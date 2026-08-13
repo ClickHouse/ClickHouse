@@ -30,12 +30,12 @@ Granules: 1/1
 
 -- Partitions UTC timezone
 1
-Condition: true
+Condition: (toStartOfDay(toDateTime(ts)) in [1756771200, 1756771200])
 Parts: 1/1
 Granules: 1/1
 
 -- Partitions EST timezone
 1
-Condition: true
+Condition: (toStartOfDay(toDateTime(ts)) in [1756771200, 1756771200])
 Parts: 1/1
 Granules: 1/1

@@ -1,0 +1,38 @@
+DROP TABLE IF EXISTS t0;
+DROP TABLE IF EXISTS t1;
+
+SET enable_shared_storage_snapshot_in_query = 1;
+
+CREATE TABLE t0 (c0 Int) ENGINE = MergeTree() ORDER BY tuple();
+CREATE TABLE t1 (c0 Int) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY (c0);
+
+INSERT INTO TABLE t0 (c0) VALUES (2);
+INSERT INTO TABLE t1 (c0) VALUES (1);
+
+DETACH TABLE t0;
+DETACH TABLE t1;
+ATTACH TABLE t0;
+
+SELECT * FROM t0;
+DROP TABLE t0;
+
+ATTACH TABLE t1;
+DROP TABLE t1;
+
+SET enable_shared_storage_snapshot_in_query = 0;
+
+CREATE TABLE t0 (c0 Int) ENGINE = MergeTree() ORDER BY tuple();
+CREATE TABLE t1 (c0 Int) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY (c0);
+
+INSERT INTO TABLE t0 (c0) VALUES (2);
+INSERT INTO TABLE t1 (c0) VALUES (1);
+
+DETACH TABLE t0;
+DETACH TABLE t1;
+ATTACH TABLE t0;
+
+SELECT * FROM t0;
+DROP TABLE t0;
+
+ATTACH TABLE t1;
+DROP TABLE t1;

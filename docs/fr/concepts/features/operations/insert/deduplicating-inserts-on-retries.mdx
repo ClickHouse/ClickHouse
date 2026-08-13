@@ -1,0 +1,557 @@
+---
+slug: /guides/developer/deduplicating-inserts-on-retries
+title: "Déduplication des insertions lors des tentatives"
+description: "Éviter les doublons de données lors des nouvelles tentatives d’insertion"
+keywords: ["déduplication", "dédupliquer", "nouvelles tentatives d’insertion", "insertions"]
+doc_type: 'guide'
+---
+
+Les opérations d’insertion peuvent parfois échouer en raison d’erreurs, comme des expirations de délai. Lorsqu’une insertion échoue, il est possible que les données aient été insérées avec succès, ou non. Ce guide explique comment activer la déduplication lors des nouvelles tentatives d’insertion afin d’éviter que les mêmes données soient insérées plus d’une fois.
+
+Lorsqu’une insertion est relancée, ClickHouse essaie de déterminer si les données ont déjà été insérées avec succès. Si les données insérées sont marquées comme doublons, ClickHouse ne les insère pas dans la table de destination. Toutefois, l’utilisateur recevra tout de même un statut de réussite, comme si les données avaient été insérées normalement.
+
+<div id="limitations">
+  ## Limites
+</div>
+
+<div id="uncertain-insert-status">
+  ### Statut d&#39;insertion incertain
+</div>
+
+L&#39;utilisateur doit réessayer l&#39;opération d&#39;insertion jusqu&#39;à ce qu&#39;elle réussisse. Si toutes les nouvelles tentatives échouent, il est impossible de déterminer si les données ont été insérées ou non. Lorsque des vues matérialisées sont impliquées, il est également impossible de savoir dans quelles tables les données ont pu apparaître. Les vues matérialisées peuvent être désynchronisées par rapport à la table source.
+
+<div id="deduplication-window-limit">
+  ### Limite de la fenêtre de déduplication
+</div>
+
+Si plus de `*_deduplication_window` autres opérations d&#39;insertion ont lieu pendant la séquence de nouvelles tentatives, la déduplication risque de ne pas fonctionner comme prévu. Dans ce cas, les mêmes données peuvent être insérées plusieurs fois.
+
+<div id="enabling-insert-deduplication-on-retries">
+  ## Activation de la déduplication des insertions en cas de nouvelles tentatives
+</div>
+
+<div id="insert-deduplication-for-tables">
+  ### Déduplication des insertions pour les tables
+</div>
+
+**Seuls les moteurs `*MergeTree` prennent en charge la déduplication à l&#39;insertion.**
+
+Pour les moteurs `*ReplicatedMergeTree`, la déduplication des insertions est activée par défaut et contrôlée par les paramètres [`replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings#replicated_deduplication_window) et [`replicated_deduplication_window_seconds`](/fr/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds). Pour les moteurs `*MergeTree` non répliqués, la déduplication est contrôlée par le paramètre [`non_replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
+
+Les paramètres ci-dessus définissent la configuration du journal de déduplication d&#39;une table. Le journal de déduplication stocke un nombre fini de `block_id`, qui déterminent le fonctionnement de la déduplication (voir ci-dessous).
+
+<div id="query-level-insert-deduplication">
+  ### Déduplication des insertions au niveau de la requête
+</div>
+
+Le paramètre `insert_deduplicate=1` active la déduplication au niveau de la requête. Notez que si vous insérez des données avec `insert_deduplicate=0`, ces données ne peuvent pas être dédupliquées, même si vous relancez une insertion avec `insert_deduplicate=1`. En effet, les `block_id` ne sont pas enregistrés pour les blocs lors des insertions avec `insert_deduplicate=0`.
+
+<div id="how-insert-deduplication-works">
+  ## Fonctionnement de la déduplication des insertions
+</div>
+
+Lorsque des données sont insérées dans ClickHouse, celui-ci les découpe en blocs selon le nombre de lignes et d’octets.
+
+Pour les tables utilisant des moteurs `*MergeTree`, chaque bloc se voit attribuer un `block_id` unique, qui est un hachage des données de ce bloc. Ce `block_id` est utilisé comme clé unique pour l’opération d’insertion. Si le même `block_id` est trouvé dans le journal de déduplication, le bloc est considéré comme un doublon et n’est pas inséré dans la table.
+
+Cette approche fonctionne bien lorsque les insertions contiennent des données différentes. En revanche, si les mêmes données sont insérées intentionnellement plusieurs fois, vous devez utiliser le paramètre `insert_deduplication_token` pour contrôler le processus de déduplication. Ce paramètre vous permet de spécifier un jeton unique pour chaque insertion, que ClickHouse utilise pour déterminer si les données constituent un doublon.
+
+Pour les requêtes `INSERT ... VALUES`, le découpage des données insérées en blocs est déterministe et dépend des paramètres. Vous devez donc relancer les insertions avec les mêmes valeurs de paramètres que lors de l’opération initiale.
+
+Pour les requêtes `INSERT ... SELECT`, il est important que la partie `SELECT` de la requête renvoie les mêmes données dans le même ordre à chaque opération. Notez toutefois que cela est difficile à obtenir en pratique. Pour garantir un ordre stable des données lors des nouvelles tentatives, définissez une clause `ORDER BY ALL` dans la partie `SELECT` de la requête. À l’heure actuelle, vous devez utiliser exactement `ORDER BY ALL` dans la requête. La prise en charge de `ORDER BY` n’est pas encore implémentée et la partie `SELECT` de la requête ne serait pas considérée comme stable. Gardez à l’esprit qu’il est possible que la table sélectionnée soit mise à jour entre deux tentatives : les données renvoyées peuvent avoir changé et la déduplication n’aura alors pas lieu. En outre, lorsque vous insérez de grands volumes de données, il est possible que le nombre de blocs après les insertions dépasse la fenêtre du journal de déduplication, et ClickHouse ne puisse alors pas dédupliquer les blocs.
+À l’heure actuelle, le comportement de `INSERT ... SELECT` est contrôlé par le paramètre `insert_select_deduplicate`. Ce paramètre détermine si la déduplication est appliquée aux données insérées à l’aide de requêtes `INSERT ... SELECT`. Consultez la documentation liée pour plus de détails et des exemples d’utilisation.
+
+<div id="insert-deduplication-with-materialized-views">
+  ## Déduplication des insertions avec les vues matérialisées
+</div>
+
+Lorsqu&#39;une table possède une ou plusieurs vues matérialisées, les données insérées sont également insérées, avec les transformations définies, dans la destination de ces vues. Les données transformées sont elles aussi dédupliquées en cas de nouvelle tentative. ClickHouse effectue la déduplication pour les vues matérialisées de la même manière que pour les données insérées dans la table cible.
+
+Vous pouvez contrôler ce processus à l&#39;aide des paramètres suivants pour la table source :
+
+* [`replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings#replicated_deduplication_window)
+* [`replicated_deduplication_window_seconds`](/fr/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)
+* [`non_replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings#non_replicated_deduplication_window)
+
+Vous devez également activer le paramètre de profil utilisateur [`deduplicate_blocks_in_dependent_materialized_views`](/fr/reference/settings/session-settings#deduplicate_blocks_in_dependent_materialized_views).
+Lorsque le paramètre `insert_deduplicate=1` est activé, les données insérées sont dédupliquées dans la table source. Le paramètre `deduplicate_blocks_in_dependent_materialized_views=1` active en plus la déduplication dans les tables dépendantes. Vous devez activer les deux si vous souhaitez une déduplication complète.
+
+Lors de l&#39;insertion de blocs dans des tables sous des vues matérialisées, ClickHouse calcule le `block_id` en hachant une chaîne qui combine les `block_id` de la table source et des identifiants supplémentaires. Cela garantit une déduplication précise au sein des vues matérialisées, en permettant de distinguer les données selon leur insertion d&#39;origine, indépendamment des transformations appliquées avant qu&#39;elles n&#39;atteignent la table de destination sous la vue matérialisée.
+
+<div id="examples">
+  ## Exemples
+</div>
+
+<div id="identical-blocks-after-materialized-view-transformations">
+  ### Blocs identiques après transformation dans une vue matérialisée
+</div>
+
+Les blocs identiques générés lors d’une transformation dans une vue matérialisée ne sont pas dédupliqués, car ils reposent sur des données insérées différentes.
+
+Voici un exemple :
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE MATERIALIZED VIEW mv_dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+```
+
+```sql
+SET max_block_size=1;
+SET min_insert_block_size_rows=0;
+SET min_insert_block_size_bytes=0;
+```
+
+Les paramètres ci-dessus nous permettent d’effectuer une sélection sur une table contenant une série de blocs d’une seule ligne. Ces petits blocs ne sont pas fusionnés et restent inchangés jusqu’à leur insertion dans une table.
+
+```sql
+SET deduplicate_blocks_in_dependent_materialized_views=1;
+```
+
+Nous devons activer la déduplication pour la vue matérialisée :
+
+```sql
+INSERT INTO dst SELECT
+    number + 1 AS key,
+    IF(key = 0, 'A', 'B') AS value
+FROM numbers(2);
+
+SELECT
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   1 │ B     │ all_0_0_0 │
+│   2 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+Ici, on voit que deux parts ont été insérées dans la table `dst`. 2 blocs issus du select -- 2 parts à l&#39;insertion. Les parts contiennent des données différentes.
+
+```sql
+SELECT
+    *,
+    _part
+FROM mv_dst
+ORDER BY all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   0 │ B     │ all_0_0_0 │
+│   0 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+Ici, on voit que 2 parts ont été insérées dans la table `mv_dst`. Ces parts contiennent les mêmes données, mais elles ne sont pas dédupliquées.
+
+```sql
+INSERT INTO dst SELECT
+    number + 1 AS key,
+    IF(key = 0, 'A', 'B') AS value
+FROM numbers(2);
+
+SELECT
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   1 │ B     │ all_0_0_0 │
+│   2 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   0 │ B     │ all_0_0_0 │
+│   0 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+Ici, on constate que lorsque nous réessayons les insertions, toutes les données sont dédupliquées. La déduplication fonctionne à la fois pour les tables `dst` et `mv_dst`.
+
+<div id="identical-blocks-on-insertion">
+  ### Blocs identiques à l’insertion
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+SET max_block_size=1;
+SET min_insert_block_size_rows=0;
+SET min_insert_block_size_bytes=0;
+```
+
+Insertion :
+
+```sql
+INSERT INTO dst SELECT
+    0 AS key,
+    'A' AS value
+FROM numbers(2);
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+Avec les paramètres ci-dessus, deux blocs résultent du select– il devrait donc y avoir deux blocs à insérer dans la table `dst`. Cependant, nous constatons qu’un seul bloc a été inséré dans la table `dst`. Cela s’explique par le fait que le deuxième bloc a été dédupliqué. Il contient les mêmes données ainsi que la clé de déduplication `block_id`, calculée comme un hash à partir des données insérées. Ce comportement n’est pas celui attendu. De tels cas sont rares, mais théoriquement possibles. Pour gérer correctement de tels cas, l’utilisateur doit fournir un `insert_deduplication_token`. Corrigeons cela avec les exemples suivants :
+
+<div id="identical-blocks-in-insertion-with-insert_deduplication_token">
+  ### Blocs identiques à l’insertion avec `insert_deduplication_token`
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+SET max_block_size=1;
+SET min_insert_block_size_rows=0;
+SET min_insert_block_size_bytes=0;
+```
+
+Insertion :
+
+```sql
+INSERT INTO dst SELECT
+    0 AS key,
+    'A' AS value
+FROM numbers(2)
+SETTINGS insert_deduplication_token='some_user_token';
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_2_2_0 │
+│ from dst   │   0 │ A     │ all_3_3_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+Deux blocs identiques ont bien été insérés, comme prévu.
+
+```sql
+SELECT 'second attempt';
+
+INSERT INTO dst SELECT
+    0 AS key,
+    'A' AS value
+FROM numbers(2)
+SETTINGS insert_deduplication_token='some_user_token';
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_2_2_0 │
+│ from dst   │   0 │ A     │ all_3_3_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+La nouvelle tentative d’insertion est dédupliquée comme prévu.
+
+```sql
+SELECT 'third attempt';
+
+INSERT INTO dst SELECT
+    1 AS key,
+    'b' AS value
+FROM numbers(2)
+SETTINGS insert_deduplication_token='some_user_token';
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_2_2_0 │
+│ from dst   │   0 │ A     │ all_3_3_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+Cette insertion est également dédupliquée, même si elle contient des données insérées différentes. Notez que `insert_deduplication_token` est prioritaire : ClickHouse n’utilise pas l’empreinte de hachage des données lorsque `insert_deduplication_token` est fourni.
+
+<div id="different-insert-operations-generate-the-same-data-after-transformation-in-the-underlying-table-of-the-materialized-view">
+  ### Différentes opérations d’insertion aboutissent aux mêmes données après transformation dans la table sous-jacente de la vue matérialisée
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE MATERIALIZED VIEW mv_dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+
+SET deduplicate_blocks_in_dependent_materialized_views=1;
+
+select 'first attempt';
+
+INSERT INTO dst VALUES (1, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER by all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+select 'second attempt';
+
+INSERT INTO dst VALUES (2, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER by all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+│ from dst   │   2 │ A     │ all_1_1_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+│ from mv_dst   │   0 │ A     │ all_1_1_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+Nous insérons des données différentes à chaque fois. Cependant, les mêmes données sont insérées dans la table `mv_dst`. Les données ne sont pas dédupliquées, car les données source étaient différentes.
+
+<div id="different-materialized-view-inserts-into-one-underlying-table-with-equivalent-data">
+  ### Insertions depuis différentes vues matérialisées dans une même table sous-jacente avec des données équivalentes
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE TABLE mv_dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE MATERIALIZED VIEW mv_first
+TO mv_dst
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+
+CREATE MATERIALIZED VIEW mv_second
+TO mv_dst
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+
+SET deduplicate_blocks_in_dependent_materialized_views=1;
+
+select 'first attempt';
+
+INSERT INTO dst VALUES (1, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER by all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+│ from mv_dst   │   0 │ A     │ all_1_1_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+Deux blocs identiques ont été insérés dans la table `mv_dst` (comme prévu).
+
+```sql
+SELECT 'second attempt';
+
+INSERT INTO dst VALUES (1, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+│ from mv_dst   │   0 │ A     │ all_1_1_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+Cette tentative est dédupliquée dans les deux tables `dst` et `mv_dst`.

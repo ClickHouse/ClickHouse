@@ -1,0 +1,37 @@
+<test>
+    <create_query>create table test_distinct_json_paths_compact_dynamic_paths (json JSON(max_dynamic_paths=1000)) engine=MergeTree order by tuple() settings min_bytes_for_wide_part='100G', dynamic_serialization_version='v3', object_serialization_version='v3'</create_query>
+    <create_query>create table test_distinct_json_paths_wide_dynamic_paths (json JSON(max_dynamic_paths=1000)) engine=MergeTree order by tuple() settings min_bytes_for_wide_part=1, min_rows_for_wide_part=1, dynamic_serialization_version='v3', object_serialization_version='v3'</create_query>
+    <create_query>create table test_distinct_json_paths_compact_map_shared_data (json JSON(max_dynamic_paths=0)) engine=MergeTree order by tuple() settings min_bytes_for_wide_part='100G', dynamic_serialization_version='v3', object_serialization_version='v3', object_shared_data_serialization_version='map', object_shared_data_serialization_version_for_zero_level_parts='map'</create_query>
+    <create_query>create table test_distinct_json_paths_wide_map_shared_data (json JSON(max_dynamic_paths=0)) engine=MergeTree order by tuple() settings min_bytes_for_wide_part=1, min_rows_for_wide_part=1, dynamic_serialization_version='v3', object_serialization_version='v3', object_shared_data_serialization_version='map', object_shared_data_serialization_version_for_zero_level_parts='map'</create_query>
+    <create_query>create table test_distinct_json_paths_compact_map_with_buckets_shared_data (json JSON(max_dynamic_paths=0)) engine=MergeTree order by tuple() settings min_bytes_for_wide_part='100G', dynamic_serialization_version='v3', object_serialization_version='v3', object_shared_data_serialization_version='map_with_buckets', object_shared_data_serialization_version_for_zero_level_parts='map_with_buckets';</create_query>
+    <create_query>create table test_distinct_json_paths_wide_map_with_buckets_shared_data (json JSON(max_dynamic_paths=0)) engine=MergeTree order by tuple() settings min_bytes_for_wide_part=1, min_rows_for_wide_part=1, dynamic_serialization_version='v3', object_serialization_version='v3', object_shared_data_serialization_version='map_with_buckets', object_shared_data_serialization_version_for_zero_level_parts='map_with_buckets'</create_query>
+    <create_query>create table test_distinct_json_paths_compact_advanced_shared_data (json JSON(max_dynamic_paths=0)) engine=MergeTree order by tuple() settings min_bytes_for_wide_part='100G', dynamic_serialization_version='v3', object_serialization_version='v3', object_shared_data_serialization_version='advanced', object_shared_data_serialization_version_for_zero_level_parts='advanced'</create_query>
+    <create_query>create table test_distinct_json_paths_wide_advanced_shared_data (json JSON(max_dynamic_paths=0)) engine=MergeTree order by tuple() settings min_bytes_for_wide_part=1, min_rows_for_wide_part=1, dynamic_serialization_version='v3', object_serialization_version='v3', object_shared_data_serialization_version='advanced', object_shared_data_serialization_version_for_zero_level_parts='advanced'</create_query>
+
+    <fill_query>insert into test_distinct_json_paths_compact_dynamic_paths select toJSONString(arrayMap(x -> tuple(repeat('a', 10) || x, repeat('b', 50)), range(1000))::Map(String, String)) from numbers(100000)</fill_query>
+    <fill_query>insert into test_distinct_json_paths_wide_dynamic_paths select toJSONString(arrayMap(x -> tuple(repeat('a', 10) || x, repeat('b', 50)), range(1000))::Map(String, String)) from numbers(100000)</fill_query>
+    <fill_query>insert into test_distinct_json_paths_compact_map_shared_data select toJSONString(arrayMap(x -> tuple(repeat('a', 10) || x, repeat('b', 50)), range(1000))::Map(String, String)) from numbers(100000)</fill_query>
+    <fill_query>insert into test_distinct_json_paths_wide_map_shared_data select toJSONString(arrayMap(x -> tuple(repeat('a', 10) || x, repeat('b', 50)), range(1000))::Map(String, String)) from numbers(100000)</fill_query>
+    <fill_query>insert into test_distinct_json_paths_compact_map_with_buckets_shared_data select toJSONString(arrayMap(x -> tuple(repeat('a', 10) || x, repeat('b', 50)), range(1000))::Map(String, String)) from numbers(100000)</fill_query>
+    <fill_query>insert into test_distinct_json_paths_wide_map_with_buckets_shared_data select toJSONString(arrayMap(x -> tuple(repeat('a', 10) || x, repeat('b', 50)), range(1000))::Map(String, String)) from numbers(100000)</fill_query>
+    <fill_query>insert into test_distinct_json_paths_compact_advanced_shared_data select toJSONString(arrayMap(x -> tuple(repeat('a', 10) || x, repeat('b', 50)), range(1000))::Map(String, String)) from numbers(100000)</fill_query>
+    <fill_query>insert into test_distinct_json_paths_wide_advanced_shared_data select toJSONString(arrayMap(x -> tuple(repeat('a', 10) || x, repeat('b', 50)), range(1000))::Map(String, String)) from numbers(100000)</fill_query>
+
+    <query>select distinctJSONPaths(json) from test_distinct_json_paths_compact_dynamic_paths format Null</query>
+    <query>select distinctJSONPaths(json) from test_distinct_json_paths_wide_dynamic_paths format Null</query>
+    <query>select distinctJSONPaths(json) from test_distinct_json_paths_compact_map_shared_data format Null</query>
+    <query>select distinctJSONPaths(json) from test_distinct_json_paths_wide_map_shared_data format Null</query>
+    <query>select distinctJSONPaths(json) from test_distinct_json_paths_compact_map_with_buckets_shared_data format Null</query>
+    <query>select distinctJSONPaths(json) from test_distinct_json_paths_wide_map_with_buckets_shared_data format Null</query>
+    <query>select distinctJSONPaths(json) from test_distinct_json_paths_compact_advanced_shared_data format Null</query>
+    <query>select distinctJSONPaths(json) from test_distinct_json_paths_wide_advanced_shared_data format Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_distinct_json_paths_compact_dynamic_paths</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_distinct_json_paths_wide_dynamic_paths</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_distinct_json_paths_compact_map_shared_data</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_distinct_json_paths_wide_map_shared_data</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_distinct_json_paths_compact_map_with_buckets_shared_data</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_distinct_json_paths_wide_map_with_buckets_shared_data</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_distinct_json_paths_compact_advanced_shared_data</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_distinct_json_paths_wide_advanced_shared_data</drop_query>
+</test>

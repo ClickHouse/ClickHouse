@@ -24,7 +24,7 @@ def started_cluster():
 def test_merge_tree_prewarm_index_cache(started_cluster):
     node.query(
         """
-        SYSTEM DROP PRIMARY INDEX CACHE;
+        SYSTEM CLEAR PRIMARY INDEX CACHE;
 
         DROP TABLE IF EXISTS t_prewarm_index_cache;
 

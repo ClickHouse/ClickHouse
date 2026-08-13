@@ -115,13 +115,13 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     /// Remove collisions if necessary.
     if (name_collision && (id_by_name != id))
     {
-        assert(replace_if_exists);
+        chassert(replace_if_exists);
         removeNoLock(id_by_name, /* throw_if_not_exists= */ true, /* notify= */ notify); // NOLINT
     }
 
     if (id_collision)
     {
-        assert(replace_if_exists);
+        chassert(replace_if_exists);
         auto & existing_entry = it_by_id->second;
         if (existing_entry.entity->getType() == new_entity->getType())
         {
@@ -131,7 +131,7 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
                 {
                     entries_by_name.erase(existing_entry.entity->getName());
                     [[maybe_unused]] bool inserted = entries_by_name.emplace(new_entity->getName(), &existing_entry).second;
-                    assert(inserted);
+                    chassert(inserted);
                 }
                 existing_entry.entity = new_entity;
                 if (notify)
@@ -215,15 +215,19 @@ bool MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & updat
     if (*new_entity == *old_entity)
         return true;
 
+    auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(old_entity->getType())];
+
+    bool name_changed = (new_entity->getName() != old_entity->getName());
+    if (name_changed)
+    {
+        if (entries_by_name.contains(new_entity->getName()))
+            throwNameCollisionCannotRename(old_entity->getType(), old_entity->getName(), new_entity->getName(), getStorageName());
+    }
+
     entry.entity = new_entity;
 
-    if (new_entity->getName() != old_entity->getName())
+    if (name_changed)
     {
-        auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(old_entity->getType())];
-        auto it2 = entries_by_name.find(new_entity->getName());
-        if (it2 != entries_by_name.end())
-            throwNameCollisionCannotRename(old_entity->getType(), old_entity->getName(), new_entity->getName(), getStorageName());
-
         entries_by_name.erase(old_entity->getName());
         entries_by_name[new_entity->getName()] = &entry;
     }

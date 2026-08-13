@@ -11,7 +11,7 @@ namespace
 {
 
 /** Incremental columns number among calls of this function. */
-class FunctionBlockNumber : public IFunction
+class FunctionBlockNumber final : public IFunction
 {
 private:
     mutable std::atomic<size_t> columns_number{0};
@@ -71,7 +71,7 @@ public:
 REGISTER_FUNCTION(BlockNumber)
 {
     FunctionDocumentation::Description description = R"(
-Returns a monotonically increasing sequence number of the [block](../../development/architecture.md#block) containing the row.
+Returns a monotonically increasing sequence number of the [block](/resources/develop-contribute/introduction/architecture#block) containing the row.
 The returned block number is updated on a best-effort basis, i.e. it may not be fully accurate.
     )";
     FunctionDocumentation::Syntax syntax = "blockNumber()";
@@ -115,7 +115,7 @@ FROM
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBlockNumber>(documentation);
 }

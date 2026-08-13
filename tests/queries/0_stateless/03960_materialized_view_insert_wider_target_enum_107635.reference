@@ -1,0 +1,5 @@
+enum8 mergetree	a	Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3)
+enum8 mergetree	b	Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3)
+enum16 replacingmergetree	x	Enum16(\'x\' = 10, \'y\' = 20, \'z\' = 30)
+enum16 replacingmergetree	y	Enum16(\'x\' = 10, \'y\' = 20, \'z\' = 30)
+enum widening with defaulted column	a	42

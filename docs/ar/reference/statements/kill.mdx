@@ -1,0 +1,158 @@
+---
+description: 'توثيق KILL'
+sidebarTitle: 'KILL'
+slug: /sql-reference/statements/kill
+title: 'عبارات KILL'
+doc_type: 'reference'
+---
+
+يوجد نوعان من عبارات KILL: أحدهما لإنهاء استعلام والآخر لإنهاء mutation
+
+<div id="kill-query">
+  ## KILL QUERY
+</div>
+
+```sql
+KILL QUERY [ON CLUSTER cluster]
+  WHERE <where expression to SELECT FROM system.processes query>
+  [SYNC|ASYNC|TEST]
+  [FORMAT format]
+```
+
+تُستخدَم لإنهاء الاستعلامات الجارية حاليًا قسرًا.
+تُحدَّد الاستعلامات المطلوب إنهاؤها من جدول system.processes باستخدام المعايير المحددة في عبارة `WHERE` ضمن استعلام `KILL`.
+
+أمثلة:
+
+أولًا، ستحتاج إلى الحصول على قائمة الاستعلامات غير المكتملة. يعرض استعلام SQL هذا هذه القائمة مرتبةً حسب الأطول تشغيلًا:
+
+قائمة من عقدة ClickHouse واحدة:
+
+```sql
+SELECT
+  initial_query_id,
+  query_id,
+  formatReadableTimeDelta(elapsed) AS time_delta,
+  query,
+  *
+  FROM system.processes
+  WHERE query ILIKE 'SELECT%'
+  ORDER BY time_delta DESC;
+```
+
+قائمة من عنقود ClickHouse:
+
+```sql
+SELECT
+  initial_query_id,
+  query_id,
+  formatReadableTimeDelta(elapsed) AS time_delta,
+  query,
+  *
+  FROM clusterAllReplicas(default, system.processes)
+  WHERE query ILIKE 'SELECT%'
+  ORDER BY time_delta DESC;
+```
+
+أنهِ الاستعلام:
+
+```sql
+-- Forcibly terminates all queries with the specified query_id:
+KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
+
+-- Synchronously terminates all queries run by 'username':
+KILL QUERY WHERE user='username' SYNC
+```
+
+<Tip>
+  إذا كنت تُنهي استعلامًا في ClickHouse Cloud أو في عنقود مُدار ذاتيًا، فتأكّد من استخدام الخيار `ON CLUSTER [cluster-name]` لضمان إنهاء الاستعلام على جميع النُسخ المتماثلة
+</Tip>
+
+لا يمكن للمستخدمين للقراءة فقط إيقاف سوى استعلاماتهم الخاصة.
+
+بشكل افتراضي، يُستخدَم الإصدار غير المتزامن من الاستعلامات (`ASYNC`)، وهو لا ينتظر تأكيدًا على توقّف الاستعلامات.
+
+ينتظر الإصدار المتزامن (`SYNC`) حتى تتوقف جميع الاستعلامات، ويعرض معلومات عن كل عملية عند توقفها.
+تتضمن الاستجابة العمود `kill_status`، والذي يمكن أن يأخذ القيم التالية:
+
+1. `finished` – تم إنهاء الاستعلام بنجاح.
+2. `waiting` – جارٍ انتظار انتهاء الاستعلام بعد إرسال إشارة إليه بإنهائه.
+3. تشرح القيم الأخرى سبب تعذّر إيقاف الاستعلام.
+
+لا يتحقق الاستعلام الاختباري (`TEST`) إلا من صلاحيات المستخدم ويعرض قائمة بالاستعلامات المطلوب إيقافها.
+
+<div id="kill-mutation">
+  ## KILL MUTATION
+</div>
+
+غالبًا ما يشير وجود عمليات mutation تستغرق وقتًا طويلًا أو عمليات mutation غير مكتملة إلى أن خدمة ClickHouse لا تعمل بكفاءة. وقد تتسبب الطبيعة غير المتزامنة لهذه عمليات mutation في استهلاكها جميع الموارد المتاحة على النظام. وقد تحتاج إلى أحد الخيارين التاليين:
+
+* إيقاف جميع عمليات mutation الجديدة وعمليات `INSERT` و`SELECT` مؤقتًا، وترك قائمة انتظار عمليات mutation تكتمل.
+* أو إنهاء بعض هذه عمليات mutation يدويًا بإرسال أمر `KILL`.
+
+```sql
+KILL MUTATION
+  WHERE <where expression to SELECT FROM system.mutations query>
+  [TEST]
+  [FORMAT format]
+```
+
+يحاول إلغاء [عمليات mutations](/ar/reference/statements/alter/index#mutations) الجارية حاليًا وإزالتها. تُحدَّد عمليات mutations المطلوب إلغاؤها من جدول [`system.mutations`](/ar/reference/system-tables/mutations) باستخدام عامل التصفية المحدد في عبارة `WHERE` ضمن استعلام `KILL`.
+
+استعلام الاختبار (`TEST`) يتحقق فقط من صلاحيات المستخدم ويعرض قائمة بعمليات mutations التي سيتم إيقافها.
+
+أمثلة:
+
+الحصول على `count()` لعدد عمليات mutations غير المكتملة:
+
+عدد عمليات mutations من عقدة ClickHouse واحدة:
+
+```sql
+SELECT count(*)
+FROM system.mutations
+WHERE is_done = 0;
+```
+
+عدد عمليات mutation في عنقود ClickHouse من النُسخ المتماثلة:
+
+```sql
+SELECT count(*)
+FROM clusterAllReplicas('default', system.mutations)
+WHERE is_done = 0;
+```
+
+استعلم عن قائمة عمليات mutation غير المكتملة:
+
+قائمة عمليات mutation من عقدة ClickHouse واحدة:
+
+```sql
+SELECT mutation_id, *
+FROM system.mutations
+WHERE is_done = 0;
+```
+
+قائمة عمليات mutation في عنقود ClickHouse:
+
+```sql
+SELECT mutation_id, *
+FROM clusterAllReplicas('default', system.mutations)
+WHERE is_done = 0;
+```
+
+أوقِف عمليات الـ mutation عند الحاجة:
+
+```sql
+-- Cancel and remove all mutations of the single table:
+KILL MUTATION WHERE database = 'default' AND table = 'table'
+
+-- Cancel the specific mutation:
+KILL MUTATION WHERE database = 'default' AND table = 'table' AND mutation_id = 'mutation_3.txt'
+```
+
+يكون هذا الاستعلام مفيدًا عندما تكون إحدى عمليات mutation عالقة ولا يمكنها الاكتمال (على سبيل المثال، إذا كانت إحدى الدوال في استعلام mutation تُطلق استثناءً عند تطبيقها على البيانات الموجودة في الجدول).
+
+لا يُتراجع عن التغييرات التي أجرتها mutation بالفعل.
+
+<Note>
+  لا يعني العمود `is_killed=1` (في ClickHouse Cloud فقط) في جدول [system.mutations](/ar/reference/system-tables/mutations) بالضرورة أن mutation قد انتهت بالكامل. فقد تظل mutation في حالة يكون فيها `is_killed=1` و`is_done=0` لفترة طويلة. ويمكن أن يحدث هذا إذا كانت mutation أخرى طويلة التشغيل تحجب mutation التي تم إيقافها. هذا وضع طبيعي.
+</Note>

@@ -11,7 +11,7 @@
 35
 SELECT count()
 FROM t_move_to_prewhere
-WHERE a AND b AND c AND (NOT ignore(fat_string))
+WHERE and(a, b, c, not(ignore(fat_string)))
       Filter ((WHERE + Change column names to column identifiers))
       Filter column: and(a, b, c, not(ignore(fat_string))) (removed)
         Prewhere info

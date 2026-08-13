@@ -11,35 +11,35 @@ has support
 0
 -- Check that the text index actually gets used (String)
 -- -- value exists only in 512 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 512/3072
 -- -- value exists only in 1024 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 1024/3072
 -- -- value exists only in 1536 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 1536/3072
 -- -- value exists only in 1536 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 1536/3072
 -- -- value does not exist in granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 0/3072
 -- Check that the text index actually gets used (FixedString)
 -- -- value exists only in 512 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 512/3072
 -- -- value exists only in 1024 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 1024/3072
 -- -- value exists only in 1536 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 1536/3072
 -- -- value exists only in 1536 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 1536/3072
 -- -- value does not exist in granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 0/3072
 hasAnyTokens support
 -- with String
@@ -52,35 +52,35 @@ hasAnyTokens support
 2560
 -- Check that the text index actually gets used (String)
 -- -- value exists only in 512 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 512/3072
 -- -- value exists only in 1024 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 1024/3072
 -- -- value exists only in 1536 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 1536/3072
 -- -- value exists only in 2560 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 2560/3072
 -- -- value does not exist in granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 0/3072
 -- Check that the text index actually gets used (FixedString)
 -- -- value exists only in 512 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 512/3072
 -- -- value exists only in 1024 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 1024/3072
 -- -- value exists only in 1536 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 1536/3072
 -- -- value exists only in 2560 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 2560/3072
 -- -- value does not exist in granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 0/3072
 hasAllTokens support
 -- with String
@@ -93,33 +93,33 @@ hasAllTokens support
 512
 -- Check that the text index actually gets used (String)
 -- -- value exists only in 512 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 512/3072
 -- -- value exists only in 1024 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 1024/3072
 -- -- value exists only in 1536 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 1536/3072
 -- -- value exists only in 512 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 512/3072
 -- -- value does not exist in granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 0/3072
 -- Check that the text index actually gets used (FixedString)
 -- -- value exists only in 512 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 512/3072
 -- -- value exists only in 1024 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 1024/3072
 -- -- value exists only in 1536 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 1536/3072
 -- -- value exists only in 512 granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 512/3072
 -- -- value does not exist in granules
-Description: text GRANULARITY 1
+Description: text GRANULARITY 100000000
 Granules: 0/3072

@@ -1,0 +1,261 @@
+---
+description: "Le protocole composable permet de configurer plus souplement l'accès TCP au serveur ClickHouse."
+sidebarTitle: 'protocole composable'
+slug: /operations/settings/composable-protocols
+title: 'protocole composable'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+Les protocoles composables permettent une configuration plus souple de l’accès TCP au
+serveur ClickHouse. Cette configuration peut coexister avec la configuration
+classique ou la remplacer.
+
+<div id="composable-protocols-section-is-denoted-as-protocols-in-configuration-xml">
+  ## Configuration des protocoles composables
+</div>
+
+Les protocoles composables peuvent être configurés dans un fichier de configuration XML. La section
+`protocols` du fichier de configuration XML correspond à la section des protocoles :
+
+```xml
+<protocols>
+
+</protocols>
+```
+
+<div id="basic-modules-define-protocol-layers">
+  ### Configuration des couches de protocole
+</div>
+
+Vous pouvez définir des couches de protocole à l’aide de modules de base. Par exemple, pour définir une
+couche HTTP, vous pouvez ajouter un nouveau module de base dans la section `protocols` :
+
+```xml
+<protocols>
+
+  <!-- plain_http module -->
+  <plain_http>
+    <type>http</type>
+  </plain_http>
+
+</protocols>
+```
+
+Les modules peuvent être configurés comme suit :
+
+* `plain_http` - nom auquel une autre couche peut faire référence
+* `type` - indique le gestionnaire de protocole qui sera instancié pour traiter les données.
+  Il peut prendre les gestionnaires de protocole prédéfinis suivants :
+  * `tcp` - gestionnaire du protocole natif ClickHouse
+  * `http` - gestionnaire du protocole HTTP ClickHouse
+  * `tls` - couche de chiffrement TLS
+  * `proxy1` - couche PROXYv1
+  * `mysql` - gestionnaire du protocole de compatibilité MySQL
+  * `postgres` - gestionnaire du protocole de compatibilité PostgreSQL
+  * `prometheus` - gestionnaire du protocole Prometheus
+  * `interserver` - gestionnaire interserver ClickHouse
+
+<Note>
+  Le gestionnaire de protocole `gRPC` n&#39;est pas implémenté pour `protocole composable`
+</Note>
+
+<div id="endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags">
+  ### Configuration des points de terminaison
+</div>
+
+Les points de terminaison (ports d’écoute) sont indiqués par les balises facultatives `<port>` et `<host>`.
+Par exemple, pour configurer un point de terminaison sur la couche HTTP ajoutée précédemment, nous
+pourrions modifier notre configuration comme suit :
+
+```xml
+<protocols>
+
+  <plain_http>
+
+    <type>http</type>
+    <!-- endpoint -->
+    <host>127.0.0.1</host>
+    <port>8123</port>
+
+  </plain_http>
+
+</protocols>
+```
+
+Si la balise `<host>` est absente, le `<listen_host>` de la configuration racine est
+utilisé.
+
+<div id="layers-sequence-is-defined-by-impl-tag-referencing-another-module">
+  ### Configuration des séquences de couches
+</div>
+
+Les séquences de couches sont définies à l’aide de la balise `<impl>`, en faisant référence à un autre
+module. Par exemple, pour configurer une couche TLS au-dessus de notre module plain&#95;http,
+nous pourrions modifier davantage notre configuration comme suit :
+
+```xml
+<protocols>
+
+  <!-- http module -->
+  <plain_http>
+    <type>http</type>
+  </plain_http>
+
+  <!-- https module configured as a tls layer on top of plain_http module -->
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+  </https>
+
+</protocols>
+```
+
+<div id="endpoint-can-be-attached-to-any-layer">
+  ### Associer des points de terminaison à des couches
+</div>
+
+Des points de terminaison peuvent être associés à n’importe quelle couche. Par exemple, nous pouvons définir des points de terminaison pour
+HTTP (port 8123) et HTTPS (port 8443) :
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+  </https>
+
+</protocols>
+```
+
+<div id="additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag">
+  ### Définir des points de terminaison supplémentaires
+</div>
+
+Des points de terminaison supplémentaires peuvent être définis en faisant référence à n’importe quel module et en omettant la
+balise `<type>`. Par exemple, nous pouvons définir le point de terminaison `another_http` pour le
+module `plain_http` comme suit :
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+  </https>
+
+  <another_http>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8223</port>
+  </another_http>
+
+</protocols>
+```
+
+<div id="custom-http-handlers-per-endpoint">
+  ### Gestionnaires HTTP personnalisés par point de terminaison
+</div>
+
+Par défaut, toutes les entrées de protocole `type=http` partagent la même
+configuration `<http_handlers>`. Vous pouvez remplacer ce comportement en ajoutant une balise `<handlers>` qui pointe
+vers une autre section de configuration. Cela permet à chaque port HTTP d&#39;utiliser un
+ensemble différent de règles de routage HTTP.
+
+Par exemple, pour exécuter une API HTTP alternative sur le port 8124 avec ses propres gestionnaires :
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <alt_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8124</port>
+    <handlers>http_handlers_alt</handlers>
+  </alt_http>
+
+</protocols>
+
+<!-- Default handlers used by plain_http (port 8123) -->
+<http_handlers>
+    <defaults/>
+</http_handlers>
+
+<!-- Alternative handlers used by alt_http (port 8124) -->
+<http_handlers_alt>
+    <rule>
+        <url>/custom</url>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>SELECT 'custom_endpoint'</query>
+        </handler>
+    </rule>
+    <defaults/>
+</http_handlers_alt>
+```
+
+Dans cet exemple, les requêtes vers le port 8123 utilisent les règles standard de `<http_handlers>`,
+tandis que les requêtes vers le port 8124 utilisent les règles de `<http_handlers_alt>`. Si `<handlers>`
+est omis, le point de terminaison revient à `<http_handlers>` par défaut.
+
+La section des handlers personnalisés suit le même format que
+[`<http_handlers>`](/fr/reference/settings/server-settings/settings#http_handlers).
+Les modifications apportées à la section des handlers personnalisés sont détectées lors du rechargement de la config, et le point de terminaison
+correspondant est automatiquement redémarré.
+
+<div id="some-modules-can-contain-specific-for-its-layer-parameters">
+  ### Spécification de paramètres supplémentaires pour la couche
+</div>
+
+Certains modules peuvent inclure des paramètres de couche supplémentaires. Par exemple, la couche TLS
+permet de spécifier un fichier de clé privée (`privateKeyFile`) et un fichier de certificat (`certificateFile`)
+comme suit :
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+    <privateKeyFile>another_server.key</privateKeyFile>
+    <certificateFile>another_server.crt</certificateFile>
+  </https>
+
+</protocols>
+```

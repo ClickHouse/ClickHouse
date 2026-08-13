@@ -1,0 +1,113 @@
+---
+slug: /clickhouse-operator/install/olm
+title: '연산자 Lifecycle Manager (OLM)를 사용해 ClickHouse 연산자 설치하기'
+keywords: ['kubernetes']
+description: '이 가이드에서는 kubectl 및 manifest 파일을 사용해 ClickHouse 연산자를 설치하는 방법을 설명합니다.'
+doc_type: 'guide'
+sidebarTitle: 'OLM'
+---
+
+이 가이드에서는 연산자 Lifecycle Manager (OLM)를 사용해 ClickHouse 연산자를 설치하는 방법을 설명합니다.
+
+<div id="prerequisites">
+  ## 필수 조건
+</div>
+
+* Kubernetes 클러스터 버전 1.28.0 이상
+* 클러스터에 액세스하도록 kubectl이 구성되어 있어야 합니다
+* 클러스터 관리자 권한
+* OLM(Operator Lifecycle Manager) 설치
+
+<div id="install-olm">
+  ## OLM 설치
+</div>
+
+클러스터에 OLM이 아직 설치되어 있지 않다면 설치하십시오:
+
+```bash
+# OLM 설치 여부 확인
+kubectl get ns olm
+
+# 설치되지 않은 경우 OLM 설치
+curl -sL https://github.com/operator-framework/operator-lifecycle-manager/releases/download/v0.28.0/install.sh | bash -s v0.28.0
+```
+
+<div id="install-the-operator">
+  ## 연산자 설치
+</div>
+
+<div id="install-from-github-catalog">
+  ### GitHub Catalog에서 설치
+</div>
+
+```bash
+# 오퍼레이터 네임스페이스 생성
+kubectl create namespace clickhouse-operator-system
+
+# CatalogSource 생성
+kubectl apply -f - <<EOF
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: clickhouse-operator-catalog
+  namespace: clickhouse-operator-system
+spec:
+  sourceType: grpc
+  image: ghcr.io/clickhouse/clickhouse-operator-catalog:latest
+  displayName: ClickHouse Operator
+  publisher: ClickHouse
+  updateStrategy:
+    registryPoll:
+      interval: 30m
+EOF
+
+# OperatorGroup 생성
+kubectl apply -f - <<EOF
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: clickhouse-operator-group
+  namespace: clickhouse-operator-system
+EOF
+
+# Subscription 생성
+kubectl apply -f - <<EOF
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: clickhouse-operator
+  namespace: clickhouse-operator-system
+spec:
+  channel: stable-v0
+  name: clickhouse-operator
+  source: clickhouse-operator-catalog
+  sourceNamespace: clickhouse-operator-system
+  installPlanApproval: Automatic
+EOF
+```
+
+<div id="uninstall">
+  ## 제거
+</div>
+
+```bash
+# subscription 삭제
+kubectl delete subscription clickhouse-operator -n clickhouse-operator-system
+# 연관된 모든 리소스 찾기
+kubectl get operator clickhouse-operator.clickhouse-operator-system -o=jsonpath="{.status.components.refs}" | jq 'map({kind, name})'
+# 연관된 리소스 삭제 (CRDs, 배포 등)
+kubectl delete <resource> <name> [-n <namespace>]  # 발견된 각 리소스에 대해 반복 실행
+
+# OperatorGroup 삭제 (선택 사항):
+kubectl delete operatorgroup clickhouse-operator-group -n clickhouse-operator-system
+# Operator 뷰 삭제
+kubectl delete operator clickhouse-operator.clickhouse-operator-system
+```
+
+제거에 대한 자세한 내용은 [OLM 문서](https://olm.operatorframework.io/docs/tasks/uninstall-operator/)에서 확인할 수 있습니다.
+
+<div id="additional-resources">
+  ## 추가 자료
+</div>
+
+* [연산자 Lifecycle Manager 문서](https://olm.operatorframework.io/docs)

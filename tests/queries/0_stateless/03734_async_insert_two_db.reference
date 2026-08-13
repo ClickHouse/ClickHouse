@@ -1,0 +1,14 @@
+Creating database test_async_insert_two_db_1_
+Creating table in database test_async_insert_two_db_1_
+Creating database test_async_insert_two_db_2_
+Creating table in database test_async_insert_two_db_2_
+Inserting data into database test_async_insert_two_db_1_
+Inserting data into database test_async_insert_two_db_2_
+Flushing inserts in test_async_insert_two_db_1_
+Flushing inserts in test_async_insert_two_db_2_
+select table in test_async_insert_two_db_1_
+9
+select table in test_async_insert_two_db_2_
+9
+Dropping database test_async_insert_two_db_1_
+Dropping database test_async_insert_two_db_2_

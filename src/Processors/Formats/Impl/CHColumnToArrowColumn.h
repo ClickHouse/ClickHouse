@@ -31,12 +31,37 @@ public:
         bool use_signed_indexes_for_dictionary = false;
         /// Always use (U)Int64 type for indexes in Arrow::Dictionary.
         bool use_64_bit_indexes_for_dictionary = false;
+        /// Output Date as UInt16 instead of Arrow DATE32 for backward compatibility.
+        bool output_date_as_uint16 = false;
+        /// Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
+        bool output_unsupported_types_as_binary = false;
     };
+
+    static std::shared_ptr<arrow::Schema> calculateArrowSchema(
+        const ColumnsWithTypeAndName & header_columns,
+        const std::string & format_name,
+        const Chunk * chunk,
+        const Settings & settings,
+        std::optional<size_t> columns_num = std::nullopt,
+        const std::optional<std::unordered_map<String, Int64>> & column_to_field_id = std::nullopt
+    );
+
+    /// Because an arrow table can only have one dictionary per column, if the returned table is intended to be inserted into a larger table,
+    /// `cached_dictionary_values` should be provided to maintain this limitation.
+    static std::shared_ptr<arrow::Table> calculateArrowTable(
+        const ColumnsWithTypeAndName & header_columns,
+        const std::string & format_name,
+        const std::vector<Chunk> & chunks,
+        const Settings & settings,
+        size_t columns_num,
+        std::shared_ptr<arrow::Schema> schema,
+        std::unordered_map<std::string, MutableColumnPtr> * cached_dictionary_values = nullptr);
+
 
     CHColumnToArrowColumn(const Block & header, const std::string & format_name_, const Settings & settings_);
     CHColumnToArrowColumn(const ColumnsWithTypeAndName & header_columns_, const std::string & format_name_, const Settings & settings_);
 
-    /// Makes a copy of this converter.
+        /// Makes a copy of this converter.
     /// This can be useful to prepare for conversion in multiple threads.
     std::unique_ptr<CHColumnToArrowColumn> clone(bool copy_arrow_schema = false) const;
 

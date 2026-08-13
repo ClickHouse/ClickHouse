@@ -53,7 +53,7 @@ SELECT simpleJSONExtractUInt(json, 'foo') FROM jsons ORDER BY json;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
     factory.registerFunction<FunctionSimpleJSONExtractUInt>(documentation);
     factory.registerAlias("visitParamExtractUInt", "simpleJSONExtractUInt");

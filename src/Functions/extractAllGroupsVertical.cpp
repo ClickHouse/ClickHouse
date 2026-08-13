@@ -1,17 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/extractAllGroups.h>
 
-namespace
-{
-
-struct VerticalImpl
-{
-    static constexpr auto Kind = DB::ExtractAllGroupsResultKind::VERTICAL;
-    static constexpr auto Name = "extractAllGroupsVertical";
-};
-
-}
-
 namespace DB
 {
 
@@ -44,10 +33,10 @@ SELECT extractAllGroupsVertical(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionExtractAllGroups<VerticalImpl>>(documentation);
-    factory.registerAlias("extractAllGroups", VerticalImpl::Name);
+    factory.registerFunction("extractAllGroupsVertical", [](ContextPtr ctx){ return FunctionExtractAllGroups::create(ctx, "extractAllGroupsVertical", ExtractAllGroupsResultKind::VERTICAL); }, documentation);
+    factory.registerAlias("extractAllGroups", "extractAllGroupsVertical");
 }
 
 }

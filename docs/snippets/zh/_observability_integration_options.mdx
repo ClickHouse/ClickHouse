@@ -1,0 +1,34 @@
+---
+title: 可观测性集成选项
+---
+
+<div id="examples">
+  ## 集成示例
+</div>
+
+外部集成使组织能够沿用既有监控工作流，借助团队对熟悉工具的现有经验，并将 ClickHouse 监控纳入更广泛的基础设施可观测性体系中，而不会打乱当前流程，也无需投入大量再培训成本。
+团队可以将现有告警规则和处理流程应用于 ClickHouse 指标，同时在统一的可观测性平台中，将数据库性能与应用和基础设施的健康状况关联起来。这种方式能够最大化当前监控方案的投资回报率，并通过集中的仪表盘和熟悉的工具界面加快故障排查。
+
+<div id="grafana">
+  ### Grafana Cloud 监控
+</div>
+
+Grafana 可通过直接插件集成和基于 Prometheus 的方式监控 ClickHouse。Prometheus 端点集成既能保持监控工作负载与生产工作负载之间的运维隔离，又能在现有的 Grafana Cloud 基础设施中实现可视化。有关配置指导，请参阅 [Grafana 的 ClickHouse 文档](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/)。
+
+<div id="datadog">
+  ### Datadog 监控
+</div>
+
+Datadog 正在开发专用的 API 集成，以在兼顾服务空闲行为的同时，提供完善的云服务监控能力。在此之前，团队可以通过 ClickHouse Prometheus 端点采用 OpenMetrics 集成方式，实现运维隔离和更具成本效益的监控。有关配置说明，请参阅 [Datadog 的 Prometheus 和 OpenMetrics 集成文档](https://docs.datadoghq.com/integrations/openmetrics/)。
+
+<div id="clickstack">
+  ### ClickStack
+</div>
+
+ClickStack 是 ClickHouse 推荐的可观测性解决方案，适用于深度系统分析和调试。它以 ClickHouse 作为存储引擎，为日志、指标和链路追踪提供统一平台。这种方式依赖 HyperDX (ClickStack 的 UI) 直接连接到 ClickHouse 实例中的系统表。
+HyperDX 自带一个面向 ClickHouse 的 dashboard，其中包含 Selects、Inserts 和 Infrastructure 选项卡。团队还可以使用 Lucene 或 SQL 语法搜索系统表和日志，并通过 Chart Explorer 创建自定义可视化图表，以进行更细致的系统分析。
+相比实时生产告警，这种方式更适合用于调试复杂问题、性能分析以及深入查看系统内部信息。
+
+<Note>
+  请注意，由于 HyperDX 会直接查询系统表，这种方式会唤醒空闲服务。
+</Note>

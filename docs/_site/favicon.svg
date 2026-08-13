@@ -1,0 +1,26 @@
+<svg width="260" height="260" viewBox="0 0 260 260" fill="none" xmlns="http://www.w3.org/2000/svg">
+<style>
+    .background {
+      fill: #1E1E1E;
+    }
+    @media (prefers-color-scheme: dark) {
+      .background {
+        fill: transparent;
+      }
+    }
+  </style>
+
+<rect class='background' width="260" height="260" rx="40" fill="none"/>
+<g clip-path="url(#clip0_39_1086)">
+<rect x="42.25" y="42.25" width="19.4993" height="175.494" rx="2.05109" fill="white"/>
+<rect x="81.251" y="42.25" width="19.4993" height="175.494" rx="2.05109" fill="white"/>
+<rect x="120.252" y="42.25" width="19.4993" height="175.494" rx="2.05109" fill="white"/>
+<rect x="159.243" y="42.25" width="19.4993" height="175.494" rx="2.05109" fill="white"/>
+<rect x="198.254" y="110.501" width="19.4993" height="38.9987" rx="2.05109" fill="white"/>
+</g>
+<defs>
+<clipPath id="clip0_39_1086">
+<rect width="208" height="208" fill="white" transform="translate(26 26)"/>
+</clipPath>
+</defs>
+</svg>

@@ -25,8 +25,9 @@ services:
               target: /postgres/
         labels:
             - "autoheal=true"
+        cpus: 3
     autoheal:
-      image: willfarrell/autoheal:latest
+      image: willfarrell/autoheal:1.2.0
       stop_grace_period: 5s
       tty: true
       restart: always
@@ -40,3 +41,4 @@ services:
         - CURL_TIMEOUT=30
       volumes:
         - /var/run/docker.sock:/var/run/docker.sock
+      cpus: 3

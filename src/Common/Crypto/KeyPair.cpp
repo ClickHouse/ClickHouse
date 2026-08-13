@@ -62,7 +62,7 @@ KeyPair KeyPair::fromPEMString(const std::string & pem, const std::string & pass
 
 KeyPair KeyPair::fromPEMString(const std::string_view & pem, const std::string & password)
 {
-    BIO_ptr pem_bio(BIO_new_mem_buf(pem.data(), pem.length()), BIO_free);
+    BIO_ptr pem_bio(BIO_new_mem_buf(pem.data(), static_cast<int>(pem.length())), BIO_free);
 
     if (!pem_bio)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_mem_buf failed: {}", getOpenSSLErrors());
@@ -96,7 +96,7 @@ KeyPair KeyPair::fromBuffer(const std::string & buffer, const std::string & pass
 
     /// Try to load a private key.
     {
-        BIO_ptr bio_buffer(BIO_new_mem_buf(buffer.c_str(), buffer.size()), BIO_free);
+        BIO_ptr bio_buffer(BIO_new_mem_buf(buffer.c_str(), static_cast<int>(buffer.size())), BIO_free);
 
         if (!bio_buffer)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_mem_buf failed: {}", getOpenSSLErrors());
@@ -107,7 +107,7 @@ KeyPair KeyPair::fromBuffer(const std::string & buffer, const std::string & pass
     /// Maybe it is a public key.
     if (!key)
     {
-        BIO_ptr bio_buffer(BIO_new_mem_buf(buffer.c_str(), buffer.size()), BIO_free);
+        BIO_ptr bio_buffer(BIO_new_mem_buf(buffer.c_str(), static_cast<int>(buffer.size())), BIO_free);
 
         if (!bio_buffer)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_file failed: {}", getOpenSSLErrors());
@@ -200,7 +200,7 @@ std::string KeyPair::publicKey() const
     if (!PEM_write_bio_PUBKEY(bio.get(), key))
         throw Exception(ErrorCodes::OPENSSL_ERROR, "PEM_write_bio_PUBKEY failed: {}", getOpenSSLErrors());
 
-    char * data;
+    char * data = nullptr;
     uint64_t len = BIO_get_mem_data(bio.get(), &data);
     std::string result(data, len);
 
@@ -217,7 +217,7 @@ std::string KeyPair::privateKey() const
     if (!PEM_write_bio_PrivateKey(bio.get(), key, nullptr, nullptr, 0, nullptr, nullptr))
         throw Exception(ErrorCodes::OPENSSL_ERROR, "PEM_write_bio_PrivateKey failed: {}", getOpenSSLErrors());
 
-    char * data;
+    char * data = nullptr;
     uint64_t len = BIO_get_mem_data(bio.get(), &data);
     std::string result(data, len);
 

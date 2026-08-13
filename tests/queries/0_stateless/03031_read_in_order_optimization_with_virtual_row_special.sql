@@ -1,21 +1,21 @@
 -- Tags: no-parallel
 
 -- modified from test_01155_ordinary, to test special optimization path for virtual row
-DROP DATABASE IF EXISTS test_03031;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
-CREATE DATABASE test_03031;
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
-USE test_03031;
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 SET read_in_order_use_virtual_row = 1;
 
 CREATE TABLE src (s String) ENGINE = MergeTree() ORDER BY s;
 INSERT INTO src(s) VALUES ('before moving tables');
-CREATE TABLE dist (s String) ENGINE = Distributed(test_shard_localhost, test_03031, src);
+CREATE TABLE dist (s String) ENGINE = Distributed(test_shard_localhost, {CLICKHOUSE_DATABASE_1:Identifier}, src);
 
 SET enable_analyzer=0;
-SELECT _table FROM merge('test_03031', '') ORDER BY _table, s;
+SELECT _table FROM merge({CLICKHOUSE_DATABASE_1:String}, '') ORDER BY _table, s;
 
 DROP TABLE src;
 DROP TABLE dist;
-DROP DATABASE test_03031;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

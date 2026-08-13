@@ -35,6 +35,10 @@ public:
         for (auto & factory : stack)
         {
             std::unique_ptr<TCPServerConnection> connection(factory->createConnection(socket(), tcp_server, stack_data));
+
+            if (!connection)
+                return;
+
             connection->run();
             if (stack_data.socket != socket())
                 socket() = stack_data.socket;

@@ -75,8 +75,8 @@ def verify_result_dictionary(diction : dict, allowed_content_types : set):
         row_values = set()
         number_of_missing_row_values = 0
         number_of_rows = 0
-        partitioned_rows = set()
         not_deleted_files = set()
+        pruned_files = set()
         for i in range(len(diction['file_path'])):
             if file_path == diction['file_path'][i]:
                 if diction['row_in_file'][i] is not None:
@@ -88,19 +88,21 @@ def verify_result_dictionary(diction : dict, allowed_content_types : set):
                         number_of_rows += 1
 
                     if diction['content_type'][i] == 'ManifestFileEntry':
-                        if diction['content'][i] == '':
-                            if diction['pruning_status'][i] is None:
-                                raise ValueError("Pruning status should be specified for this manifest file entry, file_path: {}".format(file_path))
-                            partitioned_rows.add(diction['row_in_file'][i])
-                            if diction['pruning_status'][i] == 'NotPruned':
-                                prunned_info.not_pruned += 1
-                            elif diction['pruning_status'][i] == 'PartitionPruned':
-                                prunned_info.partition_pruned += 1
-                            elif diction['pruning_status'][i] == 'MinMaxIndexPruned':
-                                prunned_info.min_max_index_pruned += 1
-                            else:
-                                raise ValueError("Unexpected pruning status: {}, file_path: {}".format(diction['pruning_status'][i], file_path))
+                        # Each ManifestFileEntry row now has both content and pruning status
+                        if diction['pruning_status'][i] is None:
+                            raise ValueError("Pruning status should be specified for this manifest file entry, file_path: {}".format(file_path))
+                        if diction['pruning_status'][i] == 'NotPruned':
+                            prunned_info.not_pruned += 1
+                        elif diction['pruning_status'][i] == 'PartitionPruned':
+                            prunned_info.partition_pruned += 1
+                            pruned_files.add(diction['row_in_file'][i])
+                        elif diction['pruning_status'][i] == 'MinMaxIndexPruned':
+                            prunned_info.min_max_index_pruned += 1
+                            pruned_files.add(diction['row_in_file'][i])
                         else:
+                            raise ValueError("Unexpected pruning status: {}, file_path: {}".format(diction['pruning_status'][i], file_path))
+
+                        if diction['content'][i] != '':
                             data_object = json.loads(diction['content'][i])
                             print("Data object: {}".format(data_object))
                             if data_object['status'] < 2:
@@ -111,9 +113,11 @@ def verify_result_dictionary(diction : dict, allowed_content_types : set):
                         raise ValueError("Row should be specified for an entry {}, file_path: {}".format(diction['content_type'][i], file_path))
 
                     number_of_missing_row_values += 1
-        if partitioned_rows != not_deleted_files:
-            raise ValueError("Partitioned rows are not consistent with not deleted files for file path: {}, partitioned rows: {}, not deleted files: {}".format(file_path, partitioned_rows, not_deleted_files))
-                
+        # All not-deleted, not-pruned files should be consistent: every row with content should have a pruning status
+        all_manifest_entry_rows = not_deleted_files | pruned_files
+        if all_manifest_entry_rows and all_manifest_entry_rows != set(range(max(all_manifest_entry_rows) + 1)):
+            raise ValueError("Manifest file entry rows are not contiguous for file path: {}, rows: {}".format(file_path, all_manifest_entry_rows))
+
         # We have exactly one metadata file
         if number_of_missing_row_values != 1:
             raise ValueError("Not a one row value (corresponding to metadata file) is missing for file path: {}".format(file_path))

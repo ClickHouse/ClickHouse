@@ -26,6 +26,9 @@ inline std::string_view checkAndReturnHost(const Pos & pos, const Pos & dot_pos,
 /// @return empty string view if the host is not valid (i.e. it does not have dot, or there no symbol after dot).
 inline std::string_view getURLHostRFC(const char * data, size_t size)
 {
+    if (size < 2)
+        return std::string_view{};
+
     Pos pos = data;
     Pos end = data + size;
 
@@ -277,7 +280,7 @@ struct ExtractDomain
         }
         else
         {
-            if (without_www && host.size() > 4 && !strncmp(host.data(), "www.", 4))  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+            if (without_www && host.size() > 4 && !strncmp(host.data(), "www.", 4)) /// NOLINT(bugprone-suspicious-stringview-data-usage)
                 host = { host.data() + 4, host.size() - 4 };
 
             res_data = host.data();

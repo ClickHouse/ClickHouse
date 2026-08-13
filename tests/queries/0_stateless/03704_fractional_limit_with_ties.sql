@@ -49,6 +49,13 @@ SELECT '*';
 SELECT id FROM ties ORDER BY id LIMIT 0.8, 0.1 WITH TIES;
 SELECT '';
 
+SET max_block_size = 10;
+SELECT number FROM numbers(50) ORDER BY number LIMIT 0.3 WITH TIES;
+SELECT '*';
+SET max_block_size = 5;
+SELECT number FROM numbers(33) ORDER BY number LIMIT 0.33 WITH TIES;
+SELECT '';
+
 SELECT count() FROM (SELECT number > 100 AS n FROM numbers(2000) ORDER BY n LIMIT 1, 0.01 WITH TIES);
 SELECT '*';
 SET max_block_size = 5;

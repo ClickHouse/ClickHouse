@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import os.path as p
 import random
 import threading
 import time
@@ -10,7 +9,6 @@ import nats
 import pytest
 from google.protobuf.internal.encoder import _VarintBytes
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import nats_user, nats_pass
 from helpers.test_tools import TSV
@@ -176,7 +174,7 @@ def test_nats_select_empty(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -196,7 +194,7 @@ def test_nats_select(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -226,7 +224,7 @@ def test_nats_json_without_delimiter(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -263,7 +261,7 @@ def test_nats_csv_with_delimiter(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -294,7 +292,7 @@ def test_nats_tsv_with_delimiter(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -325,14 +323,14 @@ def test_nats_macros(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
-            SETTINGS nats_url = '{{nats_url}}',
-                     nats_stream = '{{nats_stream}}',
-                     nats_consumer_name = '{{nats_consumer_name}}',
-                     nats_subjects = '{{nats_subjects}}',
-                     nats_format = '{{nats_format}}';
+            SETTINGS nats_url = '{nats_url}',
+                     nats_stream = '{nats_stream}',
+                     nats_consumer_name = '{nats_consumer_name}',
+                     nats_subjects = '{nats_subjects}',
+                     nats_format = '{nats_format}';
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
@@ -354,7 +352,7 @@ def test_nats_materialized_view(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -390,7 +388,7 @@ def test_nats_materialized_view_with_subquery(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -420,7 +418,7 @@ def test_nats_protobuf(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value String)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -467,7 +465,7 @@ def test_nats_big_message(nats_cluster):
     ]
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value String)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -575,7 +573,7 @@ def test_nats_insert(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -604,7 +602,7 @@ def test_fetching_messages_without_mv(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -629,7 +627,7 @@ def test_fetching_messages_without_mv(nats_cluster):
 def test_nats_many_subjects_insert_wrong(nats_cluster):
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -647,7 +645,7 @@ def test_nats_many_subjects_insert_wrong(nats_cluster):
 
     # This NATS engine reads from multiple subjects
     assert(
-        "This NATS engine reads from multiple subjects. You must specify `stream_like_engine_insert_queue` to choose the subject to write to."
+        "This NATS engine reads from multiple subjects. You must specify `stream_like_engine_insert_queue` to choose the subject to write to"
         in
         instance.query_and_get_error("INSERT INTO test.nats VALUES {}".format(values)))
 
@@ -682,7 +680,7 @@ def test_nats_many_subjects_insert_right(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -710,7 +708,7 @@ def test_nats_many_inserts(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats_many (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -769,7 +767,7 @@ def test_nats_overloaded_insert(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats_consume (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -805,7 +803,10 @@ def test_nats_overloaded_insert(nats_cluster):
             values.append("({i}, {i})".format(i=i))
         values = ",".join(values)
 
-        instance.query_with_retry("INSERT INTO test.nats_overload VALUES {}".format(values))
+        instance.query_with_retry(
+            "INSERT INTO test.nats_overload VALUES {}".format(values),
+            settings={"receive_timeout": 600},
+        )
 
     threads = []
     threads_num = 5
@@ -841,7 +842,7 @@ def test_nats_virtual_column(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats_virtuals (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -892,7 +893,7 @@ def test_nats_virtual_column_with_materialized_view(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats_virtuals_mv (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -996,7 +997,7 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree
             ORDER BY key;
@@ -1052,7 +1053,7 @@ def test_nats_no_connection_at_startup_1(nats_cluster):
         "Cannot connect to Nats"
         in
         instance.query_and_get_error(
-            f"""
+            """
             CREATE TABLE test.cs (key UInt64, value UInt64)
                 ENGINE = NATS
                 SETTINGS nats_url = 'invalid_nats_url:4444',
@@ -1072,7 +1073,7 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.cs (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -1128,7 +1129,7 @@ def test_nats_format_factory_settings(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.format_settings (
             id String, date DateTime
         ) ENGINE = NATS
@@ -1160,7 +1161,7 @@ def test_nats_bad_args(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.producer_table (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -1178,7 +1179,7 @@ def test_nats_bad_args(nats_cluster):
         "To use NATS jet stream, you must specify `nats_stream` setting"
         in
         instance.query_and_get_error(
-            f"""
+            """
             CREATE TABLE test.drop (key UInt64, value UInt64)
                 ENGINE = NATS
                 SETTINGS nats_url = 'nats1:4444',
@@ -1193,7 +1194,7 @@ def test_nats_drop_mv(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -1253,7 +1254,7 @@ def test_nats_predefined_configuration(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS(nats_pull_consumer);
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -1279,7 +1280,7 @@ def test_format_with_prefix_and_suffix(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -1307,7 +1308,7 @@ def test_max_rows_per_message(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "external_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',
@@ -1408,7 +1409,7 @@ def test_block_based_formats_1(nats_cluster):
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
     instance.query(
-        f"""
+        """
         CREATE TABLE test.nats (key UInt64, value UInt64)
             ENGINE = NATS
             SETTINGS nats_url = 'nats1:4444',

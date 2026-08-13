@@ -1,0 +1,30 @@
+---
+slug: /integrations/integration-development
+title: 'インテグレーション開発'
+sidebarTitle: '概要'
+description: 'ClickHouse インテグレーションの構築、テスト、ドキュメント作成に関するガイドです。'
+keywords: ['インテグレーション開発', 'インテグレーションを構築', 'パートナー', 'インテグレーションパートナー']
+doc_type: 'landing-page'
+---
+
+これらのガイドは、ClickHouse に接続するプロダクトを構築する方に向けたものです。インテグレーションの対象範囲、コネクタの検証方法、このサイトでドキュメントを公開する方法について説明しています。
+
+<Info>
+  **パートナーポータル**
+
+  インテグレーションを登録し、パートナー向けリソースにアクセスするには、[partner portal](https://clickhouse.com/partners) をご利用ください。以下のガイドでは、コネクタの構築、テスト、ドキュメント作成の方法を説明します。
+</Info>
+
+<div id="guides">
+  ## ガイド
+</div>
+
+次の順にお読みください。
+
+| ガイド                                                                                          | 内容                                         |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| [インテグレーションの構築](/ja/resources/develop-contribute/integrations/building-integrations)             | インジェストと利用の経路、ワイヤプロトコル、クライアント、ユーザーエージェントの規約 |
+| [インテグレーションのテスト](/ja/resources/develop-contribute/integrations/testing-your-integration)         | デプロイメントモード、データセット、型の対応範囲、レビュー前に報告すべき内容     |
+| [インテグレーションのドキュメント化](/ja/resources/develop-contribute/integrations/documenting-your-integration) | 必須のドキュメントセクション、スタイルルール、製品ページ用のプルリクエスト雛形    |
+
+プロトタイプの作成とテストが完了したら、[`/docs/integrations/<category>/<your-integration>/`](/ja/resources/develop-contribute/integrations/documenting-your-integration) 配下にインテグレーションページを追加し、[`clickhouse-docs`](https://github.com/ClickHouse/clickhouse-docs) に対してプルリクエストを作成してください。

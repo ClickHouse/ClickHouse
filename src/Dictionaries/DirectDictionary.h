@@ -1,12 +1,11 @@
 #pragma once
 
 #include <atomic>
-#include <vector>
 
+#include <Dictionaries/DictionaryHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryHelpers.h>
 
 
 namespace DB
@@ -18,7 +17,7 @@ template <DictionaryKeyType dictionary_key_type>
 class DirectDictionary final : public IDictionary
 {
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, std::string_view>;
 
     DirectDictionary(
         const StorageID & dict_id_,
@@ -42,7 +41,7 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
     }
 
     double getHitRate() const override { return 1.0; }

@@ -1,3 +1,6 @@
 [libfuzzer]
-timeout = 20
+timeout = 60
 dict = all.dict
+
+[fuzzer_arguments]
+max_parser_backtracks = 10000

@@ -3,9 +3,10 @@
 #include "config.h"
 
 #if USE_SSL
+#include <mutex>
+
 #include <Disks/IDisk.h>
 #include <Common/MultiVersion.h>
-#include <Disks/FakeDiskTransaction.h>
 #include <Disks/DiskEncryptedTransaction.h>
 #include <Disks/MetadataStorageWithPathWrapper.h>
 
@@ -31,6 +32,8 @@ public:
     const String & getPath() const override { return disk_absolute_path; }
 
     ReservationPtr reserve(UInt64 bytes) override;
+
+    ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
 
     bool existsFile(const String & path) const override
     {
@@ -122,10 +125,11 @@ public:
         const WriteSettings & write_settings,
         const std::function<void()> & cancellation_hook) override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readFile(
+    void prepareRead(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const override;
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -322,6 +326,12 @@ public:
     bool supportsChmod() const override { return delegate->supportsChmod(); }
     bool isSymlinkSupported() const override { return delegate->isSymlinkSupported(); }
 
+    bool isReadOnly() const override { return delegate->isReadOnly(); }
+    bool isWriteOnce() const override { return delegate->isWriteOnce(); }
+    bool isPlain() const override { return delegate->isPlain(); }
+
+    ObjectStoragePtr getObjectStorage() override { return delegate->getObjectStorage(); }
+
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
     std::shared_ptr<DiskEncryptedTransaction> createEncryptedTransaction() const
@@ -332,13 +342,6 @@ public:
 
     DiskTransactionPtr createTransaction() override
     {
-        if (use_fake_transaction)
-        {
-            return std::make_shared<FakeDiskTransaction>(*this);
-        }
-
-        /// Need to overwrite explicetly because this disk change
-        /// a lot of "delegate" methods.
         return createEncryptedTransaction();
     }
 
@@ -364,7 +367,14 @@ public:
 
     MetadataStoragePtr getMetadataStorage() override
     {
-        return std::make_shared<MetadataStorageWithPathWrapper>(delegate->getMetadataStorage(), disk_path);
+        /// Cache the wrapper so that the metadata storage pointer is stable across calls (like `DiskObjectStorage`),
+        /// which code such as `isStoredOnTheSameDisk` relies on to hardlink parts instead of copying them; lazily,
+        /// because a non-object-storage delegate does not implement `getMetadataStorage`.
+        std::call_once(metadata_storage_init_flag, [this]
+        {
+            metadata_storage = std::make_shared<MetadataStorageWithPathWrapper>(delegate->getMetadataStorage(), disk_path);
+        });
+        return metadata_storage;
     }
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & paths) const override;
@@ -403,7 +413,10 @@ private:
     const String disk_path;
     const String disk_absolute_path;
     MultiVersion<DiskEncryptedSettings> current_settings;
-    bool use_fake_transaction;
+
+    /// Lazily-initialized stable wrapper returned by getMetadataStorage(); see the comment there.
+    std::once_flag metadata_storage_init_flag;
+    MetadataStoragePtr metadata_storage;
 };
 
 }

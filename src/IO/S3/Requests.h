@@ -148,7 +148,12 @@ public:
     Aws::Http::HeaderValueCollection GetRequestSpecificHeaders() const override;
 };
 
-using HeadObjectRequest = ExtendedRequest<Model::HeadObjectRequest>;
+class HeadObjectRequest: public ExtendedRequest<Model::HeadObjectRequest>
+{
+public:
+    void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;
+};
+
 using ListObjectsV2Request = ExtendedRequest<Model::ListObjectsV2Request>;
 using ListObjectsRequest = ExtendedRequest<Model::ListObjectsRequest>;
 using GetObjectRequest = ExtendedRequest<Model::GetObjectRequest>;
@@ -219,13 +224,13 @@ public:
     void SetKey(Aws::String && value);
     void SetKey(const char * value);
 
-    void SetComponentNames(std::vector<Aws::String> component_names_);
+    void SetComponentNames(Strings component_names_);
 
     void SetContentType(Aws::String value);
 private:
     Aws::String bucket;
     Aws::String key;
-    std::vector<Aws::String> component_names;
+    Strings component_names;
     Aws::String content_type;
 };
 

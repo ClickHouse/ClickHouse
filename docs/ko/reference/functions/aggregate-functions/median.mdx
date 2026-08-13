@@ -1,0 +1,45 @@
+---
+description: '`median*` 함수는 해당 `quantile*`
+  함수의 별칭입니다. 수치형 데이터 표본의 중앙값을 계산합니다.'
+slug: /sql-reference/aggregate-functions/reference/median
+title: 'median'
+doc_type: '참고'
+---
+
+`median*` 함수는 해당 `quantile*` 함수의 별칭입니다. 수치형 데이터 표본의 중앙값을 계산합니다.
+
+함수:
+
+* `median` — [quantile](/ko/reference/functions/aggregate-functions/quantile)의 별칭입니다.
+* `medianDeterministic` — [quantileDeterministic](/ko/reference/functions/aggregate-functions/quantileDeterministic)의 별칭입니다.
+* `medianExact` — [quantileExact](/ko/reference/functions/aggregate-functions/quantileExact)의 별칭입니다.
+* `medianExactWeighted` — [quantileExactWeighted](/ko/reference/functions/aggregate-functions/quantileExactWeighted)의 별칭입니다.
+* `medianTiming` — [quantileTiming](/ko/reference/functions/aggregate-functions/quantileTiming)의 별칭입니다.
+* `medianTimingWeighted` — [quantileTimingWeighted](/ko/reference/functions/aggregate-functions/quantileTimingWeighted)의 별칭입니다.
+* `medianTDigest` — [quantileTDigest](/ko/reference/functions/aggregate-functions/quantileTDigest)의 별칭입니다.
+* `medianTDigestWeighted` — [quantileTDigestWeighted](/ko/reference/functions/aggregate-functions/quantileTDigestWeighted)의 별칭입니다.
+* `medianBFloat16` — [quantileBFloat16](/ko/reference/functions/aggregate-functions/quantileBFloat16)의 별칭입니다.
+* `medianDD` — [quantileDD](/ko/reference/functions/aggregate-functions/quantileddsketch)의 별칭입니다.
+
+**예시**
+
+입력 테이블:
+
+```text
+┌─val─┐
+│   1 │
+│   1 │
+│   2 │
+│   3 │
+└─────┘
+```
+
+```sql title="Query"
+SELECT medianDeterministic(val, 1) FROM t;
+```
+
+```text title="Response"
+┌─medianDeterministic(val, 1)─┐
+│                         1.5 │
+└─────────────────────────────┘
+```

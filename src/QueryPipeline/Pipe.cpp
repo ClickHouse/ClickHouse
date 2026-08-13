@@ -1,4 +1,5 @@
 #include <QueryPipeline/Pipe.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/ConcatProcessor.h>
@@ -168,9 +169,6 @@ Pipe::Pipe(ProcessorPtr source)
 {
     checkSource(*source);
 
-    if (collected_processors)
-        collected_processors->emplace_back(source);
-
     output_ports.push_back(&source->getOutputs().front());
     header = output_ports.front()->getSharedHeader();
     processors->emplace_back(std::move(source));
@@ -180,7 +178,7 @@ Pipe::Pipe(ProcessorPtr source)
 Pipe::Pipe(std::shared_ptr<Processors> processors_) : processors(std::move(processors_))
 {
     /// Create hash table with processors.
-    std::unordered_set<const IProcessor *> set;
+    UnorderedSetWithMemoryTracking<const IProcessor *> set;
     for (const auto & processor : *processors)
         set.emplace(processor.get());
 
@@ -329,15 +327,18 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow
             extremes.emplace_back(pipe.extremes_port);
     }
 
-    size_t num_processors = res.processors->size();
+    Processors totals_processors;
+    res.totals_port = uniteTotals(totals, res.header, totals_processors);
+    res.processors->append_range(totals_processors);
 
-    res.totals_port = uniteTotals(totals, res.header, *res.processors);
-    res.extremes_port = uniteExtremes(extremes, res.header, *res.processors);
+    Processors extremes_processors;
+    res.extremes_port = uniteExtremes(extremes, res.header, extremes_processors);
+    res.processors->append_range(extremes_processors);
 
     if (res.collected_processors)
     {
-        for (; num_processors < res.processors->size(); ++num_processors)
-            res.collected_processors->emplace_back(res.processors->at(num_processors));
+        res.collected_processors->append_range(std::move(totals_processors));
+        res.collected_processors->append_range(std::move(extremes_processors));
     }
 
     return res;
@@ -641,7 +642,7 @@ void Pipe::addSimpleTransform(const ProcessorGetterSharedHeader & getter)
     addSimpleTransform([&](const SharedHeader & stream_header_ptr, StreamType) { return getter(stream_header_ptr); });
 }
 
-void Pipe::addChains(std::vector<Chain> chains)
+void Pipe::addChains(VectorWithMemoryTracking<Chain> chains)
 {
     if (output_ports.size() != chains.size())
         throw Exception(
@@ -670,7 +671,7 @@ void Pipe::addChains(std::vector<Chain> chains)
         connect(*output_ports[i], chains[i].getInputPort());
         output_ports[i] = &chains[i].getOutputPort();
 
-        auto added_processors = Chain::getProcessors(std::move(chains[i]));
+        auto added_processors = std::move(chains[i].getProcessors());
         for (auto & transform : added_processors)
         {
             if (collected_processors)
@@ -844,7 +845,7 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
     auto new_processors = transformer(output_ports);
 
     /// Create hash table with new processors.
-    std::unordered_set<const IProcessor *> set;
+    UnorderedSetWithMemoryTracking<const IProcessor *> set;
     for (const auto & processor : new_processors)
         set.emplace(processor.get());
 

@@ -1,9 +1,11 @@
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/misc.h>
 #include <Common/isLocalAddress.h>
 #include <Common/quoteString.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -27,7 +29,7 @@ namespace
     /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
     void visitCreateQuery(ASTCreateQuery & create, const DDLRenamingVisitor::Data & data)
     {
-        if (create.temporary)
+        if (create.isTemporary())
         {
             /// CREATE TEMPORARY TABLE
             String table_name = create.getTable();
@@ -38,7 +40,7 @@ namespace
                 create.setTable(new_table_name.table);
                 if (new_table_name.database != DatabaseCatalog::TEMPORARY_DATABASE)
                 {
-                    create.temporary = false;
+                    create.setIsTemporary(false);
                     create.setDatabase(new_table_name.database);
                 }
             }
@@ -58,7 +60,7 @@ namespace
                     create.setTable(new_table_name.table);
                     if (new_table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
                     {
-                        create.temporary = true;
+                        create.setIsTemporary(true);
                         create.setDatabase("");
                     }
                     else
@@ -127,8 +129,11 @@ namespace
         if (new_qualified_name == qualified_name)
             return;
 
-        expr.database_and_table_name = std::make_shared<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
-        expr.children.push_back(expr.database_and_table_name);
+        /// `database_and_table_name` is registered as a child, so appending the renamed identifier
+        /// would leave the pre-rename one behind next to it. `replace` swaps both slots at once.
+        expr.replace(
+            expr.database_and_table_name,
+            make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table));
     }
 
     /// ASTDictionary keeps a dictionary definition, for example
@@ -231,7 +236,7 @@ namespace
                 return;
 
             auto new_qualified_name = data.renaming_map.getNewTableName(qualified_name);
-            arg = std::make_shared<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
+            arg = make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
             return;
         }
     }
@@ -277,10 +282,7 @@ namespace
 
     void visitFunction(const ASTFunction & function, const DDLRenamingVisitor::Data & data)
     {
-        if (function.name == "joinGet" ||
-            function.name == "dictHas" ||
-            function.name == "dictIsIn" ||
-            function.name.starts_with("dictGet"))
+        if (functionIsJoinGet(function.name) || functionIsDictGet(function.name))
         {
             replaceTableNameInArgument(function, data, 0);
         }

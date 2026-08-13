@@ -96,6 +96,7 @@ RedisOutputStream::RedisOutputStream(Net::StreamSocket& redis):
 	RedisIOS(redis),
 	std::ostream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 
@@ -108,6 +109,7 @@ RedisInputStream::RedisInputStream(Net::StreamSocket& redis):
 	RedisIOS(redis),
 	std::istream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 

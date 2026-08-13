@@ -48,7 +48,6 @@ protected:
 private:
     std::atomic_bool was_query_sent = false;
     bool need_drain = false;
-    bool executor_finished = false;
     bool add_aggregation_info = false;
     RemoteQueryExecutorPtr query_executor;
     RowsBeforeStepCounterPtr rows_before_limit;
@@ -61,13 +60,13 @@ private:
     size_t rows = 0;
     bool manually_add_rows_before_limit_counter = false;
     std::atomic_bool preprocessed_packet = false;
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     EventFD startup_event_fd;
 #endif
 };
 
 /// Totals source from RemoteQueryExecutor.
-class RemoteTotalsSource : public ISource
+class RemoteTotalsSource final : public ISource
 {
 public:
     explicit RemoteTotalsSource(RemoteQueryExecutorPtr executor);
@@ -83,7 +82,7 @@ private:
 };
 
 /// Extremes source from RemoteQueryExecutor.
-class RemoteExtremesSource : public ISource
+class RemoteExtremesSource final : public ISource
 {
 public:
     explicit RemoteExtremesSource(RemoteQueryExecutorPtr executor);

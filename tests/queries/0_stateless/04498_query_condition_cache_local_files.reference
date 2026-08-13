@@ -1,0 +1,30 @@
+first query result (expect 0):
+0
+second query result (expect 0):
+0
+first query was a cache miss (expect 1):
+1
+first query was not a cache hit (expect 0):
+0
+second query was a cache hit (expect 1):
+1
+matching predicate, run 1 (expect 1):
+1
+matching predicate, run 2 (expect 1):
+1
+rewritten file with an unsettled mtime, matching row is found (expect 1):
+1
+unsettled-mtime query bypassed the cache, no miss recorded (expect 0):
+0
+unsettled-mtime query bypassed the cache, no hit recorded (expect 0):
+0
+after the rewrite settles, matching row is found (expect 1):
+1
+settled rewritten file is served from the cache again (expect 1):
+1
+post-rewrite query was a cache miss (expect 1):
+1
+post-rewrite query was not a cache hit (expect 0):
+0
+repeated post-rewrite query was a cache hit (expect 1):
+1

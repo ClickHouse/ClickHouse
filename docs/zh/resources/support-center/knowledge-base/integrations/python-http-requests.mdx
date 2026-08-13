@@ -1,0 +1,106 @@
+---
+title: 使用 HTTP requests 模块的 Python 快速示例
+description: "使用 Python 和 requests 模块向 ClickHouse 写入并读取数据的示例"
+date: 2022-07-10
+tags: ['原生客户端和接口']
+keywords: ['Python']
+---
+
+<div id="question">
+  ## 问题
+</div>
+
+我可以直接用 *requests* 模块向 ClickHouse server 发起 HTTP 请求吗？
+
+<div id="answer">
+  ## 回答
+</div>
+
+是的，下面是示例代码。
+
+```py
+import requests
+import datetime
+
+create_replace_stmt = 'CREATE OR REPLACE TABLE test_table (name String, age UInt8) Engine=MergeTree ORDER BY tuple();'
+select_query = 'SELECT count() FROM test_table'
+insert_query = 'INSERT INTO test_table SELECT * FROM  generateRandom(\'name String, age UInt8\',1,1) LIMIT 300000000'
+
+CH_URL = 'https://your_clickhouse_service_fqdn:8443'
+CH_USER = 'default'
+CH_PASSWORD = 'secret_pwd'
+
+headers = {}
+headers["X-ClickHouse-User"] = CH_USER
+headers["X-ClickHouse-Key"] = CH_PASSWORD
+
+now = (datetime.datetime.now())
+print("{} - starting...".format(now))
+
+now = (datetime.datetime.now())
+print("{} - creating/replacing table...".format(now))
+response = requests.post(url=CH_URL,
+                         params={"database": "default",
+                                 "query": create_replace_stmt,
+                                 "session_id": "my-session-id-string"
+                                 },
+                         headers=headers)
+
+# 执行 count() 查询
+response = requests.post(url=CH_URL,
+                         params={"database": "default",
+                                 "query": select_query,
+                                 "session_id": "my-session-id-string"
+                                 },
+                         headers=headers)
+
+now = (datetime.datetime.now())
+print("{} - elements in test_table before insert: {}".format(
+    now, response.content.decode('utf-8')))
+
+# 插入数据
+now = (datetime.datetime.now())
+print("{} - Inserting data...".format(now))
+response = requests.post(url=CH_URL,
+                         params={"database": "default",
+                                 "query": insert_query,
+                                 "session_id": "my-session-id-string",
+                                 "wait_end_of_query": 1
+                                 },
+                         headers=headers)
+
+now = (datetime.datetime.now())
+print("{} - Done inserting data...".format(now))
+
+response = requests.post(url=CH_URL,
+                         params={"database": "default",
+                                 "query": select_query,
+                                 "session_id": "my-session-id-string",
+                                 },
+                         headers=headers)
+
+now = (datetime.datetime.now())
+print("{} - elements in test_table after insert: {}".format(
+    now, response.content.decode('utf-8')))
+```
+
+预期输出示例：
+
+```
+(venv) ➜  venv/bin/python main.py
+2023-07-07 14:54:27.336450 - starting...
+2023-07-07 14:54:27.336476 - creating/replacing table...
+2023-07-07 14:54:28.125270 - elements in test_table before insert: 0
+
+2023-07-07 14:54:28.125352 - Inserting data...
+2023-07-07 14:55:23.788466 - Done inserting data...
+2023-07-07 14:55:23.962134 - elements in test_table after insert: 299115357
+```
+
+requirements.txt
+
+```
+requests==2.31.0
+```
+
+有关如何设置 Python venv 的步骤，请参阅另一篇[知识库](/zh/resources/support-center/knowledge-base/integrations/python-clickhouse-connect-example#steps)。

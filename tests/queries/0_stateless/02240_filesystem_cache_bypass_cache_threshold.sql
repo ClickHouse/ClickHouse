@@ -2,7 +2,7 @@
 
 -- { echo }
 
-SYSTEM DROP FILESYSTEM CACHE;
+SYSTEM CLEAR FILESYSTEM CACHE;
 SET enable_filesystem_cache_on_write_operations=0;
 
 DROP TABLE IF EXISTS test;
@@ -26,9 +26,9 @@ INSERT INTO test SELECT number, toString(number) FROM numbers(100);
 
 SELECT  * FROM test FORMAT Null;
 SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache WHERE cache_name = '02240_bypass_cache_threshold' ORDER BY file_segment_range_end, size;
-SYSTEM DROP FILESYSTEM CACHE;
+SYSTEM CLEAR FILESYSTEM CACHE;
 SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache WHERE cache_name = '02240_bypass_cache_threshold';
 SELECT * FROM test FORMAT Null;
 SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache WHERE cache_name = '02240_bypass_cache_threshold';
-SYSTEM DROP FILESYSTEM CACHE;
+SYSTEM CLEAR FILESYSTEM CACHE;
 SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache WHERE cache_name = '02240_bypass_cache_threshold';

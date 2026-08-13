@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <Storages/MergeTree/PartDirIntent.h>
 #include <optional>
 
 namespace DB
@@ -15,6 +16,9 @@ class IVolume;
 class IDisk;
 class MergeTreeData;
 
+struct ProjectionDescription;
+using ProjectionDescriptionRawPtr = const ProjectionDescription *;
+
 using MutableDataPartStoragePtr = std::shared_ptr<IDataPartStorage>;
 using VolumePtr = std::shared_ptr<IVolume>;
 
@@ -22,8 +26,21 @@ using VolumePtr = std::shared_ptr<IVolume>;
 class MergeTreeDataPartBuilder
 {
 public:
-    MergeTreeDataPartBuilder(const MergeTreeData & data_, String name_, VolumePtr volume_, String root_path_, String part_dir_, const ReadSettings & read_settings_);
-    MergeTreeDataPartBuilder(const MergeTreeData & data_, String name_, MutableDataPartStoragePtr part_storage_, const ReadSettings & read_settings_);
+    MergeTreeDataPartBuilder(
+        const MergeTreeData & data_,
+        String name_,
+        VolumePtr volume_,
+        String root_path_,
+        String part_dir_,
+        const ReadSettings & read_settings_,
+        PartDirIntent intent_);
+
+    MergeTreeDataPartBuilder(
+        const MergeTreeData & data_,
+        String name_,
+        MutableDataPartStoragePtr part_storage_,
+        const ReadSettings & read_settings_,
+        PartDirIntent intent_);
 
     std::shared_ptr<IMergeTreeDataPart> build();
 
@@ -31,6 +48,7 @@ public:
 
     Self & withPartInfo(MergeTreePartInfo part_info_);
     Self & withParentPart(const IMergeTreeDataPart * parent_part_);
+    Self & withProjection(ProjectionDescriptionRawPtr projection_);
     Self & withPartType(MergeTreeDataPartType part_type_);
     Self & withPartStorageType(MergeTreeDataPartStorageType storage_type_);
     Self & withPartFormat(MergeTreeDataPartFormat format_);
@@ -54,6 +72,7 @@ private:
         const VolumePtr & volume_,
         const String & root_path_,
         const String & part_dir_,
+        bool initialize,
         const ReadSettings & read_settings);
 
     const MergeTreeData & data;
@@ -66,7 +85,9 @@ private:
     std::optional<MergeTreeDataPartType> part_type;
     MutableDataPartStoragePtr part_storage;
     const IMergeTreeDataPart * parent_part = nullptr;
+    ProjectionDescriptionRawPtr projection = nullptr;
 
+    const PartDirIntent intent;
     const ReadSettings read_settings;
 };
 

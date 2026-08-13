@@ -1,53 +1,53 @@
 === Test 1: ORDER BY a (sorting key) ===
-LazilyRead (Lazily Read)
-Lazily read columns: e, d, b, c
 Prefix sort description: __table1.a ASC
 Result sort description: __table1.a ASC
 ReadType: InOrder
+LazilyReadFromMergeTree
+Lazily read columns: b, c, d, e
 0	0
 1	2
 2	4
 3	6
 4	8
 === Test 2: ORDER BY a with WHERE ===
-LazilyRead (Lazily Read)
-Lazily read columns: d, b, c
 Prefix sort description: __table1.a ASC
 Result sort description: __table1.a ASC
 ReadType: InOrder
+LazilyReadFromMergeTree
+Lazily read columns: b, c, d
 51	102
 52	104
 53	106
 54	108
 55	110
 === Test 3: ORDER BY a with PREWHERE ===
-LazilyRead (Lazily Read)
-Lazily read columns: d, b, c
 Prefix sort description: __table1.a ASC
 Result sort description: __table1.a ASC
 ReadType: InOrder
+LazilyReadFromMergeTree
+Lazily read columns: b, c, d
 51	102
 52	104
 53	106
 54	108
 55	110
 === Test 4: ORDER BY a, e (e should not be lazy) ===
-LazilyRead (Lazily Read)
-Lazily read columns: d, b, c
 Prefix sort description: __table1.a ASC
 Result sort description: __table1.a ASC, __table1.e ASC
 ReadType: InOrder
+LazilyReadFromMergeTree
+Lazily read columns: b, c, d
 0	0
 1	2
 2	4
 3	6
 4	8
 === Test 5: ORDER BY a, a+1 ===
-LazilyRead (Lazily Read)
-Lazily read columns: e, d, b, c
 Prefix sort description: __table1.a ASC
 Result sort description: __table1.a ASC, plus(__table1.a, 1_UInt8) ASC
 ReadType: InOrder
+LazilyReadFromMergeTree
+Lazily read columns: b, c, d, e
 0	0
 1	2
 2	4
@@ -79,8 +79,8 @@ ReadType: InOrder
 4	four	40
 5	five	50
 === Test 10: Verify EXPLAIN shows both optimizations ===
-LazilyRead (Lazily Read)
-Lazily read columns: data, score, value
 Prefix sort description: __table1.id ASC
 Result sort description: __table1.id ASC
 ReadType: InOrder
+LazilyReadFromMergeTree
+Lazily read columns: value, score, data

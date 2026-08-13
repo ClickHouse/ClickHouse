@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Core/UUID.h>
 
 
 namespace DB
@@ -30,14 +31,7 @@ struct FutureMergedMutatedPart
     const MergeTreePartition & getPartition() const { return parts.front()->partition; }
     bool isResultPatch() const { return !parts.empty() && parts.front()->info.isPatch();}
 
-    FutureMergedMutatedPart() = default;
-
-    FutureMergedMutatedPart(MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_)
-    {
-        assign(std::move(parts_), std::move(patch_parts_));
-    }
-
-    void assign(MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_);
+    void assign(MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_, ProjectionDescriptionRawPtr projection);
     void assign(MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_, MergeTreeDataPartFormat future_part_format);
 
     void updatePath(const MergeTreeData & storage, const IReservation * reservation);

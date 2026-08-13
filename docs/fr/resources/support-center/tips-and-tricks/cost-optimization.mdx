@@ -1,0 +1,108 @@
+---
+slug: /community-wisdom/cost-optimization
+sidebarTitle: 'Optimisation des coûts'
+doc_type: 'guide'
+keywords: [
+  'optimisation des coûts',
+  'coûts de stockage', 
+  'gestion des partitions',
+  'rétention des données',
+  'analyse du stockage',
+  'optimisation de base de données',
+  'réduction des coûts ClickHouse',
+  'points chauds de stockage',
+  'performances du TTL',
+  'utilisation du disque',
+  'stratégies de compression',
+  'analyse de la rétention'
+]
+title: 'Leçons - optimisation des coûts'
+description: 'Stratégies d’optimisation des coûts issues des rencontres de la communauté ClickHouse, avec des exemples réels en production et des techniques éprouvées.'
+---
+
+*Ce guide fait partie d’une série de retours d’expérience issus de rencontres de la communauté. Les enseignements présentés sur cette page rassemblent des bonnes pratiques de la communauté pour optimiser les coûts lors de l’utilisation de ClickHouse, qui se sont révélées efficaces dans des contextes et configurations spécifiques. Pour découvrir d’autres solutions concrètes et retours d’expérience, vous pouvez [parcourir les contenus par problème spécifique](/fr/resources/support-center/tips-and-tricks/community-wisdom).*
+
+*Découvrez comment [ClickHouse Cloud peut aider à maîtriser les coûts opérationnels](/fr/products/cloud/getting-started/intro).*
+
+<div id="compression-strategy">
+  ## Stratégie de compression : LZ4 vs ZSTD en production
+</div>
+
+Lorsque Microsoft Clarity a dû gérer des centaines de téraoctets de données, l’équipe a constaté que le choix de la compression avait un impact considérable sur les coûts. À cette échelle, chaque gain de stockage compte, et elle s’est retrouvée face à un arbitrage classique : performances ou coûts de stockage. Microsoft Clarity gère des volumes massifs — deux pétaoctets de données non compressées par mois sur l’ensemble des comptes, en traitant environ 60 000 requêtes par heure sur huit nœuds et en servant des milliards de pages vues provenant de millions de sites web. À cette échelle, la stratégie de compression devient un facteur de coût critique.
+
+L’équipe utilisait initialement la compression [LZ4](/fr/reference/statements/create/table#lz4) par défaut de ClickHouse, mais a découvert qu’il était possible de réaliser d’importantes économies avec [ZSTD](/fr/reference/statements/create/table#zstd). Bien que LZ4 soit plus rapide, ZSTD offre une meilleure compression au prix de performances légèrement moindres. Après avoir testé les deux approches, elle a pris la décision stratégique de privilégier les économies de stockage. Les résultats ont été significatifs : 50 % d’économies de stockage sur les grandes tables, avec un impact maîtrisé sur les performances de l’ingestion et des requêtes.
+
+**Résultats clés :**
+
+* 50 % d’économies de stockage sur les grandes tables grâce à la compression ZSTD
+* Capacité mensuelle de traitement de 2 pétaoctets de données
+* Impact maîtrisé sur les performances de l’ingestion et des requêtes
+* Réduction significative des coûts à l’échelle de plusieurs centaines de To
+
+<div id="column-retention">
+  ## Stratégie de rétention basée sur les colonnes
+</div>
+
+L’une des techniques d’optimisation des coûts les plus efficaces consiste à analyser quelles colonnes sont réellement utilisées. Microsoft Clarity met en œuvre des stratégies sophistiquées de rétention basées sur les colonnes en s’appuyant sur les capacités de télémétrie intégrées de ClickHouse. ClickHouse fournit des métriques détaillées sur l’utilisation du stockage par colonne, ainsi que des informations complètes sur les schémas de requêtes : quelles colonnes sont consultées, à quelle fréquence, la durée des requêtes et les statistiques globales d’utilisation.
+
+Cette approche fondée sur les données permet de prendre des décisions stratégiques concernant les politiques de rétention et la gestion du cycle de vie des colonnes. En analysant ces données de télémétrie, Microsoft peut identifier des points chauds de stockage - des colonnes qui occupent beaucoup d’espace mais sont très peu interrogées. Pour ces colonnes peu utilisées, ils peuvent mettre en œuvre des politiques de rétention agressives, en ramenant la durée de stockage de 30 mois à un seul mois, ou supprimer complètement les colonnes si elles ne sont jamais interrogées. Cette stratégie de rétention sélective réduit les coûts de stockage sans affecter l’expérience utilisateur.
+
+**La stratégie :**
+
+* Analyser les schémas d’utilisation des colonnes à l’aide de la télémétrie ClickHouse
+* Identifier les colonnes gourmandes en stockage et peu interrogées
+* Mettre en œuvre des politiques de rétention sélectives
+* Surveiller les schémas de requêtes pour prendre des décisions fondées sur les données
+
+**Documentation associée**
+
+* [Managing Data - TTL au niveau des colonnes](/fr/guides/use-cases/observability/build-your-own/managing-data)
+
+<div id="partition-management">
+  ## Gestion des données par partition
+</div>
+
+Microsoft Clarity a constaté que la stratégie de partitionnement a un impact à la fois sur les performances et sur la simplicité des opérations. Leur approche : partitionner par date, trier par heure. Cette stratégie offre de multiples avantages au-delà de la seule efficacité du nettoyage : elle permet une purge des données très simple, simplifie les calculs de facturation pour leur service destiné aux clients et répond aux exigences de conformité au RGPD pour la suppression au niveau des lignes.
+
+**Avantages clés :**
+
+* Purge des données très simple (drop partition vs suppression ligne par ligne)
+* Calculs de facturation simplifiés
+* Meilleures performances des requêtes grâce à l’élimination des partitions
+* Gestion opérationnelle simplifiée
+
+**Documentation associée**
+
+* [Gestion des données - Partitions](/fr/guides/use-cases/observability/build-your-own/managing-data#partitions)
+
+<div id="string-integer-conversion">
+  ## Stratégie de conversion des chaînes en entiers
+</div>
+
+Les plateformes d&#39;analytique sont souvent confrontées à un problème de stockage avec les données catégorielles qui se répètent sur des millions de lignes. L&#39;équipe d&#39;ingénierie de Microsoft a rencontré ce problème avec ses données d&#39;analytique de recherche et a mis au point une solution efficace qui a permis de réduire de 60 % le volume de stockage des jeux de données concernés.
+
+Dans le système de web analytique de Microsoft, les résultats de recherche déclenchent différents types de réponses : cartes météo, informations sportives, articles d&#39;actualité et réponses factuelles. Chaque résultat de requête était associé à des chaînes descriptives comme `weather_answer`, `sports_answer` ou `factual_answer`. Avec des milliards de requêtes de recherche traitées, ces valeurs textuelles étaient stockées de façon répétée dans ClickHouse, ce qui consommait énormément d&#39;espace de stockage et imposait des comparaisons de chaînes coûteuses lors des requêtes.
+
+Microsoft a mis en place un système de correspondance entre chaînes et entiers à l&#39;aide d&#39;une base de données MySQL distincte. Au lieu de stocker les chaînes proprement dites dans ClickHouse, ils n&#39;y stockent que des ID entiers. Lorsque vous exécutez des requêtes via l&#39;UI et demandez les données correspondant à `weather_answer`, l&#39;optimiseur de requêtes consulte d&#39;abord la table de correspondance MySQL pour obtenir l&#39;ID entier associé, puis réécrit la requête pour utiliser cet entier avant de l&#39;envoyer à ClickHouse.
+
+Cette architecture préserve l&#39;expérience utilisateur : les utilisateurs voient toujours des libellés explicites comme `weather_answer` dans leurs tableaux de bord, tandis que le stockage et les requêtes côté backend s&#39;appuient sur des entiers bien plus efficaces. Le système de correspondance gère toute la traduction de manière transparente, sans nécessiter de modification de l&#39;interface utilisateur ni des flux de travail.
+
+**Principaux avantages :**
+
+* Réduction de 60 % du stockage sur les jeux de données concernés
+* Meilleures performances de requête grâce aux comparaisons sur des entiers
+* Réduction de l&#39;utilisation mémoire pour les joins et les aggregations
+* Réduction des coûts de transfert réseau pour les grands ensembles de résultats
+
+<Note>
+  Il s&#39;agit d&#39;un exemple utilisé spécifiquement pour le scénario de données de Microsoft Clarity. Si toutes vos données sont dans ClickHouse ou si vous n&#39;avez pas de contraintes empêchant leur déplacement vers ClickHouse, essayez plutôt d&#39;utiliser les [dictionaries](/fr/concepts/features/dictionaries/index).
+</Note>
+
+<div id="video-sources">
+  ## Sources vidéo
+</div>
+
+* **[Microsoft Clarity et ClickHouse](https://www.youtube.com/watch?v=rUVZlquVGw0)** - l’équipe Microsoft Clarity
+* **[Le parcours de ClickHouse chez Contentsquare](https://www.youtube.com/watch?v=zvuCBAl2T0Q)** - Doron Hoffman &amp; Guram Sigua (ContentSquare)
+
+*Ces retours de la communauté sur l’optimisation des coûts présentent des stratégies adoptées par des entreprises traitant de centaines de téraoctets à plusieurs pétaoctets de données et montrent des approches concrètes pour réduire les coûts d’exploitation de ClickHouse.*

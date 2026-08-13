@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/System/IStorageSystemOneBlock.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 
 namespace DB
@@ -10,14 +10,16 @@ class Context;
 
 /** Implements system table 'columns', that allows to get information about columns for every table.
   */
-class StorageSystemColumns final : public IStorage
+class StorageSystemColumns final : public StorageWithCommonVirtualColumns
 {
 public:
     explicit StorageSystemColumns(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemColumns"; }
 
-    void read(
+    static VirtualColumnsDescription createVirtuals();
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

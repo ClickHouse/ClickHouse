@@ -1,0 +1,140 @@
+---
+position: 7
+slug: /clickhouse-operator/guides/network-policies
+title: 网络策略
+keywords: ['kubernetes', 'network policy', 'security', 'metrics', 'webhook']
+description: '介绍 operator 如何通过 Kubernetes NetworkPolicies 限制进入 controller manager pod 的流量（面向指标和 webhook 端点）、如何启用这些策略，以及必须为哪些客户端命名空间添加标签。'
+doc_type: 'guide'
+---
+
+operator 提供可选的 Kubernetes `NetworkPolicy` 资源，用于
+限制哪些流量可以到达 **controller manager pod (容器组)&#x20;**——也就是 operator
+进程本身，而不是 ClickHouse server 或 Keeper pod (容器组) 。这些策略默认关闭，
+因此只有在你希望隔离 operator 的入口流量时才需要启用。
+
+这些策略覆盖 operator 向其他客户端公开的两个端口：指标
+端点和 admission webhook。
+
+<Note>
+  只有当 cluster 的 CNI plugin 实现了 `NetworkPolicy` 时，`NetworkPolicy` 才会生效
+  (例如 Calico 或 Cilium) 。如果 CNI 不强制执行 NetworkPolicy，
+  这些资源虽然会被创建，但实际上不会产生任何效果，而且 Kubernetes 也不会返回
+  error。在依赖这些策略之前，请先确认你的 CNI 会强制执行这些策略。
+</Note>
+
+<div id="what-the-helm-chart-creates">
+  ## Helm 图表会创建什么
+</div>
+
+启用后，该图表最多会创建两个仅针对入口流量的策略，二者都会选择 controller-manager pod (容器组) ：
+
+| 策略                      | 允许的来源                         | 允许的端口                           |
+| ----------------------- | ----------------------------- | ------------------------------- |
+| `allow-metrics-traffic` | 带有 `metrics: enabled` 标签的命名空间 | `metrics.port` (默认 `8080`/TCP)  |
+| `allow-webhook-traffic` | 带有 `webhook: enabled` 标签的命名空间 | `webhook.port` (默认 `9443`/TCP)  |
+
+这两个策略都只声明 `policyTypes: [Ingress]`。它们不会限制 operator 的出站流量，也不会影响 ClickHouse server 或 Keeper pod (容器组) 。
+
+<div id="default-deny">
+  ## 默认拒绝行为
+</div>
+
+当某个 pod (容器组) 被入口 `NetworkPolicy` 选中时，该 pod (容器组) 就会切换为**对入口流量默认拒绝**：一旦任一策略生效，所有未被显式允许、发往 controller
+manager pod (容器组) 的入站流量都会被丢弃。启用后，
+唯一能够到达 operator 的入口流量只有：
+
+* 来自带有 `metrics: enabled` 标签的命名空间的指标抓取，以及
+* 来自带有 `webhook: enabled` 标签的命名空间的 admission webhook 调用。
+
+发往该 pod (容器组) 的其他所有流量都会被拒绝。这正是预期的加固效果，但也
+意味着未加标签的抓取器或 webhook 调用方会在这些
+策略生效的那一刻停止工作。
+
+<div id="enabling">
+  ## 启用这些策略
+</div>
+
+如果使用 Helm，请在配置值中设置此开关：
+
+```yaml
+# values.yaml
+networkPolicy:
+  enabled: true
+```
+
+```bash
+helm upgrade --install clickhouse-operator \
+  oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+  -n clickhouse-operator-system --create-namespace \
+  -f values.yaml
+```
+
+`allow-webhook-traffic` 还要求 `webhook.enabled: true` (
+默认启用) ，因此禁用 webhook 也会一并移除其策略。
+
+对于原始 `kubectl` 清单，请按 [kubectl install guide](/zh/products/kubernetes-operator/install/kubectl) 中所述，
+取消注释 `[NETWORK POLICY]` 部分。
+这些原始清单同样包含这两条策略。
+
+<div id="labeling-namespaces">
+  ## 为客户端命名空间添加标签
+</div>
+
+由于这两条策略都会通过 `namespaceSelector` 匹配源命名空间，因此每个需要访问 operator 的命名空间
+都必须带有相应的标签。来自未打标签命名空间的抓取或 webhook
+调用都会被丢弃。
+
+```bash
+# Allow a Prometheus namespace to scrape the metrics endpoint
+kubectl label namespace <prometheus-namespace> metrics=enabled
+
+# Allow webhook callers from a given namespace
+kubectl label namespace <caller-namespace> webhook=enabled
+```
+
+请将其与
+[Monitoring → 保护指标端点](/zh/products/kubernetes-operator/guides/monitoring#securing-the-metrics-endpoint)
+中介绍的指标 RBAC 配合使用：
+`NetworkPolicy` 控制可达性，而 `集群角色` 绑定控制授权。要让受保护的抓取成功，这两者都必须同时具备。
+
+<Warning>
+  准入 webhook 请求来自 Kubernetes API server，而不是普通的
+  pod (容器组) 。这些流量是否受 `NetworkPolicy` 约束，以及它显示为
+  来自哪个源，取决于你的控制平面拓扑和 CNI —
+  托管控制平面尤其如此，它们可能会从 `namespaceSelector` 无法匹配的地址访问该 webhook。如果 API server 的流量不在
+  `webhook: enabled` 命名空间的覆盖范围内，启用 `allow-webhook-traffic` 可能会阻断
+  准入，并导致 `ClickHouseCluster`/`KeeperCluster` 的创建和更新请求
+  超时。启用后，请先在非生产集群上测试准入；如有需要，再为 API server 添加
+  一条显式放行规则。
+</Warning>
+
+<div id="verifying">
+  ## 验证
+</div>
+
+```bash
+NS=clickhouse-operator-system
+
+# The policies exist
+kubectl -n $NS get networkpolicy
+
+# Inspect the selectors and allowed sources
+kubectl -n $NS describe networkpolicy
+```
+
+启用后，请确认：
+
+* Prometheus 仍在抓取指标端点 (其命名空间带有
+  `metrics: enabled` 标签，并绑定到 metrics-reader 集群角色) 。
+* 创建或更新 `ClickHouseCluster` 仍可通过准入控制 (webhook
+  可达) 。
+
+如果抓取未返回数据，或者对 CR 执行 apply 时卡住，最可能的原因是源命名空间未打标签，或上文提到的 API 服务器可达性注意事项。
+
+<div id="related-guides">
+  ## 相关指南
+</div>
+
+* [Operator 监控](/zh/products/kubernetes-operator/guides/monitoring) — 指标端点、其 RBAC，以及如何保护抓取过程。
+* [使用 kubectl 安装](/zh/products/kubernetes-operator/install/kubectl) — 在哪里取消网络策略部分的注释。
+* [使用 Helm 安装](/zh/products/kubernetes-operator/install/helm) — 与 Operator 相关的 chart 配置值。

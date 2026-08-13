@@ -5,7 +5,7 @@ table:                    tab
 name:                     text_idx
 type:                     text
 type_full:                text(tokenizer = ngrams(3))
-granularity:              1
+granularity:              100000000 -- 100.00 million
 greater(data⋯bytes, 100): 1
 greater(data⋯_bytes, 75): 1
 marks_bytes:              72

@@ -1,0 +1,354 @@
+---
+slug: /sql-reference/functions/geo/s2
+sidebarTitle: 'Geometría S2'
+title: 'Funciones para trabajar con el índice S2'
+description: 'Documentación de las funciones para trabajar con índices S2'
+doc_type: 'reference'
+---
+
+<div id="s2index">
+  ## S2Index
+</div>
+
+[S2](https://s2geometry.io/) es un sistema de indexación geográfica en el que todos los datos geográficos se representan sobre una esfera (similar a un globo terráqueo).
+
+En la biblioteca S2, los puntos se representan como el índice S2: un número específico que codifica internamente un punto en la superficie de una esfera unitaria, a diferencia de los pares tradicionales (latitud, longitud). Para obtener el índice S2 de un punto determinado especificado en el formato (latitud, longitud), use la función [geoToS2](#geotos2). Además, puede usar la función [s2ToGeo](#s2togeo) para obtener las coordenadas geográficas correspondientes al índice S2 especificado.
+
+<div id="geotos2">
+  ## geoToS2
+</div>
+
+Devuelve el índice de punto [S2](#s2index) correspondiente a las coordenadas dadas `(longitude, latitude)`.
+
+**Sintaxis**
+
+```sql
+geoToS2(lon, lat)
+```
+
+**Argumentos**
+
+* `lon` — Longitud. [Float64](/es/reference/data-types/float).
+* `lat` — Latitud. [Float64](/es/reference/data-types/float).
+
+**Valores devueltos**
+
+* Índice de punto S2. [UInt64](/es/reference/data-types/int-uint).
+
+**Ejemplo**
+
+```sql title="Query"
+SELECT geoToS2(37.79506683, 55.71290588) AS s2Index;
+```
+
+```text title="Response"
+┌─────────────s2Index─┐
+│ 4704772434919038107 │
+└─────────────────────┘
+```
+
+<div id="s2togeo">
+  ## s2ToGeo
+</div>
+
+Devuelve las coordenadas geográficas `(longitude, latitude)` correspondientes al índice de punto [S2](#s2index) proporcionado.
+
+**Sintaxis**
+
+```sql
+s2ToGeo(s2index)
+```
+
+**Argumentos**
+
+* `s2index` — índice S2. [UInt64](/es/reference/data-types/int-uint).
+
+**Valores devueltos**
+
+* Una [tupla](/es/reference/data-types/tuple) formada por dos valores:
+  * `lon`. [Float64](/es/reference/data-types/float).
+  * `lat`. [Float64](/es/reference/data-types/float).
+
+**Ejemplo**
+
+```sql title="Query"
+SELECT s2ToGeo(4704772434919038107) AS s2Coodrinates;
+```
+
+```text title="Response"
+┌─s2Coodrinates────────────────────────┐
+│ (37.79506681471008,55.7129059052841) │
+└──────────────────────────────────────┘
+```
+
+<div id="s2getneighbors">
+  ## s2GetNeighbors
+</div>
+
+Devuelve los índices S2 vecinos correspondientes al [S2](#s2index) proporcionado. Cada celda del sistema S2 es un cuadrilátero delimitado por cuatro geodésicas. Por lo tanto, cada celda tiene 4 vecinos.
+
+**Sintaxis**
+
+```sql
+s2GetNeighbors(s2index)
+```
+
+**Argumentos**
+
+* `s2index` — índice S2. [UInt64](/es/reference/data-types/int-uint).
+
+**Valor devuelto**
+
+* Un array compuesto por 4 índices vecinos: `array[s2index1, s2index3, s2index2, s2index4]`. [Array](/es/reference/data-types/array)([UInt64](/es/reference/data-types/int-uint)).
+
+**Ejemplo**
+
+```sql title="Query"
+SELECT s2GetNeighbors(5074766849661468672) AS s2Neighbors;
+```
+
+```text title="Response"
+┌─s2Neighbors───────────────────────────────────────────────────────────────────────┐
+│ [5074766987100422144,5074766712222515200,5074767536856236032,5074767261978329088] │
+└───────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="s2cellsintersect">
+  ## s2CellsIntersect
+</div>
+
+Determina si las dos celdas [S2](#s2index) proporcionadas se intersectan entre sí o no.
+
+**Sintaxis**
+
+```sql
+s2CellsIntersect(s2index1, s2index2)
+```
+
+**Argumentos**
+
+* `siIndex1`, `s2index2` — índice S2. [UInt64](/es/reference/data-types/int-uint).
+
+**Valor devuelto**
+
+* `1` — Si las celdas se intersecan. [UInt8](/es/reference/data-types/int-uint).
+* `0` — Si las celdas no se intersecan. [UInt8](/es/reference/data-types/int-uint).
+
+**Ejemplo**
+
+```sql title="Query"
+SELECT s2CellsIntersect(9926595209846587392, 9926594385212866560) AS intersect;
+```
+
+```text title="Response"
+┌─intersect─┐
+│         1 │
+└───────────┘
+```
+
+<div id="s2capcontains">
+  ## s2CapContains
+</div>
+
+Determina si un casquete contiene un punto S2. Un casquete representa una parte de la esfera separada por un plano. Se define mediante un punto sobre una esfera y un radio en grados.
+
+**Sintaxis**
+
+```sql
+s2CapContains(center, degrees, point)
+```
+
+**Argumentos**
+
+* `center` — Índice de punto S2 correspondiente al casquete. [UInt64](/es/reference/data-types/int-uint).
+* `degrees` — Radio del casquete en grados. [Float64](/es/reference/data-types/float).
+* `point` — Índice de punto S2. [UInt64](/es/reference/data-types/int-uint).
+
+**Valor devuelto**
+
+* `1` — Si el casquete contiene el índice de punto S2. [UInt8](/es/reference/data-types/int-uint).
+* `0` — Si el casquete no contiene el índice de punto S2. [UInt8](/es/reference/data-types/int-uint).
+
+**Ejemplo**
+
+```sql title="Query"
+SELECT s2CapContains(1157339245694594829, 1.0, 1157347770437378819) AS capContains;
+```
+
+```text title="Response"
+┌─capContains─┐
+│           1 │
+└─────────────┘
+```
+
+<div id="s2capunion">
+  ## s2CapUnion
+</div>
+
+Determina el casquete más pequeño que contiene los dos casquetes de entrada indicados. Un casquete representa una porción de la esfera seccionada por un plano. Se define mediante un punto de la esfera y un radio en grados.
+
+**Sintaxis**
+
+```sql
+s2CapUnion(center1, radius1, center2, radius2)
+```
+
+**Argumentos**
+
+* `center1`, `center2` — índices de punto S2 que corresponden a los dos casquetes de entrada. [UInt64](/es/reference/data-types/int-uint).
+* `radius1`, `radius2` — radio de los dos casquetes de entrada, en grados. [Float64](/es/reference/data-types/float).
+
+**Valores devueltos**
+
+* `center` — índice de punto S2 correspondiente al centro del casquete más pequeño que contiene los dos casquetes de entrada. [UInt64](/es/reference/data-types/int-uint).
+* `radius` — radio del casquete más pequeño que contiene los dos casquetes de entrada. [Float64](/es/reference/data-types/float).
+
+**Ejemplo**
+
+```sql title="Query"
+SELECT s2CapUnion(3814912406305146967, 1.0, 1157347770437378819, 1.0) AS capUnion;
+```
+
+```text title="Response"
+┌─capUnion───────────────────────────────┐
+│ (4534655147792050737,60.2088283994957) │
+└────────────────────────────────────────┘
+```
+
+<div id="s2rectadd">
+  ## s2RectAdd
+</div>
+
+Aumenta el tamaño del rectángulo envolvente para incluir el punto S2 especificado. En el sistema S2, un rectángulo se representa mediante un tipo de S2Region llamado `S2LatLngRect`, que representa un rectángulo en el espacio de latitud y longitud.
+
+**Sintaxis**
+
+```sql
+s2RectAdd(s2pointLow, s2pointHigh, s2Point)
+```
+
+**Argumentos**
+
+* `s2PointLow` — Índice de punto S2 inferior correspondiente al rectángulo. [UInt64](/es/reference/data-types/int-uint).
+* `s2PointHigh` — Índice de punto S2 superior correspondiente al rectángulo. [UInt64](/es/reference/data-types/int-uint).
+* `s2Point` — Índice de punto S2 de destino hasta el que debe ampliarse el rectángulo delimitador para incluirlo. [UInt64](/es/reference/data-types/int-uint).
+
+**Valores devueltos**
+
+* `s2PointLow` — Identificador de celda S2 inferior correspondiente al rectángulo ampliado. [UInt64](/es/reference/data-types/int-uint).
+* `s2PointHigh` — Identificador de celda S2 superior correspondiente al rectángulo ampliado. [UInt64](/es/reference/data-types/float).
+
+**Ejemplo**
+
+```sql title="Query"
+SELECT s2RectAdd(5178914411069187297, 5177056748191934217, 5179056748191934217) AS rectAdd;
+```
+
+```text title="Response"
+┌─rectAdd───────────────────────────────────┐
+│ (5179062030687166815,5177056748191934217) │
+└───────────────────────────────────────────┘
+```
+
+<div id="s2rectcontains">
+  ## s2RectContains
+</div>
+
+Determina si un rectángulo dado contiene un punto S2. En el sistema S2, un rectángulo se representa mediante un tipo de S2Region llamado `S2LatLngRect`, que representa un rectángulo en el espacio de latitud y longitud.
+
+**Sintaxis**
+
+```sql
+s2RectContains(s2PointLow, s2PointHi, s2Point)
+```
+
+**Argumentos**
+
+* `s2PointLow` — Índice de punto S2 inferior correspondiente al rectángulo. [UInt64](/es/reference/data-types/int-uint).
+* `s2PointHigh` — Índice de punto S2 superior correspondiente al rectángulo. [UInt64](/es/reference/data-types/int-uint).
+* `s2Point` — Índice de punto S2 de destino. [UInt64](/es/reference/data-types/int-uint).
+
+**Valor devuelto**
+
+* `1` — Si el rectángulo contiene el punto S2 especificado.
+* `0` — Si el rectángulo no contiene el punto S2 especificado.
+
+**Ejemplo**
+
+```sql title="Query"
+SELECT s2RectContains(5179062030687166815, 5177056748191934217, 5177914411069187297) AS rectContains;
+```
+
+```text title="Response"
+┌─rectContains─┐
+│            0 │
+└──────────────┘
+```
+
+<div id="s2rectunion">
+  ## s2RectUnion
+</div>
+
+Devuelve el rectángulo más pequeño que contiene la unión de este rectángulo y el rectángulo especificado. En el sistema S2, un rectángulo se representa mediante un tipo de S2Region llamado `S2LatLngRect`, que representa un rectángulo en el espacio de latitud y longitud.
+
+**Sintaxis**
+
+```sql
+s2RectUnion(s2Rect1PointLow, s2Rect1PointHi, s2Rect2PointLow, s2Rect2PointHi)
+```
+
+**Argumentos**
+
+* `s2Rect1PointLow`, `s2Rect1PointHi` — Índices de punto S2 inferior y superior correspondientes al primer rectángulo. [UInt64](/es/reference/data-types/int-uint).
+* `s2Rect2PointLow`, `s2Rect2PointHi` — Índices de punto S2 inferior y superior correspondientes al segundo rectángulo. [UInt64](/es/reference/data-types/int-uint).
+
+**Valores devueltos**
+
+* `s2UnionRect2PointLow` — Identificador de celda S2 inferior correspondiente al rectángulo resultante de la unión. [UInt64](/es/reference/data-types/int-uint).
+* `s2UnionRect2PointHi` — Identificador de celda S2 superior correspondiente al rectángulo resultante de la unión. [UInt64](/es/reference/data-types/int-uint).
+
+**Ejemplo**
+
+```sql title="Query"
+SELECT s2RectUnion(5178914411069187297, 5177056748191934217, 5179062030687166815, 5177056748191934217) AS rectUnion;
+```
+
+```text title="Response"
+┌─rectUnion─────────────────────────────────┐
+│ (5179062030687166815,5177056748191934217) │
+└───────────────────────────────────────────┘
+```
+
+<div id="s2rectintersection">
+  ## s2RectIntersection
+</div>
+
+Devuelve el rectángulo más pequeño que contiene la intersección entre este rectángulo y el rectángulo dado. En el sistema S2, un rectángulo se representa mediante un tipo de S2Region llamado `S2LatLngRect`, que representa un rectángulo en el espacio de latitud y longitud.
+
+**Sintaxis**
+
+```sql
+s2RectIntersection(s2Rect1PointLow, s2Rect1PointHi, s2Rect2PointLow, s2Rect2PointHi)
+```
+
+**Argumentos**
+
+* `s2Rect1PointLow`, `s2Rect1PointHi` — Índices de punto S2 inferior y superior correspondientes al primer rectángulo. [UInt64](/es/reference/data-types/int-uint).
+* `s2Rect2PointLow`, `s2Rect2PointHi` — Índices de punto S2 inferior y superior correspondientes al segundo rectángulo. [UInt64](/es/reference/data-types/int-uint).
+
+**Valores devueltos**
+
+* `s2UnionRect2PointLow` — identificador de celda S2 inferior correspondiente al rectángulo que contiene la intersección de los rectángulos indicados. [UInt64](/es/reference/data-types/int-uint).
+* `s2UnionRect2PointHi` — identificador de celda S2 superior correspondiente al rectángulo que contiene la intersección de los rectángulos indicados. [UInt64](/es/reference/data-types/int-uint).
+
+**Ejemplo**
+
+```sql title="Query"
+SELECT s2RectIntersection(5178914411069187297, 5177056748191934217, 5179062030687166815, 5177056748191934217) AS rectIntersection;
+```
+
+```text title="Response"
+┌─rectIntersection──────────────────────────┐
+│ (5178914411069187297,5177056748191934217) │
+└───────────────────────────────────────────┘
+```

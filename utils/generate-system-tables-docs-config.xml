@@ -1,0 +1,39 @@
+<clickhouse>
+    <!-- Enable system log tables so their columns appear in `system.columns`.
+         `clickhouse-local` initializes system logs whenever any `<*_log>` section is
+         present in the config (see `hasAnySystemLogConfigured` and
+         `LocalServer::connect`); `prepare_system_log_tables_on_startup` then creates
+         the tables eagerly so their schemas are visible without flushing logs first. -->
+    <prepare_system_log_tables_on_startup>true</prepare_system_log_tables_on_startup>
+    <query_log><database>system</database><table>query_log</table></query_log>
+    <query_thread_log><database>system</database><table>query_thread_log</table></query_thread_log>
+    <part_log><database>system</database><table>part_log</table></part_log>
+    <background_schedule_pool_log><database>system</database><table>background_schedule_pool_log</table></background_schedule_pool_log>
+    <trace_log><database>system</database><table>trace_log</table></trace_log>
+    <crash_log><database>system</database><table>crash_log</table></crash_log>
+    <text_log><database>system</database><table>text_log</table></text_log>
+    <metric_log><database>system</database><table>metric_log</table></metric_log>
+    <error_log><database>system</database><table>error_log</table></error_log>
+    <filesystem_cache_log><database>system</database><table>filesystem_cache_log</table></filesystem_cache_log>
+    <filesystem_read_prefetches_log><database>system</database><table>filesystem_read_prefetches_log</table></filesystem_read_prefetches_log>
+    <s3queue_log><database>system</database><table>s3queue_log</table></s3queue_log>
+    <azure_queue_log><database>system</database><table>azure_queue_log</table></azure_queue_log>
+    <asynchronous_metric_log><database>system</database><table>asynchronous_metric_log</table></asynchronous_metric_log>
+    <opentelemetry_span_log><database>system</database><table>opentelemetry_span_log</table></opentelemetry_span_log>
+    <query_views_log><database>system</database><table>query_views_log</table></query_views_log>
+    <zookeeper_log><database>system</database><table>zookeeper_log</table></zookeeper_log>
+    <session_log><database>system</database><table>session_log</table></session_log>
+    <transactions_info_log><database>system</database><table>transactions_info_log</table></transactions_info_log>
+    <processors_profile_log><database>system</database><table>processors_profile_log</table></processors_profile_log>
+    <asynchronous_insert_log><database>system</database><table>asynchronous_insert_log</table></asynchronous_insert_log>
+    <backup_log><database>system</database><table>backup_log</table></backup_log>
+    <blob_storage_log><database>system</database><table>blob_storage_log</table></blob_storage_log>
+    <query_metric_log><database>system</database><table>query_metric_log</table></query_metric_log>
+    <dead_letter_queue><database>system</database><table>dead_letter_queue</table></dead_letter_queue>
+    <zookeeper_connection_log><database>system</database><table>zookeeper_connection_log</table></zookeeper_connection_log>
+    <aggregated_zookeeper_log><database>system</database><table>aggregated_zookeeper_log</table></aggregated_zookeeper_log>
+    <iceberg_metadata_log><database>system</database><table>iceberg_metadata_log</table></iceberg_metadata_log>
+    <delta_lake_metadata_log><database>system</database><table>delta_lake_metadata_log</table></delta_lake_metadata_log>
+    <predicate_statistics_log><database>system</database><table>predicate_statistics_log</table></predicate_statistics_log>
+    <histogram_metric_log><database>system</database><table>histogram_metric_log</table></histogram_metric_log>
+</clickhouse>

@@ -38,7 +38,7 @@ using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransac
 struct HostID
 {
     String host_name;
-    UInt16 port;
+    UInt16 port{};
 
     HostID() = default;
 
@@ -55,10 +55,7 @@ struct HostID
         return Cluster::Address::toString(host_name, port);
     }
 
-    String readableString() const
-    {
-        return host_name + ":" + DB::toString(port);
-    }
+    String readableString() const;
 
     bool isLocalAddress(UInt16 clickhouse_port) const;
     bool isLoopbackHost() const;
@@ -121,7 +118,7 @@ struct DDLTaskBase
 
     bool is_initial_query = false;
     bool is_circular_replicated = false;
-    bool execute_on_leader = false;
+    bool execute_on_single_replica = false;
 
     Coordination::Requests ops;
     ExecutionStatus execution_status;
@@ -278,7 +275,7 @@ public:
     void commit();
 
     /// (It would be nice to assert something like the following:
-    ///    assert(isExecuted() || std::uncaught_exceptions() || ops.empty());
+    ///    chassert(isExecuted() || std::uncaught_exceptions() || ops.empty());
     ///  But we can't do it because it would cause rare false positives because
     ///  ZooKeeperMetadataTransaction can be inside a weak_ptr
     ///  (in QueryStatus -> WithContext -> Context -> ContextData), enabling the following

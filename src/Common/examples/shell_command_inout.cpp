@@ -7,10 +7,11 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/copyData.h>
 #include <iostream>
+#include <Examples/clickhouse_examples.h>
 
 /** This example shows how we can proxy stdin to ShellCommand and obtain stdout in streaming fashion. */
 
-int main(int argc, char ** argv)
+int mainEntryExampleShellCommandInout(int argc, char ** argv)
 try
 {
     using namespace DB;

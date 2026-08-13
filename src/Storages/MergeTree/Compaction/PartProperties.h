@@ -35,6 +35,9 @@ struct PartProperties
     /// How old this data part in seconds.
     const time_t age = 0;
 
+    /// Number of rows in part.
+    const size_t rows = 0;
+
     /// Information about different TTLs for part. Used by Part/Row Delete Merge Selectors.
     struct GeneralTTLInfo
     {

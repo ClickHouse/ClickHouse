@@ -115,7 +115,7 @@ void HTTPBasicCredentials::parseAuthInfo(const std::string& authInfo)
 	static const int eof = std::char_traits<char>::eof();
 
 	std::istringstream istr(authInfo);
-	Base64Decoder decoder(istr);
+	Base64Decoder decoder(istr, Poco::BASE64_NO_PADDING);
 	int ch = decoder.get();
 	while (ch != eof && ch != ':')
 	{

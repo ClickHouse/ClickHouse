@@ -20,6 +20,8 @@ class ObjectStorageQueueIFileMetadata
 public:
     struct FileStatus
     {
+        explicit FileStatus(const std::string & path_) : path(path_) {}
+
         enum class State : uint8_t
         {
             Processing,
@@ -41,6 +43,7 @@ public:
 
         std::mutex processing_lock;
 
+        const std::string path;
         std::atomic<State> state = State::None;
         std::atomic<size_t> processed_rows = 0;
         std::atomic<time_t> processing_start_time = 0;
@@ -54,8 +57,45 @@ public:
     };
     using FileStatusPtr = std::shared_ptr<FileStatus>;
 
+    /// Helper structure for storing the flag of presence or absence of a node in the keeper.
+    struct PartitionLastProcessedFileInfo
+    {
+        /// Flag if node exists. For existing node need to call `set`, for non-existing - `create`.
+        bool exists;
+        /// Last processed path for this partition.
+        std::string file_path;
+    };
+
+    /// Used only in Ordered mode with partitioning (HIVE or REGEX mode).
+    /// Key: <processed_node_path>/<partition_key>
+    /// Value: last processed file info
+    /// Explanation:
+    ///    Used to collect `requests` list via preparePartitionProcessedRequests
+    ///    to set values for each <processed_node_path>/<partition_key>.
+    using PartitionLastProcessedFileInfoMap = std::unordered_map<std::string, PartitionLastProcessedFileInfo>;
+
+    struct LastProcessedFileInfo
+    {
+        /// Last processed path for some hive partition.
+        std::string file_path;
+        /// Position of record in `requests` list with keeper commands.
+        /// Used to avoid double creation of Keeper node with same path.
+        /// Instead more actual record overrides old one in the `requests` list.
+        size_t index;
+    };
+
+    /// Used only in Ordered mode.
+    /// Key: <processed_node_path> (without <hive_part>)
+    /// Value: last processed file info
+    /// Explanation:
+    ///    Used to collect `requests` list via prepareProcessedRequests
+    ///    to set values for each <processed_node_path>.
+    using LastProcessedFileInfoMap = std::unordered_map<std::string, LastProcessedFileInfo>;
+    using LastProcessedFileInfoMapPtr = std::shared_ptr<LastProcessedFileInfoMap>;
+
     explicit ObjectStorageQueueIFileMetadata(
         const std::string & path_,
+        const std::string & zookeeper_name_,
         const std::string & processing_node_path_,
         const std::string & processed_node_path_,
         const std::string & failed_node_path_,
@@ -81,6 +121,23 @@ public:
 
     static std::string generateProcessingID();
 
+    enum class PathState
+    {
+        /// The path has been successfully processed.
+        Processed,
+        /// The path has permanently failed; the failure message is populated.
+        Failed,
+        /// The path has not been processed yet (or its status is unknown).
+        Unknown,
+    };
+
+    /// Check Keeper to determine whether this file has already been processed or failed.
+    /// Sets `failure_message` when the result is `Failed`.
+    virtual PathState getPathState(std::string & failure_message) const = 0;
+
+    const std::string & getFailedNodePath() const { return failed_node_path; }
+    const std::string & getProcessedNodePath() const { return processed_node_path; }
+
     virtual bool useBucketsForProcessing() const { return false; }
     virtual size_t getBucket() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets are not supported"); }
 
@@ -92,12 +149,19 @@ public:
     void resetProcessing();
 
     /// Prepare keeper requests, required to set file as Processed.
-    void prepareProcessedRequests(Coordination::Requests & requests);
+    /// `created_nodes` is a helper index for hive partitioning case,
+    /// keeps values and indexes of already inserted commands
+    /// to avoid double creation with the same path.
+    void prepareProcessedRequests(Coordination::Requests & requests,
+        LastProcessedFileInfoMapPtr created_nodes = nullptr);
     /// Prepare keeper requests, required to set file as Failed.
     void prepareFailedRequests(
         Coordination::Requests & requests,
         const std::string & exception_message,
         bool reduce_retry_count);
+
+    /// Prepare keeper requests to save partition last processed files (for HIVE or REGEX partitioning modes).
+    virtual void preparePartitionProcessedMap(PartitionLastProcessedFileInfoMap & /* file_map */) {}
 
     struct SetProcessingResponseIndexes
     {
@@ -116,21 +180,22 @@ public:
     void finalizeProcessed();
     /// Do some work after prepared requests to set file as Failed succeeded.
     void finalizeFailed(const std::string & exception_message);
+    /// Do some work after prepared requests reset processing without marking as failed.
+    void finalizeResetProcessing();
+    /// Whether prepareFailedRequests just reset processing
+    /// without actually marking the file as failed.
+    bool wasProcessingResetWithoutFailure() const { return processing_reset_without_failure; }
     /// Do some work after prepared requests to set file as Processing succeeded.
     /// `file_state` is a file state,
     /// which we find out after unsuccessfully attempting to set file as processing.
     void afterSetProcessing(bool success, std::optional<FileStatus::State> file_state);
 
-    /// Set a starting point for processing.
-    /// Done on table creation, when we want to tell the table
-    /// that processing must be started from certain point,
-    /// instead of from scratch.
-    virtual void prepareProcessedAtStartRequests(Coordination::Requests & requests) = 0;
+    void setUncertainCommit() { uncertain_commit = true; }
 
     /// A struct, representing information stored in keeper for a single file.
     struct NodeMetadata
     {
-        std::string file_path;
+        std::string file_path; /// Ignored in hive partitioning case, subnodes hive_path=>file_name used instead.
         UInt64 last_processed_timestamp = 0;
         std::string last_exception;
         UInt64 retries = 0;
@@ -140,22 +205,29 @@ public:
     };
 
 protected:
-    virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
-    virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests) = 0;
+    /// Returns a single-component Keeper node name for the given file path.
+    /// Raw file paths contain '/' and cannot be used directly as Keeper node names,
+    /// so SipHash64 of the path is used instead.
+    static std::string getNodeName(const std::string & path);
 
-    virtual SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests &, const std::string &)
+    virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
+    virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests,
+        LastProcessedFileInfoMapPtr created_nodes) = 0;
+
+    virtual SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests &,
+        const std::string &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method prepareProcesingRequestsImpl is not implemented");
     }
     void prepareFailedRequestsImpl(Coordination::Requests & requests, bool retriable);
 
     const std::string path;
+    const std::string zookeeper_name;
     const std::string node_name;
     const FileStatusPtr file_status;
     const size_t max_loading_retries;
     const std::atomic<size_t> & metadata_ref_count;
     const bool use_persistent_processing_nodes;
-
     const std::string processing_node_path;
     const std::string processed_node_path;
     const std::string failed_node_path;
@@ -165,13 +237,19 @@ protected:
 
     /// Whether processing node was created by us.
     bool created_processing_node = false;
+    /// Set when a commit failed after a ZooKeeper retry (possible "failed after operation"):
+    /// the multi-op may have succeeded in ZK but the connection was lost before we received
+    /// the response. In this case the destructor must check ownership before removing the
+    /// processing node rather than asserting it.
+    bool uncertain_commit = false;
+    /// Whether prepareFailedRequests just reset processing without actually
+    /// marking the file as failed (when reduce_retry_count was false).
+    bool processing_reset_without_failure = false;
     /// Id of the processor, which is put into processing node.
     /// Can be used to check if processing node was created by us or by someone else.
     std::string processor_info;
 
     bool checkProcessingOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
-
-    static std::string getNodeName(const std::string & path);
 
     static NodeMetadata createNodeMetadata(const std::string & path, const std::string & exception = {}, size_t retries = 0);
 

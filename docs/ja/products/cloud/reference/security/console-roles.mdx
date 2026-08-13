@@ -1,0 +1,97 @@
+---
+sidebarTitle: 'コンソールのロールと権限'
+slug: /cloud/security/console-roles
+title: 'コンソールのロールと権限'
+description: 'このページでは、ClickHouse Cloudコンソールの標準ロールと、それぞれに関連付けられた権限について説明します'
+doc_type: 'reference'
+keywords: ['コンソールのロール', '権限', 'アクセス制御', 'セキュリティ', 'rbac']
+---
+
+<div id="organization-roles">
+  ## 組織ロール
+</div>
+
+組織ロールの割り当て方法については、[クラウドユーザーの管理](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users)を参照してください。
+
+ClickHouse には、ユーザー管理用の組織レベルのロールが 4 つあります。デフォルトでサービスにアクセスできるのは Admin ロールのみです。その他のロールでサービスを利用するには、サービスレベルのロールと組み合わせる必要があります。
+
+| Role           | Description                                                                                             |
+| -------------- | ------------------------------------------------------------------------------------------------------- |
+| Admin          | 組織に関するあらゆる管理作業を実行し、すべての設定を管理します。このロールはデフォルトで組織の最初のユーザーに割り当てられ、すべてのサービスに対する Service Admin 権限が自動的に付与されます。 |
+| Billing        | 使用状況と請求書を確認し、支払い方法を管理します。                                                                               |
+| Org API reader | 組織レベルの設定とユーザーを管理するための API 権限を持ちますが、サービスへのアクセス権はありません。                                                   |
+| Member         | サインインのみ可能で、個人のプロフィール設定を管理できます。SAML SSO ユーザーにはデフォルトで割り当てられます。                                            |
+
+<div id="service-roles">
+  ## サービスロール
+</div>
+
+サービスロールの割り当て手順については、[クラウドユーザーの管理](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users)を参照してください。
+
+サービス権限は、admin ロール以外のロールを持つユーザーに対して、admin が明示的に付与する必要があります。Service admin ロールには SQL コンソールへの管理者アクセスがあらかじめ設定されていますが、権限を縮小または削除するように変更できます。
+
+| ロール                      | 説明                              |
+| ------------------------ | ------------------------------- |
+| Service reader           | サービスと設定を表示できます。                 |
+| Service admin            | サービス設定を管理できます。                  |
+| Service API reader       | すべてのサービスのサービス設定を読み取るための API 権限。 |
+| Service API admin        | すべてのサービスのサービス設定を管理するための API 権限。 |
+| Basic service API reader | クエリ API エンドポイントを使用するための API 権限。 |
+
+<div id="sql-console-roles">
+  ## SQL コンソールのロール
+</div>
+
+SQL コンソールのロールの割り当て方法については、[SQL コンソールのロール割り当ての管理](/ja/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)を参照してください。
+
+| Role                  | Description                                   |
+| --------------------- | --------------------------------------------- |
+| SQL console read only | サービス内のデータベースへの読み取り専用アクセス。                     |
+| SQL console admin     | サービス内のデータベースへの管理者アクセス。Default データベースロールと同等です。 |
+
+<div id="console-permissions">
+  ## コンソール権限
+</div>
+
+以下の表は、ClickHouse コンソールおよび SQL コンソールの権限を示しています。詳細については、各カテゴリのヘッダーにあるリンクを参照してください。
+
+| Permission                                                                                                                         | Description                                                                                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Organization** ([詳細情報](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users))                              | 組織レベルの権限                                                                                                                                      |
+| control-plane:organization:view                                                                                                    | 組織の詳細と読み取り専用のメタデータを表示します。                                                                                                                     |
+| control-plane:organization:manage                                                                                                  | 組織設定とユーザーを管理します。                                                                                                                              |
+| **Billing** ([詳細情報](/ja/products/cloud/reference/billing/index))                                                                      | 請求と請求書の管理                                                                                                                                     |
+| control-plane:organization:manage-billing                                                                                          | 請求設定、支払い方法、請求書を管理します。                                                                                                                         |
+| control-plane:organization:view-billing                                                                                            | 請求の利用状況と請求書を表示します。                                                                                                                            |
+| **API keys** ([詳細情報](/ja/products/cloud/features/admin-features/api/index))                                                           | 組織の API キー管理                                                                                                                                  |
+| control-plane:organization:view-api-keys                                                                                           | 組織の API キーを表示します。                                                                                                                             |
+| control-plane:organization:create-api-keys                                                                                         | 組織用の新しい API キーを作成します。                                                                                                                         |
+| control-plane:organization:update-api-keys                                                                                         | 既存の API キーとその権限を更新します。                                                                                                                        |
+| control-plane:organization:delete-api-keys                                                                                         | API キーを取り消しまたは削除します。                                                                                                                          |
+| **Support** ([詳細情報](/ja/products/cloud/features/support))                                                                             | サポートケース管理                                                                                                                                     |
+| control-plane:support:manage                                                                                                       | サポートケースを作成・管理し、ClickHouse Support とのやり取りを行います。                                                                                                |
+| **Service (general)**                                                                                                              | 一般的なサービスレベル権限                                                                                                                                 |
+| control-plane:service:view                                                                                                         | サービスレベルのメタデータ、設定、ステータスを表示します。                                                                                                                 |
+| control-plane:service:manage                                                                                                       | サービス設定とライフサイクル操作を管理します。                                                                                                                       |
+| **Backups** ([詳細情報](/ja/products/cloud/features/backups/overview))                                                                    | サービスのバックアップと復元ポイント                                                                                                                            |
+| control-plane:service:view-backups                                                                                                 | サービスのバックアップと復元ポイントを表示します。                                                                                                                     |
+| control-plane:service:manage-backups                                                                                               | サービスのバックアップを作成、管理、復元します。                                                                                                                      |
+| **IP access list** ([詳細情報](/ja/products/cloud/guides/security/connectivity/setting-ip-filters))                                       | IP Access List とネットワークフィルタリングの管理                                                                                                              |
+| control-plane:service:manage-ip-access-list                                                                                        | サービスの IP Access List とネットワークフィルタリングを管理します。                                                                                                    |
+| **Generative AI** ([詳細情報](/ja/products/cloud/features/ai-ml/ask-ai))                                                                  | Generative AI 機能の設定                                                                                                                           |
+| control-plane:service:manage-generative-ai                                                                                         | サービスの Generative AI 機能と設定を構成・管理します。                                                                                                           |
+| **Query API endpoints** ([詳細情報](/ja/products/cloud/guides/sql-console/query-endpoints))                                               | クエリ API エンドポイント                                                                                                                               |
+| control-plane:service:view-query-api-endpoints                                                                                     | クエリ API エンドポイントとその構成を表示します。                                                                                                                   |
+| control-plane:service:manage-query-api-endpoints                                                                                   | クエリ API エンドポイントを作成・管理します。                                                                                                                     |
+| **Private endpoints** ([詳細情報](/ja/products/cloud/guides/security/connectivity/private-networking/index))                              | プライベート ネットワークとエンドポイント                                                                                                                         |
+| control-plane:service:view-private-endpoints                                                                                       | サービスのプライベート エンドポイント構成を表示します。                                                                                                                  |
+| control-plane:service:manage-private-endpoints                                                                                     | プライベート エンドポイントとプライベート ネットワークを作成・管理します。                                                                                                        |
+| **ClickPipes** ([詳細情報](/ja/integrations/clickpipes/home))                                                                             | ClickPipes インテグレーション                                                                                                                          |
+| control-plane:service:manage-clickpipes                                                                                            | ClickPipes インテグレーションと関連設定を管理します。現在、**Data Sources** タブにアクセスするには `control-plane:service:manage` (「Manage and Delete Selected Services」) も必要です。 |
+| **Scaling** ([詳細情報](/ja/products/cloud/features/autoscaling/overview))                                                                | スケーリングとオートスケーリングの構成                                                                                                                           |
+| control-plane:service:view-scaling-config                                                                                          | サービスのスケーリング構成とオートスケーリング設定を表示します。                                                                                                              |
+| control-plane:service:manage-scaling-config                                                                                        | スケーリング構成を変更し、スケーリング操作を開始します。                                                                                                                  |
+| **ClickStack** ([詳細情報](/ja/clickstack/overview))                                                                                      | ClickStack オブザーバビリティ インテグレーション                                                                                                                |
+| control-plane:service:manage-clickstack-api                                                                                        | ClickStack API へのアクセスと関連インテグレーションを管理します。                                                                                                      |
+| **SQL console role mapping** ([詳細情報](/ja/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)) | SQL コンソールのロール割り当てを管理                                                                                                                          |
+| sql-console:database:access                                                                                                        | SQL コンソール経由でデータベースにパスワードなしでアクセスできます (sql-console-admin または sql-console-readonly と組み合わせてのみ使用可能)                                                |

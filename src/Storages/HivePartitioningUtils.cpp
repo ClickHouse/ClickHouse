@@ -1,9 +1,11 @@
 #include <Storages/HivePartitioningUtils.h>
+#include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
 #include <Functions/keyvaluepair/impl/DuplicateKeyFoundException.h>
 #include <Formats/EscapingRuleUtils.h>
@@ -17,6 +19,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
 }
 
 namespace ErrorCodes
@@ -35,7 +38,7 @@ static auto makeExtractor()
 
 HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & path)
 {
-    thread_local auto extractor = makeExtractor();
+    static auto extractor = makeExtractor();
 
     HivePartitioningKeysAndValues key_values;
 
@@ -63,6 +66,14 @@ HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & 
     return key_values;
 }
 
+FormatSettings buildHiveFormatSettings(const std::optional<FormatSettings> & format_settings, const ContextPtr & context)
+{
+    FormatSettings hive_format_settings = format_settings.value_or(getFormatSettings(context));
+    hive_format_settings.allow_number_leading_zeros = true;
+    hive_format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+    return hive_format_settings;
+}
+
 NamesAndTypesList extractHivePartitionColumnsFromPath(
     const ColumnsDescription & storage_columns,
     const std::string & sample_path,
@@ -85,8 +96,9 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
         }
         else
         {
+            const auto hive_format_settings = buildHiveFormatSettings(format_settings, context);
             if (const auto type = tryInferDataTypeByEscapingRule(
-                    value, format_settings ? *format_settings : getFormatSettings(context), FormatSettings::EscapingRule::Raw))
+                    value, hive_format_settings, FormatSettings::EscapingRule::Raw))
             {
                 if (type->canBeInsideLowCardinality() && isStringOrFixedString(type))
                 {
@@ -110,9 +122,13 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
 void addPartitionColumnsToChunk(
     Chunk & chunk,
     const NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
-    const std::string & path)
+    const std::string & path,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context)
 {
     const auto hive_map = parseHivePartitioningKeysAndValues(path);
+
+    const auto hive_format_settings = buildHiveFormatSettings(format_settings, context);
 
     for (const auto & column : hive_partition_columns_to_read_from_file_path)
     {
@@ -123,18 +139,18 @@ void addPartitionColumnsToChunk(
         {
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
-                "Expected to find hive partitioning column {} in the path {}."
-                "Try it with hive partitioning disabled (partition_strategy='wildcard' and/or use_hive_partitioning=0",
+                "Expected to find hive partitioning column {} in the path {}. "
+                "Try it with hive partitioning disabled (partition_strategy = 'wildcard' and/or use_hive_partitioning = 0",
                 column_name,
                 path);
         }
 
-        auto chunk_column = column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(it->second), *column.type))->convertToFullColumnIfConst();
+        auto chunk_column = column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(String(it->second)), *column.type, nullptr, hive_format_settings))->convertToFullColumnIfConst();
         chunk.addColumn(std::move(chunk_column));
     }
 }
 
-void sanityCheckSchemaAndHivePartitionColumns(
+static void sanityCheckSchemaAndHivePartitionColumns(
     const NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
     const ColumnsDescription & storage_columns,
     bool check_contained_in_schema)
@@ -154,7 +170,11 @@ void sanityCheckSchemaAndHivePartitionColumns(
         }
     }
 
-    if (storage_columns.size() == hive_partition_columns_to_read_from_file_path.size())
+    /// Check by names, not just by sized, because if table structure
+    /// was manually specified and check_contained_in_schema == false,
+    /// then partition columns might not be fully contained in schema (storage_columns)
+    /// (which we allow for compatibility).
+    if (storage_columns.getOrdinary().getNameSet() == hive_partition_columns_to_read_from_file_path.getNameSet())
     {
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
@@ -163,17 +183,17 @@ void sanityCheckSchemaAndHivePartitionColumns(
     }
 }
 
-void extractPartitionColumnsFromPathAndEnrichStorageColumns(
+static NamesAndTypesList extractPartitionColumnsFromPathAndEnrichStorageColumns(
     ColumnsDescription & storage_columns,
-    NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
     const std::string & path,
     bool inferred_schema,
     std::optional<FormatSettings> format_settings,
     ContextPtr context)
 {
-    hive_partition_columns_to_read_from_file_path = extractHivePartitionColumnsFromPath(storage_columns, path, format_settings, context);
+    auto hive_partition_columns_to_read_from_file_path = extractHivePartitionColumnsFromPath(storage_columns, path, format_settings, context);
 
-    /// If the structure was inferred (not present in `columns_`), then we might need to enrich the schema with partition columns
+    /// If the structure was inferred (not present in `columns_`),
+    /// then we might need to enrich the schema with partition columns.
     /// Because they might not be present in the data and exist only in the path
     if (inferred_schema)
     {
@@ -185,6 +205,7 @@ void extractPartitionColumnsFromPathAndEnrichStorageColumns(
             }
         }
     }
+    return hive_partition_columns_to_read_from_file_path;
 }
 
 HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
@@ -212,9 +233,8 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
     }
     else if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        extractPartitionColumnsFromPathAndEnrichStorageColumns(
+        hive_partition_columns_to_read_from_file_path = extractPartitionColumnsFromPathAndEnrichStorageColumns(
             columns,
-            hive_partition_columns_to_read_from_file_path,
             sample_path,
             inferred_schema,
             format_settings,
@@ -259,9 +279,8 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForFileURLLikeStora
 
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        extractPartitionColumnsFromPathAndEnrichStorageColumns(
+        hive_partition_columns_to_read_from_file_path = extractPartitionColumnsFromPathAndEnrichStorageColumns(
             columns,
-            hive_partition_columns_to_read_from_file_path,
             sample_path,
             inferred_schema,
             format_settings,

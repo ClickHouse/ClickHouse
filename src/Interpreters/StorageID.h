@@ -91,12 +91,25 @@ struct StorageID
         size_t operator()(const StorageID & storage_id) const;
     };
 
+    struct DatabaseAndTableNameAndUUIDHash
+    {
+        size_t operator()(const StorageID & storage_id) const;
+    };
+
     /// Checks if the database and table name of two StorageIDs are equal.
     struct DatabaseAndTableNameEqual
     {
         bool operator()(const StorageID & left, const StorageID & right) const
         {
-            return (left.database_name == right.database_name) && (left.table_name == right.table_name);
+            return std::tie(left.database_name, left.table_name) == std::tie(right.database_name, right.table_name);
+        }
+    };
+
+    struct DatabaseAndTableNameAndUUIDEqual
+    {
+        bool operator()(const StorageID & left, const StorageID & right) const
+        {
+            return std::tie(left.database_name, left.table_name, left.uuid) == std::tie(right.database_name, right.table_name, right.uuid);
         }
     };
 

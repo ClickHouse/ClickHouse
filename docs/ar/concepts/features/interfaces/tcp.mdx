@@ -1,0 +1,14 @@
+---
+description: 'توثيق الواجهة الأصلية عبر TCP في ClickHouse'
+sidebarTitle: 'الواجهة الأصلية (TCP)'
+slug: /interfaces/tcp
+title: 'الواجهة الأصلية (TCP)'
+doc_type: 'reference'
+---
+
+يُستخدم البروتوكول الأصلي في [عميل سطر الأوامر](/ar/concepts/features/interfaces/cli)، وفي الاتصال بين الخوادم أثناء معالجة الاستعلامات الموزعة، وكذلك في بعض مكتبات العملاء للغات البرمجة (مثل [clickhouse-go](/ar/integrations/language-clients/go/index#connection-details)).
+
+يوفّر ClickHouse مواصفات رسمية للبروتوكول الأصلي وللتنسيق العمودي الذي يحمله:
+
+* [Native Protocol](/ar/reference/interfaces/specs/NativeProtocol) — تأطير الحزم، وآلة حالات الاتصال، والتفاوض على الإصدار، وجسم كل رسالة لا تكون من نوع `Block`.
+* [Native Format](/ar/reference/interfaces/specs/NativeFormat) — بنية `Block` والأعمدة، والترميزات الخاصة بكل نوع، وإطار الضغط. يظهر هذا التنسيق أيضًا خارج بروتوكول TCP، على سبيل المثال مع `FORMAT Native` عبر HTTP.

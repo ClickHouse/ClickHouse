@@ -1,0 +1,266 @@
+---
+title: 'أنواع بيانات التاريخ والوقت - السلاسل الزمنية'
+sidebarTitle: 'أنواع بيانات التاريخ والوقت'
+description: 'أنواع بيانات السلاسل الزمنية في ClickHouse.'
+slug: /use-cases/time-series/date-time-data-types
+keywords: ['السلاسل الزمنية', 'DateTime', 'DateTime64', 'Date', 'Time', 'Time64', 'أنواع البيانات', 'البيانات الزمنية', 'timestamp']
+show_related_blogs: true
+doc_type: 'مرجع'
+---
+
+يُعدّ توفر مجموعة شاملة من أنواع التاريخ والوقت أمرًا ضروريًا لإدارة بيانات السلاسل الزمنية بفعالية، وهذا ما يوفّره ClickHouse تمامًا.
+من تمثيلات التاريخ المضغوطة إلى الطوابع الزمنية عالية الدقة بدقة النانوثانية، صُممت هذه الأنواع لتحقيق توازن بين كفاءة التخزين والمتطلبات العملية لمختلف تطبيقات السلاسل الزمنية.
+
+سواء كنت تعمل مع بيانات مالية تاريخية، أو قراءات مستشعرات إنترنت الأشياء، أو أحداث مؤرخة في المستقبل، فإن أنواع التاريخ والوقت في ClickHouse توفّر المرونة اللازمة للتعامل مع مختلف سيناريوهات البيانات الزمنية.
+ويتيح تنوع الأنواع المدعومة تحسين كلٍّ من مساحة التخزين وأداء الاستعلام مع الحفاظ على مستوى الدقة الذي تتطلبه حالة الاستخدام لديك.
+
+* ينبغي أن يكون النوع [`Date`](/ar/reference/data-types/date) كافيًا في معظم الحالات. ويتطلب هذا النوع 2 بايت لتخزين تاريخ، ويقتصر نطاقه على `[1970-01-01, 2149-06-06]`.
+
+* يغطّي [`Date32`](/ar/reference/data-types/date32) نطاقًا أوسع من التواريخ. ويتطلب 4 بايت لتخزين تاريخ، ويقتصر نطاقه على `[1900-01-01, 2299-12-31]`
+
+* يخزّن [`DateTime`](/ar/reference/data-types/datetime) قيم التاريخ والوقت بدقة الثواني، ضمن نطاق `[1970-01-01 00:00:00, 2106-02-07 06:28:15]`. ويتطلب 4 بايت لكل قيمة.
+
+* في الحالات التي تتطلب دقة أعلى، يمكن استخدام [`DateTime64`](/ar/reference/data-types/datetime64). ويتيح ذلك تخزين الوقت بدقة تصل إلى النانوثانية، ضمن نطاق `[1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]`. ويتطلب 8 بايت لكل قيمة.
+
+لننشئ جدولًا يخزّن أنواعًا مختلفة من التاريخ:
+
+```sql
+CREATE TABLE dates
+(
+    `date` Date,
+    `wider_date` Date32,
+    `datetime` DateTime,
+    `precise_datetime` DateTime64(3),
+    `very_precise_datetime` DateTime64(9)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+يمكننا استخدام الدالة [`now()`](/ar/reference/functions/regular-functions/date-time-functions#now) لإرجاع الوقت الحالي، واستخدام [`now64()`](/ar/reference/functions/regular-functions/date-time-functions#now64) للحصول عليه بدقة يحددها الوسيط الأول.
+
+```sql
+INSERT INTO dates 
+SELECT now(), 
+       now()::Date32 + toIntervalYear(100),
+       now(), 
+       now64(3), 
+       now64(9) + toIntervalYear(200);
+```
+
+سيؤدي هذا إلى تعبئة الأعمدة بقيم الوقت وفقًا لنوع العمود:
+
+```sql
+SELECT * FROM dates
+FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+date:                  2025-03-12
+wider_date:            2125-03-12
+datetime:              2025-03-12 11:39:07
+precise_datetime:      2025-03-12 11:39:07.196
+very_precise_datetime: 2025-03-12 11:39:07.196724000
+```
+
+<div id="time-series-time-types">
+  ## النوعان Time وTime64
+</div>
+
+في الحالات التي تحتاج فيها إلى تخزين قيم الوقت ضمن اليوم من دون مكوّنات التاريخ، يوفّر ClickHouse النوعين [`Time`](/ar/reference/data-types/time) و[`Time64`](/ar/reference/data-types/time64)، وقد أُضيفا في الإصدار 25.6. وهما مفيدان لتمثيل الجداول الزمنية المتكررة والأنماط اليومية، أو في الحالات التي يكون فيها فصل مكوّنات التاريخ والوقت منطقيًا.
+
+<Note>
+  يتطلب استخدام `Time` و`Time64` تفعيل الإعداد: `SET enable_time_time64_type = 1;`
+
+  أُضيف هذان النوعان في الإصدار 25.6
+</Note>
+
+يخزّن النوع `Time` الساعات والدقائق والثواني بدقة الثواني. ويُخزَّن داخليًا على هيئة عدد صحيح موقّع من 32 بت، ويدعم نطاقًا مقداره `[-999:59:59, 999:59:59]`، مما يتيح قيَمًا تتجاوز 24 ساعة. وقد يكون هذا مفيدًا عند تتبّع الوقت المنقضي أو إجراء عمليات حسابية تنتج عنها قيَم خارج حدود يوم واحد.
+
+أما بالنسبة إلى الدقة دون الثانية، فيخزّن `Time64` الوقت مع كسور الثواني القابلة للضبط كقيمة Decimal64 موقّعة. ويقبل معامل دقة (0-9) لتحديد عدد الخانات الكسرية. ومن قيم الدقة الشائعة 3 (مللي ثانية)، و6 (ميكروثانية)، و9 (نانوثانية).
+
+لا يدعم `Time` ولا `Time64` المناطق الزمنية، إذ يمثلان قيَم وقت يوم خالصة من دون سياق إقليمي.
+
+لننشئ جدولًا يحتوي على أعمدة وقت:
+
+```sql
+SET enable_time_time64_type = 1;
+
+CREATE TABLE time_examples
+(
+    `event_id` UInt8,
+    `basic_time` Time,
+    `precise_time` Time64(3)
+)
+ENGINE = MergeTree
+ORDER BY event_id;
+```
+
+يمكن إدراج قيم الوقت باستخدام سلاسل حرفية أو قيم رقمية. بالنسبة إلى `Time`، تُفسَّر القيم الرقمية على أنها ثوانٍ منذ 00:00:00. أما بالنسبة إلى `Time64`، فتُفسَّر القيم الرقمية على أنها ثوانٍ منذ 00:00:00، ويُفسَّر الجزء الكسري وفقًا لدقة العمود:
+
+```sql
+INSERT INTO time_examples VALUES 
+    (1, '14:30:25', '14:30:25.123'),
+    (2, 52225, 52225.456),
+    (3, '26:11:10', '26:11:10.789');  -- Values normalize beyond 24 hours
+
+SELECT * FROM time_examples ORDER BY event_id;
+```
+
+```text
+┌─event_id─┬─basic_time─┬─precise_time─┐
+│        1 │ 14:30:25   │ 14:30:25.123 │
+│        2 │ 14:30:25   │ 14:30:25.456 │
+│        3 │ 26:11:10   │ 26:11:10.789 │
+└──────────┴────────────┴──────────────┘
+```
+
+يمكن تصفية القيم الزمنية بسهولة:
+
+```sql
+SELECT * FROM time_examples WHERE basic_time = '14:30:25';
+```
+
+<div id="time-series-timezones">
+  ## المناطق الزمنية
+</div>
+
+تتطلب العديد من حالات الاستخدام تخزين المناطق الزمنية أيضًا. يمكن تعيين المنطقة الزمنية كوسيطة أخيرة للنوعين `DateTime` و`DateTime64`:
+
+```sql
+CREATE TABLE dtz
+(
+    `id` Int8,
+    `dt_1` DateTime('Europe/Berlin'),
+    `dt_2` DateTime,
+    `dt64_1` DateTime64(9, 'Europe/Berlin'),
+    `dt64_2` DateTime64(9)
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+بعد تعريف المنطقة الزمنية في عبارة DDL الخاصة بنا، يمكننا الآن إدراج الأوقات باستخدام مناطق زمنية مختلفة:
+
+```sql
+INSERT INTO dtz 
+SELECT 1, 
+       toDateTime('2022-12-12 12:13:14', 'America/New_York'),
+       toDateTime('2022-12-12 12:13:14', 'America/New_York'),
+       toDateTime64('2022-12-12 12:13:14.123456789', 9, 'America/New_York'),
+       toDateTime64('2022-12-12 12:13:14.123456789', 9, 'America/New_York')
+UNION ALL
+SELECT 2, 
+       toDateTime('2022-12-12 12:13:15'),
+       toDateTime('2022-12-12 12:13:15'),
+       toDateTime64('2022-12-12 12:13:15.123456789', 9),
+       toDateTime64('2022-12-12 12:13:15.123456789', 9);
+```
+
+والآن لنلقِ نظرة على ما في جدولنا:
+
+```sql
+SELECT dt_1, dt64_1, dt_2, dt64_2
+FROM dtz
+FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+dt_1:   2022-12-12 18:13:14
+dt64_1: 2022-12-12 18:13:14.123456789
+dt_2:   2022-12-12 17:13:14
+dt64_2: 2022-12-12 17:13:14.123456789
+
+Row 2:
+──────
+dt_1:   2022-12-12 13:13:15
+dt64_1: 2022-12-12 13:13:15.123456789
+dt_2:   2022-12-12 12:13:15
+dt64_2: 2022-12-12 12:13:15.123456789
+```
+
+في الصف الأول، أدخلنا جميع القيم باستخدام المنطقة الزمنية `America/New_York`.
+
+* يُحوَّل `dt_1` و `dt64_1` تلقائيًا إلى `Europe/Berlin` وقت تنفيذ الاستعلام.
+* لم تُحدَّد منطقة زمنية لـ `dt_2` و `dt64_2`، لذا يستخدمان المنطقة الزمنية المحلية للخادم، وهي في هذه الحالة `Europe/London`.
+
+في الصف الثاني، أدخلنا جميع القيم من دون منطقة زمنية، لذا استُخدمت المنطقة الزمنية المحلية للخادم.
+وكما في الصف الأول، يُحوَّل `dt_1` و `dt64_1` إلى `Europe/Berlin`، بينما يستخدم `dt_2` و `dt64_2` المنطقة الزمنية المحلية للخادم.
+
+<div id="time-series-date-time-functions">
+  ## دوال التاريخ والوقت
+</div>
+
+يوفّر ClickHouse أيضًا مجموعة من الدوال التي تتيح التحويل بين أنواع البيانات المختلفة.
+
+على سبيل المثال، يمكننا استخدام [`toDate`](/ar/reference/functions/regular-functions/type-conversion-functions#toDate) لتحويل قيمة `DateTime` إلى النوع `Date`:
+
+```sql
+SELECT
+    now() AS current_time,
+    toTypeName(current_time),
+    toDate(current_time) AS date_only,
+    toTypeName(date_only)
+FORMAT Vertical;    
+```
+
+```text
+Row 1:
+──────
+current_time:             2025-03-12 12:32:54
+toTypeName(current_time): DateTime
+date_only:                2025-03-12
+toTypeName(date_only):    Date
+```
+
+يمكن استخدام [`toDateTime64`](/ar/reference/functions/regular-functions/type-conversion-functions#toDateTime64) لتحويل `DateTime` إلى `DateTime64`:
+
+```sql
+SELECT
+    now() AS current_time,
+    toTypeName(current_time),
+    toDateTime64(current_time, 3) AS date_only,
+    toTypeName(date_only)
+FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+current_time:             2025-03-12 12:35:01
+toTypeName(current_time): DateTime
+date_only:                2025-03-12 12:35:01.000
+toTypeName(date_only):    DateTime64(3)
+```
+
+ويمكننا استخدام [`toDateTime`](/ar/reference/functions/regular-functions/type-conversion-functions#toDateTime) للتحويل من `Date` أو `DateTime64` مرة أخرى إلى `DateTime`:
+
+```sql
+SELECT
+    now64() AS current_time,
+    toTypeName(current_time),
+    toDateTime(current_time) AS date_time1,
+    toTypeName(date_time1),
+    today() AS current_date,
+    toTypeName(current_date),
+    toDateTime(current_date) AS date_time2,
+    toTypeName(date_time2)
+FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+current_time:             2025-03-12 12:41:00.598
+toTypeName(current_time): DateTime64(3)
+date_time1:               2025-03-12 12:41:00
+toTypeName(date_time1):   DateTime
+current_date:             2025-03-12
+toTypeName(current_date): Date
+date_time2:               2025-03-12 00:00:00
+toTypeName(date_time2):   DateTime
+```

@@ -1,15 +1,9 @@
-import json
-import random
-import re
-import string
-import threading
-import time
 from multiprocessing.dummy import Pool
 
 import pytest
 
-from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, assert_eq_with_retry
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -20,7 +14,7 @@ node1 = cluster.add_instance(
     ],
     with_zookeeper=True,
     stay_alive=True,
-    tmpfs=["/jbod1:size=100M", "/jbod2:size=100M", "/jbod3:size=100M"],
+    tmpfs=["/test_jbod_balancer_jbod1:size=100M", "/test_jbod_balancer_jbod2:size=100M", "/test_jbod_balancer_jbod3:size=100M"],
     macros={"shard": 0, "replica": 1},
 )
 
@@ -30,7 +24,7 @@ node2 = cluster.add_instance(
     main_configs=["configs/config.d/storage_configuration.xml"],
     with_zookeeper=True,
     stay_alive=True,
-    tmpfs=["/jbod1:size=100M", "/jbod2:size=100M", "/jbod3:size=100M"],
+    tmpfs=["/test_jbod_balancer_jbod1:size=100M", "/test_jbod_balancer_jbod2:size=100M", "/test_jbod_balancer_jbod3:size=100M"],
     macros={"shard": 0, "replica": 2},
 )
 
@@ -133,9 +127,9 @@ def test_jbod_balanced_merge(start_cluster):
         check_balance(node1, "tbl")
 
     finally:
-        node1.query(f"DROP TABLE IF EXISTS tbl SYNC")
-        node1.query(f"DROP TABLE IF EXISTS tmp1 SYNC")
-        node1.query(f"DROP TABLE IF EXISTS tmp2 SYNC")
+        node1.query("DROP TABLE IF EXISTS tbl SYNC")
+        node1.query("DROP TABLE IF EXISTS tmp1 SYNC")
+        node1.query("DROP TABLE IF EXISTS tmp2 SYNC")
 
 
 def test_replicated_balanced_merge_fetch(start_cluster):

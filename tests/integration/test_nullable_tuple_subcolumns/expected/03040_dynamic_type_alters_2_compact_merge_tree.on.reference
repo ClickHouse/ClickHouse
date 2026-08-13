@@ -1,0 +1,75 @@
+initial insert
+alter add column
+0	0	\N	\N
+1	1	\N	\N
+2	2	\N	\N
+insert after alter add column 1
+0	0	\N	\N
+1	1	\N	\N
+2	2	\N	\N
+3	3	3	\N
+4	4	4	\N
+5	5	5	\N
+6	6	str_6	\N
+7	7	str_7	\N
+8	8	str_8	\N
+9	9	\N	\N
+10	10	\N	\N
+11	11	\N	\N
+12	12	12	\N
+13	13	str_13	\N
+14	14	\N	\N
+alter rename column 1
+0	0	\N	\N
+1	1	\N	\N
+2	2	\N	\N
+3	3	3	\N
+4	4	4	\N
+5	5	5	\N
+6	6	str_6	\N
+7	7	str_7	\N
+8	8	str_8	\N
+9	9	\N	\N
+10	10	\N	\N
+11	11	\N	\N
+12	12	12	\N
+13	13	str_13	\N
+14	14	\N	\N
+insert nested dynamic
+0	0	\N	\N	[]	[]	[]
+1	1	\N	\N	[]	[]	[]
+2	2	\N	\N	[]	[]	[]
+3	3	3	\N	[]	[]	[]
+4	4	4	\N	[]	[]	[]
+5	5	5	\N	[]	[]	[]
+6	6	str_6	\N	[]	[]	[]
+7	7	str_7	\N	[]	[]	[]
+8	8	str_8	\N	[]	[]	[]
+9	9	\N	\N	[]	[]	[]
+10	10	\N	\N	[]	[]	[]
+11	11	\N	\N	[]	[]	[]
+12	12	12	\N	[]	[]	[]
+13	13	str_13	\N	[]	[]	[]
+14	14	\N	\N	[]	[]	[]
+15	15	[15]	\N	[15]	[NULL]	[NULL]
+16	16	['str_16']	\N	[NULL]	['str_16']	[NULL]
+17	17	[17]	\N	[17]	[NULL]	[NULL]
+alter rename column 2
+0	0	\N	\N	[]	[]	[]
+1	1	\N	\N	[]	[]	[]
+2	2	\N	\N	[]	[]	[]
+3	3	3	\N	[]	[]	[]
+4	4	4	\N	[]	[]	[]
+5	5	5	\N	[]	[]	[]
+6	6	str_6	\N	[]	[]	[]
+7	7	str_7	\N	[]	[]	[]
+8	8	str_8	\N	[]	[]	[]
+9	9	\N	\N	[]	[]	[]
+10	10	\N	\N	[]	[]	[]
+11	11	\N	\N	[]	[]	[]
+12	12	12	\N	[]	[]	[]
+13	13	str_13	\N	[]	[]	[]
+14	14	\N	\N	[]	[]	[]
+15	15	[15]	\N	[15]	[NULL]	[NULL]
+16	16	['str_16']	\N	[NULL]	['str_16']	[NULL]
+17	17	[17]	\N	[17]	[NULL]	[NULL]

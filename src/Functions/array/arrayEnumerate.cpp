@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 /// arrayEnumerate(arr) - Returns the array [1,2,3,..., length(arr)]
-class FunctionArrayEnumerate : public IFunction
+class FunctionArrayEnumerate final : public IFunction
 {
 public:
     static constexpr auto name = "arrayEnumerate";
@@ -119,7 +119,7 @@ ARRAY JOIN
     )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayEnumerate>(documentation);
 }

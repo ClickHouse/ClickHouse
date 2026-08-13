@@ -175,7 +175,7 @@ SELECT netloc('http://paul@www.example.com:80/');
     };
     FunctionDocumentation::IntroducedIn introduced_in_netloc = {20, 5};
     FunctionDocumentation::Category category_netloc = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_netloc = {description_netloc, syntax_netloc, arguments_netloc, returned_value_netloc, examples_netloc, introduced_in_netloc, category_netloc};
+    FunctionDocumentation documentation_netloc = {description_netloc, syntax_netloc, arguments_netloc, {}, returned_value_netloc, examples_netloc, introduced_in_netloc, category_netloc};
 
     factory.registerFunction<FunctionNetloc>(documentation_netloc);
 }

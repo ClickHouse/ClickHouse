@@ -11,10 +11,17 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 
+#include <Core/Settings.h>
+
 
 namespace DB
 {
 static const UInt64 max_block_size = 8192;
+
+namespace Setting
+{
+    extern const SettingsBool cloud_mode;
+}
 
 namespace ErrorCodes
 {
@@ -73,6 +80,7 @@ Poco::Timestamp FileDictionarySource::getLastModification() const
 }
 
 
+void registerDictionarySourceFile(DictionarySourceFactory & factory);
 void registerDictionarySourceFile(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
@@ -84,6 +92,9 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
+        if (global_context->getSettingsRef()[Setting::cloud_mode])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `file` is disabled");
+
         if (dict_struct.has_expressions)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `file` does not support attribute expressions");
 
@@ -95,7 +106,10 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
         return std::make_unique<FileDictionarySource>(filepath, format, sample_block, context, created_from_ddl);
     };
 
-    factory.registerSource("file", create_table_source);
+    factory.registerSource("file", create_table_source, Documentation{
+        .description = "Reads dictionary data from a file on the local filesystem in one of the supported formats. When created from a DDL query, the file path must be inside the `user_files` directory.",
+        .syntax = "SOURCE(FILE(path '/path/to/file' format 'CSV'))",
+        .related = {"executable", "http"}});
 }
 
 }

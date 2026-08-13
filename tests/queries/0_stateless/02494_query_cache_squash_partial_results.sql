@@ -1,7 +1,7 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 DROP TABLE IF EXISTS t;
 
 -- Create test table with "many" rows
@@ -35,7 +35,7 @@ SELECT '-- read from cache';
 SELECT * FROM t ORDER BY c
 SETTINGS max_block_size = 3, use_query_cache = true;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 -- Run query which reads multiple chunks (small max_block_size), cache result in query cache, but **disable** squashing of partial results
 SELECT '-- insert with disabled squashing';
@@ -48,4 +48,4 @@ SELECT * FROM t ORDER BY c
 SETTINGS max_block_size = 3, use_query_cache = true;
 
 DROP TABLE t;
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;

@@ -1,0 +1,349 @@
+---
+description: 'نظرة عامة على نظام التكامل المستمر في ClickHouse'
+sidebarTitle: 'التكامل المستمر (CI)'
+slug: /development/continuous-integration
+title: 'التكامل المستمر (CI)'
+doc_type: 'reference'
+---
+
+عندما ترسل طلب سحب، يُجري نظام [التكامل المستمر (CI)](/ar/resources/develop-contribute/contribute/tests#test-automation) في ClickHouse بعض الفحوصات المؤتمتة على تعليماتك البرمجية.
+ويحدث ذلك بعد أن يراجع أحد مسؤولي صيانة المستودع (شخص من فريق ClickHouse) تعليماتك البرمجية ويضيف الوسم `can be tested` إلى طلب السحب الخاص بك.
+تُدرَج نتائج هذه الفحوصات في صفحة طلب السحب على GitHub، كما هو موضح في [وثائق GitHub الخاصة بفحوصات الحالة](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/about-status-checks).
+إذا أخفق أحد الفحوصات، فقد يُطلب منك إصلاحه.
+تقدم هذه الصفحة نظرة عامة على الفحوصات التي قد تواجهها، وما يمكنك فعله لإصلاحها.
+
+إذا بدا أن إخفاق الفحص غير مرتبط بتغييراتك، فقد يكون ذلك إخفاقًا عابرًا أو مشكلة في البنية التحتية.
+أرسل commit فارغًا إلى طلب السحب لإعادة تشغيل فحوصات CI:
+
+```shell
+git commit --allow-empty
+git push
+```
+
+إذا لم تكن متأكدًا مما ينبغي فعله، فاطلب المساعدة من أحد مشرفي المشروع.
+
+<div id="merge-with-master">
+  ## الدمج مع master
+</div>
+
+يتحقق من أن طلب السحب يمكن دمجه في `master`.
+إذا لم يكن ذلك ممكنًا، فسيفشل مع الرسالة `Cannot fetch mergecommit`.
+لإصلاح هذا التحقق، حلّ التعارض كما هو موضح في [وثائق GitHub](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/resolving-a-merge-conflict-on-github)، أو ادمج الفرع `master` في فرع طلب السحب باستخدام git.
+
+<div id="docs-check">
+  ## فحص الوثائق
+</div>
+
+يحاول بناء موقع وثائق ClickHouse.
+قد يفشل إذا أجريتَ تغييرًا في الوثائق.
+والسبب الأرجح هو وجود رابط مرجعي داخلي غير صحيح في الوثائق.
+انتقل إلى تقرير الفحص وابحث عن رسائل `ERROR` و`WARNING`.
+
+<div id="description-check">
+  ## التحقق من الوصف
+</div>
+
+تحقق من أن وصف طلب السحب الخاص بك يتوافق مع القالب [PULL&#95;REQUEST&#95;TEMPLATE.md](https://github.com/ClickHouse/ClickHouse/blob/master/.github/PULL_REQUEST_TEMPLATE.md).
+يجب عليك تحديد فئة في سجل التغييرات للتغيير الذي أجريته (على سبيل المثال، Bug Fix)، وكتابة رسالة واضحة للمستخدم تصف هذا التغيير من أجل [CHANGELOG.md](/ar/resources/changelogs/oss/2026)
+
+<div id="docker-image">
+  ## صورة Docker
+</div>
+
+يبني صور Docker الخاصة بخادم ClickHouse وKeeper للتحقق من بنائها بشكل صحيح.
+
+<div id="official-docker-library-tests">
+  ### اختبارات مكتبة Docker الرسمية
+</div>
+
+يُشغِّل اختبارات [مكتبة Docker الرسمية](https://github.com/docker-library/official-images/tree/master/test#alternate-config-files) للتحقق من أن صورة Docker ‏`clickhouse/clickhouse-server` تعمل على النحو الصحيح.
+
+لإضافة اختبارات جديدة، أنشئ دليلاً `ci/jobs/scripts/docker_server/tests/$test_name` وأضِف إليه البرنامج النصي `run.sh`.
+
+يمكن العثور على تفاصيل إضافية حول الاختبارات في [توثيق البرامج النصية لمهام CI](https://github.com/ClickHouse/ClickHouse/tree/master/ci/jobs/scripts/docker_server).
+
+<div id="marker-check">
+  ## فحص Marker
+</div>
+
+يعني هذا الفحص أن نظام CI قد بدأ معالجة طلب السحب.
+وعندما تكون حالته &#39;pending&#39;، فهذا يعني أن بعض الفحوصات لم تبدأ بعد.
+وبعد بدء جميع الفحوصات، تتغير حالته إلى &#39;success&#39;.
+
+<div id="style-check">
+  ## Style check
+</div>
+
+يُجري فحوصات متنوعة للأسلوب على قاعدة الشيفرة. ويتوافق كل فحص فرعي أدناه مع `testname` في [`ci/jobs/check_style.py`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/check_style.py)، ويمكن تشغيل كلٍّ منها على حدة باستخدام `--test <name>` (انظر أدناه).
+
+<div id="cpp">
+  ##### cpp
+</div>
+
+فحوصات نمط C++ المستندة إلى Regex عبر [`check_cpp.sh`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/scripts/check_style/check_cpp.sh). إذا فشل، فأصلِح المشكلات وفقًا لـ[دليل نمط الشيفرة](/ar/resources/develop-contribute/contribute/style).
+
+<div id="whitespace-check">
+  ##### whitespace_check
+</div>
+
+يرصد المسافات المزدوجة بعد الفواصل في ++C إذا لم تكن جزءًا من محاذاة الأعمدة.
+
+<div id="catch-all">
+  ##### catch_all
+</div>
+
+يمنع استخدام `catch (...)` خارج المدمِّرات و`main` ونقاط دخول fuzzer، إذ إن تجاهل استثناء غير معروف ليس آمنًا.
+
+<div id="yamllint">
+  ##### yamllint
+</div>
+
+يدقّق ملفات سير العمل بتنسيق YAML ضمن `.github/` باستخدام `.yamllint`.
+
+<div id="xmllint">
+  ##### xmllint
+</div>
+
+يتحقق من صحة ملفات XML في `tests/` و`programs/`.
+
+<div id="functional-tests-check">
+  ##### functional_tests_check
+</div>
+
+يفحص الاختبارات عديمة الحالة: يجب أن تستخدم الاستعلامات التي تُطبِّق عامل تصفية على `event_date` ‎`>= yesterday()` بدلاً من `today()` (لتجنّب التذبذب حول منتصف الليل)، ويجب ألا تتضمن أسماء ملفات الاختبار `fail`.
+
+<div id="test-numbers-check">
+  ##### test_numbers_check
+</div>
+
+يرصد فجوات كبيرة في ترقيم الاختبارات عديمة الحالة (`tests/queries/0_stateless/<NNNNN>_*`).
+
+<div id="symlinks">
+  ##### الروابط الرمزية
+</div>
+
+يكشف عن الروابط الرمزية المعطّلة في المستودع.
+
+<div id="various">
+  ##### متفرقات
+</div>
+
+فحوصات متنوعة للمستودع عبر [`various_checks.sh`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/scripts/check_style/various_checks.sh): يجب أن تستخدم الاستعلامات على `system.query_log` / `system.parts` / إلخ عامل تصفية حسب `currentDatabase`، ويجب أن تتضمن مسارات ZooKeeper الخاصة بـ `Replicated*MergeTree` بادئةً خاصة بكل اختبار، ويجب أن تحتوي أدلة اختبارات التكامل على `__init__.py`، وألا توجد علامات UTF BOM، وألا تكون ملفات المصدر/البيانات مفعّلًا عليها بتات التنفيذ، وألا تُستخدم وسوم `:latest` مع صور docker-compose التابعة لجهات خارجية، وغير ذلك.
+
+<div id="running-style-check-locally">
+  ### تشغيل مهمة *Style Check* محليًا
+</div>
+
+يمكن تشغيل مهمة *Style Check* بالكامل محليًا داخل حاوية Docker باستخدام:
+
+```sh
+python -m ci.praktika run "Style check"
+```
+
+لتشغيل فحص معيّن (مثل فحص *cpp*):
+
+```sh
+python -m ci.praktika run "Style check" --test cpp
+```
+
+تسحب هذه الأوامر صورة Docker ‏`clickhouse/style-test` وتشغّل المهمة ضمن بيئة حاويات.
+لا يلزم أي تبعيات أخرى سوى بايثون 3 وDocker.
+
+<div id="running-stateless-tests">
+  ## تشغيل الاختبارات عديمة الحالة
+</div>
+
+قد يعمل ClickHouse المثبّت محليًا بإعداداته الافتراضية مع بعض حالات الاختبار، لكنه لا يستطيع تشغيل جميع استعلامات الاختبار بشكل صحيح. في CI، تُثبّت كل مهمة إعدادًا محددًا لـ ClickHouse (مثل تخزين S3 والنسخ المتماثلة المتوازية)، وقد يكون من الصعب إعادة ذلك يدويًا. لتجنّب ذلك، يمكنك إعادة تنفيذ أي مهمة CI محليًا باستخدام آلية التنسيق نفسها المستخدمة في CI، من دون الحاجة إلى أي إعداد يدوي.
+
+<div id="ci-prerequisites">
+  #### المتطلبات الأساسية
+</div>
+
+* بايثون 3 (المكتبة القياسية فقط)
+* Docker
+
+ثبّت Docker على Ubuntu إذا لزم الأمر، ثم أعِد تسجيل الدخول:
+
+```sh
+sudo apt-get update
+sudo apt-get install docker.io
+sudo usermod -aG docker "$USER"
+sudo tee /etc/docker/daemon.json <<'EOF'
+{
+  "ipv6": true,
+  "ip6tables": true
+}
+EOF
+sudo systemctl restart docker
+```
+
+<div id="run-ci-job-locally">
+  #### تشغيل مهمة CI محليًا
+</div>
+
+اختر أي اسم مهمة من تقرير CI وشغّلها محليًا:
+
+```bash
+python -m ci.praktika run "<JOB_NAME>"
+```
+
+* احرص دائمًا على وضع اسم الـ مهمة بين علامتَي اقتباس تمامًا كما يظهر في تقرير CI (إذ قد يحتوي على مسافات وفواصل)، مثل: `"Stateless tests (amd_debug, parallel)"`. يضبط ذلك إعدادات ClickHouse نفسها ويشغّل الاختبارات نفسها المستخدمة في CI.
+* إن المعمارية ونوع البناء في اسم الـ مهمة (مثل `amd_debug`) هما تسميتان خاصتان بـ CI. وعند التشغيل محليًا، لا يكون لهما أي تأثير — إذ سيستخدم الـ مهمة أي ملف تنفيذي توفّره وعلى أي معمارية تعمل. يحدّد اسم الـ مهمة فقط إعدادات ClickHouse ومجموعة الاختبارات (ما لم يتم تجاوز ذلك باستخدام `--test`).
+* في CI، تُقسَّم الاختبارات الوظيفية إلى دفعات لتحسين استخدام الموارد. على سبيل المثال، يغطي كلٌّ من `"Stateless tests (amd_debug, parallel)"` و`"Stateless tests (amd_debug, sequential)"` النطاق الكامل معًا: تُشغَّل الاختبارات الآمنة للتوازي بشكل متزامن، بينما تُشغَّل بقية الاختبارات بشكل تسلسلي. ويقلّل هذا التقسيم الوقت الإجمالي في CI من خلال زيادة التوازي إلى أقصى حد ممكن. ولإعادة تنفيذ نطاق الاختبار الكامل محليًا، شغّل كلتا الدفعتين.
+* توجد أيضًا مهمة في CI باسم `"Fast test"` تشغّل نطاقًا محدودًا من الاختبارات الوظيفية للتحقق من الوظائف الأساسية في ClickHouse — وهي تستخدم build لا يتضمن جميع الوحدات الاختيارية، وتُعد أسرع طريقة لاكتشاف حالات التراجع. يمكنك تشغيلها محليًا بالطريقة نفسها. ضع ملف ClickHouse التنفيذي في أحد مسارات البحث الافتراضية (`./ci/tmp/clickhouse`, `./build/programs/clickhouse`, أو `./clickhouse`) — وإلا فستحاول الـ مهمة بناء ClickHouse أولًا:
+  ```bash
+  python -m ci.praktika run "Fast test"
+  ```
+
+<div id="run-specific-tests-within-ci-job">
+  #### تشغيل اختبارات محددة ضمن مهمة CI
+</div>
+
+باستخدام `--test`، تُعِدّ المهمة بيئة ClickHouse مطابقة لتلك المستخدمة في CI، لكنها تُشغِّل الاختبارات المحددة فقط:
+
+```bash
+python -m ci.praktika run "Stateless tests (amd_debug, parallel)" \
+  --test 00001_select1
+```
+
+* يمكنك تمرير أسماء اختبارات متعددة:
+  ```bash
+  python -m ci.praktika run "Stateless tests (amd_debug, parallel)" \
+    --test 00001_select1 00002_log_and_exception_messages_formatting
+  ```
+* نصيحة: إذا كان أي إعداد لـ ClickHouse مناسبًا وكنت تحتاج فقط إلى تشغيل اختبارات معيّنة، فاستخدم الاسم البديل `functional` بدلًا من اسم المهمة الكامل:
+  ```bash
+  python -m ci.praktika run functional --test 00001_select1
+  ```
+
+<div id="additional-customization-options">
+  #### خيارات تخصيص إضافية
+</div>
+
+* `--path PATH` — مسار مخصّص لملف ClickHouse التنفيذي. افتراضيًا، يبحث المشغّل بالترتيب التالي: `./ci/tmp/clickhouse`, `./build/programs/clickhouse`, `./clickhouse`.
+* `--count N` — كرّر كل اختبار N مرة.
+* `--workers N` — تجاوز الحساب التلقائي لعدد العمّال المتوازيين المستند إلى سعة الجهاز.
+
+<div id="build-check">
+  ## التحقق من البناء
+</div>
+
+يبني ClickHouse ضمن تهيئات مختلفة لاستخدامه في الخطوات اللاحقة.
+
+<div id="running-builds-locally">
+  ### تشغيل عمليات البناء محليًا
+</div>
+
+يمكن تشغيل عملية البناء محليًا في بيئة مشابهة لبيئة CI باستخدام:
+
+```bash
+python -m ci.praktika run "<BUILD_JOB_NAME>"
+```
+
+لا يلزم أي تبعيات أخرى سوى بايثون 3 وDocker.
+
+<div id="available-build-jobs">
+  #### مهام البناء المتاحة
+</div>
+
+أسماء مهام البناء هي نفسها تمامًا كما تظهر في تقرير CI:
+
+**عمليات بناء AMD64:**
+
+* `Build (amd_debug)` - بنية Debug مع الرموز
+* `Build (amd_release)` - بنية إصدار محسّنة
+* `Build (amd_asan)` - بنية Address Sanitizer
+* `Build (amd_tsan)` - بنية Thread Sanitizer
+* `Build (amd_msan)` - بنية Memory Sanitizer
+* `Build (amd_ubsan)` - بنية Undefined Behavior Sanitizer
+* `Build (amd_binary)` - بنية إصدار سريعة بدون Thin LTO
+* `Build (amd_compat)` - بنية توافق للأنظمة الأقدم
+* `Build (amd_musl)` - بنية باستخدام musl libc
+* `Build (amd_darwin)` - بنية macOS
+* `Build (amd_freebsd)` - بنية FreeBSD
+
+**عمليات بناء ARM64:**
+
+* `Build (arm_release)` - بنية إصدار ARM64 محسّنة
+* `Build (arm_asan)` - بنية ARM64 لـ Address Sanitizer
+* `Build (arm_coverage)` - بنية ARM64 مع تضمين أدوات قياس التغطية
+* `Build (arm_binary)` - بنية إصدار ARM64 سريعة بدون Thin LTO
+* `Build (arm_darwin)` - بنية macOS لـ ARM64
+* `Build (arm_v80compat)` - بنية توافق ARMv8.0
+
+**معماريات أخرى:**
+
+* `Build (ppc64le)` - PowerPC ‏64-بت بنظام Little Endian
+* `Build (riscv64)` - RISC-V ‏64-بت
+* `Build (s390x)` - IBM System/390 ‏64-بت
+* `Build (loongarch64)` - LoongArch ‏64-بت
+
+إذا نجحت المهمة، فستتوفر نتائج البناء في الدليل `<repo_root>/ci/tmp/build`.
+
+**ملاحظة:** بالنسبة إلى عمليات البناء التي لا تندرج ضمن فئة &quot;معماريات أخرى&quot; (والتي تستخدم التجميع المتقاطع)، يجب أن تتطابق معمارية جهازك المحلي مع نوع البناء لإنتاج البنية المطلوبة بواسطة `BUILD_JOB_NAME`.
+
+<div id="example-run-local">
+  #### مثال
+</div>
+
+لتشغيل نسخة تصحيح محلية:
+
+```bash
+python -m ci.praktika run "Build (amd_debug)"
+```
+
+إذا لم تنجح الطريقة المذكورة أعلاه معك، فاستخدم خيارات cmake من سجل البناء واتبع [عملية البناء العامة](/ar/resources/develop-contribute/build/build).
+
+<div id="functional-stateless-tests">
+  ## الاختبارات الوظيفية عديمة الحالة
+</div>
+
+يشغّل [الاختبارات الوظيفية عديمة الحالة](/ar/resources/develop-contribute/contribute/tests#functional-tests) لملفات ClickHouse التنفيذية المبنية بإعدادات مختلفة -- release وdebug ومع أدوات sanitizers وما إلى ذلك.
+اطّلع على التقرير لمعرفة الاختبارات التي تفشل، ثم أعد إنتاج الفشل محليًا كما هو موضح [هنا](/ar/resources/develop-contribute/contribute/tests#functional-tests).
+لاحظ أنه يجب استخدام إعداد البناء الصحيح لإعادة الإنتاج -- فقد يفشل اختبار عند استخدام AddressSanitizer لكنه ينجح في Debug.
+نزّل الملف التنفيذي من [صفحة فحوصات بناء CI](/ar/get-started/setup/self-managed/advanced)، أو ابنِه محليًا.
+
+<div id="integration-tests">
+  ## اختبارات التكامل
+</div>
+
+يشغّل [اختبارات التكامل](/ar/resources/develop-contribute/contribute/tests#integration-tests).
+
+<div id="bugfix-validate-check">
+  ## فحص التحقق من إصلاح الأخطاء
+</div>
+
+يتحقق من وجود اختبار جديد (وظيفي أو تكاملي)، أو من وجود اختبارات معدّلة تفشل عند استخدام الملف التنفيذي المبني من فرع master.
+يُفعَّل هذا الفحص عندما يكون طلب السحب موسومًا بالوسم &quot;pr-bugfix&quot;.
+
+<div id="stress-test">
+  ## اختبار الإجهاد
+</div>
+
+يشغّل الاختبارات الوظيفية عديمة الحالة بالتوازي من عدة عملاء لاكتشاف الأخطاء المرتبطة بالتزامن. إذا أخفق:
+
+* أصلح أولاً جميع حالات فشل الاختبارات الأخرى؛
+  * راجع التقرير للعثور على سجلات الخادم وتحقق منها بحثًا عن الأسباب المحتملة
+    للخطأ.
+
+<div id="compatibility-check">
+  ## التحقّق من التوافق
+</div>
+
+يتحقّق من أنّ الملف التنفيذي `clickhouse` يعمل على التوزيعات التي تستخدم إصدارات قديمة من libc.
+إذا فشل، فاطلب المساعدة من أحد مسؤولي الصيانة.
+
+<div id="ast-fuzzer">
+  ## AST fuzzer
+</div>
+
+يشغّل استعلامات مُولَّدة عشوائيًا لاكتشاف أخطاء في البرنامج.
+إذا تعذّر عمله، فاطلب المساعدة من أحد مسؤولي الصيانة.
+
+<div id="performance-tests">
+  ## اختبارات الأداء
+</div>
+
+لقياس التغيّرات في أداء الاستعلامات.
+هذا هو أطول فحص، ويستغرق تشغيله أقل بقليل من 6 ساعات.
+يُوضَّح تقرير اختبار الأداء بالتفصيل [هنا](https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/scripts/README.md#how-to-read-the-report).

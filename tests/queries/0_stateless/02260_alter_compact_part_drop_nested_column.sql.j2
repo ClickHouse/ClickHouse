@@ -5,7 +5,7 @@ CREATE TABLE compact_alter_{{ min_bytes_for_wide_part }} (d Date, s String, k UI
 
 INSERT INTO compact_alter_{{ min_bytes_for_wide_part }} VALUES ('2015-01-01', '2015-01-01 00:00:00', 10);
 
-ALTER TABLE compact_alter_{{ min_bytes_for_wide_part }} ADD COLUMN n.d Int;
+ALTER TABLE compact_alter_{{ min_bytes_for_wide_part }} ADD COLUMN n.d Array(Int);
 -- force columns creation
 OPTIMIZE TABLE compact_alter_{{ min_bytes_for_wide_part }} FINAL;
 -- this command will not drop n.d from compact part columns.txt

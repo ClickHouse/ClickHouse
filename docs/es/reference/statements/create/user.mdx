@@ -1,0 +1,269 @@
+---
+description: 'Documentación sobre USER'
+sidebarTitle: 'USER'
+slug: /sql-reference/statements/create/user
+title: 'CREATE USER'
+doc_type: 'reference'
+---
+
+Crea [cuentas de usuario](/es/concepts/features/security/access-rights#user-account-management).
+
+Sintaxis:
+
+```sql
+CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime] 
+    [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
+    [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [VALID UNTIL datetime]
+    [IN access_storage_type]
+    [ROLE role [,...]]
+    [DEFAULT ROLE role [,...]]
+    [DEFAULT DATABASE database | NONE]
+    [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+La cláusula `ON CLUSTER` permite crear usuarios en un clúster; consulte [Distributed DDL](/es/reference/statements/distributed-ddl).
+
+<div id="identification">
+  ## Identificación
+</div>
+
+Hay varias formas de identificar a un usuario:
+
+* `IDENTIFIED WITH no_password`
+* `IDENTIFIED WITH plaintext_password BY 'qwerty'`
+* `IDENTIFIED WITH sha256_password BY 'qwerty'` or `IDENTIFIED BY 'password'`
+* `IDENTIFIED WITH sha256_hash BY 'hash'` or `IDENTIFIED WITH sha256_hash BY 'hash' SALT 'salt'`
+* `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
+* `IDENTIFIED WITH double_sha1_hash BY 'hash'`
+* `IDENTIFIED WITH bcrypt_password BY 'qwerty'`
+* `IDENTIFIED WITH bcrypt_hash BY 'hash'`
+* `IDENTIFIED WITH ldap SERVER 'server_name'`
+* `IDENTIFIED WITH kerberos` or `IDENTIFIED WITH kerberos REALM 'realm'`
+* `IDENTIFIED WITH ssl_certificate CN 'mysite.com:user'`
+* `IDENTIFIED WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa', KEY 'another_public_key' TYPE 'ssh-ed25519'`
+* `IDENTIFIED WITH http SERVER 'http_server'` or `IDENTIFIED WITH http SERVER 'http_server' SCHEME 'basic'`
+* `IDENTIFIED BY 'qwerty'`
+
+Los requisitos de complejidad de las contraseñas pueden editarse en [config.xml](/es/concepts/features/configuration/server-config/configuration-files). A continuación, se muestra una configuración de ejemplo que exige que las contraseñas tengan al menos 12 caracteres y contengan 1 número. Cada regla de complejidad de contraseñas requiere una expresión regular con la que validar las contraseñas y una descripción de la regla.
+
+```xml
+<clickhouse>
+    <password_complexity>
+        <rule>
+            <pattern>.{12}</pattern>
+            <message>be at least 12 characters long</message>
+        </rule>
+        <rule>
+            <pattern>\p{N}</pattern>
+            <message>contain at least 1 numeric character</message>
+        </rule>
+    </password_complexity>
+</clickhouse>
+```
+
+<Note>
+  En ClickHouse Cloud, de forma predeterminada, las contraseñas deben cumplir los siguientes requisitos de complejidad:
+
+  * Tener al menos 12 caracteres
+  * Contener al menos 1 dígito
+  * Contener al menos 1 letra mayúscula
+  * Contener al menos 1 letra minúscula
+  * Contener al menos 1 carácter especial
+</Note>
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+1. El siguiente nombre de usuario es `name1` y no requiere contraseña, lo que obviamente no ofrece mucha seguridad:
+
+   ```sql
+   CREATE USER name1 NOT IDENTIFIED
+   ```
+
+2. Para especificar una contraseña en texto plano:
+
+   ```sql
+   CREATE USER name2 IDENTIFIED WITH plaintext_password BY 'my_password'
+   ```
+
+<Tip>
+  La contraseña se almacena en un archivo de texto SQL en `/var/lib/clickhouse/access`, por lo que no es buena idea usar `plaintext_password`. En su lugar, prueba `sha256_password`, como se muestra a continuación...
+</Tip>
+
+3. La opción más habitual es usar una contraseña con hash SHA-256. ClickHouse calculará el hash de la contraseña por ti cuando especifiques `IDENTIFIED WITH sha256_password`. Por ejemplo:
+
+   ```sql
+   CREATE USER name3 IDENTIFIED WITH sha256_password BY 'my_password'
+   ```
+
+   El usuario `name3` ahora puede iniciar sesión con `my_password`, pero la contraseña se almacena como el valor hash mostrado arriba. El siguiente archivo SQL se creó en `/var/lib/clickhouse/access` y se ejecuta al iniciar el servidor:
+
+   ```bash
+   /var/lib/clickhouse/access $ cat 3843f510-6ebd-a52d-72ac-e021686d8a93.sql
+   ATTACH USER name3 IDENTIFIED WITH sha256_hash BY '0C268556C1680BEF0640AAC1E7187566704208398DA31F03D18C74F5C5BE5053' SALT '4FB16307F5E10048196966DD7E6876AE53DE6A1D1F625488482C75F14A5097C7';
+   ```
+
+<Tip>
+  Si ya has creado un valor hash y el valor salt correspondiente para un nombre de usuario, puedes usar `IDENTIFIED WITH sha256_hash BY 'hash'` o `IDENTIFIED WITH sha256_hash BY 'hash' SALT 'salt'`. Para la identificación con `sha256_hash` usando `SALT`, el hash debe calcularse a partir de la concatenación de &#39;password&#39; y &#39;salt&#39;.
+</Tip>
+
+4. `double_sha1_password` no suele ser necesario, pero resulta útil al trabajar con clientes que lo requieren (como la interfaz MySQL):
+
+   ```sql
+   CREATE USER name4 IDENTIFIED WITH double_sha1_password BY 'my_password'
+   ```
+
+   ClickHouse genera y ejecuta la siguiente consulta:
+
+   ```response
+   CREATE USER name4 IDENTIFIED WITH double_sha1_hash BY 'CCD3A959D6A004B9C3807B728BC2E55B67E10518'
+   ```
+
+5. `bcrypt_password` es la opción más segura para almacenar contraseñas. Utiliza el algoritmo [bcrypt](https://en.wikipedia.org/wiki/Bcrypt), que es resistente a ataques de fuerza bruta incluso si el hash de la contraseña se ve comprometido.
+
+   ```sql
+   CREATE USER name5 IDENTIFIED WITH bcrypt_password BY 'my_password'
+   ```
+
+   La longitud de la contraseña está limitada a 72 caracteres con este método.
+   El parámetro de factor de trabajo de bcrypt, que define la cantidad de cómputo y tiempo necesarios para calcular el hash y verificar la contraseña, se puede modificar en la configuración del servidor:
+
+   ```xml
+   <bcrypt_workfactor>12</bcrypt_workfactor>
+   ```
+
+   El factor de trabajo debe estar entre 4 y 31, con un valor predeterminado de 12.
+
+<Warning>
+  Para aplicaciones con autenticación de alta frecuencia,
+  considera métodos de autenticación alternativos debido a la
+  sobrecarga computacional de bcrypt con factores de trabajo altos.
+</Warning>
+
+6. El tipo de contraseña también se puede omitir:
+
+   ```sql
+   CREATE USER name6 IDENTIFIED BY 'my_password'
+   ```
+
+   En este caso, ClickHouse usará el tipo de contraseña predeterminado especificado en la configuración del servidor:
+
+   ```xml
+   <default_password_type>sha256_password</default_password_type>
+   ```
+
+   Los tipos de contraseña disponibles son: `plaintext_password`, `sha256_password`, `double_sha1_password`.
+
+7. Se pueden especificar varios métodos de autenticación:
+
+   ```sql
+   CREATE USER user1 IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3''
+   ```
+
+Notas:
+
+1. Es posible que las versiones anteriores de ClickHouse no admitan la sintaxis de varios métodos de autenticación. Por lo tanto, si el servidor ClickHouse contiene usuarios de este tipo y se degrada a una versión que no lo admite, esos usuarios quedarán inutilizables y algunas operaciones relacionadas con los usuarios dejarán de funcionar. Para realizar la degradación correctamente, es necesario configurar todos los usuarios para que tengan un único método de autenticación antes de degradar la versión. Como alternativa, si el servidor se degradó sin seguir el procedimiento adecuado, se deben eliminar los usuarios afectados.
+2. `no_password` no puede coexistir con otros métodos de autenticación por motivos de seguridad. Por lo tanto, solo puede especificar
+   `no_password` si es el único método de autenticación en la consulta.
+
+<div id="user-host">
+  ## Host de usuario
+</div>
+
+El host de usuario es el host desde el que se puede establecer una conexión con servidor ClickHouse. El host puede especificarse en la sección `HOST` de la consulta de las siguientes maneras:
+
+* `HOST IP 'ip_address_or_subnetwork'` — El usuario solo puede conectarse a servidor ClickHouse desde la dirección IP especificada o una [subred](https://en.wikipedia.org/wiki/Subnetwork). Ejemplos: `HOST IP '192.168.0.0/16'`, `HOST IP '2001:DB8::/32'`. Para usarlo en producción, especifique solo elementos `HOST IP` (direcciones IP y sus máscaras), ya que el uso de `host` y `host_regexp` puede provocar latencia adicional.
+* `HOST ANY` — El usuario puede conectarse desde cualquier ubicación. Esta es la opción predeterminada.
+* `HOST LOCAL` — El usuario solo puede conectarse localmente.
+* `HOST NAME 'fqdn'` — El host de usuario puede especificarse como un FQDN. Por ejemplo, `HOST NAME 'mysite.com'`.
+* `HOST REGEXP 'regexp'` — Puede usar expresiones regulares [pcre](http://www.pcre.org/) al especificar hosts de usuario. Por ejemplo, `HOST REGEXP '.*\.mysite\.com'`.
+* `HOST LIKE 'template'` — Permite usar el operador [LIKE](/es/reference/functions/regular-functions/string-search-functions#like) para filtrar los hosts de usuario. Por ejemplo, `HOST LIKE '%'` equivale a `HOST ANY`; `HOST LIKE '%.mysite.com'` filtra todos los hosts del dominio `mysite.com`.
+
+Otra forma de especificar el host es usar la sintaxis `@` después del nombre de usuario. Ejemplos:
+
+* `CREATE USER mira@'127.0.0.1'` — Equivale a la sintaxis `HOST IP`.
+* `CREATE USER mira@'localhost'` — Equivale a la sintaxis `HOST LOCAL`.
+* `CREATE USER mira@'192.168.%.%'` — Equivale a la sintaxis `HOST LIKE`.
+
+<Tip>
+  ClickHouse trata `user_name@'address'` como un nombre de usuario completo. Por lo tanto, técnicamente puede crear varios usuarios con el mismo `user_name` y distintas formas después de `@`. Sin embargo, no recomendamos hacerlo.
+</Tip>
+
+<div id="valid-until-clause">
+  ## Cláusula VALID UNTIL
+</div>
+
+Permite especificar la fecha de expiración y, opcionalmente, la hora de un método de autenticación. Acepta una cadena como parámetro. Se recomienda usar el formato `YYYY-MM-DD [hh:mm:ss] [timezone]` para la fecha y hora, donde `[timezone]` debe ser un desplazamiento numérico como `+09:00` o uno de `UTC`, `GMT`, `Z`, `MSK`, `MSD`; no se reconocen zonas IANA con nombre como `Asia/Tokyo` (consulte la nota a continuación). De forma predeterminada, este parámetro es igual a `'infinity'`.
+La cláusula `VALID UNTIL` solo puede especificarse junto con un método de autenticación, excepto cuando no se haya especificado ningún método de autenticación en la consulta. En este caso, la cláusula `VALID UNTIL` se aplicará a todos los métodos de autenticación existentes.
+
+Ejemplos:
+
+* `CREATE USER name1 VALID UNTIL '2025-01-01'`
+* `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
+* `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 +09:00'`
+* `CREATE USER name1 VALID UNTIL 'infinity'`
+* `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'`
+
+<Note>
+  La cadena de fecha y hora se analiza con `parseDateTimeBestEffort`, que solo reconoce los tokens de zona horaria `UTC`, `GMT`, `Z`, `MSK`, `MSD` y desplazamientos numéricos como `+09:00` o `-05:00`. Las zonas horarias IANA con nombre, como `Asia/Tokyo` o `Europe/London`, no son compatibles, y un desplazamiento fijo no equivale a una zona IANA en regiones que observan el horario de verano, por lo que debe calcular el desplazamiento correcto para la fecha específica que está codificando.
+</Note>
+
+<div id="grantees-clause">
+  ## Cláusula GRANTEES
+</div>
+
+Especifica los usuarios o roles que pueden recibir [privilegios](/es/reference/statements/grant#privileges) de este usuario, siempre que este usuario también tenga concedidos todos los permisos de acceso necesarios con [GRANT OPTION](/es/reference/statements/grant#granting-privilege-syntax). Opciones de la cláusula `GRANTEES`:
+
+* `user` — Especifica un usuario al que este usuario puede conceder privilegios.
+* `role` — Especifica un rol al que este usuario puede conceder privilegios.
+* `ANY` — Este usuario puede conceder privilegios a cualquiera. Es la opción predeterminada.
+* `NONE` — Este usuario no puede conceder privilegios a nadie.
+
+Puede excluir cualquier usuario o rol mediante la expresión `EXCEPT`. Por ejemplo, `CREATE USER user1 GRANTEES ANY EXCEPT user2`. Esto significa que, si a `user1` se le han concedido algunos privilegios con `GRANT OPTION`, podrá conceder esos privilegios a cualquiera excepto a `user2`.
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+Cree la cuenta de usuario `mira` con la contraseña `qwerty`:
+
+```sql
+CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty';
+```
+
+`mira` debe iniciar la aplicación cliente en el host donde se ejecuta el servidor ClickHouse.
+
+Cree la cuenta de usuario `john` y asígnele roles:
+
+```sql
+CREATE USER john ROLE role1, role2;
+```
+
+Cree la cuenta de usuario `john`, asigne roles y establezca algunos de ellos como predeterminados:
+
+```sql
+CREATE USER john ROLE role1, role2 DEFAULT ROLE role1;
+```
+
+o
+
+```sql
+CREATE USER john ROLE role1, role2 DEFAULT ROLE ALL EXCEPT role2;
+```
+
+Cree la cuenta de usuario `john` y permítale otorgar sus privilegios al usuario de la cuenta `jack`:
+
+```sql
+CREATE USER john GRANTEES jack;
+```
+
+Utilice un parámetro de consulta para crear la cuenta de usuario `john`:
+
+```sql
+SET param_user=john;
+CREATE USER {user:Identifier};
+```

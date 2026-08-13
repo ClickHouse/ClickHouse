@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class FunctionArrayPushBack : public FunctionArrayPush
+class FunctionArrayPushBack final : public FunctionArrayPush
 {
 public:
     static constexpr auto name = "arrayPushBack";
@@ -35,7 +35,7 @@ For more information about the types of data in ClickHouse, see [Data types](/sq
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayPushBack(['a'], 'b') AS res;", "['a','b']"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayPushBack>(documentation);
 }

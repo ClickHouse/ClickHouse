@@ -2,7 +2,7 @@
     <query>select uniq(number) from (select DISTINCT number from numbers(1000000))</query>
     <query>select uniq(number) from (select number from numbers(1000000) group by number)</query>
 
-    <!--For new analyzer-->
+    <!--For the analyzer-->
     <query>select uniq(number) from (select DISTINCT number from numbers(1000000)) SETTINGS enable_analyzer=1</query>
     <query>select uniq(number) from (select number from numbers(1000000) group by number) SETTINGS enable_analyzer=1</query>
 </test>

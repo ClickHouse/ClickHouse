@@ -43,6 +43,7 @@ String StorageHiveMetadata::getVersion() const
     return std::to_string(last_modification_timestamp);
 }
 
+void registerStorageHiveMetadata(RemoteFileMetadataFactory & factory);
 void registerStorageHiveMetadata(RemoteFileMetadataFactory & factory)
 {
     auto creator = []() -> IRemoteFileMetadataPtr { return std::make_shared<StorageHiveMetadata>(); };

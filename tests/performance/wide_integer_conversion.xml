@@ -1,0 +1,15 @@
+<test>
+    <!-- Conversion of native integers to 256-bit integers and widening of 128-bit to 256-bit integers.
+         Random 64-bit values give a random sign for the signed cases, which is hostile to a branchy
+         sign extension. The unsigned and 128-bit target queries guard the already fast paths. -->
+
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toInt256(toInt64(cityHash64(number))))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toInt256(toInt64(bitAnd(cityHash64(number), 4611686018427387903))))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toUInt256(cityHash64(number)))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toInt256(toInt128(toInt64(cityHash64(number)))))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toInt128(toInt64(cityHash64(number))))</query>
+</test>

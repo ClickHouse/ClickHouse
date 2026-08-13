@@ -1,0 +1,11 @@
+<clickhouse>
+    <users>
+        <default remove="remove">
+        </default>
+        <common_user>
+            <password>qwerty</password>
+            <access_management>1</access_management>
+            <readonly>0</readonly>
+        </common_user>
+    </users>
+</clickhouse>

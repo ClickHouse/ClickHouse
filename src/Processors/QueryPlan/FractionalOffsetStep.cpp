@@ -5,6 +5,7 @@
 #include <Processors/OffsetTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -44,7 +45,8 @@ void FractionalOffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, co
 
 void FractionalOffsetStep::describeActions(FormatSettings & settings) const
 {
-    settings.out << String(settings.offset, ' ') << "Fractional Offset " << fractional_offset << '\n';
+    const auto & prefix = settings.detail_prefix;
+    settings.out << prefix << "Fractional Offset " << fractional_offset << '\n';
 }
 
 void FractionalOffsetStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -57,14 +59,15 @@ void FractionalOffsetStep::serialize(Serialization & ctx) const
     writeFloatBinary(fractional_offset, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> FractionalOffsetStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr FractionalOffsetStep::deserialize(Deserialization & ctx)
 {
-    Float64 offset;
+    Float64 offset = 0;
     readFloatBinary(offset, ctx.in);
 
     return std::make_unique<FractionalOffsetStep>(ctx.input_headers.front(), offset);
 }
 
+void registerFractionalOffsetStep(QueryPlanStepRegistry & registry);
 void registerFractionalOffsetStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("FractionalOffset", FractionalOffsetStep::deserialize);

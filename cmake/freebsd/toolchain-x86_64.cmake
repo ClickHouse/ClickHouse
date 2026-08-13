@@ -12,3 +12,11 @@ set (CMAKE_SYSROOT "${CMAKE_CURRENT_LIST_DIR}/../../contrib/sysroot/freebsd-x86_
 add_compile_definitions(_WITH_DPRINTF)
 
 set (CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)  # disable linkage check - it doesn't work in CMake
+
+# Make sure to ignore global clang configuration files which could influence the
+# build environment using --no-default-config
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --no-default-config")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --no-default-config")
+set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} --no-default-config")
+set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=lld --no-default-config")
+set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -fuse-ld=lld --no-default-config")

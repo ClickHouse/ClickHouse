@@ -1,10 +1,15 @@
 #pragma once
 
 #include <Functions/IFunction.h>
-#include <DataTypes/Native.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include "config.h"
+
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/IRBuilder.h>
+#    include <DataTypes/Native.h>
+#endif
 
 namespace DB
 {
@@ -49,7 +54,7 @@ public:
         auto * head = b.GetInsertBlock();
         auto * join = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
 
-        std::vector<std::pair<llvm::BasicBlock *, llvm::Value *>> returns;
+        VectorWithMemoryTracking<std::pair<llvm::BasicBlock *, llvm::Value *>> returns;
         for (size_t i = 0; i + 1 < arguments.size(); i += 2)
         {
             auto * then = llvm::BasicBlock::Create(head->getContext(), "then_" + std::to_string(i), head->getParent());
@@ -59,13 +64,18 @@ public:
             b.CreateCondBr(nativeBoolCast(b, cond), then, next);
             b.SetInsertPoint(then);
 
-            auto * value = nativeCast(b, arguments[i + 1], result_type);
+            /// Use `nativeCastWithDecimalScale` to correctly lift integer/float branches to a
+            /// `Decimal` `result_type` (and to convert between `Decimal` types of different scales).
+            /// Plain `nativeCast` reinterprets the integer bits without applying the `10^scale`
+            /// factor, which silently produces wrong values when the analyzer leaves a non-`Decimal`
+            /// branch unconverted (e.g. `if(cond, decimal_col, 1)` with `result_type = Decimal(P, S)`).
+            auto * value = nativeCastWithDecimalScale(b, arguments[i + 1], result_type);
             returns.emplace_back(b.GetInsertBlock(), value);
             b.CreateBr(join);
             b.SetInsertPoint(next);
         }
 
-        auto * else_value = nativeCast(b, arguments.back(), result_type);
+        auto * else_value = nativeCastWithDecimalScale(b, arguments.back(), result_type);
         returns.emplace_back(b.GetInsertBlock(), else_value);
         b.CreateBr(join);
 

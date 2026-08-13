@@ -1,0 +1,32 @@
+=== test_disk_04327_sed_local ===
+--- after substitution ---
+QUX
+QUX bar
+baz
+
+--- after deletion ---
+QUX
+QUX bar
+
+--- bad expression error ---
+sed wrote to stderr
+--- unchanged after failed sed ---
+QUX
+QUX bar
+
+=== test_disk_04327_sed_object_storage ===
+--- after substitution ---
+QUX
+QUX bar
+baz
+
+--- after deletion ---
+QUX
+QUX bar
+
+--- bad expression error ---
+sed wrote to stderr
+--- unchanged after failed sed ---
+QUX
+QUX bar
+

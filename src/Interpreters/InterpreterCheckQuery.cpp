@@ -24,6 +24,7 @@
 #include <Interpreters/ProcessList.h>
 
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTCheckDatabaseQuery.h>
 
 #include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
@@ -34,6 +35,7 @@
 #include <QueryPipeline/Pipe.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/checkDataPart.h>
 
 
 namespace DB
@@ -47,6 +49,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ABORTED;
 }
 
 namespace FailPoints
@@ -147,6 +150,11 @@ public:
         }
         catch (const Exception & e)
         {
+            /// Rethrow transient errors instead of reporting a false "broken" row. Keep swallowing the shutdown
+            /// ABORTED (what this catch was added for) — `isRetryableException` treats ABORTED as retryable.
+            if (e.code() != ErrorCodes::ABORTED && isRetryableException(std::current_exception()))
+                throw;
+
             is_finished = true;
             CheckResult result{"", false, e.displayText()};
             return result;
@@ -173,7 +181,7 @@ private:
 };
 
 /// Sends TableCheckTask to workers
-class TableCheckSource : public ISource
+class TableCheckSource final : public ISource
 {
 public:
     TableCheckSource(Strings databases_, ContextPtr context_, LoggerPtr log_)
@@ -204,7 +212,7 @@ protected:
 
         Chunk result;
         /// source should return at least one row to start pipeline
-        result.addColumn(ColumnUInt8::create(1, 1));
+        result.addColumn(ColumnUInt8::create(1, static_cast<UInt8>(1)));
         /// actual data stored in chunk info
         result.getChunkInfos().add(std::move(current_check_task));
         return result;
@@ -289,7 +297,7 @@ private:
 };
 
 /// Receives TableCheckTask and returns CheckResult converted to sinle-row chunk
-class TableCheckWorkerProcessor : public ISimpleTransform
+class TableCheckWorkerProcessor final : public ISimpleTransform
 {
 public:
     TableCheckWorkerProcessor(bool with_table_name_, LoggerPtr log_)
@@ -338,7 +346,7 @@ private:
 
 /// Accumulates all results and returns single value
 /// Used when settings.check_query_single_value_result is true
-class TableCheckResultEmitter : public IAccumulatingTransform
+class TableCheckResultEmitter final : public IAccumulatingTransform
 {
 public:
     explicit TableCheckResultEmitter(SharedHeader input_header)
@@ -417,8 +425,11 @@ BlockIO InterpreterCheckQuery::execute()
     bool is_table_name_in_output = false;
     if (const auto * check_query = query_ptr->as<ASTCheckTableQuery>())
     {
-        /// Check specific table
-        auto table_id = context->resolveStorageID(*check_query, Context::ResolveOrdinary);
+        /// Check specific table. Use `ResolveAll` so that an unqualified name
+        /// prefers a `TEMPORARY` table over a permanent one of the same name,
+        /// matching the scoping precedence of `SHOW CREATE TABLE` and
+        /// `DESCRIBE TABLE` introduced in #100966.
+        auto table_id = context->resolveStorageID(*check_query);
         auto table_check_task = std::make_shared<TableCheckTask>(table_id, check_query->getPartitionOrPartitionID(), context);
         worker_source = std::make_shared<TableCheckSource>(table_check_task, log);
         worker_source->addTotalRowsApprox(table_check_task->size());
@@ -430,6 +441,17 @@ BlockIO InterpreterCheckQuery::execute()
         auto databases = getAllDatabases(context);
         LOG_DEBUG(log, "Checking {} databases", databases.size());
         worker_source = std::make_shared<TableCheckSource>(databases, context, log);
+    }
+    else if (const auto * check_database_query = query_ptr->as<ASTCheckDatabaseQuery>())
+    {
+        /// Check specific database
+        const auto & database_name = check_database_query->getDatabase();
+        LOG_DEBUG(log, "Checking database name = {} ", database_name);
+        context->checkAccess(AccessType::CHECK, database_name);
+        auto database = DatabaseCatalog::instance().getDatabase(database_name);
+        database->checkDatabase();
+        BlockIO res;
+        return res;
     }
     else
     {
@@ -459,7 +481,7 @@ BlockIO InterpreterCheckQuery::execute()
         }
     }
 
-    OutputPort * resize_outport;
+    OutputPort * resize_outport = nullptr;
     {
         chassert(!processors->empty() && !processors->back()->getOutputs().empty());
         auto header = processors->back()->getOutputs().front().getSharedHeader();
@@ -473,7 +495,7 @@ BlockIO InterpreterCheckQuery::execute()
             connect(*worker_ports[i], *resize_inport_it);
         processors->emplace_back(resize_processor);
 
-        assert(resize_processor->getOutputs().size() == 1);
+        chassert(resize_processor->getOutputs().size() == 1);
         resize_outport = &resize_processor->getOutputs().front();
     }
 
@@ -498,6 +520,7 @@ BlockIO InterpreterCheckQuery::execute()
     return res;
 }
 
+void registerInterpreterCheckQuery(InterpreterFactory & factory);
 void registerInterpreterCheckQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

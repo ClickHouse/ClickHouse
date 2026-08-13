@@ -34,6 +34,10 @@ public:
 
     size_t getVersion() const;
 
+    /// The version exactly as it was set (parsed from AST or assigned), without collapsing
+    /// std::nullopt to the function's default. Empty means "no explicit version".
+    std::optional<size_t> getVersionIfExplicit() const { return version; }
+
     String getFunctionName() const;
     AggregateFunctionPtr getFunction() const { return function; }
 
@@ -54,7 +58,13 @@ public:
 
     Field getDefault() const override;
 
-    static bool strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type);
+    /// Compares name, parameters, and argument types.
+    /// When ignore_variant is false (default), also compares the state variant (Aggregation vs Window).
+    static bool strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type, bool ignore_variant = false);
+
+    /// Same as equals() but ignores the state variant (Aggregation vs Window).
+    bool equalsIgnoringVariant(const IDataType & rhs) const;
+
     bool equals(const IDataType & rhs) const override;
     void updateHashImpl(SipHash & hash) const override;
 
@@ -62,7 +72,7 @@ public:
     bool haveSubtypes() const override { return false; }
     bool shouldAlignRightInPrettyFormats() const override { return false; }
 
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
     bool supportsSparseSerialization() const override { return false; }
 
     bool isVersioned() const;

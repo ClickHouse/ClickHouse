@@ -1,5 +1,4 @@
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -17,7 +16,7 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
-class FunctionChar : public IFunction
+class FunctionChar final : public IFunction
 {
 public:
     static constexpr auto name = "char";
@@ -29,7 +28,7 @@ public:
     }
 
     bool isVariadic() const override { return true; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
@@ -153,7 +152,7 @@ SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionChar>(documentation, FunctionFactory::Case::Insensitive);
 }

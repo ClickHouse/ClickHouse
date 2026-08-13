@@ -1,4 +1,5 @@
 #include <Analyzer/TableFunctionNode.h>
+#include <Core/Block_fwd.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterExplainQuery.h>
@@ -52,7 +53,7 @@ private:
         return "";
     }
 
-    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
@@ -63,7 +64,7 @@ private:
     ASTPtr query = nullptr;
 };
 
-std::vector<size_t> TableFunctionExplain::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr /*context*/) const
+VectorWithMemoryTracking<size_t> TableFunctionExplain::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr /*context*/) const
 {
     const auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
     const auto & table_function_node_arguments = table_function_node.getArguments().getNodes();
@@ -95,7 +96,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
             getName(), kind_arg->formatForErrorMessage());
 
     ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.safeGet<String>());
-    auto explain_query = std::make_shared<ASTExplainQuery>(kind);
+    auto explain_query = make_intrusive<ASTExplainQuery>(kind);
 
     const auto * settings_arg = function->arguments->children[1]->as<ASTLiteral>();
     if (!settings_arg || settings_arg->value.getType() != Field::Types::String)
@@ -108,8 +109,12 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
     {
         const Settings & settings = context->getSettingsRef();
 
-        /// parse_only_internals_ = true - we don't want to parse `SET` keyword
-        ParserSetQuery settings_parser(/* parse_only_internals_ = */ true);
+        /// parse_only_internals_ = true - we don't want to parse `SET` keyword.
+        /// shorthand_syntax_ = false - `EXPLAIN` settings are read as numbers by
+        /// `InterpreterExplainQuery::checkAndGetSettings`, with no schema to check a bare
+        /// `SETTINGS name` against, so the shorthand must be rejected here exactly as
+        /// `ParserExplainQuery` rejects it for `EXPLAIN` itself.
+        ParserSetQuery settings_parser(/* parse_only_internals_ = */ true, /* shorthand_syntax_ = */ false);
         ASTPtr settings_ast = parseQuery(
             settings_parser, settings_str, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         explain_query->setSettings(std::move(settings_ast));
@@ -161,7 +166,7 @@ Block executeMonoBlock(QueryPipeline & pipeline)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected pulling pipeline");
 
     PullingPipelineExecutor pulling_executor(pipeline);
-    std::vector<Block> blocks;
+    Blocks blocks;
     while (true)
     {
         Block block;
@@ -201,7 +206,7 @@ InterpreterExplainQuery TableFunctionExplain::getInterpreter(ContextPtr context)
 
 void registerTableFunctionExplain(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionExplain>({.documentation = {
+    factory.registerFunction<TableFunctionExplain>({
             .description=R"(
                 Returns result of EXPLAIN query.
                 The function should not be called directly but can be invoked via `SELECT * FROM (EXPLAIN <query>)`.
@@ -211,7 +216,7 @@ void registerTableFunctionExplain(TableFunctionFactory & factory)
                 )",
             .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}},
             .category = FunctionDocumentation::Category::TableFunction
-        }});
+        });
 }
 
 }

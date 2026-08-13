@@ -25,3 +25,4 @@ services:
         source: ${JDBC_BRIDGE_LOGS:-}
         target: /app/logs
     stop_grace_period: 5s
+    cpus: 3

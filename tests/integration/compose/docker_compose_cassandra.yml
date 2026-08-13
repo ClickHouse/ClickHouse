@@ -3,3 +3,4 @@ services:
         image: cassandra:4.0
         restart: always
         stop_grace_period: 5s
+        cpus: 3

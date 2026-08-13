@@ -1,0 +1,231 @@
+---
+description: 'Documentación para la sentencia ALTER TABLE ... MODIFY QUERY'
+sidebarTitle: 'VIEW'
+slug: /sql-reference/statements/alter/view
+title: 'Sentencia ALTER TABLE ... MODIFY QUERY'
+doc_type: 'reference'
+---
+
+Puede modificar la consulta `SELECT` especificada al crear una [vista materializada](/es/reference/statements/create/view#materialized-view) con la sentencia `ALTER TABLE ... MODIFY QUERY` sin interrumpir el proceso de ingestión.
+
+Este comando está pensado para modificar una vista materializada creada con la cláusula `TO [db.]name`. No cambia la estructura de la tabla de almacenamiento subyacente ni la definición de las columnas de la vista materializada; por ello, el uso de este comando es muy limitado en las vistas materializadas creadas sin la cláusula `TO [db.]name`.
+
+**Ejemplo con tabla TO**
+
+```sql
+CREATE TABLE events (ts DateTime, event_type String)
+ENGINE = MergeTree ORDER BY (event_type, ts);
+
+CREATE TABLE events_by_day (ts DateTime, event_type String, events_cnt UInt64)
+ENGINE = SummingMergeTree ORDER BY (event_type, ts);
+
+CREATE MATERIALIZED VIEW mv TO events_by_day AS
+SELECT toStartOfDay(ts) ts, event_type, count() events_cnt
+FROM events
+GROUP BY ts, event_type;
+
+INSERT INTO events
+SELECT DATE '2020-01-01' + interval number * 900 second,
+       ['imp', 'click'][number%2+1]
+FROM numbers(100);
+
+SELECT ts, event_type, sum(events_cnt)
+FROM events_by_day
+GROUP BY ts, event_type
+ORDER BY ts, event_type;
+
+┌──────────────────ts─┬─event_type─┬─sum(events_cnt)─┐
+│ 2020-01-01 00:00:00 │ click      │              48 │
+│ 2020-01-01 00:00:00 │ imp        │              48 │
+│ 2020-01-02 00:00:00 │ click      │               2 │
+│ 2020-01-02 00:00:00 │ imp        │               2 │
+└─────────────────────┴────────────┴─────────────────┘
+
+-- Agreguemos la nueva medición `cost`
+-- y la nueva dimensión `browser`.
+
+ALTER TABLE events
+  ADD COLUMN browser String,
+  ADD COLUMN cost Float64;
+
+-- Las columnas no tienen que coincidir en una vista materializada y en TO
+-- (tabla de destino), por lo que el siguiente alter no interrumpe la inserción.
+
+ALTER TABLE events_by_day
+    ADD COLUMN cost Float64,
+    ADD COLUMN browser String after event_type,
+    MODIFY ORDER BY (event_type, ts, browser);
+
+INSERT INTO events
+SELECT Date '2020-01-02' + interval number * 900 second,
+       ['imp', 'click'][number%2+1],
+       ['firefox', 'safary', 'chrome'][number%3+1],
+       10/(number+1)%33
+FROM numbers(100);
+
+-- Las nuevas columnas `browser` y `cost` están vacías porque aún no hemos modificado la Vista Materializada.
+
+SELECT ts, event_type, browser, sum(events_cnt) events_cnt, round(sum(cost),2) cost
+FROM events_by_day
+GROUP BY ts, event_type, browser
+ORDER BY ts, event_type;
+
+┌──────────────────ts─┬─event_type─┬─browser─┬─events_cnt─┬─cost─┐
+│ 2020-01-01 00:00:00 │ click      │         │         48 │    0 │
+│ 2020-01-01 00:00:00 │ imp        │         │         48 │    0 │
+│ 2020-01-02 00:00:00 │ click      │         │         50 │    0 │
+│ 2020-01-02 00:00:00 │ imp        │         │         50 │    0 │
+│ 2020-01-03 00:00:00 │ click      │         │          2 │    0 │
+│ 2020-01-03 00:00:00 │ imp        │         │          2 │    0 │
+└─────────────────────┴────────────┴─────────┴────────────┴──────┘
+
+ALTER TABLE mv MODIFY QUERY
+  SELECT toStartOfDay(ts) ts, event_type, browser,
+  count() events_cnt,
+  sum(cost) cost
+  FROM events
+  GROUP BY ts, event_type, browser;
+
+INSERT INTO events
+SELECT Date '2020-01-03' + interval number * 900 second,
+       ['imp', 'click'][number%2+1],
+       ['firefox', 'safary', 'chrome'][number%3+1],
+       10/(number+1)%33
+FROM numbers(100);
+
+SELECT ts, event_type, browser, sum(events_cnt) events_cnt, round(sum(cost),2) cost
+FROM events_by_day
+GROUP BY ts, event_type, browser
+ORDER BY ts, event_type;
+
+┌──────────────────ts─┬─event_type─┬─browser─┬─events_cnt─┬──cost─┐
+│ 2020-01-01 00:00:00 │ click      │         │         48 │     0 │
+│ 2020-01-01 00:00:00 │ imp        │         │         48 │     0 │
+│ 2020-01-02 00:00:00 │ click      │         │         50 │     0 │
+│ 2020-01-02 00:00:00 │ imp        │         │         50 │     0 │
+│ 2020-01-03 00:00:00 │ click      │ firefox │         16 │  6.84 │
+│ 2020-01-03 00:00:00 │ click      │         │          2 │     0 │
+│ 2020-01-03 00:00:00 │ click      │ safary  │         16 │  9.82 │
+│ 2020-01-03 00:00:00 │ click      │ chrome  │         16 │  5.63 │
+│ 2020-01-03 00:00:00 │ imp        │         │          2 │     0 │
+│ 2020-01-03 00:00:00 │ imp        │ firefox │         16 │ 15.14 │
+│ 2020-01-03 00:00:00 │ imp        │ safary  │         16 │  6.14 │
+│ 2020-01-03 00:00:00 │ imp        │ chrome  │         16 │  7.89 │
+│ 2020-01-04 00:00:00 │ click      │ safary  │          1 │   0.1 │
+│ 2020-01-04 00:00:00 │ click      │ firefox │          1 │   0.1 │
+│ 2020-01-04 00:00:00 │ imp        │ firefox │          1 │   0.1 │
+│ 2020-01-04 00:00:00 │ imp        │ chrome  │          1 │   0.1 │
+└─────────────────────┴────────────┴─────────┴────────────┴───────┘
+
+-- !!! Durante `MODIFY ORDER BY` se introdujo implícitamente la PRIMARY KEY.
+
+SHOW CREATE TABLE events_by_day FORMAT TSVRaw
+
+CREATE TABLE test.events_by_day
+(
+    `ts` DateTime,
+    `event_type` String,
+    `browser` String,
+    `events_cnt` UInt64,
+    `cost` Float64
+)
+ENGINE = SummingMergeTree
+PRIMARY KEY (event_type, ts)
+ORDER BY (event_type, ts, browser)
+
+-- !!! La definición de las columnas no ha cambiado, pero no importa, no estamos consultando
+-- la MATERIALIZED VIEW, sino la tabla TO (almacenamiento).
+-- La sección SELECT está actualizada.
+
+SHOW CREATE TABLE mv FORMAT TSVRaw;
+
+CREATE MATERIALIZED VIEW test.mv TO test.events_by_day
+(
+    `ts` DateTime,
+    `event_type` String,
+    `events_cnt` UInt64
+) AS
+SELECT
+    toStartOfDay(ts) AS ts,
+    event_type,
+    browser,
+    count() AS events_cnt,
+    sum(cost) AS cost
+FROM test.events
+GROUP BY
+    ts,
+    event_type,
+    browser
+```
+
+**Ejemplo sin tabla TO**
+
+La aplicación es muy limitada porque solo se puede cambiar la sección `SELECT` sin añadir columnas nuevas.
+
+```sql
+CREATE TABLE src_table (`a` UInt32) ENGINE = MergeTree ORDER BY a;
+CREATE MATERIALIZED VIEW mv (`a` UInt32) ENGINE = MergeTree ORDER BY a AS SELECT a FROM src_table;
+INSERT INTO src_table (a) VALUES (1), (2);
+SELECT * FROM mv;
+```
+
+```text
+┌─a─┐
+│ 1 │
+│ 2 │
+└───┘
+```
+
+```sql
+ALTER TABLE mv MODIFY QUERY SELECT a * 2 as a FROM src_table;
+INSERT INTO src_table (a) VALUES (3), (4);
+SELECT * FROM mv;
+```
+
+```text
+┌─a─┐
+│ 6 │
+│ 8 │
+└───┘
+┌─a─┐
+│ 1 │
+│ 2 │
+└───┘
+```
+
+<div id="alter-table--modify-refresh-statement">
+  ## Sentencia ALTER TABLE ... MODIFY REFRESH
+</div>
+
+`ALTER TABLE ... MODIFY REFRESH` cambia los parámetros de actualización de una [vista materializada actualizable](/es/reference/statements/create/view#refreshable-materialized-view), incluidos la programación, las dependencias, la aleatorización y la [configuración de actualización](/es/reference/statements/create/view#refresh-settings).
+
+```sql
+ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPENDS ON ...] [SETTINGS ...]
+```
+
+La programación (`EVERY` o `AFTER`) es obligatoria: la sentencia reemplaza *todos* los parámetros de actualización de una vez. Cualquier cláusula no especificada — `RANDOMIZE FOR`, `DEPENDS ON` o `SETTINGS` — se elimina o se restablece a sus valores predeterminados. Para cambiar solo la configuración de actualización, repita la programación actual.
+
+```sql
+-- Cambiar la programación.
+ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
+
+-- Cambiar la configuración de reintentos (la programación debe repetirse).
+ALTER TABLE rmv MODIFY REFRESH EVERY 1 HOUR
+SETTINGS refresh_retries = 5,
+         refresh_retry_initial_backoff_ms = 500,
+         refresh_retry_max_backoff_ms = 60000;
+
+-- Agregar o mantener una dependencia.
+ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
+
+-- Eliminar la dependencia omitiendo `DEPENDS ON`.
+ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
+```
+
+Limitaciones:
+
+* `ALTER TABLE ... MODIFY SETTING` no se admite en las vistas materializadas; la configuración de actualización solo puede modificarse mediante `MODIFY REFRESH`.
+* No se admite agregar ni quitar `APPEND`.
+* La configuración de actualización `all_replicas` no puede cambiarse después de crear la vista.
+
+La lista completa de la configuración de actualización está documentada en [Configuración de actualización](/es/reference/statements/create/view#refresh-settings). El estado de actualización, incluida la configuración aplicada actualmente, puede verse en [`system.view_refreshes`](/es/reference/system-tables/view_refreshes).

@@ -2,6 +2,8 @@
 
 #include <Parsers/IAST.h>
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -15,9 +17,12 @@ public:
 
     String getID(char) const override { return "Foreign Key"; }
 
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTForeignKeyDeclaration>();
+        auto res = make_intrusive<ASTForeignKeyDeclaration>();
         res->name = name;
         return res;
     }

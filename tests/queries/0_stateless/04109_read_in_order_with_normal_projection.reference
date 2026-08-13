@@ -1,0 +1,25 @@
+all_1_3_1
+all_4_6_1
+---
+proj	all_4_6_1
+---
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Union
+      Sorting
+        Expression ((Before ORDER BY + Projection))
+          Expression ((WHERE + Change column names to column identifiers))
+            ReadFromMergeTree (default.mt)
+      Expression
+        ReadFromMergeTree (proj)
+---
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Union
+      Sorting
+        Expression ((Before ORDER BY + Projection))
+          Expression ((WHERE + Change column names to column identifiers))
+            ReadFromMergeTree (default.mt)
+      Expression
+        ReadFromMergeTree (proj)
+---

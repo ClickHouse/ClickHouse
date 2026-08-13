@@ -3,6 +3,8 @@
 #include <Parsers/IAST.h>
 #include <Core/Names.h>
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -159,12 +161,19 @@ public:
 
     void setFinal();
 
+    /// Reorder children to match the canonical order used by ParserSelectQuery.
+    /// The KQL parser may add children in a different order, which causes
+    /// tree hash mismatches when comparing with a reparsed SQL representation.
+    void normalizeChildrenOrder();
+
     QueryKind getQueryKind() const override { return QueryKind::Select; }
     bool hasQueryParameters() const;
 
     NameToNameMap getQueryParameters() const;
 
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     bool isLimitByAll() const
     {

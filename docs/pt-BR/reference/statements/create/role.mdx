@@ -1,0 +1,53 @@
+---
+description: 'Documentação para Role'
+sidebarTitle: 'ROLE'
+slug: /sql-reference/statements/create/role
+title: 'CREATE ROLE'
+doc_type: 'reference'
+---
+
+Cria novas [roles](/pt-BR/concepts/features/security/access-rights#role-management). Uma role é um conjunto de [privilégios](/pt-BR/reference/statements/grant#granting-privilege-syntax). Um [usuário](/pt-BR/reference/statements/create/user) ao qual uma role é atribuída recebe todos os privilégios dessa role.
+
+Sintaxe:
+
+```sql
+CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+```
+
+<div id="managing-roles">
+  ## Gerenciamento de roles
+</div>
+
+Um usuário pode ter várias roles atribuídas. Os usuários podem aplicar suas roles atribuídas em combinações arbitrárias por meio da instrução [SET ROLE](/pt-BR/reference/statements/set-role). O escopo final dos privilégios é a combinação de todos os privilégios de todas as roles aplicadas. Se um usuário tiver privilégios concedidos diretamente à sua conta de usuário, eles também serão combinados com os privilégios concedidos pelas roles.
+
+Um usuário pode ter roles padrão, que são aplicadas no login. Para definir roles padrão, use a instrução [SET DEFAULT ROLE](/pt-BR/reference/statements/set-role#set-default-role) ou a instrução [ALTER USER](/pt-BR/reference/statements/alter/user).
+
+Para revogar uma role, use a instrução [REVOKE](/pt-BR/reference/statements/revoke).
+
+Para excluir uma role, use a instrução [DROP ROLE](/pt-BR/reference/statements/drop#drop-role). A role excluída é automaticamente revogada de todos os usuários e roles aos quais foi atribuída.
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+```sql
+CREATE ROLE accountant;
+GRANT SELECT ON db.* TO accountant;
+```
+
+Esta sequência de consultas cria a role `accountant`, que tem o privilégio de ler dados do banco de dados `db`.
+
+Atribuindo a role ao usuário `mira`:
+
+```sql
+GRANT accountant TO mira;
+```
+
+Depois que a role é atribuída, o usuário pode ativá-la e executar as consultas permitidas. Por exemplo:
+
+```sql
+SET ROLE accountant;
+SELECT * FROM db.*;
+```

@@ -1,0 +1,30 @@
+== numeric ==
+3
+135
+7
+== strings ==
+Hello, world!
+Hello, Alice!
+Hello, Bob!
+Hello, Привет!
+ababab
+4
+2
+== nested ==
+9
+10
+== block ==
+1000	10890
+== multi-string ==
+hello|world|!
+0|1|2
+1|2|3
+2|3|4
+2000	388000
+500
+== v128 ==
+3
+18446744073709551616
+0
+36893488147419103232
+9900

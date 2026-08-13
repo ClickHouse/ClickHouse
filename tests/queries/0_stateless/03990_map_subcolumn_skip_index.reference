@@ -1,0 +1,60 @@
+-- bloom_filter mapKeys: equals with existing key
+Granules: 3/3
+Granules: 1/3
+0
+-- bloom_filter mapKeys: equals with non-existing key
+-- bloom_filter mapKeys: equals with default value - index must NOT skip (safe)
+Granules: 3/3
+-- bloom_filter mapKeys: IN with existing key
+Granules: 3/3
+Granules: 1/3
+1
+-- bloom_filter mapKeys: NOT IN with existing key
+1
+2
+-- bloom_filter mapKeys: notEquals with existing key
+Granules: 3/3
+Granules: 3/3
+-- bloom_filter mapValues: equals with existing key
+Granules: 3/3
+Granules: 1/3
+0
+-- bloom_filter mapValues: IN with existing key
+Granules: 3/3
+Granules: 1/3
+1
+-- text index mapKeys: mapContains with existing key
+Granules: 3/3
+Granules: 1/3
+-- text index mapKeys: has with existing key
+Granules: 3/3
+Granules: 1/3
+-- text index mapKeys: operator[] equals - index on mapKeys used for key filtering
+Granules: 3/3
+Granules: 1/3
+0
+-- text index mapKeys: operator[] equals with non-existing key
+-- text index mapKeys: operator[] equals with default value - should not use index
+Granules: 3/3
+-- text index mapValues: operator[] equals with existing key
+Granules: 3/3
+Granules: 1/3
+0
+-- text index mapValues: operator[] equals with default value - should not use index
+Granules: 3/3
+-- bloom_filter mapKeys with UInt64 key: equals
+Granules: 3/3
+Granules: 1/3
+0
+-- bloom_filter mapKeys with UInt64 key: non-existing key
+-- Both indexes: equals uses keys index
+Granules: 3/3
+Granules: 1/3
+Granules: 1/1
+0
+-- Correctness with optimization
+3	3
+6	6
+-- Correctness without optimization
+3	3
+6	6

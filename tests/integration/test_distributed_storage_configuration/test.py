@@ -11,7 +11,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/config.d/overrides.xml"],
-    tmpfs=["/disk1:size=100M", "/disk2:size=100M"],
+    tmpfs=["/test_dist_conf_disk1:size=100M", "/test_dist_conf_disk2:size=100M"],
 )
 
 
@@ -19,8 +19,9 @@ node = cluster.add_instance(
 def start_cluster():
     try:
         cluster.start()
+        node.query("DROP DATABASE IF EXISTS test")
         node.query(
-            "CREATE DATABASE IF NOT EXISTS test ENGINE=Ordinary",
+            "CREATE DATABASE test ENGINE=Ordinary",
             settings={"allow_deprecated_database_ordinary": 1},
         )  # Different paths with Atomic
         yield cluster
@@ -44,6 +45,7 @@ def _files_in_dist_mon(node, root, table):
 
 
 def test_insert(start_cluster):
+    node.query("DROP TABLE IF EXISTS test.foo")
     node.query("CREATE TABLE test.foo (key Int) Engine=Memory()")
     node.query(
         """
@@ -66,8 +68,8 @@ def test_insert(start_cluster):
             "use_compact_format_in_distributed_parts_names": "0",
         },
     )
-    assert _files_in_dist_mon(node, "disk1", "dist_foo") == 1
-    assert _files_in_dist_mon(node, "disk2", "dist_foo") == 0
+    assert _files_in_dist_mon(node, "test_dist_conf_disk1", "dist_foo") == 1
+    assert _files_in_dist_mon(node, "test_dist_conf_disk2", "dist_foo") == 0
 
     assert node.query("SELECT count() FROM test.dist_foo") == "100\n"
     node.query("SYSTEM FLUSH DISTRIBUTED test.dist_foo")
@@ -84,8 +86,8 @@ def test_insert(start_cluster):
             "use_compact_format_in_distributed_parts_names": "0",
         },
     )
-    assert _files_in_dist_mon(node, "disk1", "dist2_foo") == 0
-    assert _files_in_dist_mon(node, "disk2", "dist2_foo") == 1
+    assert _files_in_dist_mon(node, "test_dist_conf_disk1", "dist2_foo") == 0
+    assert _files_in_dist_mon(node, "test_dist_conf_disk2", "dist2_foo") == 1
 
     assert node.query("SELECT count() FROM test.dist2_foo") == "300\n"
     node.query("SYSTEM FLUSH DISTRIBUTED test.dist2_foo")
@@ -95,7 +97,7 @@ def test_insert(start_cluster):
     # DROP
     #
     node.query("DROP TABLE test.dist2_foo")
-    for disk in ["disk1", "disk2"]:
+    for disk in ["test_dist_conf_disk1", "test_dist_conf_disk2"]:
         node.exec_in_container(
             ["bash", "-c", "test ! -e /{}/data/test/dist2_foo".format(disk)]
         )

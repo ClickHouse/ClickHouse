@@ -1,0 +1,85 @@
+{
+  "groups": [
+    {
+      "group": "Primeros pasos",
+      "pages": [
+        "es/chdb/getting-started"
+      ],
+      "root": "es/chdb/index"
+    },
+    {
+      "group": "Integraciones de lenguajes",
+      "pages": [
+        "es/chdb/install/python",
+        "es/chdb/install/nodejs",
+        "es/chdb/install/go",
+        "es/chdb/install/rust",
+        "es/chdb/install/bun",
+        "es/chdb/install/c"
+      ],
+      "root": "es/chdb/install/index"
+    },
+    {
+      "group": "DataStore",
+      "pages": [
+        "es/chdb/datastore/quickstart",
+        "es/chdb/datastore/factory-methods",
+        "es/chdb/datastore/query-building",
+        "es/chdb/datastore/aggregation",
+        "es/chdb/datastore/accessors",
+        "es/chdb/datastore/io",
+        "es/chdb/datastore/execution-model",
+        "es/chdb/datastore/pandas-compat",
+        "es/chdb/datastore/class-reference"
+      ],
+      "root": "es/chdb/datastore/index"
+    },
+    {
+      "group": "Configuración",
+      "pages": [
+        "es/chdb/configuration/execution-engine",
+        "es/chdb/configuration/function-config",
+        "es/chdb/configuration/performance-mode"
+      ],
+      "root": "es/chdb/configuration/index"
+    },
+    {
+      "group": "Depuración",
+      "pages": [
+        "es/chdb/debugging/explain",
+        "es/chdb/debugging/logging",
+        "es/chdb/debugging/profiling"
+      ],
+      "root": "es/chdb/debugging/index"
+    },
+    {
+      "group": "Guías para desarrolladores",
+      "pages": [
+        "es/chdb/guides/jupysql",
+        "es/chdb/guides/querying-pandas",
+        "es/chdb/guides/querying-apache-arrow",
+        "es/chdb/guides/querying-s3-bucket",
+        "es/chdb/guides/querying-parquet",
+        "es/chdb/guides/query-remote-clickhouse",
+        "es/chdb/guides/clickhouse-local",
+        "es/chdb/guides/migration-from-pandas",
+        "es/chdb/guides/pandas-cookbook",
+        "es/chdb/guides/pandas-differences",
+        "es/chdb/guides/pandas-performance",
+        "es/chdb/guides/pandas-to-sql"
+      ],
+      "root": "es/chdb/guides/index"
+    },
+    {
+      "group": "Referencia técnica",
+      "pages": [
+        "es/chdb/reference/data-formats",
+        "es/chdb/reference/sql-reference",
+        "es/chdb/api/python"
+      ],
+      "root": "es/chdb/reference/index"
+    }
+  ],
+  "icon": "/images/icons/icon-chdb.svg",
+  "item": "chDB"
+}
