@@ -45,6 +45,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Named (not anonymous) so the TargetSpecific::* namespaces the macro generates cannot collide with
@@ -216,6 +217,13 @@ struct CentroidMatrix
     /// offsets is one number per row: the end position of that row's slice.
     void assignBlock(const Float32 * vec_data, const ColumnArray::Offsets & offsets, size_t n, PaddedPODArray<UInt32> & res) const
     {
+        /// Both builders reject an empty or zero-dimension centroid set, so either being zero here is a
+        /// programming error rather than bad input. Stated explicitly because it is a real precondition -
+        /// `dim` divides the tile size below - and because it does not survive the call boundary otherwise.
+        if (k == 0 || dim == 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "assignCentroid: centroid matrix is empty (k = {}, dim = {})", k, dim);
+
         for (size_t row = 0; row < n; ++row) /// validate dimensions up front - the hot loop in GEMM needs that
         {
             size_t start = row ? offsets[row - 1] : 0;
@@ -235,7 +243,7 @@ struct CentroidMatrix
 
         VectorWithMemoryTracking<Float32> best_score(n, std::numeric_limits<Float32>::max());
         for (size_t row = 0; row < n; ++row)
-            res[row] = ids.empty() ? 0 : ids[0];
+            res[row] = ids[0];
 
         /// Worked example to understand a TILE :
         /// With k=32768 and dim=768, the full centroid matrix is 32768 × 768 × 4 B = 100 MB.
