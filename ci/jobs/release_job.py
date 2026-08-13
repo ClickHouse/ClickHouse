@@ -330,13 +330,13 @@ def main():
     # out-of-order ref. The creation steps below run only when it does; a
     # recovery (skip-repo/skip-docker) or an out-of-order full run skips them
     # without erroring and just re-exports repos / rebuilds docker.
-    # If a prior step failed (ok is False) the prepared flags are unread; default to recovery so no creation step fires.
-    is_recovery = True
+    # If a prior step failed (ok is False) the prepared flags are unread; default both landmarks to "already done" so no creation step fires.
+    is_tag_pushed = True
     is_bump_landed = True
     if ok:
         with open(RELEASE_INFO_FILE) as f:
             _prepared = json.load(f)
-        is_recovery = _prepared["is_recovery"]
+        is_tag_pushed = _prepared["is_tag_pushed"]
         is_bump_landed = _prepared["is_bump_landed"]
 
     # skip-repo / skip-docker mark a partial run that only re-publishes artifacts
@@ -344,7 +344,7 @@ def main():
     # to a new release, they would otherwise fall through to the creation steps
     # below (push tag, bump version, PRs) and produce a partial new release, so
     # reject that misuse and require the release tag instead.
-    if ok and not is_recovery and (args.skip_repo or args.skip_docker):
+    if ok and not is_tag_pushed and (args.skip_repo or args.skip_docker):
 
         def _require_recovery_ref():
             raise RuntimeError(
@@ -367,8 +367,8 @@ def main():
     if args.dry_run:
         # No gh reads on dry-run (it may be a local run without gh auth): fall
         # back to the fresh-release signal so the generation is still previewed.
-        release_pr_absent = not is_recovery
-        release_pr_needs_merge = not is_recovery
+        release_pr_absent = not is_tag_pushed
+        release_pr_needs_merge = not is_tag_pushed
     else:
         release_pr_branch = None
         release_pr_state = ""  # "MERGED" | "OPEN" | ""
@@ -405,7 +405,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if not is_recovery:
+    if not is_tag_pushed:
         step(
             name="Push Git Tag for the Release",
             command=[
@@ -415,7 +415,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if args.release_type == "new" and not is_recovery:
+    if args.release_type == "new" and not is_tag_pushed:
         step(
             name="Push New Release Branch",
             command=[

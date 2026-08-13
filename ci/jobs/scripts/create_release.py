@@ -211,10 +211,8 @@ class ReleaseInfo:
     codename: str
     # True once the branch tip has moved past this release (its post-release bump landed, or a newer release advanced it further), so this is no longer the branch's current release.
     is_bump_landed: bool = True
-    # Whether this run re-publishes an existing release instead of creating one
-    # (tag/version-bump/changelog) — true for an already-released or
-    # out-of-order ref.
-    is_recovery: bool = True
+    # True once the release tag for this commit has been pushed, so this run re-publishes an existing release rather than creating one.
+    is_tag_pushed: bool = True
     changelog_pr: str = ""
     version_bump_pr: str = ""
     prs_merged: bool = False
@@ -349,7 +347,7 @@ class ReleaseInfo:
         #   * otherwise -> create the next release.
         # The tag ref is checked before the is_bump_landed guard so a release whose bump already landed can still be recovered by its tag.
         if Git.tag_exists(commit_ref):
-            self.is_recovery = True
+            self.is_tag_pushed = True
             assert release_tag == commit_ref, (
                 f"ref [{commit_ref}] is a release tag but the version at its commit "
                 f"describes [{release_tag}]; refusing to re-publish a different "
@@ -383,7 +381,7 @@ class ReleaseInfo:
                     f"bump on the branch, then dispatch its tip, or pass a "
                     f"release tag to recover an existing release."
                 )
-            self.is_recovery = True
+            self.is_tag_pushed = True
         else:
             # Creating (not recovering). The recovery branches above are exempt.
             if release_type == "patch":
@@ -412,7 +410,7 @@ class ReleaseInfo:
                         f"ahead of the last release tag {last_tag}. Fix the branch (apply "
                         f"the post-release version bump) before creating a new release"
                     )
-            self.is_recovery = False
+            self.is_tag_pushed = False
         self.release_type = release_type
         return self
 
