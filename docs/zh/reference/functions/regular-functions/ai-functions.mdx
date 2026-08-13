@@ -29,7 +29,7 @@ AI 函数是 ClickHouse 中的内置函数，可用于调用 AI 或生成嵌入�
   ## 配置
 </div>
 
-AI 函数会引用一个**命名集合**，其中存储了提供商凭据和配置信息。可以针对不同的函数或函数调用创建并使用不同的命名集合。例如，你可能希望为文本函数 (`aiGenerate`、`aiClassify`、`aiExtract`、`aiTranslate`) 定义一个命名集合，而为嵌入向量函数 (`aiEmbed`、`aiSimilarity`) 定义另一个，因为它们需要不同的端点，通常也会使用不同的模型。
+AI 函数会引用一个**命名集合**，其中存储了提供商凭据和配置信息。可以针对不同的函数或函数调用创建并使用不同的命名集合。例如，你可能希望为文本函数 (`aiGenerate`、`aiClassify`、`aiFilter`、`aiExtract`、`aiTranslate`) 定义一个命名集合，而为嵌入向量函数 (`aiEmbed`、`aiSimilarity`) 定义另一个，因为它们需要不同的端点，通常也会使用不同的模型。
 
 以下是创建包含提供商凭据的命名集合的示例语句：一个用于聊天端点，另一个用于 embedding 端点：
 
@@ -74,7 +74,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
 
 1. 参数映射中的 `credentials` 键 (如果存在) ；
 2. 否则，使用适用的默认凭据设置：
-   * 文本函数 (`aiGenerate`、`aiClassify`、`aiExtract`、`aiTranslate`) 使用 [`ai_function_text_default_credentials`](/zh/reference/settings/session-settings/ai-function#ai_function_text_default_credentials)；
+   * 文本函数 (`aiGenerate`、`aiClassify`、`aiFilter`、`aiExtract`、`aiTranslate`) 使用 [`ai_function_text_default_credentials`](/zh/reference/settings/session-settings/ai-function#ai_function_text_default_credentials)；
    * 嵌入向量函数 (`aiEmbed`、`aiSimilarity`) 使用 [`ai_function_embedding_default_credentials`](/zh/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials)。
 
 如果两者都未设置，调用就会失败。文本函数和嵌入向量函数分别使用不同的默认设置，因为聊天补全所用的端点与嵌入向量所用的端点不同。
@@ -87,6 +87,13 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.');
 
 -- Overrides the default for this call:
 SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
+```
+
+使用 `aiFilter` 通过自然语言条件过滤行；该函数返回 `UInt8`，可直接用于 `WHERE`：
+
+```sql
+SELECT * FROM reviews
+WHERE aiFilter(body, 'the customer is angry about shipping');
 ```
 
 <div id="parameter-map">

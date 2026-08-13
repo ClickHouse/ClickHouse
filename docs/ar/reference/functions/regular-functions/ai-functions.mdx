@@ -29,7 +29,7 @@ doc_type: 'reference'
   ## الإعداد
 </div>
 
-تشير دوال الذكاء الاصطناعي إلى **مجموعة مُسمّاة** تخزّن بيانات اعتماد الموفّر وإعداداته. ويمكن إنشاء مجموعات مُسمّاة مختلفة واستخدامها مع دوال مختلفة أو مع استدعاءات مختلفة للدوال. على سبيل المثال، قد ترغب في تعريف مجموعة مُسمّاة مختلفة لاستخدامها مع دوال النص (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) مقابل دوال التضمين (`aiEmbed`, `aiSimilarity`)، إذ تتطلب نقاط نهاية مختلفة وتستخدم عادةً نماذج مختلفة.
+تشير دوال الذكاء الاصطناعي إلى **مجموعة مُسمّاة** تخزّن بيانات اعتماد الموفّر وإعداداته. ويمكن إنشاء مجموعات مُسمّاة مختلفة واستخدامها مع دوال مختلفة أو مع استدعاءات مختلفة للدوال. على سبيل المثال، قد ترغب في تعريف مجموعة مُسمّاة مختلفة لاستخدامها مع دوال النص (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`) مقابل دوال التضمين (`aiEmbed`, `aiSimilarity`)، إذ تتطلب نقاط نهاية مختلفة وتستخدم عادةً نماذج مختلفة.
 
 مثال على تعليمة لإنشاء مجموعة مُسمّاة تحتوي على بيانات اعتماد الموفّر، إحداهما مع نقطة نهاية للدردشة والأخرى مع نقطة نهاية للتضمين:
 
@@ -74,7 +74,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
 
 1. مفتاح `credentials` في خريطة المَعلمات الخاصة بها، إن وُجد؛
 2. وإلا، إعداد بيانات الاعتماد الافتراضي المنطبق:
-   * [`ai_function_text_default_credentials`](/ar/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) لدوال النص (`aiGenerate` و`aiClassify` و`aiExtract` و`aiTranslate`);
+   * [`ai_function_text_default_credentials`](/ar/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) لدوال النص (`aiGenerate` و`aiClassify` و`aiFilter` و`aiExtract` و`aiTranslate`);
    * [`ai_function_embedding_default_credentials`](/ar/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials) لدوال التضمين (`aiEmbed` و`aiSimilarity`).
 
 إذا لم يُضبط أيٌّ منهما، يفشل الاستدعاء. تستخدم دوال النص ودوال التضمين إعدادات افتراضية منفصلة لأن نقطة النهاية الخاصة بإكمالات الدردشة تختلف عن نظيرتها الخاصة بالتضمينات.
@@ -87,6 +87,13 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.');
 
 -- Overrides the default for this call:
 SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
+```
+
+رشِّح الصفوف باستخدام شرط بلغة طبيعية عبر `aiFilter`، إذ تُرجع `UInt8` ويمكن استخدامها مباشرةً في `WHERE`:
+
+```sql
+SELECT * FROM reviews
+WHERE aiFilter(body, 'the customer is angry about shipping');
 ```
 
 <div id="parameter-map">

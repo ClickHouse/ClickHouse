@@ -29,7 +29,7 @@ Todas as funções compartilham uma infraestrutura comum que fornece:
   ## Configuração
 </div>
 
-As funções de IA usam uma **coleção nomeada** que armazena as credenciais do provedor e a configuração. É possível criar e usar diferentes coleções nomeadas para funções distintas ou chamadas de função específicas. Por exemplo, talvez você queira definir uma coleção nomeada diferente para usar com as funções de texto (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) em vez das funções de embedding (`aiEmbed`, `aiSimilarity`), que requerem endpoints diferentes e geralmente usam modelos diferentes.
+As funções de IA usam uma **coleção nomeada** que armazena as credenciais do provedor e a configuração. É possível criar e usar diferentes coleções nomeadas para funções distintas ou chamadas de função específicas. Por exemplo, talvez você queira definir uma coleção nomeada diferente para usar com as funções de texto (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`) em vez das funções de embedding (`aiEmbed`, `aiSimilarity`), que requerem endpoints diferentes e geralmente usam modelos diferentes.
 
 Exemplo de instrução para criar uma coleção nomeada com credenciais do provedor: uma com endpoint de chat e outra com endpoint de embedding:
 
@@ -74,7 +74,7 @@ Uma função determina a coleção nomeada a ser usada na seguinte ordem:
 
 1. a chave `credentials` do seu mapa de parâmetros, quando presente;
 2. caso contrário, a configuração padrão de credenciais aplicável:
-   * [`ai_function_text_default_credentials`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) para as funções de texto (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`);
+   * [`ai_function_text_default_credentials`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) para as funções de texto (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`);
    * [`ai_function_embedding_default_credentials`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials) para as funções de embedding (`aiEmbed`, `aiSimilarity`).
 
 Se nenhum dos dois estiver definido, a chamada falhará. As funções de texto e de embedding usam configurações padrão separadas porque um endpoint de conclusões de chat é diferente de um usado para embeddings.
@@ -87,6 +87,13 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.');
 
 -- Overrides the default for this call:
 SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
+```
+
+Filtre linhas com uma condição em linguagem natural usando `aiFilter`, que retorna `UInt8` e pode ser usada diretamente em `WHERE`:
+
+```sql
+SELECT * FROM reviews
+WHERE aiFilter(body, 'the customer is angry about shipping');
 ```
 
 <div id="parameter-map">

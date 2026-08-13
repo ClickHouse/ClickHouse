@@ -29,7 +29,7 @@ Toutes les fonctions partagent une infrastructure commune qui fournit :
   ## Configuration
 </div>
 
-Les fonctions d’IA s’appuient sur une **collection nommée** qui stocke les identifiants du fournisseur et la configuration. Différentes collections nommées peuvent être créées et utilisées pour différentes fonctions ou différents appels de fonction. Par exemple, vous pouvez définir une collection nommée distincte pour les fonctions de texte (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`), et une autre pour les fonctions d’embedding (`aiEmbed`, `aiSimilarity`), qui nécessitent des points de terminaison différents et utilisent généralement des modèles différents.
+Les fonctions d’IA s’appuient sur une **collection nommée** qui stocke les identifiants du fournisseur et la configuration. Différentes collections nommées peuvent être créées et utilisées pour différentes fonctions ou différents appels de fonction. Par exemple, vous pouvez définir une collection nommée distincte pour les fonctions de texte (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`), et une autre pour les fonctions d’embedding (`aiEmbed`, `aiSimilarity`), qui nécessitent des points de terminaison différents et utilisent généralement des modèles différents.
 
 Exemple d’instruction pour créer une collection nommée avec les identifiants du fournisseur, l’une avec un point de terminaison de chat et l’autre avec un point de terminaison d’embedding :
 
@@ -73,8 +73,8 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
 Une fonction détermine la collection nommée à utiliser dans l’ordre suivant :
 
 1. la clé `credentials` de sa map de paramètres, lorsqu’elle est présente ;
-2. sinon, le paramètre par défaut applicable pour les identifiants :
-   * [`ai_function_text_default_credentials`](/fr/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) pour les fonctions de texte (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) ;
+2. sinon, le paramètre d’identifiant par défaut applicable :
+   * [`ai_function_text_default_credentials`](/fr/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) pour les fonctions de texte (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`) ;
    * [`ai_function_embedding_default_credentials`](/fr/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials) pour les fonctions d’embedding (`aiEmbed`, `aiSimilarity`).
 
 Si aucun des deux n’est défini, l’appel échoue. Les fonctions de texte et d’embedding utilisent des paramètres par défaut distincts, car un point de terminaison de chat-completions diffère de celui des embeddings.
@@ -87,6 +87,13 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.');
 
 -- Overrides the default for this call:
 SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
+```
+
+Filtrez les lignes à l’aide d’une condition en langage naturel avec `aiFilter`, qui renvoie un `UInt8` et peut être utilisée directement dans `WHERE` :
+
+```sql
+SELECT * FROM reviews
+WHERE aiFilter(body, 'the customer is angry about shipping');
 ```
 
 <div id="parameter-map">
