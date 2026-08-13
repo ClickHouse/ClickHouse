@@ -60,24 +60,6 @@ void addFromGeoColumn(BboxAccumulator & acc, const IColumn & col, size_t row)
     }
 }
 
-/// Extract the (single) Field value of a constant ActionsDAG COLUMN node, for combining
-/// several such children into one assembled geometry (see tryExtractBboxFromMultiArgConstGeometry).
-bool tryExtractConstGeoField(const ActionsDAG::Node * node, Field & out_field)
-{
-    if (!node->column || !node->is_deterministic_constant)
-        return false;
-
-    const IColumn * data_col = node->column.get();
-    if (const auto * const_col = typeid_cast<const ColumnConst *>(data_col))
-        data_col = &const_col->getDataColumn();
-
-    if (data_col->size() != 1)
-        return false;
-
-    data_col->get(0, out_field);
-    return true;
-}
-
 }
 
 
@@ -175,7 +157,7 @@ MergeTreeIndexConditionSpatialBbox::MergeTreeIndexConditionSpatialBbox(
         query_bbox = extractQueryBbox(predicate, column_name);
 }
 
-std::optional<MergeTreeIndexConditionSpatialBbox::QueryBbox>
+std::optional<QueryBbox>
 MergeTreeIndexConditionSpatialBbox::extractQueryBbox(
     const ActionsDAG::Node * node,
     const String & col_name)
@@ -183,51 +165,16 @@ MergeTreeIndexConditionSpatialBbox::extractQueryBbox(
     bool has_bbox = false;
     bool failed = false;
     QueryBbox bbox;
+    std::unordered_set<const ActionsDAG::Node *> visited;
 
-    collectConjunctiveBbox(node, col_name, has_bbox, bbox, failed);
-
-    if (failed || !has_bbox)
-        return std::nullopt;
-    return bbox;
-}
-
-void MergeTreeIndexConditionSpatialBbox::collectConjunctiveBbox(
-    const ActionsDAG::Node * node,
-    const String & col_name,
-    bool & has_bbox,
-    QueryBbox & bbox,
-    bool & failed)
-{
-    if (!node || failed)
-        return;
-
-    /// Only recurse into `and` children: an `or` (or any other function) can be true
-    /// via a branch unrelated to the indexed column, so deriving a bbox from just one
-    /// of its arguments would incorrectly prune granules. Recursing through every `and`
-    /// conjunct (rather than stopping at the first one that yields a bbox) matters because
-    /// with `short_circuit_function_evaluation = 'disable'` every conjunct is always
-    /// evaluated: pruning a granule using only an earlier, valid conjunct's bbox would
-    /// silently skip a later conjunct whose invalid constant geometry is expected to raise
-    /// an exception.
-    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
-        && node->function_base->getName() == "and")
-    {
-        for (const auto * child : node->children)
+    /// Accept only the INPUT node matching the indexed column: a spatial predicate on any
+    /// other column carries no pruning information for THIS index (but its invalid constant
+    /// geometry, if any, must still veto pruning -- see extractSpatialPredicateNodeBbox).
+    collectConjunctiveSpatialBboxes(
+        node, visited,
+        [&col_name](const ActionsDAG::Node & child) { return child.result_name == col_name; },
+        [&](const ActionsDAG::Node &, const QueryBbox & node_bbox)
         {
-            collectConjunctiveBbox(child, col_name, has_bbox, bbox, failed);
-            if (failed)
-                return;
-        }
-        return;
-    }
-
-    QueryBbox node_bbox;
-    switch (extractNodeBbox(node, col_name, node_bbox))
-    {
-        case NodeBboxStatus::Failed:
-            failed = true;
-            return;
-        case NodeBboxStatus::Ok:
             if (!has_bbox)
             {
                 bbox = node_bbox;
@@ -243,143 +190,12 @@ void MergeTreeIndexConditionSpatialBbox::collectConjunctiveBbox(
                 bbox.xmax = std::min(bbox.xmax, node_bbox.xmax);
                 bbox.ymax = std::min(bbox.ymax, node_bbox.ymax);
             }
-            return;
-        case NodeBboxStatus::NoInfo:
-        case NodeBboxStatus::NotApplicable:
-            return;
-    }
-}
+        },
+        failed);
 
-MergeTreeIndexConditionSpatialBbox::NodeBboxStatus
-MergeTreeIndexConditionSpatialBbox::extractNodeBbox(
-    const ActionsDAG::Node * node,
-    const String & col_name,
-    QueryBbox & out_bbox)
-{
-    if (!node || node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base
-        || !node->function_base->isSpatialPredicate() || node->children.size() < 2)
-        return NodeBboxStatus::NotApplicable;
-
-    /// `pointInPolygon` is variadic: besides a single Polygon/MultiPolygon argument,
-    /// it also accepts a MultiPolygon spread across several constant polygon
-    /// arguments, e.g. pointInPolygon(geom, poly1, poly2, ...), matching a point
-    /// that falls in ANY of them.
-    const ActionsDAG::Node * input_child = nullptr;
-    /// Any argument besides the single indexed-column input and constant
-    /// geometry literals (e.g. a second column, or a non-constant
-    /// expression) means the predicate's truth can depend on something
-    /// the bbox can't see — matching Parquet::tryExtractSpatialFilterFromNode's
-    /// "exactly one non-constant input" guard.
-    bool has_extra_non_constant = false;
-    bool any_extraction_failed = false;
-    std::vector<Field> const_fields;
-    for (const auto * child : node->children)
-    {
-        if (child->type == ActionsDAG::ActionType::INPUT)
-        {
-            if (child->result_name == col_name && !input_child)
-            {
-                input_child = child;
-                continue;
-            }
-            has_extra_non_constant = true;
-            continue;
-        }
-
-        if (child->type != ActionsDAG::ActionType::COLUMN || !child->is_deterministic_constant)
-        {
-            has_extra_non_constant = true;
-            continue;
-        }
-
-        Field field;
-        if (!tryExtractConstGeoField(child, field))
-        {
-            any_extraction_failed = true;
-            continue;
-        }
-        const_fields.push_back(std::move(field));
-    }
-
-    /// This predicate doesn't reference the indexed column at all (e.g. a spatial predicate
-    /// on a different geometry column entirely) -- it carries no pruning information here.
-    /// But with `short_circuit_function_evaluation = 'disable'` it is still evaluated on every
-    /// row, so if one of its constant geometry arguments failed to extract (and is therefore
-    /// guaranteed to raise on evaluation), that must still veto pruning for this index --
-    /// otherwise a granule could be pruned using only an unrelated, valid conjunct's bbox,
-    /// silently hiding the exception this conjunct is guaranteed to raise.
-    if (!input_child)
-        return any_extraction_failed ? NodeBboxStatus::Failed : NodeBboxStatus::NotApplicable;
-
-    /// A constant geometry argument that fails to extract or validate is guaranteed to raise
-    /// on evaluation (matching e.g. FunctionPointInPolygon's own `bg::is_valid` check, or the
-    /// contract documented for `is_spatial_predicate = 1` UDFs), regardless of whether other,
-    /// non-constant arguments (e.g. an extra column) are also present. This must be checked --
-    /// and, on failure, veto pruning via `Failed` -- before `has_extra_non_constant` is allowed
-    /// to downgrade the result to `NoInfo`; otherwise an extra non-constant argument would mask
-    /// an invalid constant one, silently hiding the exception it is guaranteed to raise.
-    if (any_extraction_failed)
-        return NodeBboxStatus::Failed;
-
-    if (const_fields.empty())
-        return NodeBboxStatus::NoInfo;
-
-    /// The multi-constant-argument assembly below (shell + holes, or MultiPolygon components)
-    /// mirrors FunctionPointInPolygon::executeImpl's `is_const_multi_polygon` combination and
-    /// is only valid for `pointInPolygon` itself. Any other `isSpatialPredicate()` function
-    /// (e.g. a WASM UDF opted in via `is_spatial_predicate = 1`) with more than one constant
-    /// geometry argument could combine them under entirely different semantics -- e.g.
-    /// matching if the point is in ANY of several independent polygons -- so assuming
-    /// pointInPolygon's shell/hole assembly for it would produce a bogus bbox. Fall back to
-    /// "no info" rather than guessing.
-    if (const_fields.size() > 1 && node->function_base->getName() != "pointInPolygon")
-        return NodeBboxStatus::NoInfo;
-
-    /// A single constant geometry argument is self-contained (shell + holes, or a full
-    /// MultiPolygon, all in one literal) and is already validated as such by
-    /// extractBboxFromFieldValue. Two or more constant arguments (only reachable for
-    /// `pointInPolygon` past the check above) must be assembled and validated together
-    /// (see tryExtractBboxFromMultiArgConstGeometry), matching how FunctionPointInPolygon
-    /// combines them at execute time -- validating each argument in isolation would miss
-    /// e.g. a hole entirely outside its shell.
-    double xmin = 0;
-    double ymin = 0;
-    double xmax = 0;
-    double ymax = 0;
-    bool ok = false;
-    if (const_fields.size() == 1)
-    {
-        BboxAccumulator acc;
-        ok = extractBboxFromFieldValue(const_fields[0], acc) && acc.valid;
-        if (ok)
-        {
-            xmin = acc.xmin;
-            ymin = acc.ymin;
-            xmax = acc.xmax;
-            ymax = acc.ymax;
-        }
-    }
-    else
-    {
-        std::vector<const Field *> field_ptrs;
-        field_ptrs.reserve(const_fields.size());
-        for (const auto & f : const_fields)
-            field_ptrs.push_back(&f);
-        ok = tryExtractBboxFromMultiArgConstGeometry(field_ptrs, xmin, ymin, xmax, ymax);
-    }
-
-    if (!ok)
-        return NodeBboxStatus::Failed;
-
-    /// Only now -- after the constant geometry argument(s) are confirmed extractable and valid
-    /// -- can an extra non-constant argument downgrade the result to "no info": the predicate's
-    /// truth may depend on that argument, so its bbox can't be used to prune, but there's also
-    /// no invalid geometry to fail closed for.
-    if (has_extra_non_constant)
-        return NodeBboxStatus::NoInfo;
-
-    out_bbox = {xmin, ymin, xmax, ymax};
-    return NodeBboxStatus::Ok;
+    if (failed || !has_bbox)
+        return std::nullopt;
+    return bbox;
 }
 
 bool MergeTreeIndexConditionSpatialBbox::mayBeTrueOnGranule(

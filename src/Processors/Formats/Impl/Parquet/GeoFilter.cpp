@@ -24,97 +24,39 @@
 namespace DB::Parquet
 {
 
-namespace
-{
-
-/// Extractor callback for the shared conjunctive collection template.
-/// Returns an optional SpatialFilter when the node is a spatial predicate
-/// with at least one constant geometry argument.
-std::optional<SpatialFilter> tryExtractSpatialFilterFromNode(const ActionsDAG::Node & node, const Block & sample_block)
-{
-    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
-        return std::nullopt;
-    if (!node.function_base->isSpatialPredicate() || node.children.size() < 2)
-        return std::nullopt;
-
-    /// Fail-closed: a predicate with more than one non-constant geometry input (e.g. a WASM
-    /// UDF opted in via `is_spatial_predicate = 1` with signature `f(left_geom, right_geom,
-    /// const_poly)`) could be true because of a geometry column whose bbox we never looked at;
-    /// pruning on just one input's bbox would incorrectly skip matching rows.
-    const ActionsDAG::Node * col_node = nullptr;
-    for (const auto * child : node.children)
-    {
-        if (child->type != ActionsDAG::ActionType::INPUT)
-            continue;
-        if (col_node)
-            return std::nullopt;
-        col_node = child;
-    }
-    if (!col_node || !sample_block.has(col_node->result_name))
-        return std::nullopt;
-
-    double xmin = std::numeric_limits<double>::infinity();
-    double ymin = std::numeric_limits<double>::infinity();
-    double xmax = -std::numeric_limits<double>::infinity();
-    double ymax = -std::numeric_limits<double>::infinity();
-    bool found_const = false;
-    bool any_extraction_failed = false;
-
-    for (const auto * child : node.children)
-    {
-        if (child->type != ActionsDAG::ActionType::COLUMN || !child->column
-            || !child->is_deterministic_constant)
-            continue;
-        double cxmin = 0;
-        double cymin = 0;
-        double cxmax = 0;
-        double cymax = 0;
-        if (!tryExtractBboxFromColumn(*child->column, cxmin, cymin, cxmax, cymax))
-        {
-            any_extraction_failed = true;
-            continue;
-        }
-        xmin = std::min(xmin, cxmin);
-        ymin = std::min(ymin, cymin);
-        xmax = std::max(xmax, cxmax);
-        ymax = std::max(ymax, cymax);
-        found_const = true;
-    }
-    /// Fail-closed: if any constant arg could not be converted to a bbox, the union
-    /// bbox is incomplete. Pruning on the partial bbox would incorrectly exclude rows
-    /// that match only the geometry that was skipped (unsafe for variadic predicates
-    /// like `pointInPolygon` where polygon args are OR-ed).
-    if (!found_const || any_extraction_failed)
-        return std::nullopt;
-
-    SpatialFilter filter;
-    filter.geometry_column_name = col_node->result_name;
-    filter.query_xmin = xmin;
-    filter.query_ymin = ymin;
-    filter.query_xmax = xmax;
-    filter.query_ymax = ymax;
-    return filter;
-}
-
-}
-
 std::vector<SpatialFilter> extractSpatialFilters(
     const DB::ActionsDAG & filter_dag,
     const DB::Block & sample_block)
 {
     std::vector<SpatialFilter> result;
     std::unordered_set<const DB::ActionsDAG::Node *> visited;
+    bool failed = false;
 
-    /// Walk from DAG outputs, following only `and` nodes.
-    /// Spatial predicates reachable via OR or other non-conjunctive paths are excluded
-    /// because pruning on them would be incorrect (a disjoint spatial branch doesn't mean
-    /// the full predicate is false — a non-spatial OR branch could still match).
+    /// Walk from DAG outputs, following only `and` nodes (see `collectConjunctiveSpatialBboxes`
+    /// in `Common/GeoBbox.h`, shared with the `MergeTree` `spatial_bbox` index). Spatial predicates
+    /// reachable via OR or other non-conjunctive paths are excluded because pruning on them would
+    /// be incorrect (a disjoint spatial branch doesn't mean the full predicate is false — a
+    /// non-spatial OR branch could still match). Any conjunct with an invalid constant geometry
+    /// argument (guaranteed to raise at evaluation time) vetoes pruning for the whole `and`.
     for (const auto * output : filter_dag.getOutputs())
-        collectSpatialFiltersConjunctive(
-            *output, visited,
-            [&sample_block](const ActionsDAG::Node & n)
-            { return tryExtractSpatialFilterFromNode(n, sample_block); },
-            result);
+    {
+        collectConjunctiveSpatialBboxes(
+            output, visited,
+            [&sample_block](const ActionsDAG::Node & child) { return sample_block.has(child.result_name); },
+            [&](const ActionsDAG::Node & col_node, const QueryBbox & bbox)
+            {
+                SpatialFilter filter;
+                filter.geometry_column_name = col_node.result_name;
+                filter.query_xmin = bbox.xmin;
+                filter.query_ymin = bbox.ymin;
+                filter.query_xmax = bbox.xmax;
+                filter.query_ymax = bbox.ymax;
+                result.push_back(std::move(filter));
+            },
+            failed);
+        if (failed)
+            return {};
+    }
 
     return result;
 }
