@@ -393,7 +393,18 @@ void optimizeTreeSecondPass(
                 /// then, so recompute it on the final plan - a sorted-merge algorithm must fall through
                 /// to the next one of `join_algorithm` when its input is no longer readable in order.
                 if (auto * join_logical = typeid_cast<JoinStepLogical *>(frame_node.step.get()))
+                {
                     join_logical->resetInputsCanBeReadInJoinKeyOrder();
+                    /// If the filter pass skipped this join because an eligible sorted-merge algorithm
+                    /// won the selection, re-run it on the final plan: when the rewrite broke the
+                    /// eligibility, the selection falls through to a hash-family algorithm, which must
+                    /// get its runtime filter back. The re-added filter stays adjacent to the join (the
+                    /// push-down passes have already run), which costs only the deeper placement and the
+                    /// index analysis, not correctness.
+                    if (optimization_settings.enable_join_runtime_filters
+                        && join_logical->isRuntimeFilterSuppressedForSortedMerge())
+                        tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
+                }
                 convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
             });
 

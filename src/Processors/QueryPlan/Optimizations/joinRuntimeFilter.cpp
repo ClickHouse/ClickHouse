@@ -268,7 +268,12 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         if ((algorithm == JoinAlgorithm::SORTED_MERGE || algorithm == JoinAlgorithm::PARALLEL_SORTED_MERGE)
             && optimization_settings.read_in_order
             && join_step->inputsCanBeReadInJoinKeyOrder(node))
+        {
+            /// `applyParallelReplicas` may later invalidate the eligibility; the pass is then re-run
+            /// for the joins skipped here, so the fall-through algorithm gets its filter back.
+            join_step->setRuntimeFilterSuppressedForSortedMerge();
             return false;
+        }
     }
 
     /// Skip if the probe side is known to produce at most `join_runtime_filter_min_probe_rows` rows

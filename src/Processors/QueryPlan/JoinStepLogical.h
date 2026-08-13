@@ -203,9 +203,16 @@ public:
     /// `tryAddJoinRuntimeFilter` memoized the eligibility on the pre-rewrite plan. The stale `true`
     /// would keep selecting a merge join whose input is no longer readable in order, so drop the
     /// memoized value and let `buildPhysicalJoin` decide on the final plan (falling through to the
-    /// next algorithm of `join_algorithm`). The runtime filter suppressed by the stale answer is not
-    /// restored - that pass has already run - which only costs the filter, not correctness.
+    /// next algorithm of `join_algorithm`).
     void resetInputsCanBeReadInJoinKeyOrder() { inputs_can_be_read_in_join_key_order.reset(); }
+
+    /// Set by `tryAddJoinRuntimeFilter` when it skipped planting a runtime filter because an eligible
+    /// `sorted_merge` / `parallel_sorted_merge` won the selection. When `applyParallelReplicas` later
+    /// invalidates that eligibility (see `resetInputsCanBeReadInJoinKeyOrder`), the filter pass is
+    /// re-run for exactly these joins, so the algorithm the selection now falls through to gets its
+    /// runtime filter back.
+    bool isRuntimeFilterSuppressedForSortedMerge() const { return runtime_filter_suppressed_for_sorted_merge; }
+    void setRuntimeFilterSuppressedForSortedMerge() { runtime_filter_suppressed_for_sorted_merge = true; }
 
 protected:
     SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
@@ -230,6 +237,9 @@ protected:
 
     /// Memoized result of `inputsCanBeReadInJoinKeyOrder`.
     std::optional<bool> inputs_can_be_read_in_join_key_order;
+
+    /// See `isRuntimeFilterSuppressedForSortedMerge`.
+    bool runtime_filter_suppressed_for_sorted_merge = false;
 
     bool optimized = false;
     std::optional<UInt64> result_rows_estimation = {};
