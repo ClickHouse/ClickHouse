@@ -663,7 +663,8 @@ MergeTreeIndexConditionPtr MergeTreeProjectionIndexText::createIndexCondition(co
         text_index->preprocessor,
         text_index->postprocessor,
         text_index->params.positions,
-        text_index->params.enable_phrase_query_support);
+        text_index->params.enable_phrase_query_support,
+        /*is_projection_index_=*/ true);
 }
 
 }

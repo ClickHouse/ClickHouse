@@ -916,12 +916,20 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     if (parts.empty())
         return {};
 
+    ConditionSelectivityEstimatorPtr cached;
+    if (local_context->getSettingsRef()[Setting::use_statistics_cache])
     {
         std::lock_guard<std::mutex> lock(stats_mutex);
-        if (local_context->getSettingsRef()[Setting::use_statistics_cache]
-            && cached_estimator)
-            return cached_estimator;
+        cached = cached_estimator;
     }
+
+    /// The cached estimator is built by refreshStatistics() over all active parts.
+    /// Return it only if the query reads exactly that part set; a query pruned by
+    /// partition/PK analysis must compose statistics over the surviving parts
+    /// (issue #110281). The estimator is immutable once published, so the comparison
+    /// can run outside the mutex.
+    if (cached && !cached->isStale(parts))
+        return cached;
 
     LOG_DEBUG(log, "Loading statistics");
     ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
@@ -4903,6 +4911,16 @@ bool isSafeForKeyConversion(const IDataType * from, const IDataType * to)
     return false;
 }
 
+/// Comma-separated list of backquoted identifiers, for exception messages.
+String backQuotedList(const std::vector<String> & identifiers)
+{
+    std::vector<String> quoted;
+    quoted.reserve(identifiers.size());
+    for (const auto & identifier : identifiers)
+        quoted.push_back(backQuoteIfNeed(identifier));
+    return boost::join(quoted, ", ");
+}
+
 /// Special check for alters of VersionedCollapsingMergeTree version column
 void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataType * new_type, const String column_name)
 {
@@ -5291,7 +5309,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     /// Columns to check that the type change is safe for partition key.
     NameSet columns_alter_type_check_safe_for_partition;
 
-    /// Columns with subcolumns used in primary key or partition key.
+    /// Storage column -> its subcolumns used in the primary or partition key (raw names).
     std::unordered_map<String, std::vector<String>> column_to_subcolumns_used_in_keys;
 
     const auto & old_columns = old_metadata.getColumns();
@@ -5311,7 +5329,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         {
             auto storage_column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, col);
             if (storage_column && storage_column->isSubcolumn())
-                column_to_subcolumns_used_in_keys[storage_column->getNameInStorage()].push_back(backQuoteIfNeed(col));
+                column_to_subcolumns_used_in_keys[storage_column->getNameInStorage()].push_back(col);
             else
                 columns_alter_type_check_safe_for_partition.insert(col);
         }
@@ -5329,7 +5347,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         {
             auto storage_column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, col);
             if (storage_column && storage_column->isSubcolumn())
-                column_to_subcolumns_used_in_keys[storage_column->getNameInStorage()].push_back(backQuoteIfNeed(col));
+                column_to_subcolumns_used_in_keys[storage_column->getNameInStorage()].push_back(col);
             else
                 columns_alter_type_metadata_only.insert(col);
         }
@@ -5470,13 +5488,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                                 backQuoteIfNeed(command.column_name));
             }
 
-            if (column_to_subcolumns_used_in_keys.contains(command.column_name))
+            if (auto it = column_to_subcolumns_used_in_keys.find(command.column_name); it != column_to_subcolumns_used_in_keys.end())
             {
                 throw Exception(
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                     "Trying to ALTER RENAME column {} whose subcolumns ({}) are part of key expression",
                     backQuoteIfNeed(command.column_name),
-                    boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
+                    backQuotedList(it->second));
             }
 
             if (index_mode == AlterColumnSecondaryIndexMode::THROW)
@@ -5509,13 +5527,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     "Trying to ALTER DROP key {} column which is a part of key expression", backQuoteIfNeed(command.column_name));
             }
 
-            if (column_to_subcolumns_used_in_keys.contains(command.column_name))
+            if (auto it = column_to_subcolumns_used_in_keys.find(command.column_name); it != column_to_subcolumns_used_in_keys.end())
             {
                 throw Exception(
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                     "Trying to ALTER DROP column {} whose subcolumns ({}) are part of key expression",
                     backQuoteIfNeed(command.column_name),
-                    boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
+                    backQuotedList(it->second));
             }
 
             if (!command.clear)
@@ -5583,13 +5601,31 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "ALTER of key column {} is forbidden",
                     backQuoteIfNeed(command.column_name));
 
-            if (column_to_subcolumns_used_in_keys.contains(command.column_name))
+            /// A column whose subcolumn feeds the primary/partition key may still be ALTERed as long as
+            /// each key subcolumn keeps an on-disk-compatible type: a mutation does not re-sort data, so a
+            /// key subcolumn must convert the same way a top-level key column does (isSafeForKeyConversion),
+            /// while other subcolumns of the column may change freely.
+            if (auto it = column_to_subcolumns_used_in_keys.find(command.column_name); it != column_to_subcolumns_used_in_keys.end())
             {
-                throw Exception(
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER column {} whose subcolumns ({}) are part of key expression",
-                    backQuoteIfNeed(command.column_name),
-                    boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
+                const auto & new_columns = new_metadata.getColumns();
+                for (const String & subcolumn : it->second)
+                {
+                    auto old_subcolumn = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, subcolumn);
+                    chassert(old_subcolumn.has_value());
+                    auto new_subcolumn = new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, subcolumn);
+
+                    /// A missing new subcolumn means the ALTER removes it (e.g. drops a Tuple element);
+                    /// a changed type must be safe for the key representation, same as a top-level key column.
+                    if (!new_subcolumn || !isSafeForKeyConversion(old_subcolumn->type.get(), new_subcolumn->type.get()))
+                        throw Exception(
+                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "ALTER of column {} is forbidden because its subcolumn {} is part of a key expression and the ALTER "
+                            "changes its type from {} to {}, which is not safe for the key representation",
+                            backQuoteIfNeed(command.column_name),
+                            backQuoteIfNeed(subcolumn),
+                            old_subcolumn->type->getName(),
+                            new_subcolumn ? new_subcolumn->type->getName() : "(removed)");
+                }
             }
 
             if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
@@ -10545,7 +10581,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 continue;
         }
 
-        if (minmax_idx_condition && !minmax_idx_condition->generateForPartition(part->partition).checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+        if (minmax_idx_condition && !minmax_idx_condition->generateForPart(part).checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
         if (partition_pruner)
@@ -10843,9 +10879,11 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (my_snapshot->getColumns().getAllPhysical().sizeOfDifference(src_snapshot->getColumns().getAllPhysical()))
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
 
+    /// The definitions are compared as text, so the text must not depend on whether the user has
+    /// written redundant parentheses: `PARTITION BY (a)` and `PARTITION BY a` are the same key.
     auto query_to_string = [] (const ASTPtr & ast)
     {
-        return ast ? ast->formatWithSecretsOneLine() : "";
+        return ast ? ast->formatIgnoringRedundantParentheses() : "";
     };
 
     if (query_to_string(my_snapshot->getSortingKeyAST()) != query_to_string(src_snapshot->getSortingKeyAST()))
@@ -10870,10 +10908,10 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
         std::unordered_set<std::string> my_query_strings;
         for (const auto & description : my_descriptions)
-            my_query_strings.insert(description.definition_ast->formatWithSecretsOneLine());
+            my_query_strings.insert(description.definition_ast->formatIgnoringRedundantParentheses());
 
         for (const auto & src_description : src_descriptions)
-            if (!my_query_strings.contains(src_description.definition_ast->formatWithSecretsOneLine()))
+            if (!my_query_strings.contains(src_description.definition_ast->formatIgnoringRedundantParentheses()))
                 return false;
 
         return true;
@@ -12684,7 +12722,9 @@ bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
     bool any_enriched = false;
     subscription_manager.executeOnEachSubscription([&](StreamSubscriptionPtr & subscription)
     {
-        any_enriched |= enrichSubscription(*subscription->as<MergeTreeBoundsSubscription>(), local_parts, promoters);
+        auto & bounds_subscription = *subscription->as<MergeTreeBoundsSubscription>();
+        any_enriched |= enrichSubscription(bounds_subscription, local_parts, promoters);
+        bounds_subscription.onEnrichmentRound();
     });
 
     if (any_enriched)

@@ -135,7 +135,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_,
-    bool enable_phrase_query_support_)
+    bool enable_phrase_query_support_,
+    bool is_projection_index_)
     : WithContext(context_)
     , header(index_sample_block)
     , normalized_index_column_name(normalized_index_column_name_)
@@ -147,6 +148,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , has_postprocessor(postprocessor && postprocessor->hasActions())
     , has_positions(has_positions_)
     , enable_phrase_query_support(enable_phrase_query_support_)
+    , is_projection_index(is_projection_index_)
 {
     if (!predicate)
     {
@@ -931,6 +933,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
     bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
 
+    bool candidate_for_exact_mode = true;
     if (traverseMapElementValueNode(index_column_node, value_field))
     {
         has_index_column = true;
@@ -938,11 +941,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// If we use index on `mapValues(m)` for `func(m['key'], 'value')`, we can use direct read only as a hint
         /// because we have to match the specific key to the value and therefore execute a real filter.
         direct_read_mode = getHintOrNoneMode();
+        candidate_for_exact_mode = false;
     }
     else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues"))
     {
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
+        candidate_for_exact_mode = false;
         bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
 
         /// Convert non-string values to their text representation to match the format produced by `JSONAllValues`.
@@ -966,6 +971,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             {
                 has_index_column = true;
                 direct_read_mode = getHintOrNoneMode();
+                candidate_for_exact_mode = false;
             }
         }
     }
@@ -1303,16 +1309,19 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             auto patterns = stringLikeToPatterns(value_field, false);
             if (patterns.size() == 1)
             {
+                /// For a projection text index, never advertise `Exact`. The pattern-only branch has
+                /// no tokens that the projection text index reader can use to produce results;
+                /// `Exact` would let the optimizer drop the original predicate entirely, and the
+                /// reader (which has no fallback path for pattern-only matches) would memset the
+                /// virtual column to 1 and return false positives. `Hint` keeps the original LIKE
+                /// as a post-filter.
+                const auto pattern_read_mode
+                    = (candidate_for_exact_mode && !is_projection_index) ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+
                 out.function = RPNElement::FUNCTION_LIKE;
-                /// Use `direct_read_mode` (Hint or None) rather than hardcoded `Exact`. The
-                /// pattern-only branch has no tokens that the projection text index reader can
-                /// use to produce results; advertising `Exact` here would let the optimizer
-                /// drop the original predicate entirely, and the reader (which has no fallback
-                /// path for pattern-only matches) would memset the virtual column to 1 and
-                /// return false positives. `Hint` preserves the original LIKE as a post-filter.
                 out.text_search_queries.emplace_back(
                     std::make_shared<TextSearchQuery>(
-                        function_name, TextSearchMode::Any, direct_read_mode, VectorWithMemoryTracking<String>(), std::move(patterns)));
+                        function_name, TextSearchMode::Any, pattern_read_mode, VectorWithMemoryTracking<String>(), std::move(patterns)));
                 return true;
             }
         }
@@ -1338,13 +1347,16 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         auto patterns = stringLikeToPatterns(value_field, true);
         if (patterns.size() == 1)
         {
+            /// See the `like` branch above: a projection text index must not advertise `Exact`
+            /// for a pattern-only query, otherwise the original predicate is dropped and the
+            /// reader returns false positives.
+            const auto pattern_read_mode
+                = (candidate_for_exact_mode && !is_projection_index) ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+
             out.function = RPNElement::FUNCTION_LIKE;
-            /// See the `like` branch above: use `direct_read_mode` (Hint or None) instead of
-            /// hardcoded `Exact` so the projection reader's pattern-only path doesn't drop
-            /// the original predicate and return false positives.
             out.text_search_queries.emplace_back(
                 std::make_shared<TextSearchQuery>(
-                    function_name, TextSearchMode::Any, direct_read_mode, VectorWithMemoryTracking<String>(), std::move(patterns)));
+                    function_name, TextSearchMode::Any, pattern_read_mode, VectorWithMemoryTracking<String>(), std::move(patterns)));
             return true;
         }
         return false;

@@ -83,6 +83,7 @@ namespace Setting
     extern const SettingsBool materialize_skip_indexes_on_insert;
     extern const SettingsString exclude_materialize_skip_indexes_on_insert;
     extern const SettingsBool materialize_statistics_on_insert;
+    extern const SettingsUInt64 materialize_statistics_on_insert_max_table_size;
     extern const SettingsBool optimize_on_insert;
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
     extern const SettingsUInt64 min_free_disk_bytes_to_perform_insert;
@@ -827,9 +828,26 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     ColumnsStatistics statistics;
     if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-        statistics = ColumnsStatistics(metadata_snapshot->getColumns());
-        statistics.build(block);
+        const UInt64 max_table_size = context->getSettingsRef()[Setting::materialize_statistics_on_insert_max_table_size];
+        /// Skip building statistics on INSERT for large tables (e.g. fact tables): they materialize
+        /// statistics during merges instead, avoiding per-insert overhead. `getTotalActiveSizeInBytes`
+        /// is an O(1) atomic load of the compressed on-disk size of active parts; parts of the current
+        /// INSERT are not active yet, so we add the size of the block being written (`block.bytes()`,
+        /// the same estimate used below for the part size). The check is therefore per block, not per
+        /// INSERT: one INSERT is split into one block per partition (and into several blocks for a
+        /// streaming insert), and each of them is compared against the already active parts only, so a
+        /// single bulk load into an empty table can build statistics for all of its parts. That is
+        /// intentional - the gate is about the steady-state size of the table, and the parts of one
+        /// INSERT are not visible to each other. The block size is uncompressed (the compressed size is
+        /// unknown before the part is written), so the check is deliberately conservative by at most one
+        /// block; the only consequence of a skip is that statistics are built during merges instead.
+        /// `0` disables the limit.
+        if (max_table_size == 0 || data.getTotalActiveSizeInBytes() + block.bytes() <= max_table_size)
+        {
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
+            statistics = ColumnsStatistics(metadata_snapshot->getColumns());
+            statistics.build(block);
+        }
     }
 
     /// Size of part would not be greater than block.bytes() + epsilon
