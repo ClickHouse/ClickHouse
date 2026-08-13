@@ -114,6 +114,9 @@ start_seaweedfs() {
   pwd
   mkdir -p ./seaweedfs_data
   weed version
+  # the filer's empty-folder cleaner deletes a folder without excluding a PUT
+  # arriving between its count and the delete, which destroys the object
+  export WEED_FILER_OPTIONS_S3_EMPTY_FOLDER_CLEANUP_DELAY=24h
   # weed server also runs master/volume/filer services (each also binds a gRPC
   # port at +10000); keep them next to the S3 port, away from the ports used by
   # clickhouse-server, keeper, azurite and redpanda
