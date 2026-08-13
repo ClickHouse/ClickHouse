@@ -329,7 +329,9 @@ String makeStepDescription(const ResolvedQuery & resolved)
 bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
 {
     /// `ReadFromTextIndexCount` is not serializable, so it must not end up in a distributed plan fragment.
-    if (settings.make_distributed_plan)
+    /// `applyParallelReplicas` runs first and builds such fragments around the `ReadFromMergeTree` we would
+    /// replace, so bail and let the reader be distributed across replicas as before.
+    if (settings.make_distributed_plan || settings.enable_parallel_replicas)
         return false;
 
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
