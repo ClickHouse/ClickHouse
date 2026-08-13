@@ -8,6 +8,7 @@
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
@@ -118,6 +119,23 @@ extern const int UNKNOWN_TABLE;
 
 namespace
 {
+
+bool queryHasOrderBy(const SelectQueryInfo & query_info)
+{
+    if (query_info.query_tree)
+    {
+        if (const auto * query_node = query_info.query_tree->as<QueryNode>())
+            return query_node->hasOrderBy();
+    }
+
+    if (query_info.query)
+    {
+        if (const auto * select = query_info.query->as<ASTSelectQuery>())
+            return select->orderBy() != nullptr;
+    }
+
+    return false;
+}
 
 /// The storage a database enumerates is not always the storage a read must go through: a
 /// `MaterializedPostgreSQL` database exposes the physical nested `ReplacingMergeTree` tables to
@@ -712,9 +730,35 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     // Using narrowPipe instead. But in case of reading in order of primary key, we cannot do it,
     // because narrowPipe doesn't preserve order. Also, if we are doing a memory efficient distributed agggregation, bucket
     // order must be preserved.
-    const bool should_not_narrow = query_info.input_order_info || (
-        context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
-        && common_processed_stage == QueryProcessingStage::Enum::WithMergeableState);
+    //
+    // Order must be preserved as well when the children were read at a stage where the query's `ORDER BY` has already
+    // run remotely: every child then sorts on its own (a `Distributed` child sorts on the shards), so the step on top
+    // of `ReadFromMerge` is `Sorting (Merge sorted streams ... for ORDER BY)`, which requires each input stream to be
+    // sorted. Narrowing would feed it unsorted streams, silently producing a wrongly ordered - and, together with
+    // `LIMIT`, incomplete - result.
+    //
+    // That happens at any stage above `WithMergeableState` (the remote side did the full `ORDER BY`), and at
+    // `WithMergeableState` only for queries without aggregation and window functions - the same conditions under
+    // which the remote part of a distributed query performs the preliminary sort (and the planner merges sorted
+    // streams instead of doing a full sort on the initiator). For example, a window function query over `Distributed`
+    // is processed only up to `WithMergeableState` with no remote sort, so narrowing remains allowed.
+    const bool children_produce_sorted_streams = queryHasOrderBy(query_info)
+        && (common_processed_stage > QueryProcessingStage::WithMergeableState
+            || (common_processed_stage > QueryProcessingStage::FetchColumns && !query_info.need_aggregate
+                && !query_info.has_window));
+
+    // Memory efficient distributed aggregation delivers two-level blocks bucket by bucket, and that bucket order must be
+    // preserved. It can only happen when the query aggregates: without aggregation there are no buckets at all, so the
+    // setting alone - it is enabled by default - must not keep every shard's stream alive. Otherwise the very fan-out
+    // this optimization guards against would come back for all the other queries stopping at `WithMergeableState`, such
+    // as the window function queries above.
+    const bool memory_efficient_aggregation = query_info.need_aggregate
+        && context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
+        && common_processed_stage == QueryProcessingStage::Enum::WithMergeableState;
+
+    const bool should_not_narrow = query_info.input_order_info
+        || children_produce_sorted_streams
+        || memory_efficient_aggregation;
     if (!should_not_narrow)
     {
         size_t tables_count = selected_tables.size();
