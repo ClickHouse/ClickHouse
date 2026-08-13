@@ -121,6 +121,10 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
             index_desc.type,
             fmt::join(supported_types, ", "));
 
+    /// some argument checks live in the creator, not the validator (tokenizer bounds for
+    /// sparse_grams), so construct once here instead of failing later inside EXPLAIN WHATIF
+    MergeTreeIndexFactory::instance().get(metadata, index_desc, *merge_tree->getSettings());
+
     /// Old-syntax MergeTree rejects `ALTER TABLE ... ADD INDEX`, so reject it here too.
     if (!merge_tree->is_custom_partitioned)
         throw Exception(

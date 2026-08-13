@@ -12,5 +12,7 @@ NOT_IMPLEMENTED
 --- validate still runs before the allowlist check ---
 ILLEGAL_INDEX
 INCORRECT_QUERY
+--- arguments the creator rejects fail at CREATE, not later ---
+BAD_ARGUMENTS
 --- a schema change that invalidates the index degrades to not_applicable ---
 status: not_applicable

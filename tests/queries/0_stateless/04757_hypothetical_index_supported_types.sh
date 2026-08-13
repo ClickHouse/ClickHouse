@@ -8,8 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_hypo_types;
-    CREATE TABLE t_hypo_types (a UInt64, s String, v Array(Float32)) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = 0;
+    CREATE TABLE t_hypo_types (a UInt64, s String, v Array(Float32)) ENGINE = MergeTree ORDER BY a;
     INSERT INTO t_hypo_types SELECT number, concat('value_', toString(number % 100)), [1, 2, 3] FROM numbers(10000);
 "
 
@@ -42,6 +41,10 @@ echo "--- validate still runs before the allowlist check ---"
 $CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (a > 0) TYPE hypothesis GRANULARITY 1;" 2>&1 | grep -oE 'ILLEGAL_INDEX' | head -1
 # an unregistered type is rejected by the factory lookup, not by the allowlist
 $CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (s) TYPE no_such_index GRANULARITY 1;" 2>&1 | grep -oE 'INCORRECT_QUERY' | head -1
+
+echo "--- arguments the creator rejects fail at CREATE, not later ---"
+# sparse_grams tokenizer bounds are enforced by the creator; validate only checks arity
+$CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (s) TYPE sparse_grams(2, 100, 512, 2, 0) GRANULARITY 1;" 2>&1 | grep -oE 'BAD_ARGUMENTS' | head -1
 
 echo "--- a schema change that invalidates the index degrades to not_applicable ---"
 # minmax rejects Dynamic columns, so after the ALTER the stored description no longer validates
