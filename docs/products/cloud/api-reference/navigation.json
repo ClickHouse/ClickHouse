@@ -21,7 +21,8 @@
       {
         "group": "Billing",
         "pages": [
-          "GET /v1/organizations/{organizationId}/usageCost"
+          "GET /v1/organizations/{organizationId}/usageCost",
+          "products/cloud/api-reference/billing/active-balances-get"
         ]
       },
       {
@@ -208,7 +209,8 @@
       "products/cloud/api-reference/postgres/postgres-instance-config-patch",
       "products/cloud/api-reference/postgres/postgres-instance-metrics-get",
       "products/cloud/api-reference/postgres/slow-query-patterns-get-list",
-      "products/cloud/api-reference/postgres/slow-query-pattern-get"
+      "products/cloud/api-reference/postgres/slow-query-pattern-get",
+      "products/cloud/api-reference/postgres/postgres-logs-get-list"
     ]
   }
 ]

@@ -200,6 +200,10 @@ private:
     NameToTypeMap left_type_map;
     NameToTypeMap right_type_map;
 
+    /// Special-storage right keys whose type is corrected after the join by a USING promotion.
+    /// Filled by JoinStepLogical; empty means no key is promoted.
+    NameSet using_promoted_right_keys;
+
     /// Name -> original name. Names are the same as in columns_from_joined_table list.
     std::unordered_map<String, String> original_names;
     /// Original name -> name. Only renamed columns.
@@ -457,6 +461,8 @@ public:
     void setLeftKeys(const Names & keys) { getOnlyClause().key_names_left = keys; }
 
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
+
+    void setUsingPromotedRightKeys(NameSet keys) { using_promoted_right_keys = std::move(keys); }
 
     String renamedRightColumnName(const String & name) const;
     String renamedRightColumnNameWithAlias(const String & name) const;
