@@ -23,7 +23,7 @@ Not covered here, because it is already covered:
 | Layer | Location | What it covers |
 |---|---|---|
 | SQL | `tests/queries/0_stateless/03300_ai_functions.sql`, `04142`, `04492`, `04614`, `04628` | Argument validation, return types, named-collection resolution, error codes, settings defaults. No HTTP. |
-| Mock HTTP | `tests/integration/test_ai_functions/` (65 cases) | Row loop, retries, quotas, `NULL`/empty handling, malformed-response rejection, request headers and body. Single-threaded mock, no real model. |
+| Mock HTTP | `tests/integration/test_ai_functions/` | Row loop, retries, quotas, `NULL`/empty handling, malformed-response rejection, request headers and body, and the **API-call-count invariants** for each query shape (filter, `LIMIT`, `PREWHERE`, short-circuit, dedup, CSE) plus the per-query quota scope. Single-threaded mock, no real model, runs in CI. |
 
 This suite adds only what those two cannot answer:
 
@@ -48,6 +48,10 @@ re-tested here: no endpoint can influence them, and paying a provider to re-conf
 | Cost | The suite may spend money. A pre-run token estimate and a hard `AI_E2E_MAX_EST_USD` cap gate the run |
 | Data size | `AI_E2E_DATA_SCALE` multiplier on the loop corpora (default `1` = smallest useful run) |
 | Targets | `internal` (ClickHouse inference gateway) and `local` (OpenAI-compatible local model, for testing the test), distinguished by two flags: `toy_model` and `reports_token_usage` |
+
+One consequence of configuring through `ci/local.env`: `PYTEST_ADDOPTS=-m e2e` applies to **every**
+integration run from that checkout, so an ordinary `test_ai_functions` run would collect zero tests and
+report success. Keep that line commented out except when running this suite.
 
 **The marker keeps the suite out of CI.** `pytest.ini` already deselects `e2e`, so no shared config
 changes. `pytestmark` must be in each `test_*.py` — pytest ignores `pytestmark` in `conftest.py`, and
@@ -141,7 +145,10 @@ tests/integration/test_e2e_ai_functions/
     test_basic_e2e.py          # Suite A1
     test_params.py             # Suite A2
     test_concurrency.py        # Suite A3
-    test_structural.py         # Suite B: exact-integer cases at D=0 (counts, laziness). Seconds; no timing
+    test_structural.py         # Suite B: exact-integer cases at D=0 that need this suite's mock
+                               # (connection counting, injected delay). The call-count and
+                               # laziness invariants live in test_ai_functions/ instead, so CI
+                               # validates them on every PR
     test_latency_arch.py       # Suite B: timing cases (B1 matrix, laziness time pass, cancellation)
     test_latency_real.py       # Suite B3 (real endpoint; reporting)
     baselines/

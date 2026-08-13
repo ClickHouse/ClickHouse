@@ -73,11 +73,13 @@ count. Without that, block splitting makes M1 and M2 unreproducible across machi
 
 | File | Cases | Property | Runtime |
 |---|---|---|---|
-| `test_structural.py` | M1 and M5 cases at `delay_ms = 0`: B2-2, B2-3's counts, B2-5's count pass, B2-10 and B2-11's request counts | Exact integers; tolerates a shared host; parallel-safe | seconds |
-| `test_latency_arch.py` | Everything with a wall-clock or in-flight assertion: B1, B2-1, B2-3's timing relation, B2-4, B2-6, B2-7, B2-8, B2-9, B2-5's time pass | Needs an unshared host; runs sequentially | 12–20 min |
+| `test_ai_functions/test.py` (the **mock suite**, in CI) | Pure call-count invariants that need no special mock: query shapes (filter, `LIMIT`, `PREWHERE`, short-circuit, dedup, CSE) and quota scope | Exact integers on any host | seconds |
+| `test_structural.py` (here) | M1 and M5 cases needing this suite's mock: connection counting, injected delay for timeout and retry counts | Exact integers; tolerates a shared host | seconds |
+| `test_latency_arch.py` (here) | Everything with a wall-clock or in-flight assertion: B1, B2-1, B2-3's timing, B2-4, B2-6, B2-7, B2-8, B2-9 | Needs an unshared host; runs sequentially | ~4 min |
 
-The split is not cosmetic: it is what lets the deterministic half run on every AI-touching PR as a
-blocking check while the timing half runs weekly as a CIDB data feed.
+The split is not cosmetic. Anything that is an exact integer and needs no instrumentation belongs in
+the CI-run mock suite, where every pull request validates it; what stays here either needs this suite's
+instrumented mock or is timing-sensitive enough that CI would make it flaky.
 
 ## 3. The controlled-latency mock
 
@@ -161,7 +163,7 @@ Reported per cell: `T`, M1, M2, M3, M5, `T / (rows × D)`. The interesting cells
 | B2-2 | Same, fresh mock port | M1 `= 32`; M5 `= 32 / 1` (one connection, 32 requests) | Duplicate calls; connection-reuse regression |
 | B2-3 | `aiEmbed`, 32 rows, batch ∈ {1, 8, 32}, one block | `T ≈ M1 × D` within 40% | Batching that stops overlapping with the time it should take. The call *count* is already pinned free in the mock suite (`test_ai_functions/test.py:710`); the timing relation is not |
 | B2-4 | `aiGenerate`, 32 rows, `max_threads = 8`, 8 parts, `max_block_size = 4` | M2 `≥ baselines/arch.json["max_in_flight_8t"]`; M3 `≥ baseline × 0.8` | **Loss of parallelism.** The blessed baseline is whatever B1 finds today; the day a change adds parallelism, the new value is blessed and can never silently regress |
-| B2-5 | Laziness scenarios, §6 | Per scenario, M1 `≤ baseline`; `= ideal` where baseline already equals ideal | Any change that makes evaluation less lazy |
+| B2-5 | Laziness scenarios, §6 — **moved** to `test_ai_functions/test.py::test_api_call_count_per_query_shape`, where each shape asserts an exact count in CI | Per scenario, M1 equals the recorded count | Any change that makes evaluation less lazy |
 | B2-6 | `aiGenerate`, 4 rows, `D = 15000 ms`, one block, `KILL QUERY` after 2 s | Query reaches a terminal state within `AI_E2E_KILL_BUDGET_SEC` | Missing cancellation checkpoint. Expected to fail today — see §8. Few rows × large `D` so the case is short and the margin wide |
 | B2-7 | `max_concurrency = 2`, `over_limit = 429`, `ai_function_max_retries = 3`, 16 rows, `max_threads = 8`, 8 parts, `max_block_size = 2` | All 16 rows correct; query succeeds; `over_limit_rejections` reported | Correctness against a throttling endpoint. Gated on rows and rejections, not on M2 — with serial execution M2 is 1 and any `M2 ≤ 2` bound is vacuous |
 | B2-8 | Same, `ai_function_max_retries = 0` | Query throws; message carries the status; mock `/stats` shows ≥ 1 rejection | Retry configuration silently swallowing throttling |
@@ -169,13 +171,19 @@ Reported per cell: `T`, M1, M2, M3, M5, `T / (rows × D)`. The interesting cells
 | B2-10 | `ai_function_request_timeout_sec = 1`, `D = 3000 ms`, 2 rows, retries `0` | Query throws a timeout within ~2× the timeout; mock `/stats` `requests = 1` | Timeout not honored per request. Reads `/stats`, not M1: the query throws, so no `ProfileEvents` are recorded |
 | B2-11 | Same, `ai_function_max_retries = 2`, `ai_function_retry_initial_delay_ms = 100` | `/stats` `requests = 3`; elapsed consistent with 100 + 200 ms backoff | Retry count and backoff, deterministically — impossible against a real endpoint |
 
-B2-4 is the "did this change add parallelism" test; B2-5 is the "did the planner get AI-aware" test.
+B2-4 is the "did this change add parallelism" test. Its counterpart, "did the planner get AI-aware", is now the mock suite's call-count test, so it runs on every pull request.
 Both compare against a committed baseline, so an improvement is a deliberate, reviewable diff.
 
 ## 6. Laziness scenarios
 
-`t` is a `MergeTree` table, one part, `N = 256 × AI_E2E_DATA_SCALE` rows, `max_block_size = 64`,
-`max_threads = 1`. Two passes:
+**These scenarios have moved.** The count pass now lives in the CI-run mock suite as
+`tests/integration/test_ai_functions/test.py::test_api_call_count_per_query_shape`, at 64 rows: the
+counts are exact integers on any host, so they belong somewhere that runs on every pull request rather
+than in a manual suite whose baseline can drift. The quota-scope probe moved with them, as
+`test_api_call_quota_is_per_query`. What follows describes the scenarios and the measured result; only
+the timing pass still runs from this suite.
+
+`t` is a `MergeTree` table, one part, `N` rows, a small `max_block_size`, `max_threads = 1`. Two passes:
 
 - **Count pass** at `D = 0`, in `test_structural.py`: M1 per scenario. Free, instant, exact — and the
   pass a PR-triggered job gates on, which is what keeps `baselines/laziness.json` from going stale.
