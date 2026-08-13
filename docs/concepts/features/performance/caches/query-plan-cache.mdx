@@ -11,7 +11,10 @@ analysis and logical planning. The query is still parsed on every execution (the
 expensive analysis and planning steps are reused. Unlike the [query cache](/concepts/features/performance/caches/query-cache), which stores query *results*, a query plan cache hit still
 executes the query against current data: the cached plan's table reads are storage-agnostic placeholders that are re-bound to fresh data
 snapshots on every execution. The plan cache is therefore transactionally consistent and suitable for workloads where the same
-analysis-heavy query runs repeatedly over changing data — for example dashboards over deeply nested views.
+analysis-heavy query runs repeatedly over changing data — for example dashboards over deeply nested views. The only exception
+is scalar subqueries when caching them is explicitly enabled with `query_plan_cache_allow_scalar_subqueries`: their values are
+computed during planning and baked into the cached plan as constants, so a hit reuses them without re-reading the underlying
+tables (see [Eligibility](#eligibility)).
 
 The feature is experimental:
 

@@ -5860,7 +5860,7 @@ Possible values:
 - 1 - Enabled
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_query_plan_cache, false, R"(
-If turned on together with `allow_experimental_query_plan_cache`, `SELECT` queries (including queries over views, joins and subqueries) may cache their query plan to skip repeated query analysis and planning on subsequent identical queries. Unlike the query result cache, a plan cache hit still executes the query against current data.
+If turned on together with `allow_experimental_query_plan_cache`, `SELECT` queries (including queries over views, joins and subqueries) may cache their query plan to skip repeated query analysis and planning on subsequent identical queries. Unlike the query result cache, a plan cache hit still executes the query against current data. The only exception is scalar subqueries cached under `query_plan_cache_allow_scalar_subqueries`: their values are computed during planning and baked into the cached plan as constants, so a hit reuses them without re-reading the underlying tables.
 
 Possible values:
 
