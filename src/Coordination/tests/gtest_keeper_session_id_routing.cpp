@@ -11,6 +11,8 @@
 #include <Common/FailPoint.h>
 #include <Common/scope_guard_safe.h>
 
+#include <base/defines.h> // DEBUG_OR_SANITIZER_BUILD
+
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <sstream>
@@ -18,6 +20,13 @@
 #include <gtest/gtest.h>
 
 #include "gtest_coordination_common.h"
+
+#ifndef DEBUG_OR_SANITIZER_BUILD
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+#endif
 
 namespace
 {
@@ -92,6 +101,25 @@ DB::KeeperRequestForSession makeSessionIDRequest(int32_t server_id, int64_t inte
     request_for_session.session_id = DB::keeper_internal_get_session_id;
     return request_for_session;
 }
+
+#ifndef DEBUG_OR_SANITIZER_BUILD
+/// Constructing the dispatcher must fail before it owns anything, so nothing needs joining or
+/// draining on the rejected path.
+template <typename Dispatcher>
+void expectRouterRejected(DB::KeeperServer * server, std::string_view dispatcher_name)
+{
+    try
+    {
+        Dispatcher dispatcher(server, DB::KeeperSpecialResponseRouter{});
+        FAIL() << dispatcher_name << " accepted an empty special response router";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::LOGICAL_ERROR) << e.displayText();
+        EXPECT_NE(e.message().find("requires a special response router"), std::string::npos) << e.displayText();
+    }
+}
+#endif
 
 }
 
@@ -329,10 +357,12 @@ TEST(KeeperDispatcher, PendingSessionIDRequestsFailOnThrowingShutdown)
 }
 
 /// Both dispatchers refuse an empty router, so a caller cannot omit the wiring and silently lose
-/// SessionID error responses. The rejection is a LOGICAL_ERROR, which aborts in debug and sanitizer
-/// builds, so the contract is asserted on that abort rather than with EXPECT_THROW.
+/// SessionID error responses. The rejection is a LOGICAL_ERROR, and how that surfaces depends on the
+/// build: Exception::handleErrorCode aborts under DEBUG_OR_SANITIZER_BUILD and unwinds otherwise, so
+/// each shape needs the assertion idiom that can observe it.
 TEST(KeeperDispatcher, SessionIDRouterIsRequired)
 {
+#ifdef DEBUG_OR_SANITIZER_BUILD
     /// Re-executes the binary instead of forking a process that holds the fixture's threads.
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
 
@@ -345,6 +375,13 @@ TEST(KeeperDispatcher, SessionIDRouterIsRequired)
     EXPECT_DEATH(
         DB::KeeperRequestDispatcherOld(server, DB::KeeperSpecialResponseRouter{}),
         "KeeperRequestDispatcherOld requires a special response router");
+#else
+    DispatcherFixture fixture;
+    auto * server = fixture.server.get();
+
+    expectRouterRejected<DB::KeeperRequestDispatcher>(server, "KeeperRequestDispatcher");
+    expectRouterRejected<DB::KeeperRequestDispatcherOld>(server, "KeeperRequestDispatcherOld");
+#endif
 }
 
 #endif
