@@ -108,9 +108,9 @@ def main() -> int:
     if new is None:
         print(
             "PromQL compliance job: no PR-scoped JSON in S3 "
-            "(integration batch likely did not run test_compliance), skip."
+            "(integration batch likely did not run test_compliance)."
         )
-        return _finish_ok("No PR compliance JSON in S3 yet (404).")
+        return _finish_error("No PR compliance JSON in S3 (404).")
 
     for _k in ("pct", "passed", "failed", "unsupported"):
         if _k not in new:
@@ -152,10 +152,6 @@ def main() -> int:
         return _finish_error("Non-finite pct in result or baseline.")
 
     delta = new_pct - base_pct
-    if abs(delta) < _EPS:
-        print("PromQL compliance job: delta vs baseline is ~0, skip comment payload.")
-        return _finish_ok("Delta vs baseline ~0; no PR comment.")
-
     payload = {
         "baseline_source": baseline_source,
         "from_zero": from_zero,

@@ -71,6 +71,9 @@ def _build_body(d: dict) -> str:
         f"| Unsupported | {base_unsup} | {cur_unsup} | {d_unsup:+d} |\n"
     )
 
+    if abs(delta) < _EPS:
+        body += "\nNote: score is unchanged vs baseline.\n"
+
     if result_json_url:
         body += (
             f"\n[Uploaded compliance JSON for this PR commit]({result_json_url})\n"
