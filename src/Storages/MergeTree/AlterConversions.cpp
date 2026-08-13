@@ -183,11 +183,39 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
             }
         }
         if (!chained)
+        {
+            /// The name being taken may still map to a column that an earlier command dropped, as in
+            /// `RENAME a TO b, DROP b, RENAME c TO b`. That mapping is obsolete: the dropped column is
+            /// no longer reachable under any name, while `b` now means `c`. Keeping both entries would
+            /// leave the lookup by `b` returning whichever of them comes first.
+            std::erase_if(rename_map, [&](const RenamePair & entry)
+            {
+                return entry.rename_to == command.rename_to && dropped_columns.contains(entry.rename_from);
+            });
+
             rename_map.emplace_back(RenamePair{command.rename_to, command.column_name});
+        }
     }
     else if (command.type == DROP_COLUMN)
     {
-        dropped_columns.emplace(command.column_name);
+        /// Record the name the column has in the part, not the one the command used, because every
+        /// consumer of `isColumnDropped` asks about a part column. The two differ once renames are in
+        /// play, and only the position of the drop among them tells the cases apart: after
+        /// `RENAME a TO b, DROP b` the part's `a` is what got dropped, while after
+        /// `DROP b, RENAME a TO b` the drop hit a different column that merely had that name and the
+        /// part's `a` is still live. Commands arrive in the order they were issued, so the renames
+        /// recorded so far are exactly those that precede this drop.
+        auto name_in_part = command.column_name;
+        for (const auto & entry : rename_map)
+        {
+            if (entry.rename_to == name_in_part)
+            {
+                name_in_part = entry.rename_from;
+                break;
+            }
+        }
+
+        dropped_columns.emplace(std::move(name_in_part));
     }
     else if (command.type == READ_COLUMN)
     {
