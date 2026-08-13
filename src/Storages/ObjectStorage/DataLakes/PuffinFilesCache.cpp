@@ -3,6 +3,10 @@
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Common/CurrentMetrics.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <base/arithmeticOverflow.h>
+
+#include <initializer_list>
+#include <limits>
 
 namespace CurrentMetrics
 {
@@ -25,7 +29,22 @@ namespace
 {
 
 constexpr size_t FOOTER_BLOB_OVERHEAD = 64;
-constexpr size_t FOOTER_CELL_OVERHEAD = 200;
+
+UInt64 saturatingAdd(UInt64 left, UInt64 right)
+{
+    UInt64 result = 0;
+    if (common::addOverflow(left, right, result))
+        return std::numeric_limits<UInt64>::max();
+    return result;
+}
+
+UInt64 saturatingAdd(std::initializer_list<UInt64> values)
+{
+    UInt64 result = 0;
+    for (UInt64 value : values)
+        result = saturatingAdd(result, value);
+    return result;
+}
 
 }
 
@@ -51,6 +70,17 @@ bool PuffinFilesCacheKey::operator==(const PuffinFilesCacheKey & other) const
         && data_file_record_count == other.data_file_record_count;
 }
 
+UInt64 PuffinFilesCacheKey::approximateMemoryBytes() const
+{
+    /// Charge string payloads plus the key object / hash-map slot baseline.
+    return saturatingAdd(
+        {static_cast<UInt64>(sizeof(PuffinFilesCacheKey)),
+         static_cast<UInt64>(storage_identity.size()),
+         static_cast<UInt64>(file_path.size()),
+         static_cast<UInt64>(etag.size()),
+         static_cast<UInt64>(referenced_data_file.size())});
+}
+
 size_t PuffinFilesCacheKeyHash::operator()(const PuffinFilesCacheKey & key) const
 {
     size_t hash = 0;
@@ -65,18 +95,26 @@ size_t PuffinFilesCacheKeyHash::operator()(const PuffinFilesCacheKey & key) cons
     return hash;
 }
 
-UInt64 PuffinFilesCacheCell::calculateMemorySize(bool is_empty_deletion_vector_, const DataLakeObjectMetadata::ExcludedRowsPtr & excluded_rows_)
+UInt64 PuffinFilesCacheCell::calculateMemorySize(
+    bool is_empty_deletion_vector_,
+    const DataLakeObjectMetadata::ExcludedRowsPtr & excluded_rows_,
+    UInt64 key_memory_bytes_)
 {
-    if (is_empty_deletion_vector_)
-        return EMPTY_DELETION_VECTOR_WEIGHT;
+    const UInt64 payload_bytes = is_empty_deletion_vector_
+        ? 0
+        : (excluded_rows_ ? excluded_rows_->getAllocatedBytes() : 0);
 
-    return (excluded_rows_ ? excluded_rows_->getAllocatedBytes() : 0) + SIZE_IN_MEMORY_OVERHEAD;
+    return saturatingAdd(
+        {key_memory_bytes_,
+         payload_bytes,
+         static_cast<UInt64>(sizeof(PuffinFilesCacheCell)),
+         static_cast<UInt64>(SIZE_IN_MEMORY_OVERHEAD)});
 }
 
-PuffinFilesCacheCell::PuffinFilesCacheCell(DataLakeObjectMetadata::ExcludedRowsPtr excluded_rows_)
+PuffinFilesCacheCell::PuffinFilesCacheCell(DataLakeObjectMetadata::ExcludedRowsPtr excluded_rows_, UInt64 key_memory_bytes_)
     : excluded_rows(std::move(excluded_rows_))
     , is_empty_deletion_vector(!excluded_rows)
-    , memory_bytes(calculateMemorySize(is_empty_deletion_vector, excluded_rows))
+    , memory_bytes(calculateMemorySize(is_empty_deletion_vector, excluded_rows, key_memory_bytes_))
 {
 }
 
@@ -90,6 +128,15 @@ bool PuffinFooterCacheKey::operator==(const PuffinFooterCacheKey & other) const
     return storage_identity == other.storage_identity && file_path == other.file_path && etag == other.etag;
 }
 
+UInt64 PuffinFooterCacheKey::approximateMemoryBytes() const
+{
+    return saturatingAdd(
+        {static_cast<UInt64>(sizeof(PuffinFooterCacheKey)),
+         static_cast<UInt64>(storage_identity.size()),
+         static_cast<UInt64>(file_path.size()),
+         static_cast<UInt64>(etag.size())});
+}
+
 size_t PuffinFooterCacheKeyHash::operator()(const PuffinFooterCacheKey & key) const
 {
     size_t hash = 0;
@@ -99,28 +146,34 @@ size_t PuffinFooterCacheKeyHash::operator()(const PuffinFooterCacheKey & key) co
     return hash;
 }
 
-UInt64 PuffinFooterCacheCell::calculateMemorySize(const BlobsPtr & blobs_)
+UInt64 PuffinFooterCacheCell::calculateMemorySize(const BlobsPtr & blobs_, UInt64 key_memory_bytes_)
 {
-    UInt64 bytes = FOOTER_CELL_OVERHEAD;
+    UInt64 bytes = saturatingAdd(
+        {key_memory_bytes_,
+         static_cast<UInt64>(sizeof(PuffinFooterCacheCell)),
+         static_cast<UInt64>(SIZE_IN_MEMORY_OVERHEAD)});
+
     if (!blobs_)
         return bytes;
 
-    bytes += blobs_->capacity() * sizeof(PuffinBlob);
+    bytes = saturatingAdd(bytes, static_cast<UInt64>(blobs_->capacity() * sizeof(PuffinBlob)));
     for (const auto & blob : *blobs_)
     {
-        bytes += blob.type.size();
-        bytes += blob.compression_codec.size();
-        bytes += blob.fields.capacity() * sizeof(Int32);
-        for (const auto & [key, value] : blob.properties)
-            bytes += key.size() + value.size();
-        bytes += FOOTER_BLOB_OVERHEAD;
+        bytes = saturatingAdd(
+            {bytes,
+             static_cast<UInt64>(blob.type.size()),
+             static_cast<UInt64>(blob.compression_codec.size()),
+             static_cast<UInt64>(blob.fields.capacity() * sizeof(Int32)),
+             static_cast<UInt64>(FOOTER_BLOB_OVERHEAD)});
+        for (const auto & [prop_key, value] : blob.properties)
+            bytes = saturatingAdd(bytes, saturatingAdd(static_cast<UInt64>(prop_key.size()), static_cast<UInt64>(value.size())));
     }
     return bytes;
 }
 
-PuffinFooterCacheCell::PuffinFooterCacheCell(BlobsPtr blobs_)
+PuffinFooterCacheCell::PuffinFooterCacheCell(BlobsPtr blobs_, UInt64 key_memory_bytes_)
     : blobs(std::move(blobs_))
-    , memory_bytes(calculateMemorySize(blobs))
+    , memory_bytes(calculateMemorySize(blobs, key_memory_bytes_))
 {
 }
 

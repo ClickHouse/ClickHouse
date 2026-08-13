@@ -33,6 +33,21 @@ roaring::Roaring64Map makeLargeSparseRoaring64(size_t keys = 33)
     return bitmap;
 }
 
+PuffinFilesCacheKey makeUniqueKey(size_t index, const String & long_suffix = "")
+{
+    auto key = PuffinFilesCache::tryCreateKey(
+        "Local:////test-prefix",
+        "puffin.bin",
+        "etag-" + std::to_string(index) + long_suffix,
+        100,
+        200,
+        "data/file-" + std::to_string(index) + ".parquet" + long_suffix,
+        /*expected_cardinality=*/0,
+        /*data_file_record_count=*/1000);
+    EXPECT_TRUE(key.has_value());
+    return *key;
+}
+
 }
 
 TEST(RoaringBitmapWithSmallSetMemory, LargeSparseBitmapAllocatedBytesExceedCardinalityEstimate)
@@ -69,27 +84,59 @@ TEST(PuffinFilesCacheWeight, EvictsSparseBitmapsUnderSmallByteLimit)
 {
     /// Each sparse entry weighs far more than cardinality × sizeof(size_t); a tiny byte
     /// limit must not retain many of them if weight uses allocated bytes.
-    const auto entry_weight = makeLargeSparseExcludedRows(16)->getAllocatedBytes();
+    const auto sample_key = makeUniqueKey(0);
+    const auto sample_rows = makeLargeSparseExcludedRows(16);
+    const auto entry_weight = PuffinFilesCacheCell::calculateMemorySize(
+        /*is_empty_deletion_vector_=*/false, sample_rows, sample_key.approximateMemoryBytes());
     ASSERT_GT(entry_weight, 0u);
 
-    const size_t max_bytes = static_cast<size_t>(entry_weight) + 200; // roughly one entry + overhead
+    const size_t max_bytes = static_cast<size_t>(entry_weight) + 64; // roughly one entry
     PuffinFilesCache cache("SLRU", max_bytes, /*max_count=*/100, /*size_ratio=*/0.5);
 
     for (size_t i = 0; i < 8; ++i)
     {
-        const auto key = PuffinFilesCache::tryCreateKey(
-            "Local:////test-prefix",
-            "puffin.bin",
-            "etag-" + std::to_string(i),
-            100,
-            200,
-            "data/file-" + std::to_string(i) + ".parquet",
-            16,
-            1000);
-        ASSERT_TRUE(key.has_value());
-        cache.getOrSetDeletionVector(*key, [&]() { return makeLargeSparseExcludedRows(16); });
+        const auto key = makeUniqueKey(i);
+        cache.getOrSetDeletionVector(key, [&]() { return makeLargeSparseExcludedRows(16); });
     }
 
     EXPECT_LE(CurrentMetrics::get(CurrentMetrics::PuffinFilesCacheBytes), static_cast<Int64>(max_bytes));
     EXPECT_LT(CurrentMetrics::get(CurrentMetrics::PuffinFilesCacheFiles), 8);
+}
+
+TEST(PuffinFilesCacheWeight, LongKeyEmptyEntriesEvictAtByteLimit)
+{
+    /// Empty DVs used to weigh 1 byte and ignore key strings. With an unlimited entry
+    /// count, long unique keys must still be bounded by the configured byte limit.
+    const String long_suffix(8 * 1024, 'x');
+    const auto sample_key = makeUniqueKey(0, long_suffix);
+    const auto entry_weight = PuffinFilesCacheCell::calculateMemorySize(
+        /*is_empty_deletion_vector_=*/true, nullptr, sample_key.approximateMemoryBytes());
+    ASSERT_GT(entry_weight, sample_key.approximateMemoryBytes());
+    ASSERT_GT(entry_weight, 8 * 1024u);
+
+    /// Allow roughly two long-key empty entries; inserting many more must evict.
+    const size_t max_bytes = static_cast<size_t>(entry_weight) * 2 + 128;
+    PuffinFilesCache cache("SLRU", max_bytes, /*max_count=*/0, /*size_ratio=*/0.5);
+
+    for (size_t i = 0; i < 32; ++i)
+    {
+        const auto key = makeUniqueKey(i, long_suffix);
+        cache.getOrSetDeletionVector(key, []() -> DataLakeObjectMetadata::ExcludedRowsPtr { return nullptr; });
+    }
+
+    EXPECT_LE(CurrentMetrics::get(CurrentMetrics::PuffinFilesCacheBytes), static_cast<Int64>(max_bytes));
+    EXPECT_LE(CurrentMetrics::get(CurrentMetrics::PuffinFilesCacheFiles), 3);
+}
+
+TEST(PuffinFilesCacheWeight, EmptyEntryChargesKeyNotOneByte)
+{
+    const String long_path(4096, 'p');
+    const auto key = PuffinFilesCache::tryCreateKey(
+        "Local:////test-prefix", long_path, "etag-empty", 0, 0, long_path, 0, 0);
+    ASSERT_TRUE(key.has_value());
+
+    const auto weight = PuffinFilesCacheCell::calculateMemorySize(
+        /*is_empty_deletion_vector_=*/true, nullptr, key->approximateMemoryBytes());
+    EXPECT_GT(weight, key->approximateMemoryBytes());
+    EXPECT_GE(weight, 2 * 4096u);
 }

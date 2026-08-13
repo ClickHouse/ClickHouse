@@ -81,9 +81,12 @@ TEST(PuffinFilesCacheClone, EmptyExcludedRowsReturnsNullptr)
     auto first = cache.getOrSetDeletionVector(*key, load_fn);
     auto second = cache.getOrSetDeletionVector(*key, load_fn);
 
+    const auto expected_weight = PuffinFilesCacheCell::calculateMemorySize(
+        /*is_empty_deletion_vector_=*/true, nullptr, key->approximateMemoryBytes());
+
     EXPECT_EQ(first, nullptr);
     EXPECT_EQ(second, nullptr);
     EXPECT_EQ(load_calls, 1);
     EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::PuffinFilesCacheFiles), files_before + 1);
-    EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::PuffinFilesCacheBytes), bytes_before + 1);
+    EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::PuffinFilesCacheBytes), bytes_before + static_cast<Int64>(expected_weight));
 }
