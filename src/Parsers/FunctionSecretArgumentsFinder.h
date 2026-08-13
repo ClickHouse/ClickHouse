@@ -107,7 +107,8 @@ protected:
 
     /// Named arguments carrying TLS credentials as the literal contents of a certificate or a key file,
     /// rather than as a path to it. They are secret and have to be hidden the same way a password is.
-    static constexpr std::string_view tls_credentials_secret_keys[] = {"ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"};
+    static constexpr std::string_view tls_credentials_secret_keys[]
+        = {"ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"};
 
     /// Named arguments carrying NATS credentials. They are the setting names, because the `NATS` engine
     /// takes its arguments as overrides of a named collection (`NATS(collection, nats_token = '...')`).
