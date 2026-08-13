@@ -221,6 +221,69 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
 /// and has no counterpart in the single-replica plan. Such a set builds itself from the temporary table,
 /// which is exactly the work we wanted to move off the replicas, so leave it alone instead of failing.
 /// For the probe plan the two plans must mirror each other, and an unmatched set stays a hard error.
+/// Hand every read in the parallel replicas plan the analysis the single-node plan already produced for
+/// the same read. The plans are built from the same query and differ only where the replicas step is
+/// substituted, so their reads pair up in traversal order; the storage identity of each pair is checked
+/// and the whole transplant is skipped if anything does not line up. Without this only the matched read
+/// gets an analysis and the rest scan everything - on TPC-H q03, 1045 marks against 614.
+std::vector<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Node & root)
+{
+    Stack stack;
+    std::vector<ReadFromMergeTree *> reading_steps;
+    traverseQueryPlan(
+        stack,
+        root,
+        [&](auto & frame_node)
+        {
+            if (auto * reading_step = typeid_cast<ReadFromMergeTree *>(frame_node.step.get()))
+                reading_steps.push_back(reading_step);
+        });
+    return reading_steps;
+}
+
+void transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan::Node & replicas_root)
+{
+    auto single_node_reads = collectReadingSteps(single_node_root);
+    auto replicas_reads = collectReadingSteps(replicas_root);
+
+    if (single_node_reads.size() != replicas_reads.size())
+    {
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "Single-node plan has {} reads and the replicas plan {}; not transplanting index analysis",
+            single_node_reads.size(),
+            replicas_reads.size());
+        return;
+    }
+
+    for (size_t i = 0; i < single_node_reads.size(); ++i)
+    {
+        if (&single_node_reads[i]->getMergeTreeData() != &replicas_reads[i]->getMergeTreeData())
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Read {} is {} in the single-node plan and {} in the replicas plan; not transplanting index analysis",
+                i,
+                single_node_reads[i]->getStorageID().getNameForLogs(),
+                replicas_reads[i]->getStorageID().getNameForLogs());
+            return;
+        }
+    }
+
+    for (size_t i = 0; i < single_node_reads.size(); ++i)
+    {
+        /// Index analysis is lazy, so a read the single-node plan has not needed yet has no result to
+        /// hand over. Produce it here, the same way the matched read step does: it is one analysis per
+        /// read either way, and this way it is done once and shared instead of being repeated by the
+        /// replicas plan.
+        auto analyzed = single_node_reads[i]->getAnalyzedResult();
+        if (!analyzed)
+            analyzed = single_node_reads[i]->selectRangesToRead();
+        if (analyzed)
+            replicas_reads[i]->setAnalyzedResult(analyzed);
+    }
+}
+
 /// Whether the query has any `IN (subquery)` set to ship at all. Without one the shipped plan is identical
 /// to the probe, and building it a second time is pure waste - measured at ~0.5 ms of plan build plus
 /// ~1.5 ms of optimization on a single-table query.
@@ -347,7 +410,8 @@ void considerEnablingParallelReplicas(
     /// subquery with a temporary table, which changes that hash and makes the match fail - so the probe
     /// is always built unshipped, and the shipped plan is built below only once replicas are chosen.
     auto built_sets = collectBuiltSets(query_plan);
-    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(built_sets, /*ship_in_subqueries*/ false);
+    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(
+        built_sets, /*ship_in_subqueries*/ false);
     if (!plan_with_parallel_replicas)
         return;
 
@@ -452,6 +516,8 @@ void considerEnablingParallelReplicas(
                     return;
                 }
 
+                transplantAnalysisToAllReads(*query_plan.getRootNode(), *plan_with_parallel_replicas->getRootNode());
+
                 ReadFromMergeTree * local_replica_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
                 if (!local_replica_plan_reading_step)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find ReadFromMergeTree step in local parallel replicas plan");
@@ -487,7 +553,8 @@ void considerEnablingParallelReplicas(
                 if (optimization_settings.parallel_replicas_ship_prepared_sets && planHasSubquerySets(query_plan))
                 {
                     if (auto shipped_plan
-                        = optimization_settings.query_plan_with_parallel_replicas_builder(built_sets, /*ship_in_subqueries*/ true))
+                        = optimization_settings.query_plan_with_parallel_replicas_builder(
+                            built_sets, /*ship_in_subqueries*/ true))
                     {
                         /// Redo on the shipped plan what was done to the probe: hand it the index analysis
                         /// the single-node plan already produced.
@@ -497,6 +564,8 @@ void considerEnablingParallelReplicas(
                         /// evaluated, so nothing prunes and the analysis selects far more marks than the
                         /// single-node one the decision was based on (measured on TPC-H q03: 1045 marks
                         /// against 614, and three times the rows read).
+                        transplantAnalysisToAllReads(*query_plan.getRootNode(), *shipped_plan->getRootNode());
+
                         const auto * shipped_top = findTopNodeOfReplicasPlan(shipped_plan->getRootNode());
                         ReadFromMergeTree * shipped_reading_step = shipped_top ? findReadingStep(*shipped_top) : nullptr;
                         if (shipped_reading_step

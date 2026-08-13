@@ -218,7 +218,9 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     // never be analyzed at all: on TPC-H q03 the `lineitem` read selects every mark, 734 of 734, where the
     // single-node plan prunes to 398. So keep primary key analysis for it and only skip it for the probe,
     // which is thrown away.
-    optimization_settings.query_plan_optimize_primary_key = ship_in_subqueries;
+    // Never analyze here: `considerEnablingParallelReplicas` hands every read the analysis the
+    // single-node plan produced, so doing it again would be pure cost.
+    optimization_settings.query_plan_optimize_primary_key = false;
     // Depends on PK optimizations that we don't perform here
     optimization_settings.optimize_projection = false;
     optimization_settings.force_use_projection = false;
