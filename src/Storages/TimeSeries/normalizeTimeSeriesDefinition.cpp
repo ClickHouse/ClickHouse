@@ -44,7 +44,9 @@ namespace TimeSeriesSetting
 {
     extern const TimeSeriesSettingsBool aggregate_min_time_and_max_time;
     extern const TimeSeriesSettingsASTFunction id_generator;
+    extern const TimeSeriesSettingsUInt64 samples_index_granularity;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
+    extern const TimeSeriesSettingsUInt64 tags_index_granularity;
     extern const TimeSeriesSettingsMap tags_to_columns;
     extern const TimeSeriesSettingsBool use_all_tags_column_to_generate_id;
 }
@@ -312,7 +314,7 @@ namespace
         if (!scalar_type)
             scalar_type = std::make_shared<DataTypeFloat64>();
         if (!id_type)
-            id_type = std::make_shared<DataTypeUUID>();
+            id_type = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUUID>()});
 
         /// Validate types.
         {
@@ -328,13 +330,13 @@ namespace
                     table_id.getNameForLogs(), scalar_type->getName(), TimeSeriesColumnNames::Value);
         }
         {
-            WhichDataType id_which{*id_type};
-            bool id_ok = id_which.isUInt64()
-                || (id_which.isFixedString() && typeid_cast<const DataTypeFixedString &>(*id_type).getN() == 16)
-                || id_which.isUUID()
-                || id_which.isUInt128();
+            /// Identifiers can be of any comparable type: the id column is used in the sorting keys of the inner tables
+            /// and in JOINs between them.
+            bool id_ok = id_type->isComparable() && !id_type->isNullable() && !id_type->isLowCardinalityNullable()
+                && !isNothing(*id_type) && !isVariant(*id_type) && !id_type->hasDynamicSubcolumns();
             if (!id_ok)
-                throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "{}: Unexpected type {} of the {} column",
+                throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
+                    "{}: Unexpected type {} of the {} column, it must be a comparable non-Nullable type",
                     table_id.getNameForLogs(), id_type->getName(), TimeSeriesColumnNames::ID);
         }
 
@@ -709,36 +711,6 @@ namespace
         create_query.set(create_query.columns_list, new_outer_columns);
     }
 
-
-    /// The TimeSeries `tags` inner table keeps the tag columns (and the `tags`/`all_tags` Maps) outside
-    /// the sorting key, but they are functionally dependent on `id`, which is part of it: every group of
-    /// rows that a background merge collapses together shares the same `id`, hence the same values of
-    /// those columns, so this off-key layout is safe here. `AggregatingMergeTree` rejects such a layout
-    /// by default (see the `allow_dimensions_outside_sorting_key` setting and
-    /// https://github.com/ClickHouse/ClickHouse/issues/751), so enable that setting on the inner tags
-    /// engine — both when we generate it and when the user specifies an aggregating engine explicitly.
-    void allowOffKeyDimensionsForAggregatingTagsEngine(ASTStorage & storage)
-    {
-        if (!storage.engine || !storage.engine->name.contains("Aggregating"))
-            return;
-
-        if (storage.settings)
-        {
-            /// Respect an explicit value if the user already set it.
-            for (const auto & change : storage.settings->changes)
-                if (change.name == "allow_dimensions_outside_sorting_key")
-                    return;
-        }
-        else
-        {
-            auto settings_ast = make_intrusive<ASTSetQuery>();
-            settings_ast->is_standalone = false;
-            storage.set(storage.settings, settings_ast);
-        }
-
-        storage.settings->changes.push_back(SettingChange{"allow_dimensions_outside_sorting_key", Field(static_cast<UInt64>(1))});
-    }
-
     /// Makes the definition of the default engine for an inner table.
     boost::intrusive_ptr<ASTStorage> generateInnerEngine(ViewTarget::Kind target_kind, const TimeSeriesSettings & settings)
     {
@@ -790,6 +762,60 @@ namespace
         }
 
         return storage;
+    }
+
+    /// Whether the SETTINGS clause of an inner table's engine declaration contains the specified setting.
+    bool hasInnerEngineSetting(const ASTStorage & storage, std::string_view name)
+    {
+        return storage.settings && storage.settings->changes.tryGet(name);
+    }
+
+    /// Sets a setting in the SETTINGS clause of an inner table's engine declaration,
+    /// overwriting the existing value if present.
+    void setInnerEngineSetting(ASTStorage & storage, std::string_view name, const Field & value)
+    {
+        if (!storage.settings)
+        {
+            auto settings_ast = make_intrusive<ASTSetQuery>();
+            settings_ast->is_standalone = false;
+            storage.set(storage.settings, settings_ast);
+        }
+        storage.settings->changes.setSetting(name, value);
+    }
+
+    /// Applies engine settings driven by the TimeSeries settings to an inner table's engine,
+    /// whether the engine was generated or specified by the user.
+    void applyInnerEngineSettings(ViewTarget::Kind kind, ASTStorage & storage, const TimeSeriesSettings & settings)
+    {
+        if (!storage.engine)
+            return;
+
+        const auto & engine_name = storage.engine->name;
+
+        /// The `samples_index_granularity` and `tags_index_granularity` settings set `index_granularity`
+        /// of the inner samples and tags tables. A setting set explicitly overrides `index_granularity`
+        /// from the engine declaration. Engines outside the MergeTree family don't support `index_granularity`.
+        if ((kind == ViewTarget::Samples || kind == ViewTarget::Tags) && engine_name.ends_with("MergeTree"))
+        {
+            const auto & index_granularity = settings[(kind == ViewTarget::Samples)
+                ? TimeSeriesSetting::samples_index_granularity
+                : TimeSeriesSetting::tags_index_granularity];
+            if (index_granularity.isChanged() || !hasInnerEngineSetting(storage, "index_granularity"))
+                setInnerEngineSetting(storage, "index_granularity", Field(index_granularity.value));
+        }
+
+        /// The TimeSeries `tags` inner table keeps the tag columns (and the `tags`/`all_tags` Maps) outside
+        /// the sorting key, but they are functionally dependent on `id`, which is part of it: every group of
+        /// rows that a background merge collapses together shares the same `id`, hence the same values of
+        /// those columns, so this off-key layout is safe here. `AggregatingMergeTree` rejects such a layout
+        /// by default (see the `allow_dimensions_outside_sorting_key` setting and
+        /// https://github.com/ClickHouse/ClickHouse/issues/751), so enable that setting on the inner tags
+        /// engine — both when we generate it and when the user specifies an aggregating engine explicitly.
+        if (kind == ViewTarget::Tags && engine_name.contains("Aggregating")
+            && !hasInnerEngineSetting(storage, "allow_dimensions_outside_sorting_key"))
+        {
+            setInnerEngineSetting(storage, "allow_dimensions_outside_sorting_key", Field(static_cast<UInt64>(1)));
+        }
     }
 
     /// Checks that a target table or an inner-columns list has all the columns required by the
@@ -1078,11 +1104,8 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
                 if (!create_query.getTargetInnerEngine(kind))
                     create_query.setTargetInnerEngine(kind, generateInnerEngine(kind, settings));
 
-                if (kind == ViewTarget::Tags)
-                {
-                    if (auto * tags_engine = create_query.getTargetInnerEngine(kind))
-                        allowOffKeyDimensionsForAggregatingTagsEngine(*tags_engine);
-                }
+                if (auto * inner_engine = create_query.getTargetInnerEngine(kind))
+                    applyInnerEngineSettings(kind, *inner_engine, settings);
             }
         }
     }
