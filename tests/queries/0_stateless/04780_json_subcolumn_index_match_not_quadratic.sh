@@ -16,9 +16,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e
 
 REPEATS=100000
-# Measured on a debug build: pre-fix the dotted arm allocates 2.8x-3.0x the control in every arm,
-# post-fix 1.0003x. 1.5 sits an order of magnitude away from the fixed behavior and ~1.9x below
-# the regression, so it discriminates with margin on both sides.
+# Measured on a debug build with the untracked-memory limit pinned to 0: the dotted arm allocates
+# 1.00002x the control while the matcher is linear in the constant's length, and 1296x-2386x of it
+# while quadratic, so 1.5 discriminates by orders of magnitude on both sides.
 MAX_RATIO_PERCENT=150
 
 LONG_SUFFIX=$(printf 'a%.0s' $(seq 1 170))
