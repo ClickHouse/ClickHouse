@@ -216,25 +216,25 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     if (search_column.empty() || reference_vector.empty())
         return no_layers_updated;
 
-    /// Check if a vector similarity index exists on top of the search column.
+    /// Check if a vector similarity or vector_spann index exists on top of the search column.
     /// Multi-column indexes cannot be used
     const auto & indexes = read_from_mergetree_step->getStorageMetadata()->getSecondaryIndices();
-    bool has_vector_similarity_index = false;
+    bool has_vector_search_index = false;
     for (const auto & index : indexes)
     {
-        if (index.type != "vector_similarity")
+        if (index.type != "vector_similarity" && index.type != "vector_spann")
             continue;
 
         chassert(index.expression);
         auto required_columns = index.expression->getRequiredColumns();
         if (required_columns.size() == 1 && required_columns[0] == search_column)
         {
-            has_vector_similarity_index = true;
+            has_vector_search_index = true;
             break;
         }
     }
 
-    if (!has_vector_similarity_index)
+    if (!has_vector_search_index)
         return no_layers_updated;
 
     /// The `_distance` column is an internal virtual column populated by the vector search optimization.
@@ -387,10 +387,10 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
 
     ActionsDAG & expression = expression_step->getExpression();
 
-    bool optimize_plan = !settings.vector_search_with_rescoring;
-    /// FINAL may add PK-overlapping ranges after vector index analysis. In that case,
-    /// vector row hints only describe the original candidates and must not filter
-    /// rows added for the final merge.
+    /// FINAL can change the visible row set after vector index analysis.
+    /// The optimized `_distance` rewrite also enables exact-row filtering in
+    /// MergeTreeRangeReader, so keep it disabled under FINAL like rescoring.
+    bool optimize_plan = !settings.vector_search_with_rescoring && !read_from_mergetree_step->isQueryWithFinal();
     bool apply_row_filter_for_rescoring = settings.vector_search_with_rescoring && !read_from_mergetree_step->isQueryWithFinal();
     if (optimize_plan)
     {
@@ -451,6 +451,20 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
             {
                 auto sqrt_function = FunctionFactory::instance().get("sqrt", read_from_mergetree_step->getContext());
                 distance_node = &expression.addFunction(sqrt_function, {distance_node}, {});
+            }
+            else if (vector_search_parameters->distance_function == "dotProduct")
+            {
+                /// usearch and vector_spann store `1 - dotProduct` as the internal `_distance` (smaller means
+                /// more similar), but the planner requires - and preserves - `ORDER BY dotProduct(...) DESC`.
+                /// Sorting the raw `_distance` DESC would rank the worst matches first. Expose the
+                /// dotProduct-compatible score `1 - _distance` instead: this restores the correct ranking under
+                /// the preserved DESC direction and makes the projected value equal the real dotProduct, mirroring
+                /// how the branch above reverses usearch's squared-distance encoding via `sqrt` for `L2Distance`.
+                auto one_type = std::make_shared<DataTypeFloat32>();
+                auto one_column = one_type->createColumnConst(1, Field(Float32(1)));
+                const auto * one_node = &expression.addColumn(std::move(one_column), one_type, "_one_for_dot_product");
+                auto minus_function = FunctionFactory::instance().get("minus", read_from_mergetree_step->getContext());
+                distance_node = &expression.addFunction(minus_function, {one_node, distance_node}, {});
             }
 
             if (!distance_node->result_type->equals(*result_type))

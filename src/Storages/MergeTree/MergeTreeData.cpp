@@ -1146,7 +1146,8 @@ void MergeTreeData::checkProperties(
     ///     INSERT INTO tab SELECT number, [toFloat32(number), 0.] FROM numbers(10000);
     ///     WITH [1., 0.] AS reference_vec SELECT id, L2Distance(vec, reference_vec) FROM tab PREWHERE toLowCardinality(10) ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 100;
     /// As a workaround, force enabled adaptive index granularity for now (it is the default anyways).
-    if (new_metadata.secondary_indices.hasType("vector_similarity") && (*getSettings())[MergeTreeSetting::index_granularity_bytes] == 0)
+    if (AlterCommands::hasVectorSimilarityIndex(new_metadata)
+        && (*getSettings())[MergeTreeSetting::index_granularity_bytes] == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "Vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
 
@@ -5949,6 +5950,9 @@ static bool hasTextIndexMaterialization(const MutationCommands & commands, Stora
         if (it == secondary_indices.end())
             continue;
 
+        /// `text` and `vector_similarity` use part-wide `UInt32` row ids, so materialization is capped at
+        /// `UInt32::max()` rows per part below. `vector_spann` uses `UInt64` per-granule row ids and imposes
+        /// no such part-wide limit, so it is intentionally excluded from that guard.
         if (it->type == "text" || it->type == "vector_similarity")
             return true;
     }

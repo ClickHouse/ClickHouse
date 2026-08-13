@@ -181,6 +181,12 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
     }
 
+    /// Returns the fetch limit used by `calculateApproximateNearestNeighbors` if available.
+    virtual std::optional<size_t> getApproximateNearestNeighborsLimit() const
+    {
+        return std::nullopt;
+    }
+
     template <typename RPNElement>
     bool rpnEvaluatesAlwaysUnknownOrTrue(
         const std::vector<RPNElement> & rpn, const std::unordered_set<typename RPNElement::Function> & matchingFunctions) const
@@ -388,6 +394,9 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach, cons
 #if USE_USEARCH
 MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+
+MergeTreeIndexPtr spannIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void spannIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 #endif
 
 MergeTreeIndexPtr ginIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);

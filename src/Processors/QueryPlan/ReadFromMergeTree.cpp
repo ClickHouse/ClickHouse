@@ -53,7 +53,6 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/IndexReadRangesRefiner.h>
@@ -2414,12 +2413,9 @@ void ReadFromMergeTree::buildIndexes(
         if (index_helper->isVectorSimilarityIndex())
         {
 #if USE_USEARCH
-            const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get());
-            chassert(vector_similarity_index);
-
-            factory = [vector_similarity_index, query_context, vector_search_parameters](const ActionsDAG *, const ActionsDAG::Node * predicate)
+            factory = [index_helper, query_context, vector_search_parameters](const ActionsDAG *, const ActionsDAG::Node * predicate)
             {
-                return vector_similarity_index->createIndexCondition(predicate, query_context, vector_search_parameters);
+                return index_helper->createIndexCondition(predicate, query_context, vector_search_parameters);
             };
 #endif
         }
@@ -2524,9 +2520,9 @@ void ReadFromMergeTree::buildIndexes(
                 auto r_index_priority = r_is_minmax ? 1 : 2;
 
 #if USE_USEARCH
-                // A vector similarity index (if present) is the most selective, hence move it to front
-                bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l_index.get());
-                bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r_index.get());
+                // A vector similarity index (if present) is the most selective, hence move it to front.
+                bool l_is_vectorsimilarity = l_index->isVectorSimilarityIndex();
+                bool r_is_vectorsimilarity = r_index->isVectorSimilarityIndex();
                 if (l_is_vectorsimilarity)
                     l_index_priority = 0;
                 if (r_is_vectorsimilarity)

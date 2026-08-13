@@ -1282,7 +1282,7 @@ static NameToNameVector collectFilesForRenames(
     /// Ownership must come from each surviving index's own `getSubstreams`, and only for the
     /// extension that substream declares: claiming a substream or extension the type does not write
     /// would protect, and so leak, a file of the index being dropped.
-    static const std::array<String, 4> owned_substream_suffixes = {"", ".dct", ".pst", ".pos"};
+    static const std::array<String, 5> owned_substream_suffixes = {"", ".dct", ".pst", ".pos", ".pl"};
     static const std::array<String, 2> owned_index_extensions = {".idx2", ".idx"};
 
     NameSet surviving_index_owned_files;
@@ -1323,7 +1323,8 @@ static NameToNameVector collectFilesForRenames(
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
             /// The index type is gone from metadata by now, so enumerate every suffix any skip
-            /// index can own (positional text adds `.pos` to `.dct`/`.pst`) and both minmax extensions.
+            /// index can own (positional text adds `.pos` to `.dct`/`.pst`; vector_spann adds `.pl`)
+            /// and both minmax extensions.
             for (const auto & substream : owned_substream_suffixes)
             {
                 for (const auto & extension : owned_index_extensions)
@@ -3593,7 +3594,9 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         /// all skip-index types. This both detects archive_dirty for drop-only mutations and yields
         /// the exact in-archive filenames the filter must remove (avoiding a prefix collision when
         /// two indices share a getIndexFileName prefix, e.g. `a` and `a.b` with `escape_index_filenames` = 0).
-        static const std::array<String, 4> known_substream_suffixes = {"", ".dct", ".pst", ".pos"};
+        /// Keep this list in sync with the DROP_INDEX removal in `collectFilesForRenames` and with every
+        /// `IMergeTreeIndex::getSubstreams` implementation (`.pos` = text positions, `.pl` = vector_spann posting lists).
+        static const std::array<String, 5> known_substream_suffixes = {"", ".dct", ".pst", ".pos", ".pl"};
         static const std::array<String, 2> known_index_extensions = {".idx2", ".idx"};
         const bool escape_filenames = ctx->metadata_snapshot->escape_index_filenames;
 
