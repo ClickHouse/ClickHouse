@@ -295,6 +295,9 @@
     M(KeeperReadThreads, "Number of threads in the threadpool for keeper server reads.") \
     M(KeeperReadThreadsActive, "Number of active threads in the threadpool for keeper server reads.") \
     M(KeeperReadThreadsScheduled, "Number of queued or active jobs in the threadpool for keeper server reads. Meaningless metric, the actual read tasks on this thread pool are scheduled through a different mechanism.") \
+    M(KeeperChangelogReadAheadThreads, "Number of threads in the threadpool for Keeper changelog read-ahead fill tasks.") \
+    M(KeeperChangelogReadAheadThreadsActive, "Number of active threads in the threadpool for Keeper changelog read-ahead fill tasks.") \
+    M(KeeperChangelogReadAheadThreadsScheduled, "Number of queued or active jobs in the threadpool for Keeper changelog read-ahead fill tasks.") \
     M(KeeperBlockCacheBytes, "Total size of blocks in the Keeper storage block cache, in bytes.") \
     M(KeeperBlockCacheBlocks, "Number of blocks in the Keeper storage block cache.") \
     M(DistributedBytesToInsert, "Number of pending bytes to process for asynchronous insertion into Distributed tables. Number of bytes for every shard is summed.") \
@@ -348,6 +351,9 @@
     M(FilesystemCacheEvictionThreads, "Number of threads in the filesystem cache background eviction (removal) pool") \
     M(FilesystemCacheEvictionThreadsActive, "Number of threads in the filesystem cache background eviction pool running a task") \
     M(FilesystemCacheEvictionThreadsScheduled, "Number of queued or active jobs in the filesystem cache background eviction pool") \
+    M(FilesystemCacheDropCacheThreads, "Number of threads in the filesystem cache pool for parallel keys removal on SYSTEM DROP FILESYSTEM CACHE") \
+    M(FilesystemCacheDropCacheThreadsActive, "Number of threads in the filesystem cache keys removal pool running a task") \
+    M(FilesystemCacheDropCacheThreadsScheduled, "Number of queued or active jobs in the filesystem cache keys removal pool") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(IcebergMetadataFilesCacheBytes, "Size of the Iceberg metadata cache in bytes") \
     M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \

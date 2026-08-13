@@ -2,6 +2,7 @@
 #include <atomic>
 #include <mutex>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
+#include <Storages/MergeTree/PartDirIntent.h>
 #include <base/types.h>
 
 namespace DB
@@ -17,8 +18,9 @@ class VersionMetadataOnDisk : public VersionMetadata
 public:
     /// Constructs a `VersionMetadataOnDisk` instance for the given data part.
     /// Initializes `can_write_metadata` based on whether the storage supports transactions and the part is writable.
-    /// Sets `is_persist_deferrable` to true if no metadata file exists yet (to defer writes for non-transactional parts).
-    explicit VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_data_part_);
+    /// Sets `is_persist_deferrable` to true if no metadata file exists yet (to defer writes for
+    /// non-transactional parts); only `OpenExisting` probes the disk for it.
+    VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_data_part_, PartDirIntent intent);
 
     /// Loads transactional metadata from disk with error handling for missing or incomplete files.
     /// Handles special cases:
