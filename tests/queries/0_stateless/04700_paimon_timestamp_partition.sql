@@ -42,5 +42,11 @@ DESC paimonS3(s3_conn, filename='paimon_timestamp_partition/ltz');
 SET session_timezone = 'Asia/Shanghai';
 SELECT id, ts0, tsltz FROM paimonS3(s3_conn, filename='paimon_timestamp_partition/ltz') ORDER BY id;
 
+-- Exercise partition pruning for high-precision `TIMESTAMP WITH LOCAL TIME ZONE` while the session
+-- uses a non-UTC time zone.
+SELECT id, tsltz FROM paimonS3(s3_conn, filename='paimon_timestamp_partition/ltz')
+WHERE tsltz = '2025-07-31 08:30:00.123456'
+ORDER BY id SETTINGS use_paimon_partition_pruning = 1;
+
 SET session_timezone = 'UTC';
 SELECT id, ts0, tsltz FROM paimonS3(s3_conn, filename='paimon_timestamp_partition/ltz') ORDER BY id;
