@@ -673,7 +673,29 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
                 || to_remove == RemoveProperty::MATERIALIZED
                 || to_remove == RemoveProperty::ALIAS)
             {
+                /// Whether the column was an ALIAS over a real expression (not a simple column
+                /// reference): only such columns carry an implicit index built over the alias
+                /// expression. Must be checked before the default is cleared below.
+                bool was_expression_alias = column.default_desc.kind == ColumnDefaultKind::Alias
+                    && column.default_desc.expression && !column.default_desc.expression->as<ASTIdentifier>();
+
                 column.default_desc = ColumnDefault{};
+
+                /// Removing ALIAS changes the column kind to physical, so its implicit indices
+                /// change too. REMOVE ALIAS is a metadata-only operation: nothing rewrites the
+                /// existing parts, so index files built while the column was an expression alias
+                /// are stale (existing rows now read the physical default value), and re-creating
+                /// the same-named implicit index would silently reuse them and prune wrong. Drop
+                /// the index and do not re-create it. A simple identifier alias never had an
+                /// implicit index, so there are no stale files and the now-physical column may
+                /// gain one. Removing DEFAULT or MATERIALIZED keeps the stored column data and
+                /// the index eligibility unchanged, so no refresh is needed there.
+                if (to_remove == RemoveProperty::ALIAS)
+                {
+                    metadata.dropImplicitIndicesForColumn(column_name);
+                    if (!was_expression_alias)
+                        metadata.addImplicitIndicesForColumn(column, context);
+                }
             }
             else if (to_remove == RemoveProperty::CODEC)
             {
