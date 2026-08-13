@@ -940,7 +940,7 @@ void KeeperServer::stopLeaderMetricsPolling()
 void KeeperServer::collectLeaderMetrics()
 {
     nuraft::ptr<nuraft::delayed_task> polling_task;
-    int32_t poll_interval_ms;
+    int32_t poll_interval_ms = 0;
     {
         std::lock_guard lock(leader_unavailable_metrics_mutex);
         if (!leader_unavailable_polling_task)
