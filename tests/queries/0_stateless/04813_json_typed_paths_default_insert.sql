@@ -2,6 +2,9 @@
 -- Covers both the trivial fast path and the non-trivial path (Enum, whose
 -- default is the first enum value, not zero), plus Nullable typed paths.
 
+-- Reading a subcolumn of an aliased expression (j.e) requires the analyzer.
+SET enable_analyzer = 1;
+
 -- Trivial defaults only (Int64 typed paths): fast path in ObjectJSONNode.
 SELECT '{}'::JSON(a Int64, b Int64) AS j;
 
