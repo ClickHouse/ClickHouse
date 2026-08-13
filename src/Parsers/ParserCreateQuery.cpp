@@ -1066,11 +1066,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->set(query->storage, storage);
     query->set(query->as_table_function, as_table_function);
 
-    if (comment)
-        query->set(query->comment, comment);
-    if (sql_security)
-        query->set(query->sql_security, sql_security);
-
+    /// Normalize a PRIMARY KEY declared inside the column list into the storage definition
+    /// before the comment child is appended: when there is no explicit ENGINE clause, the
+    /// storage node is synthesized here, and it must land in `children` where a fresh parse
+    /// of the formatted query would put it - before the comment - or the tree hash would
+    /// not survive a format+parse round trip.
     if (query->columns_list && query->columns_list->primary_key)
     {
         /// If engine is not set will use default one
@@ -1101,6 +1101,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->columns_list->reset(query->columns_list->primary_key_from_columns);
         query->storage->normalizeChildrenOrder();
     }
+
+    if (comment)
+        query->set(query->comment, comment);
+    if (sql_security)
+        query->set(query->sql_security, sql_security);
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
