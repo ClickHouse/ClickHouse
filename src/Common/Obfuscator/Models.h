@@ -811,6 +811,10 @@ public:
                     params.frequency_add);
             };
 
+            /// `frequency_add` is `size_t`, which is a type distinct from `UInt64` on some platforms
+            /// (e.g. Darwin), and the checked arithmetic functions require identical operand types.
+            const UInt64 frequency_add = params.frequency_add;
+
             for (auto & elem : table)
             {
                 Histogram & histogram = elem.getMapped();
@@ -818,12 +822,12 @@ public:
                     continue;
 
                 for (auto & bucket : histogram.buckets)
-                    if (common::addOverflow(bucket.second, params.frequency_add, bucket.second))
+                    if (common::addOverflow(bucket.second, frequency_add, bucket.second))
                         throw_overflow();
 
                 UInt64 total_addition = 0;
-                if (common::addOverflow(histogram.count_end, params.frequency_add, histogram.count_end)
-                    || common::mulOverflow(params.frequency_add, static_cast<UInt64>(histogram.buckets.size()), total_addition)
+                if (common::addOverflow(histogram.count_end, frequency_add, histogram.count_end)
+                    || common::mulOverflow(frequency_add, static_cast<UInt64>(histogram.buckets.size()), total_addition)
                     || common::addOverflow(histogram.total, total_addition, histogram.total))
                     throw_overflow();
             }
