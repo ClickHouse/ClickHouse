@@ -536,6 +536,10 @@ void DiskObjectStorageTransaction::copyFileImpl(
     {
         if (String inline_data = src_metadata_storage->readInlineDataToString(from_file_path); !inline_data.empty())
         {
+            /// Inline data and blobs are mutually exclusive; a file carrying both would lose
+            /// its blobs here.
+            chassert(src_metadata_storage->getStorageObjects(from_file_path).empty());
+
             WriteSettings inline_write_settings = write_settings;
             inline_write_settings.inline_file_max_bytes = metadata_storage->supportsInlineData() ? inline_data.size() : 0;
             auto buf = writeFile(to_file_path, inline_data.size(), WriteMode::Rewrite, inline_write_settings);

@@ -829,6 +829,10 @@ void DiskObjectStorage::prepareRead(
     {
         if (String inline_data = metadata_storage->readInlineDataToString(path); !inline_data.empty())
         {
+            /// Inline data and blobs are mutually exclusive; a file carrying both would lose
+            /// its blobs here.
+            chassert(metadata_storage->getStorageObjects(path).empty());
+
             ReadPipeline::BufferCreator creator =
                 [content = std::move(inline_data), path]
                 (const StoredObject &, const ReadSettings &, bool, bool) -> std::unique_ptr<ReadBufferFromFileBase>
