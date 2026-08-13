@@ -58,6 +58,7 @@ the attach, which would upload a previous job's dump as this run's.
 
 import argparse
 import ast
+import builtins
 import contextlib
 import inspect
 import io
@@ -184,6 +185,71 @@ def _chdir(path):
         yield
     finally:
         os.chdir(previous)
+
+
+def _collector_write_targets(ct, args, tmp_path):
+    """Every path the collector opens for writing, and the text it appended.
+
+    Intercepting the writes is what makes this checkable at all.  The server's
+    own log destinations cannot be watched from here: under the CI fixture
+    `log_to_console.xml` removes `logger.log` and `logger.errorlog`, so it
+    reports no file sink, and the harness directory it writes into instead is
+    deleted mid-session by tests that move `ci/tmp` aside -- after which the
+    server keeps writing to the unlinked inodes, so no reachable path sees its
+    output.  What the collector itself opens is independent of all of that.
+
+    Signals sent are recorded alongside, because a write is not the only way to
+    make the server log: signalling it makes `BaseDaemon` dump `<Fatal>` records
+    from its own process, where no in-process interception can see them.
+    """
+    opened = {}
+    signals = []
+    real_open, real_kill = builtins.open, os.kill
+    real_killpg = os.killpg
+
+    def recording_open(file, mode="r", *rest, **kwargs):
+        handle = real_open(file, mode, *rest, **kwargs)
+        if any(flag in str(mode) for flag in ("w", "a", "x", "+")):
+            opened.setdefault(os.path.abspath(str(file)), [])
+            handle = _TeeWrite(handle, opened[os.path.abspath(str(file))])
+        return handle
+
+    def recording_kill(pid, sig, *rest, **kwargs):
+        signals.append((pid, sig))
+        return real_kill(pid, sig, *rest, **kwargs)
+
+    def recording_killpg(pgid, sig, *rest, **kwargs):
+        signals.append((pgid, sig))
+        return real_killpg(pgid, sig, *rest, **kwargs)
+
+    builtins.open, os.kill, os.killpg = recording_open, recording_kill, recording_killpg
+    try:
+        result = _run_sql_dump(ct, args, tmp_path)
+    finally:
+        builtins.open, os.kill, os.killpg = real_open, real_kill, real_killpg
+    return opened, signals, result
+
+
+class _TeeWrite:
+    """Delegate to a real file handle while recording what was written."""
+
+    def __init__(self, handle, sink):
+        self._handle = handle
+        self._sink = sink
+
+    def write(self, data):
+        self._sink.append(data)
+        return self._handle.write(data)
+
+    def __getattr__(self, name):
+        return getattr(self._handle, name)
+
+    def __enter__(self):
+        self._handle.__enter__()
+        return self
+
+    def __exit__(self, *exc):
+        return self._handle.__exit__(*exc)
 
 
 def _abort_site(function_name, marker, expected_test):
@@ -518,27 +584,30 @@ def test_sql_stacktraces_writes_nothing_to_the_server_log(tmp_path):
     # would log `<Fatal>` lines, and `check_fatal_messages_in_logs` turns any
     # of those into a merge-blocking failure.  This collector must stay purely
     # client-side, so no diagnostic can ever manufacture a blocker.
+    # Asserted on what the collector opens for writing rather than on the
+    # server's logs: the whole write set is enumerable, so it also rules out a
+    # sink nobody thought to watch.
     ct = _load_clickhouse_test()
     args = _make_args()
-    log_dir = Path(_REPO_ROOT) / "ci" / "tmp" / "var" / "log" / "clickhouse-server"
-    logs = sorted(log_dir.glob("clickhouse-server*.log")) if log_dir.is_dir() else []
-    # Assert rather than skip: an empty glob would make every assertion below
-    # a no-op, and this is the invariant that keeps a diagnostic from ever
-    # manufacturing a merge blocker. Name the path so a layout drift in
-    # ClickHouseService is diagnosable from the failure line alone.
-    assert (
-        logs
-    ), f"no clickhouse-server*.log under {log_dir} -- server log layout changed"
-    before = {path: path.stat().st_size for path in logs}
+    written, signals, result = _collector_write_targets(ct, args, tmp_path)
 
-    _run_sql_dump(ct, args, tmp_path)
-
-    for path, offset in before.items():
-        with open(path, "r", encoding="utf-8", errors="replace") as handle:
-            handle.seek(offset)
-            appended = handle.read()
-        assert "<Fatal>" not in appended, appended[:2000]
-        assert "Received signal" not in appended, appended[:2000]
+    # Its own artifact is the one permitted write, so its absence means the
+    # collector did nothing and everything below would hold vacuously.
+    artifact = str(Path(tmp_path) / ct["SQL_STACKTRACES_LOG"])
+    assert artifact in written, f"the collector wrote no {ct['SQL_STACKTRACES_LOG']}"
+    assert set(written) == {artifact}, (
+        "the collector wrote outside its own artifact: "
+        f"{sorted(set(written) - {artifact})}"
+    )
+    # Signalling the server would make it log `<Fatal>` from its own process,
+    # which no in-process check can observe.
+    assert not signals, f"the collector signalled a process: {signals}"
+    # A `<Fatal>` line is what `check_fatal_messages_in_logs` turns into a
+    # blocker, so it must not even reach the dump the job uploads.
+    appended = "".join(written[artifact])
+    assert "<Fatal>" not in appended, appended[:2000]
+    assert "Received signal" not in appended, appended[:2000]
+    assert result["artifact"].exists(), result["stdout"]
 
 
 def test_stacktrace_log_names_match_clickhouse_test(tmp_path):
