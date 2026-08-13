@@ -10,7 +10,10 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_hypo_counters;
     CREATE TABLE t_hypo_counters (p UInt8, a UInt64, b UInt64)
     ENGINE = MergeTree PARTITION BY p ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = 0;
+    -- min_*_for_wide_part pinned so a randomized value cannot make the server warn about
+    -- non-adaptive granularity, which the harness treats as a failure
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0,
+             min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
     INSERT INTO t_hypo_counters SELECT 0, number, number % 100 FROM numbers(10000);
     INSERT INTO t_hypo_counters SELECT 1, number, number % 100 FROM numbers(10000);
 "
@@ -19,18 +22,18 @@ echo "--- totals are the marks the query could read, not the whole table ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL INDEX hi_b ON t_hypo_counters (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT count() FROM t_hypo_counters WHERE p = 1 AND b = 42;
-" 2>&1 | grep -E '^\s+sampled_(parts|marks):' | tr -s ' '
+" 2>&1 | grep -E '^  sampled_(parts|marks):' | awk '{$1=$1; print}'
 
 echo "--- unpartitioned query sees both partitions ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL INDEX hi_b ON t_hypo_counters (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT count() FROM t_hypo_counters WHERE b = 42;
-" 2>&1 | grep -E '^\s+sampled_(parts|marks):' | tr -s ' '
+" 2>&1 | grep -E '^  sampled_(parts|marks):' | awk '{$1=$1; print}'
 
 echo "--- a disabled empirical tier now says why ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL INDEX hi_b ON t_hypo_counters (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT count() FROM t_hypo_counters WHERE b = 42 SETTINGS merge_tree_min_rows_for_seek = 1;
-" 2>&1 | grep -E '^\s+(source|empirical_status|empirical_reason):' | tr -s ' ' | cut -c1-60
+" 2>&1 | grep -E '^  (source|empirical_status|empirical_reason):' | awk '{$1=$1; print}'
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_counters;"
