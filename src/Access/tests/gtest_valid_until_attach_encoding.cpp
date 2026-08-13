@@ -7,6 +7,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/Access/getValidUntilFromAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -28,6 +30,20 @@ String serializedValidUntil(time_t valid_until)
     auth_data.setValidUntil(valid_until);
     auto ast = auth_data.toAST(/* attach_mode= */ true);
     return ast->valid_until->as<ASTLiteral &>().value.safeGet<String>();
+}
+
+/// Parse the stored literal exactly the way a pre-change reader does. In every earlier release the
+/// no-context branch of `getValidUntilFromAST` reads this form with `readDateTimeText`, whose
+/// all-digit fallback accumulates every digit it reads (5 to 19 of them) into a Unix timestamp -
+/// it is not `parseDateTimeBestEffort` (that one is only used on the context/query path, which
+/// never sees the stored form) and has no 9/10-digit restriction.
+time_t parsedByPreChangeReader(const String & stored)
+{
+    time_t time = 0;
+    ReadBufferFromString in(stored);
+    readDateTimeText(time, in);
+    EXPECT_TRUE(in.eof()) << stored;
+    return time;
 }
 
 time_t roundTrip(time_t valid_until)
@@ -94,6 +110,26 @@ TEST(ValidUntilAttachEncoding, StoredFormIsParsedByEverySupportedReader)
         EXPECT_EQ(stored.find_first_not_of("0123456789"), String::npos) << stored;
     }
     EXPECT_EQ(serializedValidUntil(1), "0000000001");
+
+    /// The pre-change reader accepts the stored literal across the whole accepted deadline range,
+    /// including the 11- and 12-digit values past the 10-digit Unix-timestamp range (beyond
+    /// 2286-11-20): `readDateTimeText` reads any all-digit string of 5 or more digits as a Unix
+    /// timestamp, so a deadline up to the year-9999 ceiling loads exactly on an older or downgraded
+    /// node. (Verified empirically against the official pre-change 26.7.1.1362 build as well: a
+    /// stored `VALID UNTIL '253402250399'` loads and shows year 9999 in `SHOW CREATE USER`.)
+    const std::vector<time_t> pre_change_reader_deadlines =
+    {
+        1, /// stored zero-padded to 10 digits, below the 5-digit ambiguity floor otherwise
+        1234567890,
+        9999999999, /// the largest 10-digit value (2286-11-20)
+        10000000000, /// the smallest 11-digit value, first one past the `parseDateTimeBestEffort` range
+        10413792000, /// year 2300, beyond the former `DateTime64` upper bound
+        99999999999, /// the largest 11-digit value
+        100000000000, /// the smallest 12-digit value
+        253402250399, /// `MAX_VALID_UNTIL_TIME`, the largest deadline this build ever stores
+    };
+    for (time_t deadline : pre_change_reader_deadlines)
+        EXPECT_EQ(parsedByPreChangeReader(serializedValidUntil(deadline)), deadline);
 
     /// A pre-1970 (negative) deadline is normalized to the smallest expired instant (`1`) before
     /// serialization, so it is stored as the same fail-closed all-digit timestamp - never as a datetime
