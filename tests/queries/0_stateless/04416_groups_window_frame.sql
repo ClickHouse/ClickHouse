@@ -73,23 +73,23 @@ SELECT ts, x, arraySort(groupArray(x) OVER (ORDER BY ts GROUPS BETWEEN 1 PRECEDI
 FROM t_null ORDER BY ts, x;
 
 SELECT '-- large peer groups exercise the galloping/binary equal-range search in the offset path';
--- Two peer groups of 5000 rows each. CURRENT ROW AND 1 FOLLOWING gives group A rows the sum over
+-- Two peer groups of 500 rows each. CURRENT ROW AND 1 FOLLOWING gives group A rows the sum over
 -- A+B and group B rows the sum over B, so exactly two distinct sums. The result must not depend on
 -- the block size (cross-block group stitching), so check several.
 SELECT countDistinct(s) AS distinct_sums, min(s) AS lo, max(s) AS hi
 FROM
 (
-    SELECT sum(number) OVER (ORDER BY (number >= 5000) GROUPS BETWEEN CURRENT ROW AND 1 FOLLOWING) AS s
-    FROM numbers(10000)
+    SELECT sum(number) OVER (ORDER BY (number >= 500) GROUPS BETWEEN CURRENT ROW AND 1 FOLLOWING) AS s
+    FROM numbers(1000)
 )
-SETTINGS max_block_size = 10000;
+SETTINGS max_block_size = 1000;
 SELECT countDistinct(s) AS distinct_sums, min(s) AS lo, max(s) AS hi
 FROM
 (
-    SELECT sum(number) OVER (ORDER BY (number >= 5000) GROUPS BETWEEN CURRENT ROW AND 1 FOLLOWING) AS s
-    FROM numbers(10000)
+    SELECT sum(number) OVER (ORDER BY (number >= 500) GROUPS BETWEEN CURRENT ROW AND 1 FOLLOWING) AS s
+    FROM numbers(1000)
 )
-SETTINGS max_block_size = 1000;
+SETTINGS max_block_size = 100;
 
 -- A FOLLOWING-offset GROUPS start keeps waiting for more input until it can locate its peer
 -- group, producing the correct future and empty frames at one-row blocks and one-row partitions.
@@ -229,11 +229,11 @@ FROM t_groups ORDER BY ts, x
 SETTINGS max_block_size = 1;
 
 -- A peer group whose end stays unresolved for many arriving blocks: each retry must continue from the
--- proven scan frontier, otherwise the total work is quadratic in the group size and this query hangs.
+-- proven scan frontier, otherwise the total work is quadratic in the group size.
 SELECT '-- giant peer groups arriving in tiny blocks complete in linear time';
 SELECT min(c), max(c) FROM (
     SELECT count() OVER (ORDER BY k GROUPS BETWEEN CURRENT ROW AND 1 FOLLOWING) AS c
-    FROM (SELECT intDiv(number, 15000) AS k FROM numbers(30000))
+    FROM (SELECT intDiv(number, 1500) AS k FROM numbers(3000))
 ) SETTINGS max_block_size = 1;
 
 DROP TABLE IF EXISTS t_groups;

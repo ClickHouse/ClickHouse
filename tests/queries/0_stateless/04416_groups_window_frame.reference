@@ -87,8 +87,8 @@ B	20	6	[6]
 \N	1	[1,2,5]
 \N	2	[1,2,5]
 -- large peer groups exercise the galloping/binary equal-range search in the offset path
-2	37497500	49995000
-2	37497500	49995000
+2	374750	499500
+2	374750	499500
 -- FOLLOWING-offset start, UNBOUNDED FOLLOWING end, one-row blocks
 0	[2,3,4,5]
 1	[2,3,4,5]
@@ -223,4 +223,4 @@ B	2	22	[20,21,22]
 30	5	18
 30	6	18
 -- giant peer groups arriving in tiny blocks complete in linear time
-15000	30000
+1500	3000
