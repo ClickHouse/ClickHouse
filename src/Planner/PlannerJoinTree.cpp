@@ -456,14 +456,6 @@ bool applyTrivialCountIfPossible(
 
     /// Set aggregation state
     const AggregateFunctionCount & agg_count = *count_func;
-    std::vector<char> state(agg_count.sizeOfData());
-    AggregateDataPtr place = state.data();
-    agg_count.create(place);
-    SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
-    AggregateFunctionCount::set(place, num_rows.value());
-
-    auto column = ColumnAggregateFunction::create(function_node.getAggregateFunction());
-    column->insertFrom(place);
 
     /// Use the aggregate function's action node identifier (e.g. `count()`) as the column
     /// name so the emitted block already matches the header the outer planner expects at
@@ -474,7 +466,7 @@ bool applyTrivialCountIfPossible(
         trivial_count_column_name = columns_names.front();
 
     auto block_with_count = std::make_shared<const Block>(Block{
-        {std::move(column),
+        {createSingleCountStateColumn(function_node.getAggregateFunction(), num_rows.value()),
          std::make_shared<DataTypeAggregateFunction>(function_node.getAggregateFunction(), agg_count.getArgumentTypes(), Array{}),
          trivial_count_column_name}});
 
@@ -578,21 +570,13 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
         : (stats->num_rows - stats->num_defaults);
 
     const AggregateFunctionCount & agg_count = *count_func;
-    std::vector<char> state(agg_count.sizeOfData());
-    AggregateDataPtr place = state.data();
-    agg_count.create(place);
-    SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
-    AggregateFunctionCount::set(place, num_rows);
-
-    auto column = ColumnAggregateFunction::create(function_node.getAggregateFunction());
-    column->insertFrom(place);
 
     String trivial_count_column_name = calculateActionNodeName(aggregates.front(), planner_context);
     if (trivial_count_column_name.empty())
         trivial_count_column_name = columns_names.front();
 
     auto block_with_count = std::make_shared<const Block>(Block{
-        {std::move(column),
+        {createSingleCountStateColumn(function_node.getAggregateFunction(), num_rows),
          std::make_shared<DataTypeAggregateFunction>(function_node.getAggregateFunction(), agg_count.getArgumentTypes(), Array{}),
          trivial_count_column_name}});
 

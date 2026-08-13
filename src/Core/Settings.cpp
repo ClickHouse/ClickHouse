@@ -1663,6 +1663,9 @@ Enables caching of columns metadata from the file prefixes during reading from r
 DECLARE(Bool, merge_tree_use_prefixes_deserialization_thread_pool, true, R"(
 Enables usage of the thread pool for parallel prefixes reading in Wide parts in MergeTree. Size of that thread pool is controlled by server setting `max_prefixes_deserialization_thread_pool_size`.
 )", 0) \
+DECLARE(Bool, merge_tree_prefetch_json_shared_data_substreams, true, R"(
+Enables prefetching of JSON shared data substreams in Wide parts that are read by seeking to a mark. Such a prefetch reads from the beginning of the granule, which is usually not the position the substream is read from, so it can be wasted. Disable to skip these prefetches.
+)", 0) \
     DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
 Improve FINAL queries by avoiding merges across different partitions.
 
@@ -1965,8 +1968,11 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
     DECLARE(Bool, per_part_index_stats, false, R"(
 Logs index statistics per part
 )", 0) \
-    DECLARE(Bool, materialize_statistics_on_insert, false, R"(
-If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS
+    DECLARE(Bool, materialize_statistics_on_insert, true, R"(
+If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS. Only tables whose current size, plus the size of the block being written, does not exceed `materialize_statistics_on_insert_max_table_size` are affected.
+)", 0) \
+    DECLARE(UInt64, materialize_statistics_on_insert_max_table_size, 26843545600, R"(
+Only build and store column statistics on INSERT (see `materialize_statistics_on_insert`) for tables whose current total size of active parts on disk (compressed, in bytes), plus the uncompressed in-memory size of the block being written, does not exceed this value. The contract is per written block, not per INSERT: a single INSERT is split into one block per partition (and, for streaming inserts, into several blocks), and each of them is checked against the size of the parts that are already active, because the parts of the ongoing INSERT are not active yet. A single bulk load into an empty table can therefore build statistics for all of its parts even if their total size exceeds the threshold; the limit takes effect for the inserts that follow. Using the uncompressed block size (the compressed size is unknown before the part is written) makes the check deliberately conservative by at most one block. This keeps statistics fresh on small dimension tables, which is important for cost-based join reordering, while avoiding per-insert overhead on large fact tables (their statistics are built during merges instead). `0` means no size limit.
 )", 0) \
     DECLARE(String, ignore_data_skipping_indices, "", R"(
 Ignores the skipping indexes specified if used by the query.
@@ -2520,6 +2526,46 @@ Write exception in output format to produce valid output. Works with JSON and XM
     DECLARE(UInt64, http_response_buffer_size, 0, R"(
 The number of bytes to buffer in the server memory before sending a HTTP response to the client or flushing to disk (when http_wait_end_of_query is enabled).
 )", 0) \
+    DECLARE(String, framing_output_format, "None", R"(
+Allows to multiplex different parts of the query response in a single stream: chunks of data, totals and extremes, progress packets, profile events (metrics), and server logs - everything that the native protocol supports.
+
+Framing formats are independent of output formats: they encapsulate bytes produced by any output format, by separating and potentially encoding these chunks of bytes. The concatenation of the payloads of all `data`, `totals` and `extremes` packets is exactly what the output format would have produced without framing. Auxiliary packets (progress, logs, profile events, exceptions) are represented as JSON.
+
+One deliberate exception: an output format that drops totals and extremes in its plain output because it cannot represent them (the `JSONCompactEachRow` family) does emit them under framing, into the `totals` and `extremes` packets. For such formats the concatenation of the `data` packets alone is exactly the unframed output, and the `totals` and `extremes` packets carry additional rows that the unframed output does not contain.
+
+Server logs are included if the `send_logs_level` setting is set, and profile events are included if the `send_profile_events` setting is enabled (they are sent at most once in `interactive_delay` microseconds, and progress packets are also throttled by `interactive_delay`).
+
+A successful stream ends with a final `progress` packet carrying the final counters (`result_rows`, `result_bytes`, `memory_usage`), written after the trailing `log` and `profile_events` packets emitted by the query-finish logging, like the final progress packet of the native protocol. On failure, the `exception` packet is the last packet instead - with one exception: when the failure happens after part of the packet stream has already been produced into the response and can no longer be discarded (a packet write fails partway through, the delivery of the `exception` packet itself fails, or the response stream fails while being flushed or closed), the framing fails closed - the stream is terminated without a terminal `exception` packet, and the client observes a truncated response and an aborted HTTP connection instead of a parseable terminal packet. Nothing is ever appended after a partial packet stream, so a plain HTTP error body is never mixed into it.
+
+Anything a query enables only through its own `SETTINGS` clause - a framing format, `send_logs_level`, or `send_profile_events` - is not known until the query has been parsed, so the corresponding logs and profile events are captured only from query execution onwards. The logs and profile events of the parse, plan, and analysis phase are captured only when the setting comes from the session or the URL. For example, a query that fails during analysis (such as a reference to an unknown table) and enables `send_logs_level` only in its `SETTINGS` clause delivers just the `exception` packet, not the analysis-phase logs; set `send_logs_level` on the session or the URL to capture those.
+
+The same late-discovery caveat applies to `send_logs_source_regexp`: the log queue filters entries by source at the moment each entry is captured, so a regexp set only in the query's own `SETTINGS` clause takes effect from query execution onwards. The `log` packets of the parse, plan, and analysis phase are filtered by the session or URL value of the setting (they are unfiltered when it is not set there), so they may include sources that do not match the query-level regexp; conversely, entries dropped by a narrower session or URL regexp are not recovered by a broader query-level one. Set `send_logs_source_regexp` on the session or the URL to filter the whole query lifecycle.
+
+The setting currently applies to the HTTP protocol and is ignored for other interfaces.
+
+Possible values:
+
+- `None` - transparently routes everything applicable (data, totals, extremes, progress) to the output format, and ignores everything that is not applicable (metrics, logs), so everything works as it is by default.
+- `EventStream` - frames packets as HTTP server-sent events (`text/event-stream`). Every packet is sent as an event with the corresponding name: `data`, `totals`, `extremes`, `progress`, `log`, `profile_events`, `exception`. Progress and other auxiliary packets are sent as JSON. Because server-sent events are a text protocol that treats line breaks (including carriage returns, `\r`) as delimiters, a block of formatted data is base64-encoded into a single `data` field of the event, which decodes to the fully formatted payload with all of its newlines; the `Content-Type` carries a `payload=base64` parameter to say so. Any output format can be carried this way byte-exactly, text and binary alike.
+- `JSONEachPacketBase64` - every packet is a JSON object on a separate line, and the formatted data is base64-encoded, e.g. `{"packet":"data","data":"eyJ4IjoxfQo="}`. Suitable for binary output formats.
+- `JSONEachPacketString` - every packet is a JSON object on a separate line, and the formatted data is put into a string, e.g. `{"packet":"data","data":"{\"x\":1}\n"}`.
+
+`JSONEachPacketString` puts the payload bytes into a JSON string without validating or re-encoding them. `String` and `FixedString` columns can hold arbitrary bytes, so text output formats (such as `JSONEachRow`, `TSV`, or `CSV`) may emit invalid UTF-8 for such values - just as ClickHouse's own `JSONEachRow` does with the default `output_format_json_validate_utf8 = 0` - and then the resulting NDJSON stream is not guaranteed to be valid UTF-8. Use `JSONEachPacketBase64` for byte-exact transport of arbitrary bytes.
+
+Example:
+
+```bash
+curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
+```
+
+Result:
+
+```text
+{"packet":"data","data":"{\"number\":\"0\"}\n{\"number\":\"1\"}\n{\"number\":\"2\"}\n"}
+{"packet":"profile_events","profile_events":[{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"}]}
+{"packet":"progress","progress":{"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1265958"}}
+```
+)", BETA) \
     \
     DECLARE(Bool, fsync_metadata, true, R"(
 Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) when writing `.sql` files. Enabled by default.
@@ -3300,12 +3346,20 @@ will be higher than the value of this setting.
 )", 0) \
     DECLARE(OverflowMode, timeout_overflow_mode, OverflowMode::THROW, R"(
 Sets what to do if the query is run longer than the `max_execution_time` or the
-estimated running time is longer than `max_estimated_execution_time`.
+estimated running time is longer than `max_estimated_execution_time` (the
+estimate is only checked with `throw`).
 
 Possible values:
 - `throw`: throw an exception (default).
 - `break`: stop executing the query and return the partial result, as if the
-source data ran out.
+source data ran out. Some operations cannot return a partial result safely, so instead of a smaller
+result they stop without producing one. A function computing a single value stops without producing
+that value; whether the stop also reaches the client as a `TIMEOUT_EXCEEDED` error, or only as a
+missing result, depends on where the query was interrupted. A `Memory`-table mutation left
+incomplete by the timeout keeps the table unchanged and reports `TIMEOUT_EXCEEDED`. An `INSERT` may
+report `QUERY_WAS_CANCELLED`. Some operations that wait for other replicas or for background work
+do not stop at `max_execution_time` at all: a quorum write keeps waiting until its quorum is
+satisfied, or reports `UNKNOWN_STATUS_OF_INSERT` if `insert_quorum_timeout` elapses first.
 )", 0) \
     DECLARE(Seconds, max_execution_time_leaf, 0, R"(
 Similar semantically to [`max_execution_time`](#max_execution_time) but only
@@ -3333,7 +3387,11 @@ Sets what happens when the query in leaf node run longer than `max_execution_tim
 Possible values:
 - `throw`: throw an exception (default).
 - `break`: stop executing the query and return the partial result, as if the
-source data ran out.
+source data ran out. Some operations cannot return a partial result safely, so
+instead of a smaller result they stop without producing one: a function
+computing a single value stops without producing that value. Whether such a stop
+also reaches the client as a `TIMEOUT_EXCEEDED` error, or only as a missing
+result, depends on where the query was interrupted.
 )", 0) \
     \
     DECLARE(UInt64, min_execution_speed, 0, R"(
@@ -5395,7 +5453,7 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
 - `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
 - `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
 - `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.
-- `geometry`: convert MySQL's spatial types (`LINESTRING`, `POLYGON`, `MULTILINESTRING`, `MULTIPOLYGON`, `MULTIPOINT`) to the corresponding ClickHouse geometric types, and the generic `GEOMETRY` type to the umbrella `Geometry` type. `POINT` is always converted to `Point` regardless of this option. Because a generic `GEOMETRY` column can hold any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; columns declared as `GEOMETRYCOLLECTION` map to `String`.
+- `geometry`: convert MySQL's spatial types (`LINESTRING`, `POLYGON`, `MULTILINESTRING`, `MULTIPOLYGON`, `MULTIPOINT`) to the corresponding ClickHouse geometric types, and the generic `GEOMETRY` type to the umbrella `Geometry` type. `POINT` is always converted to `Point` regardless of this option. Because a generic `GEOMETRY` column can hold any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; columns declared as `GEOMETRYCOLLECTION` map to `String`. A nullable spatial column other than `POINT` also maps to `Nullable(String)`, since `Point` is the only geometric type that can be nested inside `Nullable`. Every such string is a 4-byte SRID prefix followed by the WKB payload, as returned by MySQL. All of the above applies when the schema is inferred from the column types of a MySQL table; when the source is a query (the `query(...)` argument of the `mysql` table function or the `MySQL` table engine), MySQL reports every spatial result column as the generic `GEOMETRY` without the concrete subtype, so such columns — including `POINT` — map to `String` (`Nullable(String)` if nullable).
 )", 0) \
     DECLARE(Bool, optimize_trivial_insert_select, false, R"(
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
@@ -5987,10 +6045,10 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(Bool, use_query_condition_cache_for_top_k, false, R"(
+    DECLARE(Bool, use_query_condition_cache_for_top_k, true, R"(
 Enable the [query condition cache](/operations/query-condition-cache) for queries that use the `ORDER BY <column> LIMIT n` (TopK) optimization (dynamic filtering or skip-index based). When disabled, such reads neither consult nor populate the cache.
 
-Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read. This setting is disabled by default while the soundness of these cache entries is being established; it has no effect unless `use_query_condition_cache` is also enabled.
+Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read. This setting has no effect unless `use_query_condition_cache` is also enabled.
 
 Possible values:
 
@@ -6775,6 +6833,8 @@ Method of reading data from storage file, one of: `read`, `pread`, `mmap`. The m
 )", 0) \
     DECLARE(String, local_filesystem_read_method, "pread_threadpool", R"(
 Method of reading data from local filesystem, one of: read, pread, mmap, io_uring, pread_threadpool.
+
+The 'pread_threadpool' method hands a read off to a thread pool, unless the data is already in the page cache, which is checked with the `preadv2` system call and the `RWF_NOWAIT` flag. That check needs Linux 5.11 or newer, and the system call must not be rejected by a `seccomp` profile of a container runtime. It is checked on startup whether the system call can be used, and if it cannot, the default value of this setting is switched to 'pread', because a thread pool hand-off for every read, including the reads that are served from the page cache, is expensive; the reason is reported in the server log. A `seccomp` profile is detected only if it rejects the system call with an error code, which is what container runtimes do; a profile that terminates the process instead cannot be detected. A value set explicitly, in the configuration or with `SET`, is not switched.
 
 The 'io_uring' method is experimental and does not work for Log, TinyLog, StripeLog, File, Set and Join, and other tables with append-able files in presence of concurrent reads and writes.
 If you read various articles about 'io_uring' on the Internet, don't be blinded by them. It is not a better method of reading files, unless the case of a large amount of small IO requests, which is not the case in ClickHouse. There are no reasons to enable 'io_uring'.
@@ -8463,6 +8523,10 @@ If set to true, allow using the text index.
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted text index in query plan.
 )", 0) \
+    DECLARE(Bool, query_plan_optimize_count_from_text_index, true, R"(
+Allow to answer `SELECT count() ... WHERE <text search predicate>` directly from the text index posting-list cardinalities, without materializing the matching rows.
+Only takes effect when `query_plan_direct_read_from_text_index` is enabled.
+)", 0) \
     DECLARE(Bool, query_plan_text_index_add_hint, true, R"(
 Allow to add hint (additional predicate) for filtering built from the inverted text index in query plan.
 )", 0) \
@@ -8796,7 +8860,7 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
 Maximum number of texts to include in a single HTTP request made by the embedding functions (`aiEmbed`, `aiSimilarity`). Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
 )", EXPERIMENTAL) \
     DECLARE(String, ai_function_text_default_credentials, "", R"(
-Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint differs from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
+Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint differs from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
 )", EXPERIMENTAL) \
     DECLARE(String, ai_function_embedding_default_credentials, "", R"(
 Name of the named collection used by the embedding functions (`aiEmbed`, `aiSimilarity`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. These functions take `model` as a required positional argument, not from the named collection. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint differs from a chat one.
