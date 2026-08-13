@@ -32,13 +32,15 @@ ${CLICKHOUSE_CLIENT} --query="
 #
 # The settings have to be on the dictionary, not on the query: a dictionary loads in the global
 # context, and the `file` source only picks up this SETTINGS clause. min_bytes_for_seek = 1 stops
-# range coalescing, so each range becomes its own task.
+# range coalescing, so each range becomes its own task, and the prefetch pool has to exist for those
+# tasks to run in the background rather than inline on the decoding thread.
 ${CLICKHOUSE_CLIENT} --query="
     create dictionary ${DICT} (key UInt64, val Int64) primary key key
     source(file(path '${ABS}' format 'Parquet'))
     layout(flat(max_array_size 5000000)) lifetime(0)
     settings(max_download_threads = 32, max_parsing_threads = 32,
-             input_format_parquet_local_file_min_bytes_for_seek = 1);
+             input_format_parquet_local_file_min_bytes_for_seek = 1,
+             input_format_parquet_enable_row_group_prefetch = 1);
 "
 
 # A forced reload, because a plain dictGet would replay the first load's cached exception instead of
@@ -48,12 +50,13 @@ for _ in 1 2 3 4 5; do
         | grep -c -m1 -F 'CANNOT_PARSE_TEXT'
 done
 
-# Each iteration has to have reached the Parquet reader, otherwise the loop proves nothing: a
-# dictionary that is already FAILED replays its stored exception without reading anything, which is
-# indistinguishable from a real read by the error message alone.
+# Every iteration has to have reached row group reading, otherwise the loop proves nothing: an
+# already-FAILED dictionary replays its stored exception without reading, and a file rejected while
+# its footer is parsed reads only the footer, both of which are indistinguishable from a real read by
+# the error message alone. ParquetReadRowGroups is counted only once row groups are being read.
 ${CLICKHOUSE_CLIENT} --query="system flush logs"
 ${CLICKHOUSE_CLIENT} --query="
-    select 'reloads_that_read', countIf(ProfileEvents['ParquetPrefetcherReadSeekAndRead'] > 0)
+    select 'reloads_that_read', countIf(ProfileEvents['ParquetReadRowGroups'] > 0)
     from system.query_log
     where log_comment = '${DICT}_reload' and current_database = currentDatabase()
           and type != 'QueryStart';
