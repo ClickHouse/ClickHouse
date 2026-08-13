@@ -625,6 +625,22 @@ FROM (
     FROM t_const_batched
 );
 
+SELECT '-- arrayExists rewritten into has: the rewrite builds its own resolver, which must reach the same path';
+
+DROP TABLE IF EXISTS t_rewritten;
+CREATE TABLE t_rewritten (a Array(Dynamic)) ENGINE = Memory;
+INSERT INTO t_rewritten VALUES (['V0'::String::Dynamic]);
+
+SELECT
+    count() > 0 AS rewrite_happened
+FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = toFixedString('V0', 3), a) FROM t_rewritten)
+WHERE explain ILIKE '%has%'
+SETTINGS optimize_rewrite_array_exists_to_has = 1;
+
+SELECT arrayExists(x -> x = toFixedString('V0', 3), a) AS rewritten_got
+FROM t_rewritten
+SETTINGS optimize_rewrite_array_exists_to_has = 1;
+
 DROP TABLE IF EXISTS t_dyn_num;
 DROP TABLE IF EXISTS t_lc_dyn;
 DROP TABLE IF EXISTS t_lc_sparse;
@@ -648,3 +664,5 @@ DROP TABLE IF EXISTS t_shared;
 DROP TABLE IF EXISTS t_block_one;
 DROP TABLE IF EXISTS t_block_two;
 DROP TABLE IF EXISTS t_null_tuple;
+DROP TABLE IF EXISTS t_const_batched;
+DROP TABLE IF EXISTS t_rewritten;
