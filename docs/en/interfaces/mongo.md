@@ -98,6 +98,17 @@ db.hits.aggregate([
 
 `$group` supports the accumulators `$sum`, `$avg`, `$min`, `$max`, `$first`, `$last`, `$firstN`, `$lastN`, `$push`, `$addToSet`, `$count`, `$stdDevPop` and `$stdDevSamp`. A `_id` of `null` aggregates the whole stream into one document, and a `_id` that is a document groups by each of its fields, which become the `_id.<field>` columns of the result.
 
+`$first`, `$last`, `$push`, `$firstN` and `$lastN` read the documents of a group in the order of the stream, which is what a `$sort` right before a `$group` establishes - the way MongoDB asks for the earliest or the latest document of each key:
+
+```javascript
+db.events.aggregate([
+    {"$sort": {"ts": 1}},
+    {"$group": {"_id": "$user", "first": {"$first": "$page"}, "trail": {"$push": "$page"}}}
+])
+```
+
+Those accumulators are then translated through the keys of the `$sort`. Two orders cannot be: keys that do not share one direction, because the documents are compared by the tuple of the keys, which has a single order; and keys that a `$project` or a `$group` in between left out of the documents it builds, because they are no longer fields the `$group` can name. Both are an error rather than an arbitrary document of the group. Without a preceding `$sort` the order of a group is unspecified, in MongoDB as well, and the accumulators read the rows in whatever order the query produces them.
+
 `$unwind` is an `ARRAY JOIN`, so it drops a document whose array is empty unless `preserveNullAndEmptyArrays` asks to keep it, and `includeArrayIndex` adds the position of the element counted from zero.
 
 Inside a stage, an expression may use:

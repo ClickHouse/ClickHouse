@@ -706,7 +706,57 @@ ASTPtr parseMongoAggregateExpression(const rapidjson::Value & value)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot translate the aggregation expression");
 }
 
-ASTPtr parseMongoAccumulator(const rapidjson::Value & value)
+namespace
+{
+
+/** The keys of a preceding `$sort` as one expression to compare the documents of a group by: the
+  * key itself for a single key, and a tuple of them for several, which compares lexicographically
+  * the way a multiple key sort does.
+  *
+  * The direction has to be the same for every key, because a tuple has one order for the whole of
+  * it: a sort by `{"a": 1, "b": -1}` is not the order of any tuple of `a` and `b`, so it is
+  * rejected rather than answered in a different order.
+  */
+std::pair<ASTPtr, int> makeGroupOrderKey(const MongoGroupOrder & order, std::string_view accumulator)
+{
+    if (!order.keys_in_scope)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "The accumulator '{}' reads the documents of the group in the order of the stream, and the keys the preceding '$sort' "
+            "established are not fields of the documents the '$group' reads: sort right before the '$group', or keep the sort keys",
+            accumulator);
+
+    int direction = order.keys.front().second;
+    for (const auto & key : order.keys)
+        if (key.second != direction)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The accumulator '{}' after a '$sort' whose keys do not share one direction is not supported",
+                accumulator);
+
+    if (order.keys.size() == 1)
+        return {order.keys.front().first->clone(), direction};
+
+    auto keys = makeASTFunction("tuple");
+    for (const auto & key : order.keys)
+        keys->arguments->children.push_back(key.first->clone());
+    return {keys, direction};
+}
+
+/// The values of a group in the order of the stream: they are collected together with the sort key
+/// and sorted by it, because `groupArray` appends them in the order the query reads the rows in.
+ASTPtr makeOrderedGroupValues(ASTPtr value, const MongoGroupOrder & order, std::string_view accumulator)
+{
+    auto [key, direction] = makeGroupOrderKey(order, accumulator);
+    auto pairs = makeASTFunction("groupArray", makeASTFunction("tuple", std::move(key), std::move(value)));
+    auto sorted = makeASTFunction(direction == 1 ? "arraySort" : "arrayReverseSort", std::move(pairs));
+    auto element = makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("x"), makeLiteral(Field(UInt64(2))));
+    return makeASTFunction("arrayMap", makeLambda("x", std::move(element)), std::move(sorted));
+}
+
+}
+
+ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrder & order)
 {
     if (!value.IsObject() || value.MemberCount() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "An accumulator of '$group' must be a document holding one operator");
@@ -731,10 +781,22 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value)
 
     if (name == "$firstN" || name == "$lastN")
     {
-        /// `groupArray(N)(x)` keeps the first N values of the group and `groupArrayLast(N)(x)` the
-        /// last ones; the count is a parameter of the aggregate function rather than an argument.
         auto input = parseMongoAggregateExpression(requireMember(member.value, "input", name));
         auto count = parseMongoAggregateExpression(requireMember(member.value, "n", name));
+
+        if (!order.empty())
+        {
+            /// The first - or the last - N documents of the group in the order of the stream.
+            auto ordered = makeOrderedGroupValues(std::move(input), order, name);
+            if (name == "$firstN")
+                return makeASTFunction("arraySlice", std::move(ordered), makeLiteral(Field(UInt64(1))), std::move(count));
+            /// A negative offset counts from the end, and one that reaches past the beginning of
+            /// the array yields the whole of it, which is what Mongo answers for a small group.
+            return makeASTFunction("arraySlice", std::move(ordered), makeASTFunction("negate", std::move(count)));
+        }
+
+        /// `groupArray(N)(x)` keeps the first N values of the group and `groupArrayLast(N)(x)` the
+        /// last ones; the count is a parameter of the aggregate function rather than an argument.
         auto function = makeASTFunction(name == "$firstN" ? "groupArray" : "groupArrayLast", std::move(input));
         auto parameters = make_intrusive<ASTExpressionList>();
         parameters->children.push_back(std::move(count));
@@ -751,6 +813,23 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value)
         if (const auto * literal = argument->as<ASTLiteral>(); literal && literal->value == Field(Int64(1)))
             return makeASTFunction("count");
         return makeASTFunction("sum", std::move(argument));
+    }
+
+    /** `$first`, `$last` and `$push` read the documents of the group in the order of the stream,
+      * so when a `$sort` established one they are lowered through its keys: the first document of
+      * an ascending order is the one with the smallest key, and the last one the largest.
+      * `$addToSet` is a set, whose order Mongo leaves undefined, and the remaining accumulators do
+      * not depend on the order at all.
+      */
+    if (!order.empty() && (name == "$first" || name == "$last" || name == "$push"))
+    {
+        auto input = parseMongoAggregateExpression(member.value);
+        if (name == "$push")
+            return makeOrderedGroupValues(std::move(input), order, name);
+
+        auto [key, direction] = makeGroupOrderKey(order, name);
+        const bool takes_the_smallest_key = (name == "$first") == (direction == 1);
+        return makeASTFunction(takes_the_smallest_key ? "argMin" : "argMax", std::move(input), std::move(key));
     }
 
     if (auto it = accumulators.find(name); it != accumulators.end())

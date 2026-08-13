@@ -25,10 +25,34 @@ namespace Mongo
   */
 ASTPtr parseMongoAggregateExpression(const rapidjson::Value & value);
 
-/** Translates an accumulator of a `$group` stage: `{"$sum": 1}`, `{"$avg": "$ResolutionWidth"}`,
-  * `{"$addToSet": "$UserID"}` and so on.
+/** The order of the documents a `$group` stage consumes, when a preceding `$sort` established one.
+  *
+  * Mongo defines the value of the accumulators `$first`, `$last`, `$push`, `$firstN` and `$lastN`
+  * by the order of the documents of the group, so a `$sort` right before a `$group` is how a
+  * pipeline asks for the earliest or the latest document of each key. A ClickHouse aggregate
+  * function reads its input in whatever order the query happens to produce it in, so those
+  * accumulators are lowered through the sort keys instead - `any` would answer with an arbitrary
+  * row of the group.
   */
-ASTPtr parseMongoAccumulator(const rapidjson::Value & value);
+struct MongoGroupOrder
+{
+    /// The keys of the most recent `$sort`, in order, each with its direction: 1 or -1.
+    std::vector<std::pair<ASTPtr, int>> keys;
+
+    /** Whether those keys are still columns of the stream the `$group` reads. A stage that builds
+      * new documents - a `$project`, a `$group` - may leave the key out of them, and then the
+      * order of the stream, which Mongo keeps, cannot be named in the translated query.
+      */
+    bool keys_in_scope = true;
+
+    bool empty() const { return keys.empty(); }
+};
+
+/** Translates an accumulator of a `$group` stage: `{"$sum": 1}`, `{"$avg": "$ResolutionWidth"}`,
+  * `{"$addToSet": "$UserID"}` and so on. `order` is the order of the documents of the group, which
+  * the order-sensitive accumulators are lowered through.
+  */
+ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrder & order = {});
 
 /** A field of a document produced by a stage: the expression and the name of the column it is
   * aliased to. One member of a `$project`, `$set` or `$group` document can expand into several

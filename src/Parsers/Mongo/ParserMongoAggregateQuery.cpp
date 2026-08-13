@@ -105,12 +105,21 @@ public:
     ASTPtr offset;
     ASTPtr array_join;
 
+    /// The order the documents of the stream are in, which the accumulators of a `$group` that
+    /// depend on it are lowered through (see `MongoGroupOrder`).
+    MongoGroupOrder order;
+
     /// True when nothing but a `WHERE` has been collected, so a stage that produces the list of
     /// columns can be folded into the select being built.
     bool onlyFiltered() const { return !select_list && !group_by && !order_by && !limit && !offset; }
 
     void wrap()
     {
+        /// A select that builds documents of its own - a projection, a grouping - does not have to
+        /// carry the sort keys into them, so they are no longer fields the next stage can name.
+        if (select_list)
+            order.keys_in_scope = false;
+
         auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
         auto list_of_selects = make_intrusive<ASTExpressionList>();
         list_of_selects->children.push_back(build());
@@ -258,6 +267,11 @@ void translateGroup(SelectChain & chain, const rapidjson::Value & stage)
     if (!chain.onlyFiltered())
         chain.wrap();
 
+    /// The order of the documents a `$group` produces is undefined in Mongo, so the stream has no
+    /// order after it; the one it consumed is what its accumulators are lowered through.
+    const MongoGroupOrder order = std::move(chain.order);
+    chain.order = {};
+
     auto select_list = make_intrusive<ASTExpressionList>();
     auto group_by = make_intrusive<ASTExpressionList>();
 
@@ -282,7 +296,7 @@ void translateGroup(SelectChain & chain, const rapidjson::Value & stage)
         std::string name(stringView(it->name));
         if (name == "_id")
             continue;
-        select_list->children.push_back(withAlias(parseMongoAccumulator(it->value), name));
+        select_list->children.push_back(withAlias(parseMongoAccumulator(it->value, order), name));
     }
 
     chain.select_list = std::move(select_list);
@@ -390,6 +404,7 @@ void translateSort(SelectChain & chain, const rapidjson::Value & stage)
         chain.wrap();
 
     auto order_by = make_intrusive<ASTExpressionList>();
+    MongoGroupOrder order;
     for (auto it = stage.MemberBegin(); it != stage.MemberEnd(); ++it)
     {
         if (!it->value.IsInt64() || (it->value.GetInt64() != 1 && it->value.GetInt64() != -1))
@@ -397,14 +412,19 @@ void translateSort(SelectChain & chain, const rapidjson::Value & stage)
                 ErrorCodes::NOT_IMPLEMENTED, "The direction of '$sort' on '{}' must be 1 or -1", stringView(it->name));
 
         const int direction = static_cast<int>(it->value.GetInt64());
+        auto key = make_intrusive<ASTIdentifier>(String(stringView(it->name)));
         auto element = make_intrusive<ASTOrderByElement>();
-        element->children.push_back(make_intrusive<ASTIdentifier>(String(stringView(it->name))));
+        element->children.push_back(key);
         element->direction = direction;
         element->nulls_direction = direction;
         order_by->children.push_back(std::move(element));
+        order.keys.emplace_back(std::move(key), direction);
     }
 
     chain.order_by = std::move(order_by);
+    /// A `$group` that follows reads its documents in this order, which is what Mongo defines the
+    /// value of `$first`, `$last`, `$push`, `$firstN` and `$lastN` by.
+    chain.order = std::move(order);
 }
 
 void translateCount(SelectChain & chain, const rapidjson::Value & stage)
@@ -484,6 +504,12 @@ void translateSortByCount(SelectChain & chain, const rapidjson::Value & stage)
     order_by->children.push_back(std::move(element));
     order_by->children.push_back(std::move(tiebreak));
     chain.order_by = std::move(order_by);
+
+    /// The documents this stage produces are ordered by the size of the group, which is the order
+    /// a `$group` after it reads them in. The tiebreak on `_id` is not part of what Mongo defines,
+    /// so it is left out of the order the accumulators are lowered through.
+    chain.order = {};
+    chain.order.keys.emplace_back(make_intrusive<ASTIdentifier>("count"), -1);
 }
 
 void translateSample(SelectChain & chain, const rapidjson::Value & stage)
@@ -503,6 +529,9 @@ void translateSample(SelectChain & chain, const rapidjson::Value & stage)
 
     chain.order_by = std::move(order_by);
     chain.limit = makeLiteral(Field(parseCount(size, "$sample", /* positive = */ false)));
+    /// The documents come out in a random order, which Mongo leaves unspecified as well, so the
+    /// accumulators that depend on the order have none to be lowered through.
+    chain.order = {};
 }
 
 void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
