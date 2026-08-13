@@ -122,7 +122,8 @@ static String formatTimestampAsPartitionName(const Paimon::Timestamp & timestamp
     const Int64 nano_of_second = milli_of_second * 1'000'000 + timestamp.nano_of_millisecond;
 
     WriteBufferFromOwnString wb;
-    writeDateTimeText<'-', ':', 'T'>(static_cast<time_t>(whole_seconds), wb, DateLUT::instance("UTC"));
+    static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
+    writeDateTimeText<'-', ':', 'T'>(static_cast<time_t>(whole_seconds), wb, utc_time_zone);
     String res = wb.str();
 
     if (nano_of_second == 0)
