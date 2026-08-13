@@ -10,14 +10,14 @@ U="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 # and compares the two emitted statements. This is the loop serializeAccessEntity /
 # deserializeAccessEntity runs on every access-storage load.
 round_trip() {
-    local kind="$1" label="$2" clause="$3"
+    local kind="$1" label="$2" clause="$3" pin_setting="$4"
     local a="a_${U}" b="b_${U}"
-    local create_kw show_kw
+    local create_kw show_kw owner_col
 
     case "$kind" in
-        profile) create_kw="SETTINGS PROFILE"; show_kw="SETTINGS PROFILE" ;;
-        user)    create_kw="USER";            show_kw="USER" ;;
-        role)    create_kw="ROLE";            show_kw="ROLE" ;;
+        profile) create_kw="SETTINGS PROFILE"; show_kw="SETTINGS PROFILE"; owner_col="profile_name" ;;
+        user)    create_kw="USER";            show_kw="USER";             owner_col="user_name" ;;
+        role)    create_kw="ROLE";            show_kw="ROLE";             owner_col="role_name" ;;
     esac
 
     ${CLICKHOUSE_CLIENT} -q "DROP ${create_kw} IF EXISTS ${a}, ${b}"
@@ -38,25 +38,32 @@ round_trip() {
         echo "  reparsed: ${emitted_b}"
     fi
 
+    # Comparing the two emitted statements only proves the serializer agrees with itself, so for the
+    # arms whose value carries structure the surviving value is pinned in .reference as well.
+    if [[ -n "$pin_setting" ]]; then
+        ${CLICKHOUSE_CLIENT} -q "SELECT '${label} reparsed', value FROM system.settings_profile_elements WHERE ${owner_col} = '${b}' AND setting_name = '${pin_setting}' FORMAT TSVRaw" 2>/dev/null
+    fi
+
     ${CLICKHOUSE_CLIENT} -q "DROP ${create_kw} IF EXISTS ${a}, ${b}"
 }
 
-# kind|label|settings clause. Quoted heredoc: no shell expansion, SQL escapes pass through verbatim.
-while IFS='|' read -r kind label clause; do
+# kind|label|settings clause|setting whose reparsed value is pinned (empty = shape check only).
+# Quoted heredoc: no shell expansion, SQL escapes pass through verbatim.
+while IFS='|' read -r kind label clause pin; do
     [[ -z "$kind" ]] && continue
-    round_trip "$kind" "$label" "$clause"
+    round_trip "$kind" "$label" "$clause" "$pin"
 done <<'ARMS'
-profile|arm01 profile map|http_response_headers = '{\'Content-Type\':\'application/json\'}' CONST
-profile|arm02 profile empty map|http_response_headers = '{}' CONST
-profile|arm03 additional_table_filters|additional_table_filters = '{\'default.t\':\'x > 0\'}'
-user|arm04 user map|http_response_headers = '{\'a\':\'b\'}'
-role|arm05 role map|additional_table_filters = '{\'default.t\':\'x > 0\'}'
-profile|arm06 min max|http_response_headers = '{\'a\':\'b\'}' MIN '{}' MAX '{\'a\':\'b\'}'
-profile|arm07 multi key map|http_response_headers = '{\'Content-Type\':\'application/json\',\'X-A\':\'*\',\'X-B\':\'1\'}' CONST
-profile|arm08 hostile value|http_response_headers = '{\'k,1:{}[]()\':\'va,l:ue{}[]()\\\'x\',\'k2\':\'back\\\\slash\'}'
-profile|arm09 scalar control|max_memory_usage = 5000000 MIN 4000000 MAX 6000000 CONST
-profile|arm10 string valued builtin control|log_comment = '{\'not\':\'a map\'}'
-profile|arm11 custom setting control|custom_04902_a = 'plain string'
+profile|arm01 profile map|http_response_headers = '{\'Content-Type\':\'application/json\'}' CONST|http_response_headers
+profile|arm02 profile empty map|http_response_headers = '{}' CONST|
+profile|arm03 additional_table_filters|additional_table_filters = '{\'default.t\':\'x > 0\'}'|
+user|arm04 user map|http_response_headers = '{\'a\':\'b\'}'|
+role|arm05 role map|additional_table_filters = '{\'default.t\':\'x > 0\'}'|
+profile|arm06 min max|http_response_headers = '{\'a\':\'b\'}' MIN '{}' MAX '{\'a\':\'b\'}'|
+profile|arm07 multi key map|http_response_headers = '{\'Content-Type\':\'application/json\',\'X-A\':\'*\',\'X-B\':\'1\'}' CONST|http_response_headers
+profile|arm08 hostile value|http_response_headers = '{\'k,1:{}[]()\':\'va,l:ue{}[]()\\\'x\',\'k2\':\'back\\\\slash\'}'|http_response_headers
+profile|arm09 scalar control|max_memory_usage = 5000000 MIN 4000000 MAX 6000000 CONST|
+profile|arm10 string valued builtin control|log_comment = '{\'not\':\'a map\'}'|
+profile|arm11 custom setting control|custom_04902_a = 'plain string'|
 ARMS
 
 # arm12: ALTER then round trip.
@@ -95,3 +102,12 @@ else
     echo "arm14 FAILED: ${LIT}"
 fi
 ${CLICKHOUSE_CLIENT} -q "DROP SETTINGS PROFILE IF EXISTS ${T}"
+
+# arm15: the on-disk form. The two arms above use SHOW CREATE, which takes the display route; the
+# stored <uuid>.sql file is written by the attach route, and a second process has to parse it back
+# through deserializeAccessEntity before any query can see the entity.
+D="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.ondisk"
+rm -rf "$D"
+${CLICKHOUSE_LOCAL} --path "$D" -q "CREATE SETTINGS PROFILE ondisk SETTINGS http_response_headers = '{\'X-A\':\'1\',\'X-B\':\'2\'}' MIN '{}' MAX '{\'X-A\':\'1\',\'X-B\':\'2\'}'" -- --max_server_memory_usage=8G --memory_worker_use_cgroup=0
+${CLICKHOUSE_LOCAL} --path "$D" -q "SELECT 'arm15 on disk', value, min, max FROM system.settings_profile_elements WHERE profile_name = 'ondisk' FORMAT TSVRaw" -- --max_server_memory_usage=8G --memory_worker_use_cgroup=0
+rm -rf "$D"
