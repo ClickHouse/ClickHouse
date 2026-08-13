@@ -312,9 +312,10 @@ def test_slow_build_binary_probe_is_server_independent_and_fails_closed():
     seen = []
 
     def fake_shell(cmd, timeout=None, keep_output_on_error=False, _out=None):
-        seen.append(cmd)
+        seen.append((cmd, timeout))
         return _out
 
+    args.binary = "/some/dir/clickhouse"
     try:
         for out, expected in (("1", True), ("2", True), ("0", False), ("", False), ("x", False)):
             globals_["shell_get_output"] = (
@@ -326,16 +327,25 @@ def test_slow_build_binary_probe_is_server_independent_and_fails_closed():
     finally:
         globals_["shell_get_output"] = saved
 
+    # It must read the binary itself, bounded: this path exists because no
+    # server is up, so a live-server query would hang or throw, and an unbounded
+    # read would block the abort it is meant to diagnose.
+    for cmd, timeout in seen:
+        assert args.binary in cmd and " local " in f" {cmd} ", cmd
+        assert "--query" in cmd, cmd
+        assert timeout == 60, (cmd, timeout)
+
     # The query names exactly the signals collect_build_flags derives, so the two
     # cannot disagree about what "slow" means. A bare `-fsanitize=` match would:
     # CFI adds -fsanitize=cfi-vcall to RelWithDebInfo, which the collected-flags
     # path calls release.
     assert seen, "the probe never ran a query"
+    queries = [cmd for cmd, _ in seen]
     for token in ("BUILD_TYPE", "Debug", "WITH_COVERAGE"):
-        assert all(token in cmd for cmd in seen), token
+        assert all(token in cmd for cmd in queries), token
     for san in ("thread", "address", "undefined", "memory"):
-        assert all(f"sanitize={san}" in cmd for cmd in seen), san
-    assert all("cfi" not in cmd for cmd in seen), seen[0]
+        assert all(f"sanitize={san}" in cmd for cmd in queries), san
+    assert all("cfi" not in cmd for cmd in queries), queries[0]
 
 
 def test_lldb_helper_forwards_the_selected_budget():
