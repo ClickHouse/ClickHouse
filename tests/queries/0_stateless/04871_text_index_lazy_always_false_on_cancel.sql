@@ -15,6 +15,9 @@ SET use_skip_indexes_on_data_read = 1;
 SET text_index_posting_list_apply_mode = 'lazy';
 SET use_query_condition_cache = 0;
 SET use_text_index_tokens_cache = 1;
+-- The minmax-count projection estimation evaluates skip indexes at planning time and can answer
+-- `count()` without any read, and the reading below must happen for the cancellation to hit it.
+SET optimize_use_implicit_projections = 0;
 
 DROP TABLE IF EXISTS tab_lazy_always_false;
 
@@ -47,9 +50,13 @@ SYSTEM ENABLE FAILPOINT slowdown_skip_index_read_result_build;
 
 SELECT * FROM
 (
+    -- HAVING keeps the count row out of the output: on a slow or degraded run the branch may
+    -- finish before the exception from the second branch, and a streamed row would otherwise
+    -- make the output depend on that timing.
     SELECT count() FROM tab_lazy_always_false
     PREWHERE hasAllTokens(s, ['filler', 'zrare'])
     WHERE hasAllTokens(s, ['zzzabsent', 'filler'])
+    HAVING count() < 0
     UNION ALL
     SELECT throwIf(sleepEachRow(0.05) >= 0, 'boom') FROM numbers(1)
 ); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
