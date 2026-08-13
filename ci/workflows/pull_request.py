@@ -244,6 +244,7 @@ workflow = Workflow.Config(
     pre_hooks=[
         can_be_tested,
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/review_threads.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/team_notifications.py",

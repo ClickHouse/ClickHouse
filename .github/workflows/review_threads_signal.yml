@@ -1,0 +1,30 @@
+# Companion to rerun_on_review_threads.yml - the unresolved-review-threads CI
+# gate (https://github.com/ClickHouse/ClickHouse/issues/114724).
+#
+# Review-thread events on PRs from forks run with a read-only GITHUB_TOKEN and
+# no access to secrets, so a workflow triggered by them cannot re-run the PR
+# workflow itself. This workflow only converts those events into
+# `workflow_run` completions: rerun_on_review_threads.yml receives them in the
+# trusted default-branch context with a normal token and does the actual work.
+
+name: Review Threads Signal
+
+on:
+  pull_request_review_thread:
+    types: [resolved, unresolved]
+  pull_request_review_comment:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  signal:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Signal review-thread activity
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          echo "Review-thread activity on PR #$PR_NUMBER (head $HEAD_SHA)."
+          echo "rerun_on_review_threads.yml reconciles the CI state on this run's completion."

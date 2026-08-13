@@ -7,6 +7,11 @@ from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_integration_tests,
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
+from ci.jobs.scripts.workflow_hooks.review_threads import (
+    KV_OVERRIDE,
+    KV_UNRESOLVED_COUNT,
+    should_limit_pipeline,
+)
 from ci.praktika.info import Info
 
 
@@ -207,6 +212,33 @@ def should_skip_job(job_name):
     if not changed_files:
         print("WARNING: no changed files found for PR - do not filter jobs")
         return False, ""
+
+    # While the PR has unresolved review threads, run only builds and the
+    # preliminary checks - the code is expected to change again, so the full
+    # test suite would be wasted (https://github.com/ClickHouse/ClickHouse/issues/114724).
+    # The `Code Review` job keeps running so the AI review re-checks the new
+    # code and resolves its own addressed threads, which re-triggers the full
+    # suite via rerun_on_review_threads.yml. The kv data is stored by the
+    # review_threads.py pre-hook; when it is missing (e.g. the GitHub API was
+    # unavailable), nothing is skipped.
+    unresolved_threads = _info_cache.get_kv_data(KV_UNRESOLVED_COUNT) or 0
+    if (
+        should_limit_pipeline(
+            unresolved_threads, bool(_info_cache.get_kv_data(KV_OVERRIDE))
+        )
+        and "build" not in job_name.lower()
+        and job_name not in PRELIMINARY_JOBS
+        and job_name != JobNames.CODE_REVIEW
+    ):
+        if "unresolved-review-threads" not in _pipeline_note_labels:
+            _pipeline_note_labels.add("unresolved-review-threads")
+            _info_cache.add_workflow_note(
+                f"The PR has {unresolved_threads} unresolved review thread(s): only "
+                "builds and preliminary checks run, and merge is blocked. Resolve the "
+                "threads to re-run the full test suite automatically, or add the "
+                f"`{Labels.IGNORE_UNRESOLVED_THREADS}` label to bypass the gate."
+            )
+        return True, f"Skipped, {unresolved_threads} unresolved review thread(s)"
 
     if job_name == JobNames.BUILD_PROFILE_DIFF and only_docs(changed_files):
         return True, "Skipped, only documentation changed"

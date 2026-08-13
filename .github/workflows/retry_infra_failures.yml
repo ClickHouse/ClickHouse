@@ -174,6 +174,22 @@ jobs:
               fi
             fi
 
+            # A red "Finish Workflow" caused by the unresolved-review-threads
+            # merge gate (the "Review Threads" commit status, see
+            # ci/jobs/scripts/workflow_hooks/review_threads.py) is an expected
+            # policy failure, not an infrastructure error. A rerun would end
+            # red again; rerun_on_review_threads.yml re-runs it once the
+            # threads are resolved.
+            if [ "$should_rerun" = "true" ] && [ -n "$run_sha" ]; then
+              marker_state=$(gh api "repos/$GH_REPO/commits/$run_sha/statuses" --paginate \
+                --jq '.[] | select(.context == "Review Threads") | .state' | sed -n 1p) \
+                || marker_state=""
+              if [ "$marker_state" = "failure" ] || [ "$marker_state" = "error" ]; then
+                should_rerun=false
+                echo "  Skipping: the failure is the unresolved-review-threads merge gate."
+              fi
+            fi
+
             if [ "$should_rerun" = "true" ]; then
               if gh run rerun "$run_id" --repo "$GH_REPO"; then
                 rerun_count=$((rerun_count + 1))
