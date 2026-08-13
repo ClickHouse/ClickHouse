@@ -212,12 +212,6 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     optimization_settings.build_sets = false;
     // CTEs materialization should be done in the original plan, but not in the plan with parallel replicas.
     optimization_settings.materialize_ctes = false;
-    // If the parallel replicas plan will be chosen, the index analysis result will be reused from the
-    // single-replica plan - but only for the one read step the decision is made on. The shipped plan is
-    // the plan that actually runs, and its other reads (a table inside an `IN` subquery, say) would then
-    // never be analyzed at all: on TPC-H q03 the `lineitem` read selects every mark, 734 of 734, where the
-    // single-node plan prunes to 398. So keep primary key analysis for it and only skip it for the probe,
-    // which is thrown away.
     // Never analyze here: `considerEnablingParallelReplicas` hands every read the analysis the
     // single-node plan produced, so doing it again would be pure cost.
     optimization_settings.query_plan_optimize_primary_key = false;
