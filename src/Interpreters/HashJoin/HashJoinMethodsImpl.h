@@ -492,18 +492,25 @@ void processMatch(
     {
         setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
         used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
-        /// setUsed already marked every row of the key's list, so addFoundRowAll does not need to call setUsedOnce on the rows it emits.
+        /// An ALL join emits a right row for each matching left row, so nothing is claimed here.
         addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, nullptr, is_last_disjunct);
     }
     else if constexpr ((join_features.is_any_join || join_features.is_semi_join) && join_features.right)
     {
-        /// Use first appeared left key + it needs left columns replication
-        bool used_once = used_flags.template setUsedOnce<join_features.need_flags, flag_per_row>(find_result);
-        if (used_once)
+        /// Each right row is emitted for exactly one left row, so the claimed rows must be the emitted
+        /// ones. With several disjuncts a right row is reachable through several keys, hence the claim
+        /// is taken per row by `addFoundRowAll`, which emits only what it claims.
+        if constexpr (flag_per_row)
         {
-            auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
+            static_assert(join_features.need_flags, "RIGHT ANY/SEMI JOIN needs flags to claim the rows it emits");
+            if (addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, &used_flags, is_last_disjunct))
+                setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
+        }
+        /// A single disjunct reaches a right row through one key only, so claiming the key claims all of its rows.
+        else if (used_flags.template setUsedOnce<join_features.need_flags, flag_per_row>(find_result))
+        {
             setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
-            addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt, is_last_disjunct);
+            addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, nullptr, is_last_disjunct);
         }
     }
     else if constexpr (join_features.is_any_join && join_features.inner)
