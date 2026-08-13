@@ -70,7 +70,7 @@ namespace DB::Setting
 namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
-    extern const char iceberg_alter_catalog_update_metadata_fail[];
+    extern const char iceberg_alter_catalog_update_schema_fail[];
     extern const char iceberg_alter_catalog_commit_reported_as_failed[];
 }
 
@@ -1466,8 +1466,6 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
 
     auto request_body = buildUpdateMetadataRequestBody(namespace_name, table_name, new_snapshot);
-    if (!request_body)
-        return true;
 
     try
     {
@@ -1496,7 +1494,7 @@ bool RestCatalog::updateSchema(
     Int32 new_last_column_id,
     Poco::JSON::Object::Ptr metadata) const
 {
-    fiu_do_on(DB::FailPoints::iceberg_alter_catalog_update_metadata_fail, { return false; });
+    fiu_do_on(DB::FailPoints::iceberg_alter_catalog_update_schema_fail, { return false; });
 
     const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
 

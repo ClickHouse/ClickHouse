@@ -128,8 +128,9 @@ Int32 getNextSchemaId(Poco::JSON::Object::Ptr metadata_object)
 
 }
 
-MetadataGenerator::MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_)
+MetadataGenerator::MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_, bool allow_geo_parser_)
     : metadata_object(metadata_object_)
+    , allow_geo_parser(allow_geo_parser_)
     , gen(randomSeed())
     , dis(1, std::numeric_limits<Int64>::max())
 {
@@ -510,7 +511,7 @@ bool MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
                 if (existing_iceberg_type.isString())
                 {
                     auto reconstructed_ch_type = Iceberg::IcebergSchemaProcessor::getSimpleType(
-                        existing_iceberg_type.extract<String>(), /* allow_geo_parser */ false);
+                        existing_iceberg_type.extract<String>(), allow_geo_parser);
                     if (!current_field->getValue<bool>(Iceberg::f_required) && reconstructed_ch_type->canBeInsideNullable())
                         reconstructed_ch_type = makeNullable(reconstructed_ch_type);
 

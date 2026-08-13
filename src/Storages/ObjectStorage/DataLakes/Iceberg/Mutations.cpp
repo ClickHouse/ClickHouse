@@ -51,6 +51,11 @@ extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
 }
 
+namespace DB::Setting
+{
+extern const SettingsBool allow_experimental_geo_types_in_iceberg;
+}
+
 namespace DB::FailPoints
 {
 extern const char iceberg_writes_cleanup[];
@@ -867,7 +872,7 @@ void alter(
 
         const auto previous_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
 
-        auto metadata_json_generator = MetadataGenerator(metadata);
+        auto metadata_json_generator = MetadataGenerator(metadata, context->getSettingsRef()[Setting::allow_experimental_geo_types_in_iceberg]);
 
         if (commit_attempted && alterAlreadyApplied(metadata_json_generator, params[0]))
         {

@@ -17,7 +17,7 @@ namespace DB
 class MetadataGenerator
 {
 public:
-    explicit MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_);
+    explicit MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_, bool allow_geo_parser_ = false);
 
     struct NextMetadataResult
     {
@@ -57,6 +57,7 @@ public:
 
 private:
     Poco::JSON::Object::Ptr metadata_object;
+    bool allow_geo_parser;
 
     pcg64_fast gen;
     std::uniform_int_distribution<Int64> dis;

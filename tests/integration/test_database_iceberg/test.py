@@ -1268,39 +1268,6 @@ def test_writes_alter_when_commit_is_reported_as_failed(started_cluster):
     )
 
 
-def test_writes_when_metadata_is_not_initialized(started_cluster):
-    """When the Iceberg metadata cannot be created, the write entrypoints must report
-    `NOT_INITIALIZED` instead of dereferencing the null metadata pointer.
-    """
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_writes_uninitialized_metadata_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
-    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
-
-    node.query(f"INSERT INTO {table_ref} VALUES ('abc', 1);", settings=write_settings)
-
-    failpoint = "datalake_iceberg_metadata_create_fail"
-    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
-    try:
-        for query in [
-            f"ALTER TABLE {table_ref} ADD COLUMN z Nullable(String)",
-            f"ALTER TABLE {table_ref} DELETE WHERE y = 1",
-            f"INSERT INTO {table_ref} VALUES ('def', 2)",
-        ]:
-            error = node.query_and_get_error(query, settings=write_settings)
-            assert "NOT_INITIALIZED" in error, f"unexpected error for `{query}`:\n{error}"
-    finally:
-        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-
-    # The server must still be alive and the table unchanged.
-    assert node.query(f"SELECT x, y FROM {table_ref} ORDER BY ALL", settings=write_settings) == "abc\t1\n"
-
 
 def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
     node = started_cluster.instances["node1"]

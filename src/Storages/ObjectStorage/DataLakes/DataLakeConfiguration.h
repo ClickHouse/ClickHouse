@@ -27,7 +27,6 @@
 #include <type_traits>
 
 #include <Common/ErrorCodes.h>
-#include <Common/FailPoint.h>
 #include <Common/filesystemHelpers.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -49,13 +48,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_INITIALIZED;
     extern const int PATH_ACCESS_DENIED;
-}
-
-namespace FailPoints
-{
-    extern const char datalake_iceberg_metadata_create_fail[];
 }
 
 namespace DataLakeStorageSetting
@@ -129,7 +122,6 @@ public:
     {
         if (current_metadata != nullptr)
             return;
-        fiu_do_on(FailPoints::datalake_iceberg_metadata_create_fail, { return; });
         BaseStorageConfiguration::update(object_storage, local_context);
         assertLocalPathCorrect(object_storage, local_context);
         current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
@@ -438,7 +430,7 @@ private:
     void assertInitialized() const
     {
         if (!current_metadata)
-            throw Exception(ErrorCodes::NOT_INITIALIZED, "Metadata is not initialized");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata is not initialized");
     }
 
     ReadFromFormatInfo prepareReadingFromFormat(
