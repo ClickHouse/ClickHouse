@@ -14,6 +14,8 @@
 #include <bit>
 #include <cmath>
 #include <cstring>
+#include <limits>
+#include <tuple>
 
 namespace DB
 {
@@ -740,12 +742,15 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
       * priced as an exception. The capped form, run once per vector on the winning scale, may
       * cap either width below its maximum and exile the values that do not fit to exceptions
       * (the patching idea of PFOR), and conversely may store the near-misses as adjustment
-      * lanes: a histogram of per-value widths gives the optimal cap in closed form for the
-      * Frame-of-Reference offsets and for the adjustments (per-position independence makes them
-      * exact), and proposes a candidate cap for the deltas that an exact chain walk verifies,
-      * since an exiled delta partially reappears at the next position. The Frame-of-Reference
-      * base stays at the vector minimum, so only large values are exiled — a single small
-      * outlier still widens the lanes.
+      * lanes. The two caps interact — exiling a wide-offset value also removes the adjustment it
+      * forces — so neither is chosen before the other: every candidate lane cap is scored
+      * against the full objective (lanes + adjustment plan + exceptions). Per-position
+      * independence makes that exact for the Frame-of-Reference offsets and for the adjustments,
+      * so their caps are found by a closed-form sweep over a histogram of per-value widths,
+      * while for the deltas the histogram only bounds the cost from below and an exact chain
+      * walk decides, since an exiled delta partially reappears at the next position. The
+      * Frame-of-Reference base stays at the vector minimum, so only large values are exiled — a
+      * single small outlier still widens the lanes.
       */
     const auto measure_packing = [&](bool allow_capping) -> std::optional<Packing>
     {
@@ -818,6 +823,30 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
 
         const auto lanes_bytes = [](UInt8 w) { return Compression::FFOR::calculateBitpackedBytes(w); };
 
+        /** Picks the width cap of the adjustment lanes from a histogram of the adjustment widths
+          * of the positions that survive the lane cap, and returns it together with what it costs
+          * (the lane bytes plus the exceptions the cap exiles). Adjustments are per-position
+          * independent — a value whose adjustment does not fit the cap becomes an exception,
+          * whatever the others do — so the closed-form scan over the histogram is exact.
+          */
+        const auto plan_adjustments = [&](const UInt32 * histogram, UInt8 full_bits) -> std::pair<UInt8, UInt32>
+        {
+            UInt8 bits = full_bits;
+            UInt32 cost = lanes_bytes(full_bits);
+            UInt32 outliers = 0;
+            for (Int32 w = full_bits - 1; w >= 0; --w)
+            {
+                outliers += histogram[w + 1];
+                const UInt32 candidate = lanes_bytes(static_cast<UInt8>(w)) + outliers * exceptionCost<T>();
+                if (candidate < cost)
+                {
+                    cost = candidate;
+                    bits = static_cast<UInt8>(w);
+                }
+            }
+            return {bits, cost};
+        };
+
         std::optional<Packing> best_packing;
         if (bits_for_full < Traits::width_bits)
         {
@@ -829,66 +858,75 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             }
             else
             {
-                /// FOR: the histograms are exact — every value above a cap is one exception,
-                /// independently of the others — so scan all cap widths in closed form, then
-                /// plan the adjustment lanes over the surviving positions in one more pass.
-                UInt32 outliers = 0;
-                UInt8 best_w = bits_for_full;
-                UInt32 best_cost = header_size + lanes_bytes(bits_for_full) + exception_count * exceptionCost<T>();
-                for (Int32 w = bits_for_full - 1; w >= 0; --w)
-                {
-                    outliers += for_width_histogram[w + 1];
-                    const UInt32 cost = header_size + lanes_bytes(static_cast<UInt8>(w))
-                        + (exception_count + outliers) * exceptionCost<T>();
-                    if (cost < best_cost)
-                    {
-                        best_cost = cost;
-                        best_w = static_cast<UInt8>(w);
-                    }
-                }
-                UInt32 for_exiles = 0;
+                /** FOR: the exile decisions are per-position independent — a value whose offset
+                  * does not fit the cap is one exception, whatever the others do — so every cap
+                  * width can be scored against the *full* objective, adjustment lanes included.
+                  * The two caps must not be chosen in sequence: exiling a wide-offset value also
+                  * removes the adjustment it forces, so a cap that looks more expensive on lanes
+                  * and exceptions alone can be the cheapest once the adjustment lanes it dissolves
+                  * are priced. Positions are visited in the order of their offset width (a
+                  * counting sort over the histogram already built), so stepping the cap down
+                  * removes each of them from the adjustment histogram exactly once and the whole
+                  * sweep costs one pass over the vector plus O(width^2).
+                  */
+                UInt32 bucket_start[Traits::width_bits + 2] = {};
+                for (UInt32 w = 0; w <= bits_for_full; ++w)
+                    bucket_start[w + 1] = bucket_start[w] + for_width_histogram[w];
+                UInt32 bucket_cursor[Traits::width_bits + 1] = {};
+                std::copy(bucket_start, bucket_start + bits_for_full + 1, bucket_cursor);
+                UInt16 by_offset_width[WALLABY_VECTOR_VALUES]; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
                 UInt32 adjustment_histogram[Traits::width_bits + 1] = {};
                 UInt8 adjustment_full_bits = 0;
                 for (UInt32 i = 0; i < count; ++i)
                 {
-                    const T offset = static_cast<T>(quantized[i]) - static_cast<T>(min_q);
-                    const bool exiled = is_quantization_exception[i]
-                        || (best_w < Traits::width_bits && offset >= (T{1} << best_w));
-                    exile_scratch[i] = exiled;
-                    if (exiled)
-                    {
-                        for_exiles += !is_quantization_exception[i] ? 1 : 0;
+                    if (is_quantization_exception[i])
                         continue;
-                    }
+                    const T offset = static_cast<T>(quantized[i]) - static_cast<T>(min_q);
+                    const UInt8 w = offset == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(offset));
+                    by_offset_width[bucket_cursor[w]++] = static_cast<UInt16>(i);
                     if (max_adjustment_zigzag != 0)
                     {
                         const T adjustment = adjustments[i];
-                        const UInt8 w = adjustment == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(adjustment));
-                        ++adjustment_histogram[w];
-                        adjustment_full_bits = std::max(adjustment_full_bits, w);
+                        const UInt8 aw = adjustment == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(adjustment));
+                        ++adjustment_histogram[aw];
+                        adjustment_full_bits = std::max(adjustment_full_bits, aw);
                     }
                 }
-                UInt8 adjustment_bits = adjustment_full_bits;
-                UInt32 adjustment_cost = lanes_bytes(adjustment_full_bits);
+
+                UInt8 best_w = bits_for_full;
+                UInt8 best_adjustment_bits = 0;
+                UInt32 best_cost = std::numeric_limits<UInt32>::max();
+                UInt32 exiles = 0;
+                for (Int32 w = bits_for_full; w >= 0; --w)
                 {
-                    UInt32 adjustment_outliers = 0;
-                    UInt32 running_cost = adjustment_cost;
-                    for (Int32 w = adjustment_full_bits - 1; w >= 0; --w)
+                    const auto [adjustment_bits, adjustment_cost] = plan_adjustments(adjustment_histogram, adjustment_full_bits);
+                    const UInt32 cost = header_size + lanes_bytes(static_cast<UInt8>(w)) + adjustment_cost
+                        + (exception_count + exiles) * exceptionCost<T>();
+                    if (cost < best_cost)
                     {
-                        adjustment_outliers += adjustment_histogram[w + 1];
-                        const UInt32 cost
-                            = lanes_bytes(static_cast<UInt8>(w)) + adjustment_outliers * exceptionCost<T>();
-                        if (cost < running_cost)
-                        {
-                            running_cost = cost;
-                            adjustment_bits = static_cast<UInt8>(w);
-                            adjustment_cost = cost;
-                        }
+                        best_cost = cost;
+                        best_w = static_cast<UInt8>(w);
+                        best_adjustment_bits = adjustment_bits;
                     }
+                    if (w == 0)
+                        break;
+                    /// The cap steps down to w - 1, so the positions whose offset width is exactly
+                    /// w stop fitting: they leave the adjustment plan for the exception list.
+                    for (UInt32 k = bucket_start[w]; k < bucket_start[w + 1]; ++k)
+                    {
+                        if (max_adjustment_zigzag != 0)
+                        {
+                            const T adjustment = adjustments[by_offset_width[k]];
+                            const UInt8 aw
+                                = adjustment == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(adjustment));
+                            --adjustment_histogram[aw];
+                        }
+                        ++exiles;
+                    }
+                    while (adjustment_full_bits > 0 && adjustment_histogram[adjustment_full_bits] == 0)
+                        --adjustment_full_bits;
                 }
-                const UInt32 total = header_size + lanes_bytes(best_w) + adjustment_cost
-                    + (exception_count + for_exiles) * exceptionCost<T>();
-                best_packing = Packing{best_w, adjustment_bits, false, min_q, total};
+                best_packing = Packing{best_w, best_adjustment_bits, false, min_q, best_cost};
             }
         }
 
@@ -921,7 +959,6 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
                 }
                 UInt8 adjustment_bits = 0;
                 UInt32 adjustment_cost = 0;
-                UInt32 adjustment_exiles = 0;
                 if (max_adjustment_zigzag != 0)
                 {
                     UInt32 adjustment_histogram[Traits::width_bits + 1] = {};
@@ -935,26 +972,10 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
                         ++adjustment_histogram[aw];
                         adjustment_full_bits = std::max(adjustment_full_bits, aw);
                     }
-                    adjustment_bits = adjustment_full_bits;
-                    adjustment_cost = lanes_bytes(adjustment_full_bits);
-                    UInt32 adjustment_outliers = 0;
-                    UInt32 running_cost = adjustment_cost;
-                    for (Int32 aw = adjustment_full_bits - 1; aw >= 0; --aw)
-                    {
-                        adjustment_outliers += adjustment_histogram[aw + 1];
-                        const UInt32 cost
-                            = lanes_bytes(static_cast<UInt8>(aw)) + adjustment_outliers * exceptionCost<T>();
-                        if (cost < running_cost)
-                        {
-                            running_cost = cost;
-                            adjustment_bits = static_cast<UInt8>(aw);
-                            adjustment_cost = lanes_bytes(static_cast<UInt8>(aw));
-                            adjustment_exiles = adjustment_outliers;
-                        }
-                    }
+                    std::tie(adjustment_bits, adjustment_cost) = plan_adjustments(adjustment_histogram, adjustment_full_bits);
                 }
-                const UInt32 total = header_size + lanes_bytes(w) + adjustment_cost
-                    + (walked_exceptions + adjustment_exiles) * exceptionCost<T>();
+                const UInt32 total
+                    = header_size + lanes_bytes(w) + adjustment_cost + walked_exceptions * exceptionCost<T>();
                 return Packing{w, adjustment_bits, true, quantized[0], total};
             };
 

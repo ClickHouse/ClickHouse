@@ -3533,4 +3533,26 @@ TEST_F(WallabyTest, TakesADeltaCapWinSmallerThanAVectorOfLanes)
     EXPECT_LT(wallabyCompressedSize(values), 640u);
 }
 
+TEST_F(WallabyTest, CapsTheFrameOfReferenceLanesToDissolveTheAdjustmentLanes)
+{
+    /// The Frame-of-Reference cap and the adjustment cap cannot be chosen one after the other:
+    /// exiling a wide-offset value also removes the adjustment it forces. Here the majority is the
+    /// exact integers 0..255, while every 64th position holds 511.0000001, which quantizes to 511
+    /// with an adjustment of ~9e5 ULPs. Scored on lanes and exceptions alone, the 9-bit cap that
+    /// keeps those 16 values in the lanes looks cheaper than the 8-bit cap that exiles them
+    /// (1152 against 1024 + 16 * 10 bytes), but their 21-bit adjustments are then far too wide to
+    /// pack, so the adjustment planner exiles them anyway and the 9-bit payload pays for both. The
+    /// 8-bit cap makes them ordinary Frame-of-Reference exiles, the adjustment lanes disappear
+    /// entirely, and the payload drops from ~1325 to ~1197 bytes - below the XOR lower bound of
+    /// 8 + 64 + 1023 * 11 bits (~1416) and the ~1453 bytes of the delta lanes. An encoder revision
+    /// that froze the lane cap before pricing the adjustment lanes kept the 9-bit one.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = static_cast<Float64>(i % 256);
+    for (size_t i = 0; i < values.size(); i += 64)
+        values[i] = 511.0000001;
+
+    EXPECT_LT(wallabyCompressedSize(values), 1250u);
+}
+
 }
