@@ -1,0 +1,13 @@
+all columns dropped
+42
+42
+2
+42
+42
+stale part re-attached
+NO_SUCH_COLUMN_IN_TABLE
+renamed columns, non-adaptive granularity
+20000	42	42
+20000	42	42
+pending rename and drop of the same column
+1000	42	42
