@@ -3,6 +3,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
 #include <Common/HashTable/Prefetching.h>
+#include <Common/ProfileEvents.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/AddedColumns.h>
 #include <Interpreters/HashJoin/HashJoinMethods.h>
@@ -10,9 +11,16 @@
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/HashJoin/ProbeLookup.h>
 #include <Interpreters/JoinUtils.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 
 #include <algorithm>
 #include <type_traits>
+
+namespace ProfileEvents
+{
+extern const Event HashJoinProbeMicroseconds;
+extern const Event HashJoinProbeLookupMicroseconds;
+}
 
 namespace DB
 {
@@ -219,6 +227,8 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     const MapsTemplateVector & maps_,
     bool is_join_get)
 {
+    ProfileEventTimeIncrement<Microseconds> probe_watch(ProfileEvents::HashJoinProbeMicroseconds);
+
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
 
     std::vector<JoinOnKeyColumns> join_on_keys;
@@ -267,8 +277,12 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     else
         added_columns.reserve(join_features.need_replication);
 
-    size_t processed_rows
-        = switchJoinRightColumns(maps_, added_columns, block.getSelector(), join.data->type, *join.used_flags, join.data->key_range);
+    size_t processed_rows = 0;
+    {
+        ProfileEventTimeIncrement<Microseconds> lookup_watch(ProfileEvents::HashJoinProbeLookupMicroseconds);
+        processed_rows
+            = switchJoinRightColumns(maps_, added_columns, block.getSelector(), join.data->type, *join.used_flags, join.data->key_range);
+    }
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
 

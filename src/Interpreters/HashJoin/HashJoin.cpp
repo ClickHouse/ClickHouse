@@ -72,13 +72,6 @@ extern const Metric HashJoinDestroyThreadsActive;
 extern const Metric HashJoinDestroyThreadsScheduled;
 }
 
-namespace CurrentMetrics
-{
-extern const Metric HashJoinDestroyThreads;
-extern const Metric HashJoinDestroyThreadsActive;
-extern const Metric HashJoinDestroyThreadsScheduled;
-}
-
 namespace DB
 {
 
