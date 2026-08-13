@@ -6,6 +6,7 @@ from .cache import Cache
 from .runtime import RunConfig
 from .settings import Settings
 from .utils import Utils
+from .workflow import Workflow
 
 
 class CacheRunnerHooks:
@@ -172,29 +173,24 @@ class CacheRunnerHooks:
                     if result:
                         fetched_records.append(result)
 
-        env = _Environment.get()
         # Step 2: Apply the fetched records sequentially
         for job_name, record in fetched_records:
             assert Utils.normalize_string(job_name) not in workflow_config.cache_success
-            # Only pull_request workflows may reuse a record produced on any
-            # branch. Every other event (push, schedule, dispatch) may reuse
-            # only a record produced on the same branch. merge_queue may reuse
-            # its own branch and, additionally, the main branch: the merge group
-            # is the pull request merged with the current main, so a record
-            # whose digest was produced on main describes identical inputs and
-            # is safe to reuse - while a pull_request's record (a different
-            # branch) is still never reused, so the drift guard holds.
-            reuse_allowed = (
-                workflow.is_event_pull_request()
-                or record.branch == env.BRANCH
-                or (
-                    workflow.is_event_merge_queue()
-                    and record.branch == Settings.MAIN_BRANCH
-                )
-            )
-            if not reuse_allowed:
+            # The trust boundary is pull_request vs. everything else. A
+            # pull_request run executes untrusted code, so trusted lanes (push,
+            # schedule, dispatch, merge_queue) must not reuse a record it
+            # produced - otherwise a PR's green result could satisfy e.g. the
+            # merge queue's lookup and skip a job the queue must run on the merge
+            # group state (the drift guard). A pull_request run itself may reuse
+            # any record. Correctness is unaffected either way: a digest match
+            # means identical inputs, so the producing event only encodes how
+            # much we trust the result.
+            if (
+                not workflow.is_event_pull_request()
+                and record.event == Workflow.Event.PULL_REQUEST
+            ):
                 print(
-                    f"NOTE: Result for [{job_name}] cached from branch [{record.branch}] - skip for workflow with event=[{workflow.event}]"
+                    f"NOTE: Result for [{job_name}] cached from event [{record.event}] - skip for workflow with event=[{workflow.event}]"
                 )
                 continue
             workflow_config.cache_success.append(job_name)
@@ -261,16 +257,16 @@ class CacheRunnerHooks:
             # cache is enabled, and it's a job that supposed to be cached (has defined digest config)
             workflow_runtime = RunConfig.from_workflow_data()
             job_digest = workflow_runtime.digest_jobs[job.name]
-            # Dual of the reuse rule above: only a push workflow, which produces
-            # the canonical default-branch record, may overwrite an existing
-            # record. Every other event (pull_request, schedule, dispatch,
-            # merge_queue) writes only into an empty slot (if_not_exist=True), so
-            # a narrow-branch record never clobbers the push/master record that
-            # both push (same branch) and pull_request (any branch) can reuse.
+            # Dual of the reuse rule above: a pull_request run produces an
+            # untrusted record, so it must not overwrite a record already in the
+            # shared (job, digest) slot - it only fills an empty one
+            # (if_not_exist=True). Every trusted event overwrites, keeping the
+            # slot's record reusable by all trusted lanes (and by pull_request,
+            # which reuses anything).
             Cache.push_success_record(
                 job.name,
                 job_digest,
                 workflow_runtime.sha,
                 workflow_name=workflow.name,
-                if_not_exist=not workflow.is_event_push(),
+                if_not_exist=workflow.is_event_pull_request(),
             )

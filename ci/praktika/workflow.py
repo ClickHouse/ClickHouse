@@ -80,9 +80,6 @@ class Workflow:
         def is_event_dispatch(self):
             return self.event == Workflow.Event.DISPATCH
 
-        def is_event_merge_queue(self):
-            return self.event == Workflow.Event.MERGE_QUEUE
-
         def get_job(self, name):
             jobs = self.find_jobs(name)
             if not jobs:
