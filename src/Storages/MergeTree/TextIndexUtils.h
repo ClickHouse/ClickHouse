@@ -114,6 +114,8 @@ private:
     /// Adjusts the part offset of the given row id according to merged part offsets.
     UInt32 adjustPartOffset(size_t part_index, UInt32 row_id) const;
 
+    /// Unions the given row ids into output_postings_bitmap.
+    void appendPostingsToBitmap(std::span<UInt32> row_ids);
     /// Appends the already adjusted row ids of one source to output_postings_array or output_postings_bitmap.
     void appendPostings(size_t source_num, std::span<UInt32> row_ids);
     /// Reads the postings of one source and appends them to output_postings_bitmap or output_postings_array.
@@ -151,9 +153,9 @@ private:
     MutableColumnPtr output_tokens;
     /// Tokens infos accumulated for the current dictionary block.
     std::vector<TokenPostingsInfo> output_infos;
-    /// Postings accumulated for the current token from sources with non-embedded postings.
+    /// Postings accumulated for the current token when they don't fit into output_postings_array.
     PostingList output_postings_bitmap;
-    /// Postings accumulated for the current token from sources with embedded postings.
+    /// Buffer of at most MAX_CARDINALITY_FOR_RAW_POSTINGS postings of the current token.
     PaddedPODArray<UInt32> output_postings_array;
     /// Reusable buffer for row ids of one posting list block read from a source.
     PaddedPODArray<UInt32> row_ids_buffer;

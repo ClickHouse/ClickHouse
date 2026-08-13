@@ -366,6 +366,18 @@ UInt32 MergeTextIndexesTask::adjustPartOffset(size_t part_index, UInt32 row_id) 
     return static_cast<UInt32>(new_offset);
 }
 
+void MergeTextIndexesTask::appendPostingsToBitmap(std::span<UInt32> row_ids)
+{
+    /// If output bitmap is empty, add values directly to it.
+    /// Otherwise, create a new bitmap and union it with the output bitmap.
+    /// Union works in one pass, while adding row ids with `addMany` shifts those
+    /// already placed, and causes reallocations in case when postings are interleaved.
+    if (output_postings_bitmap.isEmpty())
+        output_postings_bitmap.addMany(row_ids.size(), row_ids.data());
+    else
+        output_postings_bitmap |= PostingList(row_ids.size(), row_ids.data());
+}
+
 void MergeTextIndexesTask::appendPostings(size_t source_num, std::span<UInt32> row_ids)
 {
     if (row_ids.empty())
@@ -387,19 +399,11 @@ void MergeTextIndexesTask::appendPostings(size_t source_num, std::span<UInt32> r
 
     if (!output_postings_array.empty())
     {
-        std::sort(output_postings_array.begin(), output_postings_array.end());
-        output_postings_bitmap.addMany(output_postings_array.size(), output_postings_array.data());
+        appendPostingsToBitmap(output_postings_array);
         output_postings_array.clear();
     }
 
-    /// If output bitmap is empty, add values directly to it.
-    /// Otherwise, create a new bitmap and union it with the output bitmap.
-    /// Union works in one pass, while adding row ids with `addMany` shifts those
-    /// already placed, and causes reallocations in case when postings are interleaved.
-    if (output_postings_bitmap.isEmpty())
-        output_postings_bitmap.addMany(row_ids.size(), row_ids.data());
-    else
-        output_postings_bitmap |= PostingList(row_ids.size(), row_ids.data());
+    appendPostingsToBitmap(row_ids);
 }
 
 void MergeTextIndexesTask::readAndAppendPostings(size_t source_num, TokenPostingsInfo & token_info)
@@ -477,7 +481,8 @@ void MergeTextIndexesTask::flushPostingList()
     {
         if (!output_postings_array.empty())
         {
-            output_postings_bitmap.addMany(output_postings_array.size(), output_postings_array.data());
+            appendPostingsToBitmap(output_postings_array);
+            output_postings_array.clear();
         }
 
         PostingListBuilder builder(&output_postings_bitmap);
