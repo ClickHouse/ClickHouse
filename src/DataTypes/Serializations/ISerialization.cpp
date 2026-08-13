@@ -732,6 +732,17 @@ bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPat
         || path[last_elem].type == Substream::SparseNullMap;
 }
 
+bool ISerialization::isPrefetchNeededForSubstream(const DB::ISerialization::SubstreamPath & path, size_t prefix_len, bool prefetch_json_shared_data_substreams)
+{
+    if (prefetch_json_shared_data_substreams || prefix_len == 0 || prefix_len > path.size())
+        return true;
+
+    /// The JSON shared data Data substream is not read from the start of the granule: a path's data is
+    /// located via a mark in another stream and read by seeking to it. With many JSON paths the granule
+    /// is large, so prefetching from the start can fetch data we never read.
+    return path[prefix_len - 1].type != Substream::ObjectSharedDataData;
+}
+
 bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
 {
     if (prefix_len == 0 || prefix_len > path.size())
