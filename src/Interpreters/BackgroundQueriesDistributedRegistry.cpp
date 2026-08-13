@@ -230,8 +230,10 @@ void BackgroundQueriesDistributedRegistry::finalizeQuery(BackgroundQueryHandle &
     handle.entry.exception = exception;
     handle.entry.finish_time = time(nullptr);
 
-    if (!entry_asynchronous_update_queue.push(EntryUpdate{handle.entry_path, handle.entry}))
-        LOG_WARNING(log, "Dropping the outcome of background query {}: the registry is shut down", handle.entry.query_id);
+    /// The update queue size should be enough for long keeper outages.
+    /// If it's ever full, do not block threads, discard updates and log warnings.
+    if (!entry_asynchronous_update_queue.tryPush(EntryUpdate{handle.entry_path, handle.entry}))
+        LOG_WARNING(log, "Dropping the outcome of background query {}: the registry is shut down or its update queue is full", handle.entry.query_id);
 }
 
 void BackgroundQueriesDistributedRegistry::threadFunction()
