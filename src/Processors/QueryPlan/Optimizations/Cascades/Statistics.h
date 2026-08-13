@@ -29,6 +29,12 @@ struct ExpressionStatistics
     /// Used to convert row-based costs into byte-based costs for network/memory/IO.
     Float64 estimated_bytes_per_row = 1.0;
 
+    /// Bytes a table-read expression has to scan, as opposed to the bytes it outputs. A filter
+    /// that the primary key cannot prune leaves the whole granule selection to scan, so the
+    /// scan volume can exceed the output estimate by orders of magnitude. Zero when unknown or
+    /// for non-read expressions; only the read cost consults it.
+    Float64 physical_read_bytes = 0;
+
     /// Statistics for output columns of the expression
     std::unordered_map<String, ColumnStats> column_statistics;
 
@@ -77,6 +83,12 @@ Float64 estimateRowWidthFromHeader(const Block & header);
 Float64 estimateRowWidth(const Block & header, const std::unordered_map<String, ColumnStats> & column_statistics);
 
 std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node);
+
+/// Sets `physical_read_bytes` from the rows the primary key keeps (`physical_selected_rows`,
+/// from the index analysis): a filter off the sorting key prunes no granules, and each
+/// surviving granule is read whole. The output estimate acts as a lower bound: stat hints mark
+/// tiny stand-in tables whose physical selection says nothing about the pretended size.
+void fillPhysicalReadBytes(ExpressionStatistics & statistics, Float64 physical_selected_rows);
 
 
 }

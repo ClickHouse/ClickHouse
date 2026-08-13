@@ -24,8 +24,10 @@ void ExpressionStatistics::dump(WriteBuffer & out) const
     out << "estimated_rows: " << estimated_row_count
         << " min_rows: " << min_row_count
         << " max_rows: " << max_row_count
-        << " estimated_bytes_per_row: " << estimated_bytes_per_row
-        << "\n";
+        << " estimated_bytes_per_row: " << estimated_bytes_per_row;
+    if (physical_read_bytes > 0)
+        out << " physical_read_bytes: " << physical_read_bytes;
+    out << "\n";
     for (const auto & column : column_statistics)
         out << "`" << column.first << "` NDV : " << column.second.num_distinct_values
             << " avg_bytes: " << column.second.avg_bytes << "\n";
@@ -264,6 +266,15 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
 }
 
+void fillPhysicalReadBytes(ExpressionStatistics & statistics, Float64 physical_selected_rows)
+{
+    /// Keep the output row width: the scan estimate then differs from the output estimate only
+    /// in the row count, and a read without a filter gets the same cost from both. A width from
+    /// only the touched columns would change the cost of every read; that is a separate change.
+    const Float64 physical_rows = std::max(physical_selected_rows, statistics.estimated_row_count);
+    statistics.physical_read_bytes = physical_rows * statistics.estimated_bytes_per_row;
+}
+
 std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
 {
     std::optional<ExpressionStatistics> stats;
@@ -305,6 +316,11 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
             stats->max_row_count = std::max(stats->estimated_row_count,
                 Float64(read_step->getStorageSnapshot()->storage.totalRows(nullptr)
                     .value_or(std::numeric_limits<UInt64>::max())));
+
+            auto analyzed_result = read_step->getAnalyzedResult();
+            analyzed_result = analyzed_result ? analyzed_result : read_step->selectRangesToRead();
+            fillPhysicalReadBytes(*stats,
+                analyzed_result ? Float64(analyzed_result->selected_rows) : 0);
         }
     }
 

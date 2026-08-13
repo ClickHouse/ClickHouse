@@ -336,6 +336,8 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
     else
         statistics.estimated_row_count = 1000000;
 
+    const Float64 physical_selected_rows = analyzed_result ? Float64(analyzed_result->selected_rows) : 0;
+
     if (read_step.getContext()->getSettingsRef()[Setting::allow_statistics_optimize])
     {
         /// TODO: Move this to IOptimizerStatistics implementation
@@ -355,6 +357,7 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
             /// tables look nearly free to move over the network.
             fillReadColumnWidths(statistics, read_step, table_name);
             statistics.estimated_bytes_per_row = estimateReadBytesPerRow(read_step, statistics);
+            fillPhysicalReadBytes(statistics, physical_selected_rows);
 
             LOG_TEST(log, "Estimate statistics for table {}: {}", table_name, statistics.dump());
             return statistics;
@@ -374,6 +377,7 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
 
     fillReadColumnWidths(statistics, read_step, table_name);
     statistics.estimated_bytes_per_row = estimateReadBytesPerRow(read_step, statistics);
+    fillPhysicalReadBytes(statistics, physical_selected_rows);
 
     return statistics;
 }

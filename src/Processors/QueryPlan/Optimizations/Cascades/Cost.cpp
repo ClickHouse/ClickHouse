@@ -150,6 +150,11 @@ static Cost hashJoinCost(const CostInputs & inputs, bool is_broadcast)
 /// One node reads the whole table.
 static Cost fullReadCost(const CostInputs & inputs)
 {
+    /// Price the scan volume, not the output volume: a filter the primary key cannot prune
+    /// leaves the whole granule selection to scan, and without this a replicated read of such
+    /// a table would look orders of magnitude cheaper than the scan it does.
+    if (inputs.output_stats.physical_read_bytes > 0)
+        return Cost{.work = inputs.output_stats.physical_read_bytes};
     return Cost{.work = inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row};
 }
 
