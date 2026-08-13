@@ -1055,8 +1055,9 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
     }
     catch (...)
     {
-        /// Not foldable; the unfolded predicate reproduces the exception (or not, under
-        /// short-circuit evaluation) exactly as the query dictates
+        /// Swallowing the exception is Ok: the predicate is left unfolded, and evaluating it
+        /// at runtime reproduces the exception (or not, under short-circuit evaluation)
+        /// exactly as the query dictates
         return std::nullopt;
     }
 }
