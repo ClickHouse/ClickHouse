@@ -16,7 +16,9 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <SettingsInfoBlock type="String" default_value="ZSTD" />
 
-The codec for compressing the client/server and server/server communication.
+The codec for compressing the client/server and server/server communication over the native protocol.
+
+The setting does not apply to the streaming-exchange channel of distributed queries, which always uses the server default codec: every compressed frame is self-describing, so the receiver detects the codec automatically.
 
 Possible values:
 
