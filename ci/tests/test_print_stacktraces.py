@@ -304,12 +304,33 @@ def test_slow_build_binary_probe_is_server_independent_and_fails_closed():
     args.binary = "/nonexistent/clickhouse-does-not-exist"
     assert ct["is_slow_build_binary"](args) is False
 
-    # And the query it issues names every flag collect_build_flags derives, so
-    # the two cannot drift into disagreeing about what "slow" means.
-    source = Path(_CLICKHOUSE_TEST).read_text(encoding="utf-8")
-    probe = source.split("def is_slow_build_binary")[1].split("\ndef ")[0]
+    # Both verdicts of the real implementation, driven only by what the query
+    # returns: stubbing the helper itself would leave an unconditional False
+    # green while every debug startup failure kept the 30s budget.
+    globals_ = ct["is_slow_build_binary"].__globals__
+    saved = globals_["shell_get_output"]
+    seen = []
+
+    def fake_shell(cmd, timeout=None, keep_output_on_error=False, _out=None):
+        seen.append(cmd)
+        return _out
+
+    try:
+        for out, expected in (("1", True), ("2", True), ("0", False), ("", False), ("x", False)):
+            globals_["shell_get_output"] = (
+                lambda cmd, timeout=None, keep_output_on_error=False, _o=out: fake_shell(
+                    cmd, timeout, keep_output_on_error, _o
+                )
+            )
+            assert ct["is_slow_build_binary"](args) is expected, (out, expected)
+    finally:
+        globals_["shell_get_output"] = saved
+
+    # The query it issues names every flag collect_build_flags derives, so the
+    # two cannot drift into disagreeing about what "slow" means.
+    assert seen, "the probe never ran a query"
     for token in ("BUILD_TYPE", "Debug", "WITH_COVERAGE", "-fsanitize="):
-        assert token in probe, token
+        assert all(token in cmd for cmd in seen), token
 
 
 def test_lldb_pid_loop_honours_the_aggregate_deadline():
