@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <Common/VariableContext.h>
 
@@ -20,7 +21,7 @@ class TraceCollector;
 struct MemoryTrackerBlockerInThread
 {
 private:
-    static thread_local constinit VariableContext level;
+    static thread_local VariableContext level;
 
     std::optional<VariableContext> previous_level;
 
@@ -38,6 +39,11 @@ public:
     static bool isBlocked(VariableContext current_level)
     {
         return current_level >= level;
+    }
+
+    static bool isBlockedAny()
+    {
+        return level < VariableContext::Max;
     }
 
     static VariableContext getLevel()

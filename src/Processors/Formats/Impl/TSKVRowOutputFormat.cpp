@@ -2,8 +2,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/Impl/TSKVRowOutputFormat.h>
-#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -36,7 +36,6 @@ void TSKVRowOutputFormat::writeRowEndDelimiter()
 }
 
 
-void registerOutputFormatTSKV(FormatFactory & factory);
 void registerOutputFormatTSKV(FormatFactory & factory)
 {
     factory.registerOutputFormat("TSKV", [](

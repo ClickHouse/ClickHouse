@@ -4,9 +4,8 @@
 
 #if USE_MINIZIP
 #include <IO/Archives/IArchiveReader.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <memory>
 #include <mutex>
+#include <vector>
 
 
 namespace DB
@@ -50,8 +49,8 @@ public:
     std::unique_ptr<FileEnumerator> nextFile(std::unique_ptr<ReadBuffer> read_buffer) override;
     std::unique_ptr<FileEnumerator> currentFile(std::unique_ptr<ReadBuffer> read_buffer) override;
 
-    Strings getAllFiles() override;
-    Strings getAllFiles(NameFilter filter) override;
+    std::vector<std::string> getAllFiles() override;
+    std::vector<std::string> getAllFiles(NameFilter filter) override;
 
     /// Sets password used to decrypt the contents of the files in the archive.
     void setPassword(const String & password_) override;
@@ -66,30 +65,12 @@ private:
 
     struct FileInfoImpl : public FileInfo
     {
-        int compression_method{};
+        int compression_method;
     };
 
     HandleHolder acquireHandle();
-
-    /// The stream pointer is opaque here (StreamFromReadBuffer* in the .cpp file).
-    /// It's non-null when reading from a buffer via archive_read_function,
-    /// null when reading from a file path.
-    ///
-    /// `opaque` keeps the heap-allocated `StreamFromReadBuffer::Opaque` struct alive
-    /// for the entire lifetime of the underlying `unzFile` handle. The minizip library
-    /// stores the `opaque` pointer internally during `unzOpen2_64` and dereferences it
-    /// from every subsequent stream callback (`readFileFunc`, `seekFunc`, `tellFunc`).
-    /// Allocating `Opaque` on the heap and pinning it via this shared pointer prevents
-    /// use-after-scope when post-open callbacks need to record exception state.
-    struct RawHandleWithStream
-    {
-        RawHandle handle = nullptr;
-        void * stream = nullptr;
-        std::shared_ptr<void> opaque;
-    };
-
-    RawHandleWithStream acquireRawHandle();
-    void releaseRawHandle(RawHandleWithStream handle_info);
+    RawHandle acquireRawHandle();
+    void releaseRawHandle(RawHandle handle_);
 
     void checkResult(int code) const;
     [[noreturn]] void showError(const String & message) const;
@@ -98,7 +79,7 @@ private:
     const ReadArchiveFunction archive_read_function;
     const UInt64 archive_size = 0;
     String password;
-    VectorWithMemoryTracking<RawHandleWithStream> free_handles;
+    std::vector<RawHandle> free_handles;
     mutable std::mutex mutex;
 };
 

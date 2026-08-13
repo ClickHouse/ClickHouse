@@ -28,7 +28,7 @@ Exception::Exception(const std::string& msg, int code): _msg(msg), _pNested(0), 
 {
 }
 
-Exception::Exception(std::string&& msg, int code): _msg(std::move(msg)), _pNested(0), _code(code)
+Exception::Exception(std::string&& msg, int code): _msg(msg), _pNested(0), _code(code)
 {
 }
 
@@ -56,16 +56,8 @@ Exception::Exception(const Exception& exc):
 	_pNested = exc._pNested ? exc._pNested->clone() : 0;
 }
 
-Exception::Exception(Exception&& exc):
-    std::exception(std::move(exc)),
-    _msg(std::move(exc._msg)),
-    _code(exc._code)
-{
-    _pNested = exc._pNested ? exc._pNested->clone() : 0;
-}
 
-
-Exception::~Exception() noexcept
+Exception::~Exception() throw()
 {
 	delete _pNested;
 }
@@ -80,40 +72,24 @@ Exception& Exception::operator = (const Exception& exc)
 		_msg     = exc._msg;
 		_pNested = newPNested;
 		_code    = exc._code;
-	    std::exception::operator=(std::move(exc));
 	}
 	return *this;
 }
 
-Exception& Exception::operator = (Exception&& exc)
-{
-    if (&exc != this)
-    {
-        Exception* newPNested = exc._pNested ? exc._pNested->clone() : 0;
-        delete _pNested;
-        _msg     = std::move(exc._msg);
-        _pNested = newPNested;
-        _code    = exc._code;
-        std::exception::operator=(std::move(exc));
 
-    }
-    return *this;
-}
-
-
-const char* Exception::name() const noexcept
+const char* Exception::name() const throw()
 {
 	return "Exception";
 }
 
 
-const char* Exception::className() const noexcept
+const char* Exception::className() const throw()
 {
 	return typeid(*this).name();
 }
 
 
-const char* Exception::what() const noexcept
+const char* Exception::what() const throw()
 {
 	return name();
 }

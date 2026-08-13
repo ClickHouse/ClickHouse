@@ -24,8 +24,7 @@ public:
         const Names & partition_key_columns,
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
-        std::optional<size_t> max_dynamic_subcolumns_,
-        bool allow_tuple_element_aggregation
+        std::optional<size_t> max_dynamic_subcolumns_
         )
         : IMergingTransform(
             num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
@@ -40,8 +39,7 @@ public:
             "sumWithOverflow",
             "sumMapWithOverflow",
             true,
-            false,
-            allow_tuple_element_aggregation)
+            false)
     {
     }
 

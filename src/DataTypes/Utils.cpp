@@ -224,24 +224,17 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
 
             return false;
         }
-        case TypeIndex::QBit:
-            return to_which_type.isQBit();
-        case TypeIndex::Object:
-        case TypeIndex::Variant:
-        case TypeIndex::Dynamic:
-        {
-            if (to_which_type.isString())
-                return true;
-
-            return false;
-        }
         case TypeIndex::String:
+        case TypeIndex::ObjectDeprecated:
+        case TypeIndex::Object:
         case TypeIndex::Set:
         case TypeIndex::Interval:
         case TypeIndex::Function:
         case TypeIndex::AggregateFunction:
         case TypeIndex::Nothing:
         case TypeIndex::JSONPaths:
+        case TypeIndex::Variant:
+        case TypeIndex::Dynamic:
             return false;
     }
 

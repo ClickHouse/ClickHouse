@@ -1,5 +1,3 @@
-SET explain_query_plan_default = 'legacy';
-
 DROP TABLE IF EXISTS 03443_data;
 
 CREATE TABLE 03443_data

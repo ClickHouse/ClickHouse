@@ -7,19 +7,9 @@ from pathlib import Path
 from typing import List
 
 from .docker import Docker
-from .info import Info
 from .job import Job
 from .settings import Settings
 from .utils import Shell, Utils
-
-
-def _is_local_run():
-    """Check if running locally. Returns False if can't determine (e.g., during workflow generation)."""
-    try:
-        return Info().is_local_run
-    except Exception:
-        # During workflow generation, Info can't be initialized - treat as CI mode
-        return False
 
 
 class Digest:
@@ -64,7 +54,9 @@ class Digest:
             for i, file_path in enumerate(included_files):
                 hash_md5 = self._calc_file_digest(file_path, hash_md5)
             if config.with_git_submodules:
-                submodules_shas = Digest.get_submodule_shas()
+                submodules_shas = Shell.get_output(
+                    "git submodule | awk '{print $1}' | sed 's/^[+-]//'", verbose=True
+                )
                 hash_md5.update(submodules_shas.encode())
             digest = hash_md5.hexdigest()[: Settings.CACHE_DIGEST_LEN]
 
@@ -82,9 +74,7 @@ class Digest:
         drop_fields = [
             "requires",
             "enable_commit_status",
-            "allow_failure",
-            "force_success",
-            "digest_config",
+            "allow_merge_on_failure",
         ]
         filtered_job_dict = {
             k: v for k, v in job_config_dict.items() if k not in drop_fields
@@ -116,8 +106,7 @@ class Digest:
         :param docker_config: Docker.Config to calculate digest for
         :return:
         """
-        if not _is_local_run():
-            print(f"Calculate digest for docker [{docker_config.name}]")
+        print(f"Calculate digest for docker [{docker_config.name}]")
         paths = Utils.traverse_path(docker_config.path, sorted=True)
         if not hash_md5:
             hash_md5 = hashlib.md5()
@@ -126,10 +115,9 @@ class Digest:
         for dependency_name in docker_config.depends_on:
             for dependency_config in dependency_configs:
                 if dependency_config.name == dependency_name:
-                    if not _is_local_run():
-                        print(
-                            f"Add docker [{dependency_config.name}] as dependency for docker [{docker_config.name}] digest calculation"
-                        )
+                    print(
+                        f"Add docker [{dependency_config.name}] as dependency for docker [{docker_config.name}] digest calculation"
+                    )
                     dependencies.append(dependency_config)
 
         for dependency in dependencies:
@@ -139,12 +127,6 @@ class Digest:
             _ = self._calc_file_digest(path, hash_md5=hash_md5)
 
         return hash_md5.hexdigest()[: Settings.CACHE_DIGEST_LEN]
-
-    @staticmethod
-    def get_submodule_shas():
-        return Shell.get_output(
-            "git submodule | awk '{print $1}' | sed 's/^[+-]//'", verbose=True
-        )
 
     @staticmethod
     def _calc_file_digest(file_path, hash_md5):

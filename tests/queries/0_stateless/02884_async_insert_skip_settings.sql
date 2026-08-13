@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP TABLE IF EXISTS t_async_insert_skip_settings SYNC;
 
 CREATE TABLE t_async_insert_skip_settings (id UInt64)
@@ -33,13 +35,13 @@ SELECT 'pending to flush', length(entries.bytes) FROM system.asynchronous_insert
 WHERE database = currentDatabase() AND table = 't_async_insert_skip_settings'
 ORDER BY first_update;
 
-SYSTEM FLUSH ASYNC INSERT QUEUE t_async_insert_skip_settings;
+SYSTEM FLUSH ASYNC INSERT QUEUE;
 
 SELECT * FROM t_async_insert_skip_settings ORDER BY id;
 
 SYSTEM FLUSH LOGS asynchronous_insert_log;
 
 SELECT 'flush queries', uniqExact(flush_query_id) FROM system.asynchronous_insert_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_async_insert_skip_settings';
+WHERE database = currentDatabase() AND table = 't_async_insert_skip_settings';
 
 DROP TABLE t_async_insert_skip_settings SYNC;

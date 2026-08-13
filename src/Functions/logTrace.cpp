@@ -17,7 +17,7 @@ namespace ErrorCodes
 
 namespace
 {
-    class FunctionLogTrace final : public IFunction
+    class FunctionLogTrace : public IFunction
     {
     public:
         static constexpr auto name = "logTrace";
@@ -41,7 +41,7 @@ namespace
         {
             String message;
             if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
-                message = col->getDataAt(0);
+                message = col->getDataAt(0).toString();
             else
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be Constant string",
                     getName());
@@ -58,12 +58,7 @@ namespace
 REGISTER_FUNCTION(LogTrace)
 {
     FunctionDocumentation::Description description = R"(
-Emits a trace log message to the server log.
-
-The function accepts a constant argument only, so the call is evaluated during query analysis and replaced
-by its result. The message is therefore emitted once while the query is analyzed, and not once per processed
-[Block](/development/architecture/#block): the number of rows and the setting `max_block_size` have no effect
-on how many messages appear in the log.
+Emits a trace log message to the server log for each [Block](/development/architecture/#block).
     )";
     FunctionDocumentation::Syntax syntax = "logTrace(message)";
     FunctionDocumentation::Arguments arguments = {
@@ -85,7 +80,7 @@ SELECT logTrace('logTrace message');
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Introspection;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionLogTrace>(documentation);
 }

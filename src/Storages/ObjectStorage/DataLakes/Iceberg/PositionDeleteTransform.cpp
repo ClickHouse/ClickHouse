@@ -1,5 +1,4 @@
 #include <Storages/ObjectStorage/Utils.h>
-#include <boost/algorithm/string/case_conv.hpp>
 #include <Common/logger_useful.h>
 #include "config.h"
 
@@ -7,7 +6,6 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 
-#include <Columns/IColumn.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -22,7 +20,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
-#include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 namespace DB::Setting
@@ -31,7 +28,6 @@ extern const SettingsNonZeroUInt64 max_block_size;
 }
 namespace DB::ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
@@ -61,33 +57,28 @@ Poco::JSON::Array::Ptr IcebergPositionDeleteTransform::getSchemaFields()
 void IcebergPositionDeleteTransform::initializeDeleteSources()
 {
     /// Create filter on the data object to get interested rows
-    auto iceberg_data_path = iceberg_object_info->info.data_object_file_path_key.serialize();
+    auto iceberg_data_path = iceberg_object_info->data_object_file_path_key;
     ASTPtr where_ast = makeASTFunction(
         "equals",
-        make_intrusive<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
-        make_intrusive<ASTLiteral>(Field(iceberg_data_path)));
+        std::make_shared<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
+        std::make_shared<ASTLiteral>(Field(iceberg_data_path)));
 
-    for (const auto & position_deletes_object : iceberg_object_info->info.position_deletes_objects)
+    for (const auto & position_deletes_object : iceberg_object_info->position_deletes_objects)
     {
+        /// Skip position deletes that do not match the data file path.
         if (position_deletes_object.reference_data_file_path.has_value()
             && position_deletes_object.reference_data_file_path != iceberg_data_path)
-        {
             continue;
-        }
-
 
         auto object_path = position_deletes_object.file_path;
-        auto object_metadata = object_storage->getObjectMetadata(object_path, /*with_tags=*/ false);
-        auto object_info = RelativePathWithMetadata{object_path, object_metadata};
+        auto object_metadata = object_storage->getObjectMetadata(object_path);
+        auto object_info = std::make_shared<ObjectInfo>(object_path, object_metadata);
 
 
         String format = position_deletes_object.file_format;
-        if (boost::to_lower_copy(format) != "parquet")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Position deletes are supported only for parquet format");
-
         Block initial_header;
         {
-            std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(object_info, object_storage, context, log);
+            std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(*object_info, object_storage, context, log);
             auto schema_reader = FormatFactory::instance().getSchemaReader(format, *read_buf_schema, context);
             auto columns_with_names = schema_reader->readSchema();
             ColumnsWithTypeAndName initial_header_data;
@@ -100,7 +91,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         CompressionMethod compression_method = chooseCompressionMethod(object_path, "auto");
 
-        delete_read_buffers.push_back(createReadBuffer(object_info, object_storage, context, log));
+        delete_read_buffers.push_back(createReadBuffer(*object_info, object_storage, context, log));
 
         auto syntax_result = TreeRewriter(context).analyze(where_ast, initial_header.getNamesAndTypesList());
         ExpressionAnalyzer analyzer(where_ast, syntax_result, context);
@@ -119,8 +110,8 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             context,
             context->getSettingsRef()[DB::Setting::max_block_size],
             format_settings,
-            parser_shared_resources,
-            std::make_shared<FormatFilterInfo>(actions_dag_ptr, context, nullptr, nullptr, nullptr),
+            std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), 1),
+            std::make_shared<FormatFilterInfo>(actions_dag_ptr, context, nullptr),
             true /* is_remote_fs */,
             compression_method);
 
@@ -141,65 +132,51 @@ size_t IcebergPositionDeleteTransform::getColumnIndex(const std::shared_ptr<IInp
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find column {} in chunk", column_name);
 }
 
-size_t IcebergPositionDeleteTransform::filterChunkToCurrentDataFile(Chunk & chunk, size_t filename_column_index) const
+void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
 {
-    const size_t num_rows = chunk.getNumRows();
-    if (num_rows == 0)
-        return 0;
+    size_t num_rows = chunk.getNumRows();
+    IColumn::Filter delete_vector(num_rows, true);
+    size_t num_rows_after_filtration = num_rows;
 
-    const auto & filename_column = *chunk.getColumns()[filename_column_index];
-    const auto iceberg_uri = iceberg_object_info->info.data_object_file_path_key.serialize();
-    const auto storage_path = iceberg_object_info->getPath();
+    auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumOffset>();
+    if (!chunk_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumOffset does not exist");
 
-    IColumn::Filter filter(num_rows, 0);
-    size_t num_matched = 0;
-    for (size_t i = 0; i < num_rows; ++i)
+    size_t row_num_offset = chunk_info->row_num_offset;
+    for (size_t i = 0; i < num_rows; i++)
     {
-        const auto file_to_delete = filename_column.getDataAt(i);
-        if (file_to_delete == iceberg_uri || file_to_delete == "/" + iceberg_uri
-            || file_to_delete == storage_path || file_to_delete == "/" + storage_path)
+        size_t row_idx = row_num_offset + i;
+        if (bitmap.rb_contains(row_idx))
         {
-            filter[i] = 1;
-            ++num_matched;
+            delete_vector[i] = false;
+            num_rows_after_filtration--;
         }
-    }
-
-    if (num_matched == num_rows)
-        return num_rows;
-
-    if (num_matched == 0)
-    {
-        chunk.clear();
-        return 0;
     }
 
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
-        column = column->filter(filter, static_cast<ssize_t>(num_matched));
-    chunk.setColumns(std::move(columns), num_matched);
-    return num_matched;
-}
+        column = column->filter(delete_vector, -1);
 
-void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
-{
-    DeletionVectorTransform::transform(chunk, bitmap);
+    chunk.setColumns(std::move(columns), num_rows_after_filtration);
 }
 
 void IcebergBitmapPositionDeleteTransform::initialize()
 {
     for (auto & delete_source : delete_sources)
     {
-        const auto position_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::positions_column_name);
-        const auto filename_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::data_file_path_column_name);
-
         while (auto delete_chunk = delete_source->read())
         {
-            if (filterChunkToCurrentDataFile(delete_chunk, filename_index) == 0)
-                continue;
+            int position_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::positions_column_name);
+            int filename_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::data_file_path_column_name);
 
-            const auto & position_column = *delete_chunk.getColumns()[position_index];
+            auto position_column = delete_chunk.getColumns()[position_index];
+            auto filename_column = delete_chunk.getColumns()[filename_index];
+
             for (size_t i = 0; i < delete_chunk.getNumRows(); ++i)
-                bitmap.add(position_column.get64(i));
+            {
+                auto position_to_delete = position_column->get64(i);
+                bitmap.add(position_to_delete);
+            }
         }
     }
 }
@@ -217,41 +194,28 @@ void IcebergStreamingPositionDeleteTransform::initialize()
             .filename_index = filename_index,
             .position_index = position_index
         });
+        auto latest_chunk = delete_source->read();
         iterator_at_latest_chunks.push_back(0);
-        latest_chunks.emplace_back();
-        fetchNewChunkFromSource(i);
+        if (latest_chunk.hasRows())
+        {
+            size_t first_position_value_in_delete_file = latest_chunk.getColumns()[delete_source_column_indices.back().position_index]->get64(0);
+            latest_positions.insert(std::pair<size_t, size_t>{first_position_value_in_delete_file, i});
+        }
+        latest_chunks.push_back(std::move(latest_chunk));
     }
 }
 
 void IcebergStreamingPositionDeleteTransform::fetchNewChunkFromSource(size_t delete_source_index)
 {
-    iterator_at_latest_chunks[delete_source_index] = 0;
-
-    /// The delete file is sorted by (file_path, pos), so positions for one data file
-    /// arrive in ascending order. But a chunk read from the Parquet reader may still
-    /// contain rows for other data files because filter_actions_dag is only used for
-    /// row-group/page pruning, not row-level filtering. Drop those rows here so the
-    /// streaming merge invariant (positions ascending per source) is preserved.
-    /// Keep reading until we find a chunk with at least one matching row, or end of source.
-    while (true)
+    auto latest_chunk = delete_sources[delete_source_index]->read();
+    if (latest_chunk.hasRows())
     {
-        auto chunk = delete_sources[delete_source_index]->read();
-        if (!chunk.hasRows())
-        {
-            latest_chunks[delete_source_index] = std::move(chunk);
-            return;
-        }
-
-        const auto filename_index = delete_source_column_indices[delete_source_index].filename_index;
-        if (filterChunkToCurrentDataFile(chunk, filename_index) == 0)
-            continue;
-
-        const auto position_index = delete_source_column_indices[delete_source_index].position_index;
-        size_t first_position_value_in_delete_file = chunk.getColumns()[position_index]->get64(0);
+        size_t first_position_value_in_delete_file = latest_chunk.getColumns()[delete_source_column_indices[delete_source_index].position_index]->get64(0);
         latest_positions.insert(std::pair<size_t, size_t>{first_position_value_in_delete_file, delete_source_index});
-        latest_chunks[delete_source_index] = std::move(chunk);
-        return;
     }
+
+    iterator_at_latest_chunks[delete_source_index] = 0;
+    latest_chunks[delete_source_index] = std::move(latest_chunk);
 }
 
 void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
@@ -259,74 +223,49 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
     size_t num_rows = chunk.getNumRows();
     IColumn::Filter filter(num_rows, true);
     size_t num_rows_after_filtration = chunk.getNumRows();
-    auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
+    auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumOffset>();
     if (!chunk_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumbers does not exist");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumOffset does not exist");
 
-    size_t num_indices = chunk_info->applied_filter.has_value() ? chunk_info->applied_filter->size() : chunk.getNumRows();
-
-    /// We get chunks in order of increasing row number because:
-    ///  * this transform should be immediately after the IInputFormat
-    ///    (typically ParquetV3BlockInputFormat) in the pipeline,
-    ///  * IInputFormat outputs chunks in order of row number even if it uses multiple threads
-    ///    internally; for parquet IcebergMetadata::modifyFormatSettings sets
-    ///    `format_settings.parquet.preserve_order = true` to ensure this, other formats return
-    ///    chunks in order by default.
-    if (previous_chunk_end_offset && previous_chunk_end_offset.value() > chunk_info->row_num_offset)
+    size_t total_previous_chunks_size = chunk_info->row_num_offset;
+    if (previous_chunk_offset && previous_chunk_offset.value() > total_previous_chunks_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunks offsets should increase.");
-    previous_chunk_end_offset = chunk_info->row_num_offset + num_indices;
-
-    size_t idx_in_chunk = 0;
-    for (size_t i = 0; i < num_indices; i++)
+    previous_chunk_offset = total_previous_chunks_size;
+    for (size_t i = 0; i < chunk.getNumRows(); ++i)
     {
-        if (!chunk_info->applied_filter.has_value() || chunk_info->applied_filter.value()[i])
+        while (!latest_positions.empty())
         {
-            size_t row_idx = chunk_info->row_num_offset + i;
-
-            while (!latest_positions.empty())
+            auto it = latest_positions.begin();
+            if (it->first < i + total_previous_chunks_size)
             {
-                auto it = latest_positions.begin();
-                if (it->first < row_idx)
+                size_t delete_source_index = it->second;
+                latest_positions.erase(it);
+                if (iterator_at_latest_chunks[delete_source_index] + 1 >= latest_chunks[delete_source_index].getNumRows() && latest_chunks[delete_source_index].getNumRows() > 0)
                 {
-                    size_t delete_source_index = it->second;
-                    latest_positions.erase(it);
-                    if (iterator_at_latest_chunks[delete_source_index] + 1 >= latest_chunks[delete_source_index].getNumRows() && latest_chunks[delete_source_index].getNumRows() > 0)
-                    {
-                        fetchNewChunkFromSource(delete_source_index);
-                    }
-                    else
-                    {
-                        ++iterator_at_latest_chunks[delete_source_index];
-                        auto position_index = delete_source_column_indices[delete_source_index].position_index;
-                        size_t next_index_value_in_positional_delete_file = latest_chunks[delete_source_index].getColumns()[position_index]->get64(iterator_at_latest_chunks[delete_source_index]);
-                        latest_positions.insert(std::pair<size_t, size_t>{next_index_value_in_positional_delete_file, delete_source_index});
-                    }
-                }
-                else if (it->first == row_idx)
-                {
-                    filter[idx_in_chunk] = false;
-
-                    if (chunk_info->applied_filter.has_value())
-                        chunk_info->applied_filter.value()[i] = false;
-
-                    --num_rows_after_filtration;
-                    break;
+                    fetchNewChunkFromSource(delete_source_index);
                 }
                 else
-                    break;
+                {
+                    ++iterator_at_latest_chunks[delete_source_index];
+                    auto position_index = delete_source_column_indices[delete_source_index].position_index;
+                    size_t next_index_value_in_positional_delete_file = latest_chunks[delete_source_index].getColumns()[position_index]->get64(iterator_at_latest_chunks[delete_source_index]);
+                    latest_positions.insert(std::pair<size_t, size_t>{next_index_value_in_positional_delete_file, delete_source_index});
+                }
             }
-
-            idx_in_chunk += 1;
+            else if (it->first == i + total_previous_chunks_size)
+            {
+                filter[i] = false;
+                --num_rows_after_filtration;
+                break;
+            }
+            else
+                break;
         }
     }
-    chassert(idx_in_chunk == chunk.getNumRows());
 
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
         column = column->filter(filter, -1);
-
-    if (!chunk_info->applied_filter.has_value())
-        chunk_info->applied_filter.emplace(std::move(filter));
 
     chunk.setColumns(std::move(columns), num_rows_after_filtration);
 }

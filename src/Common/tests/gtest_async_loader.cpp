@@ -238,7 +238,7 @@ TEST(AsyncLoader, CycleDetection)
     {
         int present[] = { 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0 };
         for (int i = 0; i < std::size(present); i++)
-            ASSERT_EQ(e.message().contains(fmt::format("job{}", i)), present[i]);
+            ASSERT_EQ(e.message().find(fmt::format("job{}", i)) != String::npos, present[i]);
     }
 
     const_cast<LoadJobSet &>(cycle_breaker->dependencies).clear();
@@ -694,7 +694,7 @@ TEST(AsyncLoader, WaitersLimit)
             t.loader.wait(job);
             success.fetch_add(1);
         }
-        catch(...) // Ok: test counts success/failure outcomes
+        catch(...)
         {
             failure.fetch_add(1);
         }
@@ -1178,7 +1178,7 @@ TEST(AsyncLoader, SubJobs)
             t.loader.setMaxThreads(0, threads);
             std::list<MyComponent> components;
             LoadTaskPtrs tasks;
-            size_t size = static_cast<size_t>(jobs_per_thread * static_cast<double>(threads));
+            size_t size = static_cast<size_t>(jobs_per_thread * threads);
             tasks.reserve(size);
             for (size_t j = 0; j < size; j++)
             {
@@ -1248,7 +1248,7 @@ TEST(AsyncLoader, RecursiveJob)
             t.loader.setMaxThreads(0, threads);
             std::list<MyComponent> components;
             LoadTaskPtrs tasks;
-            size_t size = static_cast<size_t>(jobs_per_thread * static_cast<double>(threads));
+            size_t size = static_cast<size_t>(jobs_per_thread * threads);
             tasks.reserve(size);
             for (size_t j = 0; j < size; j++)
             {

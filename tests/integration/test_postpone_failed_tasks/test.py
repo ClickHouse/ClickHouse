@@ -45,7 +45,7 @@ def prepare_cluster(use_replicated_table):
     for node in all_nodes:
         node.rotate_logs()
         node.query(f"CREATE TABLE test_table(x UInt32) ENGINE {engine} ORDER BY x")
-        node.query("INSERT INTO test_table SELECT * FROM numbers(10) ORDER BY ALL")
+        node.query("INSERT INTO test_table SELECT * FROM system.numbers LIMIT 10")
 
 
 @pytest.fixture(scope="module")
@@ -128,10 +128,9 @@ def test_fetch_exponential_backoff_with_replicated_tree(
     ## The fetch from the src replica will be impossible, until table is detached.
     ## Actually this is an imitation of scenario when one replica inserted the data and immediately becomes unavaliable,
     ## so fethes are impossible.
-    start_time = time.monotonic()
+    retry_count = 200
     task_posponed = False
-    while time.monotonic() < start_time + 80:
-        time.sleep(1)
+    for _ in range(0, retry_count):
         if count_postponed_tasks_in_replicated_queue(dst_node):
             task_posponed = True
             break

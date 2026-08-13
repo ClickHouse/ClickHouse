@@ -111,8 +111,8 @@ void TCPServerDispatcher::run()
                     if (!_stopped)
                     {
                         std::unique_ptr<TCPServerConnection> pConnection(_pConnectionFactory->createConnection(pCNf->socket()));
-                        if (pConnection)
-                            pConnection->start();
+                        poco_check_ptr(pConnection.get());
+                        pConnection->start();
                     }
                     /// endConnection() should be called after destroying TCPServerConnection,
                     /// otherwise currentConnections() could become zero while some connections are yet still alive.

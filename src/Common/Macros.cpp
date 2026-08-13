@@ -5,7 +5,6 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Core/ServerUUID.h>
-#include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -43,7 +42,7 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
     : Macros(config, root_key, log.get())
 {}
 
-Macros::Macros(std::map<String, String, std::less<>> map)
+Macros::Macros(std::map<String, String> map)
 {
     macros = std::move(map);
 }
@@ -52,7 +51,7 @@ String Macros::expand(const String & s,
                       MacroExpansionInfo & info) const
 {
     /// Do not allow recursion if we expand only special macros, because it will be infinite recursion
-    chassert(info.level == 0 || !info.expand_special_macros_only);
+    assert(info.level == 0 || !info.expand_special_macros_only);
 
     if (!s.contains('{'))
         return s;
@@ -109,13 +108,8 @@ String Macros::expand(const String & s,
         else if (macro_name == "uuid" && !info.expand_special_macros_only)
         {
             if (info.table_id.uuid == UUIDHelpers::Nil)
-            {
-                if (info.expand_for_database)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Macro 'uuid' in engine arguments is only supported when the UUID is explicitly specified "
-                        "or used within an ON CLUSTER query");
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Macro 'uuid' in engine arguments is only supported when the UUID is explicitly specified, "
                     "used within an ON CLUSTER query, or when using the Replicated database engine");
-            }
             /// For ON CLUSTER queries we don't want to require all macros definitions in initiator's config.
             /// However, initiator must check that for cross-replication cluster zookeeper_path does not contain {uuid} macro.
             /// It becomes impossible to check if {uuid} is contained inside some unknown macro.
@@ -166,14 +160,14 @@ String Macros::expand(const String & s,
     return expand(res, info);
 }
 
-String Macros::getValue(std::string_view key) const
+String Macros::getValue(const String & key) const
 {
     if (auto it = macros.find(key); it != macros.end())
         return it->second;
     throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No macro {} in config", key);
 }
 
-std::optional<String> Macros::tryGetValue(std::string_view key) const
+std::optional<String> Macros::tryGetValue(const String & key) const
 {
     if (auto it = macros.find(key); it != macros.end())
         return it->second;
