@@ -2,8 +2,8 @@
     <!-- Sorting a JSON column whose paths live in shared data. Before the ColumnObject shared-data
          comparison optimization every comparison materialized a temporary ColumnDynamic and ran a
          full binary deserialization for both sides; this measures ORDER BY over such columns. -->
-    <create_query>CREATE TABLE test_json_order_by_shared_data (json JSON(max_dynamic_paths=0)) ENGINE=MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE test_json_order_by_shared_data_prefix (json JSON(max_dynamic_paths=0)) ENGINE=MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE test_json_order_by_shared_data (json JSON(max_dynamic_paths=0)) ENGINE=MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE test_json_order_by_shared_data_prefix (json JSON(max_dynamic_paths=0)) ENGINE=MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
 
     <!-- Row counts are bounded by the harness profile runs: those enable jemalloc allocation
          sampling, which costs ~50x on the unoptimized path, so a fixture sized for the plain
