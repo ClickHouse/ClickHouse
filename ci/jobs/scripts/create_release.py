@@ -348,31 +348,12 @@ class ReleaseInfo:
         self.release_progress = ReleaseProgress.STARTED
         self.latest = latest_release
 
-        # The operation is decided from the ref and the branch's version:
-        #   * ref is an existing release tag -> recovery: re-publish exactly that
-        #     release (allowed even for a superseded one);
-        #   * ref is a branch/commit that is older than the branch tip -> out of
-        #     order. A branch ref can't reach this (its tip is never older than
-        #     itself), so it is a raw SHA pointing behind the tip; refuse it;
-        #   * ref is a branch/commit whose own release tag already exists at this
-        #     commit -> recovery: a rerun. auto_releases dispatches ref=<commit_sha>
-        #     and GitHub's "Re-run failed jobs" replays the matrix with that same
-        #     SHA while AutoReleaseInfo is not recomputed, so the tag pushed on the
-        #     first attempt already points here — degrade to recovery instead of
-        #     trying to create (and re-merge) the release a second time;
+        # Decide the operation from the ref and the branch version:
+        #   * ref is a release tag -> recovery (re-publish, even if superseded);
+        #   * ref older than the branch tip (a raw SHA behind it) -> out of order, refuse;
+        #   * ref whose computed release tag already exists here -> recovery (a rerun of the same SHA);
         #   * otherwise -> create the next release.
-        #
-        # The stale-SHA and superseded-recovery cases both compute the same
-        # existing release_tag; only the ref KIND distinguishes them, so the tag
-        # ref is checked first and the newer-release guard runs before the rerun
-        # case.
-        #
-        # release_job.py defers the patch branch version bump to the very last
-        # step (after publishing), so a rerun after any failure runs while the
-        # branch tip still equals the released commit: is_late_recovery is
-        # False and this reaches the rerun-recovery branch. The branch only moves
-        # ahead once the whole release has succeeded, when no rerun is pending.
-        # That keeps reruns recoverable without consulting release tags here.
+        # The tag ref is checked before the is_late_recovery guard so a superseded release can still be recovered by its tag.
         if Git.tag_exists(commit_ref):
             self.is_recovery = True
             assert release_tag == commit_ref, (
