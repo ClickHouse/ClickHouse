@@ -2722,7 +2722,7 @@ Set to 0 to disable the limit. Has no effect on the default `query_plan_optimize
 )", EXPERIMENTAL) \
 DECLARE(Bool, query_plan_optimize_join_order_use_proven_uniqueness, false, R"(
 Use proven aggregation grouping facts (`GROUP BY` keys) to cap cardinality estimates during join-order optimization. Storage-declared `UNIQUE KEY` facts are not trusted for costing; they feed diagnostics only.
-The setting is disabled by default. Besides tightening cardinality and cost estimates, a proven cap lets the `greedy` algorithm consider a transitively-implied join between relations that have no direct predicate; the required equality predicate is then synthesized in the selected plan. The `dpsize`, `dpsub`, and `dphyp` algorithms do not consume the caps yet. Join legality is not affected, and without a proven fact the join order, estimates, and plan are identical to the setting being disabled.
+The setting is disabled by default. Besides tightening cardinality and cost estimates, a proven cap lets the `greedy` and `dpsize` algorithms consider a transitively-implied join between relations that have no direct predicate; the required equality predicate is then synthesized in the selected plan. The `dpsub` algorithm does not consume the caps yet, and the `dphyp` algorithm applies caps only to joins reachable through explicit predicates. Join legality is not affected, and without a proven fact the join order, estimates, and plan are identical to the setting being disabled.
 )", EXPERIMENTAL) \
 DECLARE(Bool, query_plan_optimize_join_order_data_property_diagnostics, false, R"(
 Enable potentially allocation-heavy data-property derivation, propagation, and trace/test-level dumps during join-order optimization.

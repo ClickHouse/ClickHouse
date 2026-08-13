@@ -146,6 +146,7 @@ static bool hasTransitiveComparisonDomain(const JoinActionRef & predicate)
 void QueryGraph::buildColumnEquivalences()
 {
     column_equivalences = {};
+    this->equivalence_class_relations.clear();
 
     for (const auto & edge : edges)
     {
@@ -182,28 +183,31 @@ void QueryGraph::buildColumnEquivalences()
             "Column equivalence: relation {} `{}` = relation {} `{}`",
             *lhs_rel, lhs_resolved->getColumnName(), *rhs_rel, rhs_resolved->getColumnName());
     }
+
+    /// Precompute one relation mask per class: `areTransitivelyConnected` runs for every
+    /// enumerated candidate pair (~3^n pairs under DPsize), so it must not rescan every
+    /// class member each time.
+    std::unordered_set<const void *> visited_classes;
+    for (const auto & [member, _] : column_equivalences.getMemberToClassMap())
+    {
+        const auto equiv_class = column_equivalences.getClass(member);
+        if (!equiv_class || !visited_classes.insert(equiv_class.get()).second)
+            continue;
+
+        BitSet class_relations;
+        for (const auto & class_member : *equiv_class)
+            if (const auto relation = class_member.getSourceRelations().getSingleBit())
+                class_relations.set(*relation);
+        if (class_relations.any())
+            this->equivalence_class_relations.push_back(std::move(class_relations));
+    }
 }
 
 bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & right) const
 {
-    for (const auto & [member, _] : column_equivalences.getMemberToClassMap())
-    {
-        auto member_rel = member.getSourceRelations().getSingleBit();
-
-        if (!member_rel || !left.test(*member_rel))
-            continue;
-
-        auto equiv_class = column_equivalences.getClass(member);
-        if (!equiv_class)
-            continue;
-
-        for (const auto & other : *equiv_class)
-        {
-            auto other_rel = other.getSourceRelations().getSingleBit();
-            if (other_rel && right.test(*other_rel))
-                return true;
-        }
-    }
+    for (const auto & class_relations : this->equivalence_class_relations)
+        if (areIntersecting(class_relations, left) && areIntersecting(class_relations, right))
+            return true;
     return false;
 }
 
@@ -776,7 +780,8 @@ private:
         const DPJoinEntryPtr & left,
         const DPJoinEntryPtr & right,
         JoinKind join_kind,
-        std::vector<JoinActionRef *> & predicates);
+        std::vector<JoinActionRef *> & predicates,
+        const JoinCandidateAssessment & assessment);
 
     /// DPhyp helpers
     void buildHyperedges();
@@ -1030,15 +1035,6 @@ static std::optional<UInt64> estimateJoinCardinality(
     if (joined_rows < 1)
         return 1;
     return static_cast<UInt64>(joined_rows);
-}
-
-static std::optional<UInt64> estimateJoinCardinality(
-    const std::shared_ptr<DPJoinEntry> & left,
-    const std::shared_ptr<DPJoinEntry> & right,
-    double selectivity,
-    JoinKind join_kind = JoinKind::Inner)
-{
-    return estimateJoinCardinality(left->estimated_rows, right->estimated_rows, selectivity, join_kind);
 }
 
 std::optional<UInt64> JoinOrderOptimizer::estimateCardinality(
@@ -1295,14 +1291,6 @@ static double computeJoinCost(
     if (upper_bound)
         local_cost = std::min(local_cost, static_cast<double>(*upper_bound));
     return left->cost + right->cost + local_cost;
-}
-
-static double computeJoinCost(const std::shared_ptr<DPJoinEntry> & left,
-                              const std::shared_ptr<DPJoinEntry> & right,
-                              double selectivity)
-{
-    return left->cost + right->cost
-        + selectivity * static_cast<double>(left->estimated_rows.value_or(1)) * static_cast<double>(right->estimated_rows.value_or(1));
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
@@ -1814,10 +1802,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
     std::vector<std::unordered_map<BitSet, DPJoinEntryPtr>> components(total_relations_count + 1);
 
     /// Populate DP table for components of size=1.
-    /// Also reset the per-edge selectivity cache so an earlier algorithm in the
-    /// fallback chain cannot leak cached `1.0` defaults from a partial `dp_table`.
-    dp_table.clear();
-    expression_selectivity.clear();
+    resetCandidateState();
     searched_plans = 0;
     for (size_t i = 0; i < total_relations_count; ++i)
     {
@@ -1870,10 +1855,12 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                     /// DPsize also includes non-connecting predicates (single-table filters) at the earliest
                     /// stage (component_size == 2), unlike DPhyp which handles them separately via the hyperedge graph.
                     std::vector<JoinActionRef *> edge;
+                    bool has_cross_split_predicate = false;
                     for (auto & edge_it : applicable_edge)
                     {
                         if (connects(edge_it, left->relations, right->relations))
                         {
+                            has_cross_split_predicate = true;
                             LOG_TEST(log, "Adding predicate connecting {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
                             edge.push_back(edge_it);
                         }
@@ -1888,19 +1875,30 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                         }
                     }
 
-                    /// Materialized column equivalences must not admit transitive pairs here
-                    /// without the independent transitive setting; canonical proofs are consumed
-                    /// by the greedy solver only for now.
-                    bool connected = !edge.empty()
-                        || (transitive_predicates_enabled && query_graph.areTransitivelyConnected(left->relations, right->relations));
+                    const auto assessment = assessCandidate(
+                        left->relations,
+                        right->relations,
+                        left->estimated_rows,
+                        right->estimated_rows,
+                        *join_kind,
+                        {.legacy_connected = !edge.empty(), .has_cross_split_predicate = has_cross_split_predicate});
 
-                    LOG_TEST(log, "Considering join between {} and {}, predicates count: {}, connected: {}",
-                        left->dump(), right->dump(), edge.size(), connected);
+                    LOG_TEST(
+                        log,
+                        "Considering join between {} and {}, predicates count: {}, legacy connected: {}, cross-split predicate: {}, "
+                        "independently transitive: {}, proof-gated transitive: {}",
+                        left->dump(),
+                        right->dump(),
+                        edge.size(),
+                        assessment.legacy_connected,
+                        assessment.has_cross_split_predicate,
+                        assessment.independently_transitive_connected,
+                        assessment.proof_gated_transitive_connected);
 
-                    if (!connected)
+                    if (!assessment.connected())
                         continue;
 
-                    auto new_entry = evaluateJoin(left, right, *join_kind, edge);
+                    auto new_entry = evaluateJoin(left, right, *join_kind, edge, assessment);
                     if (new_entry)
                         components[component_size][new_entry->relations] = new_entry;
                 }
@@ -1959,43 +1957,55 @@ void JoinOrderOptimizer::tryJoin(const BitSet & left_rels, const BitSet & right_
         }
     }
 
-    /// When no explicit predicate connects the two sides, check transitive connectivity
-    /// via column equivalence classes (e.g. A.key=B.key AND B.key=C.key implies A.key=C.key).
-    /// `cleanupJoinPredicates` will synthesize the missing predicate after optimization.
-    if (connecting_predicates.empty()
-        && !query_graph.areTransitivelyConnected(left_rels, right_rels))
+    /// A predicate-free pair can be emitted only through a synthetic hyperedge, whose
+    /// installation is controlled by the independent transitive setting (see `buildHyperedges`);
+    /// `cleanupJoinPredicates` synthesizes the missing predicate for a selected transitive join
+    /// after optimization. The shared assessment keeps admission, selectivity, and canonical-cap
+    /// consumption consistent with the other enumerators, so a proofless candidate is costed
+    /// exactly like feature-off.
+    /// Every connecting DPhyp predicate crosses the split by construction, so `legacy_connected`
+    /// and `has_cross_split_predicate` coincide here.
+    const bool legacy_connected = !connecting_predicates.empty();
+    const auto assessment = assessCandidate(
+        left_rels,
+        right_rels,
+        left_entry->second->estimated_rows,
+        right_entry->second->estimated_rows,
+        *join_kind,
+        {.legacy_connected = legacy_connected, .has_cross_split_predicate = legacy_connected});
+    if (!assessment.connected())
         return;
 
-    evaluateJoin(left_entry->second, right_entry->second, *join_kind, connecting_predicates);
+    evaluateJoin(left_entry->second, right_entry->second, *join_kind, connecting_predicates, assessment);
 }
 
 DPJoinEntryPtr JoinOrderOptimizer::evaluateJoin(
     const DPJoinEntryPtr & left,
     const DPJoinEntryPtr & right,
     JoinKind join_kind,
-    std::vector<JoinActionRef *> & predicates)
+    std::vector<JoinActionRef *> & predicates,
+    const JoinCandidateAssessment & assessment)
 {
-    /// Equivalence-derived selectivity requires the independent transitive setting;
-    /// otherwise a candidate must receive the exact feature-off selectivity even when
-    /// column equivalences were materialized for canonical proof lookup.
-    auto selectivity = transitive_predicates_enabled ? computeSelectivity(predicates, left->relations, right->relations)
-                                                     : computeSelectivity(predicates);
-    auto new_cost = computeJoinCost(left, right, selectivity);
+    auto selectivity = assessment.equivalence_selectivity_allowed ? computeSelectivity(predicates, left->relations, right->relations)
+                                                                  : computeSelectivity(predicates);
+
+    /// Transitively connected pairs are inner joins; their predicate is synthesized later.
+    auto effective_kind = (assessment.connected() && join_kind == JoinKind::Cross) ? JoinKind::Inner : join_kind;
+    auto estimate = estimateCardinality(left->estimated_rows, right->estimated_rows, selectivity, effective_kind, assessment.canonical_cap);
+    auto new_cost = computeJoinCost(left, right, selectivity, estimate.upper_bound);
 
     const BitSet combined_rels = left->relations | right->relations;
     auto current_best = dp_table.find(combined_rels);
     if (current_best != dp_table.end() && new_cost >= current_best->second->cost)
         return nullptr;
 
-    /// Transitively connected pairs are inner joins; their predicate is synthesized later.
-    bool connected
-        = !predicates.empty() || (transitive_predicates_enabled && query_graph.areTransitivelyConnected(left->relations, right->relations));
-    auto effective_kind = (connected && join_kind == JoinKind::Cross) ? JoinKind::Inner : join_kind;
-    auto cardinality = estimateJoinCardinality(left, right, selectivity, effective_kind);
     JoinOperator join_operator(
         effective_kind, JoinStrictness::All, JoinLocality::Unspecified,
         std::ranges::to<std::vector>(predicates | std::views::transform([](const auto * p) { return *p; })));
-    auto new_entry = std::make_shared<DPJoinEntry>(left, right, new_cost, cardinality, std::move(join_operator));
+    auto new_entry = std::make_shared<DPJoinEntry>(left, right, new_cost, estimate.rows, std::move(join_operator));
+    new_entry->used_canonical_cap = estimate.upper_bound.has_value();
+    const auto * proven_cap = getProvenCap(assessment.canonical_cap);
+    new_entry->canonical_cap_obligations = proven_cap ? proven_cap->obligation_classes : 0;
 
     LOG_TEST(log, "New best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, operator: {}",
         new_entry->dump(), left->dump(), right->dump(),

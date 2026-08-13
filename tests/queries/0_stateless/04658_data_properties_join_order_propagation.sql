@@ -63,6 +63,20 @@ FROM
 )
 WHERE explain LIKE '%Join:%' OR explain LIKE '%ResultRows%';
 
+SELECT '-- unique-key cardinality caps enabled: dpsize --';
+SET query_plan_optimize_join_order_algorithm = 'dpsize';
+SELECT trimLeft(explain)
+FROM
+(
+    EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT *
+    FROM (SELECT first_id FROM data_properties_first GROUP BY first_id) AS first
+    INNER JOIN (SELECT second_first_id FROM data_properties_second GROUP BY second_first_id) AS second
+        ON first_id = second_first_id
+    INNER JOIN data_properties_third ON first_id = third_first_id
+)
+WHERE explain LIKE '%Join:%' OR explain LIKE '%ResultRows%';
+
 -- A one-to-many lower join must not preserve the grouped key for the top join.
 SELECT '-- one-to-many lower join drops the key --';
 SET query_plan_optimize_join_order_algorithm = 'greedy';
@@ -111,6 +125,12 @@ INNER JOIN data_properties_third ON first_id = third_first_id;
 SET query_plan_optimize_join_order_use_proven_uniqueness = 1;
 SET query_plan_optimize_join_order_algorithm = 'greedy';
 SELECT 'greedy', count(), sum(first_id), sum(second_first_id), sum(third_first_id)
+FROM (SELECT first_id FROM data_properties_first GROUP BY first_id) AS first
+INNER JOIN (SELECT second_first_id FROM data_properties_second GROUP BY second_first_id) AS second ON first_id = second_first_id
+INNER JOIN data_properties_third ON first_id = third_first_id;
+
+SET query_plan_optimize_join_order_algorithm = 'dpsize';
+SELECT 'dpsize', count(), sum(first_id), sum(second_first_id), sum(third_first_id)
 FROM (SELECT first_id FROM data_properties_first GROUP BY first_id) AS first
 INNER JOIN (SELECT second_first_id FROM data_properties_second GROUP BY second_first_id) AS second ON first_id = second_first_id
 INNER JOIN data_properties_third ON first_id = third_first_id;

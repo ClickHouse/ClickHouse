@@ -736,7 +736,7 @@ TEST(JoinOrderDataProperties, AllAlgorithmsConsumeCanonicalCaps)
     settings.enable_join_transitive_predicates = false;
     settings.query_plan_optimize_join_order_data_property_diagnostics = false;
 
-    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY};
+    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE};
     for (const auto algorithm : algorithms)
     {
         settings.query_plan_optimize_join_order_algorithm = {algorithm};
@@ -807,7 +807,7 @@ TEST(JoinOrderDataProperties, MissingRowsBypassCanonicalLookupsForAllAlgorithms)
     settings.query_plan_optimize_join_order_data_property_diagnostics = false;
     settings.query_plan_optimize_join_order_use_proven_uniqueness = true;
 
-    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY};
+    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE};
     for (const auto algorithm : algorithms)
     {
         settings.query_plan_optimize_join_order_algorithm = {algorithm};
@@ -835,7 +835,7 @@ TEST(JoinOrderDataProperties, AllAlgorithmsConsumeCanonicalTriangleCaps)
     settings.enable_join_transitive_predicates = false;
     settings.query_plan_optimize_join_order_data_property_diagnostics = false;
 
-    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY};
+    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE};
     for (const auto algorithm : algorithms)
     {
         settings.query_plan_optimize_join_order_algorithm = {algorithm};
@@ -885,7 +885,7 @@ TEST(JoinOrderDataProperties, PhysicalJoinMaterializesEveryMemberUsedByCanonical
     settings.enable_join_transitive_predicates = false;
     settings.query_plan_optimize_join_order_use_proven_uniqueness = true;
 
-    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY};
+    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE};
     for (const auto algorithm : algorithms)
     {
         settings.query_plan_optimize_join_order_algorithm = {algorithm};
@@ -1022,7 +1022,7 @@ TEST(JoinOrderDataProperties, LosingProvenCandidateDoesNotMaterializeSelectedPro
     settings.enable_join_transitive_predicates = false;
     settings.query_plan_optimize_join_order_data_property_diagnostics = false;
 
-    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY};
+    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE};
     for (const auto algorithm : algorithms)
     {
         SCOPED_TRACE(toString(algorithm));
@@ -1084,7 +1084,7 @@ TEST(JoinOrderDataProperties, ProvenCanonicalAssessmentAdmitsTransitiveCandidate
     settings.enable_join_transitive_predicates = false;
     settings.query_plan_optimize_join_order_data_property_diagnostics = false;
 
-    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY};
+    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE};
     for (const auto algorithm : algorithms)
     {
         SCOPED_TRACE(toString(algorithm));

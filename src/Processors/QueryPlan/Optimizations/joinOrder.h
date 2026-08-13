@@ -130,6 +130,10 @@ struct QueryGraph
     /// transitive connectivity between relations without synthesizing extra edges.
     /// Stored as alias-resolved JoinActionRef-s pointing to INPUT nodes.
     EquivalenceClasses<JoinActionRef> column_equivalences;
+    /// One relation mask per equivalence class, precomputed by `buildColumnEquivalences`,
+    /// so `areTransitivelyConnected` costs one bitset intersection per class instead of
+    /// rescanning every class member for every enumerated candidate pair.
+    std::vector<BitSet> equivalence_class_relations;
 
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();
