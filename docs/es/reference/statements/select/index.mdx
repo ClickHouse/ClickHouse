@@ -36,21 +36,24 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 
 Todas las cláusulas son opcionales, excepto la lista obligatoria de expresiones inmediatamente después de `SELECT`, que se explica con más detalle [a continuación](#select-clause).
 
-Los detalles de cada cláusula opcional se describen en secciones independientes, enumeradas en el mismo orden en que se ejecutan:
+Los detalles de cada cláusula opcional se describen en secciones independientes, enumeradas en el mismo orden en que se ejecutan (excepto `SELECT` y `DISTINCT`, que aparecen primero por comodidad: sus expresiones se evalúan solo después de que finalizan las cláusulas anteriores, como se describe [a continuación](#select-clause)):
 
 * [cláusula WITH](/es/reference/statements/select/with)
 * [cláusula SELECT](#select-clause)
+* [cláusula ALL](/es/reference/statements/select/all)
 * [cláusula DISTINCT](/es/reference/statements/select/distinct)
 * [cláusula FROM](/es/reference/statements/select/from)
 * [cláusula SAMPLE](/es/reference/statements/select/sample)
+* [cláusula ARRAY JOIN](/es/reference/statements/select/array-join)
 * [cláusula JOIN](/es/reference/statements/select/join)
 * [cláusula PREWHERE](/es/reference/statements/select/prewhere)
 * [cláusula WHERE](/es/reference/statements/select/where)
-* [cláusula WINDOW](/es/reference/functions/window-functions/index)
 * [cláusula GROUP BY](/es/reference/statements/select/group-by)
-* [cláusula LIMIT BY](/es/reference/statements/select/limit-by)
 * [cláusula HAVING](/es/reference/statements/select/having)
+* [cláusula WINDOW](/es/reference/functions/window-functions/index)
 * [cláusula QUALIFY](/es/reference/statements/select/qualify)
+* [cláusula ORDER BY](/es/reference/statements/select/order-by)
+* [cláusula LIMIT BY](/es/reference/statements/select/limit-by)
 * [cláusula LIMIT](/es/reference/statements/select/limit)
 * [cláusula OFFSET](/es/reference/statements/select/offset)
 * [cláusula UNION](/es/reference/statements/select/union)

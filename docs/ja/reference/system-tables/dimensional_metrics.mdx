@@ -68,6 +68,30 @@ FORMAT Prometheus
 
 MergeTree データパーツの数。パーツの状態、パーツのタイプ、およびプロジェクションパーツかどうかによってラベル付けされます。
 
+<div id="filesystem-cache-evictions-total">
+  ### `filesystem_cache_evictions_total`
+</div>
+
+ファイルシステムキャッシュから追い出されたファイルセグメントの数。キャッシュ名ごとにラベル付けされます。デフォルトでは無効になっているため、`expose_prometheus_eviction_metrics` で有効にします。
+
+<div id="filesystem-cache-evicted-bytes-total">
+  ### `filesystem_cache_evicted_bytes_total`
+</div>
+
+キャッシュ名ごとにラベル付けされた、ファイルシステムキャッシュから追い出されたファイルセグメントの合計バイト数。デフォルトでは無効です。`expose_prometheus_eviction_metrics` を使用して有効にします。
+
+<div id="filesystem-cache-evictions-by-user-total">
+  ### `filesystem_cache_evictions_by_user_total`
+</div>
+
+ファイルシステムキャッシュから追い出されたファイルセグメントの数。キャッシュ名とユーザー ID ごとにラベル付けされます。デフォルトでは無効で、`expose_prometheus_eviction_metrics` と `expose_prometheus_eviction_metrics_per_user` で有効にできます。
+
+<div id="filesystem-cache-evicted-bytes-by-user-total">
+  ### `filesystem_cache_evicted_bytes_by_user_total`
+</div>
+
+ファイルシステムキャッシュから追い出されたファイルセグメントの合計バイト数。キャッシュ名とユーザー ID ごとにラベル付けされます。デフォルトでは無効です。`expose_prometheus_eviction_metrics` と `expose_prometheus_eviction_metrics_per_user` で有効にします。
+
 <div id="see-also">
   ## 関連項目
 </div>

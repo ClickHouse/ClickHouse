@@ -7,6 +7,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ErrnoException.h>
 #include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <filesystem>
 #include <unordered_set>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
@@ -562,10 +563,11 @@ CacheMetadata::IteratorPtr CacheMetadata::getIterator(const UserID & user_id)
     return std::make_unique<Iterator>(user_id, metadata_buckets);
 }
 
-bool CacheMetadata::removeAllKeys(const UserID & user_id)
+bool CacheMetadata::removeAllKeys(const UserID & user_id, ThreadPool * pool)
 {
-    bool fully_removed = true;
-    for (auto & bucket : metadata_buckets)
+    std::atomic<bool> fully_removed = true;
+
+    auto process_bucket = [&](MetadataBucket & bucket)
     {
         auto lock = bucket.lock();
         for (auto it = bucket.begin(); it != bucket.end();)
@@ -590,6 +592,33 @@ bool CacheMetadata::removeAllKeys(const UserID & user_id)
             }
             ++it;
         }
+    };
+
+    if (pool)
+    {
+        std::atomic<size_t> next_bucket_index = 0;
+        auto worker = [&]
+        {
+            for (size_t i = next_bucket_index.fetch_add(1, std::memory_order_relaxed);
+                 i < metadata_buckets.size();
+                 i = next_bucket_index.fetch_add(1, std::memory_order_relaxed))
+            {
+                process_bucket(metadata_buckets[i]);
+            }
+        };
+
+        ThreadPoolCallbackRunnerLocal<void> runner(*pool, ThreadName::FILESYSTEM_CACHE_DROP);
+        /// The calling thread participates, so schedule one fewer worker.
+        const size_t extra_workers = std::min(pool->getMaxThreads(), metadata_buckets.size()) - 1;
+        for (size_t i = 0; i < extra_workers; ++i)
+            runner.enqueueAndKeepTrack(worker);
+        worker();
+        runner.waitForAllToFinishAndRethrowFirstError();
+    }
+    else
+    {
+        for (auto & bucket : metadata_buckets)
+            process_bucket(bucket);
     }
 
     /// With all of this client's keys gone, the origins deduplicated for it in the pool are no

@@ -16,19 +16,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ## 选择组织
-
+  <Step title="选择组织" id="select-org">
     在 ClickHouse Cloud 中，前往组织详情页面。
 
-    <Image img="/images/cloud/security/activity_log1.webp" size="md" alt="ClickHouse Cloud 活动选项卡" border />
+    <Image img="/images/cloud/security/activity_log1.webp" size="md" alt="ClickHouse Cloud Activity 选项卡" border />
 
     <br />
   </Step>
 
-  <Step>
-    ## 选择审计
-
+  <Step title="选择审计" id="select-audit">
     在左侧菜单中选择 **Audit** 选项卡，查看你的 ClickHouse Cloud 组织发生了哪些更改，包括更改由谁发起以及发生时间。
 
     **Activity** 页面会显示一个表，其中列出了与你的组织相关的已记录事件。默认情况下，该列表按时间倒序排列 (最新事件显示在顶部) 。点击列表头可更改表的排序顺序。表中的每一项都包含以下字段：
@@ -38,14 +34,12 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     * **IP Address:** 在适用情况下，此字段会列出发起该事件的用户 IP 地址
     * **Time:** 事件的时间戳
 
-    <Image img="/images/cloud/security/activity_log2.webp" size="md" alt="ClickHouse Cloud 活动表" border />
+    <Image img="/images/cloud/security/activity_log2.webp" size="md" alt="ClickHouse Cloud Activity 表" border />
 
     <br />
   </Step>
 
-  <Step>
-    ## 使用搜索栏
-
+  <Step title="使用搜索栏" id="use-search-bar">
     你可以使用搜索栏按某些条件筛选事件，例如服务名称或 IP 地址。你还可以将这些信息导出为 CSV format，以便在外部工具中分发或分析。
   </Step>
 </Steps>
@@ -59,12 +53,12 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </div>
 
 您可以使用 ClickHouse Cloud API 的 `activity` 端点导出审计事件。
-更多详细信息请参阅 [API 参考文档](/zh/api-reference/organization/get-list-of-available-organizations)。
+更多详细信息请参阅 [API 参考文档](/zh/products/cloud/api-reference/organization/get-list-of-available-organizations)。
 
 <div id="log-integrations">
   ## 日志集成
 </div>
 
-您可以使用 API 与所选的日志平台集成。以下平台提供开箱即用且受支持的连接器：
+您可以使用 API 与所选的日志平台集成。以下平台提供开箱即用的连接器支持：
 
-* [适用于 Splunk 的 ClickHouse Cloud Audit 插件](/zh/integrations/connectors/data-integrations/integrations/splunk)
+* [适用于 Splunk 的 ClickHouse Cloud Audit 附加组件](/zh/integrations/connectors/data-integrations/integrations/splunk)

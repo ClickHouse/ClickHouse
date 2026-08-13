@@ -140,16 +140,17 @@ def test_release_job_points_at_moved_paths():
     assert "tests/ci/artifactory.py" not in text
 
 
-def test_patch_version_bump_is_deferred_after_merge_prs():
-    """The patch branch version bump must run after --merge-prs, the new one before.
+def test_enqueue_is_last_and_patch_bump_is_deferred():
+    """The PR enqueue must be the last release step, and the patch bump deferred.
 
-    Deferring the patch bump to the end keeps the release branch tip equal to the
-    released commit throughout publishing, so a rerun after any failure sees an
-    un-bumped branch and prepare recovers the existing release instead of
-    refusing it as out-of-order or minting a below-tip release — the root-cause
-    fix for the rerun/stale-branch review comments, without scanning git tags.
-    The "new" release bump must stay before --merge-prs because it opens the
-    master bump PR that --merge-prs merges.
+    Enqueue runs last so the release PR's `CH Inc sync` check gets the maximum
+    time (the whole publish) to complete before we add the PR to the merge queue.
+    The patch version bump is still deferred to near the end (after the changelog
+    PR is created, not right after the tag push): that keeps the branch tip equal
+    to the released commit through publishing, so a rerun after any failure sees
+    an un-bumped branch and prepare recovers the existing release instead of
+    minting a below-tip one. The "new" release bump stays early (it opens the
+    master bump PR the enqueue later merges).
     """
     text = _read(RELEASE_JOB)
     # Match the actual create_release.py invocations, not prose in comments.
@@ -157,17 +158,26 @@ def test_patch_version_bump_is_deferred_after_merge_prs():
         m.start()
         for m in re.finditer(r"create_release\.py --create-bump-version-pr", text)
     ]
-    merge_pos = text.find("create_release.py --merge-prs")
+    # The enqueue step is an in-process function call (merge_created_prs), anchored
+    # by its unique step name rather than a CLI string.
+    merge_pos = text.find('name="Update Release Info and Merge Created PRs"')
+    changelog_pr_pos = text.find('name="Create ChangeLog PR"')
     assert len(bump_positions) >= 2, (
         "expected a separate 'new' and deferred 'patch' --create-bump-version-pr"
     )
-    assert merge_pos != -1, "release_job.py should invoke --merge-prs"
-    assert any(p < merge_pos for p in bump_positions), (
-        "the 'new' version bump must run before --merge-prs (it opens the PR that "
-        "--merge-prs merges)"
+    assert merge_pos != -1, "release_job.py should have the enqueue step"
+    assert changelog_pr_pos != -1, "release_job.py should have the Create ChangeLog PR step"
+    # Enqueue is the last release action: after both version bumps.
+    assert all(p < merge_pos for p in bump_positions), (
+        "the enqueue step must run after both version bumps (it is the last step)"
     )
-    assert any(p > merge_pos for p in bump_positions), (
-        "the 'patch' version bump must be deferred to after --merge-prs"
+    # The 'new' bump is early (before the changelog PR step); the 'patch' bump is
+    # deferred to after it.
+    assert min(bump_positions) < changelog_pr_pos, (
+        "the 'new' version bump must run early (before the changelog PR step)"
+    )
+    assert max(bump_positions) > changelog_pr_pos, (
+        "the 'patch' version bump must be deferred to after the changelog PR step"
     )
 
 
@@ -969,3 +979,67 @@ def test_prepare_fails_closed_on_stale_branch_version_file(tmp_path):
     )
     assert result.returncode != 0, "stale branch version file should have failed"
     assert "is stale" in (result.stdout + result.stderr)
+
+
+# --- ReleaseInfo._enqueue_release_pr (merge_prs helper) ----------------------
+
+
+def _make_release_info(cr, **overrides):
+    kwargs = dict(
+        version="26.5.6.64",
+        release_type="patch",
+        release_tag="v26.5.6.64-stable",
+        release_branch="26.5",
+        commit_sha="deadbeef",
+        latest=False,
+        codename="stable",
+    )
+    kwargs.update(overrides)
+    return cr.ReleaseInfo(**kwargs)
+
+
+def test_enqueue_release_pr_transient_gh_failure_is_best_effort(monkeypatch):
+    """A transient `gh pr view` failure must not raise (the release is already
+    published) — return False so merge_prs only warns, and never enqueue."""
+    cr = _create_release_module()
+    ri = _make_release_info(cr)
+    monkeypatch.setattr(cr.Shell, "get_output", staticmethod(lambda *a, **k: ""))
+    enqueued = []
+    monkeypatch.setattr(
+        cr.Git,
+        "enqueue_pull_request",
+        staticmethod(lambda *a, **k: enqueued.append(1) or True),
+    )
+    assert ri._enqueue_release_pr("https://x/pull/111", "ChangeLog", False) is False
+    assert not enqueued
+
+
+def test_enqueue_release_pr_skips_already_merged(monkeypatch):
+    """A non-OPEN (e.g. already merged) PR is a no-op, not an enqueue."""
+    cr = _create_release_module()
+    ri = _make_release_info(cr)
+    monkeypatch.setattr(cr.Shell, "get_output", staticmethod(lambda *a, **k: "MERGED"))
+    enqueued = []
+    monkeypatch.setattr(
+        cr.Git,
+        "enqueue_pull_request",
+        staticmethod(lambda *a, **k: enqueued.append(1) or True),
+    )
+    assert ri._enqueue_release_pr("https://x/pull/111", "ChangeLog", False) is True
+    assert not enqueued
+
+
+def test_enqueue_release_pr_open_enqueues(monkeypatch):
+    """An OPEN PR is enqueued (no status is force-set — CH Inc sync runs on its
+    own; the PR is opened early enough to complete by enqueue time)."""
+    cr = _create_release_module()
+    ri = _make_release_info(cr)
+    monkeypatch.setattr(cr.Shell, "get_output", staticmethod(lambda *a, **k: "OPEN"))
+    enq = {}
+    monkeypatch.setattr(
+        cr.Git,
+        "enqueue_pull_request",
+        staticmethod(lambda pr, repo, **k: enq.update(pr=pr) or True),
+    )
+    assert ri._enqueue_release_pr("https://x/pull/111", "ChangeLog", False) is True
+    assert enq["pr"] == 111

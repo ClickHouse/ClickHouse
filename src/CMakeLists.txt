@@ -169,6 +169,7 @@ add_headers_and_sources(dbms Common/Scheduler/Workload)
 
 add_headers_and_sources(dbms Core/YTsaurus)
 add_headers_and_sources(dbms Storages/YTsaurus)
+add_headers_and_sources(dbms Storages/BigQuery)
 
 add_headers_and_sources(dbms Core/Streaming)
 add_headers_and_sources(dbms Storages/Streaming)
@@ -501,12 +502,14 @@ endif()
 
 if (TARGET ch_contrib::nuraft)
     add_object_library(clickhouse_coordination Coordination)
+    add_object_library(clickhouse_coordination_storage Coordination/Storage)
 endif()
 
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
 
 target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
 target_link_libraries (dbms PRIVATE ch_contrib::clickstack_resources)
+target_link_libraries (dbms PRIVATE ch_contrib::xxHash)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
 endif()
@@ -699,6 +702,10 @@ endif ()
 
 if (TARGET ch_contrib::icu)
     target_link_libraries(dbms PRIVATE ch_contrib::icu)
+endif ()
+
+if (TARGET ch_contrib::mecab)
+    target_link_libraries(dbms PRIVATE ch_contrib::mecab)
 endif ()
 
 if (TARGET ch_contrib::capnp)
@@ -969,6 +976,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::azure_sdk)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::azure_sdk)
+    endif()
+
+    if (TARGET ch_contrib::hdfs)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::hdfs)
     endif()
 
     if (TARGET ch_contrib::parquet)

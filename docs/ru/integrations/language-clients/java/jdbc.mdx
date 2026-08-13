@@ -96,7 +96,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   | Свойство                            | По умолчанию | Описание                                                                                                                                                                                                                      |
   | ----------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
   | `disable_frameworks_detection`      | `true`       | Отключает определение фреймворков по User-Agent                                                                                                                                                                               |
-  | `jdbc_ignore_unsupported_values`    | `false`      | Подавляет `SQLFeatureNotSupportedException` в случаях, когда это не влияет на работу драйвера                                                                                                                                 |
+  | `jdbc_ignore_unsupported_values`    | `false`      | Подавляет `SQLFeatureNotSupportedException`, если это не влияет на работу драйвера                                                                                                                                            |
   | `clickhouse.jdbc.v1`                | `false`      | Использует старую реализацию JDBC вместо новой                                                                                                                                                                                |
   | `default_query_settings`            | `null`       | Позволяет передавать настройки запроса по умолчанию при выполнении запросов                                                                                                                                                   |
   | `jdbc_resultset_auto_close`         | `true`       | Автоматически закрывает `ResultSet` при закрытии `Statement`                                                                                                                                                                  |
@@ -137,7 +137,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   что будет эквивалентно следующему JDBC URL:
 
   ```sql
-  jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01 
+  jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01
   // credentials shoud be passed in `Properties`. Here it is just for example.
   ```
 
@@ -301,10 +301,10 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   | Тип ClickHouse                             | `getBaseTypeName()`                               | `getBaseType()`                          |
   | ------------------------------------------ | ------------------------------------------------- | ---------------------------------------- |
   | `Array(<Примитивный тип>)`                 | `<Примитивный тип>`                               | `<Примитивный тип JDBC>`                 |
-  | `Array(<Parameterized Type>(<N>))`         | `<Параметризованный тип>(<N>)`                    | `<тип JDBC базового типа>`               |
+  | `Array(<Parameterized Type>(<N>))`         | `<Параметризованный тип>(<N>)`                    | `<тип JDBC для базового типа>`           |
   | `Array(Nullable(<Type>))`                  | `Nullable(<Type>)`                                | `<тип JDBC внутреннего типа>`            |
-  | `Array(LowCardinality(<Type>))`            | `LowCardinality(<Type>)`                          | `<JDBC-тип внутреннего Type>`            |
-  | `Array(Array(...(<Тип>)))`                 | `<Type>` (элемент на самом глубоком уровне)       | `<JDBC-тип самого внутреннего элемента>` |
+  | `Array(LowCardinality(<Type>))`            | `LowCardinality(<Type>)`                          | `<тип JDBC внутреннего типа>`            |
+  | `Array(Array(...(<Type>)))`                | `<Type>` (элемент на самом глубоком уровне)       | `<JDBC-тип самого внутреннего элемента>` |
   | `Array(Tuple(...))`                        | `Tuple(...)` (полное определение)                 | `OTHER`                                  |
   | `Array(Enum8(...))` / `Array(Enum16(...))` | `Enum8(...)` / `Enum16(...)` (полное определение) | `VARCHAR`                                |
 
@@ -398,7 +398,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
                   }
               }
           }
-      } 
+      }
   }
   ```
 
@@ -510,7 +510,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   }
   ```
 
-  **Чтение вложенных данных**
+  **Чтение Nested**
 
   Используйте `ResultSet#getStruct(columnIndex, StructDescriptor)` для чтения объекта `Nested`. Объект позволяет обращаться к вложенным элементам любой глубины вложенности.
   Метод `Struct#getResultSet()` можно использовать для чтения вложенных элементов в более унифицированном виде — в форме `java.sql.ResultSet`. Это удобно,
@@ -550,7 +550,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   **Типы Nullable и LowCardinality**
 
-  * `Nullable` и `LowCardinality` — это специальные типы, которые являются оболочками для других типов.
+  * `Nullable` и `LowCardinality` — специальные типы-обёртки над другими типами.
   * `Nullable` влияет на то, как в `ResultSetMetaData` возвращаются имена типов
 
   **Специальные типы**
@@ -854,14 +854,14 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   **Типы даты/времени**
 
-  | Тип ClickHouse | Совместимость с V1 | Тип JDBC (V2) | Класс Java (V2)    | Тип JDBC (V1)                   | Класс Java (V1)             |
-  | -------------- | ------------------ | ------------- | ------------------ | ------------------------------- | --------------------------- |
-  | Date           | ❌                  | DATE          | java.sql.Date      | DATE                            | java.time.LocalDate         |
-  | Date32         | ❌                  | DATE          | java.sql.Date      | DATE                            | java.time.LocalDate         |
-  | DateTime       | ❌                  | TIMESTAMP     | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime    |
-  | DateTime64     | ❌                  | TIMESTAMP     | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime    |
-  | Time           | ✅                  | TIME          | java.sql.Time      | новый тип/не поддерживается     | новый тип/не поддерживается |
-  | Time64         | ✅                  | TIME          | java.sql.Time      | новый тип/не поддерживается     | новый тип/не поддерживается |
+  | Тип ClickHouse | Совместим с V1 | Тип JDBC (V2) | Класс Java (V2)    | Тип JDBC (V1)                   | Класс Java (V1)             |
+  | -------------- | -------------- | ------------- | ------------------ | ------------------------------- | --------------------------- |
+  | Date           | ❌              | DATE          | java.sql.Date      | DATE                            | java.time.LocalDate         |
+  | Date32         | ❌              | DATE          | java.sql.Date      | DATE                            | java.time.LocalDate         |
+  | DateTime       | ❌              | TIMESTAMP     | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime    |
+  | DateTime64     | ❌              | TIMESTAMP     | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime    |
+  | Time           | ✅              | TIME          | java.sql.Time      | новый тип/не поддерживается     | новый тип/не поддерживается |
+  | Time64         | ✅              | TIME          | java.sql.Time      | новый тип/не поддерживается     | новый тип/не поддерживается |
 
   * `Time` и `Time64` поддерживаются в V2 только в качестве новых типов.
   * `DateTime` и `DateTime64` сопоставляются с `java.sql.Timestamp` для обеспечения лучшей совместимости с JDBC.

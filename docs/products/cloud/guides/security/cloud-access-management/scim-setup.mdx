@@ -7,8 +7,8 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'SCIM', 'provisioning', 'Okta', 'SSO', 'SAML', 'identity provider', 'IdP', 'user management']
 ---
 
-import EnterprisePlanFeatureBadge from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
-import PrivatePreviewBadge from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <PrivatePreviewBadge/>
 
@@ -16,7 +16,7 @@ import PrivatePreviewBadge from "/snippets/components/PrivatePreviewBadge/Privat
 
 ClickHouse Cloud supports SCIM 2.0 (System for Cross-domain Identity Management) for automated user and group lifecycle management. Once connected to your identity provider, every user you assign to the ClickHouse Cloud application is automatically created in your organization with the right role, profile updates flow through automatically, and removing a user from your IdP removes their access — no manual invites, no orphaned accounts.
 
-This guide walks through setting up SCIM provisioning end-to-end with **Okta**. The ClickHouse Cloud SCIM endpoint follows SCIM 2.0 (RFC 7644), but authentication is supported only via Basic Auth, and Okta is the only identity provider we've tested against. Other SCIM 2.0 IdPs may work if they can authenticate using Basic Auth, but they're not officially supported today.
+This guide walks through setting up SCIM provisioning end-to-end with **Okta**. The ClickHouse Cloud SCIM endpoint follows SCIM 2.0 (RFC 7644). Okta authenticates using Basic Auth, which is what this guide uses. If your identity provider is Microsoft Entra ID, follow the [SCIM provisioning with Entra ID](/products/cloud/guides/security/cloud-access-management/scim-setup-entra) guide instead.
 
 ## Before you begin {#before-you-begin}
 
@@ -310,7 +310,7 @@ Yes. SCIM creates the user accounts, but ClickHouse Cloud authenticates them thr
 
 <Accordion title="Does SCIM work with Microsoft Entra ID, OneLogin, or other SCIM 2.0 IdPs?">
 
-Officially, no — Okta is the only IdP we've tested and support today. The endpoint follows SCIM 2.0 (RFC 7644), but authentication is restricted to Basic Auth, so any IdP that can't authenticate over Basic Auth won't work. Other Basic-Auth-capable SCIM 2.0 IdPs may work in practice, but we make no guarantees.
+Microsoft Entra ID is also supported — see [SCIM provisioning with Entra ID](/products/cloud/guides/security/cloud-access-management/scim-setup-entra). The endpoint follows SCIM 2.0 (RFC 7644) and accepts either Basic Auth (used by Okta) or a bearer token (used by Entra ID). Other SCIM 2.0 IdPs may work in practice if they can authenticate one of these ways, but Okta and Entra ID are the IdPs we've tested and support today.
 
 </Accordion>
 

@@ -1,0 +1,9 @@
+-- default variant_throw_on_type_mismatch=1 : a non-polygon row raises --
+-- variant_throw_on_type_mismatch=0 : Point -> NULL, polygon-shaped rows matched --
+1	\N
+3	1
+4	1
+-- point inside the second polygon of the MultiPolygon row --
+1	\N
+3	0
+4	1

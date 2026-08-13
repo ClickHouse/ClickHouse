@@ -101,7 +101,7 @@ spec:
   仅当底层存储类支持卷扩容时，Operator 才能修改现有的 PVC。
 </Note>
 
-关于在多磁盘 (JBOD) 布局中挂载额外磁盘、在没有持久卷的情况下运行、扩展容量、自定义存储策略，以及创建后哪些内容不能更改的规则，请参阅专门的
+关于在多磁盘 (JBOD) 布局中挂载额外磁盘、在没有持久卷的情况下运行、扩展容量、自定义存储策略、静态数据加密，以及创建后哪些内容不能更改的规则，请参阅专门的
 [存储和卷指南](/zh/products/kubernetes-operator/guides/storage)。
 
 <div id="cluster-domain">
@@ -183,31 +183,30 @@ operator 会将每个附加卷挂载到 `/var/lib/clickhouse/disks/<name>`，并
   ## 集群域
 </div>
 
-`spec.clusterDomain` 用于设置 operator 在构建其写入 ClickHouse server
-配置中的 pod (容器组) 完全限定主机名时所使用的 Kubernetes DNS 后缀。
-其默认值为 `cluster.local`，并且 `ClickHouseCluster` 和 `KeeperCluster`
-都提供了该字段。
+`spec.clusterDomain` 用于设置 operator 在构建并写入 ClickHouse server
+配置的 pod (容器组) 完全限定主机名时所使用的 Kubernetes DNS 后缀。默认值为 `cluster.local`，并且在
+`ClickHouseCluster` 和 `KeeperCluster` 中都可用。
 
 ```yaml
 spec:
   clusterDomain: cluster.local   # default; override only for a custom domain
 ```
 
-operator 会通过无头 Service 按以下形式访问每个 pod (容器组) ：
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`。该后缀会传入
-生成配置中的两个部分：
+operator 会通过无头 Service 按如下格式访问每个 pod (容器组) ：
+`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`。该后缀会传递到
+生成配置的两个部分中：
 
-* 对于 `ClickHouseCluster`，其值会用于 `remote_servers` 中的副本主机名
-  (用于跨副本和 `Distributed` 查询) 。
-* 对于 `KeeperCluster`，其值会用于构建 Keeper 节点主机名，
-  ClickHouse 会使用这些主机名进行协调。
+* 在 `ClickHouseCluster` 中，其值会用于
+  `remote_servers` 里的副本主机名 (跨副本和 `Distributed` 查询) 。
+* 在 `KeeperCluster` 中，其值会用于构建
+  ClickHouse 用于协调的 Keeper 节点主机名。
 
 <Note>
-  只有在集群的 `kubelet 节点代理` 使用了非 `cluster.local` 的 `--cluster-domain`
-  时，才应覆盖此值。如果该值与实际集群域不一致，
+  仅当你的集群中 `kubelet` 节点代理使用的 `--cluster-domain`
+  不是 `cluster.local` 时，才应覆盖此值。如果该值与实际的集群域不一致，
   ClickHouse 将无法解析 Keeper 和副本主机名——协调以及
   `Distributed` 查询都会因 DNS 解析错误而失败。请在
-  `ClickHouseCluster` 及其引用的 `KeeperCluster` 上设置**相同**的值。
+  `ClickHouseCluster` 及其引用的 `KeeperCluster` 中设置**相同**的值。
 </Note>
 
 <div id="pod-configuration">
@@ -516,13 +515,14 @@ spec:
 
 Secret 必须包含以下键：
 
-| Key                     | Format                             | When required              |
-| ----------------------- | ---------------------------------- | -------------------------- |
-| `interserver-password`  | 明文密码                               | 始终需要                       |
-| `management-password`   | 明文密码                               | 始终需要                       |
-| `keeper-identity`       | `clickhouse:<password>`            | 始终需要                       |
-| `cluster-secret`        | 明文密码                               | 始终需要                       |
-| `named-collections-key` | 以十六进制编码的 16 字节 AES 密钥 (32 个十六进制字符) | 仅适用于 ClickHouse `>= 25.12` |
+| Key                     | Format                             | When required                 |
+| ----------------------- | ---------------------------------- | ----------------------------- |
+| `interserver-password`  | 明文密码                               | 始终需要                          |
+| `management-password`   | 明文密码                               | 始终需要                          |
+| `keeper-identity`       | `clickhouse:<password>`            | 始终需要                          |
+| `cluster-secret`        | 明文密码                               | 始终需要                          |
+| `named-collections-key` | 以十六进制编码的 16 字节 AES 密钥 (32 个十六进制字符) | 仅适用于 ClickHouse `>= 25.12`    |
+| `disk-encryption-key`   | 以十六进制编码的 16 字节 AES 密钥 (32 个十六进制字符) | 仅当设置了 `settings.encryption` 时 |
 
 一个完整的 Secret 如下所示：
 
@@ -539,6 +539,7 @@ stringData:
   keeper-identity: "clickhouse:keeper-auth-password"
   cluster-secret: "cluster-internal-secret"
   named-collections-key: "0123456789abcdef0123456789abcdef"   # 32 hex chars = 16 bytes
+  disk-encryption-key: "00112233445566778899aabbccddeeff"     # only when settings.encryption is set
 ```
 
 <div id="external-secret-policy">
@@ -586,7 +587,7 @@ kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
 当 Secret 无效时，operator 会将协调重新入队，因此一旦补齐缺失的键，下一次协调就会自动生效——无需重启 Pod (容器组) 。
 
 <Note>
-  所需键的集合取决于当前运行的 ClickHouse 版本。只有在 operator 的版本探测检测到 ClickHouse `25.12` 或更高版本后，才会校验 `named-collections-key`。在较旧版本中，Secret 可以不包含该键。
+  所需键的集合取决于当前运行的 ClickHouse 版本。只有在 operator 的版本探测检测到 ClickHouse `25.12` 或更高版本后，才会校验 `named-collections-key`。在较旧版本中，Secret 可以不包含该键。仅当设置了 `spec.settings.encryption` 时，才需要 `disk-encryption-key`。
 </Note>
 
 <div id="additional-ports">

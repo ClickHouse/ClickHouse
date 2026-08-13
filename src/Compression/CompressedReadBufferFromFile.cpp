@@ -23,8 +23,6 @@ bool CompressedReadBufferFromFile::nextImpl()
         if (!size_compressed)
             return false;
 
-        LOG_TEST(log, "Decompressing {} bytes from {} to {} bytes", size_compressed, file_in.getFileName(), size_decompressed);
-
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
         /// This is for clang static analyzer.
@@ -126,8 +124,6 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
 
             if (!new_size_compressed)
                 return bytes_read;
-
-            LOG_TEST(log, "Decompressing {} bytes from {} to {} bytes", new_size_compressed, file_in.getFileName(), size_decompressed);
 
             auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 

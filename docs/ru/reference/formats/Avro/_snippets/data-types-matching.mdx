@@ -35,7 +35,7 @@ title: Соответствие типов данных
 **  [Тип Variant](/ru/reference/data-types/variant) неявно допускает `null` в качестве значения поля, поэтому, например, Avro `union(T1, T2, null)` будет преобразован в `Variant(T1, T2)`.
 В результате при формировании Avro из ClickHouse нам всегда нужно включать тип `null` в набор типов Avro `union`, поскольку при выводе схемы неизвестно, будет ли какое-либо значение фактически равно `null`.
 
-*** [Логические типы Avro](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+*** [Логические типы Avro](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
 
 Неподдерживаемые логические типы данных Avro:
 

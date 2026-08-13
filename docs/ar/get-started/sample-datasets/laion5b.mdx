@@ -25,7 +25,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## تفاصيل مجموعة البيانات
 </div>
 
-مجموعة البيانات الكاملة متاحة كمزيج من ملفات `npy` و`Parquet` على [the-eye.eu](https://the-eye.eu/public/AI/cah/laion5b/)
+يمكن تنزيل مجموعة البيانات الكاملة باستخدام [opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader).
 
 أتاح ClickHouse مجموعة فرعية تضم 100 مليون متجه في حاوية `S3`.
 تحتوي حاوية `S3` على 10 ملفات `Parquet`، ويضم كل ملف `Parquet` 10 ملايين صف.
@@ -37,9 +37,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### إنشاء جدول
-
+  <Step title="إنشاء جدول" id="create-table">
     أنشئ جدول `laion_5b_100m` لتخزين متجهات التضمين والسمات المرتبطة بها:
 
     ```sql
@@ -68,9 +66,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     البحث عن تشابه المتجهات عند دمجه مع التصفية اللاحقة/التصفية المسبقة، كما هو موضح في [الوثائق](/ar/reference/engines/table-engines/mergetree-family/annindexes)
   </Step>
 
-  <Step>
-    ### تحميل البيانات
-
+  <Step title="تحميل البيانات" id="load-table">
     لتحميل البيانات من جميع ملفات `Parquet`، شغّل تعليمة SQL التالية:
 
     ```sql
@@ -88,9 +84,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ### تشغيل بحث تشابه المتجهات بأسلوب القوة الغاشمة
-
+  <Step title="تشغيل بحث تشابه المتجهات بأسلوب القوة الغاشمة" id="run-a-brute-force-vector-similarity-search">
     يتضمن بحث KNN (k - أقرب الجيران) أو البحث بالقوة الغاشمة حساب المسافة بين كل متجه في مجموعة البيانات ومتجه التضمين المستخدم في البحث، ثم ترتيب هذه المسافات للحصول على أقرب الجيران. يمكننا استخدام أحد المتجهات من مجموعة البيانات نفسها متجهًا للبحث. على سبيل المثال:
 
     ```sql title="Query"
@@ -133,9 +127,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     مع 100 مليون صف، قد يستغرق الاستعلام أعلاه بدون فهرس متجهات بضع ثوانٍ أو دقائق حتى يكتمل.
   </Step>
 
-  <Step>
-    ### بناء فهرس للتشابه المتجهي
-
+  <Step title="بناء فهرس للتشابه المتجهي" id="build-vector-similarity-index">
     نفّذ عبارة SQL التالية لتعريف فهرس للتشابه المتجهي وإنشائه على العمود `vector` في الجدول `laion_5b_100m`:
 
     ```sql
@@ -152,9 +144,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     قد يستغرق بناء الفهرس وحفظه بضع ساعات حتى لمجموعة البيانات الكاملة البالغة 100 مليون، وذلك حسب عدد أنوية CPU المتاحة وعرض نطاق التخزين.
   </Step>
 
-  <Step>
-    ### إجراء بحث ANN
-
+  <Step title="إجراء بحث ANN" id="perform-ann-search">
     بمجرد إنشاء فهرس تشابه المتجهات، ستستخدم استعلامات البحث المتجهي هذا الفهرس تلقائيًا:
 
     ```sql title="Query"
@@ -168,9 +158,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     قد يستغرق التحميل الأول لفهرس المتجهات إلى الذاكرة بضع ثوانٍ أو دقائق.
   </Step>
 
-  <Step>
-    ### إنشاء متجهات التضمين لاستعلام البحث
-
+  <Step title="إنشاء متجهات التضمين لاستعلام البحث" id="generating-embeddings-for-search-query">
     تم إنشاء متجهات التضمين لمجموعة البيانات `LAION 5b` باستخدام نموذج `ViT-L/14` من `OpenAI CLIP`.
 
     يَرِد أدناه مثال على برنامج نصي بلغة Python يوضّح كيفية إنشاء

@@ -60,7 +60,6 @@ workflow = Workflow.Config(
     jobs=[
         JobConfigs.style_check,
         JobConfigs.code_review.set_run_after(CODE_REVIEW_BLOCKING_JOBS),
-        JobConfigs.docs_job,
         JobConfigs.docs_job_mintlify,
         JobConfigs.fast_test,
         JobConfigs.ci_tests.set_run_after(CORE_BLOCKING_JOB_NAMES),
@@ -73,7 +72,7 @@ workflow = Workflow.Config(
         ],
         *[
             job.set_run_after(REGULAR_BUILD_NAMES)
-            for job in JobConfigs.release_build_jobs
+            for job in JobConfigs.release_build_jobs_with_examples
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
@@ -87,6 +86,14 @@ workflow = Workflow.Config(
         JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_failure(),
         JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_failure(),
         *JobConfigs.stateless_tests_flaky_pr_jobs,
+        # The merge queue's non-sanitizer flaky check also runs here, so a test
+        # that is only too slow (or only flaky) without a sanitizer is reported
+        # in the PR rather than first bouncing it from the merge queue. It is
+        # the same job config as in `ci/workflows/merge_queue.py` on purpose,
+        # and it still gets its own cache key here, so the merge queue keeps
+        # rechecking the merge group state - see the comment at
+        # `stateless_tests_flaky_mq_jobs`.
+        *JobConfigs.stateless_tests_flaky_mq_jobs,
         *JobConfigs.integration_test_asan_flaky_pr_jobs,
         # Per-arch Bugfix Validation Checks (functional + integration tests on
         # both amd64 and aarch64). Each per-arch variant has
@@ -193,6 +200,8 @@ workflow = Workflow.Config(
         ],
         JobConfigs.llvm_coverage_job,
         JobConfigs.promql_compliance_job,
+        # TODO: stabilize and remove set_allow_failure
+        JobConfigs.build_profile_diff_job.set_allow_failure(),
         JobConfigs.sqllogic_test_master_job.set_run_after(
             CORE_BLOCKING_JOB_NAMES
         ),
@@ -212,8 +221,10 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
+        ArtifactConfigs.clickhouse_wasm,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
+        ArtifactConfigs.clickhouse_examples,
         *ArtifactConfigs.llvm_profdata_file,
         ArtifactConfigs.llvm_coverage_info_file,
         ArtifactConfigs.toolchain_pgo_bolt_amd,
