@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long
+# Tags: no-fasttest
 # no-fasttest: needs the Parquet format which is not built in fasttest.
-# long: writes a multi-row-group Parquet file so read tasks are still in flight on teardown.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -23,27 +22,42 @@ ABS="${USER_FILES%/}/${REL}"
 # Small row groups so there are many read ranges, hence many queued tasks at throw time.
 ${CLICKHOUSE_CLIENT} --query="
     insert into function file('${REL}', Parquet, 'key UInt64, val String')
-    select number, repeat('y', 400) from numbers(200000)
+    select number, repeat('y', 400) from numbers(2000000)
     settings engine_file_truncate_on_insert = 1, output_format_parquet_row_group_size = 5000,
              output_format_parquet_compression_method = 'none';
 "
 
 # `val` is Int64 in the dictionary but holds strings in the file, so the Parquet read throws
 # mid-flight, which is what makes the pipeline tear down while tasks are still running.
+#
+# The settings have to be on the dictionary, not on the query: a dictionary loads in the global
+# context, and the `file` source only picks up this SETTINGS clause. min_bytes_for_seek = 1 stops
+# range coalescing, so each range becomes its own task.
 ${CLICKHOUSE_CLIENT} --query="
     create dictionary ${DICT} (key UInt64, val Int64) primary key key
     source(file(path '${ABS}' format 'Parquet'))
-    layout(flat(max_array_size 500000)) lifetime(0);
+    layout(flat(max_array_size 5000000)) lifetime(0)
+    settings(max_download_threads = 32, max_parsing_threads = 32,
+             input_format_parquet_local_file_min_bytes_for_seek = 1);
 "
 
-# min_bytes_for_seek = 1 stops range coalescing, so each range becomes its own task.
+# A forced reload, because a plain dictGet would replay the first load's cached exception instead of
+# reading the file again.
 for _ in 1 2 3 4 5; do
-    ${CLICKHOUSE_CLIENT} \
-        --max_download_threads=8 --max_parsing_threads=8 \
-        --input_format_parquet_local_file_min_bytes_for_seek=1 \
-        --query="select dictGet('${DICT}', 'val', toUInt64(5))" 2>&1 \
+    ${CLICKHOUSE_CLIENT} --log_comment="${DICT}_reload" --query="system reload dictionary ${DICT}" 2>&1 \
         | grep -c -m1 -F 'CANNOT_PARSE_TEXT'
 done
+
+# Each iteration has to have reached the Parquet reader, otherwise the loop proves nothing: a
+# dictionary that is already FAILED replays its stored exception without reading anything, which is
+# indistinguishable from a real read by the error message alone.
+${CLICKHOUSE_CLIENT} --query="system flush logs"
+${CLICKHOUSE_CLIENT} --query="
+    select 'reloads_that_read', countIf(ProfileEvents['ParquetPrefetcherReadSeekAndRead'] > 0)
+    from system.query_log
+    where log_comment = '${DICT}_reload' and current_database = currentDatabase()
+          and type != 'QueryStart';
+"
 
 # The server survived every attempt and still answers.
 ${CLICKHOUSE_CLIENT} --query="select 'alive', count() from system.dictionaries where database = currentDatabase() and name = '${DICT}'"
