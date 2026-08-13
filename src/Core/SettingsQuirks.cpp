@@ -116,22 +116,28 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
         /// unchanged instead, so it is only the effective default here.
         settings[Setting::local_filesystem_read_method].setChanged(false);
 
-        /// `applySettingsQuirks` is called for every settings change as well, and the call that
-        /// applies the default profile on startup comes before the one that has a logger,
-        /// so the reason is reported once per process, by whichever call switches it first.
-        static std::once_flag reported;
-        std::call_once(
-            reported,
-            []
-            {
-                LOG_WARNING(
-                    getLogger("SettingsQuirks"),
-                    "The default value of local_filesystem_read_method has been switched from 'pread_threadpool' "
-                    "to 'pread' (you can explicitly set it back still), because {}. That system call is what "
-                    "'pread_threadpool' needs to read the data that is already in the page cache "
-                    "without handing the read off to a thread pool",
-                    preadNoWaitUnavailableReason());
-            });
+        /// `applySettingsQuirks` is called for every settings change as well, in every program:
+        /// `clickhouse-client` writes its log to stderr, and an unconditional warning here fails
+        /// every test that checks the client's stderr on a host without the system call. Report
+        /// the reason like the other quirks do - only to the caller that passes a logger, which
+        /// is `Context::setDefaultProfiles` at server startup - and once per process, because
+        /// that call runs again for every copy of the server context.
+        if (log)
+        {
+            static std::once_flag reported;
+            std::call_once(
+                reported,
+                [&]
+                {
+                    LOG_WARNING(
+                        log,
+                        "The default value of local_filesystem_read_method has been switched from 'pread_threadpool' "
+                        "to 'pread' (you can explicitly set it back still), because {}. That system call is what "
+                        "'pread_threadpool' needs to read the data that is already in the page cache "
+                        "without handing the read off to a thread pool",
+                        preadNoWaitUnavailableReason());
+                });
+        }
     }
 }
 
