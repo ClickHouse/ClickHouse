@@ -311,11 +311,18 @@ MergeTreeIndexConditionSpatialBbox::extractNodeBbox(
     if (!input_child)
         return any_extraction_failed ? NodeBboxStatus::Failed : NodeBboxStatus::NotApplicable;
 
-    if (has_extra_non_constant)
-        return NodeBboxStatus::NoInfo;
+    /// A constant geometry argument that fails to extract or validate is guaranteed to raise
+    /// on evaluation (matching e.g. FunctionPointInPolygon's own `bg::is_valid` check, or the
+    /// contract documented for `is_spatial_predicate = 1` UDFs), regardless of whether other,
+    /// non-constant arguments (e.g. an extra column) are also present. This must be checked --
+    /// and, on failure, veto pruning via `Failed` -- before `has_extra_non_constant` is allowed
+    /// to downgrade the result to `NoInfo`; otherwise an extra non-constant argument would mask
+    /// an invalid constant one, silently hiding the exception it is guaranteed to raise.
+    if (any_extraction_failed)
+        return NodeBboxStatus::Failed;
 
     if (const_fields.empty())
-        return any_extraction_failed ? NodeBboxStatus::Failed : NodeBboxStatus::NoInfo;
+        return NodeBboxStatus::NoInfo;
 
     /// The multi-constant-argument assembly below (shell + holes, or MultiPolygon components)
     /// mirrors FunctionPointInPolygon::executeImpl's `is_const_multi_polygon` combination and
@@ -363,6 +370,13 @@ MergeTreeIndexConditionSpatialBbox::extractNodeBbox(
 
     if (!ok)
         return NodeBboxStatus::Failed;
+
+    /// Only now -- after the constant geometry argument(s) are confirmed extractable and valid
+    /// -- can an extra non-constant argument downgrade the result to "no info": the predicate's
+    /// truth may depend on that argument, so its bbox can't be used to prune, but there's also
+    /// no invalid geometry to fail closed for.
+    if (has_extra_non_constant)
+        return NodeBboxStatus::NoInfo;
 
     out_bbox = {xmin, ymin, xmax, ymax};
     return NodeBboxStatus::Ok;
