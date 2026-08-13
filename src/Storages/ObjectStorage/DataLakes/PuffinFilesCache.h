@@ -47,6 +47,9 @@ struct PuffinFilesCacheKey
     UInt64 data_file_record_count = 0;
 
     bool operator==(const PuffinFilesCacheKey & other) const;
+
+    /// Approximate bytes for key strings + fixed key fields (used in entry weight).
+    UInt64 approximateMemoryBytes() const;
 };
 
 struct PuffinFilesCacheKeyHash
@@ -60,13 +63,16 @@ struct PuffinFilesCacheCell : private boost::noncopyable
     bool is_empty_deletion_vector = false;
     UInt64 memory_bytes = 0;
 
-    explicit PuffinFilesCacheCell(DataLakeObjectMetadata::ExcludedRowsPtr excluded_rows_);
+    PuffinFilesCacheCell(DataLakeObjectMetadata::ExcludedRowsPtr excluded_rows_, UInt64 key_memory_bytes_);
+
+    static UInt64 calculateMemorySize(
+        bool is_empty_deletion_vector_,
+        const DataLakeObjectMetadata::ExcludedRowsPtr & excluded_rows_,
+        UInt64 key_memory_bytes_);
 
 private:
-    static constexpr UInt64 EMPTY_DELETION_VECTOR_WEIGHT = 1;
-    static constexpr size_t SIZE_IN_MEMORY_OVERHEAD = 200;
-
-    static UInt64 calculateMemorySize(bool is_empty_deletion_vector_, const DataLakeObjectMetadata::ExcludedRowsPtr & excluded_rows_);
+    /// Hash-map node + LRU list node + shared_ptr control block underestimates are absorbed here.
+    static constexpr size_t SIZE_IN_MEMORY_OVERHEAD = 256;
 };
 
 struct PuffinFilesCacheWeightFunction
@@ -82,6 +88,8 @@ struct PuffinFooterCacheKey
     String etag;
 
     bool operator==(const PuffinFooterCacheKey & other) const;
+
+    UInt64 approximateMemoryBytes() const;
 };
 
 struct PuffinFooterCacheKeyHash
@@ -96,9 +104,12 @@ struct PuffinFooterCacheCell : private boost::noncopyable
     BlobsPtr blobs;
     UInt64 memory_bytes = 0;
 
-    explicit PuffinFooterCacheCell(BlobsPtr blobs_);
+    PuffinFooterCacheCell(BlobsPtr blobs_, UInt64 key_memory_bytes_);
 
-    static UInt64 calculateMemorySize(const BlobsPtr & blobs_);
+    static UInt64 calculateMemorySize(const BlobsPtr & blobs_, UInt64 key_memory_bytes_);
+
+private:
+    static constexpr size_t SIZE_IN_MEMORY_OVERHEAD = 256;
 };
 
 struct PuffinFooterCacheWeightFunction
@@ -168,7 +179,7 @@ public:
                 key.file_path,
                 key.etag,
                 blobs ? blobs->size() : 0);
-            return std::make_shared<PuffinFooterCacheCell>(std::move(blobs));
+            return std::make_shared<PuffinFooterCacheCell>(std::move(blobs), key.approximateMemoryBytes());
         };
 
         auto [cell, outcome] = footer_cache.getOrSetWithOutcome(key, load_fn_wrapper);
@@ -228,7 +239,7 @@ public:
                     key.content_size_in_bytes,
                     key.referenced_data_file);
             }
-            return std::make_shared<PuffinFilesCacheCell>(std::move(excluded_rows));
+            return std::make_shared<PuffinFilesCacheCell>(std::move(excluded_rows), key.approximateMemoryBytes());
         };
 
         auto [cell, outcome] = Base::getOrSetWithOutcome(key, load_fn_wrapper);
