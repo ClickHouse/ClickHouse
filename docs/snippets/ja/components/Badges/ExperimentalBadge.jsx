@@ -12,7 +12,7 @@ const Icon = () => {
 export const ExperimentalBadge = () => {
     return (
         <a
-            href="/ja/reference/settings/beta-and-experimental-features#experimental-features"
+            href="https://clickhouse.com/docs/ja/reference/settings/beta-and-experimental-features#experimental-features"
             className="experimentalBadge"
         >
             <Icon />実験的機能です

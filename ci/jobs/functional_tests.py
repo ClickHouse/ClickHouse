@@ -181,6 +181,27 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
 }
 
 
+def allow_oversubscription(options, test_options, is_flaky_check, is_targeted_check):
+    """Whether this job may run more test workers than the runner has cores.
+
+    A plain (non-sanitizer) binary job runs the whole suite, where every worker
+    picks a different test and most tests are light, so oversubscribing the
+    runner shortens the job without making any single test noticeably slower.
+
+    A flaky/targeted check is the opposite case: every worker runs the *same*
+    changed test, so `--jobs N` multiplies that one test's resource use by `N`.
+    For a heavy test (its own `max_threads`, large inserts, merges) that turns
+    into self-contention, and the flaky check fails a test whose wall-clock time
+    exceeds `TEST_MAX_RUN_TIME_IN_SECONDS` - so oversubscription decides the
+    verdict. Keep those checks at the default concurrency, where per-iteration
+    times are comparable to the other flaky-check jobs and the "too long"
+    verdict reflects the test rather than how many copies of it were co-scheduled.
+    """
+    if is_flaky_check or is_targeted_check:
+        return False
+    return "binary" in options and len(test_options) < 3
+
+
 def invert_bugfix_validation_status(test_result: Result) -> bool:
     """Invert FAIL/OK in `test_result.results` for bugfix validation.
 
@@ -266,6 +287,28 @@ def invert_bugfix_validation_status(test_result: Result) -> bool:
         return True
     test_result.set_success()
     return False
+
+
+def attach_post_verdict_artifacts(
+    test_result: Result, artifacts: list, preserve_verdict: bool
+) -> None:
+    """Attach artifact-collection rows without letting them decide the status.
+
+    `extend_sub_results` re-derives the parent status from its children, so rows
+    appended once the run is over overwrite whatever the parent said. With
+    `preserve_verdict` the parent's own status wins instead, while the rows stay
+    visible in the report: on a bugfix-validation job that status is the
+    validation verdict, which `new_tests_check.py` reads with strict
+    `is_success` to decide whether any arch validated the bug.
+
+    The captured status is restored rather than forced to `OK`, so every verdict
+    the inverter can set survives: reproduction `OK`, no-repro `SKIPPED`,
+    inconclusive `ERROR`.
+    """
+    verdict = test_result.status
+    test_result.extend_sub_results(artifacts)
+    if preserve_verdict:
+        test_result.set_status(verdict)
 
 
 def reconcile_bugfix_crash_repro(result: Result, fatals: list) -> bool:
@@ -481,7 +524,7 @@ def main():
     if is_shared_catalog or is_parallel_replicas:
         pass
     else:
-        if "binary" in args.options and len(test_options) < 3:
+        if allow_oversubscription(args.options, test_options, is_flaky_check, is_targeted_check):
             # Plain binary job runs fast; allow higher concurrency
             nproc = int(Utils.cpu_count() * 1.2)
         elif is_database_replicated:
@@ -1346,7 +1389,11 @@ def main():
             )
         )
         if test_result and CH.extra_tests_results:
-            test_result.extend_sub_results(CH.extra_tests_results)
+            attach_post_verdict_artifacts(
+                test_result,
+                CH.extra_tests_results,
+                preserve_verdict=is_labeled_bugfix_validation,
+            )
 
     # Decide whether to block the CI pipeline on test failures
     force_ok_exit = False
