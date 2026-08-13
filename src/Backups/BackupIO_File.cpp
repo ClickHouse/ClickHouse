@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-BackupReaderFile::BackupReaderFile(const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
+BackupReaderFile::BackupReaderFile(const std::filesystem::path & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderFile"))
     , root_path(root_path_)
     , data_source_description(DiskLocal::getLocalDataSourceDescription(pathToGenericString(root_path)))
@@ -76,7 +76,7 @@ void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t file
 }
 
 
-BackupWriterFile::BackupWriterFile(const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
+BackupWriterFile::BackupWriterFile(const std::filesystem::path & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterFile"))
     , root_path(root_path_)
     , data_source_description(DiskLocal::getLocalDataSourceDescription(pathToGenericString(root_path)))

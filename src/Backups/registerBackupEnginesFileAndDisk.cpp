@@ -66,7 +66,7 @@ namespace
     {
         path = path.lexically_normal();
         if (!path.is_relative() && (disk->getDataSourceDescription().type == DataSourceType::Local))
-            path = path.lexically_proximate(disk->getPath());
+            path = path.lexically_proximate(pathFromString(disk->getPath()));
 
         bool path_ok = path.empty() || (path.is_relative() && (*path.begin() != ".."));
         if (!path_ok)
@@ -88,7 +88,7 @@ namespace
 
         if (path.is_relative())
         {
-            auto first_allowed_path = fs::path(config.getString(key));
+            auto first_allowed_path = pathFromString(config.getString(key));
             if (first_allowed_path.is_relative())
                 first_allowed_path = data_dir / first_allowed_path;
 
@@ -98,7 +98,7 @@ namespace
         size_t counter = 0;
         while (true)
         {
-            auto allowed_path = fs::path(config.getString(key));
+            auto allowed_path = pathFromString(config.getString(key));
             if (allowed_path.is_relative())
                 allowed_path = data_dir / allowed_path;
             auto rel = path.lexically_proximate(allowed_path);
@@ -126,8 +126,8 @@ namespace
             if (args.size() != 1)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup engine 'File' requires 1 argument (path)");
 
-            location.path = args[0].safeGet<String>();
-            checkPath(location.path, context->getConfigRef(), context->getPath());
+            location.path = pathFromString(args[0].safeGet<String>());
+            checkPath(location.path, context->getConfigRef(), pathFromString(context->getPath()));
         }
         else if (engine_name == "Disk")
         {
@@ -138,7 +138,7 @@ namespace
 
             location.disk_name = args[0].safeGet<String>();
             checkDiskName(location.disk_name, context->getConfigRef());
-            location.path = args[1].safeGet<String>();
+            location.path = pathFromString(args[1].safeGet<String>());
             location.disk = context->getDisk(location.disk_name);
             checkPath(location.disk_name, location.disk, location.path);
         }
@@ -158,7 +158,7 @@ namespace
         if (path == ".")
             return {};
 
-        String str = path.string();
+        String str = pathToGenericString(path);
         while (str.size() > 1 && str.back() == '/')
             str.pop_back();
         return str;
@@ -222,7 +222,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         {
             std::shared_ptr<IBackupReader> reader;
             if (engine_name == "File")
-                reader = std::make_shared<BackupReaderFile>(pathToGenericString(location.path), params.read_settings, params.write_settings);
+                reader = std::make_shared<BackupReaderFile>(location.path, params.read_settings, params.write_settings);
             else
                 reader = std::make_shared<BackupReaderDisk>(location.disk, pathToGenericString(location.path), params.read_settings, params.write_settings);
             return std::make_unique<BackupImpl>(params, archive_params, reader);
@@ -230,7 +230,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
 
         std::shared_ptr<IBackupWriter> writer;
         if (engine_name == "File")
-            writer = std::make_shared<BackupWriterFile>(pathToGenericString(location.path), params.read_settings, params.write_settings);
+            writer = std::make_shared<BackupWriterFile>(location.path, params.read_settings, params.write_settings);
         else
             writer = std::make_shared<BackupWriterDisk>(location.disk, pathToGenericString(location.path), params.read_settings, params.write_settings);
         return std::make_unique<BackupImpl>(params, archive_params, writer);

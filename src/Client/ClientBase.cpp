@@ -223,8 +223,8 @@ void cleanupTempFile(const DB::ASTPtr & parsed_query, const String & tmp_file)
     {
         if (query_with_output->isOutfileTruncate() && query_with_output->out_file)
         {
-            if (fs::exists(tmp_file))
-                fs::remove(tmp_file);
+            if (fs::exists(pathFromString(tmp_file)))
+                fs::remove(pathFromString(tmp_file));
         }
     }
 }
@@ -240,13 +240,13 @@ void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_fil
 
             try
             {
-                fs::rename(tmp_file, out_file);
+                fs::rename(pathFromString(tmp_file), pathFromString(out_file));
             }
             catch (const fs::filesystem_error & e)
             {
                 /// Clean up temporary file
-                if (fs::exists(tmp_file))
-                    fs::remove(tmp_file);
+                if (fs::exists(pathFromString(tmp_file)))
+                    fs::remove(pathFromString(tmp_file));
 
                 throw DB::Exception(DB::ErrorCodes::CANNOT_WRITE_TO_FILE,
                     "Cannot rename temporary file {} to {}: {}",
@@ -1010,7 +1010,7 @@ try
 
                 auto flags = O_WRONLY | O_EXCL;
 
-                auto file_exists = fs::exists(out_file);
+                auto file_exists = fs::exists(pathFromString(out_file));
                 if (file_exists && query_with_output->isOutfileAppend())
                     flags |= O_APPEND;
                 else if (file_exists && query_with_output->isOutfileTruncate())
@@ -1611,11 +1611,11 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
             out_file = out_file_node.value.safeGet<std::string>();
 
-            if (query_with_output->isOutfileTruncate() && fs::is_regular_file(out_file))
+            if (query_with_output->isOutfileTruncate() && fs::is_regular_file(pathFromString(out_file)))
             {
                 out_file_if_truncated = out_file;
-                fs::path out_file_path(out_file);
-                out_file = (out_file_path.parent_path() / fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), out_file_path.filename().string())).string();
+                fs::path out_file_path = pathFromString(out_file);
+                out_file = pathToString(out_file_path.parent_path() / fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), pathToString(out_file_path.filename())));
 
                 /// Update the AST literal so that initOutputFormat writes to the temp file
                 /// and performAtomicRename reads the temp path from the AST.
@@ -1625,7 +1625,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             if (client_context->getSettingsRef()[Setting::into_outfile_create_parent_directories])
             {
-                fs::path file_path(out_file);
+                fs::path file_path = pathFromString(out_file);
                 fs::path parent_dir = file_path.parent_path();
 
                 if (!parent_dir.empty() && !fs::exists(parent_dir))
@@ -1639,7 +1639,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                         throw Exception(
                             ErrorCodes::CANNOT_CREATE_DIRECTORY,
                             "Cannot create parent directories for INTO OUTFILE '{}': {}",
-                            parent_dir.string(),
+                            pathToString(parent_dir),
                             e.what());
                     }
                 }
