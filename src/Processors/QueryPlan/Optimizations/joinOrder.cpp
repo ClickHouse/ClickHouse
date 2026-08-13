@@ -9,28 +9,37 @@
 #include <functional>
 #include <limits>
 #include <map>
-#include <Common/typeid_cast.h>
-#include <Core/Joins.h>
-#include <IO/Operators.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/JoinExpressionActions.h>
-#include <Interpreters/JoinOperator.h>
-#include <Interpreters/ProcessList.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Common/safe_cast.h>
-#include <base/defines.h>
 #include <ranges>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <Core/Joins.h>
+#include <IO/Operators.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/JoinOperator.h>
+#include <Interpreters/ProcessList.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/dpTable.h>
 #include <Processors/QueryPlan/Optimizations/enumeratorChecker.h>
+#include <base/defines.h>
+#include <base/scope_guard.h>
+#include <Common/safe_cast.h>
+#include <Common/typeid_cast.h>
 
 
 namespace ProfileEvents
 {
     extern const Event JoinReorderMicroseconds;
+    extern const Event JoinOrderDPhypExplicitHyperedges;
+    extern const Event JoinOrderDPhypProvenEdgeCandidatesAssessed;
+    extern const Event JoinOrderDPhypProvenEdgeCandidatesRejected;
+    extern const Event JoinOrderDPhypProvenSyntheticEdges;
+    extern const Event JoinOrderDPhypCandidatesAdmitted;
+    extern const Event JoinOrderDPhypCandidatesRejected;
+    extern const Event JoinOrderDPhypSearchedPlans;
+    extern const Event JoinOrderDPhypFallbacks;
 }
 
 namespace DB
@@ -613,6 +622,14 @@ findClassesWithIncomparableMembers(const EquivalenceClasses<JoinActionRef> & col
     return result;
 }
 
+struct JoinOrderPropertyOptions
+{
+    bool proven_uniqueness_enabled = false;
+    bool dphyp_proven_edges_enabled = false;
+    bool transitive_predicates_enabled = false;
+    bool diagnostics_enabled = false;
+};
+
 class JoinOrderOptimizer
 {
 public:
@@ -620,16 +637,17 @@ public:
         QueryGraph query_graph_,
         const std::vector<JoinOrderAlgorithm> & enabled_algorithms_,
         UInt64 max_searched_plans_,
-        bool proven_uniqueness_enabled_,
-        bool transitive_predicates_enabled_,
-        bool data_property_diagnostics_enabled_,
+        JoinOrderPropertyOptions property_options,
         JoinOrderOptimizationDebugInfo * debug_info_)
         : query_graph(std::move(query_graph_))
         , max_searched_plans(max_searched_plans_)
         , enabled_algorithms(enabled_algorithms_)
-        , proven_uniqueness_enabled(proven_uniqueness_enabled_)
-        , transitive_predicates_enabled(transitive_predicates_enabled_)
-        , data_property_diagnostics_enabled(data_property_diagnostics_enabled_)
+        , proven_uniqueness_enabled(property_options.proven_uniqueness_enabled)
+        , dphyp_proven_edges_enabled(
+              property_options.dphyp_proven_edges_enabled && property_options.proven_uniqueness_enabled
+              && !property_options.transitive_predicates_enabled)
+        , transitive_predicates_enabled(property_options.transitive_predicates_enabled)
+        , data_property_diagnostics_enabled(property_options.diagnostics_enabled)
         , debug_info(debug_info_)
     {
         if (query_graph.data_property_catalog && query_graph.data_property_catalog->relationCount() != query_graph.relation_stats.size())
@@ -720,11 +738,18 @@ private:
         const JoinOrderCardinalityCap & canonical_cap) const;
 
     /// Assessment of a predicate-free transitively-connected pair for the DPsub acceptor.
+    /// Admission mirrors `assessCandidate`: the independent transitive setting admits every
+    /// such pair; with the setting off only a proven canonical assessment may authorize
+    /// proven-uniqueness-gated transitive connectivity. Every other outcome fails closed, so
+    /// the rejected pair does not affect subset connectivity, budget, or fallback.
     struct TransitivePairAssessment
     {
         bool admitted = false;
         JoinOrderCardinalityCap canonical_cap;
     };
+    /// `Subset` is a `BitSet` or a native `UInt32` relation mask; the native instantiation
+    /// keeps the DPsub hot path free of `BitSet` allocations by using the provider's native
+    /// group lookup.
     template <typename Subset>
     TransitivePairAssessment assessTransitivePair(
         const Subset & left_relations,
@@ -732,6 +757,9 @@ private:
         std::optional<UInt64> left_rows,
         std::optional<UInt64> right_rows) const;
 
+    /// How a candidate pair is connected before canonical assessment. `legacy_connected`
+    /// means applicable predicates exist; `has_cross_split_predicate` means at least one of
+    /// them references both sides of this particular split.
     struct JoinCandidateConnectivity
     {
         bool legacy_connected = false;
@@ -760,6 +788,7 @@ private:
     bool costingPropertiesEnabled() const;
     void resetCandidateState();
     void recordCanonicalCapAssessment(const JoinOrderCardinalityCap & cap) const;
+    /// Same `Subset` convention as `assessTransitivePair`.
     template <typename Subset>
     JoinOrderCardinalityCap getCanonicalCap(
         const Subset & left_relations,
@@ -866,6 +895,20 @@ private:
     std::vector<Hyperedge> hyperedges;
     std::vector<std::vector<size_t>> node_to_edge_ids; /// node index -> hyperedge indices
 
+    /// Query-local counters for one DPhyp attempt. Hot enumeration paths update only this
+    /// structure; solveDPhyp flushes it to ProfileEvents once when the attempt ends.
+    struct DPhypAttemptMetrics
+    {
+        size_t explicit_hyperedges = 0;
+        size_t proven_edge_candidates_assessed = 0;
+        size_t proven_edge_candidates_rejected = 0;
+        size_t proven_synthetic_edges = 0;
+        size_t candidates_admitted = 0;
+        size_t candidates_rejected = 0;
+    };
+    DPhypAttemptMetrics dphyp_attempt_metrics;
+    void flushDPhypAttemptMetrics() const;
+
     /// Set by `tryJoin` when it encounters a single-table or constant predicate inside the join edges
     /// that `dphyp` does not yet know how to attach. `solveDPhyp` returns `nullptr` so the fallback
     /// algorithm chain (e.g. `dphyp,greedy`) can produce a valid plan.
@@ -880,6 +923,7 @@ private:
 
     const std::vector<JoinOrderAlgorithm> enabled_algorithms;
     const bool proven_uniqueness_enabled;
+    const bool dphyp_proven_edges_enabled;
     const bool transitive_predicates_enabled;
     const bool data_property_diagnostics_enabled;
     JoinOrderOptimizationDebugInfo * debug_info;
@@ -888,6 +932,19 @@ private:
     QueryStatusPtr query_status;
     std::function<bool()> interactive_cancel_callback;
 };
+
+void JoinOrderOptimizer::flushDPhypAttemptMetrics() const
+{
+    ProfileEvents::increment(ProfileEvents::JoinOrderDPhypExplicitHyperedges, dphyp_attempt_metrics.explicit_hyperedges);
+    ProfileEvents::increment(
+        ProfileEvents::JoinOrderDPhypProvenEdgeCandidatesAssessed, dphyp_attempt_metrics.proven_edge_candidates_assessed);
+    ProfileEvents::increment(
+        ProfileEvents::JoinOrderDPhypProvenEdgeCandidatesRejected, dphyp_attempt_metrics.proven_edge_candidates_rejected);
+    ProfileEvents::increment(ProfileEvents::JoinOrderDPhypProvenSyntheticEdges, dphyp_attempt_metrics.proven_synthetic_edges);
+    ProfileEvents::increment(ProfileEvents::JoinOrderDPhypCandidatesAdmitted, dphyp_attempt_metrics.candidates_admitted);
+    ProfileEvents::increment(ProfileEvents::JoinOrderDPhypCandidatesRejected, dphyp_attempt_metrics.candidates_rejected);
+    ProfileEvents::increment(ProfileEvents::JoinOrderDPhypSearchedPlans, searched_plans);
+}
 
 void JoinOrderOptimizer::checkLimits()
 {
@@ -1233,7 +1290,12 @@ void JoinOrderOptimizer::recordCanonicalCapAssessment(const JoinOrderCardinality
         LOG_TRACE(log, "Canonical join-order cap proven: upper bound {}", proof.upper_bound);
 }
 
-static BitSet toRelationBitSet(UInt32 subset)
+/// Widen a `Subset` (see `assessTransitivePair`) for the `BitSet`-only equivalence check.
+static BitSet toRelationBitSet(const BitSet & subset)
+{
+    return subset;
+}
+[[maybe_unused]] static BitSet toRelationBitSet(UInt32 subset)
 {
     return BitSet::fromUInt(subset);
 }
@@ -1255,9 +1317,12 @@ JoinOrderCardinalityEstimate JoinOrderOptimizer::estimateCardinality(
     const JoinOrderCardinalityCap & canonical_cap) const
 {
     JoinOrderCardinalityEstimate result{estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind), {}};
+    /// Proven caps exist only for `INNER ALL` regions (the query-graph builder rejects every
+    /// other region), so the kind check alone gates cap application.
     const auto * cap = getProvenCap(canonical_cap);
     if (join_kind != JoinKind::Inner || !cap)
         return result;
+
     result.upper_bound = cap->upper_bound;
     if (result.rows)
         result.rows = std::min(*result.rows, cap->upper_bound);
@@ -1332,8 +1397,9 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
 
     std::shared_ptr<DPJoinEntry> best_plan;
 
-    for (const auto & algorithm : enabled_algorithms)
+    for (size_t algorithm_index = 0; algorithm_index < enabled_algorithms.size(); ++algorithm_index)
     {
+        const auto algorithm = enabled_algorithms[algorithm_index];
         LOG_TRACE(log, "Solving join order using {} algorithm", toString(algorithm));
         switch (algorithm)
         {
@@ -1355,6 +1421,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
 
         if (best_plan)
             break;
+        if (algorithm == JoinOrderAlgorithm::DPHYP && algorithm_index + 1 < enabled_algorithms.size())
+            ProfileEvents::increment(ProfileEvents::JoinOrderDPhypFallbacks);
     }
 
     if (!best_plan)
@@ -1998,7 +2066,8 @@ void JoinOrderOptimizer::tryJoin(const BitSet & left_rels, const BitSet & right_
     }
 
     /// A predicate-free pair can be emitted only through a synthetic hyperedge, whose
-    /// installation is controlled by the independent transitive setting (see `buildHyperedges`);
+    /// installation is controlled by the independent transitive setting or the dedicated
+    /// proof-gated singleton mode (see `buildHyperedges`);
     /// `cleanupJoinPredicates` synthesizes the missing predicate for a selected transitive join
     /// after optimization. The shared assessment keeps admission, selectivity, and canonical-cap
     /// consumption consistent with the other enumerators, so a proofless candidate is costed
@@ -2014,8 +2083,12 @@ void JoinOrderOptimizer::tryJoin(const BitSet & left_rels, const BitSet & right_
         *join_kind,
         {.legacy_connected = legacy_connected, .has_cross_split_predicate = legacy_connected});
     if (!assessment.connected())
+    {
+        ++dphyp_attempt_metrics.candidates_rejected;
         return;
+    }
 
+    ++dphyp_attempt_metrics.candidates_admitted;
     evaluateJoin(left_entry->second, right_entry->second, *join_kind, connecting_predicates, assessment);
 }
 
@@ -2058,8 +2131,9 @@ DPJoinEntryPtr JoinOrderOptimizer::evaluateJoin(
 
 /// Build the hyperedge representation of the join graph used by DPhyp.
 /// Each join predicate becomes a hyperedge (left_rels, right_rels).
-/// When the independent transitive-predicate setting is enabled, column equivalence classes
-/// add synthetic edges for transitively-connected pairs.
+/// Column equivalence classes add synthetic relation-pair edges either unrestrictedly when the
+/// independent transitive-predicate setting is enabled or, in the dedicated opt-in mode, only
+/// when the exact singleton pair has a proven canonical cap without unresolved leaf obligations.
 /// The adjacency index `node_to_edge_ids` maps each relation to the hyperedges that touch it.
 void JoinOrderOptimizer::buildHyperedges()
 {
@@ -2111,25 +2185,16 @@ void JoinOrderOptimizer::buildHyperedges()
         add_hyperedge(left_rels, right_rels);
     }
 
-    /// Phase 2 adds synthetic hyperedges for transitively-connected relation pairs and is
-    /// authorized only by the independent transitive-predicate setting. Column equivalence
-    /// classes may be materialized solely for canonical proof lookup
-    /// (`query_plan_optimize_join_order_use_proven_uniqueness`); their existence alone must not
-    /// enlarge the search topology, its budget consumption, or the fallback behavior.
-    /// Unique-key proofs cannot authorize static topology either: they are specific to an
-    /// exact subset pair and its row estimates, neither of which exists before enumeration,
-    /// and a proven composite-key cut does not imply any proven singleton cut that a
-    /// relation-pair edge could represent. Canonical cardinality caps therefore apply only
-    /// to candidates reachable through explicit predicates when the transitive setting is
-    /// off.
-    if (!transitive_predicates_enabled)
+    dphyp_attempt_metrics.explicit_hyperedges = hyperedges.size();
+
+    /// Phase 2 has three modes. The independent transitive setting installs every
+    /// class-connected relation pair. The dedicated default-off mode assesses exact
+    /// singleton pairs using static leaf estimates and installs only dischargeable Proven pairs.
+    /// Otherwise Policy A returns with precisely the explicit topology above.
+    if (!transitive_predicates_enabled && !dphyp_proven_edges_enabled)
         return;
 
-    /// Column equivalence classes (e.g. A.key=B.key AND B.key=C.key implies A.key=C.key)
-    /// connect relations that have no direct predicate. Without these edges DPhyp's
-    /// neighborhood traversal would never discover the pair.
-
-    /// Build a connectivity matrix from explicit edges to avoid duplicating them.
+    /// Build a connectivity matrix from explicit singleton edges to avoid duplicating them.
     std::vector<BitSet> connected_rels(num_relations);
     for (const auto & hyperedge : hyperedges)
     {
@@ -2142,15 +2207,17 @@ void JoinOrderOptimizer::buildHyperedges()
         }
     }
 
+    /// The equivalence map and class identities are pointer-hashed. Gather all normalized
+    /// relation pairs first, then sort and deduplicate so hyperedge ids are deterministic.
     using ConstClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
     std::unordered_set<ConstClassPtr> processed_classes;
+    std::vector<std::pair<size_t, size_t>> relation_pairs;
 
     for (const auto & [member, equiv_class] : query_graph.column_equivalences.getMemberToClassMap())
     {
         if (!equiv_class || !processed_classes.insert(equiv_class).second)
             continue;
 
-        /// Collect all distinct relations in this equivalence class.
         BitSet seen_rels;
         std::vector<size_t> class_rels;
         for (const auto & column : *equiv_class)
@@ -2162,24 +2229,53 @@ void JoinOrderOptimizer::buildHyperedges()
                 class_rels.push_back(*relation);
             }
         }
-
+        std::ranges::sort(class_rels);
         for (size_t i = 0; i < class_rels.size(); ++i)
         {
             for (size_t j = i + 1; j < class_rels.size(); ++j)
             {
-                if (connected_rels[class_rels[i]].test(class_rels[j]))
-                    continue;
-
-                connected_rels[class_rels[i]].set(class_rels[j]);
-                connected_rels[class_rels[j]].set(class_rels[i]);
-
-                BitSet left_singleton;
-                BitSet right_singleton;
-                left_singleton.set(class_rels[i]);
-                right_singleton.set(class_rels[j]);
-                add_hyperedge(left_singleton, right_singleton);
+                relation_pairs.emplace_back(class_rels[i], class_rels[j]);
             }
         }
+    }
+
+    std::ranges::sort(relation_pairs);
+    relation_pairs.erase(std::unique(relation_pairs.begin(), relation_pairs.end()), relation_pairs.end());
+
+    for (const auto [left_relation, right_relation] : relation_pairs)
+    {
+        if (connected_rels[left_relation].test(right_relation))
+            continue;
+
+        BitSet left_singleton;
+        BitSet right_singleton;
+        left_singleton.set(left_relation);
+        right_singleton.set(right_relation);
+
+        if (!transitive_predicates_enabled)
+        {
+            ++dphyp_attempt_metrics.proven_edge_candidates_assessed;
+            const auto assessment = assessTransitivePair(
+                left_singleton,
+                right_singleton,
+                query_graph.relation_stats[left_relation].estimated_rows,
+                query_graph.relation_stats[right_relation].estimated_rows);
+            /// A topology proof is consumed before either leaf can enforce an intra-group
+            /// equality obligation. Exact singleton proofs normally have no such obligations;
+            /// reject defensively if the provider reports one so topology never relies on a
+            /// debug-only finalization check.
+            const auto * proven_cap = getProvenCap(assessment.canonical_cap);
+            if (!assessment.admitted || !proven_cap || proven_cap->obligation_classes)
+            {
+                ++dphyp_attempt_metrics.proven_edge_candidates_rejected;
+                continue;
+            }
+            ++dphyp_attempt_metrics.proven_synthetic_edges;
+        }
+
+        connected_rels[left_relation].set(right_relation);
+        connected_rels[right_relation].set(left_relation);
+        add_hyperedge(left_singleton, right_singleton);
     }
 }
 
@@ -2403,6 +2499,11 @@ void JoinOrderOptimizer::enumerateCsgRec(const BitSet & csg, const BitSet & excl
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
 {
+    resetCandidateState();
+    dphyp_attempt_metrics = {};
+    searched_plans = 0;
+    SCOPE_EXIT(flushDPhypAttemptMetrics());
+
     const size_t num_relations = query_graph.relation_stats.size();
 
     /// DPhyp's subset enumeration uses a 64-bit bitmask, so it cannot handle neighborhoods
@@ -2415,13 +2516,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
 
     dphyp_unsupported_predicate = false;
     search_budget_exceeded = false;
-    searched_plans = 0;
 
     /// Initialize dp_table with a leaf entry for each base relation.
-    /// Also reset the per-edge selectivity cache so this run is independent of any
-    /// earlier algorithm in the fallback chain.
-    dp_table.clear();
-    expression_selectivity.clear();
     for (size_t i = 0; i < num_relations; ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
@@ -2580,22 +2676,30 @@ DPJoinEntryPtr optimizeJoinOrder(
 {
     if (debug_info)
         *debug_info = {};
+
     if (query_graph.relation_stats.size() <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinOrderOptimizer: number of relations must be greater than 1");
+
+    /// Equivalence classes feed transitive connectivity, canonical proof lookup, and the
+    /// equality-cut materialization in `finalizeSelectedPlan`, which reuses the
+    /// optimizer-owned copy inside the moved graph.
     if (optimization_settings.enable_join_transitive_predicates
         || optimization_settings.query_plan_optimize_join_order_use_proven_uniqueness)
         query_graph.buildColumnEquivalences();
+
     JoinOrderOptimizer reorderer(
         std::move(query_graph),
         optimization_settings.query_plan_optimize_join_order_algorithm,
         optimization_settings.query_plan_optimize_join_order_max_searched_plans,
-        optimization_settings.query_plan_optimize_join_order_use_proven_uniqueness,
-        optimization_settings.enable_join_transitive_predicates,
-        optimization_settings.query_plan_optimize_join_order_data_property_diagnostics,
+        {.proven_uniqueness_enabled = optimization_settings.query_plan_optimize_join_order_use_proven_uniqueness,
+         .dphyp_proven_edges_enabled = optimization_settings.query_plan_optimize_join_order_dphyp_proven_edges,
+         .transitive_predicates_enabled = optimization_settings.enable_join_transitive_predicates,
+         .diagnostics_enabled = optimization_settings.query_plan_optimize_join_order_data_property_diagnostics},
         debug_info);
     auto best_plan = reorderer.solve();
     if (!best_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");
+
     reorderer.finalizeSelectedPlan(best_plan);
     return best_plan;
 }

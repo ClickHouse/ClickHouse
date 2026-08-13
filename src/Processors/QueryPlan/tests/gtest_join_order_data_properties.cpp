@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Common/ProfileEvents.h>
 #include <Common/tests/gtest_global_register.h>
 
 #include <array>
@@ -17,6 +18,18 @@
 
 using namespace DB;
 using namespace DB::QueryPlanOptimizations;
+
+namespace ProfileEvents
+{
+extern const Event JoinOrderDPhypExplicitHyperedges;
+extern const Event JoinOrderDPhypProvenEdgeCandidatesAssessed;
+extern const Event JoinOrderDPhypProvenEdgeCandidatesRejected;
+extern const Event JoinOrderDPhypProvenSyntheticEdges;
+extern const Event JoinOrderDPhypCandidatesAdmitted;
+extern const Event JoinOrderDPhypCandidatesRejected;
+extern const Event JoinOrderDPhypSearchedPlans;
+extern const Event JoinOrderDPhypFallbacks;
+}
 
 namespace
 {
@@ -69,6 +82,44 @@ makeCatalog(const std::vector<std::pair<DataPropertySet, Block>> & leaves, bool 
         builder.appendLeaf(properties, header);
     return std::move(builder).finalize(
         diagnostics ? JoinOrderDataPropertyCatalogMode::Diagnostics : JoinOrderDataPropertyCatalogMode::Costing);
+}
+
+struct DPhypCounterSnapshot
+{
+    ProfileEvents::Count explicit_hyperedges = 0;
+    ProfileEvents::Count edge_candidates_assessed = 0;
+    ProfileEvents::Count edge_candidates_rejected = 0;
+    ProfileEvents::Count proven_synthetic_edges = 0;
+    ProfileEvents::Count candidates_admitted = 0;
+    ProfileEvents::Count candidates_rejected = 0;
+    ProfileEvents::Count searched_plans = 0;
+    ProfileEvents::Count fallbacks = 0;
+};
+
+DPhypCounterSnapshot getDPhypCounterSnapshot()
+{
+    return {
+        ProfileEvents::global_counters[ProfileEvents::JoinOrderDPhypExplicitHyperedges],
+        ProfileEvents::global_counters[ProfileEvents::JoinOrderDPhypProvenEdgeCandidatesAssessed],
+        ProfileEvents::global_counters[ProfileEvents::JoinOrderDPhypProvenEdgeCandidatesRejected],
+        ProfileEvents::global_counters[ProfileEvents::JoinOrderDPhypProvenSyntheticEdges],
+        ProfileEvents::global_counters[ProfileEvents::JoinOrderDPhypCandidatesAdmitted],
+        ProfileEvents::global_counters[ProfileEvents::JoinOrderDPhypCandidatesRejected],
+        ProfileEvents::global_counters[ProfileEvents::JoinOrderDPhypSearchedPlans],
+        ProfileEvents::global_counters[ProfileEvents::JoinOrderDPhypFallbacks]};
+}
+
+DPhypCounterSnapshot operator-(const DPhypCounterSnapshot & after, const DPhypCounterSnapshot & before)
+{
+    return {
+        after.explicit_hyperedges - before.explicit_hyperedges,
+        after.edge_candidates_assessed - before.edge_candidates_assessed,
+        after.edge_candidates_rejected - before.edge_candidates_rejected,
+        after.proven_synthetic_edges - before.proven_synthetic_edges,
+        after.candidates_admitted - before.candidates_admitted,
+        after.candidates_rejected - before.candidates_rejected,
+        after.searched_plans - before.searched_plans,
+        after.fallbacks - before.fallbacks};
 }
 
 void expectCanonicalCapAssessments(
@@ -232,6 +283,110 @@ OptimizedJoinWithActions optimizeTransitiveChain(
     graph.edges.push_back(JoinActionRef::transform({b, c}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
 
     auto plan = optimizeJoinOrder(std::exchange(graph, {}), settings, debug_info);
+    return {std::exchange(actions, {}), std::exchange(plan, {})};
+}
+
+/// Four-relation mixed region where one singleton transitive edge is Proven while
+/// other class-connected singleton and larger splits remain proofless. It exposes the
+/// topology-induced searched-plan delta and candidate-specific rejection path.
+OptimizedJoinWithActions optimizeDPhypMixedTransitiveChain(const QueryPlanOptimizationSettings & settings)
+{
+    tryRegisterFunctions();
+    auto a_header = makeHeader({"a_k", "a_x"});
+    auto b_header = makeHeader({"b_x"});
+    auto c_header = makeHeader({"c_x"});
+    auto e_header = makeHeader({"e_x"});
+    auto right_header = makeHeader({"b_x", "c_x", "e_x"});
+    auto actions = std::make_unique<JoinExpressionActions>(a_header, right_header);
+    auto a_k = actions->findNode("a_k", true);
+    auto a_x = actions->findNode("a_x", true);
+    auto b_x = actions->findNode("b_x", true);
+    auto c_x = actions->findNode("c_x", true);
+    auto e_x = actions->findNode("e_x", true);
+    for (auto * action : {&a_k, &a_x})
+        action->setSourceRelations(BitSet().set(0));
+    b_x.setSourceRelations(BitSet().set(1));
+    c_x.setSourceRelations(BitSet().set(2));
+    e_x.setSourceRelations(BitSet().set(3));
+
+    QueryGraph graph;
+    graph.relation_stats
+        = {{.estimated_rows = 10,
+            .column_stats = {{"a_k", ColumnStats{.num_distinct_values = 10}}, {"a_x", ColumnStats{.num_distinct_values = 10}}},
+            .table_name = "a"},
+           {.estimated_rows = 1000000, .column_stats = {{"b_x", ColumnStats{.num_distinct_values = 10}}}, .table_name = "b"},
+           {.estimated_rows = 10, .column_stats = {{"c_x", ColumnStats{.num_distinct_values = 10}}}, .table_name = "c"},
+           {.estimated_rows = 1000000, .column_stats = {{"e_x", ColumnStats{.num_distinct_values = 10}}}, .table_name = "e"}};
+    graph.data_property_catalog = makeCatalog(
+        {{makeProperties(a_header, {0}), a_header},
+         {makeProperties(b_header), b_header},
+         {makeProperties(c_header), c_header},
+         {makeProperties(e_header), e_header}});
+    graph.edges.push_back(JoinActionRef::transform({a_x, b_x}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+    graph.edges.push_back(JoinActionRef::transform({b_x, c_x}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+    graph.edges.push_back(JoinActionRef::transform({a_k, e_x}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+    graph.edges.push_back(JoinActionRef::transform({e_x, a_x}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+
+    auto plan = optimizeJoinOrder(std::exchange(graph, {}), settings);
+    return {std::exchange(actions, {}), std::exchange(plan, {})};
+}
+
+/// Composite-only transitive opportunity: A is unique on (a_x, a_y), while the
+/// two key components reach different relations C and D through external bridges.
+/// Neither singleton A-C nor A-D cut proves the composite key; A-{C,D} does.
+OptimizedJoinWithActions optimizeCompositeOnlyTransitiveTopology(const QueryPlanOptimizationSettings & settings)
+{
+    tryRegisterFunctions();
+    auto a_header = makeHeader({"a_x", "a_y"});
+    auto b_header = makeHeader({"b_x"});
+    auto c_header = makeHeader({"c_x", "c_z"});
+    auto d_header = makeHeader({"d_y", "d_z"});
+    auto e_header = makeHeader({"e_y"});
+    auto right_header = makeHeader({"b_x", "c_x", "c_z", "d_y", "d_z", "e_y"});
+    auto actions = std::make_unique<JoinExpressionActions>(a_header, right_header);
+    auto a_x = actions->findNode("a_x", true);
+    auto a_y = actions->findNode("a_y", true);
+    auto b_x = actions->findNode("b_x", true);
+    auto c_x = actions->findNode("c_x", true);
+    auto c_z = actions->findNode("c_z", true);
+    auto d_y = actions->findNode("d_y", true);
+    auto d_z = actions->findNode("d_z", true);
+    auto e_y = actions->findNode("e_y", true);
+    for (auto * action : {&a_x, &a_y})
+        action->setSourceRelations(BitSet().set(0));
+    b_x.setSourceRelations(BitSet().set(1));
+    for (auto * action : {&c_x, &c_z})
+        action->setSourceRelations(BitSet().set(2));
+    for (auto * action : {&d_y, &d_z})
+        action->setSourceRelations(BitSet().set(3));
+    e_y.setSourceRelations(BitSet().set(4));
+
+    QueryGraph graph;
+    graph.relation_stats
+        = {{.estimated_rows = 10,
+            .column_stats = {{"a_x", ColumnStats{.num_distinct_values = 10}}, {"a_y", ColumnStats{.num_distinct_values = 10}}},
+            .table_name = "a"},
+           {.estimated_rows = 1000000, .column_stats = {{"b_x", ColumnStats{.num_distinct_values = 10}}}, .table_name = "b"},
+           {.estimated_rows = 10,
+            .column_stats = {{"c_x", ColumnStats{.num_distinct_values = 10}}, {"c_z", ColumnStats{.num_distinct_values = 10}}},
+            .table_name = "c"},
+           {.estimated_rows = 10,
+            .column_stats = {{"d_y", ColumnStats{.num_distinct_values = 10}}, {"d_z", ColumnStats{.num_distinct_values = 10}}},
+            .table_name = "d"},
+           {.estimated_rows = 1000000, .column_stats = {{"e_y", ColumnStats{.num_distinct_values = 10}}}, .table_name = "e"}};
+    graph.data_property_catalog = makeCatalog(
+        {{makeProperties(a_header, {0, 1}), a_header},
+         {makeProperties(b_header), b_header},
+         {makeProperties(c_header), c_header},
+         {makeProperties(d_header), d_header},
+         {makeProperties(e_header), e_header}});
+    graph.edges.push_back(JoinActionRef::transform({a_x, b_x}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+    graph.edges.push_back(JoinActionRef::transform({b_x, c_x}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+    graph.edges.push_back(JoinActionRef::transform({a_y, e_y}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+    graph.edges.push_back(JoinActionRef::transform({e_y, d_y}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+    graph.edges.push_back(JoinActionRef::transform({c_z, d_z}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+
+    auto plan = optimizeJoinOrder(std::exchange(graph, {}), settings);
     return {std::exchange(actions, {}), std::exchange(plan, {})};
 }
 
@@ -736,7 +891,8 @@ TEST(JoinOrderDataProperties, AllAlgorithmsConsumeCanonicalCaps)
     settings.enable_join_transitive_predicates = false;
     settings.query_plan_optimize_join_order_data_property_diagnostics = false;
 
-    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE, JoinOrderAlgorithm::DPSUB};
+    constexpr std::array algorithms{
+        JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE, JoinOrderAlgorithm::DPSUB, JoinOrderAlgorithm::DPHYP};
     for (const auto algorithm : algorithms)
     {
         settings.query_plan_optimize_join_order_algorithm = {algorithm};
@@ -807,7 +963,8 @@ TEST(JoinOrderDataProperties, MissingRowsBypassCanonicalLookupsForAllAlgorithms)
     settings.query_plan_optimize_join_order_data_property_diagnostics = false;
     settings.query_plan_optimize_join_order_use_proven_uniqueness = true;
 
-    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE, JoinOrderAlgorithm::DPSUB};
+    constexpr std::array algorithms{
+        JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE, JoinOrderAlgorithm::DPSUB, JoinOrderAlgorithm::DPHYP};
     for (const auto algorithm : algorithms)
     {
         settings.query_plan_optimize_join_order_algorithm = {algorithm};
@@ -835,7 +992,8 @@ TEST(JoinOrderDataProperties, AllAlgorithmsConsumeCanonicalTriangleCaps)
     settings.enable_join_transitive_predicates = false;
     settings.query_plan_optimize_join_order_data_property_diagnostics = false;
 
-    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE, JoinOrderAlgorithm::DPSUB};
+    constexpr std::array algorithms{
+        JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE, JoinOrderAlgorithm::DPSUB, JoinOrderAlgorithm::DPHYP};
     for (const auto algorithm : algorithms)
     {
         settings.query_plan_optimize_join_order_algorithm = {algorithm};
@@ -885,7 +1043,8 @@ TEST(JoinOrderDataProperties, PhysicalJoinMaterializesEveryMemberUsedByCanonical
     settings.enable_join_transitive_predicates = false;
     settings.query_plan_optimize_join_order_use_proven_uniqueness = true;
 
-    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE, JoinOrderAlgorithm::DPSUB};
+    constexpr std::array algorithms{
+        JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE, JoinOrderAlgorithm::DPSUB, JoinOrderAlgorithm::DPHYP};
     for (const auto algorithm : algorithms)
     {
         settings.query_plan_optimize_join_order_algorithm = {algorithm};
@@ -1102,6 +1261,309 @@ TEST(JoinOrderDataProperties, ProvenCanonicalAssessmentAdmitsTransitiveCandidate
         EXPECT_DOUBLE_EQ(ac->cost, 10.0);
         EXPECT_FALSE(ac->join_operator.expression.empty());
     }
+}
+
+TEST(JoinOrderDataProperties, DPhypProoflessTransitiveChainPreservesFeatureOffPlan)
+{
+    Settings source_settings;
+    QueryPlanOptimizationSettings settings(source_settings, 0, {}, ExpressionActionsSettings{}, {}, false);
+    settings.enable_join_transitive_predicates = false;
+    settings.query_plan_optimize_join_order_algorithm = {JoinOrderAlgorithm::DPHYP};
+    settings.query_plan_optimize_join_order_data_property_diagnostics = false;
+
+    constexpr std::array outcomes{
+        TransitiveChainCanonicalOutcome::NotProven,
+        TransitiveChainCanonicalOutcome::MissingInputRows,
+        TransitiveChainCanonicalOutcome::Unsupported};
+    for (const auto outcome : outcomes)
+    {
+        SCOPED_TRACE(static_cast<int>(outcome));
+        settings.query_plan_optimize_join_order_use_proven_uniqueness = false;
+        const auto feature_off = optimizeTransitiveChain(settings, outcome);
+        settings.query_plan_optimize_join_order_use_proven_uniqueness = true;
+        const auto canonical_on = optimizeTransitiveChain(settings, outcome);
+
+        expectSamePlan(feature_off.plan, canonical_on.plan);
+        EXPECT_FALSE(findEntry(canonical_on.plan, BitSet().set(0).set(2)));
+        expectInnerJoinsHaveExpressions(canonical_on.plan);
+    }
+}
+
+TEST(JoinOrderDataProperties, DPhypProvenCapDoesNotCreateSyntheticTopology)
+{
+    Settings source_settings;
+    QueryPlanOptimizationSettings settings(source_settings, 0, {}, ExpressionActionsSettings{}, {}, false);
+    settings.enable_join_transitive_predicates = false;
+    settings.query_plan_optimize_join_order_algorithm = {JoinOrderAlgorithm::DPHYP};
+    settings.query_plan_optimize_join_order_data_property_diagnostics = false;
+
+    settings.query_plan_optimize_join_order_use_proven_uniqueness = false;
+    settings.query_plan_optimize_join_order_dphyp_proven_edges = true;
+    const auto feature_off = optimizeTransitiveChain(settings, TransitiveChainCanonicalOutcome::Proven);
+    EXPECT_FALSE(findEntry(feature_off.plan, BitSet().set(0).set(2)));
+
+    /// Policy A: proofs are candidate-specific and cannot authorize static hypergraph topology,
+    /// so even a Proven canonical cut must not let DPhyp discover the transitive pair.
+    /// Greedy and DPsize admit this candidate through their per-pair assessment instead
+    /// (see `ProvenCanonicalAssessmentAdmitsTransitiveCandidate`).
+    settings.query_plan_optimize_join_order_use_proven_uniqueness = true;
+    settings.query_plan_optimize_join_order_dphyp_proven_edges = false;
+    const auto canonical_on = optimizeTransitiveChain(settings, TransitiveChainCanonicalOutcome::Proven);
+    EXPECT_FALSE(findEntry(canonical_on.plan, BitSet().set(0).set(2)));
+    expectInnerJoinsHaveExpressions(canonical_on.plan);
+}
+
+TEST(JoinOrderDataProperties, DPhypProvenSingletonEdgeDiscoversTransitiveJoin)
+{
+    Settings source_settings;
+    QueryPlanOptimizationSettings settings(source_settings, 0, {}, ExpressionActionsSettings{}, {}, false);
+    settings.enable_join_transitive_predicates = false;
+    settings.query_plan_optimize_join_order_algorithm = {JoinOrderAlgorithm::DPHYP};
+    settings.query_plan_optimize_join_order_use_proven_uniqueness = true;
+    settings.query_plan_optimize_join_order_data_property_diagnostics = false;
+
+    settings.query_plan_optimize_join_order_dphyp_proven_edges = false;
+    auto counters_before = getDPhypCounterSnapshot();
+    const auto policy_a = optimizeDPhypMixedTransitiveChain(settings);
+    const auto policy_a_counters = getDPhypCounterSnapshot() - counters_before;
+    EXPECT_FALSE(findEntry(policy_a.plan, BitSet().set(0).set(2)));
+    EXPECT_EQ(policy_a_counters.edge_candidates_assessed, 0u);
+    EXPECT_EQ(policy_a_counters.proven_synthetic_edges, 0u);
+    EXPECT_EQ(policy_a_counters.searched_plans, 24u);
+
+    settings.query_plan_optimize_join_order_dphyp_proven_edges = true;
+    counters_before = getDPhypCounterSnapshot();
+    const auto optimized = optimizeDPhypMixedTransitiveChain(settings);
+    const auto counters = getDPhypCounterSnapshot() - counters_before;
+
+    const auto ac = findEntry(optimized.plan, BitSet().set(0).set(2));
+    ASSERT_TRUE(ac) << optimized.plan->dump();
+    EXPECT_EQ(ac->join_operator.kind, JoinKind::Inner);
+    EXPECT_EQ(ac->estimated_rows, 10u);
+    EXPECT_TRUE(ac->used_canonical_cap);
+    /// An exact singleton proof has no equality links internal to either singleton,
+    /// so its obligation ledger is present but empty; the synthesized A-C cut below
+    /// is still audited by selected-plan finalization.
+    EXPECT_EQ(ac->canonical_cap_obligations, 0u);
+    EXPECT_TRUE(planContainsEquality(optimized.plan, "a_x", "c_x"));
+    EXPECT_FALSE(ac->join_operator.expression.empty());
+    expectInnerJoinsHaveExpressions(optimized.plan);
+
+    EXPECT_EQ(counters.explicit_hyperedges, 4u);
+    EXPECT_EQ(counters.edge_candidates_assessed, 3u);
+    EXPECT_EQ(counters.edge_candidates_rejected, 2u);
+    EXPECT_EQ(counters.proven_synthetic_edges, 1u);
+    EXPECT_EQ(counters.candidates_admitted, 14u);
+    EXPECT_EQ(counters.candidates_rejected, 1u);
+    EXPECT_EQ(counters.searched_plans, 33u);
+    EXPECT_EQ(counters.searched_plans - policy_a_counters.searched_plans, 9u);
+    EXPECT_EQ(counters.fallbacks, 0u);
+}
+
+TEST(JoinOrderDataProperties, DPhypProvenTopologyCarriesAndDischargesCompositeObligations)
+{
+    Settings source_settings;
+    QueryPlanOptimizationSettings settings(source_settings, 0, {}, ExpressionActionsSettings{}, {}, false);
+    settings.enable_join_transitive_predicates = false;
+    settings.query_plan_optimize_join_order_algorithm = {JoinOrderAlgorithm::DPHYP};
+    settings.query_plan_optimize_join_order_use_proven_uniqueness = true;
+    settings.query_plan_optimize_join_order_dphyp_proven_edges = true;
+    settings.query_plan_optimize_join_order_data_property_diagnostics = false;
+
+    const auto counters_before = getDPhypCounterSnapshot();
+    const auto optimized = optimizeExternalBridgeCap(settings);
+    const auto counters = getDPhypCounterSnapshot() - counters_before;
+
+    const auto ab = findEntry(optimized.plan, BitSet().set(0).set(1));
+    ASSERT_TRUE(ab) << optimized.plan->dump();
+    EXPECT_TRUE(ab->used_canonical_cap);
+    EXPECT_TRUE(planContainsEquality(optimized.plan, "a_x", "b_x"));
+
+    const auto abc = findEntry(optimized.plan, BitSet().set(0).set(1).set(2));
+    ASSERT_TRUE(abc) << optimized.plan->dump();
+    EXPECT_TRUE(abc->used_canonical_cap);
+    EXPECT_NE(abc->canonical_cap_obligations, 0u);
+    EXPECT_EQ(counters.edge_candidates_assessed, 1u);
+    EXPECT_EQ(counters.edge_candidates_rejected, 0u);
+    EXPECT_EQ(counters.proven_synthetic_edges, 1u);
+    expectInnerJoinsHaveExpressions(optimized.plan);
+}
+
+TEST(JoinOrderDataProperties, DPhypProvenEdgeSearchBudgetTriggersConfiguredFallback)
+{
+    Settings source_settings;
+    QueryPlanOptimizationSettings settings(source_settings, 0, {}, ExpressionActionsSettings{}, {}, false);
+    settings.enable_join_transitive_predicates = false;
+    settings.query_plan_optimize_join_order_algorithm = {JoinOrderAlgorithm::DPHYP, JoinOrderAlgorithm::GREEDY};
+    settings.query_plan_optimize_join_order_max_searched_plans = 24;
+    settings.query_plan_optimize_join_order_use_proven_uniqueness = true;
+    settings.query_plan_optimize_join_order_data_property_diagnostics = false;
+
+    settings.query_plan_optimize_join_order_dphyp_proven_edges = false;
+    auto counters_before = getDPhypCounterSnapshot();
+    const auto policy_a = optimizeDPhypMixedTransitiveChain(settings);
+    const auto policy_a_counters = getDPhypCounterSnapshot() - counters_before;
+    EXPECT_FALSE(findEntry(policy_a.plan, BitSet().set(0).set(2)));
+    EXPECT_EQ(policy_a_counters.searched_plans, 24u);
+    EXPECT_EQ(policy_a_counters.fallbacks, 0u);
+
+    settings.query_plan_optimize_join_order_dphyp_proven_edges = true;
+    counters_before = getDPhypCounterSnapshot();
+    const auto fallback = optimizeDPhypMixedTransitiveChain(settings);
+    const auto fallback_counters = getDPhypCounterSnapshot() - counters_before;
+    EXPECT_EQ(fallback_counters.searched_plans, 25u); /// exhaustion is deterministically max + 1
+    EXPECT_EQ(fallback_counters.fallbacks, 1u);
+    EXPECT_EQ(fallback_counters.proven_synthetic_edges, 1u);
+    const auto ac = findEntry(fallback.plan, BitSet().set(0).set(2));
+    ASSERT_TRUE(ac) << fallback.plan->dump();
+    EXPECT_TRUE(ac->used_canonical_cap);
+    EXPECT_TRUE(planContainsEquality(fallback.plan, "a_x", "c_x"));
+    expectInnerJoinsHaveExpressions(fallback.plan);
+
+    /// A failed last DPhyp attempt is an error, not a fallback to another algorithm.
+    settings.query_plan_optimize_join_order_algorithm = {JoinOrderAlgorithm::DPHYP};
+    settings.query_plan_optimize_join_order_max_searched_plans = 1;
+    counters_before = getDPhypCounterSnapshot();
+    EXPECT_THROW(optimizeDPhypMixedTransitiveChain(settings), Exception);
+    const auto no_successor_counters = getDPhypCounterSnapshot() - counters_before;
+    EXPECT_EQ(no_successor_counters.searched_plans, 2u);
+    EXPECT_EQ(no_successor_counters.fallbacks, 0u);
+}
+
+TEST(JoinOrderDataProperties, DPhypProvenEdgesFailClosedWithoutInstallableSingletonProof)
+{
+    Settings source_settings;
+    QueryPlanOptimizationSettings settings(source_settings, 0, {}, ExpressionActionsSettings{}, {}, false);
+    settings.enable_join_transitive_predicates = false;
+    settings.query_plan_optimize_join_order_algorithm = {JoinOrderAlgorithm::DPHYP};
+    settings.query_plan_optimize_join_order_use_proven_uniqueness = true;
+    settings.query_plan_optimize_join_order_data_property_diagnostics = false;
+
+    constexpr std::array outcomes{
+        TransitiveChainCanonicalOutcome::NotProven,
+        TransitiveChainCanonicalOutcome::MissingInputRows,
+        TransitiveChainCanonicalOutcome::Unsupported};
+    for (const auto outcome : outcomes)
+    {
+        SCOPED_TRACE(static_cast<int>(outcome));
+        settings.query_plan_optimize_join_order_dphyp_proven_edges = false;
+        auto counters_before = getDPhypCounterSnapshot();
+        const auto policy_a = optimizeTransitiveChain(settings, outcome);
+        const auto policy_a_counters = getDPhypCounterSnapshot() - counters_before;
+
+        settings.query_plan_optimize_join_order_dphyp_proven_edges = true;
+        counters_before = getDPhypCounterSnapshot();
+        JoinOrderOptimizationDebugInfo debug_info;
+        const auto proof_gated = optimizeTransitiveChain(settings, outcome, false, &debug_info);
+        const auto proof_gated_counters = getDPhypCounterSnapshot() - counters_before;
+
+        expectSamePlan(policy_a.plan, proof_gated.plan);
+        EXPECT_FALSE(findEntry(proof_gated.plan, BitSet().set(0).set(2)));
+        expectInnerJoinsHaveExpressions(proof_gated.plan);
+        EXPECT_EQ(policy_a_counters.explicit_hyperedges, 2u);
+        EXPECT_EQ(proof_gated_counters.explicit_hyperedges, 2u);
+        EXPECT_EQ(policy_a_counters.edge_candidates_assessed, 0u);
+        EXPECT_EQ(proof_gated_counters.edge_candidates_assessed, 1u);
+        EXPECT_EQ(proof_gated_counters.edge_candidates_rejected, 1u);
+        EXPECT_EQ(proof_gated_counters.proven_synthetic_edges, 0u);
+        EXPECT_EQ(proof_gated_counters.searched_plans, policy_a_counters.searched_plans);
+        EXPECT_EQ(proof_gated_counters.fallbacks, policy_a_counters.fallbacks);
+        if (outcome == TransitiveChainCanonicalOutcome::NotProven)
+            EXPECT_GT(debug_info.cap_assessments.not_proven, 0);
+        else if (outcome == TransitiveChainCanonicalOutcome::MissingInputRows)
+            EXPECT_GT(debug_info.cap_assessments.missing_input_rows, 0);
+        else if (outcome == TransitiveChainCanonicalOutcome::Unsupported)
+            EXPECT_GT(debug_info.cap_assessments.unsupported, 0);
+    }
+}
+
+TEST(JoinOrderDataProperties, DPhypCompositeOnlyProofDoesNotCreateSingletonTopology)
+{
+    Settings source_settings;
+    QueryPlanOptimizationSettings settings(source_settings, 0, {}, ExpressionActionsSettings{}, {}, false);
+    settings.enable_join_transitive_predicates = false;
+    settings.query_plan_optimize_join_order_use_proven_uniqueness = true;
+    settings.query_plan_optimize_join_order_data_property_diagnostics = false;
+
+    settings.query_plan_optimize_join_order_algorithm = {JoinOrderAlgorithm::DPHYP};
+    settings.query_plan_optimize_join_order_dphyp_proven_edges = false;
+    auto counters_before = getDPhypCounterSnapshot();
+    const auto policy_a = optimizeCompositeOnlyTransitiveTopology(settings);
+    const auto policy_a_counters = getDPhypCounterSnapshot() - counters_before;
+
+    settings.query_plan_optimize_join_order_dphyp_proven_edges = true;
+    counters_before = getDPhypCounterSnapshot();
+    const auto proof_gated = optimizeCompositeOnlyTransitiveTopology(settings);
+    const auto proof_gated_counters = getDPhypCounterSnapshot() - counters_before;
+
+    const BitSet acd = BitSet().set(0).set(2).set(3);
+    expectSamePlan(policy_a.plan, proof_gated.plan);
+    EXPECT_FALSE(findEntry(proof_gated.plan, acd));
+    EXPECT_EQ(proof_gated_counters.edge_candidates_assessed, 2u);
+    EXPECT_EQ(proof_gated_counters.edge_candidates_rejected, 2u);
+    EXPECT_EQ(proof_gated_counters.proven_synthetic_edges, 0u);
+    EXPECT_EQ(proof_gated_counters.searched_plans, policy_a_counters.searched_plans);
+    EXPECT_EQ(proof_gated_counters.fallbacks, 0u);
+
+    /// DPsize assesses the composite A-{C,D} split dynamically and proves the fixture's
+    /// intended cap; DPhyp's singleton-only topology intentionally cannot discover it.
+    settings.query_plan_optimize_join_order_algorithm = {JoinOrderAlgorithm::DPSIZE};
+    const auto dpsize = optimizeCompositeOnlyTransitiveTopology(settings);
+    const auto dpsize_acd = findEntry(dpsize.plan, acd);
+    ASSERT_TRUE(dpsize_acd) << dpsize.plan->dump();
+    EXPECT_TRUE(dpsize_acd->used_canonical_cap);
+    EXPECT_EQ(dpsize_acd->canonical_cap_obligations, 0u);
+    EXPECT_TRUE(planContainsEquality(dpsize.plan, "a_x", "c_x"));
+    EXPECT_TRUE(planContainsEquality(dpsize.plan, "a_y", "d_y"));
+    expectInnerJoinsHaveExpressions(dpsize.plan);
+}
+
+TEST(JoinOrderDataProperties, DPhypCrossDomainEqualitiesDoNotCreateTransitiveTopology)
+{
+    Settings source_settings;
+    QueryPlanOptimizationSettings settings(source_settings, 0, {}, ExpressionActionsSettings{}, {}, false);
+    settings.enable_join_transitive_predicates = false;
+    settings.query_plan_optimize_join_order_algorithm = {JoinOrderAlgorithm::DPHYP};
+    settings.query_plan_optimize_join_order_use_proven_uniqueness = true;
+    settings.query_plan_optimize_join_order_data_property_diagnostics = false;
+
+    settings.query_plan_optimize_join_order_dphyp_proven_edges = false;
+    const auto policy_a = optimizeCrossDomainEqualityChain(settings, /*trusted_keys=*/true);
+    settings.query_plan_optimize_join_order_dphyp_proven_edges = true;
+    const auto counters_before = getDPhypCounterSnapshot();
+    const auto proof_gated = optimizeCrossDomainEqualityChain(settings, /*trusted_keys=*/true);
+    const auto counters = getDPhypCounterSnapshot() - counters_before;
+
+    expectSamePlan(policy_a.plan, proof_gated.plan);
+    EXPECT_FALSE(findEntry(proof_gated.plan, BitSet().set(0).set(2)));
+    EXPECT_EQ(counters.edge_candidates_assessed, 0u);
+    EXPECT_EQ(counters.edge_candidates_rejected, 0u);
+    EXPECT_EQ(counters.proven_synthetic_edges, 0u);
+    EXPECT_EQ(counters.candidates_rejected, 0u);
+    EXPECT_EQ(counters.fallbacks, 0u);
+    expectInnerJoinsHaveExpressions(proof_gated.plan);
+}
+
+TEST(JoinOrderDataProperties, DPhypIndependentTransitiveSettingStillDiscoversSyntheticTopology)
+{
+    Settings source_settings;
+    QueryPlanOptimizationSettings settings(source_settings, 0, {}, ExpressionActionsSettings{}, {}, false);
+    settings.enable_join_transitive_predicates = true;
+    settings.query_plan_optimize_join_order_algorithm = {JoinOrderAlgorithm::DPHYP};
+    settings.query_plan_optimize_join_order_data_property_diagnostics = false;
+
+    settings.query_plan_optimize_join_order_use_proven_uniqueness = false;
+    const auto feature_off = optimizeTransitiveChain(settings, TransitiveChainCanonicalOutcome::NotProven);
+    settings.query_plan_optimize_join_order_use_proven_uniqueness = true;
+    const auto canonical_on = optimizeTransitiveChain(settings, TransitiveChainCanonicalOutcome::NotProven);
+
+    expectSamePlan(feature_off.plan, canonical_on.plan);
+    const auto ac = findEntry(canonical_on.plan, BitSet().set(0).set(2));
+    ASSERT_TRUE(ac);
+    EXPECT_EQ(ac->join_operator.kind, JoinKind::Inner);
+    EXPECT_EQ(ac->estimated_rows, 10u);
+    EXPECT_FALSE(ac->join_operator.expression.empty());
+    expectInnerJoinsHaveExpressions(canonical_on.plan);
 }
 
 TEST(JoinOrderDataProperties, DPsubProoflessTransitiveChainPreservesFeatureOffBehavior)

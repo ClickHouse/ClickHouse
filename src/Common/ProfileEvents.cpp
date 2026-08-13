@@ -449,6 +449,14 @@
     M(JoinSpillingHashJoinSwitchedToGraceJoin, "Number of times a (Concurrent)HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.", ValueType::Number) \
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \
     M(JoinOptimizeMicroseconds, "Total time spent executing JOIN plan optimizations.", ValueType::Microseconds) \
+    M(JoinOrderDPhypExplicitHyperedges, "Number of explicit predicate hyperedges installed by DPhyp attempts.", ValueType::Number) \
+    M(JoinOrderDPhypProvenEdgeCandidatesAssessed, "Number of singleton transitive edge candidates assessed by proof-gated DPhyp topology construction.", ValueType::Number) \
+    M(JoinOrderDPhypProvenEdgeCandidatesRejected, "Number of singleton transitive edge candidates rejected by proof-gated DPhyp topology construction.", ValueType::Number) \
+    M(JoinOrderDPhypProvenSyntheticEdges, "Number of proven singleton transitive hyperedges installed by DPhyp attempts.", ValueType::Number) \
+    M(JoinOrderDPhypCandidatesAdmitted, "Number of DPhyp candidates admitted by candidate-specific assessment.", ValueType::Number) \
+    M(JoinOrderDPhypCandidatesRejected, "Number of DPhyp candidates rejected by candidate-specific assessment.", ValueType::Number) \
+    M(JoinOrderDPhypSearchedPlans, "Number of partial plans consumed from the search budget by DPhyp attempts.", ValueType::Number) \
+    M(JoinOrderDPhypFallbacks, "Number of failed DPhyp attempts followed by another configured join-order algorithm.", ValueType::Number) \
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \
     M(QueryParseMicroseconds, "Total time spent parsing the query text into an AST.", ValueType::Microseconds) \
     M(QueryAnalysisMicroseconds, "Total time spent building the query tree and running analyzer passes (resolves identifiers, types, expressions).", ValueType::Microseconds) \

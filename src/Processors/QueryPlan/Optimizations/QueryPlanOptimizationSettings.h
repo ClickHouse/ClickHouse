@@ -92,6 +92,8 @@ struct QueryPlanOptimizationSettings
     UInt64 query_plan_optimize_join_order_max_searched_plans;
     /// Use proven uniqueness to cap join-order cardinality estimates
     bool query_plan_optimize_join_order_use_proven_uniqueness = false;
+    /// Let DPhyp install singleton transitive edges backed by proven canonical caps
+    bool query_plan_optimize_join_order_dphyp_proven_edges = false;
     /// Collect and emit join-order data-property diagnostics
     bool query_plan_optimize_join_order_data_property_diagnostics = false;
     /// When non-zero, randomize statistics for join reordering using this value as seed

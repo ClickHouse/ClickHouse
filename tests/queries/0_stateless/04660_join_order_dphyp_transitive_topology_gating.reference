@@ -1,0 +1,46 @@
+case 1: chain, unique keys off - dphyp plan
+        Type: INNER
+        Clauses: [(__table2.key) = (__table1.key)]
+              Type: INNER
+              Clauses: [(__table2.key) = (__table3.key)]
+                    ReadFromMergeTree (default.ttg_fact)
+                    ReadFromMergeTree (default.ttg_dim_b)
+              ReadFromMergeTree (default.ttg_dim_a)
+case 1: chain, unique keys on - dphyp plan (must be identical)
+        Type: INNER
+        Clauses: [(__table2.key) = (__table1.key)]
+              Type: INNER
+              Clauses: [(__table2.key) = (__table3.key)]
+                    ReadFromMergeTree (default.ttg_fact)
+                    ReadFromMergeTree (default.ttg_dim_b)
+              ReadFromMergeTree (default.ttg_dim_a)
+case 1: chain - result check
+10000
+case 2: proven keys, unique keys on - dphyp plan
+        Type: INNER
+        Clauses: [(__table3.key) = (__table1.key)]
+              Type: INNER
+              Clauses: [(__table3.key) = (__table4.key)]
+                    ReadFromMergeTree (default.ttg_fact)
+                        ReadFromMergeTree (default.ttg_dim_b)
+                  ReadFromMergeTree (default.ttg_dim_a)
+case 2: proven keys - result check
+10000
+case 3: transitive setting on, unique keys off - dphyp plan
+        Type: INNER
+        Clauses: [(__table2.key) = (__table1.key)]
+              ReadFromMergeTree (default.ttg_fact)
+              Type: INNER
+              Clauses: [(__table1.key) = (__table3.key)]
+                    ReadFromMergeTree (default.ttg_dim_a)
+                    ReadFromMergeTree (default.ttg_dim_b)
+case 3: transitive setting on, unique keys on - dphyp plan (must be identical)
+        Type: INNER
+        Clauses: [(__table2.key) = (__table1.key)]
+              ReadFromMergeTree (default.ttg_fact)
+              Type: INNER
+              Clauses: [(__table1.key) = (__table3.key)]
+                    ReadFromMergeTree (default.ttg_dim_a)
+                    ReadFromMergeTree (default.ttg_dim_b)
+case 3: transitive setting on - result check
+10000
