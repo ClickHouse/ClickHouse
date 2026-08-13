@@ -1628,15 +1628,19 @@ Port for exchanging data between ClickHouse servers over `<HTTPS>`.
 <interserver_https_port>9010</interserver_https_port>
 ```
 )", 0) \
-    DECLARE(String, include_from, "/etc/metrika.xml", R"(
+    DECLARE(String, include_from, "", R"(
 The path to the file with substitutions. Both XML and YAML formats are supported.
+
+Empty by default, which means that no substitutions file is used. Before version 26.8 the file `/etc/metrika.xml` was used implicitly whenever it existed; if you rely on it, specify the path explicitly.
+
+Note that configuration files that are loaded separately from the main server configuration — the users' configuration (e.g. `users.xml` when it is not included in the main file) and XML dictionary configurations — read the `include_from` element from their own contents, not from the server configuration. Each such file that relies on substitutions needs its own `include_from` element.
 
 For more information, see the section [Configuration files](/operations/configuration-files).
 
 **Example**
 
 ```xml
-<include_from>/etc/metrica.xml</include_from>
+<include_from>/etc/clickhouse-server/substitutions.xml</include_from>
 ```
 )", 0) \
     DECLARE(String, tmp_path, "/var/lib/clickhouse/tmp/", R"(
@@ -2686,9 +2690,8 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                         /// the main config's `<include_from>`, so only the single merged value (read
                         /// from the merged `config` below) reflects the source `ConfigProcessor`
                         /// actually uses. Unioning the raw pre-merge sources here would keep a
-                        /// stale/overridden source, causing both false negatives (the stale source
-                        /// whitelists an unknown key) and false positives (a removed source wrongly
-                        /// suppresses the `/etc/metrika.xml` fallback). The users config is a separate
+                        /// stale/overridden source, causing false negatives (the stale source
+                        /// whitelists an unknown key). The users config is a separate
                         /// `ConfigProcessor` invocation whose merged `<include_from>` is not exposed
                         /// on the server `config`, so record its raw declarations for the caller to
                         /// replay the merge across the users config's own fragment chain. Every
@@ -2827,15 +2830,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             server_include_from_paths.insert(resolved_include_from);
             include_from_paths.insert(std::move(resolved_include_from));
         }
-
-        /// Whether the merged (active) server config declares an explicit `<include_from>`. Derived
-        /// from the merged `config`, never from the raw pre-merge fragments, mirroring
-        /// `ConfigProcessor::processConfig`, which falls back to the default `/etc/metrika.xml`
-        /// substitution source only when the *processed* config declares no `<include_from>` of its
-        /// own; the metrika default is then used to resolve top-level `<include incl="X"/>` refs. A
-        /// `config.d` fragment that removes the main config's `<include_from>` therefore correctly
-        /// re-enables the metrika fallback, and one that replaces it does not spuriously suppress it.
-        const bool server_config_has_include_from = config.has("include_from");
 
         /// Resolve the *active* users config path exactly as `AccessControl::addStoragesFromMainConfig`
         /// does, so we never pull `incl`/`include_from` exemptions from an inactive users config tree
@@ -3112,22 +3106,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             return;
         }
 
-        /// Mirror `ConfigProcessor::processConfig`: when the server config declares no explicit
-        /// `<include_from>`, the processor still uses the default source `/etc/metrika.xml` if it
-        /// exists. A top-level `<include incl="X"/>` then imports `<X>`'s children from it, so seed
-        /// the same default here (only when there is such a reference to resolve against it) —
-        /// otherwise those imported top-level keys would be wrongly rejected as unknown.
-        if (!server_config_has_include_from && !top_level_include_refs.empty())
-        {
-            static const std::string default_include_from = "/etc/metrika.xml";
-            if (fs::exists(default_include_from))
-            {
-                /// The server's default substitution source, used to resolve server include refs.
-                server_include_from_paths.insert(default_include_from);
-                include_from_paths.insert(default_include_from);
-            }
-        }
-
         for (const auto & include_from_path : include_from_paths)
         {
             if (!fs::exists(include_from_path))
@@ -3137,7 +3115,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             /// the source file is itself merged into the server config (it lives under
             /// `config.d`/`conf.d`, so `ConfigProcessor` copies its top-level children into the
             /// loaded config). An external `<include_from>` source that is *only* a substitution
-            /// lookup table (e.g. `/etc/metrika.xml`) contributes no top-level key of its own —
+            /// lookup table contributes no top-level key of its own —
             /// `ConfigProcessor::processIncludes` reads it solely to resolve `incl` references — so
             /// exempting its tags would let a genuinely unknown top-level key pass merely because the
             /// lookup table happens to define a tag of the same name, masking exactly the typo /

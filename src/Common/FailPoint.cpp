@@ -74,6 +74,13 @@ static struct InitFiu
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
+    REGULAR(azure_inject_forbidden_response) \
+    ONCE(azure_inject_forbidden_response_once) \
+    REGULAR(azure_inject_auth_failure_on_request) \
+    ONCE(azure_inject_auth_failure_on_request_once) \
+    REGULAR(azure_inject_poco_timeout) \
+    ONCE(azure_inject_poco_timeout_once) \
+    REGULAR(azure_inject_bad_request) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(object_storage_queue_fail_commit_after_success) \
@@ -172,6 +179,7 @@ static struct InitFiu
     REGULAR(claim_inject_stale_part_dir) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(async_insert_flush_pause_in_executor) \
+    PAUSEABLE(system_replicas_schedule_requests_pause) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
     REGULAR(replicated_merge_tree_all_replicas_stale) \
     REGULAR(zero_copy_lock_zk_fail_before_op) \
@@ -218,8 +226,11 @@ static struct InitFiu
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
+    REGULAR(mutate_task_random_sleep_in_prepare) \
     PAUSEABLE(merge_task_projection_stage_pause) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
+    PAUSEABLE(rmt_mutate_task_pause_before_rename_part) \
+    PAUSEABLE(rmt_mutate_task_pause_after_temporary_part_released) \
     PAUSEABLE(rmt_mutate_task_pause_after_zero_copy_lock) \
     PAUSEABLE(merge_tree_background_task_marked_for_deletion) \
     PAUSEABLE(rmt_merge_selecting_task_pause_when_scheduled) \
@@ -247,8 +258,6 @@ static struct InitFiu
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
-    ONCE(rmt_startup_fail_after_being_leader) \
-    REGULAR(rmt_restarting_thread_fail_startup) \
     ONCE(local_object_storage_network_error_during_remove) \
     REGULAR(lightweight_show_tables) \
     REGULAR(smt_part_update_duplicated_part) \
@@ -264,6 +273,10 @@ static struct InitFiu
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
+    REGULAR(atomic_populate_fail_before_subscription) \
+    PAUSEABLE(atomic_populate_pause_before_subscription) \
+    PAUSEABLE(atomic_populate_pause_after_view_publication) \
+    PAUSEABLE(atomic_populate_pause_before_source_guard) \
     PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     ONCE(mt_skip_scheduling_merge_once) \

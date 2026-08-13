@@ -1663,6 +1663,9 @@ Enables caching of columns metadata from the file prefixes during reading from r
 DECLARE(Bool, merge_tree_use_prefixes_deserialization_thread_pool, true, R"(
 Enables usage of the thread pool for parallel prefixes reading in Wide parts in MergeTree. Size of that thread pool is controlled by server setting `max_prefixes_deserialization_thread_pool_size`.
 )", 0) \
+DECLARE(Bool, merge_tree_prefetch_json_shared_data_substreams, true, R"(
+Enables prefetching of JSON shared data substreams in Wide parts that are read by seeking to a mark. Such a prefetch reads from the beginning of the granule, which is usually not the position the substream is read from, so it can be wasted. Disable to skip these prefetches.
+)", 0) \
     DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
 Improve FINAL queries by avoiding merges across different partitions.
 
@@ -1965,8 +1968,11 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
     DECLARE(Bool, per_part_index_stats, false, R"(
 Logs index statistics per part
 )", 0) \
-    DECLARE(Bool, materialize_statistics_on_insert, false, R"(
-If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS
+    DECLARE(Bool, materialize_statistics_on_insert, true, R"(
+If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS. Only tables whose current size, plus the size of the block being written, does not exceed `materialize_statistics_on_insert_max_table_size` are affected.
+)", 0) \
+    DECLARE(UInt64, materialize_statistics_on_insert_max_table_size, 26843545600, R"(
+Only build and store column statistics on INSERT (see `materialize_statistics_on_insert`) for tables whose current total size of active parts on disk (compressed, in bytes), plus the uncompressed in-memory size of the block being written, does not exceed this value. The contract is per written block, not per INSERT: a single INSERT is split into one block per partition (and, for streaming inserts, into several blocks), and each of them is checked against the size of the parts that are already active, because the parts of the ongoing INSERT are not active yet. A single bulk load into an empty table can therefore build statistics for all of its parts even if their total size exceeds the threshold; the limit takes effect for the inserts that follow. Using the uncompressed block size (the compressed size is unknown before the part is written) makes the check deliberately conservative by at most one block. This keeps statistics fresh on small dimension tables, which is important for cost-based join reordering, while avoiding per-insert overhead on large fact tables (their statistics are built during merges instead). `0` means no size limit.
 )", 0) \
     DECLARE(String, ignore_data_skipping_indices, "", R"(
 Ignores the skipping indexes specified if used by the query.
@@ -3300,12 +3306,20 @@ will be higher than the value of this setting.
 )", 0) \
     DECLARE(OverflowMode, timeout_overflow_mode, OverflowMode::THROW, R"(
 Sets what to do if the query is run longer than the `max_execution_time` or the
-estimated running time is longer than `max_estimated_execution_time`.
+estimated running time is longer than `max_estimated_execution_time` (the
+estimate is only checked with `throw`).
 
 Possible values:
 - `throw`: throw an exception (default).
 - `break`: stop executing the query and return the partial result, as if the
-source data ran out.
+source data ran out. Some operations cannot return a partial result safely, so instead of a smaller
+result they stop without producing one. A function computing a single value stops without producing
+that value; whether the stop also reaches the client as a `TIMEOUT_EXCEEDED` error, or only as a
+missing result, depends on where the query was interrupted. A `Memory`-table mutation left
+incomplete by the timeout keeps the table unchanged and reports `TIMEOUT_EXCEEDED`. An `INSERT` may
+report `QUERY_WAS_CANCELLED`. Some operations that wait for other replicas or for background work
+do not stop at `max_execution_time` at all: a quorum write keeps waiting until its quorum is
+satisfied, or reports `UNKNOWN_STATUS_OF_INSERT` if `insert_quorum_timeout` elapses first.
 )", 0) \
     DECLARE(Seconds, max_execution_time_leaf, 0, R"(
 Similar semantically to [`max_execution_time`](#max_execution_time) but only
@@ -3333,7 +3347,11 @@ Sets what happens when the query in leaf node run longer than `max_execution_tim
 Possible values:
 - `throw`: throw an exception (default).
 - `break`: stop executing the query and return the partial result, as if the
-source data ran out.
+source data ran out. Some operations cannot return a partial result safely, so
+instead of a smaller result they stop without producing one: a function
+computing a single value stops without producing that value. Whether such a stop
+also reaches the client as a `TIMEOUT_EXCEEDED` error, or only as a missing
+result, depends on where the query was interrupted.
 )", 0) \
     \
     DECLARE(UInt64, min_execution_speed, 0, R"(
@@ -5081,6 +5099,13 @@ Allow CREATE MATERIALIZED VIEW with SELECT query that references nonexistent tab
     DECLARE(Bool, materialized_views_squash_parallel_inserts, true, R"(Squash inserts to materialized views destination table of a single INSERT query from parallel inserts to reduce amount of generated parts.
 If set to false and `parallel_view_processing` is enabled, INSERT query will generate part in the destination table for each `max_insert_thread`.
 )", 0) \
+    DECLARE(Bool, materialized_views_populate_atomically, true, R"(
+Make `CREATE MATERIALIZED VIEW ... POPULATE` atomic: the view is subscribed to new inserts of the source table and a snapshot of the existing data is taken together, under a brief exclusive lock on the source table, so that every row inserted concurrently with the population is delivered to the view exactly once (neither missed nor duplicated). The (possibly long-running) population then reads the pinned snapshot without holding any lock.
+
+This is local insert-path atomicity: the exclusive lock only serializes with inserts that acquire this source table's storage lock on the same server, so the exactly-once guarantee covers inserts arriving through this server. It is not a cluster-wide guarantee - rows inserted on another replica of a `ReplicatedMergeTree` source, or through a distributed write path (for example, into a `Distributed` table or via `ON CLUSTER`), concurrently with the population can still be missed or duplicated.
+
+This requires the source table to support reading a pinned point-in-time snapshot (the `MergeTree` family and `Memory`). For any other source (a view, `Distributed`, `Merge`, the `Log` family, or a table not in an `Atomic` database) the population falls back to the legacy, non-atomic behavior (recorded in the server log): existing data is read with a separate, non-coordinated snapshot, so rows inserted during the population can be missed or duplicated. Set this setting to `false` to force the legacy behavior for all sources. Applies to plain `CREATE MATERIALIZED VIEW` only; `CREATE OR REPLACE` / `REPLACE` always use the legacy non-atomic population, and so does a view created in a `Replicated` database (where `POPULATE` requires `database_replicated_allow_heavy_create`), because a failed population could not be rolled back consistently on all replicas there.
+)", 0) \
     DECLARE(Bool, use_compact_format_in_distributed_parts_names, true, R"(
 Uses compact format for storing blocks for background (`distributed_foreground_insert`) INSERT into tables with `Distributed` engine.
 
@@ -5383,7 +5408,7 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
 - `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
 - `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
 - `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.
-- `geometry`: convert MySQL's spatial types (`LINESTRING`, `POLYGON`, `MULTILINESTRING`, `MULTIPOLYGON`, `MULTIPOINT`) to the corresponding ClickHouse geometric types, and the generic `GEOMETRY` type to the umbrella `Geometry` type. `POINT` is always converted to `Point` regardless of this option. Because a generic `GEOMETRY` column can hold any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; columns declared as `GEOMETRYCOLLECTION` map to `String`.
+- `geometry`: convert MySQL's spatial types (`LINESTRING`, `POLYGON`, `MULTILINESTRING`, `MULTIPOLYGON`, `MULTIPOINT`) to the corresponding ClickHouse geometric types, and the generic `GEOMETRY` type to the umbrella `Geometry` type. `POINT` is always converted to `Point` regardless of this option. Because a generic `GEOMETRY` column can hold any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; columns declared as `GEOMETRYCOLLECTION` map to `String`. A nullable spatial column other than `POINT` also maps to `Nullable(String)`, since `Point` is the only geometric type that can be nested inside `Nullable`. Every such string is a 4-byte SRID prefix followed by the WKB payload, as returned by MySQL. All of the above applies when the schema is inferred from the column types of a MySQL table; when the source is a query (the `query(...)` argument of the `mysql` table function or the `MySQL` table engine), MySQL reports every spatial result column as the generic `GEOMETRY` without the concrete subtype, so such columns — including `POINT` — map to `String` (`Nullable(String)` if nullable).
 )", 0) \
     DECLARE(Bool, optimize_trivial_insert_select, false, R"(
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
@@ -5975,10 +6000,10 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(Bool, use_query_condition_cache_for_top_k, false, R"(
+    DECLARE(Bool, use_query_condition_cache_for_top_k, true, R"(
 Enable the [query condition cache](/operations/query-condition-cache) for queries that use the `ORDER BY <column> LIMIT n` (TopK) optimization (dynamic filtering or skip-index based). When disabled, such reads neither consult nor populate the cache.
 
-Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read. This setting is disabled by default while the soundness of these cache entries is being established; it has no effect unless `use_query_condition_cache` is also enabled.
+Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read. This setting has no effect unless `use_query_condition_cache` is also enabled.
 
 Possible values:
 
@@ -6614,6 +6639,9 @@ Enable multithreading after evaluating window functions to allow parallel stream
     DECLARE(Bool, query_plan_optimize_lazy_materialization, true, R"(
 Use query plan for lazy materialization optimization.
 )", 0) \
+    DECLARE(Bool, query_plan_optimize_lazy_materialization_for_object_storage, true, R"(
+Use lazy materialization optimization for reading Parquet files from object storage (including Iceberg tables): for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
+)", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
     DECLARE(Bool, query_plan_optimize_lazy_final, false, R"(
@@ -6758,6 +6786,8 @@ Method of reading data from storage file, one of: `read`, `pread`, `mmap`. The m
     DECLARE(String, local_filesystem_read_method, "pread_threadpool", R"(
 Method of reading data from local filesystem, one of: read, pread, mmap, io_uring, pread_threadpool.
 
+The 'pread_threadpool' method hands a read off to a thread pool, unless the data is already in the page cache, which is checked with the `preadv2` system call and the `RWF_NOWAIT` flag. That check needs Linux 5.11 or newer, and the system call must not be rejected by a `seccomp` profile of a container runtime. It is checked on startup whether the system call can be used, and if it cannot, the default value of this setting is switched to 'pread', because a thread pool hand-off for every read, including the reads that are served from the page cache, is expensive; the reason is reported in the server log. A `seccomp` profile is detected only if it rejects the system call with an error code, which is what container runtimes do; a profile that terminates the process instead cannot be detected. A value set explicitly, in the configuration or with `SET`, is not switched.
+
 The 'io_uring' method is experimental and does not work for Log, TinyLog, StripeLog, File, Set and Join, and other tables with append-able files in presence of concurrent reads and writes.
 If you read various articles about 'io_uring' on the Internet, don't be blinded by them. It is not a better method of reading files, unless the case of a large amount of small IO requests, which is not the case in ClickHouse. There are no reasons to enable 'io_uring'.
 )", 0) \
@@ -6875,6 +6905,9 @@ Cloud default value: `1`.
 )", 0) \
     DECLARE(Bool, enable_filesystem_cache_log, false, R"(
 Allows to record the filesystem caching log for each query
+)", 0) \
+    DECLARE(Bool, filesystem_cache_verbose_logging, false, R"(
+Emit `TEST`-level log messages for every filesystem cache buffer refill (state of the read, remaining size to read, bytes read). Only for debugging: the messages are formatted once per read, so enabling it on a query that does many small cached reads adds a large amount of logging overhead. The messages are only visible when the log level is `test` anyway (see `send_logs_level`).
 )", 0) \
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
@@ -8775,7 +8808,7 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
 Maximum number of texts to include in a single HTTP request made by the embedding functions (`aiEmbed`, `aiSimilarity`). Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
 )", EXPERIMENTAL) \
     DECLARE(String, ai_function_text_default_credentials, "", R"(
-Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint differs from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
+Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint and model differ from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
 )", EXPERIMENTAL) \
     DECLARE(String, ai_function_embedding_default_credentials, "", R"(
 Name of the named collection used by the embedding functions (`aiEmbed`, `aiSimilarity`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. These functions take `model` as a required positional argument, not from the named collection. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint differs from a chat one.
