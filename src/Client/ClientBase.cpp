@@ -3931,8 +3931,13 @@ bool isKnownSlashCommand(const String & trimmed_input)
 }
 }
 
-bool ClientBase::processAIChat(const String & text)
+bool ClientBase::processAIChat(const String & text_)
 {
+    /// In the AI mode of the line editor the leading `?` is consumed as the mode switch and the
+    /// line arrives only right-trimmed, so the documented `? clear` is passed here as ` clear`.
+    /// Trim before matching the commands below (the model does not care about the whitespace).
+    const String text = trim(text_, [](char c) { return isWhitespaceASCII(c); });
+
     if (!is_interactive)
     {
         error_stream << "The AI chat (the `?` command) is only available in interactive mode." << std::endl;
@@ -5110,7 +5115,15 @@ void ClientBase::runInteractive()
         {
             if (!processQueryText(input))
                 break;
+#if USE_CLIENT_AI
+            /// Like the AI-mode branch above: the inline `? ...` AI commands must not feed the
+            /// `.` / `/` repeat aliases, which repeat the last SQL query, not an AI question.
+            const bool is_inline_ai_command = trim(input, [](char c) { return isWhitespaceASCII(c); }).starts_with("?");
+            if (!is_inline_ai_command)
+                last_input = input;
+#else
             last_input = input;
+#endif
         }
         catch (const Exception & e)
         {
