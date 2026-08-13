@@ -68,6 +68,24 @@ namespace
         return true;
     }
 
+    /// Keywords which cannot be used as a bare metric name because a parser reading them
+    /// in the position of an operand would treat them as a binary operator or a modifier.
+    /// For example, `foo * on` is not a multiplication of `foo` and the metric `on`,
+    /// it's an incomplete `on (...)` matching modifier. Such names must stay quoted.
+    bool isReservedKeyword(std::string_view name)
+    {
+        static constexpr std::string_view keywords[]
+            = {"and", "or", "unless", "atan2", "by", "without", "on", "ignoring", "group_left", "group_right", "offset", "bool"};
+
+        for (const auto & keyword : keywords)
+        {
+            if (equalsCaseInsensitive(name, keyword))
+                return true;
+        }
+
+        return false;
+    }
+
     bool canPrintLabelNameUnquoted(std::string_view label)
     {
         return isLegacyLabelName(label)
@@ -79,7 +97,8 @@ namespace
     {
         return isLegacyMetricName(metric)
             && !equalsCaseInsensitive(metric, "inf")
-            && !equalsCaseInsensitive(metric, "nan");
+            && !equalsCaseInsensitive(metric, "nan")
+            && !isReservedKeyword(metric);
     }
 
     String formatLabelName(const String & label)

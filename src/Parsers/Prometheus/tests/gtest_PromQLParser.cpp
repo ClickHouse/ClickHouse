@@ -2,6 +2,8 @@
 
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 
+#include <fmt/format.h>
+
 using namespace DB;
 
 namespace
@@ -73,9 +75,23 @@ PrometheusQueryTree(INSTANT_VECTOR):
 }
 
 
+TEST(PromQLParser, ReservedKeywordMetricNames)
+{
+    /// A bare keyword in the position of an operand is a binary operator or a modifier,
+    /// so such metric names must stay quoted, otherwise the serialized query doesn't parse back.
+    for (const auto * const keyword :
+         {"and", "or", "unless", "atan2", "by", "without", "on", "ignoring", "group_left", "group_right", "offset", "bool"})
+    {
+        expectRoundTrip(fmt::format(R"({{"{}"}})", keyword), fmt::format(R"({{"{}"}})", keyword));
+        expectRoundTrip(fmt::format(R"({}{{job="x"}})", keyword), fmt::format(R"({{"{}",job="x"}})", keyword));
+        expectRoundTrip(fmt::format(R"(up * {{"{}"}})", keyword), fmt::format(R"(up * {{"{}"}})", keyword));
+    }
+}
+
+
 TEST(PromQLParser, InvalidQuotedSelectorIdentifiers)
 {
-    for (const auto query : {R"({""})", R"({"\xff"})"})
+    for (const auto * const query : {R"({""})", R"({"\xff"})"})
     {
         PrometheusQueryTree query_tree;
         String error_message;
@@ -88,7 +104,7 @@ TEST(PromQLParser, InvalidQuotedSelectorIdentifiers)
 
 TEST(PromQLParser, EmptyMetricNameMatcher)
 {
-    for (const auto query : {R"({__name__="",a="x"})", R"({"__name__"="",a="x"})"})
+    for (const auto * const query : {R"({__name__="",a="x"})", R"({"__name__"="",a="x"})"})
         expectRoundTrip(query, R"({__name__="",a="x"})");
 }
 
@@ -104,7 +120,7 @@ TEST(PromQLParser, MultipleMetricNameMatchers)
 
 TEST(PromQLParser, DuplicateMetricName)
 {
-    for (const auto query : {R"(up{"other.metric"})", R"(up{"up"})", R"(up{"__name__"="other"})"})
+    for (const auto * const query : {R"(up{"other.metric"})", R"(up{"up"})", R"(up{"__name__"="other"})"})
     {
         PrometheusQueryTree query_tree;
         String error_message;
