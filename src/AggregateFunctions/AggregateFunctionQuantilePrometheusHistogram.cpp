@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <numeric>
+#include <type_traits>
 
 
 namespace DB
@@ -97,6 +98,12 @@ struct QuantilePrometheusHistogram
 
     Float64 getFraction(Float64 lower, Float64 upper) const
     {
+        struct FractionRank
+        {
+            CumulativeHistogramValue cumulative{};
+            Float64 fractional = 0;
+        };
+
         size_t size = map.size();
         if (size == 0)
             return std::numeric_limits<Float64>::quiet_NaN();
@@ -114,16 +121,16 @@ struct QuantilePrometheusHistogram
         if (max_bucket.first != std::numeric_limits<UnderlyingType>::infinity())
             return std::numeric_limits<Float64>::quiet_NaN();
 
-        Float64 count = static_cast<Float64>(max_bucket.second);
+        CumulativeHistogramValue count = max_bucket.second;
         if (count == 0 || isNaN(lower) || isNaN(upper))
             return std::numeric_limits<Float64>::quiet_NaN();
 
         if (lower >= upper)
             return 0;
 
-        Float64 rank = 0;
-        Float64 lower_rank = 0;
-        Float64 upper_rank = 0;
+        CumulativeHistogramValue rank = 0;
+        FractionRank lower_rank;
+        FractionRank upper_rank;
         bool lower_set = false;
         bool upper_set = false;
         Float64 lower_bound = static_cast<Float64>(array[0].first) > 0
@@ -134,23 +141,26 @@ struct QuantilePrometheusHistogram
         {
             const Pair & bucket = array[index];
             Float64 upper_bound = static_cast<Float64>(bucket.first);
-            Float64 bucket_count = static_cast<Float64>(bucket.second);
 
-            auto interpolate = [&](Float64 value)
+            auto interpolate = [&](Float64 value) -> FractionRank
             {
                 if (lower_bound == -std::numeric_limits<Float64>::infinity())
-                    return bucket_count;
-                return rank + (bucket_count - rank) * (value - lower_bound) / (upper_bound - lower_bound);
+                    return {bucket.second, 0};
+
+                /// Keep the cumulative counts exact until the bucket delta is computed.
+                /// This preserves one-count resolution for UInt64 counts above 2^53.
+                Float64 bucket_count_delta = subtractCounts(bucket.second, rank);
+                return {rank, bucket_count_delta * (value - lower_bound) / (upper_bound - lower_bound)};
             };
 
             if (!lower_set && lower_bound >= lower)
             {
-                lower_rank = rank;
+                lower_rank = {rank, 0};
                 lower_set = true;
             }
             if (!upper_set && lower_bound >= upper)
             {
-                upper_rank = rank;
+                upper_rank = {rank, 0};
                 upper_set = true;
             }
             if (lower_set && upper_set)
@@ -169,19 +179,41 @@ struct QuantilePrometheusHistogram
             if (lower_set && upper_set)
                 break;
 
-            rank = bucket_count;
+            rank = bucket.second;
             lower_bound = upper_bound;
         }
 
-        if (!lower_set || lower_rank > count)
-            lower_rank = count;
-        if (!upper_set || upper_rank > count)
-            upper_rank = count;
+        auto clamp_rank = [&](FractionRank & rank_value, bool rank_set)
+        {
+            if (!rank_set || rank_value.cumulative > count || (rank_value.cumulative == count && rank_value.fractional > 0))
+                rank_value = {count, 0};
+        };
 
-        return (upper_rank - lower_rank) / count;
+        clamp_rank(lower_rank, lower_set);
+        clamp_rank(upper_rank, upper_set);
+
+        /// Subtract cumulative counts before converting them to Float64. Converting the
+        /// individual UInt64 counts first loses one-count differences above 2^53.
+        Float64 rank_difference = subtractCounts(upper_rank.cumulative, lower_rank.cumulative);
+        rank_difference += upper_rank.fractional - lower_rank.fractional;
+        return rank_difference / static_cast<Float64>(count);
     }
 
 private:
+    static Float64 subtractCounts(CumulativeHistogramValue lhs, CumulativeHistogramValue rhs)
+    {
+        if constexpr (std::is_same_v<CumulativeHistogramValue, UInt64>)
+        {
+            if (lhs >= rhs)
+                return static_cast<Float64>(lhs - rhs);
+            return -static_cast<Float64>(rhs - lhs);
+        }
+        else
+        {
+            return lhs - rhs;
+        }
+    }
+
     Value getInterpolatedImpl(Float64 level) const
     {
         size_t size = map.size();
