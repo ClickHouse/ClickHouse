@@ -551,10 +551,11 @@ def _probe_kinds(cmd):
 
 def test_asan_guard_runs_before_the_flavor_probe():
     # Both binary reads cost up to 60s, and each exists for the same
-    # startup-failure path where no server is up. Under ASan the flavor value is
-    # never used, so deriving it before the guard doubles the worst-case delay of
-    # an already-failing run for no dump. Drive the real helpers from what their
-    # query returns, so stubbing neither can hide the ordering.
+    # startup-failure path where no server is up. Neither the ASan return nor the
+    # no-process return consumes the flavor value, so deriving it first doubles
+    # the worst-case delay of an already-failing run for no dump. Drive the real
+    # helpers from what their query returns, so stubbing neither can hide the
+    # ordering.
     ct = _load_clickhouse_test(require_server=False)
     globals_ = ct["print_c_stacktraces"].__globals__
     saved = (
@@ -563,7 +564,7 @@ def test_asan_guard_runs_before_the_flavor_probe():
         globals_["get_stacktraces_from_lldb"],
     )
 
-    def run(is_asan):
+    def run(is_asan, pids=(4242,)):
         seen, budgets = [], []
 
         def fake_shell(cmd, timeout=None, keep_output_on_error=False):
@@ -574,7 +575,7 @@ def test_asan_guard_runs_before_the_flavor_probe():
             return "1" if kind == "flavor" else ""
 
         globals_["shell_get_output"] = fake_shell
-        globals_["get_all_server_pids"] = lambda _args: [4242]
+        globals_["get_all_server_pids"] = lambda _args: list(pids)
         globals_["get_stacktraces_from_lldb"] = (
             lambda pid, timeout=None: budgets.append(timeout) or "x" * 2000
         )
@@ -588,6 +589,14 @@ def test_asan_guard_runs_before_the_flavor_probe():
     try:
         seen, budgets, out = run(is_asan=True)
         assert "Cannot collect C stacktraces under ASan" in out, out
+        assert [kind for kind, _ in seen] == ["asan"], seen
+        assert budgets == [], budgets
+
+        # The no-process return discards the value just as the ASan one does, so
+        # it must come first too: a server that exited leaves nothing to attach
+        # to, and the read would only delay the abort.
+        seen, budgets, out = run(is_asan=False, pids=())
+        assert "Unable to locate any ClickHouse server process" in out, out
         assert [kind for kind, _ in seen] == ["asan"], seen
         assert budgets == [], budgets
 
