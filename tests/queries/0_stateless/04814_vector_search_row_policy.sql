@@ -46,6 +46,36 @@ WHERE explain LIKE '%vector_similarity%';
 
 DROP ROW POLICY rp_04814 ON t_04814;
 
+-- The policy must participate in the runtime `vector_search_index_fetch_multiplier` compensation as well,
+-- not only in the `prefilter` bailout. The policy hides the `LIMIT` nearest neighbours (the nearest rows to
+-- the reference vector are ids 0, 1, 2, ...), so the index shortlist of `LIMIT` rows is discarded entirely
+-- and the query returns nothing; raising the multiplier widens the fetch and the next visible rows are
+-- returned. The policy filters on a non-key attribute: a policy on the primary key column feeds the primary
+-- key analysis and is carried in `PrewhereInfo`, which makes the rewrite fall back to an exact scan that is
+-- correct regardless of the multiplier. Rescoring is disabled explicitly because the rescoring path applies
+-- the multiplier regardless of the presence of filters and would mask a regression.
+DROP ROW POLICY IF EXISTS rp_04814_mult ON t_04814_mult;
+DROP TABLE IF EXISTS t_04814_mult;
+
+CREATE TABLE t_04814_mult (id UInt32, attr UInt32, vec Array(Float32),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 2))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 4;
+
+INSERT INTO t_04814_mult SELECT number, number, [toFloat32(number), toFloat32(number + 1)] FROM numbers(64);
+
+CREATE ROW POLICY rp_04814_mult ON t_04814_mult FOR SELECT USING attr >= 8 TO ALL;
+
+SELECT 'policy hides the nearest neighbours, multiplier 1: too few rows';
+SELECT id FROM t_04814_mult ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 4
+    SETTINGS vector_search_with_rescoring = 0, vector_search_index_fetch_multiplier = 1.0;
+
+SELECT 'policy hides the nearest neighbours, multiplier 3: the next visible rows';
+SELECT id FROM t_04814_mult ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 4
+    SETTINGS vector_search_with_rescoring = 0, vector_search_index_fetch_multiplier = 3.0;
+
+DROP ROW POLICY rp_04814_mult ON t_04814_mult;
+DROP TABLE t_04814_mult;
+
 -- A row policy that reads the vector column itself. The non-rescoring rewrite removes the physical vector
 -- column from the read list, but the policy filter runs inside the reader and needs it, so the rewrite must
 -- be skipped for this case (same treatment as a `SELECT` clause containing the vector column).
