@@ -321,7 +321,6 @@ void PostingsSerialization::deserializeToArray(ReadBuffer & istr, UInt64 header,
 
         for (size_t i = 0; i < cardinality; ++i)
             readVarUInt(row_ids[old_size + i], istr);
-
         return;
     }
 

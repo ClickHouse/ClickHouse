@@ -113,15 +113,13 @@ private:
     void readDictionaryBlock(size_t source_num);
     /// Adjusts the part offset of the given row id according to merged part offsets.
     UInt32 adjustPartOffset(size_t part_index, UInt32 row_id) const;
-    /// Adjusts row numbers in the postings according to merged part offsets. No-op if offsets are not set.
-    void adjustPartOffsets(size_t source_num, PaddedPODArray<UInt32> & row_ids) const;
 
     /// Appends the already adjusted row ids of one source to output_postings_array or output_postings_bitmap.
-    void appendPostings(std::span<const UInt32> row_ids);
+    void appendPostings(size_t source_num, std::span<UInt32> row_ids);
     /// Reads the postings of one source and appends them to output_postings_bitmap or output_postings_array.
-    void readAndAppendPostings(size_t source_num, const TokenPostingsInfo & token_info);
+    void readAndAppendPostings(size_t source_num, TokenPostingsInfo & token_info);
     /// Reads the positions of one source and appends them to output_positions.
-    void readAndAppendPositions(size_t source_num, const TokenPostingsInfo & token_info);
+    void readAndAppendPositions(size_t source_num, TokenPostingsInfo & token_info);
 
     void flushPostingList();
     void flushDictionaryBlock();

@@ -230,8 +230,7 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
 
     if (!token_info->embedded_postings.empty())
     {
-        PostingList embedded;
-        embedded.addMany(token_info->embedded_postings.size(), token_info->embedded_postings.data());
+        PostingList embedded(token_info->embedded_postings.size(), token_info->embedded_postings.data());
         addPostings(token, embedded);
         ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
     }

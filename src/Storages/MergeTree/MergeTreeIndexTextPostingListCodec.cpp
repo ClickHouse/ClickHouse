@@ -94,59 +94,58 @@ void SegmentedPostingListCodec::insert(std::span<uint32_t> row_ids)
         flushCurrentSegment();
 }
 
-SegmentedPostingListCodec::SegmentData SegmentedPostingListCodec::readSegment(ReadBuffer & in, PaddedPODArray<char> & buffer)
+SegmentedPostingListCodec::SegmentData SegmentedPostingListCodec::readSegmentData(ReadBuffer & in, PaddedPODArray<char> & buffer)
 {
-    SegmentData segment;
-    segment.header.read(in);
+    SegmentData segment_data;
+    segment_data.header.read(in);
 
     /// The segment header is self-describing: create the block codec it was written with.
-    block_codec = createPostingListBlockCodec(segment.header.codec_type);
+    block_codec = createPostingListBlockCodec(segment_data.header.codec_type);
+    prev_row_id = segment_data.header.first_row_id;
 
-    prev_row_id = segment.header.first_row_id;
-
-    const char * payload_data = readContiguousBytes(in, segment.header.payload_bytes, buffer);
-    segment.payload = std::span(reinterpret_cast<const std::byte *>(payload_data), segment.header.payload_bytes);
-    return segment;
+    const char * payload_data = readContiguousBytes(in, segment_data.header.payload_bytes, buffer);
+    segment_data.payload = std::span(reinterpret_cast<const std::byte *>(payload_data), segment_data.header.payload_bytes);
+    return segment_data;
 }
 
 void SegmentedPostingListCodec::decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer)
 {
-    auto segment = readSegment(in, buffer);
+    auto segment_data = readSegmentData(in, buffer);
 
-    const size_t num_blocks = segment.header.cardinality / BLOCK_SIZE;
-    const size_t tail_size = segment.header.cardinality % BLOCK_SIZE;
+    const size_t num_blocks = segment_data.header.cardinality / BLOCK_SIZE;
+    const size_t tail_size = segment_data.header.cardinality % BLOCK_SIZE;
 
     current_segment.resize(BLOCK_SIZE);
 
     for (size_t i = 0; i < num_blocks; i++)
     {
-        decodeBlock(segment.payload, std::span(current_segment.data(), BLOCK_SIZE));
+        decodeBlock(segment_data.payload, std::span(current_segment.data(), BLOCK_SIZE));
         postings.addMany(BLOCK_SIZE, current_segment.data());
     }
     if (tail_size)
     {
-        decodeBlock(segment.payload, std::span(current_segment.data(), tail_size));
+        decodeBlock(segment_data.payload, std::span(current_segment.data(), tail_size));
         postings.addMany(tail_size, current_segment.data());
     }
 }
 
 void SegmentedPostingListCodec::decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer)
 {
-    auto segment = readSegment(in, buffer);
+    auto segment_data = readSegmentData(in, buffer);
 
-    const size_t num_blocks = segment.header.cardinality / BLOCK_SIZE;
-    const size_t tail_size = segment.header.cardinality % BLOCK_SIZE;
+    const size_t num_blocks = segment_data.header.cardinality / BLOCK_SIZE;
+    const size_t tail_size = segment_data.header.cardinality % BLOCK_SIZE;
 
     size_t out_pos = row_ids.size();
-    row_ids.resize(out_pos + segment.header.cardinality);
+    row_ids.resize(out_pos + segment_data.header.cardinality);
 
     for (size_t i = 0; i < num_blocks; i++)
     {
-        decodeBlock(segment.payload, std::span(row_ids.data() + out_pos, BLOCK_SIZE));
+        decodeBlock(segment_data.payload, std::span(row_ids.data() + out_pos, BLOCK_SIZE));
         out_pos += BLOCK_SIZE;
     }
     if (tail_size)
-        decodeBlock(segment.payload, std::span(row_ids.data() + out_pos, tail_size));
+        decodeBlock(segment_data.payload, std::span(row_ids.data() + out_pos, tail_size));
 }
 
 void SegmentedPostingListCodec::serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const

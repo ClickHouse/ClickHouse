@@ -366,20 +366,17 @@ UInt32 MergeTextIndexesTask::adjustPartOffset(size_t part_index, UInt32 row_id) 
     return static_cast<UInt32>(new_offset);
 }
 
-void MergeTextIndexesTask::adjustPartOffsets(size_t source_num, PaddedPODArray<UInt32> & row_ids) const
-{
-    if (!merged_part_offsets)
-        return;
-
-    size_t part_index = segments[source_num].part_index;
-    for (auto & row_id : row_ids)
-        row_id = adjustPartOffset(part_index, row_id);
-}
-
-void MergeTextIndexesTask::appendPostings(std::span<const UInt32> row_ids)
+void MergeTextIndexesTask::appendPostings(size_t source_num, std::span<UInt32> row_ids)
 {
     if (row_ids.empty())
         return;
+
+    if (merged_part_offsets)
+    {
+        size_t part_index = segments[source_num].part_index;
+        for (UInt32 & row_id : row_ids)
+            row_id = adjustPartOffset(part_index, row_id);
+    }
 
     /// Postings of a token are collected in the buffer while they fit into it.
     if (output_postings_bitmap.isEmpty() && output_postings_array.size() + row_ids.size() <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
@@ -395,27 +392,21 @@ void MergeTextIndexesTask::appendPostings(std::span<const UInt32> row_ids)
         output_postings_array.clear();
     }
 
-    /// A bulk-built bitmap is unioned in one pass, while adding row ids one by one shifts those already placed.
+    /// If output bitmap is empty, add values directly to it.
+    /// Otherwise, create a new bitmap and union it with the output bitmap.
+    /// Union works in one pass, while adding row ids with `addMany` shifts those
+    /// already placed, and causes reallocations in case when postings are interleaved.
     if (output_postings_bitmap.isEmpty())
         output_postings_bitmap.addMany(row_ids.size(), row_ids.data());
     else
         output_postings_bitmap |= PostingList(row_ids.size(), row_ids.data());
 }
 
-void MergeTextIndexesTask::readAndAppendPostings(size_t source_num, const TokenPostingsInfo & token_info)
+void MergeTextIndexesTask::readAndAppendPostings(size_t source_num, TokenPostingsInfo & token_info)
 {
     if (!token_info.embedded_postings.empty())
     {
-        if (!merged_part_offsets)
-        {
-            appendPostings(token_info.embedded_postings);
-        }
-        else
-        {
-            row_ids_buffer.assign(token_info.embedded_postings.begin(), token_info.embedded_postings.end());
-            adjustPartOffsets(source_num, row_ids_buffer);
-            appendPostings(row_ids_buffer);
-        }
+        appendPostings(source_num, token_info.embedded_postings);
         return;
     }
 
@@ -437,8 +428,7 @@ void MergeTextIndexesTask::readAndAppendPostings(size_t source_num, const TokenP
         {
             row_ids_buffer.clear();
             serialization.deserializeToArray(*data_buffer, token_info.header, token_info.cardinality, row_ids_buffer);
-            adjustPartOffsets(source_num, row_ids_buffer);
-            appendPostings(row_ids_buffer);
+            appendPostings(source_num, row_ids_buffer);
         }
         else
         {
@@ -448,7 +438,7 @@ void MergeTextIndexesTask::readAndAppendPostings(size_t source_num, const TokenP
     }
 }
 
-void MergeTextIndexesTask::readAndAppendPositions(size_t source_num, const TokenPostingsInfo & token_info)
+void MergeTextIndexesTask::readAndAppendPositions(size_t source_num, TokenPostingsInfo & token_info)
 {
     auto * stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
     auto * data_buffer = stream->getDataBuffer();
@@ -613,7 +603,7 @@ bool MergeTextIndexesTask::executeStep()
         TokenSortCursor & current = *current_ptr;
 
         size_t source_num = current->order;
-        const auto & source_block = inputs[source_num];
+        auto & source_block = inputs[source_num];
 
         /// All rows of a batch belong to one dictionary block, whose tokens are strictly
         /// increasing. Only the first row of the batch can continue the current token.
@@ -634,7 +624,7 @@ bool MergeTextIndexesTask::executeStep()
                 output_tokens_str.insertFrom(*source_block.tokens, row);
             }
 
-            const auto & token_info = source_block.token_infos[row];
+            auto & token_info = source_block.token_infos[row];
             readAndAppendPostings(source_num, token_info);
 
             if (params.positions && (token_info.header & PostingsSerialization::Flags::HasPositions))
