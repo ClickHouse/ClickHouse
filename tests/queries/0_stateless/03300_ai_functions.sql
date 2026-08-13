@@ -152,12 +152,7 @@ SET ai_function_embedding_default_credentials = 'ai_embed_credentials';
 -- =============================================================================
 
 SELECT '-- aiGenerate return type';
-DROP TABLE IF EXISTS _03300_ret_content;
-CREATE TABLE _03300_ret_content ENGINE = Memory AS
-    SELECT aiGenerate(x) AS result FROM tab;
-SELECT name, type FROM system.columns
-    WHERE database = currentDatabase() AND table = '_03300_ret_content';
-DROP TABLE IF EXISTS _03300_ret_content;
+SELECT toTypeName(aiGenerate(''));
 
 -- =============================================================================
 -- 8. NULL input propagation
@@ -337,18 +332,65 @@ SELECT '-- aiClassify: empty categories array';
 SELECT aiClassify('test', CAST([], 'Array(String)')); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- aiClassify: return type';
-DROP TABLE IF EXISTS _03300_ret_classify;
-CREATE TABLE _03300_ret_classify ENGINE = Memory AS
-    SELECT aiClassify(x, ['a', 'b', 'c']) AS result FROM tab;
-SELECT name, type FROM system.columns
-    WHERE database = currentDatabase() AND table = '_03300_ret_classify';
-DROP TABLE IF EXISTS _03300_ret_classify;
+SELECT toTypeName(aiClassify('', ['a', 'b', 'c']));
 
 SELECT '-- aiClassify: empty input executes';
 SELECT count() FROM (SELECT aiClassify(x, ['a', 'b']) AS result FROM tab);
 
 SELECT '-- aiClassify: with temperature';
 SELECT count() FROM (SELECT aiClassify(x, ['a', 'b'], map('temperature', '0.0')) AS result FROM tab);
+
+-- =============================================================================
+-- 14b. aiFilter
+-- =============================================================================
+
+SELECT '-- aiFilter: registered';
+SELECT name FROM system.functions WHERE name = 'aiFilter';
+
+SELECT '-- aiFilter: too few arguments';
+SELECT aiFilter(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT aiFilter('hello'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- aiFilter: too many arguments';
+SELECT aiFilter('x', 'angry', map('temperature', '0.0'), 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- aiFilter: non-constant condition';
+SELECT aiFilter(x, x) FROM tab; -- { serverError ILLEGAL_COLUMN }
+
+SELECT '-- aiFilter: wrong type for condition';
+SELECT aiFilter(x, 1) FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- aiFilter: empty condition';
+SELECT aiFilter('test', ''); -- { serverError BAD_ARGUMENTS }
+SELECT aiFilter('test', '   '); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- aiFilter: empty condition on empty input';
+SELECT aiFilter(x, '') FROM (SELECT '' AS x WHERE 0); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- aiFilter: return type';
+DROP TABLE IF EXISTS _03300_ret_filter;
+CREATE TABLE _03300_ret_filter ENGINE = Memory AS
+    SELECT aiFilter(x, 'is a greeting') AS result FROM tab;
+SELECT name, type FROM system.columns
+    WHERE database = currentDatabase() AND table = '_03300_ret_filter';
+DROP TABLE IF EXISTS _03300_ret_filter;
+
+SELECT '-- aiFilter: Nullable return type';
+DROP TABLE IF EXISTS _03300_ret_filter_null;
+DROP TABLE IF EXISTS _03300_filter_null_in;
+CREATE TABLE _03300_filter_null_in (x Nullable(String)) ENGINE = Memory;
+CREATE TABLE _03300_ret_filter_null ENGINE = Memory AS
+    SELECT aiFilter(x, 'is a greeting') AS result FROM _03300_filter_null_in;
+SELECT name, type FROM system.columns
+    WHERE database = currentDatabase() AND table = '_03300_ret_filter_null';
+DROP TABLE IF EXISTS _03300_ret_filter_null;
+DROP TABLE IF EXISTS _03300_filter_null_in;
+
+SELECT '-- aiFilter: empty input executes';
+SELECT count() FROM (SELECT aiFilter(x, 'is a greeting') AS result FROM tab);
+
+SELECT '-- aiFilter: with temperature';
+SELECT count() FROM (SELECT aiFilter(x, 'is a greeting', map('temperature', '0.0')) AS result FROM tab);
 
 -- =============================================================================
 -- 15. aiExtract
@@ -368,12 +410,7 @@ SELECT '-- aiExtract: non-constant instruction';
 SELECT aiExtract(x, x) FROM tab; -- { serverError ILLEGAL_COLUMN }
 
 SELECT '-- aiExtract: return type';
-DROP TABLE IF EXISTS _03300_ret_extract;
-CREATE TABLE _03300_ret_extract ENGINE = Memory AS
-    SELECT aiExtract(x, 'main topic') AS result FROM tab;
-SELECT name, type FROM system.columns
-    WHERE database = currentDatabase() AND table = '_03300_ret_extract';
-DROP TABLE IF EXISTS _03300_ret_extract;
+SELECT toTypeName(aiExtract('', 'main topic'));
 
 SELECT '-- aiExtract: JSON schema mode accepted';
 SELECT count() FROM (SELECT aiExtract(x, '{"topic":"main topic","sentiment":"pos/neg"}') AS result FROM tab);
@@ -420,18 +457,47 @@ SELECT aiTranslate('test', ''); -- { serverError BAD_ARGUMENTS }
 SELECT aiTranslate('test', '   '); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- aiTranslate: return type';
-DROP TABLE IF EXISTS _03300_ret_translate;
-CREATE TABLE _03300_ret_translate ENGINE = Memory AS
-    SELECT aiTranslate(x, 'French') AS result FROM tab;
-SELECT name, type FROM system.columns
-    WHERE database = currentDatabase() AND table = '_03300_ret_translate';
-DROP TABLE IF EXISTS _03300_ret_translate;
+SELECT toTypeName(aiTranslate('', 'French'));
 
 SELECT '-- aiTranslate: with instructions and temperature';
 SELECT count() FROM (SELECT aiTranslate(x, 'French', map('instructions', 'keep proper nouns', 'temperature', '0.3')) AS result FROM tab);
 
 -- =============================================================================
--- 17. aiEmbed
+-- 17. aiRedact
+-- =============================================================================
+
+SELECT '-- aiRedact: registered';
+SELECT name FROM system.functions WHERE name = 'aiRedact';
+
+SELECT '-- aiRedact: too few arguments';
+SELECT aiRedact(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT aiRedact('hello'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- aiRedact: too many arguments';
+SELECT aiRedact('x', ['email'], map('temperature', '0.0'), 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- aiRedact: non-constant categories';
+SELECT aiRedact(x, [x]) FROM tab; -- { serverError ILLEGAL_COLUMN }
+
+SELECT '-- aiRedact: wrong type for categories (not array)';
+SELECT aiRedact(x, 'email,phone') FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- aiRedact: wrong type for categories (Array of non-String)';
+SELECT aiRedact(x, [1, 2, 3]) FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- An empty category list is valid and falls back to the default PII categories.
+SELECT '-- aiRedact: empty categories array accepted (default categories)';
+SELECT count() FROM (SELECT aiRedact(x, []) AS result FROM tab);
+SELECT count() FROM (SELECT aiRedact(x, CAST([], 'Array(String)')) AS result FROM tab);
+
+SELECT '-- aiRedact: return type';
+SELECT toTypeName(aiRedact('', ['email']));
+
+SELECT '-- aiRedact: with replacement and temperature';
+SELECT count() FROM (SELECT aiRedact(x, ['email'], map('replacement', '***', 'temperature', '0.0')) AS result FROM tab);
+
+-- =============================================================================
+-- 18. aiEmbed
 -- =============================================================================
 
 SELECT '-- aiEmbed: registered';
@@ -473,20 +539,10 @@ SELECT '-- aiEmbed: model supplied as a positional argument resolves';
 SELECT count() FROM (SELECT aiEmbed(x, 'test-model', map('credentials', 'ai_embed_credentials')) AS result FROM tab);
 
 SELECT '-- aiEmbed: return type';
-DROP TABLE IF EXISTS _03300_ret_embed;
-CREATE TABLE _03300_ret_embed ENGINE = Memory AS
-    SELECT aiEmbed(x, 'test-model') AS result FROM tab;
-SELECT name, type FROM system.columns
-    WHERE database = currentDatabase() AND table = '_03300_ret_embed';
-DROP TABLE IF EXISTS _03300_ret_embed;
+SELECT toTypeName(aiEmbed('', 'test-model'));
 
 SELECT '-- aiEmbed: return type with dimensions';
-DROP TABLE IF EXISTS _03300_ret_embed_dim;
-CREATE TABLE _03300_ret_embed_dim ENGINE = Memory AS
-    SELECT aiEmbed(x, 'test-model', map('dimensions', '256')) AS result FROM tab;
-SELECT name, type FROM system.columns
-    WHERE database = currentDatabase() AND table = '_03300_ret_embed_dim';
-DROP TABLE IF EXISTS _03300_ret_embed_dim;
+SELECT toTypeName(aiEmbed('', 'test-model', map('dimensions', '256')));
 
 SELECT '-- aiEmbed: empty input executes';
 SELECT count() FROM (SELECT aiEmbed(x, 'test-model') AS result FROM tab);
@@ -509,23 +565,17 @@ SELECT default FROM system.settings WHERE name = 'ai_function_embedding_max_batc
 -- return type as non-Nullable `Array(Float32)` even when given `Nullable(String)`,
 -- and NULL inputs must map to `[]` at execute time.
 SELECT '-- aiEmbed: Nullable(String) input return type';
-DROP TABLE IF EXISTS _03300_embed_null_in;
-DROP TABLE IF EXISTS _03300_embed_null_out;
-CREATE TABLE _03300_embed_null_in (x Nullable(String)) ENGINE = Memory;
-INSERT INTO _03300_embed_null_in VALUES (NULL);
-CREATE TABLE _03300_embed_null_out ENGINE = Memory AS
-    SELECT aiEmbed(x, 'test-model') AS result FROM _03300_embed_null_in;
-SELECT name, type FROM system.columns
-    WHERE database = currentDatabase() AND table = '_03300_embed_null_out';
+SELECT toTypeName(aiEmbed(CAST(NULL, 'Nullable(String)'), 'test-model'));
 
 SELECT '-- aiEmbed: NULL input → []';
-SELECT length(result) FROM _03300_embed_null_out;
-
-DROP TABLE IF EXISTS _03300_embed_null_out;
 DROP TABLE IF EXISTS _03300_embed_null_in;
+CREATE TABLE _03300_embed_null_in (x Nullable(String)) ENGINE = Memory;
+INSERT INTO _03300_embed_null_in VALUES (NULL);
+SELECT length(aiEmbed(x, 'test-model')) FROM _03300_embed_null_in;
+DROP TABLE _03300_embed_null_in;
 
 -- =============================================================================
--- 18. aiSimilarity
+-- 19. aiSimilarity
 -- =============================================================================
 
 SELECT '-- aiSimilarity: registered';
@@ -607,7 +657,7 @@ SELECT aiSimilarity(x, x, 'claude-test', map('credentials', 'ai_anthropic_sim'))
 DROP NAMED COLLECTION ai_anthropic_sim;
 
 -- =============================================================================
--- 19. AI functions in column DEFAULTs: CREATE + INSERT + SELECT must complete.
+-- 20. AI functions in column DEFAULTs: CREATE + INSERT + SELECT must complete.
 -- The HTTP call fails (no provider on localhost:1); `ai_function_throw_on_error = 0`
 -- swallows the error so the INSERT still succeeds, with `[]` / "" / NULL for the row.
 -- =============================================================================
@@ -651,6 +701,18 @@ INSERT INTO _03300_classify_default (id, doc) VALUES (1, 'hello world');
 SELECT id, length(label) FROM _03300_classify_default;
 DROP TABLE _03300_classify_default;
 
+SELECT '-- aiFilter: DEFAULT survives INSERT (no exception)';
+DROP TABLE IF EXISTS _03300_filter_default;
+CREATE TABLE _03300_filter_default
+(
+    id UInt32,
+    doc String,
+    matched UInt8 DEFAULT aiFilter(doc, 'is greeting')
+) ENGINE = MergeTree ORDER BY id;
+INSERT INTO _03300_filter_default (id, doc) VALUES (1, 'hello world');
+SELECT id, matched FROM _03300_filter_default;
+DROP TABLE _03300_filter_default;
+
 SELECT '-- aiExtract: DEFAULT survives INSERT (no exception)';
 DROP TABLE IF EXISTS _03300_extract_default;
 CREATE TABLE _03300_extract_default
@@ -674,6 +736,18 @@ CREATE TABLE _03300_translate_default
 INSERT INTO _03300_translate_default (id, doc) VALUES (1, 'hello world');
 SELECT id, length(translation) FROM _03300_translate_default;
 DROP TABLE _03300_translate_default;
+
+SELECT '-- aiRedact: DEFAULT survives INSERT (no exception)';
+DROP TABLE IF EXISTS _03300_redact_default;
+CREATE TABLE _03300_redact_default
+(
+    id UInt32,
+    doc String,
+    redacted String DEFAULT aiRedact(doc, ['email'])
+) ENGINE = MergeTree ORDER BY id;
+INSERT INTO _03300_redact_default (id, doc) VALUES (1, 'hello world');
+SELECT id, length(redacted) FROM _03300_redact_default;
+DROP TABLE _03300_redact_default;
 
 SELECT '-- aiSimilarity: NULL/empty operands and failed embeddings score NULL';
 DROP TABLE IF EXISTS _03300_similarity_ops;
@@ -699,7 +773,7 @@ SET ai_function_throw_on_error = 1;
 SET ai_function_request_timeout_sec = 60;
 
 -- =============================================================================
--- 20. Re-disable the setting mid-session
+-- 21. Re-disable the setting mid-session
 -- =============================================================================
 
 SET allow_experimental_ai_functions = 0;
