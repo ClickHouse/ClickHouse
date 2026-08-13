@@ -24,27 +24,27 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT tupleElement(a, 'b') FROM file('n
 WHERE explain ILIKE '%column_name: a.b%';
 
 SELECT '-- ORC: case-insensitive matching returns the tuple element, not the colliding column';
-INSERT INTO FUNCTION file('04873_collision.orc', ORC, '`A.B` UInt64, a Tuple(b UInt64)')
+INSERT INTO FUNCTION file(currentDatabase() || '_04873_collision.orc', ORC, '`A.B` UInt64, a Tuple(b UInt64)')
 SELECT number + 100, tuple(number + 200) FROM numbers(3)
 SETTINGS engine_file_truncate_on_insert = 1;
 
-SELECT tupleElement(a, 'b') FROM file('04873_collision.orc', ORC, '`A.B` UInt64, a Tuple(b UInt64)')
+SELECT tupleElement(a, 'b') FROM file(currentDatabase() || '_04873_collision.orc', ORC, '`A.B` UInt64, a Tuple(b UInt64)')
 ORDER BY 1
 SETTINGS input_format_orc_case_insensitive_column_matching = 1;
 
-SELECT count() FROM file('04873_collision.orc', ORC, '`A.B` UInt64, a Tuple(b UInt64)')
+SELECT count() FROM file(currentDatabase() || '_04873_collision.orc', ORC, '`A.B` UInt64, a Tuple(b UInt64)')
 WHERE tupleElement(a, 'b') = 201
 SETTINGS input_format_orc_case_insensitive_column_matching = 1;
 
 SELECT '-- Parquet: same';
-INSERT INTO FUNCTION file('04873_collision.parquet', Parquet, '`A.B` UInt64, a Tuple(b UInt64)')
+INSERT INTO FUNCTION file(currentDatabase() || '_04873_collision.parquet', Parquet, '`A.B` UInt64, a Tuple(b UInt64)')
 SELECT number + 100, tuple(number + 200) FROM numbers(3)
 SETTINGS engine_file_truncate_on_insert = 1;
 
-SELECT tupleElement(a, 'b') FROM file('04873_collision.parquet', Parquet, '`A.B` UInt64, a Tuple(b UInt64)')
+SELECT tupleElement(a, 'b') FROM file(currentDatabase() || '_04873_collision.parquet', Parquet, '`A.B` UInt64, a Tuple(b UInt64)')
 ORDER BY 1
 SETTINGS input_format_parquet_case_insensitive_column_matching = 1;
 
-SELECT count() FROM file('04873_collision.parquet', Parquet, '`A.B` UInt64, a Tuple(b UInt64)')
+SELECT count() FROM file(currentDatabase() || '_04873_collision.parquet', Parquet, '`A.B` UInt64, a Tuple(b UInt64)')
 WHERE tupleElement(a, 'b') = 201
 SETTINGS input_format_parquet_case_insensitive_column_matching = 1;
