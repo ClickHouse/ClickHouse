@@ -1445,6 +1445,8 @@ private: // interaction with the scheduler thread
         cv.notify_all();
     }
 
+    void spillAllocation(ResourceCost) override {} // never a spill victim: reports no reclaimable memory
+
     std::mutex mutex;
     std::condition_variable cv;
     std::exception_ptr fail_reason;
