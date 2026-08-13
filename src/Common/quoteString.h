@@ -15,10 +15,10 @@ namespace DB
 
 [[nodiscard]] String quoteStringSingleQuoteWithSingleQuote(std::string_view x);
 
-[[nodiscard]] inline String quoteStringPostgreSQL(std::string_view x)
-{
-    return quoteStringSingleQuoteWithSingleQuote(x);
-}
+/// Quote a string for embedding in a query sent to a PostgreSQL server. Emits an `E'...'`
+/// escape-string constant (doubling both the quote and the backslash), which is safe regardless of
+/// the remote server's `standard_conforming_strings` — unlike a plain `'...'` literal.
+[[nodiscard]] String quoteStringPostgreSQL(std::string_view x);
 
 [[nodiscard]] inline String quoteStringSQLite(std::string_view x)
 {

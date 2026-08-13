@@ -110,24 +110,29 @@ String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) c
 String FieldVisitorToString::operator() (const bool & x) const { return x ? "true" : "false"; }
 String FieldVisitorToString::operator() (const CustomType & x) const { return x.toString(); }
 
-String FieldVisitorToString::operator() (const Array & x) const
+/// Container formatting is shared between FieldVisitorToString and
+/// FieldVisitorToStringPostgreSQL: only the scalar-string escaping differs, so the
+/// recursion runs through whichever visitor is passed in, keeping the two in lock-step.
+template <typename Visitor>
+static String formatArray(const Visitor & visitor, const Array & x)
 {
     checkStackSize();
     WriteBufferFromOwnString wb;
 
     wb << '[';
-    for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
+    for (auto it = x.begin(); it != x.end(); ++it)
     {
         if (it != x.begin())
             wb.write(", ", 2);
-        wb << applyVisitor(*this, *it);
+        wb << applyVisitor(visitor, *it);
     }
     wb << ']';
 
     return wb.str();
 }
 
-String FieldVisitorToString::operator() (const Tuple & x) const
+template <typename Visitor>
+static String formatTuple(const Visitor & visitor, const Tuple & x)
 {
     checkStackSize();
     WriteBufferFromOwnString wb;
@@ -135,26 +140,23 @@ String FieldVisitorToString::operator() (const Tuple & x) const
     // For single-element tuples we must use the explicit tuple() function,
     // or they will be parsed back as plain literals.
     if (x.size() > 1)
-    {
         wb << '(';
-    }
     else
-    {
         wb << "tuple(";
-    }
 
     for (auto it = x.begin(); it != x.end(); ++it)
     {
         if (it != x.begin())
             wb << ", ";
-        wb << applyVisitor(*this, *it);
+        wb << applyVisitor(visitor, *it);
     }
     wb << ')';
 
     return wb.str();
 }
 
-String FieldVisitorToString::operator() (const Map & x) const
+template <typename Visitor>
+static String formatMap(const Visitor & visitor, const Map & x)
 {
     checkStackSize();
     WriteBufferFromOwnString wb;
@@ -164,12 +166,29 @@ String FieldVisitorToString::operator() (const Map & x) const
     {
         if (it != x.begin())
             wb << ", ";
-        wb << applyVisitor(*this, *it);
+        wb << applyVisitor(visitor, *it);
     }
     wb << ']';
 
     return wb.str();
 }
+
+String FieldVisitorToString::operator() (const Array & x) const { return formatArray(*this, x); }
+String FieldVisitorToString::operator() (const Tuple & x) const { return formatTuple(*this, x); }
+String FieldVisitorToString::operator() (const Map & x) const { return formatMap(*this, x); }
+
+String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
+{
+    /// Emit an E'...' escape-string constant (doubling both the quote and the backslash), which is
+    /// safe irrespective of standard_conforming_strings. See writeQuotedStringPostgreSQLLiteral.
+    WriteBufferFromOwnString wb;
+    writeQuotedStringPostgreSQLLiteral(x, wb);
+    return wb.str();
+}
+
+String FieldVisitorToStringPostgreSQL::operator() (const Array & x) const { return formatArray(*this, x); }
+String FieldVisitorToStringPostgreSQL::operator() (const Tuple & x) const { return formatTuple(*this, x); }
+String FieldVisitorToStringPostgreSQL::operator() (const Map & x) const { return formatMap(*this, x); }
 
 String FieldVisitorToString::operator() (const Object & x) const
 {

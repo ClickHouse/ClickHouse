@@ -142,6 +142,23 @@ static void checkOld(
     EXPECT_EQ(transformed_query, expected) << query;
 }
 
+/// Transforms with PostgreSQL literal escaping, so we can assert single quotes are doubled.
+static std::string transformWithPostgreSQLEscaping(const State & state, size_t table_num, const std::string & query)
+{
+    ParserSelectQuery parser;
+    ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
+    SelectQueryInfo query_info;
+    SelectQueryOptions select_options;
+    query_info.syntax_analyzer_result
+        = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns(0)), select_options, state.getTables(table_num));
+    query_info.query = ast;
+    return transformQueryForExternalDatabase(
+        query_info,
+        query_info.syntax_analyzer_result->requiredSourceColumns(),
+        state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
+        LiteralEscapingStyle::PostgreSQL, "test", "table", state.context);
+}
+
 /// Required for transformQueryForExternalDatabase. In real life table expression is calculated via planner.
 /// But in tests we can just find it in JOIN TREE.
 static QueryTreeNodePtr findTableExpression(const QueryTreeNodePtr & node, const String & table_name)
@@ -194,6 +211,35 @@ static void checkNewAnalyzer(
         LiteralEscapingStyle::Regular, "test", "table", state.context);
 
     EXPECT_EQ(transformed_query, expected) << query;
+}
+
+/// Same as transformWithPostgreSQLEscaping, but through the modern analyzer - the default production path,
+/// which reconstructs the pushed-down AST via getASTForExternalDatabaseFromQueryTree.
+static std::string transformWithPostgreSQLEscapingNewAnalyzer(const State & state, const Names & column_names, const std::string & query)
+{
+    ParserSelectQuery parser;
+    ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
+
+    SelectQueryOptions select_query_options;
+    auto query_tree = buildQueryTree(ast, state.context);
+    QueryTreePassManager query_tree_pass_manager(state.context);
+    addQueryTreePasses(query_tree_pass_manager);
+    query_tree_pass_manager.run(query_tree);
+
+    InterpreterSelectQueryAnalyzer interpreter(query_tree, state.context, select_query_options);
+    interpreter.getQueryPlan();
+
+    auto planner_context = interpreter.getPlanner().getPlannerContext();
+    SelectQueryInfo query_info = buildSelectQueryInfo(query_tree, planner_context);
+    const auto * query_node = query_info.query_tree->as<QueryNode>();
+    if (!query_node)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryNode expected");
+
+    query_info.table_expression = findTableExpression(query_node->getJoinTree(), "table");
+
+    return transformQueryForExternalDatabase(
+        query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
+        LiteralEscapingStyle::PostgreSQL, "test", "table", state.context);
 }
 
 static void check(
@@ -475,4 +521,45 @@ TEST(TransformQueryForExternalDatabase, UUIDColumn)
     check(state, 1, {"uuid_col"},
           "SELECT uuid_col FROM table WHERE uuid_col = toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AND uuid_col > toUUID('12345678-1234-1234-1234-123456789012')",
           R"(SELECT "uuid_col" FROM "test"."table" WHERE "uuid_col" = '61f0c404-5cb3-11e7-907b-a6006ad3dba0')");
+}
+
+TEST(TransformQueryForExternalDatabase, PostgreSQLEscapingInList)
+{
+    const State & state = State::instance();
+    state.context->setSetting("external_table_strict_query", false);
+
+    /// A multi-element IN-list is pushed down as a Tuple. Its string elements must be escaped with
+    /// PostgreSQL rules and emitted as an E'...' constant with both the quote (doubled) and the
+    /// backslash (doubled) escaped - otherwise a value with a quote breaks out of the literal
+    /// (CVE-2025-1520 class). See https://github.com/ClickHouse/clickhouse-private/issues/65381
+    EXPECT_EQ(
+        transformWithPostgreSQLEscaping(state, 1, "SELECT field FROM table WHERE field IN ('a''b', 'c')"),
+        R"(SELECT "field" FROM "test"."table" WHERE "field" IN (E'a''b', E'c'))");
+
+    /// Row/tuple IN-lists nest the strings one level deeper; escaping must still propagate.
+    EXPECT_EQ(
+        transformWithPostgreSQLEscaping(state, 1, "SELECT field, value FROM table WHERE (field, value) IN (('a''b', 'x'), ('y', 'z'))"),
+        R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN ((E'a''b', E'x'), (E'y', E'z')))");
+
+    /// The case that only the E'...' form gets right: with standard_conforming_strings = off a plain
+    /// '...' literal that doubles only the quote is exploitable, because an embedded backslash escapes
+    /// the first quote of a doubled pair. The backslash must be doubled inside an E'' constant, so the
+    /// value a\b (SQL 'a\\b') must come out as E'a\\b'.
+    EXPECT_EQ(
+        transformWithPostgreSQLEscaping(state, 1, "SELECT field FROM table WHERE field IN ('a\\\\b', 'c')"),
+        R"(SELECT "field" FROM "test"."table" WHERE "field" IN (E'a\\b', E'c'))");
+
+    /// The modern analyzer is the default production path and rebuilds the AST through a different route
+    /// (getASTForExternalDatabaseFromQueryTree), so assert the same escaping holds there as well.
+    EXPECT_EQ(
+        transformWithPostgreSQLEscapingNewAnalyzer(state, {"field"}, "SELECT field FROM table WHERE field IN ('a''b', 'c')"),
+        R"(SELECT "field" FROM "test"."table" WHERE "field" IN (E'a''b', E'c'))");
+
+    EXPECT_EQ(
+        transformWithPostgreSQLEscapingNewAnalyzer(state, {"field", "value"}, "SELECT field, value FROM table WHERE (field, value) IN (('a''b', 'x'), ('y', 'z'))"),
+        R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN ((E'a''b', E'x'), (E'y', E'z')))");
+
+    EXPECT_EQ(
+        transformWithPostgreSQLEscapingNewAnalyzer(state, {"field"}, "SELECT field FROM table WHERE field IN ('a\\\\b', 'c')"),
+        R"(SELECT "field" FROM "test"."table" WHERE "field" IN (E'a\\b', E'c'))");
 }

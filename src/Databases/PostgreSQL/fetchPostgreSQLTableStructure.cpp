@@ -321,7 +321,15 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 
     std::string columns_part;
     if (!columns.empty())
-        columns_part = fmt::format(" AND attname IN ('{}')", boost::algorithm::join(columns, "','"));
+    {
+        /// Quote each column name individually so a name containing a quote cannot break out of the
+        /// literal (a plain join with `','` left the interpolated names unescaped).
+        Strings quoted_columns;
+        quoted_columns.reserve(columns.size());
+        for (const auto & column : columns)
+            quoted_columns.push_back(quoteStringPostgreSQL(column));
+        columns_part = fmt::format(" AND attname IN ({})", boost::algorithm::join(quoted_columns, ", "));
+    }
 
     /// Bypassing the error of the missing column `attgenerated` in the system table `pg_attribute` for PostgreSQL versions below 12.
     /// This trick involves executing a special query to the DBMS in advance to obtain the correct line with comment /// if column has GENERATED.
@@ -344,7 +352,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
            "AND NOT attisdropped AND attnum > 0 "
            "ORDER BY attnum ASC", generated, where, columns_part); /// Now we use variable `generated` to form query string. End of trick.
 
-    auto postgres_table_with_schema = postgres_schema.empty() ? postgres_table : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
+    auto postgres_table_with_schema = postgres_schema.empty() ? doubleQuoteString(postgres_table) : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
     table.physical_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, false);
 
     if (!table.physical_columns)

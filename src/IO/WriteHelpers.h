@@ -591,6 +591,19 @@ inline void writeQuotedStringPostgreSQL(std::string_view ref, WriteBuffer & buf)
     writeChar('\'', buf);
 }
 
+/// Quote a string as a PostgreSQL `E'...'` escape-string constant, doubling both the single quote
+/// (`''`) and the backslash (`\\`). In an `E''` constant PostgreSQL always treats backslash as an
+/// escape character irrespective of `standard_conforming_strings`, so this form is safe to embed in
+/// a query sent to a PostgreSQL server on every server configuration. Use this (not the wire-format
+/// `writeQuotedStringPostgreSQL` above) when building SQL for PostgreSQL — a plain `'...'` literal
+/// that doubles only the quote is unsafe when `standard_conforming_strings` is off.
+inline void writeQuotedStringPostgreSQLLiteral(std::string_view ref, WriteBuffer & buf)
+{
+    writeCString("E'", buf);
+    writeAnyEscapedString<'\'', true, true>(ref.data(), ref.data() + ref.size(), buf);
+    writeChar('\'', buf);
+}
+
 inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s, buf);

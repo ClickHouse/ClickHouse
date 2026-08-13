@@ -32,7 +32,8 @@ ExternalQueryBuilder::ExternalQueryBuilder(
     const std::string & table_,
     const std::string & query_,
     const std::string & where_,
-    IdentifierQuotingStyle quoting_style_)
+    IdentifierQuotingStyle quoting_style_,
+    LiteralEscapingStyle literal_escaping_style_)
     : dict_struct(dict_struct_)
     , db(db_)
     , schema(schema_)
@@ -41,8 +42,13 @@ ExternalQueryBuilder::ExternalQueryBuilder(
     , where(where_)
     , quoting_style(quoting_style_)
 {
-    // SQL-standard DBs (PostgreSQL, Cassandra, etc.) treat '\' as a literal character, so use '' escaping.
-    if (quoting_style == IdentifierQuotingStyle::DoubleQuotes)
+    /// PostgreSQL treats `\` as an escape character when `standard_conforming_strings` is off, so a plain
+    /// `''`-doubled literal is not injection-safe there; emit `E'...'` (doubling both quote and backslash),
+    /// which is safe on every server configuration. Other SQL-standard, double-quoted-identifier backends
+    /// (Cassandra, etc.) treat `\` as a literal character, so `''` doubling is enough for them.
+    if (literal_escaping_style_ == LiteralEscapingStyle::PostgreSQL)
+        format_settings.values.escape_string_for_postgresql = true;
+    else if (quoting_style == IdentifierQuotingStyle::DoubleQuotes)
         format_settings.values.escape_quote_with_quote = true;
 
     if (table.empty() && query.empty())
