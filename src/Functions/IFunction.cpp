@@ -51,6 +51,7 @@ extern const SettingsBool use_variant_default_implementation_for_comparisons;
 
 namespace ErrorCodes
 {
+extern const int BAD_FUNCTION_SIGNATURE;
 extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int LOGICAL_ERROR;
@@ -1058,7 +1059,24 @@ DataTypePtr IFunction::getReturnTypeImpl(const DataTypes & arguments) const
         columns.reserve(arguments.size());
         for (const auto & type : arguments)
             columns.emplace_back(nullptr, type, String{});
-        return applyFunctionSignature(signature_str, getName(), columns, /*types_only=*/true, signaturePropagatesNullability());
+        try
+        {
+            return applyFunctionSignature(signature_str, getName(), columns, /*types_only=*/true, signaturePropagatesNullability());
+        }
+        catch (const Exception & e)
+        {
+            /// A documentation-only signature can spell a result type the DSL cannot construct
+            /// from argument types alone — e.g. `(const String) -> Any` for `getSetting`, where
+            /// the result type is the dynamic type of the setting's value. On this column-less
+            /// path such a return-side `Any` is an uncaptured variable, and the signature engine
+            /// reports it as `BAD_FUNCTION_SIGNATURE`. The authoritative resolver of these
+            /// functions lives in their `ColumnsWithTypeAndName` override, so fall back to the
+            /// legacy behavior of this entry point instead of surfacing an internal error.
+            /// Genuine mismatches of the arguments against the signature are thrown with
+            /// user-facing codes and propagate.
+            if (e.code() != ErrorCodes::BAD_FUNCTION_SIGNATURE)
+                throw;
+        }
     }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReturnType is not implemented for {}", getName());
 }

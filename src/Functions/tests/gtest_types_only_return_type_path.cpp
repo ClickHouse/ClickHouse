@@ -11,6 +11,8 @@
 namespace DB::ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 using namespace DB;
@@ -108,4 +110,58 @@ TEST(TypesOnlyReturnTypePath, SQLJSONMultiPathShapeSurvivesTypesOnlyResolution)
 
     /// The tuple shape is really mirrored, not flattened.
     EXPECT_EQ(typesOnlyReturnType("JSON_EXISTS", {"Dynamic", "Tuple(String, String)"})->getName(), "Tuple(UInt8, UInt8)");
+}
+
+TEST(TypesOnlyReturnTypePath, ValueDependentDocumentationSignaturesFallBackToNotImplemented)
+{
+    /// These functions declare documentation-only signatures whose result type is spelled `Any`:
+    /// it depends on argument *values* (a setting name, a type name, a dictionary attribute),
+    /// which the types-only path does not have. The generic signature fallback in
+    /// `IFunction::getReturnTypeImpl(const DataTypes &)` must not surface the internal
+    /// `BAD_FUNCTION_SIGNATURE` ("Variable Any was not captured") for them; it falls back to
+    /// the legacy `NOT_IMPLEMENTED` of this entry point.
+    for (const auto & [function_name, argument_types] : std::initializer_list<std::pair<String, std::vector<String>>>{
+             {"getSetting", {"String"}},
+             {"getSettingOrDefault", {"String", "UInt64"}},
+             {"getServerSetting", {"String"}},
+             {"getMergeTreeSetting", {"String"}},
+             {"globalVariable", {"String"}},
+             {"dynamicElement", {"Dynamic", "String"}},
+             {"variantElement", {"Variant(String, UInt64)", "String"}},
+             {"accurateCastOrDefault", {"UInt64", "String"}},
+             {"dictGet", {"String", "String", "UInt64"}},
+             {"dictGetOrDefault", {"String", "String", "UInt64", "UInt64"}},
+             {"dictGetOrNull", {"String", "String", "UInt64"}}})
+    {
+        try
+        {
+            typesOnlyReturnType(function_name, argument_types);
+            FAIL() << function_name << " must not resolve on the types-only path";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::NOT_IMPLEMENTED) << function_name << ": " << e.message();
+        }
+    }
+
+    /// The fallback only covers the non-constructible result type. A genuine mismatch of the
+    /// arguments against the signature still propagates with its user-facing code.
+    try
+    {
+        typesOnlyReturnType("getSetting", {"UInt64"});
+        FAIL() << "getSetting(UInt64) must be rejected on the types-only path";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT) << e.message();
+    }
+    try
+    {
+        typesOnlyReturnType("dictGet", {"String"});
+        FAIL() << "dictGet(String) must be rejected on the types-only path";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH) << e.message();
+    }
 }
