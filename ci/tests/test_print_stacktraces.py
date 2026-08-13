@@ -76,7 +76,7 @@ _CLICKHOUSE_TEST = str(_REPO_ROOT / "tests" / "clickhouse-test")
 
 sys.path.insert(0, str(_REPO_ROOT))
 
-from ci.jobs import functional_tests
+from ci.jobs import fast_test, functional_tests
 from ci.jobs.functional_tests import STACKTRACE_LOGS, collect_stacktrace_logs
 
 
@@ -695,8 +695,8 @@ def test_the_stale_dump_clear_is_not_under_the_res_guard():
     assert "JobStages.TEST in stages" in condition, condition
 
 
-def _main_ast():
-    tree = ast.parse(Path(functional_tests.__file__).read_text(encoding="utf-8"))
+def _main_ast(module=functional_tests):
+    tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
     return next(
         node
         for node in ast.walk(tree)
@@ -841,3 +841,124 @@ def test_the_clear_and_the_attach_scan_the_directory_the_dumps_land_in():
             "clear and the attach scan -- that is exactly why fast_test, whose "
             "runner prefixes `cd {temp_dir}`, attaches from `temp_dir` instead"
         )
+
+
+def _fast_test_stacktrace_unlinks(main):
+    """Calls in `fast_test.main` that unlink a path built from a dump name.
+
+    Keyed on the enclosing `for` iterating `STACKTRACE_LOGS`, so an unlink of an
+    unrelated file cannot be mistaken for the clear.
+    """
+    unlinks = []
+    for node in ast.walk(main):
+        if not isinstance(node, ast.Call):
+            continue
+        if not ast.unparse(node.func).endswith(".unlink"):
+            continue
+        loops = [
+            stmt
+            for stmt in _enclosing_statements(main, node)
+            if isinstance(stmt, ast.For) and ast.unparse(stmt.iter) == "STACKTRACE_LOGS"
+        ]
+        if loops:
+            unlinks.append(node)
+    return unlinks
+
+
+def test_fast_test_clears_stale_dumps_before_the_tests_run():
+    # `fast_test` attaches the same two append-only files from the same
+    # persistent, gitignored `ci/tmp`, so without a clear of its own it has the
+    # defect the stateless job's clear fixes: `git clean -ffd` keeps a dump an
+    # aborted earlier run left behind, and the next run uploads it as its own.
+    main = _main_ast(fast_test)
+    unlinks = _fast_test_stacktrace_unlinks(main)
+    assert unlinks, (
+        "fast_test.main() never unlinks the STACKTRACE_LOGS names, so a dump "
+        "left by a previous run in this workspace is uploaded as this run's"
+    )
+
+    run_tests = [
+        node.lineno
+        for node in ast.walk(main)
+        if isinstance(node, ast.Call) and ast.unparse(node.func) == "CH.run_test"
+    ]
+    assert run_tests, "fast_test.main() no longer calls CH.run_test"
+    assert max(node.lineno for node in unlinks) < min(run_tests), (
+        "the clear must precede the test run, else it deletes the dumps this "
+        "run just wrote instead of a previous run's"
+    )
+
+
+def test_fast_test_stale_dump_clear_is_not_guarded_by_res():
+    # Presence and ordering are not enough. `attach_debug` is set True on a
+    # server-start failure, which is upstream of every test, so that path
+    # reaches the attach with `res` False and only a stale dump on disk. A clear
+    # under `res` is skipped on exactly those runs.
+    main = _main_ast(fast_test)
+    unlinks = _fast_test_stacktrace_unlinks(main)
+    # Without this the loop below is empty when the clear is absent, so the
+    # assertions inside it hold vacuously and this passes on unfixed code.
+    assert unlinks, "fast_test.main() never unlinks the STACKTRACE_LOGS names"
+    for unlink in unlinks:
+        guards = [
+            ast.unparse(stmt.test)
+            for stmt in _enclosing_statements(main, unlink)
+            if isinstance(stmt, ast.If)
+        ]
+        assert guards, (
+            f"the clear at line {unlink.lineno} runs under no `if`: it must be "
+            "guarded by stage membership so a resume at a later stage keeps the "
+            "dump on disk that it was resumed to collect"
+        )
+        for guard in guards:
+            assert "res" not in guard.split(), (
+                f"the clear at line {unlink.lineno} is guarded by {guard!r}, "
+                "which tests `res`: a server-start failure then skips the clear "
+                "while still reaching the attach, uploading a previous run's dump"
+            )
+        assert any("JobStages.TEST in stages" in guard for guard in guards), guards
+
+
+def test_fast_test_clears_and_attaches_the_same_names_from_the_same_directory():
+    # The axis the two tests above cannot see: both read the clear alone, so a
+    # clear scanning a different directory or a different tuple than the attach
+    # keeps them green while deleting nothing the attach would upload.
+    main = _main_ast(fast_test)
+    # Select by the loop variable, not by what is iterated: keying on the
+    # iterable would stop seeing a site the moment it drifts to a literal tuple,
+    # which is the drift this asserts against.
+    loops = [
+        node
+        for node in ast.walk(main)
+        if isinstance(node, ast.For) and ast.unparse(node.target) == "stacktrace_log"
+    ]
+    assert len(loops) == 2, (
+        f"fast_test.main() has {len(loops)} loops over the dump names, at lines "
+        f"{[node.lineno for node in loops]} -- expected exactly 2, the stale-dump "
+        "clear on TEST entry and the attach"
+    )
+    for loop in loops:
+        iterated = ast.unparse(loop.iter)
+        assert iterated == "STACKTRACE_LOGS", (
+            f"the loop at line {loop.lineno} iterates {iterated!r}; the clear and "
+            "the attach must share one tuple, else they can drift apart and the "
+            "clear stops deleting what the attach would upload"
+        )
+
+    joins = {
+        ast.unparse(node.left)
+        for node in ast.walk(main)
+        if isinstance(node, ast.BinOp)
+        and isinstance(node.op, ast.Div)
+        and "stacktrace_log" == ast.unparse(node.right)
+    }
+    assert joins == {"temp_dir"}, (
+        f"the dump paths are built from {joins}; both the clear and the attach "
+        "must use `temp_dir`, which is the cwd the `cd` in fast_test_command "
+        "gives clickhouse-test and therefore where the dumps land"
+    )
+
+    assert fast_test.STACKTRACE_LOGS == STACKTRACE_LOGS, (
+        "fast_test and the stateless job must agree on the dump names: they "
+        "read the same files written by the same clickhouse-test"
+    )
