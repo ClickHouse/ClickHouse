@@ -4,8 +4,16 @@ namespace DB
 {
 
 TTLDeleteAlgorithm::TTLDeleteAlgorithm(
-    const TTLExpressions & ttl_expressions_, const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_)
+    const TTLExpressions & ttl_expressions_,
+    const TTLDescription & description_,
+    const TTLInfo & old_ttl_info_,
+    String old_ttl_expression_fingerprint_,
+    String old_ttl_timezone_fingerprint_,
+    time_t current_time_,
+    bool force_)
     : ITTLAlgorithm(ttl_expressions_, description_, old_ttl_info_, current_time_, force_)
+    , old_ttl_expression_fingerprint(std::move(old_ttl_expression_fingerprint_))
+    , old_ttl_timezone_fingerprint(std::move(old_ttl_timezone_fingerprint_))
 {
     if (!isMinTTLExpired())
         new_ttl_info = old_ttl_info;
@@ -65,12 +73,13 @@ void TTLDeleteAlgorithm::finalize(const MutableDataPartPtr & data_part) const
     {
         data_part->ttl_infos.table_ttl = new_ttl_info;
         /// Record the rows-TTL expression and time zone these timestamps were computed under
-        /// (see `MergeTreeDataPartTTLInfos`) - but only when this algorithm actually recomputed them
-        /// by scanning the rows. When the min TTL is not expired (and the recomputation is not forced),
-        /// `execute` never looks at the rows and `new_ttl_info` is just a copy of the incoming infos,
-        /// so the fingerprint those bounds were computed under is the one already propagated into
-        /// `data_part->ttl_infos` by `MergeTreeDataPartTTLInfos::update` - stamping the current
-        /// metadata expression over it could mislabel bounds computed under an older TTL expression.
+        /// (see `MergeTreeDataPartTTLInfos`) - the current metadata fingerprint when this algorithm
+        /// actually recomputed them by scanning the rows. When the min TTL is not expired (and the
+        /// recomputation is not forced), `execute` never looks at the rows and `new_ttl_info` is just
+        /// a copy of the incoming infos, so restore the fingerprint those bounds were computed under -
+        /// `TTLTransform::finalize` cleared `data_part->ttl_infos` wholesale before this call, and
+        /// stamping the current metadata expression instead could mislabel bounds computed under an
+        /// older TTL expression.
         if (isMinTTLExpired())
         {
             /// A timestamp of exactly 0 (the epoch) means "no TTL" to the rest of the machinery and is
@@ -86,6 +95,11 @@ void TTLDeleteAlgorithm::finalize(const MutableDataPartPtr & data_part) const
                 data_part->ttl_infos.table_ttl_expression = description.result_column;
                 data_part->ttl_infos.table_ttl_timezone = getRowsTTLTimeZoneFingerprint(description);
             }
+        }
+        else
+        {
+            data_part->ttl_infos.table_ttl_expression = old_ttl_expression_fingerprint;
+            data_part->ttl_infos.table_ttl_timezone = old_ttl_timezone_fingerprint;
         }
     }
 

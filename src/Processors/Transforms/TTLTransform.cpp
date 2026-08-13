@@ -70,7 +70,8 @@ TTLTransform::TTLTransform(
         const auto & rows_ttl = metadata_snapshot_->getRowsTTL();
         auto algorithm = std::make_unique<TTLDeleteAlgorithm>(
             getExpressions(rows_ttl, subqueries_for_sets, context), rows_ttl,
-            old_ttl_infos.table_ttl, current_time_, force_);
+            old_ttl_infos.table_ttl, old_ttl_infos.table_ttl_expression, old_ttl_infos.table_ttl_timezone,
+            current_time_, force_);
 
         /// Skip all data if table ttl is expired for part
         if (algorithm->isMaxTTLExpired() && !rows_ttl.where_expression_ast)
@@ -83,7 +84,8 @@ TTLTransform::TTLTransform(
     for (const auto & where_ttl : metadata_snapshot_->getRowsWhereTTLs())
         algorithms.emplace_back(std::make_unique<TTLDeleteAlgorithm>(
             getExpressions(where_ttl, subqueries_for_sets, context), where_ttl,
-            old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_));
+            old_ttl_infos.rows_where_ttl[where_ttl.result_column], /*old_ttl_expression_fingerprint_*/ "",
+            /*old_ttl_timezone_fingerprint_*/ "", current_time_, force_));
 
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
         algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
