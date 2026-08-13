@@ -181,21 +181,24 @@ private:
             return c;
         }
         ChainedBuffers read(ByteRange sub) override { return Reader{r, state}.read(sub); }
-        FillClaim claim(ByteRange w) override
+        Lead claimLeadRole(ByteRange range) override
         {
-            FillClaim c;
-            const size_t lo = std::max(w.offset, r.offset);
-            const size_t hi = std::min(w.end(), r.end());
+            Lead lead;
+            const size_t lo = std::max(range.offset, r.offset);
+            const size_t hi = std::min(range.end(), r.end());
+            lead.available = ByteRange{lo, 0};
             if (lo >= hi)
-                return c;
+                return lead;
+            /// We hold the role over the free part (not led by a concurrent downloader); if the whole
+            /// overlap is being downloaded elsewhere we hold nothing, matching the real provider.
             const ByteRange overlap{lo, hi - lo};
-            /// We win the role over the parts no other thread holds; a part held elsewhere is left
-            /// unlisted (neither `available` nor `to_fetch`), matching the real provider.
-            c.to_fetch = state->concurrent_download.subtract(overlap);
-            return c;
+            const bool held = !state->concurrent_download.subtract(overlap).empty();
+            lead.claim = makeClaim(held, /*release=*/nullptr);
+            return lead;
         }
-        size_t write(ChainedBuffers data) override
+        size_t write(ChainedBuffers data, const Claim & claim) override
         {
+            chassert(claim);
             /// A block another thread is downloading is not ours to fill (no downloader role).
             size_t free_bytes = 0;
             for (const auto & fr : state->concurrent_download.subtract(r))

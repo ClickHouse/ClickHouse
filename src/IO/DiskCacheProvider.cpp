@@ -222,7 +222,7 @@ DiskCacheWriter::DiskCacheWriter(
         && aligned_range.end() <= seg_range.right + 1 + object_file_offset);
 }
 
-size_t DiskCacheWriter::write(ChainedBuffers data)
+size_t DiskCacheWriter::write(ChainedBuffers data, const Claim & claim)
 {
     if (cache_settings.read_if_exists_otherwise_bypass)
         return 0;
@@ -241,14 +241,11 @@ size_t DiskCacheWriter::write(ChainedBuffers data)
     FileSegment & seg = segment();
     const auto & seg_range = seg.range();
 
-    /// Only a segment this thread claimed accepts bytes; a role another thread freed is picked up by
-    /// the NEXT claim, not here.
-    if (!seg.isDownloader())
-    {
-        LOG_TRACE(log, "DiskCacheWriter::write: segment [{}, {}] not claimed by this thread, skipping",
-            seg_range.left, seg_range.right);
-        return 0;
-    }
+    /// `claimLeadRole` is the sole role-acquisition site; `write` never takes one. So a caller reaches
+    /// here only under a held `claim` that won this segment's role - assert the caller's proof and the
+    /// live state.
+    chassert(claim);
+    chassert(seg.isDownloader());
 
     /// Append-only: start at the live current write offset.
     const size_t write_offset = seg.getCurrentWriteOffset();
@@ -325,65 +322,91 @@ ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
     return result;
 }
 
-CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
+CacheWriter::Lead DiskCacheWriter::claimLeadRole(ByteRange range)
 {
-    /// `window` is FILE-space, clamped to our one segment. Split it into the committed prefix
-    /// (`available`, readable now) and the uncommitted tail we win the role for (`to_fetch`); a tail
-    /// another downloader leads is left unlisted.
-    FillClaim c;
+    /// `range` is FILE-space, within our one segment. `available` is the committed prefix (readable
+    /// now, whoever holds the role). For the uncommitted tail `getOrSetDownloader` either makes us the
+    /// downloader - we hold the returned claim and fetch+write it - or a concurrent downloader leads
+    /// it and we hold nothing (the caller derives the remainder and waits). Sole role-acquisition
+    /// site, never nested, so always a fresh acquire.
+    Lead lead;
+    lead.available = ByteRange{range.offset, 0};
+
     FileSegment & seg = segment();
     const auto & seg_range = seg.range();
     const size_t seg_file_lo = seg_range.left + object_file_offset;
     const size_t seg_file_hi = seg_range.right + 1 + object_file_offset;
 
-    const size_t lo = std::max(window.offset, seg_file_lo);
-    const size_t hi = std::min(window.end(), seg_file_hi);
+    const size_t lo = std::max(range.offset, seg_file_lo);
+    const size_t hi = std::min(range.end(), seg_file_hi);
     if (lo >= hi)
-        return c;
+        return lead;
 
     if (seg.state() == FileSegmentState::DOWNLOADED)
     {
-        c.available.push_back(ByteRange{lo, hi - lo});   // fully cached: whole overlap readable now
-        return c;
+        lead.available = ByteRange{lo, hi - lo};   // fully cached: whole overlap readable now, no role
+        return lead;
     }
 
-    /// `claim` is never nested (one claim per write), so we do not already hold the role - assert it.
-    chassert(!seg.isDownloader());
-    const bool role_captured = seg.getOrSetDownloader() == FileSegment::getCallerId();
-
-    /// Arm the release the moment we win the role, BEFORE the throwable pushes below, so a throw on
-    /// unwind never leaks the DOWNLOADING role (which aborts the holder dtor on `!is_last_holder` and
-    /// self-deadlocks a later `waitAndRead`). Capture the segment ptr, not the writer.
-    if (role_captured)
+    /// The write offset is monotonic and readable without the role (a lower bound while a concurrent
+    /// downloader advances it). If it already covers the overlap, the whole range is available now -
+    /// report it and take NO role, skipping a needless acquire+release.
+    if (seg.getCurrentWriteOffset() + object_file_offset >= hi)
     {
-        c.release = [seg_ptr = segment_holder->getSingleFileSegment(), logger = log]() noexcept
-        {
-            try
-            {
-                if (seg_ptr->isDownloader())
-                    seg_ptr->completePartAndResetDownloader();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(logger, "Failed to release a claimed cache segment");
-            }
-        };
+        lead.available = ByteRange{lo, hi - lo};
+        return lead;
     }
 
-    /// The current write offset after the role decision: exact if we hold the role (only we advance
-    /// it), else a lower bound (we under-report `available`, never over). Shifted to file space.
+    /// An uncommitted tail remains: acquire the role to fill it. Never nested (one claim per write),
+    /// so we do not already hold it - assert it. One `getOrSetDownloader` call decides it: we won iff
+    /// it returns our caller id.
+    chassert(!seg.isDownloader());
+    const bool won = seg.getOrSetDownloader() == FileSegment::getCallerId();
+
+    /// Re-read the write offset after the role decision: if we hold the role only WE advance it, so
+    /// the prefix / tail split is exact; a concurrent downloader keeps it a lower bound (we
+    /// under-report `available`, never over). Shifted to file space.
     const size_t current_write_offset = seg.getCurrentWriteOffset() + object_file_offset;
     const size_t avail_hi = std::min(hi, current_write_offset);
-    if (avail_hi > lo)
-        c.available.push_back(ByteRange{lo, avail_hi - lo});
+    lead.available = ByteRange{lo, avail_hi > lo ? avail_hi - lo : 0};
+    const size_t fetch_lo = std::max(lo, current_write_offset);
 
-    if (role_captured)
+    if (!won)
+        return lead;   /// a concurrent downloader leads the tail: hold nothing, the caller waits on it
+
+    if (fetch_lo >= hi)
     {
-        const size_t fetch_lo = std::max(lo, current_write_offset);
-        if (fetch_lo < hi)
-            c.to_fetch.push_back(ByteRange{fetch_lo, hi - fetch_lo});
+        /// We won the role (past the `!won` return, so we still hold it) but a concurrent downloader
+        /// committed the tail between our check and the acquire: nothing left to fill. Release the
+        /// role and return an empty claim.
+        try
+        {
+            seg.completePartAndResetDownloader();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to release an unneeded cache claim");
+        }
+        return lead;
     }
-    return c;
+
+    /// Won the role over an uncommitted tail: hold it. The release captures the segment (a shared ref),
+    /// not the writer, so it stays valid however long the claim is held; it never throws.
+    lead.claim = makeClaim(/*held=*/true, [seg_ptr = segment_holder->getSingleFileSegment(), logger = log]() noexcept
+    {
+        /// Nothing between arming this and running it resets our thread-affine role (`write` keeps the
+        /// segment appendable; the Claim is destroyed before the writer's holder), so we still hold it.
+        chassert(seg_ptr->isDownloader());
+        try
+        {
+            seg_ptr->completePartAndResetDownloader();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(logger, "Failed to release a claimed cache segment");
+        }
+    });
+    return lead;
 }
 
 ChainedBuffers DiskCacheWriter::waitAndRead(ByteRange subrange)

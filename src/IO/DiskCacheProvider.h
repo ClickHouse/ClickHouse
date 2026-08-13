@@ -70,9 +70,9 @@ public:
         std::lock_guard lock(committed_mutex);
         return committed_ranges;
     }
-    size_t write(ChainedBuffers data) override;
+    size_t write(ChainedBuffers data, const Claim & claim) override;
     ChainedBuffers read(ByteRange subrange) override;
-    FillClaim claim(ByteRange window) override;
+    Lead claimLeadRole(ByteRange range) override;
     ChainedBuffers waitAndRead(ByteRange subrange) override;
 
 private:

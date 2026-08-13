@@ -59,68 +59,81 @@ public:
 
     bool complete() const { return committed().subtract(range()).empty(); }
 
-    /// Store the part of `data` that lies in `range()` and is not yet in `committed()`. Return the
-    /// bytes that newly landed. Return 0 for bytes outside the range, already committed, in an
-    /// unclaimed segment, on a reservation failure, or on bypass. Never throw for those; return a
-    /// partial or zero count instead. On a tier that coordinates downloaders (the filesystem cache),
-    /// a write lands only in segments that an open `claim` of the calling thread covers.
-    virtual size_t write(ChainedBuffers data) = 0;
-
-    /// Serve an already-committed sub-range from this writer's own held segments. Do not go to the source.
-    virtual ChainedBuffers read(ByteRange subrange) = 0;
-
-    /// The result of `claim`. It splits the window into `available` (already committed; read from the
-    /// cache, never fetch) and `to_fetch` (the uncommitted tail whose downloader role this thread won;
-    /// fetch and write it while the claim is open). Move-only and bound to one thread (the downloader
-    /// id is the caller id). The destructor completes and releases exactly the roles this claim won,
-    /// swallowing and logging any error.
-    class FillClaim
+    /// A held downloader role over one write range. Move-only RAII: the destructor completes and
+    /// releases the role (never throws). `bool(claim)` is true iff this thread may write the range -
+    /// on the filesystem cache it won the role and there is an uncommitted tail; on a non-coordinating
+    /// tier it is trivially true. Only a `CacheWriter` mints one (see `makeClaim`), so a `Claim`
+    /// argument to `write` proves the caller holds the role. Bound to one thread (the downloader id is
+    /// the caller id): create, write, and destroy it on the same thread.
+    class Claim
     {
     public:
-        FillClaim() = default;
-        FillClaim(FillClaim && other) noexcept
-            : available(std::move(other.available))
-            , to_fetch(std::move(other.to_fetch))
+        Claim() = default;
+        Claim(Claim && other) noexcept
+            : held(std::exchange(other.held, false))
             , release(std::exchange(other.release, nullptr))
         {
         }
-        FillClaim & operator=(FillClaim && other) noexcept
+        Claim & operator=(Claim && other) noexcept
         {
             if (this != &other)
             {
                 reset();
-                available = std::move(other.available);
-                to_fetch = std::move(other.to_fetch);
+                held = std::exchange(other.held, false);
                 release = std::exchange(other.release, nullptr);
             }
             return *this;
         }
-        FillClaim(const FillClaim &) = delete;
-        FillClaim & operator=(const FillClaim &) = delete;
-        ~FillClaim() { reset(); }
+        Claim(const Claim &) = delete;
+        Claim & operator=(const Claim &) = delete;
+        ~Claim() { reset(); }
+
+        explicit operator bool() const noexcept { return held; }
 
         void reset() noexcept
         {
+            held = false;
             if (auto r = std::exchange(release, nullptr))
                 r();
         }
 
-        /// Already committed: read from the cache, never fetch.
-        VectorWithMemoryTracking<ByteRange> available;
-        /// The uncommitted tail whose downloader role this thread won: fetch and write it.
-        VectorWithMemoryTracking<ByteRange> to_fetch;
-        /// Completes and releases the newly-won roles. Never throws. Empty when the claim won nothing.
+    private:
+        friend class CacheWriter;
+        Claim(bool held_, std::function<void()> release_) : held(held_), release(std::move(release_)) {}
+        bool held = false;
         std::function<void()> release;
     };
 
-    /// Acquire downloader roles for the segments that overlap `window` (clamped). This is the only
-    /// place that acquires a role; `write` never takes one. So the live claims alone tell which roles
-    /// a thread holds. This does not wait. Default: fetch the whole window, release nothing.
-    virtual FillClaim claim(ByteRange window)
+    /// The result of `claimLeadRole`. The caller derives the uncommitted tail
+    /// `[available.end(), range.end())`: ours to fetch if `bool(claim)`, else a concurrent
+    /// downloader's to wait on. `available` is one contiguous prefix (a segment fills append-only).
+    struct Lead
     {
-        FillClaim c;
-        c.to_fetch.push_back(window);
-        return c;
+        ByteRange available;   /// committed prefix within the asked range (size 0 == nothing committed)
+        Claim claim;           /// held iff there is an uncommitted tail this thread must fill
+    };
+
+protected:
+    /// Mint a `Claim`. Only a `CacheWriter` subclass may authorize a write.
+    static Claim makeClaim(bool held, std::function<void()> release) { return Claim(held, std::move(release)); }
+
+public:
+    /// Store the part of `data` inside `range()` and not yet in `committed()`, under the held `claim`
+    /// (the caller's proof it holds the role; `write` never takes one). Return the bytes that newly
+    /// landed. Return 0 for bytes outside the range, already committed, on a reservation failure, or on
+    /// bypass; never throw for those.
+    virtual size_t write(ChainedBuffers data, const Claim & claim) = 0;
+
+    /// Serve an already-committed sub-range from this writer's own held segments. Do not go to the source.
+    virtual ChainedBuffers read(ByteRange subrange) = 0;
+
+    /// Acquire the downloader role for the segment overlapping `range` (clamped) and report the
+    /// committed prefix. The only place that acquires a role; `write` never takes one. Hold the role
+    /// only while there is a tail to fill: if the committed prefix already covers `range`, release it
+    /// at once and return an empty `Claim`. Do not wait. Default: nothing committed, role trivially held.
+    virtual Lead claimLeadRole(ByteRange range)
+    {
+        return Lead{ByteRange{range.offset, 0}, makeClaim(/*held=*/true, /*release=*/nullptr)};
     }
 
     /// Wait (bounded by `wait_for_concurrent_download_timeout_milliseconds`) until the concurrent

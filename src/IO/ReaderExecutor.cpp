@@ -402,18 +402,18 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
         }
     }
 
-    /// Every tier missed. Claim the start range of each writing tier BEFORE the fetch. The claim is held
-    /// only for its downloader role: it keeps the role open across the fetch+write, so concurrent
-    /// executors dedup to one download, and completes+releases it on destruction. Its `available` /
-    /// `to_fetch` split is unused here.
-    struct Claimed { CacheWriterPtr writer; ByteRange range; CacheWriter::FillClaim claim; };
+    /// Every tier missed. Claim the lead role of each writing tier BEFORE the fetch. A held claim keeps
+    /// the downloader role open across the fetch+write, so concurrent executors dedup to one download,
+    /// and completes+releases it on destruction. The `available` prefix is unused here (the thin
+    /// executor fetches the whole range coarsely).
+    struct Claimed { CacheWriterPtr writer; ByteRange range; CacheWriter::Claim claim; };
     VectorWithMemoryTracking<Claimed> claimed;
     for (auto & miss_tier : miss_tiers)
     {
         if (!miss_tier.writer)
             continue;  /// a bypass tier populates nothing
-        auto claim = miss_tier.writer->claim(miss_tier.range);
-        claimed.push_back(Claimed{std::move(miss_tier.writer), miss_tier.range, std::move(claim)});
+        auto lead = miss_tier.writer->claimLeadRole(miss_tier.range);
+        claimed.push_back(Claimed{std::move(miss_tier.writer), miss_tier.range, std::move(lead.claim)});
     }
 
     /// A range another thread is already downloading is fetched through below (its `write` lands 0).
@@ -446,6 +446,10 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
 
     for (const auto & claimed_tier : claimed)
     {
+        /// Only a held claim authorizes a write; a tier led by a concurrent downloader is filled by
+        /// that thread, not here.
+        if (!claimed_tier.claim)
+            continue;
         const size_t lo = std::max(claimed_tier.range.offset, fetch_lo);
         const size_t hi = std::min(claimed_tier.range.end(), fetched_end);
         if (lo >= hi)
@@ -455,7 +459,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
         if (!fetched.covers(write_range))
             continue;
         stats.add(Stats::CachePopulateRequests);
-        claimed_tier.writer->write(fetched.slice(write_range));
+        claimed_tier.writer->write(fetched.slice(write_range), claimed_tier.claim);
     }
 
     return fetched.slice(ByteRange{window_offset, serve_len(fetched_end)});
