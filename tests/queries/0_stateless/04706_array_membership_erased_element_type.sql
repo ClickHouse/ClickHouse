@@ -631,15 +631,17 @@ DROP TABLE IF EXISTS t_rewritten;
 CREATE TABLE t_rewritten (a Array(Dynamic)) ENGINE = Memory;
 INSERT INTO t_rewritten VALUES (['V0'::String::Dynamic]);
 
+-- The rewrite is an analyzer pass: without `enable_analyzer = 1` it never runs, so the second arm
+-- would answer 1 on any build.
 SELECT
     count() > 0 AS rewrite_happened
 FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = toFixedString('V0', 3), a) FROM t_rewritten)
 WHERE explain ILIKE '%has%'
-SETTINGS optimize_rewrite_array_exists_to_has = 1;
+SETTINGS optimize_rewrite_array_exists_to_has = 1, enable_analyzer = 1;
 
 SELECT arrayExists(x -> x = toFixedString('V0', 3), a) AS rewritten_got
 FROM t_rewritten
-SETTINGS optimize_rewrite_array_exists_to_has = 1;
+SETTINGS optimize_rewrite_array_exists_to_has = 1, enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_dyn_num;
 DROP TABLE IF EXISTS t_lc_dyn;
