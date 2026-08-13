@@ -52,6 +52,10 @@ public:
 
         if (auto * function_node = node->as<FunctionNode>(); function_node && function_node->isResolved())
         {
+            /// A lambda's parameter types are derived from its higher-order function's array
+            /// arguments, so replacing a column in one of those arguments invalidates them.
+            /// Re-derive them before rebuilding the function, which reads the lambda's type.
+            rerunLambdaArgumentsResolve(function_node, context);
             rerunFunctionResolve(function_node, context);
         }
         else if (auto * lambda_node = node->as<LambdaNode>())

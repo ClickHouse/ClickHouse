@@ -30,6 +30,26 @@ left join with join_use_nulls, right column inside a lambda body
 left join with join_use_nulls, right column outside a lambda
 1
 2
+left join with join_use_nulls, nested lambda over the right column
+1
+2
+nested lambda over the right column, without join_use_nulls
+1
+2
+nested arrayMap over the right column
+1
+2
+nested arrayFilter over the right column
+1
+2
+three lambdas deep over the right column
+1
+2
+nested lambda over a column of a single table
+10
+20
+lambda body reading both join inputs
+both join inputs outside a lambda, refused already
 left join with join_use_nulls, lambda parameter shadowing the right column
 1	100
 2	\N

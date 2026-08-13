@@ -111,6 +111,44 @@ SELECT 'left join with join_use_nulls, right column outside a lambda';
 SELECT a.id FROM pw_lam_lj_a AS a LEFT JOIN pw_lam_lj_b AS b ON a.id = b.x
 PREWHERE b.y != 0 ORDER BY a.id SETTINGS join_use_nulls = 1;
 
+-- The parameter types of a nested lambda are derived from the array it iterates, so restoring a
+-- column inside that array must re-derive them. Every spelling and depth agrees with the
+-- non-lambda control above.
+SELECT 'left join with join_use_nulls, nested lambda over the right column';
+SELECT a.id FROM pw_lam_lj_a AS a LEFT JOIN pw_lam_lj_b AS b ON a.id = b.x
+PREWHERE arrayExists(z -> arrayExists(y -> y != 0, [b.y]), [1]) ORDER BY a.id SETTINGS join_use_nulls = 1;
+
+SELECT 'nested lambda over the right column, without join_use_nulls';
+SELECT a.id FROM pw_lam_lj_a AS a LEFT JOIN pw_lam_lj_b AS b ON a.id = b.x
+PREWHERE arrayExists(z -> arrayExists(y -> y != 0, [b.y]), [1]) ORDER BY a.id SETTINGS join_use_nulls = 0;
+
+SELECT 'nested arrayMap over the right column';
+SELECT a.id FROM pw_lam_lj_a AS a LEFT JOIN pw_lam_lj_b AS b ON a.id = b.x
+PREWHERE arrayExists(z -> (arrayMap(y -> y != 0, [b.y])[1]), [1]) ORDER BY a.id SETTINGS join_use_nulls = 1;
+
+SELECT 'nested arrayFilter over the right column';
+SELECT a.id FROM pw_lam_lj_a AS a LEFT JOIN pw_lam_lj_b AS b ON a.id = b.x
+PREWHERE arrayExists(z -> arrayFilter(y -> y != 0, [b.y]) != [], [1]) ORDER BY a.id SETTINGS join_use_nulls = 1;
+
+SELECT 'three lambdas deep over the right column';
+SELECT a.id FROM pw_lam_lj_a AS a LEFT JOIN pw_lam_lj_b AS b ON a.id = b.x
+PREWHERE arrayExists(w -> arrayExists(z -> arrayExists(y -> y != 0, [b.y]), [1]), [1])
+ORDER BY a.id SETTINGS join_use_nulls = 1;
+
+-- Nothing is restored without a join, so the same nesting reads the column unchanged.
+SELECT 'nested lambda over a column of a single table';
+SELECT v FROM pw_lam_lj_a PREWHERE arrayExists(z -> arrayExists(y -> y != 0, [pw_lam_lj_a.v]), [1]) ORDER BY v;
+
+-- PREWHERE reads a single table expression, so a lambda body spanning both join inputs is
+-- refused like the non-lambda spelling instead of reaching the reader.
+SELECT 'lambda body reading both join inputs';
+SELECT a.id FROM pw_lam_lj_a AS a LEFT JOIN pw_lam_lj_b AS b ON a.id = b.x
+PREWHERE arrayExists(z -> (a.id = 1) AND (b.y != 0), [1]) ORDER BY a.id; -- { serverError ILLEGAL_PREWHERE }
+
+SELECT 'both join inputs outside a lambda, refused already';
+SELECT a.id FROM pw_lam_lj_a AS a LEFT JOIN pw_lam_lj_b AS b ON a.id = b.x
+PREWHERE (a.id = 1) AND (b.y != 0) ORDER BY a.id; -- { serverError ILLEGAL_PREWHERE }
+
 -- A lambda parameter is bound by the lambda, so sharing a name and a type with the
 -- substituted join column must not make the restoration rewrite it.
 SELECT 'left join with join_use_nulls, lambda parameter shadowing the right column';

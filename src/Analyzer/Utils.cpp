@@ -9,6 +9,7 @@
 #include <Parsers/ASTFunction.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -49,6 +50,7 @@
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/LambdaNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
@@ -939,6 +941,56 @@ void replaceColumns(QueryTreeNodePtr & node,
     visitor.visit(node);
 }
 
+namespace
+{
+
+/// Retypes the columns of a lambda body that read the lambda's own parameters, after those
+/// parameter types changed, and re-resolves every function built on them.
+class RetypeLambdaArgumentColumnsVisitor : public InDepthQueryTreeVisitor<RetypeLambdaArgumentColumnsVisitor>
+{
+public:
+    RetypeLambdaArgumentColumnsVisitor(const LambdaArgumentsNode * arguments_, const ContextPtr & context_)
+        : arguments(arguments_)
+        , context(context_)
+    {}
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (auto * column_node = node->as<ColumnNode>())
+        {
+            if (column_node->getColumnSourceOrNull().get() != arguments)
+                return;
+
+            const auto & names = arguments->getNames();
+            auto it = std::find(names.begin(), names.end(), column_node->getColumnName());
+            if (it == names.end())
+                return;
+
+            column_node->setColumnType(arguments->getTypes()[it - names.begin()]);
+        }
+        else if (auto * function_node = node->as<FunctionNode>(); function_node && function_node->isResolved())
+        {
+            rerunLambdaArgumentsResolve(function_node, context);
+            rerunFunctionResolve(function_node, context);
+        }
+    }
+
+    /// Rebuild a function only after its arguments settled.
+    bool shouldTraverseTopToBottom() const { return false; }
+
+    static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
+    {
+        auto child_node_type = child->getNodeType();
+        return child_node_type != QueryTreeNodeType::QUERY && child_node_type != QueryTreeNodeType::UNION;
+    }
+
+private:
+    const LambdaArgumentsNode * arguments;
+    const ContextPtr & context;
+};
+
+}
+
 void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
 {
     if (!function_node->isResolved())
@@ -962,6 +1014,77 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
     else if (function_node->isWindowFunction())
     {
         function_node->resolveAsWindowFunction(resolveAggregateFunction(*function_node, function_node->getFunctionName()));
+    }
+}
+
+void rerunLambdaArgumentsResolve(FunctionNode * function_node, ContextPtr context)
+{
+    if (!function_node->isResolved())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Trying to rerun lambda arguments resolve of unresolved function '{}'", function_node->getFunctionName());
+
+    if (!function_node->isOrdinaryFunction())
+        return;
+
+    auto & argument_nodes = function_node->getArguments().getNodes();
+
+    std::vector<size_t> lambda_argument_indexes;
+    for (size_t i = 0; i < argument_nodes.size(); ++i)
+        if (argument_nodes[i]->as<LambdaNode>())
+            lambda_argument_indexes.push_back(i);
+
+    if (lambda_argument_indexes.empty())
+        return;
+
+    auto function = FunctionFactory::instance().tryGet(function_node->getFunctionName(), context);
+    if (!function || !function->isHigherOrderFunction())
+        return;
+
+    /// `getLambdaArgumentTypes` expects a placeholder DataTypeFunction of the right arity at every
+    /// lambda position and fills in the parameter types from the other arguments, exactly as
+    /// function resolution does. Deriving `Array(T) -> T` here instead would miss the
+    /// tuple-unpacking and LowCardinality handling each higher-order function applies.
+    DataTypes argument_types;
+    argument_types.reserve(argument_nodes.size());
+    for (const auto & argument_node : argument_nodes)
+    {
+        if (const auto * lambda_node = argument_node->as<LambdaNode>())
+            argument_types.push_back(std::make_shared<DataTypeFunction>(
+                DataTypes(lambda_node->getArguments().getNames().size(), nullptr), nullptr));
+        else
+            argument_types.push_back(argument_node->getResultType());
+    }
+
+    function->getLambdaArgumentTypes(argument_types);
+
+    for (size_t index : lambda_argument_indexes)
+    {
+        const auto * function_data_type = typeid_cast<const DataTypeFunction *>(argument_types[index].get());
+        if (!function_data_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Function '{}' expected function data type for lambda argument with index {}. Actual: {}",
+                function_node->getFunctionName(), index, argument_types[index]->getName());
+
+        auto & lambda_node = argument_nodes[index]->as<LambdaNode &>();
+        const auto & derived_argument_types = function_data_type->getArgumentTypes();
+        if (derived_argument_types.size() != lambda_node.getArguments().getNames().size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Function '{}' lambda argument with index {} arguments size mismatch. Actual: {}. Expected {}",
+                function_node->getFunctionName(), index,
+                derived_argument_types.size(), lambda_node.getArguments().getNames().size());
+
+        if (derived_argument_types == lambda_node.getArguments().getTypes())
+            continue;
+
+        lambda_node.getArguments().resolve(derived_argument_types);
+
+        /// The body reads the parameters through columns sourced from the arguments node, so those
+        /// columns and everything derived from them must be re-typed too.
+        RetypeLambdaArgumentColumnsVisitor retype_visitor(&lambda_node.getArguments(), context);
+        retype_visitor.visit(lambda_node.getExpression());
+
+        lambda_node.resolve(std::make_shared<DataTypeFunction>(
+            derived_argument_types, lambda_node.getExpression()->getResultType()));
     }
 }
 

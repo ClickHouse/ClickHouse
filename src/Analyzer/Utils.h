@@ -152,6 +152,12 @@ void replaceColumns(QueryTreeNodePtr & node,
   */
 void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context);
 
+/** Re-derive the parameter types of the lambda arguments of a resolved function from its current
+  * arguments, and re-resolve the affected lambda bodies.
+  * This function should be called when the arguments of a higher-order function changed type.
+  */
+void rerunLambdaArgumentsResolve(FunctionNode * function_node, ContextPtr context);
+
 /// Just collect all identifiers from query tree
 NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);
 
