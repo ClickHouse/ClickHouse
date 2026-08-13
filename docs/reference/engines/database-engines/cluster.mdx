@@ -36,6 +36,8 @@ When the cluster has several shards, each proxy table reads from all of them, bu
 CREATE TABLE ... ENGINE = Distributed('cluster_name', 'database', 'table'[, rand()])
 ```
 
+The only exception is a table that is currently served through the remote-replica fallback described above (the local replica of a shard does not have the database or the table): a `Distributed` table over the whole cluster performs no such fallback, and the fallback subset of the cluster has no name of its own, so no equivalent re-executable definition exists, and `SHOW CREATE TABLE` reports the `THERE_IS_NO_QUERY` error until the local replica has the objects again.
+
 ## Notes {#notes}
 
 - The engine is a read-through view of the cluster: `CREATE TABLE`, `DROP TABLE`, `ALTER` and similar DDL statements against the `Cluster` database are not supported. Manage the schema on the cluster directly, e.g. with [`ON CLUSTER`](/reference/statements/distributed-ddl) DDL queries.

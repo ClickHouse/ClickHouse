@@ -12,6 +12,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
 
@@ -26,6 +27,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int THERE_IS_NO_QUERY;
     extern const int UNKNOWN_TABLE;
 }
 
@@ -84,12 +86,33 @@ ASTPtr DatabaseCluster::getCreateTableQueryImpl(const String & table_name, Conte
     }
 
     /// The table is exposed as the `Distributed` table engine over the named cluster, which is the
-    /// persistent counterpart of the `cluster` table function. Unlike the `Remote` database engine,
-    /// whose live proxy can be bound to an ad-hoc fallback cluster whose addresses have to be
-    /// serialized explicitly (see `DatabaseRemote::getCreateTableQueryImpl`), the emitted definition
-    /// always carries the configured cluster name: the remote-only fallback subset has no name of
-    /// its own, and a `Distributed` table recreated from the definition performs the same
-    /// local-replica fallback when reading anyway.
+    /// persistent counterpart of the `cluster` table function.
+    const auto * distributed = typeid_cast<const StorageDistributed *>(storage.get());
+
+    /// The live proxy is bound to the remote-only fallback cluster when the local replica of a
+    /// shard does not have the database or the table (see `DatabaseRemote::fetchTableStructure`).
+    /// A `Distributed` table over the whole named cluster is not equivalent to that object: it
+    /// performs no such fallback on the metadata lookup, so replaying it fails on the missing
+    /// local objects. The fallback subset has no name of its own either, and unlike the `Remote`
+    /// engine (which serializes the effective fallback addresses together with its stored
+    /// credentials, see `DatabaseRemote::getCreateTableQueryImpl`), the connections of this engine
+    /// are defined by the per-replica settings of the cluster configuration, which no explicit
+    /// address list can carry. No re-executable definition exists for this transient state, so
+    /// report that instead of emitting a definition that recreates a different object.
+    if (distributed && distributed->getCluster() != getProxyClusters().cluster)
+    {
+        if (throw_on_error)
+            throw Exception(
+                ErrorCodes::THERE_IS_NO_QUERY,
+                "Table {}.{} is currently served through the remote-replica fallback (the local replica of a shard of cluster {} "
+                "does not have the database or the table), and a `Distributed` table over the whole cluster would not perform "
+                "this fallback, so there is no equivalent re-executable CREATE query for it",
+                backQuoteIfNeed(remote_database),
+                backQuoteIfNeed(table_name),
+                backQuoteIfNeed(cluster_name));
+        return nullptr;
+    }
+
     auto table_storage_define = database_engine_define->clone();
     {
         ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
@@ -101,7 +124,6 @@ ASTPtr DatabaseCluster::getCreateTableQueryImpl(const String & table_name, Conte
         /// `DatabaseRemote::fetchTable`). The key has to be serialized explicitly: otherwise the
         /// emitted definition recreates a table that rejects a multi-shard `INSERT`
         /// (`STORAGE_REQUIRES_PARAMETER`), while the live proxy accepts it.
-        const auto * distributed = typeid_cast<const StorageDistributed *>(storage.get());
         const bool has_implicit_sharding_key = distributed && distributed->getCluster()->getShardsInfo().size() > 1;
 
         auto & engine_arguments = ast_storage->engine->arguments->children;
