@@ -69,6 +69,22 @@ String
 0
 -- aiClassify: with temperature
 0
+-- aiFilter: registered
+aiFilter
+-- aiFilter: too few arguments
+-- aiFilter: too many arguments
+-- aiFilter: non-constant condition
+-- aiFilter: wrong type for condition
+-- aiFilter: empty condition
+-- aiFilter: empty condition on empty input
+-- aiFilter: return type
+result	UInt8
+-- aiFilter: Nullable return type
+result	Nullable(UInt8)
+-- aiFilter: empty input executes
+0
+-- aiFilter: with temperature
+0
 -- aiExtract: registered
 aiExtract
 -- aiExtract: too few arguments
@@ -162,6 +178,8 @@ result	Nullable(Float32)
 -- aiGenerate: DEFAULT survives INSERT (no exception)
 1	0
 -- aiClassify: DEFAULT survives INSERT (no exception)
+1	0
+-- aiFilter: DEFAULT survives INSERT (no exception)
 1	0
 -- aiExtract: DEFAULT survives INSERT (no exception)
 1	0

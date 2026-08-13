@@ -341,6 +341,58 @@ SELECT '-- aiClassify: with temperature';
 SELECT count() FROM (SELECT aiClassify(x, ['a', 'b'], map('temperature', '0.0')) AS result FROM tab);
 
 -- =============================================================================
+-- 14b. aiFilter
+-- =============================================================================
+
+SELECT '-- aiFilter: registered';
+SELECT name FROM system.functions WHERE name = 'aiFilter';
+
+SELECT '-- aiFilter: too few arguments';
+SELECT aiFilter(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT aiFilter('hello'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- aiFilter: too many arguments';
+SELECT aiFilter('x', 'angry', map('temperature', '0.0'), 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- aiFilter: non-constant condition';
+SELECT aiFilter(x, x) FROM tab; -- { serverError ILLEGAL_COLUMN }
+
+SELECT '-- aiFilter: wrong type for condition';
+SELECT aiFilter(x, 1) FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- aiFilter: empty condition';
+SELECT aiFilter('test', ''); -- { serverError BAD_ARGUMENTS }
+SELECT aiFilter('test', '   '); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- aiFilter: empty condition on empty input';
+SELECT aiFilter(x, '') FROM (SELECT '' AS x WHERE 0); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- aiFilter: return type';
+DROP TABLE IF EXISTS _03300_ret_filter;
+CREATE TABLE _03300_ret_filter ENGINE = Memory AS
+    SELECT aiFilter(x, 'is a greeting') AS result FROM tab;
+SELECT name, type FROM system.columns
+    WHERE database = currentDatabase() AND table = '_03300_ret_filter';
+DROP TABLE IF EXISTS _03300_ret_filter;
+
+SELECT '-- aiFilter: Nullable return type';
+DROP TABLE IF EXISTS _03300_ret_filter_null;
+DROP TABLE IF EXISTS _03300_filter_null_in;
+CREATE TABLE _03300_filter_null_in (x Nullable(String)) ENGINE = Memory;
+CREATE TABLE _03300_ret_filter_null ENGINE = Memory AS
+    SELECT aiFilter(x, 'is a greeting') AS result FROM _03300_filter_null_in;
+SELECT name, type FROM system.columns
+    WHERE database = currentDatabase() AND table = '_03300_ret_filter_null';
+DROP TABLE IF EXISTS _03300_ret_filter_null;
+DROP TABLE IF EXISTS _03300_filter_null_in;
+
+SELECT '-- aiFilter: empty input executes';
+SELECT count() FROM (SELECT aiFilter(x, 'is a greeting') AS result FROM tab);
+
+SELECT '-- aiFilter: with temperature';
+SELECT count() FROM (SELECT aiFilter(x, 'is a greeting', map('temperature', '0.0')) AS result FROM tab);
+
+-- =============================================================================
 -- 15. aiExtract
 -- =============================================================================
 
@@ -648,6 +700,18 @@ CREATE TABLE _03300_classify_default
 INSERT INTO _03300_classify_default (id, doc) VALUES (1, 'hello world');
 SELECT id, length(label) FROM _03300_classify_default;
 DROP TABLE _03300_classify_default;
+
+SELECT '-- aiFilter: DEFAULT survives INSERT (no exception)';
+DROP TABLE IF EXISTS _03300_filter_default;
+CREATE TABLE _03300_filter_default
+(
+    id UInt32,
+    doc String,
+    matched UInt8 DEFAULT aiFilter(doc, 'is greeting')
+) ENGINE = MergeTree ORDER BY id;
+INSERT INTO _03300_filter_default (id, doc) VALUES (1, 'hello world');
+SELECT id, matched FROM _03300_filter_default;
+DROP TABLE _03300_filter_default;
 
 SELECT '-- aiExtract: DEFAULT survives INSERT (no exception)';
 DROP TABLE IF EXISTS _03300_extract_default;

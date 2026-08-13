@@ -2,7 +2,7 @@
 Integration tests for AI function execution paths.
 
 Tests the row-processing loop against a mock OpenAI-compatible HTTP server
-for aiGenerate, aiClassify, aiExtract, and aiTranslate.
+for aiGenerate, aiClassify, aiFilter, aiExtract, and aiTranslate.
 """
 
 import json
@@ -178,6 +178,16 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
         instance.query("CREATE TABLE test_input (x String) ENGINE = Memory")
         instance.query(
             "CREATE TABLE test_input_nullable (x Nullable(String)) ENGINE = Memory"
+        )
+        # MergeTree is required for a real PREWHERE (other engines rewrite it to WHERE).
+        instance.query(
+            "CREATE TABLE test_filter_mt (x String) ENGINE = MergeTree ORDER BY x"
+        )
+        instance.query(
+            "CREATE TABLE test_filter_join_left (id UInt32, x String) ENGINE = Memory"
+        )
+        instance.query(
+            "CREATE TABLE test_filter_join_right (id UInt32, tag String) ENGINE = Memory"
         )
         instance.query(
             "CREATE TABLE test_input_pairs (id UInt8, a Nullable(String), b Nullable(String)) ENGINE = Memory"
@@ -453,6 +463,187 @@ def test_classify_null_input(started_cluster):
     assert len(lines) == 2
     assert "\\N" in lines
     assert "a" in lines
+
+
+# ---------------------------------------------------------------------------
+# aiFilter
+# ---------------------------------------------------------------------------
+
+
+def test_filter_basic(started_cluster):
+    """aiFilter asks the model for a bare true/false response.
+    The mock returns true for ordinary messages."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('The package never arrived')")
+    result = instance.query(
+        "SELECT aiFilter(x, 'the customer is complaining about shipping', map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    assert result.strip() == "1"
+
+
+def test_filter_negative(started_cluster):
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('does not match anything')")
+    result = instance.query(
+        "SELECT aiFilter(x, 'angry about shipping', map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    assert result.strip() == "0"
+
+
+def test_filter_where(started_cluster):
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query(
+        "INSERT INTO test_input VALUES ('great product'), ('does not match'), ('also good')"
+    )
+    result = instance.query(
+        "SELECT x FROM test_input WHERE aiFilter(x, 'positive feedback', map('credentials', 'ai_mock')) ORDER BY x",
+        settings=AI_SETTINGS,
+    )
+    lines = result.strip().split("\n")
+    assert lines == ["also good", "great product"]
+
+
+def test_filter_no_response_format(started_cluster):
+    """aiFilter does not send a JSON-schema response_format; it asks for bare true/false."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('hello')")
+    instance.query(
+        "SELECT aiFilter(x, 'is a greeting', map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    last = json.loads(
+        instance.exec_in_container(
+            ["curl", "-s", f"http://localhost:{MOCK_PORT}/last-request"]
+        )
+    )
+    body = json.loads(last["body"])
+    assert "response_format" not in body
+    system = next(m["content"] for m in body["messages"] if m["role"] == "system")
+    assert "lowercase text true or false" in system.lower()
+
+
+def test_filter_null_input(started_cluster):
+    instance.query("TRUNCATE TABLE test_input_nullable")
+    instance.query("INSERT INTO test_input_nullable VALUES (NULL), ('text')")
+    result = instance.query(
+        "SELECT aiFilter(x, 'mentions a bug', map('credentials', 'ai_mock')) FROM test_input_nullable",
+        settings=AI_SETTINGS,
+    )
+    lines = result.strip().split("\n")
+    assert len(lines) == 2
+    assert "\\N" in lines
+    assert "1" in lines
+
+
+def test_filter_profile_events(started_cluster):
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('a'), ('b')")
+    qid = unique_query_id("filter_events")
+    instance.query(
+        "SELECT aiFilter(x, 'is alphabetic', map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 2
+    assert int(events["rows_processed"]) == 2
+
+
+def test_filter_prewhere(started_cluster):
+    """aiFilter is usable in PREWHERE on MergeTree (same filtering as WHERE)."""
+    instance.query("TRUNCATE TABLE test_filter_mt")
+    instance.query(
+        "INSERT INTO test_filter_mt VALUES ('great product'), ('does not match'), ('also good')"
+    )
+    qid = unique_query_id("filter_prewhere")
+    result = instance.query(
+        "SELECT x FROM test_filter_mt "
+        "PREWHERE aiFilter(x, 'positive feedback', map('credentials', 'ai_mock')) "
+        "ORDER BY x",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    assert result.strip().split("\n") == ["also good", "great product"]
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 3
+    assert int(events["rows_processed"]) == 3
+
+
+def test_filter_join_on(started_cluster):
+    """aiFilter in JOIN ... ON with a left-only predicate: one LLM call per left row.
+
+    When the filter does not depend on the right table, ClickHouse can evaluate it once
+    per left row (not once per candidate pair), which is the cheap/correct pattern.
+    """
+    instance.query("TRUNCATE TABLE test_filter_join_left")
+    instance.query("TRUNCATE TABLE test_filter_join_right")
+    instance.query(
+        "INSERT INTO test_filter_join_left VALUES "
+        "(1, 'great product'), (2, 'does not match'), (3, 'also good')"
+    )
+    instance.query(
+        "INSERT INTO test_filter_join_right VALUES "
+        "(1, 'a'), (1, 'b'), (2, 'c'), (3, 'd')"
+    )
+    qid = unique_query_id("filter_join_on")
+    result = instance.query(
+        """
+        SELECT l.x, r.tag
+        FROM test_filter_join_left AS l
+        INNER JOIN test_filter_join_right AS r
+            ON aiFilter(l.x, 'positive feedback', map('credentials', 'ai_mock'))
+            AND l.id = r.id
+        ORDER BY l.x, r.tag
+        """,
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    assert result.strip().split("\n") == [
+        "also good\td",
+        "great product\ta",
+        "great product\tb",
+    ]
+    events = get_profile_events(qid)
+    # Three left rows, one API call each — not one call per (left,right) candidate pair.
+    assert int(events["api_calls"]) == 3
+    assert int(events["rows_processed"]) == 3
+
+
+def test_filter_join_on_per_pair(started_cluster):
+    """aiFilter in JOIN ... ON that depends on both sides is evaluated per candidate pair."""
+    instance.query("TRUNCATE TABLE test_filter_join_left")
+    instance.query("TRUNCATE TABLE test_filter_join_right")
+    instance.query(
+        "INSERT INTO test_filter_join_left VALUES (1, 'great product'), (2, 'also good')"
+    )
+    instance.query(
+        "INSERT INTO test_filter_join_right VALUES (1, 'ok'), (1, 'does not match')"
+    )
+    qid = unique_query_id("filter_join_on_pair")
+    result = instance.query(
+        """
+        SELECT l.x, r.tag
+        FROM test_filter_join_left AS l
+        INNER JOIN test_filter_join_right AS r
+            ON l.id = r.id
+            AND aiFilter(
+                concat(l.x, ' ', r.tag),
+                'positive feedback',
+                map('credentials', 'ai_mock')
+            )
+        ORDER BY l.x, r.tag
+        """,
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    # Mock returns false when the user message contains "does not match".
+    assert result.strip().split("\n") == ["great product\tok"]
+    events = get_profile_events(qid)
+    # Two right matches for id=1 → two candidate pairs (and one LLM call each).
+    assert int(events["api_calls"]) == 2
+    assert int(events["rows_processed"]) == 2
 
 
 # ---------------------------------------------------------------------------
