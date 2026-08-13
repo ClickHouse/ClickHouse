@@ -1040,10 +1040,9 @@ void rerunLambdaArgumentsResolve(FunctionNode * function_node, ContextPtr contex
     if (!function || !function->isHigherOrderFunction())
         return;
 
-    /// `getLambdaArgumentTypes` expects a placeholder DataTypeFunction of the right arity at every
-    /// lambda position and fills in the parameter types from the other arguments, exactly as
-    /// function resolution does. Deriving `Array(T) -> T` here instead would miss the
-    /// tuple-unpacking and LowCardinality handling each higher-order function applies.
+    /// Each lambda position takes a placeholder DataTypeFunction of the right arity, which
+    /// `getLambdaArgumentTypes` fills in from the remaining arguments. Only the function itself knows
+    /// how, so the tuple-unpacking and LowCardinality cases are handled here for free.
     DataTypes argument_types;
     argument_types.reserve(argument_nodes.size());
     for (const auto & argument_node : argument_nodes)
