@@ -308,7 +308,13 @@ public:
         {
             const auto sort_description = sorting_step->getSortDescription();
             const UInt64 limit = sorting_step->getLimit();
-            /// `exact_rows_before_limit` needs the exact count, so the bound must not be applied per replica.
+            /// `rows_before_limit_at_least` is counted below this merge, so a hard row cut must not be shipped
+            /// into a fragment - it would truncate a replica's stream before the counter sees it. The sort's
+            /// own limit is left in place: serialization drops it, so it never reaches a replica, and on the
+            /// initiator's local half it matches what classic parallel replicas does. Rebuilding that sort
+            /// unbounded would make the statistic exact, but it deadlocks the merge (it reaches its limit,
+            /// enters the `always_read_till_end` drain and never observes its inputs finishing), so the
+            /// statistic is only kept no worse than classic here, not made exact.
             const bool read_till_end = mustReadTillEnd();
 
             /// Per-replica sort. Still a full sort here: read-in-order runs later, separately on each side.
