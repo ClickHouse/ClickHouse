@@ -4862,6 +4862,34 @@ Possible values:
 | `2`   | The query waits for all mutations to complete on all replicas (if they exist).                                                                        |
 | `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
 )", 0) \
+    DECLARE(UInt64, mutations_restrict, 0, R"(
+Safety catch that rejects DDL/DML which would create a mutation (an entry in [`system.mutations`](/reference/system-tables/mutations)) before it runs. Use as a per-session or profile-level guard against accidental heavy mutations. Complements the server-level `disable_insertion_and_mutation`; unlike that setting, it can be scoped per user/session and does not block `INSERT`s.
+
+Possible values:
+
+| Value | Description                                                                                                                                                                                                                                                                                                                            |
+|-------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `0`   | No restriction (default).                                                                                                                                                                                                                                                                                                              |
+| `1`   | Reject `ALTER TABLE` forms that produce a mutation: `UPDATE`, `DELETE`, `MATERIALIZE INDEX`/`PROJECTION`/`COLUMN`/`STATISTICS`/`TTL`, `APPLY DELETED MASK`, `APPLY PATCHES`, `DROP INDEX`/`PROJECTION`/`STATISTICS`, `RENAME COLUMN`, `DROP COLUMN` on a physical column, non-metadata `MODIFY COLUMN`, and `CLEAR ... IN PARTITION`. Metadata-only `ALTER`s (`ADD COLUMN`, `COMMENT`, `MODIFY SETTING`, `ADD`/`DROP CONSTRAINT`, alias-only `DROP COLUMN`, metadata-only `MODIFY COLUMN`, etc.) still succeed. Standalone lightweight `DELETE` / `UPDATE` still succeed. |
+| `2`   | Everything from `1`, plus reject standalone lightweight `DELETE` and `UPDATE` (`DELETE FROM t WHERE ...`, `UPDATE t SET ... WHERE ...`) and the lightweight-rewrite path of `ALTER TABLE ... UPDATE` selected by `alter_update_mode`.                                                                                                       |
+
+Does not affect `SYSTEM` commands, partition attach/detach/drop, `OPTIMIZE`, `TRUNCATE`, `CREATE`/`DROP TABLE`, or `INSERT`.
+
+Users can lower this in a session to opt out. To enforce it system-wide or per user, set the value in a profile and mark it read-only:
+
+```xml
+<profiles>
+    <default>
+        <mutations_restrict>1</mutations_restrict>
+        <constraints>
+            <mutations_restrict>
+                <readonly/>
+            </mutations_restrict>
+        </constraints>
+    </default>
+</profiles>
+```
+)", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_delete, true, R"(
 Enable lightweight DELETE mutations for mergetree tables.
 )", 0, allow_experimental_lightweight_delete) \

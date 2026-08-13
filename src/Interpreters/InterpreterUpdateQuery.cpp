@@ -42,6 +42,7 @@ namespace Setting
     extern const SettingsBool enable_lightweight_update;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 mutations_restrict;
 }
 
 namespace ServerSetting
@@ -81,6 +82,11 @@ static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query
 BlockIO InterpreterUpdateQuery::execute()
 {
     const auto & settings = getContext()->getSettingsRef();
+    if (settings[Setting::mutations_restrict] >= 2)
+        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED,
+            "UPDATE queries are rejected because setting 'mutations_restrict' is >= 2. "
+            "Set 'mutations_restrict = 0' in the current session to allow them");
+
     if (!settings[Setting::enable_lightweight_update])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Lightweight updates are not allowed. Set 'enable_lightweight_update = 1' to allow them");
 

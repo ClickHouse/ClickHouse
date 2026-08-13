@@ -1,0 +1,72 @@
+<clickhouse>
+    <profiles>
+        <default>
+        </default>
+
+        <!-- Tier 1 pinned via <readonly/>: the user cannot lower `mutations_restrict` in the session,
+             so mutation-producing `ALTER`s are guaranteed to be rejected. -->
+        <restrict_alter_profile>
+            <mutations_restrict>1</mutations_restrict>
+            <constraints>
+                <mutations_restrict>
+                    <readonly/>
+                </mutations_restrict>
+            </constraints>
+        </restrict_alter_profile>
+
+        <!-- Tier 2 pinned via <readonly/>: additionally rejects lightweight DELETE / UPDATE. -->
+        <restrict_all_profile>
+            <mutations_restrict>2</mutations_restrict>
+            <constraints>
+                <mutations_restrict>
+                    <readonly/>
+                </mutations_restrict>
+            </constraints>
+        </restrict_all_profile>
+
+        <!-- Tier 1 set as a soft default: the user CAN lower it per-session (no <readonly/>). -->
+        <default_restrict_profile>
+            <mutations_restrict>1</mutations_restrict>
+        </default_restrict_profile>
+    </profiles>
+
+    <users>
+        <default>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </default>
+        <restrict_alter_user>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>restrict_alter_profile</profile>
+            <quota>default</quota>
+        </restrict_alter_user>
+        <restrict_all_user>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>restrict_all_profile</profile>
+            <quota>default</quota>
+        </restrict_all_user>
+        <default_restrict_user>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default_restrict_profile</profile>
+            <quota>default</quota>
+        </default_restrict_user>
+    </users>
+
+    <quotas>
+        <default>
+        </default>
+    </quotas>
+</clickhouse>

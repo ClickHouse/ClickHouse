@@ -63,6 +63,7 @@ namespace Setting
     extern const SettingsTimezone session_timezone;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 mutations_restrict;
 }
 
 namespace ServerSetting
@@ -236,6 +237,23 @@ void validateMutationsAllowed(const CommandSegments & segments, const DatabasePt
 
         if (std::holds_alternative<PartitionCommands>(segment))
             throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Mutations are prohibited");
+    }
+}
+
+void validateMutationsNotRestricted(const CommandSegments & segments, const ContextPtr & context)
+{
+    if (context->getSettingsRef()[Setting::mutations_restrict] < 1)
+        return;
+
+    for (const auto & segment : segments)
+    {
+        if (const auto * mutation_commands = std::get_if<MutationCommands>(&segment))
+        {
+            if (mutation_commands->hasNonEmptyMutationCommands())
+                throw Exception(ErrorCodes::QUERY_IS_PROHIBITED,
+                    "ALTER queries that would create a mutation are rejected because setting 'mutations_restrict' is >= 1. "
+                    "Set 'mutations_restrict = 0' in the current session to allow them");
+        }
     }
 }
 
@@ -502,6 +520,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     auto segments = parseAlterCommandSegments(alter, table, getContext());
     validateSegmentsCombination(segments);
     validateMutationsAllowed(segments, database, getContext());
+    validateMutationsNotRestricted(segments, getContext());
     validateReplicatedDatabaseSegments(segments, database);
 
     if (auto lightweight_result = tryRewriteToLightweightUpdate(segments, table, getContext(), query_ptr))
