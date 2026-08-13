@@ -2400,6 +2400,13 @@ class TestCase:
         ):
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " --use_query_cache=0"
             client_options += " --use_query_cache=0"
+            # In cloud mode the same option is also carried over HTTP, where a
+            # repeated parameter likewise takes its last value.
+            url_params = os.environ.get("CLICKHOUSE_URL_PARAMS", "")
+            if "use_query_cache=1" in url_params:
+                os.environ["CLICKHOUSE_URL_PARAMS"] = (
+                    url_params + "&use_query_cache=0" if url_params else "use_query_cache=0"
+                )
 
         # Last, so that it beats an externally supplied --client-option that enabled the
         # feature: with --allow_repeated_settings the last occurrence takes effect. A SET
