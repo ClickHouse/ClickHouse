@@ -280,3 +280,95 @@ $CLICKHOUSE_LOCAL --query="
         --format_custom_field_delimiter ':' \
         --format_custom_row_after_delimiter '|' \
         --query 'SELECT variantType(v), v FROM table FORMAT TSVRaw'
+
+echo 'Variant forwards row-specific tuple quoting'
+variant_output=$($CLICKHOUSE_LOCAL --query "
+    SELECT tuple(
+        arrayJoin([
+            CAST(tuple(toDateTime('2024-01-17 08:30:00', 'UTC'), 1), 'Variant(Tuple(DateTime(''UTC''), UInt8), UInt8)'),
+            CAST(7, 'Variant(Tuple(DateTime(''UTC''), UInt8), UInt8)'),
+            CAST(NULL, 'Variant(Tuple(DateTime(''UTC''), UInt8), UInt8)')
+        ]),
+        2::UInt8
+    ) AS value, 42::UInt8 AS suffix
+    FORMAT CustomSeparated
+    SETTINGS
+        allow_experimental_variant_type = 1,
+        format_csv_delimiter = ':',
+        output_format_csv_quote_date_time_types = 0,
+        format_custom_escaping_rule = 'CSV',
+        format_custom_field_delimiter = '|',
+        format_custom_row_after_delimiter = '\n'
+")
+printf '%s\n' "$variant_output"
+printf '%s\n' "$variant_output" | $CLICKHOUSE_LOCAL \
+    --structure "value Tuple(Variant(Tuple(DateTime('UTC'), UInt8), UInt8), UInt8), suffix UInt8" \
+    --input-format CustomSeparated \
+    --input_format_custom_detect_header 0 \
+    --input_format_parallel_parsing 0 \
+    --allow_experimental_variant_type 1 \
+    --format_csv_delimiter ':' \
+    --format_custom_escaping_rule CSV \
+    --format_custom_field_delimiter '|' \
+    --format_custom_row_after_delimiter $'\n' \
+    --query 'SELECT variantType(value.1), value, suffix FROM table FORMAT TSVRaw'
+
+echo 'Dynamic forwards row-specific tuple quoting'
+dynamic_output=$($CLICKHOUSE_LOCAL --query "
+    SELECT tuple(
+        arrayJoin([
+            CAST(tuple(toDateTime('2024-01-17 08:30:00'), 1::Int64), 'Dynamic'),
+            CAST(7, 'Dynamic'),
+            CAST(NULL, 'Dynamic')
+        ]),
+        2::UInt8
+    ) AS value, 42::UInt8 AS suffix
+    FORMAT CustomSeparated
+    SETTINGS
+        allow_experimental_dynamic_type = 1,
+        format_csv_delimiter = ':',
+        output_format_csv_quote_date_time_types = 0,
+        format_custom_escaping_rule = 'CSV',
+        format_custom_field_delimiter = '|',
+        format_custom_row_after_delimiter = '\n'
+")
+printf '%s\n' "$dynamic_output"
+printf '%s\n' "$dynamic_output" | $CLICKHOUSE_LOCAL \
+    --structure "value Tuple(Dynamic, UInt8), suffix UInt8" \
+    --input-format CustomSeparated \
+    --input_format_custom_detect_header 0 \
+    --input_format_parallel_parsing 0 \
+    --allow_experimental_dynamic_type 1 \
+    --format_csv_delimiter ':' \
+    --format_custom_escaping_rule CSV \
+    --format_custom_field_delimiter '|' \
+    --format_custom_row_after_delimiter $'\n' \
+    --query 'SELECT dynamicType(value.1), value, suffix FROM table FORMAT TSVRaw'
+
+echo 'Shared Dynamic forwards row-specific tuple quoting'
+shared_dynamic_output=$($CLICKHOUSE_LOCAL --query "
+    SELECT tuple(
+        CAST(tuple(toDateTime('2024-01-17 08:30:00'), 1::Int64), 'Dynamic(max_types=0)'),
+        2::UInt8
+    ) AS value, 42::UInt8 AS suffix
+    FORMAT CustomSeparated
+    SETTINGS
+        allow_experimental_dynamic_type = 1,
+        format_csv_delimiter = ':',
+        output_format_csv_quote_date_time_types = 0,
+        format_custom_escaping_rule = 'CSV',
+        format_custom_field_delimiter = '|',
+        format_custom_row_after_delimiter = '\n'
+")
+printf '%s\n' "$shared_dynamic_output"
+printf '%s\n' "$shared_dynamic_output" | $CLICKHOUSE_LOCAL \
+    --structure "value Tuple(Dynamic(max_types=0), UInt8), suffix UInt8" \
+    --input-format CustomSeparated \
+    --input_format_custom_detect_header 0 \
+    --input_format_parallel_parsing 0 \
+    --allow_experimental_dynamic_type 1 \
+    --format_csv_delimiter ':' \
+    --format_custom_escaping_rule CSV \
+    --format_custom_field_delimiter '|' \
+    --format_custom_row_after_delimiter $'\n' \
+    --query 'SELECT dynamicType(value.1), value, suffix FROM table FORMAT TSVRaw'

@@ -26,3 +26,20 @@ CustomSeparated accepts an unquoted whole tuple
 ('value',5)	42
 Variant preserves a whole tuple through a string buffer
 Tuple(UInt8, DateTime('UTC'))	(1,'2024-01-17 08:30:00')
+Variant forwards row-specific tuple quoting
+"(('2024-01-17 08:30:00',1),2)"|42
+7:2|42
+\N:2|42
+Tuple(DateTime('UTC'), UInt8)	(('2024-01-17 08:30:00',1),2)	42
+UInt8	(7,2)	42
+None	(NULL,2)	42
+Dynamic forwards row-specific tuple quoting
+"(('2024-01-17 08:30:00',1),2)"|42
+7:2|42
+\N:2|42
+Tuple(DateTime, Int64)	(('2024-01-17 08:30:00',1),2)	42
+Int64	(7,2)	42
+None	(NULL,2)	42
+Shared Dynamic forwards row-specific tuple quoting
+"(('2024-01-17 08:30:00',1),2)"|42
+Tuple(DateTime, Int64)	(('2024-01-17 08:30:00',1),2)	42
