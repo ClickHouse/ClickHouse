@@ -1204,10 +1204,10 @@ void StorageReplicatedMergeTree::createReplicaAttempt(const StorageMetadataPtr &
         /// the user has written around key or column expressions were kept by 26.5..26.7 and are
         /// not written by any other version. When the texts differ, compare structurally, so that
         /// a retry of a partially created replica across such versions still recognizes its own
-        /// nodes. These lambdas are only reached for
-        /// an empty, never-active replica at our own path; a structural mismatch or unparseable
-        /// node throws (e.g. `METADATA_MISMATCH`), which describes the problem better than the
-        /// `REPLICA_ALREADY_EXISTS` the fall-through create attempt would produce.
+        /// nodes. These lambdas are only reached for an empty, never-active replica at our own
+        /// path; a structural mismatch or unparseable node throws (e.g. `METADATA_MISMATCH`),
+        /// which describes the problem better than the `REPLICA_ALREADY_EXISTS` the fall-through
+        /// create attempt would produce.
         auto is_same_metadata = [&](const String & zk_metadata_str)
         {
             if (zk_metadata_str == local_metadata)
