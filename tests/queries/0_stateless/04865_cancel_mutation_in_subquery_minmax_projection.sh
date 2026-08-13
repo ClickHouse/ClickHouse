@@ -27,6 +27,12 @@ $CLICKHOUSE_CLIENT -q "
         SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1
     ) WHERE explain ILIKE '%_minmax_count_projection%'"
 
+# system.part_log survives DROP TABLE and the database name is not unique per invocation when one is
+# pinned (`clickhouse-test --database`), so the ABORTED lookup below needs a per-run lower bound to
+# not be satisfied by an earlier run's row. Compare it against the microsecond column: event_time
+# truncates below a sub-second bound and would drop this run's own row.
+start_time=$($CLICKHOUSE_CLIENT -q "SELECT now64(6)")
+
 # A *constant* left-hand side is essential: it maps to no key column, so primary-key analysis returns
 # before building the set, and the projection's filter evaluation is the first materialization attempt.
 $CLICKHOUSE_CLIENT -q "
@@ -71,7 +77,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count(), sum(b) FROM t_cancel_minmax_set_build"
 aborted_in_part_log="
     SELECT countIf(errorCodeToName(error) = 'ABORTED') > 0
     FROM system.part_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600
+    WHERE event_date >= yesterday() AND event_time_microseconds >= toDateTime64('$start_time', 6)
       AND database = currentDatabase() AND table = 't_cancel_minmax_set_build'
       AND event_type = 'MutatePart' AND error != 0"
 i=0
