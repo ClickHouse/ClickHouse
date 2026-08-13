@@ -551,6 +551,10 @@ void PostgreSQLHandler::cancelRequest()
 
     auto query_context = session->makeQueryContext();
     query_context->setCurrentQueryId("");
+    /// The `KILL QUERY` text is synthesized by the server for the wire-protocol `CancelRequest`;
+    /// the user never submitted that SQL, so the session's `query_rules` must not rewrite or
+    /// reject it. The context is private to this request.
+    query_context->setSetting("query_rules", String{});
     executeQuery(std::move(replacement), *out, query_context, {});
 }
 
@@ -612,6 +616,10 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
             columns_to_insert = "(" + columns_to_insert + ")";
         }
 
+        /// The `INSERT` text is synthesized by the server to implement the wire-protocol
+        /// `COPY ... FROM STDIN`; the user never submitted that SQL, so the session's
+        /// `query_rules` must not rewrite or reject it. The context is private to this statement.
+        query_context->setSetting("query_rules", String{});
         auto [ast, io] = executeQuery(fmt::format("INSERT INTO `{}` {} FROM INFILE 'psql_copy'", copy_query->table_name, columns_to_insert), query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pushing());
         auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
@@ -709,6 +717,10 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         }
 
         auto select_query = fmt::format("SELECT {} FROM {};", columns_to_select, copy_query->table_name);
+        /// The `SELECT` text is synthesized by the server to implement the wire-protocol
+        /// `COPY ... TO STDOUT`; the user never submitted that SQL, so the session's
+        /// `query_rules` must not rewrite or reject it. The context is private to this statement.
+        query_context->setSetting("query_rules", String{});
         auto [ast, io] = executeQuery(select_query, query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pulling());
         message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(static_cast<Int32>(io.pipeline.getHeader().columns())));

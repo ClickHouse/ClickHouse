@@ -1572,6 +1572,13 @@ static BlockIO executeQueryImpl(
         /// secondary-query case), `internal` is a server-side flag and cannot be spoofed, so it
         /// is safe to skip rule application on it.
         ///
+        /// Protocol adapters that synthesize SQL from a non-SQL user request cannot use the
+        /// `internal` flag (their query should still be logged and accounted as a user query), so
+        /// they instead clear `query_rules` on their private per-request context before calling
+        /// `executeQuery`: the Prometheus HTTP API (`PrometheusHTTPProtocolAPI`), the PostgreSQL
+        /// wire protocol's `COPY` / cancel handling (`PostgreSQLHandler`), and the Arrow Flight
+        /// prepared-statement schema inference (`ArrowFlightServer`).
+        ///
         /// Distributed DDL (`ON CLUSTER` / `Replicated` database) workers replay the initiator's
         /// query with `QueryFlags{ .internal = false }` (`DDLWorker::tryExecuteQuery`), so the
         /// `internal` guard does not cover them. Rules were already applied once, on the

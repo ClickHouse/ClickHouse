@@ -115,6 +115,12 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
     chassert(sql_query);
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
+    /// The SQL below is synthesized from the user's PromQL request by `PrometheusQueryToSQL`; the
+    /// user never submitted that SQL, so the session's `query_rules` must not rewrite or reject it
+    /// (rules apply once, to the initial user query only, and a PromQL request carries no SQL to
+    /// apply them to). The context is private to this HTTP request, so clearing the setting does
+    /// not affect anything else.
+    getContext()->setSetting("query_rules", String{});
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
     try
