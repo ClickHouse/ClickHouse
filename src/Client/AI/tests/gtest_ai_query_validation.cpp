@@ -161,4 +161,30 @@ TEST(AIQueryValidation, RejectsUnknownFunctions)
     EXPECT_TRUE(isAllowed("SELECT CAST(1 AS String), toString(42), if(1, 2, 3)"));
 }
 
+TEST(AIQueryValidation, RejectsAIFunctions)
+{
+    /// The AI functions send the query data to an external AI provider and incur cost,
+    /// which must not happen without the user's confirmation.
+    EXPECT_FALSE(isAllowed("SELECT aiGenerate('ping')"));
+    EXPECT_FALSE(isAllowed("SELECT aiGenerate('ping') SETTINGS allow_experimental_ai_functions = 1"));
+    EXPECT_FALSE(isAllowed("SELECT aiClassify('text', ['a', 'b'])"));
+    EXPECT_FALSE(isAllowed("SELECT aiExtract('text', 'names')"));
+    EXPECT_FALSE(isAllowed("SELECT aiTranslate('text', 'French')"));
+    EXPECT_FALSE(isAllowed("SELECT aiEmbed('text')"));
+    EXPECT_FALSE(isAllowed("SELECT aiSimilarity('a', 'b')"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM numbers(3) WHERE aiGenerate('x') = ''"));
+}
+
+TEST(AIQueryValidation, RejectsFormatSchemaSettings)
+{
+    /// With `format_schema_source = 'query'`, `FormatSchemaInfo` executes the query from
+    /// `format_schema` after this validation, and the schema-source modes write cached schema
+    /// files - side effects outside of the validated AST.
+    EXPECT_FALSE(isAllowed("SELECT 1 FORMAT Protobuf SETTINGS format_schema_source = 'query', format_schema = 'SELECT 1'"));
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS format_schema = 'x.proto:Message'"));
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS format_schema_source = 'string'"));
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS format_schema_message_name = 'Message'"));
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS output_format_schema = 'x.proto'"));
+}
+
 #endif

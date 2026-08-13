@@ -64,6 +64,19 @@ bool isProtectedSetting(const String & name)
         || name == "compatibility";
 }
 
+/// The format-schema settings have side effects beyond the validated AST: with
+/// `format_schema_source = 'query'`, `FormatSchemaInfo::querySchema` executes the query from
+/// `format_schema` after this validation, and the schema-source modes write cached schema
+/// files. `SELECT 1 FORMAT Protobuf SETTINGS format_schema_source = 'query', format_schema =
+/// 'SELECT ...'` would otherwise smuggle an unvalidated query through the read-only tool.
+bool isFormatSchemaSetting(const String & name)
+{
+    return name == "format_schema"
+        || name == "format_schema_source"
+        || name == "format_schema_message_name"
+        || name == "output_format_schema";
+}
+
 void checkNoProtectedSettingChanges(const IAST & ast)
 {
     if (const auto * set_query = ast.as<ASTSetQuery>())
@@ -76,9 +89,22 @@ void checkNoProtectedSettingChanges(const IAST & ast)
                 "Remove it from the SETTINGS clause, or use the run_query tool",
                 name);
         };
+        const auto reject_format_schema = [](const String & name)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The query changes the setting `{}`: the format schema can execute another query "
+                "(`format_schema_source = 'query'`) or write schema files, which is outside of what "
+                "the read-only tool validates. Use the run_query tool for this query",
+                name);
+        };
         for (const auto & change : set_query->changes)
+        {
             if (isProtectedSetting(change.name))
                 reject(change.name);
+            if (isFormatSchemaSetting(change.name))
+                reject_format_schema(change.name);
+        }
         /// `SETTINGS max_execution_time = DEFAULT` lands in `default_settings`, not `changes`,
         /// and resets the limit after the sandbox has tightened it.
         for (const auto & name : set_query->default_settings)
@@ -115,11 +141,23 @@ bool isAllowedTableFunction(const String & name)
     return allowed.contains(Poco::toLower(name));
 }
 
-/// The few scalar (non-table) functions that read external resources by a path from the query.
+/// The few scalar (non-table) functions that read external resources by a path from the query,
+/// and the AI functions: they send the query data to an external AI provider and incur cost,
+/// which must not happen without the user's confirmation.
 bool isDeniedScalarFunction(const String & name)
 {
-    const String lower = Poco::toLower(name);
-    return lower == "file" || lower == "catboostevaluate";
+    static const std::unordered_set<String> denied
+    {
+        "file",
+        "catboostevaluate",
+        "aigenerate",
+        "aiclassify",
+        "aiextract",
+        "aitranslate",
+        "aiembed",
+        "aisimilarity",
+    };
+    return denied.contains(Poco::toLower(name));
 }
 
 /// Whether the function is a builtin known to the client. This validation runs on the raw
@@ -166,8 +204,8 @@ void checkNoExternalAccess(const IAST & ast)
         if (isDeniedScalarFunction(function->name))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "The function `{}` reads external resources, so it is not allowed for the read-only tool. "
-                "Use the run_query tool for this query",
+                "The function `{}` reaches external resources or services, so it is not allowed for the "
+                "read-only tool. Use the run_query tool for this query",
                 function->name);
 
         /// The allowed table functions are registered in the table-function factory, not the

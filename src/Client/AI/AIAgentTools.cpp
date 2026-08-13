@@ -172,8 +172,9 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
         "without confirmation. The query and its complete result are displayed in the user's terminal exactly as if "
         "the user ran it; you receive a summary truncated to the first and last rows. "
         "The query is executed in readonly mode with strict limits: 30 seconds and 10 GiB of memory. "
-        "INTO OUTFILE, overriding the readonly/time/memory limit settings, and table functions reaching "
-        "outside of the current server's tables (file, url, s3, remote, executable, ...) are rejected; "
+        "INTO OUTFILE, overriding the readonly/time/memory limit settings, table functions reaching "
+        "outside of the current server's tables (file, url, s3, remote, executable, ...), and the AI functions "
+        "calling external providers (aiGenerate, ...) are rejected; "
         "use run_query for anything that does not fit these constraints. Add LIMIT to exploratory queries.",
         ai::JsonValue{{"query", stringParameter("The SQL statement to run")}},
         {"query"},

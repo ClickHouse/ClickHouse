@@ -574,7 +574,7 @@ ai:
 
 - API keys are never sent to the ClickHouse server; they are read by the client from its configuration or environment.
 - The assistant runs on your connection, so it acts with exactly your permissions and cannot do anything you could not do yourself.
-- Read-only queries run under `readonly = 1` with a 30-second and a 10 GiB limit, and may not use table functions that read external files or servers (`file`, `url`, `s3`, `remote`, `executable`, ...); every other query requires your explicit confirmation, with the query shown before you decide. If the session cannot be constrained to these limits (for example, a `readonly` settings profile forbids changing them), the unconfirmed query fails instead of running without the limits.
+- Read-only queries run under `readonly = 1` with a 30-second and a 10 GiB limit, and may not use table functions that read external files or servers (`file`, `url`, `s3`, `remote`, `executable`, ...) or the AI functions that call external providers (`aiGenerate`, ...); every other query requires your explicit confirmation, with the query shown before you decide. If the session cannot be constrained to these limits (for example, a `readonly` settings profile forbids changing them), the unconfirmed query fails instead of running without the limits.
 - For the embedded client (the SSH and WebSocket protocols), client-side AI providers are disabled, because they would read API keys from the server process environment; only the server-side `aiGenerate` backend is used there.
 
 ## Connection string {#connection_string}
