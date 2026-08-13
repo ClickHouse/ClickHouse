@@ -288,7 +288,7 @@ WhatIfCandidateResult evaluateIndex(
 }
 
 
-WhatIfResult WhatIfIndexEstimator::run(
+WhatIfResult estimateHypotheticalIndexes(
     const ASTPtr & select_query, ContextPtr context, const ASTPtr & explain_settings)
 {
     auto settings = WhatIfSettings::fromAST(explain_settings);

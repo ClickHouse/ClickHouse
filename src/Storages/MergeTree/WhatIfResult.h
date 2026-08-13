@@ -1,19 +1,17 @@
 #pragma once
 
-#include <IO/WriteBufferFromString.h>
+#include <base/types.h>
 
-#include <string>
 #include <vector>
 
 namespace DB
 {
 
+class WriteBuffer;
+
 /// One hypothetical object evaluated against the baseline read
 struct WhatIfCandidateResult
 {
-    enum class Kind { Index };
-    Kind kind = Kind::Index;
-
     String name;
     /// Index type: `minmax`, `set`, ...
     String type;
@@ -37,8 +35,7 @@ struct WhatIfCandidateResult
     UInt64 elapsed_us = 0;
 };
 
-/// The whole `EXPLAIN WHATIF` answer: the baseline read plus one row per candidate.
-/// Rendered by `WhatIfResultFormatter.cpp`
+/// The whole `EXPLAIN WHATIF` answer: the baseline read plus one row per candidate
 struct WhatIfResult
 {
     /// Baseline after PK + partition + existing indexes
