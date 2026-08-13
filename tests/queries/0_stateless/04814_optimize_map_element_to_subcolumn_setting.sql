@@ -5,6 +5,8 @@ SET explain_query_plan_default = 'legacy';
 -- The rewrite is only performed by the analyzer.
 SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
+-- Both settings are randomized in CI, so pin the disabled state instead of relying on the default.
+SET optimize_map_element_to_subcolumn = 0;
 
 DROP TABLE IF EXISTS t_map_element_setting;
 
@@ -13,7 +15,7 @@ ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO t_map_element_setting SELECT number, map('key1', number, 'key2', number + 1) FROM numbers(10);
 
-SELECT '-- Disabled by default: m[key1] is NOT rewritten to a subcolumn';
+SELECT '-- Disabled: m[key1] is NOT rewritten to a subcolumn';
 SELECT count() = 0 FROM (EXPLAIN actions = 1 SELECT id FROM t_map_element_setting WHERE m['key1'] > 5) WHERE explain LIKE '%m.key_key1%';
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT id FROM t_map_element_setting WHERE m['key1'] > 5) WHERE explain LIKE '%arrayElement%';
 

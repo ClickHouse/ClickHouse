@@ -1,4 +1,4 @@
--- Disabled by default: m[key1] is NOT rewritten to a subcolumn
+-- Disabled: m[key1] is NOT rewritten to a subcolumn
 1
 1
 -- Enabled: m[key1] is rewritten to the m.key_key1 subcolumn
