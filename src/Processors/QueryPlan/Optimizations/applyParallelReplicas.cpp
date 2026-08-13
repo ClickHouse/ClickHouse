@@ -310,9 +310,9 @@ public:
             const UInt64 limit = sorting_step->getLimit();
             /// Do not ship a hard row cut into a fragment: it would truncate a replica's stream before
             /// `rows_before_limit_at_least` is counted.
-            /// FIXME: the count is still inexact (as in classic parallel replicas) because the cloned sort
-            /// keeps its limit on the local half; rebuilding it unbounded fixes the count but deadlocks the
-            /// merge in its `always_read_till_end` drain.
+            /// FIXME(#114723): the count is still inexact (as in classic parallel replicas) because the cloned
+            /// sort keeps its limit on the local half; rebuilding it unbounded fixes the count but deadlocks
+            /// the merge in its `always_read_till_end` drain.
             const bool read_till_end = mustReadTillEnd();
 
             /// Per-replica sort. Still a full sort here: read-in-order runs later, separately on each side.
