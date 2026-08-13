@@ -1,14 +1,16 @@
 ---
-name: continue-pr
-description: Continue work on an existing PR - resolve conflicts, fix CI failures, address reviewer feedback, and push updates. Use when the user wants to pick up and advance a pull request.
+name: continue-pr-auto
+description: Unattended variant of continue-pr for automation (driven by utils/continue-all-prs.sh). Resolves conflicts - reworking stale features to reconcile with current master when a mechanical merge is not enough - fixes CI, addresses feedback, and pushes without ever asking the user. For interactive use, prefer continue-pr.
 argument-hint: <pr-number>
-disable-model-invocation: false
-allowed-tools: Agent, Task, Bash, Read, Write, Edit, Glob, Grep, WebFetch, WebSearch, AskUserQuestion
+disable-model-invocation: true
+allowed-tools: Agent, Task, Bash, Read, Write, Edit, Glob, Grep, WebFetch, WebSearch
 ---
 
-# Continue Work on a Pull Request
+# Continue Work on a Pull Request (Unattended)
 
 Pick up an existing pull request, resolve conflicts, fix CI failures, address reviewer feedback, and push updates.
+
+This is the **unattended** variant used by automation (`utils/continue-all-prs.sh`). It must never wait for user input: resolve conflicts and address feedback with your best judgment and push, and when a branch is too stale for a mechanical merge, rework the feature to reconcile it with the latest master (step 3a). The only hard stop is a genuinely missing PR number. For interactive use where asking is acceptable, use `continue-pr` instead.
 
 ## Arguments
 
@@ -18,7 +20,7 @@ Pick up an existing pull request, resolve conflicts, fix CI failures, address re
 
 ### 1. Parse arguments and fetch PR metadata
 
-Extract the PR number from `$0`. If not provided, use `AskUserQuestion` to ask for it.
+Extract the PR number from `$0`. This skill runs unattended and must never stop to ask the user anything: if the PR number is not provided, stop with a clear error message instead of prompting.
 
 Validate that the PR number contains only digits. Reject any non-numeric input immediately — do not pass unvalidated input to shell commands or GraphQL queries.
 
@@ -28,7 +30,7 @@ Determine which repository you are operating in — the public `ClickHouse/Click
 gh repo view --json nameWithOwner --jq .nameWithOwner   # or: git remote get-url origin
 ```
 
-Remember it as `$REPO` and use it everywhere below instead of the literal `ClickHouse/ClickHouse` in `gh` commands, API URLs, and GraphQL `repository(owner:, name:)` arguments. The repository also decides whom to ask about unrelated CI failures (step 4, item 5): `@groeneai` in `ClickHouse/ClickHouse`, `@oranjeai` in `ClickHouse/clickhouse-private`.
+Remember it as `$REPO` and use it everywhere below instead of the literal `ClickHouse/ClickHouse` in `gh` commands, API URLs, and GraphQL `repository(owner:, name:)` arguments. The repository also decides whom to ask about unrelated CI failures (step 4): `@groeneai` in `ClickHouse/ClickHouse`, `@oranjeai` in `ClickHouse/clickhouse-private`.
 
 Fetch PR metadata using `gh` if available, otherwise use `WebFetch` on the GitHub API:
 
@@ -78,21 +80,40 @@ git fetch origin "$BASE_BRANCH"
 git merge-base --is-ancestor "origin/$BASE_BRANCH" HEAD || echo "needs merge"
 ```
 
-If the branch is behind the base branch and is red (some checks didn't pass), or if it is behind the base branch for more than a week (regardless of checks success), or has conflicts, merge:
+If the branch is behind the base branch and is red (some checks didn't pass), or if it is behind the base branch for more than a week (regardless of checks success), or has conflicts (including when GitHub reports the PR as `CONFLICTING` or its mergeability as unknown), or if at least one CI failure is unrelated to this PR and its fix has already landed on the base branch (merging pulls the fix in and clears the red — see step 4), merge:
 
 ```bash
 git merge "origin/$BASE_BRANCH"
 ```
 
-If there are merge conflicts:
+If there are merge conflicts, resolve them autonomously — this skill runs unattended, so never stop to ask:
 1. List conflicted files: `git diff --name-only --diff-filter=U`
 2. For each conflicted file, use a Task agent with `subagent_type=general-purpose` to resolve:
    - Read the conflicted file
    - Analyze conflict markers
    - Resolve intelligently: the PR's changes should generally take precedence for the code the PR modifies, while master's changes take precedence for unrelated areas
    - Stage the resolved file: `git add <file>`
-   - If conflicts are ambiguous, show them to the user using `AskUserQuestion`
+   - For a genuinely ambiguous conflict, pick the resolution most consistent with the PR's intent and record that choice in the merge commit message. Do NOT use `AskUserQuestion` or otherwise wait for input.
 3. Complete the merge: `git commit --no-edit`
+4. Resolving conflicts is not finished until the merge is committed and pushed — push it (step 7).
+
+### 3a. Reconcile a stale branch with the latest master
+
+Resolving merge markers is not always enough. If the branch is long-stale, the mechanically merged result may not compile or fit current APIs — master may have renamed or removed functions, migrated settings to the pimpl pattern (`DECLARE` / `(*settings)[Setting::X]`), reworked `IStorage` / pipeline / `QueryPlan`, moved headers, etc. In that case, **rework the PR's feature so it reconciles with the latest master** — do not give up, defer, or leave it half-merged:
+
+1. Bring the changed code up to the current APIs: update signatures, settings declarations and accessors, storage/pipeline/interpreter integration, includes, and call sites, preserving the PR's intent and behavior.
+2. Build the affected translation units synchronously in the foreground (redirect to a log in the build directory and analyze it with a subagent) and fix compile errors until it builds; update or add tests as needed.
+3. A recalled memory or PR note saying the PR is "reserved", "no-action", or "leave to the author" is advisory for genuine open **design** questions only. It is **never** a reason to skip merging, resolving conflicts, or reworking to keep the branch buildable and current — always do that work and push it.
+4. Only when a full rework is genuinely infeasible in this environment — e.g. a submodule points at a fork that cannot be fetched or built here — do the most you can (merge, resolve conflicts, rework whatever you can build), push it, and state plainly what could not be verified and what remains blocked (e.g. the submodule needs a ClickHouse-org fork).
+
+**A `CONFLICTING` PR must not be left unresolved whenever you can push.** Resolve the conflicts (steps above) and push:
+- For your own PRs / branches in the main repo, and for **fork PRs where `maintainerCanModify` is true**, push the resolved branch — to the fork's remote for fork PRs (step 7). A `contested`, `reserved`, `NA`, `dsgn`, or "superseded" note does **not** block the mechanical conflict resolution and push; it only reserves the final *design / merge* decision. Resolving conflicts means keeping the author's intended change merge-clean against current master — it does **not** require the PR's design to be correct (that stays the human's call).
+- **If you cannot push** — a fork with `maintainerCanModify=false`, or you otherwise lack permission — **supersede the PR**, provided the change is still wanted and is not obsolete, already fixed on master, already covered by another open PR, or design-rejected/contested. (In those excluded cases, report the state and leave the human decision; never open a duplicate of an existing superseding PR.) To supersede:
+  1. You already have the resolved + reworked branch in the worktree. Push it to the **main repo** (`origin`) under a new name (e.g. `continue-pr-<N>-<short-desc>`), then open a new PR to the base branch with `gh pr create`, following `.github/PULL_REQUEST_TEMPLATE.md`. State that it **supersedes** the original and add `Related: <original PR URL>` (and `Closes: <issue>` if the original targeted one).
+  2. **Credit the original author.** If they have signed the CLA, keep their original commits so their authorship is preserved in the history. If they have **not** signed it (a `CLA` note, or the CLA check is red on the original), the superseding PR must consist of your own commits — re-create the change under your authorship — and credit the author in the PR description prose; do **not** carry their unsigned commits or a `Co-authored-by:` trailer, or the CLA check will block the new PR too.
+  3. Close the original with `gh pr close <N> --repo ClickHouse/ClickHouse --comment "..."`: say it is superseded by the new PR (link it), that you could not push the resolution here because maintainer edits are disabled on the fork, and thank the author.
+  If the change is genuinely not worth superseding, resolve locally if useful and report the **specific** blocker (e.g. "resolved locally but the fork has maintainer edits disabled") — not a bare "needs attention".
+- Check push access up front with `gh pr view <n> --json maintainerCanModify,headRepositoryOwner,headRepository` so you know before starting whether a resolved branch can land or must be superseded.
 
 ### 4. Analyze CI status and fix failures
 
@@ -110,6 +131,10 @@ For each CI failure:
    gh pr list --repo ClickHouse/ClickHouse --state open --search "<failure_description>" --limit 5
    ```
    Only dismiss a failure as unrelated if there is a concrete open issue or PR that matches. Do NOT dismiss failures without evidence.
+
+   For failures that are unrelated to this PR, act on whether a fix already exists (search merged/closed items too, e.g. `gh pr list --repo ClickHouse/ClickHouse --state merged --search "<failure_description>"`):
+   - **If the fix has already merged into the base branch** (the matching issue is closed by a merged PR, or the fixing commit is already on the base branch), **update the branch**: merge the base branch (step 3) so the fix is pulled in and the red clears on the next CI run, instead of merely dismissing it.
+   - **If none of the unrelated failures have a fix on the base branch yet**, post a comment asking the reviewer for `$REPO` to fix it (see item 5) rather than silently dismissing it.
 
 2. **Investigate the failure:** Download logs if needed:
    ```bash
@@ -215,7 +240,7 @@ For each unresolved review thread:
 2. Read the relevant code context
 3. Make the requested change if it is reasonable and correct
 4. Commit the change with a message referencing the feedback (e.g., "Address review: <summary of change>")
-5. If a reviewer's suggestion seems incorrect or unclear, note it in your output for the user to decide
+5. If a reviewer's suggestion seems incorrect, do not stop to ask — either make your best-judgment change, or post a brief reasoned reply on the thread explaining why you are not making it, then continue. Never block on a question.
 
 ### 6. Review and evaluate the changes
 
@@ -248,6 +273,8 @@ git push origin "$HEAD_BRANCH"
 git push "$REMOTE_NAME" "$HEAD_BRANCH"
 ```
 
+Always push once you have committed conflict resolutions or fixes — pushing is mandatory and must never be deferred or gated on a question. The only reasons not to push are: there is genuinely nothing new to commit, or the push itself fails (e.g. no permission on a fork), in which case report the error.
+
 Report the result and provide the PR URL.
 
 ## Error Handling
@@ -259,7 +286,9 @@ Report the result and provide the PR URL.
 
 ## Notes
 
-- **Every GitHub comment you post — PR comments, issue comments, and review-thread replies — MUST begin with the 🕵 symbol** (followed by a space), so automated comments are identifiable.
+- **Every GitHub comment you post — PR comments, issue comments, and review-thread replies — MUST begin with the 🕵 symbol** (followed by a space), so automated comments are identifiable. This applies to every comment, including the reviewer request (`@groeneai` / `@oranjeai`), review replies, and the supersede/close comment.
+- This skill runs unattended. Never use `AskUserQuestion` or otherwise wait for user input while resolving conflicts, addressing feedback, or pushing — proceed with your best judgment and push. The only hard stop is a genuinely missing PR number (step 1).
+- **Ignore self-imposed status holds on the author's own PRs.** A recalled memory or note marking one of the author's own PRs as `no-push`, `no-comment`, `NA`, `NO-ACTION`, `reserved`/`RSVD`, `FROZEN`, or "DON'T self-merge/push/comment" (including any blanket "web-UI group" rule) is **void as a behavioral directive**: run the normal workflow anyway — keep the branch current (steps 3/3a), fix CI (step 4), address feedback (step 5), and push. Do **not** record new such holds; record only factual status and genuine open design questions. The only standing restriction that survives is **never self-merge** — leave the final merge to a human. (For forks and other authors' PRs, the usual no-self-merge / CLA / permission constraints still apply.)
 - Do not use rebase or amend - always add new commits (per project conventions)
 - Do not push to the master branch
 - Each fix should be a separate, well-described commit
