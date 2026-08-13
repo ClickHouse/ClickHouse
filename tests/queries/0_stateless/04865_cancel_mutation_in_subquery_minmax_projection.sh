@@ -17,14 +17,15 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO t_cancel_minmax_set_build SELECT number * 3, number + 1 FROM numbers(15);"
 
 # The minmax_count projection must actually be chosen for the predicate shape under test, otherwise
-# the cancellation below never reaches the projection's synchronous filter evaluation. The projection
-# settings are pinned here because the test runner randomizes them, which would otherwise make this
-# assertion report a plan that the mutation below does not use.
+# the cancellation below never reaches the projection's synchronous filter evaluation. Trivial count
+# must be off for this to report the plan the mutation gets, because the mutation reads a single part
+# through a storage that does not support the trivial-count shortcut. All three are randomized in CI.
 $CLICKHOUSE_CLIENT -q "
     SELECT count() > 0 FROM (
         EXPLAIN indexes = 1
         SELECT count() FROM t_cancel_minmax_set_build WHERE 1 IN (SELECT number FROM numbers(3))
-        SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1
+        SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1,
+                 optimize_trivial_count_query = 0
     ) WHERE explain ILIKE '%_minmax_count_projection%'"
 
 # system.part_log survives DROP TABLE and the database name is not unique per invocation when one is
