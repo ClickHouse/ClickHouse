@@ -70,15 +70,6 @@ struct PartialAggregationStrategy final : IAggregationStrategy
     Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
-/// --- Top-N (sort + limit) strategies ---
-
-/// Marks the per-shard bounded sort that `TwoStageTopN` creates, so the transformation
-/// does not split it again.
-struct PartialTopNStrategy final : IImplementationStrategy
-{
-    String getName() const override { return "PartialTopN"; }
-};
-
 /// --- Replicated subplan ---
 
 /// A step run identically on every node over replicated inputs.  Satisfies

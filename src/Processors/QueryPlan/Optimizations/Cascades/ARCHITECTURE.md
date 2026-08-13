@@ -272,16 +272,37 @@ Strategies are grouped by operator family — `IJoinStrategy`, `IAggregationStra
 still without a strategy is priced as its cheapest reasonable default (a non-broadcast
 hash join, or local aggregation) so a partially implemented plan still gets a finite cost.
 
-Two strategies are markers with no cost function of their own:
-
-- `PartialTopNStrategy` tags the per-shard bounded sort that `TwoStageTopN` creates, so
-  the transformation does not split it again.
-- `ReplicatedSubplanStrategy` marks a step run identically on every node over replicated
-  inputs; it satisfies `{node_count=N, is_replicated=true}` without a `BroadcastExchange`.
-  Replicated expressions get parallelism 1.0, so the default per-step formulas already
-  charge the full work each node repeats.
+One strategy is a marker with no cost function of its own: `ReplicatedSubplanStrategy`
+marks a step run identically on every node over replicated inputs; it satisfies
+`{node_count=N, is_replicated=true}` without a `BroadcastExchange`. Replicated
+expressions get parallelism 1.0, so the default per-step formulas already charge the
+full work each node repeats.
 
 **Key files**: `ImplementationStrategy.h`, `Cost.cpp`
+
+### Sorting: Property or Operator?
+
+In classical Cascades the sort order is only a physical property, enforced on demand.
+This implementation is a hybrid, because the memo ingests the planner's finished step
+tree one group per step:
+
+- The required order **is** a property (`ExpressionProperties::sorting`).
+  `SortingEnforcer` produces sorts on demand and composes with `DistributionEnforcer`
+  in the two classical ways: gather then sort, or sort per node then sorted-merge
+  gather.
+- A plain `SortingStep` (`Full`, without a limit) never becomes a group: ingestion
+  strips it and attaches its sort description as the required property of the parent's
+  input link (`OptimizerContext::addGroup`), so the enforcer owns every plain sort in
+  the memo.
+- A `SortingStep` with a limit is a top-N: the bound changes the row count, which no
+  property can express, so it is genuinely an operator with its own rules.
+  `TopNImplementation` implements it on a single node, and `TwoStageTopN` splits it
+  into a per-node bounded sort plus a coordinator limit over the sorted-merge gather.
+  The per-node partial is marked with the planner-only `SortingStep::isPartialTopN`
+  flag (not serialized, like `is_sorting_for_merge_join`): the partial emits up to
+  `L` rows on each node and needs the re-bounding limit above, so it is a different
+  operator from the global top-N — it may be implemented per node, and the split is
+  not applied to it again.
 
 ### Cost Model
 

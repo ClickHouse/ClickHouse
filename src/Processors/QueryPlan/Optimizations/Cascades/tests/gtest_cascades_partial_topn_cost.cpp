@@ -69,9 +69,9 @@ TEST(CascadesPartialTopNCost, GatherPricedOnPhysicalRowsOfSelectedChild)
     leaf_group->updateBestImplementation(leaf, memo.getEnvironment().cost_config);
 
     /// Partial top-N: bounded sort with limit L on each of the 4 nodes.
-    auto partial = std::make_shared<GroupExpression>(
-        std::make_unique<SortingStep>(header, makeSortDescription(), limit, SortingStep::Settings(65000)));
-    partial->strategy = std::make_shared<PartialTopNStrategy>();
+    auto partial_step = std::make_unique<SortingStep>(header, makeSortDescription(), limit, SortingStep::Settings(65000));
+    partial_step->setPartialTopN();
+    auto partial = std::make_shared<GroupExpression>(std::move(partial_step));
     partial->properties.distribution.node_count = node_count;
     partial->properties.sorting = makeSortDescription();
     partial->inputs.push_back({leaf_group_id, leaf->properties});
@@ -120,9 +120,9 @@ TEST(CascadesPartialTopNCost, PhysicalRowsClampedByInput)
     memo.getGroup(leaf_group_id)->statistics = makeStats(input_rows, 10);
     memo.getGroup(leaf_group_id)->updateBestImplementation(leaf, memo.getEnvironment().cost_config);
 
-    auto partial = std::make_shared<GroupExpression>(
-        std::make_unique<SortingStep>(header, makeSortDescription(), limit, SortingStep::Settings(65000)));
-    partial->strategy = std::make_shared<PartialTopNStrategy>();
+    auto partial_step = std::make_unique<SortingStep>(header, makeSortDescription(), limit, SortingStep::Settings(65000));
+    partial_step->setPartialTopN();
+    auto partial = std::make_shared<GroupExpression>(std::move(partial_step));
     partial->properties.distribution.node_count = node_count;
     partial->inputs.push_back({leaf_group_id, leaf->properties});
     auto partial_group_id = memo.addGroup(partial);

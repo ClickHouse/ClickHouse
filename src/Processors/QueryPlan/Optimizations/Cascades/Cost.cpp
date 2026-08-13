@@ -403,10 +403,9 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     /// A partial top-N emits at most L rows on each of its nodes, while the group statistics are
     /// trimmed to the final L. Record the physical output for parents; the input statistics are
     /// available here because costing runs after derivation.
-    if (dynamic_cast<const PartialTopNStrategy *>(expression->strategy.get()))
     {
         const auto * sorting_step = typeid_cast<const SortingStep *>(expression->getQueryPlanStep());
-        if (sorting_step && !inputs.input_stats.empty() && inputs.input_stats[0])
+        if (sorting_step && sorting_step->isPartialTopN() && !inputs.input_stats.empty() && inputs.input_stats[0])
             expression->physical_output_rows = std::min(
                 inputs.input_stats[0]->estimated_row_count,
                 Float64(sorting_step->getLimit()) * distribution_node_count);

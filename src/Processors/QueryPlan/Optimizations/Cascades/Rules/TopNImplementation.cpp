@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Common/assert_cast.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
@@ -65,7 +66,7 @@ std::vector<GroupExpressionPtr> TopNImplementation::applyImpl(GroupExpressionPtr
         addPhysicalToMemo(impl, required_properties, memo, result);
     };
 
-    const bool is_partial = dynamic_cast<const PartialTopNStrategy *>(expression->strategy.get()) != nullptr;
+    const bool is_partial = sorting_step->isPartialTopN();
     if (is_partial)
     {
         /// Bounded sort on each node; a sorted gather merges and a coordinator limit re-bounds.
@@ -97,8 +98,9 @@ public:
         /// walk that collects those counters, so the query would report fewer rows.
         if (memo.getEnvironment().exact_rows_before_limit)
             return false;
-        /// Skip the partial we create ourselves (it carries PartialTopNStrategy).
-        return isTopNSort(*expression->getQueryPlanStep()) && expression->strategy == nullptr;
+        /// Skip the partial we create ourselves.
+        return isTopNSort(*expression->getQueryPlanStep())
+            && !assert_cast<const SortingStep &>(*expression->getQueryPlanStep()).isPartialTopN();
     }
     Promise getPromise() const override { return 5000; }
     bool isTransformation() const override { return true; }
@@ -123,8 +125,9 @@ std::vector<GroupExpressionPtr> TwoStageTopN::applyImpl(GroupExpressionPtr expre
 
     /// Phase 1: per-node bounded sort. Same step, marked so it is implemented per node
     /// (TopNImplementation) and not split again.
-    GroupExpressionPtr partial_expr = std::make_shared<GroupExpression>(sorting_step->clone());
-    partial_expr->strategy = std::make_shared<PartialTopNStrategy>();
+    auto partial_step = cloneStepAs(*sorting_step);
+    partial_step->setPartialTopN();
+    GroupExpressionPtr partial_expr = std::make_shared<GroupExpression>(std::move(partial_step));
 
     /// Phase 2: coordinator limit over the sorted-merged partial runs. Its input requires the
     /// same sorting at a single node, so DistributionEnforcer inserts a sorted-merge gather.
