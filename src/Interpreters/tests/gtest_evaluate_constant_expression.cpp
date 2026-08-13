@@ -54,7 +54,7 @@ TEST(EvaluateConstantExpression, ColumnApiPreservesExactType)
     const auto & context = getContext().context;
 
     const ASTPtr array_literal = make_intrusive<ASTLiteral>(Field(Array{Field(true), Field(false)}));
-    const auto [column, type] = evaluateConstantExpressionAsColumn(array_literal, context);
-    EXPECT_EQ(type->getName(), "Array(Bool)");
-    ASSERT_EQ(column->size(), 1u);
+    const auto value = evaluateConstantExpressionAsColumn(array_literal, context);
+    EXPECT_EQ(value.getType()->getName(), "Array(Bool)");
+    ASSERT_EQ(value.getColumn()->size(), 1u);
 }

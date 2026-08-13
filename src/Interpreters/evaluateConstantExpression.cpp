@@ -84,7 +84,7 @@ static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLitera
 static EvaluateConstantExpressionColumnResult getColumnAndDataTypeFromLiteral(ASTLiteral * literal)
 {
     auto [field, type] = getFieldAndDataTypeFromLiteral(literal);
-    return {type->createColumnConst(1, field), type};
+    return {ConstantValue::wrapToColumnConst(type->createColumnConst(1, field)), type};
 }
 
 /// `literal_out` (the compatibility shim documented on `getFieldAndDataTypeFromLiteral`): a literal
@@ -235,7 +235,7 @@ static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExp
 
     /// Keep the value as a size-1 const column: this preserves the exact SQL type (no `Field`
     /// `NearestFieldType` collapse) and lets callers read it without materializing a `Field`.
-    return std::make_pair(result_column, result_type);
+    return ConstantValue{ConstantValue::wrapToColumnConst(result_column), result_type};
 }
 
 /// Materialize the column result into the legacy `Field` result. Used by the `Field`-returning
@@ -247,7 +247,7 @@ static std::optional<EvaluateConstantExpressionResult> materializeToField(std::o
 {
     if (!column_result)
         return {};
-    return std::make_pair((*column_result->first)[0], std::move(column_result->second));
+    return std::make_pair(column_result->getField(), column_result->getType());
 }
 
 std::optional<EvaluateConstantExpressionColumnResult> tryEvaluateConstantExpressionAsColumn(const ASTPtr & node, const ContextPtr & context)

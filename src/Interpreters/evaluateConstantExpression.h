@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block_fwd.h>
+#include <Core/ConstantValue.h>
 #include <Core/Field.h>
 #include <Columns/IColumn_fwd.h>
 #include <Interpreters/ActionsDAG.h>
@@ -21,13 +22,13 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 using EvaluateConstantExpressionResult = std::pair<Field, std::shared_ptr<const IDataType>>;
 
-/** The value of a constant expression as a single-row column plus its exact type.
+/** The value of a constant expression as an owning `ConstantValue` (size-1 const column + exact type).
   * Unlike `EvaluateConstantExpressionResult`, this keeps the precise SQL type (`UInt8`, `Float32`,
   * `DateTime64`, ...) instead of collapsing it through `Field`'s `NearestFieldType` mapping, and it
-  * avoids materializing a `Field` at all. `column` is a size-1 (const) column; read it with the typed
-  * `IColumn` accessors (`getUInt`, `getDataAt`, ...) or a `ValueRef`.
+  * avoids materializing a `Field` at all. Read the scalar with the typed accessors on `ConstantValue`
+  * (`getUInt`, `getDataAt`, `isNull`, ...) instead of a `Field`.
   */
-using EvaluateConstantExpressionColumnResult = std::pair<ColumnPtr, std::shared_ptr<const IDataType>>;
+using EvaluateConstantExpressionColumnResult = ConstantValue;
 
 /** Evaluate constant expression and its type.
   * Used in rare cases - for elements of set for IN, for data to INSERT.
