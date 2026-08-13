@@ -114,11 +114,15 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     , storage(storage_)
     , storage_snapshot(std::move(storage_snapshot_))
     , read_task_info(std::move(read_task_info_))
-    , mark_ranges(std::move(mark_ranges_).value_or(MarkRanges{MarkRange(0, read_task_info->data_part->getMarksCount())}))
+    , mark_ranges(std::move(mark_ranges_).value_or(MarkRanges{MarkRange(0, read_task_info->data_part_info->getMarksCount())}))
     , mark_cache(storage.getContext()->getMarkCache())
     , read_with_direct_io(read_with_direct_io_)
 {
-    const auto & data_part = read_task_info->data_part;
+    const auto data_part = read_task_info->data_part_info->getDataPart();
+    /// This source is only used for background merges/mutations, never the stateless-worker read
+    /// path, so the concrete part is always present. Assert it so a future misuse that routes a
+    /// borrowed part here fails loudly instead of dereferencing nullptr below.
+    chassert(data_part);
     const auto & columns_to_read = read_task_info->task_columns.columns;
 
     /// Print column name but don't pollute logs in case of many columns.
@@ -203,16 +207,16 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
 void MergeTreeSequentialSource::updateRowsToRead(size_t mark_number)
 {
-    const auto & index_granularity = read_task_info->data_part->index_granularity;
-    if (mark_number < index_granularity->getMarksCountWithoutFinal())
-        current_rows_to_read = index_granularity->getMarkRows(mark_number);
+    const auto & index_granularity = read_task_info->data_part_info->getIndexGranularity();
+    if (mark_number < index_granularity.getMarksCountWithoutFinal())
+        current_rows_to_read = index_granularity.getMarkRows(mark_number);
 }
 
 Chunk MergeTreeSequentialSource::generate()
 try
 {
-    const auto & index_granularity = read_task_info->data_part->index_granularity;
-    if (current_mark >= index_granularity->getMarksCountWithoutFinal())
+    const auto & index_granularity = read_task_info->data_part_info->getIndexGranularity();
+    if (current_mark >= index_granularity.getMarksCountWithoutFinal())
     {
         finish();
         return {};
@@ -250,7 +254,7 @@ try
 
         /// When read_task_info->merged_part_offsets we need to adjust parent part offset in projection because it will
         /// be different when parent has order by column and merge will change order of rows.
-        if (read_task_info->merged_part_offsets && read_task_info->data_part->isProjectionPart() && name == "_parent_part_offset")
+        if (read_task_info->merged_part_offsets && read_task_info->data_part_info->isProjectionPart() && name == "_parent_part_offset")
         {
             chassert(read_task_info->merged_part_offsets->isFinalized());
 
@@ -283,7 +287,7 @@ try
     bool add_part_level = storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
     if (add_part_level)
-        result.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(read_task_info->data_part->info.level));
+        result.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(read_task_info->data_part_info->getPartInfo().level));
 
     return result;
 }
@@ -291,7 +295,7 @@ catch (...)
 {
     /// Suspicion of the broken part. A part is added to the queue for verification.
     if (!isRetryableException(std::current_exception()))
-        storage.reportBrokenPart(read_task_info->data_part);
+        read_task_info->data_part_info->reportBroken();
     throw;
 }
 
@@ -323,8 +327,8 @@ Pipe createMergeTreeSequentialSource(
     bool prefetch)
 {
     auto info = std::make_shared<MergeTreeReadTaskInfo>();
-    info->data_part = std::move(data_part.data_part);
     info->alter_conversions = std::move(alter_conversions);
+    info->data_part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(std::move(data_part.data_part), info->alter_conversions);
     info->merged_part_offsets = std::move(merged_part_offsets);
     info->part_index_in_query = data_part.part_index_in_query;
     info->part_starting_offset_in_query = data_part.part_starting_offset_in_query;
@@ -332,8 +336,8 @@ Pipe createMergeTreeSequentialSource(
     info->const_virtual_fields.emplace("_part_starting_offset", info->part_starting_offset_in_query);
 
     /// The part might have some rows masked by lightweight deletes
-    bool has_lightweight_delete = info->data_part->hasLightweightDelete() || info->alter_conversions->hasLightweightDelete();
-    const bool need_to_filter_deleted_rows = apply_deleted_mask && has_lightweight_delete && !info->data_part->info.isPatch();
+    bool has_lightweight_delete = info->data_part_info->hasLightweightDelete() || info->alter_conversions->hasLightweightDelete();
+    const bool need_to_filter_deleted_rows = apply_deleted_mask && has_lightweight_delete && !info->data_part_info->getPartInfo().isPatch();
     const bool has_filter_column = std::ranges::find(columns_to_read, RowExistsColumn::name) != columns_to_read.end();
 
     if (need_to_filter_deleted_rows)
@@ -345,7 +349,7 @@ Pipe createMergeTreeSequentialSource(
     }
 
     auto result_header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(columns_to_read));
-    LoadedMergeTreeDataPartInfoForReader info_for_reader(info->data_part, info->alter_conversions);
+    const auto & info_for_reader = *info->data_part_info;
 
     info->task_columns = getReadTaskColumnsForMerge(info_for_reader, storage_snapshot, columns_to_read, info->mutation_steps);
     info->task_columns.moveAllColumnsFromPrewhere();

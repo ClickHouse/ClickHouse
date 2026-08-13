@@ -1,0 +1,10 @@
+filter off: nulls read as default 0, count matches
+{"result":[{"count()":34}],"rows_read":100}
+filter on: the row group must NOT be skipped, because its nulls decode to the queried default 0
+{"result":[{"count()":34}],"rows_read":100}
+filter on: a value present in the dictionary is found
+{"result":[{"count()":13}],"rows_read":100}
+filter on: a value in neither the dictionary nor the default is pruned
+{"result":[{"count()":0}],"rows_read":0}
+filter on, read as Nullable: nulls stay null, so a non-present value is still pruned
+{"result":[{"count()":0}],"rows_read":0}

@@ -71,6 +71,7 @@ Aggregator::Params makeParams(const Names & keys, const AggregateDescriptions & 
         /*enable_producing_buckets_out_of_order_in_aggregation_=*/false,
         /*serialize_string_with_zero_byte_=*/false,
         /*enable_parallel_single_level_merge_=*/true,
+        /*enable_packed_string_keys_=*/true,
         /*enable_adaptive_aggregator_=*/false,
         /*adaptive_aggregator_freeze_threshold_=*/0);
 }

@@ -77,14 +77,6 @@ Output types having no conversion as raw binary data. If false - such types woul
 
 Always use 64 bit integers for dictionary indexes in Arrow format
 
-## output_format_arrow_use_native_writer {#output_format_arrow_use_native_writer}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "New setting to use the native ClickHouse writer for the Arrow and ArrowStream formats instead of the Apache Arrow library."}]}]}/>
-
-Use the native ClickHouse writer for the Arrow and ArrowStream formats instead of the one based on the Apache Arrow library.
-
 ## output_format_arrow_use_signed_indexes_for_dictionary {#output_format_arrow_use_signed_indexes_for_dictionary}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -820,7 +812,7 @@ See `output_format_pretty_fallback_to_vertical_max_rows_per_chunk` and `output_f
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "100"},{"label": "A new setting"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10"},{"label": "A new setting"}]}]}/>
 
 The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of records in a chunk is not more than the specified value.
 
