@@ -1,5 +1,12 @@
 option(ENABLE_PULSAR "Enable Pulsar" ${ENABLE_LIBRARIES})
 
+# The Pulsar binary protocol is protobuf-based, so the client cannot be built
+# in configurations where protobuf is disabled (e.g. WebAssembly).
+if(ENABLE_PULSAR AND NOT TARGET ch_contrib::protobuf)
+    message(${RECONFIGURE_MESSAGE_LEVEL} "Cannot use Pulsar without protobuf")
+    set(ENABLE_PULSAR OFF)
+endif()
+
 if(NOT ENABLE_PULSAR)
     message(STATUS "Not using Pulsar")
     return()
