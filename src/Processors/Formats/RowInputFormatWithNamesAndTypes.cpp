@@ -52,6 +52,18 @@ namespace
         }
         return true;
     }
+
+    ColumnMappingPtr createColumnMappingByHeaderWithInputFields(
+        const Names & input_column_names,
+        const CaseAwareBlockNameMap & column_indexes_by_names,
+        const Names & known_input_column_names,
+        const FormatSettings & format_settings)
+    {
+        auto mapping = std::make_shared<ColumnMapping>();
+        mapping->setupByHeaderWithInputFields(input_column_names, column_indexes_by_names, known_input_column_names, format_settings);
+        mapping->is_set = true;
+        return mapping;
+    }
 }
 
 template <typename FormatReaderImpl>
@@ -112,8 +124,17 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
     if (!column_names.empty())
     {
         if (format_settings.with_names_use_header)
-            column_mapping->addColumns(column_names, column_indexes_by_names, format_settings);
-        else
+        {
+            if (column_mapping->is_set)
+                column_mapping = createColumnMappingByHeaderWithInputFields(
+                    column_names,
+                    column_indexes_by_names,
+                    column_mapping->names_of_columns,
+                    format_settings);
+            else
+                column_mapping->addColumns(column_names, column_indexes_by_names, format_settings);
+        }
+        else if (!column_mapping->is_set)
             column_mapping->setupByHeader(getPort().getHeader());
     }
     else if (!column_mapping->is_set)
@@ -175,7 +196,9 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(std::vec
     /// To understand if the first row is a header with column names, we check
     /// that all values from this row is a subset of column names from provided header
     /// or column names from provided header is a subset of values from this row
-    auto column_names = getPort().getHeader().getNames();
+    const auto column_names = column_mapping->is_set && !column_mapping->names_of_columns.empty()
+        ? column_mapping->names_of_columns
+        : getPort().getHeader().getNames();
     std::unordered_set<std::string_view> column_names_set(column_names.begin(), column_names.end());
     std::unordered_set<std::string_view> first_row_values_set(first_row_values.begin(), first_row_values.end());
     if (!isSubsetOf(first_row_values_set, column_names_set) && !isSubsetOf(column_names_set, first_row_values_set))
@@ -353,9 +376,9 @@ template <typename FormatReaderImpl>
 void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::resetParser()
 {
     RowInputFormatWithDiagnosticInfo::resetParser();
-    column_mapping->column_indexes_for_input_fields.clear();
-    column_mapping->not_presented_columns.clear();
-    column_mapping->names_of_columns.clear();
+    const auto is_set = column_mapping->is_set;
+    column_mapping = std::make_shared<ColumnMapping>();
+    column_mapping->is_set = is_set;
     end_of_stream = false;
 }
 

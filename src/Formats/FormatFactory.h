@@ -161,8 +161,9 @@ private:
     using AdditionalInfoForSchemaCacheGetter = std::function<String(const FormatSettings & settings)>;
 
     /// Some formats can support reading subset of columns depending on settings.
-    /// The checker should return true if format support append.
+    /// The checker should return true if format supports reading subset of columns.
     using SubsetOfColumnsSupportChecker = std::function<bool(const FormatSettings & settings)>;
+    using SubsetOfColumnsByPositionSupportChecker = std::function<bool(const FormatSettings & settings)>;
 
     using PrewhereSupportChecker = std::function<bool(const FormatSettings & settings)>;
 
@@ -186,6 +187,7 @@ private:
         AppendSupportChecker append_support_checker;
         AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter;
         SubsetOfColumnsSupportChecker subset_of_columns_support_checker;
+        SubsetOfColumnsByPositionSupportChecker subset_of_columns_by_position_support_checker;
         PrewhereSupportChecker prewhere_support_checker;
         Documentation documentation;
     };
@@ -344,6 +346,10 @@ public:
     void markFormatSupportsSubsetOfColumns(const String & name);
     void registerSubsetOfColumnsSupportChecker(const String & name, SubsetOfColumnsSupportChecker subset_of_columns_support_checker);
     bool checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
+    void markFormatSupportsSubsetOfColumnsByPosition(const String & name);
+    void registerSubsetOfColumnsByPositionSupportChecker(const String & name, SubsetOfColumnsByPositionSupportChecker subset_of_columns_by_position_support_checker);
+    bool checkIfFormatSupportsSubsetOfColumnsByPosition(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
+    bool checkIfFormatSupportsReadingSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 
     void registerPrewhereSupportChecker(const String & name, PrewhereSupportChecker prewhere_support_checker);
     bool checkIfFormatSupportsPrewhere(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;

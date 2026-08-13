@@ -76,6 +76,56 @@ void ColumnMapping::setupByHeader(const Block & header)
         column_indexes_for_input_fields[i] = i;
 }
 
+void ColumnMapping::setupByHeaderWithInputFields(
+    const Names & input_column_names,
+    const CaseAwareBlockNameMap & column_indexes_by_names,
+    const Names & known_input_column_names,
+    const FormatSettings & settings)
+{
+    column_indexes_for_input_fields.clear();
+    not_presented_columns.clear();
+    names_of_columns = input_column_names;
+
+    CaseAwareBlockNameMap known_input_columns_by_names(settings.input_format_column_matching_case_sensitivity);
+    known_input_columns_by_names.setSize(known_input_column_names.size());
+    for (size_t i = 0; i < known_input_column_names.size(); ++i)
+        known_input_columns_by_names.add(known_input_column_names[i], i);
+
+    std::vector<bool> read_columns(column_indexes_by_names.size(), false);
+    for (const auto & name : input_column_names)
+    {
+        const auto column_idx = column_indexes_by_names.get(name);
+        if (column_idx == CaseAwareBlockNameMap::NOT_FOUND)
+        {
+            if (known_input_columns_by_names.get(name) != CaseAwareBlockNameMap::NOT_FOUND || settings.skip_unknown_fields)
+            {
+                column_indexes_for_input_fields.push_back(std::nullopt);
+                continue;
+            }
+
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Unknown field found in format header: "
+                "'{}' at position {}\nSet the 'input_format_skip_unknown_fields' parameter explicitly "
+                "to ignore and proceed",
+                name,
+                column_indexes_for_input_fields.size());
+        }
+
+        if (read_columns[column_idx])
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing format header: {}", name);
+
+        read_columns[column_idx] = true;
+        column_indexes_for_input_fields.emplace_back(column_idx);
+    }
+
+    for (size_t i = 0; i != read_columns.size(); ++i)
+    {
+        if (!read_columns[i])
+            not_presented_columns.push_back(i);
+    }
+}
+
 void ColumnMapping::addColumns(
     const Names & column_names, const CaseAwareBlockNameMap & column_indexes_by_names, const FormatSettings & settings)
 {

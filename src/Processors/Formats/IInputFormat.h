@@ -15,7 +15,6 @@ namespace DB
 class BlockMissingValues;
 struct SelectQueryInfo;
 
-using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 using IColumnFilter = PaddedPODArray<UInt8>;
 
 /// Most (all?) file formats have a natural order of rows within the file.
