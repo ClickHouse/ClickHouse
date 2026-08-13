@@ -302,3 +302,55 @@ ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE t_empty_columns_fallback" 2>/dev/null
 echo "-- t_empty_columns_fallback: t.x digest after recovered reload"
 ${CLICKHOUSE_CLIENT} --query "SELECT sum(t.x) FROM t_empty_columns_fallback"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_empty_columns_fallback"
+
+# ---- Case J: shared Nested offsets must not witness a data-less ALTER-added sibling ----
+# On the legacy no-substreams path a column's presence is decided by enumerating its own streams. With
+# share_nested_offsets the offsets stream is named after the Nested table, so it exists as soon as any
+# sibling has data: accepting it lists a data-less n.b in the rebuilt columns.txt and CHECK TABLE then
+# reports NO_FILE_IN_DATA_PART. n.b written with data is the control that presence is still detected.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_empty_columns_shared_offsets"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE t_empty_columns_shared_offsets (id UInt64, \`n.a\` Array(UInt64))
+    ENGINE = MergeTree ORDER BY id
+    SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+             min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0,
+             share_nested_offsets = 1,
+             enable_block_number_column = 0, enable_block_offset_column = 0;
+"
+${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_empty_columns_shared_offsets"
+${CLICKHOUSE_CLIENT} --max_insert_threads 1 --min_insert_block_size_rows 100000 --min_insert_block_size_bytes 0 --max_block_size 100000 --query "INSERT INTO t_empty_columns_shared_offsets SELECT number, [number, number + 1] FROM numbers(1000)"
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE t_empty_columns_shared_offsets ADD COLUMN \`n.b\` Array(String)"
+data_path=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_empty_columns_shared_offsets' AND active LIMIT 1")
+${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_empty_columns_shared_offsets"
+: > "${data_path}columns.txt"
+rm -f "${data_path}columns_substreams.txt"
+${CLICKHOUSE_CLIENT} --query "ATTACH TABLE t_empty_columns_shared_offsets" 2>/dev/null
+echo "-- t_empty_columns_shared_offsets: n.a digest after recovery"
+${CLICKHOUSE_CLIENT} --query "SELECT sum(arraySum(n.a)) FROM t_empty_columns_shared_offsets"
+echo "-- t_empty_columns_shared_offsets: consistent part after recovery"
+${CLICKHOUSE_CLIENT} --query "CHECK TABLE t_empty_columns_shared_offsets SETTINGS check_query_single_value_result = 1"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_empty_columns_shared_offsets"
+
+# Control: the same shape with n.b written with data must keep n.b, so the rule above rejects only
+# streams the column does not own.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_empty_columns_shared_offsets_data"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE t_empty_columns_shared_offsets_data (id UInt64, \`n.a\` Array(UInt64), \`n.b\` Array(String))
+    ENGINE = MergeTree ORDER BY id
+    SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+             min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0,
+             share_nested_offsets = 1,
+             enable_block_number_column = 0, enable_block_offset_column = 0;
+"
+${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_empty_columns_shared_offsets_data"
+${CLICKHOUSE_CLIENT} --max_insert_threads 1 --min_insert_block_size_rows 100000 --min_insert_block_size_bytes 0 --max_block_size 100000 --query "INSERT INTO t_empty_columns_shared_offsets_data SELECT number, [number, number + 1], ['x', 'y'] FROM numbers(1000)"
+data_path=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_empty_columns_shared_offsets_data' AND active LIMIT 1")
+${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_empty_columns_shared_offsets_data"
+: > "${data_path}columns.txt"
+rm -f "${data_path}columns_substreams.txt"
+${CLICKHOUSE_CLIENT} --query "ATTACH TABLE t_empty_columns_shared_offsets_data" 2>/dev/null
+echo "-- t_empty_columns_shared_offsets_data: n.a and n.b digests after recovery"
+${CLICKHOUSE_CLIENT} --query "SELECT sum(arraySum(n.a)), sum(length(n.b)) FROM t_empty_columns_shared_offsets_data"
+echo "-- t_empty_columns_shared_offsets_data: consistent part after recovery"
+${CLICKHOUSE_CLIENT} --query "CHECK TABLE t_empty_columns_shared_offsets_data SETTINGS check_query_single_value_result = 1"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_empty_columns_shared_offsets_data"

@@ -633,16 +633,27 @@ std::optional<String> MergeTreeDataPartWide::getFirstFileNameForColumn(const Nam
 
     /// Fallback when serializations are not loaded yet (called from loadColumns()).
     SerializationPtr serialization = getSerializations().empty() ? column.type->getDefaultSerialization() : getSerialization(column.name);
+
+    ISerialization::StreamFileNameSettings stream_settings(*storage.getSettings());
+    ISerialization::StreamFileNameSettings unshared_settings = stream_settings;
+    unshared_settings.share_nested_offsets = false;
+
     serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
-        if (!filename.has_value())
-        {
-            /// This method may be called when checksums are not initialized yet.
-            if (!checksums.empty())
-                filename = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
-            else
-                filename = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, getDataPartStorage(), storage.getSettings());
-        }
+        if (filename.has_value())
+            return;
+
+        /// A stream whose name changes when offset sharing is turned off is named after the Nested
+        /// table, so it exists as soon as any sibling has data and cannot witness this column.
+        if (ISerialization::getFileNameForStream(column, substream_path, stream_settings)
+            != ISerialization::getFileNameForStream(column, substream_path, unshared_settings))
+            return;
+
+        /// This method may be called when checksums are not initialized yet.
+        if (!checksums.empty())
+            filename = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+        else
+            filename = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, getDataPartStorage(), storage.getSettings());
     });
 
     return filename;

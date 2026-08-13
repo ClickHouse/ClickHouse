@@ -60,3 +60,11 @@
 999000
 -- t_empty_columns_fallback: t.x digest after recovered reload
 999000
+-- t_empty_columns_shared_offsets: n.a digest after recovery
+1000000
+-- t_empty_columns_shared_offsets: consistent part after recovery
+1
+-- t_empty_columns_shared_offsets_data: n.a and n.b digests after recovery
+1000000	2000
+-- t_empty_columns_shared_offsets_data: consistent part after recovery
+1
