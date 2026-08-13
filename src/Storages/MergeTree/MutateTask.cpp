@@ -3747,6 +3747,11 @@ bool MutateTask::prepare()
     auto max_partition_blocks = std::make_shared<PartitionIdToMaxBlock>();
     max_partition_blocks->emplace(ctx->future_part->part_info.getPartitionId(), ctx->future_part->part_info.getMutationVersion());
 
+    /// When patch parts are pinned by the replicated log entry, do not derive them from the local
+    /// visible state (which may differ between replicas, issue #100493). Instead apply exactly the
+    /// pinned set via addPatches below, mirroring how merges pin patches in MergeTask.
+    const bool patches_pinned = ctx->future_part->patches_pinned;
+
     MergeTreeData::IMutationsSnapshot::Params params
     {
         .metadata_version = ctx->metadata_snapshot->getMetadataVersion(),
@@ -3755,10 +3760,16 @@ bool MutateTask::prepare()
         .max_mutation_versions = std::move(max_partition_blocks),
         .need_data_mutations = false,
         .need_alter_mutations = true,
-        .need_patch_parts = true,
+        .need_patch_parts = !patches_pinned,
     };
 
     auto mutations_snapshot = ctx->data->getMutationsSnapshot(params);
+
+    if (patches_pinned && !ctx->future_part->patch_parts.empty())
+    {
+        auto & mutable_snapshot = const_cast<MergeTreeData::IMutationsSnapshot &>(*mutations_snapshot);
+        mutable_snapshot.addPatches(ctx->future_part->patch_parts);
+    }
     auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot, ctx->context
 #if CLICKHOUSE_CLOUD
         , nullptr

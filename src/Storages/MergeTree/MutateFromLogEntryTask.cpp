@@ -175,6 +175,43 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         }
     }
 
+    /// Resolve the pinned patch parts locally so the mutation applies exactly this set across replicas
+    /// (issue #100493). Accept a covering already-merged patch in place of a pinned name (like source
+    /// parts above): patch merges never cross a mutation-version boundary and application is
+    /// version-bounded, so a covering merged patch is byte-identical to its constituents. Rejecting by
+    /// exact name would instead deadlock the queue fetching a part nobody produces. Missing patch parts
+    /// fall back to fetching.
+    if (!entry.patch_parts.empty())
+    {
+        MergeTreeData::DataPartsVector patch_parts;
+        patch_parts.reserve(entry.patch_parts.size());
+        NameSet seen_patch_parts;
+
+        for (const auto & patch_part_name : entry.patch_parts)
+        {
+            auto patch_part = storage.getActiveContainingPart(patch_part_name);
+
+            if (!patch_part || !patch_part->info.isPatch())
+            {
+                LOG_DEBUG(log, "Don't have all patch parts (at least {} is missing) for mutation {}; "
+                    "will try to fetch part instead.", patch_part_name, entry.new_part_name);
+
+                return PrepareResult{
+                    .prepared_successfully = false,
+                    .need_to_check_missing_part_in_fetch = true,
+                    .part_log_writer = part_log_writer,
+                };
+            }
+
+            /// Several pinned names can resolve to the same covering merged patch; add it once.
+            if (seen_patch_parts.insert(patch_part->name).second)
+                patch_parts.push_back(patch_part);
+        }
+
+        future_mutated_part->patch_parts = std::move(patch_parts);
+        future_mutated_part->patches_pinned = true;
+    }
+
     Strings mutation_ids;
     commands = std::make_shared<MutationCommands>(storage.queue.getMutationCommands(source_part, new_part_info.mutation, mutation_ids));
     LOG_TRACE(log, "Mutating part {} with mutation commands from {} mutations ({}): {}",

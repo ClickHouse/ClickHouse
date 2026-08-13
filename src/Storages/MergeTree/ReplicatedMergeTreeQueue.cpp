@@ -311,17 +311,20 @@ bool ReplicatedMergeTreeQueue::isMergeOfPatchPartsBlocked(const LogEntry & entry
 
     auto source_parts_set = NameSet(entry.source_parts.begin(), entry.source_parts.end());
 
-    for (const auto & merge_entry : queue)
+    /// Both MERGE_PARTS and MUTATE_PART entries pin the exact set of patch parts they apply, so a
+    /// patch-part merge must wait for either kind to run first; otherwise it can consume a pinned
+    /// patch part and the merge/mutation gets stuck fetching a part nobody can produce (issue #100493).
+    for (const auto & other_entry : queue)
     {
-        if (merge_entry->type != LogEntry::MERGE_PARTS)
+        if (other_entry->type != LogEntry::MERGE_PARTS && other_entry->type != LogEntry::MUTATE_PART)
             continue;
 
-        for (const auto & patch_part : merge_entry->patch_parts)
+        for (const auto & patch_part : other_entry->patch_parts)
         {
             if (source_parts_set.contains(patch_part))
             {
-                constexpr auto fmt_string = "Not executing log entry {} for patch part {} because source patch part {} is scheduled to be applied in merge for {}.";
-                LOG_DEBUG(LogToStr(out_reason, log), fmt_string, entry.znode_name, entry.new_part_name, patch_part, merge_entry->new_part_name);
+                constexpr auto fmt_string = "Not executing log entry {} for patch part {} because source patch part {} is scheduled to be applied in merge or mutation for {}.";
+                LOG_DEBUG(LogToStr(out_reason, log), fmt_string, entry.znode_name, entry.new_part_name, patch_part, other_entry->new_part_name);
                 return true;
             }
         }
