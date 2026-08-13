@@ -1,14 +1,24 @@
 #include <Interpreters/QueryExecutionCounters.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/IJoin.h>
+#include <Interpreters/TableJoin.h>
 #include <Common/CurrentThread.h>
 
 namespace DB
 {
 
-void QueryExecutionCounters::addJoin(JoinKind kind, JoinStrictness strictness, std::string_view algorithm)
+void QueryExecutionCounters::addExecutedJoin(const IJoin & join)
 {
-    number_of_joins.fetch_add(1, std::memory_order_relaxed);
+    auto counters = getForCurrentQuery();
+    if (!counters)
+        return;
+
+    counters->number_of_joins.fetch_add(1, std::memory_order_relaxed);
+
+    const auto & table_join = join.getTableJoin();
+    auto kind = table_join.kind();
+    auto strictness = table_join.strictness();
 
     /// Strictness does not matter for these kinds, see `JoinKind` in Core/Joins.h, and the two
     /// analyzers fill it in differently: for a CROSS join the old one leaves it unspecified while
@@ -17,12 +27,12 @@ void QueryExecutionCounters::addJoin(JoinKind kind, JoinStrictness strictness, s
     if (isCrossOrComma(kind) || isPaste(kind))
         strictness = JoinStrictness::Unspecified;
 
-    std::lock_guard lock(mutex);
-    used_joins.emplace(
+    std::lock_guard lock(counters->mutex);
+    counters->used_joins.emplace(
         toString(kind),
         toString(strictness));
 
-    used_join_algorithms.emplace(algorithm);
+    counters->used_join_algorithms.emplace(join.getAlgorithm());
 }
 
 UInt64 QueryExecutionCounters::getNumberOfJoins() const

@@ -559,7 +559,7 @@ protected:
     QueryPrivilegesInfoPtr query_privileges_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
     mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
-    /// Query metrics about the executed JOINs.
+    /// Query metrics about the execution of a query.
     mutable QueryExecutionCountersPtr query_execution_counters;
 
     /// TODO: maybe replace with temporary tables?

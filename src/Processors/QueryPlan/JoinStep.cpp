@@ -1,12 +1,10 @@
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Common/CurrentThread.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
@@ -71,22 +69,6 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join,
         description.emplace_back("Residual filter", mixed_expression->getSampleBlock().dumpNames());
 
     return description;
-}
-
-void countExecutedJoin(const JoinPtr & join)
-{
-    auto query_context = CurrentThread::tryGetQueryContext();
-    if (!query_context)
-        return;
-
-    auto counters = query_context->getQueryExecutionCounters();
-    if (!counters)
-        return;
-
-    const auto & table_join = join->getTableJoin();
-    auto kind = table_join.kind();
-    auto strictness = table_join.strictness();
-    counters->addJoin(kind, strictness, join->getAlgorithm());
 }
 
 std::vector<size_t> getPermutationForBlock(
@@ -155,7 +137,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStep expect two input steps");
 
-    countExecutedJoin(this->getJoin());
+    QueryExecutionCounters::addExecutedJoin(*join);
 
     Block lhs_header = pipelines[0]->getHeader();
     Block rhs_header = pipelines[1]->getHeader();
@@ -439,7 +421,7 @@ FilledJoinStep::FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_
 
 void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    countExecutedJoin(this->getJoin());
+    QueryExecutionCounters::addExecutedJoin(*join);
 
     bool default_totals = false;
     if (!pipeline.hasTotals() && !join->getTotals().empty())

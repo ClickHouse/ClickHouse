@@ -155,10 +155,10 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"missing_privileges", array_low_cardinality_string, "Privileges that are missing during query execution."},
 
         {"used_number_of_joins", std::make_shared<DataTypeUInt64>(), "The number of physical joins executed by the query. It is collected from the query pipeline, so it reflects the joins that were actually executed after all optimizations, not the number of JOIN clauses in the query text."},
-        {"used_join_algorithms", array_low_cardinality_string, "Algorithms of the joins that were really executed by the query: 'HASH', 'PARALLEL_HASH', 'GRACE_HASH', 'PARTIAL_MERGE', 'FULL_SORTING_MERGE', 'DIRECT', and also 'PASTE' and 'CONSTANT' for the two joins the join_algorithm setting cannot name. The setting only lists the allowed algorithms, the choice among them is made at run time, and an algorithm can be replaced by another one in the middle of execution, in which case both are reported."},
+        {"used_join_algorithms", array_low_cardinality_string, "Algorithms of the joins that were really executed by the query: 'HASH', 'PARALLEL_HASH', 'GRACE_HASH', 'PARTIAL_MERGE', 'FULL_SORTING_MERGE', 'DIRECT', 'PASTE' and 'CONSTANT'. An algorithm can be replaced by another one in the middle of execution, in which case both are reported."},
         {"used_join_kinds", array_low_cardinality_string, "Kind of the joins present in the query."},
         {"used_join_strictness", array_low_cardinality_string, "Strictness of the joins present in the query."},
-        {"spilled_to_disk", array_low_cardinality_string, "Operators that wrote data to temporary files on disk (processing in external memory) during query execution, sorted and deduplicated. An empty array means the query ran fully in memory. The values are 'join' when a memory-bounded join exceeded its limit, 'aggregation' when GROUP BY exceeded max_bytes_before_external_group_by, and 'sort' when ORDER BY exceeded max_bytes_before_external_sort."},
+        {"spilled_to_disk", array_low_cardinality_string, "Operators that wrote data to temporary files on disk (processing in external memory) during query execution, sorted and deduplicated. An empty array means the query ran fully in memory."},
 
         {"transaction_id", getTransactionIDDataType(), "The identifier of the transaction in scope of which this query was executed."},
 
