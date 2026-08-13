@@ -314,6 +314,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"max_uncompressed_bytes_in_patches", bytesRangeSetting},
     {"merge_max_block_size", highRangeNonZeroSetting},
     {"merge_max_block_size_bytes", bytesRangeSetting},
+    {"merge_use_batch_sorting_queue", trueOrFalseSetting},
     {"merge_max_bytes_to_prewarm_cache", bytesRangeSetting},
     {"merge_max_dynamic_subcolumns_in_compact_part",
      CHSetting(
