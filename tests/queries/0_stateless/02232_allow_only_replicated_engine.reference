@@ -1,2 +1,2 @@
-Only tables with a replicated engine or tables which do not store data on local disk
-Only tables with a replicated engine or tables which do not store data on local disk
+Only tables with a replicated engine or tables which do not store their own data on disk
+Only tables with a replicated engine or tables which do not store their own data on disk

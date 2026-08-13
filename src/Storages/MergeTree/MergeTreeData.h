@@ -1247,7 +1247,6 @@ public:
     DiskPtr getDiskForDetachedPart(const String & part_name) const;
 
     bool storesDataOnDisk() const override { return !isStaticStorage(); }
-    bool hasUnreplicatedLocalDiskData() const override;
     Strings getDataPaths() const override;
 
     /// Reserves space at least 1MB.

@@ -33,17 +33,16 @@ Allow long-running DDL queries (CREATE AS SELECT and POPULATE) in Replicated dat
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Allow creating a table in a database with the `Replicated` engine only if the table either replicates data
-stored on local disk or does not store data on local disk.
+Allow creating a table in a database with the `Replicated` engine only if the table either replicates its own
+data stored on disk or does not store its own data on disk.
 
-This restriction applies only to local on-disk data. It does not guarantee the durability of in-memory data or
-of data stored outside the server's local disks.
+This restriction applies only to table-owned on-disk data, including data on remote disks. It does not guarantee
+the durability of in-memory data or data managed by external systems.
 
 For example, `ReplicatedMergeTree`, in-memory engines such as `Memory` and `Buffer`, metadata-only engines
 such as `Merge` and `Alias`, and external-storage or data lake engines such as `S3` and `AzureBlobStorage` are
-allowed. Non-replicated local-disk engines such as `Log` and `Set` are rejected. A non-replicated `MergeTree`
-table is rejected when its storage policy contains a local disk and allowed when every disk in its storage policy
-is remote.
+allowed. Non-replicated engines that store table data on disk, such as `MergeTree`, `Log`, and `Set`, are
+rejected, including when their writable storage policy uses remote disks.
 
 `Distributed`, `Remote`, and `RemoteSecure` tables are allowed. Their optional local background `INSERT` queue
 is a transient send buffer, not data of the table itself. It is not replicated, and setting

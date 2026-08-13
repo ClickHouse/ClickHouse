@@ -2411,9 +2411,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
-        if (res->hasUnreplicatedLocalDiskData() && database && database->getEngineName() == "Replicated")
+        if (res->hasUnreplicatedTableDataOnDisk() && database && database->getEngineName() == "Replicated")
             throw Exception(ErrorCodes::UNKNOWN_STORAGE,
-                            "Only tables with a replicated engine or tables which do not store data on local disk "
+                            "Only tables with a replicated engine or tables which do not store their own data on disk "
                             "are allowed in a Replicated database");
     }
 

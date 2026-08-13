@@ -130,7 +130,7 @@ public:
 
     bool storesDataOnDisk() const override { return data_volume != nullptr; }
     /// The local background `INSERT` queue is a transient send buffer, not data of this table.
-    bool hasUnreplicatedLocalDiskData() const override { return false; }
+    bool hasUnreplicatedTableDataOnDisk() const override { return false; }
     Strings getDataPaths() const override;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
