@@ -15,11 +15,14 @@ you were handed. Every comment you mark resolved turns green on their screen as
 you go, so resolve them one by one rather than in a batch at the end. The review
 ends when the user closes it in the UI.
 
-The `--out` file is durable state, not a report you read once. Every comment is
+The review file is durable state, not a report you read once. Every comment is
 written to it the moment it is made, and stays in it — reappearing in the next
-round, on the line it has moved to — until **you** mark it resolved. So: use the
-same `--out` path for every round of a given piece of work, and never overwrite
-or delete that file yourself.
+round, on the line it has moved to — until **you** mark it resolved. It defaults
+to `diff-review-comments.json` in the reviewed repository's git directory: one
+per repository, so every round of a piece of work lands in the same file, and
+inside `.git`, so it never shows up in `git status` or as a file to review. Never
+overwrite or delete it yourself, and pass `--out` only to keep two reviews of one
+repository apart.
 
 ## When not to use it
 
@@ -39,13 +42,17 @@ pull request and let review happen there.
 
    ```
    Monitor({
-     command: "node .claude/skills/diff-review/server.mjs \
-       --repo <repo-root> --port 3000 --out <repo-root>/tmp/diff-review-comments.json",
+     command: "node <skill-dir>/server.mjs --repo <repo-root> --port 3000",
      description: "diff review rounds",
      persistent: true,
      timeout_ms: 3600000,
    })
    ```
+
+   `<skill-dir>` is the directory this SKILL.md was loaded from — a project's
+   `.claude/skills/<name>/` or the user's `~/.claude/skills/<name>/`, and the
+   copy to run is the one you were given. Everything the server needs it finds
+   beside itself, so the path is the only thing that has to be right.
 
    `persistent: true` is required: a review lasts as long as the user wants it
    to. Load the tool with `ToolSearch("select:Monitor")` first if it is not
@@ -81,9 +88,11 @@ pull request and let review happen there.
    of work that is already recorded. The UI's header states which range is on
    screen (`HEAD~1 → HEAD`), so a mistake here is visible rather than silent.
 
-   The UI is fully self-contained: `@pierre/diffs` is vendored (see
-   `vendor/README.md`), so no network access is needed and no third-party CDN
-   ever sees the diff.
+   The page loads code from this server only, so no third-party CDN ever sees the
+   diff. `@pierre/diffs` is pinned by sha256 and verified before it is served,
+   but not kept in git: the first review on a machine downloads it into
+   `~/.cache/diff-review` (`--prefetch` does it upfront; `vendor/README.md`
+   covers offline machines).
 
    It shows one file at a time, picked from a directory tree on the left
    (status, `+a −d` counts, and a comment-count badge per file), with a path
@@ -229,9 +238,19 @@ pull request and let review happen there.
   readable as a review (bad JSON, or a review of another repository). It may hold
   comments nobody has acted on, so the server will not clobber it: read it, deal
   with whatever is in it, then move it aside or pass a different `--out`.
+- **Exit code 1 with "needs node 18 or newer"** — the node on `PATH` is too old
+  (the version it found is in the message). Nothing to work around: point the
+  command at a newer node, or review with `git diff` / `git show`.
+- **Exit code 1 with "cannot obtain"** — a pinned UI asset is neither cached nor
+  downloadable (no network, or the URL no longer serves the pinned sha256 — the
+  hashes are on stderr). Nothing renders without it, so review with `git diff` /
+  `git show` this time and tell the user; `vendor/README.md` says how to fix the
+  pin or supply the file by hand.
 - **Port 3000 busy** — a stale server is probably running:
-  `pkill -f "diff-review/server.mjs"`, or pass `--port <other>` and give the user
-  the new URL.
+  `pkill -f "[s]erver.mjs.*--port 3000"`, or pass `--port <other>` and give the
+  user the new URL. Match on the port, never on the skill's path: another copy of
+  this skill may be holding a live review someone is writing into. The `[s]` is
+  what keeps the pattern from matching — and killing — the shell you run it from.
 - **Browser didn't open** (SSH / headless) — give the user the URL to open
   manually, together with the `ssh -L` line if the server printed one.
 - **"not saved" in the UI header, or `cannot read/write` on stderr** — something
@@ -246,14 +265,16 @@ pull request and let review happen there.
   re-read per request, so the user only has to reload the tab; changing
   `server.mjs` needs a restart (and a page reloaded against an older server loses
   the round events — restart both together). Check the logic still holds with
-  `node .claude/skills/diff-review/ui_test.mjs` against a running server: it
-  imports the shipped modules and verifies the tree model, the filter, comment
-  state across a hand-over, carry-over, and that an addressed comment survives
-  the whole way in — payload, `Session`, store. `?testannotation` and `?testsend`
-  seed the page for a headless run.
-- **After changing persistence** — `node .claude/skills/diff-review/persist_test.mjs`
-  builds a throwaway repository under `./tmp`, runs real servers against it and
-  checks the whole round-trip: saved before submit, survives a kill and a reload,
+  `node <skill-dir>/ui_test.mjs` against a running server: it imports the shipped
+  modules and verifies the tree model, the filter, comment state across a
+  hand-over, carry-over, and that an addressed comment survives the whole way
+  in — payload, `Session`, store. `?testannotation` and `?testsend` seed the page
+  for a headless run. Some checks read the live review, so a couple of them state
+  properties of whatever file set is on screen (a folded directory chain, for
+  one): read a failure against the diff being served before believing it.
+- **After changing persistence** — `node <skill-dir>/persist_test.mjs`
+  builds a throwaway repository under `<skill-dir>/tmp`, runs real servers against
+  it and checks the whole round-trip: saved before submit, survives a kill and a reload,
   relocated by `anchor.mjs` after the code moves, still open after the round is
   handed over, not reopened by the page once the session resolves it, and never
   clobbered when the file cannot be read. It needs no review to be open.

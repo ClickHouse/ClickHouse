@@ -3,16 +3,19 @@
 // on whatever line the code has moved to, and disappear only once something
 // marks them resolved.
 //
-//   node .claude/skills/diff-review/persist_test.mjs
+//   node <skill-dir>/persist_test.mjs
 //
-// Self-contained: it builds a throwaway git repository under ./tmp and runs real
-// servers against it, so it needs no review to be open and touches nothing else.
+// Self-contained: it builds a throwaway git repository under this skill's own
+// tmp/ — gitignored here, and never in the repository being worked on, wherever
+// the test is run from — and runs real servers against it, so it needs no review
+// to be open and touches nothing else.
 import { spawn, execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const SERVER = join(dirname(fileURLToPath(import.meta.url)), 'server.mjs');
+const SKILL_DIR = dirname(fileURLToPath(import.meta.url));
+const SERVER = join(SKILL_DIR, 'server.mjs');
 const PORT = Number(process.env.DIFF_REVIEW_TEST_PORT ?? 3199);
 
 let failures = 0;
@@ -21,8 +24,8 @@ const check = (name, cond, extra = '') => {
   console.log(`${cond ? 'ok  ' : 'FAIL'} ${name}${extra ? ' — ' + extra : ''}`);
 };
 
-mkdirSync(join(process.cwd(), 'tmp'), { recursive: true });
-const repo = mkdtempSync(join(process.cwd(), 'tmp', 'diff-review-test-'));
+mkdirSync(join(SKILL_DIR, 'tmp'), { recursive: true });
+const repo = mkdtempSync(join(SKILL_DIR, 'tmp', 'diff-review-test-'));
 const OUT = join(repo, 'review.json');
 const git = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8' });
 git('init', '-q');

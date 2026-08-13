@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 // diff-review: serve pending git changes for in-browser review and collect the
-// user's comments. Zero npm dependencies; the UI renders with a vendored
-// @pierre/diffs bundle (see vendor/README.md) — nothing is loaded from a CDN.
+// user's comments. Node 18+, zero npm dependencies; the UI renders with the
+// @pierre/diffs bundle, which this server serves itself, hash-pinned (see
+// assets.mjs and vendor/manifest.json) — the browser never loads code from a
+// CDN.
 //
 // Usage:
 //   node server.mjs [--repo <path>] [--base <ref>] [--head <ref> | --staged]
 //                     [--committed] [--port 3000] [--out <file>] [--no-open]
 //                     [--force]
+//   node server.mjs --prefetch      # download the pinned assets, then exit
 //
 // --base is one end of the review; the other is the working tree by default, the
 // index with --staged, or a commit with --head (--committed is --head HEAD).
@@ -26,7 +29,10 @@
 // The --out file is durable state, not just a report: every comment is written
 // to it as soon as it is made, and stays in it across runs until something marks
 // it `"resolved": true`. Reopening a review therefore starts where the last one
-// left off, and killing the server loses nothing.
+// left off, and killing the server loses nothing. It defaults to
+// diff-review-comments.json in the repository's git directory — one per
+// repository, and out of the working tree, where it would otherwise turn up as a
+// file to review. Pass --out to keep two reviews of one repository apart.
 //
 // Submitting does not end the review: the round is written out and announced on
 // stdout, and the server stays up. The session goes to work on the round it was
@@ -48,9 +54,23 @@ import { gunzipSync } from 'node:zlib';
 import { existsSync, readFileSync, writeFileSync, lstatSync, readlinkSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { tmpdir, userInfo } from 'node:os';
+import { userInfo } from 'node:os';
 
 import { reanchor, splitLines } from './anchor.mjs';
+import { AssetError, cacheDir, resolveAssets, VENDOR_DIR } from './assets.mjs';
+
+// Node 18 is the floor: global fetch and AbortSignal.timeout, which fetch the
+// pinned UI assets. Older majors parse every file here, so without this they run
+// until the first machine with a cold cache and fail there with
+// `fetch is not defined` — a floor stated once beats that.
+const NODE_MAJOR = Number(process.versions.node.split('.')[0]);
+if (!(NODE_MAJOR >= 18)) {
+  process.stderr.write(
+    `diff-review: needs node 18 or newer, this is ${process.version}. The pinned UI assets are ` +
+      `downloaded with global fetch, which older versions do not have.\n`
+  );
+  process.exit(1);
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -59,10 +79,34 @@ const argVal = (name, dflt) => {
   return i >= 0 && args[i + 1] != null ? args[i + 1] : dflt;
 };
 
+/// What the UI cannot render without, and why the server refuses to start rather
+/// than open a review that would come up blank.
+async function assetsOrDie() {
+  try {
+    return await resolveAssets({ log: (m) => process.stderr.write(m) });
+  } catch (err) {
+    if (!(err instanceof AssetError)) throw err;
+    process.stderr.write(
+      `diff-review: ${err.message}\n` +
+        `diff-review: the review UI cannot render without it. With a network, ` +
+        `\`node ${join(__dirname, 'server.mjs')} --prefetch\` fills ${cacheDir()}; ` +
+        `offline, copy an audited copy into ${VENDOR_DIR} (see vendor/README.md).\n`
+    );
+    process.exit(1);
+  }
+}
+
+// Filling the cache is a job of its own: no repository, no review, no server.
+if (args.includes('--prefetch')) {
+  for (const [servePath, asset] of await assetsOrDie())
+    process.stderr.write(`diff-review: ${servePath} <- ${asset.from}\n`);
+  process.exit(0);
+}
+
 const PORT = Number(argVal('--port', '3000'));
 const BASE = argVal('--base', 'HEAD');
 const REPO = resolve(argVal('--repo', process.cwd()));
-const OUT = resolve(argVal('--out', join(tmpdir(), `diff-review-${Date.now()}.json`)));
+const OUT_ARG = argVal('--out', null);
 const NO_OPEN = args.includes('--no-open');
 const FORCE = args.includes('--force') || process.env.DIFF_REVIEW_FORCE === '1';
 
@@ -171,6 +215,18 @@ function gitOrDie(gitArgs, opts) {
 
 let ROOT = null;
 ROOT = gitOrDie(['rev-parse', '--show-toplevel']).toString('utf8').trim();
+
+// Comments live in the git directory by default: durable and one per repository,
+// like the review they belong to, but never in `git status` and so never a file
+// under review in the next round. --absolute-git-dir, not <root>/.git, because a
+// linked worktree keeps its own git dir elsewhere.
+const OUT =
+  OUT_ARG != null
+    ? resolve(OUT_ARG)
+    : join(
+        gitOrDie(['rev-parse', '--absolute-git-dir']).toString('utf8').trim(),
+        'diff-review-comments.json'
+      );
 
 // ── Collect changed files ────────────────────────────────────────────────────
 // Everything the UI needs to draw the file tree, and nothing else: no patches,
@@ -586,18 +642,13 @@ function saveReview({ status, verdict, overall, comments }) {
   return open.length;
 }
 
-// Vendored UI dependencies (see vendor/README.md). The @pierre/diffs bundle was
-// built by esm.sh and imports its node polyfills by absolute path, so those are
-// served at the exact /node/*.mjs specifiers the bundle expects. Fixed
-// allowlist — nothing else under vendor/ or elsewhere is ever served.
-const VENDOR_FILES = new Map([
-  ['/vendor/pierre-diffs.mjs', { file: 'pierre-diffs-1.3.5.mjs.gz', gzipped: true }],
-  ['/node/process.mjs', { file: 'node_process.mjs' }],
-  ['/node/buffer.mjs', { file: 'node_buffer.mjs' }],
-  ['/node/events.mjs', { file: 'node_events.mjs' }],
-  ['/node/tty.mjs', { file: 'node_tty.mjs' }],
-  ['/node/async_hooks.mjs', { file: 'node_async_hooks.mjs' }],
-]);
+// The UI's pinned dependencies, resolved and hash-checked before the review
+// opens: a missing bundle is a blank page, and finding that out here — with
+// nothing at stake yet — beats finding it out in the browser. The map is also
+// the routing table, so only the manifest's paths are ever served. (Its
+// /node/*.mjs entries are there because the esm.sh-built @pierre/diffs bundle
+// imports its polyfills by absolute path.)
+const ASSETS = await assetsOrDie();
 
 // The page and its modules are read per request and never cached, so editing the
 // UI needs nothing but a reload of the tab.
@@ -657,29 +708,19 @@ const server = createServer((req, res) => {
       res.writeHead(200, { 'content-type': 'text/plain' });
       res.end('ok');
     }, ms);
-  } else if (req.method === 'GET' && VENDOR_FILES.has(url.pathname)) {
-    const { file, gzipped, type = 'text/javascript; charset=utf-8' } = VENDOR_FILES.get(url.pathname);
-    // An asset that cannot be read fails its own request and nothing else. The
-    // process holds the review: dying over one file loses the round the reviewer
-    // is writing, which is far worse than a page missing a script.
-    let buf;
-    try {
-      buf = readFileSync(join(__dirname, 'vendor', file));
-    } catch (err) {
-      process.stderr.write(`diff-review: cannot read vendor/${file}: ${err.message}\n`);
-      res.writeHead(500, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ error: `vendor/${file}: ${err.message}` }));
-      return;
-    }
-    if (!gzipped) {
-      res.writeHead(200, { 'content-type': type });
-      res.end(buf);
+  } else if (req.method === 'GET' && ASSETS.has(url.pathname)) {
+    // Held in memory, already verified, so a request cannot fail here.
+    const asset = ASSETS.get(url.pathname);
+    if (!asset.gzip) {
+      res.writeHead(200, { 'content-type': asset.type });
+      res.end(asset.body);
     } else if ((req.headers['accept-encoding'] ?? '').includes('gzip')) {
-      res.writeHead(200, { 'content-type': type, 'content-encoding': 'gzip' });
-      res.end(buf);
+      res.writeHead(200, { 'content-type': asset.type, 'content-encoding': 'gzip' });
+      res.end(asset.body);
     } else {
-      res.writeHead(200, { 'content-type': type });
-      res.end(gunzipSync(buf));
+      asset.inflated ??= gunzipSync(asset.body);
+      res.writeHead(200, { 'content-type': asset.type });
+      res.end(asset.inflated);
     }
   } else if (req.method === 'GET' && url.pathname === '/data') {
     withReviewFile(res, () => {
@@ -830,7 +871,10 @@ server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     process.stderr.write(
       `diff-review: port ${PORT} is already in use. ` +
-        `Kill a stale server (pkill -f "diff-review/server.mjs") or pass --port <other>.\n`
+        `Kill the stale server on this port (pkill -f "[s]erver.mjs.*--port ${PORT}") or pass ` +
+        `--port <other>. The pattern matches the port rather than this skill's path, because ` +
+        `another copy of the skill may be holding a review of its own; the [s] keeps it from ` +
+        `matching the shell that runs it.\n`
     );
   } else {
     process.stderr.write(`diff-review: server error: ${err.message}\n`);

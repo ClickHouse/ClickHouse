@@ -2,7 +2,7 @@
 // model, comment state and the split geometry. They import the shipped modules,
 // so the tested code is the code the browser gets.
 //
-//   node .claude/skills/diff-review/ui_test.mjs        # against a running server
+//   node <skill-dir>/ui_test.mjs                       # against a running server
 //   DIFF_REVIEW_URL=http://localhost:3001 node …       # …on another port
 //
 // Run it from the repository root of the review being served; it reads the
