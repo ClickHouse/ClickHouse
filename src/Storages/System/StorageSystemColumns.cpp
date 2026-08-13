@@ -211,8 +211,8 @@ protected:
                 if (need_to_check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
                     continue;
 
-                const bool can_expose_column_metadata
-                    = !needs_column_metadata || storage->isGrantedToExposeMetadata(context, AccessType::SHOW_COLUMNS, column.name);
+                if (!storage->isGrantedToExposeMetadata(context, AccessType::SHOW_COLUMNS, column.name))
+                    continue;
 
                 size_t src_index = 0;
                 size_t res_index = 0;
@@ -245,7 +245,7 @@ protected:
 
                 {
                     const auto it = column_sizes.find(column.name);
-                    if (!can_expose_column_metadata || it == std::end(column_sizes))
+                    if (it == std::end(column_sizes))
                     {
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
@@ -349,7 +349,7 @@ protected:
                 /// serialization_hint
                 if (columns_mask[src_index++])
                 {
-                    if (auto it = serialization_hints.find(column.name); can_expose_column_metadata && it != serialization_hints.end())
+                    if (auto it = serialization_hints.find(column.name); it != serialization_hints.end())
                         res_columns[res_index++]->insert(ISerialization::kindStackToString(it->second->getKindStack()));
                     else
                         res_columns[res_index++]->insertDefault();

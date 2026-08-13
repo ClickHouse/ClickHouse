@@ -121,6 +121,8 @@ ${CLICKHOUSE_CLIENT} --query "
     (
         id UInt64,
         value String,
+        CONSTRAINT value_not_empty CHECK notEmpty(value),
+        PROJECTION value_projection (SELECT value ORDER BY value),
         INDEX value_idx value TYPE minmax GRANULARITY 1
     )
     ENGINE = MergeTree
@@ -139,7 +141,10 @@ ${CLICKHOUSE_CLIENT} --query "
     GRANT CREATE TABLE ON test_alias_access TO ${access_username};
     GRANT CREATE TABLE ON test_alias_buffer_access TO ${access_username};
     GRANT TABLE ENGINE ON Alias TO ${access_username};
+    GRANT SELECT ON system.completions TO ${access_username};
+    GRANT SELECT ON system.constraints TO ${access_username};
     GRANT SELECT ON system.data_skipping_indices TO ${access_username};
+    GRANT SELECT ON system.projections TO ${access_username};
 "
 
 echo "Test CREATE without target permission"
@@ -157,10 +162,22 @@ ${CLICKHOUSE_CLIENT} --query "
     GRANT SELECT ON test_alias_buffer_access TO ${access_username};
     REVOKE SHOW COLUMNS ON test_table_access FROM ${access_username};
     REVOKE SHOW COLUMNS ON test_buffer_access FROM ${access_username};
+
+    DETACH TABLE test_alias_access;
+    ATTACH TABLE test_alias_access;
 "
 
 echo "Test count without target SELECT permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SELECT count() FROM test_alias_access SETTINGS optimize_trivial_count_query = 1;" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+
+echo "Test DESCRIBE without target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "DESCRIBE TABLE test_alias_access;" 2>&1 | grep -o "ACCESS_DENIED" | head -1
+
+echo "Test SHOW CREATE without target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SHOW CREATE TABLE test_alias_access;" 2>&1 | grep -o "ACCESS_DENIED" | head -1
+
+echo "Test SHOW COLUMNS without target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SHOW COLUMNS FROM test_alias_access;"
 
 echo "Test table statistics without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
@@ -187,12 +204,26 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     WHERE database = currentDatabase() AND name = 'test_alias_access';
 "
 
+echo "Test persisted table metadata without target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
+    SELECT empty(create_table_query), empty(engine_full)
+    FROM system.tables
+    WHERE database = currentDatabase() AND name = 'test_alias_access';
+"
+
 echo "Test column statistics without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
-    SELECT name, data_compressed_bytes > 0
+    SELECT count()
     FROM system.columns
-    WHERE database = currentDatabase() AND table = 'test_alias_access'
-    ORDER BY name;
+    WHERE database = currentDatabase() AND table = 'test_alias_access';
+"
+
+echo "Test other metadata tables without target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
+    SELECT
+        (SELECT count() FROM system.constraints WHERE database = currentDatabase() AND table = 'test_alias_access'),
+        (SELECT count() FROM system.projections WHERE database = currentDatabase() AND table = 'test_alias_access'),
+        (SELECT count() FROM system.completions WHERE context = 'column' AND belongs = 'test_alias_access');
 "
 
 echo "Test index metadata and statistics without target permission"
@@ -244,12 +275,27 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     WHERE database = currentDatabase() AND name = 'test_alias_access';
 "
 
+echo "Test persisted table metadata with target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
+    SELECT notEmpty(create_table_query), notEmpty(engine_full)
+    FROM system.tables
+    WHERE database = currentDatabase() AND name = 'test_alias_access';
+"
+
 echo "Test column statistics with column-scoped target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     SELECT name, data_compressed_bytes > 0
     FROM system.columns
     WHERE database = currentDatabase() AND table = 'test_alias_access'
     ORDER BY name;
+"
+
+echo "Test other metadata tables with target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
+    SELECT
+        (SELECT count() FROM system.constraints WHERE database = currentDatabase() AND table = 'test_alias_access'),
+        (SELECT count() FROM system.projections WHERE database = currentDatabase() AND table = 'test_alias_access'),
+        (SELECT count() FROM system.completions WHERE context = 'column' AND belongs = 'test_alias_access');
 "
 
 echo "Test index metadata and statistics with target permission"
@@ -269,6 +315,13 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     FROM system.tables
     WHERE database = currentDatabase() AND name = 'test_alias_buffer_access';
 "
+
+${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON test_table_access TO ${access_username};"
+echo "Test schema commands with target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SELECT arraySort(groupArray(name)) FROM system.columns WHERE database = currentDatabase() AND table = 'test_alias_access';"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --multiquery --query "DESCRIBE TABLE test_alias_access FORMAT Null; SELECT 'DESCRIBE OK';"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --multiquery --query "SHOW COLUMNS FROM test_alias_access FORMAT Null; SELECT 'SHOW COLUMNS OK';"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SHOW CREATE TABLE test_alias_access FORMAT TSVRaw;" | grep -o "ENGINE = Alias" | uniq
 
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE test_alias_buffer_access;

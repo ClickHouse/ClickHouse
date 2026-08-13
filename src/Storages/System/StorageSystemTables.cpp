@@ -557,6 +557,8 @@ protected:
 
                     for (auto & table : external_tables)
                     {
+                        const bool can_expose_metadata
+                            = table.second->isGrantedToExposeMetadata(context, AccessType::SHOW_TABLES, {});
                         size_t src_index = 0;
                         size_t res_index = 0;
 
@@ -609,7 +611,9 @@ protected:
                         if (columns_mask[src_index++])
                         {
                             auto temp_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
-                            ASTPtr ast = temp_db ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context) : nullptr;
+                            ASTPtr ast = can_expose_metadata && temp_db
+                                ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context)
+                                : nullptr;
                             res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
                         }
 
@@ -623,12 +627,13 @@ protected:
                             if (src_index == 14 && columns_mask[src_index])
                             {
                                 // parameterized view parameters
-                                fillParametralizedViewData(res_columns, table.second, res_index);
+                                fillParametralizedViewData(res_columns, can_expose_metadata ? table.second : nullptr, res_index);
                             }
                             // skipping_indices_types
                             else if (src_index == 20 && columns_mask[src_index])
                             {
-                                const auto metadata_snapshot = table.second->getInMemoryMetadataPtr(context, false);
+                                const auto metadata_snapshot
+                                    = can_expose_metadata ? table.second->getInMemoryMetadataPtr(context, false) : nullptr;
                                 fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
                             }
                             else if (src_index == 22 && columns_mask[src_index])
@@ -832,7 +837,7 @@ protected:
                     /// table, or one dropped concurrently with the scan): tryGetCreateTableQuery
                     /// re-enters DatabaseDataLake::getCreateTableQueryImpl, which can throw again
                     /// and abort the whole scan. A null ast makes the block below emit defaults.
-                    ASTPtr ast = table ? database->tryGetCreateTableQuery(table_name, context) : nullptr;
+                    ASTPtr ast = can_expose_metadata ? database->tryGetCreateTableQuery(table_name, context) : nullptr;
                     auto * ast_create = ast ? ast->as<ASTCreateQuery>() : nullptr;
 
                     if (ast_create && !context->getSettingsRef()[Setting::show_table_uuid_in_table_create_query_if_not_nil])
@@ -874,7 +879,7 @@ protected:
 
                 // parameterized view parameters
                 if (columns_mask[src_index++])
-                    fillParametralizedViewData(res_columns, table, res_index);
+                    fillParametralizedViewData(res_columns, can_expose_metadata ? table : nullptr, res_index);
 
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
