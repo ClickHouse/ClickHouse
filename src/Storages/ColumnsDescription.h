@@ -368,6 +368,20 @@ void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const Column
 NameSet collectMaterializedColumnsStaleAfterClear(
     const std::unordered_map<String, Names> & materialized_column_inputs, const NameSet & cleared_columns);
 
+/// Map every `MATERIALIZED` column of `columns` to the storage columns its expression reads, with
+/// matchers and `ALIAS` bodies expanded and subcolumn references canonicalized to their owning
+/// storage column. `AlterCommands::validate` and `MutationsInterpreter` both build the input of
+/// `collectMaterializedColumnsStaleAfterClear` through this helper, so `ALTER` validation and
+/// mutation preparation cannot disagree about which recalculations a `CLEAR COLUMN` triggers.
+std::unordered_map<String, Names> collectMaterializedColumnInputsAfterExpansion(const ColumnsDescription & columns, ContextPtr context);
+
+/// Collect (instead of throwing) the alias-lambda-capture violations that
+/// `validateNoAliasLambdaCaptureInStoredExpressions` would report for `columns`, keyed by the
+/// column whose stored expression violates the rule. Lets `ALTER` validation distinguish
+/// violations introduced by the current command from identical ones already present in the stored
+/// metadata, which must stay tolerated for backward compatibility.
+std::unordered_map<String, String> collectAliasLambdaCaptureViolationsInStoredExpressions(const ColumnsDescription & columns);
+
 /// Validate default expressions and corresponding types compatibility, i.e.
 /// default expression result can be cast to column_type. Also checks, that we
 /// don't have strange constructions in default expression like SELECT query or

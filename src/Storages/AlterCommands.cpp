@@ -147,13 +147,13 @@ void applyNullModifier(DataTypePtr & data_type, const std::optional<bool> & null
         data_type = makeNullable(data_type);
 }
 
-ASTPtr makeStoredDefaultExpressionList(const ColumnsDescription & columns)
+ASTPtr makeStoredDefaultExpressionList(const ColumnsDescription & columns, const NameSet & excluded_columns = {})
 {
     auto default_expr_list = make_intrusive<ASTExpressionList>();
 
     for (const auto & column : columns)
     {
-        if (!column.default_desc.expression)
+        if (!column.default_desc.expression || excluded_columns.contains(column.name))
             continue;
 
         const auto tmp_column_name = column.name + "_tmp_alter" + toString(randomSeed());
@@ -2136,17 +2136,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     for (const auto & col : all_columns.getEphemeral())
                         ephemeral_names.insert(col.name);
 
-                    std::unordered_map<String, Names> materialized_column_inputs;
-                    for (const ColumnDescription & column : all_columns)
-                    {
-                        if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression)
-                            continue;
-
-                        ASTPtr query = column.default_desc.expression->clone();
-                        expandColumnMatchersInExpression(query, all_columns);
-                        auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
-                        materialized_column_inputs.emplace(column.name, syntax_result->requiredSourceColumns());
-                    }
+                    /// Expand ALIAS bodies and canonicalize subcolumn reads exactly like
+                    /// `MutationsInterpreter` does, otherwise a MATERIALIZED column that reaches the
+                    /// cleared column through an ALIAS or a subcolumn would pass this validation and
+                    /// the mutation would only fail (or rewrite the wrong columns) after being queued.
+                    auto materialized_column_inputs = collectMaterializedColumnInputsAfterExpansion(all_columns, context);
 
                     auto stale_columns
                         = collectMaterializedColumnsStaleAfterClear(materialized_column_inputs, {command.column_name});
@@ -2373,8 +2367,30 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot DROP or CLEAR all columns");
 
     if (revalidate_stored_defaults)
+    {
+        /// The whole stored default list is revalidated here, including expressions this ALTER does
+        /// not touch. The alias-lambda-capture rule is newer than some stored metadata, and metadata
+        /// loading deliberately skips it, so applying it wholesale would make unrelated ALTERs fail
+        /// on tables that still load fine. Reject only the violations the current ALTER introduces;
+        /// an expression with an identical pre-existing violation stays tolerated and is left out of
+        /// the revalidation (its analysis could only re-throw the tolerated capture error).
+        NameSet tolerated_capture_violations;
+        auto capture_violations = collectAliasLambdaCaptureViolationsInStoredExpressions(all_columns);
+        if (!capture_violations.empty())
+        {
+            auto preexisting_violations = collectAliasLambdaCaptureViolationsInStoredExpressions(metadata->columns);
+            for (const auto & [violating_column, message] : capture_violations)
+            {
+                auto preexisting = preexisting_violations.find(violating_column);
+                if (preexisting == preexisting_violations.end() || preexisting->second != message)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+                tolerated_capture_violations.insert(violating_column);
+            }
+        }
+
         validateColumnsDefaultsAndGetSampleBlock(
-            makeStoredDefaultExpressionList(all_columns), all_columns, context, insert_time_default_columns);
+            makeStoredDefaultExpressionList(all_columns, tolerated_capture_violations), all_columns, context, insert_time_default_columns);
+    }
     else
         validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns, context, insert_time_default_columns);
 }

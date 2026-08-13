@@ -1559,16 +1559,9 @@ void MutationsInterpreter::prepare(bool dry_run)
     std::unordered_map<String, Names> materialized_column_inputs;
     if (need_recalculate_materialized_for_clear)
     {
-        for (const auto & column : columns_desc)
-        {
-            if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression)
-                continue;
-
-            auto query = cloneAndValidateExpandedDefaultExpression(column, columns_desc, context);
-            replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
-            auto syntax_result = TreeRewriter(context).analyze(query, all_columns_with_ephemeral);
-            materialized_column_inputs.emplace(column.name, syntax_result->requiredSourceColumns());
-        }
+        /// The same helper backs the `CLEAR COLUMN` check in `AlterCommands::validate`, so the
+        /// dependency sets the two sides reason about cannot drift apart.
+        materialized_column_inputs = collectMaterializedColumnInputsAfterExpansion(columns_desc, context);
 
         /// Only the MATERIALIZED columns that actually read a cleared column, directly or through
         /// another recalculated MATERIALIZED column, become stale. Recomputing any other one would

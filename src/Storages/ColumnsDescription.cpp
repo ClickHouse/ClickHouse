@@ -32,7 +32,9 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/applyColumnsTransformer.h>
+#include <Common/quoteString.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
+#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
@@ -1842,6 +1844,32 @@ void validateNoAliasLambdaCaptureInStoredExpressions(const ColumnsDescription & 
     }
 }
 
+std::unordered_map<String, String> collectAliasLambdaCaptureViolationsInStoredExpressions(const ColumnsDescription & columns)
+{
+    std::unordered_map<String, String> violations;
+    for (const auto & column : columns)
+    {
+        if (!column.default_desc.expression)
+            continue;
+
+        try
+        {
+            auto probe = cloneAndExpandColumnDefaultExpression(column.default_desc, columns);
+            ReplaceAliasByExpressionMatcher::Data alias_expansion_data{columns, {}, /*reject_lambda_capture=*/ true};
+            ReplaceAliasByExpressionMatcher::Visitor(alias_expansion_data).visit(probe);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::BAD_ARGUMENTS)
+                throw;
+            /// The host column is part of the signature: the same alias captured from a second,
+            /// newly added expression is a new violation, not a tolerated pre-existing one.
+            violations.emplace(column.name, e.message());
+        }
+    }
+    return violations;
+}
+
 ASTPtr cloneAndExpandColumnDefaultExpression(const ColumnDefault & column_default, const ColumnsDescription & columns)
 {
     if (!column_default.expression)
@@ -1862,6 +1890,29 @@ ASTPtr cloneAndExpandColumnDefaultExpressionWithAliases(const ColumnDefault & co
 void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const ColumnsDescription & columns)
 {
     expandColumnMatchersImpl(expression_list, columns);
+}
+
+std::unordered_map<String, Names> collectMaterializedColumnInputsAfterExpansion(const ColumnsDescription & columns, ContextPtr context)
+{
+    /// EPHEMERAL columns are included in the analysis set so TreeRewriter can resolve
+    /// MATERIALIZED expressions that reference them; the callers reject such dependencies.
+    NamesAndTypesList source_columns = columns.getAllPhysical();
+    for (const auto & col : columns.getEphemeral())
+        source_columns.push_back(col);
+
+    std::unordered_map<String, Names> materialized_column_inputs;
+    for (const auto & column : columns)
+    {
+        if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression)
+            continue;
+
+        auto query = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, columns, context);
+        validateNoCyclicAliasesAfterExpansion(column.name, query, columns);
+        replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, source_columns);
+        auto syntax_result = TreeRewriter(context).analyze(query, source_columns);
+        materialized_column_inputs.emplace(column.name, syntax_result->requiredSourceColumns());
+    }
+    return materialized_column_inputs;
 }
 
 NameSet collectMaterializedColumnsStaleAfterClear(

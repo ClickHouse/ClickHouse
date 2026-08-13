@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+# The alias-lambda-capture rule is newer than some stored metadata, and metadata loading skips it,
+# so a table whose stored default already violates it still loads. An unrelated ALTER on such a
+# table must not start failing (the rule would retroactively reject unchanged legacy metadata),
+# while an ALTER that introduces a new violation is still rejected.
+
+WORK_DIR=${CLICKHOUSE_TMP}/04873_${CLICKHOUSE_DATABASE}
+rm -rf "${WORK_DIR}"
+mkdir -p "${WORK_DIR}"
+
+local_query()
+{
+    $CLICKHOUSE_LOCAL --path "${WORK_DIR}" --allow_deprecated_database_ordinary 1 --query "$1"
+}
+
+# `y` is an ordinary column here, so the definition is valid and creatable.
+local_query "CREATE DATABASE db ENGINE = Ordinary"
+local_query "CREATE TABLE db.legacy (x UInt8, arr Array(UInt8), y UInt8, m Array(UInt8) MATERIALIZED arrayMap(x -> y, arr)) ENGINE = MergeTree ORDER BY tuple()"
+
+# Simulate legacy metadata predating the capture rule: turn `y` into `ALIAS x + 1`, which makes
+# the expansion of `y` inside `arrayMap(x -> y, arr)` a capture the rule would reject at CREATE.
+sed -i "s/\`y\` UInt8/\`y\` UInt8 ALIAS \`x\` + 1/" "${WORK_DIR}/metadata/db/legacy.sql"
+
+# The table still loads, and unrelated ALTERs keep working.
+local_query "ALTER TABLE db.legacy ADD COLUMN z UInt8; ALTER TABLE db.legacy DROP COLUMN z; ALTER TABLE db.legacy RENAME COLUMN arr TO arr2; SELECT 'unrelated ALTERs succeeded'"
+
+# An ALTER that introduces a new violation is still rejected.
+local_query "ALTER TABLE db.legacy ADD COLUMN m2 Array(UInt8) MATERIALIZED arrayMap(x -> y, arr2)" 2>&1 \
+    | grep -o "BAD_ARGUMENTS" | head -1
+
+rm -rf "${WORK_DIR}"
