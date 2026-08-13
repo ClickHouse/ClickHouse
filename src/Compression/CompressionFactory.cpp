@@ -42,7 +42,22 @@ void CompressionCodecFactory::upperCaseCodecFamilyNames(const ASTPtr & codec_ast
         if (const auto * identifier = child->as<ASTIdentifier>())
             child = make_intrusive<ASTIdentifier>(Poco::toUpper(identifier->name()));
         else if (auto * inner_func = child->as<ASTFunction>())
+        {
             inner_func->name = Poco::toUpper(inner_func->name);
+
+            /// Identifier-valued codec arguments (e.g. the `ALP` variant in `ALP(auto)`) were also
+            /// upper-cased by the old whole-string normalization these string entry points replace, and
+            /// the codec builders expect them upper-case, so a stored `'ALP(auto)'` must keep loading.
+            /// Literal arguments (e.g. `T64('bit')`) are case-sensitive and stay as written.
+            if (inner_func->arguments)
+            {
+                for (auto & argument : inner_func->arguments->children)
+                {
+                    if (const auto * argument_identifier = argument->as<ASTIdentifier>())
+                        argument = make_intrusive<ASTIdentifier>(Poco::toUpper(argument_identifier->name()));
+                }
+            }
+        }
     }
 }
 

@@ -33,6 +33,21 @@ SELECT 'loaded', count() FROM local.t_t64;
 SELECT 'part_codec', default_compression_codec FROM system.parts WHERE database = 'local' AND table = 't_t64' AND active;
 "
 
+# An identifier-valued codec argument was case-insensitive under the old whole-string normalization, so a
+# stored lowercase spelling such as `ALP(auto)` must keep loading: the variant is upper-cased (unlike the
+# literal above, which stays as written), so classifying the codec does not fail with
+# `ALP codec variant must be AUTO, STD or RD`; the classification then finds `ALP` unusable for untyped
+# data (it requires a column type) and the load resets the setting instead of failing.
+cat > "${WORKING_FOLDER}/data/metadata/local/t_alp.sql" <<EOF
+ATTACH TABLE local.t_alp (id UInt64, v Float64) ENGINE=MergeTree ORDER BY id SETTINGS default_compression_codec='ALP(auto)';
+EOF
+
+${CLICKHOUSE_LOCAL} --path="${WORKING_FOLDER}/data" --multiquery "
+INSERT INTO local.t_alp (id, v) SELECT number, number / 7 FROM numbers(100);
+SELECT 'alp_loaded', count() FROM local.t_alp;
+SELECT 'alp_part_codec', default_compression_codec FROM system.parts WHERE database = 'local' AND table = 't_alp' AND active;
+"
+
 # The same codec string as fresh user input is rejected for the reason it is unusable, not with a parse
 # error about the rewritten literal.
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_t64_fresh (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS default_compression_codec = 'T64(''bit'')'" 2>&1 | grep -o -m1 -E "Codec T64 requires the column type|Wrong modification for T64"
