@@ -408,3 +408,84 @@ def test_batch_delete_non_azure_failure_logs_every_object(started_cluster):
     assert "Authentication" in errors, f"expected the auth exception text in the log, got: {errors!r}"
 
     node.query("DROP TABLE IF EXISTS t_batch_del_auth SYNC")  # cleanup (failpoint disabled)
+
+
+def test_batch_delete_failure_counts_profile_events(started_cluster):
+    # Bot finding r3773675098: removeObjectsBatchIfExists must count the batch in system.events
+    # (AzureDeleteObjects) even when the batch SubmitBatch itself fails. The increment now runs before the
+    # submit — mirroring the single-object removeObjectImpl and the S3 delete path — so a failed batch is
+    # still reflected in system.events, not only in system.blob_storage_log. Pre-fix (increment after the
+    # try/catch) the rethrow skipped it, so this counter stayed flat while the blobs were still logged;
+    # assert the counter now grows by at least one per object on the failed batch.
+    node.query("DROP TABLE IF EXISTS t_batch_del_events SYNC")
+    node.query(
+        """
+        CREATE TABLE t_batch_del_events (k UInt64) ENGINE = MergeTree ORDER BY k
+        SETTINGS storage_policy = 'azure_policy', min_bytes_for_wide_part = 0
+        """
+    )
+    for i in range(3):
+        node.query(f"INSERT INTO t_batch_del_events SELECT number + {i * 100} FROM numbers(100)")
+
+    table_uuid = node.query(
+        "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_batch_del_events'"
+    ).strip()
+    expected_blobs = set(
+        node.query(
+            "SELECT remote_path FROM system.remote_data_paths "
+            f"WHERE disk_name = 'azure_disk' AND local_path LIKE '%{table_uuid}%'"
+        ).split()
+    )
+    assert expected_blobs, "the table must be backed by remote objects"
+
+    def azure_delete_objects():
+        # sum() so an absent event row reads as 0; system.events is a live global counter (no flush needed).
+        return int(
+            node.query(
+                "SELECT sum(value) FROM system.events WHERE event = 'AzureDeleteObjects'"
+            ).strip()
+        )
+
+    events_before = azure_delete_objects()
+
+    logged = set()
+    node.query("SYSTEM ENABLE FAILPOINT azure_inject_forbidden_response")
+    try:
+        try:
+            node.query("DROP TABLE t_batch_del_events SYNC")
+        except Exception:
+            pass
+
+        # Synchronize on the batch actually having been submitted: the increment now runs before the
+        # catch's blob_storage_log entries, so once every object's failed Delete row is visible the
+        # counter has definitely moved. Reuse the proven 403-batch poll for that barrier.
+        blob_list = ", ".join(f"'{p}'" for p in expected_blobs)
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            node.query("SYSTEM FLUSH LOGS")
+            logged = set(
+                node.query(
+                    "SELECT remote_path FROM system.blob_storage_log "
+                    "WHERE event_type = 'Delete' AND error_code = 403 "
+                    f"AND remote_path IN ({blob_list})"
+                ).split()
+            )
+            if logged >= expected_blobs:
+                break
+            time.sleep(0.5)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_response")
+
+    missing = expected_blobs - logged
+    assert not missing, (
+        f"batch delete did not run for every object; missing {len(missing)}/{len(expected_blobs)}: "
+        f"{sorted(missing)[:5]}"
+    )
+
+    delta = azure_delete_objects() - events_before
+    assert delta >= len(expected_blobs), (
+        f"expected system.events AzureDeleteObjects to grow by >= {len(expected_blobs)} "
+        f"on the failed batch delete, got delta {delta}"
+    )
+
+    node.query("DROP TABLE IF EXISTS t_batch_del_events SYNC")  # cleanup (failpoint disabled)

@@ -472,6 +472,10 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
         for (const auto & object : object_batch)
             responses.push_back(requests.DeleteBlob(client_ptr->GetBlobPath(object.remote_path)));
 
+        ProfileEvents::increment(ProfileEvents::AzureDeleteObjects, object_batch.size());
+        if (is_disk)
+            ProfileEvents::increment(ProfileEvents::DiskAzureDeleteObjects, object_batch.size());
+
         try
         {
             client_ptr->SubmitBatch(requests);
@@ -495,10 +499,6 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
                 add_log_entry(object, elapsed, -1, batch_error);
             throw;
         }
-
-        ProfileEvents::increment(ProfileEvents::AzureDeleteObjects, object_batch.size());
-        if (is_disk)
-            ProfileEvents::increment(ProfileEvents::DiskAzureDeleteObjects, object_batch.size());
 
         size_t avg_elapsed_us = watch.elapsedMicroseconds() / object_batch.size();
         std::exception_ptr throw_at_end;
