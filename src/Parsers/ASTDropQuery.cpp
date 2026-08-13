@@ -40,7 +40,6 @@ ASTPtr ASTDropQuery::clone() const
     /// longer matches a freshly parsed one -- which broke rewrite-rule matching of `DROP` queries,
     /// whose stored rule template is such a clone.
     res->children.clear();
-    cloneOutputOptions(*res);
     cloneTableOptions(*res);
     /// `cloneTableOptions` only handles `database` / `table`; the `DROP TABLE a, b, ...` list lives
     /// in `database_and_tables`, which is a child too, so re-clone it here as well.
@@ -49,6 +48,7 @@ ASTPtr ASTDropQuery::clone() const
         res->database_and_tables = database_and_tables->clone();
         res->children.push_back(res->database_and_tables);
     }
+    cloneOutputOptions(*res);
     return res;
 }
 
