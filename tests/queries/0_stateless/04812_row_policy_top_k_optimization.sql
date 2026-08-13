@@ -23,15 +23,24 @@ CREATE ROW POLICY rp_04812 ON t_04812 FOR SELECT USING key >= 100 TO ALL;
 -- bug only shows with the values below: `use_skip_indexes_on_data_read = 0` skips the narrowing
 -- altogether, and `query_plan_max_limit_for_top_k_optimization` below the `LIMIT` disables the
 -- optimization. All of them are pinned to their default values, so the query is the one a user runs.
+--
+-- `max_rows_to_read = 0` is pinned because the stateless-test user profile sets it to 20000000, and
+-- `ReadFromMergeTree::supportsSkipIndexesOnDataRead` disables skip indexes on data read - including
+-- the top-K narrowing - whenever a throwing `max_rows_to_read` / `max_rows_to_read_leaf` limit is set
+-- (row estimation does not work when granules are skipped during the scan). Without the pin the bug
+-- cannot manifest in the CI environment at all, and bugfix validation reports "bug does not reproduce
+-- on master". `0` is the default, so the query still is the one a user runs.
 SELECT key FROM t_04812 ORDER BY key LIMIT 3
     SETTINGS enable_analyzer = 0, use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1,
-             query_plan_max_limit_for_top_k_optimization = 1000, max_threads = 1, enable_parallel_replicas = 0;
+             query_plan_max_limit_for_top_k_optimization = 1000, max_threads = 1, enable_parallel_replicas = 0,
+             max_rows_to_read = 0, max_rows_to_read_leaf = 0;
 
 SELECT '--';
 
 SELECT key FROM t_04812 ORDER BY key LIMIT 3
     SETTINGS enable_analyzer = 1, use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1,
-             query_plan_max_limit_for_top_k_optimization = 1000, max_threads = 1, enable_parallel_replicas = 0;
+             query_plan_max_limit_for_top_k_optimization = 1000, max_threads = 1, enable_parallel_replicas = 0,
+             max_rows_to_read = 0, max_rows_to_read_leaf = 0;
 
 DROP ROW POLICY rp_04812 ON t_04812;
 DROP TABLE t_04812;
