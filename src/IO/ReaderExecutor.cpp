@@ -1711,46 +1711,6 @@ void ReaderExecutor::collectFillTargets(FetchMachine & m)
     }
 }
 
-void ReaderExecutor::runHandedFills(ByteRange served_range, const ChainedBuffers & bytes, Stats & out_stats)
-{
-    /// A promote's targets are strictly-faster-tier cells, so its `CacheWriter`s are
-    /// never the ones lent to the in-flight machine (a Remote's `into` routes only the
-    /// bottom tier and same-tier slower layers) - no thread shares these writers.
-    for (const auto & r : read_plan.schedule.retrieves)
-    {
-        if (r.source != PlanSchedule::Source::HandedChain)
-            continue;
-        if (!(r.range.offset < served_range.end() && served_range.offset < r.range.end()))
-            continue;
-        for (const auto & wt : r.into)
-        {
-            if (wt.entry >= read_plan.tiers.size() || !read_plan.tiers[wt.entry].provider)
-                continue;
-            for (const auto & w : read_plan.tiers[wt.entry].view->misses())
-            {
-                if (!w.writer)
-                    continue;
-                const size_t lo = std::max({served_range.offset, r.range.offset, w.writer->range().offset, wt.cell.offset});
-                const size_t hi = std::min({served_range.end(), r.range.end(), w.writer->range().end(), wt.cell.end()});
-                if (lo >= hi)
-                    continue;
-                auto slice = bytes.slice(ByteRange{lo, hi - lo});
-                if (slice.empty())
-                    continue;
-                auto handed = w.writer->claimLeadRole(ByteRange{lo, hi - lo});
-                if (!handed.claim)
-                    continue;
-                out_stats.add(Stats::CachePopulateRequests);
-                StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
-                const size_t written = w.writer->write(std::move(slice), handed.claim);
-                out_stats.add(Stats::BytesPromoted, written);
-                HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
-                    static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
-            }
-        }
-    }
-}
-
 /// The serve run whose `output` contains `pos_phys`. Clamps to the last run past the
 /// materialized span (EOF / extent ceiling).
 size_t ReaderExecutor::serveRunAt(size_t pos_phys) const
@@ -1949,8 +1909,8 @@ void ReaderExecutor::prefetch()
     /// (the machine above is collected, so the mid-plan rebuild is legal here).
     preparePlan(position_phys, /*coverage_ahead=*/probe);
     /// Fully cache-served plan: the look-ahead re-plan above has already pulled any
-    /// upcoming cold region into the plan, so if there is still no `Source::Remote`
-    /// retrieve there is nothing to prefetch - skip the rest of the bookkeeping.
+    /// upcoming cold region into the plan, so if there is still no retrieve there is
+    /// nothing to prefetch - skip the rest of the bookkeeping.
     if (!read_plan.has_remote_retrieves)
         return;
     if (!prefetchEnabled(read_plan.geometry()->pressure_level))
@@ -1960,10 +1920,9 @@ void ReaderExecutor::prefetch()
     for (size_t ri = read_plan.launch_frontier; ri < retrieves.size(); ++ri)
     {
         const auto & r = retrieves[ri];
-        /// The schedule says which jobs may run ahead (`ahead_eligible`: a promote takes
-        /// the serve's output as input, so it is serve-front only); a job whose launch
-        /// frontier reached its end is done. Advance the scan past them so it never rescans.
-        if (!r.ahead_eligible || launchProgress(ri) >= r.range.end())
+        /// A job whose launch frontier reached its end is done. Advance the scan past it so
+        /// it never rescans.
+        if (launchProgress(ri) >= r.range.end())
         {
             if (ri == read_plan.launch_frontier)
                 ++read_plan.launch_frontier;
@@ -2463,8 +2422,6 @@ ChainedBuffers ReaderExecutor::serveFromDisplay(ByteRange window)
     /// The contiguous served prefix; the next call serves from the first gap.
     const size_t prefix_end = coveredPrefixEnd(covered, window);
     ChainedBuffers chain = out.slice(ByteRange{window.offset, prefix_end - window.offset});
-    if (!chain.empty())
-        runHandedFills(ByteRange{window.offset, chain.range().size}, chain, stats);
     return chain;
 }
 
@@ -2736,11 +2693,9 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// reach prediction (which sizes long source connections) stays current.
     feedScheduleToFetchTracker(read_plan.schedule);
 
-    /// A plan with no `Source::Remote` retrieve is served entirely from cache; the
-    /// prefetch look-ahead has nothing to launch.
-    read_plan.has_remote_retrieves = std::any_of(
-        read_plan.schedule.retrieves.begin(), read_plan.schedule.retrieves.end(),
-        [](const auto & r) { return r.source == PlanSchedule::Source::Remote; });
+    /// A plan with no retrieve is served entirely from cache; the prefetch look-ahead
+    /// has nothing to launch.
+    read_plan.has_remote_retrieves = !read_plan.schedule.retrieves.empty();
 
     LOG_TRACE(log, "observeAndSchedule: planned [{}, {}), {} entries, {} retrieves",
         read_plan.geometry()->plan_start, read_plan.geometry()->plan_end,
@@ -2897,9 +2852,7 @@ void ReaderExecutor::extendPlan(size_t position_phys)
         effectiveWindowSize(read_plan.geometry()->pressure_level),
         effectiveBlockSize(read_plan.geometry()->pressure_level));
     feedScheduleToFetchTracker(read_plan.schedule);
-    read_plan.has_remote_retrieves = std::any_of(
-        read_plan.schedule.retrieves.begin(), read_plan.schedule.retrieves.end(),
-        [](const auto & r) { return r.source == PlanSchedule::Source::Remote; });
+    read_plan.has_remote_retrieves = !read_plan.schedule.retrieves.empty();
     size_t frontier = 0;
     while (frontier < read_plan.schedule.retrieves.size()
         && read_plan.schedule.retrieves[frontier].range.end() <= position_phys)
@@ -2914,15 +2867,12 @@ void ReaderExecutor::extendPlan(size_t position_phys)
 
 void ReaderExecutor::feedScheduleToFetchTracker(const PlanSchedule & schedule)
 {
-    /// The predicted SOURCE reads are the `Source::Remote` retrieves; upper-tier
-    /// reads and promotes open no source connection, so a wide upper hit between
-    /// them correctly breaks the run. Feed in offset order (the tracker's gap
-    /// bridging wants a monotone stream); the tracker itself skips spans an
-    /// earlier overlapping plan already fed.
+    /// Every retrieve is a source read. Feed in offset order (the tracker's gap bridging
+    /// wants a monotone stream); the tracker itself skips spans an earlier overlapping
+    /// plan already fed.
     VectorWithMemoryTracking<ByteRange> source_reads;
     for (const auto & r : schedule.retrieves)
-        if (r.source == PlanSchedule::Source::Remote)
-            source_reads.push_back(r.range);
+        source_reads.push_back(r.range);
     std::sort(source_reads.begin(), source_reads.end(),
         [](const ByteRange & a, const ByteRange & b) { return a.offset < b.offset; });
 

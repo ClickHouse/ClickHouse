@@ -866,7 +866,6 @@ The server successfully detected this situation and will download merged part fr
     M(ReaderExecutorBytesFromFilesystemCache, "Physical bytes ReaderExecutor issued from the filesystem cache tier (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorRequestedBytes.", ValueType::Bytes) \
     M(ReaderExecutorBytesFromSource, "Physical bytes ReaderExecutor issued to the source after missing all cache tiers (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorRequestedBytes.", ValueType::Bytes) \
     M(ReaderExecutorBytesPushedToCacheSync, "Bytes ReaderExecutor wrote back into cache tiers via put from a foreground (synchronous) read.", ValueType::Bytes) \
-    M(ReaderExecutorBytesPromoted, "Bytes ReaderExecutor wrote into a faster cache tier by promotion: a range served from a slower tier, written up into a missing populatable upper tier (e.g. filesystem cache to page cache).", ValueType::Bytes) \
     M(ReaderExecutorCacheGetRequests, "Number of CacheReader::read invocations in ReaderExecutor.", ValueType::Number) \
     M(ReaderExecutorCachePopulateRequests, "Number of CacheWriter::write invocations in ReaderExecutor.", ValueType::Number) \
     M(ReaderExecutorSourceRequests, "Number of source-side requests opened by ReaderExecutor (excludes live-buffer reuses).", ValueType::Number) \

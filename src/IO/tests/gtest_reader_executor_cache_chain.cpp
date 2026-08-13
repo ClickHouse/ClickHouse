@@ -76,7 +76,6 @@ namespace ProfileEvents
     extern const Event ReaderExecutorBytesFromSource;
     extern const Event ReaderExecutorBytesPushedToCacheSync;
     extern const Event ReaderExecutorSourceRequests;
-    extern const Event ReaderExecutorBytesPromoted;
 }
 
 using namespace DB;
@@ -93,11 +92,6 @@ namespace
 size_t sourceRequestsSoFar()
 {
     return CurrentThread::getProfileEvents()[ProfileEvents::ReaderExecutorSourceRequests];
-}
-
-size_t promotedBytesSoFar()
-{
-    return CurrentThread::getProfileEvents()[ProfileEvents::ReaderExecutorBytesPromoted];
 }
 
 size_t bytesFromSourceSoFar()
@@ -1029,88 +1023,6 @@ TEST_F(ReaderExecutorCacheChain, CrossCacheFetchesWholeCellForUncoveredTail)
 }
 
 
-/// Scenario 3: page cold, fs warm. A fresh `PageCacheFile` makes the page layer
-/// cold; the SAME warm fs serves the whole file. A third executor reusing the
-/// fresh page provider (now populated by #2) serves entirely from page.
-/// Plan-then-stream serves each byte from the fastest tier that already holds
-/// it and does NOT promote it up the chain: a byte resident in fs but cold in
-/// page is served from fs and left there. (Gaps - bytes resident in no tier -
-/// are still back-filled to every tier; this only drops cache->cache copies.)
-TEST_F(ReaderExecutorCacheChain, FsHitIsPromotedToPage)
-{
-    constexpr size_t segment_size = 64;
-    constexpr size_t block_size = 16;
-    constexpr size_t file_size = 5 * segment_size;
-
-    const String content = makePattern(file_size);
-    auto source = std::make_shared<MemorySourceReader>(
-        std::unordered_map<String, String>{{"obj", content}});
-
-    StoredObjects objects;
-    objects.emplace_back("obj", "", file_size);
-
-    auto page_cache = makePageCache();
-    auto fc = makeFileCache("fc3", segment_size, /*max_size=*/1ull << 20);
-    auto disk_provider = makeDiskProvider(fc);
-
-    /// Warm both via a provider on PageCacheFile "warm".
-    {
-        auto warm_page_provider = makePageProvider(page_cache, "warm", block_size, file_size);
-        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
-        caches.push_back(warm_page_provider);
-        caches.push_back(disk_provider);
-
-        ReaderExecutor::Options executor_options;
-        executor_options.window_size = block_size;
-        executor_options.min_bytes_for_seek = 0;
-        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
-        ReaderExecutor executor(source, objects, caches, executor_options);
-        EXPECT_EQ(drainAll(executor), content);
-    }
-
-    /// Executor #2: FRESH PageCacheFile "cold" (page cold) + same warm fs.
-    /// fs serves the file while page is cold, and the WritePlan PROMOTES each
-    /// served run up into the (populatable) page layer.
-    auto cold_page_provider = makePageProvider(page_cache, "cold", block_size, file_size);
-    const size_t src_before_2 = sourceRequestsSoFar();
-    const size_t promo_before_2 = promotedBytesSoFar();
-    {
-        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
-        caches.push_back(cold_page_provider);
-        caches.push_back(disk_provider);
-
-        ReaderExecutor::Options executor_options;
-        executor_options.window_size = block_size;
-        executor_options.min_bytes_for_seek = 0;
-        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
-        ReaderExecutor executor(source, objects, caches, executor_options);
-        EXPECT_EQ(drainAll(executor), content);
-    }
-    EXPECT_EQ(sourceRequestsSoFar(), src_before_2)
-        << "fs layer must serve everything while page is cold";
-    EXPECT_GT(promotedBytesSoFar() - promo_before_2, 0u)
-        << "fs hits must be promoted up into the cold (populatable) page layer";
-
-    /// Executor #3: reuses #2's page provider with the fs DROPPED from the chain.
-    /// Because #2 promoted the fs hits up into the page layer, a page-only chain
-    /// now serves everything from page - the source is untouched.
-    const size_t src_before_3 = sourceRequestsSoFar();
-    {
-        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
-        caches.push_back(cold_page_provider);
-
-        ReaderExecutor::Options executor_options;
-        executor_options.window_size = block_size;
-        executor_options.min_bytes_for_seek = 0;
-        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
-        ReaderExecutor executor(source, objects, caches, executor_options);
-        EXPECT_EQ(drainAll(executor), content);
-    }
-    EXPECT_EQ(sourceRequestsSoFar(), src_before_3)
-        << "the fs hits in #2 must have promoted the page layer (cross-tier promotion)";
-}
-
-
 /// Scenario 4: partial fs hit. Executor#1 reads only the prefix `[0, half)`
 /// (one window) and warms the fs prefix. Executor#2 reads the whole file: the
 /// prefix is served from fs, the tail from source. We attribute via
@@ -1292,85 +1204,6 @@ TEST_F(ReaderExecutorCacheChain, PageCacheBypassModeDoesNotPopulate)
     }
     EXPECT_GT(sourceRequestsSoFar() - src_before_second, 0u)
         << "bypass populated nothing, so the second read still misses";
-}
-
-
-/// Scenario 5: two fs layers. Chain [page(cold), fastFs(cold), slowFs(warm)].
-/// Only slowFs is warmed. The chain serves from slowFs (the tier that holds the
-/// bytes) and does NOT promote them up to the faster cold layers - so reading
-/// later through fastFs alone still misses and falls to the source.
-TEST_F(ReaderExecutorCacheChain, SlowFsHitIsNotPromotedToFastFs)
-{
-    constexpr size_t segment_size = 64;
-    constexpr size_t block_size = 16;
-    constexpr size_t file_size = 5 * segment_size;
-
-    const String content = makePattern(file_size);
-    auto source = std::make_shared<MemorySourceReader>(
-        std::unordered_map<String, String>{{"obj", content}});
-
-    StoredObjects objects;
-    objects.emplace_back("obj", "", file_size);
-
-    auto page_cache = makePageCache();
-    auto fast_fc = makeFileCache("fast_fc", segment_size, /*max_size=*/1ull << 20);
-    auto slow_fc = makeFileCache("slow_fc", segment_size, /*max_size=*/1ull << 20);
-
-    auto fast_provider = makeDiskProvider(fast_fc);
-    auto slow_provider = makeDiskProvider(slow_fc);
-
-    /// Warm ONLY slowFs (read through a chain of just [slowFs]).
-    const size_t src_before_warm = sourceRequestsSoFar();
-    {
-        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
-        caches.push_back(slow_provider);
-
-        ReaderExecutor::Options executor_options;
-        executor_options.window_size = block_size;
-        executor_options.min_bytes_for_seek = 0;
-        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
-        ReaderExecutor executor(source, objects, caches, executor_options);
-        EXPECT_EQ(drainAll(executor), content);
-    }
-    EXPECT_GT(sourceRequestsSoFar() - src_before_warm, 0u);
-
-    auto page_provider = makePageProvider(page_cache, "obj", block_size, file_size);
-
-    /// Executor #2: full chain [page(cold), fastFs(cold), slowFs(warm)].
-    /// slowFs serves; page + fastFs are back-filled.
-    const size_t src_before_2 = sourceRequestsSoFar();
-    {
-        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
-        caches.push_back(page_provider);
-        caches.push_back(fast_provider);
-        caches.push_back(slow_provider);
-
-        ReaderExecutor::Options executor_options;
-        executor_options.window_size = block_size;
-        executor_options.min_bytes_for_seek = 0;
-        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
-        ReaderExecutor executor(source, objects, caches, executor_options);
-        EXPECT_EQ(drainAll(executor), content);
-    }
-    EXPECT_EQ(sourceRequestsSoFar(), src_before_2)
-        << "slowFs must serve everything; source untouched";
-
-    /// Executor #3: chain of just [fastFs]. fastFs was never promoted (slowFs
-    /// served #2 directly), so it is still cold and must fall to the source.
-    const size_t src_before_3 = sourceRequestsSoFar();
-    {
-        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
-        caches.push_back(fast_provider);
-
-        ReaderExecutor::Options executor_options;
-        executor_options.window_size = block_size;
-        executor_options.min_bytes_for_seek = 0;
-        executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
-        ReaderExecutor executor(source, objects, caches, executor_options);
-        EXPECT_EQ(drainAll(executor), content);
-    }
-    EXPECT_GT(sourceRequestsSoFar() - src_before_3, 0u)
-        << "fastFs must NOT have been back-filled from slowFs (no cross-tier promotion)";
 }
 
 

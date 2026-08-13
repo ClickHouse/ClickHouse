@@ -77,22 +77,17 @@ class EncryptionHeaderCache;
 ///
 /// The CONSUMER serves windows off the DISPLAY - the one read surface (hit
 /// views + live committed cells + the bank as the overflow holder) - pumping
-/// the producer until the cursor is covered, and hands the served bytes to
-/// the scheduled promotes (`runHandedFills`: served bytes fill the faster
-/// cells the fetch skipped). It opens no source path of its own - healing
-/// runs producer code.
+/// the producer until the cursor is covered. It opens no source path of its
+/// own - healing runs producer code.
 ///
-/// CACHE-CHAIN POLICY - correctness for many tiers, performance for one.
-/// With several populating caches the executor stays CORRECT but plans and
-/// paces against the BOTTOM populating tier alone; upper tiers are a serve
-/// bonus (a hit serves from its fastest holder), not a coordination target.
-/// There is deliberately NO cross-tier down-fill: a faster tier's resident
-/// range over a lower cell leaves the lower segment partial - a write past
-/// it is refused into the bank (served, not persisted), the demand
-/// read-through completes an interior hole from the source, and a tail hole
-/// heals once the upper tier evicts and the range becomes a plain miss. One
-/// populating tier - the production shape - has no such ranges and takes
-/// the unimpaired path.
+/// CACHE-CHAIN POLICY. The fetch fills EVERY tier that misses a consumed cell
+/// directly from the source read - the whole chain is populated at one place,
+/// when we read from the source. There is deliberately NO cross-tier down-fill:
+/// a faster tier's resident range over a lower cell leaves the lower segment
+/// partial - a write past it is refused into the bank (served, not persisted),
+/// the demand read-through completes an interior hole from the source, and a
+/// tail hole heals once the upper tier evicts and the range becomes a plain
+/// miss. One populating tier - the production shape - is the common case.
 ///
 /// Tuned for sequential scans: one machine (the in-flight PIECE) ahead on a
 /// `PrefetchThreadPool`, window/block sizes shrink under memory pressure.
@@ -326,8 +321,8 @@ private:
         /// yet launched/exhausted; advanced by `prefetch`. Reset on re-plan.
         size_t launch_frontier = 0;
 
-        /// True iff `schedule.retrieves` contains a `Source::Remote` job. When false
-        /// the plan is served entirely from cache tiers, so there is no source
+        /// True iff `schedule.retrieves` is non-empty (every retrieve is a source read).
+        /// When false the plan is served entirely from cache tiers, so there is no source
         /// connection to open and `prefetch` skips its prefetch bookkeeping
         /// (after its look-ahead re-plan, which still discovers cold beyond the plan).
         bool has_remote_retrieves = false;
@@ -522,16 +517,6 @@ private:
     /// machine at LAUNCH, so the worker can write its led segments inline during the fetch.
     void collectFillTargets(FetchMachine & m);
 
-    /// Run the scheduled PROMOTE jobs overlapping the just-served range (`HandedChain`):
-    /// write served bytes UP into the faster cells the fetch deliberately skipped
-    /// (`writeTargetsFor` fills only the bottom tier; the pc fill thus trails the serve
-    /// cursor instead of riding the fetch lead). Their INPUT is the served bytes, so they
-    /// are inherently serve-front jobs; the background never runs them ahead
-    /// (`ahead_eligible`). The jobs' `into` cells carry the `[CF-promote]` no-same-tier
-    /// rule as data. The writers' committed sets make every write idempotent.
-    /// `served_range`/`bytes` are physical, pre-decryption.
-    void runHandedFills(ByteRange served_range, const ChainedBuffers & bytes, Stats & out_stats);
-
     // ─── Plan build ──────────────────────────────────────────────────────
 
     /// Query cache residency ONCE over the look-ahead span via the read-only
@@ -681,9 +666,9 @@ private:
     bool launchMachineForWindow(size_t ri, ByteRange window, IFetchMachineRunner & machine_runner);
     void launchRetrieve(size_t ri);
 
-    /// Feed the plan SCHEDULE's predicted source reads (the `Source::Remote`
-    /// retrieves, in offset order) into `fetch_tracker`; the tracker skips
-    /// spans an earlier overlapping plan already fed. A Remote retrieve's range
+    /// Feed the plan SCHEDULE's predicted source reads (the retrieves, in offset
+    /// order) into `fetch_tracker`; the tracker skips spans an earlier overlapping
+    /// plan already fed. A retrieve's range
     /// already spans bridged holes (<= `min_bytes_for_seek`) as over-read, and
     /// `bridgeable_gap == min_bytes_for_seek`, so feeding the range as one read counts
     /// that over-read exactly as a read-through would.

@@ -105,7 +105,6 @@ namespace ProfileEvents
     extern const Event ReaderExecutorIncompleteConnections;
     extern const Event ReaderExecutorMachineInterrupted;
     extern const Event ReaderExecutorPartialCollects;
-    extern const Event ReaderExecutorBytesPromoted;
 }
 
 namespace
@@ -2046,15 +2045,6 @@ public:
     }
 
     size_t segmentSize() const { return segment_size; }
-
-    /// Mark a segment fully resident with genuine `fill` bytes - the faithful twin of
-    /// setting `downloaded` directly, so reads return real data. Mirrors
-    /// `WideGranularityMockCache::seedBlock`.
-    void seedSegment(size_t idx, char fill)
-    {
-        downloaded[idx] = segment_size;
-        bytes[idx] = String(segment_size, fill);
-    }
 
     std::shared_ptr<int> & livenessFor(size_t idx)
     {
@@ -5064,56 +5054,6 @@ TEST(ReaderExecutor, MachineCollectFillsCacheInline)
     }
 }
 
-TEST(ReaderExecutor, WarmServePromotesInline)
-{
-    /// The warm-path lever: an fs-resident scan serves from the slower tier and
-    /// promotes the served runs into the faster (page) tier - inline on the serve
-    /// thread (the put lane is gone). The fs mock stores 'D' bytes (the source is 'X'),
-    /// so an all-'D' result proves the serve came from the fs tier; the source must
-    /// never be read.
-    constexpr size_t FILE_SIZE = 8000;
-    constexpr size_t SEG = 2000;
-    constexpr size_t WINDOW = 1000;
-    constexpr size_t BLOCK = 500;
-
-    auto source = std::make_shared<MemorySourceReader>(
-        std::unordered_map<String, String>{{"obj", String(FILE_SIZE, 'X')}});
-    StoredObjects objects;
-    objects.emplace_back("obj", "", FILE_SIZE);
-
-    auto fs = std::make_shared<EvictableSegmentMockCache>(SEG);
-    for (size_t i = 0; i < FILE_SIZE / SEG; ++i)
-        fs->seedSegment(i, 'D');   /// every segment fully resident with genuine 'D' bytes
-    PageCacheFixture pcfix;
-    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
-    caches.push_back(pcfix.provider(BLOCK, FILE_SIZE));   /// faster tier, cold
-    caches.push_back(fs);                                 /// slower tier, warm
-
-    auto pool = std::make_shared<SyncPrefetchPool>();
-    TestThreadGroup tg;
-    {
-        ReaderExecutor::Options executor_options;
-        executor_options.window_size = WINDOW;
-        executor_options.min_bytes_for_seek = 0;
-        executor_options.block_size = BLOCK;
-        executor_options.prefetch_pool = pool;
-        ReaderExecutor executor(source, objects, caches, executor_options);
-
-        String result;
-        while (true)
-        {
-            auto chain = executor.readNextWindow();
-            if (chain.empty())
-                break;
-            for (const auto & node : chain.getNodes())
-                result.append(node.data(), node.size);
-        }
-        EXPECT_EQ(result, String(FILE_SIZE, 'D')) << "warm serve must come from the fs tier";
-        EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 0u);
-        EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorBytesPromoted), 0u)
-            << "served runs must be promoted into the faster tier";
-    }
-}
 
 namespace
 {
@@ -5131,8 +5071,7 @@ PredictedKpi predictKpi(const PlanSchedule & s)
 {
     PredictedKpi k;
     for (const auto & r : s.retrieves)
-        if (r.source == PlanSchedule::Source::Remote)
-            k.from_source += r.range.size;
+        k.from_source += r.range.size;
     /// The cache is the buffer: EVERY delivered User byte is read out of a cell (a resident hit, or
     /// a miss filled from the source then read back), so it all counts as a cache read - a cold miss
     /// shows both `from_source` (filling the cell) and `served_from_cache` (serving it out). (These

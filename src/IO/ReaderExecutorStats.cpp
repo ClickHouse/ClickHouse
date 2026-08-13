@@ -7,7 +7,6 @@ namespace ProfileEvents
     extern const Event ReaderExecutorBytesFromFilesystemCache;
     extern const Event ReaderExecutorBytesFromSource;
     extern const Event ReaderExecutorBytesPushedToCacheSync;
-    extern const Event ReaderExecutorBytesPromoted;
     extern const Event ReaderExecutorCacheGetRequests;
     extern const Event ReaderExecutorCachePopulateRequests;
     extern const Event ReaderExecutorSourceRequests;
@@ -57,7 +56,6 @@ void ReaderExecutorStats::add(Counter c, UInt64 value)
             ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 20000ULL * value / (1024 * 1024));
             break;
         case BytesPushedToCacheSync:    ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesPushedToCacheSync, value); break;
-        case BytesPromoted:             ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesPromoted, value); break;
         case CacheGetRequests:
             ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheGetRequests, value);
             ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 50 * value);

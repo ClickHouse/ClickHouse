@@ -22,7 +22,6 @@ struct ReaderExecutorStats
         BytesFromFilesystemCache,
         BytesFromSource,
         BytesPushedToCacheSync,
-        BytesPromoted,
         CacheGetRequests,
         CachePopulateRequests,
         SourceRequests,

@@ -101,11 +101,10 @@ VectorWithMemoryTracking<ByteRange> fetchRunsFor(const CoverageMap & g, ByteRang
     return runs;
 }
 
-/// The cells connection `conn` populates. A cell holding USER bytes is filled in
-/// every tier that misses it (promotion of the request up the chain); a slack-
-/// only cell is filled ONLY in the tier that owns it - the coarsest-alignment
-/// tier missing it, the one whose segment alignment created the slack - never
-/// promoted into a faster tier.
+/// The cells connection `conn` populates. A cell holding USER (consumed) bytes is
+/// filled in EVERY tier that misses it - the source read fills the whole chain at
+/// once. A slack-only cell is filled ONLY in the tier that owns it - the coarsest-
+/// alignment tier missing it, the one whose segment alignment created the slack.
 VectorWithMemoryTracking<PlanSchedule::WriteTarget> writeTargetsFor(
     const CoverageMap & g, ByteRange conn, ByteRange span)
 {
@@ -125,26 +124,10 @@ VectorWithMemoryTracking<PlanSchedule::WriteTarget> writeTargetsFor(
             const bool holds_user = overlaps(m, span);
             if (holds_user)
             {
-                /// The fetch fills the BOTTOM tier only; the faster tiers are filled by
-                /// promotion on the serve front (`maybePromote`) as the serve reads the
-                /// now-resident bottom cell. Promotion never crosses SAME-tier (`[CF-promote]`),
-                /// so the fetch must still fill a same-tier slower layer directly. Own the
-                /// user cell iff no STRICTLY-SLOWER-tier buffer (a later, different tier - the
-                /// chain is grouped fastest-first) also misses the same bytes.
-                bool is_bottom = true;
-                for (size_t ej = ei + 1; is_bottom && ej < g.entries.size(); ++ej)
-                {
-                    if (g.entries[ej].tier == e.tier)
-                        continue;  /// same-tier slower layer: also a fetch target, never promoted into
-                    for (const auto & m2 : g.entries[ej].aligned_miss)
-                        if (overlaps(m2, m))
-                        {
-                            is_bottom = false;
-                            break;
-                        }
-                }
-                if (is_bottom)
-                    targets.push_back({ei, m, whole_block});
+                /// A consumed cell is filled in EVERY tier that misses it, straight from the
+                /// source read - the whole cache chain is populated at the fetch, no serve-front
+                /// promotion.
+                targets.push_back({ei, m, whole_block});
                 continue;
             }
 
@@ -230,7 +213,7 @@ PlanSchedule buildSchedule(
         }
     }
 
-    /// --- retrieves: one Remote per fill-closure GAP (pure coverage), plus HandedChain promotes ---
+    /// --- retrieves: one per fill-closure GAP (pure coverage) ---
     /// The schedule does NOT group gaps into connections - it lists each cache-cell-aligned gap as
     /// its own job. The runtime decides how many source connections span them (a held connection
     /// bridges a small cached hole or reopens at a wide one - see ReaderExecutor's
@@ -242,62 +225,9 @@ PlanSchedule buildSchedule(
     {
         PlanSchedule::Retrieve r;
         r.range = f;
-        r.source = PlanSchedule::Source::Remote;
         r.into = writeTargetsFor(geometry, f, span);
         r.fetch_runs = fetchRunsFor(geometry, f);
-        r.ahead_eligible = true;   /// a source fill depends on nothing but the source
         sched.retrieves.push_back(std::move(r));
-    }
-
-    /// Whether some Remote retrieve already fills the (entry, cell) target - then the serve
-    /// does not promote into it (the fetch owns it: the bottom tier and same-tier slower
-    /// layers, `writeTargetsFor`).
-    const auto remote_fills = [&](size_t entry, ByteRange cell)
-    {
-        for (const auto & r : sched.retrieves)
-        {
-            if (r.source != PlanSchedule::Source::Remote)
-                continue;
-            for (const auto & wt : r.into)
-                if (wt.entry == entry && wt.cell.offset == cell.offset && wt.cell.size == cell.size)
-                    return true;
-        }
-        return false;
-    };
-
-    /// Every User range is PROMOTED up at the serve (HandedChain: the foreground hands the
-    /// served chain - no re-read, no remote). A RESIDENT range fills the faster tiers that
-    /// miss it, never a same-tier faster LAYER (`[CF-promote]`). A GAP range fills every
-    /// user-overlapping miss cell the Remote fetch deliberately left out (`writeTargetsFor`
-    /// routes only the bottom tier and same-tier slower layers to the fetch; the faster cells
-    /// fill from the served bytes). NOT ahead-eligible: the served bytes are the input.
-    for (const auto & tr : sched.ranges)
-    {
-        if (tr.purpose != PlanSchedule::Purpose::User)
-            continue;
-        PlanSchedule::Retrieve promote;
-        promote.range = tr.range;
-        promote.source = PlanSchedule::Source::HandedChain;
-        if (tr.resident)
-        {
-            for (size_t ei = 0; ei < tr.tier_entry && ei < geometry.entries.size(); ++ei)
-            {
-                if (geometry.entries[ei].tier == geometry.entries[tr.tier_entry].tier)
-                    continue;   /// same-tier faster layer: never promoted into (`[CF-promote]`)
-                for (const auto & m : geometry.entries[ei].aligned_miss)
-                    if (overlaps(m, tr.range))
-                        promote.into.push_back({ei, m});
-            }
-        }
-        else
-        {
-            for (size_t ei = 0; ei < geometry.entries.size(); ++ei)
-                for (const auto & m : geometry.entries[ei].aligned_miss)
-                    if (overlaps(m, tr.range) && !remote_fills(ei, m))
-                        promote.into.push_back({ei, m});
-        }
-        if (!promote.into.empty())
-            sched.retrieves.push_back(std::move(promote));
     }
 
     /// --- steps: what each readNextWindow returns, wired to its retrieve ---
@@ -316,10 +246,9 @@ PlanSchedule buildSchedule(
         const ByteRange out{cursor, out_end - cursor};
 
         std::optional<size_t> require;
-        if (!res.resident())  /// a gap is served by the Remote retrieve covering it
+        if (!res.resident())  /// a gap is served by the retrieve covering it
             for (size_t ri = 0; ri < sched.retrieves.size(); ++ri)
-                if (sched.retrieves[ri].source == PlanSchedule::Source::Remote
-                    && contains(sched.retrieves[ri].range, out))
+                if (contains(sched.retrieves[ri].range, out))
                 {
                     require = ri;
                     break;

@@ -11,7 +11,7 @@ namespace DB
 {
 
 /// The explicit work of ONE look-ahead plan, computed once from the immutable
-/// `CoverageMap`. Collapses fetch/fill/promote into a single `Retrieve`
+/// `CoverageMap`. Collapses fetch/fill into a single `Retrieve`
 /// job kind and predicts what each `readNextWindow` returns. Pure description -
 /// no buffers, no I/O; the model lives in `ReaderExecutor`'s class comment.
 struct PlanSchedule
@@ -20,12 +20,6 @@ struct PlanSchedule
     {
         User,      /// inside the plan span - the only bytes readNextWindow returns
         FillOnly,  /// cell slack outside the span - fetched/filled, never served
-    };
-
-    enum class Source : uint8_t
-    {
-        Remote,       /// a source connection (may bridge small resident holes)
-        HandedChain,  /// promote: bytes already in hand (the served chain), written up
     };
 
     /// The typed decomposition of the fill region (purpose x residency), one
@@ -50,21 +44,15 @@ struct PlanSchedule
         bool whole_cell = false;
     };
 
-    /// One unit of background work: move `range` from `source` into the `into`
+    /// One unit of background work: move `range` from the source into the `into`
     /// cells, optionally retaining it for the serve. Reaches a READY milestone
     /// (bytes fetched, serve may proceed) then a DONE milestone (filled, handles
     /// released).
     struct Retrieve
     {
         ByteRange range;                              /// physical, plan coords
-        Source source = Source::Remote;
         VectorWithMemoryTracking<WriteTarget> into;   /// cells to populate
-        /// May the background run this job ahead of the serve? `Remote` fills depend on nothing
-        /// but the source; `HandedChain` takes the SERVE's output as its input, so it is
-        /// inherently a serve-front (sync) job. The fg/bg partition of the work, as
-        /// schedule data.
-        bool ahead_eligible = false;
-        /// The sub-ranges of `range` to read from the SOURCE (`Remote` only, empty otherwise).
+        /// The sub-ranges of `range` to read from the SOURCE.
         /// `range` merges adjacent cell-aligned gaps, so it can span an embedded resident
         /// region - served from its tier, never SCHEDULED as a source read; the runs split at
         /// every one. (Whether the executor reads THROUGH one at run time is a display-state
@@ -98,15 +86,15 @@ struct PlanSchedule
 /// `[plan_start, plan_end)` (physical coords). Pure function of the geometry;
 /// the serve sizes (pressure-scaled by the caller) become each run's `serve_bound`.
 ///
-/// CACHE-CHAIN POLICY - correctness for many tiers, performance for one. With
-/// several populating caches the schedule stays CORRECT but optimises for the
-/// BOTTOM populating tier alone; upper tiers are a serve bonus (a hit serves
-/// from its fastest holder), not a coordination target. There is deliberately
-/// NO cross-tier down-fill job: a faster tier's resident range over a lower
-/// cell leaves the lower segment partial (the demand read-through completes an
+/// CACHE-CHAIN POLICY. The fetch fills EVERY tier that misses a consumed (User)
+/// cell directly from the source read - the whole chain is populated at one
+/// place, when we read from the source. Read-ahead slack (never served) fills
+/// only the coarsest-alignment tier that owns it. There is deliberately NO
+/// cross-tier down-fill job: a faster tier's resident range over a lower cell
+/// leaves the lower segment partial (the demand read-through completes an
 /// interior hole from the source; a tail hole heals once the upper tier evicts
 /// and the range becomes a plain miss). One populating tier - the production
-/// shape - has no such ranges and takes the unimpaired path.
+/// shape - is the common case and takes the same path.
 PlanSchedule buildSchedule(
     const CoverageMap & geometry,
     size_t serve_window_bytes,
