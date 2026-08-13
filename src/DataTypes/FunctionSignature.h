@@ -60,6 +60,11 @@ namespace FunctionSignatures
   *
   *   TypeName | TypeMatcher | TypeName : TypeMatcher
   *
+  * A double-quoted type literal takes the quoted text verbatim as a type name and
+  * resolves it through `DataTypeFactory` — for type names the grammar cannot lex
+  * directly, e.g. `"Enum8('a' = 1)"`. Usable in argument position (matches exactly
+  * that type) and in return position (produces exactly that type).
+  *
   * Plus argument-list forms:
   *   - ellipsis `...` (repeat previous argument or numerically-suffixed group),
   *   - `[...]` optional group,

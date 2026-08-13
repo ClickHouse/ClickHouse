@@ -81,20 +81,20 @@ public:
 
     String getSignatureString() const override
     {
-        /// The "type" tuple element is an Enum8 with a non-trivial member list — keep the
-        /// rendered type behind typeFromString to avoid having to teach the signature parser
-        /// to lex Enum literals. SQL-style escape every single quote inside the type name.
+        /// The "type" tuple element is an Enum8 with a non-trivial member list that the
+        /// signature grammar cannot lex directly — embed the rendered name as a double-quoted
+        /// type literal (take-this-name-verbatim). Backslash-escape per double-quoted string
+        /// rules; the rendered Enum name contains single quotes, which need no escaping here.
         String enum_type = Impl::makeEnumType()->getName();
         String escaped;
         escaped.reserve(enum_type.size() + 16);
         for (char c : enum_type)
         {
-            if (c == '\'')
-                escaped += '\'';
+            if (c == '"' || c == '\\')
+                escaped += '\\';
             escaped += c;
         }
-        return "(String) -> Array(Tuple(begin UInt64, end UInt64, type typeFromString('"
-            + escaped + "')))";
+        return "(String) -> Array(Tuple(begin UInt64, end UInt64, type \"" + escaped + "\"))";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

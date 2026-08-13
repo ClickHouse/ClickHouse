@@ -317,6 +317,48 @@ GTEST_TEST(FunctionSignature, QuantifiedRepeats)
     EXPECT_ANY_THROW(FunctionSignature("f(UInt8...{a}) -> UInt64"));
 }
 
+GTEST_TEST(FunctionSignature, DoubleQuotedTypeLiteral)
+{
+    /// A double-quoted type literal takes the quoted text verbatim as a type name and
+    /// resolves it through `DataTypeFactory` — for type names the grammar cannot lex
+    /// directly, e.g. an `Enum8` with its member list.
+
+    /// Argument position: matches exactly that type.
+    const String enum_arg = "f(\"Enum8('a' = 1, 'b' = 2)\") -> UInt8";
+    EXPECT_EQ(checkSignature(enum_arg, {makeColumn("Enum8('a' = 1, 'b' = 2)")}), "UInt8");
+    EXPECT_THAT(checkSignature(enum_arg, {makeColumn("Enum8('a' = 1)")}), ::testing::StartsWith("FAIL:"));
+    EXPECT_THAT(checkSignature(enum_arg, {makeColumn("String")}), ::testing::StartsWith("FAIL:"));
+
+    /// Return position: produces exactly that type.
+    EXPECT_EQ(checkSignature("f(String) -> \"Enum8('a' = 1)\"", {makeColumn("String")}), "Enum8('a' = 1)");
+
+    /// The `tokenizeQuery` shape: a double-quoted literal as the type of a named tuple
+    /// element inside a return-type expression.
+    EXPECT_EQ(
+        checkSignature("f(String) -> Array(Tuple(begin UInt64, end UInt64, type \"Enum8('token' = 1)\"))",
+            {makeColumn("String")}),
+        "Array(Tuple(begin UInt64, end UInt64, type Enum8('token' = 1)))");
+
+    /// A named argument may use a double-quoted literal as its type.
+    EXPECT_EQ(
+        checkSignature("f(x \"Enum8('a' = 1)\") -> UInt8", {makeColumn("Enum8('a' = 1)")}),
+        "UInt8");
+
+    /// The `toBool` shape: a literal avoids the name lookup order of bare words
+    /// (type function, then matcher, then exact type).
+    EXPECT_EQ(checkSignature("f(Any) -> \"Bool\"", {makeColumn("UInt8")}), "Bool");
+    EXPECT_EQ(checkSignature("f(Nullable(Any)) -> Nullable(\"Bool\")", {makeColumn("Nullable(UInt8)")}), "Nullable(Bool)");
+
+    /// An unknown type name inside the quotes is an error, not a soft parse failure.
+    EXPECT_ANY_THROW(FunctionSignature("f(\"NoSuchType\") -> UInt8"));
+    EXPECT_ANY_THROW(FunctionSignature("f(String) -> \"NoSuchType\""));
+
+    /// `toString` of an exact-type matcher whose name the grammar cannot lex prints the
+    /// double-quoted form back, so the signature round-trips through the parser.
+    FunctionSignature original("f(\"Enum8('a' = 1)\") -> UInt8");
+    EXPECT_EQ(checkSignature(original.toString(), {makeColumn("Enum8('a' = 1)")}), "UInt8");
+}
+
 /// A bare (suffix-less) capture variable carries index 0. When the ellipsis follows a fixed
 /// group ending in such a variable, the walk-back takes only the single rightmost element as
 /// the repeated unit, so `(T, T, ...)` means "at least two, any count" — NOT "even count only".

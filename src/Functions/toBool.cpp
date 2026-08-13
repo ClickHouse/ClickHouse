@@ -35,8 +35,8 @@ namespace
         String getSignatureString() const override
         {
             return
-                "(Nullable(Any)) -> Nullable(typeFromString('Bool'))"
-                " OR (Any) -> typeFromString('Bool')";
+                "(Nullable(Any)) -> Nullable(\"Bool\")"
+                " OR (Any) -> \"Bool\"";
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override

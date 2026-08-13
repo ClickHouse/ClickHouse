@@ -245,7 +245,24 @@ public:
 
     std::string toString() const override
     {
-        return type->getName();
+        const String & name = type->getName();
+
+        /// A name the grammar cannot lex back (e.g. `Enum8('a' = 1)`) is printed as a
+        /// double-quoted type literal — the syntax it can only have been written in.
+        if (name.find_first_of("'\"\\") != std::string::npos)
+        {
+            String escaped;
+            escaped.reserve(name.size() + 2);
+            for (char c : name)
+            {
+                if (c == '"' || c == '\\')
+                    escaped += '\\';
+                escaped += c;
+            }
+            return "\"" + escaped + "\"";
+        }
+
+        return name;
     }
 
     bool match(const DataTypePtr & what, Variables &, size_t, size_t, std::string &) const override
@@ -1167,6 +1184,35 @@ static bool typeFamilyExists(const std::string & family_name)
         || DataTypeFactory::instance().tryGet(family_name, ASTPtr{}) != nullptr;
 }
 
+/// A double-quoted token, e.g. `"Enum8('a' = 1)"` — a type name to be taken verbatim.
+/// (The SQL lexer classifies both `"..."` and backtick strings as `QuotedIdentifier`,
+/// so the first character narrows it to the double-quoted form.)
+static bool isDoubleQuotedTypeLiteral(const Token & token)
+{
+    return token.type == TokenType::QuotedIdentifier && token.size() >= 2 && *token.begin == '"';
+}
+
+/// Read the type named by a double-quoted type literal and advance `pos`. The name is
+/// resolved through `DataTypeFactory`; an unknown name is an error rather than a soft
+/// parse failure, because a double-quoted literal cannot mean anything else.
+static DataTypePtr parseDoubleQuotedTypeLiteral(TokenIterator & pos)
+{
+    ReadBufferFromMemory buf(pos->begin, pos->size());
+    String type_name;
+    readDoubleQuotedStringWithSQLStyle(type_name, buf);
+    try
+    {
+        auto type = DataTypeFactory::instance().get(type_name);
+        ++pos;
+        return type;
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("in double-quoted type literal \"" + type_name + "\"");
+        throw;
+    }
+}
+
 static bool parseTypeExpression(TokenIterator & pos, TypeExpressionPtr & res)
 {
     /// Integer literal — used inside return-type expressions to pass numeric arguments
@@ -1194,6 +1240,15 @@ static bool parseTypeExpression(TokenIterator & pos, TypeExpressionPtr & res)
         return true;
     }
 
+    /// Double-quoted type literal — the quoted text is a type name taken verbatim.
+    /// For type names the grammar cannot lex directly, e.g. an `Enum8` with its member
+    /// list: `type "Enum8('a' = 1)"` in `tokenizeQuery`.
+    if (isDoubleQuotedTypeLiteral(*pos))
+    {
+        res = std::make_shared<ConstantTypeExpression>(Value(parseDoubleQuotedTypeLiteral(pos)));
+        return true;
+    }
+
     TokenIterator begin = pos;
     std::string name;
     TypeExpressions children;
@@ -1205,12 +1260,13 @@ static bool parseTypeExpression(TokenIterator & pos, TypeExpressionPtr & res)
             /// Named-field shorthand: `<field_name> <type_expr>` inside a function-call arg list
             /// desugars to `NamedField('<field_name>', <type_expr>)`. Used by Tuple, e.g.
             /// `Tuple(origin UInt64, destination UInt64)`. Restricted to inside parens so that
-            /// top-level `T OR ...` and `UInt64 OR ...` don't get misparsed.
+            /// top-level `T OR ...` and `UInt64 OR ...` don't get misparsed. The type may also
+            /// be a double-quoted type literal, e.g. `type "Enum8('a' = 1)"`.
             if (inner->type == TokenType::BareWord)
             {
                 auto probe = inner;
                 ++probe;
-                if (probe->type == TokenType::BareWord)
+                if (probe->type == TokenType::BareWord || isDoubleQuotedTypeLiteral(*probe))
                 {
                     auto saved = inner;
                     std::string field_name;
@@ -1295,6 +1351,13 @@ bool parseTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res);
 
 static bool parseSimpleTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
 {
+    /// Double-quoted type literal: matches exactly the type named by the quoted text.
+    if (isDoubleQuotedTypeLiteral(*pos))
+    {
+        res = std::make_shared<ExactTypeMatcher>(parseDoubleQuotedTypeLiteral(pos));
+        return true;
+    }
+
     TokenIterator begin = pos;
     std::string name;
     TypeMatchers args;
@@ -1464,12 +1527,14 @@ static bool parseSimpleArgumentDescription(TokenIterator & pos, ArgumentDescript
     /// arg_name T : Matcher
     /// arg_name T : Matcher(...)
     /// arg_name Matcher
+    /// arg_name "Type literal"
     /// T : Matcher
     /// T : Matcher(...)
     /// Matcher
 
     /// If arg_name present, consume it.
-    if (pos->type == TokenType::BareWord && next_pos->type == TokenType::BareWord)
+    if (pos->type == TokenType::BareWord
+        && (next_pos->type == TokenType::BareWord || isDoubleQuotedTypeLiteral(*next_pos)))
     {
         std::string identifier;
         if (!parseIdentifier(pos, identifier))
