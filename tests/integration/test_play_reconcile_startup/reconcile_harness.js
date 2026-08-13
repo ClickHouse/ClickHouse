@@ -266,7 +266,8 @@ function makeIndexedDB(seedTabs, seedMeta, openDelayMs) {
     const stores = new Map();
     stores.set('tabs', { keyPath: 'id', data: new Map((seedTabs || []).map(r => [r.id, structuredClone(r)])) });
     stores.set('meta', { keyPath: 'key', data: new Map(seedMeta ? [['state', structuredClone(seedMeta)]] : []) });
-    const stats = { persistCount: 0 };
+    /// `openFired` records that the load window has closed: the open callback below has run.
+    const stats = { persistCount: 0, openFired: false };
 
     function makeStoreHandle(name) {
         const s = stores.get(name);
@@ -293,6 +294,7 @@ function makeIndexedDB(seedTabs, seedMeta, openDelayMs) {
             /// `openDelayMs` lets a scenario make `IndexedDB.open` slower than any auto-run that
             /// races startup reconciliation (see the stale-reload-run-race scenario).
             setTimeout(() => {
+                stats.openFired = true;
                 req.result = {
                     objectStoreNames: { contains: (n) => stores.has(n) },
                     createObjectStore(n, opts) {
@@ -472,6 +474,8 @@ async function runScenario(js, config) {
         /// The bootstrap is synchronous and `IndexedDB.open` can only resolve through a
         /// `setTimeout`, so yielding to microtasks alone keeps the interaction before the open.
         await Promise.resolve();
+        if (stats.openFired)
+            throw new Error('duringLoad ran after the IndexedDB open completed: the load window closed early');
         if (vm.runInContext('bootstrap_settled', sandbox))
             throw new Error('duringLoad ran after reconciliation settled: the load window closed early');
         config.duringLoad(sandbox);
