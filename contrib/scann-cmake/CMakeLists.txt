@@ -8,6 +8,11 @@ if (NOT TARGET ch_contrib::eigen)
     return()
 endif()
 
+if (NOT TARGET ch_contrib::protobuf)
+    message(${RECONFIGURE_MESSAGE_LEVEL} "Can't use ScaNN without protobuf")
+    return()
+endif()
+
 set(SCANN_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/scann")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/scann_source_patch_helpers.cmake")
