@@ -860,8 +860,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     WriteBufferFromOwnString buf;
-    /// When set, the whole buffer is emitted as one record. Otherwise it is split on line feeds
-    /// into one record per line (the default for tree-like PLAN/PIPELINE/AST output).
+    /// False splits the buffer on line feeds into one record per line.
     bool single_record = false;
     bool insert_buf = true;
 
@@ -905,9 +904,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         {
             auto settings = checkAndGetSettings<QuerySyntaxSettings>(ast.getSettings());
 
-            /// EXPLAIN SYNTAX is a reformatted, copy-pasteable query, so return the whole
-            /// pretty-printed (multi-line) query as one record rather than one record per line
-            /// (issue #80410). The `oneline` option still collapses it to a single physical line.
             single_record = true;
 
             /// Inline any parameterized view calls with their parameter-substituted inner queries,
