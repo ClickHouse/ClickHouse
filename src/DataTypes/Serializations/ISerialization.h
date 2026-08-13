@@ -55,6 +55,14 @@ struct NameAndTypePair;
 
 struct MergeTreeSettings;
 
+/** Returns the separator byte that the HiveText output format uses at the given nesting level,
+  * following Apache Hive's LazySimpleSerDe separator list: index 0 is the fields delimiter,
+  * 1 the collection-items delimiter, 2 the map-keys delimiter, and deeper levels default to
+  * consecutive control characters (0x04, 0x05, ...). Throws if the nesting is too deep to be
+  * represented (Hive supports at most 8 separators).
+  */
+char getHiveTextDelimiter(const FormatSettings & settings, size_t nesting_level);
+
 /** Represents serialization of data type.
  *  Has methods to serialize/deserialize column in binary and several text formats.
  *  Every data type has default serialization, but can be serialized in different representations.
@@ -276,6 +284,7 @@ public:
 
             Bucket,
             MapBucketsInfo,
+            MapBucketIndexes,
 
             QuantizedCodes,
             ProductQuantizationCodebook,
@@ -372,6 +381,13 @@ public:
         size_t map_buckets_min_avg_size = 0;
         /// Type of MergeTree data part we serialize/deserialize data from if any.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
+
+        /// Callback to check whether a specific substream exists in the current data part.
+        /// Used during enumeration to skip substreams that were introduced after the part
+        /// was written (e.g. MapBucketIndexes in old bucketed Map parts).
+        /// When not set, all substreams are enumerated unconditionally.
+        using CheckStreamExistsCallback = std::function<bool(const SubstreamPath &)>;
+        CheckStreamExistsCallback check_stream_exists_callback;
 
         /// Current level of array. Needed to differentiate stream names of nested array offsets.
         size_t array_level = 0;
@@ -511,6 +527,13 @@ public:
         /// Callback used to mark a specific stream as unneeded indicating that it won't be used anymore.
         std::function<void(const SubstreamPath &)> release_stream_callback;
 
+        /// Callback to check whether a specific substream exists in the current data part.
+        /// Used during deserialization to handle backward compatibility: old parts written
+        /// before a new substream was introduced will not have it, and the getter may throw
+        /// (e.g. in compact parts) if called for a non-existent substream.
+        using CheckStreamExistsCallback = std::function<bool(const SubstreamPath &)>;
+        CheckStreamExistsCallback check_stream_exists_callback;
+
         /// Type of MergeTree data part we deserialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
@@ -634,6 +657,14 @@ public:
     virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
     virtual bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
+    /** Text serialization for the Hive text format. Used only for output.
+      * Without escaping or quoting. Complex types separate their elements by the Hive separator
+      * for the current nesting level (see getHiveTextDelimiter), threaded through
+      * settings.hive_text.nesting_level. The default implementation throws, so only the data
+      * types supported in Hive override it.
+      */
+    virtual void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+
     /** Text serialization for displaying on a terminal or saving into a text file, and the like.
       * Without escaping or quoting.
       */
@@ -715,6 +746,11 @@ public:
     static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
     static bool isMetadataStream(const SubstreamPath & path);
 
+    /// Returns true if the stream holds a single value for the whole part, which every granule reads
+    /// (the product quantization codebook). Such a value is written once, after the data of all granules,
+    /// so the marks do not delimit it and it has to be read as a whole file.
+    static bool isSingleValuePerPartStream(const SubstreamPath & path);
+
     /// Returns true if stream with specified path corresponds to Variant subcolumn.
     static bool isVariantSubcolumn(const SubstreamPath & path);
 
@@ -745,6 +781,11 @@ public:
     /// Set by pooled() or manually for non-pooled objects.
     /// Throws LOGICAL_ERROR if the hash has not been set.
     UInt128 getHash() const;
+
+    /// Identity of a custom serialization (`IDataType::setCustomization`), which changes a column's
+    /// streams while being invisible to `IDataType::equals`. The class is enough while the serialization
+    /// follows from the type; override when it is configured elsewhere.
+    virtual String getCustomSerializationIdentity() const { return typeid(*this).name(); }
 
 protected:
     std::optional<UInt128> cached_hash;

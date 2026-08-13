@@ -133,6 +133,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool table_readonly;
+    extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
 namespace ErrorCodes
@@ -239,6 +240,7 @@ void StorageMergeTree::startup()
     /// Do not schedule any background jobs if the table is read-only.
     if (isTableReadonly())
         return;
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::startup");
 
     clearEmptyParts();
 
@@ -475,14 +477,14 @@ void StorageMergeTree::alter(
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
 
-    auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context);
+    auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context, /*with_alters*/ false, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets]);
     if (!maybe_mutation_commands.empty())
         delayMutationOrThrowIfNeeded(nullptr, local_context);
 
     Int64 mutation_version = -1;
 
     removeImplicitStatistics(new_metadata.columns);
-    commands.apply(new_metadata, local_context);
+    commands.apply(new_metadata, local_context, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets]);
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
@@ -550,6 +552,28 @@ void StorageMergeTree::alter(
                 LOG_DEBUG(log, "Cannot change metadata with barrier alter query, will wait for mutation {}", prev_mutation);
                 waitForMutation(prev_mutation, /* from_another_mutation */ true);
                 LOG_DEBUG(log, "Mutation {} finished", prev_mutation);
+            }
+        }
+        else
+        {
+            int64_t mutation_to_wait = 0;
+            {
+                std::lock_guard lock(currently_processing_in_background_mutex);
+                for (const auto & [version, mutation_entry] : current_mutations_by_version | std::views::reverse)
+                {
+                    if (mutation_entry.commands->containBarrierCommand())
+                    {
+                        mutation_to_wait = version;
+                        break;
+                    }
+                }
+            }
+
+            if (mutation_to_wait != 0)
+            {
+                LOG_DEBUG(log, "Cannot change metadata while rename mutation {} is not finished, will wait for it", mutation_to_wait);
+                waitForMutation(mutation_to_wait, /* from_another_mutation */ true);
+                LOG_DEBUG(log, "Mutation {} finished", mutation_to_wait);
             }
         }
 
@@ -1121,7 +1145,7 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
         bool res = update_lock->sync_lock.try_lock_for(std::chrono::milliseconds(timeout_ms));
 
         if (!res)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock in {} ms for lightwegiht update with sync mode", timeout_ms);
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock in {} ms for lightweight update with sync mode", timeout_ms);
 
         LOG_TRACE(log, "Got lock for lightweight update in sync mode");
     }

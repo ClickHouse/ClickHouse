@@ -309,24 +309,12 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
         if (!array_join->isLeft())
             limit = 0;
 
-        const auto & array_joined_columns = array_join->getColumns();
-
         if (dag)
         {
-            std::unordered_set<std::string_view> keys_set(array_joined_columns.begin(), array_joined_columns.end());
-
             /// Remove array joined columns from outputs.
             /// Types are changed after ARRAY JOIN, and we can't use this columns anyway.
-            ActionsDAG::NodeRawConstPtrs outputs;
-            outputs.reserve(dag->getOutputs().size());
-
-            for (const auto & output : dag->getOutputs())
-            {
-                if (!keys_set.contains(output->result_name))
-                    outputs.push_back(output);
-            }
-
-            dag->getOutputs() = std::move(outputs);
+            const auto & array_joined_columns = array_join->getColumns();
+            dag->removeFromOutputs(NameSet(array_joined_columns.begin(), array_joined_columns.end()));
         }
     }
 }
@@ -674,8 +662,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
     }
 
     /// If the prefix description is used, we can't restore the full description from PK value.
-    /// TODO: partial sort description can be used as well. Implement support later.
-    if (order_key_prefix_descr.size() < description.size() || pk_column_names.size() < next_sort_key)
+    if (pk_column_names.size() < next_sort_key)
         can_optimize_virtual_row = false;
 
     auto order_info = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit);

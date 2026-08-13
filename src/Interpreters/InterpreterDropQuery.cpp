@@ -338,7 +338,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         }
         else if (query.kind == ASTDropQuery::Kind::Drop)
         {
-            context_->checkAccess(drop_storage, table_id);
+            if (!query.no_access_check)
+                context_->checkAccess(drop_storage, table_id);
 
             if (table->isDictionary())
             {
