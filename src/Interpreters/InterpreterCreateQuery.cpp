@@ -593,8 +593,16 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, bool check_defaults_over_virtual_columns)
+    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, bool check_defaults_over_virtual_columns,
+    bool is_full_definition_attach)
 {
+    /// A full-definition `ATTACH TABLE t (...) ENGINE = ...` is CREATE-like user input that also runs
+    /// under `LoadingStrictnessLevel::ATTACH`, so it gets the same stored-default validation as
+    /// `CREATE TABLE`. Definitions read back from metadata stored on this server (short
+    /// `ATTACH TABLE t`, server startup) and DDL/RESTORE replay of previously validated definitions
+    /// must stay loadable and skip it. This mirrors `is_fresh_definition` in `registerStorageMergeTree`.
+    const bool is_fresh_definition = mode <= LoadingStrictnessLevel::CREATE
+        || (mode == LoadingStrictnessLevel::ATTACH && is_full_definition_attach);
     /// First, deduce implicit types.
 
     /** all default_expressions as a single expression list,
@@ -654,7 +662,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     /// (for example, a default expression can contain dictGet() and that dictionary can access remote servers or
     /// require different users to authenticate).
     if (!default_expr_info.expr_list->children.empty()
-        && (default_expr_info.has_columns_with_default_without_type || (mode <= LoadingStrictnessLevel::CREATE)))
+        && (default_expr_info.has_columns_with_default_without_type || is_fresh_definition))
     {
         /// Ordinary views never evaluate column defaults over an insert block, so a default over a
         /// virtual column is inert there and must not be rejected.
@@ -759,7 +767,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     /// `columns_for_default_validation` above carries no default expressions, so the alias-capture
     /// check inside `validateColumnsDefaultsAndGetSampleBlock` has nothing to expand at CREATE time.
     /// Re-run it over the final description, which does carry them, against the same (flattened) schema.
-    if (mode <= LoadingStrictnessLevel::CREATE && !is_restore_from_backup)
+    if (is_fresh_definition && !is_restore_from_backup)
         validateNoAliasLambdaCaptureInStoredExpressions(res);
 
     if (res.getAllPhysical().empty())
@@ -821,7 +829,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             const bool check_defaults_over_virtual_columns
                 = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
             properties.columns = getColumnsDescription(
-                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
+                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns,
+                /*is_full_definition_attach=*/ create.attach && !create.attach_short_syntax);
         }
 
         if (create.columns_list->indices)
