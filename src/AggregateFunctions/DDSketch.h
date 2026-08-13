@@ -77,7 +77,7 @@ public:
         }
 
         Float64 rank = quantile * (count - 1);
-        Float64 quantile_value = 0;
+        Float64 quantile_value;
         if (rank < negative_store->count)
         {
             Float64 reversed_rank = negative_store->count - rank - 1;

@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
@@ -8,12 +7,10 @@
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
-#include <Formats/ParseError.h>
 #include <Core/Block.h>
 #include <base/find_symbols.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
@@ -125,11 +122,6 @@ Chunk ValuesBlockInputFormat::read()
     size_t rows_in_block = 0;
     for (; rows_in_block < params.max_block_size_rows; ++rows_in_block)
     {
-        /// A loop of its own, so it needs its own checkpoint; see `CANCELLATION_CHECK_PERIOD_ROWS`
-        /// and the equivalent one in `IRowInputFormat::read`.
-        if (rows_in_block != 0 && rows_in_block % CANCELLATION_CHECK_PERIOD_ROWS == 0)
-            CurrentThread::checkIfNotCancelled();
-
         try
         {
             skipWhitespaceAndSQLComments(*buf);
@@ -272,18 +264,7 @@ bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & 
 
     /// Try to parse expression using template if one was successfully deduced while parsing the first row
     const auto & settings = context->getSettingsRef();
-    bool parsed = false;
-    try
-    {
-        Exception::SuppressErrorCodesScope suppress_error_codes;
-        parsed = templates[column_idx]->parseExpression(*buf, *token_iterator, format_settings, settings);
-    }
-    catch (Exception & e)
-    {
-        e.recordToSystemErrors();
-        throw;
-    }
-    if (parsed)
+    if (templates[column_idx]->parseExpression(*buf, *token_iterator, format_settings, settings))
     {
         ++rows_parsed_using_template[column_idx];
         return true;
@@ -315,7 +296,6 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     bool rollback_on_exception = false;
     try
     {
-        Exception::SuppressErrorCodesScope suppress_error_codes;
         bool read = true;
         if (checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf))
         {
@@ -338,15 +318,12 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         assertDelimiterAfterValue(column_idx);
         return read;
     }
-    catch (Exception & e)
+    catch (const Exception & e)
     {
         /// Do not consider decimal overflow as parse error to avoid attempts to parse it as expression with float literal
         bool decimal_overflow = e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND;
         if (!isParseError(e.code()) || decimal_overflow)
-        {
-            e.recordToSystemErrors();
             throw;
-        }
         if (rollback_on_exception)
             column.popBack(1);
 
@@ -512,7 +489,6 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         bool ok = false;
         try
         {
-            Exception::SuppressErrorCodesScope suppress_error_codes;
             const auto & serialization = serializations[column_idx];
             serialization->deserializeTextQuoted(column, *buf, format_settings);
             rollback_on_exception = true;
@@ -520,14 +496,11 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             if (checkDelimiterAfterValue(column_idx))
                 ok = true;
         }
-        catch (Exception & e)
+        catch (const Exception & e)
         {
             bool decimal_overflow = e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND;
             if (!isParseError(e.code()) || decimal_overflow)
-            {
-                e.recordToSystemErrors();
                 throw;
-            }
         }
         if (ok)
         {
@@ -549,7 +522,6 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         std::exception_ptr exception;
         try
         {
-            Exception::SuppressErrorCodesScope suppress_error_codes;
             bool found_in_cache = false;
             const auto & result_type = header.getByPosition(column_idx).type;
             const char * delimiter = (column_idx + 1 == num_columns) ? ")" : ",";
@@ -588,17 +560,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         if (!format_settings.values.interpret_expressions)
         {
             if (exception)
-            {
-                try
-                {
-                    std::rethrow_exception(exception);
-                }
-                catch (Exception & e)
-                {
-                    e.recordToSystemErrors();
-                    throw;
-                }
-            }
+                std::rethrow_exception(exception);
             else
             {
                 buf->rollbackToCheckpoint();
@@ -623,14 +585,10 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     if (format_settings.null_as_default)
         tryToReplaceNullFieldsInComplexTypesWithDefaultValues(expression_value, type);
 
-    /// This materializes a value into a column (the `INSERT` VALUES expression fallback), so convert
-    /// to the nearest representable floating-point value like CAST, consistent with the streaming
-    /// literal path and the `values` table function (issue #43144). This is not a pruning/comparison
-    /// path, so the lossy float conversion is safe here. See `convert_inexact_floats` in the header.
-    Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings, /*strict=*/false, /*convert_inexact_floats=*/true);
+    Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings);
 
     /// Check that we are indeed allowed to insert a NULL.
-    if (value.isNull() && !canContainNull(type))
+    if (value.isNull() && !type.isNullable() && !type.isLowCardinalityNullable())
     {
         if (format_settings.null_as_default)
         {
@@ -648,7 +606,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Instead try to create a column with single element and cast it to the destination type.
     if (type.hasDynamicStructure())
     {
-        ColumnPtr const_column = value_raw.second->createColumnConst(1, expression_value);
+        auto const_column = value_raw.second->createColumnConst(1, expression_value);
         auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
         column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
     }
@@ -835,7 +793,6 @@ void ValuesSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::Data
     transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
-void registerInputFormatValues(FormatFactory & factory);
 void registerInputFormatValues(FormatFactory & factory)
 {
     factory.registerInputFormat("Values", [](
@@ -846,106 +803,8 @@ void registerInputFormatValues(FormatFactory & factory)
     {
         return std::make_shared<ValuesBlockInputFormat>(buf, std::make_unique<const Block>(header), params, settings);
     });
-
-    factory.setDocumentation("Values", Documentation{
-        .description = R"DOCS_MD(
-| Input | Output | Alias |
-|-------|--------|-------|
-| ✔     | ✔      |       |
-
-## Description {#description}
-
-The `Values` format prints every row in brackets. 
-
-- Rows are separated by commas without a comma after the last row. 
-- The values inside the brackets are also comma-separated. 
-- Numbers are output in a decimal format without quotes. 
-- Arrays are output in `[]`.
-- Strings, dates, and dates with times are output in quotes. 
-- Escaping rules and parsing are similar to the [TabSeparated](/reference/formats/TabSeparated/TabSeparated) format.
-
-During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). 
-[`NULL`](/sql-reference/syntax.md) is represented as `NULL`.
-
-The minimum set of characters that you need to escape when passing data in the `Values` format: 
-- single quotes
-- backslashes
-
-This is the format that is used in `INSERT INTO t VALUES ...`, but you can also use it for formatting query results.
-
-## Example usage {#example-usage}
-
-### Inserting data {#inserting-data}
-
-The `Values` format is what `INSERT` uses, so any `INSERT ... VALUES` statement
-is already using it. The `FORMAT Values` clause can be stated explicitly, and the
-rows can be supplied from a stream or a file. Each row is a bracketed,
-comma-separated tuple, with the tuples themselves separated by commas:
-
-```sql title="Query"
-CREATE TABLE t (id UInt32, name String, values Array(UInt32)) ENGINE = Memory;
-
-INSERT INTO t FORMAT Values (1, 'a', [10, 20]), (2, 'b', [30]);
-
-SELECT * FROM t ORDER BY id;
-```
-
-```response title="Response"
-┌─id─┬─name─┬─values──┐
-│  1 │ a    │ [10,20] │
-│  2 │ b    │ [30]    │
-└────┴──────┴─────────┘
-```
-
-### Using expressions on input {#using-expressions}
-
-Unlike most input formats, `Values` can evaluate SQL expressions in each field
-rather than only accepting literals. This is controlled by
-[`input_format_values_interpret_expressions`](#format-settings) (enabled by
-default): when a field cannot be read by the fast streaming parser, ClickHouse
-falls back to the SQL parser and interprets the field as an expression.
-
-```sql title="Query"
-CREATE TABLE prices (item String, total UInt32) ENGINE = Memory;
-
-INSERT INTO prices FORMAT Values ('apple', 3 * 4), ('pear', length('hello') + 10);
-
-SELECT * FROM prices ORDER BY total;
-```
-
-```response title="Response"
-┌─item──┬─total─┐
-│ apple │    12 │
-│ pear  │    15 │
-└───────┴───────┘
-```
-
-### Selecting data {#selecting-data}
-
-The `Values` format can also be used to format query results. Numbers are
-written without quotes, arrays in `[]`, and strings and dates in single quotes;
-single quotes and backslashes inside strings are escaped with a backslash, and
-[`NULL`](/sql-reference/syntax) is written as `NULL`:
-
-```sql title="Query"
-SELECT 1 AS a, 'O''Reilly' AS b, NULL::Nullable(String) AS c FORMAT Values;
-```
-
-```response title="Response"
-(1,'O\'Reilly',NULL)
-```
-
-## Format settings {#format-settings}
-
-| Setting                                                                                                                                                     | Description                                                                                                                                                                                   | Default |
-|-------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| [`input_format_values_interpret_expressions`](/reference/settings/formats/input-format#input_format_values_interpret_expressions)                     | if the field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression.                                                                               | `true`  |
-| [`input_format_values_deduce_templates_of_expressions`](/reference/settings/formats/input-format#input_format_values_deduce_templates_of_expressions) | if the field could not be parsed by streaming parser, run SQL parser, deduce template of the SQL expression, try to parse all rows using template and then interpret expression for all rows. | `true`  |
-| [`input_format_values_accurate_types_of_literals`](/reference/settings/formats/input-format#input_format_values_accurate_types_of_literals)           | when parsing and interpreting expressions using template, check actual type of literal to avoid possible overflow and precision issues.                                                       | `true`  |
-)DOCS_MD"});
 }
 
-void registerValuesSchemaReader(FormatFactory & factory);
 void registerValuesSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Values", [](ReadBuffer & buf, const FormatSettings & settings)

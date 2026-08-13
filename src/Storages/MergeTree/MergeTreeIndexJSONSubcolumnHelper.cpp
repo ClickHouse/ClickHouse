@@ -2,7 +2,11 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/NestedUtils.h>
 #include <Interpreters/convertFieldToType.h>
+
+#include <algorithm>
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -36,57 +40,34 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const Names & index_columns,
     const String & json_function_name)
 {
-    /// Scan the index columns, not the dot positions of the name: the name can embed a folded
-    /// constant, so its length is unbounded while `index_columns` is not.
-    const std::string_view name = column_name;
-    const size_t json_column_offset = json_function_name.size() + 1;
-
-    std::string_view matched_json_column;
-    std::string_view matched_subcolumn;
-    size_t matched_position = 0;
-    bool matched = false;
-
-    for (size_t position = 0; position < index_columns.size(); ++position)
+    /// Try all possible dot splits of the column name.
+    /// For "t.json.some.path" this produces:
+    ///   ("t", "json.some.path"), ("t.json", "some.path"), ("t.json.some", "path")
+    for (auto [candidate_col, subcolumn_part] : Nested::getAllColumnAndSubcolumnPairs(column_name))
     {
-        const std::string_view entry = index_columns[position];
-
-        /// Entry must be `json_function_name(X)` with a non-empty X.
-        if (entry.size() < json_column_offset + 2 || entry.back() != ')' || !entry.starts_with(json_function_name)
-            || entry[json_function_name.size()] != '(')
+        auto index_column_name = fmt::format("{}({})", json_function_name, candidate_col);
+        auto it = std::find(index_columns.begin(), index_columns.end(), index_column_name);
+        if (it == index_columns.end())
             continue;
 
-        const std::string_view json_column = entry.substr(json_column_offset, entry.size() - json_column_offset - 1);
+        /// Sub-object access (^ prefix) is not supported for index filtering
+        if (subcolumn_part.starts_with("^"))
+            return std::nullopt;
 
-        /// The name must be `X.<non-empty subcolumn>`.
-        if (json_column.size() + 1 >= name.size() || !name.starts_with(json_column) || name[json_column.size()] != '.')
-            continue;
+        String path = extractPathFromSubcolumn(subcolumn_part);
+        if (path.empty())
+            return std::nullopt;
 
-        /// Shortest X wins, ties resolve to the first entry: several entries can match one name.
-        if (matched && json_column.size() >= matched_json_column.size())
-            continue;
+        size_t position = static_cast<size_t>(std::distance(index_columns.begin(), it));
 
-        matched_json_column = json_column;
-        matched_subcolumn = name.substr(json_column.size() + 1);
-        matched_position = position;
-        matched = true;
+        return JSONSubcolumnIndexInfo{
+            .json_column_name = String(candidate_col),
+            .path = std::move(path),
+            .header_position = position,
+        };
     }
 
-    if (!matched)
-        return std::nullopt;
-
-    /// Sub-object access (^ prefix) is not supported for index filtering
-    if (matched_subcolumn.starts_with("^"))
-        return std::nullopt;
-
-    String path = extractPathFromSubcolumn(matched_subcolumn);
-    if (path.empty())
-        return std::nullopt;
-
-    return JSONSubcolumnIndexInfo{
-        .json_column_name = String(matched_json_column),
-        .path = std::move(path),
-        .header_position = matched_position,
-    };
+    return std::nullopt;
 }
 
 std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(

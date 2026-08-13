@@ -1,0 +1,6 @@
+<clickhouse>
+    <experimental_features>
+        <allow_experimental_database_hms_catalog>true</allow_experimental_database_hms_catalog>
+        <allow_experimental_database_iceberg>true</allow_experimental_database_iceberg>
+    </experimental_features>
+</clickhouse>

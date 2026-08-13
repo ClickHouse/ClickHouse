@@ -29,11 +29,6 @@ node_old = cluster.add_instance(
     "node_old",
     image="clickhouse/clickhouse-server",
     tag="25.12",
-    # System logs are disabled so that the new server does not create
-    # rotated system log tables marked with the `table_readonly` setting,
-    # which the older binary started via `restart_with_original_version`
-    # would not know and would fail to attach.
-    main_configs=["config/zz_disable_system_logs.xml"],
     with_installed_binary=True,
     stay_alive=True,
     user_configs=["config/config_old.xml"],
@@ -75,7 +70,9 @@ def check_stats_in_part(
         [
             "bash",
             "-c",
-            "find {p} -type f -name statistics.packed".format(p=part_path),
+            "find {p} -type f -name statistics.packed".format(
+                p=part_path, col=column_name
+            ),
         ],
         privileged=True,
     )

@@ -23,11 +23,9 @@ services:
             exec docker-entrypoint.sh rabbitmq-server
           "
         tmpfs:
+            - /rabbitmq_logs
             - /var/lib/rabbitmq
         volumes:
-            - type: ${RABBITMQ_LOGS_FS:-tmpfs}
-              source: ${RABBITMQ_LOGS:-}
-              target: /rabbitmq_logs/
             - /misc/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
             - /misc/rabbitmq/ca-cert.pem:/etc/rabbitmq/ca-cert.pem
             - /misc/rabbitmq/server-cert.pem:/etc/rabbitmq/server-cert.pem
