@@ -27,6 +27,8 @@ public:
     /// including initial login and subsequent refreshes.
     virtual std::string getJWT();
     static Poco::Timestamp getJwtExpiry(const std::string & token);
+    /// Returns true iff `token` decodes as a JWT (distinguishes JWTs from opaque tokens).
+    static bool isJWT(const std::string & token);
 
 protected:
     virtual std::string getAudience() const { return oauth_audience; }
