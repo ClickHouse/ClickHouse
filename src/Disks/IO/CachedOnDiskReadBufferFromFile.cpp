@@ -151,6 +151,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
 
 std::optional<size_t> CachedOnDiskReadBufferFromFile::tryGetFileSize()
 {
+    std::lock_guard lock(file_size_mutex);
     if (file_size.has_value())
         return file_size;
 
@@ -1808,6 +1809,10 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
     size_t range_begin,
     const std::function<bool(size_t)> & progress_callback) const
 {
+    /// Use the mutex-protected getter, not the lazily initialized file_size member:
+    /// readBigAt may run concurrently with the sequential read path.
+    const size_t object_size = const_cast<CachedOnDiskReadBufferFromFile &>(*this).getFileSize();
+
     ReadInfo current_info(
         info.cache_key, info.source_file_path, info.implementation_buffer_creator,
         info.use_external_buffer, info.cache_settings, info.local_fs_buffer_size,
@@ -1840,7 +1845,7 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
             info.cache_key,
             /* offset */range_begin,
             /* size */n,
-            file_size.value(),
+            object_size,
             create_settings,
             /* batch_size */0,
             origin);
@@ -1858,7 +1863,6 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
     bool cancelled = false;
     bool implementation_buffer_can_be_reused = false;
     ReadFromFileSegmentStatePtr current_state;
-    auto object_size = const_cast<CachedOnDiskReadBufferFromFile &>(*this).getFileSize();
 
     /// See the note in `nextImplStep`: distinguish an exception thrown by this scope from an outer
     /// exception being unwound through it (e.g. a cached read issued from a destructor during
