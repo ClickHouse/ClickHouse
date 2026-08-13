@@ -546,7 +546,49 @@ struct JSONPathMatch
     JSONBloomRole role = JSONBloomRole::Scalar;
 };
 
-bool isStructuralJSONSubcolumn(const DataTypeObject & object_type, const String & path, size_t array_json_bridge)
+struct ArrayJSONBridge
+{
+    size_t path_end;
+    size_t array_depth;
+};
+
+DataTypePtr resolveJSONStructuralParent(
+    DataTypePtr parent_type,
+    const String & path,
+    size_t prefix_end,
+    size_t parent_end,
+    const std::vector<ArrayJSONBridge> & array_json_bridges)
+{
+    size_t resolved_end = prefix_end;
+    for (const auto & bridge : array_json_bridges)
+    {
+        if (bridge.path_end < prefix_end || bridge.path_end > parent_end)
+            continue;
+
+        if (bridge.path_end != resolved_end)
+            parent_type = parent_type->tryGetSubcolumnType(path.substr(resolved_end + 1, bridge.path_end - resolved_end - 1));
+
+        for (size_t level = 0; parent_type && level != bridge.array_depth; ++level)
+        {
+            parent_type = removeJSONBloomWrappers(parent_type);
+            const auto * array_type = typeid_cast<const DataTypeArray *>(parent_type.get());
+            parent_type = array_type ? array_type->getNestedType() : nullptr;
+        }
+
+        if (!parent_type || !isObject(removeJSONBloomWrappers(parent_type)))
+            return nullptr;
+        resolved_end = bridge.path_end;
+    }
+
+    if (resolved_end != parent_end)
+        parent_type = parent_type->tryGetSubcolumnType(path.substr(resolved_end + 1, parent_end - resolved_end - 1));
+    return parent_type;
+}
+
+bool isStructuralJSONSubcolumn(
+    const DataTypeObject & object_type,
+    const String & path,
+    const std::vector<ArrayJSONBridge> & array_json_bridges)
 {
     const auto delimiter = path.rfind('.');
     if (delimiter == String::npos || object_type.getTypedPaths().contains(path))
@@ -563,16 +605,8 @@ bool isStructuralJSONSubcolumn(const DataTypeObject & object_type, const String 
         if (typed_path == object_type.getTypedPaths().end())
             continue;
 
-        DataTypePtr parent_type = typed_path->second;
-        if (prefix_end == array_json_bridge)
-        {
-            parent_type = removeJSONBloomWrappers(parent_type);
-            if (const auto * array_type = typeid_cast<const DataTypeArray *>(parent_type.get());
-                array_type && isObject(array_type->getNestedType()))
-                parent_type = array_type->getNestedType();
-        }
-        if (prefix_end != delimiter)
-            parent_type = parent_type->tryGetSubcolumnType(path.substr(prefix_end + 1, delimiter - prefix_end - 1));
+        DataTypePtr parent_type
+            = resolveJSONStructuralParent(typed_path->second, path, prefix_end, delimiter, array_json_bridges);
 
         while (parent_type)
         {
@@ -624,7 +658,9 @@ std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & n
             const auto subcolumn_type = object_type->tryGetSubcolumnType(String(subcolumn_name));
             const auto unwrapped_subcolumn_type = subcolumn_type ? removeJSONBloomWrappers(subcolumn_type) : nullptr;
             const auto * map_type = typeid_cast<const DataTypeMap *>(unwrapped_subcolumn_type.get());
-            if (!map_type || map_type->getValueType()->hasDynamicStructure())
+            if (!map_type)
+                continue;
+            if (map_type->getValueType()->hasDynamicStructure())
                 return std::nullopt;
 
             const auto key_type = removeJSONBloomWrappers(map_type->getKeyType());
@@ -638,7 +674,6 @@ std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & n
                 JSONBloomRole::MapValue};
         }
 
-        return std::nullopt;
     }
 
     for (const auto & [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(node.getColumnName()))
@@ -655,8 +690,8 @@ std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & n
             return std::nullopt;
 
         String path(subcolumn_name);
-        size_t array_json_bridge = String::npos;
-        if (const size_t type_hint = path.find(".:`"); type_hint != String::npos)
+        std::vector<ArrayJSONBridge> array_json_bridges;
+        for (size_t type_hint = path.find(".:`"); type_hint != String::npos; type_hint = path.find(".:`", type_hint))
         {
             const size_t type_end = path.find('`', type_hint + 3);
             if (type_end == String::npos)
@@ -666,14 +701,19 @@ std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & n
                 path.resize(type_hint);
             else
             {
-                if (path[type_end + 1] != '.' || path.find(".:`", type_end + 2) != String::npos)
+                if (path[type_end + 1] != '.')
                     return std::nullopt;
 
-                const auto hinted_type = DataTypeFactory::instance().get(path.substr(type_hint + 3, type_end - type_hint - 3));
-                const auto * array_type = typeid_cast<const DataTypeArray *>(hinted_type.get());
-                if (!array_type || !isObject(array_type->getNestedType()))
+                auto hinted_type = DataTypeFactory::instance().get(path.substr(type_hint + 3, type_end - type_hint - 3));
+                size_t array_depth = 0;
+                while (const auto * array_type = typeid_cast<const DataTypeArray *>(hinted_type.get()))
+                {
+                    hinted_type = array_type->getNestedType();
+                    ++array_depth;
+                }
+                if (array_depth == 0 || !isObject(hinted_type))
                     return std::nullopt;
-                array_json_bridge = type_hint;
+                array_json_bridges.push_back({type_hint, array_depth});
                 path.erase(type_hint, type_end - type_hint + 1);
             }
         }
@@ -681,7 +721,7 @@ std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & n
         if (path.empty())
             return std::nullopt;
 
-        if (isStructuralJSONSubcolumn(object_type, path, array_json_bridge))
+        if (isStructuralJSONSubcolumn(object_type, path, array_json_bridges))
             return std::nullopt;
 
         return JSONPathMatch{std::move(path), subcolumn_type, nullptr, JSONBloomRole::Scalar};
@@ -879,6 +919,32 @@ std::vector<UInt64> makeArrayElementProbes(
     const FormatSettings & format_settings)
 {
     target_type = removeJSONBloomWrappers(std::move(target_type));
+    if (const auto * target_array_type = typeid_cast<const DataTypeArray *>(target_type.get()))
+    {
+        source_type = removeJSONBloomWrappers(std::move(source_type));
+        const auto * source_array_type = typeid_cast<const DataTypeArray *>(source_type.get());
+        if (!source_array_type || value.getType() != Field::Types::Array || value.safeGet<Array>().empty())
+            return {};
+
+        std::vector<UInt64> hashes;
+        for (const auto & element : value.safeGet<Array>())
+        {
+            auto element_hashes = makeArrayElementProbes(
+                path,
+                role,
+                target_array_type->getNestedType(),
+                element,
+                source_array_type->getNestedType(),
+                format_settings);
+            if (element_hashes.empty())
+                return {};
+            hashes.insert(hashes.end(), element_hashes.begin(), element_hashes.end());
+        }
+        std::ranges::sort(hashes);
+        hashes.erase(std::unique(hashes.begin(), hashes.end()), hashes.end());
+        return hashes;
+    }
+
     if (!isDynamic(target_type))
         return makeValueProbes(path, role, target_type, value, source_type, format_settings);
 
@@ -1203,7 +1269,9 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
                 path->path, path->role, array_type->getNestedType(), constant, constant_type, comparison_format_settings);
             if (out.hashes.empty())
                 return false;
-            out.function = RPNElement::FUNCTION_ANY;
+            out.function = typeid_cast<const DataTypeArray *>(removeJSONBloomWrappers(array_type->getNestedType()).get())
+                ? RPNElement::FUNCTION_ALL
+                : RPNElement::FUNCTION_ANY;
             return true;
         }
 
