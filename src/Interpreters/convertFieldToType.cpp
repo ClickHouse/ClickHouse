@@ -363,7 +363,7 @@ Field coerceNumericToDateField(const T & value, const DateLUTImpl & time_zone, F
 }
 
 /// Coerce a numeric value into a Date32 day-number Field, mirroring ToDate32TransformFromSecondsOrDays:
-/// [DATE_LUT_MIN_EXTEND_DAY_NUM, DATE_LUT_MAX_EXTEND_DAY_NUM) is a signed day number, anything larger
+/// [DATE_LUT_MIN_EXTEND_DAY_NUM, DATE_LUT_MAX_EXTEND_DAY_NUM] is a signed day number, anything larger
 /// is a unix timestamp. Returns an Int64 Field, Date32's canonical representation.
 template <typename T>
 Field coerceNumericToDate32Field(const T & value, const DateLUTImpl & time_zone, FormatSettings::DateTimeOverflowBehavior overflow)
