@@ -94,11 +94,17 @@ SELECT countIf(toStartOfInterval(d, INTERVAL 1 YEAR) >= toDate('2000-01-01')) FR
 
 -- Trivial-count projection path (the exact_ranges assertion): count() with an AggregatingMergeTree key.
 SELECT '-- toStartOfDay trivial count with projection';
--- optimize_use_projections gates the implicit projections and is randomized in CI, so it is pinned here;
--- without it this check degrades into an ordinary read.
+-- optimize_use_projections gates the implicit projections and is randomized, and an ordinary read returns the
+-- same count, so the plan is asserted as well: without it this check passes without reaching the path under
+-- test. force_optimize_projection cannot serve that role here because it only fires while a MergeTree read
+-- remains in the plan, and the projection replaces it.
 SELECT count() FROM t_dt64_mono WHERE toStartOfDay(d) >= toDateTime('2000-01-01 00:00:00', 'UTC')
     SETTINGS force_primary_key = 1, optimize_use_projections = 1, optimize_use_implicit_projections = 1,
              optimize_trivial_count_query = 1;
+SELECT countIf(explain LIKE '%_exact_count_projection%') = 1 FROM (
+    EXPLAIN SELECT count() FROM t_dt64_mono WHERE toStartOfDay(d) >= toDateTime('2000-01-01 00:00:00', 'UTC')
+        SETTINGS force_primary_key = 1, optimize_use_projections = 1, optimize_use_implicit_projections = 1,
+                 optimize_trivial_count_query = 1);
 
 DROP TABLE t_dt64_mono;
 
