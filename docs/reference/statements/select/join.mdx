@@ -454,10 +454,7 @@ The `USING` clause specifies one or more columns to join, which establishes the 
 
 ### Syntax Limitations {#syntax-limitations}
 
-For multiple `JOIN` clauses in a single `SELECT` query:
-
-- Taking all the columns via `*` is available only if tables are joined, not subqueries.
-- The `USING` clause is not available.
+When a `SELECT` query contains multiple `JOIN` clauses, `*` can select all columns only when joining tables, not subqueries.
 
 For `ON`, `WHERE`, and `GROUP BY` clauses:
 

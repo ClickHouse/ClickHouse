@@ -21,12 +21,14 @@ If the [optimize_move_to_prewhere](/reference/settings/session-settings/optimize
 If query has [FINAL](/reference/statements/select/from#final-modifier) modifier, the `PREWHERE` optimization is not always correct. It is enabled only if both settings [optimize_move_to_prewhere](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) and [optimize_move_to_prewhere_if_final](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere_if_final) are turned on.
 
 <Note>
-The `PREWHERE` section is executed before `FINAL`, so the results of `FROM ... FINAL` queries may be skewed when using `PREWHERE` with fields not in the `ORDER BY` section of a table.
+The `PREWHERE` section is normally executed before `FINAL`, so the results of `FROM ... FINAL` queries may be skewed when using `PREWHERE` with fields not in the `ORDER BY` section of a table.
 </Note>
 
 ## `PREWHERE` with `JOIN` {#prewhere-with-join}
 
 With the analyzer enabled, a `PREWHERE` condition can directly reference columns from no more than one table in a [`JOIN`](/reference/statements/select/join). ClickHouse applies the condition to that table's rows before they reach the join.
+
+In contrast, a `WHERE` condition filters the result of the join. The optimizer may apply it before the join when doing so does not change the result. Moving the same condition between `PREWHERE` and `WHERE` can therefore produce different results, particularly for outer joins.
 
 The following example uses a `PREWHERE` condition that references `table_2`:
 
