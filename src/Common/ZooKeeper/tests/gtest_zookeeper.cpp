@@ -42,7 +42,7 @@ TEST(ZooKeeperTest, DeleteEphemeralNodeIfContentMatchesForeignHolder)
     try
     {
         zk->deleteEphemeralNodeIfContentMatches("/foreign", "me");
-        FAIL() << "Expected an exception for a node held by someone else";
+        ADD_FAILURE() << "Expected an exception for a node held by someone else";
     }
     catch (const DB::Exception & e)
     {
