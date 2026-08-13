@@ -4148,6 +4148,40 @@ def test_histogram_fraction():
         [["[('job','api')]", "1970-01-01 00:05:00.000", "1"]],
     )
 
+    # The usual PromQL shape applies histogram_fraction to a rate expression, not to
+    # the raw bucket counters. This also exercises the vector-grid path.
+    do_query_test(
+        "histogram_fraction(0.1, 0.5, rate(rate_bucket[60s]))",
+        360,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [360, "0.3333333333333333"]}]}',
+        [["[]", "1970-01-01 00:06:00.000", "0.3333333333333333"]],
+        eps=1e-9,
+    )
+
+    # Distinct histogram metric names must remain separate while `le` and `__name__`
+    # are removed from the output labels.
+    do_range_query_test(
+        'histogram_fraction(0.1, 1.0, {__name__=~"two_hist_a_bucket|two_hist_b_bucket"})',
+        300,
+        300,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {"env": "prod", "kind": "a"}, "values": [[300, "0.6666666666666666"]]}, {"metric": {"env": "prod", "kind": "b"}, "values": [[300, "0.3"]]}]}',
+        [
+            ["[('env','prod'),('kind','a')]", "[('1970-01-01 00:05:00.000',0.6666666666666666)]"],
+            ["[('env','prod'),('kind','b')]", "[('1970-01-01 00:05:00.000',0.3)]"],
+        ],
+        eps=1e-12,
+    )
+
+    # Negative bucket boundaries use the same linear interpolation rules as Prometheus.
+    do_query_test(
+        "histogram_fraction(-0.5, 0.5, negative_le_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "0.16666666666666666"]}]}',
+        [["[]", "1970-01-01 00:05:00.000", "0.16666666666666666"]],
+        eps=1e-12,
+    )
+
     # Multiple histogram groups in a range query. The `le` label is removed from each
     # group, while the remaining `job` label stays on the result.
     do_range_query_test(
@@ -4183,11 +4217,59 @@ def test_histogram_fraction():
         [["[('job','api')]", "1970-01-01 00:05:00.000", "0"]],
     )
 
+    # Equal bounds and finite bounds outside the observed range are valid and return
+    # the corresponding empty or complete fraction.
+    for query, expected in (
+        ("histogram_fraction(0.5, 0.5, http_request_duration_seconds_bucket)", "0"),
+        ("histogram_fraction(-1, 2, http_request_duration_seconds_bucket)", "1"),
+        ("histogram_fraction(2, 3, http_request_duration_seconds_bucket)", "0"),
+    ):
+        do_query_test(
+            query,
+            300,
+            f'{{"resultType": "vector", "result": [{{"metric": {{"job": "api"}}, "value": [300, "{expected}"]}}]}}',
+            [["[('job','api')]", "1970-01-01 00:05:00.000", expected]],
+        )
+
+    # One-sided infinite bounds select the lower or upper tail of the histogram.
+    for query, expected in (
+        ("histogram_fraction(-Inf, 0.5, http_request_duration_seconds_bucket)", "0.5"),
+        ("histogram_fraction(0.5, +Inf, http_request_duration_seconds_bucket)", "0.5"),
+    ):
+        do_query_test(
+            query,
+            300,
+            f'{{"resultType": "vector", "result": [{{"metric": {{"job": "api"}}, "value": [300, "{expected}"]}}]}}',
+            [["[('job','api')]", "1970-01-01 00:05:00.000", expected]],
+        )
+
+    # NaN bounds follow Prometheus and produce NaN for a non-empty histogram.
+    for query in (
+        "histogram_fraction(NaN, 0.5, http_request_duration_seconds_bucket)",
+        "histogram_fraction(0, NaN, http_request_duration_seconds_bucket)",
+    ):
+        do_query_test(
+            query,
+            300,
+            '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "NaN"]}]}',
+            [["[('job','api')]", "1970-01-01 00:05:00.000", "nan"]],
+        )
+
     do_query_test(
         "histogram_fraction(0, 0.5, no_inf_bucket)",
         300,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "NaN"]}]}',
         [["[]", "1970-01-01 00:05:00.000", "nan"]],
+    )
+
+    # A malformed `le` bucket is ignored while valid buckets in the same histogram
+    # continue to contribute to the result.
+    do_query_test(
+        "histogram_fraction(0, 0.1, bad_le_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "0.16666666666666666"]}]}',
+        [["[]", "1970-01-01 00:05:00.000", "0.16666666666666666"]],
+        eps=1e-12,
     )
 
     do_query_test(
@@ -4202,6 +4284,15 @@ def test_histogram_fraction():
         300,
         '{"resultType": "vector", "result": []}',
         [],
+    )
+
+    # Aggregating classic buckets by `le` before applying histogram_fraction is the
+    # common way to combine multiple input series into one histogram.
+    do_query_test(
+        "histogram_fraction(1, 4, sum by (le) (cache_lookup_duration_seconds_bucket))",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "0.5"]}]}',
+        [["[]", "1970-01-01 00:05:00.000", "0.5"]],
     )
 
     # Argument type validation: both bounds must be scalars and the input must be an
@@ -4242,7 +4333,7 @@ def test_histogram_fraction():
         "(time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
     )
     try:
-        for le, value in [("0.1", 10), ("0.5", 30), ("1.0", 50), ("+Inf", 60)]:
+        for le, value in [("0.1", 10), ("0.100001", 20), ("+Inf", 30)]:
             node.query(
                 "INSERT INTO prometheus_f32 (metric_name, tags, time_series) VALUES "
                 f"('http_request_duration_seconds_bucket', {{'job': 'api', 'le': '{le}'}}, "
@@ -4253,14 +4344,45 @@ def test_histogram_fraction():
             node.query(
                 "SELECT * FROM prometheusQuery("
                 "prometheus_f32, "
-                "'histogram_fraction(0.099999999, 0.5, http_request_duration_seconds_bucket)', "
+                "'histogram_fraction(0.099999999, 0.1000005, http_request_duration_seconds_bucket)', "
                 "300)"
             ),
-            [["[('job','api')]", "1970-01-01 00:05:00.000", "0.3333333432674408"]],
+            [["[('job','api')]", "1970-01-01 00:05:00.000", "0.1666666716337204"]],
             eps=1e-12,
         )
     finally:
         node.query("DROP TABLE prometheus_f32 SYNC")
+
+    # UInt64 cumulative counts must be subtracted before converting to Float64. Otherwise
+    # the difference between 2^53 and 2^53 + 1 is rounded away and this fraction becomes 0.
+    node.query(
+        "CREATE TABLE prometheus_u64 "
+        "(time_series Array(Tuple(DateTime64(3), UInt64))) ENGINE=TimeSeries"
+    )
+    try:
+        for le, value in [
+            ("1", 9007199254740992),
+            ("2", 9007199254740993),
+            ("+Inf", 9007199254740993),
+        ]:
+            node.query(
+                "INSERT INTO prometheus_u64 (metric_name, tags, time_series) VALUES "
+                f"('large_count_bucket', {{'le': '{le}'}}, "
+                f"[(toDateTime64(300, 3), {value})])"
+            )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery("
+                "prometheus_u64, "
+                "'histogram_fraction(1, 2, large_count_bucket)', "
+                "300)"
+            ),
+            [["[]", "1970-01-01 00:05:00.000", "1.1102230246251564e-16"]],
+            eps=1e-30,
+        )
+    finally:
+        node.query("DROP TABLE prometheus_u64 SYNC")
 
 
 def test_label_manipulation_functions():
