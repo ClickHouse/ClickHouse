@@ -3517,9 +3517,52 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedData
     }
 
     if (has_at_least_one_two_level)
+    {
+        std::vector<AggregatedDataVariants *> variants_to_convert;
         for (auto & variant : non_empty_data)
             if (!variant->isTwoLevel())
+                variants_to_convert.push_back(variant.get());
+
+        /// Convert in parallel. Initializing a two-level variant allocates and zeroes 256 bucket
+        /// tables, and there is one variant per query thread, so a sequential loop here costs
+        /// hundreds of milliseconds on machines with many cores, dominating short aggregation
+        /// queries whose states crossed `group_by_two_level_threshold_bytes` mid-scan
+        /// (https://github.com/ClickHouse/ClickHouse/issues/114640).
+        if (variants_to_convert.size() > 1 && params.max_threads > 1)
+        {
+            std::atomic<size_t> next_variant_to_convert = 0;
+            auto converter = [&variants_to_convert, &next_variant_to_convert]()
+            {
+                while (true)
+                {
+                    const size_t i = next_variant_to_convert.fetch_add(1);
+                    if (i >= variants_to_convert.size())
+                        break;
+                    variants_to_convert[i]->convertToTwoLevel();
+                }
+            };
+
+            ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
+            try
+            {
+                /// Passing converter as a reference is fine: `runner` waits for all tasks before
+                /// this scope (and the captured state) is destroyed.
+                const size_t threads = std::min(params.max_threads, variants_to_convert.size());
+                for (size_t i = 0; i < threads; ++i)
+                    runner.enqueueAndKeepTrack([&converter]() { converter(); }, Priority{});
+            }
+            catch (...) // Ok: wait for parallel tasks to finish before rethrowing
+            {
+                runner.waitForAllToFinishAndRethrowFirstError();
+            }
+            runner.waitForAllToFinishAndRethrowFirstError();
+        }
+        else
+        {
+            for (auto * variant : variants_to_convert)
                 variant->convertToTwoLevel();
+        }
+    }
 
     AggregatedDataVariantsPtr & first = non_empty_data[0];
 
