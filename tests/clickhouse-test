@@ -1263,6 +1263,30 @@ def is_asan_build(args):
     return out.strip() not in ("", "0")
 
 
+def is_slow_build_binary(args) -> bool:
+    """Debug/sanitizer/coverage flavor read from the binary, not the server.
+
+    Mirrors the flag set `collect_build_flags` derives, so the answer matches
+    what `args.build_flags` would have said had the server come up. An
+    unreadable or unparseable result is reported as not-slow, keeping the
+    tighter of the two budgets.
+    """
+    binary = getattr(args, "binary", "clickhouse")
+    local = find_clickhouse_command(binary, "local")
+    out = shell_get_output(
+        f"{local} --query \""
+        "SELECT countIf(name = 'BUILD_TYPE' AND position('Debug' IN value)) "
+        "+ countIf(name = 'WITH_COVERAGE' AND value IN ('ON', '1')) "
+        "+ countIf(name = 'CXX_FLAGS' AND position('-fsanitize=' IN value)) "
+        'FROM system.build_options"',
+        timeout=60,
+    )
+    try:
+        return int(out.strip()) > 0
+    except ValueError:
+        return False
+
+
 # Full server stacktraces are written here — one file per collector, not per
 # test: print_*_stacktraces also run from the end-of-run hung check, where no
 # single test owns the dump. The CI job runs clickhouse-test from its output
@@ -1291,12 +1315,14 @@ def lldb_timeout_for_build(args) -> float:
 
     Must read `args.build_flags`, not the module-level RELEASE_NON_SANITIZED /
     SANITIZED globals, which a spawned worker re-imports at their defaults while
-    `args` is transferred intact.  A caller reached before `collect_build_flags`
-    has no flags at all and keeps the release budget.
+    `args` is transferred intact.  When the flags were never collected (server
+    never started), read the flavor from the binary via `clickhouse local`, the
+    same server-independent route `is_asan_build` takes; the release budget is
+    only the last resort, when even that read fails.
     """
     build_flags = getattr(args, "build_flags", None)
     if build_flags is None:
-        return LLDB_TIMEOUT
+        return LLDB_SLOW_BUILD_TIMEOUT if is_slow_build_binary(args) else LLDB_TIMEOUT
     slow_build = (
         any(flag in build_flags for flag in BuildFlags.SANITIZERS)
         or BuildFlags.DEBUG in build_flags

@@ -270,18 +270,46 @@ def test_lldb_budget_survives_the_spawn_start_method():
     assert abs(budgets[0] - ct["LLDB_SLOW_BUILD_TIMEOUT"]) < 1, budgets
 
 
-def test_lldb_budget_defaults_to_release_when_build_flags_are_missing():
-    # The startup-failure caller runs before `args.build_flags` is assigned, so
-    # the flavor lookup must neither raise nor guess on the one path that is
-    # already reporting a dead server.
+def test_lldb_budget_reads_the_binary_when_build_flags_are_missing():
+    # The startup-failure caller (main -> check_server_started) runs before
+    # `args.build_flags` is assigned, and CIDB shows that path timing out at 30s
+    # on amd_debug/arm_debug. Falling back to the release budget there would
+    # leave the startup-hung case unfixed, so the flavor comes from the binary
+    # via `clickhouse local` — the same server-independent route is_asan_build
+    # already takes when the flags are missing.
     ct = _load_clickhouse_test(require_server=False)
     args = _make_args()
     delattr(args, "build_flags")
 
-    budgets, _ = _capture_lldb_budgets(ct, args, [4242])
+    for slow, expected_key in ((True, "LLDB_SLOW_BUILD_TIMEOUT"), (False, "LLDB_TIMEOUT")):
+        globals_ = ct["lldb_timeout_for_build"].__globals__
+        saved = globals_["is_slow_build_binary"]
+        globals_["is_slow_build_binary"] = lambda _args, _s=slow: _s
+        try:
+            budgets, _ = _capture_lldb_budgets(ct, args, [4242])
+        finally:
+            globals_["is_slow_build_binary"] = saved
 
-    assert len(budgets) == 1, budgets
-    assert abs(budgets[0] - ct["LLDB_TIMEOUT"]) < 1, budgets
+        assert len(budgets) == 1, (slow, budgets)
+        assert abs(budgets[0] - ct[expected_key]) < 1, (slow, budgets)
+
+
+def test_slow_build_binary_probe_is_server_independent_and_fails_closed():
+    # The probe must not need a live server (it exists for the path where the
+    # server never came up), and an unreadable binary must yield the tighter
+    # budget rather than raising on an already-failing run.
+    ct = _load_clickhouse_test(require_server=False)
+
+    args = _make_args()
+    args.binary = "/nonexistent/clickhouse-does-not-exist"
+    assert ct["is_slow_build_binary"](args) is False
+
+    # And the query it issues names every flag collect_build_flags derives, so
+    # the two cannot drift into disagreeing about what "slow" means.
+    source = Path(_CLICKHOUSE_TEST).read_text(encoding="utf-8")
+    probe = source.split("def is_slow_build_binary")[1].split("\ndef ")[0]
+    for token in ("BUILD_TYPE", "Debug", "WITH_COVERAGE", "-fsanitize="):
+        assert token in probe, token
 
 
 def test_lldb_pid_loop_honours_the_aggregate_deadline():
