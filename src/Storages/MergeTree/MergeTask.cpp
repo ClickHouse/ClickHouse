@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Statistics/Statistics.h>
@@ -697,6 +698,25 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 , nullptr
 #endif
                 ));
+        }
+
+        /// Rebuilt projections need the same patch-part provenance fallback the storage columns
+        /// get below (see the loop over global_ctx->storage_columns), so build a rename-aware view
+        /// once here for MergeTreeDataWriter::writeTempProjectionPart to consume later. mode/
+        /// source_parts/source_data_version describe how to apply a patch's data, which provenance
+        /// lookup never does -- it only reads the patch part's own declared column type -- so those
+        /// fields are left at their defaults.
+        global_ctx->projection_patch_parts.reserve(global_ctx->future_part->patch_parts.size());
+        for (size_t patch_index = 0; patch_index != global_ctx->future_part->patch_parts.size(); ++patch_index)
+        {
+            auto patch_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+                global_ctx->future_part->patch_parts[patch_index], patch_conversions[patch_index]);
+            global_ctx->projection_patch_parts.push_back(PatchPartInfoForReader{
+                .mode = PatchMode::Merge,
+                .part = std::move(patch_for_reader),
+                .source_parts = {},
+                .source_data_version = 0,
+                .perform_alter_conversions = true});
         }
 
         for (auto & storage_column : global_ctx->storage_columns)
@@ -1631,12 +1651,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
     if (squashed_chunk)
     {
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
-        /// TODO: global_ctx->future_part->patch_parts is a plain DataPartsVector, not the
-        /// PatchPartsForReader this needs for rename-aware provenance lookup; a merge that combines
-        /// a lightweight-update patch into a JSON-column projection may not retain its provenance.
         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
             *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context,
-            global_ctx->future_part->parts, /*patch_parts=*/ {});
+            global_ctx->future_part->parts, global_ctx->projection_patch_parts);
 
         tmp_part->finalize();
         tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1677,10 +1694,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         if (squashed_chunk)
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
-            /// See the analogous call above: future_part->patch_parts isn't a PatchPartsForReader.
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
                 *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context,
-                global_ctx->future_part->parts, /*patch_parts=*/ {});
+                global_ctx->future_part->parts, global_ctx->projection_patch_parts);
 
             temp_part->finalize();
             temp_part->part->getDataPartStorage().commitTransaction();
