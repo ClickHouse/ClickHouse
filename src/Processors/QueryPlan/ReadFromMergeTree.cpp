@@ -229,6 +229,7 @@ namespace Setting
     extern const SettingsBool enable_automatic_decision_for_merging_across_partitions_for_final;
     extern const SettingsBool enable_vertical_final;
     extern const SettingsBool force_aggregate_partitions_independently;
+    extern const SettingsBool force_creating_set_partitions_independently;
     extern const SettingsBool force_distinct_partitions_independently;
     extern const SettingsBool force_primary_key;
     extern const SettingsString ignore_data_skipping_indices;
@@ -3573,6 +3574,58 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForLimitBy(
     /// This becomes no different from ordinary LIMIT BY which is single stream anyway.
     if (countPartitions(getParts()) == 1)
         return false;
+
+    return output_each_partition_through_separate_port = true;
+}
+
+/// Like LIMIT BY, set building for `IN (subquery)` is lenient: the ordinary set fill merges all incoming
+/// streams into one and hashes every row in a single `CreatingSetsTransform`. With per-partition streams
+/// each partition is pre-deduplicated in parallel, so the single filling transform only sees unique rows;
+/// any parallelism at all in the reduction is a win over the fully serial baseline. The one layout that
+/// loses is heavy partition skew, checked below.
+bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForCreatingSet()
+{
+    if (isQueryWithFinal())
+        return false;
+
+    /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
+    /// With creating-set by partitions optimisation we might create a separate pool for each partition.
+    if (is_parallel_reading_from_replicas)
+        return false;
+
+    /// This becomes no different from the ordinary set fill which is single stream anyway.
+    if (countPartitions(getParts()) == 1)
+        return false;
+
+    if (!context->getSettingsRef()[Setting::force_creating_set_partitions_independently])
+    {
+        /// A dominant partition is deduplicated through a single stream and its single-threaded pass
+        /// dominates the whole build, while the ordinary fill at least reads in parallel. What matters is
+        /// skew, not the partition count: a balanced layout wins at any count (even two partitions halve
+        /// the serial reduction), so unlike the aggregation/DISTINCT heuristic there is no lower bound on
+        /// the number of partitions, and the threshold compares against the average partition rather than
+        /// a `max_threads`-based share (the baseline is a serial fill whose cost does not scale with
+        /// threads).
+        std::unordered_map<String, size_t> partition_rows;
+        for (const auto & part : getParts())
+            partition_rows[part.data_part->info.getPartitionId()] += part.data_part->rows_count;
+        size_t sum_rows = 0;
+        size_t max_rows = 0;
+        for (const auto & [_, rows] : partition_rows)
+        {
+            sum_rows += rows;
+            max_rows = std::max(max_rows, rows);
+        }
+
+        if (max_rows * partition_rows.size() > 2 * sum_rows)
+        {
+            LOG_TRACE(
+                log,
+                "Independent set creation by partitions won't be used because the largest partition holds more than twice "
+                "the rows of the average partition. You can set force_creating_set_partitions_independently to suppress this check");
+            return false;
+        }
+    }
 
     return output_each_partition_through_separate_port = true;
 }
