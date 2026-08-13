@@ -72,15 +72,19 @@ ClickHouse [fusionará partes](https://clickhouse.com/blog/asynchronous-data-ins
 
 Un único servidor de ClickHouse utiliza varios [hilos de fusión en segundo plano](/es/reference/settings/server-settings/settings/background#background_pool_size) para ejecutar [fusiones de partes](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes) de forma concurrente. Cada hilo ejecuta un bucle:
 
-```bash
-① Decide which parts to merge next, and load these parts as blocks into memory.
+<Steps>
+  <Step title="Cargar partes en memoria">
+    Decide qué partes fusionar a continuación y carga estas partes como bloques en memoria.
+  </Step>
 
-② Merge the loaded blocks in memory into a larger block.
+  <Step title="Fusionar bloques">
+    Fusiona los bloques cargados en memoria en un bloque más grande.
+  </Step>
 
-③ Write the merged block into a new part on disk.
-
-Go to ①
-```
+  <Step title="Escribir en disco">
+    Escribe el bloque fusionado en una nueva parte en disco y, después, vuelve al paso 1.
+  </Step>
+</Steps>
 
 Ten en cuenta que [aumentar](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#hardware-size) el número de núcleos de CPU y el tamaño de la RAM aumenta el rendimiento de las fusiones en segundo plano.
 

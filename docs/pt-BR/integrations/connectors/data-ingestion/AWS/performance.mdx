@@ -72,15 +72,19 @@ O ClickHouse [mescla partes](https://clickhouse.com/blog/asynchronous-data-inser
 
 Um único servidor ClickHouse utiliza várias [threads de mesclagem em segundo plano](/pt-BR/reference/settings/server-settings/settings/background#background_pool_size) para executar [mesclagens de partes](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes) simultaneamente. Cada thread executa um loop:
 
-```bash
-① Decide which parts to merge next, and load these parts as blocks into memory.
+<Steps>
+  <Step title="Carregar partes na memória">
+    Decida quais partes mesclar em seguida e carregue essas partes como blocos na memória.
+  </Step>
 
-② Merge the loaded blocks in memory into a larger block.
+  <Step title="Mesclar blocos">
+    Mescle os blocos carregados na memória em um bloco maior.
+  </Step>
 
-③ Write the merged block into a new part on disk.
-
-Go to ①
-```
+  <Step title="Gravar no disco">
+    Grave o bloco mesclado em uma nova parte no disco e retorne ao passo 1.
+  </Step>
+</Steps>
 
 Observe que [aumentar](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#hardware-size) o número de núcleos de CPU e a quantidade de RAM aumenta o throughput das mesclas em segundo plano.
 

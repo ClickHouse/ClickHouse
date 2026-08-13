@@ -60,7 +60,7 @@ Go to ①
   #### 注意合并操作
 </div>
 
-配置的插入块大小越小，大规模数据加载时创建的初始 parts 就越多，并且在数据摄取过程中并发执行的后台合并也会越多。这可能导致资源争用 (CPU 和内存) ，并且在摄取完成后，还需要额外的时间才能让 parts 数量降到[健康](/zh/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert) (3000) 水平。
+配置的插入块大小越小，大规模数据加载时创建的初始 parts 就越多，并且在数据摄取过程中并发执行的后台 parts 合并也会越多。这可能导致资源争用 (CPU 和内存) ，并且在摄取完成后，还需要额外的时间才能让 parts 数量降到[健康](/zh/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert) (3000) 水平。
 
 <Warning>
   如果 part 数量超过[建议限制](/zh/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert)，ClickHouse 查询性能会受到负面影响。
@@ -72,15 +72,19 @@ ClickHouse 会持续将 [merge parts](https://clickhouse.com/blog/asynchronous-d
 
 单个 ClickHouse 服务器 会使用多个 [后台合并线程](/zh/reference/settings/server-settings/settings/background#background_pool_size) 来并发执行 [parts 合并](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes)。每个线程都会执行一个循环：
 
-```bash
-① Decide which parts to merge next, and load these parts as blocks into memory.
+<Steps>
+  <Step title="将 parts 加载到内存">
+    决定接下来要合并哪些 parts，并将这些 parts 作为块加载到内存中。
+  </Step>
 
-② Merge the loaded blocks in memory into a larger block.
+  <Step title="合并块">
+    将内存中已加载的块合并为一个更大的块。
+  </Step>
 
-③ Write the merged block into a new part on disk.
-
-Go to ①
-```
+  <Step title="写入磁盘">
+    将合并后的块写入磁盘上的一个新 part，然后返回步骤 1。
+  </Step>
+</Steps>
 
 请注意，[增加](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#hardware-size) CPU 核心数量和 RAM 容量会提升后台合并吞吐量。
 

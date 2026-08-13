@@ -72,15 +72,19 @@ ClickHouse будет непрерывно [сливать части](https://c
 
 Один сервер ClickHouse использует несколько [фоновых потоков слияния](/ru/reference/settings/server-settings/settings/background#background_pool_size) для выполнения параллельных [слияний частей](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes). Каждый поток выполняет цикл:
 
-```bash
-① Decide which parts to merge next, and load these parts as blocks into memory.
+<Steps>
+  <Step title="Загрузите части в память">
+    Определите, какие части следует слить следующими, и загрузите их в память как блоки.
+  </Step>
 
-② Merge the loaded blocks in memory into a larger block.
+  <Step title="Слейте блоки">
+    Слейте загруженные в память блоки в более крупный блок.
+  </Step>
 
-③ Write the merged block into a new part on disk.
-
-Go to ①
-```
+  <Step title="Запишите на диск">
+    Запишите слитый блок в новую часть на диске, затем вернитесь к шагу 1.
+  </Step>
+</Steps>
 
 Обратите внимание, что [увеличение](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#hardware-size) числа ядер CPU и объема RAM повышает производительность фоновых слияний.
 

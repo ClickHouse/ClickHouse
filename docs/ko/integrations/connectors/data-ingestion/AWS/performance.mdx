@@ -72,15 +72,19 @@ ClickHouse는 [파트를 머지](https://clickhouse.com/blog/asynchronous-data-i
 
 단일 ClickHouse 서버는 여러 개의 [백그라운드 머지 스레드](/ko/reference/settings/server-settings/settings/background#background_pool_size)를 사용해 동시에 [파트 병합](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes)을 실행합니다. 각 스레드는 다음과 같은 루프를 실행합니다.
 
-```bash
-① Decide which parts to merge next, and load these parts as blocks into memory.
+<Steps>
+  <Step title="파트를 메모리에 로드">
+    다음에 머지할 파트를 결정하고, 이 파트를 블록으로 메모리에 로드합니다.
+  </Step>
 
-② Merge the loaded blocks in memory into a larger block.
+  <Step title="블록 머지">
+    메모리에 로드된 블록을 더 큰 블록으로 머지합니다.
+  </Step>
 
-③ Write the merged block into a new part on disk.
-
-Go to ①
-```
+  <Step title="디스크에 쓰기">
+    머지된 블록을 디스크의 새 파트에 쓴 후 1단계로 돌아갑니다.
+  </Step>
+</Steps>
 
 CPU 코어 수와 RAM 크기를 [늘리면](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#hardware-size) 백그라운드 머지 처리량이 증가합니다.
 

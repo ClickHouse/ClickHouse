@@ -60,7 +60,7 @@ Go to ①
   #### انتبه إلى عمليات الدمج
 </div>
 
-كلما صغر حجم كتلة الإدراج المُعدّ، زاد عدد الأجزاء الأولية التي تُنشأ عند تحميل كمية كبيرة من البيانات، وزاد عدد عمليات دمج الأجزاء في الخلفية التي تُنفَّذ بالتوازي مع إدخال البيانات. وقد يؤدي ذلك إلى تنافس على الموارد (CPU والذاكرة)، ويتطلب وقتًا إضافيًا بعد انتهاء إدخال البيانات (للوصول إلى عدد [مناسب](/ar/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert) (3000) من الأجزاء).
+كلما صغر حجم كتلة الإدراج المُعدّ، زاد عدد الأجزاء الأولية التي تُنشأ عند تحميل كمية كبيرة من البيانات، وزاد عدد عمليات دمج الأجزاء في الخلفية التي تُنفَّذ بالتوازي مع إدخال البيانات. وقد يؤدي ذلك إلى تنازع على الموارد (CPU والذاكرة)، ويتطلب وقتًا إضافيًا بعد انتهاء إدخال البيانات (للوصول إلى عدد [مناسب](/ar/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert) (3000) من الأجزاء).
 
 <Warning>
   سيتأثر أداء استعلامات ClickHouse سلبًا إذا تجاوز عدد الأجزاء [الحدود الموصى بها](/ar/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert).
@@ -70,17 +70,21 @@ Go to ①
 
 <Image img="/images/integrations/data-ingestion/s3/merges.webp" size="lg" border alt="عمليات الدمج في الخلفية في ClickHouse" />
 
-يستخدم خادم ClickHouse واحد عدة [خيوط دمج في الخلفية](/ar/reference/settings/server-settings/settings/background#background_pool_size) لتنفيذ [عمليات دمج الأجزاء](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes) المتزامنة. وينفّذ كل خيط حلقة:
+يستخدم خادم ClickHouse واحد عدة [خيوط دمج الأجزاء في الخلفية](/ar/reference/settings/server-settings/settings/background#background_pool_size) لتنفيذ [عمليات دمج الأجزاء](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes) المتزامنة. وينفّذ كل خيط حلقة:
 
-```bash
-① Decide which parts to merge next, and load these parts as blocks into memory.
+<Steps>
+  <Step title="تحميل الأجزاء إلى الذاكرة">
+    حدّد الأجزاء التي ستُدمج تاليًا، وحمّل هذه الأجزاء ككتل إلى الذاكرة.
+  </Step>
 
-② Merge the loaded blocks in memory into a larger block.
+  <Step title="دمج الكتل">
+    ادمج الكتل المحمّلة في الذاكرة ضمن كتلة أكبر.
+  </Step>
 
-③ Write the merged block into a new part on disk.
-
-Go to ①
-```
+  <Step title="الكتابة إلى القرص">
+    اكتب الكتلة المدمجة في جزء جديد على القرص، ثم ارجع إلى الخطوة 1.
+  </Step>
+</Steps>
 
 لاحظ أن [زيادة](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#hardware-size) عدد نوى CPU وحجم RAM تؤدي إلى زيادة إنتاجية الدمج في الخلفية.
 

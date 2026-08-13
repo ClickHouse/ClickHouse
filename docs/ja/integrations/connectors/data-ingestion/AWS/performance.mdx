@@ -72,15 +72,19 @@ ClickHouse は、[圧縮サイズ](/ja/reference/settings/merge-tree-settings/ma
 
 単一の ClickHouse サーバーは、複数の[バックグラウンドマージスレッド](/ja/reference/settings/server-settings/settings/background#background_pool_size)を使って、[パーツマージ](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes)を同時実行します。各スレッドは次のループを実行します。
 
-```bash
-① Decide which parts to merge next, and load these parts as blocks into memory.
+<Steps>
+  <Step title="パーツをメモリにロードする">
+    次にマージするパーツを決定し、それらのパーツをブロックとしてメモリにロードします。
+  </Step>
 
-② Merge the loaded blocks in memory into a larger block.
+  <Step title="ブロックをマージする">
+    メモリにロードしたブロックをマージして、より大きなブロックにします。
+  </Step>
 
-③ Write the merged block into a new part on disk.
-
-Go to ①
-```
+  <Step title="ディスクに書き込む">
+    マージしたブロックをディスク上の新しいパーツに書き込み、ステップ 1 に戻ります。
+  </Step>
+</Steps>
 
 [増やす](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#hardware-size)と、CPU コア数と RAM 容量に応じて、バックグラウンドマージのスループットも向上することに注意してください。
 

@@ -72,15 +72,19 @@ ClickHouse va [fusionner des parts](https://clickhouse.com/blog/asynchronous-dat
 
 Un serveur ClickHouse unique utilise plusieurs [threads de fusion en arrière-plan](/fr/reference/settings/server-settings/settings/background#background_pool_size) pour exécuter des [fusions de parts](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes) en parallèle. Chaque thread exécute une boucle :
 
-```bash
-① Decide which parts to merge next, and load these parts as blocks into memory.
+<Steps>
+  <Step title="Charger les parts en mémoire">
+    Décidez quelles parts fusionner ensuite et chargez-les en mémoire sous forme de blocs.
+  </Step>
 
-② Merge the loaded blocks in memory into a larger block.
+  <Step title="Fusionner les blocs">
+    Fusionnez les blocs chargés en mémoire en un bloc plus volumineux.
+  </Step>
 
-③ Write the merged block into a new part on disk.
-
-Go to ①
-```
+  <Step title="Écrire sur le disque">
+    Écrivez le bloc fusionné dans une nouvelle part sur le disque, puis revenez à l’étape 1.
+  </Step>
+</Steps>
 
 Notez que l&#39;[augmentation](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#hardware-size) du nombre de cœurs CPU et de la quantité de RAM accroît le débit des fusions en arrière-plan.
 
