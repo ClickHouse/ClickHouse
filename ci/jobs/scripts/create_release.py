@@ -423,6 +423,10 @@ class ReleaseInfo:
         return self
 
     def push_release_tag(self, dry_run: bool) -> None:
+        # Idempotent: a recovery finds the tag already published — nothing to do.
+        if Git.tag_exists(self.release_tag):
+            print(f"Release tag [{self.release_tag}] already exists — skipping")
+            return
         print(
             f"Create and push release tag [{self.release_tag}], commit [{self.commit_sha}]"
         )
@@ -491,6 +495,13 @@ class ReleaseInfo:
         return f"bump_version_{self.version}"
 
     def update_version_and_contributors_list(self, dry_run: bool) -> None:
+        # A superseded (late) recovery must not rewrite the branch version backwards.
+        if self.release_type == "patch" and self.is_late_recovery:
+            print(
+                f"Branch {self.release_branch} already advanced past this release "
+                f"(late recovery) — skipping version bump"
+            )
+            return
         with checkout(self.commit_sha):
             version = CHVersion.get_current_version()
             if self.release_type == "patch":

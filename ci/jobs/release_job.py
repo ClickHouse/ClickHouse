@@ -325,19 +325,10 @@ def main():
         workdir=REPO_PATH,
     )
 
-    # Prepare decides whether this run creates a new release (push tag, bump
-    # version, changelog PR) or only re-publishes artifacts for an existing /
-    # out-of-order ref. The creation steps below run only when it does; a
-    # recovery (skip-repo/skip-docker) or an out-of-order full run skips them
-    # without erroring and just re-exports repos / rebuilds docker.
-    # If a prior step failed (ok is False) the prepared flags are unread; default to recovery so no creation step fires.
-    is_recovery = True
-    is_late_recovery = True
+    # Creation steps below self-skip recoveries, so they run unconditionally; is_recovery is read only under `ok`.
     if ok:
         with open(RELEASE_INFO_FILE) as f:
-            _prepared = json.load(f)
-        is_recovery = _prepared["is_recovery"]
-        is_late_recovery = _prepared["is_late_recovery"]
+            is_recovery = json.load(f)["is_recovery"]
 
     # skip-repo / skip-docker mark a partial run that only re-publishes artifacts
     # for an already-created release (repo/Docker recovery). If the ref resolves
@@ -367,8 +358,8 @@ def main():
     if args.dry_run:
         # No gh reads on dry-run (it may be a local run without gh auth): fall
         # back to the fresh-release signal so the generation is still previewed.
-        release_pr_absent = not is_recovery
-        release_pr_needs_merge = not is_recovery
+        release_pr_absent = ok and not is_recovery
+        release_pr_needs_merge = ok and not is_recovery
     else:
         release_pr_branch = None
         release_pr_state = ""  # "MERGED" | "OPEN" | ""
@@ -405,17 +396,16 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if not is_recovery:
-        step(
-            name="Push Git Tag for the Release",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --push-release-tag"
-                f" {dry_run_flag}".strip()
-            ],
-            workdir=REPO_PATH,
-        )
+    step(
+        name="Push Git Tag for the Release",
+        command=[
+            f"python3 ./ci/jobs/scripts/create_release.py --push-release-tag"
+            f" {dry_run_flag}".strip()
+        ],
+        workdir=REPO_PATH,
+    )
 
-    if args.release_type == "new" and not is_recovery:
+    if ok and args.release_type == "new" and not is_recovery:
         step(
             name="Push New Release Branch",
             command=[
@@ -866,12 +856,9 @@ def main():
     # refusing it or minting a below-tip release. `step` skips it when a prior
     # step already failed, so a failed publish leaves the branch un-bumped and
     # recoverable. ("new" bumps earlier, above, because the merge step below
-    # merges the master bump PR it opens.)
-    # Gated on `not is_late_recovery` so any current-release recovery still
-    # completes the bump — including a skip-repo / skip-docker rerun that finishes
-    # the other publish half — while a superseded (late) recovery never rewrites
-    # the version.
-    if not is_late_recovery and args.release_type == "patch":
+    # merges the master bump PR it opens.) The bump self-skips a superseded (late)
+    # recovery inside create_release, so this runs for every patch release.
+    if args.release_type == "patch":
         step(
             name="Bump CH Version and Update Contributors' List",
             command=[
