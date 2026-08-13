@@ -1,5 +1,5 @@
 {
-  "settings": 1282,
+  "settings": 1283,
   "anchorRoutes": {
     "add_http_cors_header": "/reference/settings/session-settings/other",
     "additional_result_filter": "/reference/settings/session-settings/additional",
@@ -645,7 +645,8 @@
     "low_priority_query_wait_time_ms": "/reference/settings/session-settings/other",
     "make_distributed_plan": "/reference/settings/session-settings/other",
     "materialize_skip_indexes_on_insert": "/reference/settings/session-settings/materialize",
-    "materialize_statistics_on_insert": "/reference/settings/session-settings/materialize",
+    "materialize_statistics_on_insert": "/reference/settings/session-settings/materialize-statistics-on-insert",
+    "materialize_statistics_on_insert_max_table_size": "/reference/settings/session-settings/materialize-statistics-on-insert",
     "materialize_ttl_after_modify": "/reference/settings/session-settings/materialize",
     "materialized_views_ignore_errors": "/reference/settings/session-settings/materialized-views",
     "materialized_views_populate_atomically": "/reference/settings/session-settings/materialized-views",
@@ -1318,6 +1319,11 @@
       "prefix": "short_circuit_function_evaluation",
       "mode": "token",
       "target": "/reference/settings/session-settings/short-circuit-function-evaluation"
+    },
+    {
+      "prefix": "materialize_statistics_on_insert",
+      "mode": "token",
+      "target": "/reference/settings/session-settings/materialize-statistics-on-insert"
     },
     {
       "prefix": "use_index_for_in_with_subqueries",
@@ -2701,6 +2707,7 @@
     "/reference/settings/session-settings/log-query",
     "/reference/settings/session-settings/low-cardinality",
     "/reference/settings/session-settings/materialize",
+    "/reference/settings/session-settings/materialize-statistics-on-insert",
     "/reference/settings/session-settings/materialized-views",
     "/reference/settings/session-settings/max",
     "/reference/settings/session-settings/max-ast",
