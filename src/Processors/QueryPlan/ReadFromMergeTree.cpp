@@ -3718,8 +3718,13 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
     /// Unlike a regular read, a streaming read has no marks by which the number of streams could be
     /// clamped, and every stream creates a separate source here. Reject absurd values of
     /// `max_threads * max_streams_to_max_threads_ratio` (which the planner bounds-checks only for
-    /// representability in `size_t`), mirroring the limit on the number of threads in `MergeTreeReadPool`.
-    static constexpr size_t max_streams_for_streaming_read = 1000000;
+    /// representability in `size_t`).
+    /// The limit is much lower than the one on the number of threads in `MergeTreeReadPool` (a million),
+    /// because a source is far heavier than a thread task: the pipeline costs about 35 KB per stream
+    /// (measured on a sanitizer build), so a million streams would still allocate tens of gigabytes
+    /// before the query could fail. There is no sensible workload with more sources than that: the
+    /// number of useful streams is bounded by the number of cores.
+    static constexpr size_t max_streams_for_streaming_read = 65536;
     if (num_streams > max_streams_for_streaming_read)
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
             "Too many streams for a streaming read: {} (the maximum is {}). "

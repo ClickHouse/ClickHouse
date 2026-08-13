@@ -28,6 +28,13 @@ SELECT n FROM t_stream_num_streams STREAM
 SETTINGS max_threads = 4, max_streams_to_max_threads_ratio = 288230376151711744, max_streams_for_merge_tree_reading = 0
 FORMAT Null; -- { serverError PARAMETER_OUT_OF_BOUND }
 
+-- A number of streams that is merely absurd rather than astronomic is rejected as well:
+-- 4 * 100000 sources cost gigabytes of memory to allocate, and nothing in the streaming path
+-- shrinks them back to the amount of data.
+SELECT n FROM t_stream_num_streams STREAM
+SETTINGS max_threads = 4, max_streams_to_max_threads_ratio = 100000, max_streams_for_merge_tree_reading = 0
+FORMAT Null; -- { serverError PARAMETER_OUT_OF_BOUND }
+
 -- A sane stream count still works.
 SELECT count() FROM (SELECT n FROM t_stream_num_streams STREAM LIMIT 1)
 SETTINGS max_threads = 4, max_streams_to_max_threads_ratio = 2, max_streams_for_merge_tree_reading = 0;
