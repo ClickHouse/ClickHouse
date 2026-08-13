@@ -30,7 +30,7 @@ When `enable_analyzer = 1`, a `PREWHERE` condition in a query with a [`JOIN`](/r
 
 By contrast, a `WHERE` condition logically filters the joined result, although the optimizer may apply it before the join when doing so does not change the result. Using the same condition in `PREWHERE` and `WHERE` can therefore produce different results, particularly with outer joins.
 
-The following inner-join example uses a `PREWHERE` condition that references `table_2`:
+The following example creates two tables to demonstrate this difference:
 
 ```sql
 CREATE TABLE table_1
@@ -51,25 +51,9 @@ ORDER BY id;
 
 INSERT INTO table_1 VALUES (1, 'a'), (2, 'b'), (3, 'c');
 INSERT INTO table_2 VALUES (1, 'x'), (2, 'y'), (3, 'z');
-
-SELECT
-    table_1.id,
-    table_1.value,
-    table_2.value
-FROM table_1
-JOIN table_2 ON table_1.id = table_2.id
-PREWHERE table_2.id >= 2
-ORDER BY table_1.id;
 ```
 
-```text
-   ┌─id─┬─value─┬─table_2.value─┐
-1. │  2 │ b     │ y             │
-2. │  3 │ c     │ z             │
-   └────┴───────┴───────────────┘
-```
-
-With an outer join, moving the condition between `PREWHERE` and `WHERE` can change which rows are returned. Reusing the tables above, `PREWHERE` filters `table_2` before the `LEFT JOIN`, so the row from `table_1` with `id = 1` remains unmatched:
+In the first query, `PREWHERE` filters `table_2` before the `LEFT JOIN`, so the row from `table_1` with `id = 1` remains unmatched:
 
 ```sql
 SELECT
