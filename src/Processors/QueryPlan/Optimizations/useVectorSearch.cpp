@@ -191,7 +191,7 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
             if (data_type_array == nullptr)
                 continue;
             WhichDataType which_data_type_array_nested(data_type_array->getNestedType());
-            /// Wider integers are left out: the distance function rejects them with NO_COMMON_TYPE, so they never get here.
+            /// Wider integers are left out: the distance functions reject them, so they never get here.
             if (!which_data_type_array_nested.isFloat() && !which_data_type_array_nested.isNativeInteger())
                 continue;
 
