@@ -16,9 +16,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e
 
 REPEATS=100000
-# The dotted arm peaks at 1.0002x the control while the matcher is linear in the constant's
-# length and at 2.7x while quadratic, on both debug and sanitizer builds. The control peak also
-# scales with the constant, so the quadratic ratio stays near 2.7x as REPEATS grows.
+# The dotted arm peaks at 1.0001x the control while the matcher is linear in the constant's
+# length and at 2.4x while quadratic, on both debug and sanitizer builds. The control peak also
+# scales with the constant, so the quadratic ratio stays above 2x as REPEATS grows.
 MAX_RATIO_PERCENT=150
 
 LONG_SUFFIX=$(printf 'a%.0s' $(seq 1 170))
@@ -59,7 +59,9 @@ $CLICKHOUSE_CLIENT -nm -q "
 alloc_bytes_for() {
     local table="$1" unit="$2"
     local tag="04780-${CLICKHOUSE_DATABASE}-${table}-${unit}-${RANDOM}"
-    $CLICKHOUSE_CLIENT --max_query_size 1048576 --max_execution_time 300 -nm -q "
+    # The limit is pinned to 0 so that every allocation reaches the query tracker immediately.
+    # Otherwise the peak reflects deferred batches whose flush points depend on concurrent load.
+    $CLICKHOUSE_CLIENT --max_untracked_memory 0 --max_query_size 1048576 --max_execution_time 300 -nm -q "
         SELECT count() FROM (
             EXPLAIN indexes = 1
             SELECT count() FROM ${table} WHERE position(repeat('${unit}', ${REPEATS}), s) = 1
