@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-random-merge-tree-settings, no-random-settings
+# Tags: no-random-merge-tree-settings, no-random-settings, no-shared-merge-tree
 # Because we compare part sizes, and they could be affected by index granularity and index compression settings.
+# no-shared-merge-tree: the wait below drives cleanup with SYSTEM START CLEANUP, and
+# StorageSharedMergeTree does not implement ActionLocks::Cleanup. It removes parts from
+# PartsKillerThread on the server-wide parts_kill_delay_period instead, which a stateless
+# test cannot pin, so the bounded wait would have no bound there.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

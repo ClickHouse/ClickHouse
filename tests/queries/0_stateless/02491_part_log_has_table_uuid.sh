@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database
+# Tags: no-ordinary-database, no-shared-merge-tree
+# no-shared-merge-tree: the wait below drives cleanup with SYSTEM START CLEANUP, and
+# StorageSharedMergeTree does not implement ActionLocks::Cleanup. It removes parts from
+# PartsKillerThread on the server-wide parts_kill_delay_period instead, which a stateless
+# test cannot pin, so the bounded wait would have no bound there.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
