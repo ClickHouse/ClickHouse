@@ -47,6 +47,16 @@ b
 -- a differing overflow mode alone does not block the conversion
 1
 -- a Join engine table keeps its declared strictness check
+-- a key-value right side keeps its point lookups instead of a set over the whole side
+a
+a2
+b
+a
+a2
+b
+0
+-- while an ordinary MergeTree right side still converts
+1
 -- a key with dynamic structure is not converted: the IN function rejects such an argument
 a
 b

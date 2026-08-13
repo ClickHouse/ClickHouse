@@ -171,21 +171,22 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         || settings.network_transfer_limits.hasLimits())
         return 0;
 
-    /// The Join engine validates the query's kind and strictness against its declared ones, and
-    /// replacing the join with IN skips that check. Single-child steps can sit above the source.
-    auto isStorageJoin = [](const QueryPlan::Node * side_node)
+    /// A prepared right side is consumed in place: a Join engine validates the query's kind and
+    /// strictness against its declared ones, and a key-value storage is probed by key. The set
+    /// skips that check and reads the whole side. Single-child steps can sit above the source.
+    auto isPreparedJoinStorage = [](const QueryPlan::Node * side_node)
     {
         for (const auto * node = side_node; node; )
         {
             if (auto * lookup = typeid_cast<JoinStepLogicalLookup *>(node->step.get()))
-                return lookup->getPreparedJoinStorage().storage_join != nullptr;
+                return static_cast<bool>(lookup->getPreparedJoinStorage());
             if (node->children.size() != 1)
                 break;
             node = node->children.front();
         }
         return false;
     };
-    if (isStorageJoin(parent_node->children.back()))
+    if (isPreparedJoinStorage(parent_node->children.back()))
         return 0;
 
     /// Do not support many condition for now.

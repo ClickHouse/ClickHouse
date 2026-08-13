@@ -128,6 +128,34 @@ SETTINGS query_plan_convert_join_to_in = 1; -- { serverError INCOMPATIBLE_TYPE_O
 
 DROP TABLE t_join_any;
 
+SELECT '-- a key-value right side keeps its point lookups instead of a set over the whole side';
+DROP TABLE IF EXISTS t_kv_src;
+DROP DICTIONARY IF EXISTS t_kv;
+CREATE TABLE t_kv_src (id UInt64, rval String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_kv_src VALUES (1, 'x'), (2, 'z');
+CREATE DICTIONARY t_kv (id UInt64, rval String) PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 't_kv_src')) LAYOUT(FLAT()) LIFETIME(0);
+
+SELECT val FROM t_left SEMI LEFT JOIN t_kv ON toUInt64(t_left.id) = t_kv.id
+ORDER BY val SETTINGS query_plan_convert_join_to_in = 0;
+
+SELECT val FROM t_left SEMI LEFT JOIN t_kv ON toUInt64(t_left.id) = t_kv.id
+ORDER BY val SETTINGS query_plan_convert_join_to_in = 1;
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT val FROM t_left SEMI LEFT JOIN t_kv ON toUInt64(t_left.id) = t_kv.id
+    SETTINGS query_plan_convert_join_to_in = 1
+) WHERE explain ILIKE '%CreatingSets%';
+
+DROP DICTIONARY t_kv;
+DROP TABLE t_kv_src;
+
+SELECT '-- while an ordinary MergeTree right side still converts';
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT val FROM t_left SEMI LEFT JOIN t_right ON t_left.id = t_right.id
+    SETTINGS query_plan_convert_join_to_in = 1
+) WHERE explain ILIKE '%CreatingSets%';
+
 SELECT '-- a key with dynamic structure is not converted: the IN function rejects such an argument';
 DROP TABLE IF EXISTS t_dyn_left;
 DROP TABLE IF EXISTS t_dyn_right;
