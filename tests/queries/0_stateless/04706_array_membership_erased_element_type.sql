@@ -612,6 +612,19 @@ SELECT
     sum(has(a, n)) AS matched_rows
 FROM (SELECT n, arrayMap(x -> x::UInt64::Dynamic, range(0, 1000, 4)) AS a FROM t_const_batched);
 
+-- Needles carrying different alternatives per row: a batch of them cannot be compared as a whole, so
+-- each such batch is grouped on its own rather than the whole block being reprocessed. Only the rows
+-- whose needle holds the element's own alternative can match, which is what the two counts separate.
+SELECT
+    sum(has(a, d)) AS matched_rows,
+    sumIf(has(a, d), dynamicType(d) = 'UInt64') AS matched_same_alternative,
+    sumIf(has(a, d), dynamicType(d) = 'String') AS matched_other_alternative
+FROM (
+    SELECT if(n % 2, (n - 1)::String::Dynamic, n::UInt64::Dynamic) AS d,
+           arrayMap(x -> x::UInt64::Dynamic, range(0, 1000, 2)) AS a
+    FROM t_const_batched
+);
+
 DROP TABLE IF EXISTS t_dyn_num;
 DROP TABLE IF EXISTS t_lc_dyn;
 DROP TABLE IF EXISTS t_lc_sparse;

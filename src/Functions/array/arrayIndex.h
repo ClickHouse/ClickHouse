@@ -1282,7 +1282,7 @@ private:
         }
 
         if (col_array_const)
-            if (auto res = executeErasedEqualityConstArray(arguments, *col_array, element_type, needle_type))
+            if (auto res = executeErasedEqualityConstArray(arguments, result_type, *col_array, element_type, needle_type))
                 return res;
 
         auto full_array = arguments[0].column->convertToFullColumnIfConst();
@@ -1298,10 +1298,11 @@ private:
     }
 
     /// Pairs the needles against a constant array in batches, so the temporary stays proportional to a
-    /// batch rather than to the row count. Nothing when a batch declines: its operands are a subset of
-    /// the whole block's, so a block-wide attempt would decline too.
+    /// batch rather than to the row count. A batch whose needles cannot be compared as a whole is
+    /// grouped on its own, keeping that bound for the declining case too.
     ColumnPtr executeErasedEqualityConstArray(
         const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
         const ColumnArray & col_array,
         const DataTypePtr & element_type,
         const DataTypePtr & needle_type) const
@@ -1335,21 +1336,43 @@ private:
             for (size_t row = 0; row < batch_rows; ++row)
                 batch_offsets[row] = (row + 1) * elements_count;
 
-            auto batch_elements = elements->cloneEmpty();
-            batch_elements->reserve(elements_count * batch_rows);
+            auto batch_elements_mutable = elements->cloneEmpty();
+            batch_elements_mutable->reserve(elements_count * batch_rows);
             for (size_t row = 0; row < batch_rows; ++row)
-                batch_elements->insertRangeFrom(*elements, 0, elements_count);
+                batch_elements_mutable->insertRangeFrom(*elements, 0, elements_count);
+            ColumnPtr batch_elements = std::move(batch_elements_mutable);
 
-            auto batch_needles = full_needle->cut(first_row, batch_rows)->replicate(batch_offsets);
+            auto batch_needle = full_needle->cut(first_row, batch_rows);
 
-            auto matches = evaluateElementwiseEquality(
-                {std::move(batch_elements), element_type, "elements"}, {batch_needles, needle_type, "needle"});
-            if (!matches)
-                return nullptr;
+            ColumnPtr batch_result;
+            if (auto matches = evaluateElementwiseEquality(
+                    {batch_elements, element_type, "elements"},
+                    {batch_needle->replicate(batch_offsets), needle_type, "needle"}))
+            {
+                batch_result = foldMatchesPerRow((*matches)->getData(), batch_offsets);
+            }
+            else
+            {
+                auto offsets_column = ColumnArray::ColumnOffsets::create(batch_rows);
+                offsets_column->getData().assign(batch_offsets);
+                auto batch_array = ColumnArray::create(batch_elements, std::move(offsets_column));
 
-            auto batch_result = foldMatchesPerRow((*matches)->getData(), batch_offsets);
+                ColumnsWithTypeAndName batch_arguments = arguments;
+                batch_arguments[0].column = batch_array;
+                batch_arguments[1].column = batch_needle;
+
+                batch_result = executeErasedEqualityPerRowGroup(
+                    batch_arguments, result_type, *batch_array, batch_needle, element_type, needle_type);
+
+                if (!batch_result)
+                    batch_result = executeArrayAfterErasedEquality(batch_arguments, result_type);
+
+                batch_result = batch_result->convertToFullColumnIfConst();
+            }
+
+            const auto & batch_data = assert_cast<const ResultColumnType &>(*batch_result).getData();
             for (size_t row = 0; row < batch_rows; ++row)
-                result_data[first_row + row] = batch_result->getData()[row];
+                result_data[first_row + row] = batch_data[row];
         }
 
         return col_result;
