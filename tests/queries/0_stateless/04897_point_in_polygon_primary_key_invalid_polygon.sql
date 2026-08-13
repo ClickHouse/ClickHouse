@@ -115,15 +115,17 @@ SELECT 'valid ring, lightweight',
 -- A valid ring still builds an atom, so forcing the primary key must not raise.
 SELECT 'valid ring forces key, dense', count() FROM pip_pk
     WHERE pointInPolygon((x, y), [(1., 1.), (1., 5.), (5., 5.), (5., 1.)])
-    SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 0;
+    SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 0,
+        use_query_condition_cache = 0;
 
 SELECT 'valid ring forces key, lightweight', count() FROM pip_pk
     WHERE pointInPolygon((x, y), [(1., 1.), (1., 5.), (5., 5.), (5., 1.)])
-    SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 1;
+    SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 1,
+        use_query_condition_cache = 0;
 
--- Pruning must stay effective, not merely non-zero: this ring selects a quarter of the granules,
--- so a fourfold margin separates it from a regression that scans everything. The seek thresholds
--- are pinned because they merge accepted ranges across gaps and so inflate the count.
+-- Pruning must stay effective, not merely non-zero: this ring selects about 23% of the granules,
+-- the bound admits anything under 25%, and a ring that prunes nothing reads 100%. The seek
+-- thresholds inflate that count by merging ranges across gaps, the condition cache lowers it.
 SELECT 'valid ring prunes, dense',
     toUInt64(extract(explain, 'Granules: ([0-9]+)')) * 4 < toUInt64(extract(explain, 'Granules: [0-9]+/([0-9]+)'))
 FROM
@@ -131,7 +133,8 @@ FROM
     EXPLAIN indexes = 1
     SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(1., 1.), (1., 5.), (5., 5.), (5., 1.)])
     SETTINGS use_lightweight_primary_key_index_analysis = 0,
-        merge_tree_min_rows_for_seek = 0, merge_tree_min_bytes_for_seek = 0
+        merge_tree_min_rows_for_seek = 0, merge_tree_min_bytes_for_seek = 0,
+        use_query_condition_cache = 0
 )
 WHERE explain LIKE '%Granules%';
 
@@ -142,7 +145,8 @@ FROM
     EXPLAIN indexes = 1
     SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(1., 1.), (1., 5.), (5., 5.), (5., 1.)])
     SETTINGS use_lightweight_primary_key_index_analysis = 1,
-        merge_tree_min_rows_for_seek = 0, merge_tree_min_bytes_for_seek = 0
+        merge_tree_min_rows_for_seek = 0, merge_tree_min_bytes_for_seek = 0,
+        use_query_condition_cache = 0
 )
 WHERE explain LIKE '%Granules%';
 
