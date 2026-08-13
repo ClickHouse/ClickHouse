@@ -58,17 +58,21 @@ $CLICKHOUSE_CLIENT -nm -q "
 # EXPLAIN runs index analysis without reading data, so the measurement is the matcher's cost.
 alloc_bytes_for() {
     local table="$1" unit="$2"
-    local query_id="04780-${CLICKHOUSE_DATABASE}-${table}-${unit}-${RANDOM}"
-    $CLICKHOUSE_CLIENT --query_id "$query_id" --max_query_size 1048576 --max_execution_time 300 -q "
+    local tag="04780-${CLICKHOUSE_DATABASE}-${table}-${unit}-${RANDOM}"
+    # The counter records each allocation only while max_untracked_memory is 0; otherwise it records
+    # deferred batches sized by concurrent load. The leading statement shares the server thread, so
+    # its own detach drains the balance deferred before the measured statement's scope existed.
+    $CLICKHOUSE_CLIENT --max_untracked_memory 0 --max_query_size 1048576 --max_execution_time 300 -nm -q "
+        SELECT 1;
         SELECT count() FROM (
             EXPLAIN indexes = 1
             SELECT count() FROM ${table} WHERE position(repeat('${unit}', ${REPEATS}), s) = 1
-        )" >/dev/null
+        ) SETTINGS log_comment = '${tag}'" >/dev/null
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log" >/dev/null
     ALLOC_BYTES=$($CLICKHOUSE_CLIENT -q "
         SELECT ProfileEvents['MemoryAllocatedWithoutCheckBytes']
         FROM system.query_log
-        WHERE current_database = currentDatabase() AND query_id = '${query_id}' AND type = 'QueryFinish'")
+        WHERE current_database = currentDatabase() AND log_comment = '${tag}' AND type = 'QueryFinish'")
     [ -n "$ALLOC_BYTES" ] && [ "$ALLOC_BYTES" -gt 0 ]
 }
 
@@ -93,7 +97,7 @@ $CLICKHOUSE_CLIENT -nm -q "
     SET enable_json_type = 1;
     SELECT count() FROM withjson WHERE position(repeat('a.', 100), s) = 1;
     SELECT trimLeft(explain) FROM (
-        EXPLAIN indexes = 1 SELECT count() FROM withjson WHERE j.absent_path = 'zzz'
+        EXPLAIN indexes = 1, actions = 0 SELECT count() FROM withjson WHERE j.absent_path = 'zzz'
     ) WHERE explain LIKE '%Granules:%';
 "
 
