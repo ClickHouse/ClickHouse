@@ -497,6 +497,11 @@ class Runner:
                 result = Result.from_fs(job.name)
                 if host_metrics:
                     result.add_ext_key_value("metrics", host_metrics)
+                    # Flag over/under-utilized runners, but not for skipped jobs -
+                    # they did no real work, so their metrics are meaningless.
+                    if not result.is_skipped():
+                        for label, hint in HostMetricsCollector.classify(host_metrics):
+                            result.set_label(label, hint=hint)
                 if exit_code != 0:
                     if not result.is_completed():
                         if process.timeout_exceeded:
@@ -519,9 +524,6 @@ class Runner:
             # Idempotent: a no-op if stop() already ran above; guarantees the
             # sampling thread is always joined even if TeePopen raised.
             host_metrics_collector.stop()
-
-        print("INFO: disk status after running a job:")
-        Shell.run("df -h")
 
         return exit_code
 
@@ -622,6 +624,12 @@ class Runner:
                 print(f"Job provides s3 artifacts [{providing_artifacts}]")
                 artifact_links = []
                 s3_path = f"{Settings.S3_ARTIFACT_PATH}/{env.get_s3_prefix()}/{Utils.normalize_string(env.JOB_NAME)}"
+                # Every object uploaded to the artifact bucket must carry a
+                # "retention" tag: S3 lifecycle filters cannot match "objects
+                # without a tag", so untagged objects would be covered by no
+                # rule. Default to short retention; per-artifact tags (e.g.
+                # retention=long) override on the "retention" key.
+                default_tags = {"retention": "default"}
                 for artifact in providing_artifacts:
                     if artifact.compress_zst:
                         if isinstance(artifact.path, (tuple, list)):
@@ -651,11 +659,12 @@ class Runner:
                                     f"Artifact {artifact_path} not found"
                                 )
                             Shell.check(f"ls -l {artifact_path}", verbose=True)
+                            tags = {**default_tags, **(artifact.ext.get("tags") or {})}
                             for file_path in matched:
                                 link = S3.copy_file_to_s3(
                                     s3_path=s3_path,
                                     local_path=file_path,
-                                    tags=artifact.ext.get("tags"),
+                                    tags=tags,
                                 )
                                 result.set_link(link)
                                 artifact_links.append(link)
@@ -674,7 +683,9 @@ class Runner:
                     with open(artifact_report_file, "w", encoding="utf-8") as f:
                         json.dump(artifact_report, f)
                     link = S3.copy_file_to_s3(
-                        s3_path=s3_path, local_path=artifact_report_file
+                        s3_path=s3_path,
+                        local_path=artifact_report_file,
+                        tags=default_tags,
                     )
                     result.set_link(link)
 
@@ -1145,6 +1156,10 @@ class Runner:
                 print("=== Post run script finished ===")
 
             result.dump()
+
+        # After the post hooks, so the numbers describe the disk the next job inherits.
+        print("INFO: disk status after running a job:")
+        Shell.run("df -h")
 
         if not res and not job.force_success:
             sys.exit(1)
