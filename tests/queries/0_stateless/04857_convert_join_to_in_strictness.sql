@@ -137,14 +137,19 @@ CREATE DICTIONARY t_kv (id UInt64, rval String) PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 't_kv_src')) LAYOUT(FLAT()) LIFETIME(0);
 
 SELECT val FROM t_left SEMI LEFT JOIN t_kv ON toUInt64(t_left.id) = t_kv.id
-ORDER BY val SETTINGS query_plan_convert_join_to_in = 0;
+ORDER BY val SETTINGS query_plan_convert_join_to_in = 0, join_algorithm = 'direct,hash';
 
 SELECT val FROM t_left SEMI LEFT JOIN t_kv ON toUInt64(t_left.id) = t_kv.id
-ORDER BY val SETTINGS query_plan_convert_join_to_in = 1;
+ORDER BY val SETTINGS query_plan_convert_join_to_in = 1, join_algorithm = 'direct,hash';
+
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT val FROM t_left SEMI LEFT JOIN t_kv ON toUInt64(t_left.id) = t_kv.id
+    SETTINGS query_plan_convert_join_to_in = 0, join_algorithm = 'direct,hash'
+) WHERE explain ILIKE '%DirectKeyValueJoin%';
 
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1 SELECT val FROM t_left SEMI LEFT JOIN t_kv ON toUInt64(t_left.id) = t_kv.id
-    SETTINGS query_plan_convert_join_to_in = 1
+    SETTINGS query_plan_convert_join_to_in = 1, join_algorithm = 'direct,hash'
 ) WHERE explain ILIKE '%CreatingSets%';
 
 DROP DICTIONARY t_kv;

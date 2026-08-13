@@ -54,6 +54,7 @@ b
 a
 a2
 b
+1
 0
 -- while an ordinary MergeTree right side still converts
 1
