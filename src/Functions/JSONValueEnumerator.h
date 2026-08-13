@@ -130,17 +130,23 @@ void enumerateJSONValues(
             }
         }
 
+        /// Resolve the type name once per value: `IDataType::getName` builds a String.
+        const String * type_name;
+        String decoded_type_name;
         if (cache.hasElement(binary_type_index))
         {
             ++buffer.position();
             const auto & element = cache.getElement(binary_type_index);
             type = element.type;
             serialization = element.serialization;
+            type_name = &element.name;
         }
         else
         {
             type = decodeDataType(buffer);
-            auto [it, inserted] = serializations_cache.try_emplace(type->getName());
+            decoded_type_name = type->getName();
+            type_name = &decoded_type_name;
+            auto [it, inserted] = serializations_cache.try_emplace(decoded_type_name);
             if (inserted)
                 it->second = type->getDefaultSerialization();
             serialization = it->second;
@@ -149,13 +155,13 @@ void enumerateJSONValues(
         if (isNothing(type))
             return;
 
-        auto [column_it, inserted] = shared_columns_cache.try_emplace(type->getName());
+        auto [column_it, inserted] = shared_columns_cache.try_emplace(*type_name);
         if (inserted)
             column_it->second = type->createColumn();
 
         auto & temporary_column = *column_it->second;
         serialization->deserializeBinary(temporary_column, buffer, format_settings);
-        consumer.consumeValue(path, *type, type->getName(), *serialization, temporary_column, 0, true, format_settings);
+        consumer.consumeValue(path, *type, *type_name, *serialization, temporary_column, 0, true, format_settings);
         temporary_column.popBack(1);
     };
 
@@ -185,39 +191,23 @@ void enumerateJSONValues(
             return;
         }
 
-        const IDataType * type;
-        SerializationPtr serialization;
-        if constexpr (path_major)
+        const auto & type_name = dynamic_column.getVariantInfo().variant_names[discriminator];
+        if (entry.cached_discriminator != discriminator)
         {
-            if (entry.cached_discriminator != discriminator)
-            {
-                entry.cached_discriminator = discriminator;
-                entry.cached_dynamic_type
-                    = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariant(discriminator).get();
-                const auto & type_name = dynamic_column.getVariantInfo().variant_names[discriminator];
-                auto [serialization_it, inserted] = serializations_cache.try_emplace(type_name);
-                if (inserted)
-                    serialization_it->second = entry.cached_dynamic_type->getDefaultSerialization();
-                entry.cached_dynamic_serialization = serialization_it->second;
-            }
-            type = entry.cached_dynamic_type;
-            serialization = entry.cached_dynamic_serialization;
-        }
-        else
-        {
-            type = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariant(discriminator).get();
-            const auto & type_name = dynamic_column.getVariantInfo().variant_names[discriminator];
+            entry.cached_discriminator = discriminator;
+            entry.cached_dynamic_type
+                = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariant(discriminator).get();
             auto [serialization_it, inserted] = serializations_cache.try_emplace(type_name);
             if (inserted)
-                serialization_it->second = type->getDefaultSerialization();
-            serialization = serialization_it->second;
+                serialization_it->second = entry.cached_dynamic_type->getDefaultSerialization();
+            entry.cached_dynamic_serialization = serialization_it->second;
         }
-        const auto & type_name = dynamic_column.getVariantInfo().variant_names[discriminator];
+
         consumer.consumeValue(
             entry.path,
-            *type,
+            *entry.cached_dynamic_type,
             type_name,
-            *serialization,
+            *entry.cached_dynamic_serialization,
             variant_column.getVariantByGlobalDiscriminator(discriminator),
             variant_row,
             true,

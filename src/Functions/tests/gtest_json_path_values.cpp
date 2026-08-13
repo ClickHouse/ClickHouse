@@ -54,8 +54,10 @@ GTEST_TEST(JSONPathValues, StableTokenBytes)
     ASSERT_TRUE(complete);
     EXPECT_TRUE(complete->complete);
     EXPECT_EQ(toHex(complete->token), "6100001500000178");
-    EXPECT_EQ(tryGetKind(complete->token), Kind::ScalarComplete);
-    EXPECT_FALSE(tryGetKind(std::string_view{"\x01", 1}));
+    const auto decoded_complete = tryDecodeToken(complete->token);
+    ASSERT_TRUE(decoded_complete);
+    EXPECT_EQ(decoded_complete->kind, Kind::ScalarComplete);
+    EXPECT_FALSE(tryDecodeToken(std::string_view{"\x01", 1}));
 
     const auto truncated = encodeValue("a", string_type, "abcdef", 16, false);
     ASSERT_TRUE(truncated);

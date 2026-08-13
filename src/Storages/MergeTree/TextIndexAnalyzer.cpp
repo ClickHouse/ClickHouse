@@ -197,6 +197,15 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
             for (const auto & prefix : query->getJSONPayload()->validation_pattern_prefixes)
                 queries_by_prefix[prefix].insert(hash);
         }
+
+        if (query->hasPatternLookup())
+        {
+            if (!query->getJSONPayload() || query->getJSONPayload()->pattern_token_prefixes.empty())
+                has_unrestricted_pattern_query = true;
+            else
+                for (const auto & prefix : query->getJSONPayload()->pattern_token_prefixes)
+                    pattern_prefix_ranges.emplace_back(prefix, firstStringThatIsGreaterThanAllStringsWithPrefix(prefix));
+        }
     }
 }
 
@@ -380,23 +389,15 @@ std::vector<size_t> TextIndexAnalyzer::addTokensToPatterns(const ColumnString & 
 
 bool TextIndexAnalyzer::mayMatchPatternsInRange(std::string_view begin, std::optional<std::string_view> end) const
 {
-    for (const auto & [_, query_builder] : query_builders)
+    if (has_unrestricted_pattern_query)
+        return true;
+
+    for (const auto & [prefix, prefix_end] : pattern_prefix_ranges)
     {
-        const auto & query = *query_builder.query;
-        if (!query.hasPatternLookup())
-            continue;
-
-        if (!query.getJSONPayload() || query.getJSONPayload()->pattern_token_prefixes.empty())
+        const bool block_begins_before_prefix_end = prefix_end.empty() || begin < prefix_end;
+        const bool prefix_begins_before_block_end = !end || prefix < *end;
+        if (block_begins_before_prefix_end && prefix_begins_before_block_end)
             return true;
-
-        for (const auto & prefix : query.getJSONPayload()->pattern_token_prefixes)
-        {
-            const String prefix_end = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
-            const bool block_begins_before_prefix_end = prefix_end.empty() || begin < prefix_end;
-            const bool prefix_begins_before_block_end = !end || prefix < *end;
-            if (block_begins_before_prefix_end && prefix_begins_before_block_end)
-                return true;
-        }
     }
 
     return false;

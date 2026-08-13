@@ -60,11 +60,14 @@ private:
 
     /// Returns combined postings per column for the given mark, clipped to `slice_range`
     /// (the actual read window, which may be narrower than the mark on partial-mark reads).
+    /// With `skip_query_postings` (lazy mode) only the effective range and
+    /// dynamic-fallback postings are built; per-query postings stay empty.
     std::vector<PostingList> buildPostingsForMark(
         size_t mark,
         const RowsRange & slice_range,
         PostingList & range_posting,
-        std::vector<PostingList> & dynamic_fallback_postings);
+        std::vector<PostingList> & dynamic_fallback_postings,
+        bool skip_query_postings = false);
     /// Returns combined posting list for a single query by taking the prebuilt
     /// postings from the analyzer and reading large postings blocks as needed.
     PostingList buildPostingsForQuery(const TextSearchQuery & query, const TextIndexAnalyzer & analyzer, const RowsRange & range, PostingList & range_posting);

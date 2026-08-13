@@ -112,6 +112,12 @@ private:
     absl::flat_hash_map<const OptimizedRegularExpression *, QueryHashes> queries_by_pattern;
     /// JSON pattern queries grouped by their dictionary-token prefix.
     absl::flat_hash_map<String, QueryHashes> queries_by_prefix;
+    /// True when some pattern query is not restricted to token prefixes,
+    /// so every dictionary block may contain a matching token.
+    bool has_unrestricted_pattern_query = false;
+    /// Half-open dictionary-token ranges [prefix, prefix_end) of prefix-restricted pattern
+    /// queries, precomputed once because `mayMatchPatternsInRange` runs per dictionary block.
+    std::vector<std::pair<String, String>> pattern_prefix_ranges;
 
     /* Fields updated dynamically during text index analysis. */
 

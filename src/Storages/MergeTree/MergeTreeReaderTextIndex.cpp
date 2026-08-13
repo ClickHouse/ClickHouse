@@ -501,35 +501,17 @@ size_t MergeTreeReaderTextIndex::readRows(
         /// contains no more data rows than actually exist in the part
         size_t rows_to_read = std::min(index_granularity.getMarkRows(from_mark), max_rows_to_read - read_rows);
 
-        /// In lazy mode skip per-mark Roaring Bitmap materialization — cursors decode on demand.
+        /// In lazy mode `buildPostingsForMark` skips per-mark Roaring Bitmap materialization —
+        /// cursors decode on demand; only the effective range and dynamic-fallback postings are built.
         PostingList range_posting;
-        std::vector<PostingList> mark_postings;
         std::vector<PostingList> dynamic_fallback_postings(columns_to_read.size());
 
-        if (!use_lazy_mode)
-            mark_postings = buildPostingsForMark(
-                from_mark,
-                RowsRange(from_row, from_row + rows_to_read - 1),
-                range_posting,
-                dynamic_fallback_postings);
-        else
-        {
-            auto mark_range = getRowsRangeForMark(from_mark);
-            auto effective_range = mark_range ? mark_range->intersectWith(RowsRange(from_row, from_row + rows_to_read - 1)) : std::nullopt;
-            if (effective_range)
-            {
-                range_posting.addRangeClosed(
-                    static_cast<UInt32>(effective_range->begin),
-                    static_cast<UInt32>(effective_range->end));
-                const auto & analyzer = granule->getAnalyzer();
-                for (size_t i = 0; i < columns_to_read.size(); ++i)
-                {
-                    if (use_dynamic_fallback[i])
-                        dynamic_fallback_postings[i] = buildDynamicFallbackPostingsForQuery(
-                            *search_queries[i], analyzer, *effective_range, range_posting);
-                }
-            }
-        }
+        std::vector<PostingList> mark_postings = buildPostingsForMark(
+            from_mark,
+            RowsRange(from_row, from_row + rows_to_read - 1),
+            range_posting,
+            dynamic_fallback_postings,
+            /*skip_query_postings=*/ use_lazy_mode);
 
         bool mark_requires_dynamic_fallback_reader = false;
         for (size_t i = 0; i < dynamic_fallback_postings.size(); ++i)
@@ -695,7 +677,8 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(
     size_t mark,
     const RowsRange & slice_range,
     PostingList & range_posting,
-    std::vector<PostingList> & dynamic_fallback_postings)
+    std::vector<PostingList> & dynamic_fallback_postings,
+    bool skip_query_postings)
 {
     std::vector<PostingList> result(columns_to_read.size());
     dynamic_fallback_postings.resize(columns_to_read.size());
@@ -727,7 +710,8 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(
         if (search_query->getSearchMode() == TextSearchMode::Phrase)
             continue;
 
-        result[i] = buildPostingsForQuery(*search_query, analyzer, *effective_range, range_posting);
+        if (!skip_query_postings)
+            result[i] = buildPostingsForQuery(*search_query, analyzer, *effective_range, range_posting);
         if (use_dynamic_fallback[i])
             dynamic_fallback_postings[i] = buildDynamicFallbackPostingsForQuery(
                 *search_query, analyzer, *effective_range, range_posting);

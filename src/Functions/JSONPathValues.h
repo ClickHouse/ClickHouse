@@ -5,6 +5,7 @@
 #include <base/types.h>
 
 #include <array>
+#include <limits>
 #include <optional>
 
 namespace DB::JSONPathValues
@@ -63,15 +64,28 @@ inline size_t getTruncatedValuePrefixSize(size_t value_capacity)
     return value_capacity >= VALUE_HASH_BYTES ? value_capacity - VALUE_HASH_BYTES : 0;
 }
 
-inline void appendEscapedComponent(String & out, std::string_view value)
+/// Appends the order-preserving escaped component (zero bytes become `00 01`) followed by
+/// the `00 00` terminator. Returns false when the escaped component would not fit into
+/// `max_token_bytes` (each byte is checked with room for its potential escape).
+inline bool appendEscapedComponentBounded(String & out, std::string_view value, size_t max_token_bytes)
 {
     for (const char byte : value)
     {
+        if (out.size() + 2 > max_token_bytes)
+            return false;
         out.push_back(byte);
         if (byte == 0)
             out.push_back(1);
     }
+    if (out.size() + 2 > max_token_bytes)
+        return false;
     out.append("\0\0", 2);
+    return true;
+}
+
+inline void appendEscapedComponent(String & out, std::string_view value)
+{
+    appendEscapedComponentBounded(out, value, std::numeric_limits<size_t>::max());
 }
 
 inline void encodePathTypePrefix(String & result, std::string_view path, std::string_view binary_type)
@@ -181,14 +195,6 @@ inline std::optional<String> tryDecodeComponent(std::string_view encoded)
     return result;
 }
 
-inline std::optional<Kind> tryGetKind(std::string_view token)
-{
-    const auto decoded = tryDecodeToken(token);
-    if (!decoded)
-        return std::nullopt;
-    return decoded->kind;
-}
-
 struct EncodedValue
 {
     String token;
@@ -295,17 +301,8 @@ inline std::optional<EncodedValueInfo> encodeMapEntryTo(
 
     const size_t kind_position = result.size();
     result.push_back(0);
-    for (const char byte : key)
-    {
-        if (result.size() + 2 > max_token_bytes)
-            return std::nullopt;
-        result.push_back(byte);
-        if (byte == 0)
-            result.push_back(1);
-    }
-    if (result.size() + 2 > max_token_bytes)
+    if (!appendEscapedComponentBounded(result, key, max_token_bytes))
         return std::nullopt;
-    result.append("\0\0", 2);
 
     const size_t value_capacity = max_token_bytes - result.size();
     const bool complete = value_is_complete && value.size() <= value_capacity;
@@ -348,17 +345,8 @@ inline std::optional<String> encodeMapEntryPrefix(
     if (result.size() + 1 > max_token_bytes)
         return std::nullopt;
     result.push_back(static_cast<char>(kind));
-    for (const char byte : key)
-    {
-        if (result.size() + 2 > max_token_bytes)
-            return std::nullopt;
-        result.push_back(byte);
-        if (byte == 0)
-            result.push_back(1);
-    }
-    if (result.size() + 2 > max_token_bytes)
+    if (!appendEscapedComponentBounded(result, key, max_token_bytes))
         return std::nullopt;
-    result.append("\0\0", 2);
     return result;
 }
 

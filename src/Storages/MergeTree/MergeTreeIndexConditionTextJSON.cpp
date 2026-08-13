@@ -283,7 +283,9 @@ static bool appendJSONPathValuesDynamicEqualityTokens(
     if (which_literal.isArray())
         return false;
 
-    if (which_literal.isStringOrFixedString())
+    /// Only plain String literals: FixedString values carry zero padding that is not
+    /// part of the exact tokens the index stores.
+    if (which_literal.isString())
     {
         const auto & value = literal.safeGet<String>();
         const auto string_type = std::make_shared<DataTypeString>();
@@ -419,6 +421,12 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
         && !getContext()->getSettingsRef()[Setting::use_text_index_like_evaluation_by_dictionary_scan])
         return false;
 
+    /// FixedString literals carry zero padding that participates in zero-pad-aware string
+    /// comparison but not in the exact tokens the index stores ('a' and toFixedString('a', 3)
+    /// compare equal, but their tokens differ), so the index cannot be used for them.
+    if (value_type && WhichDataType(removeNullable(value_type)).isFixedString())
+        return false;
+
     DataTypePtr declared_type = json_path_values_configuration->json_type->tryGetSubcolumnType(json_info.path);
     if (declared_type)
         declared_type = removeNullableOrLowCardinalityNullable(declared_type);
@@ -449,12 +457,9 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
             payload = JSONTextQueryPayload{
                 .missing_tokens_are_absent = true,
                 .pattern_token_prefixes = {},
-                .pattern_token_excluded_prefixes = {},
                 .match_patterns_by_prefix = false,
                 .validation_tokens = VectorWithMemoryTracking<String>{encoded->token},
-                .validation_pattern_prefixes = {},
-                .pattern_token_kinds = {},
-                .validation_pattern_kinds = {}};
+                .validation_pattern_prefixes = {}};
 
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
@@ -492,12 +497,9 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
             JSONTextQueryPayload{
                 .missing_tokens_are_absent = true,
                 .pattern_token_prefixes = {std::move(*complete_prefix), std::move(*truncated_prefix)},
-                .pattern_token_excluded_prefixes = {},
                 .match_patterns_by_prefix = true,
                 .validation_tokens = {},
-                .validation_pattern_prefixes = {},
-                .pattern_token_kinds = {},
-                .validation_pattern_kinds = {}}));
+                .validation_pattern_prefixes = {}}));
         return true;
     }
 
@@ -665,12 +667,9 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
         JSONTextQueryPayload payload{
             .missing_tokens_are_absent = true,
             .pattern_token_prefixes = {},
-            .pattern_token_excluded_prefixes = {},
             .match_patterns_by_prefix = true,
             .validation_tokens = std::move(validation_tokens),
-            .validation_pattern_prefixes = {},
-            .pattern_token_kinds = {},
-            .validation_pattern_kinds = {}};
+            .validation_pattern_prefixes = {}};
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
             function_name,
@@ -723,12 +722,9 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
                     : std::optional<JSONTextQueryPayload>(JSONTextQueryPayload{
                         .missing_tokens_are_absent = true,
                         .pattern_token_prefixes = {},
-                        .pattern_token_excluded_prefixes = {},
                         .match_patterns_by_prefix = false,
                         .validation_tokens = std::move(validation_tokens),
-                        .validation_pattern_prefixes = {},
-                        .pattern_token_kinds = {},
-                        .validation_pattern_kinds = {}})));
+                        .validation_pattern_prefixes = {}})));
             return true;
         }
     }
@@ -759,12 +755,9 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
             payload = JSONTextQueryPayload{
                 .missing_tokens_are_absent = true,
                 .pattern_token_prefixes = {},
-                .pattern_token_excluded_prefixes = {},
                 .match_patterns_by_prefix = false,
                 .validation_tokens = VectorWithMemoryTracking<String>{encoded->token},
-                .validation_pattern_prefixes = {},
-                .pattern_token_kinds = {},
-                .validation_pattern_kinds = {}};
+                .validation_pattern_prefixes = {}};
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
             function_name,
@@ -804,12 +797,9 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
             JSONTextQueryPayload{
                 .missing_tokens_are_absent = true,
                 .pattern_token_prefixes = {complete_prefix, truncated_prefix},
-                .pattern_token_excluded_prefixes = {},
                 .match_patterns_by_prefix = false,
                 .validation_tokens = {},
-                .validation_pattern_prefixes = {truncated_prefix},
-                .pattern_token_kinds = {},
-                .validation_pattern_kinds = {}}));
+                .validation_pattern_prefixes = {truncated_prefix}}));
         return true;
     };
 
@@ -835,12 +825,9 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
             JSONTextQueryPayload{
                 .missing_tokens_are_absent = true,
                 .pattern_token_prefixes = std::move(token_prefixes),
-                .pattern_token_excluded_prefixes = {},
                 .match_patterns_by_prefix = true,
                 .validation_tokens = {},
-                .validation_pattern_prefixes = {truncated_prefix},
-                .pattern_token_kinds = {},
-                .validation_pattern_kinds = {}}));
+                .validation_pattern_prefixes = {truncated_prefix}}));
         return true;
     };
 
@@ -862,12 +849,9 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
             JSONTextQueryPayload{
                 .missing_tokens_are_absent = true,
                 .pattern_token_prefixes = {complete_prefix, truncated_prefix},
-                .pattern_token_excluded_prefixes = {},
                 .match_patterns_by_prefix = false,
                 .validation_tokens = {},
-                .validation_pattern_prefixes = {truncated_prefix},
-                .pattern_token_kinds = {},
-                .validation_pattern_kinds = {}}));
+                .validation_pattern_prefixes = {truncated_prefix}}));
         return true;
     };
 
@@ -1100,12 +1084,9 @@ bool MergeTreeIndexConditionText::tryPrepareJSONPathValuesSet(
         JSONTextQueryPayload payload{
             .missing_tokens_are_absent = true,
             .pattern_token_prefixes = {},
-            .pattern_token_excluded_prefixes = {},
             .match_patterns_by_prefix = true,
             .validation_tokens = std::move(validation_tokens),
-            .validation_pattern_prefixes = {},
-            .pattern_token_kinds = {},
-            .validation_pattern_kinds = {}};
+            .validation_pattern_prefixes = {}};
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
             function_name,
             TextSearchMode::Any,
@@ -1149,12 +1130,9 @@ bool MergeTreeIndexConditionText::tryPrepareJSONPathValuesSet(
             : std::optional<JSONTextQueryPayload>(JSONTextQueryPayload{
                 .missing_tokens_are_absent = true,
                 .pattern_token_prefixes = {},
-                .pattern_token_excluded_prefixes = {},
                 .match_patterns_by_prefix = false,
                 .validation_tokens = std::move(validation_tokens),
-                .validation_pattern_prefixes = {},
-                .pattern_token_kinds = {},
-                .validation_pattern_kinds = {}})));
+                .validation_pattern_prefixes = {}})));
     return true;
 }
 

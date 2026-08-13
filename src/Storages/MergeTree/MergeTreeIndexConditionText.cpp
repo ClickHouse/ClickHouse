@@ -98,40 +98,22 @@ TextSearchQuery::TextSearchQuery(
     if (json_payload)
     {
         std::ranges::sort(json_payload->pattern_token_prefixes);
-        std::ranges::sort(json_payload->pattern_token_excluded_prefixes);
         std::ranges::sort(json_payload->validation_tokens);
         std::ranges::sort(json_payload->validation_pattern_prefixes);
-        std::ranges::sort(json_payload->pattern_token_kinds);
-        std::ranges::sort(json_payload->validation_pattern_kinds);
     }
     initializeHash();
 }
 
 bool JSONTextQueryPayload::matchesPatternToken(std::string_view token) const
 {
-    if (!pattern_token_prefixes.empty()
-        && !std::ranges::any_of(pattern_token_prefixes, [token](const String & prefix) { return token.starts_with(prefix); }))
-        return false;
-    if (std::ranges::any_of(pattern_token_excluded_prefixes, [token](const String & prefix) { return token.starts_with(prefix); }))
-        return false;
-    if (pattern_token_kinds.empty())
-        return true;
-    const auto kind = JSONPathValues::tryGetKind(token);
-    return kind && std::ranges::binary_search(pattern_token_kinds, *kind);
+    return pattern_token_prefixes.empty()
+        || std::ranges::any_of(pattern_token_prefixes, [token](const String & prefix) { return token.starts_with(prefix); });
 }
 
 bool JSONTextQueryPayload::requiresValidation(std::string_view token) const
 {
-    if (std::ranges::binary_search(validation_tokens, token))
-        return true;
-    if (std::ranges::any_of(pattern_token_excluded_prefixes, [token](const String & prefix) { return token.starts_with(prefix); }))
-        return false;
-    if (!std::ranges::any_of(validation_pattern_prefixes, [token](const String & prefix) { return token.starts_with(prefix); }))
-        return false;
-    if (validation_pattern_kinds.empty())
-        return true;
-    const auto kind = JSONPathValues::tryGetKind(token);
-    return kind && std::ranges::binary_search(validation_pattern_kinds, *kind);
+    return std::ranges::binary_search(validation_tokens, token)
+        || std::ranges::any_of(validation_pattern_prefixes, [token](const String & prefix) { return token.starts_with(prefix); });
 }
 
 void TextSearchQuery::initializeHash()
@@ -197,15 +179,7 @@ void TextSearchQuery::initializeHash()
         };
         hash_strings(json_payload->validation_tokens);
         hash_strings(json_payload->pattern_token_prefixes);
-        hash_strings(json_payload->pattern_token_excluded_prefixes);
         hash_strings(json_payload->validation_pattern_prefixes);
-
-        hash_state.update(json_payload->pattern_token_kinds.size());
-        for (const auto kind : json_payload->pattern_token_kinds)
-            hash_state.update(kind);
-        hash_state.update(json_payload->validation_pattern_kinds.size());
-        for (const auto kind : json_payload->validation_pattern_kinds)
-            hash_state.update(kind);
     }
 
     hash = hash_state.get128();
@@ -535,7 +509,11 @@ bool hasAllTokensOrEmptyInRange(const TextSearchQuery & query, const TextIndexAn
     if (query.getTokens().empty())
         return true;
 
-    return queryMayBeTrueInRange(query, query_builder, current_range, TextSearchMode::All);
+    /// JSON path-values equality may expand into alternative tokens (e.g. "0" and "-0")
+    /// folded in `Any` mode. A partially-read `Any` union is not a superset of the result,
+    /// so evaluating such a query as `All` could prune granules whose matching token
+    /// postings have not been read yet. Use the query's own fold mode.
+    return queryMayBeTrueInRange(query, query_builder, current_range, query.getSearchMode());
 }
 
 bool hasAllTokensInRange(const TextSearchQuery & query, const TextIndexAnalyzer::QueryBuilder & query_builder, const std::optional<RowsRange> & current_range)
@@ -699,6 +677,68 @@ bool MergeTreeIndexConditionText::hasSearchPatterns() const
     return std::ranges::any_of(all_search_queries, [](const auto & query) { return query.second->hasPatternLookup(); });
 }
 
+/// Returns true when the predicate holds (non-NULL and true) for the given constant
+/// arguments. Used to prove that a NULL-replacement fallback cannot add matches.
+static bool constantPredicateMatches(const String & function_name, ColumnsWithTypeAndName arguments, const ContextPtr & context)
+{
+    for (auto & argument : arguments)
+        argument.column = argument.column->cloneResized(1);
+
+    const auto function = FunctionFactory::instance().get(function_name, context)->build(arguments);
+    const auto predicate = function->prepare(arguments)->execute(arguments, function->getResultType(), 1, true);
+    return !predicate->isNullAt(0) && predicate->getBool(0);
+}
+
+/// Peels wrappers the text index can see through off a potentially indexed argument:
+/// `toString` over a string source, and `ifNull`/`coalesce`/`nullIf` whose fallback is a
+/// constant String proven safe by `is_fallback_safe` (i.e. the fallback value cannot
+/// satisfy the predicate, so replacing NULLs cannot add matches). Returns std::nullopt
+/// when an unsafe or non-constant fallback makes the index unusable for this predicate.
+/// Sets `*unwrapped` to true if at least one wrapper was peeled.
+static std::optional<RPNBuilderTreeNode> tryUnwrapIndexArgument(
+    const RPNBuilderTreeNode & node,
+    const std::function<bool(const RPNBuilderTreeNode & fallback, const Field & fallback_value)> & is_fallback_safe,
+    bool * unwrapped = nullptr)
+{
+    std::optional<RPNBuilderTreeNode> argument(node);
+    while (argument->isFunction())
+    {
+        const auto wrapper = argument->toFunctionNode();
+        const auto & wrapper_name = wrapper.getFunctionName();
+
+        if (wrapper_name == "toString" && wrapper.getArgumentsSize() == 1)
+        {
+            const auto source = wrapper.getArgumentAt(0);
+            const auto * source_dag_node = source.getDAGNode();
+            if (!source_dag_node
+                || !WhichDataType(removeNullable(source_dag_node->result_type)).isStringOrFixedString())
+                break;
+            argument.emplace(source);
+            if (unwrapped)
+                *unwrapped = true;
+            continue;
+        }
+
+        if ((wrapper_name != "ifNull" && wrapper_name != "coalesce" && wrapper_name != "nullIf")
+            || wrapper.getArgumentsSize() != 2)
+            break;
+
+        const auto fallback = wrapper.getArgumentAt(1);
+        Field fallback_value;
+        DataTypePtr fallback_type;
+        if (!fallback.tryGetConstant(fallback_value, fallback_type)
+            || fallback_type->getTypeId() != TypeIndex::String
+            || !is_fallback_safe(fallback, fallback_value))
+            return std::nullopt;
+
+        argument.emplace(wrapper.getArgumentAt(0));
+        if (unwrapped)
+            *unwrapped = true;
+    }
+
+    return argument;
+}
+
 bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     {
@@ -748,59 +788,23 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 
         auto traverse_null_replacement = [&](size_t replacement_position)
         {
-            std::optional<RPNBuilderTreeNode> argument(function.getArgumentAt(replacement_position));
             const auto needle = function.getArgumentAt(1 - replacement_position);
             Field needle_value;
             DataTypePtr needle_type;
             if (!needle.tryGetConstant(needle_value, needle_type))
                 return false;
 
-            bool unwrapped = false;
-            while (argument->isFunction())
+            auto is_fallback_safe = [&](const RPNBuilderTreeNode & fallback, const Field &)
             {
-                const auto wrapper = argument->toFunctionNode();
-                const auto & wrapper_name = wrapper.getFunctionName();
-
-                if (wrapper_name == "toString" && wrapper.getArgumentsSize() == 1)
-                {
-                    const auto source = wrapper.getArgumentAt(0);
-                    const auto * source_dag_node = source.getDAGNode();
-                    if (!source_dag_node
-                        || !WhichDataType(removeNullable(source_dag_node->result_type)).isStringOrFixedString())
-                        break;
-                    argument.emplace(source);
-                    unwrapped = true;
-                    continue;
-                }
-
-                if ((wrapper_name != "ifNull" && wrapper_name != "coalesce" && wrapper_name != "nullIf")
-                    || wrapper.getArgumentsSize() != 2)
-                    break;
-
-                const auto fallback = wrapper.getArgumentAt(1);
-                Field fallback_value;
-                DataTypePtr fallback_type;
-                if (!fallback.tryGetConstant(fallback_value, fallback_type)
-                    || fallback_type->getTypeId() != TypeIndex::String)
-                    return false;
-
                 ColumnsWithTypeAndName fallback_arguments(2);
                 fallback_arguments[replacement_position] = fallback.getConstantColumn();
                 fallback_arguments[1 - replacement_position] = needle.getConstantColumn();
-                for (auto & fallback_argument : fallback_arguments)
-                    fallback_argument.column = fallback_argument.column->cloneResized(1);
+                return !constantPredicateMatches(function_name, std::move(fallback_arguments), getContext());
+            };
 
-                const auto fallback_function = FunctionFactory::instance().get(function_name, getContext())->build(fallback_arguments);
-                const auto fallback_predicate = fallback_function->prepare(fallback_arguments)->execute(
-                    fallback_arguments, fallback_function->getResultType(), 1, true);
-                if (!fallback_predicate->isNullAt(0) && fallback_predicate->getBool(0))
-                    return false;
-
-                argument.emplace(wrapper.getArgumentAt(0));
-                unwrapped = true;
-            }
-
-            return unwrapped && traverseFunctionNode(function, *argument, needle_type, needle_value, out);
+            bool unwrapped = false;
+            auto argument = tryUnwrapIndexArgument(function.getArgumentAt(replacement_position), is_fallback_safe, &unwrapped);
+            return argument && unwrapped && traverseFunctionNode(function, *argument, needle_type, needle_value, out);
         };
 
         const bool supports_left_null_replacement = function_name == "equals"
@@ -823,57 +827,19 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
             {
                 const auto * array_type = typeid_cast<const DataTypeArray *>(values_type.get());
                 const auto nested_type = removeNullable(array_type->getNestedType());
-                if (WhichDataType(nested_type).isStringOrFixedString())
+                /// Only Array(String) constants: FixedString elements carry zero padding
+                /// that is not part of the exact tokens the index stores.
+                if (WhichDataType(nested_type).isString())
                 {
-                    std::optional<RPNBuilderTreeNode> index_argument(rhs_argument);
-                    bool safe = true;
-                    while (index_argument->isFunction())
+                    auto is_fallback_safe = [&](const RPNBuilderTreeNode & fallback, const Field &)
                     {
-                        const auto wrapper = index_argument->toFunctionNode();
-                        const auto & wrapper_name = wrapper.getFunctionName();
-                        if (wrapper_name == "toString" && wrapper.getArgumentsSize() == 1)
-                        {
-                            const auto source = wrapper.getArgumentAt(0);
-                            const auto * source_dag_node = source.getDAGNode();
-                            if (!source_dag_node
-                                || !WhichDataType(removeNullable(source_dag_node->result_type)).isStringOrFixedString())
-                                break;
-                            index_argument.emplace(source);
-                            continue;
-                        }
+                        return !constantPredicateMatches(
+                            function_name,
+                            {lhs_argument.getConstantColumn(), fallback.getConstantColumn()},
+                            getContext());
+                    };
 
-                        if ((wrapper_name != "ifNull" && wrapper_name != "coalesce" && wrapper_name != "nullIf")
-                            || wrapper.getArgumentsSize() != 2)
-                            break;
-
-                        const auto fallback = wrapper.getArgumentAt(1);
-                        Field fallback_value;
-                        DataTypePtr fallback_type;
-                        if (!fallback.tryGetConstant(fallback_value, fallback_type)
-                            || fallback_type->getTypeId() != TypeIndex::String)
-                        {
-                            safe = false;
-                            break;
-                        }
-
-                        ColumnsWithTypeAndName fallback_arguments{
-                            lhs_argument.getConstantColumn(),
-                            fallback.getConstantColumn(),
-                        };
-                        for (auto & fallback_argument : fallback_arguments)
-                            fallback_argument.column = fallback_argument.column->cloneResized(1);
-
-                        const auto fallback_function = FunctionFactory::instance().get(function_name, getContext())->build(fallback_arguments);
-                        const auto fallback_predicate = fallback_function->prepare(fallback_arguments)->execute(
-                            fallback_arguments, fallback_function->getResultType(), 1, true);
-                        if (!fallback_predicate->isNullAt(0) && fallback_predicate->getBool(0))
-                        {
-                            safe = false;
-                            break;
-                        }
-
-                        index_argument.emplace(wrapper.getArgumentAt(0));
-                    }
+                    auto index_argument = tryUnwrapIndexArgument(rhs_argument, is_fallback_safe);
 
                     std::vector<String> values;
                     for (const auto & value : values_field.safeGet<Array>())
@@ -886,7 +852,7 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
                         values.emplace_back(value.safeGet<String>());
                     }
 
-                    if (safe
+                    if (index_argument
                         && !values.empty()
                         && tryPrepareJSONPathValuesSet(*index_argument, function_name, values, out))
                     {
@@ -1916,6 +1882,46 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     if (!future_set)
         return false;
 
+    auto node_may_have_index = [&](const RPNBuilderTreeNode & node)
+    {
+        return hasIndexForColumn(node.getColumnName())
+            || hasIndexForMapElementValue(node)
+            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues")
+            || tryMatchJSONPathValuesNode(node).has_value();
+    };
+
+    /// Cheap feasibility check before materializing the set: resolving the indexed argument
+    /// below needs the set contents (the wrapper-unwrapping safety check consults set
+    /// elements), but when no candidate argument is covered by the index at all, bail out
+    /// without forcing the subquery result to be built into an ordered set.
+    if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
+    {
+        const auto function = lhs.toFunctionNode();
+        bool any_may_have_index = false;
+        for (size_t i = 0; i < function.getArgumentsSize() && !any_may_have_index; ++i)
+            any_may_have_index = node_may_have_index(function.getArgumentAt(i));
+
+        if (!any_may_have_index)
+            return false;
+    }
+    else
+    {
+        std::optional<RPNBuilderTreeNode> candidate(lhs);
+        while (!node_may_have_index(*candidate))
+        {
+            if (!candidate->isFunction())
+                return false;
+            const auto wrapper = candidate->toFunctionNode();
+            const auto & wrapper_name = wrapper.getFunctionName();
+            const bool is_transparent_wrapper = (wrapper_name == "toString" && wrapper.getArgumentsSize() == 1)
+                || ((wrapper_name == "ifNull" || wrapper_name == "coalesce" || wrapper_name == "nullIf")
+                    && wrapper.getArgumentsSize() == 2);
+            if (!is_transparent_wrapper)
+                return false;
+            candidate.emplace(wrapper.getArgumentAt(0));
+        }
+    }
+
     auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
@@ -1924,47 +1930,25 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     if (columns.size() == 1 && isTuple(columns.front()->getDataType()))
         columns = typeid_cast<const ColumnTuple &>(*columns.front()).getColumnsCopy();
 
-    std::optional<RPNBuilderTreeNode> normalized_lhs(lhs);
-    if (!(lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
-        && columns.size() == 1
-        && WhichDataType(columns.front()->getDataType()).isStringOrFixedString())
+    auto is_fallback_safe = [&](const RPNBuilderTreeNode &, const Field & fallback_value)
     {
-        while (normalized_lhs->isFunction())
+        const auto & fallback = fallback_value.safeGet<String>();
+        for (size_t row = 0; row < prepared_set->getTotalRowCount(); ++row)
         {
-            const auto wrapper = normalized_lhs->toFunctionNode();
-            const auto & wrapper_name = wrapper.getFunctionName();
-
-            if (wrapper_name == "toString" && wrapper.getArgumentsSize() == 1)
-            {
-                const auto source = wrapper.getArgumentAt(0);
-                const auto * source_dag_node = source.getDAGNode();
-                if (!source_dag_node
-                    || !WhichDataType(removeNullable(source_dag_node->result_type)).isStringOrFixedString())
-                    break;
-                normalized_lhs.emplace(source);
-                continue;
-            }
-
-            if ((wrapper_name != "ifNull" && wrapper_name != "coalesce" && wrapper_name != "nullIf")
-                || wrapper.getArgumentsSize() != 2)
-                break;
-
-            Field fallback_value;
-            DataTypePtr fallback_type;
-            if (!wrapper.getArgumentAt(1).tryGetConstant(fallback_value, fallback_type)
-                || fallback_type->getTypeId() != TypeIndex::String)
+            if (columns.front()->getDataAt(row) == fallback)
                 return false;
-
-            const auto & fallback = fallback_value.safeGet<String>();
-            for (size_t row = 0; row < prepared_set->getTotalRowCount(); ++row)
-            {
-                if (columns.front()->getDataAt(row) == fallback)
-                    return false;
-            }
-
-            normalized_lhs.emplace(wrapper.getArgumentAt(0));
         }
-    }
+        return true;
+    };
+
+    const bool try_unwrap_lhs = !(lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
+        && columns.size() == 1
+        && WhichDataType(columns.front()->getDataType()).isStringOrFixedString();
+
+    const std::optional<RPNBuilderTreeNode> normalized_lhs
+        = try_unwrap_lhs ? tryUnwrapIndexArgument(lhs, is_fallback_safe) : std::optional<RPNBuilderTreeNode>(lhs);
+    if (!normalized_lhs)
+        return false;
 
     std::optional<size_t> set_key_position;
     std::optional<JSONPathValuesNodeInfo> json_index_info;
@@ -2033,6 +2017,20 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     if (json_index_info)
     {
+        /// FixedString set elements carry zero padding that participates in zero-pad-aware
+        /// string comparison but not in the exact tokens a String or Dynamic path stores
+        /// ('a' and toFixedString('a', 3) compare equal, but their tokens differ). Exact-match
+        /// tokens cannot be built from padded values, so do not use the index — unless the
+        /// path itself is declared FixedString, where both sides carry the same padding.
+        if (WhichDataType(set_column->getDataType()).isFixedString())
+        {
+            const auto path_type = json_index_info->source_type
+                ? removeNullableOrLowCardinalityNullable(json_index_info->source_type)
+                : nullptr;
+            if (!path_type || !WhichDataType(path_type).isFixedString())
+                return false;
+        }
+
         std::vector<String> values;
         values.reserve(total_row_count);
         for (size_t row = 0; row < total_row_count; ++row)
