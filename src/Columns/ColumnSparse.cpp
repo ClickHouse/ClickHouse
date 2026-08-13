@@ -62,7 +62,7 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
             "Size of sparse column ({}) should be greater than last position of non-default value ({})",
                 _size, offsets_concrete->getData().back());
 
-#ifndef NDEBUG
+#ifdef DEBUG_OR_SANITIZER_BUILD
     /// Use the `const` overload of `getOffsetsData` (via `std::as_const(*this)`) so the
     /// internal `*offsets` deref goes through `WrappedPtr::operator*` const, avoiding
     /// `assumeMutableRef` and its `chassert(use_count() == 1)`. This constructor is
