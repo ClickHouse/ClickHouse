@@ -4376,8 +4376,12 @@
     "source": "/integrations/data-ingestion/dbms/"
   },
   {
-    "destination": "/integrations/connectors/data-ingestion/odbc-with-clickhouse",
+    "destination": "/reference/engines/table-engines/integrations/odbc",
     "source": "/integrations/data-ingestion/dbms/odbc-with-clickhouse"
+  },
+  {
+    "destination": "/reference/engines/table-engines/integrations/odbc",
+    "source": "/integrations/connectors/data-ingestion/odbc-with-clickhouse"
   },
   {
     "destination": "/integrations/home",
