@@ -8,21 +8,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# AggregatingInOrderTransform::consume() splits one input chunk into runs of equal keys in a loop. Before the
-# fix, cancellation was only checked between work() calls, so a single consume() over a chunk with many distinct
-# keys ran to completion ignoring is_cancelled. A cancelled query (KILL QUERY / max_execution_time) then kept
-# aggregating and the connection thread blocked in PullingAsyncPipelineExecutor::cancel() -> join() waiting for
-# that loop, which the server-side AST fuzzer repeatedly hit as "Hung check failed, possible deadlock found".
-# The loop now checks isCancelled() once per key interval and returns promptly.
+# AggregatingInOrderTransform::consume() splits one input chunk into runs of equal keys, and checks cancellation
+# once per key interval so a cancelled query stops there instead of aggregating the whole chunk.
 #
-# We force ONE long consume() call: all rows in a single part and a single input chunk (large read-block
-# settings, no concurrent-read split) with max_block_size / aggregation_in_order_max_block_bytes large enough
-# that consume() does not return early. A single UInt64 key column keeps the per-key aggregation state tiny
-# (peak query memory well under a GiB), so several copies can run at once without memory pressure. The single
-# part is built by one squashed INSERT (min_insert_block_size_rows covers all rows) so no OPTIMIZE FINAL merge
-# is needed. We KILL the query once every row is read, so it is inside that single consume() loop with all keys
-# still to aggregate. WITH the fix KILL SYNC returns in a fraction of a second; WITHOUT it it blocks for the
-# several seconds the loop needs. We assert the KILL completes quickly.
+# The settings below force ONE long consume() over all rows, so a KILL issued after the read leaves most of the
+# keys unaggregated when the checkpoint works and none of them when it does not.
 
 table="t_agg_in_order_cancel_${CLICKHOUSE_DATABASE}"
 
@@ -31,13 +21,11 @@ $CLICKHOUSE_CLIENT --query "
     CREATE TABLE $table (k UInt64)
     ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192"
 
-# Every row is a distinct group on the sort key, so the key-interval loop runs once per row. One squashed INSERT
-# (min_insert_block_size_rows and max_block_size both >= row count) writes a single part, so the reader delivers
-# a single, non-split stream without needing OPTIMIZE FINAL. A single UInt64 column keeps this cheap and
-# low-memory (peak query memory well under a GiB). 40M rows make the uncancelled consume() loop take several
-# seconds even on a fast release build, so the KILL-timeout assertion below stays directional across build types.
-# max_rows_to_read = 0: the default stateless profile sets max_rows_to_read = 20000000, which numbers()
-# enforces up front, so without this the INSERT throws TOO_MANY_ROWS on numbers(40000000) before it runs.
+# Every row is a distinct group on the sort key, so the key-interval loop runs once per row, and one squashed
+# INSERT writes a single part so the reader delivers one non-split stream. The row count keeps aggregating them far
+# more expensive than reading them, which is what the assertion below compares.
+# max_rows_to_read = 0: the default stateless profile sets max_rows_to_read = 20000000, which numbers() enforces up
+# front, so without this the INSERT throws TOO_MANY_ROWS before it runs.
 $CLICKHOUSE_CLIENT --query "
     INSERT INTO $table
     SELECT number FROM numbers(40000000)
@@ -46,6 +34,15 @@ $CLICKHOUSE_CLIENT --query "
              max_memory_usage = 4000000000, max_rows_to_read = 0"
 
 query_id="04512_agg_in_order_cancel_${CLICKHOUSE_DATABASE}"
+scan_id="04512_agg_in_order_scan_${CLICKHOUSE_DATABASE}_$$"
+
+# Read the same rows once without aggregating, to price the read on this build. The oracle below is a multiple of
+# this, so sanitizer instrumentation, compression and architecture scale the threshold instead of invalidating it.
+$CLICKHOUSE_CLIENT --query_id "$scan_id" --query "
+    SELECT k FROM $table FORMAT Null
+    SETTINGS max_threads = 1, max_block_size = 200000000, preferred_block_size_bytes = '100G',
+             merge_tree_min_rows_for_concurrent_read = 1000000000, max_rows_to_read = 0,
+             enable_parallel_replicas = 0, log_profile_events = 1"
 
 # optimize_aggregation_in_order + one big input chunk (large read block, no concurrent-read split) + large
 # max_block_size / aggregation_in_order_max_block_bytes => one consume() call aggregates all 40M distinct keys.
@@ -65,7 +62,7 @@ $CLICKHOUSE_CLIENT --query_id "$query_id" --query "
              merge_tree_min_rows_for_concurrent_read = 1000000000,
              read_in_order_two_level_merge_threshold = 1, max_memory_usage = 0,
              max_rows_to_read = 0,
-             enable_parallel_replicas = 0" &>/dev/null &
+             enable_parallel_replicas = 0, log_profile_events = 1" &>/dev/null &
 
 wait_for_query_to_start "$query_id"
 
@@ -84,29 +81,48 @@ while [[ $($CLICKHOUSE_CLIENT --query "SELECT read_rows >= 40000000 FROM system.
 done
 
 # KILL SYNC returns one row per matched query with its final kill_status. The outer timeout only keeps the test
-# bounded if the KILL never returns at all; the latency assertion is on the KILL's server-side duration below.
+# bounded if the KILL never returns at all; the assertion on how much aggregation the cancelled query still did is
+# below.
 kill_id="04512_agg_in_order_kill_${CLICKHOUSE_DATABASE}_$$"
 kill_status=$(timeout 120 $CLICKHOUSE_CLIENT --query_id "$kill_id" --query \
     "KILL QUERY WHERE query_id = '$query_id' SYNC" 2>/dev/null | cut -f1)
 
+wait
+
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 
-# Bound the KILL's server-side duration rather than the wall clock of the client invocation, which also covers
-# clickhouse-client startup and connect and so grows with load on the runner. A cancellation observed at the
-# next key interval costs the single 100ms poll sleep in InterpreterKillQueryQuery; one that waits for the
-# aggregation loop costs seconds. Take the latest row for this KILL so that a missing one still fails the
-# assertion (empty -> neither branch) rather than passing as an empty aggregate.
-kill_verdict=$($CLICKHOUSE_CLIENT --query "
-    SELECT if(query_duration_ms < 3000, 'quick', 'slow')
-    FROM system.query_log
-    WHERE event_date >= yesterday() AND type = 'QueryFinish'
-      AND current_database = currentDatabase() AND query_id = '$kill_id'
-    ORDER BY event_time_microseconds DESC LIMIT 1")
+# Returning at the next key interval leaves the rest of the loop unaggregated, while ignoring cancellation charges
+# the whole loop, so CPU time counts the work the checkpoint avoids and no load can inflate it. mapContains keeps a
+# row whose counters were not logged from reading as zero, which would pass; it must be a missing measurement.
+function query_cpu_us()
+{
+    $CLICKHOUSE_CLIENT --query "
+        SELECT if(mapContains(ProfileEvents, 'UserTimeMicroseconds'),
+                  toString(ProfileEvents['UserTimeMicroseconds']), '')
+        FROM system.query_log
+        WHERE event_date >= yesterday() AND type != 'QueryStart'
+          AND current_database = currentDatabase() AND query_id = '$1'
+        ORDER BY event_time_microseconds DESC LIMIT 1"
+}
+
+cancel_cpu_us=$(query_cpu_us "$query_id")
+scan_cpu_us=$(query_cpu_us "$scan_id")
+
+# Measured on this fixture: aggregating up to cancellation costs under 2.4 times the plain read, while running the
+# loop to completion costs about 40 times it, so a multiple of the read separates them on any build.
+kill_verdict=no-measurement
+if [[ -n "$cancel_cpu_us" && -n "$scan_cpu_us" && "$scan_cpu_us" != "0" ]]; then
+    kill_verdict=$($CLICKHOUSE_CLIENT --query "
+        SELECT if($cancel_cpu_us < 8 * $scan_cpu_us, 'quick', 'slow')")
+fi
 
 # "finished" proves the KILL matched and cancelled our still-running query, "quick" that it did not wait for
 # the aggregation loop.
-[[ "$kill_status" == "finished" && "$kill_verdict" == "quick" ]] && echo "cancelled" || echo "not cancelled in time"
-
-wait
+if [[ "$kill_status" == "finished" && "$kill_verdict" == "quick" ]]; then
+    echo "cancelled"
+else
+    echo "not cancelled in time"
+    echo "kill_status=$kill_status kill_verdict=$kill_verdict cancel_cpu_us=$cancel_cpu_us scan_cpu_us=$scan_cpu_us"
+fi
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS $table"
