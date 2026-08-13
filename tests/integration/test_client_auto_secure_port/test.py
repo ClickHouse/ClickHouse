@@ -1,8 +1,9 @@
 """When neither `port` nor `secure`/`no-secure` is specified, clickhouse-client probes both the
-plain (9000) and the secure (9440) native ports concurrently. TLS is preferred: the secure port
-is chosen whenever it is reachable (e.g. servers listening on both ports, or servers whose plain
-port is firewalled, like play.clickhouse.com), and the plain port is used only when the secure
-port does not answer or the connection to it turns out to be unusable."""
+plain (9000) and the secure (9440) native ports concurrently and uses the one that answers first.
+A server that listens on both ports is reachable either way, so either port will do; what matters
+is that a server that answers on one port only is connected to without waiting out the connection
+timeout of the other one (e.g. play.clickhouse.com, whose plain port is firewalled), and that TLS
+chosen this way is not turned into a failure when the secure port turns out to be unusable."""
 
 import ipaddress
 import threading
@@ -172,8 +173,10 @@ def query_is_secure(server, *args, from_node=None):
     )
 
 
-def test_secure_port_preferred_when_both_listen():
-    assert query_is_secure(node_both_ports) == 1
+def test_either_port_when_both_listen():
+    # Both ports answer, so whichever of them the probe sees first is used: both work, and waiting to
+    # find out whether the other one answers too would only delay the connection.
+    assert query_is_secure(node_both_ports) in (0, 1)
 
 
 def test_plain_port_chosen_when_only_plain_listens():
@@ -207,10 +210,10 @@ def test_secure_port_chosen_when_plain_dropped():
 
 
 def test_secure_port_chosen_when_plain_serves_tls():
-    # A proxy in front of the server accepts TCP on the plain port but only speaks TLS there.
-    # Both probes see their TCP connection accepted, so the preferred secure port is chosen and
-    # the connection is established over TLS directly, without ever speaking the native protocol
-    # to the TLS listener behind the plain port.
+    # A proxy in front of the server accepts TCP on the plain port but only speaks TLS there. Both
+    # probes see their TCP connection accepted, so either port may be chosen, and the connection ends
+    # up over TLS either way: directly when the secure port answered first, and after the native
+    # protocol fails against the TLS listener when it was the plain port.
     redirect_plain_port_to_secure(add=True)
     try:
         assert query_is_secure(node_both_ports) == 1
@@ -251,8 +254,9 @@ def test_an_unresponsive_server_is_not_waited_for_twice():
     # failure, which is what the automatic choice is supposed to avoid in the first place. The
     # secure port refuses connections outright here, so the probe chooses the plain port with the
     # secure port as the protocol-level fallback candidate; the timeout on the plain port must not
-    # trigger that fallback. The timeouts are lowered through a client configuration file, because
-    # the connection timeouts are read from the configuration and not from the settings.
+    # trigger that fallback (only a protocol-level failure does). The timeouts are lowered through a
+    # client configuration file, because the connection timeouts are read from the configuration and
+    # not from the settings.
     node_plain_only.exec_in_container(
         [
             "bash",
@@ -599,10 +603,11 @@ def test_the_remembered_address_is_refreshed_when_the_connection_falls_through()
 def test_an_untrusted_certificate_falls_back_to_the_plain_port():
     # The certificate of `node_both_ports` is self-signed, so a client that does not pass
     # `--accept-invalid-certificate` (as every other test here does) rejects it. TLS was not asked for,
-    # it was chosen automatically, so this must not be an error: the client falls back to the plain
-    # port, which is what it would have connected to if there were no automatic choice at all.
-    # Self-signed certificates on the secure port of a server that also serves the plain port are
-    # common, and such deployments have to keep working.
+    # it was chosen automatically whenever the secure port answered the probe first, so this must not be
+    # an error: the client falls back to the plain port, which is what it would have connected to if
+    # there were no automatic choice at all. Self-signed certificates on the secure port of a server
+    # that also serves the plain port are common, and such deployments have to keep working - so the
+    # connection ends up on the plain port either way, whichever port answered first.
     query_id = str(uuid.uuid4())
     result = node_plain_only.exec_in_container(
         [
@@ -628,49 +633,6 @@ def test_an_untrusted_certificate_falls_back_to_the_plain_port():
     )
 
 
-def test_an_unresponsive_secure_port_falls_back_to_the_plain_port():
-    # The secure port accepts the connection and then never answers, while the plain port is healthy.
-    # TLS is preferred, so the secure port is chosen and its handshake waits out the handshake timeout
-    # - and then the client has to fall back to the plain port, which answered the probe, instead of
-    # reporting the timeout. The fallback opens a connection of its own rather than reusing the one the
-    # probe left on the plain port: by now that one has been idle for the whole handshake timeout, and
-    # the server drops a connection that has not finished its handshake within
-    # `handshake_timeout_milliseconds`.
-    node_plain_only.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "printf '<clickhouse><handshake_timeout_ms>3000</handshake_timeout_ms></clickhouse>'"
-            " > /tmp/short_handshake.xml",
-        ],
-    )
-    swallow_established_packets(9440, add=True)
-    try:
-        query_id = str(uuid.uuid4())
-        output = node_plain_only.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"clickhouse client --host {node_both_ports.name} --accept-invalid-certificate"
-                f" --config-file /tmp/short_handshake.xml --query_id {query_id}"
-                " --query 'SELECT 1' 2>&1 || true",
-            ]
-        )
-        assert output.strip().endswith("1"), output
-        node_both_ports.query("SYSTEM FLUSH LOGS query_log")
-        assert (
-            int(
-                node_both_ports.query(
-                    f"SELECT is_secure FROM system.query_log WHERE query_id = '{query_id}'"
-                    " AND type = 'QueryFinish' LIMIT 1"
-                )
-            )
-            == 0
-        )
-    finally:
-        swallow_established_packets(9440, add=False)
-
-
 def test_the_fallback_keeps_the_address_the_probe_reached():
     # The fallback from an unusable secure port must not start over from the first address the host
     # resolves to: the probe already found which address answers, and walking the resolved addresses
@@ -678,8 +640,10 @@ def test_the_fallback_keeps_the_address_the_probe_reached():
     # delay the probing exists to avoid.
     #
     # `multiaddress` resolves to a black hole first and to the dual-port server second, the connect
-    # timeout is raised to 60 seconds, and the certificate is not accepted, so the client must choose
-    # TLS, have it rejected, and then reach the plain port of the address it already probed.
+    # timeout is raised to 60 seconds, and the certificate is not accepted, so when the secure port is
+    # the one that answered first, the client has TLS rejected and has to reach the plain port of the
+    # address it already probed. (When the plain port answered first, the query simply runs on it: the
+    # elapsed time then proves the same property for the address that answered.)
     client, blackhole = probe_client_and_blackhole()
     blackhole_address(client, blackhole, add=True)
     client.exec_in_container(

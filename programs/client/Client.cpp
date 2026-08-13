@@ -586,10 +586,10 @@ void Client::connect()
             /// Candidate endpoints for the connection, in the order of preference. Normally there is a
             /// single candidate, resolved by `ConnectionParameters`. But when neither the port nor the TLS
             /// mode is specified explicitly, both the plain and the secure default ports are probed
-            /// concurrently, and TLS is preferred: it is enabled automatically whenever the secure port
-            /// answers. The probing is concurrent because waiting for a connection attempt to time out
-            /// first would take too long (for example, play.clickhouse.com serves TLS on 9440 while the
-            /// plain port is silently firewalled).
+            /// concurrently, and the one that answers first is used, with TLS enabled automatically when
+            /// it is the secure one. The probing is concurrent because waiting for a connection attempt to
+            /// time out first would take too long (for example, play.clickhouse.com serves TLS on 9440
+            /// while the plain port is silently firewalled).
             struct Candidate
             {
                 UInt16 port;
@@ -599,10 +599,6 @@ void Client::connect()
                 /// addresses, and the connection has to start with the right one, or it pays a whole
                 /// connection timeout for every unresponsive address in front of the working one.
                 std::optional<Poco::Net::SocketAddress> address;
-
-                /// Whether the probe established a connection to `address` on this port, as opposed to
-                /// `address` being the best guess for where this port of the same backend is.
-                bool answered = false;
 
                 /// The connection the probe has established, if it is this candidate that the probe chose.
                 /// It is taken over by the `Connection` instead of opening a second one, so that the
@@ -636,12 +632,6 @@ void Client::connect()
                 const auto plain_port = connection_parameters.port;
                 const auto secure_port = static_cast<UInt16>(config().getInt("tcp_port_secure", DBMS_DEFAULT_SECURE_PORT));
 
-                /// TLS is preferred: the secure port wins whenever it answers, even if the plain port
-                /// answered first. The plain port is chosen only when the secure port does not answer
-                /// within this much after it, so that plain-only servers (the most common setup) are
-                /// not stalled for the whole connection timeout of the unreachable secure port.
-                static const Poco::Timespan secure_preference_window(0, 100000);
-
                 /// The addresses of a port are attempted one at a time, this much apart, so that a host
                 /// that resolves to several reachable backends is not connected to on all of them at once
                 /// (see `probePlainAndSecurePorts`). This is the default of RFC 8305 (Happy Eyeballs).
@@ -656,7 +646,6 @@ void Client::connect()
                         plain_port,
                         secure_port,
                         connection_parameters.timeouts.connection_timeout,
-                        secure_preference_window,
                         address_attempt_delay);
                 }
                 catch (...)
@@ -669,48 +658,38 @@ void Client::connect()
                     throw;
                 }
 
-                if (probe.secure)
+                if (probe.endpoint)
                 {
+                    const bool secure = probe.endpoint->secure;
                     candidates.push_back(
-                        {secure_port, Protocol::Secure::Enable, probe.secure->address, true, probe.secure->socket});
+                        {secure ? secure_port : plain_port,
+                         secure ? Protocol::Secure::Enable : Protocol::Secure::Disable,
+                         probe.endpoint->address,
+                         probe.endpoint->socket});
 
-                    /// TLS was not requested, it was chosen automatically, so a secure port that turns out
-                    /// to be unusable must not make the client fail: the plain port is what it would have
-                    /// connected to if there were no automatic choice at all, so falling back to it takes
-                    /// nothing away from the user. The common case is a server whose secure port has a
-                    /// self-signed or otherwise untrusted certificate, which every client that does not
-                    /// pass `--accept-invalid-certificate` rejects.
+                    /// The port that answered the probe is not necessarily the port that works: the
+                    /// connection to it can still fail at the native protocol level, e.g. when a proxy in
+                    /// front of the server accepts TCP on the plain port but serves only TLS there, or when
+                    /// the certificate of the automatically chosen secure port is not trusted. The other
+                    /// port is then worth a try before giving up.
                     ///
-                    /// The fallback starts from the address the probe reached, and, when the plain port did
-                    /// not answer the probe (it may still have been pending when the secure port won), from
-                    /// the plain port of the address whose secure port did: the same backend is the best
-                    /// guess, and it keeps the fallback from walking the resolved addresses again and
-                    /// paying a whole connection timeout for every unresponsive one in front of it.
-                    if (probe.plain)
-                        candidates.push_back({plain_port, Protocol::Secure::Disable, probe.plain->address, true, {}});
-                    else
-                        candidates.push_back(
-                            {plain_port,
-                             Protocol::Secure::Disable,
-                             Poco::Net::SocketAddress(probe.secure->address.host(), plain_port),
-                             false,
-                             {}});
-                }
-                else if (probe.plain)
-                {
+                    /// It matters the most for the secure port: TLS was not requested, it was chosen
+                    /// automatically, so a secure port that turns out to be unusable must not make the
+                    /// client fail. The plain port is what it would have connected to if there were no
+                    /// automatic choice at all, so falling back to it takes nothing away from the user. The
+                    /// common case is a server whose secure port has a self-signed or otherwise untrusted
+                    /// certificate, which every client that does not pass `--accept-invalid-certificate`
+                    /// rejects.
+                    ///
+                    /// The fallback starts from the other port of the address that answered, because the
+                    /// same backend is the best guess for where that port is; it keeps the fallback from
+                    /// walking the resolved addresses again and paying a whole connection timeout for every
+                    /// unresponsive one in front of it.
+                    const UInt16 other_port = secure ? plain_port : secure_port;
                     candidates.push_back(
-                        {plain_port, Protocol::Secure::Disable, probe.plain->address, true, probe.plain->socket});
-
-                    /// The plain port answered the probe, but the connection to it can still fail at the
-                    /// native protocol level, e.g. when a proxy in front of the server accepts TCP there
-                    /// but serves only TLS. The secure port is then worth a try; start it from the secure
-                    /// port of the address that answered on the plain port, because the same backend is
-                    /// the best guess for where its secure port is.
-                    candidates.push_back(
-                        {secure_port,
-                         Protocol::Secure::Enable,
-                         Poco::Net::SocketAddress(probe.plain->address.host(), secure_port),
-                         false,
+                        {other_port,
+                         secure ? Protocol::Secure::Disable : Protocol::Secure::Enable,
+                         Poco::Net::SocketAddress(probe.endpoint->address.host(), other_port),
                          {}});
                 }
                 else
@@ -732,7 +711,6 @@ void Client::connect()
                     {connection_parameters.port,
                      connection_parameters.security,
                      hosts_and_ports[attempted_address_index].address,
-                     hosts_and_ports[attempted_address_index].address.has_value(),
                      {}});
             }
 
@@ -808,21 +786,14 @@ void Client::connect()
                     /// does not answer belongs to a server that is unresponsive rather than to a listener of
                     /// the wrong protocol, and the other port of the same server is not going to answer
                     /// either. Retrying it would double the time the client waits before it reports the
-                    /// failure, which is exactly the delay this feature is supposed to avoid. The exception
-                    /// is a fallback to a port that answered the probe: connecting to it cannot hang, so
-                    /// nothing is doubled, and it makes an automatically chosen secure port that accepts
-                    /// connections and then never answers fall back to the plain port that does answer,
-                    /// instead of failing outright.
+                    /// failure, which is exactly the delay this feature is supposed to avoid.
                     const bool is_connection_error = e.code() == ErrorCodes::NETWORK_ERROR
                         || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
                         || e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER
                         || e.code() == ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER;
                     const bool is_transport_error = is_connection_error || e.code() == ErrorCodes::SOCKET_TIMEOUT;
 
-                    const bool next_answered_the_probe
-                        = candidate_index + 1 < candidates.size() && candidates[candidate_index + 1].answered;
-
-                    if (candidate_index + 1 < candidates.size() && (is_connection_error || (is_transport_error && next_answered_the_probe)))
+                    if (candidate_index + 1 < candidates.size() && is_connection_error)
                     {
                         first_error = std::current_exception();
                         first_error_index = candidate_index;

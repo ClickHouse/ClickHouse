@@ -34,7 +34,8 @@ export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="$(command -v clickhouse)"}
 [ -x "$CLICKHOUSE_BINARY" ] && CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:=$CLICKHOUSE_BINARY client}
 export CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:=$CLICKHOUSE_BINARY-client}
 # Say which protocol this run uses instead of letting the client choose: given neither a port nor a TLS
-# mode it probes both the plain and the secure port and prefers TLS, and the test server listens on both.
+# mode it probes both the plain and the secure port and uses whichever answers first, and the test server
+# listens on both.
 # A secure run already carries `--secure`, which wins over this anyway. Spelled as an `if` rather than
 # with `&&`, so that a secure run does not leave a non-zero status behind for a caller using `set -e`.
 if [[ " ${CLICKHOUSE_CLIENT_OPT:-} " != *" --secure "* ]]; then

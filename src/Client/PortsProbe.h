@@ -13,9 +13,12 @@ namespace DB
 /// Result of concurrently probing TCP connectivity to the plain and the secure native protocol ports.
 struct PortsProbeResult
 {
-    /// A port that accepted a connection, together with that connection.
+    /// The port that answered, together with the connection to it.
     struct Endpoint
     {
+        /// Whether it is the secure port that answered, i.e. whether TLS is to be used.
+        bool secure = false;
+
         /// The address that answered. The host can resolve to several addresses, and only some of them
         /// may be reachable, so the caller has to connect to this one instead of starting over from the
         /// first resolved address: otherwise the connection waits out the timeout of every address that
@@ -31,13 +34,8 @@ struct PortsProbeResult
         Poco::Net::StreamSocket socket;
     };
 
-    /// The endpoints that answered, if any.
-    ///
-    /// `secure` is set when the secure port answered within the preference window, i.e. when TLS is to
-    /// be used. `plain` may be set alongside it, and then its connection is ready to be used if the
-    /// secure connection turns out to be unusable after all (an untrusted certificate, for example).
-    std::optional<Endpoint> plain;
-    std::optional<Endpoint> secure;
+    /// The endpoint that answered, if any.
+    std::optional<Endpoint> endpoint;
 
     /// A description of the per-address failures, when neither port answered.
     String failure_reason;
@@ -50,15 +48,13 @@ struct PortsProbeResult
 /// address of the host) to choose the protocol automatically when neither `port` nor `secure`/`no-secure`
 /// is specified explicitly.
 ///
-/// TLS is preferred: the secure port is chosen as soon as it becomes reachable. The plain port is chosen
-/// only when the secure port is unreachable — refused, unroutable, or not answering within
-/// `secure_preference_window` after the plain port (the window gives the secure port a head start over
-/// a plain port that merely answered faster, without stalling plain-only servers, which is the most
-/// common setup).
+/// The port that answers first is the one to use: when both are reachable, either of them will do, so there
+/// is nothing to be gained by waiting for the other one. TLS wins when both answer at the same time, which
+/// costs no waiting.
 ///
-/// Only raw TCP reachability is checked, bounded by `timeout` in total. The connection to the chosen
-/// endpoint is returned to the caller, which completes the handshake on it; the connections to the
-/// endpoints that lost the race are closed.
+/// Only raw TCP reachability is checked, bounded by `timeout` in total. The connection to the port that
+/// answered is returned to the caller, which completes the handshake on it; the connections to the endpoints
+/// that lost the race are closed.
 ///
 /// The two ports are always probed concurrently, but the addresses of a port are attempted one at a time,
 /// the next one only after `attempt_delay` without an answer (or immediately, when the previous attempt
@@ -71,7 +67,6 @@ PortsProbeResult probePlainAndSecurePorts(
     UInt16 plain_port,
     UInt16 secure_port,
     Poco::Timespan timeout,
-    Poco::Timespan secure_preference_window,
     Poco::Timespan attempt_delay);
 
 }

@@ -16,7 +16,6 @@ namespace
 /// The probes run against loopback listeners, so generous timeouts never actually elapse
 /// on the success paths; they only bound the failure paths.
 const Poco::Timespan probe_timeout(2, 0);
-const Poco::Timespan preference_window(0, 100000);
 const Poco::Timespan attempt_delay(0, 250000);
 
 Poco::Net::ServerSocket listenOnLoopback()
@@ -35,47 +34,43 @@ UInt16 closedPort()
 
 PortsProbeResult probe(UInt16 plain_port, UInt16 secure_port, const String & host = "127.0.0.1")
 {
-    return probePlainAndSecurePorts(host, "", plain_port, secure_port, probe_timeout, preference_window, attempt_delay);
+    return probePlainAndSecurePorts(host, "", plain_port, secure_port, probe_timeout, attempt_delay);
 }
 
 }
 
-/// TLS is preferred: a server listening on both ports is connected over the secure port.
-TEST(PortsProbe, PreferSecureWhenBothListen)
+/// A server listening on both ports is connected to over either of them - both work, so the probe
+/// does not wait to find out whether the other one answers too.
+TEST(PortsProbe, EitherPortWhenBothListen)
 {
     auto plain = listenOnLoopback();
     auto secure = listenOnLoopback();
     auto result = probe(plain.address().port(), secure.address().port());
-    ASSERT_TRUE(result.secure.has_value());
+    ASSERT_TRUE(result.endpoint.has_value());
     /// The address that answered is reported, so that the connection does not start over from the
     /// first resolved address of the host.
-    EXPECT_EQ(result.secure->address.toString(), secure.address().toString());
-    /// TLS is only preferred, not required: it was not asked for, so the plain port that answered too
-    /// is reported as well, ready to be used if the secure connection turns out to be unusable.
-    ASSERT_TRUE(result.plain.has_value());
-    EXPECT_EQ(result.plain->address.toString(), plain.address().toString());
+    const auto & answered = result.endpoint->secure ? secure : plain;
+    EXPECT_EQ(result.endpoint->address.toString(), answered.address().toString());
 }
 
-/// A plain-only server (the most common setup) is chosen when the secure port refuses,
-/// without waiting for the preference window to elapse.
+/// A plain-only server (the most common setup) is chosen when the secure port refuses.
 TEST(PortsProbe, PlainOnlyWhenSecureRefused)
 {
     auto plain = listenOnLoopback();
     auto result = probe(plain.address().port(), closedPort());
-    EXPECT_FALSE(result.secure.has_value());
-    ASSERT_TRUE(result.plain.has_value());
-    EXPECT_EQ(result.plain->address.toString(), plain.address().toString());
+    ASSERT_TRUE(result.endpoint.has_value());
+    EXPECT_FALSE(result.endpoint->secure);
+    EXPECT_EQ(result.endpoint->address.toString(), plain.address().toString());
 }
 
 /// When only the secure port answers (e.g. the plain port is closed or firewalled), TLS is chosen.
-TEST(PortsProbe, PreferSecureWhenPlainRefused)
+TEST(PortsProbe, SecureWhenPlainRefused)
 {
     auto secure = listenOnLoopback();
     auto result = probe(closedPort(), secure.address().port());
-    ASSERT_TRUE(result.secure.has_value());
-    EXPECT_EQ(result.secure->address.toString(), secure.address().toString());
-    /// The plain port refused, so there is nothing to fall back to.
-    EXPECT_FALSE(result.plain.has_value());
+    ASSERT_TRUE(result.endpoint.has_value());
+    EXPECT_TRUE(result.endpoint->secure);
+    EXPECT_EQ(result.endpoint->address.toString(), secure.address().toString());
 }
 
 /// A host can resolve to several addresses (`localhost` usually resolves to both `127.0.0.1` and `::1`),
@@ -84,9 +79,9 @@ TEST(PortsProbe, ReportsTheAddressThatAnswered)
 {
     auto plain = listenOnLoopback();
     auto result = probe(plain.address().port(), closedPort(), "localhost");
-    EXPECT_FALSE(result.secure.has_value());
-    ASSERT_TRUE(result.plain.has_value());
-    EXPECT_EQ(result.plain->address.toString(), plain.address().toString());
+    ASSERT_TRUE(result.endpoint.has_value());
+    EXPECT_FALSE(result.endpoint->secure);
+    EXPECT_EQ(result.endpoint->address.toString(), plain.address().toString());
 }
 
 /// The connection the probe established is handed over to the caller, so that the real connection reuses
@@ -95,17 +90,17 @@ TEST(PortsProbe, HandsOverTheEstablishedConnection)
 {
     auto plain = listenOnLoopback();
     auto result = probe(plain.address().port(), closedPort());
-    ASSERT_TRUE(result.plain.has_value());
+    ASSERT_TRUE(result.endpoint.has_value());
 
     auto accepted = plain.acceptConnection();
     /// Both ends of the same connection: what the probe connected with is what the server accepted.
-    EXPECT_EQ(result.plain->socket.peerAddress().toString(), accepted.address().toString());
-    EXPECT_EQ(result.plain->socket.address().toString(), accepted.peerAddress().toString());
+    EXPECT_EQ(result.endpoint->socket.peerAddress().toString(), accepted.address().toString());
+    EXPECT_EQ(result.endpoint->socket.address().toString(), accepted.peerAddress().toString());
 
     /// And it is a working connection, not a closed one.
-    result.plain->socket.setBlocking(true);
+    result.endpoint->socket.setBlocking(true);
     const char message[] = "probe";
-    ASSERT_EQ(result.plain->socket.sendBytes(message, sizeof(message)), static_cast<int>(sizeof(message)));
+    ASSERT_EQ(result.endpoint->socket.sendBytes(message, sizeof(message)), static_cast<int>(sizeof(message)));
     char received[sizeof(message)] = {};
     ASSERT_EQ(accepted.receiveBytes(received, sizeof(received)), static_cast<int>(sizeof(message)));
     EXPECT_STREQ(received, message);
@@ -137,13 +132,13 @@ TEST(PortsProbe, AttemptsOneAddressAtATime)
         GTEST_SKIP() << "Cannot listen on the same port in both address families";
 
     const UInt16 port = v4->address().port();
-    auto result = probePlainAndSecurePorts("localhost", "", port, closedPort(), probe_timeout, preference_window, attempt_delay);
-    ASSERT_TRUE(result.plain.has_value());
+    auto result = probePlainAndSecurePorts("localhost", "", port, closedPort(), probe_timeout, attempt_delay);
+    ASSERT_TRUE(result.endpoint.has_value());
 
     /// Exactly one of the two listeners has a connection queued: `poll` on a server socket reports
     /// readability precisely when there is one to accept. Which of them it is depends on the order the
     /// resolver returns, so it is read from the result rather than assumed.
-    const bool answered_over_v4 = result.plain->address.family() == Poco::Net::AddressFamily::IPv4;
+    const bool answered_over_v4 = result.endpoint->address.family() == Poco::Net::AddressFamily::IPv4;
     auto & chosen = answered_over_v4 ? *v4 : *v6;
     auto & other = answered_over_v4 ? *v6 : *v4;
     EXPECT_TRUE(chosen.poll(Poco::Timespan(0, 0), Poco::Net::Socket::SELECT_READ));
@@ -154,8 +149,7 @@ TEST(PortsProbe, AttemptsOneAddressAtATime)
 TEST(PortsProbe, NeitherWhenBothRefused)
 {
     auto result = probe(closedPort(), closedPort());
-    EXPECT_FALSE(result.plain.has_value());
-    EXPECT_FALSE(result.secure.has_value());
+    EXPECT_FALSE(result.endpoint.has_value());
     EXPECT_FALSE(result.timed_out);
     EXPECT_TRUE(result.failure_reason.contains("127.0.0.1"));
 }
