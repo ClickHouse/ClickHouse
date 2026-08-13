@@ -26,8 +26,17 @@ ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
     SETTINGS max_block_size=10000000, max_threads=1, max_rows_to_read=0
 " >"$output_file" 2>&1 &
 
-# Wait for the failpoint to be hit (query is now blocked in doTransform after expression execution)
-${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT filter_transform_pause PAUSE"
+# Wait for the failpoint to be hit (query is now blocked in doTransform after expression execution).
+# The wait has no built-in timeout, so bound it: if the query never reaches the failpoint
+# (a plan-shape or control-flow regression), fail explicitly instead of hanging the whole check.
+# Kill the stuck query (async — a SYNC kill of a query that never reached the pause site could
+# hang again) and exit without waiting for the background job.
+if ! timeout 60 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT filter_transform_pause PAUSE"
+then
+    echo "FAIL: timed out waiting for the filter_transform_pause failpoint"
+    ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
+    exit 1
+fi
 
 # Kill the query (ASYNC) - this triggers onCancel -> cancelExecution on all functions
 ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null

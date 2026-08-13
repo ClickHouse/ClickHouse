@@ -46,7 +46,17 @@ ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
     SETTINGS max_threads = 4, enable_vertical_final = 0, split_intersecting_parts_ranges_into_layers_final = 1
 " >"$output_file" 2>&1 &
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT filter_transform_pause PAUSE"
+# Wait for the failpoint to be hit inside the inner FilterTransform of FilterSortedStreamByRange.
+# Bound the wait: if the query never reaches the failpoint (a plan-shape or control-flow
+# regression), fail explicitly instead of hanging the whole check. Kill the stuck query (async —
+# a SYNC kill of a query that never reached the pause site could hang again) and exit without
+# waiting for the background job; the EXIT trap restores merges and drops the table.
+if ! timeout 60 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT filter_transform_pause PAUSE"
+then
+    echo "FAIL: timed out waiting for the filter_transform_pause failpoint"
+    ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
+    exit 1
+fi
 
 # Kill the query (ASYNC) - this cancels the outer FilterSortedStreamByRange, which forwards the cancellation
 ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
