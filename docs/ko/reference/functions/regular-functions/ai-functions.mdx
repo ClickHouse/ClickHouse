@@ -29,7 +29,7 @@ AI 함수는 ClickHouse에 내장된 함수로, AI를 호출하거나 임베딩�
   ## 구성
 </div>
 
-AI 함수는 프로바이더 자격 증명과 구성을 저장하는 **명명된 컬렉션**을 참조합니다. 서로 다른 함수 또는 함수 호출마다 서로 다른 명명된 컬렉션을 생성해 사용할 수 있습니다. 예를 들어 텍스트 함수(`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiaiTranslate`)에 사용할 명명된 컬렉션과 임베딩 함수(`aiEmbed`, `aiSimilarity`)에 사용할 명명된 컬렉션을 별도로 정의할 수 있습니다. 각 함수는 서로 다른 엔드포인트가 필요하며, 일반적으로 사용하는 모델도 다릅니다.
+AI 함수는 프로바이더 자격 증명과 구성을 저장하는 **명명된 컬렉션**을 참조합니다. 서로 다른 함수 또는 함수 호출마다 서로 다른 명명된 컬렉션을 생성해 사용할 수 있습니다. 예를 들어 텍스트 함수(`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`)에 사용할 명명된 컬렉션과 임베딩 함수(`aiEmbed`, `aiSimilarity`)에 사용할 명명된 컬렉션을 별도로 정의할 수 있습니다. 각 함수는 서로 다른 엔드포인트가 필요하며, 일반적으로 사용하는 모델도 다릅니다.
 
 프로바이더 자격 증명을 포함하는 명명된 컬렉션을 생성하는 예시 구문은 다음과 같습니다. 하나는 채팅 엔드포인트용이고, 다른 하나는 임베딩 엔드포인트용입니다:
 
@@ -74,7 +74,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
 
 1. 있는 경우 매개변수 맵의 `credentials` 키
 2. 그렇지 않으면 해당 기본 자격 증명 설정:
-   * 텍스트 함수(`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`)의 경우 [`ai_function_text_default_credentials`](/ko/reference/settings/session-settings/ai-function#ai_function_text_default_credentials)
+   * 텍스트 함수(`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`)의 경우 [`ai_function_text_default_credentials`](/ko/reference/settings/session-settings/ai-function#ai_function_text_default_credentials)
    * 임베딩 함수(`aiEmbed`, `aiSimilarity`)의 경우 [`ai_function_embedding_default_credentials`](/ko/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials)
 
 둘 다 설정되지 않으면 호출은 실패합니다. chat-completions 엔드포인트는 embeddings용 엔드포인트와 다르므로, 텍스트 함수와 임베딩 함수는 서로 다른 기본 설정을 사용합니다.

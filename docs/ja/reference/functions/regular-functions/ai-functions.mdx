@@ -29,7 +29,7 @@ AI 関数は ClickHouse の組み込み関数で、AI の呼び出しや埋め�
   ## Configuration
 </div>
 
-AI 関数は、プロバイダーの認証情報と設定を格納した **名前付きコレクション** を参照します。関数ごと、または関数呼び出しごとに、異なる 名前付きコレクション を作成して使い分けることができます。たとえば、テキスト関数 (`aiGenerate`、`aiClassify`、`aiFilter`、`aiExtract`、`aiTranslate`) で使用する 名前付きコレクション と、異なるエンドポイントが必要で通常は異なるモデルを使用する埋め込み関数 (`aiEmbed`、`aiSimilarity`) で使用する 名前付きコレクション を、別々に定義したい場合があります。
+AI 関数は、プロバイダーの認証情報と設定を格納した **名前付きコレクション** を参照します。関数ごと、または関数呼び出しごとに、異なる 名前付きコレクション を作成して使い分けることができます。たとえば、テキスト関数 (`aiGenerate`、`aiClassify`、`aiFilter`、`aiExtract`、`aiTranslate`、`aiRedact`) で使用する 名前付きコレクション と、異なるエンドポイントが必要で通常は異なるモデルを使用する埋め込み関数 (`aiEmbed`、`aiSimilarity`) で使用する 名前付きコレクション を、別々に定義したい場合があります。
 
 プロバイダーの認証情報を含む 名前付きコレクション を作成するための例のステートメントを以下に示します。1 つはチャット用エンドポイント、もう 1 つは埋め込み用エンドポイントです。
 
@@ -74,7 +74,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
 
 1. 存在する場合は、パラメータマップの `credentials` キー。
 2. それ以外の場合は、該当するデフォルト認証情報の設定。
-   * テキスト関数 (`aiGenerate`、`aiClassify`、`aiFilter`、`aiExtract`、`aiTranslate`) では [`ai_function_text_default_credentials`](/ja/reference/settings/session-settings/ai-function#ai_function_text_default_credentials)。
+   * テキスト関数 (`aiGenerate`、`aiClassify`、`aiFilter`、`aiExtract`、`aiTranslate`、`aiRedact`) では [`ai_function_text_default_credentials`](/ja/reference/settings/session-settings/ai-function#ai_function_text_default_credentials)。
    * 埋め込み関数 (`aiEmbed`、`aiSimilarity`) では [`ai_function_embedding_default_credentials`](/ja/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials)。
 
 どちらも設定されていない場合、呼び出しは失敗します。テキスト関数と埋め込み関数でデフォルト設定が分かれているのは、chat-completions のエンドポイントが embeddings 用のものとは異なるためです。

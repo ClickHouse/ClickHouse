@@ -29,7 +29,7 @@ doc_type: 'reference'
   ## Конфигурация
 </div>
 
-Функции ИИ используют **именованную коллекцию**, в которой хранятся учётные данные провайдера и параметры конфигурации. Для разных функций или их вызовов можно создавать и использовать разные именованные коллекции. Например, для текстовых функций (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`) и функций эмбеддингов (`aiEmbed`, `aiSimilarity`) можно определить отдельные именованные коллекции, так как им требуются разные конечные точки и обычно разные модели.
+Функции ИИ используют **именованную коллекцию**, в которой хранятся учётные данные провайдера и параметры конфигурации. Для разных функций или их вызовов можно создавать и использовать разные именованные коллекции. Например, для текстовых функций (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) и функций эмбеддингов (`aiEmbed`, `aiSimilarity`) можно определить отдельные именованные коллекции, так как им требуются разные конечные точки и обычно разные модели.
 
 Пример оператора для создания именованной коллекции с учётными данными провайдера: одна — с конечной точкой для чата, другая — с конечной точкой для эмбеддингов:
 
@@ -74,7 +74,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
 
 1. ключ `credentials` из её карты параметров, если он указан;
 2. в противном случае — соответствующую настройку учетных данных по умолчанию:
-   * [`ai_function_text_default_credentials`](/ru/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) для текстовых функций (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`);
+   * [`ai_function_text_default_credentials`](/ru/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) для текстовых функций (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`);
    * [`ai_function_embedding_default_credentials`](/ru/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials) для функций эмбеддингов (`aiEmbed`, `aiSimilarity`).
 
 Если не задано ни то ни другое, вызов завершится ошибкой. Для текстовых функций и функций эмбеддингов используются разные настройки по умолчанию, поскольку конечная точка для chat-completions отличается от конечной точки для эмбеддингов.
