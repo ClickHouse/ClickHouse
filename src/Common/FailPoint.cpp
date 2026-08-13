@@ -153,6 +153,17 @@ static struct InitFiu
     PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
+    ONCE(framing_finalize_throw) \
+    ONCE(framing_throw_after_writing_packet) \
+    ONCE(framing_throw_during_payload_reset) \
+    ONCE(framing_throw_before_totals_boundary) \
+    ONCE(framing_throw_before_extremes_boundary) \
+    ONCE(framing_pump_logs_throw) \
+    ONCE(framing_exception_packet_throw) \
+    ONCE(framing_throw_after_final_progress) \
+    ONCE(write_buffer_valid_utf8_finalize_throw) \
+    ONCE(http_output_finalize_throw) \
+    ONCE(http_push_delayed_results_throw) \
     ONCE(terminate_with_exception) \
     ONCE(terminate_with_std_exception) \
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
