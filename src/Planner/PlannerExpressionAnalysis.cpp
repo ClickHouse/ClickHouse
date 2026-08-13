@@ -559,9 +559,75 @@ SortAnalysisResult analyzeSort(
         /// If we take getLastStepAvailableOutputColumns list, it may return non-materialized constants,
         /// so here we add materialized ORDER BY columns manually, and append everything else after.
         ActionsDAG before_interpolate_actions_dag(before_sort_actions->dag.getResultColumns());
-        for (const auto & out : actions_chain.getLastStepAvailableOutputColumns())
-            if (!before_sort_actions_dag_output_node_names.contains(out.name))
-                before_interpolate_actions_dag.getOutputs().push_back(&before_interpolate_actions_dag.addInput(out));
+
+        /** A step's available output columns are every node of its dag - the intermediates of a computed
+          * expression included - because a later step is allowed to *reference* any of them. Passing all of
+          * them through as outputs turns "referenceable" into "must be in the stream", which pins the
+          * intermediates of the projection into the header of the `Filling` step. Two query trees that
+          * differ only by whether an `ALIAS` column was inlined into its defining expression then produce
+          * different headers - `v * 2` contributes its `2` and the un-inlined `a_v` does not - and a
+          * distributed query planned one way and executed the other cannot reconcile them.
+          *
+          * So the projection's own intermediates are held back. Everything else is passed through as
+          * before, including the sort columns materialized just above, which is what `Filling` fills by.
+          * They all stay inputs either way, so an INTERPOLATE expression naming one still resolves.
+          */
+        const auto & available_columns = actions_chain.getLastStepAvailableOutputColumns();
+
+        NameSet projection_intermediates;
+        const size_t last_step_index = actions_chain.getLastStepIndex();
+        const bool know_previous_step = last_step_index > 0;
+        if (know_previous_step)
+        {
+            const auto & previous_dag = actions_chain.at(last_step_index - 1)->getActions()->dag;
+
+            NameSet previous_stream_columns;
+            for (const auto & column : previous_dag.getResultColumns())
+                previous_stream_columns.insert(column.name);
+
+            for (const auto & node : previous_dag.getNodes())
+                if (!previous_stream_columns.contains(node.result_name))
+                    projection_intermediates.insert(node.result_name);
+        }
+
+        /** The INTERPOLATE expressions themselves are turned into actions later, in `Planner`, against a dag
+          * built from this step's *header*. Whatever they name therefore has to survive as a column here,
+          * even when the query does not select it. Collect those names by visiting the expressions into a
+          * throwaway dag over the same columns and reading back what it requires.
+          */
+        if (know_previous_step)
+        {
+            ActionsDAG referenced_by_interpolate_dag(available_columns);
+            referenced_by_interpolate_dag.getOutputs().clear();
+
+            PlannerActionsVisitor referenced_actions_visitor(planner_context, correlated_columns_set);
+            for (auto & interpolate_node : interpolate_list_node.getNodes())
+            {
+                auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
+                auto [nodes, correlated_subtrees]
+                    = referenced_actions_visitor.visit(referenced_by_interpolate_dag, interpolate_node_typed.getInterpolateExpression());
+                correlated_subtrees.assertEmpty("in interpolate expression");
+                for (const auto * node : nodes)
+                    referenced_by_interpolate_dag.getOutputs().push_back(node);
+            }
+
+            /// `getRequiredColumnsNames` lists every INPUT, so drop the ones the expressions did not reach.
+            referenced_by_interpolate_dag.removeUnusedActions(/*allow_remove_inputs=*/true, /*allow_constant_folding=*/false);
+
+            for (const auto & name : referenced_by_interpolate_dag.getRequiredColumnsNames())
+                projection_intermediates.erase(name);
+        }
+
+        for (const auto & out : available_columns)
+        {
+            if (before_sort_actions_dag_output_node_names.contains(out.name))
+                continue;
+
+            const auto * input_node = &before_interpolate_actions_dag.addInput(out);
+
+            if (!projection_intermediates.contains(out.name))
+                before_interpolate_actions_dag.getOutputs().push_back(input_node);
+        }
 
         for (auto & interpolate_node : interpolate_list_node.getNodes())
         {
