@@ -1600,6 +1600,20 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
             (command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::MODIFY_COLUMN)
             && (command.ttl != nullptr || command.to_remove == AlterCommand::RemoveProperty::TTL))
             columns_with_ttl_changed_by_command.insert(command.column_name);
+        else if (command.type == AlterCommand::RENAME_COLUMN)
+        {
+            /// The set is matched against `getColumnTTLs`, which is keyed by the column names after ALL
+            /// commands have been applied, so a later rename of a column whose TTL an earlier command of
+            /// this same statement set (`ADD COLUMN c ... TTL ..., RENAME COLUMN c TO d`) must carry the
+            /// mark over to the final name - otherwise the fresh TTL would be rebuilt with the
+            /// metadata-load semantics and skip the fresh-DDL validation and codec gate.
+            if (auto it = columns_with_ttl_changed_by_command.find(command.column_name);
+                it != columns_with_ttl_changed_by_command.end())
+            {
+                columns_with_ttl_changed_by_command.erase(it);
+                columns_with_ttl_changed_by_command.insert(command.rename_to);
+            }
+        }
     }
 
     auto column_ttl_asts = metadata_copy.columns.getColumnTTLs();
