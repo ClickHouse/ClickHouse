@@ -56,6 +56,39 @@ void setPartNameIdentityNodeLocal(Desc & desc)
         desc.part_name_identity = Desc::PartNameIdentity::NodeLocal;
 }
 
+/// Readers mirror the setters above. A test body is not a template, so an `if constexpr` branch
+/// inside it is still compiled; every access to a field this PR adds must therefore go through a
+/// template, which is what these do. On the merge base they report the value the description
+/// cannot carry: zero fingerprint / mark count and `Unknown` identity.
+template <typename Desc>
+size_t getTotalMarksInPart(const Desc & desc)
+{
+    if constexpr (requires { desc.total_marks_in_part; })
+        return desc.total_marks_in_part;
+    else
+        return 0;
+}
+
+template <typename Desc>
+std::pair<UInt64, UInt64> getPartFingerprint(const Desc & desc)
+{
+    if constexpr (requires { desc.part_checksum_low64; desc.part_checksum_high64; })
+        return {desc.part_checksum_low64, desc.part_checksum_high64};
+    else
+        return {0, 0};
+}
+
+/// Returns the wire value of `part_name_identity` (`Unknown` = 0, `NodeLocal` = 1,
+/// `ClusterWide` = 2) so the comparison does not have to name the enumerators outside a template.
+template <typename Desc>
+UInt8 getPartNameIdentityValue(const Desc & desc)
+{
+    if constexpr (has_part_name_identity<Desc>)
+        return static_cast<UInt8>(desc.part_name_identity);
+    else
+        return 0;
+}
+
 /// Builds a `RangesInDataPartDescription` whose analyzed view (`ranges` / `rows`) AND underlying
 /// total mark count both equal `marks`. This is the simplest shape: the part has `marks` marks
 /// on disk and the announcing replica analyzed all of them. Leaves the part fingerprint at
@@ -705,26 +738,14 @@ TEST(ParallelReplicasCoordinator, PartDescriptionRoundTripsPerProtocolVersion)
 
         /// The newer fields only travel once their gate is open; below it they must come back as the
         /// default rather than as garbage read out of the following field.
-        if constexpr (requires { got.total_marks_in_part; })
-        {
-            const size_t expected_total_marks = protocol_version >= 9 ? original.total_marks_in_part : 0;
-            EXPECT_EQ(got.total_marks_in_part, expected_total_marks) << "at protocol version " << protocol_version;
-        }
+        const size_t expected_total_marks = protocol_version >= 9 ? getTotalMarksInPart(original) : 0;
+        EXPECT_EQ(getTotalMarksInPart(got), expected_total_marks) << "at protocol version " << protocol_version;
 
-        if constexpr (requires { got.part_checksum_low64; })
-        {
-            const UInt64 expected_low64 = protocol_version >= 10 ? original.part_checksum_low64 : 0;
-            const UInt64 expected_high64 = protocol_version >= 10 ? original.part_checksum_high64 : 0;
-            EXPECT_EQ(got.part_checksum_low64, expected_low64) << "at protocol version " << protocol_version;
-            EXPECT_EQ(got.part_checksum_high64, expected_high64) << "at protocol version " << protocol_version;
-        }
+        const std::pair<UInt64, UInt64> expected_fingerprint
+            = protocol_version >= 10 ? getPartFingerprint(original) : std::pair<UInt64, UInt64>{0, 0};
+        EXPECT_EQ(getPartFingerprint(got), expected_fingerprint) << "at protocol version " << protocol_version;
 
-        if constexpr (has_part_name_identity<RangesInDataPartDescription>)
-        {
-            const auto expected_identity = protocol_version >= 10
-                ? RangesInDataPartDescription::PartNameIdentity::NodeLocal
-                : RangesInDataPartDescription::PartNameIdentity::Unknown;
-            EXPECT_EQ(got.part_name_identity, expected_identity) << "at protocol version " << protocol_version;
-        }
+        const UInt8 expected_identity = protocol_version >= 10 ? getPartNameIdentityValue(original) : 0;
+        EXPECT_EQ(getPartNameIdentityValue(got), expected_identity) << "at protocol version " << protocol_version;
     }
 }
