@@ -212,7 +212,6 @@ struct QueryPlanOptimizationSettings
     size_t automatic_parallel_replicas_mode;
     size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
-    bool parallel_replicas_ship_prepared_sets;
 
     bool query_plan_optimize_primary_key = true;
 
@@ -222,7 +221,7 @@ struct QueryPlanOptimizationSettings
 
     /// Takes the sets the single-node plan already filled, so the probe plan can adopt them instead
     /// of re-running the same subqueries.
-    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &, bool /*ship_in_subqueries*/)> query_plan_with_parallel_replicas_builder;
+    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
 
     bool parallel_replicas_filter_pushdown = false;
     bool enable_parallel_replicas = false;

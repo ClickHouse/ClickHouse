@@ -164,7 +164,6 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     const ContextMutablePtr & ctx,
     const SelectQueryOptions & select_options,
     const BuiltSetsByHashPtr & built_sets,
-    bool ship_in_subqueries,
     Args &&... interpreter_args)
 {
     const auto & logger = getLogger("InterpreterSelectQueryAnalyzer");
@@ -193,17 +192,6 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
     ctx->setSetting("force_primary_key", false);
-    /// Shipping `IN` sets replaces a subquery with a temporary table, which changes the plan shape the
-    /// automatic-parallel-replicas decision matches on, and materializes the sets even when the plan is
-    /// thrown away. The probe is therefore built unshipped; the caller asks for the shipped variant only
-    /// after deciding replicas are worth it.
-    ctx->setSetting("parallel_replicas_ship_prepared_sets", ship_in_subqueries);
-    /// So that shipping can fill the temporary table from a set this query already built. Also put it on
-    /// the query context: the plan is built through several derived contexts, and the one that reaches
-    /// `executeQueryWithParallelReplicas` is not this copy.
-    ctx->setBuiltSetsForShipping(built_sets);
-    if (ctx->hasQueryContext())
-        ctx->getQueryContext()->setBuiltSetsForShipping(built_sets);
     InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, std::forward<Args>(interpreter_args)...);
     auto plan = std::move(interpreter).extractQueryPlan();
     auto optimization_settings = QueryPlanOptimizationSettings(ctx);
@@ -212,8 +200,7 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     optimization_settings.build_sets = false;
     // CTEs materialization should be done in the original plan, but not in the plan with parallel replicas.
     optimization_settings.materialize_ctes = false;
-    // Never analyze here: `considerEnablingParallelReplicas` hands every read the analysis the
-    // single-node plan produced, so doing it again would be pure cost.
+    // If the parallel replicas plan will be chosen, the index analysis result will be reused from the single-replica plan.
     optimization_settings.query_plan_optimize_primary_key = false;
     // Depends on PK optimizations that we don't perform here
     optimization_settings.optimize_projection = false;
@@ -309,8 +296,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
           [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names](
-              const BuiltSetsByHashPtr & built_sets, bool ship_in_subqueries)
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, built_sets, ship_in_subqueries, column_names); })
+              const BuiltSetsByHashPtr & built_sets)
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, built_sets, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -332,8 +319,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            ctx = Context::createCopy(context_),
            storage = storage_,
            select_options = select_query_options_,
-           column_names](const BuiltSetsByHashPtr & built_sets, bool ship_in_subqueries)
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, built_sets, ship_in_subqueries, storage, column_names); })
+           column_names](const BuiltSetsByHashPtr & built_sets)
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, built_sets, storage, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -348,8 +335,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
           [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_](
-              const BuiltSetsByHashPtr & built_sets, bool ship_in_subqueries)
-          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, built_sets, ship_in_subqueries); })
+              const BuiltSetsByHashPtr & built_sets)
+          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, built_sets); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }

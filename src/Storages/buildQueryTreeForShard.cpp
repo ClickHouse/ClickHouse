@@ -1,7 +1,3 @@
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <Common/logger_useful.h>
-#include <Interpreters/Set.h>
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ArrayJoinNode.h>
@@ -444,98 +440,9 @@ void addDistinctRecursively(const QueryTreeNodePtr & node)
 /** Execute subquery node and put result in mutable context temporary table.
   * Returns table node that is initialized with temporary table storage.
   */
-/// Materializing a subquery for shipping must run on the initiator alone. Left to itself it inherits
-/// parallel replicas from the query, so instead of the initiator reading the source table once, every
-/// replica reads it - which is exactly the work shipping exists to avoid, and it also ships the subquery's
-/// own nested `IN` in turn. Measured on a 3-replica loopback cluster: with shipping on, the number of
-/// secondary queries doubled and the source table was still read once per replica. The settings have to go
-/// on the query nodes themselves, not just the context copy: each `QueryNode` carries its own context and
-/// that is the one the planner consults.
-void makeSubqueryExecutionLocal(const QueryTreeNodePtr & node)
-{
-    if (!node)
-        return;
-
-    if (auto * query_node = node->as<QueryNode>())
-    {
-        query_node->getMutableContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-        query_node->getMutableContext()->setSetting("parallel_replicas_ship_prepared_sets", false);
-    }
-    else if (auto * union_node = node->as<UnionNode>())
-    {
-        union_node->getMutableContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-        union_node->getMutableContext()->setSetting("parallel_replicas_ship_prepared_sets", false);
-    }
-
-    for (const auto & child : node->getChildren())
-        makeSubqueryExecutionLocal(child);
-}
-
-/// If the initiator already built the set for this subquery, its rows are right there - writing them
-/// into the temporary table is far cheaper than running the subquery a second time. Only usable when the
-/// set kept its explicit elements and their types match the subquery header exactly (`Set` strips
-/// `LowCardinality` from `set_elements_types`, so a mismatch is normal and simply means falling back).
-static bool tryFillExternalTableFromBuiltSet(
-    const StoragePtr & external_storage,
-    const Block & sample_block,
-    const BuiltSetsByHashPtr & built_sets,
-    const FutureSet::Hash & set_key,
-    ContextMutablePtr & mutable_context)
-{
-    auto log = getLogger("buildQueryTreeForShard");
-    if (!built_sets)
-    {
-        LOG_DEBUG(log, "Set reuse: no built sets were handed to this build");
-        return false;
-    }
-
-    auto it = built_sets->sets.find(set_key);
-    if (it == built_sets->sets.end() || !it->second || !it->second->set)
-    {
-        LOG_DEBUG(log, "Set reuse: no set for key {} among {} built sets", set_key.low64, built_sets->sets.size());
-        return false;
-    }
-
-    const auto & set = *it->second->set;
-    if (!set.isCreated() || !set.hasExplicitSetElements())
-    {
-        LOG_DEBUG(log, "Set reuse: set {} is created={} has_elements={}", set_key.low64, set.isCreated(), set.hasExplicitSetElements());
-        return false;
-    }
-
-    const auto elements = set.getSetElements();
-    const auto & element_types = set.getElementsTypes();
-    if (elements.size() != sample_block.columns() || element_types.size() != sample_block.columns())
-        return false;
-    for (size_t i = 0; i < elements.size(); ++i)
-    {
-        if (!element_types[i]->equals(*sample_block.getByPosition(i).type))
-            return false;
-    }
-
-    auto block = sample_block.cloneEmpty();
-    for (size_t i = 0; i < elements.size(); ++i)
-        block.getByPosition(i).column = elements[i];
-
-    const auto rows = elements.empty() ? 0 : elements.front()->size();
-    const auto metadata_snapshot = external_storage->getInMemoryMetadataPtr(mutable_context, false);
-    auto header = std::make_shared<const Block>(block.cloneEmpty());
-    QueryPipeline pipeline(external_storage->write({}, metadata_snapshot, mutable_context, /*async_insert=*/false));
-    pipeline.complete(Pipe(std::make_shared<SourceFromSingleChunk>(header, Chunk(block.getColumns(), rows))));
-    CompletedPipelineExecutor executor(pipeline);
-    executor.execute();
-    LOG_DEBUG(
-        getLogger("buildQueryTreeForShard"),
-        "Filled the shipped temporary table with {} rows from a set this query already built",
-        rows);
-    return true;
-}
-
 TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     ContextMutablePtr & mutable_context,
-    size_t subquery_depth,
-    const BuiltSetsByHashPtr & built_sets = nullptr,
-    std::optional<FutureSet::Hash> set_key = {})
+    size_t subquery_depth)
 {
     const auto subquery_hash = subquery_node->getTreeHash();
     const auto temporary_table_name = fmt::format("_data_{}", toString(subquery_hash));
@@ -554,15 +461,6 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     subquery_options.forceMaterializeCTE();
     auto context_copy = Context::createCopy(mutable_context);
     updateContextForSubqueryExecution(context_copy);
-    /// Only for the sets this feature ships. `GLOBAL IN` / `GLOBAL JOIN` materialize through here too, and
-    /// they have always run their subquery with whatever parallelism the query had; changing that is a
-    /// separate question and it is what `02784_parallel_replicas_automatic_decision_join` measures.
-    if (set_key)
-    {
-        context_copy->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-        context_copy->setSetting("parallel_replicas_ship_prepared_sets", false);
-        makeSubqueryExecutionLocal(subquery_node);
-    }
 
     InterpreterSelectQueryAnalyzer interpreter(subquery_node, context_copy, subquery_options);
     auto & query_plan = interpreter.getQueryPlan();
@@ -594,13 +492,6 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     StoragePtr external_storage = external_storage_holder.getTable();
     auto temporary_table_expression_node = std::make_shared<TableNode>(external_storage, mutable_context);
     temporary_table_expression_node->setTemporaryTableName(temporary_table_name);
-
-    if (set_key
-        && tryFillExternalTableFromBuiltSet(external_storage, sample_block_with_unique_names, built_sets, *set_key, mutable_context))
-    {
-        mutable_context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
-        return temporary_table_expression_node;
-    }
 
     QueryPlanOptimizationSettings optimization_settings(mutable_context);
     BuildQueryPipelineSettings build_pipeline_settings(mutable_context);
@@ -857,43 +748,7 @@ void rejectUnshippableJoinUsingKeys(const QueryTreeNodePtr & root)
 
 }
 
-
-/** Collects the top-most `IN (subquery)` functions so their sets can be materialized on the initiator and
-  * shipped to the replicas as temporary tables. This is deliberately *not* the `GLOBAL IN` rewrite: the
-  * function keeps its `in` name, only its right argument is swapped for the temporary table, so PREWHERE
-  * and index analysis can still use the set on the replica (`cannotBeMoved` rejects `globalIn` outright).
-  * Nested `IN`s below a collected one are skipped - materializing the outer subquery already evaluates them
-  * on the initiator, and shipping the inner set as well would be pure waste.
-  */
-void collectInSubqueriesToShip(
-    const QueryTreeNodePtr & node,
-    size_t subquery_depth,
-    std::vector<DistributedProductModeRewriteInJoinVisitor::InFunctionOrJoin> & result)
-{
-    if (!node)
-        return;
-
-    if (const auto * function_node = node->as<FunctionNode>();
-        function_node && isNameOfLocalInFunction(function_node->getFunctionName()))
-    {
-        const auto & arguments = function_node->getArguments().getNodes();
-        if (arguments.size() == 2)
-        {
-            const auto argument_type = arguments[1]->getNodeType();
-            if (argument_type == QueryTreeNodeType::QUERY || argument_type == QueryTreeNodeType::UNION)
-            {
-                result.push_back({node, subquery_depth});
-                return;
-            }
-        }
-    }
-
-    const bool is_subquery = node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION;
-    for (const auto & child : node->getChildren())
-        collectInSubqueriesToShip(child, subquery_depth + (is_subquery ? 1 : 0), result);
-}
-
-QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table, bool ship_in_subqueries, const BuiltSetsByHashPtr & built_sets)
+QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)
 {
     CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
     collect_column_source_to_columns_visitor.visit(query_tree_to_modify);
@@ -904,9 +759,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     visitor.visit(query_tree_to_modify);
 
     auto replacement_map = visitor.getReplacementMap();
-    auto global_in_or_join_nodes = visitor.getGlobalInOrJoinNodes();
-    if (ship_in_subqueries)
-        collectInSubqueriesToShip(query_tree_to_modify, 0, global_in_or_join_nodes);
+    const auto & global_in_or_join_nodes = visitor.getGlobalInOrJoinNodes();
 
     QueryTreeNodePtrWithHashMap<TableNodePtr> global_in_temporary_tables;
 
@@ -987,13 +840,10 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 if (enable_add_distinct_to_in_subqueries)
                     addDistinctRecursively(subquery_to_execute);
 
-                /// Same key `CollectSets` registers the set under, so an already-built set can be found.
                 temporary_table_expression_node = executeSubqueryNode(
                     subquery_to_execute,
                     planner_context->getMutableQueryContext(),
-                    global_in_or_join_node.subquery_depth,
-                    built_sets,
-                    in_function_subquery_node->getTreeHash({.ignore_cte = true}));
+                    global_in_or_join_node.subquery_depth);
                 replacement_table_expression = temporary_table_expression_node;
             }
             else
