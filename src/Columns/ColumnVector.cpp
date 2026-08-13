@@ -462,6 +462,23 @@ size_t ColumnVector<T>::getEqualRangeEndAssumeSorted(size_t begin, size_t end, i
 }
 
 template <typename T>
+Int64 ColumnVector<T>::compareTrackAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+{
+    const auto & rhs = assert_cast<const Self &>(rhs_);
+    const T * lhs_data = data.data();
+    const T * rhs_data = rhs.data.data();
+    const T lhs_value = lhs_data[n];
+    const T rhs_value = rhs_data[m];
+    static constexpr size_t linear_probe = 16;
+
+    return compareTrackAtImpl(
+        CompareHelper<T>::compare(lhs_value, rhs_value, nan_direction_hint),
+        n, m, data.size(), rhs.data.size(), linear_probe,
+        [&](size_t row) { return CompareHelper<T>::less(lhs_data[row], rhs_value, nan_direction_hint); },
+        [&](size_t row) { return CompareHelper<T>::greater(lhs_value, rhs_data[row], nan_direction_hint); });
+}
+
+template <typename T>
 void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
