@@ -218,6 +218,16 @@ ASTPtr ASTCreateUserQuery::clone() const
         res->children.push_back(ast_clone);
     }
 
+    /// `global_valid_until` is a child too (the parser pushes it after the authentication methods);
+    /// without re-cloning it here the clone would keep a member pointer that is absent from
+    /// `children`, so `getTreeHash` and the `children`-based AST walks would silently lose the
+    /// `VALID UNTIL` clause of the clone.
+    if (global_valid_until)
+    {
+        res->global_valid_until = global_valid_until->clone();
+        res->children.push_back(res->global_valid_until);
+    }
+
     return res;
 }
 
