@@ -26,6 +26,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 
 #include <boost/algorithm/string/split.hpp>
@@ -715,6 +716,23 @@ void registerStoragePulsar(StorageFactory & factory)
         if ((*pulsar_settings)[PulsarSetting::pulsar_num_consumers].value < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting `pulsar_num_consumers` must be at least 1");
 
+        /// An unreasonably large value would make CREATE / ATTACH open that many consumers eagerly
+        /// (and anything above INT_MAX would overflow the semaphore capacity), so cap it the same
+        /// way as `kafka_num_consumers`. The limit depends on the local CPU count, so a definition
+        /// read back from metadata may have been accepted on a bigger server. Validate only
+        /// a freshly introduced one, so existing tables stay loadable.
+        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+        const auto max_consumers = std::max<UInt64>(getNumberOfCPUCoresToUse(), 16);
+        if (is_fresh_definition && (*pulsar_settings)[PulsarSetting::pulsar_num_consumers].value > max_consumers)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The setting `pulsar_num_consumers` can not be bigger than {}. "
+                "A single consumer can read any number of topics and partitions. "
+                "Extra consumers are relatively expensive, "
+                "and using a lot of them can lead to high memory and CPU usage",
+                max_consumers);
+
         /// A zero block size would stop `PulsarSource` after its first (empty) loop iteration,
         /// and a zero poll batch size would be passed straight into `setBatchReceivePolicy`.
         if ((*pulsar_settings)[PulsarSetting::pulsar_max_block_size].changed
@@ -794,7 +812,7 @@ Required parameters:
 Optional parameters:
 
 - `pulsar_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
-- `pulsar_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient.
+- `pulsar_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The value can not exceed the number of CPU cores (but at least `16` is always allowed).
 - `pulsar_max_block_size` – The maximum batch size (in messages) for a poll. Default: [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size).
 - `pulsar_skip_broken_messages` – Parser tolerance to schema-incompatible messages per block. Default: `0`. If `pulsar_skip_broken_messages = N` then the engine skips *N* Pulsar messages that cannot be parsed (a message equals a row of data).
 - `pulsar_poll_timeout_ms` – Timeout for a single poll from Pulsar. Default: [stream_poll_timeout_ms](/reference/settings/session-settings/stream#stream_poll_timeout_ms).

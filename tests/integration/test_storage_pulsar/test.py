@@ -491,6 +491,23 @@ def test_num_consumers_zero_rejected(pulsar_cluster):
     assert "BAD_ARGUMENTS" in error
 
 
+def test_num_consumers_above_limit_rejected(pulsar_cluster):
+    # An unreasonably large `pulsar_num_consumers` would make CREATE eagerly
+    # open that many consumers (an easy server-side DoS from a typoed value),
+    # so it is capped by max(number of CPU cores, 16), like `kafka_num_consumers`.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    error = instance.query_and_get_error(
+        pulsar_table(
+            "test.pulsar_reader",
+            "too_many_consumers_topic",
+            "too_many_consumers_group",
+            extra_settings=", pulsar_num_consumers = 100000",
+        )
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "pulsar_num_consumers" in error
+
+
 def test_batch_size_zero_rejected(pulsar_cluster):
     # `pulsar_max_block_size = 0` would make every source stop after its first
     # (empty) loop iteration, and `pulsar_poll_max_batch_size = 0` would be
