@@ -1,6 +1,9 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Common/assert_cast.h>
 #include <Common/FailPoint.h>
@@ -219,6 +222,36 @@ TEST(DataTypeObjectSharedRegexp, MergeLooksThroughArrayMismatchOnTargetSide)
     const auto * result_array = typeid_cast<const DataTypeArray *>(merged.get());
     ASSERT_TRUE(result_array);
     EXPECT_EQ(asJSON(result_array->getNestedType()).getSharedDataPathRules().size(), 1);
+}
+
+TEST(DataTypeObjectSharedRegexp, MergeLooksThroughSingleElementTupleMismatchOnTargetSide)
+{
+    /// `tuple(j)` has the same one-to-one relationship to its source as `array(j)` does.
+    const auto rule_bearing = makeJSONType({{"^tag_", MatchMode::Partial}});
+
+    const auto merged = mergeJSONSharedDataPathRules(
+        std::make_shared<DataTypeTuple>(DataTypes{makeJSONType({})}), rule_bearing);
+    const auto * result_tuple = typeid_cast<const DataTypeTuple *>(merged.get());
+    ASSERT_TRUE(result_tuple);
+    ASSERT_EQ(result_tuple->getElements().size(), 1);
+    EXPECT_EQ(asJSON(result_tuple->getElements().front()).getSharedDataPathRules().size(), 1);
+
+    /// A multi-element tuple has no single source column this policy unambiguously belongs to, so
+    /// the merge must leave it untouched rather than guess.
+    const auto multi_element = std::make_shared<DataTypeTuple>(DataTypes{makeJSONType({}), makeJSONType({})});
+    EXPECT_EQ(mergeJSONSharedDataPathRules(multi_element, rule_bearing).get(), multi_element.get());
+}
+
+TEST(DataTypeObjectSharedRegexp, MergeLooksThroughMapValueMismatchOnTargetSide)
+{
+    /// `map('k', j)`: the JSON value only ever lives in the value type.
+    const auto rule_bearing = makeJSONType({{"^tag_", MatchMode::Partial}});
+
+    const auto merged = mergeJSONSharedDataPathRules(
+        std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), makeJSONType({})), rule_bearing);
+    const auto * result_map = typeid_cast<const DataTypeMap *>(merged.get());
+    ASSERT_TRUE(result_map);
+    EXPECT_EQ(asJSON(result_map->getValueType()).getSharedDataPathRules().size(), 1);
 }
 
 }

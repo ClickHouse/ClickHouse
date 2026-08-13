@@ -1138,6 +1138,31 @@ DataTypePtr applyJSONSharedDataPathPolicyImpl(const DataTypePtr & type, const Da
         return std::make_shared<DataTypeArray>(std::move(nested));
     }
 
+    /// A single-element tuple (e.g. `tuple(j)`) has the same one-to-one relationship to its source
+    /// as Array does; a tuple with more than one element has no single source column this policy
+    /// could unambiguously belong to, so it's left alone.
+    if (const auto * target_tuple = typeid_cast<const DataTypeTuple *>(type.get());
+        target_tuple && target_tuple->getElements().size() == 1 && !typeid_cast<const DataTypeTuple *>(policy_source_type.get()))
+    {
+        auto nested = applyJSONSharedDataPathPolicyImpl(target_tuple->getElements().front(), policy_source_type, merge_rules);
+        if (nested == target_tuple->getElements().front())
+            return type;
+        if (target_tuple->hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(DataTypes{std::move(nested)}, target_tuple->getElementNames());
+        return std::make_shared<DataTypeTuple>(DataTypes{std::move(nested)});
+    }
+
+    /// `map('k', j)`: the JSON value only ever lives in the value type, so descend there, leaving
+    /// the key type untouched.
+    if (const auto * target_map = typeid_cast<const DataTypeMap *>(type.get());
+        target_map && !typeid_cast<const DataTypeMap *>(policy_source_type.get()))
+    {
+        auto nested = applyJSONSharedDataPathPolicyImpl(target_map->getValueType(), policy_source_type, merge_rules);
+        if (nested == target_map->getValueType())
+            return type;
+        return std::make_shared<DataTypeMap>(target_map->getKeyType(), std::move(nested));
+    }
+
     if (const auto * object = typeid_cast<const DataTypeObject *>(type.get()))
     {
         const auto * source_object = typeid_cast<const DataTypeObject *>(policy_source_type.get());
