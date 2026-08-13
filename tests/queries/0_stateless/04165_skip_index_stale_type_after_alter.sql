@@ -40,9 +40,20 @@ CREATE TABLE t_stale_json (k UInt64, j JSON, INDEX idx j.a TYPE set(100) GRANULA
 ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
 INSERT INTO t_stale_json SELECT number, toJSONString(map('a', toString(number * 3))) FROM numbers(64);
 SYSTEM STOP MERGES t_stale_json;
-ALTER TABLE t_stale_json MODIFY COLUMN j JSON(a UInt64);
+-- A lazy type-hint ALTER over a subcolumn a skip index stores is refused, so no mutation is
+-- created and the index cannot go stale by this route.
+ALTER TABLE t_stale_json MODIFY COLUMN j JSON(a UInt64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 SELECT count() FROM system.mutations WHERE table = 't_stale_json' AND database = currentDatabase();
-SELECT count() FROM t_stale_json WHERE j.a = 150;
+-- With the hint applied as a full mutation, killing it leaves the index holding String while the
+-- metadata says UInt64, which is the state the read path must refuse to deserialize.
+DROP TABLE IF EXISTS t_stale_json_killed;
+CREATE TABLE t_stale_json_killed (k UInt64, j JSON, INDEX idx j.a TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_stale_json_killed SELECT number, toJSONString(map('a', toString(number * 3))) FROM numbers(64);
+SYSTEM STOP MERGES t_stale_json_killed;
+ALTER TABLE t_stale_json_killed MODIFY COLUMN j JSON(a UInt64) SETTINGS allow_experimental_json_lazy_type_hints = 0;
+KILL MUTATION WHERE table = 't_stale_json_killed' AND database = currentDatabase() FORMAT Null;
+SELECT count() FROM t_stale_json_killed WHERE j.a = 150;
 
 SELECT '-- 4. expression index, representation-preserving column conversion';
 DROP TABLE IF EXISTS t_stale_expr;
@@ -163,6 +174,7 @@ SELECT count() FROM t_name_reuse WHERE v2 = '7' SETTINGS use_skip_indexes = 0;
 DROP TABLE t_stale_nullable;
 DROP TABLE t_stale_plain;
 DROP TABLE t_stale_json;
+DROP TABLE t_stale_json_killed;
 DROP TABLE t_stale_expr;
 DROP TABLE t_stale_enum;
 DROP TABLE t_stale_minmax;

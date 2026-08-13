@@ -140,7 +140,9 @@ ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
 INSERT INTO t_keep_bool SELECT number, intDiv(number, 16) FROM numbers(64);
 SYSTEM STOP MERGES t_keep_bool;
 ALTER TABLE t_keep_bool MODIFY COLUMN v Bool;
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_bool WHERE v = 0) WHERE explain ILIKE '%Granules: 4/16%';
+-- optimize_trivial_count_query: a bare count() over this predicate is answerable from sparsity
+-- statistics alone, which replaces the whole read and leaves no skip-index node to assert on.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_bool WHERE v = 0 SETTINGS optimize_trivial_count_query = 0) WHERE explain ILIKE '%Granules: 4/16%';
 SELECT count() FROM t_keep_bool WHERE v = 0;
 
 SELECT '-- 18. control: an UNCHANGED JSON column with a typed DateTime path keeps pruning';
