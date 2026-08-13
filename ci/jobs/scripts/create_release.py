@@ -393,15 +393,15 @@ class ReleaseInfo:
                         f"so the only commit since the previous release is the "
                         f"automated version bump — there is nothing to release."
                     )
-                # A -stable/-lts tag for this exact X.Y.P line means it was already published (the post-release bump did not advance it) — refuse.
+                # A -stable/-lts tag for this exact X.Y.P line means it was already released — refuse creating it again.
                 released = Shell.get_output(
                     f"git tag --list 'v{version.major}.{version.minor}.{version.patch}.*-stable' "
                     f"'v{version.major}.{version.minor}.{version.patch}.*-lts'"
                 )
                 assert not released, (
-                    f"release line {version.major}.{version.minor}.{version.patch} already "
-                    f"published as [{released.split()[0]}]: the post-release bump is missing, "
-                    f"or the ref targets a superseded/duplicate commit"
+                    f"release line {version.major}.{version.minor}.{version.patch} already has a "
+                    f"release tag [{released.split()[0]}]: either the ref targets a commit with a "
+                    f"superseded release, or there is a bug in the release/versioning logic"
                 )
             self.is_tag_pushed = False
         self.release_type = release_type
