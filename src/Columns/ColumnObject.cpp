@@ -1304,6 +1304,7 @@ void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, UInt32 * ha
 
         const auto [shared_paths, shared_values] = getSharedDataPathsAndValues();
         const auto & shared_offsets = getSharedDataOffsets();
+        ColumnDynamic::SharedValueTypeCache type_cache;
         for (size_t i = 0; i < n; ++i)
         {
             for (size_t j = shared_offsets[row_begin + i - 1]; j < shared_offsets[row_begin + i]; ++j)
@@ -1311,7 +1312,7 @@ void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, UInt32 * ha
                 const auto path = shared_paths->getDataAt(j);
                 const UInt32 path_hash = updateWeakHash32(
                     reinterpret_cast<const UInt8 *>(path.data()), path.size(), WEAK_HASH32_INITIAL_VALUE);
-                object_hash[i] += combineWeakHash32(ColumnDynamic::hashSharedValue(shared_values->getDataAt(j)), path_hash);
+                object_hash[i] += combineWeakHash32(ColumnDynamic::hashSharedValue(shared_values->getDataAt(j), type_cache), path_hash);
             }
         }
     }

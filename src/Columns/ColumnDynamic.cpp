@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <DataTypes/DataTypesCache.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <Formats/FormatSettings.h>
@@ -921,18 +920,38 @@ void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash &
     variant_column_ptr->updateHashWithValueRange(begin, end, hash);
 }
 
-UInt32 ColumnDynamic::hashSharedValue(std::string_view value)
+const ColumnDynamic::SharedValueTypeCache::Entry &
+ColumnDynamic::SharedValueTypeCache::getOrDecode(std::string_view value, ReadBuffer & buf)
+{
+    for (const auto & entry : entries)
+    {
+        if (value.size() >= entry.prefix.size() && memcmp(value.data(), entry.prefix.data(), entry.prefix.size()) == 0)
+        {
+            buf.ignore(entry.prefix.size());
+            return entry;
+        }
+    }
+
+    auto type = decodeDataType(buf);
+    if (entries.size() == MAX_ENTRIES)
+        entries.clear();
+
+    /// A NULL is written as a `Nothing` prefix with no value bytes.
+    auto serialization = isNothing(type) ? nullptr : type->getDefaultSerialization();
+    entries.push_back(Entry{value.substr(0, buf.count()), std::move(type), std::move(serialization)});
+    return entries.back();
+}
+
+UInt32 ColumnDynamic::hashSharedValue(std::string_view value, SharedValueTypeCache & type_cache)
 {
     ReadBufferFromMemory buf(value);
-    auto type = decodeDataType(buf);
-    /// A NULL is written as a `Nothing` prefix with no value bytes.
-    if (isNothing(type))
+    const auto & entry = type_cache.getOrDecode(value, buf);
+    if (!entry.serialization)
         return WEAK_HASH32_INITIAL_VALUE;
 
     /// Hash the decoded value, not its serialized blob, so it matches the same value stored typed.
-    auto serialization = getDataTypesCache().getSerialization(type->getName());
-    auto column = type->createColumn();
-    serialization->deserializeBinary(*column, buf, getFormatSettings());
+    auto column = entry.type->createColumn();
+    entry.serialization->deserializeBinary(*column, buf, getFormatSettings());
     UInt32 h = WEAK_HASH32_INITIAL_VALUE;
     column->computeHashInto(0, 1, &h, /*initial=*/true);
     return h;
@@ -955,11 +974,12 @@ void ColumnDynamic::computeHashInto(size_t row_begin, size_t row_end, UInt32 * h
     variant_col.computeHashInto(row_begin, row_end, value_hash.data(), /*initial=*/true);
 
     const auto shared_discr = getSharedVariantDiscriminator();
+    SharedValueTypeCache type_cache;
     for (size_t i = 0; i < n; ++i)
     {
         const size_t row = row_begin + i;
         if (variant_col.globalDiscriminatorAt(row) == shared_discr)
-            value_hash[i] = hashSharedValue(shared_variant.getDataAt(variant_col.offsetAt(row)));
+            value_hash[i] = hashSharedValue(shared_variant.getDataAt(variant_col.offsetAt(row)), type_cache);
     }
 
     if (initial)
