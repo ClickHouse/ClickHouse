@@ -13,30 +13,20 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 echo "--- every allowed type is accepted ---"
-while read -r type
-do
-    if $CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (s) TYPE $type GRANULARITY 1; DROP HYPOTHETICAL INDEX hi ON t_hypo_types;" > /dev/null 2>&1
-    then
-        echo "accepted: $type"
-    else
-        echo "REJECTED: $type"
-    fi
-done <<'EOF'
-minmax
-set(100)
-bloom_filter(0.01)
-ngrambf_v1(3, 256, 2, 0)
-tokenbf_v1(256, 2, 0)
-sparse_grams(3, 100, 512, 2, 0)
-EOF
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL INDEX i1 ON t_hypo_types (s) TYPE minmax GRANULARITY 1;
+    CREATE HYPOTHETICAL INDEX i2 ON t_hypo_types (s) TYPE set(100) GRANULARITY 1;
+    CREATE HYPOTHETICAL INDEX i3 ON t_hypo_types (s) TYPE bloom_filter(0.01) GRANULARITY 1;
+    CREATE HYPOTHETICAL INDEX i4 ON t_hypo_types (s) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 1;
+    CREATE HYPOTHETICAL INDEX i5 ON t_hypo_types (s) TYPE tokenbf_v1(256, 2, 0) GRANULARITY 1;
+    CREATE HYPOTHETICAL INDEX i6 ON t_hypo_types (s) TYPE sparse_grams(3, 100, 512, 2, 0) GRANULARITY 1;
+    SELECT count() FROM system.hypothetical_indexes WHERE table = 't_hypo_types';
+"
 
-echo "--- types outside the allowlist are rejected at CREATE ---"
-$CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (v) TYPE vector_similarity('hnsw', 'L2Distance', 3) GRANULARITY 1;" 2>&1 | grep -m1 -oE 'NOT_IMPLEMENTED'
-$CLICKHOUSE_CLIENT -q "SET allow_experimental_full_text_index = 1; CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (s) TYPE text(tokenizer = 'array') GRANULARITY 1;" 2>&1 | grep -m1 -oE 'NOT_IMPLEMENTED'
-
-echo "--- the rejection names the supported types ---"
+echo "--- types outside the allowlist are rejected, and the error names what is supported ---"
 $CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (v) TYPE vector_similarity('hnsw', 'L2Distance', 3) GRANULARITY 1;" 2>&1 \
-    | grep -m1 -oE 'Supported types: [a-z_, ]+'
+    | grep -oE 'NOT_IMPLEMENTED|Supported types: [a-z0-9_, ]+'
+$CLICKHOUSE_CLIENT -q "SET allow_experimental_full_text_index = 1; CREATE HYPOTHETICAL INDEX hi ON t_hypo_types (s) TYPE text(tokenizer = 'array') GRANULARITY 1;" 2>&1 | grep -m1 -oE 'NOT_IMPLEMENTED'
 
 echo "--- validate still runs before the allowlist check ---"
 # 'hypothesis' is registered but its validator rejects it outright, so that error must win

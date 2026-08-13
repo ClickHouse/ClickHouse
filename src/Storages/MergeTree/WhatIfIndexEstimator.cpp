@@ -20,7 +20,6 @@
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
 #include <Storages/MergeTree/WhatIfSettings.h>
 #include <Storages/MergeTree/WhatIfStatisticalEstimator.h>
-#include <Storages/MergeTree/WhatIfSupportedIndexTypes.h>
 
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
@@ -189,14 +188,6 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
         result.not_applicable_reason = "Hypothetical index no longer matches the current table schema: "
             + getCurrentExceptionMessage(false);
-        return result;
-    }
-
-    if (!isIndexTypeSupportedByWhatIf(fresh_index_desc.type))
-    {
-        result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
-        result.not_applicable_reason = "EXPLAIN WHATIF does not support index type '" + fresh_index_desc.type
-            + "'. Supported types: " + getIndexTypesSupportedByWhatIf();
         return result;
     }
 
