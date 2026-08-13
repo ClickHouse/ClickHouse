@@ -61,9 +61,9 @@ Les exécutions suivantes de la même requête, également avec le paramètre `u
   ### Requêtes `ORDER BY ... LIMIT n` (TopK)
 </div>
 
-Les requêtes qui utilisent l’optimisation TopK (`ORDER BY <column> LIMIT n`, accélérée par le filtrage dynamique ou par un index d’omission minmax sur la colonne de tri) n’utilisent pas le cache des conditions de requête par défaut : ces lectures ne le consultent ni ne l’alimentent.
-Les lectures TopK peuvent ignorer des granules en fonction d’un seuil qui évolue pendant l’exécution de la requête. Leurs entrées de cache nécessitent donc une attention particulière ; elles sont soumises au paramètre distinct [`use_query_condition_cache_for_top_k`](/fr/reference/settings/session-settings/use-query) (désactivé par défaut), jusqu’à ce que la fiabilité de ces entrées soit pleinement établie.
-Le paramètre ne prend effet que si `use_query_condition_cache` est également activé.
+Les requêtes qui utilisent l’optimisation TopK (`ORDER BY <column> LIMIT n`, accélérée par le filtrage dynamique ou par un index d’omission minmax sur la colonne de tri) utilisent également le cache des conditions de requête.
+Les lectures TopK peuvent ignorer des granules en fonction d’un seuil qui évolue pendant l’exécution de la requête. Leurs entrées de cache sont donc partitionnées selon les paramètres du plan TopK et l’ensemble des parts lues : seule une requête ayant le même plan sur les mêmes parts les réutilise.
+Ces lectures peuvent être entièrement exclues du cache avec le paramètre [`use_query_condition_cache_for_top_k`](/fr/reference/settings/session-settings/use-query) (activé par défaut), qui ne prend effet que si `use_query_condition_cache` est également activé.
 
 <div id="administration">
   ## Administration

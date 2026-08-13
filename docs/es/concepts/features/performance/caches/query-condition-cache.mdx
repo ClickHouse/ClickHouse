@@ -61,9 +61,9 @@ Las ejecuciones posteriores de la misma consulta, también con el parámetro `us
   ### Consultas `ORDER BY ... LIMIT n` (TopK)
 </div>
 
-Las consultas que utilizan la optimización TopK (`ORDER BY <column> LIMIT n`, acelerada mediante filtrado dinámico o un índice de omisión minmax en la columna de ordenación) no usan la caché de condiciones de consulta de forma predeterminada: estas lecturas no la consultan ni la pueblan.
-Las lecturas TopK pueden omitir gránulos según un umbral que cambia mientras se ejecuta la consulta, por lo que sus entradas de caché requieren especial atención; su uso está sujeto a la configuración independiente [`use_query_condition_cache_for_top_k`](/es/reference/settings/session-settings/use-query) (predeterminado: deshabilitado) hasta que se confirme plenamente la validez de estas entradas.
-La configuración solo surte efecto si `use_query_condition_cache` también está habilitada.
+Las consultas que utilizan la optimización TopK (`ORDER BY <column> LIMIT n`, acelerada mediante filtrado dinámico o un índice de omisión minmax en la columna de ordenación) también utilizan la caché de condiciones de consulta.
+Las lecturas TopK pueden omitir gránulos según un umbral que cambia mientras se ejecuta la consulta, por lo que sus entradas de caché se particionan según los parámetros del plan TopK y el conjunto de partes leídas: solo una consulta con el mismo plan sobre las mismas partes las reutiliza.
+Estas lecturas pueden excluirse por completo de la caché con la configuración [`use_query_condition_cache_for_top_k`](/es/reference/settings/session-settings/use-query) (predeterminado: habilitado), que solo surte efecto si `use_query_condition_cache` también está habilitada.
 
 <div id="administration">
   ## Administración

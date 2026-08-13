@@ -61,9 +61,9 @@ SETTINGS use_query_condition_cache = true;
   ### `ORDER BY ... LIMIT n` (TopK) 쿼리
 </div>
 
-TopK 최적화(`ORDER BY <column> LIMIT n`, 동적 필터링 또는 정렬 컬럼의 minmax 스킵 인덱스로 가속됨)를 사용하는 쿼리는 기본적으로 쿼리 조건 캐시를 사용하지 않습니다. 이러한 읽기는 캐시를 조회하거나 채우지 않습니다.
-TopK 읽기는 쿼리 실행 중 변하는 임계값을 기준으로 그래뉼을 건너뛸 수 있으므로, 해당 캐시 엔트리에는 추가적인 주의가 필요합니다. 이러한 엔트리의 정확성이 완전히 검증될 때까지는 별도 설정인 [`use_query_condition_cache_for_top_k`](/ko/reference/settings/session-settings/use-query)로 제어되며, 기본값은 비활성화입니다.
-이 설정은 `use_query_condition_cache`도 활성화된 경우에만 적용됩니다.
+TopK 최적화(`ORDER BY <column> LIMIT n`, 동적 필터링 또는 정렬 컬럼의 minmax 스킵 인덱스로 가속됨)를 사용하는 쿼리도 쿼리 조건 캐시를 사용합니다.
+TopK 읽기는 쿼리 실행 중 변하는 임계값을 기준으로 그래뉼을 건너뛸 수 있으므로, 해당 캐시 엔트리는 TopK 계획 매개변수와 읽은 파트 집합에 따라 분할됩니다. 동일한 파트에서 동일한 계획을 사용하는 쿼리만 이를 재사용합니다.
+이러한 읽기는 [`use_query_condition_cache_for_top_k`](/ko/reference/settings/session-settings/use-query) 설정(기본값: 활성화됨)을 통해 캐시에서 완전히 제외할 수 있으며, 이 설정은 `use_query_condition_cache`도 활성화된 경우에만 적용됩니다.
 
 <div id="administration">
   ## 관리

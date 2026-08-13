@@ -61,9 +61,9 @@ SETTINGS use_query_condition_cache = true;
   ### `ORDER BY ... LIMIT n` (TopK) クエリ
 </div>
 
-TopK 最適化 (`ORDER BY <column> LIMIT n`。動的フィルタリングまたはソートカラムの minmax スキップ索引によって高速化) を使用するクエリでは、デフォルトでクエリ条件キャッシュは使用されません。このような読み取りでは、クエリ条件キャッシュを参照することも、クエリ条件キャッシュに格納することもありません。
-TopK の読み取りでは、クエリの実行中に変化するしきい値に基づいてグラニュールをスキップできるため、cache エントリの扱いには追加の注意が必要です。これらのエントリの妥当性が十分に確認されるまで、個別の設定 [`use_query_condition_cache_for_top_k`](/ja/reference/settings/session-settings/use-query) (デフォルト: 無効) で制御されます。
-この設定は、`use_query_condition_cache` も有効な場合にのみ適用されます。
+TopK 最適化 (`ORDER BY <column> LIMIT n`。動的フィルタリングまたはソートカラムの minmax スキップ索引によって高速化) を使用するクエリでも、クエリ条件キャッシュが使用されます。
+TopK の読み取りでは、クエリの実行中に変化するしきい値に基づいてグラニュールをスキップできるため、cache エントリは TopK プランのパラメータおよび読み取られるパーツのセットごとにパーティション化されます。同じパーツに対して同じプランを持つクエリのみがそれらを再利用します。
+このような読み取りは、設定 [`use_query_condition_cache_for_top_k`](/ja/reference/settings/session-settings/use-query) (デフォルト: 有効) によりキャッシュから完全に除外できます。この設定は、`use_query_condition_cache` も有効な場合にのみ適用されます。
 
 <div id="administration">
   ## 管理
