@@ -311,7 +311,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         }
 
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
-        if (auto * loaded_next = parent.load(std::memory_order_relaxed))
+        if (auto * loaded_next = parent.load(std::memory_order_acquire))
         {
             MemoryTracker * tracker = level == VariableContext::Process ? this : query_tracker;
             return loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability);
@@ -538,7 +538,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
 #endif
     }
 
-    if (auto * loaded_next = parent.load(std::memory_order_relaxed))
+    if (auto * loaded_next = parent.load(std::memory_order_acquire))
     {
         MemoryTracker * tracker = level == VariableContext::Process ? this : query_tracker;
         return loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability);
@@ -648,7 +648,7 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
         }
 
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
-        if (auto * loaded_next = parent.load(std::memory_order_relaxed))
+        if (auto * loaded_next = parent.load(std::memory_order_acquire))
             return loaded_next->free(size, _sample_probability);
 
         return AllocationTrace(_sample_probability);
@@ -677,7 +677,7 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
           */
         if (unlikely(new_amount < 0))
         {
-            amount.fetch_sub(new_amount);
+            amount.fetch_sub(new_amount, std::memory_order_relaxed);
             accounted_size += new_amount;
         }
     }
@@ -689,7 +689,7 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
     if (metric_loaded != CurrentMetrics::end())
         CurrentMetrics::sub(metric_loaded, accounted_size);
 
-    if (auto * loaded_next = parent.load(std::memory_order_relaxed))
+    if (auto * loaded_next = parent.load(std::memory_order_acquire))
         return loaded_next->free(size, _sample_probability);
 
     return AllocationTrace(_sample_probability);
@@ -805,7 +805,7 @@ void MemoryTracker::setParent(MemoryTracker * elem)
     if (level == VariableContext::Thread && DB::current_thread)
         DB::current_thread->flushUntrackedMemory();
 
-    parent.store(elem, std::memory_order_relaxed);
+    parent.store(elem, std::memory_order_release);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     bool found_total_memory_tracker = false;
@@ -816,7 +816,7 @@ void MemoryTracker::setParent(MemoryTracker * elem)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Double total in the MemoryTracker chains. It is a bug.");
         if (next == &total_memory_tracker)
             found_total_memory_tracker = true;
-    } while ((next = next->parent.load(std::memory_order_relaxed)));
+    } while ((next = next->parent.load(std::memory_order_acquire)));
     if (!found_total_memory_tracker)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot found total MemoryTracker. Bug in nesting.");
 #endif

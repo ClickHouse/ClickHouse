@@ -418,41 +418,25 @@ def check_rabbitmq_is_available(rabbitmq_id, cookie):
 
 
 def rabbitmq_debuginfo(rabbitmq_id, cookie):
-    p = subprocess.Popen(
-        docker_exec(
-            "-e",
-            f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            rabbitmq_id,
-            "rabbitmq-diagnostics",
-            "status",
-        ),
-        stdout=subprocess.PIPE,
+    # The container state shows whether it is still running and whether it was OOM-killed,
+    # and the process list shows where the entrypoint is stuck if the node never came up.
+    run_and_check(
+        ["docker", "inspect", "--format", "{{json .State}}", rabbitmq_id],
+        nothrow=True,
     )
-    p.communicate()
+    run_and_check(docker_exec(rabbitmq_id, "ps"), nothrow=True)
 
-    p = subprocess.Popen(
-        docker_exec(
-            "-e",
-            f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            rabbitmq_id,
-            "rabbitmq-diagnostics",
-            "listeners",
-        ),
-        stdout=subprocess.PIPE,
-    )
-    p.communicate()
-
-    p = subprocess.Popen(
-        docker_exec(
-            "-e",
-            f"RABBITMQ_ERLANG_COOKIE={cookie}",
-            rabbitmq_id,
-            "rabbitmq-diagnostics",
-            "environment",
-        ),
-        stdout=subprocess.PIPE,
-    )
-    p.communicate()
+    for diagnostic in ("status", "listeners", "environment"):
+        run_and_check(
+            docker_exec(
+                "-e",
+                f"RABBITMQ_ERLANG_COOKIE={cookie}",
+                rabbitmq_id,
+                "rabbitmq-diagnostics",
+                diagnostic,
+            ),
+            nothrow=True,
+        )
 
 
 async def check_nats_is_available(cluster, connect_timeout=10):
@@ -3155,34 +3139,50 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait MySQL C# Client container")
 
-    def wait_rabbitmq_to_start(self, timeout=120):
+    def wait_rabbitmq_to_start(self, timeout=120, retries=2):
         self.print_all_docker_pieces()
-        self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                if check_rabbitmq_is_available(
-                    self.rabbitmq_docker_id, self.rabbitmq_cookie
-                ):
-                    logging.debug("RabbitMQ is available")
-                    return True
-            except Exception as ex:
-                logging.debug("RabbitMQ await_startup failed, %s:", ex)
-                time.sleep(1)
+        for attempt in range(retries):
+            if attempt > 0:
+                # The container occasionally hangs on startup: the entrypoint produces
+                # no output at all and the Erlang node never registers with epmd, while
+                # a fresh container on the same host starts in seconds. Recreate it and
+                # wait again instead of failing the whole test module.
+                logging.warning(
+                    "RabbitMQ did not start in %s seconds, recreating the container",
+                    timeout,
+                )
+                run_and_check(
+                    ["docker", "rm", "-f", "-v", self.rabbitmq_docker_id],
+                    nothrow=True,
+                )
+                run_and_check(
+                    self.base_rabbitmq_cmd + ["up", "-d", "--renew-anon-volumes"]
+                )
+                self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
 
-        start = time.time()
-        while time.time() - start < timeout:
+            self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
+
+            start = time.time()
+            while time.time() - start < timeout:
+                try:
+                    if check_rabbitmq_is_available(
+                        self.rabbitmq_docker_id, self.rabbitmq_cookie
+                    ):
+                        logging.debug("RabbitMQ is available")
+                        return True
+                except Exception as ex:
+                    logging.debug("RabbitMQ await_startup failed, %s:", ex)
+                    time.sleep(1)
+
             try:
-                with open(os.path.join(self.rabbitmq_dir, "docker.log"), "w+") as f:
+                with open(os.path.join(self.rabbitmq_dir, "docker.log"), "a+") as f:
                     subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
                         self.base_rabbitmq_cmd + ["logs"], stdout=f
                     )
                 rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
-                break
             except Exception as ex:
                 logging.debug("Unable to get logs from docker: %s:", ex)
-                time.sleep(0.5)
 
         raise RuntimeError("Cannot wait RabbitMQ container")
 

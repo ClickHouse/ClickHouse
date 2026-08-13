@@ -649,6 +649,18 @@ class JobConfigs:
     # merge queue produces anyway; merge-queue runs use a reduced iteration
     # count and time budget (see `ci/jobs/functional_tests.py`) to keep queue
     # latency bounded.
+    #
+    # The same job config also runs in PR CI (see `ci/workflows/pull_request.py`),
+    # so the configuration that can bounce a PR from the merge queue is seen in
+    # the PR first, with the full iteration count and time budget. One config
+    # for both workflows keeps the two lanes from drifting apart, and it does
+    # not merge their praktika cache records: `calc_job_digest` hashes the
+    # mangled job config, and the PR workflow mangles it differently - the
+    # `pr-` runner-label prefix from `runs_on_label_prefix` and its own
+    # `run_after` list - so each workflow keeps its own cache key. That is what
+    # preserves the drift guard: a green PR-side run cannot mark the
+    # merge-queue run as cached, so the merge group state is still rechecked.
+    # `ci/tests/test_flaky_check_pr_parity.py` pins both halves of this.
     stateless_tests_flaky_mq_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_binary, flaky check",
