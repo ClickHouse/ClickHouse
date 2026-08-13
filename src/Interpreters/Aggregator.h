@@ -167,6 +167,8 @@ public:
         /// local single-stage aggregation (see `addAggregationStep` in the planner); requires
         /// `ANY` overflow mode without an overflow row, and external aggregation must be disabled
         /// because spilled buckets would bypass the restriction to the kept keys.
+        /// For the fixed hash map methods (8/16-bit keys) the cutoff stays inert and the
+        /// aggregation is exact and complete — see `Aggregator::shared_kept_keys_cutoff_inert`.
         /// See `ManyAggregatedData::SharedKeptKeys` for the protocol.
         bool shared_kept_keys_for_overflow_any = false;
 
@@ -395,6 +397,14 @@ private:
     AggregatedDataVariants::Type method_chosen_for_in_order;
 
     Sizes key_sizes;
+
+    /// `shared_kept_keys_for_overflow_any` is requested, but `method_chosen` uses a fixed hash
+    /// map (8/16-bit keys), where the cutoff is both useless and broken: the tables are bounded
+    /// by the key space (at most 65536 cells), so capping them buys nothing, and the implicit-zero
+    /// maps cannot represent a kept key with a zero inline `count()` state (such a cell reads as
+    /// absent, so the seeded keys would be lost and their rows dropped). `checkLimits` ignores
+    /// `max_rows_to_group_by` in that case and the aggregation stays exact and complete.
+    bool shared_kept_keys_cutoff_inert = false;
 
     HashMethodContextPtr aggregation_state_cache;
 

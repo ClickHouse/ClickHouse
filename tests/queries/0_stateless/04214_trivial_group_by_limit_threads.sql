@@ -12,7 +12,9 @@
 -- range of `number` and therefore sees a different cycle of keys early. With
 -- `max_block_size = 1` the cap is exceeded after the first few distinct keys, so
 -- without the shared kept-keys cutoff each thread would drop the keys it has not yet
--- seen and produce an undercount. The true count for every key is 100.
+-- seen and produce an undercount. The true count for every key is 100. The key is cast
+-- to `UInt64` because for 8/16-bit keys (fixed hash maps bounded by the key space) the
+-- cutoff intentionally stays inert.
 --
 -- The LIMIT-5 output of the GROUP BY is captured into a table because a bare SELECT
 -- would not demonstrate the wrong values deterministically enough in the output.
@@ -26,7 +28,7 @@ CREATE TABLE t_trivial_group_by_limit_threads (k UInt64, c UInt64) ENGINE = Memo
 
 INSERT INTO t_trivial_group_by_limit_threads
 SELECT k, count() AS c
-FROM (SELECT number % 100 AS k FROM numbers_mt(10000))
+FROM (SELECT toUInt64(number % 100) AS k FROM numbers_mt(10000))
 GROUP BY k
 LIMIT 5
 SETTINGS optimize_trivial_group_by_limit_query = 1, max_threads = 4, max_block_size = 1;

@@ -731,6 +731,26 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             ;
     }
 
+    /// See the comment on the member: the kept-keys cutoff must stay inert for the fixed hash
+    /// map methods, whose tables are bounded by the key space anyway.
+    if (params.shared_kept_keys_for_overflow_any)
+    {
+        switch (method_chosen)
+        {
+            case AggregatedDataVariants::Type::key8:
+            case AggregatedDataVariants::Type::key16:
+            case AggregatedDataVariants::Type::keys16:
+            case AggregatedDataVariants::Type::nullable_key8:
+            case AggregatedDataVariants::Type::nullable_key16:
+            case AggregatedDataVariants::Type::low_cardinality_key8:
+            case AggregatedDataVariants::Type::low_cardinality_key16:
+                shared_kept_keys_cutoff_inert = true;
+                break;
+            default:
+                break;
+        }
+    }
+
     HashMethodContext::Settings cache_settings;
     cache_settings.max_threads = params.max_threads;
     cache_settings.serialize_string_with_zero_byte = params.serialize_string_with_zero_byte;
@@ -1997,7 +2017,8 @@ void Aggregator::writeToTemporaryFileImpl(
 
 bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
 {
-    if (!no_more_keys && params.max_rows_to_group_by && result_size > params.max_rows_to_group_by)
+    if (!no_more_keys && params.max_rows_to_group_by && !shared_kept_keys_cutoff_inert
+        && result_size > params.max_rows_to_group_by)
     {
         switch (params.group_by_overflow_mode)
         {
