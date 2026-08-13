@@ -106,9 +106,14 @@ ASTPtr makePresenceMaskedValues(ASTPtr values, ASTPtr presence_counts, bool keep
         std::move(presence_counts));
 }
 
-String materializeTable(ASTPtr && select_query, ConverterContext & context)
+/// Registers a named subquery. Subqueries read by more than one downstream step must be added with
+/// SQLSubqueryType::MATERIALIZED_TABLE so they are evaluated once: ClickHouse inlines WITH subqueries
+/// per use, and `checkSharedSubqueriesAreMaterialized` asserts the mark in debug builds.
+/// (If the setting `enable_materialized_cte` is disabled, a shared subquery is evaluated a second
+/// time, which is still correct because group ids are the same within one query.)
+String materializeTable(ASTPtr && select_query, ConverterContext & context, SQLSubqueryType subquery_type = SQLSubqueryType::TABLE)
 {
-    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(select_query), SQLSubqueryType::TABLE});
+    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(select_query), subquery_type});
     return context.subqueries.back().name;
 }
 
@@ -149,8 +154,12 @@ void checkArgumentTypes(
     (void)context;
 }
 
-String
-prepareSide(const PrometheusQueryTree::BinaryOperator * operator_node, SQLQueryPiece && argument, ConverterContext & context, bool & metric_name_dropped)
+String prepareSide(
+    const PrometheusQueryTree::BinaryOperator * operator_node,
+    SQLQueryPiece && argument,
+    ConverterContext & context,
+    bool & metric_name_dropped,
+    bool read_twice)
 {
     argument = toVectorGrid(std::move(argument), context);
     metric_name_dropped = argument.metric_name_dropped;
@@ -176,7 +185,10 @@ prepareSide(const PrometheusQueryTree::BinaryOperator * operator_node, SQLQueryP
     builder.select_list.push_back(dropStaleMarkers(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
-    return materializeTable(builder.getSelectQuery(), context);
+    /// A side read twice (by the presence-counting step and by the final join or union) is added
+    /// as a materialized CTE to be evaluated once.
+    return materializeTable(
+        builder.getSelectQuery(), context, read_twice ? SQLSubqueryType::MATERIALIZED_TABLE : SQLSubqueryType::TABLE);
 }
 
 ASTPtr selectPresenceByJoinGroup(const String & table_name)
@@ -287,7 +299,8 @@ ASTPtr selectAnd(const String & left, const String & right, ConverterContext & c
 
 ASTPtr selectUnless(const String & left, const String & right, ConverterContext & context)
 {
-    String right_presence = materializeTable(selectPresenceByJoinGroup(right), context);
+    /// The presence table is read twice - by the missing-group anti join and by the masking join.
+    String right_presence = materializeTable(selectPresenceByJoinGroup(right), context, SQLSubqueryType::MATERIALIZED_TABLE);
     ASTPtr unmatched_groups = selectLeftByMissingGroup(left, right_presence);
     ASTPtr unmatched_steps = selectLeftMaskedByPresence(left, right_presence, /* keep_when_present = */ false, context);
     return selectUnion(std::move(unmatched_groups), std::move(unmatched_steps), context, /* combine_matching_groups = */ false);
@@ -295,7 +308,8 @@ ASTPtr selectUnless(const String & left, const String & right, ConverterContext 
 
 ASTPtr selectOr(const String & left, const String & right, ConverterContext & context)
 {
-    String left_presence = materializeTable(selectPresenceByJoinGroup(left), context);
+    /// The presence table is read twice - by the missing-group anti join and by the masking join.
+    String left_presence = materializeTable(selectPresenceByJoinGroup(left), context, SQLSubqueryType::MATERIALIZED_TABLE);
     ASTPtr left_all = selectOriginalSeries(left);
     ASTPtr right_unmatched_groups = selectLeftByMissingGroup(right, left_presence);
     ASTPtr right_unmatched_steps = selectLeftMaskedByPresence(right, left_presence, /* keep_when_present = */ false, context);
@@ -345,8 +359,12 @@ SQLQueryPiece applySetBinaryOperator(
 
     bool left_metric_name_dropped = false;
     bool right_metric_name_dropped = false;
-    String left = prepareSide(operator_node, std::move(left_argument), context, left_metric_name_dropped);
-    String right = prepareSide(operator_node, std::move(right_argument), context, right_metric_name_dropped);
+    /// `or` reads both sides twice (presence counting + the final selects), `unless` reads its left side twice
+    /// (the missing-group and masking branches); `and` reads each side once.
+    bool left_read_twice = impl_info->operation != SetOperation::And;
+    bool right_read_twice = impl_info->operation == SetOperation::Or;
+    String left = prepareSide(operator_node, std::move(left_argument), context, left_metric_name_dropped, left_read_twice);
+    String right = prepareSide(operator_node, std::move(right_argument), context, right_metric_name_dropped, right_read_twice);
 
     ASTPtr result_ast;
     switch (impl_info->operation)
