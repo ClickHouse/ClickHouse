@@ -949,9 +949,13 @@ namespace
 class RetypeLambdaArgumentColumnsVisitor : public InDepthQueryTreeVisitor<RetypeLambdaArgumentColumnsVisitor>
 {
 public:
-    RetypeLambdaArgumentColumnsVisitor(const LambdaArgumentsNode * arguments_, const ContextPtr & context_)
+    RetypeLambdaArgumentColumnsVisitor(
+        const LambdaArgumentsNode * arguments_,
+        const ContextPtr & context_,
+        const std::unordered_set<size_t> & changed_argument_indexes_)
         : arguments(arguments_)
         , context(context_)
+        , changed_argument_indexes(changed_argument_indexes_)
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -966,7 +970,13 @@ public:
             if (it == names.end())
                 return;
 
-            column_node->setColumnType(arguments->getTypes()[it - names.begin()]);
+            /// A parameter whose type is unchanged still reads the type it was resolved with, so
+            /// nothing above it needs rebuilding.
+            const size_t index = it - names.begin();
+            if (!changed_argument_indexes.contains(index))
+                return;
+
+            column_node->setColumnType(arguments->getTypes()[index]);
             retyped_subtrees.insert(node.get());
             return;
         }
@@ -1016,7 +1026,9 @@ public:
 private:
     const LambdaArgumentsNode * arguments;
     const ContextPtr & context;
-    /// Nodes a parameter read was retyped at or under. The body being visited owns every entry.
+    const std::unordered_set<size_t> & changed_argument_indexes;
+    /// Nodes a parameter read was retyped at or under. Only tested for membership, and no node is
+    /// allocated during the visit, so a released address cannot be aliased by a node tested later.
     std::unordered_set<const IQueryTreeNode *> retyped_subtrees;
 };
 
@@ -1103,14 +1115,24 @@ void rerunLambdaArgumentsResolve(FunctionNode * function_node, ContextPtr contex
                 function_node->getFunctionName(), index,
                 derived_argument_types.size(), lambda_node.getArguments().getNames().size());
 
-        if (derived_argument_types == lambda_node.getArguments().getTypes())
+        const auto & old_argument_types = lambda_node.getArguments().getTypes();
+        if (derived_argument_types == old_argument_types)
             continue;
+
+        std::unordered_set<size_t> changed_argument_indexes;
+        for (size_t i = 0; i < derived_argument_types.size(); ++i)
+        {
+            const auto & new_type = derived_argument_types[i];
+            const auto & old_type = i < old_argument_types.size() ? old_argument_types[i] : nullptr;
+            if (!old_type || !new_type || !old_type->equals(*new_type))
+                changed_argument_indexes.insert(i);
+        }
 
         lambda_node.getArguments().resolve(derived_argument_types);
 
         /// The body reads the parameters through columns sourced from the arguments node, so those
         /// columns and everything derived from them must be re-typed too.
-        RetypeLambdaArgumentColumnsVisitor retype_visitor(&lambda_node.getArguments(), context);
+        RetypeLambdaArgumentColumnsVisitor retype_visitor(&lambda_node.getArguments(), context, changed_argument_indexes);
         retype_visitor.visit(lambda_node.getExpression());
 
         lambda_node.resolve(std::make_shared<DataTypeFunction>(

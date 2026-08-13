@@ -12,3 +12,7 @@ udf in a lambda whose parameter is a restored join column, join_use_nulls
 1
 udf in a retyped lambda body, restored column also read outside
 1
+udf reads an unchanged parameter beside a restored one, join_use_nulls
+1
+builtin reads an unchanged parameter beside a restored one, join_use_nulls
+1

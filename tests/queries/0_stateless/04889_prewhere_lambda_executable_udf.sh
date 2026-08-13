@@ -28,6 +28,15 @@ run() {
            "--user_defined_executable_functions_config=$SCRIPTS_DIR/function.xml" < /dev/null
 }
 
+# udf_proxy echoes its argument, so unlike the nullary test_function it can read a lambda
+# parameter. It is declared in a separate config.
+run_proxy() {
+    echo "$1"
+    $CLICKHOUSE_LOCAL --multiquery -q "$DATA $2" \
+        -- "--user_scripts_path=$SCRIPTS_DIR" \
+           "--user_defined_executable_functions_config=$SCRIPTS_DIR/proxy.xml" < /dev/null
+}
+
 run 'udf outside a lambda' "
     SELECT id FROM lam_udf_l PREWHERE (test_function() = 'qwerty') AND (v > 0) ORDER BY id;"
 
@@ -61,4 +70,16 @@ run 'udf in a lambda whose parameter is a restored join column, join_use_nulls' 
 run 'udf in a retyped lambda body, restored column also read outside' "
     SELECT a.id FROM lam_udf_l AS a LEFT JOIN lam_udf_r AS b ON a.id = b.x
     PREWHERE arrayExists(x -> (test_function() = 'qwerty') AND (x != 0), [b.y]) AND (b.y > 0)
+    ORDER BY a.id SETTINGS join_use_nulls = 1;"
+
+# Only the second parameter of this lambda is restored, so the udf reading the first one keeps the
+# type it was resolved with and must be left alone. The builtin control takes the same shape.
+run_proxy 'udf reads an unchanged parameter beside a restored one, join_use_nulls' "
+    SELECT a.id FROM lam_udf_l AS a LEFT JOIN lam_udf_r AS b ON a.id = b.x
+    PREWHERE arrayExists((u, v) -> (udf_proxy(toString(u)) = '1') AND (v != 0), [1], [b.y])
+    ORDER BY a.id SETTINGS join_use_nulls = 1;"
+
+run_proxy 'builtin reads an unchanged parameter beside a restored one, join_use_nulls' "
+    SELECT a.id FROM lam_udf_l AS a LEFT JOIN lam_udf_r AS b ON a.id = b.x
+    PREWHERE arrayExists((u, v) -> (toString(u) = '1') AND (v != 0), [1], [b.y])
     ORDER BY a.id SETTINGS join_use_nulls = 1;"
