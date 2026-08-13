@@ -388,7 +388,39 @@ void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bo
 /// subquery is processed.
 QueryTreeNodePtr buildSubcolumnProjectionNode(const PushdownGroup & group, const QueryTreeNodePtr & inner_node, const ContextPtr & context)
 {
-    auto * inner_column = inner_node->as<ColumnNode>();
+    /// The projection expression can itself be a subcolumn read left as a `getSubcolumn` function,
+    /// e.g. when the subquery exports `json.a AS x` over a deeper subquery. Reading a subcolumn of
+    /// such an export is reading a deeper subcolumn of the underlying column, so the paths compose:
+    /// `a` + `b` -> `a.b`.
+    QueryTreeNodePtr base_node = inner_node;
+    String subcolumn_path = group.subcolumn_path;
+
+    while (const auto * base_function = base_node->as<FunctionNode>())
+    {
+        if (base_function->getFunctionName() != "getSubcolumn" || !base_function->isResolved())
+            return nullptr;
+
+        const auto & base_function_arguments = base_function->getArguments().getNodes();
+        if (base_function_arguments.size() != 2)
+            return nullptr;
+
+        const auto * path_constant = base_function_arguments[1]->as<ConstantNode>();
+        if (!path_constant)
+            return nullptr;
+
+        auto path_value = path_constant->getValue();
+        if (path_value.getType() != Field::Types::String)
+            return nullptr;
+
+        auto path_prefix = path_value.safeGet<String>();
+        if (path_prefix.empty())
+            return nullptr;
+
+        subcolumn_path = path_prefix + "." + subcolumn_path;
+        base_node = base_function_arguments[0];
+    }
+
+    auto * inner_column = base_node->as<ColumnNode>();
     if (!inner_column)
         return nullptr;
 
@@ -422,7 +454,7 @@ QueryTreeNodePtr buildSubcolumnProjectionNode(const PushdownGroup & group, const
         if (storage_snapshot->metadata->isVirtualColumn(inner_column->getColumnName()))
             return nullptr;
 
-        auto subcolumn_full_name = inner_column->getColumnName() + "." + group.subcolumn_path;
+        auto subcolumn_full_name = inner_column->getColumnName() + "." + subcolumn_path;
 
         /// An ordinary column with the same name would shadow the subcolumn.
         if (storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All), subcolumn_full_name))
@@ -439,7 +471,7 @@ QueryTreeNodePtr buildSubcolumnProjectionNode(const PushdownGroup & group, const
     {
         auto function_node = std::make_shared<FunctionNode>("getSubcolumn");
 
-        auto constant_value = ConstantValue{group.subcolumn_path, std::make_shared<DataTypeString>()};
+        auto constant_value = ConstantValue{subcolumn_path, std::make_shared<DataTypeString>()};
 
         ColumnsWithTypeAndName argument_columns;
         argument_columns.push_back({nullptr, inner_column->getColumnType(), {}});
@@ -451,7 +483,7 @@ QueryTreeNodePtr buildSubcolumnProjectionNode(const PushdownGroup & group, const
             return nullptr;
 
         auto & function_arguments = function_node->getArguments().getNodes();
-        function_arguments.push_back(inner_node->clone());
+        function_arguments.push_back(base_node->clone());
         function_arguments.push_back(std::make_shared<ConstantNode>(std::move(constant_value)));
 
         function_node->resolveAsFunction(std::move(function_base));
