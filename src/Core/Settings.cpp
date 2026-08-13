@@ -3300,12 +3300,20 @@ will be higher than the value of this setting.
 )", 0) \
     DECLARE(OverflowMode, timeout_overflow_mode, OverflowMode::THROW, R"(
 Sets what to do if the query is run longer than the `max_execution_time` or the
-estimated running time is longer than `max_estimated_execution_time`.
+estimated running time is longer than `max_estimated_execution_time` (the
+estimate is only checked with `throw`).
 
 Possible values:
 - `throw`: throw an exception (default).
 - `break`: stop executing the query and return the partial result, as if the
-source data ran out.
+source data ran out. Some operations cannot return a partial result safely, so instead of a smaller
+result they stop without producing one. A function computing a single value stops without producing
+that value; whether the stop also reaches the client as a `TIMEOUT_EXCEEDED` error, or only as a
+missing result, depends on where the query was interrupted. A `Memory`-table mutation left
+incomplete by the timeout keeps the table unchanged and reports `TIMEOUT_EXCEEDED`. An `INSERT` may
+report `QUERY_WAS_CANCELLED`. Some operations that wait for other replicas or for background work
+do not stop at `max_execution_time` at all: a quorum write keeps waiting until its quorum is
+satisfied, or reports `UNKNOWN_STATUS_OF_INSERT` if `insert_quorum_timeout` elapses first.
 )", 0) \
     DECLARE(Seconds, max_execution_time_leaf, 0, R"(
 Similar semantically to [`max_execution_time`](#max_execution_time) but only
@@ -3333,7 +3341,11 @@ Sets what happens when the query in leaf node run longer than `max_execution_tim
 Possible values:
 - `throw`: throw an exception (default).
 - `break`: stop executing the query and return the partial result, as if the
-source data ran out.
+source data ran out. Some operations cannot return a partial result safely, so
+instead of a smaller result they stop without producing one: a function
+computing a single value stops without producing that value. Whether such a stop
+also reaches the client as a `TIMEOUT_EXCEEDED` error, or only as a missing
+result, depends on where the query was interrupted.
 )", 0) \
     \
     DECLARE(UInt64, min_execution_speed, 0, R"(
@@ -5390,7 +5402,7 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
 - `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
 - `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
 - `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.
-- `geometry`: convert MySQL's spatial types (`LINESTRING`, `POLYGON`, `MULTILINESTRING`, `MULTIPOLYGON`, `MULTIPOINT`) to the corresponding ClickHouse geometric types, and the generic `GEOMETRY` type to the umbrella `Geometry` type. `POINT` is always converted to `Point` regardless of this option. Because a generic `GEOMETRY` column can hold any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; columns declared as `GEOMETRYCOLLECTION` map to `String`.
+- `geometry`: convert MySQL's spatial types (`LINESTRING`, `POLYGON`, `MULTILINESTRING`, `MULTIPOLYGON`, `MULTIPOINT`) to the corresponding ClickHouse geometric types, and the generic `GEOMETRY` type to the umbrella `Geometry` type. `POINT` is always converted to `Point` regardless of this option. Because a generic `GEOMETRY` column can hold any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; columns declared as `GEOMETRYCOLLECTION` map to `String`. A nullable spatial column other than `POINT` also maps to `Nullable(String)`, since `Point` is the only geometric type that can be nested inside `Nullable`. Every such string is a 4-byte SRID prefix followed by the WKB payload, as returned by MySQL. All of the above applies when the schema is inferred from the column types of a MySQL table; when the source is a query (the `query(...)` argument of the `mysql` table function or the `MySQL` table engine), MySQL reports every spatial result column as the generic `GEOMETRY` without the concrete subtype, so such columns — including `POINT` — map to `String` (`Nullable(String)` if nullable).
 )", 0) \
     DECLARE(Bool, optimize_trivial_insert_select, false, R"(
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
@@ -6885,6 +6897,9 @@ Cloud default value: `1`.
 )", 0) \
     DECLARE(Bool, enable_filesystem_cache_log, false, R"(
 Allows to record the filesystem caching log for each query
+)", 0) \
+    DECLARE(Bool, filesystem_cache_verbose_logging, false, R"(
+Emit `TEST`-level log messages for every filesystem cache buffer refill (state of the read, remaining size to read, bytes read). Only for debugging: the messages are formatted once per read, so enabling it on a query that does many small cached reads adds a large amount of logging overhead. The messages are only visible when the log level is `test` anyway (see `send_logs_level`).
 )", 0) \
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
@@ -8785,7 +8800,7 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
 Maximum number of texts to include in a single HTTP request made by the embedding functions (`aiEmbed`, `aiSimilarity`). Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
 )", EXPERIMENTAL) \
     DECLARE(String, ai_function_text_default_credentials, "", R"(
-Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint differs from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
+Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint and model differ from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
 )", EXPERIMENTAL) \
     DECLARE(String, ai_function_embedding_default_credentials, "", R"(
 Name of the named collection used by the embedding functions (`aiEmbed`, `aiSimilarity`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. These functions take `model` as a required positional argument, not from the named collection. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint differs from a chat one.
