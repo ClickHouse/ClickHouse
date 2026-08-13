@@ -25,7 +25,8 @@ Check out our [ClickHouse Managed Postgres](/products/managed-postgres/overview)
 The `PostgreSQL` table engine allows **SELECT** and **INSERT** operations on data stored on the remote PostgreSQL server from ClickHouse.
 This article is to illustrate basic methods of integration using one table.
 
-### 1. Setting up PostgreSQL {#1-setting-up-postgresql}
+<Steps>
+<Step title="Setting up PostgreSQL" id="1-setting-up-postgresql">
 1.  In `postgresql.conf`, add the following entry to enable PostgreSQL to listen on the network interfaces:
   ```text
   listen_addresses = '*'
@@ -79,7 +80,8 @@ If you're using this feature in ClickHouse Cloud, you may need the to allow the 
 Check the ClickHouse [Cloud Endpoints API](/products/cloud/guides/sql-console/query-endpoints) for egress traffic details.
 </Note>
 
-### 2. Define a Table in ClickHouse {#2-define-a-table-in-clickhouse}
+</Step>
+<Step title="Define a table in ClickHouse" id="2-define-a-table-in-clickhouse">
 1. Login to the `clickhouse-client`:
   ```bash
   clickhouse-client --user default --password ClickHouse123!
@@ -113,7 +115,8 @@ Check the ClickHouse [Cloud Endpoints API](/products/cloud/guides/sql-console/qu
   View the [PostgreSQL table engine](/reference/engines/table-engines/integrations/postgresql) doc page for a complete list of parameters.
 </Note>
 
-### 3 Test the Integration {#3-test-the-integration}
+</Step>
+<Step title="Test the integration" id="3-test-the-integration">
 
 1. In ClickHouse, view initial rows:
   ```sql
@@ -178,6 +181,9 @@ Check the ClickHouse [Cloud Endpoints API](/products/cloud/guides/sql-console/qu
     6 | pqr
   (6 rows)
   ```
+
+</Step>
+</Steps>
 
 This example demonstrated the basic integration between PostgreSQL and ClickHouse using the `PostrgeSQL` table engine.
 Check out the [doc page for the PostgreSQL table engine](/reference/engines/table-engines/integrations/postgresql) for more features, such as specifying schemas, returning only a subset of columns, and connecting to multiple replicas. Also check out the [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres) blog.
