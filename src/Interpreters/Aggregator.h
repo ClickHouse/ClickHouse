@@ -158,6 +158,18 @@ public:
         /// `prealloc_serialized`, where it is a win.
         bool aggregation_in_order = false;
 
+        /// With `group_by_overflow_mode = ANY`: once any aggregation stream exceeds
+        /// `max_rows_to_group_by`, freeze a single shared set of exactly `max_rows_to_group_by`
+        /// kept keys and restrict every parallel stream to that set, so that the aggregate values
+        /// of the returned keys stay exact. Without it the cutoff is per-stream: a key kept by one
+        /// stream and rejected by another loses the other stream's rows and comes out of the merge
+        /// with an undercounted value. Set by the trivial `GROUP BY ... LIMIT` optimization for
+        /// local single-stage aggregation (see `addAggregationStep` in the planner); requires
+        /// `ANY` overflow mode without an overflow row, and external aggregation must be disabled
+        /// because spilled buckets would bypass the restriction to the kept keys.
+        /// See `ManyAggregatedData::SharedKeptKeys` for the protocol.
+        bool shared_kept_keys_for_overflow_any = false;
+
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
         Params(

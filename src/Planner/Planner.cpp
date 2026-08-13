@@ -75,6 +75,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TrivialGroupByLimit.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/AggregationUtils.h>
@@ -629,7 +630,8 @@ ALWAYS_INLINE void addFilterStep(
 Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
-    bool aggregate_descriptions_remove_arguments = false)
+    bool aggregate_descriptions_remove_arguments = false,
+    std::optional<UInt64> trivial_group_by_limit = {})
 {
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
@@ -653,16 +655,24 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     auto tmp_data_scope = query_context->getTempDataOnDisk();
     if (tmp_data_scope)
         tmp_data_scope = tmp_data_scope->childScope(/* metrics */{}, settings[Setting::temporary_files_buffer_size], settings[Setting::temporary_files_codec]);
+    /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET` keys
+    /// and enable the shared kept-keys cutoff, which keeps the aggregate values of the kept keys
+    /// exact under parallel aggregation (see `Aggregator::Params::shared_kept_keys_for_overflow_any`).
+    /// External aggregation is disabled together with it: spilled buckets would bypass the
+    /// restriction to the kept keys. Memory stays bounded anyway — the cutoff caps every stream's
+    /// hash table at roughly `LIMIT + OFFSET` keys plus one block of keys before the freeze.
     Aggregator::Params aggregator_params = Aggregator::Params(
         aggregation_analysis_result.aggregation_keys,
         aggregate_descriptions,
         query_analysis_result.aggregate_overflow_row,
-        settings[Setting::max_rows_to_group_by],
-        settings[Setting::group_by_overflow_mode],
+        trivial_group_by_limit.value_or(settings[Setting::max_rows_to_group_by]),
+        trivial_group_by_limit ? OverflowMode::ANY : settings[Setting::group_by_overflow_mode].value,
         settings[Setting::group_by_two_level_threshold],
         settings[Setting::group_by_two_level_threshold_bytes],
-        Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
-            settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
+        trivial_group_by_limit
+            ? 0
+            : Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
+                settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]
                 && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys),
@@ -681,6 +691,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::serialize_string_in_memory_with_zero_byte],
         settings[Setting::enable_parallel_single_level_merge],
         settings[Setting::enable_packed_string_keys_in_aggregation]);
+    aggregator_params.shared_kept_keys_for_overflow_any = trivial_group_by_limit.has_value();
 
     return aggregator_params;
 }
@@ -699,10 +710,16 @@ SortDescription getSortDescriptionFromNames(const Names & names)
 void addAggregationStep(QueryPlan & query_plan,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    std::optional<UInt64> trivial_group_by_limit)
 {
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
-    auto aggregator_params = getAggregatorParams(planner_context, aggregation_analysis_result, query_analysis_result);
+    auto aggregator_params = getAggregatorParams(
+        planner_context,
+        aggregation_analysis_result,
+        query_analysis_result,
+        /*aggregate_descriptions_remove_arguments=*/false,
+        trivial_group_by_limit);
 
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
@@ -2425,7 +2442,31 @@ void Planner::buildPlanForQueryNode()
                     "Before GROUP BY",
                     useful_sets);
 
-            addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context);
+            /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET`
+            /// keys. Unlike the settings-based rewrite of `OptimizeTrivialGroupByLimitPass`
+            /// (which is restricted to aggregate-free projections), the shared kept-keys cutoff
+            /// keeps the aggregate values of the kept keys exact, so it also fires with aggregate
+            /// functions in the projection. It is only sound when this node performs the complete
+            /// aggregation itself (both stages): partial states sent to a remote initiator would
+            /// be merged with other nodes' states, whose kept keys differ, and the values of the
+            /// kept keys would be undercounted again — one level up, across nodes instead of
+            /// across threads. On the shards of distributed queries and on the replicas of
+            /// parallel-replicas reading, `isSecondStage` is false, so the cutoff stays off there.
+            std::optional<UInt64> trivial_group_by_limit;
+            if (query_processing_info.isFirstStage() && query_processing_info.isSecondStage())
+            {
+                trivial_group_by_limit = getTrivialGroupByLimit(query_node, settings);
+
+                /// Respect a user-set tighter `max_rows_to_group_by`: keep the user's approximate
+                /// ANY-mode semantics untouched. When the values are equal, proceeding only makes
+                /// the values of the kept keys exact — this also covers the aggregate-free case
+                /// where `OptimizeTrivialGroupByLimitPass` has already set the very same value.
+                const UInt64 user_max_rows = settings[Setting::max_rows_to_group_by];
+                if (trivial_group_by_limit && user_max_rows != 0 && user_max_rows < *trivial_group_by_limit)
+                    trivial_group_by_limit.reset();
+            }
+
+            addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, trivial_group_by_limit);
         }
 
         /** If we have aggregation, we can't execute any later-stage

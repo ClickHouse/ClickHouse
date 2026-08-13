@@ -4,6 +4,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
+#include <Common/Arena.h>
 #include <Common/CurrentThread.h>
 #include <Core/ProtocolDefines.h>
 #include <Formats/NativeReader.h>
@@ -34,6 +35,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event ExternalAggregationMerge;
+    extern const Event AggregationSharedKeptKeysRebuilds;
 }
 
 namespace DB
@@ -1008,6 +1010,82 @@ private:
     }
 };
 
+namespace
+{
+
+/// Builds the seed block of the kept-keys cutoff: the first `max_rows` keys of the freezing
+/// stream in the mergeable block layout, with empty aggregate states. Merging the seed into an
+/// empty `AggregatedDataVariants` pre-seeds the hash table with exactly the kept keys; merging
+/// the stream's own converted data on top with `no_more_keys` then merges the states of the kept
+/// keys and drops everything else.
+Block buildKeptKeysSeedBlock(
+    const Aggregator::AggregatedChunks & own_chunks, const Block & mergeable_header, size_t keys_size, size_t max_rows)
+{
+    MutableColumns seed_columns = mergeable_header.cloneEmptyColumns();
+
+    size_t rows_left = max_rows;
+    for (const auto & agg_chunk : own_chunks)
+    {
+        if (!rows_left)
+            break;
+        chassert(!agg_chunk.is_overflows);
+        size_t rows_to_take = std::min(rows_left, agg_chunk.chunk.getNumRows());
+        const auto & columns = agg_chunk.chunk.getColumns();
+        for (size_t i = 0; i < keys_size; ++i)
+            seed_columns[i]->insertRangeFrom(*columns[i], 0, rows_to_take);
+        rows_left -= rows_to_take;
+    }
+
+    /// `checkLimits` freezes only when the table size exceeds `max_rows`, so the freezing
+    /// stream always has enough keys for a full seed.
+    chassert(rows_left == 0);
+
+    /// Empty aggregate states for the kept keys: `insertDefault` of `ColumnAggregateFunction`
+    /// creates a freshly initialized state, and merging such a state into another is a no-op.
+    for (size_t i = keys_size; i < seed_columns.size(); ++i)
+        seed_columns[i]->insertManyDefaults(max_rows - rows_left);
+
+    Block seed = mergeable_header.cloneEmpty();
+    seed.setColumns(std::move(seed_columns));
+    return seed;
+}
+
+/// Rebuilds `variants` in place to contain exactly the kept keys of the seed block, preserving
+/// the states the stream has accumulated for them. `own_chunks` must be the result of
+/// `convertToChunks(variants, final = false)` on the same variants (empty when the variants held
+/// no data). The states of the dropped keys are destroyed together with `own_chunks`.
+void rebuildVariantsToKeptKeys(
+    const Aggregator & aggregator,
+    AggregatedDataVariants & variants,
+    const Block & seed,
+    Aggregator::AggregatedChunks own_chunks,
+    std::atomic<bool> & is_cancelled)
+{
+    /// After `convertToChunks` the chunks own the states. Reset the table and the arenas so the
+    /// old arenas die with the chunks instead of staying referenced for the rest of the query.
+    variants.invalidate();
+    variants.aggregates_pools = AggregatedDataVariants::Arenas(1, std::make_shared<Arena>());
+    variants.aggregates_pool = variants.aggregates_pools.back().get();
+    chassert(!variants.without_key);
+
+    bool rebuild_no_more_keys = false;
+    aggregator.mergeOnBlock(seed.getColumns(), seed.rows(), /*is_overflows=*/false, variants, rebuild_no_more_keys, is_cancelled);
+    /// The seed has exactly `max_rows_to_group_by` keys, which does not exceed the limit.
+    chassert(!rebuild_no_more_keys);
+    rebuild_no_more_keys = true;
+
+    for (auto & agg_chunk : own_chunks)
+    {
+        size_t num_rows = agg_chunk.chunk.getNumRows();
+        aggregator.mergeOnBlock(
+            agg_chunk.chunk.detachColumns(), num_rows, /*is_overflows=*/false, variants, rebuild_no_more_keys, is_cancelled);
+    }
+
+    ProfileEvents::increment(ProfileEvents::AggregationSharedKeptKeysRebuilds);
+}
+
+}
+
 AggregatingTransform::AggregatingTransform(
     SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : AggregatingTransform(
@@ -1039,6 +1117,7 @@ AggregatingTransform::AggregatingTransform(
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
     , variants(*many_data->variants[current_variant])
+    , variant_index(current_variant)
     , max_threads(std::min(many_data->variants.size(), max_threads_))
     , temporary_data_merge_threads(temporary_data_merge_threads_)
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
@@ -1184,6 +1263,15 @@ void AggregatingTransform::consume(Chunk chunk)
     src_rows += num_rows;
     src_bytes += chunk.bytes();
 
+    /// The kept-keys cutoff froze in another stream: restrict this stream's hash table to the
+    /// kept keys before consuming more rows (see ManyAggregatedData::SharedKeptKeys). Once the
+    /// cutoff is applied, `no_more_keys` stays set, so this fires at most once per stream.
+    const auto & shared_kept_keys = many_data->shared_kept_keys;
+    if (shared_kept_keys && !no_more_keys && shared_kept_keys->frozen.load(std::memory_order_acquire))
+        applySharedKeptKeysCutoff(/*may_freeze=*/false);
+
+    const bool had_no_more_keys = no_more_keys;
+
     if (params->params.only_merge)
     {
         materializeChunk(chunk);
@@ -1195,6 +1283,40 @@ void AggregatingTransform::consume(Chunk chunk)
         if (!params->aggregator.executeOnBlock(chunk.detachColumns(), 0, num_rows, variants, key_columns, aggregate_columns, no_more_keys))
             is_consume_finished = true;
     }
+
+    /// This stream is the first to exceed `max_rows_to_group_by` (`checkLimits` has just set
+    /// `no_more_keys`): publish the kept key set and restrict this stream to it. All the rows
+    /// consumed so far, including the chunk above, were aggregated normally.
+    if (shared_kept_keys && no_more_keys && !had_no_more_keys)
+        applySharedKeptKeysCutoff(/*may_freeze=*/true);
+}
+
+void AggregatingTransform::applySharedKeptKeysCutoff(bool may_freeze)
+{
+    auto & shared = *many_data->shared_kept_keys;
+    const auto & aggregator = params->aggregator;
+
+    /// Move this stream's accumulated states out of the hash table. The chunks keep the states
+    /// alive (and destroy the dropped ones) while the table is rebuilt around the kept keys.
+    Aggregator::AggregatedChunks own_chunks;
+    if (!variants.empty())
+        own_chunks = aggregator.convertToChunks(variants, /*final=*/false);
+
+    if (may_freeze)
+    {
+        std::lock_guard lock(shared.mutex);
+        if (!shared.frozen.load(std::memory_order_relaxed))
+        {
+            shared.seed = buildKeptKeysSeedBlock(
+                own_chunks, params->getCustomHeader(/*final_=*/false), aggregator.getParams().keys_size, aggregator.getParams().max_rows_to_group_by);
+            shared.frozen.store(true, std::memory_order_release);
+            LOG_TRACE(log, "Froze a shared set of {} kept keys for the GROUP BY LIMIT cutoff", shared.seed.rows());
+        }
+    }
+
+    rebuildVariantsToKeptKeys(aggregator, variants, shared.seed, std::move(own_chunks), is_cancelled);
+    shared.applied[variant_index] = 1;
+    no_more_keys = true;
 }
 
 void AggregatingTransform::initGenerate()
@@ -1236,6 +1358,26 @@ void AggregatingTransform::initGenerate()
         /// It might cause extra memory usage for complex queries othervise.
         many_data.reset();
         return;
+    }
+
+    /// If the kept-keys cutoff froze, restrict the variants of the streams that finished
+    /// consuming before discovering the freeze: they still hold arbitrary keys whose merged
+    /// values would be undercounted (see ManyAggregatedData::SharedKeptKeys). All the streams
+    /// have finished consuming at this point (`num_finished`), so the variants are ours.
+    if (const auto & shared = many_data->shared_kept_keys; shared && shared->frozen.load(std::memory_order_acquire))
+    {
+        for (size_t i = 0; i < many_data->variants.size(); ++i)
+        {
+            auto & variant = *many_data->variants[i];
+            if (shared->applied[i] || variant.empty())
+                continue;
+            /// Use the aggregator that built the variant: mixed pipelines of aggregate
+            /// projections aggregate raw and pre-aggregated parts with two different ones.
+            const Aggregator & builder = variant.aggregator ? *variant.aggregator : params->aggregator;
+            auto own_chunks = builder.convertToChunks(variant, /*final=*/false);
+            rebuildVariantsToKeptKeys(builder, variant, shared->seed, std::move(own_chunks), is_cancelled);
+            shared->applied[i] = 1;
+        }
     }
 
     /// In the case of two different aggregators existing simultaneously due to a mixed pipeline of aggregate projections,
