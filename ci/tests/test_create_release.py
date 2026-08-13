@@ -1265,6 +1265,24 @@ def test_enqueue_release_pr_open_enqueues(monkeypatch):
     assert enq["pr"] == 111
 
 
+# --- self-gating steps (the orchestrator no longer gates on recovery flags) --
+
+
+def test_push_new_release_branch_skips_when_branch_exists(monkeypatch):
+    """Idempotent: an existing release branch is a no-op, so the orchestrator no
+    longer needs an ``is_recovery`` gate. If it did not return early it would
+    reach ``CHVersion.get_current_version`` (patched to fail loudly here)."""
+    cr = _create_release_module()
+    ri = _make_release_info(cr, release_type="new", release_branch="26.5")
+    monkeypatch.setattr(cr.Git, "branch_exists", staticmethod(lambda name: True))
+
+    def _unreachable():
+        raise AssertionError("must skip before reading the version")
+
+    monkeypatch.setattr(cr.CHVersion, "get_current_version", staticmethod(_unreachable))
+    assert ri.push_new_release_branch(dry_run=False) is None
+
+
 def test_prepare_refuses_rereleasing_an_already_released_line(tmp_path):
     """A create run whose X.Y.P line was already released must fail closed.
 

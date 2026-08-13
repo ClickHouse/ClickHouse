@@ -266,7 +266,11 @@ class ReleaseInfo:
         return tweak == 1 and patch != 1
 
     def prepare(
-        self, commit_ref: str, release_type: str, dry_run: bool = False
+        self,
+        commit_ref: str,
+        release_type: str,
+        dry_run: bool = False,
+        skip_publish: bool = False,
     ) -> "ReleaseInfo":
         assert release_type in ("patch", "new")
         # `commit_ref` (the workflow `ref` input) is interpolated into git
@@ -420,6 +424,11 @@ class ReleaseInfo:
                     )
             self.is_recovery = False
         self.release_type = release_type
+        # skip-repo/skip-docker only re-publish an existing release (a recovery).
+        assert not (skip_publish and not self.is_recovery), (
+            f"skip-repo/skip-docker require a recovery ref; [{commit_ref}] resolves "
+            f"to a new release [{release_tag}] — pass the release tag instead"
+        )
         return self
 
     def push_release_tag(self, dry_run: bool) -> None:
@@ -454,6 +463,10 @@ class ReleaseInfo:
             print("WARNING: failed to create backport labels for the new branch")
 
     def push_new_release_branch(self, dry_run: bool) -> None:
+        # Idempotent: a recovery finds the branch already pushed — nothing to do.
+        if Git.branch_exists(self.release_branch):
+            print(f"Release branch [{self.release_branch}] already exists — skipping")
+            return
         version = CHVersion.get_current_version()
         new_release_branch = self.release_branch
         version_after_release = copy(version)
@@ -1032,6 +1045,16 @@ def parse_args() -> argparse.Namespace:
         help="Post release status (prints summary; Slack integration removed)",
     )
     parser.add_argument(
+        "--skip-repo",
+        action="store_true",
+        help="Repo export is skipped (only valid for a recovery ref)",
+    )
+    parser.add_argument(
+        "--skip-docker",
+        action="store_true",
+        help="Docker build is skipped (only valid for a recovery ref)",
+    )
+    parser.add_argument(
         "--ref",
         type=str,
         help="the commit hash or branch",
@@ -1069,6 +1092,7 @@ if __name__ == "__main__":
                 commit_ref=args.ref,
                 release_type=args.release_type,
                 dry_run=args.dry_run,
+                skip_publish=args.skip_repo or args.skip_docker,
             )
 
     if args.download_packages:

@@ -172,6 +172,9 @@ def main():
     # cannot pass on a repo this large).
     os.environ["GH_TOKEN"] = _GH_TOKEN_SECRET.get_value()
 
+    # Linear body: no `if ok` / recovery-flag / dry-run gating in the orchestrator.
+    # The `ok` short-circuit lives inside step() so a failed step skips the rest;
+    # the remaining runtime checks are delegated into the (self-gating) steps.
     results = []
     ok = True
 
@@ -229,10 +232,13 @@ def main():
     # mutation (tag push, GitHub release, repo export). Pushing docker images
     # is part of the release contract, so a missing/expired registry token must
     # stop the run before partial publication. Gated on the docker phase running
-    # this attempt (patch, not dry-run, docker not skipped).
-    if args.release_type == "patch" and not args.dry_run and not args.skip_docker:
+    # this attempt (patch, docker not skipped); the step self-skips on dry-run.
+    if args.release_type == "patch" and not args.skip_docker:
 
         def docker_login():
+            if args.dry_run:
+                print("Dry-run: skipping Docker Hub login")
+                return
             Shell.check(
                 f"docker login --username {shlex.quote(_DOCKERHUB_USERNAME)}"
                 f" --password-stdin",
@@ -248,20 +254,27 @@ def main():
         )
 
     if args.release_type == "patch" and not args.skip_repo:
-        # Skipped on dry-run (local convenience).
-        if not args.dry_run:
-            step(
-                # The tools are baked into the release-maker image; fail closed rather than fetch third-party code on a credentialed host.
-                name="Verify release tools",
-                command=[
-                    "geesefs --version"
-                    " && createrepo_c --version"
-                    " && reprepro --version 2>&1 | grep -qE 'reprepro version 5\\.([4-9]|[1-9][0-9])'"
-                    " || { echo 'ERROR: geesefs, createrepo_c and reprepro 5.4+ must be"
-                    " installed for a release' >&2; exit 1; }"
-                ],
-                workdir=REPO_PATH,
+
+        def verify_release_tools():
+            # Skipped on dry-run: the tools live on the release-maker image, not a laptop.
+            if args.dry_run:
+                print("Dry-run: skipping release-tools verification")
+                return
+            # The tools are baked into the release-maker image; fail closed rather than fetch third-party code on a credentialed host.
+            Shell.check(
+                "geesefs --version"
+                " && createrepo_c --version"
+                " && reprepro --version 2>&1 | grep -qE 'reprepro version 5\\.([4-9]|[1-9][0-9])'"
+                " || { echo 'ERROR: geesefs, createrepo_c and reprepro 5.4+ must be"
+                " installed for a release' >&2; exit 1; }",
+                strict=True,
             )
+
+        step(
+            name="Verify release tools",
+            command=verify_release_tools,
+            workdir=REPO_PATH,
+        )
 
         def _write_secret_file(path: str, content: str) -> None:
             # These hold R2 package-publishing credentials; create them 0600 so
@@ -315,73 +328,24 @@ def main():
             workdir=REPO_PATH,
         )
 
+    # Prepare validates the ref and refuses skip-repo/skip-docker against a
+    # non-recovery ref itself, so the orchestrator passes those inputs and does
+    # not gate on the result.
+    skip_flags = " ".join(
+        f for f in (
+            "--skip-repo" if args.skip_repo else "",
+            "--skip-docker" if args.skip_docker else "",
+        ) if f
+    )
     step(
         name="Prepare Release Info",
         command=[
             f"python3 ./ci/jobs/scripts/create_release.py --prepare-release-info"
             f" --ref {shlex.quote(args.ref)} --release-type {args.release_type}"
-            f" {dry_run_flag}".strip()
+            f" {skip_flags} {dry_run_flag}".strip()
         ],
         workdir=REPO_PATH,
     )
-
-    # Creation steps below self-skip recoveries, so they run unconditionally; is_recovery is read only under `ok`.
-    if ok:
-        with open(RELEASE_INFO_FILE) as f:
-            is_recovery = json.load(f)["is_recovery"]
-
-    # skip-repo / skip-docker mark a partial run that only re-publishes artifacts
-    # for an already-created release (repo/Docker recovery). If the ref resolves
-    # to a new release, they would otherwise fall through to the creation steps
-    # below (push tag, bump version, PRs) and produce a partial new release, so
-    # reject that misuse and require the release tag instead.
-    if ok and not is_recovery and (args.skip_repo or args.skip_docker):
-
-        def _require_recovery_ref():
-            raise RuntimeError(
-                "skip-repo/skip-docker re-publish an existing release and must be "
-                "run against its release tag (recovery); the given ref resolves to "
-                "a new release. Pass the release tag as the ref."
-            )
-
-        step(name="Validate Recovery Ref", command=_require_recovery_ref)
-
-    # The release opens exactly one PR against master - the changelog PR for a
-    # patch, the version-bump PR for a new release. Ensure it exists and is
-    # merged, idempotently: create it if absent, merge it if open, skip if it is
-    # already merged. This converges a fresh release and a recovery / rerun after
-    # a failed create-or-merge through the same path. These PR operations key off
-    # the PR's actual state, not the run mode, so they run regardless of
-    # skip-repo/skip-docker: a cheap recovery run can create a missing release PR
-    # or enqueue an open-but-unmerged one (e.g. when the original run's enqueue
-    # lost the race with a still-pending `CH Inc sync` required check).
-    if args.dry_run:
-        # No gh reads on dry-run (it may be a local run without gh auth): fall
-        # back to the fresh-release signal so the generation is still previewed.
-        release_pr_absent = ok and not is_recovery
-        release_pr_needs_merge = ok and not is_recovery
-    else:
-        release_pr_branch = None
-        release_pr_state = ""  # "MERGED" | "OPEN" | ""
-        if ok:
-            with open(RELEASE_INFO_FILE) as f:
-                _info = json.load(f)
-            release_pr_branch = (
-                f"auto/{_info['release_tag']}"
-                if args.release_type == "patch"
-                else f"bump_version_{_info['version']}"
-            )
-            release_pr_state = GH.get_pr_state_by_branch(
-                release_pr_branch, "ClickHouse/ClickHouse"
-            )
-            print(
-                f"Release PR branch [{release_pr_branch}] state: "
-                + (release_pr_state or "absent — will create")
-            )
-        release_pr_absent = release_pr_branch is not None and release_pr_state == ""
-        release_pr_needs_merge = (
-            release_pr_branch is not None and release_pr_state != "MERGED"
-        )
 
     # Fail-fast: verify the release packages exist (this downloads them) before
     # pushing the tag or opening the changelog PR, so a missing-artifacts run
@@ -405,7 +369,7 @@ def main():
         workdir=REPO_PATH,
     )
 
-    if ok and args.release_type == "new" and not is_recovery:
+    if args.release_type == "new":
         step(
             name="Push New Release Branch",
             command=[
@@ -424,7 +388,7 @@ def main():
     # branch tip as the just-released version, recovers the existing release, and
     # never refuses a rerun as "out-of-order" or mints a release below the tip —
     # all without scanning git tags. See the deferred step near the end of main.
-    if args.release_type == "new" and release_pr_absent:
+    if args.release_type == "new":
         step(
             name="Bump CH Version and Update Contributors' List",
             command=[
@@ -434,7 +398,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if ok and args.release_type == "patch" and release_pr_absent:
+    if args.release_type == "patch":
         with open(RELEASE_INFO_FILE) as f:
             release_tag = json.load(f)["release_tag"]
         uid = os.getuid()
@@ -470,12 +434,19 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if ok and args.release_type == "patch" and not args.dry_run and release_pr_absent:
-        with open(RELEASE_INFO_FILE) as f:
-            release_tag = json.load(f)["release_tag"]
+    if args.release_type == "patch":
 
         def create_changelog_pr():
+            if args.dry_run:
+                print("Dry-run: skipping ChangeLog PR creation")
+                return
+            with open(RELEASE_INFO_FILE) as f:
+                release_tag = json.load(f)["release_tag"]
             pr_branch = f"auto/{release_tag}"
+            # Idempotent: an already-merged PR needs no branch re-push.
+            if GH.get_pr_state_by_branch(pr_branch, "ClickHouse/ClickHouse") == "MERGED":
+                print(f"ChangeLog PR for [{pr_branch}] already merged — skipping")
+                return
             commit_msg = f"Update version_date.tsv and changelogs after {release_tag}"
             pr_title = f"Update version_date.tsv and changelog after {release_tag}"
             pr_body = (
@@ -660,29 +631,28 @@ def main():
                 workdir=REPO_PATH,
             )
 
-    if (
-        ok
-        and args.release_type == "patch"
-        and not args.dry_run
-        and not args.skip_docker
-    ):
-        with open(RELEASE_INFO_FILE) as f:
-            release_info = json.load(f)
-        release_tag = release_info["release_tag"]
-        # not is_late_recovery: this release is the latest on its branch →
-        # publish the floating minor/major tags. is_latest: its branch is the
-        # latest release branch → additionally publish `latest`. These decide the
-        # floating tags by whether the release is current, so recovery of the
-        # current release re-applies them while recovery of a superseded one (a
-        # late recovery) only re-publishes its exact version tag.
-        is_late_recovery = release_info["is_late_recovery"]
-        is_latest = release_info["latest"]
+    if args.release_type == "patch" and not args.skip_docker:
 
         def _make_docker_build(
             image: str,
             build_configs: List[Tuple[str, str, str]],
         ):
             def build():
+                if args.dry_run:
+                    print(f"Dry-run: skipping docker build/push for {image}")
+                    return
+                with open(RELEASE_INFO_FILE) as f:
+                    release_info = json.load(f)
+                release_tag = release_info["release_tag"]
+                # not is_late_recovery: this release is the latest on its branch →
+                # publish the floating minor/major tags. is_latest: its branch is
+                # the latest release branch → additionally publish `latest`. These
+                # decide the floating tags by whether the release is current, so
+                # recovery of the current release re-applies them while recovery of
+                # a superseded one (a late recovery) only re-publishes its exact
+                # version tag.
+                is_late_recovery = release_info["is_late_recovery"]
+                is_latest = release_info["latest"]
                 Shell.check(f"git checkout {release_tag}", strict=True)
 
                 m = re.match(r"^v(\d+\.\d+\.\d+\.\d+)", release_tag)
@@ -755,9 +725,11 @@ def main():
 
             return build
 
-        step(
-            name="Set up Docker buildx (multi-arch)",
-            command=[
+        def setup_buildx():
+            if args.dry_run:
+                print("Dry-run: skipping docker buildx setup")
+                return
+            for cmd in [
                 # The ephemeral runner is not pre-provisioned for multi-arch
                 # docker builds (the legacy dedicated runner was). The release
                 # images are built for both linux/amd64 and linux/arm64 in one
@@ -781,7 +753,12 @@ def main():
                 "docker buildx create --name release-builder --driver docker-container"
                 " --driver-opt network=host --use",
                 "docker buildx inspect --bootstrap",
-            ],
+            ]:
+                Shell.check(cmd, strict=True)
+
+        step(
+            name="Set up Docker buildx (multi-arch)",
+            command=setup_buildx,
             workdir=REPO_PATH,
         )
 
@@ -853,7 +830,7 @@ def main():
     # than right after the tag push) keeps the branch tip equal to the released
     # commit for the whole publish phase, so any rerun in that window sees an
     # un-bumped branch and prepare recovers the existing release instead of
-    # refusing it or minting a below-tip release. `step` skips it when a prior
+    # refusing it or minting a below-tip release. step() skips it when a prior
     # step already failed, so a failed publish leaves the branch un-bumped and
     # recoverable. ("new" bumps earlier, above, because the merge step below
     # merges the master bump PR it opens.) The bump self-skips a superseded (late)
@@ -870,11 +847,10 @@ def main():
 
     # Enqueue the release PR - the LAST release action, so its `CH Inc sync`
     # required check gets the maximum time (the whole publish above) to complete
-    # before we enqueue. Only when every preceding step succeeded (step() skips
-    # when ok is already False). Merge the PR created earlier (or left open by a
-    # failed prior run); skipped only when it is already merged (the "merged ->
-    # continue" branch). merge_prs looks the PR up by branch and enqueues it
-    # (best-effort); a no-op if the lookup finds nothing.
+    # before we enqueue. Runs only when every preceding step succeeded (step()
+    # skips once ok is False). Idempotent: merge_prs enqueues the PR only when it
+    # is still OPEN (best-effort), so a rerun whose PR is already merged, or which
+    # finds no PR, is a no-op.
     def merge_created_prs():
         # Imported lazily so the module-level boto3 dependency of create_release
         # is only needed on the release machine, not at praktika config time.
@@ -889,12 +865,11 @@ def main():
             release_info.update_release_info(dry_run=args.dry_run)
             release_info.merge_prs(dry_run=args.dry_run)
 
-    if release_pr_needs_merge:
-        step(
-            name="Update Release Info and Merge Created PRs",
-            command=merge_created_prs,
-            workdir=REPO_PATH,
-        )
+    step(
+        name="Update Release Info and Merge Created PRs",
+        command=merge_created_prs,
+        workdir=REPO_PATH,
+    )
 
     # Post the final release status — but only when "Prepare Release Info" ran
     # this attempt and produced RELEASE_INFO_FILE. If an early setup step failed
