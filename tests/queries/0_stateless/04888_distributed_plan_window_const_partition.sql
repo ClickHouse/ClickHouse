@@ -66,6 +66,23 @@ SELECT 'constant key, Nullable', count() FROM
     FROM t_const_window
 );
 
+-- A function that returns its argument column verbatim keeps the key constant, so the description is
+-- still all-constant after the const-strip. `materialize` is the opposite case: it converts to a full
+-- column, the strip keeps the key, and the sort really sorts, so that shape never reached the merge.
+SELECT 'constant key behind identity', count() FROM
+(
+    SELECT uniq(modulo(v, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
+        OVER (PARTITION BY identity('c') ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll
+    FROM t_const_window
+);
+
+SELECT 'materialized key is not constant', count() FROM
+(
+    SELECT uniq(modulo(v, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
+        OVER (PARTITION BY materialize('c') ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll
+    FROM t_const_window
+);
+
 -- Controls. A real column key, and a mixed key whose second component is a column, both order rows and
 -- must keep using the merge; they passed before the fix and must keep passing.
 SELECT 'column key', count() FROM
