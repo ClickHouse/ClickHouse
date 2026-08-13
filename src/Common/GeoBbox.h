@@ -238,6 +238,7 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
         try
         {
             auto geo = parseWKBFormat(buf);
+            bool geometry_valid = true;
             std::visit([&]<typename T>(const T & g)
             {
                 if constexpr (std::is_same_v<T, CartesianPoint>)
@@ -245,18 +246,47 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
                 else if constexpr (std::is_same_v<T, LineString<CartesianPoint>>)
                     acc.addAll(g);
                 else if constexpr (std::is_same_v<T, Polygon<CartesianPoint>>)
-                    acc.addAll(g.outer());
+                {
+                    /// Validate the same way the Array-literal ring/polygon branches above do --
+                    /// a self-intersecting or otherwise invalid WKB polygon is guaranteed to raise
+                    /// on evaluation, so it must fail closed rather than silently contribute no bbox.
+                    Polygon<CartesianPoint> polygon = g;
+                    boost::geometry::correct(polygon);
+                    std::string failure_message;
+                    if (!boost::geometry::is_valid(polygon, failure_message))
+                    {
+                        geometry_valid = false;
+                        return;
+                    }
+                    acc.addAll(polygon.outer());
+                }
                 else if constexpr (std::is_same_v<T, MultiPoint<CartesianPoint>>)
                     acc.addAll(g);
                 else if constexpr (std::is_same_v<T, MultiLineString<CartesianPoint>>)
                     for (const auto & ls : g)
                         acc.addAll(ls);
                 else if constexpr (std::is_same_v<T, MultiPolygon<CartesianPoint>>)
-                    for (const auto & poly : g)
+                {
+                    MultiPolygon<CartesianPoint> multi_polygon = g;
+                    boost::geometry::correct(multi_polygon);
+                    std::string failure_message;
+                    if (!boost::geometry::is_valid(multi_polygon, failure_message))
+                    {
+                        geometry_valid = false;
+                        return;
+                    }
+                    for (const auto & poly : multi_polygon)
                         acc.addAll(poly.outer());
+                }
                 else
                     static_assert(!sizeof(T), "Unhandled geometry type — add a case here");
             }, geo);
+
+            if (!geometry_valid)
+            {
+                acc.valid = false;
+                return false;
+            }
         }
         catch (...)
         {
@@ -489,8 +519,21 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     if (const_fields.empty())
         return NodeBboxStatus::NoInfo;
 
+    /// Two or more constant geometry arguments on a non-`pointInPolygon` predicate aren't
+    /// assembled into one combined shape (see the comment above), so no bbox can be derived --
+    /// but each argument on its own is still guaranteed to be evaluated, and an invalid one is
+    /// still guaranteed to raise. Validate each in isolation and fail closed if any is bad,
+    /// exactly like the single-constant-argument case does below.
     if (const_fields.size() > 1 && node.function_base->getName() != "pointInPolygon")
+    {
+        for (const auto & field : const_fields)
+        {
+            BboxAccumulator field_acc;
+            if (!extractBboxFromFieldValue(field, field_acc) || !field_acc.valid)
+                return NodeBboxStatus::Failed;
+        }
         return NodeBboxStatus::NoInfo;
+    }
 
     /// A single constant geometry argument is self-contained (shell + holes, or a full
     /// MultiPolygon, all in one literal) and is already validated as such by
