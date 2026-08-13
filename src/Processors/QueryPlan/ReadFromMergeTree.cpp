@@ -5617,7 +5617,8 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
             auto split = splitIntersectingPartsRangesIntoLayers(
                 std::move(intersecting), intersecting_layers, primary_key.column_names.size(), *in_reverse_order, log);
             for (size_t i = 0; i < split.layers.size(); ++i)
-                buckets.push_back({split.layers[i].getDescriptions(), /*needs_merge=*/ true, split.borders, i});
+                if (!split.layers[i].empty())
+                    buckets.push_back({split.layers[i].getDescriptions(), /*needs_merge=*/ true, split.borders, i});
         }
     }
 
