@@ -1,0 +1,57 @@
+---
+title: 'セルフマネージドでのインストール'
+sidebarTitle: '概要'
+description: 'ご自身で管理するインフラストラクチャに ClickHouse をインストールします。'
+doc_type: 'landing-page'
+keywords: ['インストール', 'セルフマネージド', 'linux', 'macos', 'windows', 'docker']
+---
+
+ご自身で運用するプラットフォームに ClickHouse をインストールします。
+
+<div id="local-development">
+  ## ローカル開発
+</div>
+
+自分のマシンで ClickHouse を実行して、開発、テスト、検証を行います。
+
+<CardGroup cols={2}>
+  <Card title="クイックインストール" href="/ja/get-started/setup/self-managed/quick-install" icon="bolt">
+    単一の ClickHouse バイナリをダウンロードする、1 行の `curl` スクリプトです。
+  </Card>
+
+  <Card title="clickhousectl (CLI)" href="/ja/get-started/setup/self-managed/clickhousectl" icon="terminal">
+    ClickHouse CLI を使用して、ローカルの ClickHouse バージョンとサーバーをインストールおよび管理します。
+  </Card>
+
+  <Card title="Docker" href="/ja/get-started/setup/self-managed/docker" icon="docker">
+    公式の Docker image を取得して、コンテナーを実行します。
+  </Card>
+
+  <Card title="ソースビルド" href="/ja/get-started/setup/self-managed/advanced" icon="code">
+    ソースからのビルドや、そのほかの高度なインストール方法です。
+  </Card>
+</CardGroup>
+
+<div id="production-server">
+  ## 本番サーバー
+</div>
+
+長期間稼働させる環境向けに、パッケージまたはバイナリから ClickHouse Server をインストールします。
+
+<CardGroup cols={2}>
+  <Card title="Debian / Ubuntu" href="/ja/get-started/setup/self-managed/debian-ubuntu" icon="ubuntu">
+    公式のAPTリポジトリからインストールします。
+  </Card>
+
+  <Card title="Red Hat / CentOS" href="/ja/get-started/setup/self-managed/redhat" icon="redhat">
+    公式のYUM/DNFリポジトリからインストールします。
+  </Card>
+
+  <Card title="NixOS" href="/ja/get-started/setup/self-managed/nixos" icon="snowflake">
+    パッケージマネージャーを使用して NixOS にインストールします。
+  </Card>
+
+  <Card title="Other Linux" href="/ja/get-started/setup/self-managed/other-linux" icon="linux">
+    tarball を使用して、その他の Linux ディストリビューションにインストールします。
+  </Card>
+</CardGroup>

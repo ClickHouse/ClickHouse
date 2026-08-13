@@ -1,0 +1,640 @@
+---
+title: 'DataStore Accessor'
+sidebarTitle: 'Accessor'
+slug: /chdb/datastore/accessors
+description: 'String, DateTime, 배열, JSON, URL, IP, Geo Accessor 및 185개 이상의 메서드'
+keywords: ['chdb', 'datastore', 'accessor', 'str', 'dt', 'arr', 'json', 'url', 'ip', 'geo']
+doc_type: 'reference'
+---
+
+DataStore는 도메인 특화 작업을 위한 185개 이상의 메서드를 제공하는 7개의 Accessor 네임스페이스를 제공합니다.
+
+| Accessor | 메서드 | 설명                        |
+| -------- | --- | ------------------------- |
+| `.str`   | 56  | String 연산                 |
+| `.dt`    | 42+ | DateTime 연산               |
+| `.arr`   | 37  | 배열 연산 (ClickHouse 전용)     |
+| `.json`  | 13  | JSON 파싱 (ClickHouse 전용)   |
+| `.url`   | 15  | URL 파싱 (ClickHouse 전용)    |
+| `.ip`    | 9   | IP 주소 연산 (ClickHouse 전용)  |
+| `.geo`   | 14  | Geo/거리 연산 (ClickHouse 전용) |
+
+***
+
+<div id="str">
+  ## String 접근자 (`.str`)
+</div>
+
+pandas의 `.str` 메서드 56개 전체와 ClickHouse 문자열 함수도 지원합니다.
+
+<div id="str-case">
+  ### 대소문자 변환
+</div>
+
+| 메서드            | ClickHouse  | 설명                  |
+| -------------- | ----------- | ------------------- |
+| `upper()`      | `upper()`   | 대문자로 변환             |
+| `lower()`      | `lower()`   | 소문자로 변환             |
+| `capitalize()` | `initcap()` | 첫 글자를 대문자로 변환       |
+| `title()`      | `initcap()` | 각 단어의 첫 글자를 대문자로 변환 |
+| `swapcase()`   | -           | 대소문자 반전             |
+| `casefold()`   | `lower()`   | 케이스 폴딩              |
+
+```python
+ds['name_upper'] = ds['name'].str.upper()
+ds['name_title'] = ds['name'].str.title()
+```
+
+<div id="str-length">
+  ### 길이와 크기
+</div>
+
+| 메서드             | ClickHouse      | 설명          |
+| --------------- | --------------- | ----------- |
+| `len()`         | `length()`      | 문자열 길이(바이트) |
+| `char_length()` | `char_length()` | 문자 수 기준 길이  |
+
+```python
+ds['name_len'] = ds['name'].str.len()
+```
+
+<div id="str-substring">
+  ### 부분 문자열 및 슬라이싱
+</div>
+
+| 메서드                  | ClickHouse    | 설명          |
+| -------------------- | ------------- | ----------- |
+| `slice(start, stop)` | `substring()` | 부분 문자열 추출   |
+| `slice_replace()`    | -             | 슬라이스 교체     |
+| `left(n)`            | `left()`      | 왼쪽부터 n개 문자  |
+| `right(n)`           | `right()`     | 오른쪽부터 n개 문자 |
+| `get(i)`             | -             | 인덱스 위치의 문자  |
+
+```python
+ds['first_3'] = ds['name'].str.slice(0, 3)
+ds['last_4'] = ds['name'].str.right(4)
+```
+
+<div id="str-trim">
+  ### 공백 제거
+</div>
+
+| 메서드        | ClickHouse    | 설명        |
+| ---------- | ------------- | --------- |
+| `strip()`  | `trim()`      | 공백 제거     |
+| `lstrip()` | `trimLeft()`  | 앞부분 공백 제거 |
+| `rstrip()` | `trimRight()` | 뒷부분 공백 제거 |
+
+```python
+ds['trimmed'] = ds['text'].str.strip()
+```
+
+<div id="str-search">
+  ### 검색 및 일치
+</div>
+
+| 메서드               | ClickHouse     | 설명              |
+| ----------------- | -------------- | --------------- |
+| `contains(pat)`   | `position()`   | 부분 문자열 포함       |
+| `startswith(pat)` | `startsWith()` | 접두사로 시작         |
+| `endswith(pat)`   | `endsWith()`   | 접미사로 끝남         |
+| `find(sub)`       | `position()`   | 위치 찾기           |
+| `rfind(sub)`      | -              | 오른쪽부터 찾기        |
+| `index(sub)`      | `position()`   | 찾거나 예외 발생       |
+| `rindex(sub)`     | -              | 오른쪽부터 찾거나 예외 발생 |
+| `match(pat)`      | `match()`      | 정규식 일치          |
+| `fullmatch(pat)`  | -              | 전체 정규식 일치       |
+| `count(pat)`      | -              | 출현 횟수 계산        |
+
+```python
+# 부분 문자열 포함 여부 확인
+ds['has_john'] = ds['name'].str.contains('John')
+
+# 정규식 매칭
+ds['valid_email'] = ds['email'].str.match(r'^[\w.-]+@[\w.-]+\.\w+$')
+```
+
+<div id="str-replace">
+  ### 치환
+</div>
+
+| 메서드                              | ClickHouse           | 설명         |
+| -------------------------------- | -------------------- | ---------- |
+| `replace(pat, repl)`             | `replace()`          | 일치하는 부분 치환 |
+| `replace(pat, repl, regex=True)` | `replaceRegexpAll()` | 정규식 치환     |
+| `removeprefix(prefix)`           | -                    | 접두사 제거     |
+| `removesuffix(suffix)`           | -                    | 접미사 제거     |
+| `translate(table)`               | -                    | 문자 치환      |
+
+```python
+ds['cleaned'] = ds['text'].str.replace('\n', ' ')
+ds['digits_only'] = ds['phone'].str.replace(r'\D', '', regex=True)
+```
+
+<div id="str-split">
+  ### 분할
+</div>
+
+| 메서드               | ClickHouse        | 설명             |
+| ----------------- | ----------------- | -------------- |
+| `split(sep)`      | `splitByString()` | 배열로 나눔         |
+| `rsplit(sep)`     | -                 | 오른쪽부터 나눔       |
+| `partition(sep)`  | -                 | 3부분으로 나눔       |
+| `rpartition(sep)` | -                 | 오른쪽부터 3부분으로 나눔 |
+
+```python
+ds['parts'] = ds['path'].str.split('/')
+```
+
+<div id="str-padding">
+  ### 패딩
+</div>
+
+| 메서드             | ClickHouse          | 설명      |
+| --------------- | ------------------- | ------- |
+| `pad(width)`    | `leftPad()`         | 왼쪽 채우기  |
+| `ljust(width)`  | `rightPad()`        | 오른쪽 정렬  |
+| `rjust(width)`  | `leftPad()`         | 왼쪽 정렬   |
+| `center(width)` | -                   | 가운데 정렬  |
+| `zfill(width)`  | `leftPad(..., '0')` | 0으로 채우기 |
+
+```python
+ds['padded_id'] = ds['id'].astype(str).str.zfill(6)
+```
+
+<div id="str-tests">
+  ### 문자 검사
+</div>
+
+| Method        | 설명         |
+| ------------- | ---------- |
+| `isalpha()`   | 모든 문자가 알파벳 |
+| `isdigit()`   | 모든 문자가 숫자  |
+| `isalnum()`   | 영숫자        |
+| `isspace()`   | 모든 문자가 공백  |
+| `isupper()`   | 모든 문자가 대문자 |
+| `islower()`   | 모든 문자가 소문자 |
+| `istitle()`   | 타이틀 케이스    |
+| `isnumeric()` | 숫자 문자      |
+| `isdecimal()` | 10진수 문자    |
+
+```python
+ds['is_numeric'] = ds['code'].str.isdigit()
+```
+
+<div id="str-other">
+  ### 기타
+</div>
+
+| 메서드                | 설명          |
+| ------------------ | ----------- |
+| `repeat(n)`        | n번 반복       |
+| `reverse()`        | 문자열 뒤집기     |
+| `wrap(width)`      | 텍스트 줄바꿈     |
+| `encode(enc)`      | 인코딩         |
+| `decode(enc)`      | 디코딩         |
+| `normalize(form)`  | 유니코드 정규화    |
+| `extract(pat)`     | 정규식 그룹 추출   |
+| `extractall(pat)`  | 모든 일치 항목 추출 |
+| `cat(sep)`         | 모두 이어 붙이기   |
+| `get_dummies(sep)` | 더미 변수       |
+
+***
+
+<div id="dt">
+  ## DateTime 접근자 (`.dt`)
+</div>
+
+42개 이상의 pandas `.dt` 메서드와 ClickHouse datetime 함수를 제공합니다.
+
+<div id="dt-components">
+  ### 날짜 구성 요소
+</div>
+
+| 속성              | ClickHouse        | 설명       |
+| --------------- | ----------------- | -------- |
+| `year`          | `toYear()`        | 연도       |
+| `month`         | `toMonth()`       | 월 (1-12) |
+| `day`           | `toDayOfMonth()`  | 일 (1-31) |
+| `hour`          | `toHour()`        | 시 (0-23) |
+| `minute`        | `toMinute()`      | 분 (0-59) |
+| `second`        | `toSecond()`      | 초 (0-59) |
+| `millisecond`   | `toMillisecond()` | 밀리초      |
+| `microsecond`   | `toMicrosecond()` | 마이크로초    |
+| `quarter`       | `toQuarter()`     | 분기 (1-4) |
+| `dayofweek`     | `toDayOfWeek()`   | 요일 (0=월) |
+| `dayofyear`     | `toDayOfYear()`   | 연중 날짜 순번 |
+| `week`          | `toWeek()`        | 주 번호     |
+| `days_in_month` | -                 | 월의 일수    |
+
+```python
+ds['year'] = ds['date'].dt.year
+ds['month'] = ds['date'].dt.month
+ds['day_of_week'] = ds['date'].dt.dayofweek
+```
+
+<div id="dt-truncation">
+  ### 내림
+</div>
+
+| 메서드                     | ClickHouse           | 설명    |
+| ----------------------- | -------------------- | ----- |
+| `to_start_of_day()`     | `toStartOfDay()`     | 하루 시작 |
+| `to_start_of_week()`    | `toStartOfWeek()`    | 주 시작  |
+| `to_start_of_month()`   | `toStartOfMonth()`   | 월 시작  |
+| `to_start_of_quarter()` | `toStartOfQuarter()` | 분기 시작 |
+| `to_start_of_year()`    | `toStartOfYear()`    | 연 시작  |
+| `to_start_of_hour()`    | `toStartOfHour()`    | 시간 시작 |
+| `to_start_of_minute()`  | `toStartOfMinute()`  | 분 시작  |
+
+```python
+ds['month_start'] = ds['date'].dt.to_start_of_month()
+```
+
+<div id="dt-arithmetic">
+  ### 산술
+</div>
+
+| 메서드                  | ClickHouse         | 설명    |
+| -------------------- | ------------------ | ----- |
+| `add_years(n)`       | `addYears()`       | 년 추가  |
+| `add_months(n)`      | `addMonths()`      | 개월 추가 |
+| `add_weeks(n)`       | `addWeeks()`       | 주 추가  |
+| `add_days(n)`        | `addDays()`        | 일 추가  |
+| `add_hours(n)`       | `addHours()`       | 시간 추가 |
+| `add_minutes(n)`     | `addMinutes()`     | 분 추가  |
+| `add_seconds(n)`     | `addSeconds()`     | 초 추가  |
+| `subtract_years(n)`  | `subtractYears()`  | 년 차감  |
+| `subtract_months(n)` | `subtractMonths()` | 개월 차감 |
+| `subtract_days(n)`   | `subtractDays()`   | 일 차감  |
+
+```python
+ds['next_month'] = ds['date'].dt.add_months(1)
+ds['last_week'] = ds['date'].dt.subtract_weeks(1)
+```
+
+<div id="dt-checks">
+  ### 불리언 확인
+</div>
+
+| 메서드                  | 설명        |
+| -------------------- | --------- |
+| `is_month_start()`   | 월의 첫날     |
+| `is_month_end()`     | 월의 마지막 날  |
+| `is_quarter_start()` | 분기의 첫날    |
+| `is_quarter_end()`   | 분기의 마지막 날 |
+| `is_year_start()`    | 해의 첫날     |
+| `is_year_end()`      | 해의 마지막 날  |
+| `is_leap_year()`     | 윤년        |
+
+```python
+ds['is_eom'] = ds['date'].dt.is_month_end()
+```
+
+<div id="dt-formatting">
+  ### 포맷팅
+</div>
+
+| 메서드             | ClickHouse         | 설명      |
+| --------------- | ------------------ | ------- |
+| `strftime(fmt)` | `formatDateTime()` | 문자열로 변환 |
+| `day_name()`    | -                  | 요일 이름   |
+| `month_name()`  | -                  | 월 이름    |
+
+```python
+ds['date_str'] = ds['date'].dt.strftime('%Y-%m-%d')
+ds['day_name'] = ds['date'].dt.day_name()
+```
+
+<div id="dt-timezone">
+  ### 시간대
+</div>
+
+| 메서드               | ClickHouse     | 설명     |
+| ----------------- | -------------- | ------ |
+| `tz_convert(tz)`  | `toTimezone()` | 시간대 변환 |
+| `tz_localize(tz)` | -              | 시간대 지정 |
+
+```python
+ds['utc_time'] = ds['timestamp'].dt.tz_convert('UTC')
+```
+
+***
+
+<div id="arr">
+  ## 배열 접근자 (`.arr`)
+</div>
+
+ClickHouse 전용 배열 연산(37개 메서드)입니다.
+
+<div id="arr-properties">
+  ### 속성
+</div>
+
+| 속성          | ClickHouse   | 설명           |
+| ----------- | ------------ | ------------ |
+| `length`    | `length()`   | 배열의 길이       |
+| `size`      | `length()`   | `length`의 별칭 |
+| `empty`     | `empty()`    | 비어 있는지 여부    |
+| `not_empty` | `notEmpty()` | 비어 있지 않은지 여부 |
+
+```python
+ds['tag_count'] = ds['tags'].arr.length
+ds['has_tags'] = ds['tags'].arr.not_empty
+```
+
+<div id="arr-access">
+  ### 요소 접근
+</div>
+
+| 메서드                     | ClickHouse              | 설명      |
+| ----------------------- | ----------------------- | ------- |
+| `array_first()`         | `arrayElement(..., 1)`  | 첫 번째 요소 |
+| `array_last()`          | `arrayElement(..., -1)` | 마지막 요소  |
+| `array_element(n)`      | `arrayElement()`        | n번째 요소  |
+| `array_slice(off, len)` | `arraySlice()`          | 배열 일부   |
+
+```python
+ds['first_tag'] = ds['tags'].arr.array_first()
+ds['last_tag'] = ds['tags'].arr.array_last()
+```
+
+<div id="arr-aggregations">
+  ### 집계
+</div>
+
+| 메서드               | ClickHouse       | 설명     |
+| ----------------- | ---------------- | ------ |
+| `array_sum()`     | `arraySum()`     | 요소의 합  |
+| `array_avg()`     | `arrayAvg()`     | 평균     |
+| `array_min()`     | `arrayMin()`     | 최솟값    |
+| `array_max()`     | `arrayMax()`     | 최댓값    |
+| `array_product()` | `arrayProduct()` | 곱      |
+| `array_uniq()`    | `arrayUniq()`    | 고유값 개수 |
+
+```python
+ds['total'] = ds['values'].arr.array_sum()
+ds['average'] = ds['values'].arr.array_avg()
+```
+
+<div id="arr-transformations">
+  ### 변환
+</div>
+
+| Method                 | ClickHouse           | 설명           |
+| ---------------------- | -------------------- | ------------ |
+| `array_sort()`         | `arraySort()`        | 오름차순으로 정렬    |
+| `array_reverse_sort()` | `arrayReverseSort()` | 내림차순으로 정렬    |
+| `array_reverse()`      | `arrayReverse()`     | 순서 뒤집기       |
+| `array_distinct()`     | `arrayDistinct()`    | 고유 요소만 유지    |
+| `array_compact()`      | `arrayCompact()`     | 연속된 중복 요소 제거 |
+| `array_flatten()`      | `arrayFlatten()`     | 중첩 배열 평탄화    |
+
+```python
+ds['sorted_tags'] = ds['tags'].arr.array_sort()
+ds['unique_tags'] = ds['tags'].arr.array_distinct()
+```
+
+<div id="arr-modifications">
+  ### 수정
+</div>
+
+| 메서드                      | ClickHouse         | 설명         |
+| ------------------------ | ------------------ | ---------- |
+| `array_push_back(elem)`  | `arrayPushBack()`  | 뒤에 추가      |
+| `array_push_front(elem)` | `arrayPushFront()` | 앞에 추가      |
+| `array_pop_back()`       | `arrayPopBack()`   | 마지막 항목 제거  |
+| `array_pop_front()`      | `arrayPopFront()`  | 첫 번째 항목 제거 |
+| `array_concat(other)`    | `arrayConcat()`    | 이어 붙이기     |
+
+<div id="arr-search">
+  ### 검색
+</div>
+
+| 메서드                 | ClickHouse     | 설명       |
+| ------------------- | -------------- | -------- |
+| `has(elem)`         | `has()`        | 요소 포함 여부 |
+| `index_of(elem)`    | `indexOf()`    | 인덱스 찾기   |
+| `count_equal(elem)` | `countEqual()` | 등장 횟수 계산 |
+
+```python
+ds['has_python'] = ds['skills'].arr.has('Python')
+```
+
+<div id="arr-string">
+  ### 문자열 연산
+</div>
+
+| 메서드                        | ClickHouse            | 설명      |
+| -------------------------- | --------------------- | ------- |
+| `array_string_concat(sep)` | `arrayStringConcat()` | 문자열로 결합 |
+
+```python
+ds['tags_str'] = ds['tags'].arr.array_string_concat(', ')
+```
+
+***
+
+<div id="json">
+  ## JSON 접근자 (`.json`)
+</div>
+
+ClickHouse 전용 JSON 파싱 메서드(13개).
+
+| 메서드                | ClickHouse            | 설명          |
+| ------------------ | --------------------- | ----------- |
+| `get_string(path)` | `JSONExtractString()` | 문자열 추출      |
+| `get_int(path)`    | `JSONExtractInt()`    | 정수 추출       |
+| `get_float(path)`  | `JSONExtractFloat()`  | 부동소수점 값 추출  |
+| `get_bool(path)`   | `JSONExtractBool()`   | 불리언 추출      |
+| `get_raw(path)`    | `JSONExtractRaw()`    | 원시 JSON 추출  |
+| `get_keys()`       | `JSONExtractKeys()`   | 키 가져오기      |
+| `get_type(path)`   | `JSONType()`          | 유형 확인       |
+| `get_length(path)` | `JSONLength()`        | 길이 확인       |
+| `has_key(key)`     | `JSONHas()`           | 키 존재 여부 확인  |
+| `is_valid()`       | `isValidJSON()`       | JSON 유효성 검사 |
+| `to_json_string()` | `toJSONString()`      | JSON으로 변환   |
+
+```python
+# JSON 컬럼 파싱
+ds['user_name'] = ds['json_data'].json.get_string('user.name')
+ds['user_age'] = ds['json_data'].json.get_int('user.age')
+ds['is_active'] = ds['json_data'].json.get_bool('user.active')
+ds['has_email'] = ds['json_data'].json.has_key('user.email')
+```
+
+***
+
+<div id="url">
+  ## URL 접근자 (`.url`)
+</div>
+
+ClickHouse 전용 URL 파싱 메서드(15개)입니다.
+
+| Method                        | ClickHouse               | Description      |
+| ----------------------------- | ------------------------ | ---------------- |
+| `domain()`                    | `domain()`               | 도메인 추출           |
+| `domain_without_www()`        | `domainWithoutWWW()`     | www를 제외한 도메인     |
+| `top_level_domain()`          | `topLevelDomain()`       | 최상위 도메인          |
+| `protocol()`                  | `protocol()`             | 프로토콜(http/https) |
+| `path()`                      | `path()`                 | URL 경로           |
+| `path_full()`                 | `pathFull()`             | 쿼리를 포함한 경로       |
+| `query_string()`              | `queryString()`          | 쿼리 문자열           |
+| `fragment()`                  | `fragment()`             | 프래그먼트(#...)      |
+| `port()`                      | `port()`                 | 포트 번호            |
+| `extract_url_parameter(name)` | `extractURLParameter()`  | 쿼리 매개변수 가져오기     |
+| `extract_url_parameters()`    | `extractURLParameters()` | 모든 매개변수          |
+| `cut_url_parameter(name)`     | `cutURLParameter()`      | 매개변수 제거          |
+| `decode_url_component()`      | `decodeURLComponent()`   | URL 디코딩          |
+| `encode_url_component()`      | `encodeURLComponent()`   | URL 인코딩          |
+
+```python
+# URL 파싱
+ds['domain'] = ds['url'].url.domain()
+ds['path'] = ds['url'].url.path()
+ds['utm_source'] = ds['url'].url.extract_url_parameter('utm_source')
+```
+
+***
+
+<div id="ip">
+  ## IP 접근자 (`.ip`)
+</div>
+
+ClickHouse 전용 IP 주소 연산(9개 메서드)입니다.
+
+| Method                     | ClickHouse          | Description      |
+| -------------------------- | ------------------- | ---------------- |
+| `to_ipv4()`                | `toIPv4()`          | IPv4로 변환         |
+| `to_ipv6()`                | `toIPv6()`          | IPv6로 변환         |
+| `ipv4_num_to_string()`     | `IPv4NumToString()` | 숫자를 문자열로 변환      |
+| `ipv4_string_to_num()`     | `IPv4StringToNum()` | 문자열을 숫자로 변환      |
+| `ipv6_num_to_string()`     | `IPv6NumToString()` | IPv6 숫자를 문자열로 변환 |
+| `ipv4_to_ipv6()`           | `IPv4ToIPv6()`      | IPv6로 변환         |
+| `is_ipv4_string()`         | `isIPv4String()`    | IPv4 유효성 검사      |
+| `is_ipv6_string()`         | `isIPv6String()`    | IPv6 유효성 검사      |
+| `ipv4_cidr_to_range(cidr)` | `IPv4CIDRToRange()` | CIDR를 범위로 변환     |
+
+```python
+# IP 연산
+ds['is_valid_ip'] = ds['ip'].ip.is_ipv4_string()
+ds['ip_num'] = ds['ip'].ip.ipv4_string_to_num()
+```
+
+***
+
+<div id="geo">
+  ## Geo 접근자 (`.geo`)
+</div>
+
+ClickHouse 전용 geo/거리 연산(총 14개 메서드)입니다.
+
+<div id="geo-distance">
+  ### 거리 함수
+</div>
+
+| 메서드                           | ClickHouse              | 설명         |
+| ----------------------------- | ----------------------- | ---------- |
+| `great_circle_distance(...)`  | `greatCircleDistance()` | 대권 거리      |
+| `geo_distance(...)`           | `geoDistance()`         | WGS-84 거리  |
+| `l1_distance(v1, v2)`         | `L1Distance()`          | 맨해튼 거리     |
+| `l2_distance(v1, v2)`         | `L2Distance()`          | 유클리드 거리    |
+| `l2_squared_distance(v1, v2)` | `L2SquaredDistance()`   | 유클리드 거리 제곱 |
+| `linf_distance(v1, v2)`       | `LinfDistance()`        | 체비쇼프 거리    |
+| `cosine_distance(v1, v2)`     | `cosineDistance()`      | 코사인 거리     |
+
+<div id="geo-vector">
+  ### 벡터 연산
+</div>
+
+| 메서드                   | ClickHouse      | 설명    |
+| --------------------- | --------------- | ----- |
+| `dot_product(v1, v2)` | `dotProduct()`  | 내적    |
+| `l2_norm(vec)`        | `L2Norm()`      | 벡터 노름 |
+| `l2_normalize(vec)`   | `L2Normalize()` | 정규화   |
+
+<div id="geo-h3">
+  ### H3 함수
+</div>
+
+| 메서드                        | ClickHouse  | 설명              |
+| -------------------------- | ----------- | --------------- |
+| `geo_to_h3(lon, lat, res)` | `geoToH3()` | Geo를 H3 인덱스로 변환 |
+| `h3_to_geo(h3)`            | `h3ToGeo()` | H3를 Geo 좌표로 변환  |
+
+<div id="geo-point">
+  ### 점 연산
+</div>
+
+| 메서드                          | ClickHouse          | 설명      |
+| ---------------------------- | ------------------- | ------- |
+| `point_in_polygon(pt, poly)` | `pointInPolygon()`  | 다각형 내 점 |
+| `point_in_ellipses(...)`     | `pointInEllipses()` | 타원 내 점  |
+
+```python
+from chdb.datastore import F
+
+# 거리 계산
+ds['distance'] = F.great_circle_distance(
+    ds['lon1'], ds['lat1'],
+    ds['lon2'], ds['lat2']
+)
+
+# 벡터 유사도
+ds['similarity'] = F.cosine_distance(ds['embedding1'], ds['embedding2'])
+```
+
+***
+
+<div id="using-accessors">
+  ## Accessor 사용
+</div>
+
+<div id="lazy">
+  ### 지연 평가
+</div>
+
+대부분의 Accessor 메서드는 즉시 실행되지 않고, 나중에 평가되는 표현식을 반환합니다:
+
+```python
+# 다음은 모두 지연 평가됩니다
+ds['name_upper'] = ds['name'].str.upper()  # 아직 실행되지 않음
+ds['year'] = ds['date'].dt.year            # 아직 실행되지 않음
+ds['domain'] = ds['url'].url.domain()      # 아직 실행되지 않음
+
+# 결과에 접근할 때 실행됩니다
+df = ds.to_df()  # 이 시점에 모든 연산이 실행됩니다
+```
+
+<div id="execute-immediately">
+  ### 즉시 실행되는 메서드
+</div>
+
+일부 `.str` 메서드는 구조를 변경하기 때문에 즉시 실행되어야 합니다:
+
+| Method             | Returns           | Why                |
+| ------------------ | ----------------- | ------------------ |
+| `partition(sep)`   | DataStore (3개 컬럼) | 여러 컬럼을 생성함         |
+| `rpartition(sep)`  | DataStore (3개 컬럼) | 여러 컬럼을 생성함         |
+| `get_dummies(sep)` | DataStore (N개 컬럼) | 컬럼 수가 동적으로 결정됨     |
+| `extractall(pat)`  | DataStore         | MultiIndex 결과를 반환함 |
+| `cat(sep)`         | str               | 집계 (N개 행 → 1개)     |
+
+<div id="chaining">
+  ### 접근자 체이닝
+</div>
+
+접근자 메서드는 체이닝해서 사용할 수 있습니다:
+
+```python
+ds['clean_name'] = (ds['name']
+    .str.strip()
+    .str.lower()
+    .str.replace(' ', '_')
+)
+
+ds['next_month_start'] = (ds['date']
+    .dt.add_months(1)
+    .dt.to_start_of_month()
+)
+```

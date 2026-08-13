@@ -1,0 +1,61 @@
+---
+description: 'ClickHouse Playground를 사용하면 서버나 클러스터를 설정하지 않아도 즉시 쿼리를 실행하며 ClickHouse를 실험할 수 있습니다.'
+keywords: ['clickhouse', 'playground', '시작하기', '문서']
+sidebarTitle: 'ClickHouse Playground'
+slug: /getting-started/playground
+title: 'ClickHouse Playground'
+doc_type: 'guide'
+---
+
+[ClickHouse Playground](https://sql.clickhouse.com)를 사용하면 서버나 클러스터를 설정하지 않아도 즉시 쿼리를 실행하며 ClickHouse를 실험할 수 있습니다.
+Playground에서는 여러 예시 데이터셋을 사용할 수 있습니다.
+
+[curl](https://curl.haxx.se) 또는 [wget](https://www.gnu.org/software/wget/) 같은 HTTP 클라이언트를 사용해 Playground에 쿼리를 보낼 수 있으며, [JDBC](/ko/concepts/features/interfaces/jdbc) 또는 [ODBC](/ko/concepts/features/interfaces/odbc) 드라이버로 연결할 수도 있습니다. ClickHouse를 지원하는 소프트웨어 제품에 관한 자세한 정보는 [여기](/ko/integrations/home)에서 확인할 수 있습니다.
+
+<div id="credentials">
+  ## 자격 증명
+</div>
+
+| 매개변수           | 값                                  |
+| :------------- | :--------------------------------- |
+| HTTPS 엔드포인트    | `https://play.clickhouse.com:443/` |
+| 네이티브 TCP 엔드포인트 | `play.clickhouse.com:9440`         |
+| 사용자            | `explorer` 또는 `play`               |
+| 비밀번호           | (비어 있음)                            |
+
+<div id="limitations">
+  ## 제한 사항
+</div>
+
+쿼리는 읽기 전용 사용자로 실행되므로 몇 가지 제한이 있습니다:
+
+* DDL 쿼리는 허용되지 않습니다
+* INSERT 쿼리는 허용되지 않습니다
+
+이 서비스에는 사용량 쿼터도 적용됩니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+`curl`을 사용한 HTTPS 엔드포인트 예시:
+
+```bash
+curl "https://play.clickhouse.com/?user=explorer" --data-binary "SELECT 'Play ClickHouse'"
+```
+
+[CLI](/ko/concepts/features/interfaces/cli)를 이용한 TCP 엔드포인트 예시:
+
+```bash
+clickhouse client --secure --host play.clickhouse.com --user explorer
+```
+
+<div id="specifications">
+  ## Playground 사양
+</div>
+
+ClickHouse Playground는 다음과 같은 사양으로 실행되고 있습니다:
+
+* 미국 중부 Region(US-Central-1)의 Google Cloud(GCE)에서 호스팅됨
+* 3개 레플리카 구성
+* 각 레플리카는 256 GiB의 스토리지와 59개의 가상 CPU를 사용

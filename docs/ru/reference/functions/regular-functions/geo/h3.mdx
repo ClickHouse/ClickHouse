@@ -1,0 +1,1519 @@
+---
+description: 'Документация по H3'
+sidebarTitle: 'Индексы H3'
+slug: /sql-reference/functions/geo/h3
+title: 'Функции для работы с индексами H3'
+doc_type: 'reference'
+---
+
+<div id="h3-index">
+  ## индекс H3
+</div>
+
+[H3](https://h3geo.org/) — это система географической индексации, в которой поверхность Земли разбита на сетку из одинаковых шестиугольных ячеек. Эта система иерархична, то есть каждый шестиугольник верхнего уровня (`parent`) может быть разделён на семь таких же, но меньших (`children`), и так далее.
+
+Уровень иерархии называется `resolution` и может принимать значения от `0` до `15`, где `0` — это уровень `base` с самыми большими и самыми грубыми ячейками.
+
+Пару широты и долготы можно преобразовать в 64-битный индекс H3, который идентифицирует ячейку сетки.
+
+Индекс H3 в основном используется для группировки местоположений по бакетам и других геопространственных преобразований.
+
+Полное описание системы H3 доступно на [сайте Uber Engineering](https://www.uber.com/blog/h3/).
+
+<div id="h3isvalid">
+  ## h3IsValid
+</div>
+
+Проверяет, является ли число корректным индексом [H3](#h3-index).
+
+**Синтаксис**
+
+```sql
+h3IsValid(h3index)
+```
+
+**Параметр**
+
+* `h3index` — Номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемые значения**
+
+* 1 — Число является корректным индексом H3. [UInt8](/ru/reference/data-types/int-uint).
+* 0 — Число не является корректным индексом H3. [UInt8](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3IsValid(630814730351855103) AS h3IsValid;
+```
+
+```text title="Response"
+┌─h3IsValid─┐
+│         1 │
+└───────────┘
+```
+
+<div id="h3getresolution">
+  ## h3GetResolution
+</div>
+
+Определяет разрешение для указанного [H3](#h3-index)-индекса.
+
+**Синтаксис**
+
+```sql
+h3GetResolution(h3index)
+```
+
+**Параметр**
+
+* `h3index` — номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемые значения**
+
+* Разрешение индекса. Диапазон: `[0, 15]`. [UInt8](/ru/reference/data-types/int-uint).
+* Если индекс некорректен, функция возвращает случайное значение. Используйте [h3IsValid](#h3isvalid), чтобы проверить индекс. [UInt8](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3GetResolution(639821929606596015) AS resolution;
+```
+
+```text title="Response"
+┌─resolution─┐
+│         14 │
+└────────────┘
+```
+
+<div id="h3edgeangle">
+  ## h3EdgeAngle
+</div>
+
+Вычисляет среднюю длину ребра [H3](#h3-index)-шестиугольника в градах.
+
+**Синтаксис**
+
+```sql
+h3EdgeAngle(resolution)
+```
+
+**Параметр**
+
+* `resolution` — разрешение индекса. [UInt8](/ru/reference/data-types/int-uint). Диапазон: `[0, 15]`.
+
+**Возвращаемые значения**
+
+* Средняя длина ребра шестиугольника [H3](#h3-index) в градах. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3EdgeAngle(10) AS edgeAngle;
+```
+
+```text title="Response"
+┌───────h3EdgeAngle(10)─┐
+│ 0.0005927224846720883 │
+└───────────────────────┘
+```
+
+<div id="h3edgelengthm">
+  ## h3EdgeLengthM
+</div>
+
+Вычисляет среднюю длину ребра шестиугольника [H3](#h3-index) в метрах.
+
+**Синтаксис**
+
+```sql
+h3EdgeLengthM(resolution)
+```
+
+**Параметр**
+
+* `resolution` — разрешение индекса. [UInt8](/ru/reference/data-types/int-uint). Диапазон: `[0, 15]`.
+
+**Возвращаемые значения**
+
+* Средняя длина ребра [H3](#h3-index)-шестиугольника в метрах. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3EdgeLengthM(15) AS edgeLengthM;
+```
+
+```text title="Response"
+┌─edgeLengthM─┐
+│ 0.509713273 │
+└─────────────┘
+```
+
+<div id="h3edgelengthkm">
+  ## h3EdgeLengthKm
+</div>
+
+Вычисляет среднюю длину ребра [шестиугольника H3](#h3-index) в километрах.
+
+**Синтаксис**
+
+```sql
+h3EdgeLengthKm(resolution)
+```
+
+**Параметр**
+
+* `resolution` — разрешение индекса. [UInt8](/ru/reference/data-types/int-uint). Диапазон: `[0, 15]`.
+
+**Возвращаемые значения**
+
+* Средняя длина ребра шестиугольника [H3](#h3-index) в километрах. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3EdgeLengthKm(15) AS edgeLengthKm;
+```
+
+```text title="Response"
+┌─edgeLengthKm─┐
+│  0.000509713 │
+└──────────────┘
+```
+
+<div id="geotoh3">
+  ## geoToH3
+</div>
+
+Возвращает индекс точки [H3](#h3-index) `(lat, lon)` с указанным разрешением.
+
+**Синтаксис**
+
+```sql
+geoToH3(lat, lon, resolution)
+```
+
+**Аргументы**
+
+* `lat` — Широта. [Float64](/ru/reference/data-types/float).
+* `lon` — Долгота. [Float64](/ru/reference/data-types/float).
+* `resolution` — Разрешение индекса. Диапазон: `[0, 15]`. [UInt8](/ru/reference/data-types/int-uint).
+
+**Возвращаемые значения**
+
+* Номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+* 0 в случае ошибки. [UInt64](/ru/reference/data-types/int-uint).
+
+Примечание: в ClickHouse v25.4 и более ранних версиях `geoToH3()` принимает значения в порядке `(lon, lat)`. Начиная с ClickHouse v25.5, входные значения принимаются в порядке `(lat, lon)`. Предыдущее поведение можно восстановить с помощью настройки `geotoh3_argument_order = 'lon_lat'`.
+
+**Пример**
+
+```sql title="Query"
+SELECT geoToH3(55.71290588, 37.79506683, 15) AS h3Index;
+```
+
+```text title="Response"
+┌────────────h3Index─┐
+│ 644325524701193974 │
+└────────────────────┘
+```
+
+<div id="h3togeo">
+  ## h3ToGeo
+</div>
+
+Возвращает широту и долготу центра, соответствующие указанному индексу [H3](#h3-index).
+
+**Синтаксис**
+
+```sql
+h3ToGeo(h3Index)
+```
+
+**Аргументы**
+
+* `h3Index` — индекс H3. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемые значения**
+
+* Кортеж из двух значений: `tuple(lat,lon)`. `lat` — широта. [Float64](/ru/reference/data-types/float). `lon` — долгота. [Float64](/ru/reference/data-types/float).
+
+Примечание: в ClickHouse v24.12 и более ранних версиях `h3ToGeo()` возвращает значения в порядке `(lon, lat)`. Начиная с ClickHouse v25.1, возвращаемые значения идут в порядке `(lat, lon)`. Предыдущее поведение можно восстановить с помощью настройки `h3togeo_lon_lat_result_order = true`.
+
+**Пример**
+
+```sql title="Query"
+SELECT h3ToGeo(644325524701193974) AS coordinates;
+```
+
+```text title="Response"
+┌─coordinates───────────────────────────┐
+│ (55.71290243145668,37.79506616830252) │
+└───────────────────────────────────────┘
+```
+
+<div id="h3togeoboundary">
+  ## h3ToGeoBoundary
+</div>
+
+Возвращает массив пар `(lat, lon)`, соответствующий границе указанного индекса H3.
+
+**Синтаксис**
+
+```sql
+h3ToGeoBoundary(h3Index)
+```
+
+**Аргументы**
+
+* `h3Index` — индекс H3. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемые значения**
+
+* Массив пар &#39;(lat, lon)&#39;. [Array](/ru/reference/data-types/array)([Float64](/ru/reference/data-types/float), [Float64](/ru/reference/data-types/float)).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3ToGeoBoundary(644325524701193974) AS coordinates;
+```
+
+```text title="Response"
+┌─h3ToGeoBoundary(599686042433355775)────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [(37.2713558667319,-121.91508032705622),(37.353926450852256,-121.8622232890249),(37.42834118609435,-121.92354999630156),(37.42012867767779,-122.03773496427027),(37.33755608435299,-122.090428929044),(37.26319797461824,-122.02910130919001)] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3kring">
+  ## h3kRing
+</div>
+
+Перечисляет все [H3](#h3-index) шестиугольники, расположенные в радиусе `k` от заданного шестиугольника, в случайном порядке.
+
+**Синтаксис**
+
+```sql
+h3kRing(h3index, k)
+```
+
+**Аргументы**
+
+* `h3index` — номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+* `k` — радиус. [integer](/ru/reference/data-types/int-uint)
+
+**Возвращаемые значения**
+
+* Массив индексов H3. [Array](/ru/reference/data-types/array)([UInt64](/ru/reference/data-types/int-uint)).
+
+**Пример**
+
+```sql title="Query"
+SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index;
+```
+
+```text title="Response"
+┌────────────h3index─┐
+│ 644325529233966508 │
+│ 644325529233966497 │
+│ 644325529233966510 │
+│ 644325529233966504 │
+│ 644325529233966509 │
+│ 644325529233966355 │
+│ 644325529233966354 │
+└────────────────────┘
+```
+
+<div id="h3polygontocells">
+  ## h3PolygonToCells
+</div>
+
+Возвращает шестиугольники (с указанным разрешением), содержащиеся в заданной геометрии: ring или (multi-)polygon.
+
+**Синтаксис**
+
+```sql
+h3PolygonToCells(geometry, resolution)
+```
+
+**Аргументы**
+
+* `geometry` может быть одним из следующих [гео-типов данных](/ru/reference/data-types/geo) или соответствующих примитивных типов:
+  * [Ring](/ru/reference/data-types/geo#ring)
+  * [Polygon](/ru/reference/data-types/geo#polygon)
+  * [MultiPolygon](/ru/reference/data-types/geo#multipolygon)
+* `resolution` — разрешение индекса. Диапазон: `[0, 15]`. [UInt8](/ru/reference/data-types/int-uint).
+
+**Возвращаемые значения**
+
+* Массив содержащихся индексов H3. [Array](/ru/reference/data-types/array)([UInt64](/ru/reference/data-types/int-uint)).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.3544736999993603,37.7198061999978478),(-122.4798767000009008,37.8151571999998453)], 7) AS h3index;
+```
+
+```text title="Response"
+┌────────────h3index─┐
+│ 608692970769612799 │
+│ 608692971927240703 │
+│ 608692970585063423 │
+│ 608692970819944447 │
+│ 608692970719281151 │
+│ 608692970752835583 │
+│ 608692972027903999 │
+└────────────────────┘
+```
+
+<div id="h3polygontocellswithcontainment">
+  ## h3PolygonToCellsWithContainment
+</div>
+
+Возвращает шестиугольники (с указанным разрешением), покрывающие переданную геометрию — Ring или (multi-)polygon, — с использованием экспериментальных режимов покрытия H3.
+
+Эта функция сопоставляет `flags` с режимами покрытия H3:
+
+* `0` — `CONTAINMENT_CENTER`
+* `1` — `CONTAINMENT_FULL`
+* `2` — `CONTAINMENT_OVERLAPPING`
+* `3` — `CONTAINMENT_OVERLAPPING_BBOX`
+
+**Синтаксис**
+
+```sql
+h3PolygonToCellsWithContainment(geometry, resolution, flags)
+```
+
+**Аргументы**
+
+* `geometry` может быть одним из следующих [гео-типов данных](/ru/reference/data-types/geo) или их базовых примитивных типов:
+  * [Ring](/ru/reference/data-types/geo#ring)
+  * [Polygon](/ru/reference/data-types/geo#polygon)
+  * [MultiPolygon](/ru/reference/data-types/geo#multipolygon)
+* `resolution` — разрешение индекса. Диапазон: `[0, 15]`. [UInt8](/ru/reference/data-types/int-uint).
+* `flags` — режим покрытия. Диапазон: `[0, 3]`. Используйте целочисленные литералы, такие как `0`, `1`, `2` и `3`, или значения [UInt32](/ru/reference/data-types/int-uint) (например, `toUInt32(2)`). Значения передаются в H3 API как `UInt32`. Другие встроенные целочисленные типы преобразуются с помощью точного приведения типов.
+
+**Возвращаемые значения**
+
+* Массив индексов H3 в соответствии с выбранным режимом покрытия. [Array](/ru/reference/data-types/array)([UInt64](/ru/reference/data-types/int-uint)).
+
+**Пример**
+
+```sql title="Query"
+SELECT
+    h3PolygonToCellsWithContainment([(-122.4089866999972145, 37.813318999983238), (-122.3544736999993603, 37.7198061999978478), (-122.4798767000009008, 37.8151571999998453)], 7, 0) AS center_cells,
+    h3PolygonToCellsWithContainment([(-122.4089866999972145, 37.813318999983238), (-122.3544736999993603, 37.7198061999978478), (-122.4798767000009008, 37.8151571999998453)], 7, 2) AS overlap_cells;
+```
+
+```text title="Response"
+   ┌─center_cells───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─overlap_cells──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+1. │ [608692970585063423,608692970719281151,608692970752835583,608692970769612799,608692970819944447,608692971927240703,608692972027903999] │ [608692970249519103,608692970266296319,608692970585063423,608692970601840639,608692970635395071,608692970685726719,608692970719281151,608692970736058367,608692970752835583,608692970769612799,608692970786390015,608692970819944447,608692971927240703,608692971994349567,608692972027903999] │
+   └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3getbasecell">
+  ## h3GetBaseCell
+</div>
+
+Возвращает номер базовой ячейки индекса [H3](#h3-index).
+
+**Синтаксис**
+
+```sql
+h3GetBaseCell(index)
+```
+
+**Параметр**
+
+* `index` — номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Номер базовой ячейки шестиугольника. [UInt8](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3GetBaseCell(612916788725809151) AS basecell;
+```
+
+```text title="Response"
+┌─basecell─┐
+│       12 │
+└──────────┘
+```
+
+<div id="h3hexaream2">
+  ## h3HexAreaM2
+</div>
+
+Возвращает среднюю площадь шестиугольника в квадратных метрах для заданного разрешения.
+
+**Синтаксис**
+
+```sql
+h3HexAreaM2(resolution)
+```
+
+**Параметр**
+
+* `resolution` — Разрешение индекса. Диапазон: `[0, 15]`. [UInt8](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Площадь в квадратных метрах. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3HexAreaM2(13) AS area;
+```
+
+```text title="Response"
+┌─area─┐
+│ 43.9 │
+└──────┘
+```
+
+<div id="h3hexareakm2">
+  ## h3HexAreaKm2
+</div>
+
+Возвращает среднюю площадь шестиугольника в квадратных километрах для заданного разрешения.
+
+**Синтаксис**
+
+```sql
+h3HexAreaKm2(resolution)
+```
+
+**Параметр**
+
+* `resolution` — разрешение индекса. Диапазон: `[0, 15]`. [UInt8](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Площадь в квадратных километрах. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3HexAreaKm2(13) AS area;
+```
+
+```text title="Response"
+┌──────area─┐
+│ 0.0000439 │
+└───────────┘
+```
+
+<div id="h3indexesareneighbors">
+  ## h3IndexesAreNeighbors
+</div>
+
+Возвращает, являются ли указанные индексы [H3](#h3-index) соседними.
+
+**Синтаксис**
+
+```sql
+h3IndexesAreNeighbors(index1, index2)
+```
+
+**Аргументы**
+
+* `index1` — Номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+* `index2` — Номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* `1` — Индексы являются соседями. [UInt8](/ru/reference/data-types/int-uint).
+* `0` — Индексы не являются соседями. [UInt8](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3IndexesAreNeighbors(617420388351344639, 617420388352655359) AS n;
+```
+
+```text title="Response"
+┌─n─┐
+│ 1 │
+└───┘
+```
+
+<div id="h3tochildren">
+  ## h3ToChildren
+</div>
+
+Возвращает массив дочерних индексов для заданного индекса [H3](#h3-index).
+
+**Синтаксис**
+
+```sql
+h3ToChildren(index, resolution)
+```
+
+**Аргументы**
+
+* `index` — Номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+* `resolution` — Разрешение индекса. Диапазон: `[0, 15]`. [UInt8](/ru/reference/data-types/int-uint).
+
+**Возвращаемые значения**
+
+* Массив дочерних H3-индексов. [Array](/ru/reference/data-types/array)([UInt64](/ru/reference/data-types/int-uint)).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3ToChildren(599405990164561919, 6) AS children;
+```
+
+```text title="Response"
+┌─children───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [603909588852408319,603909588986626047,603909589120843775,603909589255061503,603909589389279231,603909589523496959,603909589657714687] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3toparent">
+  ## h3ToParent
+</div>
+
+Возвращает родительский индекс более общего уровня, содержащий указанный индекс [H3](#h3-index).
+
+**Синтаксис**
+
+```sql
+h3ToParent(index, resolution)
+```
+
+**Аргументы**
+
+* `index` — Номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+* `resolution` — Разрешение индекса. Диапазон: `[0, 15]`. [UInt8](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Родительский индекс H3. [UInt64](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3ToParent(599405990164561919, 3) AS parent;
+```
+
+```text title="Response"
+┌─────────────parent─┐
+│ 590398848891879423 │
+└────────────────────┘
+```
+
+<div id="h3tostring">
+  ## h3ToString
+</div>
+
+Преобразует представление индекса `H3Index` в строковое представление.
+
+```sql
+h3ToString(index)
+```
+
+**Параметр**
+
+* `index` — номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Строковое представление индекса H3. [String](/ru/reference/data-types/string).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3ToString(617420388352917503) AS h3_string;
+```
+
+```text title="Response"
+┌─h3_string───────┐
+│ 89184926cdbffff │
+└─────────────────┘
+```
+
+<div id="stringtoh3">
+  ## stringToH3
+</div>
+
+Преобразует строковое представление в формат `H3Index` (UInt64).
+
+**Синтаксис**
+
+```sql
+stringToH3(index_str)
+```
+
+**Параметр**
+
+* `index_str` — Строковое представление индекса H3. [String](/ru/reference/data-types/string).
+
+**Возвращаемое значение**
+
+* Номер шестиугольного индекса. При ошибке возвращает 0. [UInt64](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+SELECT stringToH3('89184926cc3ffff') AS index;
+```
+
+```text title="Response"
+┌──────────────index─┐
+│ 617420388351344639 │
+└────────────────────┘
+```
+
+<div id="h3getresolution">
+  ## h3GetResolution
+</div>
+
+Возвращает разрешение индекса [H3](#h3-index).
+
+**Синтаксис**
+
+```sql
+h3GetResolution(index)
+```
+
+**Параметр**
+
+* `index` — номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Разрешение индекса. Диапазон: `[0, 15]`. [UInt8](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3GetResolution(617420388352917503) AS res;
+```
+
+```text title="Response"
+┌─res─┐
+│   9 │
+└─────┘
+```
+
+<div id="h3isresclassiii">
+  ## h3IsResClassIII
+</div>
+
+Возвращает, имеет ли [H3](#h3-index) индекс разрешение с ориентацией класса III.
+
+**Синтаксис**
+
+```sql
+h3IsResClassIII(index)
+```
+
+**Параметр**
+
+* `index` — номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* `1` — индекс относится к разрешению с ориентацией Class III. [UInt8](/ru/reference/data-types/int-uint).
+* `0` — индекс не относится к разрешению с ориентацией Class III. [UInt8](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3IsResClassIII(617420388352917503) AS res;
+```
+
+```text title="Response"
+┌─res─┐
+│   1 │
+└─────┘
+```
+
+<div id="h3ispentagon">
+  ## h3IsPentagon
+</div>
+
+Возвращает, является ли этот индекс [H3](#h3-index) пятиугольной ячейкой.
+
+**Синтаксис**
+
+```sql
+h3IsPentagon(index)
+```
+
+**Параметр**
+
+* `index` — номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* `1` — индекс соответствует пятиугольной ячейке. [UInt8](/ru/reference/data-types/int-uint).
+* `0` — индекс не соответствует пятиугольной ячейке. [UInt8](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3IsPentagon(644721767722457330) AS pentagon;
+```
+
+```text title="Response"
+┌─pentagon─┐
+│        0 │
+└──────────┘
+```
+
+<div id="h3getfaces">
+  ## h3GetFaces
+</div>
+
+Возвращает грани икосаэдра, с которыми пересекается указанный индекс [H3](#h3-index).
+
+**Синтаксис**
+
+```sql
+h3GetFaces(index)
+```
+
+**Параметр**
+
+* `index` — номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемые значения**
+
+* [Array](/ru/reference/data-types/array)([UInt64](/ru/reference/data-types/int-uint)) — массив граней икосаэдра, с которыми пересекается указанный индекс H3.
+
+**Пример**
+
+```sql title="Query"
+SELECT h3GetFaces(599686042433355775) AS faces;
+```
+
+```text title="Response"
+┌─faces─┐
+│ [7]   │
+└───────┘
+```
+
+<div id="h3cellaream2">
+  ## h3CellAreaM2
+</div>
+
+Возвращает точную площадь конкретной ячейки в квадратных метрах для указанного индекса H3.
+
+**Синтаксис**
+
+```sql
+h3CellAreaM2(index)
+```
+
+**Параметр**
+
+* `index` — номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Площадь ячейки в квадратных метрах. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3CellAreaM2(579205133326352383) AS area;
+```
+
+```text title="Response"
+┌───────────────area─┐
+│ 4106166334463.9233 │
+└────────────────────┘
+```
+
+<div id="h3cellarearads2">
+  ## h3CellAreaRads2
+</div>
+
+Возвращает точную площадь заданной ячейки в квадратных радианах для указанного индекса H3.
+
+**Синтаксис**
+
+```sql
+h3CellAreaRads2(index)
+```
+
+**Параметр**
+
+* `index` — номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Площадь ячейки в квадратных радианах. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3CellAreaRads2(579205133326352383) AS area;
+```
+
+```text title="Response"
+┌────────────────area─┐
+│ 0.10116268528089567 │
+└─────────────────────┘
+```
+
+<div id="h3tocenterchild">
+  ## h3ToCenterChild
+</div>
+
+Возвращает центральный дочерний (более детализированный) [H3](#h3-index) индекс, входящий в заданный [H3](#h3-index), на указанном разрешении.
+
+**Синтаксис**
+
+```sql
+h3ToCenterChild(index, resolution)
+```
+
+**Параметры**
+
+* `index` — номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+* `resolution` — разрешение индекса. Диапазон: `[0, 15]`. [UInt8](/ru/reference/data-types/int-uint).
+
+**Возвращаемые значения**
+
+* Индекс [H3](#h3-index) центральной дочерней ячейки, содержащейся в указанном индексе [H3](#h3-index) при заданном разрешении. [UInt64](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3ToCenterChild(577023702256844799,1) AS centerToChild;
+```
+
+```text title="Response"
+┌──────centerToChild─┐
+│ 581496515558637567 │
+└────────────────────┘
+```
+
+<div id="h3exactedgelengthm">
+  ## h3ExactEdgeLengthM
+</div>
+
+Возвращает точную длину однонаправленного ребра, представленного входным индексом H3, в метрах.
+
+**Синтаксис**
+
+```sql
+h3ExactEdgeLengthM(index)
+```
+
+**Параметр**
+
+* `index` — номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Точная длина ребра в метрах. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3ExactEdgeLengthM(1310277011704381439) AS exactEdgeLengthM;;
+```
+
+```text title="Response"
+┌───exactEdgeLengthM─┐
+│ 195449.63163407316 │
+└────────────────────┘
+```
+
+<div id="h3exactedgelengthkm">
+  ## h3ExactEdgeLengthKm
+</div>
+
+Возвращает точную длину однонаправленного ребра, представленного переданным индексом H3, в километрах.
+
+**Синтаксис**
+
+```sql
+h3ExactEdgeLengthKm(index)
+```
+
+**Параметр**
+
+* `index` — Номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Точная длина ребра в километрах. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3ExactEdgeLengthKm(1310277011704381439) AS exactEdgeLengthKm;;
+```
+
+```text title="Response"
+┌──exactEdgeLengthKm─┐
+│ 195.44963163407317 │
+└────────────────────┘
+```
+
+<div id="h3exactedgelengthrads">
+  ## h3ExactEdgeLengthRads
+</div>
+
+Возвращает точную длину однонаправленного ребра, представленного входным индексом H3, в радианах.
+
+**Синтаксис**
+
+```sql
+h3ExactEdgeLengthRads(index)
+```
+
+**Параметр**
+
+* `index` — номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Точная длина ребра в радианах. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3ExactEdgeLengthRads(1310277011704381439) AS exactEdgeLengthRads;;
+```
+
+```text title="Response"
+┌──exactEdgeLengthRads─┐
+│ 0.030677980118976447 │
+└──────────────────────┘
+```
+
+<div id="h3numhexagons">
+  ## h3NumHexagons
+</div>
+
+Возвращает количество уникальных индексов H3 для заданного разрешения.
+
+**Синтаксис**
+
+```sql
+h3NumHexagons(resolution)
+```
+
+**Параметр**
+
+* `resolution` — разрешение индекса. Диапазон: `[0, 15]`. [UInt8](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Количество индексов H3. [Int64](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3NumHexagons(3) AS numHexagons;
+```
+
+```text title="Response"
+┌─numHexagons─┐
+│       41162 │
+└─────────────┘
+```
+
+<div id="h3pointdistm">
+  ## h3PointDistM
+</div>
+
+Возвращает расстояние в метрах по &quot;дуге большого круга&quot; или по формуле &quot;гаверсинуса&quot; между парами точек GeoCoord (широта/долгота).
+
+**Синтаксис**
+
+```sql
+h3PointDistM(lat1, lon1, lat2, lon2)
+```
+
+**Аргументы**
+
+* `lat1`, `lon1` — широта и долгота точки 1 в градусах. [Float64](/ru/reference/data-types/float).
+* `lat2`, `lon2` — широта и долгота точки 2 в градусах. [Float64](/ru/reference/data-types/float).
+
+**Возвращаемые значения**
+
+* Расстояние по гаверсинусу или расстояние по дуге большого круга в метрах. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
+```
+
+```text title="Response"
+┌──────h3PointDistM─┐
+│ 2223901.039504589 │
+└───────────────────┘
+```
+
+<div id="h3pointdistkm">
+  ## h3PointDistKm
+</div>
+
+Возвращает расстояние в километрах между парами точек GeoCoord (широта/долгота), вычисленное по &quot;дуге большого круга&quot; или по формуле &quot;гаверсинуса&quot;.
+
+**Синтаксис**
+
+```sql
+h3PointDistKm(lat1, lon1, lat2, lon2)
+```
+
+**Аргументы**
+
+* `lat1`, `lon1` — широта и долгота точки 1 в градусах. [Float64](/ru/reference/data-types/float).
+* `lat2`, `lon2` — широта и долгота точки 2 в градусах. [Float64](/ru/reference/data-types/float).
+
+**Возвращаемые значения**
+
+* Расстояние, вычисленное по гаверсинусу или по дуге большого круга, в километрах. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3PointDistKm(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistKm;
+```
+
+```text title="Response"
+┌─────h3PointDistKm─┐
+│ 2223.901039504589 │
+└───────────────────┘
+```
+
+<div id="h3pointdistrads">
+  ## h3PointDistRads
+</div>
+
+Возвращает расстояние между парами точек GeoCoord (широта/долгота), вычисленное по дуге большого круга или по формуле гаверсинуса, в радианах.
+
+**Синтаксис**
+
+```sql
+h3PointDistRads(lat1, lon1, lat2, lon2)
+```
+
+**Аргументы**
+
+* `lat1`, `lon1` — широта и долгота точки 1 в градусах. [Float64](/ru/reference/data-types/float).
+* `lat2`, `lon2` — широта и долгота точки 2 в градусах. [Float64](/ru/reference/data-types/float).
+
+**Возвращаемые значения**
+
+* Расстояние по формуле гаверсинуса или длина дуги большого круга в радианах. [Float64](/ru/reference/data-types/float).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3PointDistRads(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistRads;
+```
+
+```text title="Response"
+┌────h3PointDistRads─┐
+│ 0.3490658503988659 │
+└────────────────────┘
+```
+
+<div id="h3getres0indexes">
+  ## h3GetRes0Indexes
+</div>
+
+Возвращает массив всех индексов H3 нулевого разрешения.
+
+**Синтаксис**
+
+```sql
+h3GetRes0Indexes()
+```
+
+**Возвращаемые значения**
+
+* Массив всех индексов H3 с разрешением 0. [Array](/ru/reference/data-types/array)([UInt64](/ru/reference/data-types/int-uint)).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3GetRes0Indexes AS indexes ;
+```
+
+```text title="Response"
+┌─indexes─────────────────────────────────────┐
+│ [576495936675512319,576531121047601151,....]│
+└─────────────────────────────────────────────┘
+```
+
+<div id="h3getpentagonindexes">
+  ## h3GetPentagonIndexes
+</div>
+
+Возвращает все пятиугольные индексы H3 при указанном разрешении.
+
+**Синтаксис**
+
+```sql
+h3GetPentagonIndexes(resolution)
+```
+
+**Параметр**
+
+* `resolution` — разрешение индекса. Диапазон: `[0, 15]`. [UInt8](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Массив всех пятиугольных индексов H3. [Array](/ru/reference/data-types/array)([UInt64](/ru/reference/data-types/int-uint)).
+
+**Пример**
+
+```sql title="Query"
+SELECT h3GetPentagonIndexes(3) AS indexes;
+```
+
+```text title="Response"
+┌─indexes────────────────────────────────────────────────────────┐
+│ [590112357393367039,590464201114255359,590816044835143679,...] │
+└────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3line">
+  ## h3Line
+</div>
+
+Возвращает линию, соединяющую два указанных индекса.
+
+**Синтаксис**
+
+```sql
+h3Line(start,end)
+```
+
+**Параметры**
+
+* `start` — Номер шестиугольного индекса, представляющий начальную точку. [UInt64](/ru/reference/data-types/int-uint).
+* `end` — Номер шестиугольного индекса, представляющий конечную точку. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+Массив индексов H3, представляющих линию между двумя указанными индексами. [Array](/ru/reference/data-types/array)([UInt64](/ru/reference/data-types/int-uint)).
+
+**Пример**
+
+```sql title="Query"
+ SELECT h3Line(590080540275638271,590103561300344831) AS indexes;
+```
+
+```text title="Response"
+┌─indexes────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [590080540275638271,590080471556161535,590080883873021951,590106516237844479,590104385934065663,590103630019821567,590103561300344831] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3distance">
+  ## h3Distance
+</div>
+
+Возвращает расстояние между двумя указанными индексами в ячейках сетки.
+
+**Синтаксис**
+
+```sql
+h3Distance(start,end)
+```
+
+**Параметр**
+
+* `start` — номер шестиугольного индекса, обозначающий начальную точку. [UInt64](/ru/reference/data-types/int-uint).
+* `end` — номер шестиугольного индекса, обозначающий конечную точку. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Количество ячеек сетки. [Int64](/ru/reference/data-types/int-uint).
+
+Возвращает отрицательное число, если определить расстояние не удаётся.
+
+**Пример**
+
+```sql title="Query"
+ SELECT h3Distance(590080540275638271,590103561300344831) AS distance;
+```
+
+```text title="Response"
+┌─distance─┐
+│        7 │
+└──────────┘
+```
+
+<div id="h3hexring">
+  ## h3HexRing
+</div>
+
+Возвращает индексы шестиугольного кольца длины k с центром в указанном исходном h3Index.
+
+Возвращает 0, если пентагональных искажений не обнаружено.
+
+**Синтаксис**
+
+```sql
+h3HexRing(index, k)
+```
+
+**Параметр**
+
+* `index` — Номер шестиугольного индекса, представляющий исходную ячейку. [UInt64](/ru/reference/data-types/int-uint).
+* `k` — Расстояние. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемые значения**
+
+* Массив индексов H3. [Array](/ru/reference/data-types/array)([UInt64](/ru/reference/data-types/int-uint)).
+
+**Пример**
+
+```sql title="Query"
+ SELECT h3HexRing(590080540275638271, toUInt16(1)) AS hexRing;
+```
+
+```text title="Response"
+┌─hexRing─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [590080815153545215,590080471556161535,590080677714591743,590077585338138623,590077447899185151,590079509483487231] │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3getunidirectionaledge">
+  ## h3GetUnidirectionalEdge
+</div>
+
+Возвращает индекс H3 для однонаправленного ребра на основе указанных исходной ячейки и пункта назначения; в случае ошибки возвращает 0.
+
+**Синтаксис**
+
+```sql
+h3GetUnidirectionalEdge(originIndex, destinationIndex)
+```
+
+**Параметр**
+
+* `originIndex` — Номер шестиугольного индекса исходной ячейки. [UInt64](/ru/reference/data-types/int-uint).
+* `destinationIndex` — Номер шестиугольного индекса целевой ячейки. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Номер шестиугольного индекса однонаправленного ребра. [UInt64](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+ SELECT h3GetUnidirectionalEdge(599686042433355775, 599686043507097599) AS edge;
+```
+
+```text title="Response"
+┌────────────────edge─┐
+│ 1248204388774707199 │
+└─────────────────────┘
+```
+
+<div id="h3unidirectionaledgeisvalid">
+  ## h3UnidirectionalEdgeIsValid
+</div>
+
+Проверяет, является ли указанный H3Index корректным индексом однонаправленного ребра. Возвращает 1, если это однонаправленное ребро, и 0 в противном случае.
+
+**Синтаксис**
+
+```sql
+h3UnidirectionalEdgeisValid(index)
+```
+
+**Параметр**
+
+* `index` — Номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* 1 — Индекс H3 является валидным однонаправленным ребром. [UInt8](/ru/reference/data-types/int-uint).
+* 0 — Индекс H3 не является валидным однонаправленным ребром. [UInt8](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+ SELECT h3UnidirectionalEdgeIsValid(1248204388774707199) AS validOrNot;
+```
+
+```text title="Response"
+┌─validOrNot─┐
+│          1 │
+└────────────┘
+```
+
+<div id="h3getoriginindexfromunidirectionaledge">
+  ## h3GetOriginIndexFromUnidirectionalEdge
+</div>
+
+Возвращает индекс исходного шестиугольника по H3Index однонаправленного ребра.
+
+**Синтаксис**
+
+```sql
+h3GetOriginIndexFromUnidirectionalEdge(edge)
+```
+
+**Параметр**
+
+* `edge` — номер шестиугольного индекса, представляющего однонаправленное ребро. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Номер исходного шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+ SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707197) AS origin;
+```
+
+```text title="Response"
+┌─────────────origin─┐
+│ 599686042433355773 │
+└────────────────────┘
+```
+
+<div id="h3getdestinationindexfromunidirectionaledge">
+  ## h3GetDestinationIndexFromUnidirectionalEdge
+</div>
+
+Возвращает индекс шестиугольника пункта назначения по однонаправленному ребру H3Index.
+
+**Синтаксис**
+
+```sql
+h3GetDestinationIndexFromUnidirectionalEdge(edge)
+```
+
+**Параметр**
+
+* `edge` — номер шестиугольного индекса, представляющего однонаправленное ребро. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Номер шестиугольного индекса пункта назначения. [UInt64](/ru/reference/data-types/int-uint).
+
+**Пример**
+
+```sql title="Query"
+ SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707197) AS destination;
+```
+
+```text title="Response"
+┌────────destination─┐
+│ 599686043507097597 │
+└────────────────────┘
+```
+
+<div id="h3getindexesfromunidirectionaledge">
+  ## h3GetIndexesFromUnidirectionalEdge
+</div>
+
+Возвращает индексы исходного шестиугольника и шестиугольника в пункте назначения для указанного H3Index однонаправленного ребра.
+
+**Синтаксис**
+
+```sql
+h3GetIndexesFromUnidirectionalEdge(edge)
+```
+
+**Параметр**
+
+* `edge` — номер шестиугольного индекса, который представляет однонаправленное ребро. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+Кортеж, состоящий из двух значений `tuple(origin,destination)`:
+
+* `origin` — исходный номер шестиугольного индекса. [UInt64](/ru/reference/data-types/int-uint).
+* `destination` — номер шестиугольного индекса пункта назначения. [UInt64](/ru/reference/data-types/int-uint).
+
+Возвращает `(0,0)`, если переданное значение недопустимо.
+
+**Пример**
+
+```sql title="Query"
+ SELECT h3GetIndexesFromUnidirectionalEdge(1248204388774707199) AS indexes;
+```
+
+```text title="Response"
+┌─indexes─────────────────────────────────┐
+│ (599686042433355775,599686043507097599) │
+└─────────────────────────────────────────┘
+```
+
+<div id="h3getunidirectionaledgesfromhexagon">
+  ## h3GetUnidirectionalEdgesFromHexagon
+</div>
+
+Возвращает все однонаправленные рёбра для указанного H3Index.
+
+**Синтаксис**
+
+```sql
+h3GetUnidirectionalEdgesFromHexagon(index)
+```
+
+**Параметр**
+
+* `index` — номер шестиугольного индекса, соответствующий однонаправленному ребру. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+Массив индексов H3, представляющих каждое однонаправленное ребро. [Array](/ru/reference/data-types/array)([UInt64](/ru/reference/data-types/int-uint)).
+
+**Пример**
+
+```sql title="Query"
+ SELECT h3GetUnidirectionalEdgesFromHexagon(1248204388774707199) AS edges;
+```
+
+```text title="Response"
+┌─edges─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [1248204388774707199,1320261982812635135,1392319576850563071,1464377170888491007,1536434764926418943,1608492358964346879] │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3getunidirectionaledgeboundary">
+  ## h3GetUnidirectionalEdgeBoundary
+</div>
+
+Возвращает координаты, задающие однонаправленное ребро.
+
+**Синтаксис**
+
+```sql
+h3GetUnidirectionalEdgeBoundary(index)
+```
+
+**Параметр**
+
+* `index` — номер шестиугольного индекса, представляющий однонаправленное ребро. [UInt64](/ru/reference/data-types/int-uint).
+
+**Возвращаемое значение**
+
+* Массив пар &#39;(lon, lat)&#39;. [Array](/ru/reference/data-types/array)([Float64](/ru/reference/data-types/float), [Float64](/ru/reference/data-types/float)).
+
+**Пример**
+
+```sql title="Query"
+ SELECT h3GetUnidirectionalEdgeBoundary(1248204388774707199) AS boundary;
+```
+
+```text title="Response"
+┌─boundary────────────────────────────────────────────────────────────────────────┐
+│ [(37.42012867767779,-122.03773496427027),(37.33755608435299,-122.090428929044)] │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```

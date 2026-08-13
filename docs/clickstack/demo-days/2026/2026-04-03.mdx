@@ -1,0 +1,106 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-04-03
+title: 'Demo days - 2026-04-03'
+sidebarTitle: '2026-04-03'
+description: 'ClickStack demo days for 2026-04-03'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## New dashboard and saved search listing pages {#new-dashboard-and-saved-search-listing-pages}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/dQCkNZElwcg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Dashboards and saved searches have moved off the sidebar and onto dedicated listing pages. If your team has accumulated a meaningful number of dashboards, the old sidebar approach got unwieldy fast. The new pages show everything in a card view organised by tag, with name search and tag filtering built in. A denser list view is also available if you prefer it.
+
+Favouriting is now part of the picture too. Star a dashboard or saved search and it pins to the top of the listing page and reappears in the sidebar for quick access, similar to how things worked before but without crowding the nav for everyone else. The listing page also surfaces alert status icons and "created by / updated by" metadata on each card, so you can see at a glance who owns what and whether anything is firing.
+
+A new template gallery rounds things out. Four pre-built dashboards covering OTel runtime metrics for Node.js, Python, Go, and Java can be imported in a couple of clicks. Tags and the target metrics source can be edited during import, so you can slot them straight into your existing tagging structure.
+
+**Related PRs:** [#1971](https://github.com/hyperdxio/hyperdx/pull/1971) Add dashboard listing page, [#2012](https://github.com/hyperdxio/hyperdx/pull/2012) Add saved searches listing page, [#2021](https://github.com/hyperdxio/hyperdx/pull/2021) Add favorites for dashboards and saved searches, [#2033](https://github.com/hyperdxio/hyperdx/pull/2033) Group dashboards and searches by tag, [#2031](https://github.com/hyperdxio/hyperdx/pull/2031) Show created/updated metadata, [#2053](https://github.com/hyperdxio/hyperdx/pull/2053) Add alert icons to dashboard list page, [#2010](https://github.com/hyperdxio/hyperdx/pull/2010) Add dashboard template gallery
+
+## Filters for filters {#filters-for-filters}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/Tfe9kJygoEg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Dashboard variable filters now support their own filter conditions. The motivating case is straightforward: if you have a "service name" dropdown on a Node.js dashboard, you probably only want that dropdown to list Node.js services, not every service in your environment. You can now configure a filter condition directly on the dashboard variable to scope what gets shown.
+
+The filter selector has also been updated to support multi-select. For dashboards that group by service, being able to pick several values at once from a dropdown makes comparisons a lot more practical.
+
+**Related PRs:** [#1969](https://github.com/hyperdxio/hyperdx/pull/1969) Add conditions to Dashboard filters; Support filter multi-select
+
+## RBAC for predefined dashboards {#rbac-for-predefined-dashboards}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/AZ94-quHEuw" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Role-based access control now applies to ClickStack's preset dashboards. Previously these built-in dashboards ignored RBAC entirely, so any user could access them regardless of their assigned role. That gap is now closed.
+
+Fine-grained read permissions work as you'd expect. A role configured with read-only access to specific services restricts users to seeing only the preset dashboards relevant to those services. Users in that role can view the dashboards and their filters, but the filter controls are locked to prevent editing. The demo shows a custom role with a "services" read permission scoped to a named service, and a user logged in with that role seeing exactly the dashboards and filter state they should have access to.
+
+## Optimizations for searching {#optimizations-for-searching}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/uVD2FKzoHjM" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+ClickHouse's "Read in Order" optimisation makes search queries fast by reading data sequentially when the ORDER BY matches the table's primary key, stopping as soon as the LIMIT is reached. Benchmarking revealed that despite this, searches were still over-fetching on larger datasets. The issue comes down to the number of parts being iterated: even with the optimisation active, a sufficiently large table has enough parts that ClickHouse still reads more data than necessary.
+
+The fix is a one-minute time window prepended to the windowed query array for search queries. Most searches have the data they need in the last minute anyway, so hitting that window first returns results almost instantly. If nothing is found there, the query falls back to progressively wider windows as usual. Separately, the ORDER BY optimisation was not being applied correctly to the `otel_traces` schema because the timestamp column used a `toDateTime(Timestamp)` expression that wasn't being recognised. That has been fixed too.
+
+**Related PRs:** [#2019](https://github.com/hyperdxio/hyperdx/pull/2019) Use 1 minute window for searches, [#2014](https://github.com/hyperdxio/hyperdx/pull/2014) Fix optimize order by shortcomings for otel_traces
+
+## Copy row and configurable filter sizes {#copy-row-and-configurable-filter-sizes}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/e_IIKG3f6SE" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+A copy-as-JSON button is now available in the row viewer, letting you grab the entire log row in one click. The button shows up in the full sidebar view too. It's handy for pasting a row into an LLM prompt to ask where this log would appear in the code, or just capturing a complete event for an incident report without manually selecting all the text.
+
+The number of filter keys fetched in the sidebar is now a configurable team setting under Query Settings. The previous fixed limit meant that on larger datasets only a fraction of available filter attributes were visible. Now teams can raise that limit to surface more resource and log attributes. The change also includes virtualisation improvements to keep filter panel rendering fast even when a large number of filter groups are shown.
+
+**Related PRs:** [#2035](https://github.com/hyperdxio/hyperdx/pull/2035) Add copy row as JSON button, [#2020](https://github.com/hyperdxio/hyperdx/pull/2020) New team setting for number of filters to fetch, [#1979](https://github.com/hyperdxio/hyperdx/pull/1979) Virtualize nested filter groups
+
+## Tabs and groups in dashboards {#tabs-and-groups-in-dashboards}
+
+*Demo by [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/tyumDlJuDTg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Dashboard tiles can now be organised into Groups. This replaces the previous model that had two separate container types ("sections" and "groups"), which required users to decide upfront which container type they wanted. The new single Group concept keeps things simpler: a Group is collapsible by default, can optionally have a visible border, and can have tabs added to it. Each tab holds its own set of tiles, and tiles can be moved between groups via drag handles.
+
+The demo shows a group with a few customisation options toggled: collapsible on and off, border visible or hidden, tabs enabled or not. At demo time the PR was still in review with design feedback being gathered. Once it lands, it should give dashboard authors a more flexible and less confusing set of building blocks compared to the old two-container-type model.
+
+**Related PRs:** [#1972](https://github.com/hyperdxio/hyperdx/pull/1972) Dashboard groups with tabs and collapsible/bordered options, [#2015](https://github.com/hyperdxio/hyperdx/pull/2015) Unify section/group into single Group
+
+## ClickStack CLI {#clickstack-cli}
+
+*Demo by [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/9XqJNhstabw" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+The ClickStack CLI (`hdx`) is a new terminal TUI for searching, tailing, and inspecting logs and traces without leaving your terminal. It connects to your HyperDX instance using the same web session mechanism as the browser, so there's no separate API key to manage. After a one-time `hdx auth login` with your instance URL and email, it stays authenticated.
+
+The TUI surface is the same search interface you'd get in the web app: same query syntax, same source selection, same ability to drill into individual log entries. One highlight is the trace waterfall view, where clicking into a log entry shows the full distributed trace rendered directly in the terminal. The demo also previews an early experiment with agentic usage: by giving an AI agent access to the CLI's schema introspection output alongside the ability to run queries via the ClickHouse proxy, the agent can investigate issues autonomously. The demo takes it further and shows the agent using web sessions to navigate the HyperDX UI via Playwright, pulling metrics from rendered charts to cross-reference with what it found in the logs.
+
+**Related PRs:** [#2043](https://github.com/hyperdxio/hyperdx/pull/2043) Add @hyperdx/cli package — terminal TUI for searching and tailing events

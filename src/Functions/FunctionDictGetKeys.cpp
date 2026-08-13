@@ -391,6 +391,9 @@ private:
         auto read_progress_callback = std::make_unique<ReadProgressCallback>();
         read_progress_callback->setProgressCallback(helper.context->getProgressCallback());
         read_progress_callback->setQuota(helper.context->getQuota());
+        /// Carry the query hash so this dictionary scan's `read_rows`/`read_bytes` are accounted to the
+        /// query's own bucket under a `KEYED BY normalized_query_hash` quota, not the shared hash-0 one.
+        read_progress_callback->setNormalizedQueryHash(helper.context->getNormalizedQueryHash());
         read_progress_callback->setProcessListElement(process_list_element);
         executor.setReadProgressCallback(std::move(read_progress_callback));
 
@@ -471,7 +474,7 @@ private:
 
         const auto & structure = dict->getStructure();
         const auto & attribute_column_type = structure.getAttribute(attr_name).type;
-        ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type)->convertToFullIfNeeded();
+        ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type)->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
 
         chassert(values_column != nullptr);
         chassert(values_column->size() == input_rows_count);
@@ -842,11 +845,14 @@ This is most effective with large dictionaries when the input has low cardinalit
     FunctionDocumentation::Examples examples
         = {{"Sample usage",
             R"(
-SELECT dictGetKeys('task_id_to_priority_dictionary', 'priority_level', 'high') AS ids;
+CREATE TABLE task_priority_source (task_id UInt64, priority_level String) ENGINE = Memory;
+INSERT INTO task_priority_source VALUES (1, 'low'), (2, 'high'), (3, 'medium'), (4, 'high');
+CREATE DICTIONARY task_id_to_priority_dictionary (task_id UInt64, priority_level String) PRIMARY KEY task_id SOURCE(CLICKHOUSE(TABLE 'task_priority_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 0 MAX 0);
+SELECT arraySort(dictGetKeys('task_id_to_priority_dictionary', 'priority_level', 'high')) AS ids;
     )",
             R"(
 ┌─ids───┐
-│ [4,2] │
+│ [2,4] │
 └───────┘
     )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 12};

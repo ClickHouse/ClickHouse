@@ -74,7 +74,7 @@ namespace
                 return isWordCharASCII(character);
             });
 
-            if (parameter_name.empty() && !is_identifier)
+            if (parameter_name.empty() || !is_identifier)
                 continue;
 
             std::string data_type_name(command_value.data() + semicolon_pos + 1, command_value.data() + end_parameter_pos);

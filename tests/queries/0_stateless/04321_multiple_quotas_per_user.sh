@@ -4,6 +4,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Lower the client log level so transient server warnings (e.g. QuotaCache's "Re-chose quotas
+# ... in N ms", emitted when a recompute is slow under load) cannot leak onto stderr and fail
+# the stdout-only assertions below.
+CLICKHOUSE_CLIENT=$(echo "${CLICKHOUSE_CLIENT}" | sed "s/--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}/--send_logs_level=error/")
+
 # A user can be assigned several quotas at once (here, of different key types). All of them must
 # be enforced together: a query is rejected if ANY assigned quota is exceeded. Previously only one
 # quota per user was enforced, chosen non-deterministically, so the others were silently ignored.

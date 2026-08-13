@@ -60,7 +60,7 @@ LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
         databases[database_name]->loadTablesMetadata(global_context, metadata, isLoadingFromExistingMetadata(strictness_mode));
     }
 
-    LOG_INFO(log, "Parsed metadata of {} tables in {} databases in {} sec",
+    LOG_INFO(log, "Parsed metadata of {} tables in {} databases in {:.3f} sec",
              metadata.parsed_tables.size(), databases_to_load.size(), stopwatch.elapsedSeconds());
 
     stopwatch.restart();

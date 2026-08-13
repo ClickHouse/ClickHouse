@@ -1,0 +1,68 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/executable-pool
+title: 'Origen de diccionario Executable Pool'
+sidebarTitle: 'Executable Pool'
+description: 'Configura un grupo de ejecutables como origen de diccionario en ClickHouse.'
+doc_type: 'reference'
+---
+
+Executable pool permite cargar datos desde un conjunto de procesos.
+Este origen no funciona con diseños de diccionario que necesitan cargar todos los datos desde el origen.
+
+Executable pool funciona si el diccionario [se almacena](/es/reference/statements/create/dictionary/layouts/overview#storing-dictionaries-in-memory) con uno de los siguientes diseños:
+
+* `cache`
+* `complex_key_cache`
+* `ssd_cache`
+* `complex_key_ssd_cache`
+* `direct`
+* `complex_key_direct`
+
+Executable pool iniciará un conjunto de procesos con el comando especificado y los mantendrá en ejecución hasta que finalicen. El programa debe leer datos de STDIN mientras estén disponibles y escribir el resultado en STDOUT. Puede esperar el siguiente bloque de datos en STDIN. ClickHouse no cerrará STDIN después de procesar un bloque de datos, sino que enviará otro fragmento de datos cuando sea necesario. El script ejecutable debe estar preparado para esta forma de procesar los datos: debe sondear STDIN y vaciar los datos en STDOUT lo antes posible.
+
+Ejemplo de configuración:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(EXECUTABLE_POOL(
+        command 'while read key; do printf "$key\tData for key $key\n"; done'
+        format 'TabSeparated'
+        pool_size 10
+        max_command_execution_time 10
+        implicit_key false
+    ))
+    ```
+  </Tab>
+
+  <Tab title="Archivo de configuración">
+    ```xml
+    <source>
+        <executable_pool>
+            <command><command>while read key; do printf "$key\tData for key $key\n"; done</command</command>
+            <format>TabSeparated</format>
+            <pool_size>10</pool_size>
+            <max_command_execution_time>10<max_command_execution_time>
+            <implicit_key>false</implicit_key>
+        </executable_pool>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+Campos de configuración:
+
+| Configuración                 | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `command`                     | La ruta absoluta al archivo ejecutable, o el nombre del archivo (si el directorio del programa está incluido en `PATH`).                                                                                                                                                                                                                                                                                                                                     |
+| `format`                      | El formato de archivo. Se admiten todos los formatos descritos en [Formats](/es/reference/formats/index).                                                                                                                                                                                                                                                                                                                                                       |
+| `pool_size`                   | Tamaño del conjunto. Si se especifica 0 como `pool_size`, no habrá restricciones en el tamaño del conjunto. El valor predeterminado es `16`.                                                                                                                                                                                                                                                                                                                 |
+| `command_termination_timeout` | El script ejecutable debe contener un bucle principal de lectura y escritura. Después de que se destruya el diccionario, la tubería se cierra y el archivo ejecutable tendrá `command_termination_timeout` segundos para apagarse antes de que ClickHouse envíe la señal SIGTERM al proceso hijo. Se especifica en segundos. El valor predeterminado es `10`. Opcional.                                                                                      |
+| `max_command_execution_time`  | Tiempo máximo de ejecución del comando del script ejecutable para procesar un bloque de datos. Se especifica en segundos. El valor predeterminado es `10`. Opcional.                                                                                                                                                                                                                                                                                         |
+| `command_read_timeout`        | Tiempo de espera para leer datos de stdout del comando, en milisegundos. El valor predeterminado es `10000`. Opcional.                                                                                                                                                                                                                                                                                                                                       |
+| `command_write_timeout`       | Tiempo de espera para escribir datos en stdin del comando, en milisegundos. El valor predeterminado es `10000`. Opcional.                                                                                                                                                                                                                                                                                                                                    |
+| `implicit_key`                | El archivo del origen ejecutable puede devolver solo valores, y la correspondencia con las claves solicitadas se determina implícitamente por el orden de las filas en el resultado. El valor predeterminado es `false`. Opcional.                                                                                                                                                                                                                           |
+| `execute_direct`              | Si `execute_direct` = `1`, `command` se buscará dentro de la carpeta user&#95;scripts especificada por [user&#95;scripts&#95;path](/es/reference/settings/server-settings/settings#user_scripts_path). Se pueden especificar argumentos adicionales del script usando espacios en blanco como separador. Ejemplo: `script_name arg1 arg2`. Si `execute_direct` = `0`, `command` se pasa como argumento a `bin/sh -c`. El valor predeterminado es `1`. Opcional. |
+| `send_chunk_header`           | Controla si se debe enviar el recuento de filas antes de enviar un fragmento de datos al proceso. El valor predeterminado es `false`. Opcional.                                                                                                                                                                                                                                                                                                              |
+
+Este origen de diccionario solo puede configurarse mediante configuración XML. La creación de diccionarios con origen ejecutable mediante DDL está deshabilitada; de lo contrario, el usuario de la DB podría ejecutar cualquier binario arbitrario en el nodo de ClickHouse.

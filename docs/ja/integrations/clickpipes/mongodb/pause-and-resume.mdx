@@ -1,0 +1,51 @@
+---
+title: 'MongoDB ClickPipe の一時停止と再開'
+description: 'MongoDB ClickPipe の一時停止と再開'
+sidebarTitle: 'テーブルの一時停止'
+slug: /integrations/clickpipes/mongodb/pause_and_resume
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'データインジェスト', 'リアルタイム同期']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+MongoDB ClickPipe を一時停止すると役立つケースがあります。たとえば、既存データが静的な状態にある間に分析を実行したい場合です。あるいは、MongoDB のアップグレードを行っている場合もあるでしょう。以下では、MongoDB ClickPipe を一時停止および再開する方法を説明します。
+
+<div id="pause-clickpipe-steps">
+  ## MongoDB ClickPipe を一時停止する手順
+</div>
+
+1. Data Sources タブで、一時停止する MongoDB ClickPipe をクリックします。
+2. **Settings** タブを開きます。
+3. **Pause** ボタンをクリックします。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
+
+4. 確認ダイアログが表示されるので、もう一度 **Pause** をクリックします。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
+
+4. **Metrics** タブを開きます。
+5. パイプのステータスが **Paused** になるまで待ちます。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+
+<div id="resume-clickpipe-steps">
+  ## MongoDB ClickPipe を再開する手順
+</div>
+
+1. **Data Sources** タブで、再開する MongoDB ClickPipe をクリックします。ミラーのステータスは、最初は **Paused** になっているはずです。
+2. **Settings** タブに移動します。
+3. **Resume** ボタンをクリックします。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
+
+4. 確認ダイアログが表示されます。もう一度 **Resume** をクリックします。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
+
+5. **Metrics** タブに移動します。
+6. パイプのステータスが **Running** になるまで待ちます。

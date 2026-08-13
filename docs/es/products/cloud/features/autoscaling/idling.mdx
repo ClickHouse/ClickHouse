@@ -1,0 +1,44 @@
+---
+sidebarTitle: 'Inactividad automática'
+slug: /cloud/features/autoscaling/idling
+description: 'Inactividad automática e inactividad adaptativa en ClickHouse Cloud'
+keywords: ['inactividad', 'inactividad automática', 'inactividad adaptativa', 'ahorro de costos', 'pausa']
+title: 'Inactividad automática'
+doc_type: 'guide'
+---
+
+<div id="automatic-idling">
+  ## Inactividad automática
+</div>
+
+En la página de **Configuración**, también puedes elegir si quieres permitir la inactividad automática de tu servicio cuando permanezca inactivo durante un tiempo determinado (es decir, cuando el servicio no esté ejecutando ninguna consulta enviada por usuarios). La inactividad automática reduce el costo de tu servicio, ya que no se te facturan recursos de cómputo cuando el servicio está en pausa.
+
+<Warning>
+  **Configura la lista de acceso IP de tu servicio**
+
+  Cuando creas un servicio de ClickHouse Cloud, la configuración predeterminada de la lista de acceso IP es &#39;Allow from anywhere&#39;. Recomendamos encarecidamente restringir el acceso a direcciones IP o rangos específicos lo antes posible. Los servicios configurados con `Allow from anywhere` pueden pasar periódicamente de un estado inactivo a uno activo debido a rastreadores y escáneres de Internet que buscan IP públicas, lo que puede generar costos inesperados.
+</Warning>
+
+<div id="adaptive-idling">
+  ### Inactividad adaptativa
+</div>
+
+ClickHouse Cloud implementa la inactividad adaptativa para evitar interrupciones y, al mismo tiempo, optimizar los costos. El sistema evalúa varias condiciones antes de que un servicio entre en inactividad. La inactividad adaptativa prevalece sobre la configuración de la duración de la inactividad cuando se cumple cualquiera de las condiciones que se indican a continuación:
+
+* Cuando el número de partes supera el umbral máximo de partes para la inactividad (predeterminado: 10.000), el servicio no entra en inactividad para que el mantenimiento en segundo plano pueda continuar
+* Cuando hay operaciones de merge en curso, el servicio no entra en inactividad hasta que esos merges finalicen, para evitar interrumpir la consolidación crítica de datos
+* Además, el servicio también ajusta los tiempos de espera antes de entrar en inactividad en función del tiempo de inicialización del servidor:
+  * Si el tiempo de inicialización del servidor es inferior a 15 minutos, no se aplica ningún tiempo de espera adaptativo y se usa el tiempo de espera de inactividad predeterminado configurado por el cliente
+  * Si el tiempo de inicialización del servidor está entre 15 y 30 minutos, el tiempo de espera de inactividad se establece en 15 minutos
+  * Si el tiempo de inicialización del servidor está entre 30 y 60 minutos, el tiempo de espera de inactividad se establece en 30 minutos.
+  * Si el tiempo de inicialización del servidor es superior a 60 minutos, el tiempo de espera de inactividad se establece en 1 hora
+
+<Note>
+  El servicio puede entrar en un estado de inactividad en el que suspende las actualizaciones de las [vistas materializadas actualizables](/es/concepts/features/materialized-views/refreshable-materialized-view), el consumo de [S3Queue](/es/reference/engines/table-engines/integrations/s3queue) y la programación de nuevas operaciones de merge. Las operaciones de merge existentes se completarán antes de que el servicio pase al estado de inactividad. Para garantizar el funcionamiento continuo de las vistas materializadas actualizables y del consumo de S3Queue, deshabilite la funcionalidad de inactividad.
+</Note>
+
+<Danger>
+  **Cuándo no usar la inactividad automática**
+
+  Use la inactividad automática solo si su caso de uso puede tolerar una demora antes de poder responder a las consultas, porque cuando un servicio está en pausa, las conexiones al servicio agotarán el tiempo de espera. La inactividad automática es ideal para servicios que se usan con poca frecuencia y en los que se puede tolerar una demora. No se recomienda para servicios que sustentan funcionalidades orientadas al cliente y se usan con frecuencia.
+</Danger>

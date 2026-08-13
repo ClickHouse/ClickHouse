@@ -195,7 +195,7 @@ void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, Wr
     }
 }
 
-void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in)
+void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity)
 {
     UInt64 num_aggregates = 0;
     readVarUInt(num_aggregates, in);
@@ -214,7 +214,7 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
         for (auto & arg_name : aggregate.argument_names)
         {
             readStringBinary(arg_name, in);
-            argument_types.emplace_back(decodeDataType(in));
+            argument_types.emplace_back(decodeDataType(in, max_type_complexity));
         }
 
         String function_name;

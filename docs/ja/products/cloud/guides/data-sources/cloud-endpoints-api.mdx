@@ -1,0 +1,49 @@
+---
+slug: /manage/data-sources/cloud-endpoints-api
+sidebarTitle: 'Cloud IPアドレス'
+title: 'Cloud IPアドレス'
+description: 'このページでは、ClickHouse の Cloud Endpoints API におけるセキュリティ機能について説明します。認証および認可の仕組みによるアクセス管理を通じて、ClickHouse のデプロイメントを保護する方法を詳しく解説します。'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', '静的 IP アドレス', 'Cloud エンドポイント', 'API', 'セキュリティ', 'エグレス IP', 'イングレス IP', 'ファイアウォール']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="static-ips-api">
+  ## 静的 IP API
+</div>
+
+静的 IP の一覧を取得する必要がある場合は、次の ClickHouse Cloud API エンドポイントを使用できます: [`https://api.clickhouse.cloud/static-ips.json`](https://api.clickhouse.cloud/static-ips.json)。この API では、リージョンやクラウドごとのイングレス/エグレス IP、S3 エンドポイントなど、ClickHouse Cloud サービスのエンドポイントを取得できます。
+
+MySQL や PostgreSQL Engine などのインテグレーションを使用している場合は、ClickHouse Cloud からお使いのインスタンスへのアクセスを許可する必要が生じることがあります。この API を使ってパブリック IP を取得し、GCP の `firewalls` や `Authorized networks`、Azure や AWS の `Security Groups`、または使用中のその他のインフラストラクチャのエグレス管理システムに設定できます。
+
+たとえば、リージョン `ap-south-1` の AWS でホストされている ClickHouse Cloud サービスからのアクセスを許可するには、そのリージョンの `egress_ips` アドレスを追加できます:
+
+```bash
+❯ curl -s https://api.clickhouse.cloud/static-ips.json | jq '.'
+{
+  "aws": [
+    {
+      "egress_ips": [
+        "3.110.39.68",
+        "15.206.7.77",
+        "3.6.83.17"
+      ],
+      "ingress_ips": [
+        "15.206.78.111",
+        "3.6.185.108",
+        "43.204.6.248"
+      ],
+      "region": "ap-south-1",
+      "s3_endpoints": "vpce-0a975c9130d07276d"
+    },
+...
+```
+
+たとえば、`us-east-2` で稼働し、ClickHouse Cloud サービスへの接続が必要な AWS RDS インスタンスでは、セキュリティグループの受信ルールは次のように設定します。
+
+<Image img="/images/_snippets/aws-rds-mysql.webp" size="lg" alt="AWS セキュリティグループルール" border />
+
+同じ ClickHouse Cloud サービスが `us-east-2` で稼働していて、今度は GCP 上の MySQL に接続する場合、`Authorized networks` は次のようになります。
+
+<Image img="/images/_snippets/gcp-authorized-network.webp" size="md" alt="GCP 承認済みネットワーク" border />

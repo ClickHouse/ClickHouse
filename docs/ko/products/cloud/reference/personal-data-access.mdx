@@ -1,0 +1,73 @@
+---
+sidebarTitle: '개인 데이터 접근'
+slug: /cloud/manage/personal-data-access
+title: '개인 데이터 접근'
+description: '등록된 사용자는 ClickHouse에서 연락처 정보를 포함한 개인 계정 데이터를 확인하고 관리할 수 있습니다.'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', '개인 데이터', 'DSAR', '정보주체 열람 요청', '개인정보 처리방침', 'GDPR']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="intro">
+  ## 소개
+</div>
+
+등록된 사용자는 ClickHouse에서 연락처 정보를 포함한 개인 계정 데이터를 확인하고 관리할 수 있습니다. 역할에 따라 조직 내 다른 사용자의 연락처 정보, API Key 세부 정보 및 기타 관련 정보에 대한 접근 권한도 포함될 수 있습니다. 이러한 정보는 ClickHouse 콘솔에서 직접 셀프서비스 방식으로 관리할 수 있습니다.
+
+**정보주체 열람 요청(DSAR)이란 무엇인가요**
+
+거주 지역에 따라 적용 법률에 의해 ClickHouse 개인정보 처리방침에 설명된 대로 ClickHouse가 보유한 개인 데이터와 관련해 추가적인 권리(데이터 주체 권리)가 부여될 수 있습니다. 데이터 주체 권리를 행사하는 절차를 정보주체 열람 요청(DSAR)이라고 합니다.
+
+**개인 데이터의 범위**
+
+ClickHouse가 수집하는 개인 데이터와 그 사용 방식에 관한 자세한 내용은 ClickHouse 개인정보 처리방침을 확인하십시오.
+
+<div id="self-service">
+  ## 셀프서비스
+</div>
+
+기본적으로 ClickHouse는 사용자가 ClickHouse 콘솔에서 자신의 개인 데이터를 직접 확인할 수 있도록 합니다.
+
+아래는 계정 설정 및 서비스 사용 중 ClickHouse가 수집하는 데이터의 요약과, ClickHouse 콘솔에서 특정 개인 데이터를 확인할 수 있는 위치에 대한 정보입니다.
+
+| Location/URL                                                 | Description             | Personal Data |
+| ------------------------------------------------------------ | ----------------------- | ------------- |
+| https://auth.clickhouse.cloud/u/signup/                      | 계정 등록                   | 이메일, 비밀번호     |
+| https://console.clickhouse.cloud/profile                     | 일반 사용자 프로필 정보           | 이름, 이메일       |
+| https://console.clickhouse.cloud/organizations/OrgID/members | 조직의 사용자 목록              | 이름, 이메일       |
+| https://console.clickhouse.cloud/organizations/OrgID/keys    | API Key 목록 및 생성한 사용자 정보 | 이메일           |
+| https://console.clickhouse.cloud/organizations/OrgID/audit   | 개별 사용자의 활동을 나열하는 활동 로그  | 이메일           |
+| https://console.clickhouse.cloud/organizations/OrgID/billing | 청구 정보 및 인보이스            | 청구 주소, 이메일    |
+| https://console.clickhouse.cloud/support                     | ClickHouse 지원팀과의 상호작용   | 이름, 이메일       |
+
+참고: `OrgID`가 포함된 URL은 해당 계정의 `OrgID`에 맞게 업데이트해야 합니다.
+
+<div id="current-customers">
+  ### 기존 고객
+</div>
+
+계정이 있고 셀프서비스 옵션으로 개인정보 관련 문제가 해결되지 않은 경우, 개인정보 처리방침에 따라 정보주체 열람 요청(Data Subject Access Request)을 제출할 수 있습니다. 이를 위해 ClickHouse 계정에 로그인한 다음 [지원 케이스](https://console.clickhouse.cloud/support)를 여십시오. 이렇게 하면 본인 확인이 가능해지고 요청 처리 절차를 간소화하는 데 도움이 됩니다.
+
+지원 케이스에는 다음 세부 정보를 반드시 포함하십시오:
+
+| 항목 | 요청에 포함할 텍스트                                   |
+| -- | --------------------------------------------- |
+| 제목 | 정보주체 열람 요청(DSAR)                              |
+| 설명 | ClickHouse가 확인, 수집 및/또는 제공해야 하는 정보에 대한 자세한 설명 |
+
+<Image img="/images/cloud/security/support-case-form.webp" size="sm" alt="ClickHouse Cloud의 지원 케이스 양식" border />
+
+<div id="individuals-without-an-account">
+  ### 계정이 없는 개인
+</div>
+
+당사 계정이 없고 위의 self-service 옵션으로도 개인정보 관련 문제가 해결되지 않았으며, 개인정보 처리방침에 따라 정보주체 열람 요청(Data Subject Access Request)을 하려는 경우 [privacy@clickhouse.com](mailto:privacy@clickhouse.com)으로 이메일을 보내 요청할 수 있습니다.
+
+<div id="identity-verification">
+  ## 본인 확인
+</div>
+
+이메일로 정보주체 열람 요청을 제출하는 경우, 본인 여부를 확인하고 요청을 처리하는 데 필요한 특정 정보를 요청할 수 있습니다. 적용되는 법률에 따라 요청을 거부해야 하거나 거부할 수 있습니다. 요청을 거부하는 경우, 법적 제한이 없는 범위 내에서 그 사유를 알려드립니다.
+
+자세한 내용은 [ClickHouse 개인정보 처리방침](https://clickhouse.com/legal/privacy-policy)을 확인하십시오.

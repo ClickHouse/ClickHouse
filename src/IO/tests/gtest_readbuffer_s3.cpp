@@ -255,6 +255,40 @@ TEST_F(ReadBufferFromS3Test, ReleaseSessionWhenReadUntilPosition)
     ASSERT_FALSE(subject.nextImpl());
 }
 
+TEST_F(ReadBufferFromS3Test, MissingResponseETagIsNotRejected)
+{
+    /// Contract: a GET whose response omits the ETag header must NOT be rejected even when a non-empty
+    /// expected_etag was requested. Some S3-compatible backends (and zero-byte reads) omit the header;
+    /// the read must succeed rather than raise S3_OBJECT_CHANGED_DURING_READ. Guards the `!response_etag.empty()`
+    /// clause in ReadBufferFromS3::initialize so this compatibility path cannot regress silently.
+    const auto client = std::make_shared<ClientFake>();
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = 10;
+    auto subject = DB::ReadBufferFromS3(
+        client,
+        "test_bucket",
+        "test_key",
+        /*version_id_=*/"",
+        DB::S3::S3RequestSettings(),
+        read_settings,
+        /*use_external_buffer=*/false,
+        /*offset_=*/0,
+        /*read_until_position_=*/0,
+        /*restricted_seek_=*/false,
+        /*file_size=*/std::nullopt,
+        /*credentials_refresh_callback_=*/[] { return nullptr; },
+        /*blob_storage_log_=*/{},
+        /*expected_etag_=*/"expected-tag-1");
+
+    auto session = std::make_shared<CountedSession>();
+    const auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>("1234");
+    /// setGetObjectSuccess builds the GetObjectResult with an empty header collection, i.e. no ETag.
+    client->setGetObjectSuccess(session, stream_buf.get());
+
+    readAndAssert(subject, "1234");
+    ASSERT_TRUE(subject.eof());
+}
+
 TEST_F(ReadBufferFromS3Test, IterateUsesStartAfter)
 {
     std::unique_ptr<DB::S3::Client> client = std::make_unique<ClientFake>();
@@ -370,18 +404,23 @@ TEST_F(ReadBufferFromS3Test, HavingZeroBytes)
     object_metadata.size_bytes = data.size();
     object_metadata.etag = "tag1";
     DB::RelativePathWithMetadata relative_path_with_metadata("test_key", object_metadata);
-    auto buf = DB::createReadBuffer(relative_path_with_metadata, object_storage, query_context, log);
-
+    /// Configure the fake GET stub before createReadBuffer: for a small object it issues the
+    /// initial prefetch eagerly (also over the filesystem cache), so the data must already be
+    /// servable when that background read runs.
     auto session = std::make_shared<CountedSession>();
     const auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>(data);
     auto storage_client = object_storage->getS3StorageClient();
     dynamic_cast<ClientFake *>(const_cast<DB::S3::Client *>(storage_client.get()))->setGetObjectSuccess(session, stream_buf.get());
 
+    auto buf = DB::createReadBuffer(relative_path_with_metadata, object_storage, query_context, log);
+
     auto * async_buf = dynamic_cast<DB::AsynchronousBoundedReadBuffer *>(buf.get());
-    auto * cached_buf = dynamic_cast<DB::CachedOnDiskReadBufferFromFile *>(async_buf->getImpl().get());
     ASSERT_TRUE(async_buf);
+    auto * cached_buf = dynamic_cast<DB::CachedOnDiskReadBufferFromFile *>(async_buf->getImpl().get());
     ASSERT_TRUE(cached_buf);
 
+    /// The initial small-object prefetch is already in flight, so this manual prefetch is a no-op
+    /// on the pending future; the driven read/seek sequence below is unchanged.
     async_buf->prefetch(Priority{0});
     async_buf->next();
     ASSERT_EQ(async_buf->available(), 4);

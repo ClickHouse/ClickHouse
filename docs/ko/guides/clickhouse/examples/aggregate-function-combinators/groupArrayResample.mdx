@@ -1,0 +1,71 @@
+---
+slug: '/examples/aggregate-function-combinators/groupArrayResample'
+title: 'groupArrayResample'
+description: 'groupArray에 Resample combinator를 사용하는 예시'
+keywords: ['groupArray', 'Resample', 'combinator', '예시', 'groupArrayResample']
+sidebarTitle: 'groupArrayResample'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 설명
+</div>
+
+[`Resample`](/ko/reference/functions/aggregate-functions/combinators#-resample)
+combinator는 [`groupArray`](/ko/reference/functions/aggregate-functions/sum) 집계 함수에 적용할 수 있으며,
+지정된 키 컬럼의 범위를 고정된 개수의 인터벌(`N`)로 나눈 뒤
+각 인터벌에 속하는 데이터 포인트에서 대표값 하나
+(최소 키에 해당하는 값)를 선택해 결과 배열을 구성합니다.
+모든 값을 수집하는 대신, 데이터의 다운샘플링된 뷰를 생성합니다.
+
+<div id="example-usage">
+  ## 예시 사용법
+</div>
+
+예시를 살펴보겠습니다. 직원의 `name`, `age`, `wage`를 포함하는 테이블(table)을 생성한 다음,
+여기에 일부 데이터를 삽입하겠습니다:
+
+```sql
+CREATE TABLE employee_data 
+(
+    name String,
+    age UInt8,
+    wage Float32
+) ENGINE = MergeTree()
+ORDER BY tuple()
+
+INSERT INTO employee_data (name, age, wage) VALUES
+    ('John', 16, 10.0),
+    ('Alice', 30, 15.0),
+    ('Mary', 35, 8.0),
+    ('Evelyn', 48, 11.5),
+    ('David', 62, 9.9),
+    ('Brian', 60, 16.0);
+```
+
+나이가 `[30,60)`
+및 `[60,75)` 인터벌에 속하는 사람들의 이름을 구해 보겠습니다. 나이는 정수로 표현하므로
+각각 `[30, 59]` 및 `[60,74]` 인터벌에 해당합니다.
+
+이름을 배열에 집계하려면 `groupArray` 집계 함수를 사용합니다.
+이 함수는 인수를 하나 받습니다. 여기서는 name 컬럼입니다. `groupArrayResample`
+함수는 나이별로 이름을 집계하기 위해 age 컬럼을 사용해야 합니다. 필요한
+인터벌을 정의하려면 `groupArrayResample`
+함수에 `30`, `75`, `30`을 인수로 전달합니다:
+
+```sql
+SELECT groupArrayResample(30, 75, 30)(name, age) FROM employee_data
+```
+
+```response
+┌─groupArrayResample(30, 75, 30)(name, age)─────┐
+│ [['Alice','Mary','Evelyn'],['David','Brian']] │
+└───────────────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`groupArray`](/ko/reference/functions/aggregate-functions/groupArray)
+* [`Resample combinator`](/ko/reference/functions/aggregate-functions/combinators#-resample)

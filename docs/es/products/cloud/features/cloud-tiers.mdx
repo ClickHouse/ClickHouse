@@ -1,0 +1,267 @@
+---
+sidebarTitle: 'Niveles de ClickHouse Cloud'
+slug: /cloud/manage/cloud-tiers
+title: 'Niveles de ClickHouse Cloud'
+description: 'Niveles disponibles en ClickHouse Cloud'
+keywords: ['niveles de ClickHouse Cloud', 'planes de servicio', 'niveles de precios en la nube', 'niveles de servicio en la nube']
+doc_type: 'reference'
+---
+
+Hay varios niveles disponibles en ClickHouse Cloud.
+Los niveles se asignan a nivel de organización. Por lo tanto, todos los servicios dentro de una organización pertenecen al mismo nivel.
+En esta página se explica qué niveles son los adecuados para su caso de uso específico.
+
+**Resumen de los niveles de Cloud:**
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>[Basic](#basic)</th>
+      <th>[Scale (Recomendado)](#scale)</th>
+      <th>[Enterprise](#enterprise)</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr className="table-category-header">
+      <td>**Características del servicio**</td>
+
+      <td colspan="3" />
+    </tr>
+
+    <tr>
+      <td>Número de servicios</td>
+      <td>✓ Ilimitado</td>
+      <td>✓ Ilimitado</td>
+      <td>✓ Ilimitado</td>
+    </tr>
+
+    <tr>
+      <td>Almacenamiento</td>
+      <td>✓ Máximo de 1 TB / servicio</td>
+      <td>✓ Ilimitado</td>
+      <td>✓ Ilimitado</td>
+    </tr>
+
+    <tr>
+      <td>Memoria</td>
+      <td>✓ 8-12 GiB de memoria total</td>
+      <td>✓ Configurable</td>
+      <td>✓ Configurable</td>
+    </tr>
+
+    <tr>
+      <td>Disponibilidad</td>
+      <td>✓ 1 zona</td>
+      <td>✓ 2+ zonas</td>
+      <td>✓ 2+ zonas</td>
+    </tr>
+
+    <tr>
+      <td>Copias de seguridad</td>
+      <td>✓ 1 copia de seguridad cada 24 h, conservada durante 1 día</td>
+      <td>✓ Configurable</td>
+      <td>✓ Configurable</td>
+    </tr>
+
+    <tr>
+      <td>Escalado vertical</td>
+
+      <td />
+
+      <td>✓ Escalado automático</td>
+      <td>✓ Automático para perfiles estándar, manual para perfiles personalizados</td>
+    </tr>
+
+    <tr>
+      <td>Escalado horizontal</td>
+
+      <td />
+
+      <td>✓ Escalado manual</td>
+      <td>✓ Escalado manual</td>
+    </tr>
+
+    <tr>
+      <td>ClickPipes</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>Actualizaciones anticipadas</td>
+
+      <td />
+
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>Separación de cómputo-cómputo</td>
+
+      <td />
+
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>Exportar copias de seguridad a su propia cuenta en la nube</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>Actualizaciones programadas</td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>Perfiles de hardware personalizados</td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+
+    <tr className="table-category-header">
+      <td>**Seguridad**</td>
+
+      <td colspan="3" />
+    </tr>
+
+    <tr>
+      <td>SAML/SSO</td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>MFA</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>SOC 2 Type II</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>ISO 27001</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>Conectividad privada</td>
+
+      <td />
+
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>Acceso a S3 basado en roles</td>
+
+      <td />
+
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>Cifrado transparente de datos (CMEK para TDE)</td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>HIPAA</td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="basic">
+  ## Basic
+</div>
+
+* Opción económica que admite implementaciones con una sola réplica.
+* Ideal para casos de uso departamentales con volúmenes de datos más reducidos que no requieren garantías estrictas de fiabilidad.
+
+<Note>
+  Los servicios del nivel Basic están pensados para tener un tamaño fijo y no permiten escalado, ni automático ni manual.
+  Puede pasar al nivel Scale o Enterprise para escalar sus servicios.
+</Note>
+
+<div id="scale">
+  ## Scale
+</div>
+
+Diseñado para cargas de trabajo que requieren SLA más exigentes (implementaciones con 2 o más réplicas), escalabilidad y seguridad avanzada.
+
+* Ofrece compatibilidad con funcionalidades como:
+  * [Soporte para redes privadas](/es/products/cloud/guides/security/connectivity/private-networking/index).
+  * [Separación entre recursos de cómputo](/es/products/cloud/features/infrastructure/warehouses#what-is-compute-compute-separation).
+  * Opciones de [escalado flexible](/es/products/cloud/features/autoscaling/overview) (escalado vertical y horizontal).
+  * [Copias de seguridad configurables](/es/products/cloud/guides/backups/configurable-backups)
+
+<div id="enterprise">
+  ## Enterprise
+</div>
+
+Pensado para implementaciones de misión crítica a gran escala con requisitos estrictos de seguridad y cumplimiento.
+
+* Todo lo incluido en Scale, **más**
+* Escalado flexible: perfiles estándar (`relación 1:4 vCPU:memoria`), así como perfiles personalizados `HighMemory (relación 1:8)`.
+* Proporciona los niveles más altos de rendimiento y garantías de resiliencia.
+* Admite seguridad de nivel empresarial:
+  * Inicio de sesión único (SSO)
+  * Cifrado mejorado: para servicios de AWS y GCP. Los servicios se cifran con nuestra clave de forma predeterminada y pueden rotarse a su propia clave para habilitar Claves de cifrado gestionadas por el cliente (CMEK).
+* Permite actualizaciones programadas: puede seleccionar el día de la semana y la ventana de tiempo para las actualizaciones, tanto de la base de datos como de las versiones de Cloud.
+* Ofrece cumplimiento de [HIPAA](/es/products/cloud/reference/security/compliance-overview#hipaa-since-2024) y PCI.
+
+<Note>
+  Los servicios de una sola réplica en cualquiera de los tres niveles están pensados para tener un tamaño fijo (`8 GiB`, `12 GiB`)
+</Note>
+
+<div id="upgrading-to-a-different-tier">
+  ## Cambiar a otro nivel
+</div>
+
+Siempre puedes pasar de Basic a Scale o de Scale a Enterprise. Para bajar de nivel, tendrás que desactivar las funciones prémium.
+
+***
+
+Si tienes alguna pregunta sobre los tipos de servicio, consulta la [página de precios](https://clickhouse.com/pricing) o ponte en contacto con support@clickhouse.com.

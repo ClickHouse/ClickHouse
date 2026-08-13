@@ -415,8 +415,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto cashflow_col = arguments[0].column->convertToFullIfNeeded();
-        auto date_col = arguments[1].column->convertToFullIfNeeded();
+        auto cashflow_col = arguments[0].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+        auto date_col = arguments[1].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
 
         const auto * cashflow_array = checkAndGetColumn<ColumnArray>(cashflow_col.get());
         const auto * date_array = checkAndGetColumn<ColumnArray>(date_col.get());
@@ -531,7 +531,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto cashflow_col = arguments[0].column->convertToFullIfNeeded();
+        auto cashflow_col = arguments[0].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
         const auto * cashflow_array = checkAndGetColumn<ColumnArray>(cashflow_col.get());
         if (!cashflow_array)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cashflow argument must be an array");
@@ -630,9 +630,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto rate_col = arguments[0].column->convertToFullIfNeeded();
-        auto cashflow_col = arguments[1].column->convertToFullIfNeeded();
-        auto date_col = arguments[2].column->convertToFullIfNeeded();
+        auto rate_col = arguments[0].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+        auto cashflow_col = arguments[1].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+        auto date_col = arguments[2].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
 
         const auto * cashflow_array = checkAndGetColumn<ColumnArray>(cashflow_col.get());
         const auto * date_array = checkAndGetColumn<ColumnArray>(date_col.get());
@@ -746,8 +746,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto rate_col = arguments[0].column->convertToFullIfNeeded();
-        auto cashflow_col = arguments[1].column->convertToFullIfNeeded();
+        auto rate_col = arguments[0].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+        auto cashflow_col = arguments[1].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
 
         const auto * cashflow_array = checkAndGetColumn<ColumnArray>(cashflow_col.get());
         if (!cashflow_array)

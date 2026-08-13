@@ -1,0 +1,49 @@
+---
+slug: '/examples/aggregate-function-combinators/groupArrayDistinct'
+title: 'groupArrayDistinct'
+description: 'Ejemplo de uso del combinador groupArrayDistinct'
+keywords: ['groupArray', 'Distinct', 'combinador', 'ejemplos', 'groupArrayDistinct']
+sidebarTitle: 'groupArrayDistinct'
+doc_type: 'reference'
+---
+
+import { RunnableCode } from "/snippets/es/components/RunnableCode/RunnableCode.jsx";
+
+<div id="description">
+  ## Descripción
+</div>
+
+El combinador [`groupArrayDistinct`](/es/reference/functions/aggregate-functions/combinators#-foreach)
+puede aplicarse a la función de agregado [`groupArray`](/es/reference/functions/aggregate-functions/sum) para crear un array
+de valores de argumento únicos.
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+Para este ejemplo, usaremos el conjunto de datos `hits` disponible en nuestro [playground de SQL](https://sql.clickhouse.com/).
+
+Imagina que quieres averiguar, para cada dominio distinto de página de destino (`URLDomain`)
+de tu sitio web, cuáles son los códigos únicos de SO del User Agent (`OS`) registrados para
+los visitantes que llegan a ese dominio. Esto puede ayudarte a comprender la variedad de
+sistemas operativos que interactúan con distintas partes de tu sitio.
+
+<RunnableCode>
+  ```sql
+  SELECT
+      URLDomain,
+      groupArrayDistinct(OS) AS distinct_os_codes
+  FROM metrica.hits_v1
+  WHERE URLDomain != '' -- Considera solo los hits con un dominio registrado
+  GROUP BY URLDomain
+  ORDER BY URLDomain ASC
+  LIMIT 20;
+  ```
+</RunnableCode>
+
+<div id="see-also">
+  ## Vea también
+</div>
+
+* [`groupArray`](/es/reference/functions/aggregate-functions/groupArray)
+* [`Combinador Distinct`](/es/reference/functions/aggregate-functions/combinators#-distinct)

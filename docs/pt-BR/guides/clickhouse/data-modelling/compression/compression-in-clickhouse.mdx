@@ -1,0 +1,309 @@
+---
+slug: /data-compression/compression-in-clickhouse
+title: 'Compressão no ClickHouse'
+description: 'Como escolher algoritmos de compressão no ClickHouse'
+keywords: ['compressão', 'codec', 'codificação']
+doc_type: 'reference'
+---
+
+Um dos segredos do desempenho das consultas no ClickHouse é a compressão.
+
+Menos dados em disco significam menos I/O e consultas e inserções mais rápidas. Na maioria dos casos, a sobrecarga de CPU de qualquer algoritmo de compressão é compensada pela redução de I/O. Portanto, melhorar a compressão dos dados deve ser a primeira prioridade ao trabalhar para garantir consultas rápidas no ClickHouse.
+
+> Para entender por que o ClickHouse comprime dados tão bem, recomendamos a leitura [deste artigo](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema). Em resumo, nosso banco de dados orientado a colunas grava os valores por coluna. Quando esses valores são ordenados, valores idênticos ficam adjacentes uns aos outros, e os algoritmos de compressão aproveitam padrões contíguos nos dados. Além disso, o ClickHouse tem codecs e tipos de dados granulares que permitem ajustar ainda mais a compressão com facilidade.
+
+A compressão no ClickHouse será impactada por 3 fatores principais:
+
+* A chave de ordenação
+* Os tipos de dados
+* Quais codecs são usados
+
+Todos eles são configurados por meio do esquema.
+
+<div id="choose-the-right-data-type-to-optimize-compression">
+  ## Escolha o tipo de dado certo para otimizar a compressão
+</div>
+
+Vamos usar o conjunto de dados do Stack Overflow como exemplo. Vamos comparar as estatísticas de compressão dos seguintes esquemas da tabela `posts`:
+
+* `posts` - Um esquema sem otimização de tipos e sem chave de ordenação.
+* `posts_v3` -  Um esquema com tipos otimizados, com o tipo e o tamanho em bits adequados para cada coluna, com chave de ordenação `(PostTypeId, toDate(CreationDate), CommentCount)`.
+
+Usando as consultas a seguir, podemos medir o tamanho atual comprimido e não comprimido de cada coluna. Vamos examinar o tamanho do esquema inicial otimizado `posts`, sem chave de ordenação.
+
+```sql
+SELECT name,
+   formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+   formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+   round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE table = 'posts'
+GROUP BY name
+```
+
+```response
+┌─name──────────────────┬─compressed_size─┬─uncompressed_size─┬───ratio────┐
+│ Body                  │ 46.14 GiB       │ 127.31 GiB        │ 2.76       │
+│ Title                 │ 1.20 GiB        │ 2.63 GiB          │ 2.19       │
+│ Score                 │ 84.77 MiB       │ 736.45 MiB        │ 8.69       │
+│ Tags                  │ 475.56 MiB      │ 1.40 GiB          │ 3.02       │
+│ ParentId              │ 210.91 MiB      │ 696.20 MiB        │ 3.3        │
+│ Id                    │ 111.17 MiB      │ 736.45 MiB        │ 6.62       │
+│ AcceptedAnswerId      │ 81.55 MiB       │ 736.45 MiB        │ 9.03       │
+│ ClosedDate            │ 13.99 MiB       │ 517.82 MiB        │ 37.02      │
+│ LastActivityDate      │ 489.84 MiB      │ 964.64 MiB        │ 1.97       │
+│ CommentCount          │ 37.62 MiB       │ 565.30 MiB        │ 15.03      │
+│ OwnerUserId           │ 368.98 MiB      │ 736.45 MiB        │ 2          │
+│ AnswerCount           │ 21.82 MiB       │ 622.35 MiB        │ 28.53      │
+│ FavoriteCount         │ 280.95 KiB      │ 508.40 MiB        │ 1853.02    │
+│ ViewCount             │ 95.77 MiB       │ 736.45 MiB        │ 7.69       │
+│ LastEditorUserId      │ 179.47 MiB      │ 736.45 MiB        │ 4.1        │
+│ ContentLicense        │ 5.45 MiB        │ 847.92 MiB        │ 155.5      │
+│ OwnerDisplayName      │ 14.30 MiB       │ 142.58 MiB        │ 9.97       │
+│ PostTypeId            │ 20.93 MiB       │ 565.30 MiB        │ 27         │
+│ CreationDate          │ 314.17 MiB      │ 964.64 MiB        │ 3.07       │
+│ LastEditDate          │ 346.32 MiB      │ 964.64 MiB        │ 2.79       │
+│ LastEditorDisplayName │ 5.46 MiB        │ 124.25 MiB        │ 22.75      │
+│ CommunityOwnedDate    │ 2.21 MiB        │ 509.60 MiB        │ 230.94     │
+└───────────────────────┴─────────────────┴───────────────────┴────────────┘
+```
+
+<Accordion title="Uma observação sobre partes `compact` versus `wide`">
+  Se você estiver vendo valores de `compressed_size` ou `uncompressed_size` iguais a `0`, isso pode acontecer porque o tipo das
+  partes é `compact`, e não `wide` (veja a descrição de `part_type` em [`system.parts`](/pt-BR/reference/system-tables/parts)).
+  O formato da parte é controlado pelas configurações [`min_bytes_for_wide_part`](/pt-BR/reference/settings/merge-tree-settings#min_bytes_for_wide_part)
+  e [`min_rows_for_wide_part`](/pt-BR/reference/settings/merge-tree-settings#min_rows_for_wide_part), o que significa que, se os dados inseridos
+  resultarem em uma parte que não ultrapasse os valores das configurações mencionadas acima, a parte será `compact` em vez de
+  `wide`, e você não verá os valores de `compressed_size` ou `uncompressed_size`.
+
+  Para demonstrar:
+
+  ```sql title="Consulta"
+  -- Crie uma tabela com partes compact
+  CREATE TABLE compact (
+    number UInt32
+  )
+  ENGINE = MergeTree()
+  ORDER BY number 
+  AS SELECT * FROM numbers(100000); -- Não é grande o suficiente para exceder o valor padrão de min_bytes_for_wide_part = 10485760
+
+  -- Verifique o tipo das partes
+  SELECT table, name, part_type from system.parts where table = 'compact';
+
+  -- Obtenha os tamanhos comprimido e não comprimido das colunas da tabela compact
+  SELECT name,
+     formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+     formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+     round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+  FROM system.columns
+  WHERE table = 'compact'
+  GROUP BY name;
+
+  -- Crie uma tabela com partes wide 
+  CREATE TABLE wide (
+    number UInt32
+  )
+  ENGINE = MergeTree()
+  ORDER BY number
+  SETTINGS min_bytes_for_wide_part=0
+  AS SELECT * FROM numbers(100000);
+
+  -- Verifique o tipo das partes
+  SELECT table, name, part_type from system.parts where table = 'wide';
+
+  -- Obtenha os tamanhos comprimido e não comprimido da tabela wide
+  SELECT name,
+     formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+     formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+     round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+  FROM system.columns
+  WHERE table = 'wide'
+  GROUP BY name;
+  ```
+
+  ```response title="Resposta"
+     ┌─table───┬─name──────┬─part_type─┐
+  1. │ compact │ all_1_1_0 │ Compact   │
+     └─────────┴───────────┴───────────┘
+     ┌─name───┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+  1. │ number │ 0.00 B          │ 0.00 B            │   nan │
+     └────────┴─────────────────┴───────────────────┴───────┘
+     ┌─table─┬─name──────┬─part_type─┐
+  1. │ wide  │ all_1_1_0 │ Wide      │
+     └───────┴───────────┴───────────┘
+     ┌─name───┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+  1. │ number │ 392.31 KiB      │ 390.63 KiB        │     1 │
+     └────────┴─────────────────┴───────────────────┴───────┘
+  ```
+</Accordion>
+
+Mostramos aqui tanto o tamanho comprimido quanto o não comprimido. Ambos são importantes. O tamanho comprimido corresponde ao que precisaremos ler do disco — algo que queremos minimizar para melhorar o desempenho da consulta (e reduzir o custo de armazenamento). Esses dados precisarão ser descomprimidos antes da leitura. Já o tamanho não comprimido dependerá, neste caso, do tipo de dado usado. Minimizar esse tamanho reduz a sobrecarga de memória das consultas e a quantidade de dados que precisa ser processada pela consulta, melhorando o uso de cache e, em última análise, o tempo de execução das consultas.
+
+> A consulta acima depende da tabela `columns` no banco de dados do sistema. Esse banco de dados é gerenciado pelo ClickHouse e é uma verdadeira mina de informações úteis, desde métricas de desempenho de consultas até logs de cluster em segundo plano. Recomendamos [&quot;System Tables and a Window into the Internals of ClickHouse&quot;](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables) e os artigos complementares[[1]](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)[[2]](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse) para quem quiser se aprofundar.
+
+Para resumir o tamanho total da tabela, podemos simplificar a consulta acima:
+
+```sql
+SELECT formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE table = 'posts'
+```
+
+```response
+┌─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ 50.16 GiB       │ 143.47 GiB        │  2.86 │
+└─────────────────┴───────────────────┴───────┘
+```
+
+Repetindo esta consulta para `posts_v3`, a tabela com um tipo e uma chave de ordenação otimizados, podemos observar uma redução significativa nos tamanhos não comprimido e comprimido.
+
+```sql
+SELECT
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE `table` = 'posts_v3'
+```
+
+```response
+┌─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ 25.15 GiB       │ 68.87 GiB         │  2.74 │
+└─────────────────┴───────────────────┴───────┘
+```
+
+A análise completa por coluna mostra uma economia considerável nas colunas `Body`, `Title`, `Tags` e `CreationDate`, obtida ao ordenar os dados antes da compressão e usar os tipos adequados.
+
+```sql
+SELECT
+    name,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE `table` = 'posts_v3'
+GROUP BY name
+```
+
+```response
+┌─name──────────────────┬─compressed_size─┬─uncompressed_size─┬───ratio─┐
+│ Body                  │ 23.10 GiB       │ 63.63 GiB         │    2.75 │
+│ Title                 │ 614.65 MiB      │ 1.28 GiB          │    2.14 │
+│ Score                 │ 40.28 MiB       │ 227.38 MiB        │    5.65 │
+│ Tags                  │ 234.05 MiB      │ 688.49 MiB        │    2.94 │
+│ ParentId              │ 107.78 MiB      │ 321.33 MiB        │    2.98 │
+│ Id                    │ 159.70 MiB      │ 227.38 MiB        │    1.42 │
+│ AcceptedAnswerId      │ 40.34 MiB       │ 227.38 MiB        │    5.64 │
+│ ClosedDate            │ 5.93 MiB        │ 9.49 MiB          │     1.6 │
+│ LastActivityDate      │ 246.55 MiB      │ 454.76 MiB        │    1.84 │
+│ CommentCount          │ 635.78 KiB      │ 56.84 MiB         │   91.55 │
+│ OwnerUserId           │ 183.86 MiB      │ 227.38 MiB        │    1.24 │
+│ AnswerCount           │ 9.67 MiB        │ 113.69 MiB        │   11.76 │
+│ FavoriteCount         │ 19.77 KiB       │ 147.32 KiB        │    7.45 │
+│ ViewCount             │ 45.04 MiB       │ 227.38 MiB        │    5.05 │
+│ LastEditorUserId      │ 86.25 MiB       │ 227.38 MiB        │    2.64 │
+│ ContentLicense        │ 2.17 MiB        │ 57.10 MiB         │   26.37 │
+│ OwnerDisplayName      │ 5.95 MiB        │ 16.19 MiB         │    2.72 │
+│ PostTypeId            │ 39.49 KiB       │ 56.84 MiB         │ 1474.01 │
+│ CreationDate          │ 181.23 MiB      │ 454.76 MiB        │    2.51 │
+│ LastEditDate          │ 134.07 MiB      │ 454.76 MiB        │    3.39 │
+│ LastEditorDisplayName │ 2.15 MiB        │ 6.25 MiB          │    2.91 │
+│ CommunityOwnedDate    │ 824.60 KiB      │ 1.34 MiB          │    1.66 │
+└───────────────────────┴─────────────────┴───────────────────┴─────────┘
+```
+
+<div id="choosing-the-right-column-compression-codec">
+  ## Escolhendo o codec de compressão de coluna adequado
+</div>
+
+Com codecs de compressão de coluna, podemos alterar o algoritmo (e suas configurações) usado para codificar e comprimir cada coluna.
+
+Codificação e compressão funcionam de maneiras ligeiramente diferentes, mas com o mesmo objetivo: reduzir o tamanho dos dados. As codificações aplicam um mapeamento aos dados, transformando os valores com base em uma função que explora propriedades do tipo de dado. Já a compressão usa um algoritmo genérico para comprimir os dados no nível de bytes.
+
+Normalmente, as codificações são aplicadas primeiro, antes da compressão. Como diferentes codificações e algoritmos de compressão são eficazes para diferentes distribuições de valores, precisamos entender nossos dados.
+
+O ClickHouse oferece suporte a um grande número de codecs e algoritmos de compressão. A seguir, algumas recomendações em ordem de importância:
+
+| Recomendação                                         | Justificativa                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`ZSTD` em quase todos os casos**                   | A compressão `ZSTD` oferece as melhores taxas de compressão. `ZSTD(1)` deve ser o padrão para a maioria dos tipos mais comuns. Níveis mais altos de compressão podem ser testados ajustando o valor numérico. Raramente vemos benefícios suficientes em valores acima de 3 que justifiquem o custo adicional da compressão (inserção mais lenta).                                                                                                                                                       |
+| **`Delta` para sequências de datas e inteiros**      | Codecs baseados em `Delta` funcionam bem sempre que há sequências monotônicas ou pequenos deltas entre valores consecutivos. Mais especificamente, o codec `Delta` funciona bem desde que as derivadas resultem em números pequenos. Caso contrário, vale a pena testar `DoubleDelta` (isso normalmente acrescenta pouco se a derivada de primeiro nível de `Delta` já for muito pequena). Sequências em que o incremento monotônico é uniforme comprimem ainda melhor, por exemplo, campos `DateTime`. |
+| **`Delta` melhora o `ZSTD`**                         | `ZSTD` é um codec eficaz para dados delta; em contrapartida, a codificação delta pode melhorar a compressão com `ZSTD`. Na presença de `ZSTD`, outros codecs raramente oferecem ganhos adicionais.                                                                                                                                                                                                                                                                                                      |
+| **`LZ4` em vez de `ZSTD`, se possível**              | Se você obtiver compressão semelhante com `LZ4` e `ZSTD`, prefira `LZ4`, pois ele oferece descompressão mais rápida e exige menos CPU. No entanto, na maioria dos casos, `ZSTD` superará `LZ4` com folga. Alguns desses codecs podem funcionar mais rápido em combinação com `LZ4`, ao mesmo tempo em que oferecem compressão semelhante à de `ZSTD` sem codec. Isso, porém, depende dos dados e exige testes.                                                                                          |
+| **`T64` para dados esparsos ou intervalos pequenos** | `T64` pode ser eficaz em dados esparsos ou quando o intervalo em um bloco é pequeno. Evite `T64` para números aleatórios.                                                                                                                                                                                                                                                                                                                                                                               |
+| **`Gorilla` e `T64` para padrões desconhecidos?**    | Se os dados tiverem um padrão desconhecido, talvez valha a pena testar `Gorilla` e `T64`.                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **`Gorilla` para dados de gauge**                    | `Gorilla` pode ser eficaz em dados de ponto flutuante, especificamente aqueles que representam leituras de gauge, ou seja, picos aleatórios.                                                                                                                                                                                                                                                                                                                                                            |
+
+Veja [aqui](/pt-BR/reference/statements/create/table#column_compression_codec) outras opções.
+
+Abaixo, especificamos o codec `Delta` para `Id`, `ViewCount` e `AnswerCount`, partindo da hipótese de que eles terão correlação linear com a chave de ordenação e, portanto, devem se beneficiar da codificação `Delta`.
+
+```sql
+CREATE TABLE posts_v4
+(
+        `Id` Int32 CODEC(Delta, ZSTD),
+        `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+        `Score` Int32,
+        `ViewCount` UInt32 CODEC(Delta, ZSTD),
+        `Body` String,
+        `OwnerUserId` Int32,
+        `OwnerDisplayName` String,
+        `LastEditorUserId` Int32,
+        `LastEditorDisplayName` String,
+        `LastEditDate` DateTime64(3, 'UTC'),
+        `LastActivityDate` DateTime64(3, 'UTC'),
+        `Title` String,
+        `Tags` String,
+        `AnswerCount` UInt16 CODEC(Delta, ZSTD),
+        `CommentCount` UInt8,
+        `FavoriteCount` UInt8,
+        `ContentLicense` LowCardinality(String),
+        `ParentId` String,
+        `CommunityOwnedDate` DateTime64(3, 'UTC'),
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+```
+
+As melhorias de compressão dessas colunas são mostradas abaixo:
+
+```sql
+SELECT
+    `table`,
+    name,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE (name IN ('Id', 'ViewCount', 'AnswerCount')) AND (`table` IN ('posts_v3', 'posts_v4'))
+GROUP BY
+    `table`,
+    name
+ORDER BY
+    name ASC,
+    `table` ASC
+```
+
+```response
+┌─table────┬─name────────┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ posts_v3 │ AnswerCount │ 9.67 MiB        │ 113.69 MiB        │ 11.76 │
+│ posts_v4 │ AnswerCount │ 10.39 MiB       │ 111.31 MiB        │ 10.71 │
+│ posts_v3 │ Id          │ 159.70 MiB      │ 227.38 MiB        │  1.42 │
+│ posts_v4 │ Id          │ 64.91 MiB       │ 222.63 MiB        │  3.43 │
+│ posts_v3 │ ViewCount   │ 45.04 MiB       │ 227.38 MiB        │  5.05 │
+│ posts_v4 │ ViewCount   │ 52.72 MiB       │ 222.63 MiB        │  4.22 │
+└──────────┴─────────────┴─────────────────┴───────────────────┴───────┘
+
+6 rows in set. Elapsed: 0.008 sec
+```
+
+<div id="compression-in-clickhouse-cloud">
+  ### Compressão no ClickHouse Cloud
+</div>
+
+No ClickHouse Cloud, usamos por padrão o algoritmo de compressão `ZSTD` (com valor padrão 1). Embora a velocidade de compressão desse algoritmo possa variar conforme o nível de compressão (quanto maior, mais lento), ele tem a vantagem de manter um desempenho consistentemente rápido na descompressão (com variação de cerca de 20%) e também de poder ser paralelizado. Nossos testes históricos também indicam que esse algoritmo costuma ser suficientemente eficaz e pode até superar o `LZ4` combinado com um codec. Ele é eficaz para a maioria dos tipos de dados e distribuições de informações e, por isso, é uma escolha padrão sensata para uso geral — razão pela qual nossa compressão inicial já é excelente mesmo sem otimização.

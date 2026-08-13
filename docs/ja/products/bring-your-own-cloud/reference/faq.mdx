@@ -1,0 +1,72 @@
+---
+title: 'BYOC よくある質問'
+slug: /cloud/reference/byoc/reference/faq
+sidebarTitle: 'よくある質問'
+keywords: ['BYOC', 'クラウド', 'Bring Your Own Cloud', 'よくある質問']
+description: '自社のクラウドインフラストラクチャに ClickHouse をデプロイ'
+doc_type: 'reference'
+---
+
+<div id="faq">
+  ## よくある質問
+</div>
+
+<div id="compute">
+  ### コンピュート
+</div>
+
+<Accordion title="この 1 つの EKS クラスター内で複数のサービスを作成できますか？">
+  はい。インフラストラクチャのプロビジョニングは、AWS アカウントとリージョンの組み合わせごとに 1 回だけ行えば十分です。
+</Accordion>
+
+<Accordion title="BYOC でサポートしているリージョンはどこですか？">
+  BYOC デプロイでは、[サポート対象リージョン](/ja/products/cloud/reference/supported-regions) のドキュメントに記載されているすべての**パブリックリージョン**をご利用いただけます。
+</Accordion>
+
+<Accordion title="多少のリソースオーバーヘッドはありますか？ ClickHouseインスタンス以外のサービスを実行するには、どの程度のリソースが必要ですか？">
+  ClickHouseインスタンス自体 (ClickHouse server と ClickHouse Keeper) に加えて、`clickhouse-operator`、`aws-cluster-autoscaler`、Istio、監視スタックなどの補助サービスも稼働します。
+
+  これらの共有コンポーネントのリソース使用量は比較的安定しており、ClickHouseサービスの数やサイズに応じて比例的に増えるわけではありません。大まかな目安として、AWS では通常、これらのワークロードを実行するために、`4xlarge` の EC2 インスタンス約 4 台で構成された専用ノードグループを使用します。
+</Accordion>
+
+<div id="network-and-security">
+  ### ネットワークとセキュリティ
+</div>
+
+<Accordion title="セットアップ完了後に、インストール時に設定した権限を取り消すことはできますか？">
+  現在、これはできません。
+</Accordion>
+
+<Accordion title="トラブルシューティングのために ClickHouse エンジニアが顧客インフラへアクセスすることについて、将来的なセキュリティ制御は検討されていますか？">
+  はい。お客様がエンジニアのクラスターへのアクセスを承認できる、お客様管理の仕組みの実装をロードマップに含めています。現時点では、エンジニアがクラスターへのジャストインタイムアクセスを取得するには、社内のエスカレーションプロセスを経る必要があります。これは当社のセキュリティチームによって記録・監査されています。
+</Accordion>
+
+<Accordion title="作成される VPC の IP 範囲のサイズはどれくらいですか？">
+  デフォルトでは、BYOC VPC に `10.0.0.0/16` を使用します。将来的なスケーリングの可能性を考慮し、少なくとも /22 を確保しておくことを推奨しますが、
+  サイズを小さくしたい場合は、
+  サーバー ポッドが 30 個までに制限される見込みであれば /23 を使用することも可能です。
+</Accordion>
+
+<Accordion title="メンテナンス頻度は決められますか？">
+  メンテナンス ウィンドウの調整についてはサポートにお問い合わせください。更新スケジュールは少なくとも週 1 回となることを想定してください。
+</Accordion>
+
+<Accordion title="BYOC VPC と S3 の間のネットワーク通信はどのように機能しますか？">
+  お客様の BYOC VPC と S3 間のトラフィックでは、テーブルデータ、バックアップ、ログのために AWS S3 API 経由の HTTPS (ポート 443) を使用します。S3 VPC エンドポイントを使用する場合、このトラフィックは AWS ネットワーク内にとどまり、パブリックインターネットを経由しません。
+</Accordion>
+
+<Accordion title="ClickHouse クラスター内部の通信にはどのポートが使用されますか？">
+  お客様の BYOC VPC 内での ClickHouse クラスター内部通信には、以下を使用します。
+
+  * ポート 9000 のネイティブ ClickHouse プロトコル
+  * ポート 8123/8443 の HTTP/HTTPS
+  * レプリケーションおよび分散クエリ用のポート 9009 のサーバー間通信
+</Accordion>
+
+<div id="uptime-sla">
+  ### アップタイム SLA
+</div>
+
+<Accordion title="ClickHouse は BYOC 向けのアップタイム SLA を提供していますか？">
+  いいえ。データプレーンはお客様のクラウド環境でホストされるため、サービスの可用性は ClickHouse の管理下にないリソースに左右されます。そのため、ClickHouse は BYOC デプロイメントに対する正式なアップタイム SLA を提供していません。ご不明な点があれば、support@clickhouse.com までお問い合わせください。
+</Accordion>

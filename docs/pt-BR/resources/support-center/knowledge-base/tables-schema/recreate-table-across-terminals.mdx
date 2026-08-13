@@ -1,0 +1,64 @@
+---
+date: 2023-03-24
+title: "Como recriar rapidamente uma pequena tabela em diferentes terminais"
+description: "Aprenda a recriar rapidamente uma pequena tabela e seus dados em diferentes terminais usando copiar e colar em ambientes de desenvolvimento."
+tags: ['Ferramentas e utilitários']
+keywords: ['Recriar tabela', 'Terminais']
+---
+
+<div id="question">
+  ## Pergunta
+</div>
+
+Como posso recriar rapidamente uma tabela e seus dados usando apenas copiar e colar entre terminais diferentes?
+
+<div id="answer">
+  ## Resposta
+</div>
+
+Esta NÃO é uma prática recomendada para migrar dados de um banco de dados para outro e NÃO deve ser usada em migrações de dados em produção.
+
+Isto serve apenas como uma forma rápida e improvisada de recriar uma pequena quantidade de dados ao desenvolver em vários ambientes.
+
+1. Obtenha a instrução `CREATE TABLE` com `SHOW CREATE table`:
+
+```sql
+SHOW CREATE TABLE cookies;
+
+SHOW CREATE TABLE cookies
+
+Query id: 248ec8e2-5bce-45b3-97d9-ed68edf445a5
+
+┌─statement────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.cookies
+(
+    `id` String,
+    `timestamp` DateTime
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8192 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+```
+
+2. Obtenha a exportação dos dados com `FORMAT SQLInsert`
+
+```sql
+SELECT * FROM cookies FORMAT SQLInsert;
+
+SELECT *
+FROM cookies
+FORMAT SQLInsert
+
+Query id: 383759b8-69c0-4561-ab95-f8224abc0071
+
+INSERT INTO table (`id`, `timestamp`) VALUES ('4', '2023-03-15 16:28:46')
+, ('2', '2023-03-15 16:28:41')
+, ('1', '2023-03-15 16:11:02'), ('1', '2023-03-15 16:11:40'), ('1', '2023-03-15 16:11:48'), ('1', '2023-03-15 16:16:05'), ('2', '2023-03-15 16:11:06'), ('3', '2023-03-15 16:11:12'), ('3', '2023-03-15 16:11:45'), ('3', '2023-03-15 16:16:08'), ('4', '2023-03-15 16:11:14'), ('4', '2023-03-15 16:11:50'), ('4', '2023-03-15 16:16:01'), ('5', '2023-03-15 16:11:18'), ('5', '2023-03-15 16:16:11')
+;
+
+15 rows in set. Elapsed: 0.023 sec.
+```
+
+Observe que será necessário substituir o nome `table` no ponto 2 pelo nome real da tabela (`cookies`, neste exemplo)

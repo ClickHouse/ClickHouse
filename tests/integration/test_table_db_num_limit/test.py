@@ -369,3 +369,172 @@ def test_named_collection_metric_after_config_reload(started_cluster):
 
     finally:
         node2.query("DROP NAMED COLLECTION IF EXISTS nc_reload_test")
+
+
+@pytest.mark.parametrize(
+    "setting_name, initial_limit, lower_limit, metric_name, error_name, kind",
+    [
+        pytest.param("max_table_num_to_throw", 10, 6, "AttachedTable", "TOO_MANY_TABLES", "table", id="table"),
+        pytest.param(
+            "max_replicated_table_num_to_throw",
+            5,
+            2,
+            "AttachedReplicatedTable",
+            "TOO_MANY_TABLES",
+            "replicated_table",
+            id="replicated-table",
+        ),
+        pytest.param("max_view_num_to_throw", 10, 6, "AttachedView", "TOO_MANY_TABLES", "view", id="view"),
+        pytest.param(
+            "max_dictionary_num_to_throw",
+            10,
+            6,
+            "AttachedDictionary",
+            "TOO_MANY_TABLES",
+            "dictionary",
+            id="dictionary",
+        ),
+        pytest.param("max_database_num_to_throw", 10, 6, "AttachedDatabase", "TOO_MANY_DATABASES", "database", id="database"),
+        pytest.param(
+            "max_named_collection_num_to_throw",
+            10,
+            6,
+            "NamedCollection",
+            "TOO_MANY_NAMED_COLLECTIONS",
+            "named_collection",
+            id="named-collection",
+        ),
+    ],
+)
+def test_runtime_config_reload_of_to_throw_limits(
+    started_cluster,
+    setting_name,
+    initial_limit,
+    lower_limit,
+    metric_name,
+    error_name,
+    kind,
+):
+    """Runtime reload must affect each `to_throw` limit enforcement path."""
+
+    config_path = "/etc/clickhouse-server/config.d/reload_test.xml"
+    max_objects = initial_limit + 2
+
+    def _get_server_setting():
+        return int(node.query(f"SELECT value FROM system.server_settings WHERE name = '{setting_name}'").strip())
+
+    def _get_server_setting_function():
+        return int(node.query(f"SELECT getServerSetting('{setting_name}')").strip())
+
+    def _get_count_for_limit():
+        if kind == "database":
+            return int(node.query(
+                """
+                SELECT count()
+                FROM system.databases
+                WHERE name NOT IN ('_temporary_and_external_tables', 'system', 'information_schema', 'INFORMATION_SCHEMA')
+                """
+            ).strip())
+        return int(node.query(f"SELECT value FROM system.metrics WHERE name = '{metric_name}'").strip())
+
+    def _reload_without_override():
+        node.exec_in_container(["bash", "-c", f"rm -f {config_path}"])
+        node.query("SYSTEM RELOAD CONFIG")
+
+    def _reload_with_limit(limit):
+        node.replace_config(config_path, f"<clickhouse><{setting_name}>{limit}</{setting_name}></clickhouse>")
+        node.query("SYSTEM RELOAD CONFIG")
+
+    def _object_name(i):
+        return f"reload_limit_{kind}_{i}"
+
+    def _create(i):
+        name = _object_name(i)
+        if kind == "table":
+            node.query(f"CREATE TABLE {name} (a Int32) ENGINE = Log")
+        elif kind == "replicated_table":
+            node.query(
+                f"CREATE TABLE {name} (a Int32) "
+                f"ENGINE = ReplicatedMergeTree('/clickhouse/test_table_db_num_limit/{name}', 'r1') "
+                "ORDER BY a"
+            )
+        elif kind == "view":
+            node.query(f"CREATE VIEW {name} AS SELECT 1")
+        elif kind == "dictionary":
+            node.query(
+                f"CREATE DICTIONARY {name} (a Int32) PRIMARY KEY a "
+                "SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(1000)"
+            )
+        elif kind == "database":
+            node.query(f"CREATE DATABASE {name}")
+        elif kind == "named_collection":
+            node.query(f"CREATE NAMED COLLECTION {name} AS key = 1")
+        else:
+            raise AssertionError(f"Unknown limit kind: {kind}")
+
+    def _create_and_get_error(i):
+        name = _object_name(i)
+        if kind == "table":
+            return node.query_and_get_error(f"CREATE TABLE {name} (a Int32) ENGINE = Log")
+        if kind == "replicated_table":
+            return node.query_and_get_error(
+                f"CREATE TABLE {name} (a Int32) "
+                f"ENGINE = ReplicatedMergeTree('/clickhouse/test_table_db_num_limit/{name}', 'r1') "
+                "ORDER BY a"
+            )
+        if kind == "view":
+            return node.query_and_get_error(f"CREATE VIEW {name} AS SELECT 1")
+        if kind == "dictionary":
+            return node.query_and_get_error(
+                f"CREATE DICTIONARY {name} (a Int32) PRIMARY KEY a "
+                "SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(1000)"
+            )
+        if kind == "database":
+            return node.query_and_get_error(f"CREATE DATABASE {name}")
+        if kind == "named_collection":
+            return node.query_and_get_error(f"CREATE NAMED COLLECTION {name} AS key = 1")
+        raise AssertionError(f"Unknown limit kind: {kind}")
+
+    def _cleanup():
+        for i in range(max_objects):
+            name = _object_name(i)
+            if kind == "table" or kind == "replicated_table":
+                node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+            elif kind == "view":
+                node.query(f"DROP VIEW IF EXISTS {name}")
+            elif kind == "dictionary":
+                node.query(f"DROP DICTIONARY IF EXISTS {name}")
+            elif kind == "database":
+                node.query(f"DROP DATABASE IF EXISTS {name}")
+            elif kind == "named_collection":
+                node.query(f"DROP NAMED COLLECTION IF EXISTS {name}")
+
+    try:
+        _cleanup()
+        _reload_without_override()
+
+        assert _get_server_setting() == initial_limit
+        assert _get_server_setting_function() == initial_limit
+
+        target_limit = max(lower_limit, _get_count_for_limit())
+        assert target_limit < initial_limit
+
+        i = 0
+        while _get_count_for_limit() < target_limit:
+            _create(i)
+            i += 1
+
+        _reload_with_limit(target_limit)
+
+        assert _get_server_setting() == target_limit
+        assert _get_server_setting_function() == target_limit
+        assert error_name in _create_and_get_error(i)
+
+        _reload_without_override()
+
+        assert _get_server_setting() == initial_limit
+        assert _get_server_setting_function() == initial_limit
+
+    finally:
+        _cleanup()
+        _reload_without_override()

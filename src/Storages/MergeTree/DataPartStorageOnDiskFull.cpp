@@ -38,6 +38,9 @@ MutableDataPartStoragePtr DataPartStorageOnDiskFull::create(
 
 MutableDataPartStoragePtr DataPartStorageOnDiskFull::getProjection(const std::string & name, bool use_parent_transaction) // NOLINT
 {
+    /// Not arena-scoped: most callers use this only as a short-lived filesystem handle (CHECK TABLE,
+    /// mutation hardlink/copy, existence probes). The part-lifetime projection storage is created via
+    /// `getProjectionPartBuilder`, which scopes the arena itself.
     return std::shared_ptr<DataPartStorageOnDiskFull>(new DataPartStorageOnDiskFull(volume, std::string(fs::path(root_path) / part_dir), name, use_parent_transaction ? transaction : nullptr));
 }
 
@@ -51,13 +54,8 @@ bool DataPartStorageOnDiskFull::exists() const
     return volume->getDisk()->existsDirectory(fs::path(root_path) / part_dir);
 }
 
-bool DataPartStorageOnDiskFull::existsFile(const std::string & name) const
+bool DataPartStorageOnDiskFull::existsFileImpl(const std::string & name) const
 {
-    if (looksLikePackedSkipIndexFile(name))
-    {
-        if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
-            return true;
-    }
     return volume->getDisk()->existsFile(fs::path(root_path) / part_dir / name);
 }
 
@@ -97,14 +95,17 @@ Poco::Timestamp DataPartStorageOnDiskFull::getFileLastModified(const String & fi
     return volume->getDisk()->getLastModified(fs::path(root_path) / part_dir / file_name);
 }
 
-size_t DataPartStorageOnDiskFull::getFileSize(const String & file_name) const
+size_t DataPartStorageOnDiskFull::getFileSizeImpl(const String & file_name) const
+{
+    return volume->getDisk()->getFileSize(fs::path(root_path) / part_dir / file_name);
+}
+
+std::optional<UInt64> DataPartStorageOnDiskFull::getPackedFileUncompressedSize(const std::string & file_name) const
 {
     if (looksLikePackedSkipIndexFile(file_name))
-    {
         if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(file_name))
-            return reader->getFileSize(file_name);
-    }
-    return volume->getDisk()->getFileSize(fs::path(root_path) / part_dir / file_name);
+            return reader->getFileUncompressedSize(file_name);
+    return {};
 }
 
 UInt32 DataPartStorageOnDiskFull::getRefCount(const String & file_name) const
@@ -135,48 +136,20 @@ String DataPartStorageOnDiskFull::getUniqueId() const
     return disk->getUniqueId(fs::path(getRelativePath()) / "checksums.txt");
 }
 
-void DataPartStorageOnDiskFull::prepareRead(
+void DataPartStorageOnDiskFull::prepareReadImpl(
     const std::string & name,
     const ReadSettings & settings,
     std::optional<size_t> read_hint,
     ReadPipeline & pipeline) const
 {
-    if (looksLikePackedSkipIndexFile(name))
-    {
-        if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
-        {
-            /// Packed substreams skip the disk's normal pipeline (filesystem cache,
-            /// async prefetch, etc.) and read through PackedFilesReader::readFile, which
-            /// opens the archive via the underlying disk and wraps the result with
-            /// ReadBufferFromFileView at the right offset. The archive's current location is
-            /// captured here and passed in, so the reader holds no path of its own.
-            auto disk = volume->getDisk();
-            String archive_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
-            ReadPipeline::BufferCreator creator =
-                [reader, disk, archive_path, name, read_hint](const StoredObject &, const ReadSettings & s, bool, bool)
-                {
-                    return reader->readFile(disk, archive_path, name, s, read_hint);
-                };
-            pipeline.setSource(std::move(creator), StoredObjects{StoredObject{}}, settings);
-            return;
-        }
-    }
     volume->getDisk()->prepareRead(fs::path(root_path) / part_dir / name, settings, read_hint, pipeline);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExists(
+std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExistsImpl(
     const std::string & name,
     const ReadSettings & settings,
     std::optional<size_t> read_hint) const
 {
-    if (looksLikePackedSkipIndexFile(name))
-    {
-        if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
-            return reader->readFile(
-                volume->getDisk(),
-                fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME),
-                name, settings, read_hint);
-    }
     return volume->getDisk()->readFileIfExists(fs::path(root_path) / part_dir / name, settings, read_hint);
 }
 

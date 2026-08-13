@@ -87,6 +87,11 @@ const Aggregator::Params & CubeStep::getParams() const
     return params;
 }
 
+QueryPlanStepPtr CubeStep::clone() const
+{
+    return std::make_unique<CubeStep>(*this);
+}
+
 void CubeStep::updateOutputHeader()
 {
     output_header = std::make_shared<const Block>(generateOutputHeader(params.getHeader(*input_headers.front(), final), params.keys, use_nulls));
