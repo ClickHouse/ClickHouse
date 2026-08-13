@@ -297,7 +297,7 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
     }
 
     /// Footer is keyed by file identity only, so N DV slices in one coalesced Puffin share one parse.
-    /// Resolve the footer only on a deletion-vector cache miss (nested getOrSet on a separate CacheBase).
+    /// Resolve the footer only on a deletion-vector cache miss (nested memo lookup).
     return cache->getOrSetDeletionVector(*cache_key, [&]()
     {
         auto footer = cache->getOrSetFooter(*footer_key, [&]()

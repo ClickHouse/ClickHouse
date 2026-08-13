@@ -12,14 +12,11 @@ namespace CurrentMetrics
 {
 extern const Metric PuffinFilesCacheBytes;
 extern const Metric PuffinFilesCacheFiles;
-extern const Metric PuffinFooterCacheBytes;
-extern const Metric PuffinFooterCacheFiles;
 }
 
 namespace ProfileEvents
 {
 extern const Event PuffinFilesCacheWeightLost;
-extern const Event PuffinFooterCacheWeightLost;
 }
 
 namespace DB
@@ -27,8 +24,6 @@ namespace DB
 
 namespace
 {
-
-constexpr size_t FOOTER_BLOB_OVERHEAD = 64;
 
 UInt64 saturatingAdd(UInt64 left, UInt64 right)
 {
@@ -128,15 +123,6 @@ bool PuffinFooterCacheKey::operator==(const PuffinFooterCacheKey & other) const
     return storage_identity == other.storage_identity && file_path == other.file_path && etag == other.etag;
 }
 
-UInt64 PuffinFooterCacheKey::approximateMemoryBytes() const
-{
-    return saturatingAdd(
-        {static_cast<UInt64>(sizeof(PuffinFooterCacheKey)),
-         static_cast<UInt64>(storage_identity.size()),
-         static_cast<UInt64>(file_path.size()),
-         static_cast<UInt64>(etag.size())});
-}
-
 size_t PuffinFooterCacheKeyHash::operator()(const PuffinFooterCacheKey & key) const
 {
     size_t hash = 0;
@@ -144,62 +130,6 @@ size_t PuffinFooterCacheKeyHash::operator()(const PuffinFooterCacheKey & key) co
     boost::hash_combine(hash, CityHash_v1_0_2::CityHash64(key.file_path.data(), key.file_path.size()));
     boost::hash_combine(hash, CityHash_v1_0_2::CityHash64(key.etag.data(), key.etag.size()));
     return hash;
-}
-
-UInt64 PuffinFooterCacheCell::calculateMemorySize(const BlobsPtr & blobs_, UInt64 key_memory_bytes_)
-{
-    UInt64 bytes = saturatingAdd(
-        {key_memory_bytes_,
-         static_cast<UInt64>(sizeof(PuffinFooterCacheCell)),
-         static_cast<UInt64>(SIZE_IN_MEMORY_OVERHEAD)});
-
-    if (!blobs_)
-        return bytes;
-
-    bytes = saturatingAdd(bytes, static_cast<UInt64>(blobs_->capacity() * sizeof(PuffinBlob)));
-    for (const auto & blob : *blobs_)
-    {
-        bytes = saturatingAdd(
-            {bytes,
-             static_cast<UInt64>(blob.type.size()),
-             static_cast<UInt64>(blob.compression_codec.size()),
-             static_cast<UInt64>(blob.fields.capacity() * sizeof(Int32)),
-             static_cast<UInt64>(FOOTER_BLOB_OVERHEAD)});
-        for (const auto & [prop_key, value] : blob.properties)
-            bytes = saturatingAdd(bytes, saturatingAdd(static_cast<UInt64>(prop_key.size()), static_cast<UInt64>(value.size())));
-    }
-    return bytes;
-}
-
-PuffinFooterCacheCell::PuffinFooterCacheCell(BlobsPtr blobs_, UInt64 key_memory_bytes_)
-    : blobs(std::move(blobs_))
-    , memory_bytes(calculateMemorySize(blobs, key_memory_bytes_))
-{
-}
-
-size_t PuffinFooterCacheWeightFunction::operator()(const PuffinFooterCacheCell & cell) const
-{
-    return cell.memory_bytes;
-}
-
-PuffinFooterCache::PuffinFooterCache(
-    const String & cache_policy,
-    size_t max_size_in_bytes,
-    size_t max_count,
-    double size_ratio)
-    : Base(
-        cache_policy,
-        CurrentMetrics::PuffinFooterCacheBytes,
-        CurrentMetrics::PuffinFooterCacheFiles,
-        max_size_in_bytes,
-        max_count,
-        size_ratio)
-{
-}
-
-void PuffinFooterCache::onEntryRemoval(const size_t weight_loss, const MappedPtr &)
-{
-    ProfileEvents::increment(ProfileEvents::PuffinFooterCacheWeightLost, weight_loss);
 }
 
 PuffinFilesCache::PuffinFilesCache(
@@ -215,27 +145,29 @@ PuffinFilesCache::PuffinFilesCache(
         max_count,
         size_ratio)
     , log(getLogger("PuffinFilesCache"))
-    /// Footers are much smaller than roaring bitmaps; reuse the same limits so configuration stays one knob.
-    , footer_cache(cache_policy, max_size_in_bytes, max_count, size_ratio)
+    , footer_memo_max_count(max_count)
 {
 }
 
 void PuffinFilesCache::clear()
 {
     Base::clear();
-    footer_cache.clear();
+    std::lock_guard lock(footer_mutex);
+    footer_memo.clear();
 }
 
 void PuffinFilesCache::setMaxSizeInBytes(size_t max_size_in_bytes)
 {
     Base::setMaxSizeInBytes(max_size_in_bytes);
-    footer_cache.setMaxSizeInBytes(max_size_in_bytes);
 }
 
 void PuffinFilesCache::setMaxCount(size_t max_count)
 {
     Base::setMaxCount(max_count);
-    footer_cache.setMaxCount(max_count);
+    std::lock_guard lock(footer_mutex);
+    footer_memo_max_count = max_count;
+    if (footer_memo_max_count > 0 && footer_memo.size() > footer_memo_max_count)
+        footer_memo.clear();
 }
 
 String PuffinFilesCache::makeStorageIdentity(const IObjectStorage & object_storage)

@@ -121,9 +121,6 @@
     M(PuffinFilesCacheHits, "Number of times parsed Puffin file content has been found in the cache.", ValueType::Number) \
     M(PuffinFilesCacheMisses, "Number of times parsed Puffin file content has not been found in the cache and had to be read from disk.", ValueType::Number) \
     M(PuffinFilesCacheWeightLost, "Approximate number of bytes evicted from the Puffin files cache.", ValueType::Number) \
-    M(PuffinFooterCacheHits, "Number of times a parsed Puffin footer has been found in the cache.", ValueType::Number) \
-    M(PuffinFooterCacheMisses, "Number of times a parsed Puffin footer has not been found in the cache and had to be read from disk.", ValueType::Number) \
-    M(PuffinFooterCacheWeightLost, "Approximate number of bytes evicted from the Puffin footer cache.", ValueType::Number) \
     M(OneLakeAccessTokenRequests, "Number of access token requests issued by the OneLake catalog via the Entra ID refresh token grant.", ValueType::Number) \
     M(OneLakeAccessTokenRequestFailures, "Number of failed access token requests issued by the OneLake catalog via the Entra ID refresh token grant (including expired or revoked refresh tokens).", ValueType::Number) \
     M(OneLakeAccessTokenRequestMicroseconds, "Total time spent requesting access tokens via the Entra ID refresh token grant in the OneLake catalog.", ValueType::Microseconds) \
