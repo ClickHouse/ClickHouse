@@ -112,7 +112,7 @@ Initial delay in milliseconds before the first retry of a failed AI function API
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "New setting"}]}]}/>
 
-Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint differs from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
+Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint and model differ from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
 
 ## ai_function_throw_on_error {#ai_function_throw_on_error}
 

@@ -2192,7 +2192,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         find_exact_ranges,
         is_parallel_reading_from_replicas,
         allow_query_condition_cache,
-        supportsSkipIndexesOnDataRead());
+        supportsSkipIndexesOnDataRead(),
+        /*check_row_limits=*/true);
 
     return analyzed_result_ptr;
 }
@@ -2219,7 +2220,32 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWith
         /*find_exact_ranges=*/false,
         is_parallel_reading_from_replicas,
         /*allow_query_condition_cache_=*/false,
-        supportsSkipIndexesOnDataRead());
+        supportsSkipIndexesOnDataRead(),
+        /*check_row_limits=*/true);
+}
+
+ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEstimation() const
+{
+    return selectRangesToRead(
+        getParts(),
+        mutations_snapshot,
+        vector_search_parameters,
+        top_k_filter_info,
+        storage_snapshot->metadata,
+        query_info,
+        context,
+        requested_num_streams,
+        max_block_numbers_to_read,
+        data,
+        data_settings,
+        all_column_names,
+        log,
+        indexes,
+        /*find_exact_ranges=*/false,
+        is_parallel_reading_from_replicas,
+        allow_query_condition_cache,
+        supportsSkipIndexesOnDataRead(),
+        /*check_row_limits=*/false);
 }
 
 namespace
@@ -2761,7 +2787,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool find_exact_ranges,
     bool is_parallel_reading_from_replicas_,
     bool allow_query_condition_cache_,
-    bool supports_skip_indexes_on_data_read)
+    bool supports_skip_indexes_on_data_read,
+    bool check_row_limits)
 {
     ProfileEvents::increment(ProfileEvents::IndexAnalysisRounds);
 
@@ -2820,7 +2847,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     indexes->use_skip_indexes_on_data_read = supports_skip_indexes_on_data_read;
     if (indexes->part_values && indexes->part_values->empty())
+    {
+        result.has_exact_ranges = true;
         return std::make_shared<AnalysisResult>(std::move(result));
+    }
 
     if (indexes->key_condition->generateUnsubstituted().alwaysUnknownOrTrue())
     {
@@ -2844,7 +2874,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         LOG_DEBUG(log, "Total offset condition: {}", indexes->total_offset_condition->generateUnsubstituted().toString());
 
     if (indexes->key_condition->generateUnsubstituted().alwaysFalse())
+    {
+        result.has_exact_ranges = true;
         return std::make_shared<AnalysisResult>(std::move(result));
+    }
 
     size_t total_marks_pk = 0;
     size_t parts_before_pk = 0;
@@ -2876,7 +2909,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         log);
 
     if (result.sampling.read_nothing)
+    {
+        result.has_exact_ranges = true;
         return std::make_shared<AnalysisResult>(std::move(result));
+    }
 
     for (const auto & part : res_parts)
         total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
@@ -2923,6 +2959,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         .find_exact_ranges = find_exact_ranges,
         .is_parallel_reading_from_replicas = is_parallel_reading_from_replicas_,
         .has_projections = has_projections,
+        .check_row_limits = check_row_limits,
         .result = result,
     };
 
@@ -3076,7 +3113,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
             /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
-            /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, do
+            /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, do
             /// not record index-analysis exclusions for TopK reads: their excluded ranges include marks
             /// dropped by the running `__topKFilter` threshold, which is not sound to store in the
             /// (threshold-oblivious) QCC. When it is on, salt the key with the TopK plan parameters so
@@ -5293,7 +5330,7 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
     top_k_filter_info = top_k_filter_info_;
 
     /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
-    /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, turn the
+    /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, turn the
     /// cache off for this read: a TopK read can drop granules during execution depending on the running
     /// `__topKFilter` threshold, so writing threshold-oblivious QCC entries is unsound.
     /// Use `allow_query_condition_cache` rather than mutating `reader_settings` directly: it is the
@@ -5340,12 +5377,18 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) 
 
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator(const Names & required_columns) const
 {
+    return getConditionSelectivityEstimator(required_columns, analyzed_result_ptr);
+}
+
+ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator(const Names & required_columns, const AnalysisResultPtr & analyzed_result) const
+{
     /// Just attempting to read statistics files on disk can increase query latencies
     /// First check the in-memory metadata if statistics are present at all
     if (!getStorageMetadata()->hasStatistics())
         return nullptr;
 
-    return data.getConditionSelectivityEstimator(getParts(), required_columns, getContext());
+    const RangesInDataParts & parts = analyzed_result ? analyzed_result->parts_with_ranges : getParts();
+    return data.getConditionSelectivityEstimator(parts, required_columns, getContext());
 }
 
 bool ReadFromMergeTree::canRemoveUnusedColumns() const
