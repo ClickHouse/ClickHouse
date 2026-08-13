@@ -1199,14 +1199,47 @@ void StorageReplicatedMergeTree::createReplicaAttempt(const StorageMetadataPtr &
         const auto & zk_mutation_pointer            = response_exists[response_num++].data;
         const auto & zk_creator_info                = response_exists[response_num++].data;
 
+        /// The `metadata` and `columns` nodes could have been written by a server version that
+        /// serialized the same table definition to a different text: the redundant parentheses
+        /// the user has written around key or column expressions were kept by 26.5..26.7 and are
+        /// not written by any other version. When the texts differ, compare structurally, so that
+        /// a retry of a partially created replica across such versions still recognizes its own
+        /// nodes. These lambdas are only reached for an empty, never-active replica at our own
+        /// path; a structural mismatch or unparseable node throws (e.g. `METADATA_MISMATCH`),
+        /// which describes the problem better than the `REPLICA_ALREADY_EXISTS` the fall-through
+        /// create attempt would produce.
+        auto is_same_metadata = [&](const String & zk_metadata_str)
+        {
+            if (zk_metadata_str == local_metadata)
+                return true;
+            auto zk_metadata_parsed = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+                zk_metadata_str,
+                metadata_snapshot->getColumns(),
+                metadata_snapshot->add_minmax_index_for_numeric_columns,
+                metadata_snapshot->add_minmax_index_for_string_columns,
+                getContext());
+            return ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).checkEquals(
+                zk_metadata_parsed,
+                metadata_snapshot->getColumns(),
+                getStorageID().getNameForLogs(),
+                getContext());
+        };
+
+        auto is_same_columns = [&](const String & zk_columns_str)
+        {
+            if (zk_columns_str == local_columns)
+                return true;
+            return ColumnsDescription::parse(zk_columns_str) == metadata_snapshot->getColumns();
+        };
+
         if (zk_host.empty() &&
             zk_log_pointer.empty() &&
             zk_queue.empty() &&
             zk_parts.empty() &&
             zk_flags.empty() &&
             (zk_is_lost == "0" || zk_is_lost == "1") &&
-            zk_metadata == local_metadata &&
-            zk_columns == local_columns &&
+            is_same_metadata(zk_metadata) &&
+            is_same_columns(zk_columns) &&
             zk_metadata_version == local_metadata_version &&
             zk_min_unprocessed_insert_time.empty() &&
             zk_max_processed_insert_time.empty() &&
