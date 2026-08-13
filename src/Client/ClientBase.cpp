@@ -3674,6 +3674,47 @@ bool ClientBase::processQueryText(const String & text)
         }
     }
 
+    /// Client-side `/dialect <name>` command (also `/lang`, `/language`) - equivalent to `SET dialect = '<name>'`.
+    /// A `SET` query is not always expressible in the current dialect: after `SET dialect = 'kusto'` the input
+    /// is parsed with the Kusto parser, so a regular `SET dialect = 'clickhouse'` cannot be used to switch back.
+    /// Without an argument, prints the current dialect.
+    if (is_interactive || supportsLocalMetaCommands())
+    {
+        for (const std::string_view prefix : {"/dialect", "/language", "/lang"})
+        {
+            std::optional<String> dialect_name;
+            if (boost::iequals(trimmed_input, prefix))
+                dialect_name.emplace();
+            else if (trimmed_input.size() > prefix.size() && boost::istarts_with(trimmed_input, prefix)
+                && isWhitespaceASCII(trimmed_input[prefix.size()]))
+                dialect_name = trim(trimmed_input.substr(prefix.size()), [](char c) { return isWhitespaceASCII(c); });
+
+            if (!dialect_name)
+                continue;
+
+            if (dialect_name->empty())
+            {
+                output_stream << "Current dialect: " << client_context->getSettingsRef()[Setting::dialect].toString() << std::endl;
+                return true;
+            }
+
+            /// Allow `/dialect 'kusto'` in addition to `/dialect kusto`.
+            if (dialect_name->size() >= 2 && (dialect_name->front() == '\'' || dialect_name->front() == '"')
+                && dialect_name->back() == dialect_name->front())
+                dialect_name = dialect_name->substr(1, dialect_name->size() - 2);
+
+            try
+            {
+                client_context->setSetting("dialect", *dialect_name);
+            }
+            catch (...)
+            {
+                error_stream << getCurrentExceptionMessage(false) << std::endl;
+            }
+            return true;
+        }
+    }
+
 
 #if USE_CLIENT_AI
     // Handle "?? <free_text>" command
@@ -3734,7 +3775,25 @@ bool ClientBase::processQueryText(const String & text)
 
 String ClientBase::getPrompt() const
 {
-    return prompt;
+    String pattern = prompt;
+
+    /// A non-default dialect is shown after the server display name in parentheses,
+    /// e.g. `clickhouse-cloud (polyglot) :) `.
+    String display_name = server_display_name;
+    if (client_context)
+    {
+        if (const Dialect dialect = client_context->getSettingsRef()[Setting::dialect]; dialect != Dialect::clickhouse)
+        {
+            if (!display_name.empty())
+                display_name += ' ';
+            display_name += '(';
+            display_name += client_context->getSettingsRef()[Setting::dialect].toString();
+            display_name += ')';
+        }
+    }
+
+    boost::replace_all(pattern, "{display_name}", display_name);
+    return appendSmileyIfNeeded(pattern);
 }
 
 

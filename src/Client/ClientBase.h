@@ -365,7 +365,7 @@ protected:
     void initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option);
     void initKeystrokeInterceptor();
 
-    String appendSmileyIfNeeded(const String & prompt);
+    static String appendSmileyIfNeeded(const String & prompt);
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -473,6 +473,9 @@ protected:
 
     UInt64 server_revision = 0;
     String server_version;
+    /// A template for the prompt rendered by getPrompt: the `{display_name}` placeholder
+    /// is substituted there on every call (the current dialect is appended to it when
+    /// it is not the default one), and the `:) ` smiley is appended if missing.
     String prompt;
     String server_display_name;
 
