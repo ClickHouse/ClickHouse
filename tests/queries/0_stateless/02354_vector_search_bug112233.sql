@@ -60,12 +60,44 @@ SELECT trimLeft(explain) FROM (
 )
 WHERE explain LIKE '%vector_similarity%';
 
-SELECT '-- Reference vector not exactly representable in Float32: index usage expected';
+SELECT '-- BFloat16 reference vector: index usage expected';
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1
+    SELECT id
+    FROM tab
+    ORDER BY L2Distance(vec, [0, 2]::Array(BFloat16))
+    LIMIT 1
+)
+WHERE explain LIKE '%vector_similarity%';
+
+-- Integer-to-float conversion is lossy in general, not only above some magnitude, so these tests only pin down that the
+-- index is used. A reference vector whose values the column's float type cannot represent exactly, e.g. 2^53 + 1 against
+-- an Array(Float64) column or an Array(UInt256) literal, is rejected by the distance function itself with NO_COMMON_TYPE
+-- and never reaches this optimization.
+SELECT '-- Reference vector above the Float32 mantissa: index usage expected';
 SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1
     SELECT id
     FROM tab
     ORDER BY L2Distance(vec, [16777217, 2])
+    LIMIT 1
+)
+WHERE explain LIKE '%vector_similarity%';
+
+SELECT '-- Extremal integer reference vectors: index usage expected';
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1
+    SELECT id
+    FROM tab
+    ORDER BY L2Distance(vec, [4294967295, 2])
+    LIMIT 1
+)
+WHERE explain LIKE '%vector_similarity%';
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1
+    SELECT id
+    FROM tab
+    ORDER BY L2Distance(vec, [-2147483648, 2])
     LIMIT 1
 )
 WHERE explain LIKE '%vector_similarity%';
