@@ -2,7 +2,6 @@
 #include <Core/Joins.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <array>
 
 class SipHash;
@@ -162,13 +161,6 @@ size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes &, const 
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 
-/// Find the `__applyFilter(<key>, key_column)` conjuncts planted by tryAddJoinRuntimeFilter
-/// among the top-level AND conjuncts of the given filter predicate. One descriptor per
-/// bare-column conjunct; an `__applyFilter` outside the conjunction (under an OR or a NOT,
-/// or in an unrelated expression of the same DAG) is not applied to every row and is not
-/// reported. The overload takes the filter column of a FilterStep by name.
-std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate);
-std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name);
 
 /// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);

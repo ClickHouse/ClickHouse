@@ -440,16 +440,11 @@ public:
     void setTopKColumn(const TopKFilterInfo & top_k_filter_info_);
     bool isSkipIndexAvailableForTopK(const String & sort_column) const;
 
-    /// Gate this read on a seal from a join marked with enableSealGatedProbeReading: the
-    /// sources are replaced by SealGatedReadTransforms which do not read until the seal
-    /// arrives through a pipeline edge, and the given runtime filters (covering a prefix of
-    /// the primary key, in the key order) then prune mark ranges at task-cut time (see
-    /// RuntimeFilterReadRangesRefiner). Set by the plan optimization together with marking
-    /// the join step. The filter ids name the same filters on the plan level: their
-    /// read-time index analysis (see addJoinRuntimeFilterIndexAnalysisOnDataRead) is
-    /// redundant on a gated read and skipped. Reads under FINAL, parallel replicas or a join
-    /// sharded by PK ranges are not gated; the mark has no effect there and the join wiring
-    /// falls back gracefully.
+    /// Gate this read on the seal of a join marked with enableSealGatedProbeReading: nothing
+    /// is read until the seal arrives, and the given filters (covering a primary key prefix)
+    /// then prune mark ranges at task-cut time (see RuntimeFilterReadRangesRefiner).
+    /// Ungatable shapes (FINAL, parallel replicas, sharded joins) ignore the mark and fall
+    /// back to ungated reading; see the gating decision in initializePipeline.
     void enableSealGatedReading(std::vector<RuntimeFilterIndexAnalysisDescriptor> pk_prefix_filters)
     {
         seal_gated_reading = SealGatedReading{std::move(pk_prefix_filters)};

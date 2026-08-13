@@ -82,11 +82,8 @@ public:
     /// Names are required for EXPLAIN only.
     void enableJoinByLayers(PrimaryKeySharding sharding) { primary_key_sharding = std::move(sharding); }
 
-    /// Gate the probe-side reading of this join on the build completion (the gated reads of
-    /// the probe subtree do not start until the hash table is ready), with the runtime filter
-    /// registered under the given key as the seal payload for range pruning (may be empty:
-    /// gating alone). Set by the plan optimization together with marking the reading steps.
-    /// Intentionally not serialized: the filter key is per-plan-build.
+    /// Gate the probe-side reads on the build completion seal carrying the given runtime
+    /// filter. Set by markSealGatedReading; not serialized (the key is per-plan-build).
     void enableSealGatedProbeReading(const String & runtime_filter_key) { seal_gate = runtime_filter_key; }
     void keepLeftPipelineInOrder(bool disable_squashing = false);
 
