@@ -50,17 +50,13 @@ struct SessionLogElement
     Strings roles;
     Strings profiles;
     std::vector<std::pair<String, String>> settings;
+    std::vector<std::pair<String, String>> quotas;
 
     ClientInfo client_info;
     String auth_failure_reason;
 
-    /// TLS client certificate presented on this connection (empty if none was presented).
-    bool has_certificate = false;
-    Strings certificate_subjects;
-    String certificate_serial;
-    String certificate_issuer;
-    time_t certificate_not_before{};
-    time_t certificate_not_after{};
+    /// TLS client certificate presented on this connection (unset if none was presented).
+    std::optional<ClientCertificateInfo> certificate_info;
 
     static std::string name() { return "SessionLog"; }
 
