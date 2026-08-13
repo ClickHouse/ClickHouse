@@ -242,8 +242,7 @@ TEST(MetadataStorageFromMemory, ReplicationRecordsAccumulate)
     auto storage = makeWritableStorage();
     auto tx = storage->createTransaction();
 
-    tx->recordBlobsReplication(StoredObject("blobs/a", "a.bin", 1), {"eu-west-1"});
-    tx->recordBlobsReplication(StoredObject("blobs/a", "a.bin", 1), {"us-east-1"});
+    tx->recordBlobsReplication(StoredObject("blobs/a", "a.bin", 1), {"eu-west-1", "us-east-1"});
     tx->recordBlobsReplication(StoredObject("blobs/b", "b.bin", 1), {"eu-west-1"});
     tx->recordBlobsReplication(StoredObject("blobs/c", "c.bin", 1), /*missing_locations=*/{});
 

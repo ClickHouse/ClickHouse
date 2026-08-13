@@ -360,8 +360,8 @@ void MetadataStorageFromMemoryTransaction::recordBlobsReplication(const StoredOb
         return;
 
     std::unique_lock lock(storage.metadata_mutex);
-    auto & locations = storage.replication_records[blob.remote_path];
-    locations.insert(locations.end(), missing_locations.begin(), missing_locations.end());
+    /// A blob is written and recorded once; a repeated record carries the same set.
+    storage.replication_records[blob.remote_path] = missing_locations;
 }
 
 StoredObjects MetadataStorageFromMemoryTransaction::getSubmittedForRemovalBlobs()
