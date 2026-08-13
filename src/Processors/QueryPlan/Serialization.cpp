@@ -59,14 +59,6 @@ static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
     return Block(std::move(columns));
 }
 
-/// Nothing is here for now
-struct QueryPlan::SerializationFlags
-{
-    /// Query-plan serialization version of the stream, set on deserialize from the leading version field.
-    UInt64 version = 0;
-    bool skip_data = false;
-};
-
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 {
     UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
@@ -74,6 +66,18 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 
     SerializationFlags flags;
     flags.version = version;
+    serialize(out, flags);
+}
+
+void QueryPlan::serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const
+{
+    UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    writeVarUInt(version, out);
+
+    SerializationFlags flags;
+    flags.version = version;
+    flags.sets_must_be_ready = true;
+    flags.sets_transfer_limits = sets_transfer_limits;
     serialize(out, flags);
 }
 
