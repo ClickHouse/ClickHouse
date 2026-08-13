@@ -230,13 +230,6 @@ public:
         nested_function->reserveForInsertResult(place, to);
     }
 
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
-    {
-        auto arguments = nested_function->getArgumentsThatCanBeOnlyNull();
-        arguments.insert(key_col);
-        return arguments;
-    }
-
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 };
 
