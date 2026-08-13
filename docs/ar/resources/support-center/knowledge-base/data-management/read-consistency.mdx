@@ -1,0 +1,54 @@
+---
+date: 2024-02-14
+title: "كيف تحقق اتساق القراءة للبيانات في ClickHouse؟"
+description: "تعرّف على كيفية ضمان اتساق البيانات عند قراءتها من ClickHouse، سواء كنت متصلًا بالعقدة نفسها أو بعقدة عشوائية."
+tags: ['الأداء والتحسينات']
+keywords: ['اتساق القراءة']
+---
+
+<div id="question">
+  ## السؤال
+</div>
+
+أكتب البيانات إلى ClickHouse Cloud وأحتاج إلى ضمان أنني، عند قراءتها، أحصل على أحدث المعلومات الكاملة.
+
+<div id="answer">
+  ## الإجابة
+</div>
+
+<div id="talking-to-the-same-node">
+  ### الاتصال بالعقدة نفسها
+</div>
+
+إذا كنت تستخدم البروتوكول الأصلي، أو جلسة لإجراء عمليات الكتابة/القراءة، فينبغي أن تكون متصلًا بالنسخة المتماثلة نفسها. في هذه الحالة، ستقرأ مباشرةً من العقدة التي تكتب إليها، ولذلك ستكون القراءة متسقة دائمًا.
+
+<div id="talking-to-a-random-node">
+  ### الاتصال بعقدة عشوائية
+</div>
+
+إذا لم تتمكن من ضمان أنك تتصل بالعقدة نفسها (على سبيل المثال، عند الاتصال بالعقدة عبر طلبات HTTPS التي يوزّعها موازن التحميل)، فيمكنك إما:
+
+A)
+
+1. اكتب بياناتك
+2. اتصل بنسخة متماثلة جديدة
+3. نفّذ `SYSTEM SYNC REPLICA db.table_name LIGHTWEIGHT`
+4. اقرأ أحدث البيانات
+
+راجع مرجع أوامر `SYSTEM` [reference](/ar/reference/statements/system#sync-replica)
+
+OR
+
+B) اقرأ في أي وقت باستخدام الاتساق التسلسلي
+
+```sql
+SELECT 
+...
+SETTINGS select_sequential_consistency = 1
+```
+
+لاحظ أنه عند استخدام ClickHouse Cloud ومحرك الجداول الافتراضي [SharedMergeTree](/ar/products/cloud/features/infrastructure/shared-merge-tree)، لا تكون هناك حاجة إلى استخدام `insert_quorum_parallel` — إذ إن جميع عمليات الإدراج إلى SharedMergeTree هي quorum inserts (بحكم التصميم).
+
+سيؤدي استخدام [`SYSTEM SYNC REPLICAS`](/ar/reference/statements/system#sync-replica) أو [`select_sequential_consistency`](/ar/reference/settings/session-settings#select_sequential_consistency) إلى زيادة الحمل على ClickHouse Keeper، وقد يتباطأ الأداء تبعًا للحمل الواقع على الخدمة.
+
+والنهج الموصى به هو تنفيذ عمليات الكتابة/القراءة ضمن الجلسة نفسها أو عبر البروتوكول الأصلي (اتصال ثابت).

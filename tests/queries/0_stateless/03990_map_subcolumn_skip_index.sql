@@ -3,6 +3,7 @@
 -- produced by FunctionToSubcolumnsPass (m.key_<serialized_key> form).
 -- When optimize_functions_to_subcolumns is enabled and Map uses with_buckets serialization,
 -- m['key'] is rewritten to m.key_key. The index analysis must handle both forms.
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;

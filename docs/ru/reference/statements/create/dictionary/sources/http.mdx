@@ -1,0 +1,65 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/http
+title: 'HTTP(S)-источник словаря'
+sidebarTitle: 'HTTP(S)'
+description: 'Настройте конечную точку HTTP или HTTPS как источник словаря в ClickHouse.'
+doc_type: 'reference'
+---
+
+Работа с HTTP(S)-сервером зависит от [того, как словарь хранится в памяти](/ru/reference/statements/create/dictionary/layouts/overview). Если словарь хранится с использованием `cache` и `complex_key_cache`, ClickHouse запрашивает необходимые ключи, отправляя `POST`-запрос.
+
+Пример настроек:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(HTTP(
+        url 'http://[::1]/os.tsv'
+        format 'TabSeparated'
+        credentials(user 'user' password 'password')
+        headers(header(name 'API-KEY' value 'key'))
+    ))
+    ```
+  </Tab>
+
+  <Tab title="Файл конфигурации">
+    ```xml
+    <source>
+        <http>
+            <url>http://[::1]/os.tsv</url>
+            <format>TabSeparated</format>
+            <credentials>
+                <user>user</user>
+                <password>password</password>
+            </credentials>
+            <headers>
+                <header>
+                    <name>API-KEY</name>
+                    <value>key</value>
+                </header>
+            </headers>
+        </http>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Чтобы ClickHouse мог получить доступ к HTTPS-ресурсу, необходимо [настроить openSSL](/ru/reference/settings/server-settings/settings#openssl) в конфигурации сервера.
+
+Поля настройки:
+
+| Настройка     | Описание                                                                                           |
+| ------------- | -------------------------------------------------------------------------------------------------- |
+| `url`         | URL источника.                                                                                     |
+| `format`      | Формат файла. Поддерживаются все форматы, описанные в разделе [Formats](/ru/reference/formats/index). |
+| `credentials` | Базовая HTTP-аутентификация. Необязательно.                                                        |
+| `user`        | Имя пользователя, необходимое для аутентификации.                                                  |
+| `password`    | Пароль, необходимый для аутентификации.                                                            |
+| `headers`     | Все пользовательские HTTP-заголовки, используемые в HTTP-запросе. Необязательно.                   |
+| `header`      | Один HTTP-заголовок.                                                                               |
+| `name`        | Имя, используемое для заголовка, отправляемого в запросе.                                          |
+| `value`       | Значение, заданное для указанного имени.                                                           |
+
+При создании словаря с помощью DDL-команды (`CREATE DICTIONARY ...`) удаленные хосты для HTTP-словарей сверяются с содержимым раздела `remote_url_allow_hosts` в конфигурации, чтобы пользователи базы данных не могли получать доступ к произвольным HTTP-серверам.

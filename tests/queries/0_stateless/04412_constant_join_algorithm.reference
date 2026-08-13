@@ -1,0 +1,32 @@
+-- Constant joins use ConstantJoin independently of join_algorithm.
+-- { echo on }
+SELECT * FROM constant_join_algorithm_t1 AS t1 JOIN constant_join_algorithm_t2 AS t2 ON 1 = 1 ORDER BY ALL SETTINGS join_algorithm = 'full_sorting_merge';
+1	2
+1	3
+2	2
+2	3
+SELECT * FROM constant_join_algorithm_t1 AS t1 JOIN constant_join_algorithm_t2 AS t2 ON 1 = 1 ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+1	2
+1	3
+2	2
+2	3
+SELECT * FROM constant_join_algorithm_t1 AS t1 JOIN constant_join_algorithm_t2 AS t2 ON 1 = 1 ORDER BY ALL SETTINGS join_algorithm = 'auto';
+1	2
+1	3
+2	2
+2	3
+SELECT * FROM constant_join_algorithm_t1 AS t1 JOIN constant_join_algorithm_t2 AS t2 ON NULL ORDER BY ALL SETTINGS join_algorithm = 'full_sorting_merge';
+SELECT * FROM constant_join_algorithm_t1 AS t1 JOIN constant_join_algorithm_t2 AS t2 ON NULL ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+SELECT * FROM constant_join_algorithm_t1 AS t1 LEFT JOIN constant_join_algorithm_t2 AS t2 ON NULL ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+1	0
+2	0
+SELECT * FROM constant_join_algorithm_t1 AS t1 RIGHT JOIN constant_join_algorithm_t2 AS t2 ON NULL ORDER BY ALL SETTINGS join_algorithm = 'auto';
+0	2
+0	3
+SELECT * FROM constant_join_algorithm_t1 AS t1 FULL JOIN constant_join_algorithm_t2 AS t2 ON NULL ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+0	2
+0	3
+1	0
+2	0
+DROP TABLE IF EXISTS constant_join_algorithm_t1;
+DROP TABLE IF EXISTS constant_join_algorithm_t2;

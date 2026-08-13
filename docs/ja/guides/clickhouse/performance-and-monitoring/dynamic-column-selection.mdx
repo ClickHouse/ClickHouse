@@ -1,0 +1,210 @@
+---
+slug: /guides/developer/dynamic-column-selection
+sidebarTitle: '動的カラム選択'
+title: '動的カラム選択'
+description: 'ClickHouse で代替のクエリ言語を使用する'
+doc_type: 'guide'
+keywords: ['dynamic column selection', 'regular expressions', 'APPLY modifier', 'advanced queries', 'developer guide']
+---
+
+[動的カラム選択](/ja/reference/statements/select/index#dynamic-column-selection) は、各カラムを個別に指定する代わりに正規表現を使ってカラムを選択できる、強力でありながらあまり活用されていない ClickHouse の機能です。さらに、`APPLY` 修飾子を使って一致したカラムに関数を適用することもできるため、データ分析や変換作業で非常に役立ちます。
+
+この機能の使い方を、[ニューヨークのタクシーデータセット](/ja/get-started/sample-datasets/nyc-taxi) を使って学んでいきます。このデータセットは [ClickHouse SQL playground](https://sql.clickhouse.com?query=LS0gRGF0YXNldCBjb250YWluaW5nIHRheGkgcmlkZSBkYXRhIGluIE5ZQyBmcm9tIDIwMDkuIE1vcmUgaW5mbyBoZXJlOiBodHRwczovL2NsaWNraG91c2UuY29tL2RvY3MvZW4vZ2V0dGluZy1zdGFydGVkL2V4YW1wbGUtZGF0YXNldHMvbnljLXRheGkKU0VMRUNUICogRlJPTSBueWNfdGF4aS50cmlwcyBMSU1JVCAxMDA) でも確認できます。
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/moabRqqHNo4?si=jgmInV-u3UxtLvMS" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen />
+</Frame>
+
+<div id="selecting-columns">
+  ## パターンに一致するカラムを選択する
+</div>
+
+まずはよくある例から始めましょう。NYC taxi データセットから、`_amount` を含むカラムだけを選択します。各カラム名を手入力する代わりに、正規表現を使った `COLUMNS` 式を使用できます。
+
+```sql
+FROM nyc_taxi.trips
+SELECT COLUMNS('.*_amount')
+LIMIT 10;
+```
+
+> [このクエリを SQL Playground で試す](https://sql.clickhouse.com?query=U0VMRUNUIENPTFVNTlMoJy4qX2Ftb3VudCcpCkZST00gbnljX3RheGkudHJpcHMKTElNSVQgMTA7\&run_query=true)
+
+このクエリは最初の 10 行を返しますが、名前がパターン `.*_amount` (任意の文字列の後に &quot;&#95;amount&quot; が続く) に一致するカラムだけを対象にしています。
+
+```text
+    ┌─fare_amount─┬─tip_amount─┬─tolls_amount─┬─total_amount─┐
+ 1. │           9 │          0 │            0 │          9.8 │
+ 2. │           9 │          0 │            0 │          9.8 │
+ 3. │         3.5 │          0 │            0 │          4.8 │
+ 4. │         3.5 │          0 │            0 │          4.8 │
+ 5. │         3.5 │          0 │            0 │          4.3 │
+ 6. │         3.5 │          0 │            0 │          4.3 │
+ 7. │         2.5 │          0 │            0 │          3.8 │
+ 8. │         2.5 │          0 │            0 │          3.8 │
+ 9. │           5 │          0 │            0 │          5.8 │
+10. │           5 │          0 │            0 │          5.8 │
+    └─────────────┴────────────┴──────────────┴──────────────┘
+```
+
+`fee` または `tax` を含むカラムも返したいとします。
+その場合は、それらも含めるように正規表現を更新できます。
+
+```sql
+SELECT COLUMNS('.*_amount|fee|tax')
+FROM nyc_taxi.trips
+ORDER BY rand() 
+LIMIT 3;
+```
+
+> [SQL Playgroundでこのクエリを試す](https://sql.clickhouse.com?query=U0VMRUNUIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykKRlJPTSBueWNfdGF4aS50cmlwcwpPUkRFUiBCWSByYW5kKCkgCkxJTUlUIDM7\&run_query=true)
+
+```text
+   ┌─fare_amount─┬─mta_tax─┬─tip_amount─┬─tolls_amount─┬─ehail_fee─┬─total_amount─┐
+1. │           5 │     0.5 │          1 │            0 │         0 │          7.8 │
+2. │        12.5 │     0.5 │          0 │            0 │         0 │         13.8 │
+3. │         4.5 │     0.5 │       1.66 │            0 │         0 │         9.96 │
+   └─────────────┴─────────┴────────────┴──────────────┴───────────┴──────────────┘
+```
+
+<div id="selecting-multiple-patterns">
+  ## 複数のパターンの選択
+</div>
+
+1つのクエリで複数のカラムパターンを組み合わせることができます：
+
+```sql
+SELECT 
+    COLUMNS('.*_amount'),
+    COLUMNS('.*_date.*')
+FROM nyc_taxi.trips
+LIMIT 5;
+```
+
+> [このクエリをSQL Playgroundで試す](https://sql.clickhouse.com?query=U0VMRUNUIAogICAgQ09MVU1OUygnLipfYW1vdW50JyksCiAgICBDT0xVTU5TKCcuKl9kYXRlLionKQpGUk9NIG55Y190YXhpLnRyaXBzCkxJTUlUIDU7\&run_query=true)
+
+```text
+   ┌─fare_amount─┬─tip_amount─┬─tolls_amount─┬─total_amount─┬─pickup_date─┬─────pickup_datetime─┬─dropoff_date─┬────dropoff_datetime─┐
+1. │           9 │          0 │            0 │          9.8 │  2001-01-01 │ 2001-01-01 00:01:48 │   2001-01-01 │ 2001-01-01 00:15:47 │
+2. │           9 │          0 │            0 │          9.8 │  2001-01-01 │ 2001-01-01 00:01:48 │   2001-01-01 │ 2001-01-01 00:15:47 │
+3. │         3.5 │          0 │            0 │          4.8 │  2001-01-01 │ 2001-01-01 00:02:08 │   2001-01-01 │ 2001-01-01 01:00:02 │
+4. │         3.5 │          0 │            0 │          4.8 │  2001-01-01 │ 2001-01-01 00:02:08 │   2001-01-01 │ 2001-01-01 01:00:02 │
+5. │         3.5 │          0 │            0 │          4.3 │  2001-01-01 │ 2001-01-01 00:02:26 │   2001-01-01 │ 2001-01-01 00:04:49 │
+   └─────────────┴────────────┴──────────────┴──────────────┴─────────────┴─────────────────────┴──────────────┴─────────────────────┘
+```
+
+<div id="applying-functions">
+  ## すべてのカラムに関数を適用する
+</div>
+
+[`APPLY`](/ja/reference/statements/select/index) 修飾子を使うと、すべてのカラムに対して関数を適用することもできます。
+たとえば、それぞれのカラムの最大値を求めるには、次のクエリを実行します。
+
+```sql
+SELECT COLUMNS('.*_amount|fee|tax') APPLY(max)
+FROM nyc_taxi.trips;
+```
+
+> [このクエリを SQL Playground で試す](https://sql.clickhouse.com?query=U0VMRUNUIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykgQVBQTFkobWF4KQpGUk9NIG55Y190YXhpLnRyaXBzOw\&run_query=true)
+
+```text
+   ┌─max(fare_amount)─┬─max(mta_tax)─┬─max(tip_amount)─┬─max(tolls_amount)─┬─max(ehail_fee)─┬─max(total_amount)─┐
+1. │           998310 │     500000.5 │       3950588.8 │           7999.92 │           1.95 │         3950611.5 │
+   └──────────────────┴──────────────┴─────────────────┴───────────────────┴────────────────┴───────────────────┘
+```
+
+あるいは、代わりに平均を見てみましょう：
+
+```sql
+SELECT COLUMNS('.*_amount|fee|tax') APPLY(avg)
+FROM nyc_taxi.trips
+```
+
+> [このクエリをSQL Playgroundで試す](https://sql.clickhouse.com?query=U0VMRUNUIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykgQVBQTFkoYXZnKQpGUk9NIG55Y190YXhpLnRyaXBzOw\&run_query=true)
+
+```text
+   ┌─avg(fare_amount)─┬───────avg(mta_tax)─┬────avg(tip_amount)─┬──avg(tolls_amount)─┬──────avg(ehail_fee)─┬──avg(total_amount)─┐
+1. │ 11.8044154834777 │ 0.4555942672733423 │ 1.3469850969211845 │ 0.2256511991414463 │ 3.37600560437412e-9 │ 14.423323722271563 │
+   └──────────────────┴────────────────────┴────────────────────┴────────────────────┴─────────────────────┴────────────────────┘
+```
+
+これらの値には小数点以下の桁が多く含まれていますが、幸い、関数を組み合わせることで調整できます。この場合は、まず `avg` 関数を適用し、その後に `round` 関数を適用します。
+
+```sql
+SELECT COLUMNS('.*_amount|fee|tax') APPLY(avg) APPLY(round)
+FROM nyc_taxi.trips;
+```
+
+> [このクエリを SQL Playground で試す](https://sql.clickhouse.com?query=U0VMRUNUIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykgQVBQTFkoYXZnKSBBUFBMWShyb3VuZCkKRlJPTSBueWNfdGF4aS50cmlwczs\&run_query=true)
+
+```text
+   ┌─round(avg(fare_amount))─┬─round(avg(mta_tax))─┬─round(avg(tip_amount))─┬─round(avg(tolls_amount))─┬─round(avg(ehail_fee))─┬─round(avg(total_amount))─┐
+1. │                      12 │                   0 │                      1 │                        0 │                     0 │                       14 │
+   └─────────────────────────┴─────────────────────┴────────────────────────┴──────────────────────────┴───────────────────────┴──────────────────────────┘
+```
+
+ただし、これでは平均値が整数に丸められてしまいます。たとえば小数点以下2桁に丸めたい場合も、同様に対応できます。`APPLY` 修飾子は関数だけでなくラムダも受け取れるため、平均値を小数点以下2桁に丸めるように round 関数を柔軟に適用できます:
+
+```sql
+SELECT COLUMNS('.*_amount|fee|tax') APPLY(avg) APPLY(x -> round(x, 2))
+FROM nyc_taxi.trips;
+```
+
+> [このクエリをSQL Playgroundで試す](https://sql.clickhouse.com?query=U0VMRUNUIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykgQVBQTFkgYXZnIEFQUExZIHggLT4gcm91bmQoeCwgMikKRlJPTSBueWNfdGF4aS50cmlwcw\&run_query=true)
+
+```text
+   ┌─round(avg(fare_amount), 2)─┬─round(avg(mta_tax), 2)─┬─round(avg(tip_amount), 2)─┬─round(avg(tolls_amount), 2)─┬─round(avg(ehail_fee), 2)─┬─round(avg(total_amount), 2)─┐
+1. │                       11.8 │                   0.46 │                      1.35 │                        0.23 │                        0 │                       14.42 │
+   └────────────────────────────┴────────────────────────┴───────────────────────────┴─────────────────────────────┴──────────────────────────┴─────────────────────────────┘
+```
+
+<div id="replacing-columns">
+  ## カラムの置き換え
+</div>
+
+ここまでは順調です。では、ほかの値はそのままにして、そのうちの1つだけを調整したいとします。たとえば、合計金額を2倍にし、MTA tax を1.1で割りたい場合です。これには [`REPLACE`](/ja/reference/statements/select/index) 修飾子を使用します。これにより、ほかのカラムはそのままにして、1つのカラムだけを置き換えられます。
+
+```sql
+FROM nyc_taxi.trips 
+SELECT 
+  COLUMNS('.*_amount|fee|tax')
+  REPLACE(
+    total_amount*2 AS total_amount,
+    mta_tax/1.1 AS mta_tax
+  ) 
+  APPLY(avg)
+  APPLY(col -> round(col, 2));
+```
+
+> [SQL Playgroundでこのクエリを試す](https://sql.clickhouse.com?query=RlJPTSBueWNfdGF4aS50cmlwcyAKU0VMRUNUIAogIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykKICBSRVBMQUNFKAogICAgdG90YWxfYW1vdW50KjIgQVMgdG90YWxfYW1vdW50LAogICAgbXRhX3RheC8xLjEgQVMgbXRhX3RheAogICkgCiAgQVBQTFkoYXZnKQogIEFQUExZKGNvbCAtPiByb3VuZChjb2wsIDIpKTs\&run_query=true)
+
+```text
+   ┌─round(avg(fare_amount), 2)─┬─round(avg(di⋯, 1.1)), 2)─┬─round(avg(tip_amount), 2)─┬─round(avg(tolls_amount), 2)─┬─round(avg(ehail_fee), 2)─┬─round(avg(mu⋯nt, 2)), 2)─┐
+1. │                       11.8 │                     0.41 │                      1.35 │                        0.23 │                        0 │                    28.85 │
+   └────────────────────────────┴──────────────────────────┴───────────────────────────┴─────────────────────────────┴──────────────────────────┴──────────────────────────┘
+```
+
+<div id="excluding-columns">
+  ## カラムの除外
+</div>
+
+[`EXCEPT`](/ja/reference/statements/select/index) 修飾子を使って、カラムを除外することもできます。たとえば、`tolls_amount` カラムを除外するには、次のクエリを記述します。
+
+```sql
+FROM nyc_taxi.trips 
+SELECT 
+  COLUMNS('.*_amount|fee|tax') EXCEPT(tolls_amount)
+  REPLACE(
+    total_amount*2 AS total_amount,
+    mta_tax/1.1 AS mta_tax
+  ) 
+  APPLY(avg)
+  APPLY(col -> round(col, 2));
+```
+
+> [SQL Playgroundでこのクエリを試す](https://sql.clickhouse.com?query=RlJPTSBueWNfdGF4aS50cmlwcyAKU0VMRUNUIAogIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykgRVhDRVBUKHRvbGxzX2Ftb3VudCkKICBSRVBMQUNFKAogICAgdG90YWxfYW1vdW50KjIgQVMgdG90YWxfYW1vdW50LAogICAgbXRhX3RheC8xLjEgQVMgbXRhX3RheAogICkgCiAgQVBQTFkoYXZnKQogIEFQUExZKGNvbCAtPiByb3VuZChjb2wsIDIpKTs\&run_query=true)
+
+```text
+   ┌─round(avg(fare_amount), 2)─┬─round(avg(di⋯, 1.1)), 2)─┬─round(avg(tip_amount), 2)─┬─round(avg(ehail_fee), 2)─┬─round(avg(mu⋯nt, 2)), 2)─┐
+1. │                       11.8 │                     0.41 │                      1.35 │                        0 │                    28.85 │
+   └────────────────────────────┴──────────────────────────┴───────────────────────────┴──────────────────────────┴──────────────────────────┘
+```

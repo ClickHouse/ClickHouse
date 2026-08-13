@@ -1,0 +1,338 @@
+---
+title: 'DataStore 디버깅'
+sidebarTitle: '개요'
+slug: /chdb/debugging
+description: 'explain(), 프로파일링, 로깅으로 DataStore 작업을 디버깅합니다'
+keywords: ['chdb', 'DataStore', '디버깅', 'explain', '프로파일링', '로깅']
+doc_type: 'guide'
+---
+
+DataStore는 데이터 파이프라인을 이해하고 최적화하는 데 도움이 되는 종합적인 디버깅 도구를 제공합니다.
+
+<div id="overview">
+  ## 디버깅 도구 개요
+</div>
+
+| 도구          | 목적          | 사용 시점           |
+| ----------- | ----------- | --------------- |
+| `explain()` | 실행 계획 보기    | 실행될 SQL 파악      |
+| 프로파일러       | 성능 측정       | 느린 작업 식별        |
+| 로깅          | 실행 세부 정보 보기 | 예기치 않은 동작 문제 해결 |
+
+<div id="decision-matrix">
+  ## 빠른 의사결정 매트릭스
+</div>
+
+| 필요 사항      | 도구          | 명령                          |
+| ---------- | ----------- | --------------------------- |
+| 실행 계획 확인   | `explain()` | `ds.explain()`              |
+| 성능 측정      | 프로파일러       | `config.enable_profiling()` |
+| SQL 쿼리 디버깅 | 로깅          | `config.enable_debug()`     |
+| 위 항목 모두    | 조합          | 아래 참조                       |
+
+<div id="quick-setup">
+  ## 빠른 설정
+</div>
+
+<div id="enable-all">
+  ### 전체 디버깅 활성화
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+# Enable all debugging
+config.enable_debug()        # Verbose logging
+config.enable_profiling()    # Performance tracking
+
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).groupby('city').agg({'salary': 'mean'})
+
+# View execution plan
+result.explain()
+
+# Get profiler report
+from chdb.datastore.config import get_profiler
+profiler = get_profiler()
+profiler.report()
+```
+
+***
+
+<div id="explain">
+  ## explain() 메서드
+</div>
+
+쿼리를 실행하기 전에 실행 계획을 확인합니다.
+
+```python title="Query"
+ds = pd.read_csv("data.csv")
+
+query = (ds
+    .filter(ds['amount'] > 1000)
+    .groupby('region')
+    .agg({'amount': ['sum', 'mean']})
+)
+
+# View plan
+query.explain()
+```
+
+```text title="Response"
+Pipeline:
+  Source: file('data.csv', 'CSVWithNames')
+  Filter: amount > 1000
+  GroupBy: region
+  Aggregate: sum(amount), avg(amount)
+
+Generated SQL:
+SELECT region, SUM(amount) AS sum, AVG(amount) AS mean
+FROM file('data.csv', 'CSVWithNames')
+WHERE amount > 1000
+GROUP BY region
+```
+
+[explain() 문서](/ko/chdb/debugging/explain)에서 자세한 내용을 확인하십시오.
+
+***
+
+<div id="profiling">
+  ## 프로파일링
+</div>
+
+각 연산의 실행 시간을 측정합니다.
+
+```python title="Query"
+from chdb.datastore.config import config, get_profiler
+
+# Enable profiling
+config.enable_profiling()
+
+# Run operations
+ds = pd.read_csv("large_data.csv")
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('category')
+    .agg({'amount': 'sum'})
+    .sort('sum', ascending=False)
+    .head(10)
+    .to_df()
+)
+
+# View report
+profiler = get_profiler()
+profiler.report(min_duration_ms=0.1)
+```
+
+```text title="Response"
+Performance Report
+==================
+Step                          Duration    Calls
+----                          --------    -----
+read_csv                      1.234s      1
+filter                        0.002s      1
+groupby                       0.001s      1
+agg                           0.089s      1
+sort                          0.045s      1
+head                          0.001s      1
+to_df (SQL execution)         0.567s      1
+----                          --------    -----
+Total                         1.939s      7
+```
+
+자세한 내용은 [프로파일링 가이드](/ko/chdb/debugging/profiling)를 참조하십시오.
+
+***
+
+<div id="logging">
+  ## 로깅
+</div>
+
+자세한 실행 로그를 확인합니다.
+
+```python
+from chdb.datastore.config import config
+
+# Enable debug logging
+config.enable_debug()
+
+# Run operations - logs will show:
+# - SQL queries generated
+# - Execution engine used
+# - Cache hits/misses
+# - Timing information
+```
+
+로그 출력 예시:
+
+```text
+DEBUG - DataStore: Creating from file 'data.csv'
+DEBUG - Query: SELECT region, SUM(amount) FROM ... WHERE amount > 1000 GROUP BY region
+DEBUG - Engine: Using chdb for aggregation
+DEBUG - Execution time: 0.089s
+DEBUG - Cache: Storing result (key: abc123)
+```
+
+자세한 내용은 [로깅 구성](/ko/chdb/debugging/logging)을 확인하십시오.
+
+***
+
+<div id="scenarios">
+  ## 일반적인 디버깅 시나리오
+</div>
+
+<div id="scenario-wrong-results">
+  ### 1. 쿼리 결과가 예상과 다른 경우
+</div>
+
+```python
+# Step 1: View the execution plan
+query = ds.filter(ds['age'] > 25).groupby('city').sum()
+query.explain(verbose=True)
+
+# Step 2: Enable logging to see SQL
+config.enable_debug()
+
+# Step 3: Run and check logs
+result = query.to_df()
+```
+
+<div id="scenario-slow">
+  ### 2. 쿼리 실행이 느린 경우
+</div>
+
+```python
+# Step 1: Enable profiling
+config.enable_profiling()
+
+# Step 2: Run your query
+result = process_data()
+
+# Step 3: Check profiler report
+profiler = get_profiler()
+profiler.report()
+
+# Step 4: Identify slow operations and optimize
+```
+
+<div id="scenario-engine">
+  ### 3. 엔진 선택 이해하기
+</div>
+
+```python
+# Enable verbose logging
+config.enable_debug()
+
+# Run operations
+result = ds.filter(ds['x'] > 10).apply(custom_func)
+
+# Logs will show which engine was used for each operation:
+# DEBUG - filter: Using chdb engine
+# DEBUG - apply: Using pandas engine (custom function)
+```
+
+<div id="scenario-cache">
+  ### 4. 캐시 문제 디버깅
+</div>
+
+```python
+# Enable debug to see cache operations
+config.enable_debug()
+
+# First run
+result1 = ds.filter(ds['x'] > 10).to_df()
+# LOG: Cache miss, executing query
+
+# Second run (should use cache)
+result2 = ds.filter(ds['x'] > 10).to_df()
+# LOG: Cache hit, returning cached result
+
+# If not caching when expected, check:
+# - Are operations identical?
+# - Is cache enabled? config.cache_enabled
+```
+
+***
+
+<div id="best-practices">
+  ## 권장 사항
+</div>
+
+<div id="best-practice-1">
+  ### 1. 프로덕션이 아닌 개발 환경에서 디버깅하기
+</div>
+
+```python
+# Development
+config.enable_debug()
+config.enable_profiling()
+
+# Production
+config.set_log_level(logging.WARNING)
+config.set_profiling_enabled(False)
+```
+
+<div id="best-practice-2">
+  ### 2. 대규모 쿼리를 실행하기 전에 explain()을 사용하세요
+</div>
+
+```python
+# Build query
+query = ds.filter(...).groupby(...).agg(...)
+
+# Check plan first
+query.explain()
+
+# If plan looks good, execute
+result = query.to_df()
+```
+
+<div id="best-practice-3">
+  ### 3. 최적화 전에 프로파일링하세요
+</div>
+
+```python
+# Don't guess what's slow - measure it
+config.enable_profiling()
+result = your_pipeline()
+get_profiler().report()
+```
+
+<div id="best-practice-4">
+  ### 4. 결과가 올바르지 않을 때 SQL 확인
+</div>
+
+```python
+# View generated SQL
+print(query.to_sql())
+
+# Compare with expected SQL
+# Run SQL directly in ClickHouse to verify
+```
+
+***
+
+<div id="summary">
+  ## 디버깅 도구 요약
+</div>
+
+| 도구          | 명령                          | 출력           |
+| ----------- | --------------------------- | ------------ |
+| 실행 계획 확인    | `ds.explain()`              | 실행 단계 + SQL  |
+| 상세 실행 계획 확인 | `ds.explain(verbose=True)`  | + 메타데이터      |
+| SQL 보기      | `ds.to_sql()`               | SQL 쿼리 문자열   |
+| 디버그 활성화     | `config.enable_debug()`     | 상세 logs      |
+| 프로파일링 활성화   | `config.enable_profiling()` | 시간 측정 데이터    |
+| 프로파일러 보고서   | `get_profiler().report()`   | 성능 요약        |
+| 프로파일러 초기화   | `get_profiler().reset()`    | 시간 측정 데이터 삭제 |
+
+***
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+* [explain() 메서드](/ko/chdb/debugging/explain) - 상세한 실행 계획 문서
+* [프로파일링 가이드](/ko/chdb/debugging/profiling) - 성능 측정
+* [로깅 구성](/ko/chdb/debugging/logging) - 로그 레벨 및 포맷 설정

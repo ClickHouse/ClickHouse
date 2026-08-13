@@ -58,6 +58,20 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
         new_state->variant_element_state = variant_element_state ? variant_element_state->clone() : nullptr;
         return new_state;
     }
+
+    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
+    {
+        if (shared_variant)
+            callback(shared_variant);
+    }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        if (structure_state)
+            callback(structure_state);
+        if (variant_element_state)
+            callback(variant_element_state);
+    }
 };
 
 
@@ -119,9 +133,11 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
     {
         settings.path.push_back(Substream::DynamicData);
         if (is_null_map_subcolumn)
-            dynamic_element_state->variant_serialization = SerializationVariantElementNullMap::create(dynamic_element_name, *global_discr);
+            dynamic_element_state->variant_serialization = SerializationVariantElementNullMap::create(
+                dynamic_element_name, *global_discr, variant_type.getVariants().size());
         else
-            dynamic_element_state->variant_serialization = SerializationVariantElement::create(nested_serialization, dynamic_element_name, *global_discr);
+            dynamic_element_state->variant_serialization = SerializationVariantElement::create(
+                nested_serialization, dynamic_element_name, *global_discr, variant_type.getVariants().size());
         dynamic_element_state->variant_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_element_state->variant_element_state, cache);
         dynamic_element_state->read_from_shared_variant = false;
         settings.path.pop_back();
@@ -135,7 +151,8 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
         dynamic_element_state->variant_serialization = SerializationVariantElement::create(
             shared_variant_serialization,
             ColumnDynamic::getSharedVariantTypeName(),
-            *shared_variant_global_discr);
+            *shared_variant_global_discr,
+            variant_type.getVariants().size());
         dynamic_element_state->variant_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_element_state->variant_element_state, cache);
         dynamic_element_state->read_from_shared_variant = true;
         settings.path.pop_back();
@@ -230,6 +247,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
             {
                 auto value = shared_variant.getDataAt(i);
                 ReadBufferFromMemory buf(value);
+                /// Reading already-stored shared-variant data: not limited by the input complexity guard.
                 auto type = decodeDataType(buf);
                 if (type->getName() == dynamic_element_name)
                 {

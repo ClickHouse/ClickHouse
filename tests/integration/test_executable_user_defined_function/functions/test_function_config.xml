@@ -326,6 +326,39 @@
 
     <function>
         <type>executable</type>
+        <name>test_function_invalid_parameter_name_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_parameter.py {test parameter:UInt64}</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_invalid_empty_parameter_name_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_parameter.py {:UInt64}</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_invalid_blank_parameter_name_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_parameter.py { :UInt64}</command>
+    </function>
+
+    <function>
+        <type>executable</type>
         <name>test_function_always_error_throw_python</name>
         <return_type>String</return_type>
         <argument>

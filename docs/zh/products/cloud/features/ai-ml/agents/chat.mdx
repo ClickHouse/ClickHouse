@@ -1,0 +1,112 @@
+---
+sidebarTitle: '聊天'
+slug: /cloud/features/ai-ml/agents/chat
+title: '聊天'
+description: 'ClickHouse 智能体中的对话、书签、置顶对话、分支、键盘快捷键和聊天共享'
+keywords: ['AI', 'ClickHouse Cloud', 'agent', '聊天', '对话', '书签', '置顶对话', '键盘快捷键', '分支', '共享']
+doc_type: 'reference'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge />
+
+ClickHouse 智能体中的聊天界面支持对话、分支和共享。
+
+<Image img="/images/cloud/agent-builder/chat/chat.webp" alt="显示左侧导航、agent身份标头和消息输入框的 ClickHouse 智能体聊天界面" size="lg" />
+
+<div id="conversations">
+  ## 对话
+</div>
+
+点击左侧导航中的撰写图标，即可开始新对话。
+在对话窗口左上角的 Agent 选择对话框中，选择要使用的 agent——默认选中的是 **ClickHouse 智能体**。
+现在，你可以在输入框中输入消息，然后点击发送。每个对话都会保存到侧边栏的历史记录中，之后可重新打开、重命名或删除。
+
+<Image img="/images/cloud/agent-builder/chat/conversation.webp" alt="聊天界面中，左侧导航里的撰写图标已高亮显示；侧边栏显示 Chats 历史记录，其中保存了一个 Top 10 Tables Ranked 对话；输入框中还输入了一个示例问题" size="lg" />
+
+你可以直接编辑任意一条消息，agent 将从对话历史中的该位置重新生成回复。
+你也可以仅重新生成 agent 的上一条回复，而无需重新发送消息。
+
+<div id="bookmarks">
+  ## 书签
+</div>
+
+为消息或整个对话添加书签，方便快速找回。书签仅自己可见，即使对话重命名后也会保留。
+
+<Image img="/images/cloud/agent-builder/chat/bookmark.webp" alt="聊天标题栏中高亮显示的书签图标，以及可见的“添加书签”提示" size="lg" />
+
+<div id="pinned-conversations">
+  ## 置顶对话
+</div>
+
+将对话置顶后，它会固定显示在侧边栏顶部，并与下方按日期分组的历史记录分开显示。在侧边栏中打开该对话的选项菜单 (三点图标) ，然后选择 **Pin**。置顶的对话会集中显示在 **Pinned** 部分，位于 **Today**、**Yesterday** 和更早分组的上方。
+
+如需取消置顶，请打开同一菜单并选择 **Unpin**。
+
+<div id="forking">
+  ## 分支
+</div>
+
+创建分支会从某条特定消息派生出一个新对话。你可以用它探索另一种走向，而不影响原始对话。
+共有三种分支模式可用：
+
+* **仅可见消息** - 允许你复制通往分支消息的直接路径。
+* **包含相关分支** - 允许你复制主路径以及现有的所有相关分支。
+* **包含到此处的全部内容** - 允许你复制直到分支消息为止的全部内容。
+
+分支后的对话彼此独立，因此所做的更改不会同步回原始对话。
+
+<Image img="/images/cloud/agent-builder/chat/fork.webp" alt="分支选项对话框，显示三个分支模式图标、“Start fork here”和“Remember”复选框，以及下方的消息操作工具栏" size="lg" />
+
+<div id="sharing-chats">
+  ## 共享聊天
+</div>
+
+为任意对话生成可分享链接，以便发送给队友或保存为参考。接收者看到的是只读视图，其中包括制品和可见分支。你可以随时在共享页面中撤销链接。
+
+对现有消息的编辑会显示在共享视图中；但在生成链接后添加的消息不会显示。
+
+任何查看共享链接的人都可以点击 **Continue this chat**，在自己的账户中继续该对话。这会将该对话 (包括他们当前查看的分支) 复制到其历史记录中，作为一个新的私密对话，而你的原始对话不会受到影响。
+
+要共享对话，请打开侧边栏中的对话菜单，然后选择 **共享**：
+
+<Image img="/images/cloud/agent-builder/chat/share.webp" alt="侧边栏中的对话菜单，显示“共享”“重命名”“复制”“归档”和“删除”选项" size="lg" />
+
+然后在共享对话框中点击 **创建链接**：
+
+<Image img="/images/cloud/agent-builder/chat/share-modal.webp" alt="聊天共享链接对话框，其中包含“创建链接”按钮，以及一条说明：你的姓名和共享后添加的任何消息都将保持私密" size="md" />
+
+<div id="keyboard-shortcuts">
+  ## 键盘快捷键
+</div>
+
+使用 `Cmd+Shift+/` (在 Windows 和 Linux 上为 `Ctrl+Shift+/`) 打开键盘快捷键速查表，也可以在账户菜单中通过 **Help** → **Keyboard shortcuts** 打开。所有快捷键都可以自定义：点击对话框中的某一行即可录制新的组合键，使用 **Reset all to defaults** 可恢复默认设置。
+
+默认快捷键如下：
+
+| 操作       | macOS                 | Windows and Linux      |
+| -------- | --------------------- | ---------------------- |
+| 显示键盘快捷键  | `Cmd+Shift+/`         | `Ctrl+Shift+/`         |
+| 新建聊天     | `Cmd+Shift+O`         | `Ctrl+Shift+O`         |
+| 聚焦聊天输入框  | `Shift+Esc`           | `Shift+Esc`            |
+| 上传文件     | `Cmd+Shift+U`         | `Ctrl+Shift+U`         |
+| 复制上一条回复  | `Cmd+Shift+;`         | `Ctrl+Shift+;`         |
+| 提交消息     | `Cmd+Enter`           | `Ctrl+Enter`           |
+| 切换侧边栏    | `Cmd+Shift+S`         | `Ctrl+Shift+S`         |
+| 打开模型选择器  | `Cmd+Shift+M`         | `Ctrl+Shift+M`         |
+| 聚焦搜索     | `Cmd+/`               | `Ctrl+/`               |
+| 打开设置     | `Cmd+Shift+,`         | `Ctrl+Shift+,`         |
+| 为对话添加书签  | `Cmd+Shift+B`         | `Ctrl+Shift+B`         |
+| 停止生成     | `Cmd+Shift+X`         | `Ctrl+Shift+X`         |
+| 重新生成回复   | `Cmd+Shift+E`         | `Ctrl+Shift+E`         |
+| 编辑上一条消息  | `Cmd+Shift+I`         | `Ctrl+Shift+I`         |
+| 继续回复     | `Cmd+Shift+C`         | `Ctrl+Shift+C`         |
+| 复制上一段代码块 | `Cmd+Shift+K`         | `Ctrl+Shift+K`         |
+| 滚动到顶部    | `Cmd+Shift+Up`        | `Ctrl+Shift+Up`        |
+| 滚动到底部    | `Cmd+Shift+Down`      | `Ctrl+Shift+Down`      |
+| 归档对话     | `Cmd+Shift+L`         | `Ctrl+Shift+L`         |
+| 删除对话     | `Cmd+Shift+Backspace` | `Ctrl+Shift+Backspace` |
+
+你还可以为打开智能体、提示词、文件和书签等面板分配自己的快捷键——这些功能默认没有快捷键。

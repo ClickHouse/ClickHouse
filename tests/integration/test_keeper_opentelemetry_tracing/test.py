@@ -10,7 +10,7 @@ def started_cluster(request):
     xid_mode = request.param
     cluster = ClickHouseCluster(__file__)
 
-    clickhouse = cluster.add_instance(
+    cluster.add_instance(
         "clickhouse",
         main_configs=[
             "configs/server/use_keeper.xml",
@@ -201,8 +201,8 @@ def test_keeper_opentelemetry_tracing_without_server_trace(started_cluster):
 
     clickhouse = started_cluster.instances["clickhouse"]
     keeper1 = started_cluster.instances["clickhouseKeeper1"]
-    keeper2 = started_cluster.instances["clickhouseKeeper2"]
-    keeper3 = started_cluster.instances["clickhouseKeeper3"]
+    started_cluster.instances["clickhouseKeeper2"]
+    started_cluster.instances["clickhouseKeeper3"]
 
     db = f"test_no_server_trace_{uuid.uuid4()}_database"
 

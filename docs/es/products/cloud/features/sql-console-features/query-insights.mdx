@@ -1,0 +1,54 @@
+---
+sidebar_title: 'Query insights'
+slug: /cloud/get-started/query-insights
+description: 'Visualiza los datos de system.query_log para simplificar la depuración y la optimización del rendimiento de las consultas'
+keywords: ['query insights', 'registro de consultas', 'UI del registro de consultas', 'información de system.query_log']
+title: 'Query insights'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+La función **Query Insights** facilita el uso del registro de consultas integrado de ClickHouse mediante visualizaciones y tablas. La tabla `system.query_log` de ClickHouse es una fuente clave de información para la optimización de consultas, la depuración y la monitorización del estado general y del rendimiento del clúster.
+
+<div id="query-overview">
+  ## Vista general de las consultas
+</div>
+
+Después de seleccionar un servicio, el elemento de navegación **Monitoring** de la barra lateral izquierda debería expandirse para mostrar un nuevo subelemento, **Query insights**. Al hacer clic en esta opción, se abre la nueva página de Query insights:
+
+<Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="Vista general de la interfaz de Query Insights" border />
+
+<div id="top-level-metrics">
+  ## Métricas principales
+</div>
+
+Los paneles de estadísticas de la parte superior muestran algunas métricas principales básicas de las consultas durante el período seleccionado. Debajo, se muestran tres gráficos de series temporales con el volumen de consultas, la latencia y la tasa de errores, desglosados por tipo de consulta (`select`, `insert`, `other`) en el intervalo de tiempo seleccionado. El gráfico de latencia puede ajustarse aún más para mostrar las latencias p50, p90 y p99:
+
+<Image img="/images/cloud/sqlconsole/insights_latency.webp" size="md" alt="Gráfico de latencia de la UI de Query Insights" border />
+
+<div id="recent-queries">
+  ## Consultas recientes
+</div>
+
+Debajo de las métricas principales, una tabla muestra las entradas del registro de consultas (agrupadas por el hash de la consulta normalizada y el usuario) dentro del intervalo de tiempo seleccionado:
+
+<Image img="/images/cloud/sqlconsole/insights_recent.webp" size="md" alt="Tabla de consultas recientes en la UI de Query Insights" border />
+
+Las consultas recientes se pueden filtrar y ordenar por cualquier campo disponible. La tabla también puede configurarse para mostrar u ocultar campos adicionales, como tablas y latencias p90 y p99.
+
+<div id="query-drill-down">
+  ## Desglose de la consulta
+</div>
+
+Al seleccionar una consulta de la tabla de consultas recientes, se abrirá un panel lateral con métricas e información específicas de la consulta seleccionada:
+
+<Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="Desglose de la consulta en la UI de Query Insights" border />
+
+Como podemos ver en el panel lateral, esta consulta en particular se ha ejecutado más de 3000 veces en las últimas 24 horas. Todas las métricas de la pestaña **Información de la consulta** son métricas agregadas, pero también podemos ver las métricas de ejecuciones individuales seleccionando la pestaña **Historial de la consulta**:
+
+<Image img="/images/cloud/sqlconsole/insights_query_info.webp" size="sm" alt="Información de la consulta en la UI de Query Insights" border />
+
+<br />
+
+Desde este panel, se pueden desplegar los elementos `Settings` y `Profile Events` de cada ejecución de la consulta para ver información adicional.

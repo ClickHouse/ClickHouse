@@ -54,6 +54,7 @@ SYSTEM DROP QUERY CACHE;
 
 -- Test 7: Multiple subqueries with query_cache_for_subqueries
 SELECT * FROM (SELECT number FROM numbers(3)) AS a, (SELECT number FROM numbers(3)) AS b
+ORDER BY ALL
 SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
 SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
 -- Expected: >= 1

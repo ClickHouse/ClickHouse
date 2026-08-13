@@ -23,8 +23,10 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_insert_into_iceberg 1 -q "
 # Before the fix this caused std::out_of_range exception in IcebergPathResolver::resolve
 # because table_location is longer than data_path (the manifest filename),
 # causing unsigned underflow and out-of-range substr.
+# input_format_parallel_parsing=0: the metadata file is pretty-printed, and parallel
+# parsing returns its lines out of order, which breaks the downstream json.load.
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT * FROM s3(s3_conn, filename='${TABLE_PATH}/metadata/v2.metadata.json', structure='line String', format='LineAsString')
+    SELECT * FROM s3(s3_conn, filename='${TABLE_PATH}/metadata/v2.metadata.json', structure='line String', format='LineAsString') SETTINGS input_format_parallel_parsing = 0
 " | python3 -c "
 import json, sys
 m = json.load(sys.stdin)

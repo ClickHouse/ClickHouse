@@ -1,0 +1,47 @@
+---
+title: 'Modelo de costos de BYOC (AWS)'
+slug: /cloud/reference/byoc/cost-model-aws
+sidebarTitle: 'Modelo de costos (AWS)'
+keywords: ['BYOC', 'bring your own cloud', 'AWS', 'costo', 'facturación', 'TCO', 'precios', 'EC2', 'S3', 'EBS']
+description: 'Cómo los cargos de ClickHouse Cloud y los cargos de infraestructura de AWS se combinan para conformar el costo total de propiedad de un despliegue BYOC'
+doc_type: 'reference'
+---
+
+Un despliegue BYOC de ClickHouse genera dos facturas independientes:
+
+1. **Cargos de ClickHouse Cloud** — facturados por ClickHouse por tus servicios de ClickHouse, en función de la memoria total asignada.
+2. **Cargos de infraestructura de AWS** — facturados por AWS directamente a tu cuenta de AWS por cada recurso que el despliegue BYOC aprovisiona en ella.
+
+Esta página describe cómo se calcula cada uno y cómo se combinan para conformar el costo total de propiedad (TCO).
+
+<div id="clickhouse-cloud-charges">
+  ## Cargos de ClickHouse Cloud
+</div>
+
+Los cargos de ClickHouse Cloud se basan en la asignación total de memoria. [Póngase en contacto con el equipo](https://clickhouse.com/cloud/bring-your-own-cloud) para entender cómo se aplica esto a su configuración.
+
+<div id="aws-infrastructure-charges">
+  ## Cargos de infraestructura de AWS
+</div>
+
+AWS factura directamente a tu cuenta cada recurso aprovisionado por BYOC. ClickHouse no aplica recargos ni revende capacidad de AWS. Consulta [servicios facturables de AWS](/es/products/bring-your-own-cloud/reference/billable-aws-services) para ver el inventario completo de servicios obligatorios y opcionales.
+
+Los principales factores de costo, normalmente en orden descendente de contribución a una factura de BYOC, son:
+
+1. **Amazon EC2** — instancias worker que sustentan los grupos de nodos administrados de EKS. De forma predeterminada, se usan familias Graviton estándar (por ejemplo, `m7g`). La familia y la cantidad se ajustan según la memoria asignada a tu servicio y el escalado automático del grupo de nodos.
+2. **Amazon S3** — almacenamiento de los datos de las tablas de ClickHouse y de las copias de seguridad en tus buckets. Se cobra por GB-mes, además de las tarifas por solicitud y por transferencia entre regiones.
+3. **Amazon EBS** — volúmenes gp3 conectados a los nodos worker para el SO, las imágenes de contenedor y los logs de ClickHouse.
+4. **gateway NAT y transferencia de datos entre AZ** — salida desde subredes privadas, además del tráfico entre zonas de disponibilidad (las implementaciones multi-AZ replican datos entre AZ).
+5. **Amazon EKS** — tarifa fija por hora de clúster del plano de control.
+6. **Elastic Load Balancing (NLB)** — por LCU-hora para el tráfico de entrada de clientes.
+7. **CloudWatch Logs, Route 53, KMS, endpoints de VPC** — por lo general, representan una pequeña fracción de la factura total, pero varían según la carga de trabajo.
+
+Para consultar los precios vigentes de AWS, revisa las páginas de precios por servicio en [aws.amazon.com](https://aws.amazon.com/pricing/).
+
+<div id="related">
+  ## Temas relacionados
+</div>
+
+* [Servicios facturables de AWS](/es/products/bring-your-own-cloud/reference/billable-aws-services) — inventario completo de los servicios de AWS que aprovisiona BYOC
+* [Límites y cuotas de servicio de AWS](/es/products/bring-your-own-cloud/reference/aws-service-limits) — cuotas que debes verificar antes del despliegue
+* [Arquitectura de BYOC](/es/products/bring-your-own-cloud/overview/architecture) — componentes que ClickHouse Cloud implementa en tu cuenta

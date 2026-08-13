@@ -40,6 +40,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/formatReadable.h>
 #include <Common/ThrottlerArray.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 
@@ -196,12 +197,18 @@ enum class BackupsWorker::ThreadPoolId : uint8_t
     /// Making a list of files to copy or copying those files.
     BACKUP,
 
+    /// Dedicated pool for creating lightweight snapshots, so it is not starved by a concurrent heavy BACKUP sharing the BACKUP pool.
+    CREATE_SNAPSHOT,
+
     /// Creating of tables and databases during RESTORE and filling them with data.
     RESTORE,
 
     /// We need background threads for ASYNC backups and restores.
     ASYNC_BACKGROUND_BACKUP,
     ASYNC_BACKGROUND_RESTORE,
+
+    /// Dedicated async-starter pool for lightweight snapshot creation, so a snapshot's top-level operation is not starved by a concurrent heavy BACKUP occupying ASYNC_BACKGROUND_BACKUP.
+    ASYNC_BACKGROUND_CREATE_SNAPSHOT,
 
     /// We need background threads for coordination workers (see BackgroundCoordinationStageSync).
     ON_CLUSTER_COORDINATION_BACKUP,
@@ -250,7 +257,9 @@ public:
         switch (thread_pool_id)
         {
             case ThreadPoolId::BACKUP:
+            case ThreadPoolId::CREATE_SNAPSHOT:
             case ThreadPoolId::ASYNC_BACKGROUND_BACKUP:
+            case ThreadPoolId::ASYNC_BACKGROUND_CREATE_SNAPSHOT:
             case ThreadPoolId::ON_CLUSTER_COORDINATION_BACKUP:
             case ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_BACKUP:
             case ThreadPoolId::ON_CLUSTER_COORDINATION_INTERNAL_BACKUP:
@@ -260,7 +269,7 @@ public:
                 metric_scheduled_threads = CurrentMetrics::BackupsThreadsScheduled;
                 max_threads = num_backup_threads;
                 /// We don't use thread pool queues for thread pools with a lot of tasks otherwise that queue could be memory-wasting.
-                use_queue = (thread_pool_id != ThreadPoolId::BACKUP);
+                use_queue = (thread_pool_id != ThreadPoolId::BACKUP && thread_pool_id != ThreadPoolId::CREATE_SNAPSHOT);
                 break;
             }
 
@@ -298,10 +307,12 @@ public:
             /// and everything else is after those ones.
             ThreadPoolId::ASYNC_BACKGROUND_BACKUP,
             ThreadPoolId::ASYNC_BACKGROUND_RESTORE,
+            ThreadPoolId::ASYNC_BACKGROUND_CREATE_SNAPSHOT,
             ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_BACKUP,
             ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_RESTORE,
             /// Others:
             ThreadPoolId::BACKUP,
+            ThreadPoolId::CREATE_SNAPSHOT,
             ThreadPoolId::RESTORE,
             ThreadPoolId::ON_CLUSTER_COORDINATION_BACKUP,
             ThreadPoolId::ON_CLUSTER_COORDINATION_INTERNAL_BACKUP,
@@ -462,7 +473,8 @@ struct BackupsWorker::BackupStarter
             backup_context->getCurrentQueryId(),
             is_internal_backup,
             process_list_element,
-            BackupStatus::CREATING_BACKUP);
+            BackupStatus::CREATING_BACKUP,
+            backup_settings.getSerializedSettings());
     }
 
     void doBackup()
@@ -575,12 +587,25 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
 
     try
     {
-        auto thread_pool_id = starter->is_internal_backup ? ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_BACKUP: ThreadPoolId::ASYNC_BACKGROUND_BACKUP;
-        ThreadName thread_name = starter->is_internal_backup ? ThreadName::BACKUP_ASYNC_INTERNAL : ThreadName::BACKUP_ASYNC;
+        ThreadPoolId thread_pool_id = ThreadPoolId::ASYNC_BACKGROUND_BACKUP;
+        ThreadName thread_name = ThreadName::BACKUP_ASYNC;
+        if (starter->backup_settings.experimental_lightweight_snapshot)
+        {
+            /// Snapshot creation needs its own async-starter capacity: otherwise a concurrent heavy BACKUP can occupy all
+            /// ASYNC_BACKGROUND_BACKUP threads and the snapshot's doBackup would never start (and so never reach CREATE_SNAPSHOT).
+            thread_pool_id = ThreadPoolId::ASYNC_BACKGROUND_CREATE_SNAPSHOT;
+            thread_name = ThreadName::SNAPSHOT_ASYNC;
+        }
+        else if (starter->is_internal_backup)
+        {
+            thread_pool_id = ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_BACKUP;
+            thread_name = ThreadName::BACKUP_ASYNC_INTERNAL;
+        }
         auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pools->getThreadPool(thread_pool_id), thread_name);
 
         schedule([starter]
             {
+                auto component_guard = Coordination::setCurrentComponent("BackupStarter::doBackup");
                 try
                 {
                     starter->doBackup();
@@ -625,6 +650,9 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(
     backup_create_params.data_file_name_prefix_length = *backup_settings.data_file_name_prefix_length;
     backup_create_params.backup_coordination = backup_coordination;
     backup_create_params.backup_uuid = backup_settings.backup_uuid;
+    /// The logical backup id, not BackupStarter's `-internal-` suffixed infos-map key -- internal ON CLUSTER
+    /// workers never write a manifest (writeBackupMetadata asserts !is_internal_backup), so this is the id readers see.
+    backup_create_params.backup_id = backup_settings.id.empty() ? toString(*backup_settings.backup_uuid) : backup_settings.id;
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
     backup_create_params.allow_s3_native_copy = backup_settings.allow_s3_native_copy;
     backup_create_params.allow_azure_native_copy = backup_settings.allow_azure_native_copy;
@@ -660,6 +688,19 @@ void BackupsWorker::doBackup(
 
     bool is_internal_backup = backup_settings.internal;
 
+    /// Snapshot creation uses a dedicated thread pool so it is not starved by a concurrent heavy BACKUP occupying the shared BACKUP pool.
+    const ThreadPoolId backup_thread_pool_id
+        = backup_settings.experimental_lightweight_snapshot ? ThreadPoolId::CREATE_SNAPSHOT : ThreadPoolId::BACKUP;
+
+    /// Record the engine's effective settings for observability (see `system.backups`).
+    /// A non-internal `BACKUP ON CLUSTER` initiator only writes metadata/lock files locally; the data
+    /// files are written by the per-host internal operations (which are filtered out of `system.backups`)
+    /// and those hosts may use different endpoint or global settings. So the initiator's local writer does
+    /// not represent the whole backup; omit the engine settings, as is done for incremental multi-engine backups.
+    const bool is_on_cluster_initiator = on_cluster && !is_internal_backup;
+    if (!is_on_cluster_initiator)
+        setEngineSettings(backup_id, backup->getEngineSettings());
+
     maybeSleepForTesting();
 
     /// Write the backup.
@@ -692,7 +733,7 @@ void BackupsWorker::doBackup(
                 backup_coordination,
                 read_settings,
                 context,
-                getThreadPool(ThreadPoolId::BACKUP));
+                getThreadPool(backup_thread_pool_id));
             backup_entries = backup_entries_collector.run();
         }
 
@@ -700,8 +741,8 @@ void BackupsWorker::doBackup(
         chassert(backup);
         chassert(backup_coordination);
         chassert(context);
-        buildFileInfosForBackupEntries(backup, backup_entries, read_settings, backup_coordination, context->getProcessListElement());
-        writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, is_internal_backup, context->getProcessListElement());
+        buildFileInfosForBackupEntries(backup, backup_entries, read_settings, backup_coordination, backup_thread_pool_id, context->getProcessListElement());
+        writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, is_internal_backup, backup_thread_pool_id, context->getProcessListElement());
 
         /// We have written our backup entries (there is no need to sync it with other hosts because it's the last stage).
         backup_coordination->setStage(Stage::COMPLETED, "", /* sync = */ false);
@@ -739,10 +780,10 @@ void BackupsWorker::doBackup(
 }
 
 
-void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, QueryStatusPtr process_list_element)
+void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element)
 {
     backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "", /* sync = */ true);
-    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(ThreadPoolId::BACKUP), process_list_element));
+    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(thread_pool_id), process_list_element));
 }
 
 
@@ -752,12 +793,13 @@ void BackupsWorker::writeBackupEntries(
     const OperationID & backup_id,
     std::shared_ptr<IBackupCoordination> backup_coordination,
     bool is_internal_backup,
+    ThreadPoolId thread_pool_id,
     QueryStatusPtr process_list_element)
 {
     LOG_TRACE(log, "{}, num backup entries={}", Stage::WRITING_BACKUP, backup_entries.size());
     backup_coordination->setStage(Stage::WRITING_BACKUP, "", /* sync = */ true);
 
-    auto file_infos = backup_coordination->getFileInfos();
+    const auto & file_infos = backup_coordination->getFileInfos();
     if (file_infos.size() != backup_entries.size())
     {
         throw Exception(
@@ -771,7 +813,7 @@ void BackupsWorker::writeBackupEntries(
     std::atomic_bool failed = false;
 
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
-    auto & thread_pool = getThreadPool(ThreadPoolId::BACKUP);
+    auto & thread_pool = getThreadPool(thread_pool_id);
 
     std::vector<size_t> writing_order;
     if (test_randomize_order)
@@ -791,13 +833,22 @@ void BackupsWorker::writeBackupEntries(
         size_t index = !writing_order.empty() ? writing_order[i] : i;
 
         auto & entry = backup_entries[index].second;
+
+        if (entry->isFromRemoteFile())
+        {
+            backup->setOriginalEndpointAndNamespaceIfEmpty(entry->getEndpointURI(), entry->getNamespace());
+            continue;
+        }
+
         const auto & file_info = file_infos[index];
 
         /// Using references here is fine as the variables reference objects either belonging to `this` or passed as references in the
         /// function. The exception is file_info, which is itself a reference to `file_infos`, created before the runner (so it will be
         /// destroyed after)
-        auto job = [&failed, &process_list_element, &backup, &file_info, &entry, this, is_internal_backup, &backup_id]()
+        auto job = [&failed, &process_list_element, &backup, &file_info, &entry, this, is_internal_backup, &backup_id,
+                    current_component = Coordination::getCurrentComponent()]()
         {
+            auto local_component_guard = Coordination::setCurrentComponent(current_component);
             if (failed)
                 return;
             try
@@ -869,6 +920,15 @@ struct BackupsWorker::RestoreStarter
         restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
         restore_context->makeQueryContext();
 
+        /// `makeQueryContext` above reset `restore_context` to a fresh, empty `QueryPrivilegesInfo`. Account the
+        /// privileges checked while restoring (in `RestorerFromBackup::checkAccessForObjectsFoundInBackup` and
+        /// when creating databases/tables from the backup, all of which run on copies of `restore_context`) to the
+        /// original RESTORE query instead, so they appear in the `used_privileges`/`missing_privileges` columns of
+        /// `system.query_log`. `QueryPrivilegesInfo` has its own mutex and is not one of the context fields a
+        /// concurrent originating thread mutates, so sharing it does not reintroduce the data race that switching
+        /// the background workers off the live query context avoids.
+        restore_context->setQueryPrivilegesInfo(query_context->getQueryPrivilegesInfoPtr());
+
         backup_info = BackupInfo::fromAST(*restore_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
         is_internal_restore = restore_settings.internal;
@@ -918,7 +978,8 @@ struct BackupsWorker::RestoreStarter
             restore_context->getCurrentQueryId(),
             is_internal_restore,
             process_list_element,
-            BackupStatus::RESTORING);
+            BackupStatus::RESTORING,
+            restore_settings.getSerializedSettings());
     }
 
     void doRestore()
@@ -935,7 +996,7 @@ struct BackupsWorker::RestoreStarter
         restore_coordination = backups_worker.makeRestoreCoordination(on_cluster, restore_settings, restore_context);
         restore_coordination->startup();
 
-        backups_worker.doRestore(restore_query, restore_id, backup_info, restore_settings, restore_coordination, restore_context, query_context,
+        backups_worker.doRestore(restore_query, restore_id, backup_info, restore_settings, restore_coordination, restore_context,
                                  on_cluster, cluster);
 
         if (!is_internal_restore)
@@ -1055,7 +1116,6 @@ void BackupsWorker::doRestore(
     RestoreSettings restore_settings,
     std::shared_ptr<IRestoreCoordination> restore_coordination,
     ContextMutablePtr context,
-    const ContextPtr & query_context,
     bool on_cluster,
     const ClusterPtr & cluster)
 {
@@ -1065,6 +1125,13 @@ void BackupsWorker::doRestore(
 
     /// Open the backup for reading.
     BackupPtr backup = openBackupForReading(backup_info, restore_settings, context);
+
+    /// Record the engine's effective settings for observability (see `system.backups`).
+    /// As on the backup path, a non-internal `RESTORE ON CLUSTER` initiator records only its own reader
+    /// while the per-host internal restores do the actual work, so omit the engine settings in that case.
+    const bool is_on_cluster_initiator = on_cluster && !is_internal_restore;
+    if (!is_on_cluster_initiator)
+        setEngineSettings(restore_id, backup->getEngineSettings());
 
     String current_database = context->getCurrentDatabase();
 
@@ -1083,7 +1150,7 @@ void BackupsWorker::doRestore(
             String addr_database = address->default_database.empty() ? current_database : address->default_database;
             for (auto & element : restore_elements)
                 element.setCurrentDatabase(addr_database);
-            RestorerFromBackup dummy_restorer{restore_elements, restore_settings, nullptr, backup, context, query_context, getThreadPool(ThreadPoolId::RESTORE), {}};
+            RestorerFromBackup dummy_restorer{restore_elements, restore_settings, nullptr, backup, context, getThreadPool(ThreadPoolId::RESTORE), {}};
             dummy_restorer.run(RestorerFromBackup::CHECK_ACCESS_ONLY);
         }
     }
@@ -1115,7 +1182,7 @@ void BackupsWorker::doRestore(
 
         /// Restore from the backup.
         RestorerFromBackup restorer{restore_query->elements, restore_settings, restore_coordination,
-                                    backup, context, query_context, getThreadPool(ThreadPoolId::RESTORE), after_task_callback};
+                                    backup, context, getThreadPool(ThreadPoolId::RESTORE), after_task_callback};
         restorer.run(RestorerFromBackup::RESTORE);
     }
 }
@@ -1222,7 +1289,7 @@ BackupsWorker::makeRestoreCoordination(bool on_cluster, const RestoreSettings & 
 
 std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, const String & name, const String & base_backup_name,
                                                      const String & query_id, bool internal, QueryStatusPtr process_list_element,
-                                                     BackupStatus status)
+                                                     BackupStatus status, std::map<String, String> settings)
 {
     ExtendedOperationInfo extended_info;
     auto & info = extended_info.info;
@@ -1232,6 +1299,7 @@ std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, con
     info.query_id = query_id;
     info.internal = internal;
     info.status = status;
+    info.settings = std::move(settings);
     info.start_time_us = timeInMicroseconds(std::chrono::system_clock::now());
 
     bool is_final_status = isFinalStatus(status);
@@ -1269,7 +1337,7 @@ std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, con
     }
 
     if (backup_log)
-        backup_log->add(BackupLogElement{info});
+        backup_log->add([&](BackupLogElement & element) { BackupLogElement::fromInfo(element, info); });
 
     infos[id] = std::move(extended_info);
 
@@ -1314,7 +1382,7 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
     }
 
     if (backup_log)
-        backup_log->add(BackupLogElement{info});
+        backup_log->add([&](BackupLogElement & element) { BackupLogElement::fromInfo(element, info); });
 
     num_active_backups += getNumActiveBackupsChange(status) - getNumActiveBackupsChange(old_status);
     num_active_restores += getNumActiveRestoresChange(status) - getNumActiveRestoresChange(old_status);
@@ -1342,6 +1410,18 @@ void BackupsWorker::setNumFilesAndSize(const OperationID & id, size_t num_files,
     info.compressed_size = compressed_size;
     info.num_read_files = num_read_files;
     info.num_read_bytes = num_read_bytes;
+}
+
+
+void BackupsWorker::setEngineSettings(const OperationID & id, std::map<String, String> engine_settings)
+{
+    /// Current operation's info entry is updated here. The backup_log table is updated on its basis within a subsequent setStatus() call.
+    std::lock_guard lock{infos_mutex};
+    auto it = infos.find(id);
+    if (it == infos.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup ID {}", id);
+
+    it->second.info.engine_settings = std::move(engine_settings);
 }
 
 

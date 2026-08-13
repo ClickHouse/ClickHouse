@@ -1,4 +1,3 @@
-import datetime
 import logging
 import time
 from datetime import datetime
@@ -144,8 +143,8 @@ MODIFY REFRESH
 
 @pytest.fixture(scope="module", autouse=True)
 def module_setup_tables(started_cluster):
-    node.query(f"DROP DATABASE IF EXISTS test_db")
-    node.query(f"CREATE DATABASE test_db ON CLUSTER default")
+    node.query("DROP DATABASE IF EXISTS test_db")
+    node.query("CREATE DATABASE test_db ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS test_db.test_rmv ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS src1 ON CLUSTER default")
@@ -154,20 +153,20 @@ def module_setup_tables(started_cluster):
     node.query("DROP TABLE IF EXISTS tgt2 ON CLUSTER default")
 
     node.query(
-        f"CREATE TABLE src1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
+        "CREATE TABLE src1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
     )
     node.query(
-        f"CREATE TABLE src2 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
+        "CREATE TABLE src2 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
     )
     node.query(
-        f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = MergeTree ORDER BY tuple()"
+        "CREATE TABLE tgt1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = MergeTree ORDER BY tuple()"
     )
     node.query(
-        f"CREATE TABLE tgt2 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
+        "CREATE TABLE tgt2 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
     )
     node.query(
-        f"CREATE MATERIALIZED VIEW IF NOT EXISTS dummy_rmv ON CLUSTER default "
-        f"REFRESH EVERY 10 HOUR engine Memory EMPTY AS select number as x from numbers(1)"
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS dummy_rmv ON CLUSTER default "
+        "REFRESH EVERY 10 HOUR engine Memory EMPTY AS select number as x from numbers(1)"
     )
 
 
@@ -179,13 +178,13 @@ def fn_setup_tables():
     node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default")
 
     node.query(
-        f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = MergeTree ORDER BY tuple()"
+        "CREATE TABLE tgt1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = MergeTree ORDER BY tuple()"
     )
 
     node.query(
-        f"CREATE TABLE src1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
+        "CREATE TABLE src1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
     )
-    node.query(f"INSERT INTO src1 VALUES ('2020-01-01', 1), ('2020-01-02', 2)")
+    node.query("INSERT INTO src1 VALUES ('2020-01-01', 1), ('2020-01-02', 2)")
 
 
 def opposite_minutes():
@@ -427,9 +426,9 @@ def test_long_query_cancel(fn_setup_tables):
 
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
-        refresh_interval="EVERY 3 SECONDS",
+        refresh_interval="EVERY 2 SECONDS",
         to_clause="tgt1",
-        select_query="SELECT now() a, sleep(1) b from numbers(5) settings max_block_size=1",
+        select_query="SELECT now() a, sleep(1) b from numbers(3) settings max_block_size=1",
         with_append=False,
         empty=True,
         settings={"refresh_retries": "0"},
@@ -452,7 +451,7 @@ def test_long_query_cancel(fn_setup_tables):
         node, "test_rmv", delay=0.1, max_attempts=1000, wait_status="Scheduled"
     )
 
-    assert node.query("SELECT count() FROM tgt1") == "5\n"
+    assert node.query("SELECT count() FROM tgt1") == "3\n"
 
 
 @pytest.fixture(scope="function")
@@ -461,7 +460,7 @@ def fn3_setup_tables():
     node.query("DROP TABLE IF EXISTS test_db.test_rmv ON CLUSTER default SYNC")
     node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default")
 
-    node.query(f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime) ENGINE = Memory")
+    node.query("CREATE TABLE tgt1 ON CLUSTER default (a DateTime) ENGINE = Memory")
 
 
 def test_query_fail(fn3_setup_tables):
@@ -486,11 +485,11 @@ def test_query_fail(fn3_setup_tables):
             exc.value
         )
     assert (
-        node.query(f"SELECT count() FROM system.view_refreshes WHERE view='test_rmv'")
+        node.query("SELECT count() FROM system.view_refreshes WHERE view='test_rmv'")
         == "0\n"
     )
     assert (
-        node.query(f"SELECT count() FROM system.tables WHERE name='test_rmv'") == "0\n"
+        node.query("SELECT count() FROM system.tables WHERE name='test_rmv'") == "0\n"
     )
 
 

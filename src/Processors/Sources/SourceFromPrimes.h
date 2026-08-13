@@ -60,6 +60,12 @@ protected:
 
         while (written < target)
         {
+            /// A large step (or limit) makes this loop call `next` a huge number of times without
+            /// yielding, so a cancelled/timed-out query keeps running. Observe cancellation here so
+            /// `KILL` / `max_execution_time` / shutdown can abort generation promptly.
+            if (isCancelled())
+                return {};
+
             auto prime = prime_generator.next();
 
             const UInt64 cur_prime_index = prime_index;
@@ -159,6 +165,10 @@ protected:
 
         while (written < target)
         {
+            /// See `PrimesSource::generate`: bail out of this potentially very long loop on cancellation.
+            if (isCancelled())
+                return {};
+
             if (interval_idx >= intervals.size())
                 break;
 

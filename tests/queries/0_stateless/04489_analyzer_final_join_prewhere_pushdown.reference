@@ -1,0 +1,12 @@
+analyzer tables read with FINAL	1
+legacy tables read with FINAL	1
+result analyzer	x	a
+result legacy	x	a
+final reads none	0
+final reads left	1
+final reads right	1
+final reads both	2
+result none	['l_new/r_new','l_new/r_old','l_old/r_new','l_old/r_old']
+result left	['l_new/r_new','l_new/r_old']
+result right	['l_new/r_new','l_old/r_new']
+result both	['l_new/r_new']

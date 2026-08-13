@@ -1,0 +1,5 @@
+bare predicate, QUALIFY NULL
+no-op AND constant, QUALIFY NULL
+baseline, no WHERE keeps both right rows
+2	-2	2	-2
+0	0	6	-6

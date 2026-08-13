@@ -15,11 +15,77 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
-from ci.jobs.ast_fuzzer_job import JOB_ARTIFACTS, WORKSPACE_PATH
+import tempfile
+
+import pytest
+
+from ci.jobs.ast_fuzzer_job import (
+    JOB_ARTIFACTS,
+    WORKSPACE_PATH,
+    _format_status_error,
+    _read_fuzzer_status,
+)
 from ci.praktika.utils import Utils
 
 FUZZER_JOB = "AST fuzzer (amd_debug)"
 STRESS_JOB = "Stress test (amd_debug)"
+
+
+def test_read_fuzzer_status_valid():
+    with tempfile.TemporaryDirectory() as d:
+        status = Path(d) / "status.tsv"
+        status.write_text("1\t0\t137\n")
+        assert _read_fuzzer_status(status) == (True, 0, 137)
+
+
+def test_read_fuzzer_status_missing_or_empty():
+    # The runner aborts (timeout / OOM / docker failure) before writing
+    # status.tsv. A missing or empty file must be reported as an early abort,
+    # not as an opaque parse crash.
+    with tempfile.TemporaryDirectory() as d:
+        with pytest.raises(FileNotFoundError):
+            _read_fuzzer_status(Path(d) / "status.tsv")
+        empty = Path(d) / "status.tsv"
+        empty.write_text("")
+        with pytest.raises(FileNotFoundError):
+            _read_fuzzer_status(empty)
+
+
+def test_read_fuzzer_status_malformed():
+    with tempfile.TemporaryDirectory() as d:
+        bad = Path(d) / "status.tsv"
+        bad.write_text("garbage line\n")
+        with pytest.raises(ValueError):
+            _read_fuzzer_status(bad)
+
+
+def test_format_status_error_missing_is_neutral_with_log_tail():
+    # Missing status.tsv -> neutral early-abort message, no traceback, log tail.
+    # It must NOT assert infra / "re-run clears it": a missing file can also be
+    # a server-startup or harness regression, so we point at the logs instead.
+    with tempfile.TemporaryDirectory() as d:
+        fuzzer_log = Path(d) / "fuzzer.log"
+        fuzzer_log.write_text("\n".join(f"line{i}" for i in range(200)))
+        msg = _format_status_error(
+            FileNotFoundError("status.tsv was not produced"),
+            [fuzzer_log, Path(d) / "absent.log"],
+        )
+        assert "aborted before writing status.tsv" in msg
+        assert "re-run" not in msg.lower()
+        assert "Traceback" not in msg
+        assert "fuzzer.log (last lines)" in msg
+        assert "line199" in msg  # tail, not head
+        assert "line0\n" not in msg  # head bounded out
+
+
+def test_format_status_error_malformed_keeps_traceback():
+    # Malformed status.tsv -> harness bug; keep the traceback for debugging.
+    try:
+        raise ValueError("expected 3 tab-separated fields")
+    except ValueError as e:
+        msg = _format_status_error(e, [])
+    assert "harness bug" in msg
+    assert "Traceback" in msg
 
 
 def test_fuzzer():

@@ -1,0 +1,275 @@
+---
+slug: /optimize/skipping-indexes/examples
+sidebarTitle: 'Index de saut de données - exemples'
+description: 'Exemples consolidés d’index de saut de données'
+title: 'Exemples d’index de saut de données'
+doc_type: 'guide'
+keywords: ['index de saut', 'saut de données', 'performance', 'indexation', 'meilleures pratiques']
+---
+
+Cette page rassemble des exemples d’index de saut de données ClickHouse et montre comment déclarer chaque type, quand l’utiliser et comment vérifier qu’il est bien pris en compte. Toutes ces fonctionnalités sont compatibles avec les [tables de la famille MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree).
+
+**Syntaxe de l’index :**
+
+```sql
+INDEX name expr TYPE type(...) [GRANULARITY N]
+```
+
+ClickHouse prend en charge six types de skip index :
+
+| Type d’index                                        | Description                                                            |
+| --------------------------------------------------- | ---------------------------------------------------------------------- |
+| **minmax**                                          | Suit les valeurs minimale et maximale dans chaque granule              |
+| **set(N)**                                          | Stocke jusqu’à N valeurs distinctes par granule                        |
+| **text**                                            | Index inversé sur des chaînes tokenisées pour la recherche plein texte |
+| **bloom&#95;filter([false&#95;positive&#95;rate])** | Filtre probabiliste pour vérifier l’existence                          |
+| **ngrambf&#95;v1**                                  | Filtre de Bloom en n-grammes pour les recherches de sous-chaînes       |
+| **tokenbf&#95;v1**                                  | Filtre de Bloom basé sur des tokens pour les recherches plein texte    |
+
+Chaque section fournit des exemples avec un jeu de données d’exemple et montre comment vérifier l’utilisation des index lors de l’exécution des requêtes.
+
+<div id="minmax-index">
+  ## MinMax index
+</div>
+
+L’index `minmax` convient le mieux aux prédicats de plage sur des données peu triées ou sur des colonnes corrélées à `ORDER BY`.
+
+```sql
+-- Define in CREATE TABLE
+CREATE TABLE events
+(
+  ts DateTime,
+  user_id UInt64,
+  value UInt32,
+  INDEX ts_minmax ts TYPE minmax GRANULARITY 1
+)
+ENGINE=MergeTree
+ORDER BY ts;
+
+-- Or add later and materialize
+ALTER TABLE events ADD INDEX ts_minmax ts TYPE minmax GRANULARITY 1;
+ALTER TABLE events MATERIALIZE INDEX ts_minmax;
+
+-- Query that benefits from the index
+SELECT count() FROM events WHERE ts >= now() - 3600;
+
+-- Verify usage
+EXPLAIN indexes = 1
+SELECT count() FROM events WHERE ts >= now() - 3600;
+```
+
+Consultez un [exemple concret](/fr/concepts/best-practices/using-data-skipping-indices#example) avec `EXPLAIN` et l’élagage.
+
+<div id="set-index">
+  ## Index `set`
+</div>
+
+Utilisez l’index `set` lorsque la cardinalité locale (par bloc) est faible ; il n’est pas utile si chaque bloc contient de nombreuses valeurs distinctes.
+
+```sql
+ALTER TABLE events ADD INDEX user_set user_id TYPE set(100) GRANULARITY 1;
+ALTER TABLE events MATERIALIZE INDEX user_set;
+
+SELECT * FROM events WHERE user_id IN (101, 202);
+
+EXPLAIN indexes = 1
+SELECT * FROM events WHERE user_id IN (101, 202);
+```
+
+Un processus de création/matérialisation, ainsi que l’effet avant/après, sont présentés dans le [guide de fonctionnement de base](/fr/concepts/features/performance/skip-indexes/skipping-indexes#basic-operation).
+
+<div id="textindex-for-full-text-search">
+  ## Index de texte (text) pour la recherche en texte intégral
+</div>
+
+`text` est un index inversé sur des données textuelles tokenisées.
+Conçu spécifiquement pour les charges de travail de recherche en texte intégral, il permet une recherche de tokens et de termes efficace et déterministe.
+Recommandé pour les cas d’usage de traitement du langage naturel ou de recherche textuelle à grande échelle.
+
+Consultez [Recherche en texte intégral avec les index de texte](/fr/reference/engines/table-engines/mergetree-family/textindexes) pour plus de détails et d’exemples.
+
+```sql
+ALTER TABLE logs ADD INDEX msg_text msg TYPE text(tokenizer = splitByNonAlpha);
+ALTER TABLE logs MATERIALIZE INDEX msg_text;
+
+SELECT count() FROM logs WHERE hasAllTokens(msg, 'exception');
+```
+
+Consultez [ici](/fr/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search) la documentation d’un exemple d’observabilité plus complet.
+
+L’index de texte est entièrement déterministe et offre un réglage fin de la tokenisation et du traitement du texte, au prix d’une consommation de stockage légèrement supérieure à celle des index basés sur des bloom filters,
+
+<div id="generic-bloom-filter-scalar">
+  ## Filtre de Bloom générique (scalaire)
+</div>
+
+L’index `bloom_filter` est bien adapté aux recherches d’égalité et d’appartenance `IN` de type &quot;aiguille dans une botte de foin&quot;. Il accepte un paramètre facultatif correspondant au taux de faux positifs (par défaut : 0.025).
+
+```sql
+ALTER TABLE events ADD INDEX value_bf value TYPE bloom_filter(0.01) GRANULARITY 3;
+ALTER TABLE events MATERIALIZE INDEX value_bf;
+
+SELECT * FROM events WHERE value IN (7, 42, 99);
+
+EXPLAIN indexes = 1
+SELECT * FROM events WHERE value IN (7, 42, 99);
+```
+
+<div id="n-gram-bloom-filter-ngrambf-v1-for-substring-search">
+  ## Filtre de Bloom à n-grammes (ngrambf_v1) pour la recherche de sous-chaînes *(Déprécié)*
+</div>
+
+<Note>
+  L’utilisation des index `ngrambf_v1` pour la recherche en texte intégral est dépréciée dans les versions de ClickHouse `>= 26.2` au profit des index `text` (voir [ici](/fr/reference/engines/table-engines/mergetree-family/textindexes) pour plus de détails).
+</Note>
+
+L’index `ngrambf_v1` découpe les chaînes en n-grammes. Il fonctionne bien pour les requêtes `LIKE '%...%'`. Il prend en charge String/FixedString/Map (via mapKeys/mapValues), ainsi qu’une taille, un nombre de fonctions de hachage et une graine configurables. Consultez la documentation sur le [filtre de Bloom à n-grammes](/fr/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) pour plus de détails.
+
+```sql
+-- Create index for substring search
+ALTER TABLE logs ADD INDEX msg_ngram msg TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1;
+ALTER TABLE logs MATERIALIZE INDEX msg_ngram;
+
+-- Substring search
+SELECT count() FROM logs WHERE msg LIKE '%timeout%';
+
+EXPLAIN indexes = 1
+SELECT count() FROM logs WHERE msg LIKE '%timeout%';
+```
+
+[Ce guide](/fr/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search) présente des exemples concrets et indique quand utiliser token ou ngram.
+
+**Aides à l’optimisation des paramètres :**
+
+Les quatre paramètres de ngrambf&#95;v1 (taille du n-gram, taille du bitmap, fonctions de hachage, seed) ont un impact important sur les performances et l’utilisation de la mémoire. Utilisez ces fonctions pour calculer la taille optimale du bitmap et le nombre de fonctions de hachage en fonction du volume de n-grams attendu et du taux de faux positifs souhaité :
+
+```sql
+CREATE FUNCTION bfEstimateFunctions AS
+(total_grams, bits) -> round((bits / total_grams) * log(2));
+
+CREATE FUNCTION bfEstimateBmSize AS
+(total_grams, p_false) -> ceil((total_grams * log(p_false)) / log(1 / pow(2, log(2))));
+
+-- Example sizing for 4300 ngrams, p_false = 0.0001
+SELECT bfEstimateBmSize(4300, 0.0001) / 8 AS size_bytes;  -- ~10304
+SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) AS k; -- ~13
+```
+
+Consultez la [documentation des paramètres](/fr/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) pour obtenir des recommandations complètes sur le réglage.
+
+<div id="token-bloom-filter-tokenbf-v1-for-word-based-search">
+  ## Filtre Bloom de tokens (tokenbf_v1) pour la recherche par mots *(Déprécié)*
+</div>
+
+<Note>
+  L&#39;utilisation des index `tokenbf_v1` pour la recherche en texte intégral est dépréciée dans les versions de ClickHouse `>= 26.2`, au profit des index `text` (voir [ici](/fr/reference/engines/table-engines/mergetree-family/textindexes) pour plus de détails).
+</Note>
+
+Les index `tokenbf_v1` indexent les tokens séparés par des caractères non alphanumériques. Ils doivent être utilisés avec [`hasToken`](/fr/reference/functions/regular-functions/string-search-functions#hasToken), des motifs de mots `LIKE` ou `equals`/`IN`. Ils prennent en charge les types `String`/`FixedString`/`Map`.
+
+Consultez les pages [Token bloom filter](/fr/reference/engines/table-engines/mergetree-family/mergetree#token-bloom-filter) et [Bloom filter types](/fr/concepts/features/performance/skip-indexes/skipping-indexes#skip-index-types) pour plus de détails.
+
+```sql
+ALTER TABLE logs ADD INDEX msg_token lower(msg) TYPE tokenbf_v1(10000, 7, 7) GRANULARITY 1;
+ALTER TABLE logs MATERIALIZE INDEX msg_token;
+
+-- Word search (case-insensitive via lower)
+SELECT count() FROM logs WHERE hasToken(lower(msg), 'exception');
+
+EXPLAIN indexes = 1
+SELECT count() FROM logs WHERE hasToken(lower(msg), 'exception');
+```
+
+Voir des exemples d’observabilité et des conseils sur `token` vs `ngram` [ici](/fr/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search).
+
+<div id="add-indexes-during-create-table-multiple-examples">
+  ## Ajouter des index au moment du CREATE TABLE (plusieurs exemples)
+</div>
+
+Les index de saut de données prennent également en charge les expressions composites ainsi que les types `Map`/`Tuple`/`Nested`. Cela est illustré dans l&#39;exemple ci-dessous :
+
+```sql
+CREATE TABLE t
+(
+  u64 UInt64,
+  s String,
+  m Map(String, String),
+
+  INDEX idx_bf u64 TYPE bloom_filter(0.01) GRANULARITY 3,
+  INDEX idx_minmax u64 TYPE minmax GRANULARITY 1,
+  INDEX idx_set u64 * length(s) TYPE set(1000) GRANULARITY 4,
+  INDEX idx_ngram s TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1,
+  INDEX idx_token mapKeys(m) TYPE tokenbf_v1(10000, 7, 7) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY u64;
+```
+
+<div id="materializing-on-existing-data-and-verifying">
+  ## Matérialisation sur les données existantes et vérification
+</div>
+
+Vous pouvez ajouter un index aux parts de données existantes avec `MATERIALIZE`, puis examiner l’élagage à l’aide de `EXPLAIN` ou des logs de trace, comme ci-dessous :
+
+```sql
+ALTER TABLE t MATERIALIZE INDEX idx_bf;
+
+EXPLAIN indexes = 1
+SELECT count() FROM t WHERE u64 IN (123, 456);
+
+-- Optional: detailed pruning info
+SET send_logs_level = 'trace';
+```
+
+Cet [exemple pratique de minmax](/fr/concepts/best-practices/using-data-skipping-indices#example) montre la structure de la sortie EXPLAIN et le nombre d’éléments élagués.
+
+<div id="when-use-and-when-to-avoid">
+  ## Quand utiliser et quand éviter les index de saut
+</div>
+
+**Utilisez les index de saut lorsque :**
+
+* Les valeurs de filtre sont éparses dans les blocs de données
+* Il existe une forte corrélation avec les colonnes `ORDER BY`, ou les schémas d’ingestion des données regroupent des valeurs similaires
+* Vous effectuez des recherches textuelles dans de grands jeux de logs (types `ngrambf_v1`/`tokenbf_v1`)
+
+**Évitez les index de saut lorsque :**
+
+* La plupart des blocs contiennent probablement au moins une valeur correspondante (les blocs seront alors lus de toute façon)
+* Vous filtrez sur des colonnes à forte cardinalité sans corrélation avec l’ordre des données
+
+<Info>
+  **Points importants**
+
+  Si une valeur apparaît ne serait-ce qu’une seule fois dans un bloc de données, ClickHouse doit lire l’intégralité du bloc. Testez les index sur des jeux de données réalistes et ajustez la granularité ainsi que les paramètres propres au type en fonction de mesures de performances réelles.
+</Info>
+
+<div id="temporarily-ignore-or-force-indexes">
+  ## Ignorer temporairement des index ou en imposer l’utilisation
+</div>
+
+Désactivez des index spécifiques par leur nom pour des requêtes individuelles lors des tests et du dépannage. Il existe également des paramètres permettant d’imposer l’utilisation des index si nécessaire. Voir [`ignore_data_skipping_indices`](/fr/reference/settings/session-settings#ignore_data_skipping_indices).
+
+```sql
+-- Ignore an index by name
+SELECT * FROM logs
+WHERE hasToken(lower(msg), 'exception')
+SETTINGS ignore_data_skipping_indices = 'msg_token';
+```
+
+<div id="notes-and-caveats">
+  ## Notes et limites
+</div>
+
+* Les index de saut ne sont pris en charge que sur les [tables de la famille MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree) ; l’élagage s’effectue au niveau des granules/blocs.
+* Les index basés sur des filtres de Bloom sont probabilistes (les faux positifs entraînent des lectures supplémentaires, mais n’excluent pas de données valides).
+* Les filtres de Bloom et les autres index de saut doivent être validés à l’aide de `EXPLAIN` et du traçage ; ajustez la granularité pour trouver un équilibre entre l’élagage et la taille de l’index.
+
+<div id="related-docs">
+  ## Documentation connexe
+</div>
+
+* [Guide des index de saut de données](/fr/concepts/features/performance/skip-indexes/skipping-indexes)
+* [Guide des bonnes pratiques](/fr/concepts/best-practices/using-data-skipping-indices)
+* [Manipuler les index de saut de données](/fr/reference/statements/alter/skipping-index)
+* [Informations sur la table système](/fr/reference/system-tables/data_skipping_indices)

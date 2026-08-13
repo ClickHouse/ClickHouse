@@ -4,6 +4,7 @@
 #include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 #include <mutex>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadSettings.h>

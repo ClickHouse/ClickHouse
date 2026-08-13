@@ -1,0 +1,314 @@
+---
+sidebarTitle: 'Go'
+keywords: ['clickhouse', 'go', 'client', 'golang']
+slug: /integrations/go
+description: 'ClickHouse용 Go 클라이언트를 사용하면 Go 표준 database/sql 인터페이스 또는 최적화된 네이티브 인터페이스를 통해 ClickHouse에 연결할 수 있습니다.'
+title: 'ClickHouse Go'
+doc_type: '참고'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+---
+
+import ConnectionDetails from '/snippets/ko/_gather_your_details_native.mdx';
+
+<div id="quick-start">
+  ## 빠른 시작
+</div>
+
+간단한 예시로 시작하겠습니다. 이 예시에서는 ClickHouse에 연결한 뒤 system 데이터베이스에서 데이터를 조회합니다. 시작하려면 연결 정보가 필요합니다.
+
+<div id="connection-details">
+  ### 연결 정보
+</div>
+
+<ConnectionDetails />
+
+<div id="initialize-a-module">
+  ### 모듈 초기화하기
+</div>
+
+```bash
+mkdir clickhouse-golang-example
+cd clickhouse-golang-example
+go mod init clickhouse-golang-example
+```
+
+<div id="copy-in-some-sample-code">
+  ### 예제 코드를 복사합니다
+</div>
+
+이 코드를 `clickhouse-golang-example` 디렉터리에 `main.go`라는 이름으로 복사하세요.
+
+```go title=main.go
+package main
+
+import (
+    "context"
+    "crypto/tls"
+    "fmt"
+    "log"
+
+    "github.com/ClickHouse/clickhouse-go/v2"
+    "github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+)
+
+func main() {
+    conn, err := connect()
+    if err != nil {
+        panic(err)
+    }
+
+    ctx := context.Background()
+    rows, err := conn.Query(ctx, "SELECT name, toString(uuid) as uuid_str FROM system.tables LIMIT 5")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer rows.Close()
+
+    for rows.Next() {
+        var name, uuid string
+        if err := rows.Scan(&name, &uuid); err != nil {
+            log.Fatal(err)
+        }
+        log.Printf("name: %s, uuid: %s", name, uuid)
+    }
+
+    // 참고: rows.Err() 확인을 생략하지 마십시오
+    if err := rows.Err(); err != nil {
+        log.Fatal(err)
+    }
+
+}
+
+func connect() (driver.Conn, error) {
+    var (
+        ctx       = context.Background()
+        conn, err = clickhouse.Open(&clickhouse.Options{
+            Addr: []string{"<CLICKHOUSE_SECURE_NATIVE_HOSTNAME>:9440"},
+            Auth: clickhouse.Auth{
+                Database: "default",
+                Username: "default",
+                Password: "<DEFAULT_USER_PASSWORD>",
+            },
+            ClientInfo: clickhouse.ClientInfo{
+                Products: []struct {
+                    Name    string
+                    Version string
+                }{
+                    {Name: "an-example-go-client", Version: "0.1"},
+                },
+            },
+            Debugf: func(format string, v ...interface{}) {
+                fmt.Printf(format, v)
+            },
+            TLS: &tls.Config{
+                InsecureSkipVerify: true,
+            },
+        })
+    )
+
+    if err != nil {
+        return nil, err
+    }
+
+    if err := conn.Ping(ctx); err != nil {
+        if exception, ok := err.(*clickhouse.Exception); ok {
+            fmt.Printf("Exception [%d] %s \n%s\n", exception.Code, exception.Message, exception.StackTrace)
+        }
+        return nil, err
+    }
+    return conn, nil
+}
+```
+
+<div id="run-go-mod-tidy">
+  ### go mod tidy를 실행하세요
+</div>
+
+```bash
+go mod tidy
+```
+
+<div id="set-your-connection-details">
+  ### 연결 정보 설정
+</div>
+
+앞에서 연결 정보를 확인했습니다. 이제 `main.go`의 `connect()` 함수에서 이를 설정합니다:
+
+```go highlight={5,7-9}
+func connect() (driver.Conn, error) {
+  var (
+    ctx       = context.Background()
+    conn, err = clickhouse.Open(&clickhouse.Options{
+      Addr: []string{"<CLICKHOUSE_SECURE_NATIVE_HOSTNAME>:9440"},
+      Auth: clickhouse.Auth{
+        Database: "default",
+        Username: "default",
+        Password: "<DEFAULT_USER_PASSWORD>",
+      },
+```
+
+<div id="run-the-example">
+  ### 예시 실행하기
+</div>
+
+```bash
+go run .
+```
+
+```response
+2023/03/06 14:18:33 name: COLUMNS, uuid: 00000000-0000-0000-0000-000000000000
+2023/03/06 14:18:33 name: SCHEMATA, uuid: 00000000-0000-0000-0000-000000000000
+2023/03/06 14:18:33 name: TABLES, uuid: 00000000-0000-0000-0000-000000000000
+2023/03/06 14:18:33 name: VIEWS, uuid: 00000000-0000-0000-0000-000000000000
+2023/03/06 14:18:33 name: hourly_data, uuid: a4e36bd4-1e82-45b3-be77-74a0fe65c52b
+```
+
+<div id="learn-more">
+  ### 자세히 알아보기
+</div>
+
+이 범주의 나머지 문서에서는 ClickHouse Go client에 대한 자세한 내용을 다룹니다.
+
+<div id="overview">
+  ## 개요
+</div>
+
+ClickHouse는 2개의 공식 Go 클라이언트를 지원합니다. 이 클라이언트들은 상호 보완적이며, 의도적으로 서로 다른 사용 사례를 지원합니다.
+
+* [clickhouse-go](https://github.com/ClickHouse/clickhouse-go) - Go 표준 `database/sql` 인터페이스 또는 네이티브 ClickHouse API를 지원하는 고수준 클라이언트입니다.
+* [ch-go](https://github.com/ClickHouse/ch-go) - 저수준 클라이언트입니다. 네이티브 인터페이스만 지원합니다.
+
+clickhouse-go는 고수준 인터페이스를 제공하므로, 사용자는 행 지향 방식과 데이터 타입에 비교적 관대한 배칭을 사용해 데이터를 쿼리하고 삽입할 수 있습니다. 잠재적인 정밀도 손실만 없다면 값은 자동으로 변환됩니다. 반면 ch-go는 타입 엄격성과 더 복잡한 사용 방식이 요구되는 대신, 낮은 CPU 및 메모리 오버헤드로 빠른 데이터 블록 스트리밍을 제공하는 최적화된 컬럼 지향 인터페이스를 제공합니다.
+
+버전 2.3부터 clickhouse-go는 인코딩, 디코딩, 압축과 같은 저수준 기능에 ch-go를 활용합니다. 두 클라이언트 모두 최적의 성능을 위해 인코딩에 Native 형식을 사용하며, 네이티브 ClickHouse 프로토콜을 통해 통신할 수 있습니다. 또한 clickhouse-go는 트래픽을 프록시하거나 로드 밸런싱해야 하는 경우를 위해 HTTP도 전송 메커니즘으로 지원합니다.
+
+<div id="four-ways-to-connect">
+  ### 연결하는 네 가지 방법
+</div>
+
+clickhouse-go는 서로 독립적인 두 가지를 선택할 수 있게 합니다. **어떤 API**를 사용할지, 그리고 **어떤 전송 방식**을 사용할지입니다. 이 둘을 조합하면 네 가지 연결 모드가 됩니다.
+
+|                                                | **TCP** (네이티브 프로토콜, 포트 9000/9440) |     **HTTP** (포트 8123/8443)    |
+| :--------------------------------------------- | :-------------------------------: | :----------------------------: |
+| **ClickHouse API** (`clickhouse.Open`)         |          기본값 — 가장 뛰어난 성능          | `Protocol: clickhouse.HTTP` 설정 |
+| **`database/sql` API** (`OpenDB` / `sql.Open`) |      `clickhouse://host:9000`     |       `http://host:8123`       |
+
+**API 선택:** 최대 성능과 전체 기능 세트(진행 콜백, 컬럼 단위 삽입, 다양한 유형 지원)가 필요하면 ClickHouse API를 선택하십시오. ORM이나 표준 Go 데이터베이스 인터페이스를 기대하는 도구와 통합해야 한다면 `database/sql`을 선택하십시오.
+
+**전송 방식 선택:** TCP가 더 빠르며 기본값입니다. 인프라 요구 사항에 따라 HTTP로 전환하십시오. 예를 들어 HTTP 로드 밸런서나 프록시를 통해 연결할 때, 또는 임시 테이블(temporary table)을 사용하는 세션이나 추가 압축 알고리즘(`gzip`, `deflate`, `br`) 같은 HTTP 전용 기능이 필요할 때입니다.
+
+두 API 모두 전송 방식과 관계없이 네이티브 바이너리 인코딩을 사용하므로, HTTP에는 직렬화 오버헤드가 없습니다.
+
+|                    | Native 형식 | TCP 전송 | HTTP 전송 | 대량 쓰기 | 구조체 마샬링 |  압축 | 진행 콜백 |
+| :----------------: | :-------: | :----: | :-----: | :---: | :-----: | :-: | :---: |
+|   ClickHouse API   |     ✅     |    ✅   |    ✅    |   ✅   |    ✅    |  ✅  |   ✅   |
+| `database/sql` API |     ✅     |    ✅   |    ✅    |   ✅   |         |  ✅  |       |
+
+<div id="choosing-a-client">
+  ### 클라이언트 선택
+</div>
+
+클라이언트 라이브러리 선택은 사용 패턴과 최적의 성능 요구 사항에 따라 달라집니다. 초당 수백만 건의 삽입이 필요한 삽입 중심 사용 사례에는 저수준 클라이언트인 [ch-go](https://github.com/ClickHouse/ch-go) 사용을 권장합니다. 이 클라이언트는 ClickHouse Native 형식에 맞게 데이터를 행 지향 포맷에서 컬럼으로 피벗할 때 수반되는 오버헤드를 피할 수 있습니다. 또한 사용을 단순화하기 위해 리플렉션이나 `interface{}` (`any`) 타입도 사용하지 않습니다.
+
+집계 중심의 쿼리 워크로드나 처리량이 더 낮은 삽입 워크로드에는 [clickhouse-go](https://github.com/ClickHouse/clickhouse-go)가 익숙한 `database/sql` 인터페이스와 더 직관적인 행 중심 의미 체계를 제공합니다. 또한 전송 프로토콜로 HTTP를 선택적으로 사용할 수 있으며, helper 함수를 활용해 행과 structs 간 마샬링도 수행할 수 있습니다.
+
+|               | Native 형식 | 네이티브 프로토콜 | HTTP 프로토콜 | 행 지향 API | 컬럼 지향 API | 타입 유연성 |  압축 | 쿼리 플레이스홀더 |
+| :-----------: | :-------: | :-------: | :-------: | :------: | :-------: | :----: | :-: | :-------: |
+| clickhouse-go |     ✅     |     ✅     |     ✅     |     ✅    |     ✅     |    ✅   |  ✅  |     ✅     |
+|     ch-go     |     ✅     |     ✅     |           |          |     ✅     |        |  ✅  |           |
+
+<div id="installation">
+  ## 설치
+</div>
+
+드라이버 v1은 더 이상 사용이 권장되지 않으며, 기능 업데이트나 새로운 ClickHouse 타입 지원도 제공되지 않습니다. 성능이 더 뛰어난 v2로 마이그레이션하는 것이 좋습니다.
+
+클라이언트 2.x 버전을 설치하려면 `go.mod` 파일에 패키지를 추가하세요:
+
+`require github.com/ClickHouse/clickhouse-go/v2 main`
+
+또는 리포지토리를 클론하세요:
+
+```bash
+git clone --branch v2 https://github.com/clickhouse/clickhouse-go.git $GOPATH/src/github
+```
+
+다른 버전을 설치하려면 해당 경로 또는 브랜치 이름을 수정하십시오.
+
+```bash
+mkdir my-clickhouse-app && cd my-clickhouse-app
+
+cat > go.mod <<-END
+  module my-clickhouse-app
+
+  go 1.21
+
+  require github.com/ClickHouse/clickhouse-go/v2 main
+END
+
+cat > main.go <<-END
+  package main
+
+  import (
+    "fmt"
+    "github.com/ClickHouse/clickhouse-go/v2"
+  )
+
+  func main() {
+   conn, _ := clickhouse.Open(&clickhouse.Options{Addr: []string{"127.0.0.1:9000"}})
+    v, _ := conn.ServerVersion()
+    fmt.Println(v.String())
+  }
+END
+
+go mod tidy
+go run main.go
+
+```
+
+<div id="versioning">
+  ### 버전 관리
+</div>
+
+이 클라이언트는 ClickHouse와는 별도로 릴리스됩니다. 2.x는 현재 개발 중인 최신 메이저 버전입니다. 2.x의 모든 버전은 서로 호환되어야 합니다.
+
+<div id="clickhouse-compatibility">
+  #### ClickHouse 호환성
+</div>
+
+클라이언트는 다음을 지원합니다.
+
+* [여기](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md)에 명시된, 현재 지원 중인 모든 ClickHouse 버전. ClickHouse 버전에 대한 지원이 종료되면 해당 버전은 이후 클라이언트 릴리스에서 더 이상 적극적으로 테스트되지 않습니다.
+* 클라이언트 릴리스 날짜를 기준으로 지난 2년간의 모든 ClickHouse 버전. 단, 적극적으로 테스트되는 것은 LTS 버전에 한합니다.
+
+<div id="golang-compatibility">
+  #### Golang 호환성
+</div>
+
+|       클라이언트 버전       |  Golang 버전 |
+| :------------------: | :--------: |
+|  =&gt; 2.0 &lt;= 2.2 | 1.17, 1.18 |
+| &gt;= 2.3, &lt; 2.41 |    1.18+   |
+|      &gt;= 2.41      |    1.21+   |
+|      &gt;= 2.43      |    1.24+   |
+
+<div id="best-practices">
+  ## 모범 사례
+</div>
+
+* 가능하면 ClickHouse API를 사용하십시오. 특히 기본 타입에서는 더욱 그렇습니다. 이렇게 하면 과도한 리플렉션과 간접 참조를 피할 수 있습니다.
+* 대규모 데이터셋을 읽는 경우 [`BlockBufferSize`](/ko/integrations/language-clients/go/configuration#connection-settings) 조정을 고려하십시오. 이렇게 하면 메모리 사용량은 늘어나지만, 행을 순회하는 동안 더 많은 블록을 병렬로 디코딩할 수 있습니다. 기본값 2는 보수적인 설정으로, 메모리 오버헤드를 최소화합니다. 값을 높이면 메모리에 더 많은 블록이 유지됩니다. 쿼리마다 블록 크기가 달라질 수 있으므로 테스트가 필요합니다. 따라서 [쿼리 수준](/ko/integrations/language-clients/go/clickhouse-api#using-context)에서 Context를 통해 설정할 수 있습니다.
+* 데이터를 삽입할 때는 타입을 구체적으로 지정하십시오. 클라이언트는 유연하게 동작하도록 설계되어 있어, 예를 들어 문자열을 UUID나 IP로 파싱할 수 있지만, 이를 위해서는 데이터 검증이 필요하며 삽입 시점에 비용이 발생합니다.
+* 가능하면 컬럼 지향 삽입을 사용하십시오. 이 경우에도 타입을 명확히 지정하여 클라이언트가 값을 변환할 필요가 없도록 하십시오.
+* 최적의 삽입 성능을 위해 ClickHouse [권장 사항](/ko/reference/statements/insert-into#performance-considerations)을 따르십시오.
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+* [구성](/ko/integrations/language-clients/go/configuration) — 연결 설정, TLS, 인증, 로깅, 압축
+* [ClickHouse API](/ko/integrations/language-clients/go/clickhouse-api) — 쿼리와 삽입을 위한 네이티브 Go API
+* [데이터베이스/SQL API](/ko/integrations/language-clients/go/database-sql-api) — 표준 `database/sql` 인터페이스
+* [데이터 타입](/ko/integrations/language-clients/go/data-types) — Go 타입 매핑과 복합 타입 지원

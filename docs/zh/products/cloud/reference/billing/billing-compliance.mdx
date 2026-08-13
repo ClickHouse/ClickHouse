@@ -1,0 +1,153 @@
+---
+sidebarTitle: 'ClickHouse Cloud 计费合规'
+slug: /manage/clickhouse-cloud-billing-compliance
+title: 'ClickHouse Cloud 计费合规'
+description: '介绍 ClickHouse Cloud 计费合规的页面'
+keywords: ['计费合规', '按使用量付费']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="billing-compliance">
+  ## 计费合规
+</div>
+
+要使用 ClickHouse Cloud，您的组织必须配置一个有效且处于启用状态的计费方式。30 天试用结束后，或试用额度用尽后 (以先发生者为准) ，您可以选择以下计费方式以继续使用 ClickHouse Cloud：
+
+| 计费选项                                                  | 说明                      |
+| ----------------------------------------------------- | ----------------------- |
+| [Direct PAYG](#direct-payg)                           | 为您的组织添加有效的信用卡，以启用按使用量付费 |
+| [Marketplace 按使用量付费](#cloud-marketplace-payg)           | 通过受支持的云市场提供商设置按使用量付费订阅  |
+| [Committed spend contract](#committed-spend-contract) | 直接签订承诺消费合同，或通过受支持的云市场签订 |
+
+如果试用结束时您的组织尚未配置任何计费选项，
+所有服务都将停止。如果两周后仍未配置
+计费方式，所有数据都将被删除。
+
+ClickHouse 在组织层级对服务计费。如果我们无法继续使用您当前的
+计费方式处理付款，您必须将其更新为上述三种选项之一，
+以避免服务中断。有关根据您所选计费方式需满足的付款合规要求的更多
+详细信息，请参见下文。
+
+<div id="direct-payg">
+  ### 使用信用卡进行按使用量付费计费
+</div>
+
+您可以使用信用卡按月后付费，支付 ClickHouse Cloud 的使用费用。
+要添加信用卡，请按照这些[说明](#add-credit-card)操作。
+
+ClickHouse 的月度计费周期从您为组织选择层级
+(基础版、Scale 或 Enterprise) ，并在该组织内创建第一个服务之日开始。
+
+已登记的信用卡通常会在每月计费周期结束时扣款，
+但如果周期内应付金额达到 1,000 美元，
+则会提前扣款 (有关支付阈值的更多信息，请参见[此处](/zh/products/cloud/reference/billing/payment-thresholds)) 。
+
+已登记的信用卡必须有效、未过期，并且有足够的可用额度
+来支付您的发票总额。如果由于任何原因我们无法扣除
+全部应付金额，将立即适用以下未付发票限制：
+
+* 每个副本最多只能扩容到 120 GiB
+* 如果服务已停止，您将无法重新启动
+* 您无法启动或创建新服务
+
+我们将尝试使用该组织已配置的计费
+方式处理付款，最长持续 30 天。如果 14 天后付款仍未成功，组织内的所有服务
+都将被停止。如果在这 30 天期限结束时仍未收到付款，且我们未批准延期，所有与您的组织相关的数据和
+服务都将被删除。
+
+<div id="cloud-marketplace-payg">
+  ### 云市场按使用量付费计费
+</div>
+
+也可以将按使用量付费计费配置为通过我们支持的某个云市场
+(AWS、GCP 或 Azure) 向组织收费。要注册市场按使用量付费计费，请按照这些
+[说明](#marketplace-payg)操作。
+
+与 Direct PAYG 计费类似，您在 ClickHouse
+使用市场 PAYG 的月度计费周期，从选择组织层级 (基础版、Scale
+或 Enterprise) 并在该
+组织内创建第一个服务之日开始。
+
+不过，由于云市场的要求，我们会按小时
+上报您的按使用量付费费用。系统将根据您与该市场协议中的条款向您
+开具发票——通常
+采用自然月计费周期。
+
+例如，如果您在 1 月 18 日创建第一个组织服务，那么您在 ClickHouse Cloud 中的
+第一个计费用量周期将从 1 月 18 日持续到
+2 月 17 日当天结束。不过，您可能会在
+2 月初收到来自云市场的第一张发票。
+
+但是，如果您的 PAYG 市场订阅被取消，或未能自动
+续订，计费将回退到该
+组织已登记的信用卡 (如果有) 。如需添加信用卡，请[联系支持团队](/zh/resources/about/support)
+寻求帮助。如果未提供有效的信用卡，则会适用上文针对 [Direct PAYG](#direct-payg) 所述的相同未付发票
+限制——这
+包括服务暂停以及最终数据删除。
+
+<div id="committed-spend-contract">
+  ### 承诺合同计费
+</div>
+
+您可以通过承诺合同为您的组织购买积分，方式如下：
+
+1. 联系销售直接购买积分，付款方式包括 ACH
+   或电汇。付款条款将在适用的订单中规定。
+2. 联系销售，通过我们支持的某个
+   云市场 (AWS、GCP 或 Azure) 上的订阅购买积分。接受专属报价后，相关费用将报送至相应
+   市场，后续也将按照报价条款处理；但向您开具发票时，将依据您与该
+   市场之间协议的条款执行。若要通过市场付款，请按照这些
+   [说明](#marketplace-payg)操作。
+
+应用到组织的积分 (例如通过承诺合同或退款获得的积分)
+可在订单或已接受的专属报价中指定的期限内供您使用。
+积分自授予之日起开始消耗，并按计费周期计算，
+该计费周期以首次选择组织层级 (基础版、Scale 或
+Enterprise) 的日期为准。
+
+如果某个组织**未**采用云市场承诺合同，并且积分已用尽
+或已过期，则该组织将自动切换到
+按使用量付费 (PAYG) 计费。在这种情况下，如果组织留存了
+信用卡信息，我们将尝试使用该信用卡处理付款。
+
+如果某个组织**正在**采用云市场承诺合同，并且积分已用尽，
+它也会自动通过同一
+市场切换到 PAYG 计费，直至该订阅剩余期限结束。不过，如果该订阅
+未续订并到期，那么如果组织留存了
+信用卡信息，我们随后将尝试使用该信用卡处理付款。
+
+无论是哪种情况，如果我们无法向已配置的信用卡扣费，
+上文针对使用信用卡进行[按使用量付费 (PAYG) ](#direct-payg)
+计费所述的未付发票限制都将适用——其中包括暂停服务。
+有关从承诺合同转为 PAYG 计费的更多详情，请参阅我们的
+[条款与条件](https://clickhouse.com/legal/agreements/terms-of-service)中的“Overconsumption”部分。
+不过，对于承诺合同客户，我们会在启动数据删除之前
+就任何未付发票与您联系。数据不会在经过任何一段时间后自动
+删除。
+
+如果您想在现有积分到期或
+耗尽之前添加更多积分，请[联系我们](https://clickhouse.com/company/contact)。
+
+<div id="add-credit-card">
+  ### 如何使用信用卡支付
+</div>
+
+前往 ClickHouse Cloud UI 的账单部分，然后点击“Add Credit Card”按钮 (如下所示) 完成设置。如有任何问题，请[联系支持团队](/zh/resources/about/support)获取帮助。
+
+<Image img="/images/cloud/manage/billing_compliance.webp" size="md" alt="如何添加信用卡" />
+
+<div id="marketplace-payg">
+  ## 如何通过市场付款
+</div>
+
+如果您想通过我们支持的某个市场 (AWS、GCP 或 Azure) 付款，
+可以参考[此处](/zh/products/cloud/reference/billing/marketplace/overview)的步骤说明。
+如果您有任何与云市场计费相关的问题，请直接联系云服务提供商。
+
+用于解决市场计费问题的实用链接：
+
+* [AWS 计费常见问题](https://aws.amazon.com/aws-cost-management/aws-billing/faqs/)
+* [GCP 计费常见问题](https://cloud.google.com/compute/docs/billing-questions)
+* [Azure 计费常见问题](https://learn.microsoft.com/en-us/azure/cost-management-billing/cost-management-billing-faq)

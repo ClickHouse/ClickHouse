@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -212,7 +213,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_elems = this->data(place);
         auto & rhs_elems = this->data(rhs);
@@ -342,12 +343,17 @@ public:
                 readBinaryLittleEndian(element, buf);
         }
 
-        if constexpr (Trait::last)
+        if constexpr (Trait::last || Trait::sampler == Sampler::RNG)
+        {
             readBinaryLittleEndian(this->data(place).total_values, buf);
+            if (static_cast<UInt64>(this->data(place).value.size()) != std::min<UInt64>(max_elems, this->data(place).total_values))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Malformed {} state: {} stored elements, but total_values = {} with max_elems = {}",
+                    getName(), this->data(place).value.size(), this->data(place).total_values, max_elems);
+        }
 
         if constexpr (Trait::sampler == Sampler::RNG)
         {
-            readBinaryLittleEndian(this->data(place).total_values, buf);
             std::string rng_string;
             readStringBinary(rng_string, buf);
             ReadBufferFromString rng_buf(rng_string);
@@ -572,7 +578,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_elems = data(place);
         auto & rhs_elems = data(rhs);
@@ -691,12 +697,17 @@ public:
                 value[i] = Node::read(buf, arena);
         }
 
-        if constexpr (Trait::last)
+        if constexpr (Trait::last || Trait::sampler == Sampler::RNG)
+        {
             readBinaryLittleEndian(data(place).total_values, buf);
+            if (static_cast<UInt64>(data(place).value.size()) != std::min<UInt64>(max_elems, data(place).total_values))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Malformed {} state: {} stored elements, but total_values = {} with max_elems = {}",
+                    getName(), data(place).value.size(), data(place).total_values, max_elems);
+        }
 
         if constexpr (Trait::sampler == Sampler::RNG)
         {
-            readBinaryLittleEndian(data(place).total_values, buf);
             std::string rng_string;
             readStringBinary(rng_string, buf);
             ReadBufferFromString rng_buf(rng_string);

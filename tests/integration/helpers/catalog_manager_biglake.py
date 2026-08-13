@@ -5,13 +5,24 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import gcsfs
 import pyarrow as pa
+import requests
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2.credentials import Credentials as GoogleOAuth2Credentials
 from pyiceberg.catalog import load_catalog
+from pyiceberg.exceptions import (
+    AuthorizationExpiredError,
+    CommitStateUnknownException,
+    NoSuchNamespaceError,
+    NoSuchTableError,
+    OAuthError,
+    ServerError,
+    ServiceUnavailableError,
+    UnauthorizedError,
+)
 
 from helpers.catalog_manager import CatalogManager, arrow_to_iceberg_schema
 
@@ -20,6 +31,41 @@ log = logging.getLogger(__name__)
 BIGLAKE_CATALOG_URL = "https://biglake.googleapis.com/iceberg/v1beta/restcatalog"
 GOOGLE_OAUTH2_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 NAMESPACE_PREFIX = "ch_e2e_bl_"
+
+# Auth-expiry errors are non-retryable everywhere in this manager: self.catalog
+# is a RestCatalog built once in __init__ with a static bearer token, and
+# _refresh_token_if_needed refreshes only the separate GoogleOAuth2Credentials
+# object, never the token baked into the catalog. Retrying any catalog call after
+# the token expires just resends the same stale token until the deadline.
+# Rebuilding self.catalog mid-retry is unsafe because callers share it
+# concurrently (test_many_tables_pagination fans catalog calls across a 10-thread
+# pool), so auth expiry is always left to propagate. These mirror pyiceberg's own
+# retry-then-reraise set for its REST client (AuthorizationExpiredError,
+# UnauthorizedError; OAuthError covers the token-endpoint path).
+_AUTH_EXPIRY_ERRORS = (
+    AuthorizationExpiredError,
+    OAuthError,
+    UnauthorizedError,
+)
+
+# REST/network errors that create_table retries; pyiceberg's REST client
+# retries only auth errors (stop_after_attempt(2)), so these otherwise escape.
+# Auth-expiry errors are deliberately excluded (see _AUTH_EXPIRY_ERRORS).
+_TRANSIENT_CREATE_ERRORS = (
+    ServerError,
+    ServiceUnavailableError,
+    CommitStateUnknownException,
+    requests.exceptions.RequestException,
+)
+
+# The only errors that PROVE a table is gone. wait_for_table_gone treats these
+# as confirmation; any other error from load_table (5xx, connection reset, the
+# transient class create_table retries) is NOT proof of removal and must be
+# retried under the deadline rather than accepted as "gone".
+_TABLE_GONE_ERRORS = (
+    NoSuchTableError,
+    NoSuchNamespaceError,
+)
 
 
 @dataclass
@@ -278,34 +324,122 @@ class BigLakeCatalogManager(CatalogManager):
         return f"e2e_biglake_{uuid.uuid4().hex[:8]}"
 
     def create_table(
-        self, data: pa.Table, table_name: Optional[str] = None
+        self,
+        data: pa.Table,
+        table_name: Optional[str] = None,
+        timeout: float = 120,
+        poll_interval: float = 5,
     ) -> str:
-        if table_name is None:
-            table_name = f"tbl_{uuid.uuid4().hex[:8]}"
-
+        # pyiceberg's REST client only retries auth errors and gives up
+        # after 2 attempts, so a single transient BigLake blip (5xx,
+        # connection reset, commit-state-unknown) otherwise propagates and
+        # fails the shared module-scoped fixture. Retry create+append under a
+        # wall-clock deadline, mirroring wait_for_table_ready/resolve_table_name.
+        #
+        # Retrying is safe ONLY for the auto-generated-name path: each attempt
+        # uses a fresh unique name, so a partial prior attempt (table created,
+        # append failed) cannot resurface as TableAlreadyExistsError nor
+        # duplicate rows -- creation stays exactly-once. When a caller supplies
+        # a fixed table_name (test_many_tables_pagination asserts the exact
+        # short names it passed appear in SHOW TABLES, so we cannot substitute a
+        # UUID), a fresh name is not an option, so that path makes a single
+        # attempt and lets a transient error propagate as before.
         namespace = self._session_namespace
-        table_identifier = f"{namespace}.{table_name}"
-        table_location = (
-            f"{self._warehouse_path()}/{namespace}/{table_name}"
-        )
-
-        self._refresh_token_if_needed()
-
         iceberg_schema = arrow_to_iceberg_schema(data)
-        table = self.catalog.create_table(
-            identifier=table_identifier,
-            schema=iceberg_schema,
-            location=table_location,
-        )
-        table.append(data)
 
-        log.info(
-            "Created BigLake Iceberg table '%s' at %s",
-            table_identifier,
-            table_location,
-        )
-        self._tables_created.append(table_name)
-        return table_name
+        if table_name is not None:
+            self._refresh_token_if_needed()
+            try:
+                table = self.catalog.create_table(
+                    identifier=f"{namespace}.{table_name}",
+                    schema=iceberg_schema,
+                    location=f"{self._warehouse_path()}/{namespace}/{table_name}",
+                )
+                table.append(data)
+            except Exception:
+                # create may have committed before a later step (append, or a
+                # CommitStateUnknownException from create itself) threw.
+                # Reconcile the partial attempt so no table is leaked untracked,
+                # then propagate: named creates are single-attempt, so the
+                # caller-supplied identifier is never created twice.
+                self._drop_failed_attempt(table_name)
+                raise
+            log.info("Created BigLake Iceberg table '%s.%s'", namespace, table_name)
+            self._tables_created.append(table_name)
+            return table_name
+
+        deadline = time.monotonic() + timeout
+        attempt = 0
+        while True:
+            attempt += 1
+            candidate = f"tbl_{uuid.uuid4().hex[:8]}"
+            table_identifier = f"{namespace}.{candidate}"
+            table_location = f"{self._warehouse_path()}/{namespace}/{candidate}"
+
+            self._refresh_token_if_needed()
+            try:
+                table = self.catalog.create_table(
+                    identifier=table_identifier,
+                    schema=iceberg_schema,
+                    location=table_location,
+                )
+                table.append(data)
+            except Exception as exc:
+                # ANY failure here may have left a committed table behind
+                # (create succeeds before append can throw; create itself can
+                # raise CommitStateUnknownException after committing). Reconcile
+                # the partial attempt FIRST -- for every exception, transient or
+                # not -- so nothing is leaked untracked, then decide retry vs
+                # re-raise.
+                self._drop_failed_attempt(candidate)
+                if not isinstance(exc, _TRANSIENT_CREATE_ERRORS):
+                    raise
+                if time.monotonic() >= deadline:
+                    raise
+                log.warning(
+                    "create_table('%s') transient failure (attempt %d), "
+                    "retrying: %s",
+                    table_identifier,
+                    attempt,
+                    exc,
+                )
+                time.sleep(poll_interval)
+                continue
+
+            log.info(
+                "Created BigLake Iceberg table '%s' at %s (attempt %d)",
+                table_identifier,
+                table_location,
+                attempt,
+            )
+            self._tables_created.append(candidate)
+            return candidate
+
+    def _drop_failed_attempt(self, table_name: str) -> None:
+        """Reconcile a table left behind by a failed create attempt.
+
+        Drops it if possible; otherwise registers it in `_tables_created` so the
+        end-of-session `cleanup_all` sweep reaps it. Never leaves a possibly-live
+        table untracked. `NoSuchTableError` is treated as unconfirmed (not proof
+        the table is gone): BigLake indexes asynchronously, so a just-committed
+        table can be invisible to `drop_table` here and only surface later. The
+        only case that skips registration is a clearly successful drop.
+        """
+        identifier = f"{self._session_namespace}.{table_name}"
+        try:
+            self._refresh_token_if_needed()
+            self.catalog.drop_table(identifier)
+            log.info("Dropped partially-created table '%s'", identifier)
+            return
+        except Exception as exc:
+            log.warning(
+                "Could not confirm drop of partially-created table '%s' (%s); "
+                "tracking it for end-of-session cleanup",
+                identifier,
+                exc,
+            )
+        if table_name not in self._tables_created:
+            self._tables_created.append(table_name)
 
     def wait_for_table_ready(
         self,
@@ -341,6 +475,11 @@ class BigLakeCatalogManager(CatalogManager):
                     attempt,
                     listed_names,
                 )
+            except _AUTH_EXPIRY_ERRORS:
+                # Non-retryable (see _AUTH_EXPIRY_ERRORS): the stale static token
+                # cannot be refreshed in place, so polling would only burn the
+                # deadline. Propagate, mirroring create_table/cleanup_all.
+                raise
             except Exception as exc:
                 log.warning(
                     "load_table('%s') failed (attempt %d): %s",
@@ -362,7 +501,17 @@ class BigLakeCatalogManager(CatalogManager):
         timeout: float = 120,
         poll_interval: float = 5,
     ) -> None:
-        """Poll until load_table raises, confirming the table is gone."""
+        """Poll until load_table proves the table is gone.
+
+        Only a genuine not-found (see `_TABLE_GONE_ERRORS`) confirms removal.
+        A transient load failure -- the same 5xx / connection-reset class
+        create_table retries -- does NOT prove the table is gone, so it is
+        retried under the deadline like a still-visible table rather than
+        accepted as success. Otherwise a teardown-time blip on load_table would
+        let test_table_disappears_after_cleanup pass with a live table behind.
+        Auth-expiry is non-retryable (see `_AUTH_EXPIRY_ERRORS`) and likewise is
+        not proof of removal, so it propagates.
+        """
         namespace = self._session_namespace
         identifier = f"{namespace}.{table_name}"
         deadline = time.monotonic() + timeout
@@ -377,13 +526,30 @@ class BigLakeCatalogManager(CatalogManager):
                     identifier,
                     attempt,
                 )
-            except Exception:
+            except _AUTH_EXPIRY_ERRORS:
+                # Must precede the handlers below: an expired static token is
+                # non-retryable (see _AUTH_EXPIRY_ERRORS) and, crucially, is NOT
+                # proof the table is gone. Treating it as "gone" here would be a
+                # false-positive cleanup, so propagate instead of returning.
+                raise
+            except _TABLE_GONE_ERRORS:
                 log.info(
                     "Table '%s' gone after %d attempts",
                     identifier,
                     attempt,
                 )
                 return
+            except Exception as exc:
+                # A transient load failure (5xx, connection reset) is NOT proof
+                # the table is gone. Retry under the deadline instead of
+                # accepting a false-positive cleanup.
+                log.warning(
+                    "load_table('%s') failed transiently (attempt %d): %s; "
+                    "retrying, not treating as gone",
+                    identifier,
+                    attempt,
+                    exc,
+                )
 
             if time.monotonic() >= deadline:
                 raise TimeoutError(
@@ -399,6 +565,11 @@ class BigLakeCatalogManager(CatalogManager):
         try:
             self.catalog.drop_table(table_identifier)
             log.info("Dropped table '%s'", table_identifier)
+            # Confirmed gone -- stop tracking so the end-of-session cleanup_all
+            # sweep does not re-drop (and pointlessly retry) an already-removed
+            # table. A failed drop leaves it tracked so cleanup_all retries it.
+            if table_name in self._tables_created:
+                self._tables_created.remove(table_name)
         except Exception as exc:
             log.warning("Cleanup of table '%s' failed: %s", table_identifier, exc)
 
@@ -411,21 +582,124 @@ class BigLakeCatalogManager(CatalogManager):
         except Exception as exc:
             log.warning("GCS cleanup of '%s' failed: %s", gcs_path, exc)
 
-    def cleanup_all(self) -> None:
+    def _drop_confirmed(self, table_name: str) -> bool:
+        """Attempt to drop a tracked table; return True ONLY on a confirmed
+        drop (the catalog `drop_table` call returned without raising).
+
+        Any raised drop returns False so the caller retains the name and
+        retries. We deliberately do NOT treat a raised drop as "gone" -- a
+        transient 5xx/network error obviously leaves the table live, and a
+        `NoSuchTableError` does NOT prove removal either: under BigLake
+        async-index lag a just-committed table can be briefly invisible to
+        `drop_table` and surface later. Forgetting a name on that ambiguous
+        signal is exactly the leak this path guards against, so "confirmed
+        gone" means only a `drop_table` that returned.
+
+        Auth-expiry errors (see `_AUTH_EXPIRY_ERRORS`) are re-raised, not
+        retained-and-retried: `self.catalog` holds a static token that
+        `_refresh_token_if_needed` cannot push into it, so every retry resends
+        the same stale token. `cleanup_all` turns that into a fail-fast exit.
+        """
+        identifier = f"{self._session_namespace}.{table_name}"
         self._refresh_token_if_needed()
-        for table_name in self._tables_created:
-            table_identifier = f"{self._session_namespace}.{table_name}"
-            try:
-                self.catalog.drop_table(table_identifier)
-            except Exception:
-                pass
-        self._tables_created.clear()
+        try:
+            self.catalog.drop_table(identifier)
+            log.info("Dropped tracked table '%s'", identifier)
+            return True
+        except _AUTH_EXPIRY_ERRORS:
+            raise
+        except Exception as drop_exc:
+            log.warning(
+                "Drop of tracked table '%s' unconfirmed (%s); retaining",
+                identifier,
+                drop_exc,
+            )
+            return False
+
+    def cleanup_all(self, timeout: float = 120, poll_interval: float = 5) -> None:
+        """Drop every tracked table, then the session namespace and its GCS
+        storage.
+
+        A tracked table is forgotten ONLY once its drop is confirmed (see
+        `_drop_confirmed`). Drops that raise -- transient 5xx/network errors,
+        or BigLake async-index lag that makes a just-committed table briefly
+        invisible to `drop_table` -- are retried under a bounded wall-clock
+        deadline rather than being cleared unconditionally, so a teardown-time
+        blip cannot lose track of a still-live table. Any tables still
+        unconfirmed after the deadline are retained (never cleared blindly) and
+        logged; the final namespace drop + GCS prefix delete are the storage
+        backstop for anything the per-table catalog drop could not reach.
+
+        Auth-expiry is the one non-retryable case: since `self.catalog` cannot
+        pick up a refreshed token, retrying drops would only burn the deadline
+        and still leave the tables behind. On auth expiry we stop immediately
+        (no deadline loop), keep the tables tracked, run the GCS storage
+        backstop -- which builds a fresh gcsfs client from the refreshed
+        credential and so still reaps the data files -- and then propagate,
+        mirroring create_table.
+        """
+        deadline = time.monotonic() + timeout
+        pending = list(self._tables_created)
+        try:
+            while pending:
+                pending = [n for n in pending if not self._drop_confirmed(n)]
+                if not pending or time.monotonic() >= deadline:
+                    break
+                time.sleep(poll_interval)
+        except _AUTH_EXPIRY_ERRORS as auth_exc:
+            # Fail fast: the static catalog token has expired and cannot be
+            # refreshed in place, so every further drop would resend it. Keep
+            # the tables tracked (never cleared) and fall back to the GCS
+            # storage sweep, which uses the refreshed credential, then
+            # propagate so the teardown failure is visible.
+            log.warning(
+                "cleanup_all: auth expired mid-cleanup (%s); skipping catalog "
+                "drops and relying on the GCS storage sweep for tracked "
+                "table(s): %s",
+                auth_exc,
+                pending,
+            )
+            self._delete_gcs_prefix(
+                self._namespace_gcs_path(self._session_namespace)
+            )
+            raise
+        if pending:
+            log.warning(
+                "cleanup_all: %d tracked table(s) could not be confirmed "
+                "dropped after %ds; relying on the namespace/storage sweep: %s",
+                len(pending),
+                timeout,
+                pending,
+            )
+        # Keep only the names we could NOT confirm gone -- never clear blindly.
+        self._tables_created = pending
 
         self._refresh_token_if_needed()
         try:
             self.catalog.drop_namespace(self._session_namespace)
             log.info("Dropped session namespace '%s'", self._session_namespace)
+        except _AUTH_EXPIRY_ERRORS as auth_exc:
+            # Same non-retryable contract as the per-table loop: the static
+            # catalog token cannot be refreshed in place. When pending is empty
+            # (the common case, since cleanup_table untracks confirmed drops) or
+            # the token expires only after the loop, this final drop_namespace
+            # is the one remaining catalog call, and swallowing an auth failure
+            # here would silently leave the namespace behind. Run the GCS
+            # storage backstop (fresh gcsfs from the refreshed credential), then
+            # propagate so the teardown failure is visible.
+            log.warning(
+                "cleanup_all: auth expired dropping namespace '%s' (%s); "
+                "relying on the GCS storage sweep",
+                self._session_namespace,
+                auth_exc,
+            )
+            self._delete_gcs_prefix(
+                self._namespace_gcs_path(self._session_namespace)
+            )
+            raise
         except Exception:
+            # Best-effort: the namespace may be non-empty (retained tables) or
+            # already gone. The GCS prefix delete below is the storage backstop.
             pass
 
         self._delete_gcs_prefix(self._namespace_gcs_path(self._session_namespace))

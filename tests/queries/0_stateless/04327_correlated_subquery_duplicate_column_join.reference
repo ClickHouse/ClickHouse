@@ -1,0 +1,11 @@
+-- minimal
+-- left
+0	0	0
+1	1	1
+2	2	2
+-- right
+0	0	0
+1	1	1
+2	2	2
+-- fuzzer query runs
+-- ok

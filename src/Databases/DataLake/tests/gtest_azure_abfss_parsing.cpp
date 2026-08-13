@@ -240,4 +240,48 @@ TEST_F(AzureAbfssParsingTest, TableMetadataGetLocationWithEndpointVirtualHostedD
     EXPECT_EQ(location, "https://my.dotted.bucket.s3.mycompany.com/path/to/table/");
 }
 
+TEST_F(AzureAbfssParsingTest, TableMetadataAbfssEndpointAlreadyContainsContainerDefault)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("abfss://mycontainer@mystorageaccount.dfs.core.windows.net/mycontainer/actual/path");
+    metadata.setEndpoint("https://mystorageaccount.dfs.core.windows.net/mycontainer");
+
+    EXPECT_EQ(
+        metadata.getLocation(),
+        "https://mystorageaccount.dfs.core.windows.net/mycontainer/mycontainer/actual/path/");
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataAbfssEndpointAlreadyContainsContainerForceAddBucket)
+{
+    TableMetadata metadata;
+    metadata.withLocation().withForceAddBucket();
+    metadata.setLocation("abfss://mycontainer@mystorageaccount.dfs.core.windows.net/mycontainer/actual/path");
+    metadata.setEndpoint("https://mystorageaccount.dfs.core.windows.net/mycontainer");
+
+    EXPECT_EQ(
+        metadata.getLocation(),
+        "https://mystorageaccount.dfs.core.windows.net/mycontainer/mycontainer/mycontainer/actual/path/");
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataS3EndpointAlreadyEndsWithBucketDefault)
+{
+    TableMetadata metadata;
+    metadata.withLocation();
+    metadata.setLocation("s3://warehouse-rest/data/testns/testtable");
+    metadata.setEndpoint("http://minio:9000/warehouse-rest");
+
+    EXPECT_EQ(metadata.getLocation(), "http://minio:9000/warehouse-rest/data/testns/testtable/");
+}
+
+TEST_F(AzureAbfssParsingTest, TableMetadataS3EndpointAlreadyEndsWithBucketForceAddBucket)
+{
+    TableMetadata metadata;
+    metadata.withLocation().withForceAddBucket();
+    metadata.setLocation("s3://warehouse-rest/data/testns/testtable");
+    metadata.setEndpoint("http://minio:9000/warehouse-rest");
+
+    EXPECT_EQ(metadata.getLocation(), "http://minio:9000/warehouse-rest/warehouse-rest/data/testns/testtable/");
+}
+
 }

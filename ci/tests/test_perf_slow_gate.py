@@ -1,8 +1,10 @@
+import inspect
 import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
+import ci.jobs.performance_tests as performance_tests
 from ci.jobs.performance_tests import (
     INSERT_HISTORICAL_DATA,
     SLOWER_QUERIES_FAIL_THRESHOLD,
@@ -45,10 +47,28 @@ def test_slower_count_above_threshold_fails():
         assert too_many_slow(f"1 faster, {n} slower") is True, n
 
 
+def test_cidb_inserts_are_best_effort_not_asserted():
+    # CIDB metrics/history inserts are a reporting side-effect, NOT the perf
+    # verdict. A bare `assert cidb.is_ready()` turns a transient LogCluster
+    # (play.clickhouse.com) timeout into a whole-job exit-1, which is exactly
+    # what failed arm_release/master_head shards (PR #107236). Every is_ready()
+    # call site in the perf job must use the graceful skip-and-warn guard
+    # (`if not cidb.is_ready(): ... return True`) instead of asserting.
+    source = inspect.getsource(performance_tests.main)
+    assert "assert cidb.is_ready()" not in source, (
+        "A bare `assert cidb.is_ready()` re-introduces the whole-job failure on "
+        "transient CIDB timeouts. Use `if not cidb.is_ready(): ... return True`."
+    )
+    # All four is_ready() call sites must be guarded; none asserted.
+    assert source.count("cidb.is_ready()") == 4
+    assert source.count("if not cidb.is_ready():") == 4
+
+
 if __name__ == "__main__":
     test_historical_insert_parses_threshold_columns()
     test_gate_threshold_value()
     test_no_slower_queries_does_not_fail()
     test_slower_count_at_or_below_threshold_does_not_fail()
     test_slower_count_above_threshold_fails()
+    test_cidb_inserts_are_best_effort_not_asserted()
     print("All perf slow-gate tests passed.")

@@ -1,0 +1,256 @@
+---
+description: 'Guía para usar y configurar la funcionalidad de caché de consultas en ClickHouse'
+sidebarTitle: 'Caché de consultas'
+slug: /operations/query-cache
+title: 'Caché de consultas'
+doc_type: 'guide'
+---
+
+La caché de consultas permite calcular las consultas `SELECT` una sola vez y servir las ejecuciones posteriores de la misma consulta directamente desde la caché.
+Según el tipo de consultas, esto puede reducir drásticamente la latencia y el consumo de recursos del servidor de ClickHouse.
+
+<div id="background-design-and-limitations">
+  ## Antecedentes, diseño y limitaciones
+</div>
+
+Las cachés de consultas, por lo general, pueden considerarse transaccionalmente coherentes o incoherentes.
+
+* En las cachés transaccionalmente coherentes, la base de datos invalida (descarta) los resultados de consultas almacenados en caché si el resultado de la consulta `SELECT` cambia
+  o puede cambiar. En ClickHouse, las operaciones que modifican los datos incluyen inserciones/actualizaciones/eliminaciones en/de tablas o merges
+  de colapso. El almacenamiento en caché transaccionalmente coherente es especialmente adecuado para bases de datos OLTP, por ejemplo
+  [MySQL](https://dev.mysql.com/doc/refman/5.6/en/query-cache.html) (que eliminó la caché de consultas a partir de la versión 8.0) y
+  [Oracle](https://docs.oracle.com/database/121/TGDBA/tune_result_cache.htm).
+* En las cachés transaccionalmente incoherentes, se aceptan pequeñas imprecisiones en los resultados de las consultas bajo el supuesto de que a todas las entradas de caché se les
+  asigna un período de validez tras el cual expiran (p. ej., 1 minuto) y de que los datos subyacentes cambian muy poco durante ese período.
+  En general, este enfoque es más adecuado para bases de datos OLAP. Como ejemplo de un caso en el que el almacenamiento en caché transaccionalmente incoherente es suficiente,
+  considere un informe horario de ventas en una herramienta de informes al que acceden simultáneamente varios usuarios. Por lo general, los datos de ventas cambian
+  lo bastante despacio como para que la base de datos solo necesite calcular el informe una vez (representado por la primera consulta `SELECT`). Las consultas posteriores pueden
+  servirse directamente desde la caché de consultas. En este ejemplo, un período de validez razonable podría ser de 30 min.
+
+Tradicionalmente, el almacenamiento en caché transaccionalmente incoherente lo proporcionan herramientas cliente o paquetes proxy (p. ej.,
+[chproxy](https://www.chproxy.org/configuration/caching/)) que interactúan con la base de datos. Como resultado, la misma lógica de almacenamiento en caché y la misma
+configuración suelen duplicarse. Con la caché de consultas de ClickHouse, la lógica de almacenamiento en caché pasa al lado del servidor. Esto reduce el esfuerzo de mantenimiento
+y evita redundancias.
+
+<div id="configuration-settings-and-usage">
+  ## Ajustes de configuración y uso
+</div>
+
+<Note>
+  En ClickHouse Cloud, debe usar [ajustes a nivel de consulta](/es/concepts/features/configuration/settings/settings-query-level) para editar los ajustes de la caché de consultas. Actualmente no se admite la edición de [ajustes a nivel de configuración](/es/concepts/features/configuration/server-config/configuration-files).
+</Note>
+
+<Note>
+  [clickhouse-local](/es/concepts/features/tools-and-utilities/clickhouse-local) ejecuta una sola consulta a la vez. Como no tiene sentido almacenar en caché los resultados de las consultas, la caché de resultados de consultas está deshabilitada en clickhouse-local.
+</Note>
+
+El ajuste [use&#95;query&#95;cache](/es/reference/settings/session-settings#use_query_cache) puede utilizarse para controlar si una consulta específica o todas las consultas de la
+sesión actual deben usar la caché de consultas. Por ejemplo, la primera ejecución de la consulta
+
+```sql
+SELECT some_expensive_calculation(column_1, column_2)
+FROM table
+SETTINGS use_query_cache = true;
+```
+
+almacenará el resultado de la consulta en la caché de consultas. Las ejecuciones posteriores de la misma consulta (también con el parámetro `use_query_cache = true`) leerán
+el resultado calculado de la caché y lo devolverán inmediatamente.
+
+<Note>
+  Establecer `use_query_cache` y todos los demás ajustes relacionados con la caché de consultas solo surte efecto en sentencias `SELECT` independientes. En particular,
+  los resultados de `SELECT` sobre vistas creadas mediante `CREATE VIEW AS SELECT [...] SETTINGS use_query_cache = true` no se almacenan en la caché, a menos que la sentencia `SELECT`
+  se ejecute con `SETTINGS use_query_cache = true`.
+</Note>
+
+La forma en que se utiliza la caché puede configurarse con más detalle mediante los ajustes [enable&#95;writes&#95;to&#95;query&#95;cache](/es/reference/settings/session-settings#enable_writes_to_query_cache)
+y [enable&#95;reads&#95;from&#95;query&#95;cache](/es/reference/settings/session-settings#enable_reads_from_query_cache) (ambos con el valor predeterminado `true`). El primero
+controla si los resultados de las consultas se almacenan en la caché, mientras que el segundo determina si la base de datos debe intentar recuperar resultados de consultas
+desde la caché. Por ejemplo, la siguiente consulta usará la caché solo de forma pasiva; es decir, intentará leer de ella, pero no almacenar su
+resultado en ella:
+
+```sql
+SELECT some_expensive_calculation(column_1, column_2)
+FROM table
+SETTINGS use_query_cache = true, enable_writes_to_query_cache = false;
+```
+
+Para tener el máximo control, por lo general se recomienda proporcionar los ajustes `use_query_cache`, `enable_writes_to_query_cache` y
+`enable_reads_from_query_cache` solo en consultas específicas. También es posible habilitar el almacenamiento en caché a nivel de usuario o de perfil (por ejemplo, mediante `SET
+use_query_cache = true`), pero debe tenerse en cuenta que, en ese caso, todas las consultas `SELECT` pueden devolver resultados almacenados en caché.
+
+La caché de consultas puede vaciarse mediante la sentencia `SYSTEM CLEAR QUERY CACHE`. El contenido de la caché de consultas se muestra en la tabla del sistema
+[system.query&#95;cache](/es/reference/system-tables/query_cache). El número de aciertos y fallos de la caché de consultas desde el inicio de la base de datos se muestra como eventos
+&quot;QueryCacheHits&quot; y &quot;QueryCacheMisses&quot; en la tabla del sistema [system.events](/es/reference/system-tables/events). Ambos contadores solo se actualizan para
+consultas `SELECT` que se ejecutan con el ajuste `use_query_cache = true`; las demás consultas no afectan a &quot;QueryCacheMisses&quot;. El campo `query_cache_usage`
+en la tabla del sistema [system.query&#95;log](/es/reference/system-tables/query_log) muestra, para cada consulta ejecutada, si el resultado de la consulta se escribió en
+o se leyó de la caché de consultas. Las métricas `QueryCacheEntries` y `QueryCacheBytes` en la tabla del sistema
+[system.metrics](/es/reference/system-tables/metrics) muestran cuántas entradas / bytes contiene actualmente la caché de consultas.
+
+La caché de consultas existe una vez por cada proceso del servidor ClickHouse. Sin embargo, de forma predeterminada, los resultados almacenados en caché no se comparten entre usuarios. Esto puede
+cambiarse (véase más abajo), pero no se recomienda hacerlo por motivos de seguridad.
+
+Los resultados de las consultas se referencian en la caché de consultas mediante el [árbol de sintaxis abstracta (AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) de
+la consulta. Esto significa que el almacenamiento en caché no distingue entre mayúsculas y minúsculas; por ejemplo, `SELECT 1` y `select 1` se tratan como la misma consulta. Para
+que la coincidencia sea más natural, todos los ajustes a nivel de consulta relacionados con la caché de consultas y el [formato de salida](/es/reference/settings/formats))
+se eliminan del AST.
+
+Si la consulta se aborta debido a una excepción o a una cancelación del usuario, no se escribe ninguna entrada en la caché de consultas.
+
+El tamaño de la caché de consultas en bytes, el número máximo de entradas de caché y el tamaño máximo de cada entrada de caché (en bytes y en
+registros) pueden configurarse mediante distintas [opciones de configuración del servidor](/es/reference/settings/server-settings/settings#query_cache).
+
+```xml
+<query_cache>
+    <max_size_in_bytes>1073741824</max_size_in_bytes>
+    <max_entries>1024</max_entries>
+    <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
+    <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
+</query_cache>
+```
+
+También es posible limitar el uso de la caché por usuario mediante [perfiles de configuración](/es/concepts/features/configuration/settings/settings-profiles) y [restricciones de
+configuración](/es/concepts/features/configuration/settings/constraints-on-settings). Más concretamente, puede restringir la cantidad máxima de memoria (en bytes) que un usuario puede
+asignar a la caché de consultas y el número máximo de resultados de consultas almacenados. Para ello, primero defina las configuraciones
+[query&#95;cache&#95;max&#95;size&#95;in&#95;bytes](/es/reference/settings/session-settings#query_cache_max_size_in_bytes) y
+[query&#95;cache&#95;max&#95;entries](/es/reference/settings/session-settings#query_cache_max_entries) en un perfil de usuario de `users.xml` y, a continuación, establezca ambas configuraciones como
+solo lectura:
+
+```xml
+<profiles>
+    <default>
+        <!-- The maximum cache size in bytes for user/profile 'default' -->
+        <query_cache_max_size_in_bytes>10000</query_cache_max_size_in_bytes>
+        <!-- The maximum number of SELECT query results stored in the cache for user/profile 'default' -->
+        <query_cache_max_entries>100</query_cache_max_entries>
+        <!-- Make both settings read-only so the user cannot change them -->
+        <constraints>
+            <query_cache_max_size_in_bytes>
+                <readonly/>
+            </query_cache_max_size_in_bytes>
+            <query_cache_max_entries>
+                <readonly/>
+            <query_cache_max_entries>
+        </constraints>
+    </default>
+</profiles>
+```
+
+Para definir cuánto tiempo debe ejecutarse como mínimo una consulta para que su resultado pueda almacenarse en caché, puede usar la opción de configuración
+[query&#95;cache&#95;min&#95;query&#95;duration](/es/reference/settings/session-settings#query_cache_min_query_duration). Por ejemplo, el resultado de la consulta
+
+```sql
+SELECT some_expensive_calculation(column_1, column_2)
+FROM table
+SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
+```
+
+solo se almacena en caché si la consulta tarda más de 5 segundos en ejecutarse. También es posible especificar cuántas veces debe ejecutarse una consulta antes de que su resultado se
+almacene en caché; para ello, use la configuración [query&#95;cache&#95;min&#95;query&#95;runs](/es/reference/settings/session-settings#query_cache_min_query_runs).
+
+Las entradas de la caché de consultas se vuelven obsoletas tras un determinado período de tiempo (time-to-live). De forma predeterminada, este período es de 60 segundos, pero se puede especificar un
+valor diferente a nivel de sesión, perfil o consulta mediante la configuración [query&#95;cache&#95;ttl](/es/reference/settings/session-settings#query_cache_ttl). La caché de
+consultas expulsa las entradas &quot;de forma diferida&quot;, es decir, cuando una entrada se vuelve obsoleta, no se elimina inmediatamente de la caché. En su lugar, cuando se va a insertar una nueva entrada
+en la caché de consultas, la base de datos comprueba si la caché tiene suficiente espacio libre para ella. Si no es
+así, la base de datos intenta eliminar todas las entradas obsoletas. Si la caché sigue sin tener suficiente espacio libre, la nueva entrada no se inserta.
+
+Si la consulta se ejecuta a través de HTTP, ClickHouse establece los encabezados `Age` y `Expires` con la antigüedad (en segundos) y la marca temporal de expiración de la
+entrada almacenada en caché.
+
+Las entradas de la caché de consultas se comprimen de forma predeterminada. Esto reduce el consumo total de memoria a costa de escrituras en / lecturas desde
+la caché de consultas más lentas. Para deshabilitar la compresión, use la configuración [query&#95;cache&#95;compress&#95;entries](/es/reference/settings/session-settings#query_cache_compress_entries).
+
+A veces resulta útil mantener en caché varios resultados de la misma consulta. Esto se puede lograr mediante la configuración
+[query&#95;cache&#95;tag](/es/reference/settings/session-settings#query_cache_tag), que actúa como una etiqueta (o espacio de nombres) para las entradas de la caché de consultas. La caché de consultas
+considera distintos los resultados de la misma consulta con diferentes etiquetas.
+
+Ejemplo para crear tres entradas diferentes en la caché de consultas para la misma consulta:
+
+```sql
+SELECT 1 SETTINGS use_query_cache = true; -- query_cache_tag is implicitly '' (empty string)
+SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 1';
+SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 2';
+```
+
+Para eliminar solo las entradas con la etiqueta `tag` de la caché de consultas, puede usar la sentencia `SYSTEM CLEAR QUERY CACHE TAG 'tag'`.
+
+<div id="subquery-caching">
+  ## Almacenamiento en caché de subconsultas
+</div>
+
+De forma predeterminada, `use_query_cache` en la consulta externa no se aplica a las subconsultas. Esto significa que cada subconsulta debe habilitar explícitamente el almacenamiento en caché:
+
+```sql
+SELECT *
+FROM (SELECT number FROM system.numbers LIMIT 1000 SETTINGS use_query_cache = true)
+WHERE number > 500;
+```
+
+En este ejemplo, solo se almacena en caché el resultado de la subconsulta interna. La consulta externa no se almacena en caché.
+
+Para habilitar el almacenamiento en caché de todas las subconsultas de una sola vez, use la opción `query_cache_for_subqueries`:
+
+```sql
+SELECT *
+FROM (SELECT number FROM system.numbers LIMIT 1000)
+WHERE number > 500
+SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
+```
+
+Para desactivar explícitamente el almacenamiento en caché de una subconsulta específica mientras la propagación por lotes está habilitada, establezca `use_query_cache = false` en esa subconsulta:
+
+```sql
+SELECT *
+FROM (SELECT number FROM system.numbers LIMIT 1000 SETTINGS use_query_cache = false)
+WHERE number > 500
+SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
+```
+
+Las entradas de caché de subconsultas son visibles en [system.query&#95;cache](/es/reference/system-tables/query_cache) con `is_subquery = 1`. La opción `query_cache_ttl` también se aplica a las entradas de caché de subconsultas y puede configurarse para cada subconsulta.
+
+ClickHouse lee los datos de las tablas en bloques de [max&#95;block&#95;size](/es/reference/settings/session-settings#max_block_size) filas. Debido al filtrado, la agregación,
+etc., los bloques de resultados suelen ser mucho más pequeños que &#39;max&#95;block&#95;size&#39;, aunque también hay casos en los que son mucho mayores. La opción
+[query&#95;cache&#95;squash&#95;partial&#95;results](/es/reference/settings/session-settings#query_cache_squash_partial_results) (habilitada de forma predeterminada) controla si los bloques de resultados
+se compactan (si son muy pequeños) o se dividen (si son grandes) en bloques de tamaño &#39;max&#95;block&#95;size&#39; antes de insertarlos en la caché de resultados de consultas.
+Esto reduce el rendimiento de las escrituras en la caché de consultas, pero mejora la tasa de compresión de las entradas de caché y proporciona una
+granularidad de bloque más natural cuando más adelante los resultados de las consultas se sirven desde la caché de consultas.
+
+Como resultado, la caché de consultas almacena varios bloques de
+resultados parciales para cada consulta. Aunque este comportamiento es una buena configuración predeterminada, puede desactivarse con la opción
+[query&#95;cache&#95;squash&#95;partial&#95;results](/es/reference/settings/session-settings#query_cache_squash_partial_results).
+
+Además, los resultados de consultas con funciones no deterministas no se almacenan en caché de forma predeterminada. Estas funciones incluyen:
+
+* funciones para acceder a diccionarios: [`dictGet()`](/es/reference/functions/regular-functions/ext-dict-functions), etc.
+* [funciones definidas por el usuario](/es/reference/statements/create/function) sin la etiqueta `<deterministic>true</deterministic>` en su definición
+  XML,
+* funciones que devuelven la fecha o la hora actuales: [`now()`](/es/reference/functions/regular-functions/date-time-functions#now),
+  [`today()`](/es/reference/functions/regular-functions/date-time-functions#today),
+  [`yesterday()`](/es/reference/functions/regular-functions/date-time-functions#yesterday), etc.,
+* funciones que devuelven valores aleatorios: [`randomString()`](/es/reference/functions/regular-functions/random-functions#randomString),
+  [`fuzzBits()`](/es/reference/functions/regular-functions/random-functions#fuzzBits), etc.,
+* funciones cuyo resultado depende del tamaño, el orden o los fragmentos internos usados para el procesamiento de consultas:
+  [`nowInBlock()`](/es/reference/functions/regular-functions/date-time-functions#nowInBlock), etc.,
+  [`rowNumberInBlock()`](/es/reference/functions/regular-functions/other-functions#rowNumberInBlock),
+  [`runningDifference()`](/es/reference/functions/regular-functions/other-functions#runningDifference),
+  [`blockSize()`](/es/reference/functions/regular-functions/other-functions#blockSize), etc.,
+* funciones que dependen del entorno: [`currentUser()`](/es/reference/functions/regular-functions/other-functions#currentUser),
+  [`queryID()`](/es/reference/functions/regular-functions/other-functions#queryID),
+  [`getMacro()`](/es/reference/functions/regular-functions/other-functions#getMacro), etc.
+
+Para forzar de todos modos el almacenamiento en caché de los resultados de consultas con funciones no deterministas, use la opción
+[query&#95;cache&#95;nondeterministic&#95;function&#95;handling](/es/reference/settings/session-settings#query_cache_nondeterministic_function_handling).
+
+Los resultados de consultas que involucran tablas del sistema (p. ej., [system.processes](/es/reference/system-tables/processes)&#96; o
+[information&#95;schema.tables](/es/reference/system-tables/information_schema)) no se almacenan en caché de forma predeterminada. Para forzar de todos modos el almacenamiento en caché de los resultados de consultas con
+tablas del sistema, use la opción [query&#95;cache&#95;system&#95;table&#95;handling](/es/reference/settings/session-settings#query_cache_system_table_handling).
+
+Por último, las entradas de la caché de consultas no se comparten entre usuarios por motivos de seguridad. Por ejemplo, el usuario A no debe poder eludir una
+ROW POLICY en una tabla ejecutando la misma consulta que otro usuario B para quien no existe esa política. Sin embargo, si es necesario, las entradas de caché pueden
+marcarse como accesibles para otros usuarios (es decir, compartidas) mediante la opción
+[query&#95;cache&#95;share&#95;between&#95;users](/es/reference/settings/session-settings#query_cache_share_between_users).
+
+<div id="related-content">
+  ## Contenido relacionado
+</div>
+
+* Blog: [Presentamos la caché de consultas de ClickHouse](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)

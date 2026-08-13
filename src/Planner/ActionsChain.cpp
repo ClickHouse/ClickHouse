@@ -3,6 +3,7 @@
 #include <boost/algorithm/string/join.hpp>
 
 #include <Columns/ColumnConst.h>
+#include <Core/Field.h>
 #include <DataTypes/IDataType.h>
 
 #include <IO/WriteBuffer.h>
@@ -11,6 +12,58 @@
 
 namespace DB
 {
+
+namespace
+{
+
+/// Compares two constant values exactly like `Field::operator==`, except the aggregate-state
+/// leaves, which are compared by both the aggregate function name and the serialized state
+/// instead of throwing when the names differ. The plain `Field` comparison of aggregate states
+/// throws for different function names even when the types compare equal (they may be compatible
+/// only by state representation, e.g. `quantileState` vs `quantilesState(0.9)`). Such states must
+/// compare as different here: this comparison drives the replacement of a COLUMN output with the
+/// same-name INPUT, and substituting a state of a different aggregate function would change the
+/// downstream behavior (e.g. the result of `finalizeAggregation`), unlike in the block structure
+/// checks where a relaxed comparison is a pure validation.
+bool sameConstantValue(const Field & lhs, const Field & rhs);
+
+bool sameConstantValueVectors(const FieldVector & lhs, const FieldVector & rhs)
+{
+    if (lhs.size() != rhs.size())
+        return false;
+
+    for (size_t i = 0; i < lhs.size(); ++i)
+        if (!sameConstantValue(lhs[i], rhs[i]))
+            return false;
+
+    return true;
+}
+
+bool sameConstantValue(const Field & lhs, const Field & rhs)
+{
+    if (lhs.getType() != rhs.getType())
+        return false;
+
+    switch (lhs.getType())
+    {
+        case Field::Types::AggregateFunctionState:
+        {
+            const auto & lhs_state = lhs.safeGet<AggregateFunctionStateData>();
+            const auto & rhs_state = rhs.safeGet<AggregateFunctionStateData>();
+            return lhs_state.name == rhs_state.name && lhs_state.data == rhs_state.data;
+        }
+        case Field::Types::Array:
+            return sameConstantValueVectors(lhs.safeGet<Array>(), rhs.safeGet<Array>());
+        case Field::Types::Tuple:
+            return sameConstantValueVectors(lhs.safeGet<Tuple>(), rhs.safeGet<Tuple>());
+        case Field::Types::Map:
+            return sameConstantValueVectors(lhs.safeGet<Map>(), rhs.safeGet<Map>());
+        default:
+            return lhs == rhs;
+    }
+}
+
+}
 
 ActionsChainStep::ActionsChainStep(ActionsAndProjectInputsFlagPtr actions_,
     bool use_actions_nodes_as_output_columns_,
@@ -22,7 +75,7 @@ ActionsChainStep::ActionsChainStep(ActionsAndProjectInputsFlagPtr actions_,
     initialize();
 }
 
-void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input_columns)
+void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input_columns, const NameSet & source_const_inputs)
 {
     child_required_output_columns_names.clear();
 
@@ -86,8 +139,9 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
                         && input_node->result_type
                         && output_node->result_type
                         && input_node->result_type->equals(*output_node->result_type)
-                        && assert_cast<const ColumnConst &>(*input_node->column).getField()
-                            == assert_cast<const ColumnConst &>(*output_node->column).getField();
+                        && sameConstantValue(
+                            assert_cast<const ColumnConst &>(*input_node->column).getField(),
+                            assert_cast<const ColumnConst &>(*output_node->column).getField());
 
                     if (same_const_value)
                         output_node = input_node;
@@ -96,7 +150,16 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
         }
     }
 
-    actions->dag.removeUnusedActions();
+    /// Keep source-constant INPUTs (named in source_const_inputs) that folding would re-create as
+    /// free-standing COLUMN outputs and orphan: they must keep flowing as required inputs so the
+    /// column stays in the stream. Literals/aliases are excluded, so they stay foldable.
+    std::unordered_set<const ActionsDAG::Node *> used_inputs;
+    if (!source_const_inputs.empty())
+        for (const auto * input : actions->dag.getInputs())
+            if (input->column && source_const_inputs.contains(input->result_name))
+                used_inputs.insert(input);
+
+    actions->dag.removeUnusedActions(used_inputs);
     actions->project_input = true;
     initialize();
 }
@@ -139,27 +202,34 @@ void ActionsChainStep::initialize()
     {
         std::unordered_set<std::string_view> available_output_columns_names;
 
+        for (const auto * output_node : actions->dag.getOutputs())
+        {
+            if (!available_output_columns_names.insert(output_node->result_name).second)
+                continue;
+
+            available_output_columns.emplace_back(output_node->column, output_node->result_type, output_node->result_name);
+        }
+
         for (const auto & node : actions->dag.getNodes())
         {
-            if (available_output_columns_names.contains(node.result_name))
+            if (!available_output_columns_names.insert(node.result_name).second)
                 continue;
 
             available_output_columns.emplace_back(node.column, node.result_type, node.result_name);
-            available_output_columns_names.insert(node.result_name);
         }
     }
 
     available_output_columns.insert(available_output_columns.end(), additional_output_columns.begin(), additional_output_columns.end());
 }
 
-void ActionsChain::finalize()
+void ActionsChain::finalize(const NameSet & source_const_inputs)
 {
     if (steps.empty())
         return;
 
     /// For last chain step there are no columns required in child nodes
     NameSet empty_child_input_columns;
-    steps.back().get()->finalizeInputAndOutputColumns(empty_child_input_columns);
+    steps.back().get()->finalizeInputAndOutputColumns(empty_child_input_columns, source_const_inputs);
 
     Int64 steps_last_index = steps.size() - 1;
     for (Int64 i = steps_last_index; i >= 1; --i)
@@ -167,7 +237,7 @@ void ActionsChain::finalize()
         auto & current_step = steps[i];
         auto & previous_step = steps[i - 1];
 
-        previous_step->finalizeInputAndOutputColumns(current_step->getInputColumnNames());
+        previous_step->finalizeInputAndOutputColumns(current_step->getInputColumnNames(), source_const_inputs);
     }
 }
 

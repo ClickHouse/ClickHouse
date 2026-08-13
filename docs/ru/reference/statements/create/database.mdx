@@ -1,0 +1,101 @@
+---
+description: 'Документация по команде CREATE DATABASE'
+sidebarTitle: 'DATABASE'
+slug: /sql-reference/statements/create/database
+title: 'CREATE DATABASE'
+doc_type: 'reference'
+---
+
+Создаёт новую базу данных.
+
+```sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [SETTINGS ...] [COMMENT 'Comment']
+```
+
+<div id="clauses">
+  ## Секции
+</div>
+
+<div id="if-not-exists">
+  ### IF NOT EXISTS
+</div>
+
+Если база данных `db_name` уже существует, ClickHouse не создает новую базу данных и:
+
+* Не генерирует исключение, если указана эта конструкция.
+* Генерирует исключение, если эта конструкция не указана.
+
+<div id="on-cluster">
+  ### ON CLUSTER
+</div>
+
+ClickHouse создает базу данных `db_name` на всех серверах указанного кластера. Подробности см. в статье [Distributed DDL](/ru/reference/statements/distributed-ddl).
+
+<div id="engine">
+  ### ДВИЖОК
+</div>
+
+По умолчанию ClickHouse использует собственный движок базы данных [Atomic](/ru/reference/engines/database-engines/atomic). Также существуют [MySQL](/ru/reference/engines/database-engines/mysql), [PostgresSQL](/ru/reference/engines/database-engines/postgresql), [MaterializedPostgreSQL](/ru/reference/engines/database-engines/materialized-postgresql), [Replicated](/ru/reference/engines/database-engines/replicated), [SQLite](/ru/reference/engines/database-engines/sqlite).
+
+<div id="comment">
+  ### COMMENT
+</div>
+
+Вы можете добавить комментарий к базе данных при её создании.
+
+Комментарии поддерживаются всеми движками баз данных.
+
+**Синтаксис**
+
+```sql
+CREATE DATABASE db_name ENGINE = engine(...) COMMENT 'Comment'
+```
+
+**Пример**
+
+```sql title="Query"
+CREATE DATABASE db_comment ENGINE = Memory COMMENT 'The temporary database';
+SELECT name, comment FROM system.databases WHERE name = 'db_comment';
+```
+
+```text title="Response"
+┌─name───────┬─comment────────────────┐
+│ db_comment │ The temporary database │
+└────────────┴────────────────────────┘
+```
+
+<div id="settings">
+  ### Настройки
+</div>
+
+<div id="lazy-load-tables">
+  #### lazy_load_tables
+</div>
+
+Когда этот параметр включен, таблицы не загружаются полностью при запуске базы данных. Вместо этого для каждой таблицы создается облегченный прокси, а реальный движок таблицы материализуется при первом обращении. Это сокращает время запуска и использование памяти для баз данных с большим количеством таблиц, когда активно запрашивается только часть из них.
+
+```sql
+CREATE DATABASE db_name ENGINE = Atomic SETTINGS lazy_load_tables = 1;
+```
+
+Применяется к движкам баз данных, которые хранят метаданные таблиц на диске (например, `Atomic`, `Ordinary`). Представления, materialized view, словари и таблицы, использующие table function, всегда загружаются сразу независимо от этого параметра.
+
+**Когда использовать:** Этот параметр полезен для баз данных с большим количеством таблиц (сотнями или тысячами), когда активно запрашивается только часть из них. Он уменьшает время запуска сервера и использование памяти, откладывая создание объектов движка таблицы, сканирование частей данных и инициализацию фоновых потоков до первого обращения.
+
+**Влияние на `system.tables`:**
+
+* Пока к таблице не обратились, `system.tables` показывает её движок как `TableProxy`. После первого обращения отображается реальное имя движка (например, `MergeTree`).
+* Столбцы вроде `total_rows` и `total_bytes` возвращают `NULL` для незагруженных таблиц, поскольку реальное хранилище ещё не создано.
+
+**Взаимодействие с DDL-операциями:**
+
+* `SELECT`, `INSERT`, `ALTER`, `DROP` прозрачно инициируют загрузку реального движка таблицы при первом использовании.
+* `RENAME TABLE` работает без инициирования загрузки.
+* После загрузки таблица остаётся загруженной на всё время работы серверного процесса.
+
+**Ограничения:**
+
+* Инструменты мониторинга, которые полагаются на метаданные `system.tables` (например, `total_rows`, `engine`), могут показывать неполную информацию для незагруженных таблиц.
+* Первый запрос к незагруженной таблице приводит к разовым затратам на загрузку (разбор сохранённого оператора `CREATE TABLE` и инициализацию движка).
+
+Значение по умолчанию: `0` (отключено).

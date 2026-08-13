@@ -1,0 +1,190 @@
+---
+slug: /changelogs/24.5
+title: 'changelog da v24.5 para Cloud'
+description: 'Changelog do lançamento rápido da v24.5'
+keywords: ['changelog', 'cloud']
+sidebarTitle: '24.5'
+doc_type: 'changelog'
+---
+
+Alterações relevantes para os serviços do ClickHouse Cloud com base no lançamento v24.5.
+
+<div id="breaking-changes">
+  ## Mudanças incompatíveis
+</div>
+
+* Altere o nome da coluna de duration&#95;ms para duration&#95;microseconds na tabela system.zookeeper para refletir que a duração está em microssegundos. [#60774](https://github.com/ClickHouse/ClickHouse/pull/60774) (Duc Canh Le).
+
+* Não permitir definir max&#95;parallel&#95;replicas como 0, pois isso não faz sentido. Defini-lo como 0 pode levar a erros lógicos inesperados. Fecha #60140. [#61201](https://github.com/ClickHouse/ClickHouse/pull/61201) (Kruglov Pavel).
+
+* Remova o suporte à consulta INSERT WATCH (parte da funcionalidade experimental LIVE VIEW). [#62382](https://github.com/ClickHouse/ClickHouse/pull/62382) (Alexey Milovidov).
+
+* O uso das funções neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue e runningDifference foi descontinuado (porque pode induzir a erros). Em vez disso, devem ser usadas funções de janela adequadas. Para reativá-las, defina allow&#95;deprecated&#95;error&#95;prone&#95;window&#95;functions=1. [#63132](https://github.com/ClickHouse/ClickHouse/pull/63132) (Nikita Taranov).
+
+<div id="backward-incompatible-changes">
+  ## Alterações incompatíveis com versões anteriores
+</div>
+
+* Na nova versão do ClickHouse, as funções geoDistance, greatCircleDistance e greatCircleAngle usarão o tipo de dados de ponto flutuante de dupla precisão de 64 bits para cálculos internos e como tipo de retorno se todos os argumentos forem Float64. Isso corrige #58476. Nas versões anteriores, a função sempre usava Float32. Você pode voltar ao comportamento antigo definindo geo&#95;distance&#95;returns&#95;float64&#95;on&#95;float64&#95;arguments como false ou definindo compatibility como 24.2 ou anterior. [#61848](https://github.com/ClickHouse/ClickHouse/pull/61848) (Alexey Milovidov).
+
+* As consultas a system.columns funcionarão mais rapidamente se houver um grande número de colunas, mas muitos bancos de dados ou tabelas não tiverem SHOW TABLES concedido. Observe que, em versões anteriores, se você conceder SHOW COLUMNS a colunas individuais sem conceder SHOW TABLES às tabelas correspondentes, a tabela system.columns mostrará essas colunas, mas, na nova versão, ela ignorará a tabela por completo. Foram removidas as mensagens de log de trace &quot;Access granted&quot; e &quot;Access denied&quot;, que deixavam as consultas mais lentas. [#63439](https://github.com/ClickHouse/ClickHouse/pull/63439) (Alexey Milovidov).
+
+* Corrigida falha em largestTriangleThreeBuckets. Isso altera o comportamento dessa função e faz com que ela ignore NaNs na série fornecida. Assim, o conjunto de resultados pode diferir das versões anteriores. [#62646](https://github.com/ClickHouse/ClickHouse/pull/62646) (Raúl Marín).
+
+<div id="new-features">
+  ## Novos recursos
+</div>
+
+* O novo analisador está habilitado por padrão nos novos serviços.
+
+* Permite remover várias tabelas ao mesmo tempo, como em drop table a,b,c;. [#58705](https://github.com/ClickHouse/ClickHouse/pull/58705) (zhongyuankai).
+
+* Agora o usuário pode analisar CRLF no formato TSV usando a configuração input&#95;format&#95;tsv&#95;crlf&#95;end&#95;of&#95;line. Fecha #56257. [#59747](https://github.com/ClickHouse/ClickHouse/pull/59747) (Shaun Struwig).
+
+* Agora é possível conceder privilégios para o mecanismo de tabela, sem afetar o comportamento dos usuários existentes. [#60117](https://github.com/ClickHouse/ClickHouse/pull/60117) (jsc0218).
+
+* Adiciona o formato Form para ler/gravar um único registro no formato application/x-www-form-urlencoded. [#60199](https://github.com/ClickHouse/ClickHouse/pull/60199) (Shaun Struwig).
+
+* Adicionada a possibilidade de compactação em CROSS JOIN. [#60459](https://github.com/ClickHouse/ClickHouse/pull/60459) (p1rattttt).
+
+* Nova configuração input&#95;format&#95;force&#95;null&#95;for&#95;omitted&#95;fields, que força valores NULL para campos omitidos. [#60887](https://github.com/ClickHouse/ClickHouse/pull/60887) (Constantine Peresypkin).
+
+* Suporte a join com condições de desigualdade que envolvem colunas de ambas as tabelas, esquerda e direita. Ex.: `t1.y < t2.y`. Para habilitar, SET allow&#95;experimental&#95;join&#95;condition = 1. [#60920](https://github.com/ClickHouse/ClickHouse/pull/60920) (lgbo).
+
+* Adicionada uma nova função, getClientHTTPHeader. Isso corrige #54665. Em coautoria com @lingtaolf. [#61820](https://github.com/ClickHouse/ClickHouse/pull/61820) (Alexey Milovidov).
+
+* Por conveniência, SELECT * FROM numbers() funcionará da mesma forma que SELECT * FROM system.numbers — sem limite. [#61969](https://github.com/ClickHouse/ClickHouse/pull/61969) (YenchangChan).
+
+* Agora é possível modificar as configurações da tabela Memory por meio de ALTER MODIFY SETTING. ALTER TABLE memory MODIFY SETTING min&#95;rows&#95;to&#95;keep = 100, max&#95;rows&#95;to&#95;keep = 1000;. [#62039](https://github.com/ClickHouse/ClickHouse/pull/62039) (zhongyuankai).
+
+* O analisador oferece suporte a CTEs recursivas. [#62074](https://github.com/ClickHouse/ClickHouse/pull/62074) (Maksim Kita).
+
+* Antes, nosso armazenamento S3 e a função de tabela S3 não ofereciam suporte à seleção de dados em arquivos compactados. Criei uma solução que permite iterar pelos arquivos dentro de arquivos compactados no S3. [#62259](https://github.com/ClickHouse/ClickHouse/pull/62259) (Daniil Ivanik).
+
+* Suporte à função condicional clamp. [#62377](https://github.com/ClickHouse/ClickHouse/pull/62377) (skyoct).
+
+* Adicionado o formato de saída npy. [#62430](https://github.com/ClickHouse/ClickHouse/pull/62430) (豪肥肥).
+
+* Suporte à cláusula QUALIFY no analisador. Fecha #47819. [#62619](https://github.com/ClickHouse/ClickHouse/pull/62619) (Maksim Kita).
+
+* Adicionado o parâmetro de consulta `role` à interface HTTP. Ele funciona de forma semelhante a SET ROLE x, aplicando a role antes da execução da instrução. Isso permite contornar a limitação da interface HTTP, já que não são permitidas múltiplas instruções e não é possível enviar SET ROLE x e a própria instrução ao mesmo tempo. É possível definir múltiplas roles dessa forma, por exemplo, ?role=x&amp;role=y, o que equivale a SET ROLE x, y. [#62669](https://github.com/ClickHouse/ClickHouse/pull/62669) (Serge Klochkov).
+
+* Adicionado SYSTEM UNLOAD PRIMARY KEY. [#62738](https://github.com/ClickHouse/ClickHouse/pull/62738) (Pablo Marcos).
+
+* Foram adicionadas as funções SQL generateUUIDv7, generateUUIDv7ThreadMonotonic e generateUUIDv7NonMonotonic (com diferentes equilíbrios entre monotonicidade e desempenho) para gerar UUIDs versão 7, também conhecidos como UUIDs baseados em timestamp com um componente aleatório. Também foram adicionadas a nova função UUIDToNum, para extrair bytes de um UUID, e a nova função UUIDv7ToDateTime, para extrair o componente de timestamp de um UUID versão 7. [#62852](https://github.com/ClickHouse/ClickHouse/pull/62852) (Alexey Petrunyaka).
+
+* Raw como um sinônimo de TSVRaw. [#63394](https://github.com/ClickHouse/ClickHouse/pull/63394) (Unalian).
+
+* Adicionada a possibilidade de realizar cross join em arquivo temporário caso o tamanho exceda os limites. [#63432](https://github.com/ClickHouse/ClickHouse/pull/63432) (p1rattttt).
+
+<div id="performance-improvements">
+  ## Melhorias de desempenho
+</div>
+
+* Ignora a mesclagem de blocos de projeção recém-criados durante INSERTs. [#59405](https://github.com/ClickHouse/ClickHouse/pull/59405) (Nikita Taranov).
+
+* Reduz a sobrecarga das mutações em SELECTs (v2). [#60856](https://github.com/ClickHouse/ClickHouse/pull/60856) (Azat Khuzhin).
+
+* Melhorias no pushdown de filtro em JOIN usando conjuntos equivalentes. [#61216](https://github.com/ClickHouse/ClickHouse/pull/61216) (Maksim Kita).
+
+* Adiciona uma nova etapa do analisador para otimizar `IN` com valor único. [#61564](https://github.com/ClickHouse/ClickHouse/pull/61564) (LiuNeng).
+
+* Processa funções de string XXXUTF8 de forma &quot;ASCII&quot; se as strings de entrada contiverem apenas caracteres ASCII. Inspirado em apache/doris#29799. A aceleração geral é de 1.07x~1.62x. Observe que o pico de uso de memória foi reduzido em alguns casos. [#61632](https://github.com/ClickHouse/ClickHouse/pull/61632) (李扬).
+
+* Habilita o codificador rápido de Parquet por padrão (output&#95;format&#95;parquet&#95;use&#95;custom&#95;encoder). [#62088](https://github.com/ClickHouse/ClickHouse/pull/62088) (Michael Kolupaev).
+
+* Melhora o JSONEachRowRowInputFormat ignorando todos os campos restantes quando todos os campos obrigatórios já tiverem sido lidos. [#62210](https://github.com/ClickHouse/ClickHouse/pull/62210) (lgbo).
+
+* As funções splitByChar e splitByRegexp ficaram significativamente mais rápidas. [#62392](https://github.com/ClickHouse/ClickHouse/pull/62392) (李扬).
+
+* Melhora insert select triviais de arquivos em table functions file/s3/hdfs/url/.... Adiciona a configuração separada max&#95;parsing&#95;threads para controlar o número de threads usadas no parsing em paralelo. [#62404](https://github.com/ClickHouse/ClickHouse/pull/62404) (Kruglov Pavel).
+
+* Oferece suporte a buffer de escrita em paralelo para AzureBlobStorage, controlado pela configuração azure&#95;allow&#95;parallel&#95;part&#95;upload. [#62534](https://github.com/ClickHouse/ClickHouse/pull/62534) (SmitaRKulkarni).
+
+* As funções to&#95;utc&#95;timestamp e from&#95;utc&#95;timestamp agora são cerca de 2x mais rápidas. [#62583](https://github.com/ClickHouse/ClickHouse/pull/62583) (KevinyhZou).
+
+* As funções parseDateTimeOrNull, parseDateTimeOrZero, parseDateTimeInJodaSyntaxOrNull e parseDateTimeInJodaSyntaxOrZero agora executam significativamente mais rápido (10x - 1000x) quando a entrada contém principalmente valores que não podem ser analisados. [#62634](https://github.com/ClickHouse/ClickHouse/pull/62634) (LiuNeng).
+
+* Altera o comportamento de HostResolver em caso de falha para manter apenas um registro por IP. [#62652](https://github.com/ClickHouse/ClickHouse/pull/62652) (Anton Ivashkin).
+
+* Adiciona uma nova configuração, prefer&#95;merge&#95;sort&#95;block&#95;bytes, para controlar o uso de memória e acelerar a ordenação em 2x durante a mesclagem quando há muitas colunas. [#62904](https://github.com/ClickHouse/ClickHouse/pull/62904) (LiuNeng).
+
+* Otimização no QueryPlan para converter OUTER JOIN em INNER JOIN se o filtro após o JOIN sempre filtrar os valores padrão. A otimização pode ser controlada pela configuração query&#95;plan&#95;convert&#95;outer&#95;join&#95;to&#95;inner&#95;join, habilitada por padrão. [#62907](https://github.com/ClickHouse/ClickHouse/pull/62907) (Maksim Kita).
+
+* Habilita optimize&#95;rewrite&#95;sum&#95;if&#95;to&#95;count&#95;if por padrão. [#62929](https://github.com/ClickHouse/ClickHouse/pull/62929) (Raúl Marín).
+
+* Micro-otimizações para o novo analisador. [#63429](https://github.com/ClickHouse/ClickHouse/pull/63429) (Raúl Marín).
+
+* A análise de índice funcionará se DateTime for comparado a DateTime64. Isso fecha #63441. [#63443](https://github.com/ClickHouse/ClickHouse/pull/63443) (Alexey Milovidov).
+
+* Acelera um pouco os índices do tipo set (cerca de 1,5x) removendo lixo. [#64098](https://github.com/ClickHouse/ClickHouse/pull/64098) (Alexey Milovidov).
+
+<div id="improvements">
+  ## Melhorias
+</div>
+
+* Remove a configuração optimize&#95;monotonous&#95;functions&#95;in&#95;order&#95;by; ela está deixando de ter efeito. [#63004](https://github.com/ClickHouse/ClickHouse/pull/63004) (Raúl Marín).
+
+* Maps agora podem ter Float32, Float64, Array(T), Map(K,V) e Tuple(T1, T2, ...) como chaves. Fecha #54537. [#59318](https://github.com/ClickHouse/ClickHouse/pull/59318) (李扬).
+
+* Adiciona um WriteBuffer assíncrono para AzureBlobStorage, semelhante ao do S3. [#59929](https://github.com/ClickHouse/ClickHouse/pull/59929) (SmitaRKulkarni).
+
+* Strings de várias linhas com preservação de borda e alteração da largura da coluna. [#59940](https://github.com/ClickHouse/ClickHouse/pull/59940) (Volodyachan).
+
+* Faz o RabbitMQ enviar nack para mensagens corrompidas. Fecha #45350. [#60312](https://github.com/ClickHouse/ClickHouse/pull/60312) (Kseniia Sumarokova).
+
+* Adiciona a configuração first&#95;day&#95;of&#95;week, que afeta o primeiro dia da semana considerado pelas funções toStartOfInterval(..., INTERVAL ... WEEK). Isso permite manter consistência com a função toStartOfWeek, que por padrão usa domingo como o primeiro dia da semana. [#60598](https://github.com/ClickHouse/ClickHouse/pull/60598) (Jordi Villar).
+
+* Adicionada a coluna virtual persistente &#95;block&#95;offset, que armazena o número original da linha no bloco atribuído no insert. A persistência da coluna &#95;block&#95;offset pode ser habilitada pela configuração enable&#95;block&#95;offset&#95;column. Adicionada a coluna virtual &#95;part&#95;data&#95;version, que contém o número mínimo do bloco ou a versão de mutação da parte. A coluna virtual persistente &#95;block&#95;number não é mais considerada experimental. [#60676](https://github.com/ClickHouse/ClickHouse/pull/60676) (Anton Popov).
+
+* As funções date&#95;diff e age agora calculam seus resultados com precisão de nanossegundos em vez de microssegundos. Agora elas também aceitam nanosecond (ou nanoseconds ou ns) como possível valor para o parâmetro unit. [#61409](https://github.com/ClickHouse/ClickHouse/pull/61409) (Austin Kothig).
+
+* Agora, as marcas não são carregadas para partes wide durante mesclagens. [#61551](https://github.com/ClickHouse/ClickHouse/pull/61551) (Anton Popov).
+
+* Habilita output&#95;format&#95;pretty&#95;row&#95;numbers por padrão. Isso melhora a usabilidade. [#61791](https://github.com/ClickHouse/ClickHouse/pull/61791) (Alexey Milovidov).
+
+* A barra de progresso funcionará para consultas triviais com LIMIT em system.zeros, system.zeros&#95;mt (ela já funciona para system.numbers e system.numbers&#95;mt) e a table function generateRandom. Como bônus, se o número total de registros for maior que o limite max&#95;rows&#95;to&#95;read, ela lançará uma exceção mais cedo. Isso fecha #58183. [#61823](https://github.com/ClickHouse/ClickHouse/pull/61823) (Alexey Milovidov).
+
+* Adiciona TRUNCATE ALL TABLES. [#61862](https://github.com/ClickHouse/ClickHouse/pull/61862) (豪肥肥).
+
+* Adiciona a configuração input&#95;format&#95;json&#95;throw&#95;on&#95;bad&#95;escape&#95;sequence; ao desabilitá-la, é possível salvar sequências de escape inválidas em formatos de entrada JSON. [#61889](https://github.com/ClickHouse/ClickHouse/pull/61889) (Kruglov Pavel).
+
+* Corrigido o artigo de &quot;a&quot; para &quot;the&quot; na mensagem de aviso. Há apenas um engine Atomic, portanto deve ser &quot;to the new Atomic engine&quot; em vez de &quot;to a new Atomic engine&quot;. [#61952](https://github.com/ClickHouse/ClickHouse/pull/61952) (shabroo).
+
+* Corrige erro lógico ao desfazer a transação de insert com quorum. [#61953](https://github.com/ClickHouse/ClickHouse/pull/61953) (Han Fei).
+
+* Infere automaticamente os tipos de coluna Nullable a partir do esquema Apache Arrow. [#61984](https://github.com/ClickHouse/ClickHouse/pull/61984) (Maksim Kita).
+
+* Permite cancelar a mesclagem paralela dos estados de agregação durante a agregação. Exemplo: uniqExact. [#61992](https://github.com/ClickHouse/ClickHouse/pull/61992) (Maksim Kita).
+
+* A fonte do Dicionário com INVALIDATE&#95;QUERY não é recarregada duas vezes na inicialização. [#62050](https://github.com/ClickHouse/ClickHouse/pull/62050) (vdimir).
+
+* OPTIMIZE FINAL para ReplicatedMergeTree agora aguardará a conclusão das mesclagens ativas no momento e, em seguida, tentará novamente agendar uma mesclagem final. Isso o aproxima mais do comportamento normal do MergeTree. [#62067](https://github.com/ClickHouse/ClickHouse/pull/62067) (Nikita Taranov).
+
+* Ao ler dados de um arquivo de texto do Hive, a primeira linha do arquivo era usada para ajustar a quantidade de campos de entrada, e às vezes o número de campos da primeira linha não corresponde ao definido na tabela do Hive. Por exemplo, a tabela do Hive pode ser definida com 3 colunas, como test&#95;tbl(a Int32, b Int32, c Int32), mas a primeira linha do arquivo de texto tem apenas 2 campos. Nessa situação, os campos de entrada serão ajustados para 2 e, se a próxima linha do arquivo de texto tiver 3 campos, o terceiro campo não poderá ser lido e receberá o valor padrão 0, o que não está correto. [#62086](https://github.com/ClickHouse/ClickHouse/pull/62086) (KevinyhZou).
+
+* O realce de sintaxe ao digitar no cliente funcionará no nível de sintaxe (antes, funcionava no nível do lexer). [#62123](https://github.com/ClickHouse/ClickHouse/pull/62123) (Alexey Milovidov).
+
+* Corrige um problema em que, quando um `= 1` ou `= 0` redundante é adicionado após uma expressão booleana envolvendo a chave primária, o índice primário não é usado. Por exemplo, tanto `SELECT * FROM <table> WHERE <primary-key> IN (<value>) = 1` quanto `SELECT * FROM <table> WHERE <primary-key> NOT IN (<value>) = 0` farão uma varredura completa da tabela, embora o índice primário possa ser usado. [#62142](https://github.com/ClickHouse/ClickHouse/pull/62142) (josh-hildred).
+
+* Adiciona a configuração lightweight&#95;deletes&#95;sync (valor padrão: 2 - aguarda todas as réplicas sincronamente). Ela é semelhante à configuração mutations&#95;sync, mas afeta apenas o comportamento das exclusões leves. [#62195](https://github.com/ClickHouse/ClickHouse/pull/62195) (Anton Popov).
+
+* Distingue booleanos de inteiros durante o parsing de valores para configurações personalizadas: SET custom&#95;a = true; SET custom&#95;b = 1;. [#62206](https://github.com/ClickHouse/ClickHouse/pull/62206) (Vitaly Baranov).
+
+* Oferece suporte ao acesso ao S3 por meio de endpoints de interface do Private Link da AWS. Fecha #60021, #31074 e #53761. [#62208](https://github.com/ClickHouse/ClickHouse/pull/62208) (Arthur Passos).
+
+* O cliente precisa enviar o cabeçalho &#39;Keep-Alive: timeout=X&#39; para o servidor. Se um cliente receber uma resposta do servidor com esse cabeçalho, ele precisará usar o valor enviado pelo servidor. Além disso, é melhor que o cliente não use uma conexão que esteja prestes a expirar, para evitar uma condição de corrida no fechamento da conexão. [#62249](https://github.com/ClickHouse/ClickHouse/pull/62249) (Sema Checherinda).
+
+* Adiciona as unidades de nano-, micro- e milissegundos para date&#95;trunc. [#62335](https://github.com/ClickHouse/ClickHouse/pull/62335) (Misz606).
+
+* O cache de consultas agora não armazena mais em cache os resultados de consultas em tabelas do sistema (system.*, information&#95;schema.*, INFORMATION&#95;SCHEMA.*). [#62376](https://github.com/ClickHouse/ClickHouse/pull/62376) (Robert Schulze).
+
+* A consulta MOVE PARTITION TO TABLE pode ser adiada ou pode gerar a exceção TOO&#95;MANY&#95;PARTS para evitar exceder os limites da contagem de partes. Aplicam-se as mesmas configurações e limites da consulta INSERT (consulte max&#95;parts&#95;in&#95;total, parts&#95;to&#95;delay&#95;insert, parts&#95;to&#95;throw&#95;insert, inactive&#95;parts&#95;to&#95;throw&#95;insert, inactive&#95;parts&#95;to&#95;delay&#95;insert, max&#95;avg&#95;part&#95;size&#95;for&#95;too&#95;many&#95;parts, min&#95;delay&#95;to&#95;insert&#95;ms e a configuração max&#95;delay&#95;to&#95;insert). [#62420](https://github.com/ClickHouse/ClickHouse/pull/62420) (Sergei Trifonov).
+
+* Faz `transform` sempre retornar a primeira correspondência. [#62518](https://github.com/ClickHouse/ClickHouse/pull/62518) (Raúl Marín).
+
+* Evita avaliar expressões DEFAULT da tabela ao executar RESTORE. [#62601](https://github.com/ClickHouse/ClickHouse/pull/62601) (Vitaly Baranov).
+
+* Permite usar chave de quota com um método de autenticação diferente em requisições HTTP. [#62842](https://github.com/ClickHouse/ClickHouse/pull/62842) (Kseniia Sumarokova).
+
+* Fecha a sessão quando o `valid&#95;until` do usuário é atingido. [#63046](https://github.com/ClickHouse/ClickHouse/pull/63046) (Konstantin Bogdanov).

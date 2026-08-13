@@ -270,7 +270,8 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
         fs::create_directories(rocksdb_dir);
     }
 
-    const auto sample_block = getInMemoryMetadataPtr(context_, false)->getSampleBlock();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
+    const auto sample_block = metadata_snapshot->getSampleBlock();
     primary_key_pos.reserve(primary_keys.size());
     primary_key_types.reserve(primary_keys.size());
     std::vector<bool> is_pk(sample_block.columns());
@@ -349,8 +350,8 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
         Block block;
         while (executor.pull(block))
         {
-            std::vector<ColumnPtr> columns;
-            std::vector<DataTypePtr> types;
+            Columns columns;
+            DataTypes types;
             columns.reserve(primary_key_pos.size());
             types.reserve(primary_key_pos.size());
             for (const auto pos : primary_key_pos)
@@ -500,11 +501,11 @@ public:
             std::array<char, 1024> stack; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - written by `vsnprintf` before read
             if (vsnprintf(stack.data(), stack.size(), format, backup_ap) < static_cast<int>(stack.size()))
             {
-                va_end(backup_ap);
+                va_end(backup_ap); // NOLINT(clang-analyzer-security.VAList)
                 LOG_IMPL(log, level.first, level.second, "{}", stack.data());
                 return;
             }
-            va_end(backup_ap);
+            va_end(backup_ap); // NOLINT(clang-analyzer-security.VAList)
         }
 
         /// let's try with a bigger dynamic buffer (but not too huge, since
@@ -945,27 +946,29 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
     {
         std::string & serialized_key = raw_keys.emplace_back();
         WriteBufferFromString wb(serialized_key);
-        for (const auto & key : keys)
+        for (size_t pk_idx = 0; pk_idx < keys.size(); ++pk_idx)
         {
             Field field;
-            key.column->get(i, field);
+            keys[pk_idx].column->get(i, field);
             if (field.isNull())
             {
                 null_map[i] = 0;
                 break;
             }
-            key.type->getDefaultSerialization()->serializeBinary(field, wb, {});
+            primary_key_types[pk_idx]->getDefaultSerialization()->serializeBinary(field, wb, {});
         }
         wb.finalize();
     }
 
-    auto block = getBySerializedKeys(raw_keys, &null_map, getInMemoryMetadataPtr(getContext(), false)->getSampleBlock());
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto block = getBySerializedKeys(raw_keys, &null_map, metadata_snapshot->getSampleBlock());
     return Chunk(block.getColumns(), block.rows());
 }
 
 Block StorageEmbeddedRocksDB::getSampleBlock(const Names &) const
 {
-    return getInMemoryMetadataPtr(getContext(), false)->getSampleBlock();
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    return metadata_snapshot->getSampleBlock();
 }
 
 Block StorageEmbeddedRocksDB::getBySerializedKeys(const std::vector<std::string> & keys, PaddedPODArray<UInt8> * in_out_null_map, const Block & sample_block) const
@@ -1287,7 +1290,7 @@ ORDER BY key ASC
 ```
 
 ### More information on Joins {#more-information-on-joins}
-- [`join_algorithm` setting](/operations/settings/settings.md#join_algorithm)
+- [`join_algorithm` setting](/reference/settings/session-settings/join#join_algorithm)
 - [JOIN clause](/sql-reference/statements/select/join.md)
 )DOCS_MD",
         .syntax = "ENGINE = EmbeddedRocksDB([ttl, rocksdb_dir, read_only]) PRIMARY KEY(key)",

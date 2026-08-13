@@ -112,6 +112,8 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
+    bool supportsObjectGenerationComparison() const override { return object_storage->supportsObjectGenerationComparison(); }
+
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
 #if USE_AZURE_BLOB_STORAGE
@@ -142,6 +144,13 @@ public:
         return object_storage->tryGetS3StorageClient();
     }
 #endif
+
+    /// Forward to the underlying storage so DeltaLake's catalog-vended credentials
+    /// refresh path works through a cache disk too.
+    bool tryRefreshCredentialsViaCallback() override
+    {
+        return object_storage->tryRefreshCredentialsViaCallback();
+    }
 
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
     void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override

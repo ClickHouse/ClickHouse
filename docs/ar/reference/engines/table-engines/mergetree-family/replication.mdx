@@ -1,0 +1,355 @@
+---
+description: 'نظرة عامة على النسخ المتماثل للبيانات باستخدام عائلة محركات الجداول Replicated* في ClickHouse'
+sidebarTitle: 'Replicated*'
+slug: /engines/table-engines/mergetree-family/replication
+title: 'محركات الجداول Replicated*'
+doc_type: 'مرجع'
+---
+
+<Note>
+  في ClickHouse Cloud، تتم إدارة النسخ المتماثل نيابةً عنك. يُرجى إنشاء جداولك دون إضافة معاملات. على سبيل المثال، في النص أدناه ستستبدل:
+
+  ```sql
+  ENGINE = ReplicatedMergeTree(
+      '/clickhouse/tables/{shard}/table_name',
+      '{replica}'
+  )
+  ```
+
+  بـ:
+
+  ```sql
+  ENGINE = ReplicatedMergeTree
+  ```
+</Note>
+
+النسخ المتماثل مدعوم فقط للجداول في عائلة MergeTree
+
+* ReplicatedSummingMergeTree
+* ReplicatedCoalescingMergeTree
+* ReplicatedVersionedCollapsingMergeTree
+* ReplicatedCollapsingMergeTree
+* ReplicatedGraphiteMergeTree
+* ReplicatedMergeTree
+* ReplicatedReplacingMergeTree
+* ReplicatedAggregatingMergeTree
+
+يعمل النسخ المتماثل على مستوى كل جدول على حدة، وليس على مستوى الخادم بأكمله. ويمكن للخادم تخزين جداول متماثلة وأخرى غير متماثلة في الوقت نفسه.
+
+لا يعتمد النسخ المتماثل على sharding. لكل shard نسخ متماثل مستقل خاص به.
+
+تُنسخ البيانات المضغوطة الخاصة باستعلامات `INSERT` و `ALTER` (لمزيد من المعلومات، راجع توثيق [ALTER](/ar/reference/statements/alter/index)).
+
+تُنفَّذ استعلامات `CREATE` و `DROP` و `ATTACH` و `DETACH` و `RENAME` على خادم واحد ولا تُنسخ متماثلًا:
+
+* ينشئ استعلام `CREATE TABLE` جدولًا جديدًا قابلاً للنسخ المتماثل على الخادم الذي يُشغَّل عليه الاستعلام. وإذا كان هذا الجدول موجودًا بالفعل على خوادم أخرى، فإنه يضيف نسخة متماثلة جديدة.
+* يحذف استعلام `DROP TABLE` النسخة المتماثلة الموجودة على الخادم الذي يُشغَّل عليه الاستعلام.
+* يعيد استعلام `RENAME` تسمية الجدول على إحدى النسخ المتماثلة. وبعبارة أخرى، يمكن أن تحمل الجداول المتماثلة أسماء مختلفة على نسخ متماثلة مختلفة.
+
+يستخدم ClickHouse ‏[ClickHouse Keeper](/ar/guides/oss/deployment-and-scaling/keeper/index) لتخزين البيانات الوصفية الخاصة بالنسخ المتماثلة. ويمكن استخدام ZooKeeper بالإصدار 3.4.5 أو أحدث، لكن يُوصى باستخدام ClickHouse Keeper.
+
+لاستخدام النسخ المتماثل، اضبط المعلمات في قسم تهيئة الخادم [zookeeper](/ar/reference/settings/server-settings/settings#zookeeper).
+
+<Note>
+  لا تُهمل إعدادات الأمان. يدعم ClickHouse مخطط [ACL](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) من نوع `digest` ضمن النظام الفرعي لأمان ZooKeeper.
+</Note>
+
+مثال على تعيين عناوين عنقود ClickHouse Keeper:
+
+```xml
+<zookeeper>
+    <node>
+        <host>example1</host>
+        <port>2181</port>
+    </node>
+    <node>
+        <host>example2</host>
+        <port>2181</port>
+    </node>
+    <node>
+        <host>example3</host>
+        <port>2181</port>
+    </node>
+</zookeeper>
+```
+
+يدعم ClickHouse أيضًا تخزين البيانات الوصفية للنسخ المتماثلة في عنقود ZooKeeper إضافي. ويمكنك القيام بذلك من خلال توفير اسم عنقود ZooKeeper والمسار كوسيطات للمحرك.
+وبعبارة أخرى، فهو يدعم تخزين البيانات الوصفية للجداول المختلفة في عناقيد ZooKeeper مختلفة.
+
+مثال على تعيين عناوين عنقود ZooKeeper الإضافي:
+
+```xml
+<auxiliary_zookeepers>
+    <zookeeper2>
+        <node>
+            <host>example_2_1</host>
+            <port>2181</port>
+        </node>
+        <node>
+            <host>example_2_2</host>
+            <port>2181</port>
+        </node>
+        <node>
+            <host>example_2_3</host>
+            <port>2181</port>
+        </node>
+    </zookeeper2>
+    <zookeeper3>
+        <node>
+            <host>example_3_1</host>
+            <port>2181</port>
+        </node>
+    </zookeeper3>
+</auxiliary_zookeepers>
+```
+
+لتخزين البيانات الوصفية للجدول في عنقود ZooKeeper إضافي بدلاً من عنقود ZooKeeper الافتراضي، يمكننا استخدام SQL لإنشاء الجدول باستخدام
+محرك ReplicatedMergeTree على النحو التالي:
+
+```sql
+CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'replica_name') ...
+```
+
+يمكنك تحديد أي عنقود ZooKeeper موجود، وسيستخدم النظام دليلاً عليها لبياناته الخاصة (يُحدَّد هذا الدليل عند إنشاء جدول قابل للنسخ المتماثل).
+
+إذا لم يكن ZooKeeper مُعدًّا في ملف الإعدادات، فلن تتمكن من إنشاء جداول ذات نسخ متماثلة، وستكون أي جداول موجودة ذات نسخ متماثلة للقراءة فقط.
+
+لا يُستخدم ZooKeeper في استعلامات `SELECT` لأن النسخ المتماثل لا يؤثر في أداء `SELECT`، وتعمل الاستعلامات بالسرعة نفسها كما في الجداول غير المكررة. عند الاستعلام عن الجداول المكررة الموزعة، يتحكم الإعدادان [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/ar/reference/settings/session-settings#max_replica_delay_for_distributed_queries) و[fallback&#95;to&#95;stale&#95;replicas&#95;for&#95;distributed&#95;queries](/ar/reference/settings/session-settings#fallback_to_stale_replicas_for_distributed_queries) في سلوك ClickHouse.
+
+لكل استعلام `INSERT`، تُضاف نحو عشرة إدخالات إلى ZooKeeper عبر عدة معاملات. (ولمزيد من الدقة، يحدث ذلك لكل كتلة بيانات مُدرجة؛ إذ يحتوي استعلام `INSERT` على كتلة واحدة، أو كتلة واحدة لكل `max_insert_block_size = 1048576` صفًا.) يؤدي ذلك إلى زيادة طفيفة في زمن الاستجابة لاستعلامات `INSERT` مقارنةً بالجداول غير المكررة. ولكن إذا اتبعت التوصيات وأدرجت البيانات على دفعات بما لا يزيد على عملية `INSERT` واحدة في الثانية، فلن يسبب ذلك أي مشكلات. ويمكن لعنقود ClickHouse كامل يستخدم للتنسيق مع عنقود ZooKeeper واحد أن يتعامل إجمالًا مع عدة مئات من عمليات `INSERT` في الثانية. وتبقى إنتاجية إدراج البيانات (عدد الصفوف في الثانية) بنفس الارتفاع كما في البيانات غير المكررة.
+
+بالنسبة إلى العناقيد الكبيرة جدًا، يمكنك استخدام عناقيد ZooKeeper مختلفة لأجزاء shards مختلفة. ومع ذلك، ووفقًا لتجربتنا، لم يثبت أن هذا ضروري في عناقيد production التي تضم نحو 300 خادم.
+
+النسخ المتماثل غير متزامن ومتعدد الأطراف. يمكن إرسال استعلامات `INSERT` (وكذلك `ALTER`) إلى أي خادم متاح. تُدرج البيانات على الخادم الذي يُنفَّذ عليه الاستعلام، ثم تُنسخ إلى الخوادم الأخرى. ونظرًا لأنه غير متزامن، تظهر البيانات المُدرجة حديثًا على النسخ المتماثلة الأخرى بعد قدر من زمن الاستجابة. وإذا لم يكن بعض النسخ المتماثلة متاحًا، فتُكتب البيانات عندما تصبح متاحة. وإذا كانت النسخة المتماثلة متاحة، فإن زمن الاستجابة يساوي الوقت اللازم لنقل كتلة البيانات المضغوطة عبر الشبكة. ويمكن ضبط عدد threads التي تنفذ المهام الخلفية للجداول المكررة باستخدام الإعداد [background&#95;schedule&#95;pool&#95;size](/ar/reference/settings/server-settings/settings#background_schedule_pool_size).
+
+يستخدم المحرك `ReplicatedMergeTree` thread pool منفصلًا لعمليات fetches المكررة. ويُحدَّد حجم هذا pool بواسطة الإعداد [background&#95;fetches&#95;pool&#95;size](/ar/reference/settings/server-settings/settings#background_fetches_pool_size)، والذي يمكن ضبطه مع إعادة تشغيل الخادم.
+
+بشكل افتراضي، ينتظر استعلام `INSERT` تأكيد كتابة البيانات من نسخة متماثلة واحدة فقط. وإذا كُتبت البيانات بنجاح على نسخة متماثلة واحدة فقط ثم توقّف الخادم الذي يحتوي على هذه النسخة عن الوجود، فستُفقد البيانات المخزنة. لتمكين الحصول على تأكيد لكتابة البيانات من عدة نسخ متماثلة، استخدم الخيار `insert_quorum`.
+
+تُكتب كل كتلة بيانات بصورة atomic. ويُقسَّم استعلام `INSERT` إلى كتل يصل حجمها إلى `max_insert_block_size = 1048576` صفًا. وبعبارة أخرى، إذا كان استعلام `INSERT` يحتوي على أقل من 1048576 صفًا، فإنه يُنفَّذ بصورة atomic.
+
+تُزال ازدواجية كتل البيانات. فعند كتابة كتلة البيانات نفسها عدة مرات (كتل بيانات بالحجم نفسه وتحتوي على الصفوف نفسها وبالترتيب نفسه)، لا تُكتب الكتلة إلا مرة واحدة فقط. والسبب في ذلك هو التعامل مع حالات تعطل الشبكة عندما لا يعرف تطبيق العميل ما إذا كانت البيانات قد كُتبت إلى قاعدة البيانات أم لا، لذا يمكن ببساطة تكرار استعلام `INSERT`. ولا يهم إلى أي نسخة متماثلة أُرسلت عمليات `INSERT` ذات البيانات المتطابقة. إن عمليات `INSERT` متسامحة مع التكرار. وتتحكم إعدادات الخادم [merge&#95;tree](/ar/reference/settings/server-settings/settings#merge_tree) في معلمات إزالة الازدواجية.
+
+أثناء النسخ المتماثل، لا يُنقل عبر الشبكة إلا البيانات المصدر المطلوب إدراجها. أما تحويل البيانات لاحقًا (merging) فيُنسَّق ويُنفَّذ على جميع النسخ المتماثلة بالطريقة نفسها. ويؤدي ذلك إلى تقليل استخدام الشبكة، ما يعني أن النسخ المتماثل يعمل جيدًا عندما تكون النسخ المتماثلة موجودة في datacenters مختلفة. (لاحظ أن تكرار البيانات في datacenters مختلفة هو الهدف الأساسي من النسخ المتماثل.)
+
+يمكنك امتلاك أي عدد من النسخ المتماثلة للبيانات نفسها. واستنادًا إلى خبراتنا، يمكن أن يعتمد حل موثوق ومناسب نسبيًا على نسخ متماثل مزدوج في production، مع استخدام كل خادم RAID-5 أو RAID-6 (وRAID-10 في بعض الحالات).
+
+يراقب النظام مدى تزامن البيانات على النسخ المتماثلة، وهو قادر على التعافي بعد الفشل. ويكون Failover تلقائيًا (عند وجود فروق صغيرة في البيانات) أو شبه تلقائي (عندما تختلف البيانات كثيرًا، ما قد يشير إلى خطأ في configuration).
+
+<div id="creating-replicated-tables">
+  ## إنشاء الجداول المكرَّرة
+</div>
+
+<Note>
+  في ClickHouse Cloud، يُدار النسخ المتماثل تلقائيًا.
+
+  أنشئ الجداول باستخدام [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) من دون وسيطات النسخ المتماثل. ويُعيد النظام داخليًا كتابة [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) إلى [`SharedMergeTree`](/ar/products/cloud/features/infrastructure/shared-merge-tree) لأغراض النسخ المتماثل وتوزيع البيانات.
+
+  تجنّب استخدام `ReplicatedMergeTree` أو تحديد معلمات النسخ المتماثل، لأن المنصة تتولى إدارة النسخ المتماثل.
+</Note>
+
+<div id="replicatedmergetree-parameters">
+  ### معلمات Replicated*MergeTree
+</div>
+
+| المعلمة            | الوصف                                                                                               |
+| ------------------ | --------------------------------------------------------------------------------------------------- |
+| `zoo_path`         | مسار الجدول في ClickHouse Keeper.                                                                   |
+| `replica_name`     | اسم النسخة المتماثلة في ClickHouse Keeper.                                                          |
+| `other_parameters` | معلمات المحرك المستخدم لإنشاء النسخة المتماثلة، على سبيل المثال، `version` في `ReplacingMergeTree`. |
+
+مثال:
+
+```sql
+CREATE TABLE table_name
+(
+    EventDate DateTime,
+    CounterID UInt32,
+    UserID UInt32,
+    ver UInt16
+)
+ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}', ver)
+PARTITION BY toYYYYMM(EventDate)
+ORDER BY (CounterID, EventDate, intHash32(UserID))
+SAMPLE BY intHash32(UserID);
+```
+
+<details markdown="1">
+  <summary>مثال على الصياغة المتقادمة</summary>
+
+  ```sql
+  CREATE TABLE table_name
+  (
+      EventDate DateTime,
+      CounterID UInt32,
+      UserID UInt32
+  ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192);
+  ```
+</details>
+
+كما يوضح المثال، يمكن أن تتضمن هذه المَعلَمات استبدالات ضمن `{}`. وتُؤخذ القيم المستبدلة من قسم [macros](/ar/reference/settings/server-settings/settings#macros) في ملف التكوين.
+
+مثال:
+
+```xml
+<macros>
+    <shard>02</shard>
+    <replica>example05-02-1</replica>
+</macros>
+```
+
+يجب أن يكون مسار الجدول في ClickHouse Keeper فريدًا لكل جدول مكرّر. ويجب أن يكون للجداول الموجودة على shardات مختلفة مسارات مختلفة.
+في هذه الحالة، يتكوّن المسار من الأجزاء التالية:
+
+`/clickhouse/tables/` هي البادئة المشتركة. نوصي باستخدام هذا المسار كما هو تمامًا.
+
+سيُوسَّع `{shard}` إلى معرّف الـ shard.
+
+`table_name` هو اسم العقدة الخاصة بالجدول في ClickHouse Keeper. ومن الأفضل أن يكون مطابقًا لاسم الجدول. ويُحدَّد صراحةً لأنه، بخلاف اسم الجدول، لا يتغيّر بعد تنفيذ استعلام `RENAME`.
+*تلميح*: يمكنك أيضًا إضافة اسم قاعدة البيانات قبل `table_name`. مثلًا `db_name.table_name`
+
+يمكن استخدام الاستبدالين المضمّنين `{database}` و`{table}`، إذ سيتوسّعان إلى اسم الجدول واسم قاعدة البيانات على التوالي (ما لم تكن وحدات الماكرو هذه معرّفة في قسم `macros`). لذلك يمكن تحديد مسار ZooKeeper بالشكل `'/clickhouse/tables/{shard}/{database}/{table}'`.
+انتبه عند إعادة تسمية الجداول عند استخدام هذين الاستبدالين المضمّنين. فلا يمكن تغيير المسار في ClickHouse Keeper، وعند إعادة تسمية الجدول ستتوسّع وحدات الماكرو إلى مسار مختلف، وسيشير الجدول إلى مسار غير موجود في ClickHouse Keeper، وسيدخل في وضع القراءة فقط.
+
+يحدّد اسم نسخة متماثلة النسخ المتماثلة المختلفة للجدول نفسه. يمكنك استخدام اسم الخادم لهذا الغرض، كما في المثال. ويكفي أن يكون الاسم فريدًا داخل كل shard.
+
+يمكنك تعريف المعلمات صراحةً بدلًا من استخدام الاستبدالات. وقد يكون ذلك مناسبًا للاختبار ولإعداد المجموعات الصغيرة. ومع ذلك، لا يمكنك استخدام استعلامات DDL الموزعة (`ON CLUSTER`) في هذه الحالة.
+
+عند العمل مع المجموعات الكبيرة، نوصي باستخدام الاستبدالات لأنها تقلّل احتمال حدوث الخطأ.
+
+يمكنك تحديد الوسائط الافتراضية لمحرك الجداول `Replicated` في ملف تهيئة الخادم. على سبيل المثال:
+
+```xml
+<default_replica_path>/clickhouse/tables/{shard}/{database}/{table}</default_replica_path>
+<default_replica_name>{replica}</default_replica_name>
+```
+
+في هذه الحالة، يمكنك الاستغناء عن المعاملات عند إنشاء الجداول:
+
+```sql
+CREATE TABLE table_name (
+    x UInt32
+) ENGINE = ReplicatedMergeTree
+ORDER BY x;
+```
+
+وهو يعادل:
+
+```sql
+CREATE TABLE table_name (
+    x UInt32
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}')
+ORDER BY x;
+```
+
+شغّل استعلام `CREATE TABLE` على كل نسخة متماثلة. ينشئ هذا الاستعلام جدولًا متماثلًا جديدًا، أو يضيف نسخة متماثلة جديدة إلى جدول متماثل موجود.
+
+إذا أضفت نسخة متماثلة جديدة بعد أن كان الجدول يحتوي بالفعل على بعض البيانات في النسخ المتماثلة الأخرى، فستُنسخ البيانات من تلك النسخ إلى النسخة الجديدة بعد تشغيل الاستعلام. وبعبارة أخرى، تُزامن النسخة المتماثلة الجديدة نفسها مع بقية النسخ.
+
+لحذف نسخة متماثلة، شغّل `DROP TABLE`. ومع ذلك، لن تُحذف إلا نسخة متماثلة واحدة فقط، وهي الموجودة على الخادم الذي تُشغّل عليه الاستعلام.
+
+<div id="recovery-after-failures">
+  ## الاسترداد بعد الأعطال
+</div>
+
+إذا لم يكن ClickHouse Keeper متاحًا عند بدء تشغيل الخادم، فإن الجداول المتماثلة تنتقل إلى وضع القراءة فقط. ويحاول النظام دوريًا الاتصال بـ ClickHouse Keeper.
+
+إذا لم يكن ClickHouse Keeper متاحًا أثناء تنفيذ `INSERT`، أو حدث خطأ عند التفاعل مع ClickHouse Keeper، فسيتم طرح استثناء.
+
+بعد الاتصال بـ ClickHouse Keeper، يتحقق النظام مما إذا كانت مجموعة البيانات الموجودة في نظام الملفات المحلي تطابق مجموعة البيانات المتوقعة (ويخزن ClickHouse Keeper هذه المعلومات). وإذا كانت هناك حالات عدم اتساق طفيفة، فسيعالجها النظام من خلال مزامنة البيانات مع النسخ المتماثلة.
+
+إذا اكتشف النظام أجزاء بيانات تالفة (بأحجام ملفات غير صحيحة) أو أجزاء غير معروفة (أجزاء كُتبت في نظام الملفات ولكن لم تُسجَّل في ClickHouse Keeper)، فإنه ينقلها إلى الدليل الفرعي `detached` (ولا يحذفها). وتُنسخ أي أجزاء مفقودة من النسخ المتماثلة.
+
+لاحظ أن ClickHouse لا ينفذ أي إجراءات إتلافية، مثل حذف كميات كبيرة من البيانات تلقائيًا.
+
+عند بدء تشغيل الخادم (أو عند إنشاء جلسة جديدة مع ClickHouse Keeper)، فإنه يتحقق فقط من عدد جميع الملفات وأحجامها. وإذا تطابقت أحجام الملفات لكن تغيّرت بعض البايتات في موضع ما في المنتصف، فلن يُكتشف ذلك فورًا، بل فقط عند محاولة قراءة البيانات لاستعلام `SELECT`. ويطرح الاستعلام استثناءً بشأن عدم تطابق checksum أو حجم block مضغوط. وفي هذه الحالة، تُضاف أجزاء البيانات إلى قائمة انتظار التحقق وتُنسخ من النسخ المتماثلة إذا لزم الأمر.
+
+إذا اختلفت مجموعة البيانات المحلية كثيرًا عن المجموعة المتوقعة، فسيتم تفعيل آلية أمان. ويسجل الخادم ذلك في السجل ويرفض التشغيل. ويرجع السبب في ذلك إلى أن هذه الحالة قد تشير إلى خطأ في التهيئة، مثل أن تكون نسخة متماثلة على shard قد ضُبطت بالخطأ كما لو كانت نسخة متماثلة على shard مختلف. ومع ذلك، فإن الحدود الخاصة بهذه الآلية مضبوطة على قيم منخفضة نسبيًا، وقد يحدث هذا الوضع أثناء الاسترداد الطبيعي من الأعطال. وفي هذه الحالة، تُستعاد البيانات بشكل شبه تلقائي — عبر &quot;الضغط على زر&quot;.
+
+لبدء الاسترداد، أنشئ العقدة `/path_to_table/replica_name/flags/force_restore_data` في ClickHouse Keeper بأي محتوى، أو شغّل الأمر لاستعادة جميع الجداول المتماثلة:
+
+```bash
+sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
+```
+
+ثم أعد تشغيل الخادم. وعند بدء التشغيل، يحذف الخادم هذه المؤشرات ويبدأ عملية الاستعادة.
+
+<div id="recovery-after-complete-data-loss">
+  ## الاستعادة بعد الفقدان الكامل للبيانات
+</div>
+
+إذا فُقدت جميع البيانات والبيانات الوصفية من أحد الخوادم، فاتبع الخطوات التالية للاستعادة:
+
+1. ثبّت ClickHouse على الخادم. حدِّد استبدالات بشكل صحيح في ملف الإعدادات الذي يحتوي على معرّف الشارد والنسخ المتماثلة، إذا كنت تستخدمها.
+2. إذا كانت لديك جداول غير مكرَّرة يجب نسخها يدويًا إلى الخوادم، فانقل بياناتها من نسخة متماثلة (في directory ‏`/var/lib/clickhouse/data/db_name/table_name/`).
+3. انسخ تعريفات الجداول الموجودة في `/var/lib/clickhouse/metadata/` من نسخة متماثلة. إذا كان معرّف الشارد أو النسخة المتماثلة محددًا صراحةً في تعريفات الجداول، فصححه ليتوافق مع هذه النسخة المتماثلة. (بدلًا من ذلك، شغّل server ونفّذ جميع استعلامات `ATTACH TABLE` التي كان يجب أن تكون موجودة في ملفات ‎`.sql` داخل `/var/lib/clickhouse/metadata/`.)
+4. لبدء الاستعادة، أنشئ عقدة ClickHouse Keeper ‏`/path_to_table/replica_name/flags/force_restore_data` بأي محتوى، أو شغّل الأمر التالي لاستعادة جميع replicated tables: `sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data`
+
+ثم شغّل server (أعد تشغيله إذا كان يعمل بالفعل). ستُنزل البيانات من النسخ المتماثلة.
+
+خيار آخر للاستعادة هو حذف المعلومات الخاصة بالنسخة المتماثلة المفقودة من ClickHouse Keeper ‏(`/path_to_table/replica_name`)، ثم إنشاء النسخة المتماثلة مرة أخرى كما هو موضح في &quot;[إنشاء الجداول المكرَّرة](#creating-replicated-tables)&quot;.
+
+لا توجد أي قيود على عرض النطاق الترددي للشبكة أثناء الاستعادة. ضع ذلك في اعتبارك إذا كنت تستعيد عددًا كبيرًا من النسخ المتماثلة في الوقت نفسه.
+
+<div id="converting-from-mergetree-to-replicatedmergetree">
+  ## التحويل من MergeTree إلى ReplicatedMergeTree
+</div>
+
+نستخدم المصطلح `MergeTree` للإشارة إلى جميع محركات الجداول ضمن `عائلة MergeTree`، تمامًا كما هو الحال مع `ReplicatedMergeTree`.
+
+إذا كان لديك جدول `MergeTree` جرى نسخ بياناته متماثلًا يدويًا، فيمكنك تحويله إلى جدول مكرّر. قد تحتاج إلى ذلك إذا كنت قد جمعت بالفعل كمية كبيرة من البيانات في جدول `MergeTree` وتريد الآن تمكين النسخ المتماثل.
+
+تتيح تعليمة [ATTACH TABLE ... AS REPLICATED](/ar/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) إرفاق جدول `MergeTree` مفصول كـ `ReplicatedMergeTree`.
+
+يمكن تحويل جدول `MergeTree` تلقائيًا عند إعادة تشغيل الخادم إذا تم تعيين العلامة `convert_to_replicated` في دليل بيانات الجدول (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` لقاعدة البيانات `Atomic`).
+أنشئ ملفًا فارغًا باسم `convert_to_replicated` وسيتم تحميل الجدول كجدول مكرّر عند إعادة تشغيل الخادم التالية.
+
+يمكن استخدام هذا الاستعلام للحصول على مسار بيانات الجدول. وإذا كان للجدول عدة مسارات بيانات، فيجب استخدام الأول منها.
+
+```sql
+SELECT data_paths FROM system.tables WHERE table = 'table_name' AND database = 'database_name';
+```
+
+لاحظ أن جدول ReplicatedMergeTree سيُنشأ باستخدام قيم الإعدادين `default_replica_path` و`default_replica_name`.
+ولإنشاء الجدول المُحوَّل على النُسخ المتماثلة الأخرى، ستحتاج إلى تحديد مساره صراحةً في الوسيط الأول لمحرك `ReplicatedMergeTree`. ويمكن استخدام الاستعلام التالي للحصول على هذا المسار.
+
+```sql
+SELECT zookeeper_path FROM system.replicas WHERE table = 'table_name';
+```
+
+هناك أيضًا طريقة يدوية للقيام بذلك.
+
+إذا كانت البيانات مختلفة بين النسخ المتماثلة، فقم أولًا بمزامنتها، أو احذف هذه البيانات من جميع النسخ المتماثلة باستثناء واحدة.
+
+أعِد تسمية جدول MergeTree الحالي، ثم أنشئ جدول `ReplicatedMergeTree` بالاسم القديم.
+انقل البيانات من الجدول القديم إلى الدليل الفرعي `detached` داخل الدليل الذي يحتوي على بيانات الجدول الجديد (`/var/lib/clickhouse/data/db_name/table_name/`).
+ثم نفّذ `ALTER TABLE ATTACH PARTITION` على إحدى النسخ المتماثلة لإضافة أجزاء البيانات هذه إلى المجموعة النشطة.
+
+<div id="converting-from-replicatedmergetree-to-mergetree">
+  ## التحويل من ReplicatedMergeTree إلى MergeTree
+</div>
+
+استخدم تعليمة [ATTACH TABLE ... AS NOT REPLICATED](/ar/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) لإلحاق جدول `ReplicatedMergeTree` المنفصل كجدول `MergeTree` على خادم واحد.
+
+تتطلب طريقة أخرى لتنفيذ ذلك إعادة تشغيل الخادم. أنشئ جدول `MergeTree` باسم مختلف. انقل جميع البيانات من الدليل الذي يحتوي على بيانات جدول `ReplicatedMergeTree` إلى دليل بيانات الجدول الجديد. ثم احذف جدول `ReplicatedMergeTree` وأعد تشغيل الخادم.
+
+إذا كنت تريد التخلص من جدول `ReplicatedMergeTree` بدون تشغيل الخادم:
+
+* احذف ملف `.sql` المقابل في دليل البيانات الوصفية (`/var/lib/clickhouse/metadata/`).
+* احذف المسار المقابل في ClickHouse Keeper (`/path_to_table/replica_name`).
+
+بعد ذلك، يمكنك تشغيل الخادم، وإنشاء جدول `MergeTree`، ونقل البيانات إلى دليله، ثم إعادة تشغيل الخادم.
+
+<div id="recovery-when-metadata-in-the-zookeeper-cluster-is-lost-or-damaged">
+  ## التعافي عند فقدان البيانات الوصفية في عنقود ClickHouse Keeper أو تلفها
+</div>
+
+إذا فُقدت البيانات المخزنة في ClickHouse Keeper أو تعرضت للتلف، يمكنك إنقاذها بنقلها إلى جدول غير مكرّر كما هو موضح أعلاه.
+
+**انظر أيضًا**
+
+* [background&#95;schedule&#95;pool&#95;size](/ar/reference/settings/server-settings/settings#background_schedule_pool_size)
+* [background&#95;fetches&#95;pool&#95;size](/ar/reference/settings/server-settings/settings#background_fetches_pool_size)
+* [execute&#95;merges&#95;on&#95;single&#95;replica&#95;time&#95;threshold](/ar/reference/settings/merge-tree-settings#execute_merges_on_single_replica_time_threshold)
+* [max&#95;replicated&#95;fetches&#95;network&#95;bandwidth](/ar/reference/settings/merge-tree-settings#max_replicated_fetches_network_bandwidth)
+* [max&#95;replicated&#95;sends&#95;network&#95;bandwidth](/ar/reference/settings/merge-tree-settings#max_replicated_sends_network_bandwidth)

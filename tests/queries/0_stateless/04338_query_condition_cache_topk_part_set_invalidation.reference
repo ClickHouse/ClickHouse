@@ -1,0 +1,77 @@
+--- DESC LIMIT 5 ground truth (QCC off): top rows all come from partition 0
+999007
+998007
+997007
+996007
+995007
+--- Warm run records partition 1 granules as skippable under the TopK salt
+999007
+998007
+997007
+996007
+995007
+1
+--- Cached run, same part set: must match ground truth
+999007
+998007
+997007
+996007
+995007
+--- QCC ProfileEvents (warm has 0 hits, cached has hits)
+1
+1
+--- After DROP PARTITION: ground truth (QCC off) comes from partition 1
+499007
+498007
+497007
+496007
+495007
+--- QCC on must not reuse granule decisions recorded under the old part set
+499007
+498007
+497007
+496007
+495007
+--- QCC ProfileEvents after DROP PARTITION: no hits (key invalidated)
+1
+--- DESC rerun hits its warm entry (proves direction DESC populated QCC)
+1
+--- ASC after warming DESC: distinct direction key, must not hit
+7
+1007
+2007
+3007
+4007
+7
+1007
+2007
+3007
+4007
+1
+--- Negative LIMIT: correct result, TopK-QCC path does not engage
+4007
+3007
+2007
+1007
+7
+4007
+3007
+2007
+1007
+7
+--- Positive TopK ground truth (QCC off) after the negative run
+499007
+498007
+497007
+496007
+495007
+--- Positive TopK cached rerun: must match ground truth (not poisoned)
+499007
+498007
+497007
+496007
+495007
+--- Negative LIMIT does not reuse the TopK entry (0 hits)
+1
+--- Positive TopK query still hits after the negative run (not poisoned)
+1

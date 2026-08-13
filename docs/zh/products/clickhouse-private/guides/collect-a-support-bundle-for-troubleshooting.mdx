@@ -1,0 +1,90 @@
+---
+noindex: true
+title: "收集支持包以进行故障排查"
+sidebarTitle: "收集支持包"
+description: "使用 `support-bundle` Helm 图表从 ClickHouse 私网集群收集诊断数据。"
+---
+
+使用 `support-bundle` Helm 图表从 ClickHouse 私网集群收集诊断数据。生成的归档文件可共享给 ClickHouse 支持团队，以加快故障处理。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+此 Helm chart 依赖 [Troubleshoot](https://troubleshoot.sh/)，它是一个用于集群诊断的 kubectl 插件。可通过 [Krew](https://krew.sigs.k8s.io/) 安装：
+
+```bash
+kubectl krew install support-bundle
+```
+
+或者参阅 [Troubleshoot 文档](https://troubleshoot.sh/docs/)，了解其他安装方式。
+
+<div id="generating-and-running-the-bundle">
+  ## 生成并运行支持包
+</div>
+
+该 chart 不会在集群中安装任何资源。相反，它会在本地渲染出一个 `SupportBundle` 清单，供 `kubectl support-bundle` 插件使用。
+
+对于名为 `default-xx-01` 的 ClickHouse 集群，请在本地渲染该 chart 并运行该支持包：
+
+```bash
+helm template oci://$HELM_REGISTRY/helm/support-bundle \
+  --set-json='supportBundle.clickhouseClusterName="default-xx-01"' > support-bundle.yaml
+
+kubectl support-bundle support-bundle.yaml
+```
+
+该插件会收集数据，并在当前目录中生成一个 `tar.gz` 归档文件。
+
+<div id="what-is-collected">
+  ## 收集内容
+</div>
+
+该支持包会从两个来源收集数据：ClickHouse Operator 命名空间和集群命名空间 (命名规则为 `ns-<cluster-name>`) 。
+
+**ClickHouse Operator** (可通过 `supportBundle.collectors.operator.enabled` 启用或禁用) ：
+
+* operator 部署中的容器日志
+* operator 命名空间中的 Kubernetes 资源 (Pod、Service、ConfigMap、Event 等) 
+* 安装在 operator 命名空间中的 chart 的 Helm release 配置值
+
+**ClickHouse Cluster** (可通过 `supportBundle.collectors.clickhouseCluster.enabled` 启用或禁用) ：
+
+* ClickHouse Server 容器日志
+* ClickHouse Keeper 容器日志
+* 集群命名空间中的 Kubernetes 资源
+* 安装在集群命名空间中的 chart 的 Helm release 配置值
+* 第一个 ClickHouse Server pod (容器组) 的 `SELECT version()` 输出
+* 第一个 Keeper pod (容器组) 执行 `mntr` 命令的输出
+
+敏感数据——密码、S3 凭据、集群 secrets 以及密码哈希——会被自动脱敏。
+
+<div id="customizing-collection">
+  ## 自定义采集
+</div>
+
+默认配置已适用于大多数场景，但也可按需调整。例如，如需仅采集最近 24 小时的日志并跳过 operator 数据：
+
+```yaml
+supportBundle:
+  clickhouseClusterName: "default-xx-01"
+  collectors:
+    operator:
+      enabled: false
+    clickhouseCluster:
+      enabled: true
+      logs:
+        maxAge: "24h"
+        maxLines: 50000
+```
+
+使用自定义 values 文件渲染：
+
+```bash
+helm template oci://$HELM_REGISTRY/helm/support-bundle \
+  -f custom-values.yaml > support-bundle.yaml
+
+kubectl support-bundle support-bundle.yaml
+```
+
+如果 ClickHouse Operator 安装在非默认命名空间中，请相应地设置 `supportBundle.collectors.operator.namespace`。

@@ -43,15 +43,13 @@ public:
 
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response) override;
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
+    void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;
 
     Packet receivePacket() override;
 
     void disconnect() override;
 
     void sendCancel() override;
-
-    /// Send parts' uuids to replicas to exclude them from query processing
-    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids) override;
 
     Packet drain() override;
 

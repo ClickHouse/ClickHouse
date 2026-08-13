@@ -1,0 +1,33 @@
+---
+description: "Documentation de l'instruction MOVE sur les entités d’accès"
+sidebarTitle: 'MOVE'
+slug: /sql-reference/statements/move
+title: "Instruction MOVE sur les entités d’accès"
+doc_type: 'reference'
+---
+
+Cette instruction permet de déplacer une entité d’accès d’un stockage d’accès vers un autre.
+
+Syntaxe :
+
+```sql
+MOVE {USER, ROLE, QUOTA, SETTINGS PROFILE, ROW POLICY} name1 [, name2, ...] TO access_storage_type
+```
+
+Actuellement, il existe cinq stockages des accès dans ClickHouse :
+
+* `local_directory`
+* `memory`
+* `replicated`
+* `users_xml` (ro)
+* `ldap` (ro)
+
+Exemples :
+
+```sql
+MOVE USER test TO local_directory
+```
+
+```sql
+MOVE ROLE test TO memory
+```

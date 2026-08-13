@@ -978,7 +978,7 @@ def lambda_handler(event, context):
                         ext = getattr(newest_event, "ext", {}) or {}
                         pr_number = ext.get("pr_number", 0) or 0
                         repo_name = ext.get("repo_name", "")
-                        pr_title = ext.get("pr_title", "")
+                        ext.get("pr_title", "")
                         sha = getattr(newest_event, "sha", "")
                         ci_status = (
                             getattr(newest_event, "ci_status", "") or ""

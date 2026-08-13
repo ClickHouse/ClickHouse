@@ -196,7 +196,7 @@ def test_contingency_backward_compatibility(start_cluster):
 
     new_node_1.query(agg_table_ddl)
     new_node_1.query(
-        f"INSERT INTO agg_states SELECT * FROM remote('old_node_1', default, agg_states)"
+        "INSERT INTO agg_states SELECT * FROM remote('old_node_1', default, agg_states)"
     )
     assert new_node_1.query(read_agg).strip() == old_result, "old agg -> new agg mismatch"
 
@@ -207,7 +207,7 @@ def test_contingency_backward_compatibility(start_cluster):
 
     old_node_2.query(agg_table_ddl)
     old_node_2.query(
-        f"INSERT INTO agg_states SELECT * FROM remote('new_node_2', default, agg_states)"
+        "INSERT INTO agg_states SELECT * FROM remote('new_node_2', default, agg_states)"
     )
     assert old_node_2.query(read_agg).strip() == old_result, "new agg -> old agg mismatch"
 
@@ -224,14 +224,14 @@ def test_contingency_backward_compatibility(start_cluster):
 
     old_node_1.query("TRUNCATE TABLE agg_states")
     old_node_1.query(
-        f"INSERT INTO agg_states SELECT * FROM remote('new_node_1', default, agg_states)"
+        "INSERT INTO agg_states SELECT * FROM remote('new_node_1', default, agg_states)"
     )
     assert old_node_1.query(read_agg).strip() == old_result, "new window -> old agg mismatch"
 
     # Direction 4: new window -> new agg (same binary, cross-variant)
     new_node_2.query("TRUNCATE TABLE agg_states")
     new_node_2.query(
-        f"INSERT INTO agg_states SELECT * FROM remote('new_node_1', default, agg_states)"
+        "INSERT INTO agg_states SELECT * FROM remote('new_node_1', default, agg_states)"
     )
     assert new_node_2.query(read_agg).strip() == old_result, "new window -> new agg mismatch"
 

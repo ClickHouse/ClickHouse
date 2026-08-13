@@ -1,0 +1,130 @@
+---
+description: '`eval` テーブル関数は、定数式をクエリ文字列として評価し、結果として得られた `SELECT` クエリを実行します。'
+sidebarTitle: 'eval'
+slug: /sql-reference/table-functions/eval
+title: 'eval'
+doc_type: 'reference'
+---
+
+`eval` テーブル関数は、引数をクエリ文字列として評価し、その文字列を単一の `SELECT` クエリとして実行します。
+
+このテーブル関数は実験的機能であり、デフォルトでは無効になっています。使用するには、`allow_experimental_eval_table_function` 設定を有効にします。
+
+```sql
+SET allow_experimental_eval_table_function = 1;
+```
+
+これには、アナライザ ([`enable_analyzer`](/ja/reference/settings/session-settings#allow_experimental_analyzer)。デフォルトで有効) が必要です。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+eval(expression)
+eval(SELECT ...)
+```
+
+<div id="arguments">
+  ## 引数
+</div>
+
+* `expression` — クエリ文字列を返す定数式です。クエリパラメータとスカラーサブクエリを使用できます。
+* `SELECT ...` — クエリ文字列を返す `SELECT` クエリです。この形式はスカラーサブクエリのシンタックスシュガーです。`eval(SELECT ...)` は `eval((SELECT ...))` と等価なため、このクエリは必ずちょうど1行1カラムを返す必要があります。
+
+式の値は、次のいずれかの型である必要があります。
+
+* `String`
+* `Nullable(String)`
+* `LowCardinality(String)`
+* `LowCardinality(Nullable(String))`
+
+値が `NULL` の場合、`eval` は例外をスローします。
+
+<div id="returned-value">
+  ## 戻り値
+</div>
+
+生成された `SELECT` クエリの結果をテーブルとして返します。
+
+出力スキーマは `eval` テーブル関数の解析時に決定されるため、外側のクエリから、生成されたクエリの実際のカラム名や型を参照できます。
+
+<div id="examples">
+  ## 例
+</div>
+
+定数式を評価する例:
+
+```sql
+SELECT * FROM eval('SEL' || 'ECT 1 AS x');
+```
+
+結果:
+
+```text
+┌─x─┐
+│ 1 │
+└───┘
+```
+
+クエリパラメータを使用する:
+
+```sql
+SET param_q = 'SELECT 2 AS y';
+SELECT * FROM eval({q:String});
+```
+
+結果:
+
+```text
+┌─y─┐
+│ 2 │
+└───┘
+```
+
+クエリテキストを返す `SELECT` クエリを評価します:
+
+```sql
+SELECT * FROM eval(SELECT 'SELECT 3 AS z');
+```
+
+結果:
+
+```text
+┌─z─┐
+│ 3 │
+└───┘
+```
+
+生成したスキーマを外側のクエリで使用します:
+
+```sql
+SELECT x + 1 FROM eval('SELECT 4 AS x');
+```
+
+結果:
+
+```text
+┌─plus(x, 1)─┐
+│          5 │
+└────────────┘
+```
+
+<div id="restrictions">
+  ## 制約事項
+</div>
+
+* `eval` はクエリ アナライザ (`enable_analyzer = 1`) でのみ動作します。
+* 生成されるクエリは、`INTO OUTFILE` や `FORMAT` などの出力オプションを含まない、単一の `SELECT` クエリでなければなりません。`eval` で複数のステートメントは実行できません。
+* 生成されるクエリは自己完結している必要があります。独立したスコープで解決されるため、外側のクエリの `WITH` 別名やカラムは参照できません。
+* 生成されるクエリでは、`eval` テーブル関数を再度使用することはできません。
+* `eval` は、`remote('host', eval(...))` のように、別のテーブル関数の引数として使用できません。生成されたクエリをリモートサーバーで実行するには、これを `view` でラップします: `remote('host', view(SELECT * FROM eval(...)))`。
+* 引数はクエリの解析時に一度だけ評価され、行ごとやブロックごとに評価されるわけではありません。
+* 外側のクエリログには `eval` を含む元のクエリが記録されます。生成された `SELECT` クエリは、別個のユーザークエリとしては記録されません。
+
+<div id="related">
+  ## 関連
+</div>
+
+* [`view` テーブル関数](/ja/reference/functions/table-functions/view)
+* `allow_experimental_eval_table_function` 設定

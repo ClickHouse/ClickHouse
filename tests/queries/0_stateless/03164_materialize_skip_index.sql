@@ -1,4 +1,5 @@
 -- add_minmax_index_for_numeric_columns=0: Changes the plan FOR b
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS t_skip_index_insert;
 
 SET use_statistics_for_part_pruning = 0; -- disable statistics-based part pruning to keep EXPLAIN output stable

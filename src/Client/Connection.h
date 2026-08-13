@@ -131,6 +131,8 @@ public:
 
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 
+    void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;
+
     void sendExternalTablesData(ExternalTablesData & data) override;
 
     bool poll(size_t timeout_microseconds/* = 0 */) override;
@@ -148,6 +150,13 @@ public:
 
     bool checkConnected(const ConnectionTimeouts & timeouts) override { return isConnected() && ping(timeouts); }
 
+    /// Note that a server that went away without closing the connection is not detected here, and
+    /// neither is a close that has not arrived yet; that only shows up when the connection is used.
+    /// Pinging the server to find out would add a round trip to every query, and a pong that does
+    /// not arrive in time is indistinguishable from a closed connection, so it would make the client
+    /// drop live sessions under load.
+    bool checkConnectedWithoutRoundTrip() override { return isConnected() && !isStale(); }
+
     void disconnect() override;
 
     /// Send prepared block of data (serialized and, if need, compressed), that will be read from 'input'.
@@ -156,9 +165,7 @@ public:
 
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response);
     /// Send all scalars.
-    void sendScalarsData(Scalars & data);
-    /// Send parts' uuids to excluded them from query processing
-    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids);
+    void sendScalarsData(Scalars & data) override;
 
     TablesStatusResponse getTablesStatus(const ConnectionTimeouts & timeouts,
                                          const TablesStatusRequest & request);
@@ -188,6 +195,7 @@ public:
     }
 
     UInt64 getParallelReplicasProtocolVersion() const { return server_parallel_replicas_protocol_version; }
+    UInt64 getQueryPlanSerializationVersion() const { return server_query_plan_serialization_version; }
 
 private:
     String host;
@@ -327,6 +335,9 @@ private:
     void sendClusterNameAndSalt();
 #endif
     bool ping(const ConnectionTimeouts & timeouts);
+
+    /// Whether the connection can no longer serve a request, checked without a round trip.
+    bool isStale();
 
     Block receiveData();
     Block receiveLogData();

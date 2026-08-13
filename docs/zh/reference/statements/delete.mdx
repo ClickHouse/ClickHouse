@@ -1,0 +1,116 @@
+---
+description: '轻量级删除简化了从数据库删除数据的过程。'
+keywords: ['delete']
+sidebarTitle: 'DELETE'
+slug: /sql-reference/statements/delete
+title: '轻量级 DELETE 语句'
+doc_type: 'reference'
+---
+
+轻量级 `DELETE` 语句会从表 `[db.]table` 中删除满足表达式 `expr` 的行。它仅适用于 *MergeTree 表引擎家族。
+
+```sql
+DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr;
+```
+
+之所以称其为“轻量级 `DELETE`”，是为了与 [ALTER TABLE ... DELETE](/zh/reference/statements/alter/delete) 命令相对区别开来，后者属于重量级操作。
+
+<div id="examples">
+  ## 示例
+</div>
+
+```sql
+-- 删除 `hits` 表中 `Title` 列包含文本 `hello` 的所有行
+DELETE FROM hits WHERE Title LIKE '%hello%';
+```
+
+<div id="lightweight-delete-does-not-delete-data-immediately">
+  ## 轻量级 `DELETE` 不会立即删除数据
+</div>
+
+轻量级 `DELETE` 是通过 [变更](/zh/reference/statements/alter/index#mutations) 实现的：它会将行标记为已删除，但不会立即从物理层面删除这些数据。
+
+默认情况下，`DELETE` 语句会等待这些行完成“已删除”标记后才返回。如果数据量很大，这可能会耗费较长时间。或者，你也可以通过设置 [`lightweight_deletes_sync`](/zh/reference/settings/session-settings#lightweight_deletes_sync) 让它在后台异步执行。如果禁用该设置，`DELETE` 语句会立即返回，但在后台变更完成之前，查询仍可能看到这些数据。
+
+变更不会物理删除那些已标记为删除的行；只有在下一次合并时才会真正删除。因此，在一段未指定的时间内，数据实际上可能并未从存储中移除，而只是被标记为已删除。
+
+如果你需要确保数据能在可预测的时间内从存储中删除，可以考虑使用表设置 [`min_age_to_force_merge_seconds`](/zh/reference/settings/merge-tree-settings#min_age_to_force_merge_seconds)。或者，你也可以使用 [ALTER TABLE ... DELETE](/zh/reference/statements/alter/delete) 命令。请注意，使用 `ALTER TABLE ... DELETE` 删除数据可能会消耗大量资源，因为它会重新创建所有受影响的 parts。
+
+<div id="deleting-large-amounts-of-data">
+  ## 删除大量数据
+</div>
+
+大规模删除可能会对 ClickHouse 的性能产生负面影响。如果你想删除表中的所有行，建议考虑使用 [`TRUNCATE TABLE`](/zh/reference/statements/truncate) 命令。
+
+如果预计会频繁执行删除操作，建议考虑使用[自定义分区键](/zh/reference/engines/table-engines/mergetree-family/custom-partitioning-key)。这样，你就可以使用 [`ALTER TABLE ... DROP PARTITION`](/zh/reference/statements/alter/partition#drop-partitionpart) 命令，快速删除与该分区关联的所有行。
+
+<div id="limitations-of-lightweight-delete">
+  ## 轻量级 `DELETE` 的局限性
+</div>
+
+<div id="lightweight-deletes-with-projections">
+  ### 带投影的 轻量级 DELETE
+</div>
+
+默认情况下，`DELETE` 不适用于带有投影的表。这是因为投影中的行可能会受到 `DELETE` 操作的影响。不过，可以通过 [MergeTree setting](/zh/reference/settings/merge-tree-settings) `lightweight_mutation_projection_mode` 来更改这种行为。
+
+<div id="performance-considerations-when-using-lightweight-delete">
+  ## 使用轻量级 `DELETE` 时的性能注意事项
+</div>
+
+**使用轻量级 `DELETE` 语句删除大量数据，可能会对 SELECT 查询性能产生负面影响。**
+
+以下情况也可能会降低轻量级 `DELETE` 的性能：
+
+* `DELETE` 查询中的 `WHERE` 条件开销较大。
+* 如果变更队列中积压了大量其他变更，可能会导致性能问题，因为表上的所有变更都会按顺序执行。
+* 受影响的表包含非常多的 parts。
+* compact parts 中有大量数据。在 compact part 中，所有列都存储在一个文件中。
+
+<div id="delete-permissions">
+  ## 删除权限
+</div>
+
+`DELETE` 需要 `ALTER DELETE` 权限。要为指定用户授予对特定表执行 `DELETE` 语句的权限，请运行以下命令：
+
+```sql
+GRANT ALTER DELETE ON db.table to username;
+```
+
+<div id="how-lightweight-deletes-work-internally-in-clickhouse">
+  ## ClickHouse 中轻量级 DELETE 的内部工作原理
+</div>
+
+1. **为受影响的行应用“掩码”**
+
+   当执行 `DELETE FROM table ...` 查询时，ClickHouse 会保存一个掩码，将每一行标记为“存在”或“已删除”。这些“已删除”的行在后续查询中会被忽略。不过，这些行实际上只会在后续合并时才被真正移除。写入这个掩码比 `ALTER TABLE ... DELETE` 查询所执行的操作要轻量得多。
+
+   该掩码通过一个隐藏的 `_row_exists` 系统列来实现：对所有可见行存储 `True`，对已删除的行存储 `False`。只有当某个 part 中有部分行被删除时，这一列才会存在于该 part 中。如果某个 part 中这一列的所有值都为 `True`，则这一列不存在。
+
+2. **`SELECT` 查询会被改写为包含该掩码的形式**
+
+   当查询中用到了带掩码的列时，`SELECT ... FROM table WHERE condition` 查询在内部会额外加入 `_row_exists` 上的过滤条件，并被改写为：
+
+   ```sql
+   SELECT ... FROM table PREWHERE _row_exists WHERE condition
+   ```
+
+   在执行时，会读取 `_row_exists` 列，以确定哪些行不应返回。如果已删除的行很多，ClickHouse 在读取其余列时还可以判断哪些粒度可以被完全跳过。
+
+3. **`DELETE` 查询会被转换为 `ALTER TABLE ... UPDATE` 查询**
+
+   `DELETE FROM table WHERE condition` 会被转换为 `ALTER TABLE table UPDATE _row_exists = 0 WHERE condition` 变更。
+
+   在内部，此变更分两步执行：
+
+   1. 对每个单独的 part 执行 `SELECT count() FROM table WHERE condition` 命令，以确定该 part 是否受影响。
+
+   2. 根据上述命令的结果，对受影响的 parts 执行变更，并为未受影响的 parts 创建硬链接。对于 wide parts，会更新每一行的 `_row_exists` 列，而其他所有列的文件则创建硬链接。对于 compact parts，由于所有列都存储在同一个文件中，因此所有列都会被重写。
+
+   从上述步骤可以看出，使用掩码技术的轻量级 `DELETE` 相比传统的 `ALTER TABLE ... DELETE` 性能更好，因为它不需要为受影响的 parts 重写所有列的文件。
+
+<div id="related-content">
+  ## 相关内容
+</div>
+
+* 博客：[ClickHouse 中更新和删除的处理](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

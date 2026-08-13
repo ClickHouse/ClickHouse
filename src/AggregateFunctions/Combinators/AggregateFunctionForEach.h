@@ -104,11 +104,17 @@ private:
                 throw;
             }
 
-            for (i = 0; i < old_size; ++i)
+            /// Zero-sized nested state (aggregate over Nothing): the zero-byte arena
+            /// allocation does not advance, so new_state aliases old_state. There is no
+            /// data to migrate, and merge() with aliasing source/destination is undefined.
+            if (nested_size_of_data != 0)
             {
-                nested_func->merge(&new_state[i * nested_size_of_data],
-                        &old_state[i * nested_size_of_data],
-                        &arena);
+                for (i = 0; i < old_size; ++i)
+                {
+                    nested_func->merge(&new_state[i * nested_size_of_data],
+                            &old_state[i * nested_size_of_data],
+                            &arena);
+                }
             }
 
             state.array_of_aggregate_datas = new_state;
@@ -259,10 +265,17 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         const AggregateFunctionForEachData & rhs_state = data(rhs);
         AggregateFunctionForEachData & state = ensureAggregateData(place, rhs_state.dynamic_array_size, *arena);
+
+        /// Zero-sized nested state (aggregate over Nothing): every element aliases the same
+        /// zero-byte arena slot (alignedAlloc(0) does not advance), so nested_state ==
+        /// rhs_nested_state. There is nothing to merge, and merge() with aliasing
+        /// source/destination is undefined.
+        if (nested_size_of_data == 0)
+            return;
 
         const char * rhs_nested_state = rhs_state.array_of_aggregate_datas;
         char * nested_state = state.array_of_aggregate_datas;

@@ -3,10 +3,12 @@
 -- It checks that disjunctions (OR) over conjunctions can be split and pushed as per-side
 -- pre-join filters without changing query results, and that when the optimization is disabled
 -- such pre-join filters are not produced. It also validates join-order-dependent pushdown
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer=1;
 SET enable_join_runtime_filters=0;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
+SET query_plan_optimize_join_order_randomize = 0;
 
 DROP TABLE IF EXISTS tp1;
 DROP TABLE IF EXISTS tp2;

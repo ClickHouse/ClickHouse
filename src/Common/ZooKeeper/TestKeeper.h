@@ -127,6 +127,8 @@ public:
         ACLs acls;
         bool is_ephemeral = false;
         bool is_sequental = false;
+        bool is_ttl = false;
+        int64_t ttl = 0;
         Stat stat{};
         int32_t seq_num = 0;
     };
@@ -157,11 +159,15 @@ private:
     Watches watches;
     Watches list_watches; /// Watches for 'list' request (watches on children).
 
+    int64_t last_ttl_cleanup_ms = 0;
+
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
     RequestsQueue requests_queue{1};
 
     void pushRequest(RequestInfo && request);
     void exprireRequest(RequestInfo && request);
+
+    void clearExpiredTTLNodes();
 
     ThreadFromGlobalPool processing_thread;
 

@@ -1,0 +1,116 @@
+---
+description: '轻量级删除简化了从数据库中删除数据的过程。'
+keywords: ['delete']
+sidebarTitle: 'DELETE'
+slug: /sql-reference/statements/delete
+title: '轻量级删除语句'
+doc_type: 'reference'
+---
+
+轻量级删除语句用于删除表 `[db.]table` 中与表达式 `expr` 匹配的行。它仅适用于 *MergeTree 表引擎家族。
+
+```sql
+DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr;
+```
+
+之所以称为 &quot;轻量级删除&quot;，是为了与 [ALTER TABLE ... DELETE](/zh/reference/statements/alter/delete) 命令相区别，后者属于开销较大的过程。
+
+<div id="examples">
+  ## 示例
+</div>
+
+```sql
+-- 删除 `hits` 表中 `Title` 列包含文本 `hello` 的所有行
+DELETE FROM hits WHERE Title LIKE '%hello%';
+```
+
+<div id="lightweight-delete-does-not-delete-data-immediately">
+  ## 轻量级删除不会立即删除数据
+</div>
+
+轻量级删除是以 [变更](/zh/reference/statements/alter/index#mutations) 的形式实现的：它会将行标记为已删除，但不会立即从物理层面删除这些行。
+
+默认情况下，`DELETE` 语句会等到行被标记为已删除后才返回。如果数据量很大，这可能需要较长时间。或者，你也可以通过设置 [`lightweight_deletes_sync`](/zh/reference/settings/session-settings#lightweight_deletes_sync) 让它在后台异步执行。禁用该设置后，`DELETE` 语句会立即返回，但在后台变更完成之前，这些数据对查询而言仍可能可见。
+
+该变更不会物理删除那些已标记为删除的行；这只会在下一次合并期间发生。因此，在一段未明确的时间内，数据实际上可能并未从存储中删除，而只是被标记为已删除。
+
+如果你需要确保数据能在可预测的时间内从存储中删除，请考虑使用表设置 [`min_age_to_force_merge_seconds`](/zh/reference/settings/merge-tree-settings#min_age_to_force_merge_seconds)。或者，也可以使用 [ALTER TABLE ... DELETE](/zh/reference/statements/alter/delete) 命令。请注意，使用 `ALTER TABLE ... DELETE` 删除数据可能会消耗大量资源，因为它会重建所有受影响的 parts。
+
+<div id="deleting-large-amounts-of-data">
+  ## 删除大量数据
+</div>
+
+大批量删除可能会对 ClickHouse 的性能产生负面影响。如果你想删除表中的所有行，建议使用 [`TRUNCATE TABLE`](/zh/reference/statements/truncate) 命令。
+
+如果你预计会频繁删除数据，建议使用[自定义分区键](/zh/reference/engines/table-engines/mergetree-family/custom-partitioning-key)。这样，你就可以使用 [`ALTER TABLE ... DROP PARTITION`](/zh/reference/statements/alter/partition#drop-partitionpart) 命令快速删除与该分区关联的所有行。
+
+<div id="limitations-of-lightweight-delete">
+  ## lightweight `DELETE` 的局限性
+</div>
+
+<div id="lightweight-deletes-with-projections">
+  ### 带投影的轻量级删除
+</div>
+
+默认情况下，`DELETE` 不支持带投影的表。这是因为投影中的行可能会受 `DELETE` 操作影响。不过，可以使用 [MergeTree setting](/zh/reference/settings/merge-tree-settings) `lightweight_mutation_projection_mode` 来更改这一行为。
+
+<div id="performance-considerations-when-using-lightweight-delete">
+  ## 使用轻量级删除时的性能注意事项
+</div>
+
+**使用轻量级删除语句删除大量数据，可能会对 SELECT 查询性能造成负面影响。**
+
+以下因素也可能会影响轻量级删除的性能：
+
+* `DELETE` 查询中的 `WHERE` 条件过于复杂。
+* 如果变更队列中积压了大量其他变更，也可能导致性能问题，因为表上的所有变更都是按顺序依次执行的。
+* 受影响的表包含数量非常多的数据分区片段。
+* compact parts 中存有大量数据。在 Compact part 中，所有列都存储在同一个文件中。
+
+<div id="delete-permissions">
+  ## 删除权限
+</div>
+
+`DELETE` 需要 `ALTER DELETE` 权限。要为特定用户启用对特定表执行 `DELETE` 语句的权限，请运行以下命令：
+
+```sql
+GRANT ALTER DELETE ON db.table to username;
+```
+
+<div id="how-lightweight-deletes-work-internally-in-clickhouse">
+  ## ClickHouse 中轻量级 DELETE 的内部工作机制
+</div>
+
+1. **对受影响的行应用“掩码”**
+
+   当执行 `DELETE FROM table ...` 查询时，ClickHouse 会保存一个掩码，将每一行标记为“存在”或“已删除”。这些“已删除”的行会在后续查询中被忽略。不过，这些行实际上只会在之后的合并过程中才被真正移除。写入这个掩码比执行 `ALTER TABLE ... DELETE` 查询要轻量得多。
+
+   该掩码通过一个隐藏的 `_row_exists` 系统列来实现：对所有可见行存储 `True`，对已删除的行存储 `False`。只有当某个 part 中有行被删除时，这一列才会出现在该 part 中。如果某个 part 的所有值都等于 `True`，则不会存在这一列。
+
+2. **`SELECT` 查询会被改写为包含该掩码的形式**
+
+   当查询中使用了带掩码的列时，`SELECT ... FROM table WHERE condition` 查询在内部会加上 `_row_exists` 上的谓词，并被改写为：
+
+   ```sql
+   SELECT ... FROM table PREWHERE _row_exists WHERE condition
+   ```
+
+   在执行时，会读取 `_row_exists` 列来确定哪些行不应返回。如果已删除的行很多，ClickHouse 还可以判断在读取其余列时，哪些粒度能够被完全跳过。
+
+3. **`DELETE` 查询会被转换为 `ALTER TABLE ... UPDATE` 查询**
+
+   `DELETE FROM table WHERE condition` 会被转换为一个 `ALTER TABLE table UPDATE _row_exists = 0 WHERE condition` 变更。
+
+   在内部，这个变更分两步执行：
+
+   1. 对每个单独的 part 执行一条 `SELECT count() FROM table WHERE condition` 命令，以确定该 part 是否受影响。
+
+   2. 根据上述命令的结果，对受影响的 parts 执行变更，而对未受影响的 parts 创建硬链接。对于 wide parts，会更新每一行的 `_row_exists` 列，而其他所有列的文件都会创建硬链接。对于 compact parts，由于所有列都存储在同一个文件中，因此所有列都会被重写。
+
+   从上述步骤可以看出，使用掩码技术的轻量级 `DELETE` 比传统的 `ALTER TABLE ... DELETE` 性能更好，因为它不需要为受影响的 parts 重写所有列文件。
+
+<div id="related-content">
+  ## 相关内容
+</div>
+
+* 博客：[ClickHouse 中更新与删除的处理方式](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

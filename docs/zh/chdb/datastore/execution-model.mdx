@@ -1,0 +1,466 @@
+---
+title: 'DataStore 执行模型'
+sidebarTitle: '执行模型'
+slug: /chdb/datastore/execution-model
+description: '了解 DataStore 的惰性求值、执行触发条件和缓存机制'
+keywords: ['chdb', 'datastore', '惰性', '求值', '执行', '缓存']
+doc_type: 'guide'
+---
+
+理解 DataStore 的惰性求值模型，是高效使用它并获得最佳性能的关键。
+
+<div id="lazy-evaluation">
+  ## 惰性求值
+</div>
+
+DataStore 使用**惰性求值**——操作不会立即执行，而是先记录下来并编译成优化后的 SQL 查询。只有在实际需要结果时，才会执行。
+
+<div id="lazy-vs-eager">
+  ### 示例：惰性求值与立即求值
+</div>
+
+```python
+from pathlib import Path
+Path("sales.csv").write_text("""\
+region,product,category,amount,quantity,price,date,order_id
+East,Widget,Electronics,5200,10,120,2024-01-15,1001
+West,Gadget,Electronics,800,5,160,2024-02-20,1002
+East,Gizmo,Home,6500,3,100,2024-03-10,1003
+North,Widget,Electronics,4500,6,150,2024-06-18,1004
+West,Gadget,Electronics,2000,8,250,2024-09-14,1005
+""")
+
+from chdb import datastore as pd
+
+ds = pd.read_csv("sales.csv")
+
+# These operations are NOT executed yet
+result = (ds
+    .filter(ds['amount'] > 1000)    # Recorded, not executed
+    .select('region', 'amount')      # Recorded, not executed
+    .groupby('region')               # Recorded, not executed
+    .agg({'amount': 'sum'})          # Recorded, not executed
+    .sort('sum', ascending=False)    # Recorded, not executed
+)
+
+# Still no execution - just building the query plan
+print(result.to_sql())
+# SELECT region, SUM(amount) AS sum
+# FROM file('sales.csv', 'CSVWithNames')
+# WHERE amount > 1000
+# GROUP BY region
+# ORDER BY sum DESC
+
+# NOW execution happens
+df = result.to_df()  # <-- Triggers execution
+```
+
+<div id="benefits">
+  ### 惰性求值的优势
+</div>
+
+1. **查询优化**：多个操作会编译成一条优化后的 SQL 查询
+2. **过滤器下推**：过滤器会在数据源层面应用
+3. **列裁剪**：只读取所需的列
+4. **延迟决策**：可在运行时选择执行引擎
+5. **计划检查**：可在执行前查看/调试查询
+
+***
+
+<div id="triggers">
+  ## 执行触发时机
+</div>
+
+在需要实际值时，系统会自动触发执行：
+
+<div id="automatic-triggers">
+  ### 自动触发
+</div>
+
+| 触发方式                 | 示例                 | 描述              |
+| -------------------- | ------------------ | --------------- |
+| `print()` / `repr()` | `print(ds)`        | 显示结果            |
+| `len()`              | `len(ds)`          | 获取行数            |
+| `.columns`           | `ds.columns`       | 获取列名            |
+| `.dtypes`            | `ds.dtypes`        | 获取列类型           |
+| `.shape`             | `ds.shape`         | 获取维度            |
+| `.index`             | `ds.index`         | 获取行索引           |
+| `.values`            | `ds.values`        | 获取 NumPy 数组     |
+| 迭代                   | `for row in ds`    | 遍历行             |
+| `to_df()`            | `ds.to_df()`       | 转换为 pandas      |
+| `to_pandas()`        | `ds.to_pandas()`   | `to&#95;df` 的别名 |
+| `to_dict()`          | `ds.to_dict()`     | 转换为字典           |
+| `to_numpy()`         | `ds.to_numpy()`    | 转换为数组           |
+| `.equals()`          | `ds.equals(other)` | 比较 DataStore    |
+
+**示例：**
+
+```python
+# All these trigger execution
+print(ds)              # Display
+len(ds)                # 1000
+ds.columns             # Index(['name', 'age', 'city'])
+ds.shape               # (1000, 3)
+list(ds)               # List of values
+ds.to_df()             # pandas DataFrame
+```
+
+<div id="stay-lazy">
+  ### 保持惰性执行的操作
+</div>
+
+| 操作                     | 返回值         | 描述             |
+| ---------------------- | ----------- | -------------- |
+| `filter()`             | DataStore   | 添加 WHERE 子句    |
+| `select()`             | DataStore   | 添加列选择          |
+| `sort()`               | DataStore   | 添加 ORDER BY    |
+| `groupby()`            | LazyGroupBy | 为 GROUP BY 做准备 |
+| `join()`               | DataStore   | 添加 JOIN        |
+| `ds['col']`            | ColumnExpr  | 列引用            |
+| `ds[['col1', 'col2']]` | DataStore   | 列选择            |
+
+**示例：**
+
+```python
+# These do NOT trigger execution - they stay lazy
+result = ds.filter(ds['age'] > 25)      # Returns DataStore
+result = ds.select('name', 'age')        # Returns DataStore
+result = ds['name']                      # Returns ColumnExpr
+result = ds.groupby('city')              # Returns LazyGroupBy
+```
+
+***
+
+<div id="three-phase">
+  ## 三阶段执行
+</div>
+
+DataStore 操作采用三阶段执行模型：
+
+<div id="phase-1">
+  ### 阶段 1：SQL 查询构建 (惰性)
+</div>
+
+可用 SQL 表达的操作会先累积起来：
+
+```python
+result = (ds
+    .filter(ds['status'] == 'active')   # WHERE
+    .select('user_id', 'amount')         # SELECT
+    .groupby('user_id')                  # GROUP BY
+    .agg({'amount': 'sum'})              # SUM()
+    .sort('sum', ascending=False)        # ORDER BY
+    .limit(10)                           # LIMIT
+)
+# All compiled into one SQL query
+```
+
+<div id="phase-2">
+  ### 第 2 阶段：执行时机
+</div>
+
+当触发条件出现时，就会执行已累积的 SQL：
+
+```python
+# Execution triggered here
+df = result.to_df()  
+# The single optimized SQL query runs now
+```
+
+<div id="phase-3">
+  ### 阶段 3：DataFrame 操作 (如有)
+</div>
+
+如果你在执行后继续进行仅适用于 pandas 的操作：
+
+```python
+# Mixed operations
+result = (ds
+    .filter(ds['amount'] > 100)          # Phase 1: SQL
+    .to_df()                             # Phase 2: Execute
+    .pivot_table(...)                    # Phase 3: pandas
+)
+```
+
+***
+
+<div id="explain">
+  ## 查看执行计划
+</div>
+
+使用 `explain()` 可查看将如何执行：
+
+```python title="Query"
+ds = pd.read_csv("sales.csv")
+
+query = (ds
+    .filter(ds['amount'] > 1000)
+    .groupby('region')
+    .agg({'amount': ['sum', 'mean']})
+)
+
+# View execution plan
+query.explain()
+```
+
+```text title="Response"
+Pipeline:
+  1. Source: file('sales.csv', 'CSVWithNames')
+  2. Filter: amount > 1000
+  3. GroupBy: region
+  4. Aggregate: sum(amount), avg(amount)
+
+Generated SQL:
+SELECT region, SUM(amount) AS sum, AVG(amount) AS mean
+FROM file('sales.csv', 'CSVWithNames')
+WHERE amount > 1000
+GROUP BY region
+```
+
+使用 `verbose=True` 查看更多详细信息：
+
+```python
+query.explain(verbose=True)
+```
+
+参见[调试：explain()](/zh/chdb/debugging/explain)了解完整文档。
+
+***
+
+<div id="caching">
+  ## 缓存
+</div>
+
+DataStore 会缓存执行结果，以避免重复查询。
+
+<div id="how-caching">
+  ### 缓存的工作原理
+</div>
+
+```python
+from pathlib import Path
+Path("data.csv").write_text("""\
+name,age,city,salary,department
+Alice,25,NYC,55000,Engineering
+Bob,30,LA,65000,Product
+Charlie,35,NYC,80000,Engineering
+Diana,28,SF,70000,Design
+Eve,42,NYC,95000,Product
+""")
+
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25)
+
+# First access - executes query
+print(result.shape)  # Executes and caches
+
+# Second access - uses cache
+print(result.columns)  # Uses cached result
+
+# Third access - uses cache
+df = result.to_df()  # Uses cached result
+```
+
+<div id="cache-invalidation">
+  ### 缓存失效
+</div>
+
+当操作修改 DataStore 时，缓存会失效：
+
+```python
+result = ds.filter(ds['age'] > 25)
+print(result.shape)  # Executes, caches
+
+# New operation invalidates cache
+result2 = result.filter(result['city'] == 'NYC')
+print(result2.shape)  # Re-executes (different query)
+```
+
+<div id="cache-control">
+  ### 手动控制缓存
+</div>
+
+```python
+# Clear cache
+ds.clear_cache()
+
+# Disable caching
+from chdb.datastore.config import config
+config.set_cache_enabled(False)
+```
+
+***
+
+<div id="mixing">
+  ## 混合 SQL 与 Pandas 操作
+</div>
+
+DataStore 可智能处理结合 SQL 和 Pandas 的操作：
+
+<div id="sql-ops">
+  ### 与 SQL 兼容的操作
+</div>
+
+以下操作会被编译为 SQL：
+
+* `filter()`, `where()`
+* `select()`
+* `groupby()`, `agg()`
+* `sort()`, `orderby()`
+* `limit()`, `offset()`
+* `join()`, `union()`
+* `distinct()`
+* 列操作 (数学运算、比较、字符串方法)
+
+<div id="pandas-ops">
+  ### 仅限 Pandas 的操作
+</div>
+
+以下操作会触发执行，并使用 pandas：
+
+* 使用自定义函数的 `apply()`
+* 带有复杂聚合的 `pivot_table()`
+* `stack()`、`unstack()`
+* 对已执行的 DataFrame 执行的操作
+
+<div id="hybrid">
+  ### 混合式管道
+</div>
+
+```python
+# SQL phase
+result = (ds
+    .filter(ds['amount'] > 100)      # SQL
+    .groupby('category')              # SQL
+    .agg({'amount': 'sum'})           # SQL
+)
+
+# Execution + pandas phase
+result = (result
+    .to_df()                          # Execute SQL
+    .pivot_table(...)                 # pandas operation
+)
+```
+
+***
+
+<div id="engine-selection">
+  ## 执行引擎选择
+</div>
+
+DataStore 可使用不同的引擎来执行操作：
+
+<div id="auto-mode">
+  ### 自动模式 (默认)
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.set_execution_engine('auto')  # Default
+# Automatically selects best engine per operation
+```
+
+<div id="chdb-engine">
+  ### 强制使用 chDB 引擎
+</div>
+
+```python
+config.set_execution_engine('chdb')
+# All operations use ClickHouse SQL
+```
+
+<div id="pandas-engine">
+  ### 强制使用 pandas 引擎
+</div>
+
+```python
+config.set_execution_engine('pandas')
+# All operations use pandas
+```
+
+详见[配置：执行引擎](/zh/chdb/configuration/execution-engine)。
+
+***
+
+<div id="performance">
+  ## 性能影响
+</div>
+
+<div id="filter-early">
+  ### 好：尽早过滤
+</div>
+
+```python
+# Good: Filter in SQL, then aggregate
+result = (ds
+    .filter(ds['date'] >= '2024-01-01')  # Reduces data early
+    .groupby('category')
+    .agg({'amount': 'sum'})
+)
+```
+
+<div id="filter-late">
+  ### 不佳：过晚进行过滤
+</div>
+
+```python
+# Bad: Aggregate all, then filter
+result = (ds
+    .groupby('category')
+    .agg({'amount': 'sum'})
+    .to_df()
+    .query('sum > 1000')  # Pandas filter after aggregation
+)
+```
+
+<div id="select-early">
+  ### 推荐：尽早选择列
+</div>
+
+```python
+# Good: Select columns in SQL
+result = (ds
+    .select('user_id', 'amount', 'date')
+    .filter(ds['date'] >= '2024-01-01')
+    .groupby('user_id')
+    .agg({'amount': 'sum'})
+)
+```
+
+<div id="sql-work">
+  ### 推荐做法：让 SQL 来处理
+</div>
+
+```python
+# Good: Complex aggregation in SQL
+result = (ds
+    .groupby('category')
+    .agg({
+        'amount': ['sum', 'mean', 'count'],
+        'quantity': 'sum'
+    })
+    .sort('sum', ascending=False)
+    .limit(10)
+)
+# One SQL query does everything
+
+# Bad: Multiple separate queries
+sums = ds.groupby('category')['amount'].sum().to_df()
+means = ds.groupby('category')['amount'].mean().to_df()
+# Two queries instead of one
+```
+
+***
+
+<div id="best-practices">
+  ## 最佳实践摘要
+</div>
+
+1. **执行前先串联各项操作** - 先构建完整查询，再统一触发一次
+2. **尽早过滤** - 在源头减少数据量
+3. **只选择所需列** - 列裁剪可提升性能
+4. **使用 `explain()` 理解执行方式** - 运行前先调试
+5. **让 SQL 处理聚合** - ClickHouse 已对此进行了优化
+6. **留意执行触发时机** - 避免意外过早执行
+7. **合理使用缓存** - 了解缓存何时会失效
