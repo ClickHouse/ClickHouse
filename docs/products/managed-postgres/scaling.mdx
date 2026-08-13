@@ -162,6 +162,15 @@ If writes fill the disk faster than autoscaling can complete, the instance goes 
 
 Reads keep working, while writes fail with the standard Postgres error `cannot execute INSERT in a read-only transaction`. Read-only mode lifts automatically once free space recovers, usually right after the scale-up cutover completes.
 
+### Example {#autoscaling-example}
+
+An instance with 1024 GB of storage runs a write-heavy workload:
+
+1. At 870 GB used (85%), you receive the storage notification.
+2. At 922 GB used (90%), autoscaling starts. A replacement server with 2048 GB of storage is provisioned and restored from the latest backup while your instance keeps serving traffic.
+3. Once the replacement has caught up, the cutover runs, within your maintenance window if one is configured. Connections drop for under a minute, your application reconnects to the same hostname, and usage is back around 45%.
+4. If free space drops below 2% (about 20 GB) before the cutover completes, the instance goes read-only. Writes resume automatically once the cutover to the larger disk finishes.
+
 ## Additional resources {#resources}
 
 - [Settings and configuration](/products/managed-postgres/settings)
