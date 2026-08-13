@@ -226,6 +226,20 @@ class Targeting:
                 return f"{base_name}{ext}"
         return None
 
+    @classmethod
+    def functional_test_source_file(cls, test_name: str):
+        """Return the stateless test source file name (e.g. `00001_x.sql`) for a
+        test name as used by `clickhouse-test` (`00001_x` or `00001_x.`), or
+        `None` when no such file exists in `tests/queries/0_stateless` - a
+        stateful test, or a test that has since been removed or renamed.
+        """
+        base_name = test_name.rstrip(".")
+        test_dir = Path("tests/queries/0_stateless")
+        for ext in cls._TEST_FILE_EXTENSIONS:
+            if (test_dir / f"{base_name}{ext}").is_file():
+                return f"{base_name}{ext}"
+        return None
+
     @staticmethod
     def is_sequential_functional_test(test_source_file: str) -> bool:
         """True if the on-disk stateless test file (e.g. `00001_x.sql`, as
@@ -2190,7 +2204,7 @@ class Targeting:
             name="tests found by coverage", status=Result.Status.OK, info=info
         )
 
-    def get_all_relevant_tests_with_info(self):
+    def get_all_relevant_tests_with_info(self, include_changed_tests=False):
         # Use a list to preserve insertion order and a seen set to deduplicate.
         # Priority: changed/new tests first, then previously failed, then
         # coverage-ranked tests (most changed lines covered first).
@@ -2204,12 +2218,15 @@ class Targeting:
                     seen.add(t)
                     ranked.append(t)
 
-        # Changed/new tests are already covered by the flaky check — skip them
-        # in the targeted check to avoid duplication.
-        # if self.job_type == self.STATELESS_JOB_TYPE:
-        #     changed_tests, result = self.get_changed_or_new_tests_with_info()
-        #     add_tests(changed_tests)
-        #     results.append(result)
+        # For the targeted check, changed/new tests are left out: they are
+        # already covered by the flaky check, which reruns them many times.
+        # A `selected tests` run (`include_changed_tests`) replaces the full
+        # suite in its job flavor, so there the changed tests must be included -
+        # no other job runs them in that flavor.
+        if include_changed_tests and self.job_type == self.STATELESS_JOB_TYPE:
+            changed_tests, result = self.get_changed_or_new_tests_with_info()
+            add_tests(changed_tests)
+            results.append(result)
 
         previously_failed_tests, result = self.get_previously_failed_tests_with_info()
         add_tests(previously_failed_tests)
