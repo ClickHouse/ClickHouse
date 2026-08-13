@@ -1273,11 +1273,18 @@ def is_slow_build_binary(args) -> bool:
     """
     binary = getattr(args, "binary", "clickhouse")
     local = find_clickhouse_command(binary, "local")
+    # Name the same four sanitizers `collect_build_flags` maps, not every
+    # `-fsanitize=`: a CFI build carries `-fsanitize=cfi-vcall` on top of
+    # RelWithDebInfo, and the collected-flags path calls that a release build.
+    sanitizers = " OR ".join(
+        f"position('sanitize={san}' IN value)"
+        for san in ("thread", "address", "undefined", "memory")
+    )
     out = shell_get_output(
         f"{local} --query \""
         "SELECT countIf(name = 'BUILD_TYPE' AND position('Debug' IN value)) "
         "+ countIf(name = 'WITH_COVERAGE' AND value IN ('ON', '1')) "
-        "+ countIf(name = 'CXX_FLAGS' AND position('-fsanitize=' IN value)) "
+        f"+ countIf(name = 'CXX_FLAGS' AND ({sanitizers})) "
         'FROM system.build_options"',
         timeout=60,
     )

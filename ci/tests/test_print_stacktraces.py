@@ -326,11 +326,44 @@ def test_slow_build_binary_probe_is_server_independent_and_fails_closed():
     finally:
         globals_["shell_get_output"] = saved
 
-    # The query it issues names every flag collect_build_flags derives, so the
-    # two cannot drift into disagreeing about what "slow" means.
+    # The query names exactly the signals collect_build_flags derives, so the two
+    # cannot disagree about what "slow" means. A bare `-fsanitize=` match would:
+    # CFI adds -fsanitize=cfi-vcall to RelWithDebInfo, which the collected-flags
+    # path calls release.
     assert seen, "the probe never ran a query"
-    for token in ("BUILD_TYPE", "Debug", "WITH_COVERAGE", "-fsanitize="):
+    for token in ("BUILD_TYPE", "Debug", "WITH_COVERAGE"):
         assert all(token in cmd for cmd in seen), token
+    for san in ("thread", "address", "undefined", "memory"):
+        assert all(f"sanitize={san}" in cmd for cmd in seen), san
+    assert all("cfi" not in cmd for cmd in seen), seen[0]
+
+
+def test_lldb_helper_forwards_the_selected_budget():
+    # The budget only matters if the real collector passes it to the lldb
+    # invocation. Every other arm stubs the collector out, so restoring a
+    # hardcoded timeout=30 inside it would leave them all green while silently
+    # disabling the slow-build budget.
+    ct = _load_clickhouse_test(require_server=False)
+
+    globals_ = ct["get_stacktraces_from_lldb"].__globals__
+    saved = globals_["shell_get_output"]
+    calls = []
+
+    def fake_shell(cmd, timeout=None, keep_output_on_error=False):
+        calls.append((cmd, timeout, keep_output_on_error))
+        return "bt"
+
+    globals_["shell_get_output"] = fake_shell
+    try:
+        ct["get_stacktraces_from_lldb"](4242, timeout=ct["LLDB_SLOW_BUILD_TIMEOUT"])
+        ct["get_stacktraces_from_lldb"](4242)
+    finally:
+        globals_["shell_get_output"] = saved
+
+    assert [c[1] for c in calls] == [ct["LLDB_SLOW_BUILD_TIMEOUT"], ct["LLDB_TIMEOUT"]], calls
+    # A timed-out attach is only recoverable because the output is kept.
+    assert all(c[2] is True for c in calls), calls
+    assert all("-p 4242" in c[0] for c in calls), calls
 
 
 def test_lldb_pid_loop_honours_the_aggregate_deadline():
