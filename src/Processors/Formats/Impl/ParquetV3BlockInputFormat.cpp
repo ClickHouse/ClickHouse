@@ -194,6 +194,20 @@ void ParquetV3BlockInputFormat::onCancel() noexcept
         reader->cancel();
 }
 
+void ParquetV3BlockInputFormat::resetReadBuffer()
+{
+    {
+        /// The base class releases `in` and `owned_buffers` below, and the reader holds a
+        /// non-owning pointer to that buffer which background tasks read through, so those tasks
+        /// have to be stopped first. `reader` itself is kept alive: getMatchedBuckets() runs after
+        /// the source is exhausted and needs the row group metadata.
+        std::lock_guard lock(reader_mutex);
+        if (reader)
+            reader->shutdownTasks();
+    }
+    IInputFormat::resetReadBuffer();
+}
+
 void ParquetV3BlockInputFormat::resetParser()
 {
     {
