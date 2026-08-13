@@ -6,8 +6,8 @@
 # name embeds the text of a folded constant, so a large dotted constant made index analysis
 # quadratic in the constant's length.
 # Each arm compares a dotted constant against a no-dots constant of the same length. The oracle is
-# the allocated-bytes counter rather than wall clock: it is exactly reproducible, whereas the
-# ~2.6s planning delta is smaller than debug-build client startup jitter.
+# the query's peak memory rather than wall clock: it is stable to within a fraction of a percent
+# across repeats, whereas the planning delta is smaller than debug-build client startup jitter.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,9 +16,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e
 
 REPEATS=100000
-# Measured on a debug build with the untracked-memory limit pinned to 0: the dotted arm allocates
-# 1.00002x the control while the matcher is linear in the constant's length, and 1296x-2386x of it
-# while quadratic, so 1.5 discriminates by orders of magnitude on both sides.
+# The dotted arm peaks at 1.0002x the control while the matcher is linear in the constant's
+# length and at 2.7x while quadratic, on both debug and sanitizer builds. The control peak also
+# scales with the constant, so the quadratic ratio stays near 2.7x as REPEATS grows.
 MAX_RATIO_PERCENT=150
 
 LONG_SUFFIX=$(printf 'a%.0s' $(seq 1 170))
@@ -54,23 +54,19 @@ $CLICKHOUSE_CLIENT -nm -q "
     INSERT INTO tokens SELECT 'v' || toString(number % 10) FROM numbers(1000);
 "
 
-# Sets ALLOC_BYTES to the bytes the server allocated while planning one query.
+# Sets ALLOC_BYTES to the peak memory the server tracked while planning one query.
 # EXPLAIN runs index analysis without reading data, so the measurement is the matcher's cost.
 alloc_bytes_for() {
     local table="$1" unit="$2"
     local tag="04780-${CLICKHOUSE_DATABASE}-${table}-${unit}-${RANDOM}"
-    # The counter records each allocation only while max_untracked_memory is 0; otherwise it records
-    # deferred batches sized by concurrent load. The leading statement shares the server thread, so
-    # its own detach drains the balance deferred before the measured statement's scope existed.
-    $CLICKHOUSE_CLIENT --max_untracked_memory 0 --max_query_size 1048576 --max_execution_time 300 -nm -q "
-        SELECT 1;
+    $CLICKHOUSE_CLIENT --max_query_size 1048576 --max_execution_time 300 -nm -q "
         SELECT count() FROM (
             EXPLAIN indexes = 1
             SELECT count() FROM ${table} WHERE position(repeat('${unit}', ${REPEATS}), s) = 1
         ) SETTINGS log_comment = '${tag}'" >/dev/null
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log" >/dev/null
     ALLOC_BYTES=$($CLICKHOUSE_CLIENT -q "
-        SELECT ProfileEvents['MemoryAllocatedWithoutCheckBytes']
+        SELECT memory_usage
         FROM system.query_log
         WHERE current_database = currentDatabase() AND log_comment = '${tag}' AND type = 'QueryFinish'")
     [ -n "$ALLOC_BYTES" ] && [ "$ALLOC_BYTES" -gt 0 ]
