@@ -55,6 +55,31 @@ SELECT
     (SELECT arraySort(groupArray((CounterID, EventDate))) FROM (SELECT DISTINCT CounterID, EventDate FROM t_virtual_row_distinct ORDER BY toIntervalMinute(1) > toIntervalWeek(59) ASC, CounterID DESC))
   = (SELECT arraySort(groupArray((CounterID, EventDate))) FROM (SELECT DISTINCT CounterID, EventDate FROM t_virtual_row_distinct ORDER BY toIntervalMinute(1) > toIntervalWeek(59) ASC, CounterID DESC SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
 
+-- Per-block virtual rows (a truncated virtual row can then appear after every data chunk, not
+-- only in `initialize`): the widened distinct-in-order read must stay correct and must not throw.
+SELECT
+    (SELECT groupArray((CounterID, EventDate)) FROM (SELECT DISTINCT CounterID, EventDate FROM t_virtual_row_distinct ORDER BY CounterID DESC, EventDate SETTINGS read_in_order_use_virtual_row_per_block = 1))
+  = (SELECT groupArray((CounterID, EventDate)) FROM (SELECT DISTINCT CounterID, EventDate FROM t_virtual_row_distinct ORDER BY CounterID DESC, EventDate SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
+
+-- LIMIT BY after ORDER BY: `optimizeLimitByInOrder` cannot reach this read (`findReadingStep`
+-- does not look through `SortingStep`), so the read keeps the ORDER BY prefix and its virtual
+-- row; the streaming `LIMIT BY` result must stay correct (a mis-ordered merge would emit
+-- duplicate groups).
+SELECT count()
+FROM (EXPLAIN actions = 1 SELECT CounterID, EventDate FROM t_virtual_row_distinct ORDER BY CounterID DESC LIMIT 1 BY CounterID, EventDate)
+WHERE explain ILIKE '%Virtual row conversions%';
+
+SELECT
+    (SELECT arraySort(groupArray((CounterID, EventDate))) FROM (SELECT CounterID, EventDate FROM t_virtual_row_distinct ORDER BY CounterID DESC LIMIT 1 BY CounterID, EventDate))
+  = (SELECT arraySort(groupArray((CounterID, EventDate))) FROM (SELECT CounterID, EventDate FROM t_virtual_row_distinct ORDER BY CounterID DESC LIMIT 1 BY CounterID, EventDate SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
+
+-- LIMIT BY driving the in-order read itself (`optimizeLimitByInOrder` widens the read to the
+-- whole BY-columns key prefix through the same `requestReadingInOrder` hook as
+-- distinct-in-order): must not throw and the group set must stay correct.
+SELECT
+    (SELECT arraySort(groupArray((CounterID, EventDate))) FROM (SELECT * FROM (SELECT CounterID, EventDate FROM t_virtual_row_distinct LIMIT 1 BY CounterID, EventDate) ORDER BY CounterID DESC))
+  = (SELECT arraySort(groupArray((CounterID, EventDate))) FROM (SELECT * FROM (SELECT CounterID, EventDate FROM t_virtual_row_distinct LIMIT 1 BY CounterID, EventDate) ORDER BY CounterID DESC SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
+
 DROP TABLE t_virtual_row_distinct;
 
 -- Same widening on key (a, b): ORDER BY a builds a one-column virtual row for a, then
@@ -94,8 +119,15 @@ CREATE TABLE t_virtual_row_fixed_key (a UInt32, b UInt32, c UInt32)
 ENGINE = MergeTree ORDER BY (a, b, c)
 SETTINGS index_granularity = 8;
 
+-- Keep the parts unmerged (here and in the sections below) so the multi-source in-order merge
+-- that consumes the virtual row is exercised deterministically: a background merge collapsing
+-- the table into one part would leave a single source and never compare the announced boundary.
+SYSTEM STOP MERGES t_virtual_row_fixed_key;
+
 INSERT INTO t_virtual_row_fixed_key SELECT number % 10, 1, number % 7 FROM numbers(2000);
 INSERT INTO t_virtual_row_fixed_key SELECT number % 10, 1, number % 7 FROM numbers(2000, 2000);
+INSERT INTO t_virtual_row_fixed_key SELECT number % 10, 1, number % 7 FROM numbers(4000, 2000);
+INSERT INTO t_virtual_row_fixed_key SELECT number % 10, 1, number % 7 FROM numbers(6000, 2000);
 
 -- Virtual row optimization must stay enabled for the skipped-middle-key read.
 SELECT count()
@@ -112,6 +144,12 @@ SELECT
 SELECT
     (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_fixed_key WHERE b = 1 ORDER BY a DESC, c DESC SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1))
   = (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_fixed_key WHERE b = 1 ORDER BY a DESC, c DESC SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
+
+-- Per-block mode emits the truncated virtual row again after every data chunk, exercising the
+-- covered-prefix comparison in `consume` and not only in `initialize`.
+SELECT
+    (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_fixed_key WHERE b = 1 ORDER BY a, c SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1))
+  = (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_fixed_key WHERE b = 1 ORDER BY a, c SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
 
 -- A fixed key that stays in ORDER BY is not supported for the virtual row (as before this fix):
 -- the index value at the boundary may belong to a filtered-out row.
@@ -134,8 +172,12 @@ CREATE TABLE t_virtual_row_fixed_key_nullable (a UInt32, b UInt32, c Nullable(UI
 ENGINE = MergeTree ORDER BY (a, b, c)
 SETTINGS index_granularity = 8, allow_nullable_key = 1;
 
+SYSTEM STOP MERGES t_virtual_row_fixed_key_nullable;
+
 INSERT INTO t_virtual_row_fixed_key_nullable SELECT number % 10, 1, number % 7 FROM numbers(2000);
 INSERT INTO t_virtual_row_fixed_key_nullable SELECT number % 10, 1, number % 7 FROM numbers(2000, 2000);
+INSERT INTO t_virtual_row_fixed_key_nullable SELECT number % 10, 1, number % 7 FROM numbers(4000, 2000);
+INSERT INTO t_virtual_row_fixed_key_nullable SELECT number % 10, 1, number % 7 FROM numbers(6000, 2000);
 
 SELECT
     (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_fixed_key_nullable WHERE b = 1 ORDER BY a ASC NULLS FIRST, c ASC SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1))
@@ -152,8 +194,12 @@ CREATE TABLE t_virtual_row_fixed_key_string (a UInt32, b UInt32, s String)
 ENGINE = MergeTree ORDER BY (a, b, s)
 SETTINGS index_granularity = 8;
 
+SYSTEM STOP MERGES t_virtual_row_fixed_key_string;
+
 INSERT INTO t_virtual_row_fixed_key_string SELECT number % 10, 1, toString(number % 7) FROM numbers(2000);
 INSERT INTO t_virtual_row_fixed_key_string SELECT number % 10, 1, toString(number % 7) FROM numbers(2000, 2000);
+INSERT INTO t_virtual_row_fixed_key_string SELECT number % 10, 1, toString(number % 7) FROM numbers(4000, 2000);
+INSERT INTO t_virtual_row_fixed_key_string SELECT number % 10, 1, toString(number % 7) FROM numbers(6000, 2000);
 
 SELECT count()
 FROM (EXPLAIN actions = 1 SELECT a, s FROM t_virtual_row_fixed_key_string WHERE b = 1 ORDER BY a, s
@@ -174,3 +220,38 @@ SELECT
   = (SELECT groupArray((a, s)) FROM (SELECT a, s FROM t_virtual_row_fixed_key_string WHERE b = 1 ORDER BY a DESC, s DESC SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
 
 DROP TABLE t_virtual_row_fixed_key_string;
+
+-- A near-unique first key column makes every part keep only that column of the primary index in
+-- memory (optimizeIndexColumns, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns).
+-- The widened distinct-in-order read then requests index values for (a, b) while the loaded
+-- index covers only (a): the virtual row must degrade to the loaded prefix instead of silently
+-- disappearing, and the merges compare it on that prefix only.
+DROP TABLE IF EXISTS t_virtual_row_truncated_index;
+
+CREATE TABLE t_virtual_row_truncated_index (a UInt32, b UInt32)
+ENGINE = MergeTree ORDER BY (a, b)
+SETTINGS index_granularity = 8;
+
+SYSTEM STOP MERGES t_virtual_row_truncated_index;
+
+INSERT INTO t_virtual_row_truncated_index SELECT number, number % 3 FROM numbers(4000);
+INSERT INTO t_virtual_row_truncated_index SELECT number, number % 3 FROM numbers(4000, 4000);
+INSERT INTO t_virtual_row_truncated_index SELECT number, number % 3 FROM numbers(8000, 4000);
+INSERT INTO t_virtual_row_truncated_index SELECT number, number % 3 FROM numbers(12000, 4000);
+
+-- The virtual row must actually reach the pipeline (previously it was silently dropped for
+-- every part whose loaded index is shorter than the widened prefix).
+SELECT count() > 0
+FROM (EXPLAIN PIPELINE SELECT DISTINCT a, b FROM t_virtual_row_truncated_index ORDER BY a DESC SETTINGS enable_parallel_replicas = 0)
+WHERE explain ILIKE '%VirtualRow%';
+
+SELECT
+    (SELECT groupArray((a, b)) FROM (SELECT DISTINCT a, b FROM t_virtual_row_truncated_index ORDER BY a DESC))
+  = (SELECT groupArray((a, b)) FROM (SELECT DISTINCT a, b FROM t_virtual_row_truncated_index ORDER BY a DESC SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
+
+-- Per-block mode takes the same clamp in `MergeTreeSelectProcessor::buildVirtualRowFromIndex`.
+SELECT
+    (SELECT groupArray((a, b)) FROM (SELECT DISTINCT a, b FROM t_virtual_row_truncated_index ORDER BY a DESC SETTINGS read_in_order_use_virtual_row_per_block = 1))
+  = (SELECT groupArray((a, b)) FROM (SELECT DISTINCT a, b FROM t_virtual_row_truncated_index ORDER BY a DESC SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
+
+DROP TABLE t_virtual_row_truncated_index;

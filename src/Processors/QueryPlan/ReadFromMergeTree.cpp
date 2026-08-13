@@ -933,12 +933,14 @@ Pipe ReadFromMergeTree::readInOrder(
         processor->addPartLevelToChunk(isQueryWithFinal());
 
         Block pk_header;
+        size_t virtual_row_min_pk_columns = 0;
         if (use_virtual_row)
         {
             const auto & primary_key = storage_snapshot->metadata->primary_key;
             /// Take index values for the whole used key prefix: the in-order merges inside this
             /// step sort by all of it, while the conversion may use only a subset of the columns.
             size_t num_pk_columns_required = virtual_row_conversion->getRequiredColumnsWithTypes().size();
+            virtual_row_min_pk_columns = num_pk_columns_required;
             if (query_info.input_order_info)
                 num_pk_columns_required = std::max(
                     num_pk_columns_required,
@@ -971,16 +973,26 @@ Pipe ReadFromMergeTree::readInOrder(
             size_t mark_range_pos = read_in_direct_order ? part_with_ranges.ranges.front().begin : part_with_ranges.ranges.back().end;
             bool has_pk_value = (read_in_direct_order || has_final_mark) && std::ranges::all_of(*index, [&](const auto & col) { return col->size() > mark_range_pos; });
 
-            /// The index may have fewer columns than the primary key if suffix columns were
-            /// removed by optimizeIndexColumns (controlled by primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns).
-            /// In that case, we cannot apply virtual row optimization because we don't have all required columns.
-            auto pk_columns = pk_header.cloneEmptyColumns();
-            if (index->size() >= pk_columns.size() && has_pk_value)
+            /// The loaded index may keep only a prefix of the primary key: optimizeIndexColumns
+            /// (controlled by primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns)
+            /// drops suffix index columns whose values almost never repeat. A virtual row over
+            /// the loaded prefix is still valid — the merges compare it only on the covered
+            /// prefix — as long as the conversion still gets all of its inputs; otherwise skip
+            /// the virtual row for this part.
+            size_t num_index_columns = std::min(index->size(), pk_header.columns());
+            if (num_index_columns >= virtual_row_min_pk_columns && has_pk_value)
             {
-                for (size_t j = 0; j < pk_columns.size(); ++j)
-                    pk_columns[j]->insert((*(*index)[j])[mark_range_pos]);
+                ColumnsWithTypeAndName pk_block_columns;
+                pk_block_columns.reserve(num_index_columns);
+                for (size_t j = 0; j < num_index_columns; ++j)
+                {
+                    const auto & header_col = pk_header.getByPosition(j);
+                    auto column = header_col.type->createColumn();
+                    column->insert((*(*index)[j])[mark_range_pos]);
+                    pk_block_columns.push_back({std::move(column), header_col.type, header_col.name});
+                }
 
-                Block pk_block = pk_header.cloneWithColumns(std::move(pk_columns));
+                Block pk_block(std::move(pk_block_columns));
                 pipe.addSimpleTransform([&](const SharedHeader & header)
                 {
                     return std::make_shared<VirtualRowTransform>(header, pk_block, virtual_row_conversion);
@@ -3321,10 +3333,11 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
 
     /// The virtual row conversion was built for a previously requested key prefix. A wider
     /// re-request (e.g. from distinct-in-order) keeps it valid: the in-order merges inside this
-    /// step take exact index values for the whole prefix, and the downstream merge compares the
-    /// virtual row only on the columns the conversion covers. A narrower prefix could leave the
-    /// conversion without some of its inputs, and a prefix not fully backed by the primary index
-    /// would leave the in-order merges with uncovered sort columns, so drop the conversion.
+    /// step take exact index values for the whole prefix (clamped per part to the loaded index
+    /// prefix, see `readInOrder`), and the merges compare the virtual row only on the sort-key
+    /// prefix it covers. A narrower prefix could leave the conversion without some of its
+    /// inputs, and a prefix beyond the primary key would request index values no part can ever
+    /// provide, so drop the conversion.
     if (virtual_row_conversion
         && (prefix_size < virtual_row_key_prefix_size
             || prefix_size > storage_snapshot->metadata->primary_key.column_names.size()))
