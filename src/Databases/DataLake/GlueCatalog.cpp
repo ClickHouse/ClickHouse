@@ -50,6 +50,7 @@
 #include <Common/FailPoint.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ArchivePathSyntax.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
@@ -580,9 +581,10 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
     auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
     auto configuration = std::make_shared<DB::StorageS3IcebergConfiguration>(storage_settings);
-    DB::StorageObjectStorageConfiguration::initialize(*configuration, args, getContext(), false);
+    auto archive_path_context = DB::contextWithArchivePathSyntax(getContext(), settings.allow_archive_path_syntax);
+    DB::StorageObjectStorageConfiguration::initialize(*configuration, args, archive_path_context, false);
 
-    auto object_storage = configuration->createObjectStorage(getContext(), true, {});
+    auto object_storage = configuration->createObjectStorage(archive_path_context, true, {});
 
     /// Parse S3 path to extract bucket and table path
     String table_path = s3_location;

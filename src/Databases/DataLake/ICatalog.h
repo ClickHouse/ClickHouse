@@ -182,6 +182,7 @@ struct TableNameFilter
 
 struct CatalogSettings
 {
+    bool allow_archive_path_syntax = true;
     String storage_endpoint;
     String aws_access_key_id;
     String aws_secret_access_key;
