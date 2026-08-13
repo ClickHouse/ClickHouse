@@ -42,7 +42,10 @@ def main():
         f"Workflow [[{info.workflow_name}]({info.get_report_url(latest=True)})]"
     )
     sync_line = f"Sync PR [[sync-upstream/pr/{info.pr_number}]({get_sync_pr_search_url(info.pr_number)})]"
-    block = f"{BLOCK_START}\n{workflow_line}\n{sync_line}\n{BLOCK_END}"
+    # A horizontal rule visually separates the machine-owned block from the
+    # user-authored description. It lives inside the block markers so it is
+    # dropped together with the block.
+    block = f"{BLOCK_START}\n\n---\n{workflow_line}\n{sync_line}\n{BLOCK_END}"
 
     title, body, _labels = GH.get_pr_title_body_labels()
     if not title:
