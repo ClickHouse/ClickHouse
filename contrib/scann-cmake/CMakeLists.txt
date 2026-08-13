@@ -9,7 +9,7 @@ if (NOT TARGET ch_contrib::eigen)
 endif()
 
 if (NOT TARGET ch_contrib::protobuf)
-    message(${RECONFIGURE_MESSAGE_LEVEL} "Can't use ScaNN without protobuf")
+    message(STATUS "Not using ScaNN because protobuf is disabled")
     return()
 endif()
 
