@@ -5390,6 +5390,17 @@ bool ReadFromMergeTree::canRemoveUnusedColumns() const
 
         if (!has_column_that_is_not_required_for_final)
             return false;
+
+        /// A column that FINAL reads for merging but that is absent from the output header (PREWHERE consumed it)
+        /// is re-added when the header is recomputed, making the header longer than the caller's position vector.
+        if (output_header)
+        {
+            const auto is_read_for_final_but_not_in_output = [&](const auto & column_name)
+            { return required_for_final.contains(column_name) && !output_header->has(column_name); };
+
+            if (std::ranges::any_of(all_column_names, is_read_for_final_but_not_in_output))
+                return false;
+        }
     }
     return true;
 }
