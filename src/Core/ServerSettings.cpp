@@ -1636,8 +1636,6 @@ Empty by default, which means that no substitutions file is used. Before version
 
 Note that configuration files that are loaded separately from the main server configuration — the users' configuration (e.g. `users.xml` when it is not included in the main file) and XML dictionary configurations — read the `include_from` element from their own contents, not from the server configuration. Each such file that relies on substitutions needs its own `include_from` element.
 
-For more information, see the section [Configuration files](/concepts/features/configuration/server-config/configuration-files.mdx).
-
 **Example**
 
 ```xml
