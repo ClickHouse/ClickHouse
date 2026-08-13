@@ -1126,6 +1126,18 @@ DataTypePtr applyJSONSharedDataPathPolicyImpl(const DataTypePtr & type, const Da
         source_nullable && !typeid_cast<const DataTypeNullable *>(type.get()))
         return applyJSONSharedDataPathPolicyImpl(type, source_nullable->getNestedType(), merge_rules);
 
+    /// Same idea for an expression that wraps its argument in a single-element array (e.g.
+    /// `array(j)`): the array's own element is the same JSON value `j` always was, so the policy
+    /// should still transfer to it even though the source column itself was never an Array.
+    if (const auto * target_array = typeid_cast<const DataTypeArray *>(type.get());
+        target_array && !typeid_cast<const DataTypeArray *>(policy_source_type.get()))
+    {
+        auto nested = applyJSONSharedDataPathPolicyImpl(target_array->getNestedType(), policy_source_type, merge_rules);
+        if (nested == target_array->getNestedType())
+            return type;
+        return std::make_shared<DataTypeArray>(std::move(nested));
+    }
+
     if (const auto * object = typeid_cast<const DataTypeObject *>(type.get()))
     {
         const auto * source_object = typeid_cast<const DataTypeObject *>(policy_source_type.get());
