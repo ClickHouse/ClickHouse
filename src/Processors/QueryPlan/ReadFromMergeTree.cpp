@@ -80,6 +80,7 @@
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
@@ -1284,6 +1285,59 @@ static bool canScaleSizeBySelectedRows(const IDataType & type)
     return !has_low_cardinality;
 }
 
+/// Mirrors `injectRequiredColumnsRecursively`: a column that is absent from a part is filled from its
+/// default expression, and evaluating that expression may require reading other physical columns of
+/// the part. Returns true when at least one physical column has to be read for `column_name`.
+///
+/// A default that expands to no physical identifiers - an explicit `ALTER TABLE ... ADD COLUMN c UInt8
+/// DEFAULT 0`, or the implicit type default of a newly added column - reads nothing, so such a column
+/// costs no bytes and does not have to disable the estimate.
+template <typename TryGetColumnInPart>
+static bool missingColumnReadsPhysicalColumns(
+    const String & column_name,
+    const StorageSnapshotPtr & storage_snapshot,
+    const GetColumnsOptions & storage_options,
+    const TryGetColumnInPart & try_get_column_in_part,
+    NameSet & visited)
+{
+    /// Defaults can be cyclic, and the expression can be arbitrarily deep.
+    checkStackSize();
+
+    if (!visited.emplace(column_name).second)
+        return false;
+
+    if (try_get_column_in_part(column_name))
+        return true;
+
+    const auto col_in_storage = storage_snapshot->tryGetColumn(storage_options, column_name);
+
+    /// The part may predate a metadata-only `ALTER MODIFY COLUMN`, so it stores the parent column but
+    /// not the requested subcolumn of the new type. The reader then reads the parent and extracts the
+    /// subcolumn from it.
+    if (col_in_storage && col_in_storage->isSubcolumn() && try_get_column_in_part(col_in_storage->getNameInStorage()))
+        return true;
+
+    auto column_default = storage_snapshot->getDefault(column_name);
+    /// A subcolumn has no default expression of its own: it is extracted from the evaluated default of
+    /// the column in storage (see `IMergeTreeReader::evaluateMissingDefaults`).
+    if (!column_default && col_in_storage && col_in_storage->isSubcolumn())
+        column_default = storage_snapshot->getDefault(col_in_storage->getNameInStorage());
+
+    if (!column_default || !column_default->expression)
+        return false;
+
+    IdentifierNameSet identifiers;
+    column_default->expression->collectIdentifierNames(identifiers);
+
+    for (const auto & identifier : identifiers)
+    {
+        if (missingColumnReadsPhysicalColumns(identifier, storage_snapshot, storage_options, try_get_column_in_part, visited))
+            return true;
+    }
+
+    return false;
+}
+
 /// Estimate the uncompressed size of `column_names` over the mark ranges actually selected in
 /// `parts_with_ranges`.
 ///
@@ -1379,15 +1433,22 @@ static std::optional<size_t> estimateReadBytes(
         for (const auto & col_name : column_names)
         {
             const auto col = try_get_column_in_part(col_name);
-            /// Defaults and mutation steps can make the reader fetch other physical columns. The
-            /// dependency set is built later for each read task, so do not cap when it is unknown here.
             if (!col)
             {
                 if (isTextIndexVirtualColumn(col_name))
                     return std::nullopt;
                 if (virtuals.tryGet(col_name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader))
                     continue;
-                return std::nullopt;
+
+                /// A column missing from the part is filled from its default. Defaults and mutation
+                /// steps can make the reader fetch other physical columns, whose bytes are unknown
+                /// here because the dependency set is built later for each read task, so do not cap
+                /// in that case. A default that reads nothing costs nothing, and the estimate over
+                /// the remaining columns stays valid.
+                NameSet visited;
+                if (missingColumnReadsPhysicalColumns(col_name, storage_snapshot, storage_options, try_get_column_in_part, visited))
+                    return std::nullopt;
+                continue;
             }
 
             /// Per-column sizes are stored for the whole part, so they can only be scaled down for a
