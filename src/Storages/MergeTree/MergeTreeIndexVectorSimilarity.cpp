@@ -23,6 +23,11 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/castColumn.h>
+#include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 
 #include <cmath>
 #include <ranges>
@@ -147,11 +152,15 @@ void USearchIndexWithSerialization::serialize(WriteBuffer & ostr) const
         }
     };
 
-    if (auto result = Base::save_to_stream(callback); !result)
+    /// Vectors are stored in the table part and not duplicated in the index file.
+    serialization_config_t config;
+    config.exclude_vectors = true;
+
+    if (auto result = Base::save_to_stream(callback, config); !result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not save vector similarity index. Error: {}", result.error.release());
 }
 
-void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
+void USearchIndexWithSerialization::deserialize(ReadBuffer & istr, bool exclude_vectors)
 {
     auto callback = [&istr](void * from, size_t n)
     {
@@ -168,7 +177,10 @@ void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
         }
     };
 
-    if (auto result = Base::load_from_stream(callback); !result)
+    serialization_config_t config;
+    config.exclude_vectors = exclude_vectors;
+
+    if (auto result = Base::load_from_stream(callback, config); !result)
         /// See the comment in MergeTreeIndexGranuleVectorSimilarity::deserializeBinary why we throw here
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not load vector similarity index. Please drop the index and create it again. Error: {}", result.error.release());
 
@@ -263,11 +275,11 @@ void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr,
 
     UInt64 file_version = 0;
     readIntBinary(file_version, istr);
-    if (file_version != FILE_FORMAT_VERSION)
+    if (file_version < 1 || file_version > FILE_FORMAT_VERSION)
         throw Exception(
             ErrorCodes::FORMAT_VERSION_TOO_OLD,
-            "Vector similarity index could not be loaded because its version is too old (current version: {}, persisted version: {}). Please drop the index and create it again.",
-            FILE_FORMAT_VERSION, file_version);
+            "Vector similarity index could not be loaded because its version ({}) is not supported (supported range: 1 to {}). Please drop the index and create it again.",
+            file_version, FILE_FORMAT_VERSION);
         /// More fancy error handling would be: Set a flag on the index that it failed to load. During usage return all granules, i.e.
         /// behave as if the index does not exist. Since format changes are expected to happen only rarely and it is "only" an index, keep it simple for now.
 
@@ -275,10 +287,164 @@ void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr,
     readIntBinary(dimensions, istr);
     index = std::make_shared<USearchIndexWithSerialization>(dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 
-    index->deserialize(istr);
+    /// v1: vectors are embedded in the index file (legacy format).
+    /// v2: vectors are excluded from the index file and must be loaded from the table part.
+    const bool exclude_vectors = (file_version >= 2);
+    index->deserialize(istr, exclude_vectors);
+    needs_vectors_from_part = exclude_vectors;
 
     auto statistics = index->getStatistics();
     LOG_TRACE(logger, "Loaded vector similarity index: {}", statistics.toString());
+}
+
+void MergeTreeIndexGranuleVectorSimilarity::deserializeBinaryWithMultipleStreams(
+    MergeTreeIndexInputStreams & streams,
+    MergeTreeIndexDeserializationState & state)
+{
+    IMergeTreeIndexGranule::deserializeBinaryWithMultipleStreams(streams, state);
+
+    if (needs_vectors_from_part)
+    {
+        loadVectorsFromPart(state.part, state.index, state.mark);
+        needs_vectors_from_part = false;
+    }
+}
+
+void MergeTreeIndexGranuleVectorSimilarity::loadVectorsFromPart(
+    const IMergeTreeDataPart & part, const IMergeTreeIndex & idx, size_t mark) const
+{
+    LOG_TRACE(logger, "Loading vectors for vector similarity index from table part (mark {})", mark);
+
+    const String & column_name = idx.index.column_names[0];
+    const DataTypePtr & column_type = idx.index.data_types[0];
+    const size_t granularity = idx.index.granularity;
+
+    auto part_ptr = part.shared_from_this();
+    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part_ptr, std::make_shared<AlterConversions>());
+
+    NamesAndTypesList columns_to_read{{column_name, column_type}};
+
+    auto metadata_ptr = part.storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    auto storage_snapshot = std::make_shared<StorageSnapshot>(part.storage, metadata_ptr);
+    auto storage_settings = part.storage.getSettings();
+
+    const size_t first_data_mark = mark * granularity;
+    const size_t last_data_mark = std::min(first_data_mark + granularity, static_cast<size_t>(part.getMarksCount()));
+    MarkRanges mark_ranges{MarkRange{first_data_mark, last_data_mark}};
+
+    auto reader = createMergeTreeReader(
+        read_info,
+        columns_to_read,
+        storage_snapshot,
+        storage_settings,
+        mark_ranges,
+        {} /* virtual_fields */,
+        nullptr /* uncompressed_cache */,
+        nullptr /* mark_cache */,
+        nullptr /* deserialization_prefixes_cache */,
+        MergeTreeReaderSettings::createFromSettings() /* reader_settings */,
+        {} /* avg_value_size_hints */,
+        {} /* profile_callback */);
+
+    const size_t num_rows = index->size();
+    Columns result_columns(1, nullptr);
+    reader->readRows(first_data_mark, last_data_mark, /*continue_reading=*/false, num_rows, /*rows_offset=*/0, result_columns);
+
+    if (!result_columns[0])
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to read vector column '{}' from part while loading vector similarity index", column_name);
+
+    const auto * array_column = typeid_cast<const ColumnArray *>(result_columns[0].get());
+    if (!array_column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array column '{}' when loading vector similarity index vectors from part", column_name);
+
+    if (!index->allocate_vectors_lookup(num_rows))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to allocate vector lookup for vector similarity index ({} rows)", num_rows);
+
+    const auto & offsets = array_column->getOffsets();
+    if (offsets.size() < num_rows)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Vector column '{}' has {} rows, but {} rows are expected for vector similarity index",
+            column_name, offsets.size(), num_rows);
+
+    /// Parallel HNSW insertions assign slots in non-deterministic order, so key K (= row K in the granule)
+    /// may end up at slot S ≠ K. Recover the row assigned to each slot by iterating the loaded graph.
+    /// Validate the slot/key pairs against `num_rows` so a malformed index file cannot drive out-of-bounds writes,
+    /// and require both slots and keys to form a one-to-one mapping over [0, num_rows) so a payload with duplicate
+    /// keys cannot leave some rows unread.
+    std::vector<size_t> slot_to_row(num_rows);
+    std::vector<bool> slot_assigned(num_rows, false);
+    std::vector<bool> key_assigned(num_rows, false);
+    for (auto it = index->cbegin(); it != index->cend(); ++it)
+    {
+        const size_t slot = static_cast<size_t>(get_slot(it));
+        const size_t row = static_cast<size_t>(it.key());
+        if (slot >= num_rows || row >= num_rows)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Vector similarity index has out-of-range slot or key (slot={}, key={}, num_rows={})",
+                slot, row, num_rows);
+        if (slot_assigned[slot])
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Vector similarity index has a duplicate slot {} during deserialization",
+                slot);
+        if (key_assigned[row])
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Vector similarity index has a duplicate key {} during deserialization",
+                row);
+        slot_to_row[slot] = row;
+        slot_assigned[slot] = true;
+        key_assigned[row] = true;
+    }
+
+    const auto * data_type_array = typeid_cast<const DataTypeArray *>(column_type.get());
+    if (!data_type_array)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected DataTypeArray for vector column '{}'", column_name);
+
+    const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
+    WhichDataType which(nested_type_index);
+
+    const size_t expected_dimensions = index->dimensions();
+
+    for (size_t slot = 0; slot < num_rows; ++slot)
+    {
+        const size_t row = slot_to_row[slot];
+        const size_t row_offset = (row == 0) ? 0 : offsets[row - 1];
+        const size_t row_length = offsets[row] - row_offset;
+        if (row_length != expected_dimensions)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Vector at row {} of column '{}' has length {}, expected {} (index dimensions)",
+                row, column_name, row_length, expected_dimensions);
+        bool success = false;
+
+        if (which.isFloat32())
+        {
+            const auto & data = typeid_cast<const ColumnFloat32 &>(array_column->getData());
+            success = index->set_vector_at_position(static_cast<USearchIndex::compressed_slot_t>(slot), &data.getData()[row_offset]);
+        }
+        else if (which.isFloat64())
+        {
+            const auto & data = typeid_cast<const ColumnFloat64 &>(array_column->getData());
+            success = index->set_vector_at_position(static_cast<USearchIndex::compressed_slot_t>(slot), &data.getData()[row_offset]);
+        }
+        else if (which.isBFloat16())
+        {
+            const auto & data = typeid_cast<const ColumnBFloat16 &>(array_column->getData());
+            success = index->set_vector_at_position(
+                static_cast<USearchIndex::compressed_slot_t>(slot),
+                reinterpret_cast<const unum::usearch::bf16_t *>(&data.getData()[row_offset].raw()));
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected element type in vector column '{}'", column_name);
+
+        if (!success)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to set vector at position {} in vector similarity index", slot);
+    }
+
+    LOG_TRACE(logger, "Loaded {} vectors from part for vector similarity index", num_rows);
 }
 
 MergeTreeIndexAggregatorVectorSimilarity::MergeTreeIndexAggregatorVectorSimilarity(

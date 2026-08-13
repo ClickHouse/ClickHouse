@@ -137,6 +137,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
             .condition = condition,
             .part = *part,
             .index = *index,
+            .mark = mark,
             .readable_ranges = readable_ranges,
         };
 
