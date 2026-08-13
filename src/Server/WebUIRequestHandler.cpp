@@ -10,6 +10,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
@@ -271,10 +272,16 @@ std::vector<DocumentationEntity> getDocumentationIndex(IServer & server)
         "SELECT name, toString(type) AS type FROM system.documentation ORDER BY type, name FORMAT JSONEachRow");
 
     std::vector<DocumentationEntity> entities;
-    std::istringstream lines(result);
-    for (String line; std::getline(lines, line);)
+    ReadBufferFromString lines(result);
+    while (!lines.eof())
+    {
+        String line;
+        readStringUntilNewlineInto(line, lines);
+        if (!lines.eof())
+            lines.ignore();
         if (!line.empty())
             entities.push_back(parseDocumentationEntity(line));
+    }
     return entities;
 }
 
