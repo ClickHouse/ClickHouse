@@ -25,13 +25,13 @@ ClickHouse does not delete data from the table automatically. See [Introduction]
 
 The `system.query_log` table registers two kinds of queries:
 
-1.  Initial queries that were run directly by the client.
+1.  Initial (top-level) queries that were not initiated by another query as part of distributed query execution.
 2.  Child queries that were initiated by other queries (for distributed query execution). For these types of queries, information about the original initial query is shown in the `initial_*` columns.
 
 <Tip>
 **Filter top-level queries with `is_initial_query`**
 
-When analyzing queries submitted directly by clients, add `is_initial_query = 1`. This excludes child queries created during distributed query execution, so the initial query and its children are not analyzed as separate client queries.
+When analyzing top-level queries, add `is_initial_query = 1`. This excludes child queries created during distributed query execution, so they are not counted separately from the top-level query. This filter does not imply that a query was submitted by a client, because server-internal work can also be an initial query.
 
 Use `initial_query_id` instead when you need to trace the complete execution cascade of a distributed query. The initial query has the same value for `initial_query_id` and `query_id`, while its child queries keep the initial query's `initial_query_id` and have their own `query_id`:
 
