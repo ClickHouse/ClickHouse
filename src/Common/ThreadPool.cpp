@@ -697,6 +697,7 @@ void ThreadPoolImpl<Thread>::finishNoLock(const std::lock_guard<std::mutex> &)
 
     /// Wake up all idle threads so they can see it and exit gracefully.
     wakeUpAllIdleThreadsNoLock();
+    job_finished.notify_all();
 }
 
 template <typename Thread>
