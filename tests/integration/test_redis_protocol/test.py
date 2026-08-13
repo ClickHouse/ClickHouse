@@ -57,6 +57,14 @@ def started_cluster():
             ENGINE = Join(ALL, LEFT, name)
             """
         )
+        # A value column whose type cannot be wrapped in `Nullable`, so a missing
+        # key would not be representable as Nil.
+        node.query(
+            """
+            CREATE TABLE IF NOT EXISTS array_value_map (name String, tags Array(String))
+            ENGINE = Join(ANY, LEFT, name)
+            """
+        )
         yield cluster
     except Exception as ex:
         logging.exception(ex)
@@ -177,6 +185,15 @@ def test_unsupported_join_variant(redis_client):
     with pytest.raises(exceptions.ResponseError) as resp_err:
         redis_client.select(3)
     assert "does not support get requests" in str(resp_err.value)
+
+
+def test_unrepresentable_value_column(redis_client):
+    # An `Array` value cannot be wrapped in `Nullable`, so a missing key could not be
+    # distinguished from a present one. This has to be reported by `SELECT`, not by
+    # the first `GET`.
+    with pytest.raises(exceptions.ResponseError) as resp_err:
+        redis_client.select(5)
+    assert "cannot be used for get requests" in str(resp_err.value)
 
 
 def test_table_is_resolved_for_every_request(started_cluster, redis_client):

@@ -7,6 +7,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
@@ -30,6 +31,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -210,7 +216,13 @@ bool RedisHandler::processRequest()
             }
 
             /// Report a misconfigured mapping or an unusable table right away, not on the first lookup.
-            resolveTable(selected_db, *mapping);
+            auto resolved = resolveTable(selected_db, *mapping);
+
+            /// For a string database, also check that the value column can represent a missing key
+            /// as Nil: with no keys, `getBlockByKeys` only validates the return types, and throws
+            /// for a value column whose type cannot be wrapped in `Nullable`.
+            if (mapping->db_type == RedisProtocol::DBType::STRING)
+                resolved.table->getBlockByKeys({}, {mapping->value_column}, query_context);
 
             db = selected_db;
             RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::OK);
@@ -230,7 +242,7 @@ bool RedisHandler::processRequest()
             if (mapping.db_type != RedisProtocol::DBType::STRING)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "GET command can only be applied to a database of type string");
 
-            auto table = resolveTable(db, mapping);
+            auto [table, table_lock] = resolveTable(db, mapping);
             query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{mapping.key_column, mapping.value_column});
             std::vector<std::vector<Field>> keys{{get_request.getKey()}};
             auto result_block = table->getBlockByKeys(keys, {mapping.value_column}, query_context);
@@ -252,7 +264,7 @@ bool RedisHandler::processRequest()
             if (mapping.db_type != RedisProtocol::DBType::STRING)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MGET command can only be applied to a database of type string");
 
-            auto table = resolveTable(db, mapping);
+            auto [table, table_lock] = resolveTable(db, mapping);
             query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{mapping.key_column, mapping.value_column});
 
             /// All the keys are looked up in one call, so that a single command cannot mix values
@@ -287,7 +299,7 @@ bool RedisHandler::processRequest()
             if (mapping.db_type != RedisProtocol::DBType::HASH)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HGET command can only be applied to a database of type hash");
 
-            auto table = resolveTable(db, mapping);
+            auto [table, table_lock] = resolveTable(db, mapping);
             query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{mapping.key_column, hget_request.getField()});
             std::vector<std::vector<Field>> keys{{hget_request.getKey()}};
             auto result_block = table->getBlockByKeys(keys, {hget_request.getField()}, query_context);
@@ -309,7 +321,7 @@ bool RedisHandler::processRequest()
             if (mapping.db_type != RedisProtocol::DBType::HASH)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HMGET command can only be applied to a database of type hash");
 
-            auto table = resolveTable(db, mapping);
+            auto [table, table_lock] = resolveTable(db, mapping);
             Strings columns_to_check{mapping.key_column};
             columns_to_check.insert(columns_to_check.end(), hmget_request.getFields().begin(), hmget_request.getFields().end());
             query_context->checkAccess(AccessType::SELECT, table->getStorageID(), columns_to_check);
@@ -348,13 +360,18 @@ RedisProtocol::MapDescription RedisHandler::getMapDescription(UInt32 db_) const
     return *mapping;
 }
 
-StoragePtr RedisHandler::resolveTable(UInt32 db_, const RedisProtocol::MapDescription & mapping) const
+RedisHandler::ResolvedTable RedisHandler::resolveTable(UInt32 db_, const RedisProtocol::MapDescription & mapping) const
 {
     /// Resolve the table again for every request: a session must not keep serving data from a table
     /// that has been dropped, renamed, or recreated in the meantime.
     auto table = DatabaseCatalog::instance().getTable(StorageID{mapping.clickhouse_db, mapping.clickhouse_table}, query_context);
+
+    /// Hold a share lock for the duration of the command, as a regular read does, so that a concurrent
+    /// `DROP TABLE` or `DETACH TABLE` cannot commit while the command is reading the table.
+    auto lock = table->lockForShare(query_context->getInitialQueryId(), query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
     validateTable(db_, mapping, table);
-    return table;
+    return {std::move(table), std::move(lock)};
 }
 
 void RedisHandler::validateTable(UInt32 db_, const RedisProtocol::MapDescription & mapping, const StoragePtr & table_ptr) const

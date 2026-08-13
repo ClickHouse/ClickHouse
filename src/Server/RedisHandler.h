@@ -13,6 +13,7 @@
 #include <Server/IServer.h>
 #include <Server/RedisProtocolMapping.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/TableLockHolder.h>
 #include <base/types.h>
 #include <Common/Logger.h>
 
@@ -47,9 +48,18 @@ private:
     /// for every request, so that `SYSTEM RELOAD CONFIG` is visible to already connected clients.
     RedisProtocol::MapDescription getMapDescription(UInt32 db_) const;
 
-    /// Resolves the table configured for a Redis database and validates that it can serve lookups.
+    /// A resolved table together with a share lock that prevents a concurrent DROP or DETACH
+    /// from committing while a command reads the table. Keep it alive for the whole command.
+    struct ResolvedTable
+    {
+        StoragePtr table;
+        TableLockHolder lock;
+    };
+
+    /// Resolves the table configured for a Redis database, takes a share lock on it, and
+    /// validates that it can serve lookups.
     /// The table is resolved for every request, so DDL on it is visible immediately.
-    StoragePtr resolveTable(UInt32 db_, const RedisProtocol::MapDescription & mapping) const;
+    ResolvedTable resolveTable(UInt32 db_, const RedisProtocol::MapDescription & mapping) const;
 
     /// Checks that the table matches the configuration of the Redis database and supports lookups.
     void validateTable(UInt32 db_, const RedisProtocol::MapDescription & mapping, const StoragePtr & table) const;

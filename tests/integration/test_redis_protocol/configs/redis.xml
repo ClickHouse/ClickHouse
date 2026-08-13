@@ -36,6 +36,13 @@
                 <key_column>name</key_column>
                 <value_column>surname</value_column>
             </_4>
+            <_5>
+                <db_type>string</db_type>
+                <clickhouse_db>default</clickhouse_db>
+                <clickhouse_table>array_value_map</clickhouse_table>
+                <key_column>name</key_column>
+                <value_column>tags</value_column>
+            </_5>
         </db>
     </redis>
 </clickhouse>
