@@ -48,7 +48,7 @@ You can use the [log_queries_probability](/reference/settings/session-settings/l
 - `current_database` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Name of the current database.
 - `query` ([String](/reference/data-types/string)) — Query string.
 - `normalized_query_hash` ([UInt64](/reference/data-types/int-uint)) — The hash of normalized query - with wiped constants, etc.
-- `is_initial_query` ([UInt8](/reference/data-types/int-uint)) — Query type. Possible values: 1 — Query was initiated by the client, 0 — Query was initiated by another query for distributed query execution.
+- `is_initial_query` ([UInt8](/reference/data-types/int-uint)) — Whether the query is initial. Possible values: 1 — an initial (top-level) query, 0 — a child query initiated by another query, including queries for distributed execution and internal subqueries.
 - `connection_address` ([IPv6](/reference/data-types/ipv6)) — The client IP address from which the connection was made. When connected through a proxy, this will be the address of the proxy.
 - `connection_port` ([UInt16](/reference/data-types/int-uint)) — The client port from which the connection was made. When connected through a proxy, this will be the port of the proxy.
 - `user` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Name of the user who initiated the current query.
