@@ -7,7 +7,6 @@
 #include <cerrno>
 
 #if USE_SSL
-#include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Poco/Net/SecureStreamSocketImpl.h>
 #include <openssl/ssl.h>
@@ -117,6 +116,32 @@ private:
     bool was_blocking;
 };
 
+#if USE_SILK
+class ScopedDontWait
+{
+public:
+    explicit ScopedDontWait(Silk::SecureFiberStreamSocketImpl & socket_impl_)
+        : socket_impl(socket_impl_), was_dont_wait(socket_impl_.getDontWait())
+    {
+        if (!was_dont_wait)
+            socket_impl.setDontWait(true);
+    }
+
+    ~ScopedDontWait()
+    {
+        if (!was_dont_wait)
+            socket_impl.setDontWait(false);
+    }
+
+    ScopedDontWait(const ScopedDontWait &) = delete;
+    ScopedDontWait & operator=(const ScopedDontWait &) = delete;
+
+private:
+    Silk::SecureFiberStreamSocketImpl & socket_impl;
+    bool was_dont_wait;
+};
+#endif
+
 }
 
 #endif
@@ -133,8 +158,7 @@ SocketState getSocketState(const Poco::Net::StreamSocket & socket)
 #if USE_SILK
             if (auto * silk_secure = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(secure))
             {
-                silk_secure->setDontWait(true);
-                SCOPE_EXIT({ silk_secure->setDontWait(false); });
+                ScopedDontWait dont_wait(*silk_secure);
                 return getSSLSocketState(ssl);
             }
 #endif

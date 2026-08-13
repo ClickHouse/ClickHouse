@@ -265,6 +265,11 @@ SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(FiberStreamSocketImpl *
     setMutex(std::make_unique<SilkRecursiveMutex>());
 }
 
+bool SecureFiberStreamSocketImpl::getDontWait() const
+{
+    return underlying->getDontWait();
+}
+
 void SecureFiberStreamSocketImpl::setDontWait(bool flag)
 {
     underlying->setDontWait(flag);
