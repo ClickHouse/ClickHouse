@@ -6,7 +6,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/ServerUUID.h>
+#include <Core/UUID.h>
 
 #include <Common/Logger.h>
 #include <Common/formatReadable.h>
@@ -26,6 +26,7 @@ namespace DB
 DiskLocalCheckThread::DiskLocalCheckThread(DiskLocal * disk_, ContextPtr context_, int64_t local_disk_check_period_ms)
     : WithContext(context_)
     , disk(std::move(disk_))
+    , check_file_path(fmt::format("clickhouse_disk_checker_{}", toString(UUIDHelpers::generateV4())))
     , log(getLogger(fmt::format("{}::DiskLocalCheckThread", disk->getName())))
     , is_readonly(CurrentMetrics::ReadonlyDisks)
     , is_broken(CurrentMetrics::BrokenDisks)
@@ -42,7 +43,7 @@ DiskLocalCheckThread::~DiskLocalCheckThread()
 
 void DiskLocalCheckThread::startup()
 {
-    LOG_INFO(log, "Disk check for disk {} started with period {}", disk->getName(), formatReadableTime(static_cast<double>(check_period.getCurrentDelay()) * 1e6));
+    LOG_INFO(log, "Disk check for disk {} started with period {}, check file {}", disk->getName(), formatReadableTime(static_cast<double>(check_period.getCurrentDelay()) * 1e6), check_file_path);
     task->activateAndSchedule();
 }
 
@@ -50,8 +51,7 @@ void DiskLocalCheckThread::run()
 {
     try
     {
-        const String path = fmt::format("clickhouse_disk_checker_{}", toString(DB::ServerUUID::get()));
-        disk->checkAccessImpl(path);
+        disk->checkAccessImpl(check_file_path);
         check_period.rotateToMin();
     }
     catch (...)

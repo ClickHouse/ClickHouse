@@ -1050,7 +1050,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         // These limits are checked per part so that we can fail very quickly
         // if we hit row limits on large datasets. Row counts use an atomic
         // counter as part processing typically uses multiple threads (max_threads)
-        auto [limits, leaf_limits] = getRowLimits(settings, query_info);
+        auto [limits, leaf_limits] = filter_context.check_row_limits ? getRowLimits(settings, query_info) : RowLimits{};
         std::atomic<size_t> total_rows{0};
 
         /// Precompute the part-independent PK-position -> partition-minmax-slot mapping once for all parts.
@@ -1079,9 +1079,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 ranges.ranges = markRangesFromPKRange(
                     ranges,
                     metadata_snapshot,
-                    key_condition->generateForPartition(ranges.data_part->partition),
-                    part_offset_condition ? &part_offset_condition->generateForPartition(ranges.data_part->partition) : nullptr,
-                    total_offset_condition ? &total_offset_condition->generateForPartition(ranges.data_part->partition) : nullptr,
+                    key_condition->generateForPart(ranges.data_part),
+                    part_offset_condition ? &part_offset_condition->generateForPart(ranges.data_part) : nullptr,
+                    total_offset_condition ? &total_offset_condition->generateForPart(ranges.data_part) : nullptr,
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
                     pk_to_minmax_slot_ptr,
                     settings,
@@ -1162,8 +1162,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     {
                         std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                             index_and_condition.index,
-                            index_and_condition.condition_template->generateForPartition(ranges.data_part->partition),
-                            key_condition_rpn_template->generateForPartition(ranges.data_part->partition),
+                            index_and_condition.condition_template->generateForPart(ranges.data_part),
+                            key_condition_rpn_template->generateForPart(ranges.data_part),
                             ranges.data_part,
                             ranges.ranges,
                             ranges.read_hints,
@@ -1186,7 +1186,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 if (use_skip_indexes_for_disjunctions && key_condition_rpn_template != nullptr)
                 {
                     ranges.ranges = mergePartialResultsForDisjunctions(ranges.data_part,
-                                        ranges.ranges, key_condition_rpn_template->generateForPartition(ranges.data_part->partition),
+                                        ranges.ranges, key_condition_rpn_template->generateForPart(ranges.data_part),
                                         partial_eval_results, reader_settings, log);
 
                     sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
@@ -1361,7 +1361,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     .name = index_name,
                     .part_name = parts_with_ranges[part_index].data_part->name,
                     .description = std::move(description),
-                    .condition = index_and_condition.condition_template->generateForPartition(parts_with_ranges[part_index].data_part->partition)->getDescription(),
+                    .condition = index_and_condition.condition_template->generateForPart(parts_with_ranges[part_index].data_part)->getDescription(),
                     .num_parts_after = stat.total_parts - stat.parts_dropped,
                     .num_granules_after = stat.total_granules - stat.granules_dropped});
             }
@@ -1562,7 +1562,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         return;
 
     /// The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads is gated behind the
-    /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, skip the
+    /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, skip the
     /// consult entirely for any read stamped as TopK — including shapes where no `__topKFilter` node
     /// is folded into the filter DAG (skip-index-only TopK, or a query with a PREWHERE), whose plain
     /// condition hash would otherwise still hit entries primed by an ordinary `SELECT ... WHERE`.
@@ -1822,7 +1822,8 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         /*find_exact_ranges*/false,
         /*is_parallel_reading_from_replicas*/false,
         use_query_condition_cache,
-        /*supports_skip_indexes_on_data_read*/false);
+        /*supports_skip_indexes_on_data_read*/false,
+        /*check_row_limits=*/true);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
@@ -2874,7 +2875,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_initial_selected_granules += num_granules;
 
         /// hyperrectangle must come from the part whose metadata built the condition.
-        if (minmax_idx_condition && !minmax_idx_condition->generateForPartition(part->partition).checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+        if (minmax_idx_condition && !minmax_idx_condition->generateForPart(part_or_projection).checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
         counters.num_parts_after_minmax += 1;
