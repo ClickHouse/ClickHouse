@@ -616,7 +616,11 @@ Constructions with `{}` are similar to the [remote](/reference/functions/table-f
 
 ## Introspection {#introspection}
 
-For introspection use `system.s3queue_metadata_cache` stateless table and `system.s3queue_log` persistent table.
+For introspection use the `system.s3queue_metadata_cache` and `system.s3_queue_metadata` stateless tables and the `system.s3queue_log` persistent table.
+
+- Use `system.s3queue_metadata_cache` to inspect the in-memory cache of per-file processing state (which files are currently being processed, processed or failed) on the local server.
+- Use `system.s3_queue_metadata` to inspect the state stored in keeper directly: the number of `processed`, `processing` and `failed` nodes per metadata object, and, on demand, their contents. This is useful when the in-memory cache does not (yet) reflect keeper, or to look at the shared state across the cluster.
+- Use `system.s3queue_log` for the persistent history of `processed` and `failed` files.
 
 1. `system.s3queue_metadata_cache`. This table is not persistent and shows in-memory state of `S3Queue`: which files are currently being processed, which files are processed or failed.
 
@@ -658,7 +662,25 @@ ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMul
 exception:
 ```
 
-2. `system.s3queue_log`. Persistent table. Has the same information as `system.s3queue_metadata_cache`, but for `processed` and `failed` files.
+2. `system.s3_queue_metadata`. This table is not persistent and reads the state directly from keeper: the number of `processed`, `processing` and `failed` nodes per metadata object, and, on demand, their contents.
+
+The `processed_nodes`, `processing_nodes`, `failed_nodes` and `processed_path` columns issue keeper requests and are fetched only when the corresponding column is selected, so selecting just the `*_nodes_count` counters avoids the extra keeper traffic.
+
+```sql
+SELECT zookeeper_path, processed_nodes_count, processing_nodes_count, failed_nodes_count
+FROM system.s3_queue_metadata
+
+Row 1:
+──────
+zookeeper_path:         /clickhouse/s3queue/25ea5621-ae8c-40c7-96d0-cec959c5ab88/3b3f66a1-9866-4c2e-ba78-b6bfa154207e
+processed_nodes_count:  128
+processing_nodes_count: 2
+failed_nodes_count:     0
+```
+
+For the full list of columns see the `system.s3_queue_metadata` reference page.
+
+3. `system.s3queue_log`. Persistent table. Has the same information as `system.s3queue_metadata_cache`, but for `processed` and `failed` files.
 
 The table has the following structure:
 
@@ -863,7 +885,8 @@ Enable logging for the table via the table setting `enable_logging_to_queue_log=
 Introspection capabilities are the same as the [S3Queue table engine](/reference/engines/table-engines/integrations/s3queue#introspection) with several distinct differences:
 
 1. Use the `system.azure_queue_metadata_cache` for the in-memory state of the queue for server versions >= 25.1. For older versions use the `system.s3queue_metadata_cache` (it would contain information for `azure` tables as well).
-2. Enable the `system.azure_queue_log` via the main ClickHouse configuration e.g.
+2. Use the `system.azure_queue_metadata` table to inspect the state stored in keeper directly: the number of `processed`, `processing` and `failed` nodes per metadata object, and, on demand, their contents. This is the `AzureQueue` counterpart of `system.s3_queue_metadata`.
+3. Enable the `system.azure_queue_log` via the main ClickHouse configuration e.g.
 
 ```xml
 <azure_queue_log>
