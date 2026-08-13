@@ -1663,6 +1663,9 @@ Enables caching of columns metadata from the file prefixes during reading from r
 DECLARE(Bool, merge_tree_use_prefixes_deserialization_thread_pool, true, R"(
 Enables usage of the thread pool for parallel prefixes reading in Wide parts in MergeTree. Size of that thread pool is controlled by server setting `max_prefixes_deserialization_thread_pool_size`.
 )", 0) \
+DECLARE(Bool, merge_tree_prefetch_json_shared_data_substreams, true, R"(
+Enables prefetching of JSON shared data substreams in Wide parts that are read by seeking to a mark. Such a prefetch reads from the beginning of the granule, which is usually not the position the substream is read from, so it can be wasted. Disable to skip these prefetches.
+)", 0) \
     DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
 Improve FINAL queries by avoiding merges across different partitions.
 
@@ -6782,6 +6785,8 @@ Method of reading data from storage file, one of: `read`, `pread`, `mmap`. The m
 )", 0) \
     DECLARE(String, local_filesystem_read_method, "pread_threadpool", R"(
 Method of reading data from local filesystem, one of: read, pread, mmap, io_uring, pread_threadpool.
+
+The 'pread_threadpool' method hands a read off to a thread pool, unless the data is already in the page cache, which is checked with the `preadv2` system call and the `RWF_NOWAIT` flag. That check needs Linux 5.11 or newer, and the system call must not be rejected by a `seccomp` profile of a container runtime. It is checked on startup whether the system call can be used, and if it cannot, the default value of this setting is switched to 'pread', because a thread pool hand-off for every read, including the reads that are served from the page cache, is expensive; the reason is reported in the server log. A `seccomp` profile is detected only if it rejects the system call with an error code, which is what container runtimes do; a profile that terminates the process instead cannot be detected. A value set explicitly, in the configuration or with `SET`, is not switched.
 
 The 'io_uring' method is experimental and does not work for Log, TinyLog, StripeLog, File, Set and Join, and other tables with append-able files in presence of concurrent reads and writes.
 If you read various articles about 'io_uring' on the Internet, don't be blinded by them. It is not a better method of reading files, unless the case of a large amount of small IO requests, which is not the case in ClickHouse. There are no reasons to enable 'io_uring'.
