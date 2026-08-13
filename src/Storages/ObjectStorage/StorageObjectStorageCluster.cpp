@@ -43,6 +43,15 @@ namespace FailPoints
 
 String StorageObjectStorageCluster::getPathSample(ContextPtr context)
 {
+    const auto path = configuration->getRawPath();
+
+    /// For non-glob paths, return directly without any object storage API calls.
+    /// Besides saving a request, this keeps hive partition inference working for an explicitly
+    /// specified key that does not exist (or is filtered out before reading): the path string
+    /// itself carries the partition columns, so it must not depend on the object being present.
+    if (!configuration->isArchive() && !path.hasGlobs())
+        return path.path;
+
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
     query_settings.throw_on_zero_files_match = false;

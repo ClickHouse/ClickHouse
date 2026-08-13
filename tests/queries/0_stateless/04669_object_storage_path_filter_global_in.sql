@@ -35,6 +35,14 @@ WHERE _path GLOBAL IN (SELECT 'no such path');
 SELECT * FROM s3(s3_conn, filename = concat('04669_path_filter_global_in_no_such_file_', currentDatabase()), format = CSV, structure = 'x UInt64')
 WHERE _file GLOBAL NOT IN (SELECT concat('04669_path_filter_global_in_no_such_file_', currentDatabase()));
 
+-- Hive partition columns are inferred from the sample path string alone, so an explicitly specified
+-- key must keep them even when the object does not exist and the predicate excludes it: the cluster
+-- variant samples the path during analysis, and a missing key must not erase the sample. Losing the
+-- sample made the query throw UNKNOWN_IDENTIFIER for `date` instead of returning 0 rows.
+SELECT x, date FROM s3Cluster('test_shard_localhost', s3_conn, filename = concat('04669_path_filter_global_in_hive_', currentDatabase(), '/date=2026-08-12/missing.csv'), format = CSV, structure = 'x UInt64')
+WHERE _path GLOBAL IN (SELECT 'no such path')
+SETTINGS use_hive_partitioning = 1;
+
 -- A glob applies the same filter lazily, while listing objects; it must keep working too.
 SELECT * FROM s3(s3_conn, filename = concat('04669_path_filter_global_in_', currentDatabase(), '*'), format = CSV, structure = 'x UInt64')
 WHERE _file GLOBAL IN (SELECT concat('04669_path_filter_global_in_', currentDatabase()));
