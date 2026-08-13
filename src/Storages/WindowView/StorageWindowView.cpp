@@ -761,132 +761,38 @@ inline void StorageWindowView::fire(UInt32 watermark)
 ASTPtr StorageWindowView::getSourceTableSelectQuery()
 {
     throwIfWindowViewIsDisabled();
-    auto query = select_query->clone();
-    auto & modified_select = query->as<ASTSelectQuery &>();
 
-    if (hasJoin(modified_select))
-    {
-        auto analyzer_res = TreeRewriterResult({});
-        removeJoin(modified_select, analyzer_res, getContext());
-    }
-    else
-    {
-        modified_select.setExpression(ASTSelectQuery::Expression::HAVING, {});
-        modified_select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
-        modified_select.group_by_all = false;
-        /// Same for the GROUP BY modifiers: a leftover WITH TOTALS/ROLLUP/CUBE/GROUPING SETS
-        /// flag makes the interpreter reject the rewritten aggregation-free query.
-        modified_select.group_by_with_totals = false;
-        modified_select.group_by_with_rollup = false;
-        modified_select.group_by_with_cube = false;
-        modified_select.group_by_with_grouping_sets = false;
-        /// WINDOW definitions and LIMIT BY expressions may reference aliases of the original
-        /// select list, which is rewritten to raw source columns below, so they must not
-        /// survive either (removeJoin does the same for the join branch above). QUALIFY is
-        /// cleared for the same reason.
-        modified_select.setExpression(ASTSelectQuery::Expression::WINDOW, {});
-        modified_select.setExpression(ASTSelectQuery::Expression::QUALIFY, {});
-        modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_BY, {});
-        modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, {});
-        modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, {});
-        modified_select.limit_by_all = false;
-    }
+    /// This query backfills the view on `CREATE WINDOW VIEW ... POPULATE`: the rows it produces are
+    /// inserted into the window view, where `writeIntoWindowView` executes the mergeable view query
+    /// over them - exactly like blocks inserted into the source table in steady state, which are
+    /// delivered raw (`getInputHeader` is the source table header no matter how the view query wraps
+    /// or transforms the table). So the backfill query must deliver the raw source table rows in full
+    /// and leave every row transformation of the original query to the view query; otherwise the
+    /// initialized state diverges from live behavior. Instead of stripping each row-shaping construct
+    /// from a clone of the view query (JOIN, ARRAY JOIN, WHERE, PREWHERE, GROUP BY, ORDER BY,
+    /// LIMIT [BY], DISTINCT, SAMPLE, FINAL, ... - including inside wrapped subqueries and CTE
+    /// definitions, which would need the same rewrite recursively), build a fresh query that reads
+    /// the source table directly.
+    auto query = make_intrusive<ASTSelectQuery>();
 
     auto select_list = make_intrusive<ASTExpressionList>();
     for (const auto & column_name : getInputHeader().getNames())
         select_list->children.emplace_back(make_intrusive<ASTIdentifier>(column_name));
-    modified_select.setExpression(ASTSelectQuery::Expression::SELECT, select_list);
+    query->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
 
+    query->replaceDatabaseAndTable(select_table_id);
+
+    /// `writeIntoWindowView` initializes the watermark from the first delivered record, so deliver
+    /// the rows in timestamp order. When the time window function uses `now`, there is no raw
+    /// timestamp column to order by; the rows get the processing time on insertion instead.
     if (!is_time_column_func_now)
     {
-        auto query_ = select_query->clone();
-        DropTableIdentifierMatcher::Data drop_table_identifier_data;
-        DropTableIdentifierMatcher::Visitor(drop_table_identifier_data).visit(query_);
-
-        WindowFunctionMatcher::Data query_info_data;
-        WindowFunctionMatcher::Visitor(query_info_data).visit(query_);
-
         auto order_by = make_intrusive<ASTExpressionList>();
         auto order_by_elem = make_intrusive<ASTOrderByElement>();
         order_by_elem->children.push_back(make_intrusive<ASTIdentifier>(timestamp_column_name));
         order_by_elem->direction = 1;
         order_by->children.push_back(order_by_elem);
-        modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by));
-        /// The original query may have used ORDER BY ALL, but the clause was replaced above,
-        /// so the flag must not survive: otherwise the analysis of this query would treat
-        /// the timestamp sort element as the ALL keyword and expand it over all columns.
-        modified_select.order_by_all = false;
-    }
-    else
-    {
-        modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
-    }
-
-    /// This query must read the raw source table in full: it backfills the view on
-    /// `CREATE WINDOW VIEW ... POPULATE`, and the window-view query is applied to the
-    /// inserted rows afterwards. A leftover LIMIT/OFFSET would pre-truncate the raw
-    /// input stream, which steady-state inserts do not have, so the initialized state
-    /// would diverge from live behavior. WITH TIES cannot survive without its LIMIT
-    /// (and its ORDER BY was replaced or removed above anyway). Plain DISTINCT is an
-    /// output-stage modifier too: after the select list was rewritten to raw source
-    /// columns above, it would deduplicate source rows before they reach the view query
-    /// (which applies the original DISTINCT itself). DISTINCT ON needs no extra handling:
-    /// the parser lowers it to LIMIT BY, which was cleared above.
-    modified_select.distinct = false;
-    modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, {});
-    modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, {});
-    modified_select.limit_with_ties = false;
-
-    /// INTERPOLATE belongs to the replaced (or removed) ORDER BY ... WITH FILL clause, and it may
-    /// reference aliases of the original select list, which was rewritten to raw source columns above.
-    /// `RequiredSourceColumnsVisitor` traverses INTERPOLATE independently of ORDER BY, so a stale
-    /// clause would pull unknown identifiers into the source query.
-    modified_select.setExpression(ASTSelectQuery::Expression::INTERPOLATE, {});
-
-    /// The rows this query inserts go through `writeIntoWindowView`, which executes the mergeable
-    /// view query over them, so all row transformations of the original query happen there and must
-    /// not be applied while reading the raw source table too. A leftover ARRAY JOIN would expand the
-    /// rows here and then again in the view query (double-counting every array element), and without
-    /// an alias it would even replace the raw Array column with its elements before the rows reach
-    /// the view query. WHERE and PREWHERE are cleared for the same reason: the view query re-applies
-    /// its filter itself, and the predicate may reference aliases of the removed ARRAY JOIN (or of
-    /// the rewritten select list), which do not exist in the raw-source query. SAMPLE and FINAL are
-    /// the opposite case: they would be applied here but never on the live path (`writeIntoWindowView`
-    /// reads the inserted blocks back through `StorageBlocks`, which ignores the table-expression
-    /// modifiers), so the initialized state would be computed from a sampled/finalized snapshot that
-    /// steady-state inserts never see.
-    modified_select.setExpression(ASTSelectQuery::Expression::WHERE, {});
-    modified_select.setExpression(ASTSelectQuery::Expression::PREWHERE, {});
-    if (auto tables = modified_select.tables())
-    {
-        auto & tables_children = tables->children;
-        tables_children.erase(
-            std::remove_if(
-                tables_children.begin(),
-                tables_children.end(),
-                [](const ASTPtr & child) { return child->as<ASTTablesInSelectQueryElement &>().array_join != nullptr; }),
-            tables_children.end());
-
-        for (const auto & child : tables_children)
-        {
-            auto & element = child->as<ASTTablesInSelectQueryElement &>();
-            if (!element.table_expression)
-                continue;
-            auto & table_expression = element.table_expression->as<ASTTableExpression &>();
-            table_expression.final = false;
-
-            auto remove_child = [&](ASTPtr & node)
-            {
-                if (!node)
-                    return;
-                auto & expression_children = table_expression.children;
-                expression_children.erase(
-                    std::remove(expression_children.begin(), expression_children.end(), node), expression_children.end());
-                node = nullptr;
-            };
-            remove_child(table_expression.sample_size);
-            remove_child(table_expression.sample_offset);
-        }
+        query->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_by);
     }
 
     const auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
