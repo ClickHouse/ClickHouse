@@ -4,7 +4,7 @@
 -- synchronously, so the deferred inner DROPs are rejected with "ON CLUSTER is not allowed for Replicated database".
 
 -- `timeSeriesSelector` (and every PromQL selector evaluated through it) filters the samples table with
--- `id IN <tags subquery>`. With a two-component id layout `Tuple(hash(metric_name), hash(metric_name, tags))`
+-- `id IN <tags subquery>`. With a two-component id layout `Tuple(hash(metric_name), hash(tags))`
 -- all series of one metric occupy one continuous primary-key range. When a selector matches the WHOLE
 -- metric (verified by a probe on the tags table at query build time), the generated WHERE additionally
 -- carries `id >= tuple(hash('metric'), min) AND id <= tuple(hash('metric'), max)` and the id set is
@@ -22,7 +22,7 @@ DROP TABLE IF EXISTS ts_custom_gen;
 DROP TABLE IF EXISTS ts_altered_gen;
 DROP TABLE IF EXISTS ts_u64;
 
--- The metric-clustered layout: id = tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags))).
+-- The metric-clustered layout: id = tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))).
 -- Inner target tables (their names contain dots and the table UUID - the qualified references of the
 -- range conditions must still resolve).
 CREATE TABLE ts_clustered ENGINE = TimeSeries TAGS INNER COLUMNS (id Tuple(UInt64, UUID));
@@ -96,7 +96,7 @@ FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN 
 SELECT '-- custom id generator: no structural guarantee, no id range, same results';
 
 CREATE TABLE ts_custom_gen ENGINE = TimeSeries
-TAGS INNER COLUMNS (id Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(all_tags), reinterpretAsUUID(sipHash128(metric_name, all_tags))));
+TAGS INNER COLUMNS (id Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(tags), reinterpretAsUUID(sipHash128(metric_name, tags))));
 
 INSERT INTO ts_custom_gen (metric_name, tags, time_series) VALUES
     ('foo', map('env', 'prod'), [(toDateTime64(100, 3), 1.)]),
@@ -110,13 +110,13 @@ FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN 
 SELECT '-- id_generator changed after ingestion: old series ids are outside the range, the probe detects them and falls back';
 
 CREATE TABLE ts_altered_gen ENGINE = TimeSeries
-TAGS INNER COLUMNS (id Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(all_tags), reinterpretAsUUID(sipHash128(metric_name, all_tags))));
+TAGS INNER COLUMNS (id Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(tags), reinterpretAsUUID(sipHash128(metric_name, tags))));
 
 INSERT INTO ts_altered_gen (metric_name, tags, time_series) VALUES
     ('foo', map('env', 'old'), [(toDateTime64(100, 3), 1.)]);
 
 -- The setting overrides the column DEFAULT, so new inserts get canonical (metric-clustered) ids.
-ALTER TABLE ts_altered_gen MODIFY SETTING id_generator = 'tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags)))';
+ALTER TABLE ts_altered_gen MODIFY SETTING id_generator = 'tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags)))';
 
 INSERT INTO ts_altered_gen (metric_name, tags, time_series) VALUES
     ('foo', map('env', 'new'), [(toDateTime64(200, 3), 2.)]);

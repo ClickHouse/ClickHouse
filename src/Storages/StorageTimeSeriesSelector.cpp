@@ -649,7 +649,7 @@ namespace
         /// column, then the canonical generator.
         /// `getDefault` cannot throw here: two-component tuples of the types accepted above are
         /// exactly the tuple types it supports.
-        ASTPtr canonical_generator = TimeSeriesIDGenerator::getDefault(id_data_type, time_series_settings, time_series_storage_id);
+        ASTPtr canonical_generator = TimeSeriesIDGenerator::getDefault(id_data_type, time_series_storage_id);
         ASTPtr id_generator = time_series_settings[TimeSeriesSetting::id_generator].value;
         if (!id_generator)
         {
