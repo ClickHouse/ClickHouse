@@ -21,10 +21,12 @@ select * from format(Values, 'x Time64(6)', '(1::Decimal64(6))');
 -- The DateTime64 sibling branch keeps reporting the same overflow.
 select 1 where toDateTime64('1970-01-01 00:00:01', 6) in (253402207200000::Decimal64(0)); -- { serverError DECIMAL_OVERFLOW }
 
--- A wrapped value must not be persisted.
+-- A wrapped value must not be persisted. The conversion is asserted through `format` so that it
+-- happens on the server: an inline `VALUES` list of an `INSERT` is parsed by the client, which
+-- reports the same overflow as a client error, and which side parses it is not the contract here.
 drop table if exists t_04883;
 create table t_04883 (t Time64(6)) engine = MergeTree order by tuple();
-insert into t_04883 values (253402207200000::Decimal64(0)); -- { serverError DECIMAL_OVERFLOW }
+insert into t_04883 select * from format(Values, 'x Time64(6)', '(253402207200000::Decimal64(0))'); -- { serverError DECIMAL_OVERFLOW }
 insert into t_04883 values (-12::Decimal64(0));
 select toString(t) from t_04883;
 drop table t_04883;
