@@ -444,6 +444,33 @@ void addDistinctRecursively(const QueryTreeNodePtr & node)
 /** Execute subquery node and put result in mutable context temporary table.
   * Returns table node that is initialized with temporary table storage.
   */
+/// Materializing a subquery for shipping must run on the initiator alone. Left to itself it inherits
+/// parallel replicas from the query, so instead of the initiator reading the source table once, every
+/// replica reads it - which is exactly the work shipping exists to avoid, and it also ships the subquery's
+/// own nested `IN` in turn. Measured on a 3-replica loopback cluster: with shipping on, the number of
+/// secondary queries doubled and the source table was still read once per replica. The settings have to go
+/// on the query nodes themselves, not just the context copy: each `QueryNode` carries its own context and
+/// that is the one the planner consults.
+void makeSubqueryExecutionLocal(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return;
+
+    if (auto * query_node = node->as<QueryNode>())
+    {
+        query_node->getMutableContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        query_node->getMutableContext()->setSetting("parallel_replicas_ship_prepared_sets", false);
+    }
+    else if (auto * union_node = node->as<UnionNode>())
+    {
+        union_node->getMutableContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        union_node->getMutableContext()->setSetting("parallel_replicas_ship_prepared_sets", false);
+    }
+
+    for (const auto & child : node->getChildren())
+        makeSubqueryExecutionLocal(child);
+}
+
 /// If the initiator already built the set for this subquery, its rows are right there - writing them
 /// into the temporary table is far cheaper than running the subquery a second time. Only usable when the
 /// set kept its explicit elements and their types match the subquery header exactly (`Set` strips
@@ -527,6 +554,15 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     subquery_options.forceMaterializeCTE();
     auto context_copy = Context::createCopy(mutable_context);
     updateContextForSubqueryExecution(context_copy);
+    /// Only for the sets this feature ships. `GLOBAL IN` / `GLOBAL JOIN` materialize through here too, and
+    /// they have always run their subquery with whatever parallelism the query had; changing that is a
+    /// separate question and it is what `02784_parallel_replicas_automatic_decision_join` measures.
+    if (set_key)
+    {
+        context_copy->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        context_copy->setSetting("parallel_replicas_ship_prepared_sets", false);
+        makeSubqueryExecutionLocal(subquery_node);
+    }
 
     InterpreterSelectQueryAnalyzer interpreter(subquery_node, context_copy, subquery_options);
     auto & query_plan = interpreter.getQueryPlan();
