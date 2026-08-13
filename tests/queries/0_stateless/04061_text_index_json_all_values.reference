@@ -22,8 +22,8 @@ SELECT id FROM tab WHERE startsWith(data.key1, 'lazy') ORDER BY id
 1
 Description: text GRANULARITY 100000000
 Condition: (mode: All; tokens: [])
-Parts: 4/4
-Granules: 4/4
+Parts: 1/4
+Granules: 1/4
 SELECT id FROM tab WHERE endsWith(data.key1, 'fox') ORDER BY id
 0
 Description: text GRANULARITY 100000000
@@ -61,8 +61,8 @@ SELECT id FROM tab WHERE startsWith(data.key1::String, 'lazy') ORDER BY id
 1
 Description: text GRANULARITY 100000000
 Condition: (mode: All; tokens: [])
-Parts: 4/4
-Granules: 4/4
+Parts: 1/4
+Granules: 1/4
 SELECT id FROM tab WHERE hasToken(data.key1::String, 'quick') ORDER BY id
 0
 2
