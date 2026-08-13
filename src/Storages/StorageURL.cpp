@@ -81,6 +81,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char storage_url_pause_between_metadata_probes[];
+    extern const char storage_url_pause_before_handling_interrupted_read_error[];
 }
 
 namespace Setting
@@ -559,18 +560,11 @@ Chunk StorageURLSource::generate()
         }
         catch (...)
         {
-            /// The query does not need any more data and must succeed with what it has already read:
-            /// a soft `max_execution_time` with the `break` overflow mode, or a consumer that has
-            /// enough data - see cancel. A failure of the interrupted read - for example, the last
-            /// HTTP error rethrown by ReadWriteBufferFromHTTP::doWithRetries when the cancellation
-            /// wakes up its retry backoff - must not fail the query, so end the stream instead.
-            /// The check is against the effective cancellation: a soft cancellation which a later
-            /// hard one has overridden - ExecutingGraph::cancel upgrades PartialResult to the later
-            /// reason and cancel here runs once more - does not allow discarding the error.
-            if (!cancellation->isCancelledSoftly())
-                throw;
+            /// A window for the tests which arrange a cancellation upgrade - see below - to land
+            /// between the throw and the checks here.
+            FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_handling_interrupted_read_error);
 
-            /// Discard only the interruption of the read itself: the error of a request which was
+            /// Handle only the interruption of the read itself: the error of a request which was
             /// abandoned because of the cancellation, see Cancellation::markReadInterrupted. An
             /// error the cancellation has nothing to do with - for example, a parse error of the
             /// data that had already been downloaded when it arrived - fails the query the same way
@@ -588,6 +582,34 @@ Chunk StorageURLSource::generate()
             /// read as if its result were partial.
             CurrentThread::checkIfNotCancelled();
 
+            /// The check is against the effective cancellation: a soft cancellation which a later
+            /// hard one has overridden - ExecutingGraph::cancel upgrades PartialResult to the later
+            /// reason and cancel here runs once more - does not allow discarding the error.
+            if (!cancellation->isCancelledSoftly())
+            {
+                /// The exception at hand is only the interruption of the cancelled read - the last
+                /// HTTP error rethrown by ReadWriteBufferFromHTTP::doWithRetries when the
+                /// cancellation woke up its retry backoff, or the cancellation error synthesized
+                /// between the failover options - possibly constructed under a soft state which the
+                /// hard cancellation has overridden only afterwards. Under a hard cancellation the
+                /// query fails for a reason of its own - the error of the peer whose failure tore
+                /// the pipeline down, the kill reported by the check above, or a disconnected
+                /// client with no one left to report to - and rethrowing the error of the
+                /// interrupted read could mask that reason, so end the stream with nothing to say.
+                tryLogCurrentException(
+                    getLogger("StorageURLSource"),
+                    "The read was interrupted by a hard cancellation; the stream ends and the query fails with the error which caused the cancellation",
+                    LogsLevel::information);
+
+                if (reader)
+                    reader->cancel();
+                break;
+            }
+
+            /// The query does not need any more data and must succeed with what it has already read:
+            /// a soft `max_execution_time` with the `break` overflow mode, or a consumer that has
+            /// enough data - see cancel. A failure of the interrupted read must not fail the query,
+            /// so end the stream instead.
             tryLogCurrentException(
                 getLogger("StorageURLSource"),
                 "The read was interrupted by a cancellation after which the query returns its partial result, discarding the error",
