@@ -1,0 +1,4 @@
+196
+count: metadata_only
+optimize_off: decoded
+row_group_spans: metadata_only
