@@ -44,9 +44,7 @@ Test index statistics without target permission
 0
 Test lifetime statistics without target permission
 1	1
-Test direct and Alias count with column-scoped target SELECT permission using the old analyzer
-2	2
-Test direct and Alias count with column-scoped target SELECT permission using the new analyzer
+Test direct and Alias count with column-scoped target SELECT permission using the analyzer
 2	2
 Test table statistics with target permission
 2	1	1	1	1

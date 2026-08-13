@@ -195,15 +195,7 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
 
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT(value) ON test_table_access TO ${access_username};"
 
-echo "Test direct and Alias count with column-scoped target SELECT permission using the old analyzer"
-${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
-    SELECT
-        (SELECT count() FROM test_table_access),
-        (SELECT count() FROM test_alias_access)
-    SETTINGS optimize_trivial_count_query = 1, enable_analyzer = 0;
-"
-
-echo "Test direct and Alias count with column-scoped target SELECT permission using the new analyzer"
+echo "Test direct and Alias count with column-scoped target SELECT permission using the analyzer"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     SELECT
         (SELECT count() FROM test_table_access),

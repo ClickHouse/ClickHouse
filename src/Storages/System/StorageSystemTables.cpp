@@ -976,8 +976,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes_uncompressed
-                            = can_expose_metadata ? table->totalBytesUncompressed(context_copy->getSettingsRef()) : std::nullopt;
+                        auto total_bytes_uncompressed = can_expose_metadata ? table->totalBytesUncompressed(context_copy->getSettingsRef()) : std::nullopt;
                         if (total_bytes_uncompressed)
                             res_columns[res_index]->insert(*total_bytes_uncompressed);
                         else
