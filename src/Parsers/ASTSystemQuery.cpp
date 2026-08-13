@@ -521,7 +521,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             {
                 ostr << ' ';
                 print_keyword("SET FAKE TIME");
-                ostr << " '" << LocalDateTime(*fake_time_for_view) << "'";
+                ostr << " " << quoteString(*fake_time_for_view);
             }
             break;
         }
@@ -771,7 +771,7 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
         buf << ']';
     }
     if (fake_time_for_view.has_value())
-        w.writeInt("fake_time_for_view", *fake_time_for_view);
+        w.writeString("fake_time_for_view", *fake_time_for_view);
     if (!tables.empty())
     {
         w.writeKey("tables");
@@ -956,7 +956,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     }
     src_replicas = r.readStringArray("src_replicas");
     if (r.has("fake_time_for_view"))
-        fake_time_for_view = r.getInt("fake_time_for_view");
+        fake_time_for_view = r.getString("fake_time_for_view");
     if (r.has("tables"))
     {
         auto arr = r.getArray("tables");
