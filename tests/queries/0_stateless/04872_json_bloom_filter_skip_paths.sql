@@ -28,13 +28,14 @@ CREATE TABLE json_bf_skip_paths
     j JSON(
         request_id String,
         request String,
+        ignored Dynamic(max_types = 0),
         payload Tuple(raw Tuple(secret String), kept String),
-        metadata Tuple(trace String),
+        metadata Tuple(trace String, ignored Dynamic(max_types = 0)),
         other Tuple(trace_id String),
         meta String),
     INDEX idx j TYPE jsonbf_v1(
         false_positive_rate = 0.0001,
-        skip_paths = ['request_id', 'payload.raw'],
+        skip_paths = ['request_id', 'payload.raw', 'ignored'],
         skip_paths_regexp = ['^metadata\\.', 'trace_id$']) GRANULARITY 1
 )
 ENGINE = MergeTree
@@ -42,8 +43,8 @@ ORDER BY id
 SETTINGS index_granularity = 1;
 
 INSERT INTO json_bf_skip_paths FORMAT JSONEachRow
-{"id":1,"j":{"request_id":"high-1","request":"keep-1","payload":{"raw":{"secret":"raw-1"},"kept":"nested-1"},"metadata":{"trace":"trace-1"},"other":{"trace_id":"other-1"},"meta":"meta-1"}}
-{"id":2,"j":{"request_id":"high-2","request":"keep-2","payload":{"raw":{"secret":"raw-2"},"kept":"nested-2"},"metadata":{"trace":"trace-2"},"other":{"trace_id":"other-2"},"meta":"meta-2"}}
+{"id":1,"j":{"request_id":"high-1","request":"keep-1","ignored":[[1]],"payload":{"raw":{"secret":"raw-1"},"kept":"nested-1"},"metadata":{"trace":"trace-1","ignored":[[2]]},"other":{"trace_id":"other-1"},"meta":"meta-1"}}
+{"id":2,"j":{"request_id":"high-2","request":"keep-2","ignored":[[3]],"payload":{"raw":{"secret":"raw-2"},"kept":"nested-2"},"metadata":{"trace":"trace-2","ignored":[[4]]},"other":{"trace_id":"other-2"},"meta":"meta-2"}}
 ;
 
 SELECT 'exact prefix sibling', groupArray(id) FROM json_bf_skip_paths WHERE j.request = 'keep-2'

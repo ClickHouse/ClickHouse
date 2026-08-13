@@ -8,7 +8,6 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/SipHash.h>
-#include <Common/re2.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -34,11 +33,11 @@
 #include <Interpreters/misc.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Storages/MergeTree/JSONBloomPathMatcher.h>
 #include <Storages/MergeTree/JSONValueEnumerator.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
-#include <list>
 #include <ranges>
 
 namespace DB
@@ -51,43 +50,35 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class JSONBloomPathMatcher
+JSONBloomPathMatcher::JSONBloomPathMatcher(std::vector<String> paths_, const std::vector<String> & regexps_)
+    : paths(std::move(paths_))
 {
-public:
-    JSONBloomPathMatcher(std::vector<String> paths_, const std::vector<String> & regexps_)
-        : paths(std::move(paths_))
+    for (const auto & regexp : regexps_)
     {
-        for (const auto & regexp : regexps_)
-        {
-            regexps.emplace_back(regexp);
-            if (!regexps.back().ok())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid `jsonbf_v1` path regexp '{}': {}",
-                    regexp,
-                    regexps.back().error());
-        }
+        regexps.emplace_back(regexp);
+        if (!regexps.back().ok())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid `jsonbf_v1` path regexp '{}': {}",
+                regexp,
+                regexps.back().error());
+    }
+}
+
+bool JSONBloomPathMatcher::shouldSkip(std::string_view path) const
+{
+    path = path.substr(0, path.find('\0'));
+    for (const auto & skipped : paths)
+    {
+        if (path == skipped
+            || (path.starts_with(skipped)
+                && path.size() > skipped.size()
+                && (path[skipped.size()] == '.' || path[skipped.size()] == '[')))
+            return true;
     }
 
-    bool shouldSkip(std::string_view path) const
-    {
-        path = path.substr(0, path.find('\0'));
-        for (const auto & skipped : paths)
-        {
-            if (path == skipped
-                || (path.starts_with(skipped)
-                    && path.size() > skipped.size()
-                    && (path[skipped.size()] == '.' || path[skipped.size()] == '[')))
-                return true;
-        }
-
-        return std::ranges::any_of(regexps, [&](const auto & regexp) { return re2::RE2::PartialMatch(path, regexp); });
-    }
-
-private:
-    std::vector<String> paths;
-    std::list<re2::RE2> regexps;
-};
+    return std::ranges::any_of(regexps, [&](const auto & regexp) { return re2::RE2::PartialMatch(path, regexp); });
+}
 
 namespace
 {
