@@ -11,24 +11,6 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 本页介绍了在 BYOC 中连接 ClickHouse 服务的不同方式。你可以根据安全和网络要求，选择公共负载均衡器、私有负载均衡器或 PrivateLink/Private Service Connect 端点。
 
-<div id="connection-via">
-  ## 在控制台中选择连接路径
-</div>
-
-每个 BYOC 服务的连接信息都可在 ClickHouse Cloud 控制台中查看：打开相应服务，然后点击 **Connect**。
-
-对于 BYOC 服务，**Connect** 对话框中包含一个 **Connection via** 下拉列表。你可以用它选择访问该服务的方式：
-
-* **公网负载均衡器** — 面向互联网的端点。
-* **私有负载均衡器** — 内部端点，通过 VPC peering 或已连接的网络访问。仅当你的基础设施已启用 [私有负载均衡器](#private-load-balancer) 时才会显示。
-* **PrivateLink** (AWS) / **Private Service Connect** (GCP) — 云提供商的私有端点主机名。仅当已启用 [PrivateLink or Private Service Connect](#privatelink-or-private-service-connect) 时才会显示。
-
-选择某条路径后，对话框中所有连接示例里的主机名都会更新——包括 HTTPS (`curl`) 命令、原生客户端、JDBC、MySQL 以及各语言客户端代码片段 (Python、Node.js、Java、Go 和 C#) ——这样你就可以直接复制与你所需路径完全对应的现成命令，无需手动修改主机名。
-
-下拉列表中只会显示你的基础设施已启用的路径，并且每次打开对话框时都会刷新——新启用的私有负载均衡器或 PrivateLink 端点会在你下次打开 **Connect** 时显示出来，无需等待传播延迟。当只有一条路径可用时，下拉列表会以禁用状态显示，并选中该端点。
-
-<Image img="/images/cloud/reference/byoc-connect-via.png" size="lg" alt="展开 Connection via 下拉列表的 Connect 对话框，显示公网负载均衡器、私有负载均衡器和 PrivateLink 路径" background="black" />
-
 <div id="public-load-balancer">
   ## 公网负载均衡器
 </div>
@@ -44,7 +26,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * **安全**: 通过 TLS 加密和 IP 过滤器提供保护 (推荐)
 
 <div id="connecting-via-public-load-balancer">
-  ### 通过公网负载均衡器连接
+  ### 通过公共负载均衡器连接
 </div>
 
 要通过公网端点连接到您的 ClickHouse 服务：
@@ -89,15 +71,12 @@ sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com
 
 1. **启用私有负载均衡器** (如果尚未启用) 。如果您需要为您的部署[启用私有负载均衡器](/zh/products/bring-your-own-cloud/configuration/configurations#load-balancers)，请联系 ClickHouse 支持团队。
 2. **确保网络连通性**：
-   * 对于 VPC peering：完成 VPC peering 设置 (参见[私有网络设置](/zh/products/bring-your-own-cloud/onboarding/network))
-   * 对于其他私有网络：确保已配置好可访问 BYOC VPC 的路由
+   * 对于 VPC 对等互连：完成 VPC 对等互连设置 (参见 [私有网络设置](/zh/products/bring-your-own-cloud/onboarding/network))
+   * 对于其他私有网络：确保已正确配置路由，以便能够访问 BYOC VPC
 3. **获取您的专用终结点**：
    您可以在 ClickHouse Cloud 控制台中服务的“Connect”部分找到专用终结点。专用终结点的格式与公网端点相同，只是在服务 ID 部分添加了 `-private` 后缀。例如：
-
-   * **公网端点**：`sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
+   * **公共端点**：`sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
    * **专用终结点**：`sb9jmrq2ne-private.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
-
-   无需手动推导 `-private` 主机名，只需在 **Connect** 对话框的 **Connection via** 下拉列表中选择 **Private load balancer**，即可直接复制该端点和现成的连接命令。
 
 <div id="public-ip-filtering">
   ### IP 过滤
@@ -141,8 +120,6 @@ PrivateLink 端点格式与公网端点类似，但会在服务子域和 BYOC �
 
 * **公网端点**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
 * **PrivateLink 端点**: `h5ju65kv87.vpce.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
-
-端点设置完成并已加入允许列表后，在 **Connect** 对话框的 **Connection via** 下拉列表中选择 **PrivateLink** (在 GCP 上则选择 **Private Service Connect**) ，即可直接复制私网端点的连接详情。
 
 <div id="endpoint-id-allowlist">
   ### Endpoint ID 允许名单

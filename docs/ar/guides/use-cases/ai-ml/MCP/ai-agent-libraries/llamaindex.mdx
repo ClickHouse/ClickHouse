@@ -28,7 +28,9 @@ doc_type: 'guide'
 يمكنك تنفيذ الخطوات التالية إما من مفسّر بايثون التفاعلي (REPL) أو عبر نص برمجي.
 
 <Steps>
-  <Step title="تثبيت المكتبات" id="install-libraries">
+  <Step>
+    ## تثبيت المكتبات
+
     ثبّت المكتبات المطلوبة بتنفيذ الأوامر التالية:
 
     ```python
@@ -37,7 +39,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="إعداد بيانات الاعتماد" id="setup-credentials">
+  <Step>
+    ## إعداد بيانات الاعتماد
+
     بعد ذلك، ستحتاج إلى إدخال مفتاح API الخاص بك في Anthropic:
 
     ```python
@@ -57,7 +61,9 @@ doc_type: 'guide'
     </Info>
   </Step>
 
-  <Step title="تهيئة خادم MCP" id="initialize-mcp-and-agent">
+  <Step>
+    ## تهيئة خادم MCP
+
     الآن اضبط ClickHouse MCP server ليتصل بـ ClickHouse SQL playground.
     ستحتاج إلى تحويلها من دوال بايثون إلى أدوات Llama Index:
 
@@ -89,7 +95,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="إنشاء وكيل" id="create-agent">
+  <Step>
+    ## إنشاء وكيل
+
     أنت الآن جاهز لإنشاء وكيل يمكنه الوصول إلى تلك الأدوات. حدِّد الحد الأقصى
     لعدد استدعاءات الأدوات في التشغيل الواحد بـ 10. يمكنك تعديل هذه المعلمة إذا أردت:
 
@@ -104,7 +112,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="تهيئة نموذج اللغة الكبير (LLM)" id="initialize-llm">
+  <Step>
+    ## تهيئة نموذج اللغة الكبير (LLM)
+
     هيِّئ نموذج Claude Sonnet 4.0 باستخدام الكود التالي:
 
     ```python
@@ -113,7 +123,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="تشغيل الوكيل" id="run-agent">
+  <Step>
+    ## تشغيل الوكيل
+
     أخيرًا، يمكنك توجيه سؤال إلى الوكيل:
 
     ```python

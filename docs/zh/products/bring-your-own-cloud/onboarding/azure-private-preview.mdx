@@ -7,7 +7,7 @@ description: '使用 Terraform 模块和跨租户身份验证，在 Azure 上为
 doc_type: 'reference'
 ---
 
-import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import PrivatePreviewBadge from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <PrivatePreviewBadge />
 
@@ -35,13 +35,17 @@ Azure 上的 BYOC 让您可以在自己的 Azure 订阅中运行 ClickHouse。�
 </div>
 
 <Steps>
-  <Step title="1. 应用 Terraform 模块" id="apply-terraform-module">
+  <Step>
+    ### 1. 应用 Terraform 模块
+
     要开始进行 Azure BYOC 接入，请在你的**目标租户和订阅**中应用 ClickHouse 提供的 [适用于 Azure 的 Terraform 模块](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure)。
 
     所需变量和应用步骤请参考该模块的文档。应用完成后，该模块会在你的 Azure 环境中配置所需的身份和权限。
   </Step>
 
-  <Step title="2. 向 ClickHouse 提供 ID" id="provide-ids">
+  <Step>
+    ### 2. 向 ClickHouse 提供 ID
+
     请与 ClickHouse 团队共享以下信息：
 
     * **目标订阅 ID** — 将创建 BYOC 资源的 Azure 订阅

@@ -1,0 +1,867 @@
+---
+description: 'Encuentra rápidamente términos de búsqueda en textos.'
+keywords: ['búsqueda de texto completo', 'índice de texto', 'índice', 'índices']
+sidebarTitle: 'Búsqueda de texto completo mediante índices de texto'
+slug: /engines/table-engines/mergetree-family/invertedindexes
+title: 'Búsqueda de texto completo mediante índices de texto'
+doc_type: 'referencia'
+---
+
+import {PrivatePreviewBadge} from '/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx'
+
+<PrivatePreviewBadge />
+
+Los índices de texto en ClickHouse (también conocidos como [&quot;índices invertidos&quot;](https://en.wikipedia.org/wiki/Inverted_index)) ofrecen capacidades rápidas de búsqueda de texto completo sobre datos de tipo cadena.
+El índice asigna cada token de la columna a las filas que contienen ese token.
+Los tokens se generan mediante un proceso llamado tokenización.
+Por ejemplo, de forma predeterminada, ClickHouse tokeniza la frase en inglés &quot;All cat like mice.&quot; como [&quot;All&quot;, &quot;cat&quot;, &quot;like&quot;, &quot;mice&quot;] (ten en cuenta que se ignora el punto final).
+También hay tokenizadores más avanzados disponibles, por ejemplo, para datos de logs.
+
+<div id="creating-a-text-index">
+  ## Crear un índice de texto
+</div>
+
+Para crear un índice de texto, primero habilite la configuración experimental correspondiente:
+
+```sql
+SET allow_experimental_full_text_index = true;
+```
+
+Se puede definir un índice de texto en una columna de [String](/es/reference/data-types/string), [FixedString](/es/reference/data-types/fixedstring), [Array(String)](/es/reference/data-types/array), [Array(FixedString)](/es/reference/data-types/array) y [Map](/es/reference/data-types/map) (mediante las funciones de mapa [mapKeys](/es/reference/functions/regular-functions/tuple-map-functions#mapkeys) y [mapValues](/es/reference/functions/regular-functions/tuple-map-functions#mapvalues)) usando la siguiente sintaxis:
+
+```sql
+CREATE TABLE tab
+(
+    `key` UInt64,
+    `str` String,
+    INDEX text_idx(str) TYPE text(
+                                -- Parámetros obligatorios:
+                                tokenizer = splitByNonAlpha|splitByString(S)|ngrams(N)|array
+                                -- Parámetros opcionales:
+                                [, preprocessor = expression(str)]
+                                -- Parámetros avanzados opcionales:
+                                [, dictionary_block_size = D]
+                                [, dictionary_block_frontcoding_compression = B]
+                                [, max_cardinality_for_embedded_postings = M]
+                                [, bloom_filter_false_positive_rate = R]
+                            ) [GRANULARITY 64]
+)
+ENGINE = MergeTree
+ORDER BY key
+```
+
+**Argumento `tokenizer`**. El argumento `tokenizer` especifica el tokenizador:
+
+* `splitByNonAlpha` divide las cadenas por caracteres ASCII no alfanuméricos (consulte también la función [splitByNonAlpha](/es/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)).
+* `splitByString(S)` divide las cadenas usando determinadas cadenas separadoras `S` definidas por el usuario (consulte también la función [splitByString](/es/reference/functions/regular-functions/splitting-merging-functions#splitByString)).
+  Los separadores pueden especificarse mediante un parámetro opcional; por ejemplo, `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
+  Tenga en cuenta que cada cadena puede constar de varios caracteres (`', '` en el ejemplo).
+  La lista predeterminada de separadores, si no se especifica explícitamente (por ejemplo, `tokenizer = splitByString`), es un único espacio en blanco `[' ']`.
+* `ngrams(N)` divide las cadenas en `N`-gramas del mismo tamaño (consulte también la función [ngrams](/es/reference/functions/regular-functions/splitting-merging-functions#ngrams)).
+  La longitud del ngram puede especificarse mediante un parámetro entero opcional entre 2 y 8; por ejemplo, `tokenizer = ngrams(3)`.
+  El tamaño predeterminado del ngram, si no se especifica explícitamente (por ejemplo, `tokenizer = ngrams`), es 3.
+* `array` no realiza tokenización; es decir, cada valor de fila es un token (consulte también la función [array](/es/reference/functions/regular-functions/array-functions#array)).
+* `sparseGrams(min_length, max_length, min_cutoff_length)` — utiliza el mismo algoritmo que la función [sparseGrams](/es/reference/functions/regular-functions/string-functions#sparseGrams) para dividir una cadena en todos los ngrams de `min_length` y varios ngrams de mayor tamaño hasta `max_length`, inclusive. Si se especifica `min_cutoff_length`, solo se guardan en el índice los N-gramas con una longitud mayor o igual que `min_cutoff_length`. A diferencia de `ngrams(N)`, que genera únicamente N-gramas de longitud fija, `sparseGrams` produce un conjunto de N-gramas de longitud variable dentro del rango especificado, lo que permite una representación más flexible del contexto del texto. Por ejemplo, `tokenizer = sparseGrams(3, 5, 4)` generará 3-, 4- y 5-gramas a partir de la cadena de entrada y guardará solo los 4- y 5-gramas en el índice.
+
+<Note>
+  El tokenizador `splitByString` aplica los separadores de división de izquierda a derecha.
+  Esto puede crear ambigüedades.
+  Por ejemplo, las cadenas separadoras `['%21', '%']` harán que `%21abc` se tokenice como `['abc']`, mientras que, si se invierte el orden de ambas cadenas separadoras a `['%', '%21']`, el resultado será `['21abc']`.
+  En la mayoría de los casos, querrá que la coincidencia dé prioridad a los separadores más largos.
+  En general, esto puede hacerse pasando las cadenas separadoras en orden descendente de longitud.
+  Si las cadenas separadoras forman un [código prefijo](https://en.wikipedia.org/wiki/Prefix_code), pueden pasarse en cualquier orden.
+</Note>
+
+<Warning>
+  Por el momento, no se recomienda crear índices de texto sobre texto en idiomas no occidentales, por ejemplo, chino.
+  Los tokenizadores compatibles actualmente pueden dar lugar a tamaños de índice enormes y tiempos de consulta elevados.
+  En el futuro, planeamos añadir tokenizadores especializados para idiomas concretos que manejarán mejor estos casos.
+</Warning>
+
+Para probar cómo los tokenizadores separan la cadena de entrada, puede usar la función [tokens](/es/reference/functions/regular-functions/splitting-merging-functions#tokens) de ClickHouse:
+
+Por ejemplo,
+
+```sql
+SELECT tokens('abc def', 'ngrams', 3) AS tokens;
+```
+
+devuelve
+
+```result
++-tokens--------------------------+
+| ['abc','bc ','c d',' de','def'] |
++---------------------------------+
+```
+
+**Argumento `preprocessor`**. El argumento opcional `preprocessor` es una expresión que transforma la cadena de entrada antes de la tokenización.
+
+Los casos de uso típicos del argumento `preprocessor` incluyen:
+
+1. Convertir las cadenas de entrada a minúsculas (o mayúsculas) para permitir coincidencias sin distinción entre mayúsculas y minúsculas; por ejemplo, [lower](/es/reference/functions/regular-functions/string-functions#lower), [lowerUTF8](/es/reference/functions/regular-functions/string-functions#lowerUTF8). Consulte el primer ejemplo a continuación.
+2. La normalización UTF-8; por ejemplo, [normalizeUTF8NFC](/es/reference/functions/regular-functions/string-functions#normalizeUTF8NFC), [normalizeUTF8NFD](/es/reference/functions/regular-functions/string-functions#normalizeUTF8NFD), [normalizeUTF8NFKC](/es/reference/functions/regular-functions/string-functions#normalizeUTF8NFKC), [normalizeUTF8NFKD](/es/reference/functions/regular-functions/string-functions#normalizeUTF8NFKD), [toValidUTF8](/es/reference/functions/regular-functions/string-functions#toValidUTF8).
+3. Eliminar o transformar caracteres o subcadenas no deseados; por ejemplo, [extractTextFromHTML](/es/reference/functions/regular-functions/string-functions#extractTextFromHTML), [substring](/es/reference/functions/regular-functions/string-functions#substring), [idnaEncode](/es/reference/functions/regular-functions/string-functions#idnaEncode).
+
+La expresión `preprocessor` debe transformar un valor de entrada de tipo [String](/es/reference/data-types/string) o [FixedString](/es/reference/data-types/fixedstring) en un valor del mismo tipo.
+
+Ejemplos:
+
+* `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))`
+* `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = substringIndex(col, '\n', 1))`
+* `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(extractTextFromHTML(col))`
+
+Además, la expresión `preprocessor` solo debe hacer referencia a la columna sobre la que se define el índice de texto.
+No se permite usar funciones no deterministas.
+
+Las funciones [hasToken](/es/reference/functions/regular-functions/string-search-functions#hasToken), [hasAllTokens](/es/reference/functions/regular-functions/string-search-functions#hasAllTokens) y [hasAnyTokens](/es/reference/functions/regular-functions/string-search-functions#hasAnyTokens) usan `preprocessor` para transformar primero el término de búsqueda antes de tokenizarlo.
+
+Por ejemplo:
+
+```sql
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+SELECT count() FROM tab WHERE hasToken(str, 'Foo');
+```
+
+equivale a:
+
+```sql
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(lower(str)) TYPE text(tokenizer = 'splitByNonAlpha')
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+SELECT count() FROM tab WHERE hasToken(str, lower('Foo'));
+```
+
+**Otros argumentos**. Los índices de texto en ClickHouse se implementan como [índices secundarios](/es/reference/engines/table-engines/mergetree-family/mergetree#skip-index-types).
+Sin embargo, a diferencia de otros skip indexes, los índices de texto tienen una GRANULARITY predeterminada de 64 para el índice.
+Este valor se ha elegido empíricamente y ofrece un buen equilibrio entre velocidad y tamaño del índice para la mayoría de los casos de uso.
+Los usuarios avanzados pueden especificar una granularidad de índice distinta (no lo recomendamos).
+
+<AccordionGroup>
+  <Accordion title="Parámetros avanzados opcionales">
+    Los valores predeterminados de los siguientes parámetros avanzados funcionan bien en prácticamente todas las situaciones.
+    No recomendamos cambiarlos.
+
+    El parámetro opcional `dictionary_block_size` (predeterminado: 128) especifica el tamaño de los bloques del diccionario en filas.
+
+    El parámetro opcional `dictionary_block_frontcoding_compression` (predeterminado: 1) especifica si los bloques del diccionario usan front coding para la compresión.
+
+    El parámetro opcional `max_cardinality_for_embedded_postings` (predeterminado: 16) especifica el umbral de cardinalidad por debajo del cual las posting lists deben integrarse en los bloques del diccionario.
+
+    El parámetro opcional `bloom_filter_false_positive_rate` (predeterminado: 0.1) especifica la tasa de falsos positivos del bloom filter del diccionario.
+  </Accordion>
+</AccordionGroup>
+
+Los índices de texto pueden añadirse o eliminarse de una columna después de crear la tabla:
+
+```sql
+ALTER TABLE tab DROP INDEX text_idx;
+ALTER TABLE tab ADD INDEX text_idx(s) TYPE text(tokenizer = splitByNonAlpha);
+```
+
+<div id="using-a-text-index">
+  ## Uso de un índice de texto
+</div>
+
+Usar un índice de texto en las consultas SELECT es sencillo, ya que las funciones habituales de búsqueda de cadenas aprovecharán el índice automáticamente.
+Si no existe ningún índice, las siguientes funciones de búsqueda de cadenas recurrirán a búsquedas exhaustivas lentas.
+
+<div id="supported-functions">
+  ### Funciones compatibles
+</div>
+
+El índice de texto puede usarse si se utilizan funciones de texto en la cláusula `WHERE` de una consulta SELECT:
+
+```sql
+SELECT [...]
+FROM [...]
+WHERE string_search_function(column_with_text_index)
+```
+
+<div id="and">
+  #### `=` y `!=`
+</div>
+
+`=` ([equals](/es/reference/functions/regular-functions/comparison-functions#equals)) y `!=` ([notEquals](/es/reference/functions/regular-functions/comparison-functions#notEquals) ) coinciden con el término de búsqueda completo especificado.
+
+Ejemplo:
+
+```sql
+SELECT * from tab WHERE str = 'Hello';
+```
+
+El índice de texto admite `=` y `!=`, pero la búsqueda por igualdad y desigualdad solo tiene sentido con el tokenizador `array` (lo que hace que el índice almacene los valores completos de cada fila).
+
+<div id="in-and-not-in">
+  #### `IN` y `NOT IN`
+</div>
+
+`IN` ([in](/es/reference/functions/regular-functions/in-functions)) y `NOT IN` ([notIn](/es/reference/functions/regular-functions/in-functions)) son similares a las funciones `equals` y `notEquals`, pero permiten buscar todos (`IN`) o ninguno (`NOT IN`) de los términos de búsqueda.
+
+Ejemplo:
+
+```sql
+SELECT * from tab WHERE str IN ('Hello', 'World');
+```
+
+Se aplican las mismas restricciones que para `=` y `!=`; es decir, `IN` y `NOT IN` solo tienen sentido cuando se usan con el tokenizador `array`.
+
+<div id="like-not-like-and-match">
+  #### `LIKE`, `NOT LIKE` y `match`
+</div>
+
+<Note>
+  Actualmente, estas funciones usan el índice de texto para filtrar solo si el tokenizador del índice es `splitByNonAlpha` o `ngrams`.
+</Note>
+
+Para usar `LIKE` [like](/es/reference/functions/regular-functions/string-search-functions#like), `NOT LIKE` ([notLike](/es/reference/functions/regular-functions/string-search-functions#notLike)) y la función [match](/es/reference/functions/regular-functions/string-search-functions#match) con índices de texto, ClickHouse debe poder extraer tokens completos del término de búsqueda.
+
+Ejemplo:
+
+```sql
+SELECT count() FROM tab WHERE comment LIKE 'support%';
+```
+
+`support` en el ejemplo podría coincidir con `support`, `supports`, `supporting`, etc.
+Este tipo de consulta es una consulta de subcadena y no puede acelerarse mediante un índice de texto.
+
+Para aprovechar un índice de texto en consultas LIKE, el patrón de LIKE debe reescribirse de la siguiente manera:
+
+```sql
+SELECT count() FROM tab WHERE comment LIKE ' support %'; -- o `% support %`
+```
+
+Los espacios a la izquierda y a la derecha de `support` garantizan que el término pueda extraerse como token.
+
+<div id="startswith-and-endswith">
+  #### `startsWith` y `endsWith`
+</div>
+
+Al igual que `LIKE`, las funciones [startsWith](/es/reference/functions/regular-functions/string-functions#startsWith) y [endsWith](/es/reference/functions/regular-functions/string-functions#endsWith) solo pueden usar un índice de texto si es posible extraer tokens completos del término de búsqueda.
+
+Ejemplo:
+
+```sql
+SELECT count() FROM tab WHERE startsWith(comment, 'clickhouse support');
+```
+
+En el ejemplo, solo `clickhouse` se considera un token.
+`support` no es un token porque puede coincidir con `support`, `supports`, `supporting`, etc.
+
+Para encontrar todas las filas que empiezan por `clickhouse supports`, termine el patrón de búsqueda con un espacio al final:
+
+```sql
+startsWith(comment, 'clickhouse supports ')`
+```
+
+Del mismo modo, `endsWith` debe utilizarse con un espacio inicial:
+
+```sql
+SELECT count() FROM tab WHERE endsWith(comment, ' olap engine');
+```
+
+<div id="hastoken-and-hastokenornull">
+  #### `hasToken` and `hasTokenOrNull`
+</div>
+
+Las funciones [hasToken](/es/reference/functions/regular-functions/string-search-functions#hasToken) y [hasTokenOrNull](/es/reference/functions/regular-functions/string-search-functions#hasTokenOrNull) realizan coincidencias con un único token especificado.
+
+A diferencia de las funciones mencionadas anteriormente, no tokenizan el término de búsqueda (suponen que la entrada es un único token).
+
+Ejemplo:
+
+```sql
+SELECT count() FROM tab WHERE hasToken(comment, 'clickhouse');
+```
+
+Las funciones `hasToken` y `hasTokenOrNull` son las más eficientes para usar con el índice `text`.
+
+<div id="hasanytokens-and-hasalltokens">
+  #### `hasAnyTokens` and `hasAllTokens`
+</div>
+
+Las funciones [hasAnyTokens](/es/reference/functions/regular-functions/string-search-functions#hasAnyTokens) y [hasAllTokens](/es/reference/functions/regular-functions/string-search-functions#hasAllTokens) buscan coincidencias con cualquiera o con todos los tokens proporcionados.
+
+Estas dos funciones aceptan los tokens de búsqueda como una cadena, que se tokenizará con el mismo tokenizador usado para la columna indexada, o como un Array de tokens ya procesados, al que no se le aplicará tokenización antes de la búsqueda.
+Consulte la documentación de la función para obtener más información.
+
+Ejemplo:
+
+```sql
+-- Tokens de búsqueda pasados como argumento de tipo cadena
+SELECT count() FROM tab WHERE hasAnyTokens(comment, 'clickhouse olap');
+SELECT count() FROM tab WHERE hasAllTokens(comment, 'clickhouse olap');
+
+-- Tokens de búsqueda pasados como Array(String)
+SELECT count() FROM tab WHERE hasAnyTokens(comment, ['clickhouse', 'olap']);
+SELECT count() FROM tab WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
+```
+
+<div id="has">
+  #### `has`
+</div>
+
+La función de Array [has](/es/reference/functions/regular-functions/array-functions#has) coincide con un único token dentro del array de cadenas.
+
+Ejemplo:
+
+```sql
+SELECT count() FROM tab WHERE has(array, 'clickhouse');
+```
+
+<div id="mapcontains">
+  #### `mapContains`
+</div>
+
+La función [mapContains](/es/reference/functions/regular-functions/tuple-map-functions#mapcontainskey)(alias de: `mapContainsKey`) busca coincidencias con un único token en las claves de un mapa.
+
+Ejemplo:
+
+```sql
+SELECT count() FROM tab WHERE mapContainsKey(map, 'clickhouse');
+-- OR
+SELECT count() FROM tab WHERE mapContains(map, 'clickhouse');
+```
+
+<div id="operator">
+  #### `operator[]`
+</div>
+
+El [operador de acceso `operator[]`](/es/reference/operators/index#access-operators) se puede usar con el índice de texto para filtrar claves y valores.
+
+Ejemplo:
+
+```sql
+SELECT count() FROM tab WHERE map['engine'] = 'clickhouse'; -- will use the text index if defined
+```
+
+Consulte los siguientes ejemplos de uso de `Array(T)` y `Map(K, V)` con el índice de texto.
+
+<div id="examples-for-the-text-index-array-and-map-support">
+  ### Ejemplos de compatibilidad del índice de texto para `Array` y `Map`.
+</div>
+
+<div id="indexing-arraystring">
+  #### Indexación de Array(String)
+</div>
+
+En una plataforma de blogs sencilla, los autores asignan palabras clave a sus publicaciones para categorizar el contenido.
+Una funcionalidad habitual permite a los usuarios descubrir contenido relacionado haciendo clic en palabras clave o buscando temas.
+
+Considere esta definición de la tabla:
+
+```sql
+CREATE TABLE posts (
+    post_id UInt64,
+    title String,
+    content String,
+    keywords Array(String) COMMENT 'Palabras clave definidas por el autor'
+)
+ENGINE = MergeTree
+ORDER BY (post_id);
+```
+
+Sin un índice de texto, encontrar publicaciones con una palabra clave específica (p. ej., `clickhouse`) requiere examinar todas las entradas:
+
+```sql
+SELECT count() FROM posts WHERE has(keywords, 'clickhouse'); -- exploración completa de la tabla lenta - verifica cada palabra clave en cada publicación
+```
+
+A medida que la plataforma crece, esto se vuelve cada vez más lento, porque la consulta debe examinar cada array de palabras clave en cada fila.
+
+Para resolver este problema de rendimiento, podemos definir un índice de texto para `keywords` que crea una estructura optimizada para la búsqueda, la cual preprocesa todas las palabras clave y permite búsquedas al instante:
+
+```sql
+ALTER TABLE posts ADD INDEX keywords_idx(keywords) TYPE text(tokenizer = splitByNonAlpha);
+```
+
+<Note>
+  Importante: Después de añadir el índice de texto, debes reconstruirlo para los datos existentes:
+
+  ```sql
+  ALTER TABLE posts MATERIALIZE INDEX keywords_idx;
+  ```
+</Note>
+
+<div id="indexing-map">
+  #### Indexación de Map
+</div>
+
+En un sistema de logging, las solicitudes del servidor suelen almacenar metadatos en pares clave-valor. Los equipos de operaciones necesitan buscar de forma eficiente en los logs para tareas de depuración, incidentes de seguridad y monitoreo.
+
+Considere la siguiente tabla de logs:
+
+```sql
+CREATE TABLE logs (
+    id UInt64,
+    timestamp DateTime,
+    message String,
+    attributes Map(String, String)
+)
+ENGINE = MergeTree
+ORDER BY (timestamp);
+```
+
+Sin un índice de texto, buscar en datos de tipo [Map](/es/reference/data-types/map) requiere escaneos completos de la tabla:
+
+1. Encuentra todos los logs con limitación de tasa:
+
+```sql
+SELECT count() FROM logs WHERE has(mapKeys(attributes), 'rate_limit'); -- escaneo lento de tabla completa
+```
+
+2. Encuentra todos los logs de una IP específica:
+
+```sql
+SELECT count() FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- escaneo lento de tabla completa
+```
+
+A medida que aumenta el volumen de logs, estas consultas se vuelven lentas.
+
+La solución es crear un índice de texto para las claves y los valores de [Map](/es/reference/data-types/map).
+
+Usa [mapKeys](/es/reference/functions/regular-functions/tuple-map-functions#mapkeys) para crear un índice de texto cuando necesites encontrar logs por nombres de campo o tipos de atributos:
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = array);
+```
+
+Usa [mapValues](/es/reference/functions/regular-functions/tuple-map-functions#mapvalues) para crear un índice de texto cuando necesites buscar en el contenido real de los atributos:
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = array);
+```
+
+<Note>
+  Importante: Después de agregar el índice de texto, debe reconstruirlo para los datos existentes:
+
+  ```sql
+  ALTER TABLE posts MATERIALIZE INDEX attributes_keys_idx;
+  ALTER TABLE posts MATERIALIZE INDEX attributes_vals_idx;
+  ```
+</Note>
+
+1. Encuentre todas las solicitudes sujetas a limitación de tasa:
+
+```sql
+SELECT * FROM logs WHERE mapContainsKey(attributes, 'rate_limit'); -- rápido
+```
+
+2. Busca todos los logs procedentes de una IP específica:
+
+```sql
+SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- rápido
+```
+
+<div id="implementation">
+  ## Implementación
+</div>
+
+<div id="index-layout">
+  ### Diseño del índice
+</div>
+
+Cada índice de texto consta de dos estructuras de datos (abstractas):
+
+* un diccionario que asigna cada token a una posting list, y
+* un conjunto de posting lists, cada una de las cuales representa un conjunto de números de fila.
+
+Como un índice de texto es un skip index, estas estructuras de datos existen lógicamente por cada gránulo de índice.
+
+Durante la creación del índice, se crean tres archivos (por cada parte):
+
+**Archivo de bloques del diccionario (.dct)**
+
+Los tokens de un gránulo de índice se ordenan y se almacenan en bloques de diccionario de 128 tokens cada uno (el tamaño del bloque es configurable mediante el parámetro `dictionary_block_size`).
+Un archivo de bloques del diccionario (.dct) consta de todos los bloques de diccionario de todos los gránulos de índice de una parte.
+
+**Archivo de gránulos de índice (.idx)**
+
+El archivo de gránulos de índice contiene, para cada bloque de diccionario, el primer token del bloque, su desplazamiento relativo en el archivo de bloques del diccionario y un bloom filter para todos los tokens del bloque.
+Esta estructura de índice disperso es similar al [índice disperso de clave primaria](/es/guides/clickhouse/data-modelling/sparse-primary-indexes)).
+El bloom filter permite omitir bloques de diccionario de forma temprana si el token buscado no está contenido en un bloque de diccionario.
+
+**Archivo de posting lists (.pst)**
+
+Las posting lists de todos los tokens se organizan secuencialmente en el archivo de posting lists.
+Para ahorrar espacio y, al mismo tiempo, permitir operaciones rápidas de intersección y unión, las posting lists se almacenan como [roaring bitmaps](https://roaringbitmap.org/).
+Si la cardinalidad de una posting list es menor que 16 (configurable mediante el parámetro `max_cardinality_for_embedded_postings`), se incrusta en el diccionario.
+
+<div id="direct-read">
+  ### Lectura directa
+</div>
+
+Ciertos tipos de consultas de texto pueden acelerarse significativamente mediante una optimización llamada &quot;lectura directa&quot;.
+Más concretamente, la optimización puede aplicarse si la consulta SELECT *no* incluye la columna de texto en la proyección.
+
+Ejemplo:
+
+```sql
+SELECT column_a, column_b, ... -- no: column_with_text_index
+FROM [...]
+WHERE string_search_function(column_with_text_index)
+```
+
+La optimización de lectura directa en ClickHouse responde la consulta exclusivamente mediante el text index (es decir, búsquedas en el text index), sin acceder a la columna de texto subyacente.
+Las búsquedas en el text index leen relativamente pocos datos y, por lo tanto, son mucho más rápidas que los skip indexes habituales en ClickHouse (que hacen una búsqueda en el skip index, seguida de la carga y el filtrado de los granules restantes).
+
+La lectura directa se controla mediante dos opciones de configuración:
+
+* La opción [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/es/reference/settings/session-settings#query_plan_direct_read_from_text_index) (valor predeterminado: 1), que especifica si la lectura directa está habilitada en general.
+* La opción [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/es/reference/settings/session-settings#use_skip_indexes_on_data_read) (valor predeterminado: 1), que es otro requisito previo para la lectura directa. Ten en cuenta que, en las bases de datos de ClickHouse con [compatibility](/es/reference/settings/session-settings#compatibility) &lt; 25.10, `use_skip_indexes_on_data_read` está deshabilitado, por lo que debes aumentar el valor de la opción compatibility o ejecutar `SET use_skip_indexes_on_data_read = 1` explícitamente.
+
+Además, el text index debe estar completamente materializado para usar la lectura directa (para ello, usa `ALTER TABLE ... MATERIALIZE INDEX`).
+
+**Funciones compatibles**
+La optimización de lectura directa admite las funciones `hasToken`, `hasAllTokens` y `hasAnyTokens`.
+Estas funciones también pueden combinarse mediante los operadores AND, OR y NOT.
+La cláusula WHERE también puede contener filtros adicionales que no sean funciones de búsqueda de texto (para columnas de texto u otras columnas); en ese caso, la optimización de lectura directa seguirá utilizándose, pero será menos eficaz (solo se aplica a las funciones de búsqueda de texto compatibles).
+
+Para comprobar que una consulta utiliza la lectura directa, ejecuta la consulta con `EXPLAIN PLAN actions = 1`.
+Como ejemplo, una consulta con lectura directa deshabilitado
+
+```sql
+EXPLAIN PLAN actions = 1
+SELECT count()
+FROM tab
+WHERE hasToken(col, 'some_token')
+SETTINGS query_plan_direct_read_from_text_index = 0;
+```
+
+devuelve
+
+```text
+[...]
+Filter ((WHERE + Change column names to column identifiers))
+Filter column: hasToken(__table1.col, 'some_token'_String) (removed)
+Actions: INPUT : 0 -> col String : 0
+         COLUMN Const(String) -> 'some_token'_String String : 1
+         FUNCTION hasToken(col :: 0, 'some_token'_String :: 1) -> hasToken(__table1.col, 'some_token'_String) UInt8 : 2
+[...]
+```
+
+mientras que la misma consulta, ejecutada con `query_plan_direct_read_from_text_index = 1`
+
+```sql
+EXPLAIN PLAN actions = 1
+SELECT count()
+FROM tab
+WHERE hasToken(col, 'some_token')
+SETTINGS query_plan_direct_read_from_text_index = 1;
+```
+
+devuelve
+
+```text
+[...]
+Expression (Before GROUP BY)
+Positions:
+  Filter
+  Filter column: __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 (removed)
+  Actions: INPUT :: 0 -> __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 UInt8 : 0
+[...]
+```
+
+La segunda salida de EXPLAIN PLAN contiene una columna virtual `__text_index_<index_name>_<function_name>_<id>`.
+Si esta columna aparece, se utiliza la lectura directa.
+
+<div id="example-hackernews-dataset">
+  ## Ejemplo: conjunto de datos de Hacker News
+</div>
+
+Veamos las mejoras de rendimiento de los índices de texto en un conjunto de datos grande con mucho contenido textual.
+Usaremos 28,7 millones de filas de comentarios del popular sitio web Hacker News.
+Aquí está la tabla sin índice de texto:
+
+```sql
+CREATE TABLE hackernews (
+    id UInt64,
+    deleted UInt8,
+    type String,
+    author String,
+    timestamp DateTime,
+    comment String,
+    dead UInt8,
+    parent UInt64,
+    poll UInt64,
+    children Array(UInt32),
+    url String,
+    score UInt32,
+    title String,
+    parts Array(UInt32),
+    descendants UInt32
+)
+ENGINE = MergeTree
+ORDER BY (type, author);
+```
+
+Los 28.7M de filas están en un archivo Parquet en S3; vamos a insertarlos en la tabla `hackernews`:
+
+```sql
+INSERT INTO hackernews
+    SELECT * FROM s3Cluster(
+        'default',
+        'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
+        'Parquet',
+        '
+    id UInt64,
+    deleted UInt8,
+    type String,
+    by String,
+    time DateTime,
+    text String,
+    dead UInt8,
+    parent UInt64,
+    poll UInt64,
+    kids Array(UInt32),
+    url String,
+    score UInt32,
+    title String,
+    parts Array(UInt32),
+    descendants UInt32');
+```
+
+Usaremos `ALTER TABLE` y añadiremos un índice de texto a la columna comment; luego lo materializaremos:
+
+```sql
+-- Agregar el índice
+ALTER TABLE hackernews ADD INDEX comment_idx(comment) TYPE text(tokenizer = splitByNonAlpha);
+
+-- Materializar el índice para los datos existentes
+ALTER TABLE hackernews MATERIALIZE INDEX comment_idx SETTINGS mutations_sync = 2;
+```
+
+Ahora, ejecutemos consultas con las funciones `hasToken`, `hasAnyTokens` y `hasAllTokens`.
+Los siguientes ejemplos mostrarán la gran diferencia de rendimiento entre un escaneo estándar del índice y la optimización de lectura directa.
+
+<div id="1-using-hastoken">
+  ### 1. Uso de `hasToken`
+</div>
+
+`hasToken` comprueba si el texto contiene un token específico.
+Buscaremos el token que distingue entre mayúsculas y minúsculas &#39;ClickHouse&#39;.
+
+**Lectura directa desactivada (escaneo estándar)**
+De forma predeterminada, ClickHouse usa el skip index para filtrar gránulos y luego lee los datos de la columna de esos gránulos.
+Podemos simular este comportamiento desactivando la lectura directa.
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasToken(comment, 'ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+
+┌─count()─┐
+│     516 │
+└─────────┘
+
+1 row in set. Elapsed: 0.362 sec. Processed 24.90 million rows, 9.51 GB
+```
+
+**Lectura directa activada (lectura rápida del índice)**
+Ahora ejecutamos la misma consulta con la lectura directa activada (la opción predeterminada).
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasToken(comment, 'ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+
+┌─count()─┐
+│     516 │
+└─────────┘
+
+1 row in set. Elapsed: 0.008 sec. Processed 3.15 million rows, 3.15 MB
+```
+
+La consulta con lectura directa es más de 45 veces más rápida (0.362s frente a 0.008s) y procesa muchos menos datos (9.51 GB frente a 3.15 MB) al leer únicamente del índice.
+
+<div id="2-using-hasanytokens">
+  ### 2. Uso de `hasAnyTokens`
+</div>
+
+`hasAnyTokens` comprueba si el texto contiene al menos uno de los tokens indicados.
+Buscaremos comentarios que contengan &#39;love&#39; o &#39;ClickHouse&#39;.
+
+**Lectura directa desactivada (escaneo estándar)**
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasAnyTokens(comment, 'love ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+
+┌─count()─┐
+│  408426 │
+└─────────┘
+
+1 row in set. Elapsed: 1.329 sec. Processed 28.74 million rows, 9.72 GB
+```
+
+**Lectura directa activada (lectura rápida del índice)**
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasAnyTokens(comment, 'love ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+
+┌─count()─┐
+│  408426 │
+└─────────┘
+
+1 row in set. Elapsed: 0.015 sec. Processed 27.99 million rows, 27.99 MB
+```
+
+La aceleración es aún más pronunciada para esta búsqueda común con &quot;OR&quot;.
+La consulta es casi 89 veces más rápida (1.329s frente a 0.015s) al evitar el escaneo completo de la columna.
+
+<div id="3-using-hasalltokens">
+  ### 3. Uso de `hasAllTokens`
+</div>
+
+`hasAllTokens` comprueba si el texto contiene todos los tokens indicados.
+Buscaremos comentarios que contengan tanto &#39;love&#39; como &#39;ClickHouse&#39;.
+
+**Lectura directa deshabilitada (Escaneo estándar)**
+Incluso con la lectura directa deshabilitada, el skip index estándar sigue siendo eficaz.
+Reduce las 28.7M filas a solo 147.46K, pero aun así tiene que leer 57.03 MB de la columna.
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasAllTokens(comment, 'love ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+
+┌─count()─┐
+│      11 │
+└─────────┘
+
+1 row in set. Elapsed: 0.184 sec. Processed 147.46 thousand rows, 57.03 MB
+```
+
+**Lectura directa activada (Lectura rápida del índice)**
+La lectura directa responde a la consulta usando los datos del índice y solo lee 147.46 KB.
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasAllTokens(comment, 'love ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+
+┌─count()─┐
+│      11 │
+└─────────┘
+
+1 row in set. Elapsed: 0.007 sec. Processed 147.46 thousand rows, 147.46 KB
+```
+
+Para esta búsqueda con &quot;AND&quot;, la optimización de lectura directa es más de 26 veces más rápida (0.184s frente a 0.007s) que el escaneo estándar con skip index.
+
+<div id="4-compound-search-or-and-not">
+  ### 4. Búsqueda compuesta: OR, AND, NOT, ...
+</div>
+
+La optimización de lectura directa también se aplica a las expresiones booleanas compuestas.
+Aquí, realizaremos una búsqueda sin distinción entre mayúsculas y minúsculas de &#39;ClickHouse&#39; OR &#39;clickhouse&#39;.
+
+**Lectura directa deshabilitada (Escaneo estándar)**
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasToken(comment, 'ClickHouse') OR hasToken(comment, 'clickhouse')
+SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+
+┌─count()─┐
+│     769 │
+└─────────┘
+
+1 row in set. Elapsed: 0.450 sec. Processed 25.87 million rows, 9.58 GB
+```
+
+**Lectura directa activada (lectura rápida desde el índice)**
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasToken(comment, 'ClickHouse') OR hasToken(comment, 'clickhouse')
+SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+
+┌─count()─┐
+│     769 │
+└─────────┘
+
+1 row in set. Elapsed: 0.013 sec. Processed 25.87 million rows, 51.73 MB
+```
+
+Al combinar los resultados del índice, la consulta con lectura directa es 34 veces más rápida (0.450s frente a 0.013s) y evita leer 9.58 GB de datos de columna.
+Para este caso concreto, `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` sería la sintaxis más adecuada y eficiente.
+
+<div id="tuning-the-text-index">
+  ## Ajuste del índice de texto
+</div>
+
+Actualmente, existen cachés para los bloques deserializados del diccionario, los encabezados y las posting lists del índice de texto, con el fin de reducir la E/S.
+
+Se pueden habilitar mediante los ajustes [use&#95;text&#95;index&#95;dictionary&#95;cache](/es/reference/settings/session-settings#use_text_index_dictionary_cache), [use&#95;text&#95;index&#95;header&#95;cache](/es/reference/settings/session-settings#use_text_index_header_cache) y [use&#95;text&#95;index&#95;postings&#95;cache](/es/reference/settings/session-settings#use_text_index_postings_cache), respectivamente. De forma predeterminada, están deshabilitadas.
+
+Consulte los siguientes ajustes del servidor para configurar la caché.
+
+<div id="server-settings">
+  ### Configuración del servidor
+</div>
+
+<div id="dictionary-blocks-cache-settings">
+  #### Configuración de la caché de bloques del diccionario
+</div>
+
+| Setting                                                                                                                                                             | Description                                                                                                                         | Default      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| [text&#95;index&#95;dictionary&#95;block&#95;cache&#95;policy](/es/reference/settings/server-settings/settings#text_index_dictionary_block_cache_policy)               | Nombre de la política de caché de bloques del diccionario del índice de texto.                                                      | `SLRU`       |
+| [text&#95;index&#95;dictionary&#95;block&#95;cache&#95;size](/es/reference/settings/server-settings/settings#text_index_dictionary_block_cache_size)                   | Tamaño máximo de la caché en bytes.                                                                                                 | `1073741824` |
+| [text&#95;index&#95;dictionary&#95;block&#95;cache&#95;max&#95;entries](/es/reference/settings/server-settings/settings#text_index_dictionary_block_cache_max_entries) | Número máximo de bloques del diccionario deserializados en la caché.                                                                | `1'000'000`  |
+| [text&#95;index&#95;dictionary&#95;block&#95;cache&#95;size&#95;ratio](/es/reference/settings/server-settings/settings#text_index_dictionary_block_cache_size_ratio)   | Tamaño de la cola protegida en la caché de bloques del diccionario del índice de texto en relación con el tamaño total de la caché. | `0.5`        |
+
+<div id="header-cache-settings">
+  #### Configuración de la caché de encabezados
+</div>
+
+| Setting                                                                                                                                     | Description                                                                                                          | Default      |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------ |
+| [text&#95;index&#95;header&#95;cache&#95;policy](/es/reference/settings/server-settings/settings#text_index_header_cache_policy)               | Nombre de la política de la caché de encabezados del índice de texto.                                                | `SLRU`       |
+| [text&#95;index&#95;header&#95;cache&#95;size](/es/reference/settings/server-settings/settings#text_index_header_cache_size)                   | Tamaño máximo de la caché en bytes.                                                                                  | `1073741824` |
+| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/es/reference/settings/server-settings/settings#text_index_header_cache_max_entries) | Número máximo de encabezados deserializados en la caché.                                                             | `100'000`    |
+| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/es/reference/settings/server-settings/settings#text_index_header_cache_size_ratio)   | Tamaño de la cola protegida en la caché de encabezados del índice de texto con respecto al tamaño total de la caché. | `0.5`        |
+
+<div id="posting-lists-cache-settings">
+  #### Configuración de la caché de posting lists
+</div>
+
+| Configuración                                                                                                                                   | Descripción                                                                                                                    | Predeterminado |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------- |
+| [text&#95;index&#95;postings&#95;cache&#95;policy](/es/reference/settings/server-settings/settings#text_index_postings_cache_policy)               | Nombre de la política de caché de las posting lists del índice de texto.                                                       | `SLRU`         |
+| [text&#95;index&#95;postings&#95;cache&#95;size](/es/reference/settings/server-settings/settings#text_index_postings_cache_size)                   | Tamaño máximo de la caché en bytes.                                                                                            | `2147483648`   |
+| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/es/reference/settings/server-settings/settings#text_index_postings_cache_max_entries) | Número máximo de postings deserializados en la caché.                                                                          | `1'000'000`    |
+| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/es/reference/settings/server-settings/settings#text_index_postings_cache_size_ratio)   | Tamaño de la cola protegida en la caché de posting lists del índice de texto en relación con el tamaño total de la caché.     | `0.5`          |
+
+<div id="related-content">
+  ## Contenido relacionado
+</div>
+
+* Blog: [Presentamos los índices invertidos en ClickHouse](https://clickhouse.com/blog/clickhouse-search-with-inverted-indices)
+* Blog: [La búsqueda de texto completo en ClickHouse: rápida, nativa y columnar](https://clickhouse.com/blog/clickhouse-full-text-search)
+* Video: [Índices de texto completo: diseño y experimentos](https://www.youtube.com/watch?v=O_MnyUkrIq8)

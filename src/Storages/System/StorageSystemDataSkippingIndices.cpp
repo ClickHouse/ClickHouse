@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
-#include <Storages/System/DatabaseTablesCursor.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
@@ -72,8 +71,9 @@ public:
         : ISource(header)
         , column_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
-        , databases_cursor(std::move(databases_))
+        , databases(std::move(databases_))
         , context(Context::createCopy(context_))
+        , database_idx(0)
     {}
 
     String getName() const override { return "DataSkippingIndices"; }
@@ -81,7 +81,7 @@ public:
 protected:
     Chunk generate() override
     {
-        if (!databases_cursor.advanceToNextDatabase())
+        if (database_idx >= databases->size())
             return {};
 
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
@@ -92,24 +92,34 @@ protected:
         size_t rows_count = 0;
         while (rows_count < max_block_size)
         {
-            if (!databases_cursor.advanceToNextDatabase())
+            if (tables_it && !tables_it->isValid())
+                ++database_idx;
+
+            while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
+            {
+                database_name = databases->getDataAt(database_idx);
+                database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+
+                if (database)
+                    break;
+                ++database_idx;
+            }
+
+            if (database_idx >= databases->size())
                 break;
 
-            const String & database_name = databases_cursor.getDatabaseName();
-
-            if (!databases_cursor.hasTablesIterator())
-                databases_cursor.setTablesIterator(databases_cursor.getDatabase()->getTablesIterator(context));
+            if (!tables_it || !tables_it->isValid())
+                tables_it = database->getTablesIterator(context);
 
             const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
-            auto & tables_it = databases_cursor.getTablesIterator();
-            for (; rows_count < max_block_size && tables_it.isValid(); tables_it.next())
+            for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
-                auto table_name = tables_it.name();
+                auto table_name = tables_it->name();
                 if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                const auto table = tables_it.table();
+                const auto table = tables_it->table();
                 if (!table)
                     continue;
                 const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
@@ -186,8 +196,12 @@ protected:
 private:
     std::vector<UInt8> column_mask;
     UInt64 max_block_size;
-    DatabaseTablesCursor databases_cursor;
+    ColumnPtr databases;
     ContextPtr context;
+    size_t database_idx;
+    DatabasePtr database;
+    std::string database_name;
+    DatabaseTablesIteratorPtr tables_it;
 };
 
 class ReadFromSystemDataSkippingIndices : public SourceStepWithFilter

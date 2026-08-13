@@ -79,7 +79,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     prebuilt_cursors.resize(columns_.size());
 
     auto data_part = getDataPart();
-    auto index_format = index.index->getDeserializedFormat(*data_part, index.index->getFileName());
+    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName(), &data_part->getDataPartStorage());
     chassert(index_format);
 
     MergeTreeIndexDeserializationState state
@@ -221,9 +221,7 @@ void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
     IMergeTreeReader::updateAllMarkRanges(ranges);
 
     if (fallback_reader)
-    {
         fallback_reader->updateAllMarkRanges(ranges);
-    }
 
     if (!ranges.empty())
     {
@@ -386,7 +384,7 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
 {
     const auto & data_part = getDataPart();
 
-    auto index_format = index.index->getDeserializedFormat(*data_part, index.index->getFileName());
+    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName(), &data_part->getDataPartStorage());
     if (index_format.version != 2)
         return;
 
@@ -408,6 +406,7 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
 
 size_t MergeTreeReaderTextIndex::readRows(
     size_t from_mark,
+    size_t current_task_last_mark,
     bool continue_reading,
     size_t max_rows_to_read,
     size_t rows_offset,
@@ -472,7 +471,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     if (any_use_fallback && fallback_reader && max_rows_to_read > 0)
     {
         Columns fallback_cols(fallback_columns_list.size(), nullptr);
-        fallback_reader->readRows(from_mark, continue_reading, max_rows_to_read, rows_offset, fallback_cols);
+        fallback_reader->readRows(from_mark, current_task_last_mark, continue_reading, max_rows_to_read, rows_offset, fallback_cols);
         size_t col_idx = 0;
         for (const auto & col_name_type : fallback_columns_list)
             fallback_block.insert({fallback_cols[col_idx++], col_name_type.type, col_name_type.name});
@@ -661,7 +660,7 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
         else if (query.getSearchMode() == TextSearchMode::Any)
             *result |= large_postings;
 
-        if (query.getSearchMode() == TextSearchMode::All && result && result->isEmpty())
+        if (query.getSearchMode() == TextSearchMode::All && result && result->cardinality() == 0)
             return {};
     }
 

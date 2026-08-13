@@ -1,0 +1,32 @@
+---
+sidebarTitle: 'HyperDX'
+slug: /cloud/manage/hyperdx
+title: 'HyperDX'
+description: 'يوفر HyperDX، واجهة المستخدم لـ ClickStack، وهي منصة رصد جاهزة للإنتاج مبنية على ClickHouse وOpenTelemetry (OTel)، وتوحّد السجلات والتتبعات والمقاييس والجلسات في حل واحد عالي الأداء وقابل للتوسع.'
+doc_type: 'دليل'
+keywords: ['hyperdx', 'الرصد', 'التكامل', 'ميزات السحابة', 'المراقبة']
+---
+
+import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+HyperDX هي واجهة المستخدم لـ [**ClickStack**](/ar/clickstack/overview) — منصة رصد جاهزة لبيئات production، مبنية على ClickHouse وOpenTelemetry (OTel)، وتوحّد السجلات وتتبعّات ومقاييس وبيانات الجلسات في حل واحد عالي الأداء. وقد صُممت لمراقبة الأنظمة المعقدة وتصحيح أخطائها، وتُمكّن المطورين وفرق SRE من تتبّع المشكلات من البداية إلى النهاية من دون التنقّل بين الأدوات أو ربط البيانات يدويًا باستخدام timestamps أو معرّفات الارتباط.
+
+HyperDX هي واجهة أمامية مصممة خصيصًا لاستكشاف بيانات رصد وعرضها بصريًا، وتدعم الاستعلامات بأسلوب Lucene واستعلامات SQL، ولوحات المعلومات التفاعلية، والتنبيهات، واستكشاف تتبّعات، وغير ذلك الكثير — وكل ذلك مُحسّن للعمل مع ClickHouse كـ backend.
+
+يتيح لك HyperDX في ClickHouse Cloud الاستفادة من تجربة ClickStack أكثر تكاملًا وجاهزية — من دون بنية تحتية لإدارتها، ومن دون مصادقة منفصلة تحتاج إلى إعدادها.
+يمكن تشغيل HyperDX بنقرة واحدة وربطه ببياناتك — وهو مدمج بالكامل في نظام المصادقة الخاص بـ ClickHouse Cloud لتوفير وصول سلس وآمن إلى رؤى رصد الخاصة بك.
+
+<div id="main-concepts">
+  ## النشر
+</div>
+
+يتوفر HyperDX في ClickHouse Cloud حاليًا في معاينة خاصة، ويجب تمكينه على مستوى المؤسسة. وبعد تمكينه، ستجد HyperDX متاحًا في قائمة التنقل الرئيسية على اليسار عند اختيار أي خدمة.
+
+<Image img="/images/use-cases/observability/hyperdx_cloud.webp" alt="HyperDX في ClickHouse Cloud" size="lg" />
+
+لبدء استخدام HyperDX في ClickHouse Cloud، نوصي بالرجوع إلى [دليل البدء المخصص](/ar/clickstack/deployment/managed).
+
+لمزيد من التفاصيل حول ClickStack، راجع [الوثائق الكاملة](/ar/clickstack/overview).

@@ -1,4 +1,3 @@
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Databases/removeWhereConditionPlaceholder.h>

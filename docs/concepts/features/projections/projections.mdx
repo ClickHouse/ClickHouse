@@ -277,7 +277,7 @@ ALTER TABLE uk.uk_price_paid_with_projections
 SETTINGS mutations_sync = 1
 ```
 
-The [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) setting is
+The [`mutations_sync`](/reference/settings/session-settings#mutations_sync) setting is
 used to force synchronous execution.
 
 We create and populate projection `prj_gby_county` – an additional (hidden) table
@@ -443,7 +443,7 @@ ALTER TABLE uk.uk_price_paid_with_projections_v2
 SETTINGS mutations_sync = 1
 ```
 
-The following queries contrast performance with and without projections. To disable projection use we use the setting [`optimize_use_projections`](/reference/settings/session-settings/optimize-use#optimize_use_projections), which is enabled by default.
+The following queries contrast performance with and without projections. To disable projection use we use the setting [`optimize_use_projections`](/reference/settings/session-settings#optimize_use_projections), which is enabled by default.
 
 #### Query 1. Average price per year {#average-price-projections}
 

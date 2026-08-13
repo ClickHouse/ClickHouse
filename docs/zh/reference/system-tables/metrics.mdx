@@ -719,18 +719,6 @@ DatabaseReplicated 中用于创建表的线程池中，处于排队或活动状�
 
 由于 MergeTree 表中某个分区的活跃数据分区片段过多而被限流的 INSERT 查询数量。
 
-<div id="deletebitmapcachebytes">
-  ### DeleteBitmapCacheBytes
-</div>
-
-UNIQUE KEY delete-bitmap 缓存总大小 (字节)
-
-<div id="deletebitmapcacheentries">
-  ### DeleteBitmapCacheEntries
-</div>
-
-已缓存的 UNIQUE KEY 删除 bitmap 总数
-
 <div id="deltalakesnapshotcachesizeelements">
   ### DeltaLakeSnapshotCacheSizeElements
 </div>
@@ -1048,24 +1036,6 @@ ZooKeeper 中持有的临时节点数。
 </div>
 
 文件系统缓存元素 (File 段)
-
-<div id="filesystemcacheevictionthreads">
-  ### FilesystemCacheEvictionThreads
-</div>
-
-文件系统缓存后台淘汰 (移除) 池中的线程数
-
-<div id="filesystemcacheevictionthreadsactive">
-  ### FilesystemCacheEvictionThreadsActive
-</div>
-
-文件系统缓存后台淘汰线程池中正在执行任务的线程数
-
-<div id="filesystemcacheevictionthreadsscheduled">
-  ### FilesystemCacheEvictionThreadsScheduled
-</div>
-
-文件系统缓存后台淘汰池中排队或正在运行的作业数量
 
 <div id="filesystemcacheholdfilesegments">
   ### FilesystemCacheHoldFileSegments
@@ -1511,12 +1481,6 @@ Keeper server 读取线程池中的线程数量。
 
 用于 Keeper server 读取操作的线程池中，处于排队或活跃状态的作业数量。该指标没有实际意义，因为此线程池中的实际读取任务是通过另一种机制调度的。
 
-<div id="keeperttlnodes">
-  ### KeeperTTLNodes
-</div>
-
-当前存储在 Keeper 中、已设置生存时间 (TTL) 的节点数。
-
 <div id="licenseremainingseconds">
   ### LicenseRemainingSeconds
 </div>
@@ -1606,18 +1570,6 @@ DDLWorker 已处理的最大 DDL 条目 ID。
 </div>
 
 DDLWorker 推送到 ZooKeeper 的最大 DDL 条目 ID。
-
-<div id="memoryreservationapproved">
-  ### MemoryReservationApproved
-</div>
-
-当前为内存预留已分配 (已批准) 的总字节数
-
-<div id="memoryreservationdemand">
-  ### MemoryReservationDemand
-</div>
-
-内存预留中待处理的增量请求总字节数
 
 <div id="memorytracking">
   ### MemoryTracking
@@ -2134,24 +2086,6 @@ Parquet 元数据缓存中已缓存的文件数量
 </div>
 
 等待刷写的异步插入数量。
-
-<div id="pointinpolygoncachebytes">
-  ### PointInPolygonCacheBytes
-</div>
-
-`pointInPolygon` 函数中预处理后的常量多边形缓存大小 (以字节为单位)
-
-<div id="pointinpolygoncachecells">
-  ### PointInPolygonCacheCells
-</div>
-
-`pointInPolygon` 函数缓存中预处理后的常量多边形数量
-
-<div id="pointinpolygoncachesizelimit">
-  ### PointInPolygonCacheSizeLimit
-</div>
-
-`pointInPolygon` 函数中预处理后的常量多边形缓存的最大大小 (以字节为单位)  (即服务器级设置 `point_in_polygon_cache_size` 的实际生效值)
 
 <div id="polygondictionarythreads">
   ### PolygonDictionaryThreads
@@ -2992,24 +2926,6 @@ OvercommitTracker 中处于等待状态的线程数
 </div>
 
 创建的临时 File 数量
-
-<div id="udfdriverinvokerthreads">
-  ### UDFDriverInvokerThreads
-</div>
-
-用于处理可执行 UDF 驱动命令管道的线程池中的线程数。
-
-<div id="udfdriverinvokerthreadsactive">
-  ### UDFDriverInvokerThreadsActive
-</div>
-
-处理可执行 UDF driver 命令管道的线程池中的活跃线程数。
-
-<div id="udfdriverinvokerthreadsscheduled">
-  ### UDFDriverInvokerThreadsScheduled
-</div>
-
-处理可执行 UDF driver 命令管道的线程池中，处于排队或活动状态的作业数量。
 
 <div id="uncompressedcachebytes">
   ### UncompressedCacheBytes

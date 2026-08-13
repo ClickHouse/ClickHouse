@@ -45,7 +45,7 @@ BigQuery와 ClickHouse Cloud 간 데이터 마이그레이션은 크게 두 가�
   #### Google Cloud Storage (GCS)를 통한 대량 적재
 </div>
 
-BigQuery는 데이터를 Google의 객체 스토리지(GCS)로 내보내는 기능을 지원합니다. 예시 데이터셋의 경우 다음과 같습니다.
+BigQuery는 데이터를 Google의 객체 스토리지(GCS)로 내보내는 기능을 지원합니다. 예시 데이터 세트의 경우 다음과 같습니다.
 
 1. 7개의 테이블을 GCS로 내보내십시오. 필요한 명령은 [여기](https://pastila.nl/?014e1ae9/cb9b07d89e9bb2c56954102fd0c37abd#0Pzj52uPYeu1jG35nmMqRQ==)에서 확인할 수 있습니다.
 
@@ -165,7 +165,7 @@ BigQuery의 클러스터링과 유사하게 ClickHouse 테이블의 데이터는
 
 ClickHouse에서 선택한 프라이머리 키는 인덱스뿐 아니라 데이터가 디스크에 기록되는 순서도 결정합니다. 따라서 이는 압축 수준에 큰 영향을 줄 수 있으며, 결과적으로 쿼리 성능에도 영향을 미칠 수 있습니다. 대부분의 컬럼 값이 연속된 순서로 기록되도록 하는 순서 지정 키(ordering key)를 선택하면, 선택한 압축 알고리즘(및 코덱)이 데이터를 더 효과적으로 압축할 수 있습니다.
 
-> 테이블의 모든 컬럼은 키 자체에 포함되어 있는지와 관계없이 지정된 순서 지정 키의 값을 기준으로 정렬됩니다. 예를 들어 `CreationDate`를 키로 사용하면 다른 모든 컬럼의 값 순서도 `CreationDate` 컬럼의 값 순서를 따르게 됩니다. 여러 개의 순서 지정 키를 지정할 수도 있으며, 이 경우 `SELECT` 쿼리의 `ORDER BY` 절과 동일한 의미로 정렬됩니다.
+> 테이블의 모든 컬럼은 키 자체에 포함되어 있는지와 관계없이 지정된 순서 지정 키의 값을 기준으로 정렬됩니다. 예를 들어 `CreationDate`를 키로 사용하면 다른 모든 컬럼의 값 순서도 `CreationDate` 컬럼의 값 순서를 따르게 됩니다. 여러 개의 순서 지정 키를 지정할 수도 있으며, 이 경우 `SELECT` 쿼리의 `ORDER BY` 절과 동일한 의미로 정렬됩니다。
 
 <div id="choosing-an-ordering-key">
   ### 순서 지정 키 선택하기
@@ -398,27 +398,27 @@ WHERE UserId = 8592047
 ```
 
 <div id="when-to-use-projections">
-  ### 프로젝션 사용 시점
+  ### PROJECTION을 사용해야 하는 경우
 </div>
 
-프로젝션은 데이터가 삽입될 때 자동으로 유지되므로, 처음 사용하는 사용자에게도 매력적인 기능입니다.
-또한 쿼리를 단일 테이블로만 보내면 되며, 가능한 경우 프로젝션이 활용되어 응답
+PROJECTION은 데이터가 삽입될 때 자동으로 유지되므로, 처음 사용하는 사용자에게 매력적인 기능입니다.
+또한 쿼리를 단일 테이블에만 보내면 되고, 가능한 경우 PROJECTION이 활용되어 응답
 시간을 단축할 수 있습니다.
 
-<Image img="/images/migrations/bigquery-7.webp" size="md" alt="프로젝션" />
+<Image img="/images/migrations/bigquery-7.webp" size="md" alt="PROJECTION" />
 
-이는 materialized view와 대조적입니다. materialized view에서는 필터에 따라
+이는 구체화된 뷰(Materialized View)와는 대조적입니다. 구체화된 뷰에서는 필터에 따라
 적절히 최적화된 대상 테이블을 선택하거나 쿼리를 재작성해야 합니다.
-이로 인해 사용자 애플리케이션에 더 큰 부담이 가해지고 클라이언트 측
+이 때문에 사용자 애플리케이션에 더 많이 의존하게 되고 클라이언트 측
 복잡성도 증가합니다.
 
-이러한 장점에도 불구하고, 프로젝션에는 알아두어야 할 몇 가지 고유한 제한 사항이
-있으므로 필요한 경우에만 신중하게 사용해야 합니다. 자세한 내용은
-[&quot;materialized views versus projections&quot;](/ko/concepts/features/projections/materialized-views-versus-projections)을 참조하십시오.
+이러한 장점에도 불구하고 PROJECTION에는 본질적인 몇 가지 제한 사항이 있으므로
+이를 충분히 인지한 뒤 꼭 필요한 경우에만 제한적으로 사용해야 합니다. 자세한 내용은
+[&quot;구체화된 뷰와 PROJECTION 비교&quot;](/ko/concepts/features/projections/materialized-views-versus-projections)를 참조하십시오.
 
-다음과 같은 경우 프로젝션 사용을 권장합니다:
+다음과 같은 경우 PROJECTION 사용을 권장합니다:
 
-* 데이터의 전체 재정렬이 필요한 경우입니다. 이론적으로 프로젝션의 표현식에서 `GROUP BY,`를 사용할 수는 있지만, 집계를 유지하는 데에는 materialized view가 더 효과적입니다. 또한 쿼리 최적화기는 `SELECT * ORDER BY x`처럼 단순한 재정렬을 사용하는 프로젝션을 활용할 가능성이 더 높습니다. 저장 공간 사용량을 줄이기 위해 이 표현식에서 컬럼의 부분 집합만 선택할 수도 있습니다.
+* 데이터의 전체적인 재정렬이 필요한 경우입니다. 이론적으로는 PROJECTION의 표현식에서 `GROUP BY,`를 사용할 수 있지만, 집계를 유지하는 데에는 구체화된 뷰가 더 효과적입니다. 또한 쿼리 최적화기는 `SELECT * ORDER BY x`처럼 단순한 재정렬을 사용하는 PROJECTION을 활용할 가능성이 더 높습니다. 저장 공간 사용량을 줄이기 위해 이 표현식에서 컬럼의 부분 집합만 선택할 수도 있습니다.
 * 저장 공간 사용량 증가와 데이터를 두 번 기록하는 오버헤드를 감수할 수 있는 경우입니다. 삽입 속도에 미치는 영향을 테스트하고 [저장 공간 오버헤드도 평가하십시오](/ko/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
 
 <div id="rewriting-bigquery-queries-in-clickhouse">

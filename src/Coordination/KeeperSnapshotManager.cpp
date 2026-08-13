@@ -21,6 +21,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <base/sort.h>
+#include <base/scope_guard.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
@@ -237,12 +238,12 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     }
 
     /// Serialize data tree
-    writeBinary(snapshot.view->getNodeCount() - keeper_context->getSystemNodesWithData().size(), out);
+    writeBinary(snapshot.node_stream->node_count - keeper_context->getSystemNodesWithData().size(), out);
     std::string_view node_path;
     std::string_view node_data;
     KeeperNodeStats node_stats;
     size_t nodes_seen = 0;
-    while (snapshot.view->next(node_path, node_data, node_stats))
+    while (snapshot.node_stream->next(node_path, node_data, node_stats))
     {
         ++nodes_seen;
         // write only the root system path because of digest
@@ -251,14 +252,14 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
 
         /// (This is guaranteed because KeeperStorageSnapshot constructor is called with nuraft's
         ///  commit_lock_ held, and therefore storage can't change between when we get storage->zxid
-        ///  and when we issue the read view.)
+        ///  and when we call storage->beginWritingSnapshot().)
         if (node_stats.mzxid > snapshot.zxid)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to serialize node with mzxid {}, but last snapshot index {}", node_stats.mzxid, snapshot.zxid);
 
         writeBinary(node_path, out);
         writeNode(node_data, node_stats, snapshot.version, out);
     }
-    chassert(nodes_seen == snapshot.view->getNodeCount());
+    chassert(nodes_seen == snapshot.node_stream->node_count);
 
     /// Session must be saved in a sorted order,
     /// otherwise snapshots will be different
@@ -297,9 +298,20 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
 }
 
 KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_, SnapshotVersion version_)
-    : KeeperStorageSnapshot(
-          storage_, std::make_shared<SnapshotMetadata>(up_to_log_idx_, 0, std::make_shared<nuraft::cluster_config>()), cluster_config_, version_)
+    : storage(storage_)
+    , version(version_)
+    , snapshot_meta(std::make_shared<SnapshotMetadata>(up_to_log_idx_, 0, std::make_shared<nuraft::cluster_config>()))
+    , session_id(storage->session_id_counter)
+    , cluster_config(cluster_config_)
+    , zxid(storage->zxid)
+    , nodes_digest(storage->nodes_digest)
 {
+    node_stream = storage->nodes_storage->beginWritingSnapshot();
+    scope_guard snapshot_mode_guard([&] { storage->nodes_storage->finishWritingSnapshot(std::move(node_stream)); });
+    session_and_timeout = storage->getActiveSessions();
+    acl_map = storage->acl_map.getMapping();
+    session_and_auth = storage->committed_session_and_auth;
+    snapshot_mode_guard.release();
 }
 
 KeeperStorageSnapshot::KeeperStorageSnapshot(
@@ -308,14 +320,22 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(
     , version(version_)
     , snapshot_meta(snapshot_meta_)
     , session_id(storage->session_id_counter)
-    , view(storage->issueReadView())
     , cluster_config(cluster_config_)
     , zxid(storage->zxid)
     , nodes_digest(storage->nodes_digest)
 {
+    node_stream = storage->nodes_storage->beginWritingSnapshot();
+    scope_guard snapshot_mode_guard([&] { storage->nodes_storage->finishWritingSnapshot(std::move(node_stream)); });
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
     session_and_auth = storage->committed_session_and_auth;
+    snapshot_mode_guard.release();
+}
+
+KeeperStorageSnapshot::~KeeperStorageSnapshot()
+{
+    if (node_stream)
+        storage->nodes_storage->finishWritingSnapshot(std::move(node_stream));
 }
 
 SnapshotFileInfoPtr

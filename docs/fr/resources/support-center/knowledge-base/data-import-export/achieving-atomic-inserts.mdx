@@ -6,6 +6,10 @@ tags: ['Ingestion de données', 'Bonnes pratiques']
 keywords: ['insertion atomique', 'table intermédiaire', 'MOVE PARTITION', 'ATTACH PARTITION', 'REPLACE PARTITION', 'cohérence entre plusieurs tables']
 ---
 
+{frontMatter.description}
+
+{/* truncate */}
+
 <div id="problem">
   ## Problème
 </div>
@@ -37,15 +41,19 @@ Au lieu d’insérer directement dans les tables de production et de tenter un n
 </div>
 
 <Steps>
-  <Step title="Créer une table intermédiaire" id="create-staging-table">
-    Utilisez le même schéma, la même clé de partitionnement, le même `ORDER BY` et la même politique de stockage que la table de production.
+  <Step>
+    ### Créer une table intermédiaire
+
+    Utilisez le même schéma, la même clé de partition, le même `ORDER BY` et la même politique de stockage que la table de production.
 
     ```sql
     CREATE TABLE my_table_staging AS my_table_prod;
     ```
   </Step>
 
-  <Step title="Insérer des données dans la table intermédiaire" id="insert-into-staging">
+  <Step>
+    ### Insérer des données dans la table intermédiaire
+
     Exécutez votre insert sur la table intermédiaire plutôt que sur la table de production.
 
     ```sql
@@ -53,7 +61,9 @@ Au lieu d’insérer directement dans les tables de production et de tenter un n
     ```
   </Step>
 
-  <Step title="Si l’insert échoue, tronquez et réessayez" id="on-failure">
+  <Step>
+    ### Si l’insert échoue, tronquez et réessayez
+
     Tronquez la table intermédiaire et relancez le chargement. Aucune donnée de production n’a été affectée.
 
     ```sql
@@ -61,7 +71,9 @@ Au lieu d’insérer directement dans les tables de production et de tenter un n
     ```
   </Step>
 
-  <Step title="Si l’insert réussit, déplacez les partitions en production" id="on-success">
+  <Step>
+    ### Si l’insert réussit, déplacez les partitions en production
+
     Pour déplacer les données en production et les supprimer de la table intermédiaire, utilisez `MOVE PARTITION`.
 
     ```sql
@@ -77,7 +89,9 @@ Au lieu d’insérer directement dans les tables de production et de tenter un n
     Ces deux opérations sont des modifications au niveau des métadonnées sur la même politique de stockage et s’exécutent presque instantanément.
   </Step>
 
-  <Step title="Nettoyer la table intermédiaire" id="clean-up">
+  <Step>
+    ### Nettoyer la table intermédiaire
+
     Une fois toutes les partitions déplacées, tronquez la table intermédiaire afin de la laisser vide pour le prochain chargement.
 
     ```sql

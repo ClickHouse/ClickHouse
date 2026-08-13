@@ -7,7 +7,7 @@ keywords: ['managed postgres', 'prometheus', 'grafana', 'datadog', 'метрик
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ru/components/Image.jsx";
 
 import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
@@ -131,15 +131,21 @@ scrape_configs:
 </div>
 
 <Steps>
-  <Step title="Скачайте JSON панели мониторинга" id="download">
+  <Step>
+    #### Скачайте JSON панели мониторинга
+
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">Скачать JSON панели мониторинга</TrackedLink>.
   </Step>
 
-  <Step title="Откройте импорт в Grafana" id="open-import">
+  <Step>
+    #### Откройте импорт в Grafana
+
     Перейдите в **Dashboards → New → Import**. Загрузите JSON‑файл или вставьте его содержимое.
   </Step>
 
-  <Step title="Выберите источник данных Prometheus" id="pick-datasource">
+  <Step>
+    #### Выберите источник данных Prometheus
+
     Когда появится запрос для `DS_PROMETHEUS`, выберите источник данных Prometheus, который собирает метрики с конечной точки, настроенной в [предыдущем разделе](#configuring-prometheus).
   </Step>
 </Steps>

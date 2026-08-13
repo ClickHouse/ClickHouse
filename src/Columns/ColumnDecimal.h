@@ -162,10 +162,6 @@ public:
 
     UInt32 getScale() const { return scale; }
 
-    void serializeAsComparable(size_t n, String & out) const final;
-
-    void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation, const UInt8 * null_map) const override;
-
 protected:
     Container data;
     UInt32 scale;

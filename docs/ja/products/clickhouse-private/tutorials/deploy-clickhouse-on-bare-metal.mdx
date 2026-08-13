@@ -27,7 +27,9 @@ description: "このチュートリアルでは、Kubernetesディストリビ�
 ***
 
 <Steps>
-  <Step title="フェーズ 1: Terraform のインストール" id="phase-1-install-terraform">
+  <Step>
+    ## フェーズ 1: Terraform のインストール
+
     ```text
     dnf install -y unzip git
     ```
@@ -60,7 +62,9 @@ description: "このチュートリアルでは、Kubernetesディストリビ�
     ***
   </Step>
 
-  <Step title="フェーズ 2: サンプルスクリプトをダウンロード" id="phase-2-download-example-scripts">
+  <Step>
+    ## フェーズ 2: サンプルスクリプトをダウンロード
+
     ClickHouse が提供するサンプルスクリプトをダウンロードして展開します。
 
     ```text
@@ -73,7 +77,9 @@ description: "このチュートリアルでは、Kubernetesディストリビ�
     ***
   </Step>
 
-  <Step title="フェーズ 3: AWS認証情報を設定する" id="phase-3-configure-aws-credentials">
+  <Step>
+    ## フェーズ 3: AWS認証情報を設定する
+
     AWS IAM のアクセスキーとシークレットアクセスキーを含む認証情報ファイルを作成します。
 
     ```bash
@@ -95,7 +101,9 @@ description: "このチュートリアルでは、Kubernetesディストリビ�
     ***
   </Step>
 
-  <Step title="フェーズ 4: Terraform を初期化して適用する" id="phase-4-initialize-and-apply-terraform">
+  <Step>
+    ## フェーズ 4: Terraform を初期化して適用する
+
     RKE2 Terraform モジュールを初期化します。Terraform の state をローカルから S3 に移行する場合は、`-migrate-state` を追加します。
 
     ```text
@@ -121,7 +129,9 @@ description: "このチュートリアルでは、Kubernetesディストリビ�
     ***
   </Step>
 
-  <Step title="フェーズ 5: Ansible の依存関係をインストール" id="phase-5-install-ansible-dependencies">
+  <Step>
+    ## フェーズ 5: Ansible の依存関係をインストール
+
     Ansible のディレクトリに移動し、必要な Galaxy のロールとコレクションをインストールします:
 
     ```bash
@@ -139,7 +149,9 @@ description: "このチュートリアルでは、Kubernetesディストリビ�
     ***
   </Step>
 
-  <Step title="フェーズ 6: RKE2 をプロビジョニングする" id="phase-6-provision-rke2">
+  <Step>
+    ## フェーズ 6: RKE2 をプロビジョニングする
+
     ### ノードが Ready 状態であることを確認する
 
     ```text
@@ -177,7 +189,9 @@ description: "このチュートリアルでは、Kubernetesディストリビ�
     ***
   </Step>
 
-  <Step title="フェーズ 7: cert-manager と証明書の設定" id="phase-7-configure-cert-manager-and-certificates">
+  <Step>
+    ## フェーズ 7: cert-manager と証明書の設定
+
     Ansible playbook を使用して cert-manager と trust-manager をインストールし、ClickHouse 用の証明書を生成します。
 
     ```bash
@@ -206,7 +220,9 @@ description: "このチュートリアルでは、Kubernetesディストリビ�
     ***
   </Step>
 
-  <Step title="フェーズ 8: ローカルストレージをインストール" id="phase-8-install-local-storage">
+  <Step>
+    ## フェーズ 8: ローカルストレージをインストール
+
     ### local-path-provisioner をインストール
 
     ```bash
@@ -252,7 +268,9 @@ description: "このチュートリアルでは、Kubernetesディストリビ�
     ***
   </Step>
 
-  <Step title="フェーズ 9: ノードにラベルを付ける" id="phase-9-label-nodes">
+  <Step>
+    ## フェーズ 9: ノードにラベルを付ける
+
     オペレーターが必要とする ClickHouse グループおよびトポロジーゾーンのラベルをノードに付けます。
 
     ```bash
@@ -268,7 +286,9 @@ description: "このチュートリアルでは、Kubernetesディストリビ�
     ***
   </Step>
 
-  <Step title="フェーズ10: ClickHouse Operatorとクラスターのインストール" id="phase-10-install-clickhouse-operator-and-cluster">
+  <Step>
+    ## フェーズ10: ClickHouse Operatorとクラスターのインストール
+
     ### 環境変数の設定
 
     Helm変数スクリプトを作成して読み込みます。すべてのプレースホルダーの値を更新してください：

@@ -26,7 +26,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 لإنشاء دور مخصّص لمستخدم في SQL Console ومنحه دورًا عامًا، شغّل الأوامر التالية. يجب أن يتطابق عنوان البريد الإلكتروني مع عنوان البريد الإلكتروني للمستخدم في Console.
 
 <Steps>
-  <Step title={<>إنشاء <code>database_developer</code> ومنح الأذونات</>} id="create-role-grant-permissions">
+  <Step>
+    #### إنشاء `database_developer` ومنح الأذونات
+
     أنشئ الدور `database_developer` وامنحه أذونات `SHOW` و`CREATE` و`ALTER` و`DELETE`.
 
     ```sql
@@ -38,7 +40,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step title="إنشاء دور لمستخدم SQL Console" id="create-sql-console-user-role">
+  <Step>
+    #### إنشاء دور لمستخدم SQL Console
+
     أنشئ دورًا لمستخدم SQL Console وهو my.user@domain.com، ثم أسند إليه الدور `database_developer`.
 
     ```sql
@@ -47,7 +51,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step title="يُسنَد إلى المستخدم الدور الجديد عند استخدام SQL Console" id="use-assigned-new-role">
+  <Step>
+    #### يُسنَد إلى المستخدم الدور الجديد عند استخدام SQL Console
+
     سيُسنَد إلى المستخدم الدور المرتبط بعنوان بريده الإلكتروني كلما استخدم SQL Console.
   </Step>
 </Steps>
@@ -90,7 +96,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
   ## أذونات قاعدة البيانات
 </div>
 
-اضبط ما يلي ضمن الخدمات وقواعد البيانات باستخدام عبارة SQL ‏[GRANT](/ar/reference/statements/grant).
+اضبط ما يلي على مستوى الخدمات وقواعد البيانات باستخدام عبارة SQL ‏[GRANT](/ar/reference/statements/grant).
 
 | Role    | Description                                                     |
 | :------ | :-------------------------------------------------------------- |
@@ -101,9 +107,9 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 * يمكن منح أدوار قاعدة البيانات لأدوار أخرى، مما يؤدي إلى بنية هرمية. وترث الأدوار جميع أذونات الأدوار التي تكون عضوًا فيها.
 * أدوار قاعدة البيانات خاصة بكل خدمة، ويمكن تطبيقها على عدة قواعد بيانات ضمن الخدمة نفسها.
 
-يوضح الشكل أدناه الطرق المختلفة التي يمكن بها منح المستخدم أذونات.
+يوضح الشكل أدناه الطرق المختلفة التي يمكن بها منح مستخدم أذونات.
 
-<Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="رسم توضيحي يبيّن الطرق المختلفة التي يمكن بها منح المستخدم أذونات" size="md" background="black" />
+<Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="رسم توضيحي يبيّن الطرق المختلفة التي يمكن بها منح مستخدم أذونات" size="md" background="black" />
 
 <div id="initial-settings">
   ### الإعدادات الأولية
@@ -131,7 +137,9 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 يمكن استخدام العملية التالية لإنشاء قائمة وصول كاملة عبر SQL console وقواعد البيانات في مؤسستك.
 
 <Steps>
-  <Step title="الحصول على قائمة بجميع الأذونات الممنوحة في قاعدة البيانات" id="get-a-list-of-all-database-grants">
+  <Step>
+    #### الحصول على قائمة بجميع الأذونات الممنوحة في قاعدة البيانات
+
     شغّل الاستعلامات التالية للحصول على قائمة بجميع الأذونات الممنوحة في قاعدة البيانات.
 
     ```sql
@@ -157,7 +165,9 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
     ```
   </Step>
 
-  <Step title="ربط قائمة الأذونات الممنوحة بمستخدمي Console الذين لديهم وصول إلى SQL console" id="associate-grant-list-to-console-users-with-access-to-sql-console">
+  <Step>
+    #### ربط قائمة الأذونات الممنوحة بمستخدمي Console الذين لديهم وصول إلى SQL console
+
     اربط هذه القائمة بمستخدمي Console الذين لديهم وصول إلى SQL console.
 
     a. انتقل إلى Console.
@@ -168,7 +178,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 
     d. مرّر إلى قسم الوصول إلى SQL console.
 
-    e. انقر على رابط عدد المستخدمين الذين لديهم إمكانية الوصول إلى قاعدة البيانات `There are # users with access to this service.` لعرض قائمة المستخدمين.
+    e. انقر على الرابط الذي يعرض عدد المستخدمين الذين لديهم وصول إلى قاعدة البيانات `There are # users with access to this service.` لعرض قائمة المستخدمين.
   </Step>
 </Steps>
 
@@ -176,4 +186,4 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
   ## مستخدمو المستودع
 </div>
 
-يكون مستخدمو المستودع مشتركين بين الخدمات ضمن المستودع نفسه. لمزيد من المعلومات، راجع [ضوابط الوصول إلى المستودع](/ar/products/cloud/features/infrastructure/warehouses#access-controls).
+تتم مشاركة مستخدمي المستودع بين الخدمات ضمن المستودع نفسه. لمزيد من المعلومات، راجع [عناصر التحكم في الوصول إلى المستودع](/ar/products/cloud/features/infrastructure/warehouses#access-controls).

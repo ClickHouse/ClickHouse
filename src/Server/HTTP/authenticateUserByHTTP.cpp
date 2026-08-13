@@ -26,7 +26,6 @@ namespace ErrorCodes
 {
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
-    extern const int INCORRECT_DATA;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -305,19 +304,10 @@ bool authenticateUserByHTTP(
 
     /// Extract the last entry from comma separated list of forwarded_for addresses.
     /// Only the last proxy can be trusted (if any).
-    const auto & client_info = session.getClientInfo();
-    auto forwarded_address = client_info.getLastForwardedFor();
-    const bool use_forwarded_address = global_context->getConfigRef().getBool("auth_use_forwarded_address", false);
+    auto forwarded_address = session.getClientInfo().getLastForwardedFor();
     try
     {
-        /// If `auth_use_forwarded_address` is enabled, consider a non-empty invalid header an error
-        /// instead of silently authenticating with the proxy's address.
-        if (use_forwarded_address && !client_info.forwarded_for.empty() && !forwarded_address)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Invalid address in `X-Forwarded-For` HTTP header: expected an IP literal with an optional numeric port");
-
-        if (forwarded_address && use_forwarded_address)
+        if (forwarded_address && global_context->getConfigRef().getBool("auth_use_forwarded_address", false))
             session.authenticate(*current_credentials, *forwarded_address, request.clientAddress());
         else
             session.authenticate(*current_credentials, request.clientAddress());

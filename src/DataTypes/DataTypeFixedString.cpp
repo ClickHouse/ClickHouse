@@ -101,7 +101,7 @@ Examples of the values that can be efficiently stored in `FixedString`-typed col
 - Currency codes (USD, RUB, ...).
 - Binary representation of hashes (`FixedString(16)` for MD5, `FixedString(32)` for SHA256).
 
-To store UUID values, use the [UUID](/reference/data-types/uuid) data type.
+To store UUID values, use the [UUID](../../sql-reference/data-types/uuid.md) data type.
 
 When inserting the data, ClickHouse:
 

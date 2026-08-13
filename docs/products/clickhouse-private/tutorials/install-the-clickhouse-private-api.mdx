@@ -1,0 +1,158 @@
+---
+noindex: true
+title: "Install the ClickHouse Private API"
+sidebarTitle: "Install the management API"
+description: "This tutorial walks you through installing the ClickHouse Private API, an optional standalone component that provides support for common management operations"
+---
+
+This tutorial walks you through installing the ClickHouse Private API, an optional standalone component that provides support for common management operations such as backups and vertical scaling.
+
+------------------------------------------------------------------------
+
+## Prerequisites
+
+Before starting, ensure you have:
+
+- ClickHouse Operator installed (see [tutorials/deploy-aws.md](/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks), Phase 8)
+- At least one ClickHouse cluster deployed (see [tutorials/deploy-aws.md](/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks), Phase 9)
+- Access to the ClickHouse private ECR repository
+- Target ECR repositories created in your AWS account:
+- `airgap-management`
+- `helm/airgap-management`
+
+------------------------------------------------------------------------
+
+<Steps>
+
+<Step title="Step 1: Copy Container Images" id="step-1-copy-container-images">
+
+Use skopeo to copy the Private API image and Helm chart to your ECR.
+
+``` ini
+SOURCE_REGION=us-east-1
+SOURCE_ECR_REPO=349290138304.dkr.ecr.$SOURCE_REGION.amazonaws.com
+
+TARGET_REGION=us-west-2
+TARGET_ECR_REPO=0000000000.dkr.ecr.$TARGET_REGION.amazonaws.com
+
+# log into our ECR
+aws ecr get-login-password --region $SOURCE_REGION | skopeo login --username AWS --password-stdin $SOURCE_ECR_REPO
+
+# log into the target AWS repo
+aws ecr get-login-password --region $TARGET_REGION | skopeo login --username AWS --password-stdin $TARGET_ECR_REPO
+
+# copy each image to target ECR, be sure to include the --all flag
+skopeo copy --all docker://$SOURCE_ECR_REPO/airgap-management:1.165.1 docker://$TARGET_ECR_REPO/airgap-management:1.165.1
+skopeo copy --all docker://$SOURCE_ECR_REPO/helm/airgap-management:1.165.1 docker://$TARGET_ECR_REPO/helm/airgap-management:1.165.1
+```
+
+Replace `1.165.1` and `1.165.1` with the version tags provided by ClickHouse.
+
+------------------------------------------------------------------------
+
+</Step>
+
+<Step title="Step 2: Install via Helm" id="step-2-install-via-helm">
+
+The Private API is installed in a dedicated namespace.
+
+``` text
+# update ECR_HOST as needed
+ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+
+# should use the version of the API's helm chart
+API_HELM_VERSION=1.165.1
+
+# set the API image tag
+API_IMAGE_TAG=1.165.1
+
+helm install clickhouse-private-api \
+   oci://$ECR_HOST/helm/airgap-management \
+   --version=$API_HELM_VERSION \
+   --create-namespace \
+   -n clickhouse-private-api \
+   --set-json="image.repository=\"$ECR_HOST/airgap-management\"" \
+   --set-json="image.tag=\"$API_IMAGE_TAG\""
+```
+
+------------------------------------------------------------------------
+
+</Step>
+
+<Step title="Step 3: Configure Authentication" id="step-3-configure-authentication">
+
+By default, basic authentication is disabled. For production environments, enable it by setting Helm values:
+
+- `api.basicAuth.enabled=true`
+- `api.basicAuth.username` -- your chosen username
+- `api.basicAuth.password` -- a secure password
+
+The username and password should be stored securely and rotated regularly according to your organization's security policies.
+
+------------------------------------------------------------------------
+
+</Step>
+
+<Step title="Step 4: Verify Installation" id="step-4-verify-installation">
+
+### Check the Pod
+
+``` bash
+kubectl get pods -n clickhouse-private-api
+```
+
+Expected output:
+
+``` text
+NAME                                    READY   STATUS    RESTARTS   AGE
+clickhouse-private-api-xxxxxxxxxx-xxxxx   1/1     Running   0          1m
+```
+
+### Port-forward and Test
+
+``` bash
+kubectl port-forward svc/clickhouse-private-api-airgap-management 8080:8080 -n clickhouse-private-api
+```
+
+Test the health endpoint:
+
+``` bash
+curl http://localhost:8080/readiness
+```
+
+If authentication is enabled:
+
+``` bash
+curl -u admin:YOUR_SECURE_PASSWORD_HERE http://localhost:8080/readiness
+```
+
+------------------------------------------------------------------------
+
+</Step>
+
+</Steps>
+
+## Configuration Options
+
+The following key configuration options are available via Helm values:
+
+| Helm Value | Description | Default |
+|----|----|----|
+| `image.repository` | ECR repository for the Private API image | -- |
+| `image.tag` | Image tag to deploy | -- |
+| `api.port` | Port on which the API listens | `8080` |
+| `api.basicAuth.enabled` | Enable HTTP basic authentication | `false` |
+| `api.basicAuth.username` | Username for basic auth | `admin` |
+| `api.basicAuth.password` | Password for basic auth | `changeme` |
+| `serviceAccount.enabled` | Create a service account for the API | `true` |
+| `serviceAccount.annotations` | Annotations for the service account (e.g., for IRSA) | `{}` |
+
+For a complete list of configuration options, refer to the Helm chart's values file.
+
+------------------------------------------------------------------------
+
+## Next Steps
+
+- **[Manage backups via API](/products/clickhouse-private/guides/manage-backups-via-the-private-api)** — Create, list, schedule, and restore backups
+- **[Scale a cluster](/products/clickhouse-private/guides/vertically-scale-a-clickhouse-cluster)** — Vertically scale CPU and memory
+- **[Reset passwords](/products/clickhouse-private/guides/reset-user-passwords)** — Reset the ClickHouse default user password

@@ -12,8 +12,7 @@ For every localized file (under `<locale>/` and `snippets/<locale>/`), check:
   * static `href`/`to` paths: one already under `/<locale>/` must resolve; an
     unprefixed path whose localized counterpart `/<locale>/...` EXISTS is a
     regression (routes readers to English instead of the localized page; if no
-    localized counterpart or fragment exists, English is an acceptable
-    fallback);
+    localized counterpart exists, English is an acceptable fallback);
   * template-literal href bases, e.g. `` `/get-started/quickstarts/${id}` `` --
     the fallback the "featured" cards render -- flagged when localized pages
     exist under the base (GT copies the English base verbatim into every locale);
@@ -48,24 +47,16 @@ TEMPLATE = re.compile(r"`(/[A-Za-z0-9][A-Za-z0-9/_.#-]*)\$\{")
 # (e.g. a stale `featuredQuickstarts` image left over from an old English
 # structure) that lychee never checks; the referenced file must exist on disk.
 ASSET = re.compile(r"""\b(?:image|img|src)\s*[:=]\s*\{?\s*(['"`])(/(?:images|assets)/[^'"`\s]+)\1""")
-EXPLICIT_ANCHOR = re.compile(r"""\{#([^}\s]+)\}|\bid\s*=\s*['"]([^'"]+)['"]""")
 
 
 def build_targets(docs_root):
     pages = set()
-    anchors = {}
     for root, dirs, files in os.walk(docs_root):
         dirs[:] = [d for d in dirs if d not in (".git", "node_modules")]
         for n in files:
             if n.endswith((".mdx", ".md")):
                 rel = os.path.relpath(os.path.join(root, n), docs_root)
-                page = re.sub(r"\.mdx?$", "", rel)
-                pages.add(page)
-                content = open(os.path.join(root, n), encoding="utf-8", errors="replace").read()
-                anchors[page] = {
-                    match.group(1) or match.group(2)
-                    for match in EXPLICIT_ANCHOR.finditer(content)
-                }
+                pages.add(re.sub(r"\.mdx?$", "", rel))
     redirects = set()
     rj = os.path.join(docs_root, "_site", "redirects.json")
     if os.path.isfile(rj):
@@ -73,7 +64,7 @@ def build_targets(docs_root):
             s = (r.get("source") or "").strip().strip("/")
             if s:
                 redirects.add(s)
-    return pages, redirects, anchors
+    return pages, redirects
 
 
 def main(argv=None):
@@ -82,16 +73,10 @@ def main(argv=None):
     p.add_argument("--fix", action="store_true", help="Rewrite regressions in place.")
     args = p.parse_args(argv)
     docs_root = os.path.abspath(args.docs_root)
-    pages, redirects, anchors = build_targets(docs_root)
+    pages, redirects = build_targets(docs_root)
 
     def resolves(bare):
         return bare in pages or (bare + "/index") in pages or bare in redirects
-
-    def has_fragment(bare, fragment):
-        return (
-            fragment in anchors.get(bare, set())
-            or fragment in anchors.get(bare + "/index", set())
-        )
 
     violations = []   # (file, path, kind, suggestion)
     fixed = 0
@@ -112,8 +97,7 @@ def main(argv=None):
                         nonlocal fixed
                         path = m.group(2)
                         raw = path
-                        path, _, fragment = path.partition("#")
-                        path = path.split("?")[0]
+                        path = path.split("#")[0].split("?")[0]
                         if (path in SKIP_EXACT or path.startswith(SKIP_PREFIXES)):
                             return m.group(0)
                         bare = path.lstrip("/")
@@ -125,33 +109,14 @@ def main(argv=None):
                             return m.group(0)
                         # unprefixed: localized counterpart exists => must localize
                         localized = f"{loc}/{bare}"
-                        english_resolves = resolves(bare)
-                        localized_resolves = resolves(localized)
-                        if fragment:
-                            english_fragment = (
-                                english_resolves and has_fragment(bare, fragment)
-                            )
-                            localized_fragment = (
-                                localized_resolves
-                                and has_fragment(localized, fragment)
-                            )
-                            # Do not let --fix preserve a typo on a localized URL.
-                            # Localize only when that target actually has the anchor.
-                            if not english_fragment and not localized_fragment:
-                                violations.append((rel, raw, "broken-fragment", None))
-                                return m.group(0)
-                            # Keep an English fallback when the page is translated
-                            # but the linked section is not.
-                            if english_fragment and not localized_fragment:
-                                return m.group(0)
-                        if localized_resolves:
+                        if resolves(localized):
                             suggestion = "/" + loc + raw  # keep fragment
                             violations.append((rel, raw, "should-localize", suggestion))
                             if args.fix:
                                 fixed += 1
                                 return m.group(0).replace(raw, "/" + loc + raw, 1)
                             return m.group(0)
-                        if not english_resolves:
+                        if not resolves(bare):
                             violations.append((rel, raw, "broken", None))
                         return m.group(0)
 

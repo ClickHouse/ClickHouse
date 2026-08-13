@@ -107,10 +107,8 @@ configure_opts=(
     # Let's enable S3 storage by default
     --s3-storage
 )
-use_encrypted_storage=0
 if [ $((RANDOM % 2)) -eq 0 ]; then
     configure_opts+=(--encrypted-storage)
-    use_encrypted_storage=1
 fi
 
 # Start server from previous release
@@ -127,11 +125,7 @@ clickhouse-client --receive_timeout 30 --query="SELECT 'Server version: ', versi
 
 mkdir tmp_stress_output
 
-# clickhouse-test must know which storage backend the server actually uses, or its storage skip tags
-# are ignored and incompatible tests run on an unsupported backend: --s3-storage (object storage is the
-# default MergeTree policy above) covers no-object-storage/no-s3-storage; --encrypted-storage mirrors the
-# coin flip above and covers no-encrypted-storage (stress.py forwards it to clickhouse-test).
-stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\" --s3-storage" --encrypted-storage "$use_encrypted_storage" --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
+stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\""  --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
@@ -360,6 +354,9 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       `MergeTreeBackgroundExecutor` line of the replicated case in a single entry.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
+# `Unknown tokenizer: 'unicode_word'` appears because the `unicode_word` tokenizer was renamed to `asciiCJK`
+#       (with `unicodeWord` as a transitional alias). Tables from old versions using `unicode_word` trigger this
+#       on attach. Narrowed to the exact legacy name so genuinely unsupported tokenizer names are not masked.
 # `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
 #       for `openbucketforpublicci.blob.core.windows.net`. Filtered via regex in the secondary pipe below to match
 #       both the Azure SDK exception type AND the DNS error together, so non-Azure DNS errors are not masked.
@@ -451,22 +448,6 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       restart the engine probes the server while loading the persisted object and logs `<Error>` for the
 #       expected connection failure. Filtered to require the MySQL component AND the connection-failure
 #       symptom together, so real MySQL regressions (auth, protocol, query errors) are not masked.
-# `DDLWorker(rdb_test_...)` + `Error on initialization of rdb_test_...` + `Mapping for table with UUID=... already
-#       exists` + `TABLE_ALREADY_EXISTS` is benign noise from the `--replicated-database` test wrapper during the
-#       upgrade restart. `clickhouse-test --replicated-database` creates each test's database as
-#       `ENGINE=Replicated(...)` named `rdb_test_<rnd>_<shard>`. On the upgrade restart the database's DDLWorker
-#       runs `DatabaseReplicatedDDLWorker::initializeReplication` -> `recoverLostReplica`, which re-creates tables
-#       from the ZooKeeper metadata snapshot. If a stale local table still owns a table's UUID (e.g. a leftover
-#       `_tmp_replace_*` from `CREATE OR REPLACE`, or a table not yet finally dropped), `addUUIDMapping` reports the
-#       collision as a non-fatal `TABLE_ALREADY_EXISTS` (code 57). The DDLWorker main loop catches it, logs this
-#       `<Error> ... Error on initialization of ...` line, waits 5s and retries; recovery self-heals (after enough
-#       retries `max_retries_before_automatic_recovery` forces a digest reset). The server stays up - every other
-#       upgrade-check sub-test (incl. "Server successfully started") passes; only the post-restart `<Error>` scrub
-#       trips. Filtered via regex in the secondary pipe below to require ALL of: `Error on initialization of`
-#       (logged at exactly one site, the DDLWorker recovery retry), the `rdb_test_` test-DB prefix, the UUID mapping
-#       message, AND the `TABLE_ALREADY_EXISTS` code together. So a real `LOGICAL_ERROR` UUID-mapping crash, the same
-#       collision on a non-test database, a different init failure on an `rdb_test_` DB, and unrelated
-#       `TABLE_ALREADY_EXISTS` errors all still surface.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -533,6 +514,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot parse projection test_projection" \
            -e "Key expressions cannot contain subqueries" \
            -e "Expression must be deterministic but it contains non-deterministic part" \
+           -e "Unknown tokenizer: 'unicode_word'" \
            -e "This engine is deprecated and is not supported in transactions" \
            -e "Prevent converting Nullable type to non-Nullable type inside mutation" \
            -e "e.what() = failed to parse response body" \
@@ -542,7 +524,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Exception during get topic partitions from Kafka: Local: Broker transport failure" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
-    | grep -av -e "Error on initialization of rdb_test_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
     | grep -av -e "SystemLogQueue.*Queue had been full" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \

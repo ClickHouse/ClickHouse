@@ -26,8 +26,7 @@ public:
         MutableDataPartStoragePtr temporary_storage_,
         MergeTreeWriterSettings writer_settings_,
         CompressionCodecPtr default_codec_,
-        String marks_file_extension_,
-        const MergeTreeSettings & storage_settings);
+        String marks_file_extension_);
 
     String getName() const override { return "BuildTextIndexTransform"; }
 
@@ -60,10 +59,6 @@ private:
     size_t num_processed_rows = 0;
     /// Number of flushed segments for each index.
     std::vector<size_t> segment_numbers;
-    /// Estimated memory retained by each index builder.
-    std::vector<size_t> estimated_allocated_bytes;
-    size_t max_processed_tokens;
-    size_t max_allocated_bytes;
 };
 
 /// Task that merges text indexes from data parts,
@@ -84,8 +79,7 @@ public:
         MergeTreeIndexPtr index_ptr_,
         std::shared_ptr<MergedPartOffsets> merged_part_offsets_,
         const MergeTreeReaderSettings & reader_settings_,
-        const MergeTreeWriterSettings & writer_settings_,
-        bool sync_);
+        const MergeTreeWriterSettings & writer_settings_);
 
     ~MergeTextIndexesTask() noexcept override;
 
@@ -122,8 +116,6 @@ private:
     /// If not null, posting list values must be recalculated using merged offsets.
     std::shared_ptr<MergedPartOffsets> merged_part_offsets;
     MergeTreeWriterSettings writer_settings;
-    /// Whether to fsync the produced index files in `finalize` (merge/mutation `need_sync`).
-    bool sync;
     size_t step_time_ms;
 
     std::vector<MergeTreeIndexInputStreams> input_streams;

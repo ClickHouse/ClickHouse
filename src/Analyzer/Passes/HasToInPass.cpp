@@ -75,7 +75,7 @@ public:
         /// node's return type, which breaks parent nodes that were already resolved against UInt8
         /// (e.g. `NOT has(...)` ends up with `NOT in(...)` whose argument is LowCardinality(UInt8)).
         if (isNullableOrLowCardinalityNullable(second_arg_type) || expr_data_type.isLowCardinality() ||
-                expr_data_type.isMap() || expr_data_type.isArray() || expr_data_type.isTuple() || expr_data_type.isObject() || expr_data_type.isDynamic() || expr_data_type.isVariant() || expr_data_type.isNothing())
+                expr_data_type.isMap() || expr_data_type.isArray() || expr_data_type.isTuple() || expr_data_type.isObject() || expr_data_type.isDynamic() || expr_data_type.isNothing())
             return;
 
         /// has() on a constant array compares raw Field values (FunctionArrayIndex::executeConst uses

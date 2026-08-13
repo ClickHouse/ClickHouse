@@ -7,7 +7,7 @@ keywords: ['Moose']
 doc_type: 'guide'
 ---
 
-import { CommunityMaintainedBadge } from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import CommunityMaintainedBadge from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -43,7 +43,9 @@ O sigue esta guía para empezar a usar Moose OLAP en un despliegue existente de 
 * **macOS/Linux** - Windows funciona mediante WSL2
 
 <Steps>
-  <Step title="Instala Moose" id="step-1-install-moose">
+  <Step>
+    ### Instala Moose
+
     Instala la CLI de Moose de forma global en tu sistema:
 
     ```bash
@@ -51,7 +53,9 @@ O sigue esta guía para empezar a usar Moose OLAP en un despliegue existente de 
     ```
   </Step>
 
-  <Step title="Configura tu proyecto" id="step-2-set-up-project">
+  <Step>
+    ### Configura tu proyecto
+
     #### Opción A: Usa tu propio despliegue existente de ClickHouse
 
     **Importante**: Tu ClickHouse de producción permanecerá intacto. Esto solo inicializará un nuevo proyecto OLAP de Moose con modelos de datos derivados de tus tablas de ClickHouse.
@@ -83,7 +87,9 @@ O sigue esta guía para empezar a usar Moose OLAP en un despliegue existente de 
     ```
   </Step>
 
-  <Step title="Instala las dependencias" id="step-3-install-dependencies">
+  <Step>
+    ### Instala las dependencias
+
     ```bash
     # TypeScript
     cd my-project
@@ -99,13 +105,17 @@ O sigue esta guía para empezar a usar Moose OLAP en un despliegue existente de 
     Deberías ver: `Successfully generated X models from ClickHouse tables`
   </Step>
 
-  <Step title="Explora tus modelos generados" id="step-4-explore-models">
+  <Step>
+    ### Explora tus modelos generados
+
     La CLI de Moose genera automáticamente interfaces de TypeScript o modelos Pydantic de Python a partir de tus tablas de ClickHouse existentes.
 
     Revisa tus nuevos modelos de datos en el archivo `app/index.ts`.
   </Step>
 
-  <Step title="Inicia el desarrollo" id="step-5-start-development">
+  <Step>
+    ### Inicia el desarrollo
+
     Inicia tu servidor de desarrollo para levantar una instancia local de ClickHouse con todas tus tablas de producción reproducidas automáticamente a partir de las definiciones de tu código:
 
     ```bash
@@ -115,7 +125,9 @@ O sigue esta guía para empezar a usar Moose OLAP en un despliegue existente de 
     **Importante**: Tu ClickHouse de producción permanecerá intacto. Esto crea un entorno de desarrollo local.
   </Step>
 
-  <Step title="Carga datos en tu base de datos local" id="step-6-seed-database">
+  <Step>
+    ### Carga datos en tu base de datos local
+
     Carga tus datos en tu instancia local de ClickHouse:
 
     #### Desde tu propio ClickHouse
@@ -131,8 +143,10 @@ O sigue esta guía para empezar a usar Moose OLAP en un despliegue existente de 
     ```
   </Step>
 
-  <Step title="Desarrolla con Moose OLAP" id="step-7-building-with-moose-olap">
-    Ahora que tienes tus tablas definidas en código, obtienes las mismas ventajas que los modelos de datos ORM en las aplicaciones web: tipado seguro y autocompletado al crear API y vistas materializadas sobre tus datos analíticos. Como siguiente paso, podrías probar:
+  <Step>
+    ### Desarrolla con Moose OLAP
+
+    Ahora que tienes tus tablas definidas en código, obtienes las mismas ventajas que los modelos de datos ORM en las aplicaciones web: seguridad de tipos y autocompletado al crear API y vistas materializadas sobre tus datos analíticos. Como siguiente paso, podrías probar:
 
     * Crear una API REST con [Moose API](https://docs.fiveonefour.com/moosestack/apis)
     * Ingestar o transformar datos con [Moose Workflows](https://docs.fiveonefour.com/moosestack/workflows) o [Moose Streaming](https://docs.fiveonefour.com/moosestack/workflows)

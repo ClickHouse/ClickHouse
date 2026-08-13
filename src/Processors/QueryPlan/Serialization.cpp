@@ -126,7 +126,7 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
             serializeHeader({}, out);
 
         QueryPlanSerializationSettings settings;
-        node->step->serializeSettings(settings, flags.version);
+        node->step->serializeSettings(settings);
 
         settings.writeChangedBinary(out);
 

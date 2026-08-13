@@ -7,7 +7,7 @@ doc_type: 'référence'
 keywords: ['clickstack', 'json', 'map', 'attributs', 'schéma', 'observabilité']
 ---
 
-import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 Le [schéma par défaut](/fr/clickstack/ingesting-data/schemas) de ClickStack stocke les attributs resource, scope, log et span dans des colonnes `Map(LowCardinality(String), String)`. ClickHouse prend également en charge le [type `JSON`](/fr/reference/formats/JSON/JSON), et ClickStack offre une prise en charge bêta permettant de l’utiliser à la place de `Map`.
 
@@ -113,9 +113,13 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
 Pour migrer depuis les [schémas basés sur Map par défaut](/fr/clickstack/ingesting-data/schemas), suivez ces étapes :
 
 <Steps>
-  <Step title="Arrêter l’OTel collector" id="stop-the-collector" />
+  <Step>
+    ### Arrêter l’OTel collector
+  </Step>
 
-  <Step title="Renommer les tables existantes et mettre à jour les sources" id="rename-existing-tables-sources">
+  <Step>
+    ### Renommer les tables existantes et mettre à jour les sources
+
     Renommez les tables existantes et mettez à jour les sources de données dans HyperDX.
 
     Par exemple :
@@ -126,17 +130,23 @@ Pour migrer depuis les [schémas basés sur Map par défaut](/fr/clickstack/inge
     ```
   </Step>
 
-  <Step title="Déployer le collector" id="deploy-the-collector">
+  <Step>
+    ### Déployer le collector
+
     Déployez le collector en définissant `OTEL_AGENT_FEATURE_GATE_ARG`.
   </Step>
 
-  <Step title="Redémarrer le conteneur HyperDX avec la prise en charge du schéma JSON" id="restart-the-hyperdx-container">
+  <Step>
+    ### Redémarrer le conteneur HyperDX avec le support du schéma JSON
+
     ```shell
     export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
     ```
   </Step>
 
-  <Step title="Créer de nouvelles sources de données" id="create-new-data-sources">
+  <Step>
+    ### Créer de nouvelles sources de données
+
     Créez de nouvelles sources de données dans HyperDX pointant vers les tables JSON.
   </Step>
 </Steps>

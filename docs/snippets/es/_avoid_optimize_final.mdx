@@ -8,11 +8,7 @@ Cada inserción crea una nueva parte que contiene archivos de columnas ordenados
 
 Con el tiempo, los procesos en segundo plano fusionan las partes más pequeñas en otras más grandes para reducir la fragmentación y mejorar el rendimiento de las consultas.
 
-<div className="ch-image-md">
-  <Frame>
-    <img src="/images/bestpractices/simple_merges.webp" alt="Fusiones simples" />
-  </Frame>
-</div>
+<Image img="/images/bestpractices/simple_merges.webp" size="md" alt="Fusiones simples" />
 
 Aunque resulte tentador forzar manualmente esta fusión usando:
 
@@ -24,7 +20,7 @@ OPTIMIZE TABLE <table> FINAL;
 operaciones que consumen muchos recursos y pueden afectar al rendimiento del clúster.
 
 <Info>
-  **OPTIMIZE FINAL vs FINAL**
+  **`OPTIMIZE FINAL` vs `FINAL`**
 
   `OPTIMIZE FINAL` no es lo mismo que `FINAL`, cuyo uso a veces es necesario
   para obtener resultados sin duplicados, como ocurre con `ReplacingMergeTree`. En general,

@@ -100,27 +100,7 @@ struct DeserializeBinaryBulkStateDynamic : public ISerialization::DeserializeBin
         auto new_state = std::make_shared<DeserializeBinaryBulkStateDynamic>(*this);
         new_state->variant_state = variant_state ? variant_state->clone() : nullptr;
         new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
-        /// The flattened states are mutated while reading, so they must be deep-cloned as well;
-        /// otherwise a prefix-cache clone would share them with the cached original.
-        new_state->flattened_indexes_state = flattened_indexes_state ? flattened_indexes_state->clone() : nullptr;
-        for (size_t i = 0; i != flattened_states.size(); ++i)
-            new_state->flattened_states[i] = flattened_states[i] ? flattened_states[i]->clone() : nullptr;
         return new_state;
-    }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (variant_state)
-            callback(variant_state);
-        if (structure_state)
-            callback(structure_state);
-        for (const auto & flattened_state : flattened_states)
-        {
-            if (flattened_state)
-                callback(flattened_state);
-        }
-        if (flattened_indexes_state)
-            callback(flattened_indexes_state);
     }
 };
 
@@ -816,15 +796,8 @@ static ReturnType deserializeVariant(
     auto & variant = variant_column.getVariantByGlobalDiscriminator(global_discr);
     if constexpr (std::is_same_v<ReturnType, bool>)
     {
-        /// The caller tries each variant in turn, so a failed attempt must leave the variant
-        /// untouched: a row kept here would have no discriminator and no offset pointing at it.
-        size_t prev_size = variant.size();
         if (!deserialize(*variant_serialization, variant, istr))
-        {
-            if (variant.size() > prev_size)
-                variant.popBack(variant.size() - prev_size);
             return ReturnType(false);
-        }
     }
     else
     {

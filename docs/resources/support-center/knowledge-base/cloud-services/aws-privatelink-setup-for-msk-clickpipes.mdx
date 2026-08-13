@@ -6,11 +6,14 @@ tags: ['Security and Authentication', 'Managing Cloud']
 keywords: ['AWS PrivateLink', 'MSK', 'ClickPipes']
 ---
 
+{frontMatter.description}
+{/* truncate */}
+
 ## Overview {#overview}
-This guide will get you started with setting up a **MSK multi-VPC** to be used with [ClickPipes reverse private endpoint](/integrations/clickpipes/networking/aws-privatelink#msk-multi-vpc).
+This guide will get you started with setting up a **MSK multi-VPC** to be used with [ClickPipes reverse private endpoint](/integrations/clickpipes/aws-privatelink#msk-multi-vpc).
 
 ## Requirements {#requirements}
-Your MSK cluster VPC must be located in one of our ClickPipes regions. See [ClickPipes regions](/integrations/clickpipes/networking/aws-privatelink#aws-privatelink-regions) for the list of supported regions.
+Your MSK cluster VPC must be located in one of our ClickPipes regions. See [ClickPipes regions](/integrations/clickpipes/aws-privatelink#aws-privatelink-regions) for the list of supported regions.
 
 ## Enabling multi-VPC connectivity {#enabling-multi-vpc-connectivity}
 1. Navigate to the MSK cluster.
@@ -53,4 +56,4 @@ If you want to configure IAM authentication for your MSK cluster, please refer t
 </Tip>
 
 ## Creating reverse private endpoint {#creating-reverse-private-endpoint}
-Follow reverse private endpoint creation steps in the [ClickPipes documentation](/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe).
+Follow reverse private endpoint creation steps in the [ClickPipes documentation](/integrations/clickpipes/aws-privatelink#creating-clickpipe).

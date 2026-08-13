@@ -67,7 +67,9 @@ Elastic Stack предоставляет ряд агентов для сбора
 В следующем примере мы приводим начальные шаги по настройке Vector для приёма событий журналов от Filebeat по протоколу Lumberjack. Мы также приводим VRL для преобразования входящих ECS-событий в формат спецификации OTel перед отправкой в коллектор ClickStack OpenTelemetry по OTLP. Пользователи, получающие события из Kafka, могут заменить источник Vector Logstash на [источник Kafka](https://vector.dev/docs/reference/configuration/sources/kafka/) — все остальные шаги остаются теми же.
 
 <Steps>
-  <Step title="Установка Vector" id="install-vector">
+  <Step>
+    ### Установка Vector
+
     Установите Vector, следуя [официальному руководству по установке](https://vector.dev/docs/setup/installation/).
 
     Его можно установить на том же инстансе, где развернут ваш OTel collector для Elastic Stack.
@@ -75,7 +77,9 @@ Elastic Stack предоставляет ряд агентов для сбора
     Вы можете воспользоваться рекомендациями по архитектуре и безопасности при [подготовке Vector к промышленной эксплуатации](https://vector.dev/docs/setup/going-to-prod/).
   </Step>
 
-  <Step title="Настройка vector" id="configure-vector">
+  <Step>
+    ### Настройка vector
+
     Vector необходимо настроить для приёма событий по протоколу Lumberjack, имитируя экземпляр Logstash. Для этого нужно настроить источник [`logstash`](https://vector.dev/docs/reference/configuration/sources/logstash/) для Vector:
 
     ```yaml
@@ -84,8 +88,8 @@ Elastic Stack предоставляет ряд агентов для сбора
         type: logstash
         address: 0.0.0.0:5044
         tls:
-          enabled: false  # Set to true if you're using TLS
-          # The files below are generated from the steps at https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs
+          enabled: false  # Установите значение true, если используете TLS
+          # Файлы ниже создаются по инструкциям по адресу https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs
           # crt_file: logstash.crt
           # key_file: logstash.key
           # ca_file: ca.crt
@@ -112,29 +116,29 @@ Elastic Stack предоставляет ряд агентов для сбора
 
     <Accordion title="VRL — из ECS в OTel">
       ```javascript
-      # Define keys to ignore at root level
+      # Определить ключи для игнорирования на корневом уровне
       ignored_keys = ["@metadata"]
 
-      # Define resource key prefixes
+      # Определить префиксы ключей ресурсов
       resource_keys = ["host", "cloud", "agent", "service"]
 
-      # Create separate objects for resource and log record fields
+      # Создать отдельные объекты для полей ресурса и записи журнала
       resource_obj = {}
       log_record_obj = {}
 
-      # Copy all non-ignored root keys to appropriate objects
+      # Скопировать все неигнорируемые корневые ключи в соответствующие объекты
       root_keys = keys(.)
       for_each(root_keys) -> |_index, key| {
           if !includes(ignored_keys, key) {
               val, err = get(., [key])
               if err == null {
-                  # Check if this is a resource field
+                  # Проверить, является ли это поле полем ресурса
                   is_resource = false
                   if includes(resource_keys, key) {
                       is_resource = true
                   }
 
-                  # Add to appropriate object
+                  # Добавить в соответствующий объект
                   if is_resource {
                       resource_obj = set(resource_obj, [key], val) ?? resource_obj
                   } else {
@@ -144,11 +148,11 @@ Elastic Stack предоставляет ряд агентов для сбора
           }
       }
 
-      # Flatten both objects separately
+      # Выполнить выравнивание обоих объектов по отдельности
       flattened_resources = flatten(resource_obj, separator: ".")
       flattened_logs = flatten(log_record_obj, separator: ".")
 
-      # Process resource attributes
+      # Обработать атрибуты ресурса
       resource_attributes = []
       resource_keys_list = keys(flattened_resources)
       for_each(resource_keys_list) -> |_index, field_key| {
@@ -166,7 +170,7 @@ Elastic Stack предоставляет ряд агентов для сбора
           }
       }
 
-      # Process log record attributes
+      # Обработать атрибуты записи журнала
       log_attributes = []
       log_keys_list = keys(flattened_logs)
       for_each(log_keys_list) -> |_index, field_key| {
@@ -184,14 +188,14 @@ Elastic Stack предоставляет ряд агентов для сбора
           }
       }
 
-      # Get timestamp for timeUnixNano (convert to nanoseconds)
+      # Получить временную метку для timeUnixNano (преобразовать в наносекунды)
       timestamp_nano = if exists(.@timestamp) {
           to_unix_timestamp!(parse_timestamp!(.@timestamp, format: "%Y-%m-%dT%H:%M:%S%.3fZ"), unit: "nanoseconds")
       } else {
           to_unix_timestamp(now(), unit: "nanoseconds")
       }
 
-      # Get message/body field
+      # Получить поле message/body
       body_value = if exists(.message) {
           to_string!(.message)
       } else if exists(.body) {
@@ -200,7 +204,7 @@ Elastic Stack предоставляет ряд агентов для сбора
           ""
       }
 
-      # Create the OpenTelemetry structure
+      # Создать структуру OpenTelemetry
       . = {
           "resourceLogs": [
               {
@@ -235,10 +239,10 @@ Elastic Stack предоставляет ряд агентов для сбора
     sinks:
       otlp:
         type: opentelemetry
-        inputs: [remap_filebeat] # receives events from a remap transform - see below
+        inputs: [remap_filebeat] # получает события из преобразования remap — см. ниже
         protocol:
-          type: http  # Use "grpc" for port 4317
-          uri: http://localhost:4318/v1/logs # logs endpoint for the OTel collector 
+          type: http  # Используйте "grpc" для порта 4317
+          uri: http://localhost:4318/v1/logs # конечная точка журналов для OTel collector 
           method: post
           encoding:
             codec: json
@@ -251,7 +255,7 @@ Elastic Stack предоставляет ряд агентов для сбора
 
     `YOUR_INGESTION_API_KEY` здесь генерируется ClickStack. Ключ можно найти в интерфейсе ClickStack (HyperDX) в разделе `Team Settings → API Keys`.
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Ключи ингестии" size="lg" />
+    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Ключи для ингестии" size="lg" />
 
     Итоговая полная конфигурация приведена ниже:
 
@@ -261,7 +265,7 @@ Elastic Stack предоставляет ряд агентов для сбора
         type: logstash
         address: 0.0.0.0:5044
         tls:
-          enabled: false  # Set to true if you're using TLS
+          enabled: false  # Установите true, если используете TLS
             #crt_file: /data/elasticsearch-9.0.1/logstash/logstash.crt
             #key_file: /data/elasticsearch-9.0.1/logstash/logstash.key
             #ca_file: /data/elasticsearch-9.0.1/ca/ca.crt
@@ -278,7 +282,7 @@ Elastic Stack предоставляет ряд агентов для сбора
         type: opentelemetry
         inputs: [remap_filebeat]
         protocol:
-          type: http  # Use "grpc" for port 4317
+          type: http  # Используйте "grpc" для порта 4317
           uri: http://localhost:4318/v1/logs
           method: post
           encoding:
@@ -290,23 +294,25 @@ Elastic Stack предоставляет ряд агентов для сбора
     ```
   </Step>
 
-  <Step title="Настройка Filebeat" id="configure-filebeat">
+  <Step>
+    ### Настройка Filebeat
+
     Существующие установки Filebeat достаточно просто перенастроить, чтобы они отправляли события в Vector. Для этого нужно настроить выход Logstash — при необходимости также можно настроить TLS:
 
     ```yaml
     # ------------------------------ Logstash Output -------------------------------
     output.logstash:
-      # The Logstash hosts
+      # Хосты Logstash
       hosts: ["localhost:5044"]
 
-      # Optional SSL. By default is off.
-      # List of root certificates for HTTPS server verifications
+      # Необязательный SSL. По умолчанию отключён.
+      # Список корневых сертификатов для проверки HTTPS-сервера
       #ssl.certificate_authorities: ["/etc/pki/root/ca.pem"]
 
-      # Certificate for SSL client authentication
+      # Сертификат для аутентификации SSL-клиента
       #ssl.certificate: "/etc/pki/client/cert.pem"
 
-      # Client Certificate Key
+      # Ключ сертификата клиента
       #ssl.key: "/etc/pki/client/cert.key"
     ```
   </Step>
@@ -330,11 +336,15 @@ Elastic Agent объединяет различные Elastic Beats в един�
 </div>
 
 <Steps>
-  <Step title="Установка и настройка Vector" id="install-configure-vector">
+  <Step>
+    #### Установка и настройка Vector
+
     Установите и настройте Vector, выполнив [те же шаги](#install-vector), что описаны в инструкции по миграции с Filebeat.
   </Step>
 
-  <Step title="Настройка Elastic Agent" id="configure-elastic-agent">
+  <Step>
+    #### Настройка Elastic Agent
+
     Elastic Agent необходимо настроить на отправку данных через протокол Lumberjack для Logstash. Это [поддерживаемый сценарий развертывания](https://www.elastic.co/docs/manage-data/ingest/ingest-reference-architectures/ls-networkbridge); его можно настроить централизованно или [через файл конфигурации агента `elastic-agent.yaml`](https://www.elastic.co/docs/reference/fleet/logstash-output), если развертывание выполняется без Fleet.
 
     Централизованную настройку через Kibana можно выполнить, добавив [Output в Fleet](https://www.elastic.co/docs/reference/fleet/fleet-settings#output-settings).
@@ -381,7 +391,7 @@ Elastic Agent включает встроенный EDOT Collector, которы
 
 ```yaml
 exporters:
-  # Exporter to send logs and metrics to Elasticsearch Managed OTLP Input
+  # Экспортёр для отправки журналов и метрик в Elasticsearch Managed OTLP Input
   otlp:
     endpoint: localhost:4317
     headers:
@@ -400,11 +410,11 @@ exporters:
 
 <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Ключи ингестии" size="lg" />
 
-Если Vector настроен на использование взаимного TLS, а сертификат и ключи сгенерированы по инструкции из руководства [&quot;Настройка SSL/TLS для Logstash output&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output), то экспортер `otlp` нужно настроить соответствующим образом, например:
+Если Vector настроен на использование взаимного TLS, а сертификат и ключи сгенерированы по инструкции из руководства [&quot;Настройка SSL/TLS для вывода Logstash&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output), то экспортер `otlp` нужно настроить соответствующим образом, например:
 
 ```yaml
 exporters:
-  # Exporter to send logs and metrics to Elasticsearch Managed OTLP Input
+  # Экспортёр для отправки журналов и метрик в Elasticsearch Managed OTLP Input
   otlp:
     endpoint: localhost:4317
     headers:

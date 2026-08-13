@@ -102,12 +102,11 @@ try
     if (!system_log)
         return;
 
-    system_log->add([&](TransactionsInfoLogElement & element)
-    {
-        element.type = type;
-        element.tid = tid;
-        element.fillCommonFields(&context);
-    });
+    TransactionsInfoLogElement elem;
+    elem.type = type;
+    elem.tid = tid;
+    elem.fillCommonFields(&context);
+    system_log->add(std::move(elem));
 }
 catch (...)
 {

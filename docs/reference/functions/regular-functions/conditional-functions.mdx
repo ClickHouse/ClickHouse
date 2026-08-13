@@ -385,7 +385,7 @@ Performs conditional branching.
 - If the condition `cond` evaluates to a non-zero value, the function returns the result of the expression `then`.
 - If `cond` evaluates to zero or NULL, the result of the `else` expression is returned.
 
-The setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
+The setting [`short_circuit_function_evaluation`](/reference/settings/session-settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
 
 If enabled, the `then` expression is evaluated only on rows where `cond` is true and the `else` expression where `cond` is false.
 
@@ -506,7 +506,7 @@ Allows writing the [`CASE`](/reference/operators/index#conditional-expression) o
 Evaluates each condition in order. For the first condition that is true (non-zero and not `NULL`), returns the corresponding branch value.
 If none of the conditions are true, returns the `else` value.
 
-Setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls
+Setting [`short_circuit_function_evaluation`](/reference/settings/session-settings#short_circuit_function_evaluation) controls
 whether short-circuit evaluation is used. If enabled, the `then_i` expression is evaluated only on rows where
 `((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)` is true.
 
