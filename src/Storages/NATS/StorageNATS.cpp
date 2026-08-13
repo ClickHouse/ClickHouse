@@ -54,6 +54,9 @@ namespace NATSSetting
 {
     extern const NATSSettingsString nats_credentials;
     extern const NATSSettingsString nats_credential_file;
+    extern const NATSSettingsString nats_ca_file;
+    extern const NATSSettingsString nats_client_cert_file;
+    extern const NATSSettingsString nats_client_key_file;
     extern const NATSSettingsMilliseconds nats_flush_interval_ms;
     extern const NATSSettingsBool nats_wait_for_flush_interval;
     extern const NATSSettingsBool nats_commit_on_select;
@@ -118,6 +121,17 @@ StorageNATS::StorageNATS(
     auto nats_token = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_token]);
     auto nats_credential_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credential_file]);
     auto nats_credentials = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credentials]);
+    auto nats_ca_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_ca_file]);
+    auto nats_client_cert_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_client_cert_file]);
+    auto nats_client_key_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_client_key_file]);
+
+    /// A client certificate and its key are one credential, so they are inherited from the configuration
+    /// together. Inheriting them separately would pair a certificate from the query with a foreign key.
+    if (nats_client_cert_file.empty() && nats_client_key_file.empty())
+    {
+        nats_client_cert_file = getContext()->getConfigRef().getString("nats.client_cert_file", "");
+        nats_client_key_file = getContext()->getConfigRef().getString("nats.client_key_file", "");
+    }
 
     /// A credential source specified in the table settings overrides both config-level sources
     /// (otherwise a table with `nats_credential_file` would silently authenticate with a server-level `nats.credentials`).
@@ -142,10 +156,19 @@ StorageNATS::StorageNATS(
         .token = nats_token.empty() ? getContext()->getConfigRef().getString("nats.token", "") : nats_token,
         .credential_file = nats_credential_file,
         .credentials = nats_credentials,
+        .ca_file = nats_ca_file.empty() ? getContext()->getConfigRef().getString("nats.ca_file", "") : nats_ca_file,
+        .client_cert_file = nats_client_cert_file,
+        .client_key_file = nats_client_key_file,
         .max_connect_tries = static_cast<UInt64>((*nats_settings)[NATSSetting::nats_startup_connect_tries].value),
         .reconnect_wait = static_cast<int>((*nats_settings)[NATSSetting::nats_reconnect_wait].value),
         .secure = (*nats_settings)[NATSSetting::nats_secure].value
     };
+
+    if (configuration.client_cert_file.empty() != configuration.client_key_file.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings nats_client_cert_file and nats_client_key_file must be specified together");
+
+    if (!configuration.secure && !(configuration.ca_file.empty() && configuration.client_cert_file.empty()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "TLS certificates are specified for a NATS table without nats_secure");
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -977,6 +1000,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_token = 'clickhouse',]
     [nats_credential_file = '/var/nats_credentials',]
     [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
+    [nats_ca_file = '/var/nats_ca.pem',]
+    [nats_client_cert_file = '/var/nats_client_cert.pem',]
+    [nats_client_key_file = '/var/nats_client_key.pem',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
     [nats_commit_on_select = false,]
@@ -1008,6 +1034,9 @@ Optional parameters:
 - `nats_token` - NATS auth token.
 - `nats_credential_file` - Path to a NATS credentials file.
 - `nats_credentials` - NATS credentials content (the same payload as in a `.creds` file with user JWT and seed).
+- `nats_ca_file` - Path to a file with the trusted CA certificates used to verify the NATS server certificate. Requires `nats_secure`.
+- `nats_client_cert_file` - Path to the client certificate presented to the NATS server. Requires `nats_secure` and `nats_client_key_file`.
+- `nats_client_key_file` - Path to the private key of `nats_client_cert_file`.
 - `nats_startup_connect_tries` - Number of connect tries at startup. Default: `5`.
 - `nats_max_rows_per_message` — The maximum number of rows written in one NATS message for row-based formats. (default : `1`).
 - `nats_commit_on_select` - Commit messages when query is made. Applies to JetStream only; core NATS has no acknowledgements. Default: `0`.
@@ -1018,6 +1047,11 @@ SSL connection:
 For secure connection use `nats_secure = 1`.
 Certificate verification is controlled by the `CLICKHOUSE_NATS_TLS_SECURE` environment variable;
 If the certificate is expired, self-signed, missing, or otherwise invalid, disable verification by setting `CLICKHOUSE_NATS_TLS_SECURE=0`.
+
+A server certificate signed by a private CA is verified by pointing `nats_ca_file` at the CA certificate,
+which is preferable to turning verification off. When the server requires client certificates,
+supply them with `nats_client_cert_file` and `nats_client_key_file`. Both files are read when the
+table connects, so an unreadable or malformed file fails the query instead of the handshake.
 
 Writing to NATS table:
 
