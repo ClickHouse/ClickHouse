@@ -413,10 +413,10 @@ class ReleaseInfo:
                     assert (version.major, version.minor, version.patch) > tuple(
                         int(x) for x in m.groups()
                     ), (
-                        f"version {version.major}.{version.minor}.{version.patch} is not "
-                        f"ahead of the last release {last_tag}: the post-release bump is "
-                        f"missing, or the run targets a superseded/duplicate commit, or "
-                        f"there is a bug in the release/versioning logic"
+                        f"inconsistent branch state: {FILE_WITH_VERSION_PATH} describes "
+                        f"{version.major}.{version.minor}.{version.patch}, which is not "
+                        f"ahead of the last release tag {last_tag}. Fix the branch (apply "
+                        f"the post-release version bump) before creating a new release"
                     )
             self.is_recovery = False
         self.release_type = release_type
