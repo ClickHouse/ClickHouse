@@ -2277,6 +2277,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             /// Don't check dependencies during DROP of the view, because we will recreate
             /// it with the same name and all dependencies will remain valid.
             drop_context->setSetting("check_table_dependencies", false);
+            drop_context->setDDLOrOnClusterInternal(true);
             InterpreterDropQuery interpreter(drop_ast, drop_context);
             interpreter.execute();
         }
@@ -2566,6 +2567,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     {
         ContextMutablePtr drop_context = Context::createCopy(current_context);
         drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
+        drop_context->setDDLOrOnClusterInternal(true);
         /// Bypass = "the size guard was already enforced upstream; do not re-check or consume `force_drop_table` twice".
         if (bypass_size_guard)
         {
