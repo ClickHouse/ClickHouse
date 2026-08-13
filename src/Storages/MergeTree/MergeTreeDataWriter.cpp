@@ -26,7 +26,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
-#include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
+#include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -990,11 +990,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     temp_part->temporary_directory_lock = data.claimTemporaryPartDirectory(data_part_volume->getDisk(), part_dir, may_have_leftover);
 
     auto part_format = data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr);
-    /// UNIQUE KEY parts must use Full part storage: the dense-index sidecar
-    /// (`unique_key_index.sst`) is opened directly by filesystem path via RocksDB
-    /// `SstFileReader`, which cannot read a file packed inside an archive. Packed
-    /// storage would leave the sidecar existsFile-visible but unopenable, failing
-    /// every subsequent load of the part.
+    /// UNIQUE KEY parts must use Full part storage: load-time rebuild of the
+    /// dense-index sidecar (`unique_key_index.sst`) calls `removeFileIfExists`
+    /// + `writeFile`, but packed storage only supports these through the writer,
+    /// which is not initialized at load/ATTACH time.
     if (metadata_snapshot->hasUniqueKey())
         part_format.storage_type = MergeTreeDataPartStorageType::Full;
 
@@ -1112,14 +1111,18 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
 
+    /// Records the `unique_key_index.sst` entry in `gathered_data.checksums`, so
+    /// the dense index is covered by `CHECK TABLE`, part-size accounting, backup
+    /// and replica fetches like every other part file.
     if (metadata_snapshot->hasUniqueKey())
-        UniqueKeyDenseIndexOps::writeDenseIndexOnInsert(
+        SSTIndexWriter::writeDenseIndexOnInsert(
             *data_part_storage,
             metadata_snapshot,
             block,
             perm_ptr,
             context->getSettingsRef()[Setting::unique_key_max_encoded_size],
-            context);
+            context,
+            gathered_data.checksums);
 
     if ((*data.getSettings())[MergeTreeSetting::materialize_projections_on_insert])
     {

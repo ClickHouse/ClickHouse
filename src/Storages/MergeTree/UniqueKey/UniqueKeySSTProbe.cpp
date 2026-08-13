@@ -10,10 +10,13 @@
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 
+#include <IO/ReadSettings.h>
 #include <Common/Exception.h>
 
 #include <base/unaligned.h>
 
+#include <rocksdb/env.h>
+#include <rocksdb/file_system.h>
 #include <rocksdb/filter_policy.h>
 #include <rocksdb/iterator.h>
 #include <rocksdb/options.h>
@@ -21,6 +24,8 @@
 #include <rocksdb/sst_file_reader.h>
 #include <rocksdb/status.h>
 #include <rocksdb/table.h>
+
+#include <mutex>
 
 namespace DB
 {
@@ -45,42 +50,256 @@ namespace
                 "UNIQUE KEY SST value has {} bytes, expected exactly 4", size);
         return unalignedLoadBigEndian<UInt32>(data);
     }
+
+    /// RocksDB is not exception-safe, so a storage failure must be reported as a
+    /// status instead of unwinding through its frames.
+    rocksdb::IOStatus currentExceptionToIOStatus()
+    {
+        return rocksdb::IOStatus::IOError(getCurrentExceptionMessage(/*with_stacktrace=*/false));
+    }
+
+    /// `FSRandomAccessFile` backed by a `ReadBuffer`. `readBigAt` is positional
+    /// and lock-free; the `seek`+`read` fallback needs the mutex.
+    /// `supportsReadAt` is probed once in the ctor (it may be slow).
+    class ReadBufferBasedRandomAccessFile : public rocksdb::FSRandomAccessFile
+    {
+    public:
+        explicit ReadBufferBasedRandomAccessFile(std::unique_ptr<SeekableReadBuffer> buffer_)
+            : buffer(std::move(buffer_))
+            , supports_read_at(buffer->supportsReadAt())
+        {
+        }
+
+        rocksdb::IOStatus Read(
+            uint64_t offset,
+            size_t n,
+            const rocksdb::IOOptions &,
+            rocksdb::Slice * result,
+            char * scratch,
+            rocksdb::IODebugContext *) const override
+        {
+            try
+            {
+                size_t bytes_read = 0;
+                if (supports_read_at)
+                {
+                    bytes_read = buffer->readBigAt(scratch, n, offset, {});
+                }
+                else
+                {
+                    std::scoped_lock lock(mutex);
+                    buffer->seek(static_cast<size_t>(offset), SEEK_SET);
+                    bytes_read = buffer->read(scratch, n);
+                }
+                *result = rocksdb::Slice(scratch, bytes_read);
+                return rocksdb::IOStatus::OK();
+            }
+            catch (...)
+            {
+                return currentExceptionToIOStatus();
+            }
+        }
+
+    private:
+        std::unique_ptr<SeekableReadBuffer> buffer;
+        const bool supports_read_at;
+        mutable std::mutex mutex;
+    };
+
+    /// Read-only `FileSystem` that opens files through `IDataPartStorage`, so
+    /// encrypted and remote SSTs are read in place. Only random-access is
+    /// supported; everything else returns `NotSupported`.
+    class ReadBufferFileSystem : public rocksdb::FileSystem
+    {
+    public:
+        ReadBufferFileSystem(DataPartStoragePtr storage_, const ReadSettings & read_settings_)
+            : storage(std::move(storage_))
+            , read_settings(read_settings_)
+        {
+        }
+
+        const char * Name() const override { return "ReadBufferFileSystem"; }
+
+        rocksdb::IOStatus NewRandomAccessFile(
+            const std::string & f,
+            const rocksdb::FileOptions &,
+            std::unique_ptr<rocksdb::FSRandomAccessFile> * r,
+            rocksdb::IODebugContext *) override
+        {
+            try
+            {
+                *r = std::make_unique<ReadBufferBasedRandomAccessFile>(
+                    storage->readFile(f, read_settings, /*read_hint=*/std::nullopt));
+                return rocksdb::IOStatus::OK();
+            }
+            catch (...)
+            {
+                return currentExceptionToIOStatus();
+            }
+        }
+
+        rocksdb::IOStatus FileExists(
+            const std::string & f,
+            const rocksdb::IOOptions &,
+            rocksdb::IODebugContext *) override
+        {
+            try
+            {
+                return storage->existsFile(f) ? rocksdb::IOStatus::OK() : rocksdb::IOStatus::NotFound();
+            }
+            catch (...)
+            {
+                return currentExceptionToIOStatus();
+            }
+        }
+
+        rocksdb::IOStatus GetFileSize(
+            const std::string & f,
+            const rocksdb::IOOptions &,
+            uint64_t * res,
+            rocksdb::IODebugContext *) override
+        {
+            try
+            {
+                *res = storage->getFileSize(f);
+                return rocksdb::IOStatus::OK();
+            }
+            catch (...)
+            {
+                return currentExceptionToIOStatus();
+            }
+        }
+
+        /// Unsupported: this file system is read-only and random-access only.
+        rocksdb::IOStatus NewSequentialFile(
+            const std::string &,
+            const rocksdb::FileOptions &,
+            std::unique_ptr<rocksdb::FSSequentialFile> *,
+            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
+        rocksdb::IOStatus NewWritableFile(
+            const std::string &,
+            const rocksdb::FileOptions &,
+            std::unique_ptr<rocksdb::FSWritableFile> *,
+            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
+        rocksdb::IOStatus NewDirectory(
+            const std::string &,
+            const rocksdb::IOOptions &,
+            std::unique_ptr<rocksdb::FSDirectory> *,
+            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
+        rocksdb::IOStatus GetChildren(
+            const std::string &,
+            const rocksdb::IOOptions &,
+            std::vector<std::string> *,
+            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
+        rocksdb::IOStatus DeleteFile(
+            const std::string &,
+            const rocksdb::IOOptions &,
+            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
+        rocksdb::IOStatus CreateDir(
+            const std::string &,
+            const rocksdb::IOOptions &,
+            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
+        rocksdb::IOStatus CreateDirIfMissing(
+            const std::string &,
+            const rocksdb::IOOptions &,
+            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
+        rocksdb::IOStatus DeleteDir(
+            const std::string &,
+            const rocksdb::IOOptions &,
+            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
+        rocksdb::IOStatus GetFileModificationTime(
+            const std::string &,
+            const rocksdb::IOOptions &,
+            uint64_t *,
+            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
+        rocksdb::IOStatus GetAbsolutePath(
+            const std::string &,
+            const rocksdb::IOOptions &,
+            std::string *,
+            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
+        rocksdb::IOStatus RenameFile(
+            const std::string &,
+            const std::string &,
+            const rocksdb::IOOptions &,
+            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
+        rocksdb::IOStatus LockFile(
+            const std::string &,
+            const rocksdb::IOOptions &,
+            rocksdb::FileLock **,
+            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
+        rocksdb::IOStatus UnlockFile(
+            rocksdb::FileLock *,
+            const rocksdb::IOOptions &,
+            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
+        rocksdb::IOStatus GetTestDirectory(
+            const rocksdb::IOOptions &,
+            std::string *,
+            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
+        rocksdb::IOStatus IsDirectory(
+            const std::string &,
+            const rocksdb::IOOptions &,
+            bool *,
+            rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
+
+    private:
+        DataPartStoragePtr storage;
+        ReadSettings read_settings;
+    };
 }
 
-SSTOpenResult tryOpenSSTReaderFromPath(const String & sst_path)
+SSTFileReader::SSTFileReader(const DataPartStoragePtr & storage, const String & sst_file_name, const ReadSettings & read_settings)
 {
-    /// The one place the read-open options live: bloom policy + table factory
-    /// must match what `SSTIndexWriter` wrote.
+    sst_env = rocksdb::NewCompositeEnv(std::make_shared<ReadBufferFileSystem>(storage, read_settings));
+
+    /// Bloom policy must match `SSTIndexWriter`.
     rocksdb::Options options;
+    options.env = sst_env.get();
     rocksdb::BlockBasedTableOptions block_based;
     block_based.filter_policy.reset(
         rocksdb::NewBloomFilterPolicy(SSTIndexWriter::BLOOM_BITS_PER_KEY));
+    block_based.no_block_cache = true;
     options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(block_based));
 
-    auto reader = std::make_shared<rocksdb::SstFileReader>(options);
-    auto status = reader->Open(sst_path);
+    auto reader = std::make_unique<rocksdb::SstFileReader>(options);
+    auto status = reader->Open(sst_file_name);
     if (!status.ok())
-        return {nullptr, std::move(status)};
-    return {std::move(reader), std::move(status)};
+        /// A corruption means the file itself is damaged, so a caller may rebuild
+        /// it; any other failure may be transient and the file must be kept.
+        throw Exception(status.IsCorruption() ? ErrorCodes::CORRUPTED_DATA : ErrorCodes::CANNOT_OPEN_FILE,
+            "Failed to open UNIQUE KEY SST `{}`: {}", sst_file_name, status.ToString());
+    index_reader = std::move(reader);
 }
 
-SSTReaderHandle openSSTReaderFromPath(const String & sst_path)
+std::unique_ptr<rocksdb::Iterator> SSTFileReader::newIterator(const rocksdb::ReadOptions & options) const
 {
-    auto opened = tryOpenSSTReaderFromPath(sst_path);
-    if (!opened.status.ok())
-        throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
-            "Failed to open UNIQUE KEY SST `{}`: {}", sst_path, opened.status.ToString());
+    return std::unique_ptr<rocksdb::Iterator>(index_reader->NewIterator(options));
+}
 
-    return SSTReaderHandle{std::move(opened.reader)};
+std::shared_ptr<const rocksdb::TableProperties> SSTFileReader::getProperties() const
+{
+    return index_reader->GetTableProperties();
+}
+
+rocksdb::Status SSTFileReader::verifyChecksum() const
+{
+    return index_reader->VerifyChecksum();
+}
+
+SSTFileReaderPtr openSSTReaderFromStorage(
+    const DataPartStoragePtr & storage,
+    const String & sst_file_name,
+    const ReadSettings & read_settings)
+{
+    return std::make_shared<SSTFileReader>(storage, sst_file_name, read_settings);
 }
 
 SSTProbeTargetPart::SSTProbeTargetPart(
     const IMergeTreeDataPart * part_,
     std::shared_ptr<const DeleteBitmap> pinned_bitmap_,
-    SSTReaderHandle handle_)
+    SSTFileReaderPtr reader_)
     : part(part_)
     , pinned_bitmap(std::move(pinned_bitmap_))
-    , handle(std::move(handle_))
+    , reader(std::move(reader_))
 {
 }
 
@@ -91,16 +310,15 @@ void SSTProbeTargetPart::findRowIndexBatch(
     out.assign(encoded_keys.size(), std::nullopt);
 
     /// Fail closed: `NOT_FOUND` must mean "no active part holds the key", never
-    /// "could not read this part" — a silent miss could let a duplicate through.
-    if (!handle.reader)
+    /// "could not read this part" - a silent miss could let a duplicate through.
+    if (!reader)
         throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
-            "UNIQUE KEY SST probe target has no readable index (invalid reader handle)");
+            "UNIQUE KEY SST probe target has no readable index (invalid reader)");
 
-    /// Fresh iterator per call: the target is shared as `shared_ptr<const>`, so a
-    /// cached iterator would race across concurrent probes. `Seek` lands at >= key,
-    /// so the exact-equality compare is required.
+    /// Fresh iterator per call: the target is `shared_ptr<const>`, so a cached
+    /// iterator would race across concurrent probes.
     rocksdb::ReadOptions read_opts;
-    std::unique_ptr<rocksdb::Iterator> it(handle.reader->NewIterator(read_opts));
+    std::unique_ptr<rocksdb::Iterator> it = reader->newIterator(read_opts);
 
     for (size_t i = 0; i < encoded_keys.size(); ++i)
     {
@@ -110,11 +328,8 @@ void SSTProbeTargetPart::findRowIndexBatch(
         {
             auto value_slice = it->value();
             const UInt64 row_number = decodeRowNumberBE(value_slice.data(), value_slice.size());
-            /// `row_number` is used directly as `_part_offset`; an out-of-range
-            /// offset (corrupt/incompatible SST) would read past the part, so fail
-            /// closed. `part` is null only in isolation unit tests.
-            /// TODO(unique-key): the production probe-target factory must pass a
-            /// non-null part so this bound is enforced once INSERT probe is wired.
+            /// Out-of-range row means a corrupt SST - fail closed.
+            /// TODO(unique-key): enforce this once the probe factory passes a non-null part.
             if (part && row_number >= part->rows_count)
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "UNIQUE KEY SST points at row {} but part '{}' has only {} rows",

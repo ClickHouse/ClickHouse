@@ -1,0 +1,24 @@
+sst_present
+yes
+sst_in_checksums
+yes
+active_parts_after_attach
+1
+rows_after_attach
+500	124750
+sst_size_unchanged_after_damage
+yes
+active_parts_after_corrupt_rebuild
+1
+rows_after_corrupt_rebuild
+500	124750
+active_parts_after_missing_sst
+0
+detached_parts_after_missing_sst
+1
+readonly_attach_with_corrupt_sst_fails
+yes
+corrupt_sst_left_in_place
+yes
+readonly_attach_after_restore
+200
