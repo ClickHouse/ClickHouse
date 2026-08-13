@@ -1,5 +1,6 @@
 -- Tags: no-parallel, no-random-settings, no-object-storage, no-flaky-check
--- add_minmax_index_for_numeric_columns=0: More opened files
+-- add_minmax_index_for_numeric_columns=0, auto_statistics_types='': otherwise the auto minmax index / column
+-- statistics open extra files and this test counts opened files precisely.
 
 -- this test checks I/O counters (FileOpen) incompatible with ReaderExecutor
 SET use_reader_executor = 0;
@@ -12,7 +13,7 @@ DROP TABLE IF EXISTS t_index_hint;
 
 CREATE TABLE t_index_hint (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY a
-SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, serialization_info_version = 'basic', add_minmax_index_for_numeric_columns=0;
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, serialization_info_version = 'basic', add_minmax_index_for_numeric_columns=0, auto_statistics_types='';
 
 INSERT INTO t_index_hint SELECT number, number FROM numbers(1000);
 
@@ -47,7 +48,7 @@ CREATE TABLE t_index_hint
     INDEX idx_tokens s_tokens TYPE bloom_filter(0.01) GRANULARITY 1,
 )
 ENGINE = MergeTree ORDER BY a
-SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, serialization_info_version = 'basic';
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, serialization_info_version = 'basic', auto_statistics_types='';
 
 INSERT INTO t_index_hint (a, s) VALUES (1, 'Text with my_token') (2, 'Another text');
 

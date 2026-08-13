@@ -3766,7 +3766,9 @@ try
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_WARNING(log, "Will shutdown forcefully.");
-                safeExit(0);
+                /// No leak check: remaining connection handlers or refresh tasks still own memory
+                /// it would report as leaked. Reported, because here stderr is the server log.
+                safeExit(0, LeakCheck::SkipAndReport);
             }
         });
 
