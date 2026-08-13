@@ -26,6 +26,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
@@ -257,18 +258,17 @@ String appendMapKey(
     WriteBufferFromOwnString encoded_key;
     key_type->getDefaultSerialization()->serializeBinary(key_column, row, encoded_key, {});
 
-    String result(path);
-    result.push_back('\0');
-    result.push_back('M');
+    WriteBufferFromOwnString result;
+    writeString(path, result);
+    writeChar('\0', result);
+    writeChar('M', result);
     const String & type_name = key_type->getName();
-    const UInt64 type_size = type_name.size();
-    result.append(reinterpret_cast<const char *>(&type_size), sizeof(type_size));
-    result.append(type_name);
+    writeBinaryLittleEndian(static_cast<UInt64>(type_name.size()), result);
+    writeString(type_name, result);
     const String & key = encoded_key.str();
-    const UInt64 key_size = key.size();
-    result.append(reinterpret_cast<const char *>(&key_size), sizeof(key_size));
-    result.append(key);
-    return result;
+    writeBinaryLittleEndian(static_cast<UInt64>(key.size()), result);
+    writeString(key, result);
+    return result.str();
 }
 
 class JSONBloomExtractor
