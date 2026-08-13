@@ -165,6 +165,20 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (!isInnerOrLeft(join_operator.kind))
         return 0;
 
+    /// Being enabled is not being chosen: the first listed algorithm accepting this operator wins, and
+    /// these all accept every SEMI INNER/LEFT reaching here. One listed ahead of hash spills or streams
+    /// the right side, where the set always materializes it.
+    for (auto algorithm : join_algorithms)
+    {
+        if (algorithm == JoinAlgorithm::HASH || algorithm == JoinAlgorithm::PARALLEL_HASH
+            || algorithm == JoinAlgorithm::DEFAULT)
+            break;
+
+        if (algorithm == JoinAlgorithm::PARTIAL_MERGE || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
+            || algorithm == JoinAlgorithm::GRACE_HASH || algorithm == JoinAlgorithm::AUTO)
+            return 0;
+    }
+
     /// The join limits bound its stored right side, the transfer limits bound only the set's hash
     /// table: different allocations, so an active limit on either side can change which rows survive.
     if (join_settings.max_rows_in_join || join_settings.max_bytes_in_join

@@ -58,6 +58,13 @@ b
 0
 -- while an ordinary MergeTree right side still converts
 1
+-- an algorithm listed ahead of hash keeps the spilling or streaming join it would have run
+0
+0
+0
+0
+-- while hash ahead of them still converts
+1
 -- a key with dynamic structure is not converted: the IN function rejects such an argument
 a
 b

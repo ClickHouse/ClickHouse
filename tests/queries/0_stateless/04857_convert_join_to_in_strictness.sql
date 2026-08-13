@@ -164,6 +164,36 @@ SELECT count() > 0 FROM (
     SETTINGS query_plan_convert_join_to_in = 1
 ) WHERE explain ILIKE '%CreatingSets%';
 
+SELECT '-- an algorithm listed ahead of hash keeps the spilling or streaming join it would have run';
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT val FROM t_left SEMI LEFT JOIN t_right ON t_left.id = t_right.id
+    SETTINGS query_plan_convert_join_to_in = 1, join_algorithm = 'partial_merge,hash'
+) WHERE explain ILIKE '%CreatingSets%';
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT val FROM t_left SEMI LEFT JOIN t_right ON t_left.id = t_right.id
+    SETTINGS query_plan_convert_join_to_in = 1, join_algorithm = 'prefer_partial_merge,hash'
+) WHERE explain ILIKE '%CreatingSets%';
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT val FROM t_left SEMI LEFT JOIN t_right ON t_left.id = t_right.id
+    SETTINGS query_plan_convert_join_to_in = 1, join_algorithm = 'grace_hash,hash'
+) WHERE explain ILIKE '%CreatingSets%';
+
+-- `auto` picks its physical join from the spill thresholds, which the test profile randomizes,
+-- so pin them to reach the merge-capable switcher deterministically.
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT val FROM t_left SEMI LEFT JOIN t_right ON t_left.id = t_right.id
+    SETTINGS query_plan_convert_join_to_in = 1, join_algorithm = 'auto,hash',
+             max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+) WHERE explain ILIKE '%CreatingSets%';
+
+SELECT '-- while hash ahead of them still converts';
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT val FROM t_left SEMI LEFT JOIN t_right ON t_left.id = t_right.id
+    SETTINGS query_plan_convert_join_to_in = 1, join_algorithm = 'hash,partial_merge'
+) WHERE explain ILIKE '%CreatingSets%';
+
 SELECT '-- a key with dynamic structure is not converted: the IN function rejects such an argument';
 DROP TABLE IF EXISTS t_dyn_left;
 DROP TABLE IF EXISTS t_dyn_right;
