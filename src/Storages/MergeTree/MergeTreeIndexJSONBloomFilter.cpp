@@ -562,22 +562,44 @@ bool isStructuralJSONSubcolumn(const DataTypeObject & object_type, const String 
         return false;
 
     const auto last_component = path.substr(delimiter + 1);
-    if (last_component != "null"
-        && last_component != "keys"
-        && last_component != "values"
-        && last_component != "items"
-        && !last_component.starts_with("key_")
-        && !(last_component.starts_with("size")
-            && last_component.size() > 4
-            && std::ranges::all_of(last_component.substr(4), [](char c) { return c >= '0' && c <= '9'; })))
-        return false;
+    const bool is_array_size = last_component.starts_with("size")
+        && last_component.size() > 4
+        && std::ranges::all_of(last_component.substr(4), [](char c) { return c >= '0' && c <= '9'; });
 
     for (size_t prefix_end = delimiter; prefix_end != String::npos; prefix_end = path.rfind('.', prefix_end - 1))
     {
         const auto typed_path = object_type.getTypedPaths().find(path.substr(0, prefix_end));
-        if (typed_path != object_type.getTypedPaths().end()
-            && typed_path->second->tryGetSubcolumnType(path.substr(prefix_end + 1)))
-            return true;
+        if (typed_path == object_type.getTypedPaths().end())
+            continue;
+
+        DataTypePtr parent_type = typed_path->second;
+        const auto parent_subcolumn = path.substr(prefix_end + 1, delimiter - prefix_end - 1);
+        if (!parent_subcolumn.empty())
+            parent_type = parent_type->tryGetSubcolumnType(parent_subcolumn);
+
+        while (parent_type)
+        {
+            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(parent_type.get()))
+            {
+                if (last_component == "null")
+                    return true;
+                parent_type = nullable_type->getNestedType();
+                continue;
+            }
+            if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(parent_type.get()))
+            {
+                parent_type = low_cardinality_type->getDictionaryType();
+                continue;
+            }
+            if (typeid_cast<const DataTypeArray *>(parent_type.get()))
+                return is_array_size;
+            if (typeid_cast<const DataTypeMap *>(parent_type.get()))
+                return is_array_size
+                    || last_component == "keys"
+                    || last_component == "values"
+                    || last_component.starts_with("key_");
+            break;
+        }
     }
 
     return false;
