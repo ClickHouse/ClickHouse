@@ -30,7 +30,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t_04512_sparse"
 # encodings (including the size-stream String layout) when a recent client_protocol_version is
 # requested, so the two dumps differ.
 native_default=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+'abc'+AS+s+FORMAT+Native" | od -An -v -tx1 | tr -d ' \n')
-native_revision=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54489&query=SELECT+'abc'+AS+s+FORMAT+Native" | od -An -v -tx1 | tr -d ' \n')
+native_revision=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54490&query=SELECT+'abc'+AS+s+FORMAT+Native" | od -An -v -tx1 | tr -d ' \n')
 if [ "$native_default" != "$native_revision" ]; then echo "native dumps differ"; fi
 
 # A per-value Native HTTP round-trip through both the synchronous and the asynchronous insert paths.
@@ -50,7 +50,7 @@ rm -f "${CLICKHOUSE_TMP}/04512_rt.native"
 # Buffers is a plain format, not part of the protocol: it always uses the portable per-value layout,
 # so client_protocol_version does not change its output.
 buffers_default=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+'abc'+AS+s+FORMAT+Buffers" | od -An -v -tx1 | tr -d ' \n')
-buffers_revision=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54489&query=SELECT+'abc'+AS+s+FORMAT+Buffers" | od -An -v -tx1 | tr -d ' \n')
+buffers_revision=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&client_protocol_version=54490&query=SELECT+'abc'+AS+s+FORMAT+Buffers" | od -An -v -tx1 | tr -d ' \n')
 if [ "$buffers_default" = "$buffers_revision" ]; then echo "buffers dumps identical"; fi
 
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t_04512_rt2"
