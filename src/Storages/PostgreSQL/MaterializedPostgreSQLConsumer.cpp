@@ -392,6 +392,22 @@ size_t MaterializedPostgreSQLConsumer::readTupleData(
             }
             case 'u': /// TOAST value && unchanged at the same time. Actual value is not sent.
             {
+                /// A replica identity column that arrives as an unchanged TOAST value leaves the
+                /// row unidentifiable: its value is neither in this message nor derivable from
+                /// anything else in it, so neither this row nor the previous version of it can be
+                /// addressed by key. Inserting a default value would corrupt the key silently and
+                /// make the lookup below read some unrelated row, so refuse the message instead.
+                if (std::find(buffer.key_column_indices.begin(), buffer.key_column_indices.end(), static_cast<size_t>(column_idx))
+                    != buffer.key_column_indices.end())
+                {
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Column {} of table {} belongs to the replica identity and arrived as an unchanged TOAST value, "
+                        "so the row cannot be identified. Use a replica identity over columns that are not stored out of line",
+                        buffer.sample_block.getByPosition(column_idx).name,
+                        storage_data.storage->getStorageID().getNameForLogs());
+                }
+
                 insertDefaultValue(storage_data, column_idx);
                 if (type == PostgreSQLQuery::UPDATE && !old_value)
                 {

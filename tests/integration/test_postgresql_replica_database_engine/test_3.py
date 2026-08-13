@@ -312,6 +312,54 @@ VALUES (1, (SELECT array_to_string(ARRAY(SELECT chr((100 + round(random() * 25))
     )
 
 
+def test_toast_in_replica_identity(started_cluster):
+    table = "test_toast_in_replica_identity"
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        """CREATE TABLE "{}" (id text PRIMARY KEY, other text)""",
+    )
+    # `EXTERNAL` disables compression, so the key is stored out of line and an
+    # update that leaves it alone sends it as an unchanged TOAST value. The value
+    # is still short enough to fit into the primary key index.
+    pg_manager.execute(f"ALTER TABLE {table} ALTER COLUMN id SET STORAGE EXTERNAL")
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+
+    pg_manager.execute(
+        f"INSERT INTO {table} (id, other) VALUES (repeat('k', 2500), 'initial')"
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+
+    # The row cannot be identified once its key arrives as an unchanged TOAST
+    # value, so replication must report it instead of writing a defaulted key.
+    pg_manager.execute(f"UPDATE {table} SET other = 'updated'")
+    assert_logs_contain_with_retry(
+        instance,
+        "belongs to the replica identity and arrived as an unchanged TOAST value",
+        retry_count=60,
+        sleep_time=1,
+    )
+    assert (
+        instance.query(f"SELECT length(id), other FROM test_database.{table}")
+        == "2500\tinitial\n"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
 def test_replica_consumer(started_cluster):
     table = "test_replica_consumer"
     pg_manager_instance2.restart()
