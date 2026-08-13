@@ -28,13 +28,14 @@ def query_log_has_finish_for_query_id_sql(query_id):
     )
 
 
-def query_log_has_finish_with_written_rows_sql(query_id, initial_query_id):
+def query_log_has_single_finish_with_written_rows_sql(query_id):
     return (
-        f"SELECT count() > 0 FROM system.query_log "
-        f"WHERE type = 'QueryFinish' AND query_id = '{query_id}' "
+        f"SELECT count() = 1 AND countIf("
+        f"query_id = '{query_id}' "
         f"AND written_rows > 0 AND written_bytes > 0 "
-        f"AND is_internal = 1 AND is_initial_query = 0 "
-        f"AND initial_query_id = '{initial_query_id}'"
+        f"AND is_internal = 0 AND is_initial_query = 1) = 1 "
+        f"FROM system.query_log "
+        f"WHERE type = 'QueryFinish' AND initial_query_id = '{query_id}'"
     )
 
 
@@ -50,14 +51,14 @@ def assert_query_log_has_finish_for_query_id(query_id, retry_count=30, sleep_tim
     )
 
 
-def assert_query_log_has_finish_with_written_rows(
-    query_id, initial_query_id, retry_count=30, sleep_time=1
+def assert_query_log_has_single_finish_with_written_rows(
+    query_id, retry_count=30, sleep_time=1
 ):
-    """Assert the remote write produced a correlated QueryFinish row with written rows/bytes."""
+    """Assert the remote write produced one QueryFinish row with written rows/bytes."""
     node.query("SYSTEM FLUSH LOGS query_log")
     assert_eq_with_retry(
         node,
-        query_log_has_finish_with_written_rows_sql(query_id, initial_query_id),
+        query_log_has_single_finish_with_written_rows_sql(query_id),
         "1\n",
         retry_count=retry_count,
         sleep_time=sleep_time,
@@ -117,10 +118,8 @@ def test_query_api_appears_in_query_log_with_read_rows():
 
 def test_remote_write_appears_in_query_log_with_written_rows():
     """
-    After a remote write to /write, the inserts into the tags and samples target
-    tables should each produce a row in system.query_log with type = 'QueryFinish',
-    written_rows > 0, and written_bytes > 0. The inserts are correlated to the
-    request via child query ids "<X-ClickHouse-Query-Id>:<target table kind>".
+    A remote write to /write should produce one parent TimeSeries row in
+    system.query_log with written_rows and written_bytes.
     """
     query_id = f"prometheus-query-log-test-{uuid.uuid4()}"
 
@@ -139,16 +138,13 @@ def test_remote_write_appears_in_query_log_with_written_rows():
         headers={"X-ClickHouse-Query-Id": query_id},
     )
 
-    assert_query_log_has_finish_with_written_rows(f"{query_id}:Tags", query_id)
-    assert_query_log_has_finish_with_written_rows(f"{query_id}:Samples", query_id)
+    assert_query_log_has_single_finish_with_written_rows(query_id)
 
 
 def test_remote_write_metadata_appears_in_query_log_with_written_rows():
     """
-    After a remote write to /write containing metrics metadata, the insert into the
-    metrics target table should produce a row in system.query_log with
-    type = 'QueryFinish', written_rows > 0, and written_bytes > 0, correlated to the
-    request via the child query id "<X-ClickHouse-Query-Id>:Metrics".
+    A remote write to /write containing metrics metadata should produce one parent
+    TimeSeries row in system.query_log with written_rows and written_bytes.
     """
     query_id = f"prometheus-query-log-test-{uuid.uuid4()}"
 
@@ -169,7 +165,7 @@ def test_remote_write_metadata_appears_in_query_log_with_written_rows():
         headers={"X-ClickHouse-Query-Id": query_id},
     )
 
-    assert_query_log_has_finish_with_written_rows(f"{query_id}:Metrics", query_id)
+    assert_query_log_has_single_finish_with_written_rows(query_id)
 
 
 def test_query_range_api_appears_in_query_log_with_read_rows():
