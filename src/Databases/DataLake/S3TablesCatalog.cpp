@@ -34,6 +34,7 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace DB::Setting
@@ -229,8 +230,16 @@ bool S3TablesCatalog::tryGetTableMetadata(
     return true;
 }
 
-void S3TablesCatalog::dropTable(const String & namespace_name, const String & table_name) const
+void S3TablesCatalog::dropTable(const String & namespace_name, const String & table_name, bool delete_data) const
 {
+    /// https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-delete.html
+    if (!delete_data)
+        throw DB::Exception(
+            DB::ErrorCodes::SUPPORT_IS_DISABLED,
+            "S3 Tables cannot drop table {}.{} without deleting its data, and `iceberg_delete_data_on_drop` is disabled. "
+            "Enable `iceberg_delete_data_on_drop` to drop the table together with its data",
+            namespace_name, table_name);
+
     const auto state_snapshot = state.get();
     const std::string endpoint
         = (base_url / state_snapshot->config.prefix / "namespaces" / namespace_name / "tables" / table_name).string()

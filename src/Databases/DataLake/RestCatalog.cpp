@@ -1882,7 +1882,7 @@ bool RestCatalog::updateSchema(
     return true;
 }
 
-void RestCatalog::dropTable(const String & namespace_name, const String & table_name) const
+void RestCatalog::dropTable(const String & namespace_name, const String & table_name, bool /*delete_data*/) const
 {
     const auto state_snapshot = state.get();
     const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}?purgeRequested=False", base_url, namespace_name, table_name);

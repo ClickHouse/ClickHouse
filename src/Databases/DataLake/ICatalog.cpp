@@ -413,7 +413,7 @@ bool ICatalog::updateSchema(
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateSchema is not implemented");
 }
 
-void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/) const
+void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/, bool /*delete_data*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "dropTable is not implemented");
 }
