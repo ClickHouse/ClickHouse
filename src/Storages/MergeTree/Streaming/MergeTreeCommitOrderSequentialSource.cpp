@@ -362,10 +362,8 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleRunningPipeline()
 
     if (auto cursor = chunk.getChunkInfos().extract<StreamingChunkCursorInfo>())
     {
-        auto & position = last_emitted_positions[cursor->partition_id];
-        position.block_number = cursor->last_block_number;
-        position.block_offset = cursor->last_block_offset;
-        LOG_TEST(log, "Cursor for partition '{}' updated from chunk to ({}, {})", cursor->partition_id, position.block_number, position.block_offset);
+        last_emitted_positions[cursor->partition_id] = cursor->cursor;
+        LOG_TEST(log, "Cursor for partition '{}' updated from chunk to ({}, {})", cursor->partition_id, cursor->cursor.block_number, cursor->cursor.block_offset);
     }
 
     if (!input.isFinished())
