@@ -10,6 +10,9 @@
 #include <Poco/JSON/Object.h>
 #include <base/types.h>
 
+#include <optional>
+#include <vector>
+
 using namespace DB;
 
 namespace
@@ -23,6 +26,45 @@ Poco::JSON::Object::Ptr findUpdateByAction(const Poco::JSON::Array::Ptr & update
             return o;
     }
     return nullptr;
+}
+
+Poco::JSON::Object::Ptr makeIntField(Int32 id, const std::string & name)
+{
+    Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
+    field->set(Iceberg::f_id, id);
+    field->set(Iceberg::f_name, name);
+    field->set(Iceberg::f_required, false);
+    field->set(Iceberg::f_type, "int");
+    return field;
+}
+
+/// Builds a single-column (`a`) struct schema, optionally carrying `identifier-field-ids`.
+Poco::JSON::Object::Ptr makeSingleColumnSchema(Int32 schema_id, std::optional<std::vector<Int32>> identifier_field_ids)
+{
+    Poco::JSON::Object::Ptr schema = new Poco::JSON::Object;
+    schema->set(Iceberg::f_schema_id, schema_id);
+    schema->set(Iceberg::f_type, "struct");
+    Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
+    fields->add(makeIntField(1, "a"));
+    schema->set(Iceberg::f_fields, fields);
+    if (identifier_field_ids.has_value())
+    {
+        Poco::JSON::Array::Ptr ids = new Poco::JSON::Array;
+        for (auto id : *identifier_field_ids)
+            ids->add(id);
+        schema->set("identifier-field-ids", ids);
+    }
+    return schema;
+}
+
+Poco::JSON::Object::Ptr makeMetadataWithSchemas(const std::vector<Poco::JSON::Object::Ptr> & schema_list)
+{
+    Poco::JSON::Object::Ptr metadata = new Poco::JSON::Object;
+    Poco::JSON::Array::Ptr schemas = new Poco::JSON::Array;
+    for (const auto & schema : schema_list)
+        schemas->add(schema);
+    metadata->set(Iceberg::f_schemas, schemas);
+    return metadata;
 }
 }
 
@@ -142,6 +184,42 @@ TEST(RestCatalogUpdateSchemaBody, EquivalentSchemaDeduplicates)
     auto set_schema = findUpdateByAction(updates, "set-current-schema");
     ASSERT_TRUE(set_schema);
     EXPECT_EQ(set_schema->getValue<Int32>("schema-id"), 0);
+}
+
+TEST(RestCatalogUpdateSchemaBody, EquivalentSchemaDeduplicatesAcrossIdentifierFieldIds)
+{
+    /// A schema already committed through this catalog carries an empty `identifier-field-ids`,
+    /// while a freshly generated one does not. That difference must not prevent deduplication.
+    auto metadata = makeMetadataWithSchemas({makeSingleColumnSchema(0, std::vector<Int32>{})});
+    auto new_schema = makeSingleColumnSchema(1, std::nullopt);
+
+    auto body = DataLake::buildUpdateSchemaRequestBody("ns", "t", metadata, new_schema, 0, 1);
+    ASSERT_TRUE(body);
+
+    auto updates = body->getArray("updates");
+    EXPECT_FALSE(findUpdateByAction(updates, "add-schema"));
+
+    auto set_schema = findUpdateByAction(updates, "set-current-schema");
+    ASSERT_TRUE(set_schema);
+    EXPECT_EQ(set_schema->getValue<Int32>("schema-id"), 0);
+}
+
+TEST(RestCatalogUpdateSchemaBody, NonEmptyIdentifierFieldIdsPreventDeduplication)
+{
+    /// Identifier fields define row identity, so a schema that declares them is not equivalent
+    /// to one that does not.
+    auto metadata = makeMetadataWithSchemas({makeSingleColumnSchema(0, std::vector<Int32>{1})});
+    auto new_schema = makeSingleColumnSchema(1, std::nullopt);
+
+    auto body = DataLake::buildUpdateSchemaRequestBody("ns", "t", metadata, new_schema, 0, 1);
+    ASSERT_TRUE(body);
+
+    auto updates = body->getArray("updates");
+    ASSERT_TRUE(findUpdateByAction(updates, "add-schema"));
+
+    auto set_schema = findUpdateByAction(updates, "set-current-schema");
+    ASSERT_TRUE(set_schema);
+    EXPECT_EQ(set_schema->getValue<Int32>("schema-id"), -1);
 }
 
 TEST(RestCatalogUpdateSchemaBody, NormalPathEmitsAddSchema)

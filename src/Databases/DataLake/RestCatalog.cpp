@@ -158,6 +158,8 @@ std::unordered_set<std::string> getAllowedBigLakeMetadataServiceHosts(
 namespace
 {
 
+constexpr auto IDENTIFIER_FIELD_IDS = "identifier-field-ids";
+
 Poco::JSON::Object::Ptr cloneJsonObject(const Poco::JSON::Object::Ptr & obj)
 {
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -219,12 +221,20 @@ bool icebergJsonValueEquals(const Poco::Dynamic::Var & lhs, const Poco::Dynamic:
 }
 
 /// Two Iceberg schemas are equivalent when they differ only by their `schema-id`.
+/// `identifier-field-ids` is ignored as well: a schema committed through this catalog always
+/// carries it, while a freshly generated one does not, and an absent list means the same as an
+/// empty one.
 bool schemasEquivalentIgnoringId(const Poco::JSON::Object::Ptr & lhs, const Poco::JSON::Object::Ptr & rhs)
 {
     Poco::JSON::Object::Ptr lhs_copy = cloneJsonObject(lhs);
     Poco::JSON::Object::Ptr rhs_copy = cloneJsonObject(rhs);
-    lhs_copy->remove(DB::Iceberg::f_schema_id);
-    rhs_copy->remove(DB::Iceberg::f_schema_id);
+    for (auto * copy : {&lhs_copy, &rhs_copy})
+    {
+        (*copy)->remove(DB::Iceberg::f_schema_id);
+        if (auto identifier_field_ids = (*copy)->getArray(IDENTIFIER_FIELD_IDS);
+            identifier_field_ids.isNull() || identifier_field_ids->size() == 0)
+            (*copy)->remove(IDENTIFIER_FIELD_IDS);
+    }
     return icebergJsonObjectEquals(lhs_copy, rhs_copy);
 }
 
@@ -260,10 +270,10 @@ Poco::JSON::Object::Ptr buildUpdateSchemaRequestBody(
     }
 
     Poco::JSON::Object::Ptr schema_for_rest = cloneJsonObject(new_schema);
-    if (!schema_for_rest->has("identifier-field-ids"))
+    if (!schema_for_rest->has(IDENTIFIER_FIELD_IDS))
     {
         Poco::JSON::Array::Ptr empty_identifier_field_ids = new Poco::JSON::Array;
-        schema_for_rest->set("identifier-field-ids", empty_identifier_field_ids);
+        schema_for_rest->set(IDENTIFIER_FIELD_IDS, empty_identifier_field_ids);
     }
 
     std::optional<Int32> existing_equivalent_schema_id;
@@ -1424,7 +1434,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     {
         Poco::JSON::Object::Ptr initial_schema = metadata_content->getArray("schemas")->getObject(0);
         Poco::JSON::Array::Ptr identifier_fields = new Poco::JSON::Array;
-        initial_schema->set("identifier-field-ids", identifier_fields);
+        initial_schema->set(IDENTIFIER_FIELD_IDS, identifier_fields);
         request_body->set("schema", initial_schema);
     }
     request_body->set("partition-spec", metadata_content->getArray("partition-specs")->get(0));

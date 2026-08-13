@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Poco/JSON/Array.h>
@@ -200,6 +201,46 @@ TEST(IcebergMetadataGenerator, AddColumnAppliedDetectsCommittedColumn)
     /// Emulate the commit that the catalog applied while reporting a failure.
     gen.generateAddColumnMetadata("z", type);
     EXPECT_TRUE(gen.isAddColumnApplied("z", type));
+}
+
+
+TEST(IcebergMetadataGenerator, AddColumnAppliedDetectsCommittedComplexColumn)
+{
+    auto metadata = makeMetadataWithGap();
+    MetadataGenerator gen(metadata);
+
+    /// `getIcebergType` numbers the nested fields of a complex type from `last-column-id`, which
+    /// the applied commit has already advanced. The detection must look past those ids.
+    auto type = makeNullable(std::make_shared<DataTypeTuple>(
+        DataTypes{std::make_shared<DataTypeInt32>(), std::make_shared<DataTypeInt64>()},
+        Names{"a", "b"}));
+    EXPECT_FALSE(gen.isAddColumnApplied("t", type));
+
+    gen.generateAddColumnMetadata("t", type);
+    EXPECT_TRUE(gen.isAddColumnApplied("t", type));
+}
+
+
+TEST(IcebergMetadataGenerator, AddColumnAppliedRejectsComplexTypeMismatch)
+{
+    auto metadata = makeMetadataWithGap();
+    MetadataGenerator gen(metadata);
+
+    auto type = makeNullable(std::make_shared<DataTypeTuple>(
+        DataTypes{std::make_shared<DataTypeInt32>(), std::make_shared<DataTypeInt64>()},
+        Names{"a", "b"}));
+    gen.generateAddColumnMetadata("t", type);
+
+    /// Ignoring the nested ids must not make structurally different types compare equal.
+    auto renamed_element = makeNullable(std::make_shared<DataTypeTuple>(
+        DataTypes{std::make_shared<DataTypeInt32>(), std::make_shared<DataTypeInt64>()},
+        Names{"a", "c"}));
+    EXPECT_FALSE(gen.isAddColumnApplied("t", renamed_element));
+
+    auto retyped_element = makeNullable(std::make_shared<DataTypeTuple>(
+        DataTypes{std::make_shared<DataTypeInt32>(), std::make_shared<DataTypeString>()},
+        Names{"a", "b"}));
+    EXPECT_FALSE(gen.isAddColumnApplied("t", retyped_element));
 }
 
 

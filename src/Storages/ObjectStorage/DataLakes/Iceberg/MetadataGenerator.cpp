@@ -115,6 +115,65 @@ bool icebergTypesEqual(Poco::Dynamic::Var old_type, Poco::Dynamic::Var new_type)
     return false;
 }
 
+/// Recursively drop the field ids Iceberg assigns to nested elements of a complex type.
+/// `getIcebergType` allocates them from a running counter, so regenerating the same
+/// ClickHouse type with a different counter start yields a different - but structurally
+/// identical - descriptor. Removing the ids makes such descriptors comparable.
+void stripNestedFieldIds(Poco::JSON::Object::Ptr type_object)
+{
+    for (const auto & id_field : {Iceberg::f_id, Iceberg::f_element_id, Iceberg::f_key_id, Iceberg::f_value_id})
+        type_object->remove(id_field);
+
+    for (const auto & nested_field : {Iceberg::f_element, Iceberg::f_key, Iceberg::f_value, Iceberg::f_type})
+    {
+        if (!type_object->has(nested_field))
+            continue;
+        auto nested = type_object->get(nested_field);
+        if (nested.isString())
+            continue;
+        if (auto nested_object = nested.extract<Poco::JSON::Object::Ptr>())
+            stripNestedFieldIds(nested_object);
+    }
+
+    if (type_object->has(Iceberg::f_fields))
+    {
+        auto fields = type_object->getArray(Iceberg::f_fields);
+        for (UInt32 i = 0; i < fields->size(); ++i)
+        {
+            if (auto field = fields->getObject(i))
+                stripNestedFieldIds(field);
+        }
+    }
+}
+
+/// Like `icebergTypesEqual`, but ignores the field ids embedded in complex types.
+/// Used to recognize a type that a previous attempt already wrote, where the ids
+/// were allocated from a lower `last-column-id` than the one we would use now.
+bool icebergTypesEqualIgnoringIds(Poco::Dynamic::Var old_type, Poco::Dynamic::Var new_type)
+{
+    if (old_type.isString() && new_type.isString())
+        return old_type.extract<String>() == new_type.extract<String>();
+
+    if (old_type.isString() || new_type.isString())
+        return false;
+
+    auto old_object = old_type.extract<Poco::JSON::Object::Ptr>();
+    auto new_object = new_type.extract<Poco::JSON::Object::Ptr>();
+    if (!old_object || !new_object)
+        return false;
+
+    auto old_stripped = deepCopy(old_object);
+    auto new_stripped = deepCopy(new_object);
+    stripNestedFieldIds(old_stripped);
+    stripNestedFieldIds(new_stripped);
+
+    std::ostringstream oss_old; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    std::ostringstream oss_new; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    old_stripped->stringify(oss_old);
+    new_stripped->stringify(oss_new);
+    return oss_old.str() == oss_new.str();
+}
+
 /// Allocate the next schema id as max(existing schema ids) + 1 to avoid
 /// collisions when current-schema-id is not the highest in the list.
 Int32 getNextSchemaId(Poco::JSON::Object::Ptr metadata_object)
@@ -193,8 +252,10 @@ bool MetadataGenerator::isAddColumnApplied(const String & column_name, DataTypeP
         auto field = fields->getObject(i);
         if (field->getValue<String>(Iceberg::f_name) != column_name)
             continue;
+        /// The stored descriptor was produced from a lower `last-column-id` than the one we
+        /// just used, so the ids of nested elements differ even for the very same type.
         return field->getValue<bool>(Iceberg::f_required) == expected_type.second
-            && icebergTypesEqual(field->get(Iceberg::f_type), expected_type.first);
+            && icebergTypesEqualIgnoringIds(field->get(Iceberg::f_type), expected_type.first);
     }
     return false;
 }
