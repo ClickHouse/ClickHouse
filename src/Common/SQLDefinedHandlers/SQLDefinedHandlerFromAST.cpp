@@ -510,6 +510,22 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
             create.handler_name);
     }
 
+    /// A query that takes the request body as its data cannot also use the `_request_body` parameter: there is a
+    /// single non-rewindable body stream, and binding `_request_body` drains it (see
+    /// `PredefinedQueryHandler::customizeContext`) before the query's input pipeline is built (see
+    /// `HTTPHandler::processQuery`), so the `INSERT` (or its `input` function) would find the stream at EOF and
+    /// silently insert nothing. Reject the handler here instead of creating one that discards every upload.
+    if (queryConsumesRequestBody(*create.query) && handler->receive_params.contains("_request_body"))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Handler `{}` runs a query that takes its data from the HTTP request body (an INSERT, or an "
+            "INSERT ... SELECT reading from `input`) and also uses the `_request_body` parameter. "
+            "Binding `_request_body` consumes the request body before the query reads its input data, "
+            "so the uploaded data would be silently lost. "
+            "Use either the query's own body input or the `_request_body` parameter, not both.",
+            create.handler_name);
+    }
+
     /// An `INSERT` handler takes the request body as its data, and a query using `_request_body` reads the body
     /// explicitly. Only these handlers need `Content-Length` on a non-chunked request (see `SQLDefinedHandler`).
     handler->consumes_request_body = queryConsumesRequestBody(*create.query)
