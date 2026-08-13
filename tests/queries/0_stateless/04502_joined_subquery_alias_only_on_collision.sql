@@ -149,6 +149,19 @@ SELECT arr1, other FROM arr_t AS t, (SELECT 1 AS other) ARRAY JOIN t.arr1;
 -- Disabling the setting keeps the pre-existing permissive behavior.
 SELECT arr1 FROM arr_t AS t, (SELECT 1 AS arr1) ARRAY JOIN t.arr1 SETTINGS joined_subquery_requires_alias = 0;
 
+-- An `ARRAY JOIN` alias shadows bare identifiers only inside the query that contains the `ARRAY JOIN`. It must
+-- not leak into a nested subquery under it: there the alias is not visible, so an inner join's unaliased
+-- subquery whose column collides only with the *outer* alias introduces no ambiguity and stays allowed.
+SELECT 1 FROM (SELECT 1 AS y FROM numbers(1), (SELECT 2 AS x)) ARRAY JOIN [10] AS x;
+
+-- A collision between siblings of the inner join is local to the inner query and still requires the alias there,
+-- independently of the enclosing `ARRAY JOIN`.
+SELECT 1 FROM (SELECT 1 FROM (SELECT 3 AS w) AS lhs, (SELECT 2 AS w)) ARRAY JOIN [10] AS x; -- { serverError ALIAS_REQUIRED }
+
+-- An outer `ARRAY JOIN` whose exposed names are unknown before resolution (a `COLUMNS(...)` matcher) forces the
+-- strict fallback only for joins of its own query, not inside a nested subquery.
+SELECT 1 FROM (SELECT [10] AS arr, 1 AS y FROM numbers(1), (SELECT 2 AS z)) AS t2 ARRAY JOIN COLUMNS('^arr');
+
 -- A sibling table expression can itself be wrapped in an `ARRAY JOIN`. Such a sibling exposes the columns
 -- of its inner table expression plus the `ARRAY JOIN` output columns, and both sets are already resolved
 -- when the join is validated, so it does not force the conservative fallback. No name collides here

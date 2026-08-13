@@ -1085,13 +1085,19 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
             true /*collect_array_join_columns*/, true /*collect_projection_subcolumns*/);
     }
 
+    /// An `ARRAY JOIN` alias shadows bare identifiers only inside the query that contains the `ARRAY JOIN`.
+    /// The stack stays populated while the `ARRAY JOIN`'s table expression subtree -- including any nested
+    /// subqueries with joins of their own -- is resolved, so entries pushed by an *outer* query must not leak
+    /// into the validation of an inner query's join, where the outer alias is not visible: only the entries
+    /// whose query scope is the one being validated take part.
     for (const auto & array_join_alias_names : enclosing_array_join_alias_names_stack)
-        columns_are_known &= array_join_alias_names.all_names_known;
+        if (array_join_alias_names.query_scope == &scope)
+            columns_are_known &= array_join_alias_names.all_names_known;
 
     auto collides_with_enclosing_array_join_alias = [&](const String & column_name)
     {
         for (const auto & array_join_alias_names : enclosing_array_join_alias_names_stack)
-            if (array_join_alias_names.names.contains(column_name))
+            if (array_join_alias_names.query_scope == &scope && array_join_alias_names.names.contains(column_name))
                 return true;
         return false;
     };
@@ -5248,6 +5254,10 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
     /// names that are only known after resolution, so mark the set as incomplete and let the validation fall
     /// back to the strict behavior for join expressions under this `ARRAY JOIN`.
     EnclosingArrayJoinNames array_join_alias_names;
+    /// The aliases shadow bare identifiers only inside the query containing this `ARRAY JOIN`; the join tree of
+    /// that query is resolved with this very scope, so recording it lets the validation skip the entry when it
+    /// runs inside a nested subquery (a different scope), where these aliases are not visible.
+    array_join_alias_names.query_scope = &scope;
     for (const auto & array_join_expression : array_join_node_typed.getJoinExpressions().getNodes())
     {
         const auto & alias = array_join_expression->getAlias();

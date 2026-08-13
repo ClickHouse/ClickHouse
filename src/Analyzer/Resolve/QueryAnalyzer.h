@@ -323,10 +323,15 @@ private:
     /// When an `ARRAY JOIN` expression is neither aliased nor a plain identifier (e.g. a `COLUMNS(...)` matcher),
     /// the names it will expose are unknown before resolution, and `all_names_known` is set to false so that the
     /// validation falls back to the strict behavior instead of missing a collision.
+    /// The aliases shadow bare identifiers only inside the query that contains the `ARRAY JOIN`, so each entry
+    /// records that query's resolve scope (`query_scope`), and the validation consults only the entries whose
+    /// scope matches the join being validated. Without this, an outer `ARRAY JOIN ... AS x` would force an alias
+    /// on an unaliased subquery joined *inside a nested subquery*, where the outer alias is not visible at all.
     struct EnclosingArrayJoinNames
     {
         NameSet names;
         bool all_names_known = true;
+        const IdentifierResolveScope * query_scope = nullptr;
     };
     std::vector<EnclosingArrayJoinNames> enclosing_array_join_alias_names_stack;
 
