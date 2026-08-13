@@ -105,20 +105,17 @@ namespace
     SQLQueryPiece setEvaluationTime(
         const PrometheusQueryTree::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
     {
+        /// A range vector already contains the samples evaluated at the fixed time. Keep its timestamps and, for a
+        /// subquery, its complete inner grid intact. A range-vector function will aggregate it at the fixed time.
+        if (expression.type == ResultType::RANGE_VECTOR)
+        {
+            expression.node = offset_node;
+            return std::move(expression);
+        }
+
         auto node_range = context.node_range_getter.get(offset_node);
         if (node_range.empty())
             return SQLQueryPiece{offset_node, offset_node->result_type, StoreMethod::EMPTY};
-
-        /// A subquery already contains the complete range-vector grid produced at the fixed evaluation time.
-        /// Keep that inner grid intact so a function over the subquery can consume all of its samples. Raw range
-        /// selectors use StoreMethod::RAW_DATA and still need the materialization below to repeat their samples
-        /// for every outer evaluation step.
-        if (expression.type == ResultType::RANGE_VECTOR && expression.store_method != StoreMethod::RAW_DATA)
-        {
-            expression.node = offset_node;
-            expression.step_invariant = true;
-            return std::move(expression);
-        }
 
         /// <expression> is expected to be calculated at a fixed evaluation time.
         if (expression.start_time != expression.end_time)
