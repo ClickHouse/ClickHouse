@@ -1364,7 +1364,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_merge_coordinator_distribution_algorithm", "water_filling", "sainte_lague", "Enable Sainte-Lague distribution by default."},
             {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
             {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},
-            {"object_shared_data_serialization_version", "advanced", "advanced_chunked", "Enable advanced_chunked shared data serialization version by default to reduce peak memory during merges of JSON columns with many unique paths"},
             {"object_shared_data_target_chunk_rows", 8192, 8192, "New setting"},
         });
 

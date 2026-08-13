@@ -333,7 +333,7 @@ Possible values:
 
 Only version `v3` supports changing the shared data serialization version.
 )", 0) \
-    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version, "advanced_chunked", R"(
+    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version, "advanced", R"(
 Serialization version for shared data inside JSON data type.
 
 Possible values:
