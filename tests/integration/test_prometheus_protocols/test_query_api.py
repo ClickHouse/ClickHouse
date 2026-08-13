@@ -354,10 +354,15 @@ def test_generated_sql_always_runs_with_analyzer():
         extract_data_from_http_api_response(response)  # raises unless a success envelope
 
         node.query("SYSTEM FLUSH LOGS query_log")
+        # The response is flushed to the client before the QueryFinish row is queued, so a
+        # flush can run before there is anything to flush and the row then waits for the
+        # background interval. Retry for longer than that interval.
         assert_eq_with_retry(
             node,
             "SELECT Settings['allow_experimental_analyzer'], "
             "Settings['enable_materialized_cte'] "
             f"FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '{query_id}'",
             "1\t1\n",
+            retry_count=30,
+            sleep_time=1,
         )
