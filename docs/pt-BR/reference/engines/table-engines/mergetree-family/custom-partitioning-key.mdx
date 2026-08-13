@@ -162,7 +162,7 @@ GROUP BY UserID;
 ```
 
 <Note>
-  O desempenho de uma consulta desse tipo depende fortemente do layout da tabela. Por isso, a otimização não é habilitada por padrão.
+  O desempenho de uma consulta desse tipo depende do layout da tabela. A otimização é habilitada por padrão desde a versão 26.7; heurísticas de runtime a ignoram automaticamente quando o layout das partições é desfavorável — especificamente, quando há poucas partições (menos de `max_threads / 2`), partições demais (mais de `max_number_of_partitions_for_independent_aggregation`) ou quando os tamanhos das partições são muito desiguais (a maior partição contém mais linhas do que o dobro do número total de linhas dividido por `max_threads`). A lista abaixo descreve os fatores de layout para um bom desempenho em geral; desses, apenas a contagem de partições e a desigualdade de tamanho são consideradas pelas heurísticas de runtime.
 </Note>
 
 Os principais fatores para um bom desempenho são:

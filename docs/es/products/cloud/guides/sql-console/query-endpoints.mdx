@@ -29,9 +29,7 @@ Puedes seguir esta guía para [crear una clave de API](/es/products/cloud/featur
 </Info>
 
 <Steps>
-  <Step>
-    ### Crear una consulta guardada
-
+  <Step title="Crear una consulta guardada" id="creating-a-saved-query">
     Si ya tienes una consulta guardada, puedes omitir este paso.
 
     Abre una nueva pestaña de consulta. Para esta demostración, usaremos el [dataset de YouTube](/es/get-started/sample-datasets/youtube-dislikes), que contiene aproximadamente 4,5 mil millones de registros.
@@ -79,15 +77,13 @@ Puedes seguir esta guía para [crear una clave de API](/es/products/cloud/featur
     Puedes encontrar más documentación sobre las consultas guardadas en la sección [&quot;Saving a query&quot;](/es/products/cloud/features/sql-console-features/sql-console#saving-a-query).
   </Step>
 
-  <Step>
-    ### Configurar el endpoint de la API de consultas
-
+  <Step title="Configurar el endpoint de la API de consultas" id="configuring-the-query-api-endpoint">
     Los endpoints de la API de consultas se pueden configurar directamente desde la vista de consulta haciendo clic en el botón **Share** y seleccionando `API Endpoint`.
-    Se te pedirá que especifiques qué claves API podrán acceder al endpoint:
+    Se te pedirá que especifiques qué claves de API podrán acceder al endpoint:
 
     <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="Configurar endpoint de consulta" />
 
-    Después de seleccionar una clave API, se te pedirá que:
+    Después de seleccionar una clave de API, se te pedirá que:
 
     * Selecciones el rol de base de datos que se usará para ejecutar la consulta (`Full access`, `Read only` o `Create a custom role`)
     * Especifiques los dominios permitidos para el uso compartido de recursos entre orígenes (CORS)
@@ -105,15 +101,11 @@ Puedes seguir esta guía para [crear una clave de API](/es/products/cloud/featur
     ```
   </Step>
 
-  <Step>
-    ### Parámetros de la API de consultas
-
+  <Step title="Parámetros de la API de consultas" id="query-api-parameters">
     Los parámetros de consulta pueden especificarse con la sintaxis `{parameter_name: type}`. Estos parámetros se detectarán automáticamente y el payload de solicitud de ejemplo contendrá un objeto `queryVariables` mediante el cual podrás pasarlos.
   </Step>
 
-  <Step>
-    ### Pruebas y monitorización
-
+  <Step title="Pruebas y monitorización" id="testing-and-monitoring">
     Una vez creado un endpoint de la API de consultas, puedes comprobar que funciona usando `curl` o cualquier otro cliente HTTP:
 
     <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="prueba curl del endpoint" />

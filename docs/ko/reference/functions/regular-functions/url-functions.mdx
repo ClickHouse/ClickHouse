@@ -1069,9 +1069,9 @@ SELECT extractURLParameters('http://example.com/?param1=value1&param2=value2');
 
 도입 버전: v1.1.0
 
-&quot;첫 번째로 의미 있는 하위 도메인&quot;을 반환합니다.
+&quot;유의미한 하위 도메인&quot;을 반환합니다.
 
-첫 번째로 의미 있는 하위 도메인은 &#39;com&#39;, &#39;net&#39;, &#39;org&#39; 또는 &#39;co&#39;인 경우 2단계 도메인입니다.
+유의미한 하위 도메인은 &#39;com&#39;, &#39;net&#39;, &#39;org&#39; 또는 &#39;co&#39;인 경우 2단계 도메인입니다.
 그렇지 않으면 3단계 도메인입니다.
 
 예를 들어, firstSignificantSubdomain(&#39;https://news.clickhouse.com/&#39;) = &#39;clickhouse&#39;이고, firstSignificantSubdomain (&#39;https://news.clickhouse.com.tr/&#39;) = &#39;clickhouse&#39;입니다.
@@ -1096,9 +1096,6 @@ firstSignificantSubdomain(url)
 
 ```sql title=Query
 SELECT firstSignificantSubdomain('https://news.clickhouse.com/')
-```
-
-```response title=Response
 ```
 
 <div id="firstSignificantSubdomainCustomRFC">

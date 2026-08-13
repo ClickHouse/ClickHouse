@@ -51,17 +51,13 @@ v2.x チャートでは、**2 段階のインストール**を採用していま
 <br />
 
 <Steps>
-  <Step>
-    ### 前提条件
-
+  <Step title="前提条件" id="prerequisites">
     * [Helm](https://helm.sh/) v3+
     * Kubernetes クラスター (v1.20+ 推奨)
     * クラスターに接続できるように設定された `kubectl`
   </Step>
 
-  <Step>
-    ### ClickStack の Helm リポジトリを追加する
-
+  <Step title="ClickStack の Helm リポジトリを追加する" id="add-the-clickstack-helm-repository">
     ClickStack の Helm リポジトリを追加します:
 
     ```shell
@@ -70,9 +66,7 @@ v2.x チャートでは、**2 段階のインストール**を採用していま
     ```
   </Step>
 
-  <Step>
-    ### Operator をインストールする
-
+  <Step title="Operator をインストールする" id="install-the-operators">
     まず、Operator のチャートをインストールします。これにより、メインチャートに必要な CRD が登録されます。
 
     ```shell
@@ -86,9 +80,7 @@ v2.x チャートでは、**2 段階のインストール**を採用していま
     ```
   </Step>
 
-  <Step>
-    ### ClickStack をインストールする
-
+  <Step title="ClickStack をインストールする" id="installing-clickstack">
     オペレーターが起動したら、メインの Helm チャートをインストールします。
 
     ```shell
@@ -96,9 +88,7 @@ v2.x チャートでは、**2 段階のインストール**を採用していま
     ```
   </Step>
 
-  <Step>
-    ### インストールの確認
-
+  <Step title="インストールの確認" id="verify-the-installation">
     インストールを確認します。
 
     ```shell
@@ -108,9 +98,7 @@ v2.x チャートでは、**2 段階のインストール**を採用していま
     すべてのポッドの準備が整ったら、次に進んでください。
   </Step>
 
-  <Step>
-    ### ポートフォワード
-
+  <Step title="ポートフォワード" id="forward-ports">
     ポートフォワードを使用すると、HyperDX にアクセスしてセットアップできます。本番環境にデプロイする場合は、適切なネットワークアクセス、TLS 終端、スケーラビリティを確保するため、代わりにイングレスまたはロードバランサー経由でサービスを公開してください。ポートフォワードは、ローカル開発や一時的な管理作業には適していますが、長期運用や高可用性が求められる環境には向きません。
 
     ```shell
@@ -126,9 +114,7 @@ v2.x チャートでは、**2 段階のインストール**を採用していま
     </Tip>
   </Step>
 
-  <Step>
-    ### UI に移動する
-
+  <Step title="UI に移動する" id="navigate-to-the-ui">
     HyperDX UI を開くには、[http://localhost:8080](http://localhost:8080) にアクセスします。
 
     要件を満たすユーザー名とパスワードを入力して、ユーザーを作成します。
@@ -144,9 +130,7 @@ v2.x チャートでは、**2 段階のインストール**を採用していま
     </Info>
   </Step>
 
-  <Step>
-    ### values のカスタマイズ (任意)
-
+  <Step title="values のカスタマイズ (任意)" id="customizing-values">
     `--set` フラグを使って設定をカスタマイズできます。たとえば、
 
     ```shell
@@ -188,9 +172,7 @@ v2.x チャートでは、**2 段階のインストール**を採用していま
     ```
   </Step>
 
-  <Step>
-    ### Secret の使用 (任意)
-
+  <Step title="Secret の使用 (任意)" id="using-secrets">
     v2.x チャートでは、`values` の `hyperdx.secrets` から設定される単一の Secret (`clickstack-secret`) を使用します。ClickHouse のパスワード、MongoDB のパスワード、HyperDX の API key を含むすべての機密環境変数は、この 1 つの Secret を通じて扱われます。
 
     Secret の値を上書きするには:

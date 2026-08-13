@@ -1,24 +1,29 @@
 ---
-description: '제약 조건 조작에 대한 문서'
+description: '제약 조건 관리 문서'
 sidebarTitle: 'CONSTRAINT'
 slug: /sql-reference/statements/alter/constraint
-title: '제약 조건 조작'
+title: '제약 조건 관리'
 doc_type: 'reference'
 ---
 
-다음 구문으로 제약 조건을 추가하거나 삭제할 수 있습니다.
+제약 조건은 다음 구문을 사용하여 추가, 수정 또는 삭제할 수 있습니다:
 
 ```sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name CHECK expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name {CHECK|ASSUME} expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY CONSTRAINT [IF EXISTS] constraint_name {CHECK|ASSUME} expression;
 ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name;
 ```
 
-자세한 내용은 [제약 조건](/ko/reference/statements/create/table#constraints)을 참고하십시오.
+테이블 생성과 마찬가지로 제약 조건은 `CHECK`(`INSERT` 시 적용됨) 또는 `ASSUME`(검사하지 않고 옵티마이저가 신뢰함)로 선언할 수 있습니다. 두 방식의 차이점은 [constraints](/ko/reference/statements/create/table#constraints)를 참조하십시오.
 
-이러한 쿼리는 테이블의 제약 조건 메타데이터를 추가하거나 제거하므로 즉시 처리됩니다.
+`MODIFY CONSTRAINT`는 기존 제약 조건의 선언을 대체하면서 테이블 정의에서 해당 위치는 그대로 유지합니다. 또한 제약 조건의 종류도 변경할 수 있습니다(예: `CHECK`에서 `ASSUME`로). 이는 제약 조건을 삭제한 뒤 새 선언으로 다시 추가하는 것과 같습니다. 제약 조건이 존재하지 않으면 `IF EXISTS`를 지정한 경우를 제외하고 쿼리에서 오류가 발생합니다.
+
+자세한 내용은 [constraints](/ko/reference/statements/create/table#constraints)를 참조하십시오.
+
+이 쿼리들은 테이블의 제약 조건 metadata를 추가, 변경 또는 제거하므로 즉시 처리됩니다.
 
 <Tip>
-  제약 조건을 추가하더라도 기존 데이터에 대해서는 제약 조건 검사가 **실행되지 않습니다**.
+  제약 조건을 추가하거나 수정해도 기존 데이터에 대해서는 제약 조건 검사가 **실행되지 않습니다**.
 </Tip>
 
-복제된 테이블의 모든 변경 사항은 ZooKeeper로 전파되며 다른 레플리카에도 적용됩니다.
+복제된 테이블의 모든 변경 사항은 ZooKeeper에 브로드캐스트되며 다른 레플리카에도 적용됩니다.

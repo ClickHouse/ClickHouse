@@ -20,41 +20,31 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Пользовательские роли могут включать комбинацию разрешений на уровне организации, сервиса и базы данных. Разрешения можно применять ко всем сервисам и базам данных или только к их части.
 
 <Steps>
-  <Step>
-    ### Откройте настройки организации и выберите Users and roles
-
+  <Step title="Откройте настройки организации и выберите Users and roles" id="users-and-roles-1">
     На странице сервисов выберите имя своей организации. Во всплывающем меню выберите пункт `Users and roles`.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Выберите вкладку `Roles`
-
+  <Step title={<>Выберите вкладку <code>Roles</code></>} id="roles-tab">
     Выберите вкладку `Roles` в верхней части экрана по центру.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Выберите `Create new role` в правом верхнем углу
-
+  <Step title={<>Выберите <code>Create new role</code> в правом верхнем углу</>} id="create-new-role">
     Нажмите кнопку `Create new role` в правом верхнем углу экрана.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Назовите роль
-
+  <Step title="Назовите роль" id="name-the-role">
     Введите понятное имя роли. Это имя будет отображаться при назначении ролей пользователям и ключам API.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
   </Step>
 
-  <Step>
-    ### Нажмите `Allow` и выберите область действия разрешений
-
+  <Step title={<>Нажмите <code>Allow</code> и выберите область действия разрешений</>} id="scope-permissions">
     Нажмите кнопку `Allow` и выберите разрешения уровня Organization, Service и/или Database. Описание всех разрешений см. в разделе [Роли и разрешения в консоли](/ru/products/cloud/reference/security/console-roles).
 
     <Tip>
@@ -70,9 +60,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
   </Step>
 
-  <Step>
-    ### Проверьте новую роль
-
+  <Step title="Проверьте новую роль" id="review-role">
     Перед завершением проверьте разрешения, назначенные новой роли. Когда всё будет готово, нажмите `Create role`.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />

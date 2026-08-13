@@ -46,6 +46,59 @@
 namespace DB
 {
 
+/** The DCL statements: access management, in three groups because each has to keep its place among
+  * the other alternatives. `SET ROLE` has to be tried before `SET`, which would otherwise read it
+  * as the shorthand for a `Bool` setting named `ROLE`.
+  *
+  * A `CLICKHOUSE_PARSER_NO_DCL` build has none of them, and the linker then drops
+  * `src/Parsers/Access` and `src/Access/Common` along with them. See `utils/wasm-parser`.
+  */
+#if defined(CLICKHOUSE_PARSER_NO_DCL)
+
+static bool parseSetRoleQuery(IParser::Pos &, ASTPtr &, Expected &) { return false; }
+static bool parseCreateAccessEntityQuery(IParser::Pos &, ASTPtr &, Expected &) { return false; }
+static bool parseGrantOrDropAccessEntityQuery(IParser::Pos &, ASTPtr &, Expected &) { return false; }
+
+#else
+
+static bool parseSetRoleQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserSetRoleQuery set_role_p;
+    return set_role_p.parse(pos, node, expected);
+}
+
+static bool parseCreateAccessEntityQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserCreateUserQuery create_user_p;
+    ParserCreateRoleQuery create_role_p;
+    ParserCreateQuotaQuery create_quota_p;
+    ParserCreateRowPolicyQuery create_row_policy_p;
+    ParserCreateMaskingPolicy create_masking_policy_p;
+    ParserCreateSettingsProfileQuery create_settings_profile_p;
+
+    return create_user_p.parse(pos, node, expected)
+        || create_role_p.parse(pos, node, expected)
+        || create_quota_p.parse(pos, node, expected)
+        || create_row_policy_p.parse(pos, node, expected)
+        || create_masking_policy_p.parse(pos, node, expected)
+        || create_settings_profile_p.parse(pos, node, expected);
+}
+
+static bool parseGrantOrDropAccessEntityQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserDropAccessEntityQuery drop_access_entity_p;
+    ParserMoveAccessEntityQuery move_access_entity_p;
+    ParserGrantQuery grant_p;
+    ParserCheckGrantQuery check_grant_p;
+
+    return drop_access_entity_p.parse(pos, node, expected)
+        || move_access_entity_p.parse(pos, node, expected)
+        || grant_p.parse(pos, node, expected)
+        || check_grant_p.parse(pos, node, expected);
+}
+
+#endif
+
 bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// QueryWithOutput includes SELECT, SELECT with UNION ALL, SHOW, and similar:
@@ -55,12 +108,6 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserUseQuery use_p;
     ParserSetQuery set_p;
     ParserSystemQuery system_p;
-    ParserCreateUserQuery create_user_p;
-    ParserCreateRoleQuery create_role_p;
-    ParserCreateQuotaQuery create_quota_p;
-    ParserCreateRowPolicyQuery create_row_policy_p;
-    ParserCreateMaskingPolicy create_masking_policy_p;
-    ParserCreateSettingsProfileQuery create_settings_profile_p;
     ParserCreateFunctionQuery create_function_p;
     ParserDropFunctionQuery drop_function_p;
     ParserCreateWorkloadQuery create_workload_p;
@@ -73,11 +120,6 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateIndexQuery create_index_p;
     ParserDropIndexQuery drop_index_p;
     ParserHypotheticalIndexQuery hypothetical_index_p;
-    ParserDropAccessEntityQuery drop_access_entity_p;
-    ParserMoveAccessEntityQuery move_access_entity_p;
-    ParserGrantQuery grant_p;
-    ParserCheckGrantQuery check_grant_p;
-    ParserSetRoleQuery set_role_p;
     ParserTransactionControl transaction_control_p;
     ParserDeleteQuery delete_p;
     ParserUpdateQuery update_p;
@@ -86,15 +128,10 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
         || use_p.parse(pos, node, expected)
-        || set_role_p.parse(pos, node, expected)
+        || parseSetRoleQuery(pos, node, expected)
         || set_p.parse(pos, node, expected)
         || system_p.parse(pos, node, expected)
-        || create_user_p.parse(pos, node, expected)
-        || create_role_p.parse(pos, node, expected)
-        || create_quota_p.parse(pos, node, expected)
-        || create_row_policy_p.parse(pos, node, expected)
-        || create_masking_policy_p.parse(pos, node, expected)
-        || create_settings_profile_p.parse(pos, node, expected)
+        || parseCreateAccessEntityQuery(pos, node, expected)
         || create_function_p.parse(pos, node, expected)
         || drop_function_p.parse(pos, node, expected)
         || create_workload_p.parse(pos, node, expected)
@@ -107,15 +144,13 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || create_index_p.parse(pos, node, expected)
         || drop_index_p.parse(pos, node, expected)
         || hypothetical_index_p.parse(pos, node, expected)
-        || drop_access_entity_p.parse(pos, node, expected)
-        || move_access_entity_p.parse(pos, node, expected)
-        || grant_p.parse(pos, node, expected)
-        || check_grant_p.parse(pos, node, expected)
+        || parseGrantOrDropAccessEntityQuery(pos, node, expected)
         || transaction_control_p.parse(pos, node, expected)
         || delete_p.parse(pos, node, expected)
         || update_p.parse(pos, node, expected)
         || copy_p.parse(pos, node, expected);
 
+#if !defined(CLICKHOUSE_PARSER_NO_DCL)
     if (!res && allow_execute_as)
     {
         ParserQuery subquery_p{end, allow_settings_after_format_in_insert, implicit_select};
@@ -123,6 +158,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ParserExecuteAsQuery execute_as_p{subquery_p};
         res = execute_as_p.parse(pos, node, expected);
     }
+#endif
 
     if (res && allow_in_parallel_with)
     {

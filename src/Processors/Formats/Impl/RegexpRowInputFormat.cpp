@@ -111,7 +111,18 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
     ReadBuffer field_buf(const_cast<char *>(matched_field.data()), matched_field.size(), 0);
     try
     {
-        return deserializeFieldByEscapingRule(type, serializations[index], *columns[index], field_buf, escaping_rule, format_settings);
+        bool read = deserializeFieldByEscapingRule(type, serializations[index], *columns[index], field_buf, escaping_rule, format_settings);
+        /// A capture group is the whole field, so the value must consume it entirely. The `Quoted`
+        /// readers stop at the first character that cannot belong to the value, and in a stream-based
+        /// format the leftover would fail the subsequent delimiter check; here there is no delimiter,
+        /// so without this check a trailing unparsed rest would be silently discarded (for example, a
+        /// fractional timestamp read by the integer-only compatibility parser would lose its fraction).
+        if (escaping_rule == FormatSettings::EscapingRule::Quoted && !field_buf.eof())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Unexpected data '{}' after parsed value in the matched field '{}'",
+                String(field_buf.position(), field_buf.available()),
+                String(matched_field.data(), matched_field.size()));
+        return read;
     }
     catch (Exception & e)
     {
@@ -200,13 +211,13 @@ The `Regex` format parses every line of imported data according to the provided 
 
 **Usage**
 
-The regular expression from [format_regexp](/operations/settings/settings-formats.md/#format_regexp) setting is applied to every line of imported data. The number of subpatterns in the regular expression must be equal to the number of columns in imported dataset.
+The regular expression from [format_regexp](/reference/settings/formats/format-regexp#format_regexp) setting is applied to every line of imported data. The number of subpatterns in the regular expression must be equal to the number of columns in imported dataset.
 
 Lines of the imported data must be separated by newline character `'\n'` or DOS-style newline `"\r\n"`.
 
-The content of every matched subpattern is parsed with the method of corresponding data type, according to [format_regexp_escaping_rule](/operations/settings/settings-formats.md/#format_regexp_escaping_rule) setting.
+The content of every matched subpattern is parsed with the method of corresponding data type, according to [format_regexp_escaping_rule](/reference/settings/formats/format-regexp#format_regexp_escaping_rule) setting.
 
-If the regular expression does not match the line and [format_regexp_skip_unmatched](/operations/settings/settings-formats.md/#format_regexp_escaping_rule) is set to 1, the line is silently skipped. Otherwise, exception is thrown.
+If the regular expression does not match the line and [format_regexp_skip_unmatched](/reference/settings/formats/format-regexp#format_regexp_skip_unmatched) is set to 1, the line is silently skipped. Otherwise, exception is thrown.
 
 ## Example usage {#example-usage}
 

@@ -7,6 +7,8 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
@@ -53,7 +55,6 @@
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/CollectTableExpressionData.h>
-#include <Planner/CollectSets.h>
 #include <Planner/Utils.h>
 #include <Interpreters/Context.h>
 #include <Parsers/makeASTForLogicalFunction.h>
@@ -81,6 +82,9 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool validate_mutation_query;
+    extern const SettingsSetOperationMode union_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
+    extern const SettingsSetOperationMode except_default_mode;
 }
 
 namespace MergeTreeSetting
@@ -108,7 +112,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Returns whether the new analyzer should be used for mutations.
+/// Returns whether the analyzer should be used for mutations.
 /// If the server config has `use_analyzer_for_mutations`, that value overrides the session setting.
 /// The override is parsed once per config reload in `Server.cpp` and stored on the shared context,
 /// so this is a cheap atomic load.
@@ -119,6 +123,26 @@ bool shouldUseAnalyzerForMutations(const ContextPtr & context)
     return context->getSettingsRef()[Setting::allow_experimental_analyzer];
 }
 
+}
+
+/// A mutation command's predicate and `UPDATE` expressions are stored as serialized SQL text and
+/// re-parsed on execution. Re-parsing resets any set-operation nodes (`UNION`/`INTERSECT`/`EXCEPT`)
+/// to their un-normalized form (`union_mode` becomes `UNION_DEFAULT` and the `is_normalized` flag is
+/// lost), which the analyzer rejects with "UNION mode UNION_DEFAULT must be normalized". Re-run the
+/// same normalization that `executeQuery` applies to top-level queries so set operators work inside
+/// mutations. The serialized text always carries explicit modes, so the `*_default_mode` fallbacks
+/// are not reached in practice; passing the current context settings just mirrors `executeQuery`.
+void normalizeSetOperations(ASTPtr & ast, const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    {
+        SelectIntersectExceptQueryVisitor::Data data{settings[Setting::intersect_default_mode], settings[Setting::except_default_mode]};
+        SelectIntersectExceptQueryVisitor{data}.visit(ast);
+    }
+    {
+        NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
+        NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+    }
 }
 
 ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
@@ -165,7 +189,7 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     auto query_tree = buildQueryTree(ast, context);
 
     auto & query_node = query_tree->as<QueryNode &>();
-    query_node.getJoinTree() = std::make_shared<TableNode>(storage, context);
+    query_node.getJoinTreeNode() = std::make_shared<TableNode>(storage, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager);
@@ -330,9 +354,17 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     }
 
     IAST * predicate = alter ? alter->predicate : nullptr;
-    if (predicate && alter->partition)
-        return makeASTOperator("and", ASTPtr(predicate), std::move(partition_predicate_as_ast_func));
-    return predicate ? ASTPtr(predicate) : partition_predicate_as_ast_func;
+    if (!predicate)
+        return partition_predicate_as_ast_func;
+
+    /// The predicate was re-parsed from the serialized mutation command, so its set operations
+    /// (UNION/INTERSECT/EXCEPT) are not normalized yet. Normalize them as `executeQuery` does.
+    ASTPtr predicate_ast(predicate);
+    normalizeSetOperations(predicate_ast, context);
+
+    if (alter->partition)
+        return makeASTOperator("and", std::move(predicate_ast), std::move(partition_predicate_as_ast_func));
+    return predicate_ast;
 }
 
 MutationsInterpreter::Source::Source(StoragePtr storage_) : storage(std::move(storage_))
@@ -886,6 +918,11 @@ void MutationsInterpreter::prepare(bool dry_run)
             NameSet affected_materialized;
             auto alter = command.ast();
             auto column_to_update = alter ? getColumnToUpdateExpression(*alter) : std::unordered_map<String, ASTPtr>{};
+
+            /// The assignment expressions were re-parsed from the serialized mutation command, so their
+            /// set operations (UNION/INTERSECT/EXCEPT) are not normalized yet. Normalize them as `executeQuery` does.
+            for (auto & [column_name, update_expr] : column_to_update)
+                normalizeSetOperations(update_expr, context);
 
             /// Compute partition+predicate once per command (reusing the same parse); cloned per assignment below.
             /// For a single command with returned mutated rows it is already checked by the prefilter.
@@ -1542,7 +1579,15 @@ void MutationsInterpreter::prepare(bool dry_run)
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         if (!source.hasProjection(projection.name))
+        {
+            if (projection.with_block_number || projection.with_block_offset)
+            {
+                LOG_DEBUG(logger, "Will rebuild commit-order projection {}", projection.name);
+                materialized_projections.insert(projection.name);
+            }
+
             continue;
+        }
 
         /// Always rebuild broken projections.
         if (source.hasBrokenProjection(projection.name))
@@ -1572,13 +1617,35 @@ void MutationsInterpreter::prepare(bool dry_run)
             materialized_projections.insert(projection.name);
     }
 
+    /// Every column emitted by a non-readonly stage is written into the new part at its current
+    /// metadata type, so its statistics have to be recomputed rather than carried over from the
+    /// source part. `updated_columns` and `changed_columns` do not cover all emitters: MATERIALIZE
+    /// COLUMN, UPDATE's dependent MATERIALIZED columns and the MATERIALIZED recalculation caused
+    /// by CLEAR COLUMN all write a column without registering it there. Collect the names from
+    /// the stages themselves so that a newly added emitter cannot be missed here.
+    NameSet columns_written_by_stages;
+    for (const auto & stage : stages)
+    {
+        if (stage.is_readonly)
+            continue;
+
+        for (const auto & [column_name, _] : stage.column_to_updated)
+            columns_written_by_stages.insert(column_name);
+    }
+
     for (const auto & column : metadata_snapshot->getColumns())
     {
         if (column.statistics.empty())
             continue;
 
+        /// A cleared column is excluded from the new part and its statistics are removed by the
+        /// mutation. Registering it would recreate an empty statistics object for a column that
+        /// the new part does not contain.
+        bool written_by_stage = columns_written_by_stages.contains(column.name)
+            && !cleared_columns_with_dependencies.contains(column.name);
+
         if (updated_columns.contains(column.name) || changed_columns.contains(column.name)
-            || patch_updated_columns.contains(column.name))
+            || patch_updated_columns.contains(column.name) || written_by_stage)
             materialized_statistics.insert(column.name);
     }
 
@@ -1690,7 +1757,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
         if (use_analyzer)
         {
-            /// --- New analyzer path ---
+            /// --- Analyzer path ---
             /// 1. Build query tree from AST expression list and resolve against storage.
             auto execution_context = Context::createCopy(context);
             auto expression = buildQueryTree(all_asts, execution_context);
@@ -1710,8 +1777,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             auto planner_context = std::make_shared<PlannerContext>(
                 execution_context, global_planner_context, SelectQueryOptions{});
 
-            collectSourceColumns(expression, planner_context, /*keep_alias_columns=*/true);
-            collectSets(expression, *planner_context);
+            collectSetsAndSourceColumns(expression, planner_context, /*keep_alias_columns=*/true);
 
             /// 3. Build input columns from all available columns plus any
             /// virtual columns actually referenced by the expression
@@ -1857,8 +1923,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 auto update_tree = buildQueryTree(update_expr_list, execution_context);
                 QueryAnalyzer update_analyzer(/*only_analyze=*/!execute_scalar_subqueries);
                 update_analyzer.resolve(update_tree, table_node, execution_context);
-                collectSourceColumns(update_tree, planner_context, true);
-                collectSets(update_tree, *planner_context);
+                collectSetsAndSourceColumns(update_tree, planner_context, true);
 
                 auto update_actions = std::make_shared<ActionsAndProjectInputsFlag>();
                 update_actions->dag = ActionsDAG(available_columns_for_step);
@@ -2068,7 +2133,7 @@ MutationsInterpreter::Stage::~Stage() = default;
 MutationsInterpreter::Stage::Stage(Stage &&) noexcept = default;
 MutationsInterpreter::Stage & MutationsInterpreter::Stage::operator=(Stage &&) noexcept = default;
 
-/// Build QueryPlans for subquery sets (IN subqueries) on the new analyzer path,
+/// Build QueryPlans for subquery sets (IN subqueries) on the analyzer path,
 /// then add a DelayedCreatingSetsStep to the plan. This mirrors
 /// addBuildSubqueriesForSetsStepIfNeeded from the Planner.
 static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const PreparedSetsPtr & prepared_sets, ContextPtr context_)

@@ -19,6 +19,9 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
+#include <libdivide-config.h>
+#include <libdivide.h>
+
 namespace DB
 {
 
@@ -46,13 +49,9 @@ enum class ToStartOfIntervalOverload
     Origin      /// toStartOfInterval(time, interval, origin) or toStartOfInterval(time, interval, origin, timezone)
 };
 
-/// toStartOfInterval reports itself as always monotonic to the primary index, so its result must be
-/// monotonic over the whole argument range. Only a DateTime64 argument reaches values whose start-of-interval
-/// exceeds the standard-precision result types Date (UInt16 days) and DateTime (UInt32 seconds); there a plain
-/// static_cast would wrap, breaking monotonicity and mis-pruning granules, so those narrowing results are
-/// saturated to [0, type max]. Date / Date32 / DateTime arguments keep the plain cast (their out-of-range
-/// rounding is defined in DateLUTImpl and must not be clamped here), and the wider result types
-/// (Date32 = Int32, DateTime64 = Int64, used by the extended-results and DateTime64 paths) hold the full range.
+/// Clamps a rounded timestamp into a narrowing result type instead of wrapping, so that the result stays
+/// monotonic over the whole argument range. Only DateTime64 arguments round outside Date and DateTime; the
+/// out-of-range rounding of the other argument types is defined in DateLUTImpl, so they pass saturate = false.
 template <bool saturate, typename FieldType>
 FieldType saturatingResultCast(Int64 value)
 {
@@ -240,6 +239,87 @@ private:
         std::unreachable();
     }
 
+    /// Fast path for the interval kinds and time zones where the result is `roundDownToMultiple` of the unix
+    /// timestamp (see the `*IntervalModularDivisor` methods of `DateLUTImpl`). The generic loop pays a
+    /// hardware division by the run-time divisor for every row; a precomputed libdivide divider turns it
+    /// into multiplication and shifts and lets the DateTime loop vectorize (about 5 times faster).
+    template <IntervalKind::Kind unit, typename TimeColumnType, bool saturate, typename ResultContainer>
+    static bool tryExecuteArithmeticRounding(
+        const typename TimeColumnType::Container & time_data,
+        ResultContainer & result_data,
+        Int64 num_units,
+        const DateLUTImpl & time_zone,
+        Int64 scale_multiplier)
+    {
+        std::optional<Int64> modular_divisor;
+        if constexpr (unit == IntervalKind::Kind::Minute)
+            modular_divisor = time_zone.minuteIntervalModularDivisor(static_cast<UInt64>(num_units));
+        else if constexpr (unit == IntervalKind::Kind::Second)
+            modular_divisor = time_zone.secondIntervalModularDivisor(static_cast<UInt64>(num_units));
+        else
+        {
+            static_assert(unit == IntervalKind::Kind::Hour);
+            modular_divisor = time_zone.hourIntervalModularDivisor(static_cast<UInt64>(num_units));
+        }
+        if (!modular_divisor)
+            return false;
+        const Int64 divisor = *modular_divisor;
+
+        const size_t size = time_data.size();
+        using ResultFieldType = typename ResultContainer::value_type;
+
+        if constexpr (std::is_same_v<TimeColumnType, ColumnDateTime>)
+        {
+            /// The scale multiplier does not apply to DateTime values, and they are never negative.
+            if (divisor > std::numeric_limits<UInt32>::max())
+            {
+                for (size_t i = 0; i != size; ++i)
+                    result_data[i] = static_cast<ResultFieldType>(0);
+            }
+            else
+            {
+                const UInt32 d = static_cast<UInt32>(divisor);
+                const libdivide::divider<UInt32, libdivide::BRANCHFULL> divider(d);
+                for (size_t i = 0; i != size; ++i)
+                    result_data[i] = static_cast<ResultFieldType>(time_data[i] / divider * d);
+            }
+        }
+        else
+        {
+            static_assert(std::is_same_v<TimeColumnType, ColumnDateTime64>);
+            /// There is no 64-bit vector multiply-high instruction, so these loops stay scalar.
+            const libdivide::divider<Int64, libdivide::BRANCHFULL> scale_divider(scale_multiplier);
+            if (divisor == 1)
+            {
+                /// A one-second interval never consults the LUT, so it needs no range check.
+#pragma clang loop vectorize(disable)
+                for (size_t i = 0; i != size; ++i)
+                    result_data[i] = saturatingResultCast<saturate, ResultFieldType>(static_cast<Int64>(time_data[i]) / scale_divider);
+                return true;
+            }
+            const libdivide::divider<Int64, libdivide::BRANCHFULL> divider(divisor);
+#pragma clang loop vectorize(disable)
+            for (size_t i = 0; i != size; ++i)
+            {
+                const Int64 t = static_cast<Int64>(time_data[i]) / scale_divider;
+                /// Out of the LUT range the offset is extrapolated and can have a sub-divisor component
+                /// (e.g. `Asia/Kolkata` is +5:53:28 before 1906), so the rounding is not modular there.
+                if (unlikely(!DateLUTImpl::isTimeInLUTRange(t)))
+                {
+                    result_data[i] = saturatingResultCast<saturate, ResultFieldType>(
+                        ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
+                    continue;
+                }
+                const Int64 rounded_towards_zero = t / divider * divisor;
+                const Int64 res = t >= 0
+                    ? rounded_towards_zero
+                    : DateLUTImpl::roundDownNegativeToMultiple(t, rounded_towards_zero, divisor);
+                result_data[i] = saturatingResultCast<saturate, ResultFieldType>(res);
+            }
+        }
+        return true;
+    }
+
     template <typename ResultDataType, typename TimeDataType, typename TimeColumnType, IntervalKind::Kind unit>
     ColumnPtr execute(const TimeDataType &, const TimeColumnType & time_column_type, Int64 num_units, const ColumnWithTypeAndName & origin_column, const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale) const
     {
@@ -306,18 +386,26 @@ private:
                     origin /= SECONDS_PER_DAY;
                 }
 
-                result_data[i] = static_cast<ResultDataType::FieldType>(origin + offset);
+                Int64 result = 0;
+                if (common::addOverflow(origin, offset, result))
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                        "The result of function {} for the origin ({}) and the rounding offset ({}) does not fit into Int64",
+                        getName(), origin, offset);
+
+                result_data[i] = static_cast<ResultDataType::FieldType>(result);
             }
         }
         else // Overload: Default
         {
-            /// The default overload is the one used for primary-key pruning (getMonotonicityForRange reports
-            /// always-monotonic), so its narrowing standard-precision result (DateTime, UInt32 seconds) must
-            /// saturate rather than wrap for out-of-range DateTime64 arguments at this cast. Only DateTime64
-            /// arguments reach an out-of-range value here; Date32/DateTime rounding is defined in DateLUTImpl
-            /// and left intact. The Date carrier's own high-side wrap (a Date beyond 2106-02-07 with INTERVAL
-            /// DAY) happens earlier, inside ToStartOfInterval<Day>::execute(UInt16), and is saturated there.
             constexpr bool saturate = std::is_same_v<TimeDataType, DataTypeDateTime64>;
+
+            if constexpr ((unit == IntervalKind::Kind::Second || unit == IntervalKind::Kind::Minute || unit == IntervalKind::Kind::Hour)
+                && (std::is_same_v<TimeColumnType, ColumnDateTime> || std::is_same_v<TimeColumnType, ColumnDateTime64>))
+            {
+                if (tryExecuteArithmeticRounding<unit, TimeColumnType, saturate>(time_data, result_data, num_units, time_zone, scale_multiplier))
+                    return result_col;
+            }
+
             for (size_t i = 0; i != size; ++i)
                 result_data[i] = saturatingResultCast<saturate, typename ResultDataType::FieldType>(
                     ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));

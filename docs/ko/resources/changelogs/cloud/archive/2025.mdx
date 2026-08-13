@@ -269,11 +269,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ## 2025년 3월 7일
 </div>
 
-* 새로운 `UsageCost` API endpoint: 이제 API 사양에서 사용량 정보를 조회하기 위한 새 엔드포인트를
+* 새로운 `UsageCost` API 엔드포인트: 이제 API 사양에서 사용량 정보를 조회하기 위한 새 엔드포인트를
   지원합니다. 이는 조직 엔드포인트이며, 사용 비용은
-  최대 31일까지 조회할 수 있습니다. 조회 가능한 메트릭에는
+  최대 31일치까지 조회할 수 있습니다. 조회 가능한 메트릭에는
   Storage, 컴퓨트, 데이터 전송 및 ClickPipes가 포함됩니다. 자세한 내용은
-  [문서](/ko/api-reference/billing/get-organization-usage-costs)를 참조하십시오.
+  [문서](/ko/products/cloud/api-reference/billing/get-organization-usage-costs)를 참조하십시오.
 * Terraform 프로바이더 [v2.1.0](https://registry.terraform.io/providers/ClickHouse/clickhouse/2.1.0/docs/resources/service#nestedatt--endpoints_configuration) 릴리스에서는 MySQL 엔드포인트를 활성화할 수 있습니다.
 
 <div id="february-21-2025">
@@ -433,12 +433,12 @@ JDBC / Java는[ 0.8.0](https://github.com/ClickHouse/clickhouse-java/releases/ta
 
 Prometheus 통합에 여러 개선 사항이 추가되었습니다.
 
-* **조직 수준 엔드포인트**. ClickHouse Cloud용 Prometheus 통합이 개선되었습니다. 서비스 수준 메트릭에 더해, 이제 API에서 **조직 수준 메트릭**을 위한 엔드포인트도 제공합니다. 이 새로운 엔드포인트는 조직 내 모든 서비스의 메트릭을 자동으로 수집하므로, 메트릭을 Prometheus collector로 내보내는 과정을 간소화할 수 있습니다. 또한 이러한 메트릭은 Grafana 및 Datadog와 같은 시각화 도구와 통합하여 조직 성능을 더욱 종합적으로 파악하는 데 활용할 수 있습니다.
+* **조직 수준 엔드포인트**. ClickHouse Cloud용 Prometheus 통합이 개선되었습니다. 이제 API는 서비스 수준 메트릭뿐 아니라 **조직 수준 메트릭**을 위한 엔드포인트도 제공합니다. 이 새로운 엔드포인트는 조직 내 모든 서비스의 메트릭을 자동으로 수집하므로, 메트릭을 Prometheus collector로 내보내는 작업이 한층 간소화됩니다. 또한 이러한 메트릭은 Grafana 및 Datadog 같은 시각화 도구와 통합하여 조직 성능을 더욱 종합적으로 파악하는 데 활용할 수 있습니다.
 
   이 기능은 현재 모든 사용자에게 제공됩니다. 자세한 내용은 [여기](/ko/products/cloud/features/monitoring/prometheus)에서 확인할 수 있습니다.
 
-* **필터링된 메트릭**. ClickHouse Cloud용 Prometheus 통합에서 필터링된 메트릭 목록을 반환하는 기능이 추가되었습니다. 이 기능을 사용하면 서비스 상태 모니터링에 중요한 메트릭에 집중할 수 있어 응답 페이로드 크기를 줄이는 데 도움이 됩니다.
+* **필터링된 메트릭**. ClickHouse Cloud용 Prometheus 통합에서 필터링된 메트릭 목록을 반환하는 기능이 추가되었습니다. 이 기능을 사용하면 서비스 상태 모니터링에 중요한 메트릭에 집중할 수 있어 응답 payload 크기를 줄이는 데 도움이 됩니다.
 
-  이 기능은 API의 선택적 쿼리 매개변수를 통해 사용할 수 있으므로, 데이터 수집을 최적화하고 Grafana 및 Datadog와 같은 도구와의 통합을 더 간편하게 구성할 수 있습니다.
+  이 기능은 API의 선택적 쿼리 매개변수를 통해 사용할 수 있으므로, 데이터 수집을 최적화하고 Grafana 및 Datadog 같은 도구와의 통합도 더욱 간소화할 수 있습니다.
 
   필터링된 메트릭 기능은 현재 모든 사용자에게 제공됩니다. 자세한 내용은 [여기](/ko/products/cloud/features/monitoring/prometheus)에서 확인할 수 있습니다.

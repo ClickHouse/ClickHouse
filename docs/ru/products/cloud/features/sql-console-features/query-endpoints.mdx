@@ -24,10 +24,8 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Чтобы ограничить, какие клиенты могут вызывать ваши эндпоинты Query API:
 
 <Steps>
-  <Step>
-    #### Откройте настройки ключа API
-
-    1. Перейдите в ClickHouse Cloud Console → **Organization** → **API Keys**
+  <Step title="Откройте настройки ключа API" id="open-settings">
+    1. Перейдите в консоль ClickHouse Cloud → **Organization** → **API Keys**
 
     <Image img="/images/cloud/guides/query-endpoints/console-api-keys.webp" size="md" alt="Ключи API" />
 
@@ -36,9 +34,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     <Image img="/images/cloud/guides/query-endpoints/api-key-edit.webp" size="md" alt="Изменить" />
   </Step>
 
-  <Step>
-    #### Добавьте разрешенные IP-адреса
-
+  <Step title="Добавьте разрешенные IP-адреса" id="add-ips">
     1. В разделе **Allow access to this API Key** выберите **Specific locations**
     2. Введите IP-адреса или диапазоны CIDR (например, `203.0.113.1` или `203.0.113.0/24`)
     3. При необходимости добавьте несколько записей

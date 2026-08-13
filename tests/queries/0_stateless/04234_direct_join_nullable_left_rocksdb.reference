@@ -1,0 +1,12 @@
+new planner inner
+a	A
+b	B
+c	C
+new planner left
+a	A
+b	B
+c	C
+d	
+\N	
+explain
+Algorithm: DirectKeyValueJoin

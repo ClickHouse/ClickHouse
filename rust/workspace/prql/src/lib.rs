@@ -15,7 +15,12 @@ fn set_output(result: String, out: *mut *mut u8, out_size: *mut u64) {
 }
 
 /// Converts a PRQL query from a raw C string to SQL, returning an error code if the conversion fails.
-pub unsafe extern "C" fn prql_to_sql_impl(
+///
+/// This must be a plain Rust `fn`, not `extern "C"`. `prqlc::compile` can panic on some
+/// inputs; a panic that unwinds out of an `extern "C"` frame is a nounwind abort (SIGABRT)
+/// that the `catch_unwind` in `prql_to_sql` cannot intercept. Keeping this frame as a normal
+/// Rust fn lets the panic unwind into `catch_unwind` and be converted to an error code.
+unsafe fn prql_to_sql_impl(
     query: *const u8,
     size: u64,
     out: *mut *mut u8,
@@ -105,5 +110,13 @@ mod tests {
         // panic is caught. When we upgrade prqlc, it won't be a panic any
         // longer.
         assert!(run_compile("x -> y").1 == 1);
+    }
+
+    #[test]
+    fn test_prql_panic_is_caught() {
+        // `prqlc::compile` panics (`todo!()` in `type_intersection`) when `append`
+        // combines pipelines whose column types have no defined intersection. The
+        // panic must be caught and turned into an error code, never abort the process.
+        assert!(run_compile("from t | select {a=1} | append (from u | select {a=[1]})").1 == 1);
     }
 }
