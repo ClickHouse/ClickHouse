@@ -24,6 +24,19 @@ SELECT 'array size0 via merge()', (SELECT arr.size0 FROM merge(currentDatabase()
 -- The old analyzer never resolved the name; it must keep failing loudly rather than start guessing.
 SELECT arr.size0 FROM m_arr SETTINGS enable_analyzer = 0, optimize_functions_to_subcolumns = 0; -- { serverError UNKNOWN_IDENTIFIER }
 
+-- Here the alias expression reads a physical column, so the child must be asked for `dep`.
+-- `dep + 2` keeps the size0 truth (9), `dep` (7) and `first` (11) distinct: with a plain
+-- `range(dep)` the truth would equal `dep`, and a read landing on `dep` would look correct.
+DROP TABLE IF EXISTS t_dep;
+DROP TABLE IF EXISTS m_dep;
+CREATE TABLE t_dep (first UInt64, tiny UInt8, dep UInt64, arr Array(UInt64) ALIAS range(dep + 2)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_dep (first, tiny, dep) VALUES (11, 0, 7);
+CREATE TABLE m_dep (arr Array(UInt64), tiny UInt8, dep UInt64, first UInt64) ENGINE = Merge(currentDatabase(), '^t_dep$');
+
+SELECT 'dep alias size0', (SELECT arr.size0 FROM m_dep) AS through_merge, (SELECT arr.size0 FROM t_dep) AS direct SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'dep alias size0 with parent', arr.size0, length(arr) FROM m_dep SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'dep alias size0 with dep', arr.size0, dep, first FROM m_dep SETTINGS optimize_functions_to_subcolumns = 0;
+
 DROP TABLE IF EXISTS t_tup;
 DROP TABLE IF EXISTS m_tup;
 CREATE TABLE t_tup (n UInt64, tup Tuple(a UInt8, b UInt8) ALIAS tuple(1, 2)) ENGINE = MergeTree ORDER BY tuple();
@@ -101,6 +114,8 @@ SELECT 'missing column', n, arr.size0 FROM m_miss ORDER BY n SETTINGS optimize_f
 
 DROP TABLE IF EXISTS t_arr;
 DROP TABLE IF EXISTS m_arr;
+DROP TABLE IF EXISTS t_dep;
+DROP TABLE IF EXISTS m_dep;
 DROP TABLE IF EXISTS t_tup;
 DROP TABLE IF EXISTS m_tup;
 DROP TABLE IF EXISTS t_str;

@@ -3,6 +3,9 @@ array size0 subcolumns on	5	5
 array size0 with parent	5	5
 array size0 with other column	5	0
 array size0 via merge()	5	5
+dep alias size0	9	9
+dep alias size0 with parent	9	9
+dep alias size0 with dep	9	7	11
 tuple element	1	1
 string size	5	5
 nullable null	1	1
