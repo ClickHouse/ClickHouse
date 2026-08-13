@@ -97,8 +97,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
 
         auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
-            index_and_condition.condition_template->generateForPartition(part.data_part->partition),
-            key_condition_rpn_template->generateForPartition(part.data_part->partition),
+            index_and_condition.condition_template->generateForPart(part.data_part),
+            key_condition_rpn_template->generateForPart(part.data_part),
             part.data_part,
             ranges,
             part.read_hints,
@@ -123,7 +123,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
     if (use_for_disjunctions)
     {
         ranges = MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
-                            part.data_part, ranges, key_condition_rpn_template->generateForPartition(part.data_part->partition),
+                            part.data_part, ranges, key_condition_rpn_template->generateForPart(part.data_part),
                             partial_eval_results, reader_settings, log);
 
         LOG_DEBUG(log, "Final set of granules after AND/OR processing : {} out of {} in part {}",
