@@ -14,7 +14,9 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <unordered_set>
+#include <vector>
 
 namespace Poco
 {
@@ -33,6 +35,16 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+/// Where the definition of a resolvable cluster name comes from.
+/// Used by the unified `Clusters` registry (owned by `ClusterFactory`) to tell entries from different upstreams apart
+/// so reloads from one upstream only touch clusters of that source.
+enum class ClusterDefinitionSource : uint8_t
+{
+    RemoteServersConfig,
+    SQLCatalog,
+    Discovery,
+};
 
 struct DatabaseReplicaInfo
 {
@@ -97,6 +109,7 @@ public:
     static Poco::Timespan saturate(Poco::Timespan v, Poco::Timespan limit);
 
     using SlotToShard = std::vector<UInt64>;
+    static constexpr size_t MAX_TOTAL_SHARD_WEIGHT = 1'000'000;
 
     struct Address
     {
@@ -191,6 +204,9 @@ public:
         /// Returns resolved address if it does resolve.
         std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
 
+        /// Recompute `is_local` after fields are set (e.g. when building `Address` outside config parsing).
+        void recomputeIsLocal(UInt16 clickhouse_port) { is_local = isLocal(clickhouse_port); }
+
         auto tuple() const { return std::tie(host_name, port, secure, user, password, default_database, bind_host); }
         bool operator==(const Address & other) const { return tuple() == other.tuple(); }
 
@@ -200,6 +216,25 @@ public:
 
     using Addresses = std::vector<Address>;
     using AddressesWithFailover = std::vector<Addresses>;
+
+    /// Input for one shard before connection pools exist. Carries resolved `Address` list plus weight and
+    /// `internal_replication`; `Cluster(settings, name, secret, std::vector<ShardInitSpec>)` passes each row to `addShard`, which
+    /// builds the corresponding `ShardInfo` (pools, local vs remote split, insert paths, etc.).
+    /// Used by `ClusterFactory` when materializing catalog clusters from shard definitions.
+    struct ShardInitSpec
+    {
+        Addresses addresses;
+        UInt32 weight = 1;
+        bool internal_replication = false;
+    };
+
+    /// Build from pre-resolved `ShardInitSpec` rows (no XML config). Used by `ClusterFactory`.
+    Cluster(
+        const Settings & settings,
+        const String & cluster_name_,
+        const String & cluster_secret_,
+        std::vector<ShardInitSpec> && shard_specs,
+        bool allow_distributed_ddl_queries_ = true);
 
     /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
     ///
@@ -296,6 +331,23 @@ public:
 
     const String & getName() const { return name; }
 
+    /// Where this cluster was defined (config file, SQL catalog, or cluster discovery).
+    /// Default `RemoteServersConfig` matches the common case: `Cluster` built from `<remote_servers>` XML.
+    /// SQL catalog and cluster discovery call `setDefinitionMetadata` right after construction.
+    ClusterDefinitionSource getDefinitionSource() const { return definition_source; }
+
+    /// Version tag tied to the upstream that defined this cluster:
+    /// - `RemoteServersConfig` → `Context::getClustersVersion()` at the time config was applied
+    /// - `SQLCatalog` → `ClusterFactory::sql_catalog_mutation_counter` snapshot at materialization time
+    /// - `Discovery` → currently 0 (watch state carries its own freshness)
+    UInt64 getDefinitionVersion() const { return definition_version; }
+
+    void setDefinitionMetadata(ClusterDefinitionSource source, UInt64 version)
+    {
+        definition_source = source;
+        definition_version = version;
+    }
+
 private:
     SlotToShard slot_to_shard;
 
@@ -342,37 +394,66 @@ private:
     size_t local_shard_count = 0;
 
     String name;
+
+    ClusterDefinitionSource definition_source = ClusterDefinitionSource::RemoteServersConfig;
+    UInt64 definition_version = 0;
 };
 
 using ClusterPtr = std::shared_ptr<Cluster>;
 
 
+/// Materialised registry of named `Cluster` objects. Intended lifecycle (managed exclusively by `ClusterFactory`):
+///   1. Writer constructs or clones a `Clusters` instance it owns alone (the "builder").
+///   2. Writer calls mutators (`addCluster`, `removeClusterEntry`, `mergeConfigClusters`) on the builder.
+///   3. Writer publishes the builder as `shared_ptr<const Clusters>` through `MultiVersion<ClustersSnapshot>`.
+///   4. Readers observe only published instances and call only the `const` accessors.
+///
+/// There is no internal mutex: published instances are immutable, and builders are single-owner by contract
+/// (enforced by `ClusterFactory::clusters_writer_mutex` serialising writes). Calling a mutator on a published
+/// `Clusters` is a bug — type system prevents it when callers use `shared_ptr<const Clusters>`.
 class Clusters
 {
 public:
     Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, MultiVersion<Macros>::Version macros, const String & config_prefix = "remote_servers");
 
-    Clusters(const Clusters &) = delete;
+    /// Builder seed: copies `impl` (shallow, `shared_ptr<Cluster>` sharing the underlying objects),
+    /// `automatic_clusters` and `macros_`. Precondition: `other` is either an already-published snapshot
+    /// (immutable, nobody will mutate it) or a writer-owned builder on the same thread — no synchronisation
+    /// needed. Intended only for `ClusterFactory::cloneClustersForWriteLocked`.
+    Clusters(const Clusters & other);
     Clusters & operator=(const Clusters &) = delete;
 
+    /// --- Read-only accessors, safe on any published snapshot ---
     ClusterPtr getCluster(const std::string & cluster_name) const;
-    void setCluster(const String & cluster_name, const ClusterPtr & cluster);
-
-    void updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config = nullptr);
+    /// Existence-only probe: avoids the `getCluster(name) != nullptr` idiom on hot read paths and makes call
+    /// sites read as a predicate instead of leaking the materialised `ClusterPtr` when callers don't need it.
+    bool hasCluster(const std::string & cluster_name) const;
 
     using Impl = std::map<String, ClusterPtr>;
-
     Impl getContainer() const;
 
-protected:
+    /// --- Builder-only mutators ---
+    /// Valid only while the caller is the sole owner of `*this` (i.e. before publishing it through
+    /// `MultiVersion<ClustersSnapshot>`). Names deliberately differ from the classical `setCluster` / etc. to
+    /// make the write-side contract obvious at every call site.
+    void addCluster(const String & cluster_name, const ClusterPtr & cluster);
+    void removeClusterEntry(const String & cluster_name);
+    /// Diff `new_config` against `old_config` (nullptr => treat as empty) and apply the resulting add / remove /
+    /// replace operations to `impl`. Entries registered via ClusterDiscovery (`automatic_clusters`) are preserved.
+    void mergeConfigClusters(
+        const Poco::Util::AbstractConfiguration & new_config,
+        const Settings & settings,
+        const String & config_prefix,
+        const Poco::Util::AbstractConfiguration * old_config = nullptr);
 
-    /// setup outside of this class, stored to prevent deleting from impl on config update
+private:
+    /// Set of cluster names registered via ClusterDiscovery. Kept across `mergeConfigClusters` so the config
+    /// diff does not evict Discovery-owned entries.
     std::unordered_set<std::string> automatic_clusters;
 
-    MultiVersion<Macros>::Version macros_;
+    MultiVersion<Macros>::Version macros_; // NOLINT(readability-identifier-naming)
 
     Impl impl;
-    mutable std::mutex mutex;
 };
 
 }

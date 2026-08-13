@@ -1,0 +1,6 @@
+<clickhouse>
+    <!-- Shared Keeper paths for `test_sql_catalog_replica_ddl` (see `test.py`). -->
+    <distributed_ddl>
+        <path>/clickhouse/test_sql_catalog_replica_ddl/ddl</path>
+    </distributed_ddl>
+</clickhouse>

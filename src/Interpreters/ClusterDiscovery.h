@@ -33,9 +33,6 @@ public:
 
     void start();
 
-    ClusterPtr getCluster(const String & cluster_name) const;
-    std::unordered_map<String, ClusterPtr> getClusters() const;
-
     ~ClusterDiscovery();
 
 private:
@@ -151,9 +148,6 @@ private:
     /// Hold the callback pointers of each cluster.
     /// To avoid registering callbacks for the same path multiple times.
     std::unordered_map<String, Coordination::WatchCallbackPtr> get_nodes_callbacks;
-
-    mutable std::mutex mutex;
-    std::unordered_map<String, ClusterPtr> cluster_impls;
 
     bool is_initialized = false;
     ThreadFromGlobalPool main_thread;

@@ -13,6 +13,7 @@ ls_escapes_spaces: OK
 ls_escapes_single_quotes: OK
 ls_roundtrip_semicolon: OK
 ls_roundtrip_tab: OK
+uuid_path_scientific_notation_like: OK
 command_completion: OK
 path_completion_unique_match: OK
 directory_completion_trailing_slash: OK

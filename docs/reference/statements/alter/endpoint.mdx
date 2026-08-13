@@ -1,0 +1,37 @@
+---
+description: 'Documentation for ALTER ENDPOINT'
+sidebarTitle: 'ENDPOINT'
+slug: /sql-reference/statements/alter/endpoint
+title: 'ALTER ENDPOINT'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+Modifies properties of an existing SQL cluster catalog endpoint.
+
+Requires [`cluster_metadata`](/operations/sql-clusters#configuration) and the `ALTER ENDPOINT` privilege.
+
+## Syntax {#syntax}
+
+```sql
+ALTER ENDPOINT name
+MODIFY PROPERTIES (name = value [, ...])
+[SYNC]
+```
+
+At least one assignment is required. Allowed property names match [`CREATE ENDPOINT`](/sql-reference/statements/create/endpoint).
+
+## Example {#example}
+
+```sql
+ALTER ENDPOINT replica_01 MODIFY PROPERTIES (secure = 1, priority = 2);
+```
+
+## Related {#related}
+
+- [SQL clusters guide](/operations/sql-clusters)
+- [`CREATE ENDPOINT`](/sql-reference/statements/create/endpoint)
+- [`DROP ENDPOINT`](/sql-reference/statements/drop#drop-endpoint)

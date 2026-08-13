@@ -65,6 +65,6 @@ def test_role_grants_from_config():
         [
             "GRANT SHOW ON *.* TO test_role",
             "GRANT CREATE ON *.* TO test_role WITH GRANT OPTION",
-            "REVOKE SHOW ON system.* FROM test_role",
+            "REVOKE SHOW DATABASES, SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES ON system.* FROM test_role",
         ]
     )
