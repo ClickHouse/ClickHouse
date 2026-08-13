@@ -99,7 +99,8 @@ $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 kill_verdict=$($CLICKHOUSE_CLIENT --query "
     SELECT if(query_duration_ms < 3000, 'quick', 'slow')
     FROM system.query_log
-    WHERE event_date >= yesterday() AND type = 'QueryFinish' AND query_id = '$kill_id'
+    WHERE event_date >= yesterday() AND type = 'QueryFinish'
+      AND current_database = currentDatabase() AND query_id = '$kill_id'
     ORDER BY event_time_microseconds DESC LIMIT 1")
 
 # "finished" proves the KILL matched and cancelled our still-running query, "quick" that it did not wait for
