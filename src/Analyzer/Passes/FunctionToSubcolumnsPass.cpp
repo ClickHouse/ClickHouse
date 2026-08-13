@@ -34,6 +34,8 @@
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 
+#include <boost/algorithm/string/predicate.hpp>
+
 #include <stack>
 
 
@@ -145,6 +147,23 @@ bool sourceHasColumn(QueryTreeNodePtr column_source, const String & column_name)
         return {};
 
     return storage_snapshot->tryGetColumn(GetColumnsOptions::All, column_name).has_value();
+}
+
+/// True when the source declares a top-level column whose name matches `column_name` up to case.
+/// A reader with case-insensitive column matching (e.g. `input_format_orc_case_insensitive_column_matching`)
+/// binds a flattened subcolumn name like `a.b` to such a column instead of the tuple element,
+/// so the rewrite must not fire.
+bool sourceHasColumnCaseInsensitive(const QueryTreeNodePtr & column_source, const String & column_name)
+{
+    auto storage_snapshot = getStorageSnapshotForColumnSource(column_source);
+    if (!storage_snapshot)
+        return false;
+
+    for (const auto & column : storage_snapshot->getColumns(GetColumnsOptions::All))
+        if (boost::iequals(column.name, column_name))
+            return true;
+
+    return false;
 }
 
 /// Sometimes we cannot optimize function to subcolumn because there is no such subcolumn in the table.
@@ -406,11 +425,13 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
     if (!subcolumn)
         return;
 
+    NameAndTypePair column{ctx.column.name + "." + subcolumn->name, subcolumn->type};
+
     if constexpr (std::is_same_v<DataType, DataTypeTuple>)
-        if (tupleElementNameIsAmbiguousWhenFlattened(data_type_concrete, subcolumn->name))
+        if (tupleElementNameIsAmbiguousWhenFlattened(data_type_concrete, subcolumn->name)
+            || sourceHasColumnCaseInsensitive(ctx.column_source, column.name))
             return;
 
-    NameAndTypePair column{ctx.column.name + "." + subcolumn->name, subcolumn->type};
     if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
         return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
