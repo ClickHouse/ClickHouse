@@ -66,82 +66,88 @@ public:
 
     bool complete() const { return committed().subtract(range()).empty(); }
 
-    /// Store the portion of `data` within `range()` minus `committed()`.
-    /// Returns the bytes that newly landed; 0 for bytes outside the range,
-    /// already committed, an unclaimed cell, reservation failure or
-    /// bypass - NEVER throws on those, degrades to a partial or zero return.
-    /// On tiers that coordinate downloaders (the disk cache) a write lands only
-    /// into cells covered by an open `claim` of the calling thread.
-    virtual size_t write(ChainedBuffers data) = 0;
+    /// A held downloader LEAD role over one write range. Move-only RAII: the destructor
+    /// completes-and-releases the role (noexcept - the provider wraps the release body in
+    /// try/catch and logs). `bool(claim)` is true iff this thread is AUTHORIZED to write the
+    /// range: on a coordinating tier (disk cache) it won the role AND there is an uncommitted
+    /// tail to fill; on a non-coordinating tier (page cache) it is trivially true. A provider is
+    /// the only source of a held `Claim` (see `makeClaim`), so a `Claim` param on `write` proves
+    /// the caller acquired the role first. Roles are thread-affine (the downloader id is the
+    /// caller id), so the token must be created, written through, and destroyed on ONE thread.
+    class Claim
+    {
+    public:
+        Claim() = default;
+        Claim(Claim && other) noexcept
+            : held(std::exchange(other.held, false))
+            , release(std::exchange(other.release, nullptr))
+        {
+        }
+        Claim & operator=(Claim && other) noexcept
+        {
+            if (this != &other)
+            {
+                reset();
+                held = std::exchange(other.held, false);
+                release = std::exchange(other.release, nullptr);
+            }
+            return *this;
+        }
+        Claim(const Claim &) = delete;
+        Claim & operator=(const Claim &) = delete;
+        ~Claim() { reset(); }
+
+        explicit operator bool() const noexcept { return held; }
+
+        void reset() noexcept
+        {
+            held = false;
+            if (auto r = std::exchange(release, nullptr))
+                r();
+        }
+
+    private:
+        friend class CacheWriter;
+        Claim(bool held_arg, std::function<void()> release_arg) : held(held_arg), release(std::move(release_arg)) {}
+        bool held = false;
+        std::function<void()> release;
+    };
+
+    /// The result of `claimLeadRole`: the committed prefix and the lead role. The caller derives
+    /// the uncommitted tail `[available.end(), range.end())` - OURS to fetch if `bool(claim)`,
+    /// else a sibling's to wait on. `available` is a single contiguous prefix because a segment is
+    /// written append-only at its write offset.
+    struct Lead
+    {
+        ByteRange available;   /// committed prefix within `range` (size 0 == nothing committed yet)
+        Claim claim;           /// held iff there is an uncommitted tail this thread must fill
+    };
+
+protected:
+    /// Mint a `Claim`. Only `CacheWriter` and its provider subclasses may authorize a write.
+    static Claim makeClaim(bool held, std::function<void()> release) { return Claim(held, std::move(release)); }
+
+public:
+    /// Store the portion of `data` within `range()` minus `committed()`, under the held `claim`
+    /// (the caller's proof it holds this range's lead role - `write` never acquires one). Returns
+    /// the bytes that newly landed; 0 for bytes outside the range, already committed, reservation
+    /// failure or bypass - NEVER throws on those, degrades to a partial or zero return.
+    virtual size_t write(ChainedBuffers data, const Claim & claim) = 0;
 
     /// Serve an already-committed sub-range from this buffer's own held
     /// segments/cells, without a source round-trip.
     virtual ChainedBuffers read(ByteRange sub) = 0;
 
-    /// The result of `claim`: the downloader roles the calling thread holds over one window,
-    /// plus the window's decomposition into runs already committed (`available` - read from
-    /// cache) and runs whose role we won and must fetch (`to_fetch`). A run a sibling leads is
-    /// neither - the caller derives that contended remainder and resolves it. Move-only RAII:
-    /// roles are thread-affine (the downloader id is the caller id), so the token must be
-    /// created, written through, and destroyed on ONE thread; the destructor
-    /// completes-and-releases exactly the roles this claim NEWLY won - a nested claim over
-    /// cells the thread already leads (a tile write inside a window-long claim) releases
-    /// nothing of the outer claim's. Exceptions in the release are swallowed and logged.
-    class FillClaim
+    /// Acquire the lead role for the cache segment overlapping `range` (clamped internally) and
+    /// report the committed prefix. The ONLY role-acquisition site: `write` never adopts a role,
+    /// even one a sibling freed mid-window - a freed cell is picked up by the NEXT claim, which
+    /// keeps "which roles does this thread hold" answerable from the live claims alone. Holds the
+    /// role ONLY when there is an uncommitted tail to fill; if the committed prefix already covers
+    /// `range` it releases immediately and returns an empty `Claim`. Does NOT wait. Default: no
+    /// coordination - nothing committed, the role trivially held (e.g. page cache).
+    virtual Lead claimLeadRole(ByteRange range)
     {
-    public:
-        FillClaim() = default;
-        FillClaim(FillClaim && other) noexcept
-            : available(std::move(other.available))
-            , to_fetch(std::move(other.to_fetch))
-            , release(std::exchange(other.release, nullptr))
-        {
-        }
-        FillClaim & operator=(FillClaim && other) noexcept
-        {
-            if (this != &other)
-            {
-                reset();
-                available = std::move(other.available);
-                to_fetch = std::move(other.to_fetch);
-                release = std::exchange(other.release, nullptr);
-            }
-            return *this;
-        }
-        FillClaim(const FillClaim &) = delete;
-        FillClaim & operator=(const FillClaim &) = delete;
-        ~FillClaim() { reset(); }
-
-        void reset() noexcept
-        {
-            if (auto r = std::exchange(release, nullptr))
-                r();
-        }
-
-        /// The segment's already-committed prefix (a prior or concurrent downloader's partial,
-        /// or a fully DOWNLOADED segment): read it from cache, never fetch it from the source -
-        /// progress the caller accounts as covered.
-        VectorWithMemoryTracking<ByteRange> available;
-        /// The uncommitted tail whose downloader role THIS thread holds: fetch+write it while
-        /// the claim is open. A tail a sibling leads is neither `available` nor `to_fetch` - the
-        /// caller derives that contended remainder as `window \ available \ to_fetch`.
-        VectorWithMemoryTracking<ByteRange> to_fetch;
-        /// Completes-and-releases the newly-won roles; noexcept by construction (the
-        /// provider wraps its body in try/catch). Empty when nothing was won.
-        std::function<void()> release;
-    };
-
-    /// Acquire the downloader roles for the cache cells overlapping `window` (clamped
-    /// internally). The ONLY role-acquisition site: `write` never adopts a role, even one a
-    /// sibling freed mid-window - a freed cell is picked up by the NEXT claim, which keeps
-    /// "which roles does this thread hold" answerable from the live claims alone. Does NOT
-    /// wait. Default: the whole window is to-fetch, nothing to release (no coordination,
-    /// e.g. page cache).
-    virtual FillClaim claim(ByteRange window)
-    {
-        FillClaim c;
-        c.to_fetch.push_back(window);
-        return c;
+        return Lead{ByteRange{range.offset, 0}, makeClaim(/*held=*/true, /*release=*/nullptr)};
     }
 
     /// Wait until `sub`'s bytes are committed by the sibling downloader, then serve them

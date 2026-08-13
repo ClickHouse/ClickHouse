@@ -101,9 +101,9 @@ public:
         std::lock_guard lock(committed_mutex);
         return committed_ranges;
     }
-    size_t write(ChainedBuffers data) override;
+    size_t write(ChainedBuffers data, const Claim & claim) override;
     ChainedBuffers read(ByteRange sub) override;
-    FillClaim claim(ByteRange window) override;
+    Lead claimLeadRole(ByteRange range) override;
     ChainedBuffers waitAndReadSiblingLed(ByteRange sub) override;
     bool frontierInPartial(size_t frontier) const override;
     ~DiskCacheWriter() override;

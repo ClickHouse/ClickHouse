@@ -80,7 +80,7 @@ PageCacheWriter::PageCacheWriter(
 {
 }
 
-size_t PageCacheWriter::write(ChainedBuffers data)
+size_t PageCacheWriter::write(ChainedBuffers data, [[maybe_unused]] const Claim & claim)
 {
     /// A bypass tier populates nothing - skip before any `getOrSet`.
     if (bypass_if_missing)

@@ -295,8 +295,8 @@ public:
                 break;
             }
         ASSERT_NE(writer_ptr, nullptr);
-        auto claim = writer_ptr->claim(writer_ptr->range());
-        ASSERT_EQ(writer_ptr->write(patternChain(content, cell.offset, prefix)), prefix);
+        auto lead = writer_ptr->claimLeadRole(writer_ptr->range());
+        ASSERT_EQ(writer_ptr->write(patternChain(content, cell.offset, prefix), lead.claim), prefix);
     }
 
     ByteRange expectedSpan(size_t start) const

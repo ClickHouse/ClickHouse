@@ -62,6 +62,16 @@ ChainedBuffers makeChain(size_t offset, size_t size, char fill)
     return chain;
 }
 
+/// Claim the writer's range then write - the page cache has no downloader role, so its default
+/// claim always authorizes; mirrors how the executor drives a write under a held claim.
+size_t claimedWrite(CacheWriter & writer, ChainedBuffers chain)
+{
+    auto lead = writer.claimLeadRole(writer.range());
+    if (!lead.claim)
+        return 0;
+    return writer.write(std::move(chain), lead.claim);
+}
+
 /// Flatten `chain`'s coverage of `[offset, offset + size)` into a std::string,
 /// asserting full coverage first.
 std::string flatten(const ChainedBuffers & chain, size_t offset, size_t size)
@@ -94,7 +104,7 @@ TEST(PageCacheBuffers, WriteWholeBlockThenHit)
 
     EXPECT_FALSE(writer.complete());
 
-    size_t wrote = writer.write(makeChain(0, block_size, 'A'));
+    size_t wrote = claimedWrite(writer, makeChain(0, block_size, 'A'));
     EXPECT_EQ(wrote, block_size) << "the whole block newly landed";
     EXPECT_TRUE(writer.complete());
 
@@ -128,7 +138,7 @@ TEST(PageCacheBuffers, WriteBufferDoublesAsReadBuffer)
     ASSERT_EQ(misses.size(), 1u);
     auto & writer = *misses[0].writer;
 
-    writer.write(makeChain(0, block_size, 'Z'));
+    claimedWrite(writer, makeChain(0, block_size, 'Z'));
 
     /// Whole-block read back.
     auto whole = writer.read(ByteRange{0, block_size});
@@ -160,7 +170,7 @@ TEST(PageCacheBuffers, EofTailBlockShort)
     auto & writer = *misses[0].writer;
     EXPECT_EQ(writer.range().size, tail_size);
 
-    size_t wrote = writer.write(makeChain(tail_off, tail_size, 'T'));
+    size_t wrote = claimedWrite(writer, makeChain(tail_off, tail_size, 'T'));
     EXPECT_EQ(wrote, tail_size);
     EXPECT_TRUE(writer.complete());
 
@@ -204,7 +214,7 @@ TEST(PageCacheBuffers, BypassOpensNoWritersAndPopulatesNothing)
         PageCacheWriter writer(
             cache, file, block_size, /*file_size_in_bytes=*/block_size,
             /*inject_eviction=*/false, /*bypass_if_missing=*/true, ByteRange{0, block_size});
-        size_t wrote = writer.write(makeChain(0, block_size, 'X'));
+        size_t wrote = claimedWrite(writer, makeChain(0, block_size, 'X'));
         EXPECT_EQ(wrote, 0u);
         EXPECT_FALSE(writer.complete()) << "bypass write commits nothing";
     }
@@ -260,11 +270,11 @@ TEST(PageCacheBuffers, FirstWriterWins)
     ASSERT_EQ(second.size(), 1u);
 
     /// First writer populates the block with 'F'.
-    EXPECT_EQ(first[0].writer->write(makeChain(0, block_size, 'F')), block_size);
+    EXPECT_EQ(claimedWrite(*first[0].writer, makeChain(0, block_size, 'F')), block_size);
 
     /// Second writer tries 'S' over the same block: it loses the race.
     auto & writer = *second[0].writer;
-    size_t wrote = writer.write(makeChain(0, block_size, 'S'));
+    size_t wrote = claimedWrite(writer, makeChain(0, block_size, 'S'));
     EXPECT_EQ(wrote, 0u) << "lost the first-writer-wins race: nothing newly landed";
     EXPECT_TRUE(writer.complete()) << "the byte IS cached (by the first writer), so committed must advance";
     EXPECT_TRUE(writer.committed().subtract(ByteRange{0, block_size}).empty());
@@ -300,9 +310,9 @@ TEST(PageCacheBuffers, WriteAcrossTwoBlocks)
     EXPECT_EQ(w1.range().size, block_size);
 
     /// Fill block 0 with '0', block 1 with '1'; each whole block lands.
-    EXPECT_EQ(w0.write(makeChain(0, block_size, '0')), block_size);
+    EXPECT_EQ(claimedWrite(w0, makeChain(0, block_size, '0')), block_size);
     EXPECT_TRUE(w0.complete());
-    EXPECT_EQ(w1.write(makeChain(block_size, block_size, '1')), block_size);
+    EXPECT_EQ(claimedWrite(w1, makeChain(block_size, block_size, '1')), block_size);
     EXPECT_TRUE(w1.complete());
 
     /// probeView coalesces the two adjacent hit blocks into one HitEntry.
@@ -337,7 +347,7 @@ TEST(PageCacheBuffers, PartialBlockWriteIsSkipped)
     auto & writer = *misses[0].writer;
 
     /// Data covers only the first half of the block — the whole block is not covered.
-    size_t wrote = writer.write(makeChain(0, block_size / 2, 'P'));
+    size_t wrote = claimedWrite(writer, makeChain(0, block_size / 2, 'P'));
     EXPECT_EQ(wrote, 0u) << "a partially-covered block is left for a later write";
     EXPECT_FALSE(writer.complete());
     auto uncommitted = writer.committed().subtract(ByteRange{0, block_size});
@@ -367,7 +377,7 @@ TEST(PageCacheBuffers, HitMissInterleavedTiling)
     {
         auto view_middle = openWriters(provider, StoredObject{}, 0, {ByteRange{block_size, block_size}}); const auto & middle = view_middle->misses();
         ASSERT_EQ(middle.size(), 1u);
-        size_t wrote = middle[0].writer->write(makeChain(block_size, block_size, 'M'));
+        size_t wrote = claimedWrite(*middle[0].writer, makeChain(block_size, block_size, 'M'));
         EXPECT_EQ(wrote, block_size);
     }
 
@@ -414,11 +424,11 @@ TEST(PageCacheBuffers, FirstWriterWinsAcrossProviders)
     ASSERT_EQ(second.size(), 1u);
 
     /// provider1 populates the block with 'F'.
-    EXPECT_EQ(first[0].writer->write(makeChain(0, block_size, 'F')), block_size);
+    EXPECT_EQ(claimedWrite(*first[0].writer, makeChain(0, block_size, 'F')), block_size);
 
     /// provider2's writer tries 'S' over the same cache key: it loses the race.
     auto & writer = *second[0].writer;
-    size_t wrote = writer.write(makeChain(0, block_size, 'S'));
+    size_t wrote = claimedWrite(writer, makeChain(0, block_size, 'S'));
     EXPECT_EQ(wrote, 0u) << "lost the cross-provider first-writer-wins race: nothing newly landed";
     EXPECT_TRUE(writer.complete()) << "the byte IS cached (by provider1), so committed must advance";
     EXPECT_TRUE(writer.committed().subtract(ByteRange{0, block_size}).empty());

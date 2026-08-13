@@ -637,11 +637,13 @@ ChainedBuffers ReaderExecutor::fetchEncryptionHeader()
             {
                 if (!m.writer)
                     continue;
-                auto fill_claim = m.writer->claim(header_range);
+                auto lead = m.writer->claimLeadRole(header_range);
+                if (!lead.claim)
+                    continue;
                 stats.add(Stats::CachePopulateRequests);
                 StatTimer put_scope(stats, Stats::CachePopulateMicroseconds);
                 stats.add(Stats::BytesPushedToCacheSync,
-                    m.writer->write(fetched.slice(header_range)));
+                    m.writer->write(fetched.slice(header_range), lead.claim));
             }
         }
     }
@@ -1003,13 +1005,13 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
     IntervalSet to_fetch;      /// won tails + bypass gaps -> fetched on this thread
     IntervalSet resolved;      /// available ∪ to_fetch = everything NOT contended
     IntervalSet writer_coverage;
-    VectorWithMemoryTracking<CacheWriter::FillClaim> claims;
+    VectorWithMemoryTracking<CacheWriter::Claim> claims;
     for (const auto & view : m.writer_views)
     {
-        /// One claim per view, PARALLEL to `m.writer_views` (a default/empty claim for a null or
+        /// One claim per view, PARALLEL to `m.writer_views` (an empty claim for a null or
         /// non-overlapping view) so the per-tile `pushChainToWriters` can index claim↔view. The
         /// claims are held for the whole fetch step, so the per-tile writes run under them.
-        CacheWriter::FillClaim fill_claim;
+        CacheWriter::Claim claim;
         if (view.writer)
         {
             const size_t lo = std::max(window.offset, view.writer->range().offset);
@@ -1017,17 +1019,22 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
             if (lo < hi)
             {
                 writer_coverage.add(ByteRange{lo, hi - lo});
-                fill_claim = view.writer->claim(ByteRange{lo, hi - lo});
-                for (const auto & r : fill_claim.available)
-                    resolved.add(r);
-                for (const auto & r : fill_claim.to_fetch)
+                auto lead = view.writer->claimLeadRole(ByteRange{lo, hi - lo});
+                /// `available` is the committed prefix (read from cache). The uncommitted tail
+                /// `[available.end(), hi)` is OURS to fetch iff we hold the role; otherwise it is a
+                /// sibling's - left out of `resolved` so it falls out as contended below.
+                if (lead.available.size)
+                    resolved.add(lead.available);
+                const size_t tail_lo = lead.available.end();
+                if (lead.claim && tail_lo < hi)
                 {
-                    to_fetch.add(r);
-                    resolved.add(r);
+                    to_fetch.add(ByteRange{tail_lo, hi - tail_lo});
+                    resolved.add(ByteRange{tail_lo, hi - tail_lo});
                 }
+                claim = std::move(lead.claim);
             }
         }
-        claims.push_back(std::move(fill_claim));
+        claims.push_back(std::move(claim));
     }
     for (const auto & g : writer_coverage.subtract(window))
     {
@@ -1200,16 +1207,17 @@ ChainedBuffers ReaderExecutor::fetchWindowFromSource(ByteRange physical_window, 
     return result;
 }
 
-void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, [[maybe_unused]] const CacheWriter::FillClaim & claim,
+void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, const CacheWriter::Claim & claim,
     ByteRange window, const ChainedBuffers & chain, Stats & out_stats)
 {
     chassert(writer);
-    /// `claim` is the CALLER's held role for this writer: its lifetime keeps the segment's
-    /// downloader role open, and it is passed as a guardrail so a write only ever runs under a
-    /// held claim. The write acquires no role of its own - `claim` is the sole role-acquisition
-    /// site. `DiskCacheWriter::write` still enforces the role per segment (`isDownloader`), so a
-    /// cell a sibling leads refuses the bytes.
-    ///
+    /// `claim` is the CALLER's held lead role for this writer. Skip the write entirely unless the
+    /// claim AUTHORIZES it (`bool(claim)`): a cell a sibling leads (contended) or one already
+    /// committed is not ours to write. `write` acquires no role of its own and asserts this claim,
+    /// so the gate here is what keeps that assertion true.
+    if (!claim)
+        return;
+
     /// Clamp the write target to the window's served portion and the buffer's own aligned range;
     /// the buffer further skips already-committed bytes internally (committed-set idempotency),
     /// so an out-of-order/overlapping slice from an interleaved promotion never double-counts.
@@ -1236,7 +1244,7 @@ void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, [[maybe_unused]] c
             continue;
         out_stats.add(Stats::CachePopulateRequests);
         StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
-        out_stats.add(Stats::BytesPushedToCacheSync, writer->write(std::move(slice)));
+        out_stats.add(Stats::BytesPushedToCacheSync, writer->write(std::move(slice), claim));
         HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
             static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
     }
@@ -1245,7 +1253,7 @@ void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, [[maybe_unused]] c
 // ─── Fill lane ─────────────────────────────────────────────────────────────
 
 void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views,
-    const VectorWithMemoryTracking<CacheWriter::FillClaim> & claims, ByteRange window,
+    const VectorWithMemoryTracking<CacheWriter::Claim> & claims, ByteRange window,
     const ChainedBuffers & chain, Stats & out_stats)
 {
     chassert(claims.size() == views.size());
@@ -1729,10 +1737,12 @@ void ReaderExecutor::runHandedFills(ByteRange served_range, const ChainedBuffers
                 auto slice = bytes.slice(ByteRange{lo, hi - lo});
                 if (slice.empty())
                     continue;
+                auto handed = w.writer->claimLeadRole(ByteRange{lo, hi - lo});
+                if (!handed.claim)
+                    continue;
                 out_stats.add(Stats::CachePopulateRequests);
                 StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
-                auto handed_claim = w.writer->claim(ByteRange{lo, hi - lo});
-                const size_t written = w.writer->write(std::move(slice));
+                const size_t written = w.writer->write(std::move(slice), handed.claim);
                 out_stats.add(Stats::BytesPromoted, written);
                 HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
                     static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));

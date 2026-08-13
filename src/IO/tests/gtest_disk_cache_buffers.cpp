@@ -66,8 +66,10 @@ ChainedBuffers makeChain(size_t offset, size_t size, char byte)
 /// writer's whole range for the duration of one write, as the executor's sync paths do.
 size_t claimedWrite(CacheWriter & writer, ChainedBuffers chain)
 {
-    auto fill_claim = writer.claim(writer.range());
-    return writer.write(std::move(chain));
+    auto lead = writer.claimLeadRole(writer.range());
+    if (!lead.claim)
+        return 0;
+    return writer.write(std::move(chain), lead.claim);
 }
 
 /// Flatten a chain's bytes (in logical order) into a string for comparison.
@@ -501,26 +503,25 @@ TEST_F(DiskCacheBuffers, FreshClaimServesCommittedPrefixInsteadOfRefetching)
     ASSERT_EQ(claimedWrite(writer, makeChain(0, half, 'A')), half);
 
     /// Fresh claim over the WHOLE range on the now-partial segment.
-    auto claim = writer.claim(ByteRange{0, kSegmentSize});
+    auto lead = writer.claimLeadRole(ByteRange{0, kSegmentSize});
 
-    ASSERT_EQ(claim.available.size(), 1u) << "the committed prefix must be available (cache read)";
-    EXPECT_EQ(claim.available[0].offset, 0u);
-    EXPECT_EQ(claim.available[0].size, half);
+    EXPECT_EQ(lead.available.offset, 0u) << "the committed prefix must be available (cache read)";
+    EXPECT_EQ(lead.available.size, half);
 
-    ASSERT_EQ(claim.to_fetch.size(), 1u) << "only the missing tail may be fetched";
-    EXPECT_EQ(claim.to_fetch[0].offset, half);
-    EXPECT_EQ(claim.to_fetch[0].size, kSegmentSize - half);
+    /// The uncommitted tail [available.end(), kSegmentSize) is OURS to fetch: the role is held.
+    EXPECT_TRUE(static_cast<bool>(lead.claim)) << "the cold tail's downloader role is won";
+    EXPECT_EQ(lead.available.end(), half) << "only the missing tail [half, kSegmentSize) remains";
 
     /// The won role still fills the tail; the segment completes across the two claims.
-    ASSERT_EQ(writer.write(makeChain(half, kSegmentSize - half, 'B')), kSegmentSize - half);
+    ASSERT_EQ(writer.write(makeChain(half, kSegmentSize - half, 'B'), lead.claim), kSegmentSize - half);
 }
 
-/// A fresh claim whose overlap is ALREADY fully committed (a partial segment's prefix covers
-/// the whole ask) still takes the downloader role via `getOrSetDownloader` - so it MUST record
-/// that role for release even though there is nothing to fetch. Otherwise the role leaks and a
-/// later `waitAndReadSiblingLed` self-deadlocks: a thread cannot wait on a segment it downloads
-/// (`FileSegment::wait` asserts `!isDownloaderUnlocked`). Pins the Step-1 regression the
-/// real-disk sequential-eviction test caught.
+/// A fresh claim whose overlap is ALREADY fully committed (a partial segment's prefix covers the
+/// whole ask) takes the downloader role via `getOrSetDownloader` to read `cwo` exactly, finds
+/// nothing to fetch, and RELEASES it immediately - returning an EMPTY `Claim`. Otherwise the role
+/// would leak and a later `waitAndReadSiblingLed` self-deadlocks: a thread cannot wait on a segment
+/// it downloads (`FileSegment::wait` asserts `!isDownloaderUnlocked`). Pins the Step-1 regression
+/// the real-disk sequential-eviction test caught.
 TEST_F(DiskCacheBuffers, ClaimOverFullyCommittedOverlapReleasesRole)
 {
     auto provider = makeProvider();
@@ -533,12 +534,12 @@ TEST_F(DiskCacheBuffers, ClaimOverFullyCommittedOverlapReleasesRole)
     ASSERT_EQ(claimedWrite(writer, makeChain(0, half, 'A')), half);   /// partial: cwo = half
 
     {
-        /// Claim ONLY the committed prefix: `available` covers it, nothing to fetch - but the
-        /// role is taken and must be released when the claim is destroyed.
-        auto claim = writer.claim(ByteRange{0, half});
-        ASSERT_EQ(claim.available.size(), 1u);
-        EXPECT_TRUE(claim.to_fetch.empty()) << "a fully-committed overlap leaves nothing to fetch";
-    }   /// claim destroyed -> the role must be released here
+        /// Claim ONLY the committed prefix: `available` covers it and there is nothing to fetch,
+        /// so `claimLeadRole` releases the role before returning - the `Claim` is empty.
+        auto lead = writer.claimLeadRole(ByteRange{0, half});
+        EXPECT_EQ(lead.available.size, half);
+        EXPECT_FALSE(static_cast<bool>(lead.claim)) << "a fully-committed overlap holds no role";
+    }
 
     /// If the role leaked, this self-waits and trips `chassert(!isDownloaderUnlocked)`.
     ChainedBuffers got = writer.waitAndReadSiblingLed(ByteRange{0, half});
@@ -567,8 +568,9 @@ TEST_F(DiskCacheBuffers, SecondWriterYieldsToHeldClaimThenContinues)
     std::latch release_sibling(1);
     std::thread sibling([&]
     {
-        auto sibling_claim = writer1.claim(writer1.range());
-        ASSERT_EQ(writer1.write(makeChain(0, half, 'A')), half);
+        auto sibling_lead = writer1.claimLeadRole(writer1.range());
+        ASSERT_TRUE(static_cast<bool>(sibling_lead.claim));
+        ASSERT_EQ(writer1.write(makeChain(0, half, 'A'), sibling_lead.claim), half);
         prefix_committed.count_down();
         release_sibling.wait();
     });
@@ -806,8 +808,8 @@ TEST_F(DiskCacheBuffers, ClaimReleaseMakesForeignThreadTeardownSafe)
 
     std::thread worker([&]
     {
-        auto fill_claim = misses[0].writer->claim(ByteRange{0, kSegmentSize});
-        ASSERT_FALSE(fill_claim.to_fetch.empty()) << "the cold segment is led (downloader role won)";
+        auto lead = misses[0].writer->claimLeadRole(ByteRange{0, kSegmentSize});
+        ASSERT_TRUE(static_cast<bool>(lead.claim)) << "the cold segment is led (downloader role won)";
         /// The fetch never reached this writer (interrupted); the claim going out of
         /// scope resets the segment - what the claims' lifetime does in production.
     });
