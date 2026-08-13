@@ -219,7 +219,7 @@ Columns indexColumns(const Columns & columns, const DataTypes & types, const Pad
     return new_columns;
 }
 
-size_t nextDistinct(FullMergeJoinCursor & impl)
+size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
 {
     chassert(impl.isValid());
     const size_t start_pos = impl.getRow();
@@ -247,7 +247,7 @@ size_t nextDistinct(FullMergeJoinCursor & impl)
 
 /// Lookup the equal range of the cursor, without moving the cursor
 /// Needed for EXPLAIN ANALYZE to compute the matches
-size_t countMatchedRowsAheadIfNeeded(FullMergeJoinCursor & cursor, const JoinKeyRow & row_to_compare, bool collect_matches)
+size_t ALWAYS_INLINE countMatchedRowsAheadIfNeeded(FullMergeJoinCursor & cursor, const JoinKeyRow & row_to_compare, bool collect_matches)
 {
     if (!collect_matches || !row_to_compare.equals(cursor))
         return 0;
@@ -259,7 +259,7 @@ size_t countMatchedRowsAheadIfNeeded(FullMergeJoinCursor & cursor, const JoinKey
 
 /// Is used to compute the length of equal range between chunks
 /// Needed for EXPLAIN ANALYZE to ocmpute the matches
-size_t consumeEqualRange(FullMergeJoinCursor & cursor, const JoinKeyRow & matched_range, size_t & matched_rows)
+size_t ALWAYS_INLINE consumeEqualRange(FullMergeJoinCursor & cursor, const JoinKeyRow & matched_range, size_t & matched_rows)
 {
     const bool matched = matched_range.equals(cursor);
     const size_t length = nextDistinct(cursor);
@@ -650,6 +650,8 @@ struct AllJoinImpl
         size_t lpos = std::numeric_limits<size_t>::max();
         int cmp = 0;
         chassert(left_cursor.isValid() && right_cursor.isValid());
+        size_t matched_left = 0;
+        size_t matched_right = 0;
         while (left_cursor.isValid() && right_cursor.isValid())
         {
             lpos = left_cursor.getRow();
@@ -664,8 +666,8 @@ struct AllJoinImpl
             {
                 size_t lnum = nextDistinct(left_cursor);
                 size_t rnum = nextDistinct(right_cursor);
-                matched_rows.left += lnum;
-                matched_rows.right += rnum;
+                matched_left += lnum;
+                matched_right += rnum;
                 bool all_fit_in_block = !max_block_size || std::max(left_map.size(), right_map.size()) + lnum * rnum <= max_block_size;
                 bool have_all_ranges = left_cursor.isValid() && right_cursor.isValid();
                 if (all_fit_in_block && have_all_ranges)
@@ -683,6 +685,8 @@ struct AllJoinImpl
                     state = std::make_unique<AllJoinState>(left_cursor, lpos, right_cursor, rpos);
                     state->addRange(0, left_cursor.getCurrent().clone(), lpos, lnum);
                     state->addRange(1, right_cursor.getCurrent().clone(), rpos, rnum);
+                    matched_rows.left += matched_left;
+                    matched_rows.right += matched_right;
                     return;
                 }
             }
@@ -708,6 +712,8 @@ struct AllJoinImpl
                 }
             }
         }
+        matched_rows.left += matched_left;
+        matched_rows.right += matched_right;
     }
 };
 
@@ -966,6 +972,9 @@ struct AnyJoinImpl
         chassert(left_cursor.isValid() && right_cursor.isValid());
         int cmp = 0;
         bool count_matches = any_join_state.count_matches;
+        size_t matched_left = 0;
+        size_t matched_right = 0;
+
         while (left_cursor.isValid() && right_cursor.isValid())
         {
             lpos = left_cursor.getRow();
@@ -987,14 +996,14 @@ struct AnyJoinImpl
                 if constexpr (isLeftOrFull(kind))
                 {
                     size_t lnum = nextDistinct(left_cursor);
-                    matched_rows.left += lnum;
+                    matched_left += lnum;
                     right_map.resize_fill(right_map.size() + lnum, rpos);
                 }
 
                 if constexpr (isRightOrFull(kind))
                 {
                     size_t rnum = nextDistinct(right_cursor);
-                    matched_rows.right += rnum;
+                    matched_right += rnum;
                     left_map.resize_fill(left_map.size() + rnum, lpos);
                 }
 
@@ -1003,8 +1012,8 @@ struct AnyJoinImpl
                     size_t lnum = nextDistinct(left_cursor);
                     size_t rnum = nextDistinct(right_cursor);
 
-                    matched_rows.left += lnum;
-                    matched_rows.right += rnum;
+                    matched_left += lnum;
+                    matched_right += rnum;
 
                     left_map.emplace_back(lpos);
                     right_map.emplace_back(rpos);
@@ -1012,7 +1021,7 @@ struct AnyJoinImpl
             }
             else if (cmp < 0)
             {
-                matched_rows.left += countMatchedRowsAheadIfNeeded(left_cursor, any_join_state.matched.left, count_matches);
+                matched_left += countMatchedRowsAheadIfNeeded(left_cursor, any_join_state.matched.left, count_matches);
                 /// When a later key column decided the order, only the run of equal keys can be skipped.
                 size_t num = skipTracked(left_cursor, first_key.track);
                 if constexpr (isLeftOrFull(kind))
@@ -1020,12 +1029,14 @@ struct AnyJoinImpl
             }
             else
             {
-                matched_rows.right += countMatchedRowsAheadIfNeeded(right_cursor, any_join_state.matched.right, count_matches);
+                matched_right += countMatchedRowsAheadIfNeeded(right_cursor, any_join_state.matched.right, count_matches);
                 size_t num = skipTracked(right_cursor, first_key.track);
                 if constexpr (isRightOrFull(kind))
                     left_map.resize_fill(left_map.size() + num, left_cursor.rows);
             }
         }
+        matched_rows.left += matched_left;
+        matched_rows.right += matched_right;
 
         /// Remember last joined row to propagate it to next block
 
