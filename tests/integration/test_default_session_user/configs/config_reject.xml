@@ -23,6 +23,10 @@
          single reload, which must restart the listener even though the *new* handler set
          no longer consumes the setting. -->
     <prometheus>
+        <!-- The standalone prometheus listener serves the same handler set as the composable
+             `type = prometheus` endpoints below, so a change of the section must restart it
+             too, even though it has no `protocols.*` entry of its own. -->
+        <port>9118</port>
         <handlers>
             <write_rule>
                 <url>/write</url>

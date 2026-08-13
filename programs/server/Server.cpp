@@ -4587,6 +4587,13 @@ void Server::updateServers(
                 /// internal replication communications.
                 is_http = server->getPortName() == "http_port" || server->getPortName() == "https_port";
                 is_prometheus = server->getPortName() == "prometheus.port";
+                /// The standalone `prometheus.port` listener is built from the same shared
+                /// `prometheus.handlers` section as a composable `type = prometheus` endpoint
+                /// (`createPrometheusMainHandlerFactory` bakes it into the handler factory), and
+                /// there is no other reconfiguration hook for it, so it needs the same restart
+                /// check. In keeper-metrics-only mode the section is not served at all, and a
+                /// change of the mode itself is handled by the check below.
+                is_non_keeper_prometheus = is_prometheus && !server_settings[ServerSetting::prometheus_keeper_metrics_only];
             }
 
             if (!has_host)
@@ -4604,7 +4611,8 @@ void Server::updateServers(
                 force_restart = true;
                 LOG_TRACE(log, "<{}> had been changed, will reload {}", handlers_key, server->getDescription());
             }
-            /// A composable non-keeper `prometheus` listener serves the shared `prometheus.handlers`
+            /// A non-keeper `prometheus` listener (a composable `type = prometheus` endpoint as well
+            /// as the standalone `prometheus.port` one) serves the shared `prometheus.handlers`
             /// section, which is baked into its handler factory, so the listener must be restarted
             /// when the section changes (a fixed `user`, a route, or a handler type may have changed).
             if (is_non_keeper_prometheus && !isSameConfiguration(previous_config, config, "prometheus.handlers"))
