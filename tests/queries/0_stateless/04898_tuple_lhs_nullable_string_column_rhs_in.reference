@@ -16,6 +16,14 @@ SELECT (0, 0) IN (rhs) FROM (SELECT CAST(NULL AS Nullable(String)) AS rhs);
 0
 SELECT (toNullable(0), 0) IN (rhs), (toNullable(0), 0) NOT IN (rhs), toTypeName((toNullable(0), 0) IN (rhs)) FROM (SELECT materialize(CAST(NULL AS Nullable(String))) AS rhs);
 0	1	UInt8
+-- The substitution before the cast, not lazy `if` evaluation, is what keeps the cast total:
+-- these repeat the NULL arms with short-circuiting off.
+SELECT (0, 0) IN (rhs), (0, 0) NOT IN (rhs) FROM (SELECT materialize(CAST(NULL AS Nullable(String))) AS rhs) SETTINGS short_circuit_function_evaluation = 'disable';
+0	1
+SELECT nullIn((0, 0), rhs), notNullIn((0, 0), rhs) FROM (SELECT materialize(CAST(NULL AS Nullable(String))) AS rhs) SETTINGS short_circuit_function_evaluation = 'disable';
+0	1
+SELECT (0, 0) IN (rhs) FROM (SELECT materialize(CAST(NULL AS Nullable(String))) AS rhs) SETTINGS short_circuit_function_evaluation = 'force_enable';
+0
 -- A present value is still parsed into the tuple type and compared, NULL or not.
 SELECT (1, 2) IN (rhs), (1, 2) NOT IN (rhs) FROM (SELECT materialize(CAST('(1,2)' AS Nullable(String))) AS rhs);
 1	0
