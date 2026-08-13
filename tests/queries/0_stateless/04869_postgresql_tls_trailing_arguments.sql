@@ -14,7 +14,7 @@ CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = PostgreSQL('127.0.0.
 CREATE TABLE t_04869 (x Int32) ENGINE = PostgreSQL('127.0.0.1:1', 'd', 't', 'u', 'p', sslrootcert_pem = 'a', sslrootcert_pem = 'b'); -- { serverError BAD_ARGUMENTS }
 
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = PostgreSQL('127.0.0.1:1', 'd', 'u', 'p', 'sch', 1, sslmode = 'require');
-SELECT engine FROM system.databases WHERE name = '{CLICKHOUSE_DATABASE_1:String}' ORDER BY 1;
+SELECT engine FROM system.databases WHERE name = {CLICKHOUSE_DATABASE_1:String} ORDER BY 1;
 
 CREATE TABLE t_04869 (x Int32) ENGINE = PostgreSQL('127.0.0.1:1', 'd', 't', 'u', 'p', 'sch', sslmode = 'require');
 SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 't_04869' ORDER BY 1;
