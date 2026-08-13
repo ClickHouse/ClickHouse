@@ -429,8 +429,6 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         return result;
     }
 
-    /// Conditions that rule out every candidate at once. Reporting them per candidate keeps the
-    /// baseline visible and tells the user why nothing can help, instead of failing the statement
     String blanket_not_applicable_reason;
     if (query_with_final)
         blanket_not_applicable_reason = "EXPLAIN WHATIF cannot accurately model skip-index pruning under FINAL "
