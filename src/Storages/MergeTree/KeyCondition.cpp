@@ -3655,6 +3655,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             }
             boost::geometry::correct(out.polygon->ring);
 
+            /// `correct` does not make a ring valid, and `intersects` below only agrees with the
+            /// algorithm the function evaluates for a ring that is. Prune only from a valid one.
+            if (!boost::geometry::is_valid(out.polygon->ring))
+                return false;
+
             /// Store bounding box of the polygon so that we can quickly reject blocks/parts and avoid
             /// costly `intersects` checks
             boost::geometry::envelope(out.polygon->ring, out.polygon->bbox);
