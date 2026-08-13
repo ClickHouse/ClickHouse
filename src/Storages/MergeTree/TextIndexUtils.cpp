@@ -366,42 +366,56 @@ UInt32 MergeTextIndexesTask::adjustPartOffset(size_t part_index, UInt32 row_id) 
     return static_cast<UInt32>(new_offset);
 }
 
-void MergeTextIndexesTask::appendPostings(size_t source_num, std::span<const UInt32> row_ids)
+void MergeTextIndexesTask::adjustPartOffsets(size_t source_num, PaddedPODArray<UInt32> & row_ids) const
 {
-    bool append_to_array = output_postings_array.size() + row_ids.size() <= MAX_CARDINALITY_FOR_RAW_POSTINGS;
-
     if (!merged_part_offsets)
+        return;
+
+    size_t part_index = segments[source_num].part_index;
+    for (auto & row_id : row_ids)
+        row_id = adjustPartOffset(part_index, row_id);
+}
+
+void MergeTextIndexesTask::appendPostings(std::span<const UInt32> row_ids)
+{
+    if (row_ids.empty())
+        return;
+
+    /// Postings of a token are collected in the buffer while they fit into it.
+    if (output_postings_bitmap.isEmpty() && output_postings_array.size() + row_ids.size() <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
     {
-        if (append_to_array)
-            output_postings_array.insert(row_ids.begin(), row_ids.end());
-        else
-            output_postings_bitmap.addMany(row_ids.size(), row_ids.data());
+        output_postings_array.insert(row_ids.begin(), row_ids.end());
         return;
     }
 
-    size_t part_index = segments[source_num].part_index;
-
-    if (append_to_array)
+    if (!output_postings_array.empty())
     {
-        output_postings_array.reserve(output_postings_array.size() + row_ids.size());
-
-        for (UInt32 row_id : row_ids)
-            output_postings_array.push_back(adjustPartOffset(part_index, row_id));
+        std::sort(output_postings_array.begin(), output_postings_array.end());
+        output_postings_bitmap.addMany(output_postings_array.size(), output_postings_array.data());
+        output_postings_array.clear();
     }
+
+    /// A bulk-built bitmap is unioned in one pass, while adding row ids one by one shifts those already placed.
+    if (output_postings_bitmap.isEmpty())
+        output_postings_bitmap.addMany(row_ids.size(), row_ids.data());
     else
-    {
-        roaring::BulkContext context;
-
-        for (UInt32 row_id : row_ids)
-            output_postings_bitmap.addBulk(context, adjustPartOffset(part_index, row_id));
-    }
+        output_postings_bitmap |= PostingList(row_ids.size(), row_ids.data());
 }
 
 void MergeTextIndexesTask::readAndAppendPostings(size_t source_num, const TokenPostingsInfo & token_info)
 {
     if (!token_info.embedded_postings.empty())
     {
-        appendPostings(source_num, token_info.embedded_postings);
+        if (!merged_part_offsets)
+        {
+            appendPostings(token_info.embedded_postings);
+        }
+        else
+        {
+            row_ids_buffer.assign(token_info.embedded_postings.begin(), token_info.embedded_postings.end());
+            adjustPartOffsets(source_num, row_ids_buffer);
+            appendPostings(row_ids_buffer);
+        }
         return;
     }
 
@@ -423,7 +437,8 @@ void MergeTextIndexesTask::readAndAppendPostings(size_t source_num, const TokenP
         {
             row_ids_buffer.clear();
             serialization.deserializeToArray(*data_buffer, token_info.header, token_info.cardinality, row_ids_buffer);
-            appendPostings(source_num, row_ids_buffer);
+            adjustPartOffsets(source_num, row_ids_buffer);
+            appendPostings(row_ids_buffer);
         }
         else
         {

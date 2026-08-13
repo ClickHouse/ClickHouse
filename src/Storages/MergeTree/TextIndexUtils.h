@@ -116,8 +116,8 @@ private:
     /// Adjusts row numbers in the postings according to merged part offsets. No-op if offsets are not set.
     void adjustPartOffsets(size_t source_num, PaddedPODArray<UInt32> & row_ids) const;
 
-    /// Appends the given row ids to output_postings_array or output_postings_bitmap.
-    void appendPostings(size_t source_num, std::span<const UInt32> row_ids);
+    /// Appends the already adjusted row ids of one source to output_postings_array or output_postings_bitmap.
+    void appendPostings(std::span<const UInt32> row_ids);
     /// Reads the postings of one source and appends them to output_postings_bitmap or output_postings_array.
     void readAndAppendPostings(size_t source_num, const TokenPostingsInfo & token_info);
     /// Reads the positions of one source and appends them to output_positions.
