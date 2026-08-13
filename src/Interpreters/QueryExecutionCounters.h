@@ -39,10 +39,10 @@ struct QueryExecutionCounters
 
 private:
 
+    mutable std::mutex mutex;
+
     /// Counters of the query the calling thread belongs to, or nullptr when it is not attached to one.
     static std::shared_ptr<QueryExecutionCounters> getForCurrentQuery();
-
-    mutable std::mutex mutex;
 
     /// Algorithms that were used in the query
     std::set<String> used_join_algorithms TSA_GUARDED_BY(mutex);
