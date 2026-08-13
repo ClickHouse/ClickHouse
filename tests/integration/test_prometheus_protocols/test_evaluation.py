@@ -4117,6 +4117,152 @@ def test_histogram_quantile():
     )
 
 
+def test_histogram_fraction():
+    do_query_test(
+        "histogram_fraction(0, 0.5, http_request_duration_seconds_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "0.5"]}]}',
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "0.5"]],
+    )
+
+    do_query_test(
+        "histogram_fraction(0.1, 0.5, http_request_duration_seconds_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "0.3333333333333333"]}]}',
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "0.3333333333333333"]],
+        eps=1e-12,
+    )
+
+    do_query_test(
+        "histogram_fraction(0, 1, http_request_duration_seconds_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "0.8333333333333334"]}]}',
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "0.8333333333333334"]],
+        eps=1e-12,
+    )
+
+    do_query_test(
+        "histogram_fraction(-Inf, +Inf, http_request_duration_seconds_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "1"]}]}',
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "1"]],
+    )
+
+    # Multiple histogram groups in a range query. The `le` label is removed from each
+    # group, while the remaining `job` label stays on the result.
+    do_range_query_test(
+        "histogram_fraction(1, 4, cache_lookup_duration_seconds_bucket)",
+        300,
+        320,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "reader"}, "values": [[300, "0.6"], [310, "0.6"], [320, "0.6"]]}, {"metric": {"job": "writer"}, "values": [[300, "0.4"], [310, "0.4"], [320, "0.4"]]}]}',
+        [
+            [
+                "[('job','reader')]",
+                "[('1970-01-01 00:05:00.000',0.6),('1970-01-01 00:05:10.000',0.6),('1970-01-01 00:05:20.000',0.6)]",
+            ],
+            [
+                "[('job','writer')]",
+                "[('1970-01-01 00:05:00.000',0.4),('1970-01-01 00:05:10.000',0.4),('1970-01-01 00:05:20.000',0.4)]",
+            ],
+        ],
+        eps=1e-12,
+    )
+
+    do_query_test(
+        "histogram_fraction(0, 0.5, only_inf_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "0"]}]}',
+        [["[]", "1970-01-01 00:05:00.000", "0"]],
+    )
+
+    do_query_test(
+        "histogram_fraction(1, 0.5, http_request_duration_seconds_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "0"]}]}',
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "0"]],
+    )
+
+    do_query_test(
+        "histogram_fraction(0, 0.5, no_inf_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "NaN"]}]}',
+        [["[]", "1970-01-01 00:05:00.000", "nan"]],
+    )
+
+    do_query_test(
+        "histogram_fraction(0, 0.5, zero_count_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "NaN"]}]}',
+        [["[]", "1970-01-01 00:05:00.000", "nan"]],
+    )
+
+    do_query_test(
+        "histogram_fraction(0, 0.5, foo)",
+        300,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Argument type validation: both bounds must be scalars and the input must be an
+    # instant vector.
+    do_query_test_expect_error(
+        "histogram_fraction(http_request_duration_seconds_bucket, 0.5, http_request_duration_seconds_bucket)",
+        300,
+        "expected type scalar",
+        "expects argument 1 of type",
+    )
+
+    do_query_test_expect_error(
+        "histogram_fraction(0, http_request_duration_seconds_bucket, http_request_duration_seconds_bucket)",
+        300,
+        "expected type scalar",
+        "expects argument 2 of type",
+    )
+
+    do_query_test_expect_error(
+        "histogram_fraction(0, 0.5, 1)",
+        300,
+        "expected type instant vector",
+        "expects third argument of type",
+    )
+
+    # Prometheus accepts scalar expressions for the bounds. ClickHouse currently supports
+    # only constant bounds, so check this documented limitation on both ClickHouse paths.
+    for query in (
+        "histogram_fraction(time(), 0.5, http_request_duration_seconds_bucket)",
+        "histogram_fraction(0, time(), http_request_duration_seconds_bucket)",
+    ):
+        expected_error = "requires constant lower and upper parameters"
+        assert expected_error in execute_query_in_clickhouse_sql(query, 300, expect_error=True)
+        assert expected_error in execute_query_in_clickhouse_http_api(query, 300, expect_error=True)
+
+    node.query(
+        "CREATE TABLE prometheus_f32 "
+        "(time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+    )
+    try:
+        for le, value in [("0.1", 10), ("0.5", 30), ("1.0", 50), ("+Inf", 60)]:
+            node.query(
+                "INSERT INTO prometheus_f32 (metric_name, tags, time_series) VALUES "
+                f"('http_request_duration_seconds_bucket', {{'job': 'api', 'le': '{le}'}}, "
+                f"[(toDateTime64(300, 3), {value})])"
+            )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery("
+                "prometheus_f32, "
+                "'histogram_fraction(0.099999999, 0.5, http_request_duration_seconds_bucket)', "
+                "300)"
+            ),
+            [["[('job','api')]", "1970-01-01 00:05:00.000", "0.3333333432674408"]],
+            eps=1e-12,
+        )
+    finally:
+        node.query("DROP TABLE prometheus_f32 SYNC")
+
+
 def test_label_manipulation_functions():
     # Add a new label using a regex capture from an existing label.
     do_query_test(

@@ -269,10 +269,10 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Trig     | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
 | Type     | `scalar`, `vector` |
-| Histogram | `histogram_quantile` |
+| Histogram | `histogram_quantile`, `histogram_fraction` |
 | Other    | `time`, `pi` |
 
-**Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not yet supported, and the `phi` (quantile level) argument must currently be a constant scalar — expressions that vary per step such as `histogram_quantile(time() / 1000, ...)` are rejected with a `NOT_IMPLEMENTED` error.
+**Note**: `histogram_quantile` and `histogram_fraction` use linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not yet supported. The scalar parameters must currently be constant: `phi` for `histogram_quantile`, and `lower` and `upper` for `histogram_fraction`. Non-constant scalar expressions are rejected with a `NOT_IMPLEMENTED` error.
 
 ### Operators {#operators}
 
@@ -339,10 +339,10 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Trig     | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
 | Type     | `scalar`, `vector` |
-| Histogram | `histogram_quantile` |
+| Histogram | `histogram_quantile`, `histogram_fraction` |
 | Other    | `time`, `pi` |
 
-**Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not yet supported, and the `phi` (quantile level) argument must currently be a constant scalar — expressions that vary per step such as `histogram_quantile(time() / 1000, ...)` are rejected with a `NOT_IMPLEMENTED` error.
+**Note**: `histogram_quantile` and `histogram_fraction` use linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not yet supported. The scalar parameters must currently be constant: `phi` for `histogram_quantile`, and `lower` and `upper` for `histogram_fraction`. Non-constant scalar expressions are rejected with a `NOT_IMPLEMENTED` error.
 
 ### Operators {#operators}
 
