@@ -25,10 +25,9 @@ CREATE TABLE t_date (d Date, y UInt32) ENGINE = MergeTree ORDER BY (d, y);
 INSERT INTO t_date SELECT toDate('2021-01-01') + intDiv(number, 4), number % 4 FROM numbers(20);
 
 SELECT trimLeft(explain) FROM (
-    EXPLAIN PLAN SELECT * FROM t_date ORDER BY toString(d), y SETTINGS optimize_read_in_order = 1
+    EXPLAIN PLAN actions = 1, compact = 1, pretty = 1 SELECT * FROM t_date ORDER BY toString(d), y SETTINGS optimize_read_in_order = 1
 ) WHERE explain LIKE '%sort description%';
 
 DROP TABLE t_time;
 DROP TABLE t_dst;
-DROP TABLE t_utc;
 DROP TABLE t_date;
