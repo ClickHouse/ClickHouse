@@ -24,11 +24,14 @@ INSERT INTO ts (metric_name, tags, time_series) VALUES
 INSERT INTO ts (tags, time_series) VALUES
     ({'__name__': 'http_requests', 'job': 'crawler', 'instance': 'host2:8080'}, [(toDateTime64(1060, 3), 2.5)]);
 
+-- The database is passed to `timeSeriesTags` explicitly, otherwise the queries fail
+-- with parallel replicas: `timeSeriesTags` reads the inner MergeTree table directly, so the query
+-- can be sent to another replica where the current database is different.
 SELECT 'stored tags:';
-SELECT metric_name, job_column, instance_column, tags FROM timeSeriesTags(ts) ORDER BY tags;
+SELECT metric_name, job_column, instance_column, tags FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts') ORDER BY tags;
 
 SELECT 'id is calculated from the stored columns:';
-SELECT countIf(id = tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags)))), count() FROM timeSeriesTags(ts);
+SELECT countIf(id = tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags)))), count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts');
 
 SELECT 'prometheusQuery:';
 SELECT tags, value FROM prometheusQuery(ts, 'http_requests', 1080) ORDER BY tags;
@@ -42,7 +45,7 @@ INSERT INTO ts (metric_name, tags, time_series) VALUES
 
 SELECT 'id is calculated by the altered id_generator:';
 SELECT countIf(id = tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, tags)))), count()
-FROM timeSeriesTags(ts) WHERE tags['job'] = 'miner';
+FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts') WHERE tags['job'] = 'miner';
 
 -- The time series inserted before the ALTER are still readable together with the new one.
 SELECT 'prometheusQuery after ALTER:';
