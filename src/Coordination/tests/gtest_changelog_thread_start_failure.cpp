@@ -48,6 +48,7 @@ TEST(ChangelogThreadStartFailure, ConstructorUnwindsCleanlyOnCannotScheduleTask)
                 getLogger("ChangelogThreadStartFailureTest"),
                 DB::LogFileSettings{.force_sync = false, .compress_logs = false, .rotate_interval = 100},
                 DB::FlushSettings{},
+                DB::ReadAheadSettings{},
                 keeper_context);
         }
         catch (const DB::Exception & e)
