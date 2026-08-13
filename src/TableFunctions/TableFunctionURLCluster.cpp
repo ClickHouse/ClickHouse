@@ -14,16 +14,18 @@ namespace ErrorCodes
 
 namespace
 {
-    void checkURLClusterDoesNotUseIndexPageWildcards(const String & filename, const StorageURL::Configuration & configuration)
+    void checkURLClusterDoesNotUseIndexPageWildcards(const String & filename)
     {
-        if (configuration.http_method.empty() && urlPathHasListableGlobs(filename))
+        /// Rejected regardless of the configured `http_method`: `StorageURLCluster` cannot
+        /// list index pages, so it must never silently take over such queries.
+        if (urlPathHasListableGlobs(filename))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "`urlCluster` does not support wildcard expansion from HTTP index pages");
     }
 }
 
 ColumnsDescription TableFunctionURLCluster::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
-    checkURLClusterDoesNotUseIndexPageWildcards(filename, configuration);
+    checkURLClusterDoesNotUseIndexPageWildcards(filename);
     return TableFunctionURL::getActualTableStructure(context, is_insert_query);
 }
 
@@ -31,7 +33,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
     const String & /*source*/, const String & /*format_*/, const ColumnsDescription & columns, ContextPtr context,
     const std::string & table_name, const String & /*compression_method_*/, bool /*is_insert_query*/) const
 {
-    checkURLClusterDoesNotUseIndexPageWildcards(filename, configuration);
+    checkURLClusterDoesNotUseIndexPageWildcards(filename);
 
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {

@@ -2676,7 +2676,7 @@ void registerStorageURL(StorageFactory & factory)
 
             /// The index-page listing requests are plain GET; a silent fallback to probing the
             /// literal `*` URL would read different files, so reject the combination explicitly.
-            /// PUT applies to writes only and keeps the pre-existing behavior.
+            /// PUT applies to writes only, so PUT-configured reads take the listing path like GET.
             if (urlPathHasListableGlobs(config.url)
                 && IStorageURLBase::chooseReadMethod(config.http_method) == Poco::Net::HTTPRequest::HTTP_POST)
                 throw Exception(
@@ -2685,7 +2685,7 @@ void registerStorageURL(StorageFactory & factory)
                     config.url);
 
             const bool use_object_storage
-                = config.http_method.empty()
+                = IStorageURLBase::chooseReadMethod(config.http_method) == Poco::Net::HTTPRequest::HTTP_GET
                 && urlPathHasListableGlobs(config.url);
 
             if (!use_object_storage)

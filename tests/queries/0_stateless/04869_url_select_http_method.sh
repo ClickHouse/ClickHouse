@@ -53,6 +53,8 @@ $CLICKHOUSE_CLIENT $SETTINGS_OPT --schema_inference_use_cache_for_url=0 -q "SELE
 #    literal `*` URL.
 $CLICKHOUSE_CLIENT -q "SELECT * FROM url('http://localhost:1/files/*.csv', 'CSV', 'x String', http_method='POST')" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
 $CLICKHOUSE_CLIENT -q "CREATE TABLE url_wild_62352 (x String) ENGINE = URL('http://localhost:1/files/*.csv', CSV, http_method='POST')" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
+# urlCluster never supports index-page wildcards; a configured http_method must not bypass that.
+$CLICKHOUSE_CLIENT -q "SELECT * FROM urlCluster('test_cluster_two_shards_localhost', 'http://localhost:1/files/*.csv', 'CSV', 'x String', http_method='PUT')" 2>&1 | grep -o -m1 'NOT_IMPLEMENTED'
 
 # 8. The schema-inference cache is method-aware: with the cache enabled (the default), a
 #    repeated POST inference stays all-POST — the cache-validation probe follows the

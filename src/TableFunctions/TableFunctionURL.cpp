@@ -361,7 +361,7 @@ StoragePtr TableFunctionURL::getStorage(
     /// old literal/template expansion and read different (or no) files than the non-cluster path.
     /// The index-page listing requests are plain GET; a silent fallback to probing the
     /// literal `*` URL would read different files, so reject the combination explicitly.
-    /// PUT applies to writes only and keeps the pre-existing behavior.
+    /// PUT applies to writes only, so PUT-configured reads take the listing path like GET.
     if (!is_insert_query && urlPathHasListableGlobs(source)
         && IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_POST)
         throw Exception(
@@ -369,7 +369,9 @@ StoragePtr TableFunctionURL::getStorage(
             "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
             source);
 
-    const bool use_web_wildcard = !is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(source);
+    const bool use_web_wildcard = !is_insert_query
+        && IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_GET
+        && urlPathHasListableGlobs(source);
 
     const bool can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
         && settings[Setting::parallel_replicas_for_cluster_engines]
@@ -458,7 +460,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
                 filename);
 
-        if (configuration.http_method.empty() && urlPathHasListableGlobs(filename))
+        if (IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_GET
+            && urlPathHasListableGlobs(filename))
         {
             checkExperimentalURLWildcardFromIndexPages(context);
 
