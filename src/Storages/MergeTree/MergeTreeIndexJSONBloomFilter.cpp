@@ -8,6 +8,7 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/SipHash.h>
+#include <Common/re2.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -36,6 +37,7 @@
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
+#include <list>
 #include <ranges>
 
 namespace DB
@@ -47,6 +49,44 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int LOGICAL_ERROR;
 }
+
+class JSONBloomPathMatcher
+{
+public:
+    JSONBloomPathMatcher(std::vector<String> paths_, const std::vector<String> & regexps_)
+        : paths(std::move(paths_))
+    {
+        for (const auto & regexp : regexps_)
+        {
+            regexps.emplace_back(regexp);
+            if (!regexps.back().ok())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid `jsonbf_v1` path regexp '{}': {}",
+                    regexp,
+                    regexps.back().error());
+        }
+    }
+
+    bool shouldSkip(std::string_view path) const
+    {
+        path = path.substr(0, path.find('\0'));
+        for (const auto & skipped : paths)
+        {
+            if (path == skipped
+                || (path.starts_with(skipped)
+                    && path.size() > skipped.size()
+                    && (path[skipped.size()] == '.' || path[skipped.size()] == '[')))
+                return true;
+        }
+
+        return std::ranges::any_of(regexps, [&](const auto & regexp) { return re2::RE2::PartialMatch(path, regexp); });
+    }
+
+private:
+    std::vector<String> paths;
+    std::list<re2::RE2> regexps;
+};
 
 namespace
 {
@@ -234,14 +274,16 @@ String appendMapKey(
 class JSONBloomExtractor
 {
 public:
-    explicit JSONBloomExtractor(HashSet<UInt64> & hashes_)
+    JSONBloomExtractor(HashSet<UInt64> & hashes_, const JSONBloomPathMatcher & path_matcher_)
         : hashes(hashes_)
+        , path_matcher(path_matcher_)
     {
     }
 
     void beginRow() {}
     void endRow() {}
     void consumeNull(std::string_view, bool) {}
+    bool shouldConsumePath(std::string_view path) const { return !path_matcher.shouldSkip(path); }
 
     void consumeValue(
         std::string_view path,
@@ -270,6 +312,7 @@ private:
         void beginRow() {}
         void endRow() {}
         void consumeNull(std::string_view, bool) {}
+        bool shouldConsumePath(std::string_view path) const { return extractor.shouldConsumePath(appendPath(prefix, path)); }
 
         void consumeValue(
             std::string_view path,
@@ -431,6 +474,9 @@ private:
         size_t row,
         bool is_dynamic)
     {
+        if (path_matcher.shouldSkip(path))
+            return;
+
         if (isDynamic(type))
         {
             emitDynamic(path, role, assert_cast<const ColumnDynamic &>(source_column), row);
@@ -490,6 +536,7 @@ private:
     }
 
     HashSet<UInt64> & hashes;
+    const JSONBloomPathMatcher & path_matcher;
 };
 
 bool hashMatchesFilter(const BloomFilterPtr & bloom_filter, UInt64 hash, size_t hash_functions)
@@ -832,11 +879,16 @@ std::vector<UInt64> makeArrayElementProbes(
 }
 
 MergeTreeIndexAggregatorJSONBloomFilter::MergeTreeIndexAggregatorJSONBloomFilter(
-    size_t bits_per_row_, size_t hash_functions_, String column_name_, DataTypePtr column_type_)
+    size_t bits_per_row_,
+    size_t hash_functions_,
+    String column_name_,
+    DataTypePtr column_type_,
+    std::shared_ptr<const JSONBloomPathMatcher> path_matcher_)
     : bits_per_row(bits_per_row_)
     , hash_functions(hash_functions_)
     , column_name(std::move(column_name_))
     , column_type(std::move(column_type_))
+    , path_matcher(std::move(path_matcher_))
 {
 }
 
@@ -868,7 +920,7 @@ void MergeTreeIndexAggregatorJSONBloomFilter::update(const Block & block, size_t
 
     /// `MergeTreeIndexGranuleBloomFilter` cannot serialize a filter with zero hashes.
     hashes.insert(alwaysPresentHash());
-    JSONBloomExtractor extractor(hashes);
+    JSONBloomExtractor extractor(hashes, *path_matcher);
     enumerateJSONValues(*object_column, *object_type, extractor, *pos, rows);
 
     *pos += rows;
@@ -876,9 +928,14 @@ void MergeTreeIndexAggregatorJSONBloomFilter::update(const Block & block, size_t
 }
 
 MergeTreeIndexConditionJSONBloomFilter::MergeTreeIndexConditionJSONBloomFilter(
-    const ActionsDAG::Node * predicate, ContextPtr context, const Block & header_, size_t hash_functions_)
+    const ActionsDAG::Node * predicate,
+    ContextPtr context,
+    const Block & header_,
+    size_t hash_functions_,
+    std::shared_ptr<const JSONBloomPathMatcher> path_matcher_)
     : header(header_)
     , hash_functions(hash_functions_)
+    , path_matcher(std::move(path_matcher_))
     , comparison_format_settings(getJSONComparisonFormatSettings(context))
 {
     if (!predicate)
@@ -1042,7 +1099,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
 
         auto key_node = function.getArgumentAt(0);
         auto path = tryMatchJSONPath(key_node, header);
-        if (!path || path->cast_type || isDynamic(removeJSONBloomWrappers(path->type)))
+        if (!path || path_matcher->shouldSkip(path->path) || path->cast_type || isDynamic(removeJSONBloomWrappers(path->type)))
             return false;
 
         auto future_set = function.getArgumentAt(1).tryGetPreparedSet();
@@ -1084,7 +1141,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
     }
 
     auto path = tryMatchJSONPath(*key_node, header);
-    if (!path)
+    if (!path || path_matcher->shouldSkip(path->path))
         return false;
 
     if (function_name == "equals")
@@ -1162,10 +1219,15 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
 }
 
 MergeTreeIndexJSONBloomFilter::MergeTreeIndexJSONBloomFilter(
-    StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_, size_t bits_per_row_, size_t hash_functions_)
+    StorageMetadataPtr metadata_snapshot_,
+    const IndexDescription & index_,
+    size_t bits_per_row_,
+    size_t hash_functions_,
+    std::shared_ptr<const JSONBloomPathMatcher> path_matcher_)
     : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
     , bits_per_row(bits_per_row_)
     , hash_functions(hash_functions_)
+    , path_matcher(std::move(path_matcher_))
 {
 }
 
@@ -1177,14 +1239,14 @@ MergeTreeIndexGranulePtr MergeTreeIndexJSONBloomFilter::createIndexGranule() con
 MergeTreeIndexAggregatorPtr MergeTreeIndexJSONBloomFilter::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorJSONBloomFilter>(
-        bits_per_row, hash_functions, index.column_names.front(), index.data_types.front());
+        bits_per_row, hash_functions, index.column_names.front(), index.data_types.front(), path_matcher);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexJSONBloomFilter::createIndexCondition(
     const ActionsDAG::Node * predicate,
     ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionJSONBloomFilter>(predicate, context, index.sample_block, hash_functions);
+    return std::make_shared<MergeTreeIndexConditionJSONBloomFilter>(predicate, context, index.sample_block, hash_functions, path_matcher);
 }
 
 namespace
@@ -1211,10 +1273,39 @@ std::unordered_map<String, ASTPtr> parseJSONBloomOptions(const ASTPtr & argument
     return options;
 }
 
-Float64 getJSONBloomFalsePositiveRate(const IndexDescription & index)
+std::vector<String> extractStringArrayOption(std::unordered_map<String, ASTPtr> & options, std::string_view name)
+{
+    const auto it = options.find(String(name));
+    if (it == options.end())
+        return {};
+
+    const Field value = getFieldFromIndexArgumentAST(it->second);
+    if (value.getType() != Field::Types::Array)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`jsonbf_v1` argument `{}` must be an array of strings", name);
+
+    std::vector<String> result;
+    result.reserve(value.safeGet<Array>().size());
+    for (const auto & element : value.safeGet<Array>())
+    {
+        if (element.getType() != Field::Types::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`jsonbf_v1` argument `{}` must be an array of strings", name);
+        result.push_back(element.safeGet<String>());
+    }
+
+    options.erase(it);
+    return result;
+}
+
+struct JSONBloomOptions
+{
+    Float64 false_positive_rate;
+    std::shared_ptr<const JSONBloomPathMatcher> path_matcher;
+};
+
+JSONBloomOptions getJSONBloomOptions(const IndexDescription & index)
 {
     auto options = parseJSONBloomOptions(index.arguments);
-    Float64 result = 0.025;
+    Float64 false_positive_rate = 0.025;
 
     if (auto it = options.find("false_positive_rate"); it != options.end())
     {
@@ -1223,13 +1314,18 @@ Float64 getJSONBloomFalsePositiveRate(const IndexDescription & index)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "`jsonbf_v1` argument `false_positive_rate` must be a `Float64` between 0 and 1");
-        result = value.safeGet<Float64>();
+        false_positive_rate = value.safeGet<Float64>();
         options.erase(it);
     }
 
+    auto skip_paths = extractStringArrayOption(options, "skip_paths");
+    if (std::ranges::any_of(skip_paths, [](const auto & path) { return path.empty(); }))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`jsonbf_v1` argument `skip_paths` cannot contain an empty path");
+    auto skip_paths_regexp = extractStringArrayOption(options, "skip_paths_regexp");
+
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected `jsonbf_v1` argument `{}`", options.begin()->first);
-    return result;
+    return {false_positive_rate, std::make_shared<JSONBloomPathMatcher>(std::move(skip_paths), skip_paths_regexp)};
 }
 
 }
@@ -1239,14 +1335,15 @@ MergeTreeIndexPtr jsonBloomFilterIndexCreator(
     const IndexDescription & index,
     const MergeTreeSettings &)
 {
-    const auto false_positive_rate = getJSONBloomFalsePositiveRate(index);
-    const auto [bits_per_row, hash_functions] = BloomFilterHash::calculationBestPractices(false_positive_rate);
-    return std::make_shared<MergeTreeIndexJSONBloomFilter>(std::move(metadata_snapshot), index, bits_per_row, hash_functions);
+    auto options = getJSONBloomOptions(index);
+    const auto [bits_per_row, hash_functions] = BloomFilterHash::calculationBestPractices(options.false_positive_rate);
+    return std::make_shared<MergeTreeIndexJSONBloomFilter>(
+        std::move(metadata_snapshot), index, bits_per_row, hash_functions, std::move(options.path_matcher));
 }
 
 void jsonBloomFilterIndexValidator(const IndexDescription & index, bool, const MergeTreeSettings &)
 {
-    getJSONBloomFalsePositiveRate(index);
+    getJSONBloomOptions(index);
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "`jsonbf_v1` must be created on one direct `JSON` column");
     if (!index.isSimpleSingleColumnIndex())

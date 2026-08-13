@@ -255,7 +255,7 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
         jsonBloomFilterIndexCreator,
         Documentation{
             .description = "A path-aware Bloom filter over scalar values in a JSON column.",
-            .syntax = "INDEX name json TYPE jsonbf_v1([false_positive_rate = p]) GRANULARITY g",
+            .syntax = "INDEX name json TYPE jsonbf_v1([false_positive_rate = p, skip_paths = [...], skip_paths_regexp = [...]]) GRANULARITY g",
             .related = {"bloom_filter"}});
     registerValidator("jsonbf_v1", jsonBloomFilterIndexValidator);
 

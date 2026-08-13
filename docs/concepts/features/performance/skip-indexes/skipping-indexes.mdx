@@ -157,8 +157,13 @@ Data skipping index types based on Bloom filters include:
 * The specialized **`jsonbf_v1`** indexes scalar leaves of one direct `JSON` column. Paths, container roles, runtime types, and values are hashed separately, so values at different paths do not match each other. Arrays are indexed by element, typed `Map` values by key, and `Tuple` values by field. Whole containers are not stringified.
 
   ```sql
-  INDEX json_values data TYPE jsonbf_v1(false_positive_rate = 0.025) GRANULARITY 1
+  INDEX json_values data TYPE jsonbf_v1(
+      false_positive_rate = 0.025,
+      skip_paths = ['request_id', 'payload.raw'],
+      skip_paths_regexp = ['^metadata\\.', '.*_id$']) GRANULARITY 1
   ```
+
+  `skip_paths` excludes exact paths and their nested paths. `skip_paths_regexp` excludes paths using partial regular-expression matches. Queries on excluded paths do not use the index.
 
   Runtime `Dynamic` types that cannot be represented by `jsonbf_v1` make the containing index granule conservative: ClickHouse reads that granule instead of risking a false negative. Complex runtime values add a path-qualified presence token so incompatible predicates on the same path cannot hide an exception.
 
