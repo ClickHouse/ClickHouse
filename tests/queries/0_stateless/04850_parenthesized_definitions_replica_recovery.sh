@@ -13,12 +13,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # that kept the redundant parentheses the user wrote (26.5..26.7), so `createReplicaAttempt` must
 # compare its `metadata` and `columns` structurally, not as raw strings.
 
-ZK_PATH="/clickhouse/tables/$CLICKHOUSE_DATABASE/t_parens_recovery"
+ZK_PATH="/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_parens_recovery"
 UUID=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_parens_recovery_r1 SYNC"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_parens_recovery_r1 (x UInt64, y UInt64 DEFAULT x + 1)
-    ENGINE = ReplicatedMergeTree('$ZK_PATH', 'r1') ORDER BY (x)"
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_parens_recovery', 'r1') ORDER BY (x)"
 
 # Simulate the leftover nodes of a replica r2 that a 26.5..26.7 server created in ZooKeeper before
 # failing to save the local metadata: the same definitions, spelled with the redundant parentheses.
@@ -56,7 +56,7 @@ $CLICKHOUSE_CLIENT -q "
 # as the failed server would have them) reuses the existing empty replica instead of throwing
 # REPLICA_ALREADY_EXISTS.
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_parens_recovery_r2 UUID '$UUID' (x UInt64, y UInt64 DEFAULT (x + 1))
-    ENGINE = ReplicatedMergeTree('$ZK_PATH', 'r2') ORDER BY ((x))"
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_parens_recovery', 'r2') ORDER BY ((x))"
 
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_parens_recovery_r1 (x) VALUES (1)"
 $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA t_parens_recovery_r2"
