@@ -487,6 +487,7 @@ static ASTPtr convertIntoTableExpressionAST(
         {
             auto ast_stream_settings = make_intrusive<ASTStreamSettings>();
             ast_stream_settings->setSubscribeForUpdates(stream_settings->subscribe_for_updates);
+            ast_stream_settings->setUnordered(stream_settings->unordered);
             if (stream_settings->cursor)
                 ast_stream_settings->setCursor(stream_settings->cursor->clone());
             if (stream_settings->watermark)
