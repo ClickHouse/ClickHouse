@@ -7,6 +7,7 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <Disks/createVolume.h>
 #include <IO/HashingWriteBuffer.h>
@@ -43,6 +44,7 @@
 #include <Common/quoteString.h>
 
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
@@ -1097,35 +1099,88 @@ DataTypePtr mergeJSONSharedDataPathRulesFromPatchParts(
     DataTypePtr type, const String & column_name, const PatchPartsForReader & patch_parts, bool & inputs_saturated);
 }
 
+/// projection.metadata's columns are keyed by the projection's analyzed output name, which for a
+/// non-trivial SELECT-list expression (e.g. `assumeNotNull(j)`, `materialize(j)`) is the rendered
+/// expression text, not any single source column's own name -- see ProjectionsDescription.cpp's
+/// choice of QueryProcessingStage: without a WHERE clause or aggregation, the header (and thus a
+/// materialized part with no prior projection sub-part to read from) is instead built straight
+/// from the source columns verbatim, so the *same* SELECT item can end up named either way
+/// depending on the projection. Collect every identifier referenced anywhere in each SELECT item
+/// (covers both outcomes, plus multi-column expressions like `if(cond, j, k)`) so the fallback
+/// below can still find the right physical column either way.
+static std::unordered_map<String, std::vector<String>> getProjectionOutputToSourceIdentifiers(const ProjectionDescription & projection)
+{
+    std::unordered_map<String, std::vector<String>> output_to_sources;
+    const auto * select_query = projection.query_ast->as<ASTSelectQuery>();
+    if (!select_query || !select_query->select())
+        return output_to_sources;
+
+    for (const auto & child : select_query->select()->children)
+    {
+        IdentifierNameSet names;
+        child->collectIdentifierNames(names);
+        if (!names.empty())
+            output_to_sources.emplace(child->getAliasOrColumnName(), std::vector<String>(names.begin(), names.end()));
+    }
+    return output_to_sources;
+}
+
+/// mergeJSONSharedDataPathRules requires matching type shapes at each level (see
+/// applyJSONSharedDataPathPolicyImpl in DataTypeObject.cpp) and otherwise silently no-ops. A
+/// candidate found via getProjectionOutputToSourceIdentifiers can differ from the target by
+/// exactly the wrapper a type-stripping expression removed (e.g. `assumeNotNull(j)` strips the
+/// Nullable that the source column `j` still has), so look through a source-only Nullable layer.
+static DataTypePtr unwrapNullableToMatch(const DataTypePtr & target, const DataTypePtr & source)
+{
+    if (typeid_cast<const DataTypeNullable *>(source.get()) && !typeid_cast<const DataTypeNullable *>(target.get()))
+        return assert_cast<const DataTypeNullable &>(*source).getNestedType();
+    return source;
+}
+
 /// Mirrors applyJSONSharedDataPathPoliciesForMutation (MutateTask.cpp) for a projection's own declared
 /// columns: prefer each source's own projection part, else fall back to that source's main columns.
 static void applyJSONSharedDataPathPoliciesForProjection(
     NamesAndTypesList & result_columns,
-    const String & projection_name,
+    const ProjectionDescription & projection,
     const MergeTreeData::DataPartsVector & source_parts,
     const PatchPartsForReader & patch_parts)
 {
+    auto output_to_sources = getProjectionOutputToSourceIdentifiers(projection);
+
     for (auto & result_column : result_columns)
     {
+        Names candidate_names = {result_column.name};
+        if (auto it = output_to_sources.find(result_column.name); it != output_to_sources.end())
+            for (const auto & name : it->second)
+                if (name != result_column.name)
+                    candidate_names.push_back(name);
+
         for (const auto & source_part : source_parts)
         {
             /// A rebuild can add a column to the projection that an existing projection sub-part
             /// doesn't have yet (see MergeTask::prepareProjectionsToMergeAndRebuild); the fallback
             /// to the source's own main column must apply per-column, not only when no sub-part
             /// exists at all, or such a column silently skips provenance merging entirely.
-            std::optional<NameAndTypePair> source_column;
             const auto & source_projection_parts = source_part->getProjectionParts();
-            if (auto it = source_projection_parts.find(projection_name); it != source_projection_parts.end())
-                source_column = it->second->tryGetColumn(result_column.name);
-            if (!source_column)
-                source_column = source_part->tryGetColumn(result_column.name);
-            if (source_column)
-                result_column.type = mergeJSONSharedDataPathRules(result_column.type, source_column->type);
+            auto projection_part_it = source_projection_parts.find(projection.name);
+
+            for (const auto & candidate_name : candidate_names)
+            {
+                std::optional<NameAndTypePair> source_column;
+                if (projection_part_it != source_projection_parts.end())
+                    source_column = projection_part_it->second->tryGetColumn(candidate_name);
+                if (!source_column)
+                    source_column = source_part->tryGetColumn(candidate_name);
+                if (source_column)
+                    result_column.type = mergeJSONSharedDataPathRules(
+                        result_column.type, unwrapNullableToMatch(result_column.type, source_column->type));
+            }
         }
 
         bool inputs_saturated = false;
-        result_column.type = MutationHelpers::mergeJSONSharedDataPathRulesFromPatchParts(
-            result_column.type, result_column.name, patch_parts, inputs_saturated);
+        for (const auto & candidate_name : candidate_names)
+            result_column.type = MutationHelpers::mergeJSONSharedDataPathRulesFromPatchParts(
+                result_column.type, candidate_name, patch_parts, inputs_saturated);
     }
 }
 
@@ -1166,7 +1221,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     /// A merge/mutation-driven rewrite must not silently re-promote paths a retired SHARED REGEXP
     /// rule once forced into shared data; a fresh insert (merge_is_needed=false) has no such history.
     if (merge_is_needed && !(*data_settings)[MergeTreeSetting::allow_json_shared_data_paths_repromotion])
-        applyJSONSharedDataPathPoliciesForProjection(columns, projection.name, source_parts, patch_parts);
+        applyJSONSharedDataPathPoliciesForProjection(columns, projection, source_parts, patch_parts);
 
     SerializationInfo::Settings settings
     {
