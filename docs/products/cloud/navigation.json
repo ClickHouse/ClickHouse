@@ -41,6 +41,7 @@
                   "pages": [
                     "products/cloud/features/autoscaling/overview",
                     "products/cloud/features/autoscaling/vertical",
+                    "products/cloud/features/autoscaling/horizontal-autoscaling",
                     "products/cloud/features/autoscaling/horizontal",
                     "products/cloud/features/autoscaling/make-before-break",
                     "products/cloud/features/autoscaling/idling",
@@ -48,6 +49,7 @@
                     "products/cloud/features/autoscaling/scheduled-scaling"
                   ]
                 },
+                "products/cloud/features/large-single-replica-services",
                 "products/cloud/features/infrastructure/parallel-replicas",
                 "products/cloud/features/infrastructure/deployment-options",
                 "products/cloud/features/infrastructure/shared-catalog",
@@ -207,8 +209,7 @@
               "expanded": false,
               "group": "Migration",
               "pages": [
-                "products/cloud/guides/migration/upload-a-csv-file",
-                "products/cloud/guides/migration/oss-to-cloud-backup-restore"
+                "products/cloud/guides/migration/upload-a-csv-file"
               ]
             },
             {
@@ -258,8 +259,7 @@
                   "group": "Deployment modes",
                   "pages": [
                     "products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
-                    "products/cloud/guides/infrastructure/deployment-options/clickhouse-government",
-                    "products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+                    "products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
                   ]
                 }
               ]
@@ -276,10 +276,12 @@
                     "products/cloud/guides/security/cloud-access-management/manage-my-account",
                     "products/cloud/guides/security/cloud-access-management/manage-cloud-users",
                     "products/cloud/guides/security/cloud-access-management/manage-custom-roles",
+                    "products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles",
                     "products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
                     "products/cloud/guides/security/cloud-access-management/manage-database-users",
                     "products/cloud/guides/security/cloud-access-management/saml-sso-setup",
                     "products/cloud/guides/security/cloud-access-management/scim-setup",
+                    "products/cloud/guides/security/cloud-access-management/scim-setup-entra",
                     "products/cloud/guides/security/cloud-access-management/common-access-management-queries",
                     "products/cloud/guides/security/cloud-access-management/manage-database-service-accounts",
                     "products/cloud/guides/security/saml-sso-removal"
@@ -337,6 +339,9 @@
     },
     {
       "$ref": "../bring-your-own-cloud/navigation.json"
+    },
+    {
+      "sourceRef": "ClickHouse/airgap-docs"
     }
   ],
   "icon": "/images/icons/icon-clickhouse-cloud.svg",

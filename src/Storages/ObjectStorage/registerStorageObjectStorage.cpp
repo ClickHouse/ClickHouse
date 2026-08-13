@@ -591,11 +591,22 @@ CREATE TABLE table_with_asterisk (name String, value UInt32)
     ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/{some,another}_folder/*', 'CSV');
 ```
 
+## Resolving relative URLs {#resolving-relative-urls}
+
+The [s3_base](/reference/settings/session-settings/s3#s3_base) setting allows using a relative URL in the `S3` engine. When `s3_base` is set and the path has no scheme, it is resolved against the base URL per [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). For a full description of the resolution rules, see the [s3 table function docs](/reference/functions/table-functions/s3#resolving-relative-urls). The resolved URL is materialized into the stored table definition, so the table does not depend on the value of `s3_base` after creation.
+
+```sql
+SET s3_base = 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/';
+CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Close Float32, Volume Float32, OpenInt Int32)
+    ENGINE = S3('aapl_stock.csv', NOSIGN, 'CSVWithNames');
+```
+
 ## Storage settings {#storage-settings}
 
 - [s3_truncate_on_insert](/reference/settings/session-settings/s3#s3_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
 - [s3_create_new_file_on_insert](/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
 - [s3_skip_empty_files](/reference/settings/session-settings/s3#s3_skip_empty_files) - allows to skip empty files while reading. Enabled by default.
+- [s3_base](/reference/settings/session-settings/s3#s3_base) - base URL for resolving relative URLs passed to the engine. Empty (disabled) by default.
 
 ## S3-related settings {#settings}
 

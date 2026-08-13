@@ -49,6 +49,7 @@ from copy import copy
 from pathlib import Path
 from typing import Iterator, List
 
+from ci.jobs.scripts import release_packages
 from ci.jobs.scripts.clickhouse_version import (
     FILE_WITH_VERSION_PATH,
     CHVersion,
@@ -799,45 +800,24 @@ class ReleaseInfo:
             )
 
 
-class RepoTypes:
-    RPM = "rpm"
-    DEBIAN = "deb"
-    TGZ = "tgz"
-
-
 class PackageDownloader:
-    PACKAGES = (
-        "clickhouse-client",
-        "clickhouse-common-static",
-        "clickhouse-common-static-dbg",
-        "clickhouse-keeper",
-        "clickhouse-keeper-dbg",
-        "clickhouse-server",
-    )
-
-    PACKAGE_ARCHS = ("amd", "arm")
+    # The package/build-job/filename contract lives in `release_packages`, the
+    # single source of truth shared with the `AutoReleases` gate
+    # (`tests/ci/auto_release.py`), so the producer here and the checker there
+    # cannot drift. Re-export the two constants callers read off the class.
+    PACKAGES = release_packages.PACKAGES
+    PACKAGE_ARCHS = release_packages.PACKAGE_ARCHS
     MACOS_PACKAGE_TO_BIN_SUFFIX = {
         "amd": "macos",
         "arm": "macos-aarch64",
     }
     LOCAL_DIR = "/tmp/packages"
 
-    @classmethod
-    def _get_arch_suffix(cls, package_arch, repo_type):
-        if package_arch == "amd":
-            return "amd64" if repo_type in (RepoTypes.DEBIAN, RepoTypes.TGZ) else "x86_64"
-        if package_arch == "arm":
-            return "arm64" if repo_type in (RepoTypes.DEBIAN, RepoTypes.TGZ) else "aarch64"
-        assert False, "BUG"
-
     def __init__(self, release, commit_sha, version):
         assert version.startswith(release), "Invalid release branch or version"
         self.package_names = list(self.PACKAGES)
         self.release = release
-        major_version = int(release.split(".")[0])
-        minor_version = int(release.split(".")[1])
-        self.is_new_ci = (major_version >= 25 and minor_version >= 3) or major_version > 25
-        self.s3_release_prefix = f"REFs/{release}" if self.is_new_ci else release
+        self.s3_release_prefix = release_packages.s3_release_prefix(release)
         self.commit_sha = commit_sha
         self.version = version
         self.s3 = S3Helper()
@@ -850,36 +830,21 @@ class PackageDownloader:
 
         Shell.check(f"mkdir -p {self.LOCAL_DIR}")
 
-        for package_arch in self.PACKAGE_ARCHS:
-            if not self.is_new_ci:
-                job_name = "package_release" if package_arch == "amd" else "package_aarch64"
-                job_name_darwin = "binary_darwin" if package_arch == "amd" else "binary_darwin_aarch64"
-            else:
-                job_name = "build_amd_release" if package_arch == "amd" else "build_arm_release"
-                job_name_darwin = "build_amd_darwin" if package_arch == "amd" else "build_arm_darwin"
+        files_by_repo_type = {
+            "deb": self.deb_package_files,
+            "rpm": self.rpm_package_files,
+            "tgz": self.tgz_package_files,
+        }
+        for repo_type, package_file, job_name in release_packages.iter_package_objects(
+            version
+        ):
+            files_by_repo_type[repo_type].append(package_file)
+            self.file_to_job_name[package_file] = job_name
 
-            for package in self.package_names:
-                arch = self._get_arch_suffix(package_arch, RepoTypes.DEBIAN)
-                deb = f"{package}_{self.version}_{arch}.deb"
-                self.deb_package_files.append(deb)
-                self.file_to_job_name[deb] = job_name
-
-                arch = self._get_arch_suffix(package_arch, RepoTypes.RPM)
-                rpm = f"{package}-{self.version}.{arch}.rpm"
-                self.rpm_package_files.append(rpm)
-                self.file_to_job_name[rpm] = job_name
-
-                arch = self._get_arch_suffix(package_arch, RepoTypes.TGZ)
-                tgz = f"{package}-{self.version}-{arch}.tgz"
-                self.tgz_package_files.append(tgz)
-                self.file_to_job_name[tgz] = job_name
-                tgz_sha = tgz + ".sha512"
-                self.tgz_package_files.append(tgz_sha)
-                self.file_to_job_name[tgz_sha] = job_name
-
-                dest_bin = f"clickhouse-{self.MACOS_PACKAGE_TO_BIN_SUFFIX[package_arch]}"
-                assert dest_bin in self.macos_package_files
-                self.macos_binary_to_job_name[dest_bin] = job_name_darwin
+        for package_arch, job_name_darwin in release_packages.iter_macos_objects():
+            dest_bin = f"clickhouse-{self.MACOS_PACKAGE_TO_BIN_SUFFIX[package_arch]}"
+            assert dest_bin in self.macos_package_files
+            self.macos_binary_to_job_name[dest_bin] = job_name_darwin
 
     def get_deb_packages_files(self):
         return self.deb_package_files

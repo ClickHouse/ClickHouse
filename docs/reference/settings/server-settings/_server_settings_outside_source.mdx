@@ -35,6 +35,8 @@ To disable `asynchronous_metric_log` setting, you should create the following fi
 ## auth_use_forwarded_address {#auth_use_forwarded_address}
 Use originating address for authentication for clients connected through proxy.
 
+- **Default:** `false`
+
 <Note>
 This setting should be used with extra caution since forwarded addresses can be easily spoofed - servers accepting such authentication should not be accessed directly but rather exclusively through a trusted proxy.
 </Note>
@@ -115,6 +117,8 @@ Contains information about all background tasks that are executed via various ba
 Work factor for the `bcrypt_password` authentication type which uses the [Bcrypt algorithm](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 The work factor defines the amount of computations and time needed to compute the hash and verify the password.
 
+- **Default:** `12`
+
 ```xml
 <bcrypt_workfactor>12</bcrypt_workfactor>
 ```
@@ -126,7 +130,11 @@ bcrypt's computational overhead at higher work factors.
 </Warning>
 
 ## table_engines_require_grant {#table_engines_require_grant}
+<CloudNotSupportedBadge/>
+
 If set to true, users require a grant to create a table with a specific engine e.g. `GRANT TABLE ENGINE ON TinyLog to user`.
+
+- **Default:** `false`
 
 <Note>
 By default, for backward compatibility creating table with a specific table engine ignores grant, however you can change this behaviour by setting this to true.
@@ -169,7 +177,7 @@ We recommend not changing this if you have just started using ClickHouse.
 - `min_part_size` – The minimum size of a data part.
 - `min_part_size_ratio` – The ratio of the data part size to the table size.
 - `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
-- `level` – Compression level. See [Codecs](/reference/statements/create/table#general-purpose-codecs).
+- `level` – Compression level. See [Codecs](/reference/statements/create/table/codec#general-purpose-codecs).
 
 <Note>
 You can configure multiple `<case>` sections.
@@ -198,7 +206,7 @@ If no conditions are met for a data part, ClickHouse uses the `lz4` compression.
 ```
 
 ## encryption {#encryption}
-Configures a command to obtain a key to be used by [encryption codecs](/reference/statements/create/table#encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
+Configures a command to obtain a key to be used by [encryption codecs](/reference/statements/create/table/codec#encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
 
 Keys can be hex or string with a length equal to 16 bytes.
 
@@ -342,6 +350,8 @@ Hard limit is configured via system tools
 
 ## default_profile {#default_profile}
 Default settings profile. Settings profiles are located in the file specified in the setting `user_config`.
+
+- **Default:** `default`
 
 **Example**
 
@@ -511,6 +521,8 @@ Example:
 The page that is shown by default when you access the ClickHouse HTTP(s) server.
 The default value is "Ok." (with a line feed at the end)
 
+- **Default:** `"Ok.\n"`
+
 **Example**
 
 Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
@@ -566,6 +578,8 @@ A value of `0` means ClickHouse disables HSTS. If you set a positive number, the
 ## interserver_listen_host {#interserver_listen_host}
 Restriction on hosts that can exchange data between ClickHouse servers.
 If Keeper is used, the same restriction will be applied to the communication between different Keeper instances.
+
+- **Default:** `listen_host`
 
 <Note>
 By default, the value is equal to the [`listen_host`](#listen_host) setting.
@@ -1039,7 +1053,7 @@ Replica group name for database Replicated.
 The cluster created by Replicated database will consist of replicas in the same group.
 DDL queries will only wait for the replicas in the same group.
 
-Empty by default.
+- **Default:** `""`
 
 **Example**
 
@@ -1253,10 +1267,11 @@ Settings:
 - `events` – Expose metrics from the [system.events](/reference/system-tables/events) table.
 - `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](/reference/system-tables/asynchronous_metrics) table.
 - `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](/reference/system-tables/errors) as well.
+- `labels` – Constant labels added to every exposed metric. Each child element defines one label: the element name is the label name (must match `[a-zA-Z_][a-zA-Z0-9_]*`) and the element value is the label value. Label values support standard config substitutions such as the `from_env` attribute. A label name is rejected when it starts with `__` (reserved by Prometheus), or when it would collide with a label this endpoint already writes for one of its enabled sections — otherwise a sample would carry the same label name twice. The reserved set therefore follows the endpoint's active export surface: `le` when `histograms` is enabled; the `ClickHouse_Info` labels (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`) when `info` is enabled; and any label used by an exposed histogram or dimensional metric family (for example `group`, `direction`, or `operation_type`) when `histograms`/`dimensional_metrics` is enabled. Because it depends on what the endpoint actually exposes, a name can be valid on one endpoint but rejected on another — for example a Keeper `keeper_metrics_only` endpoint exposes only the `keeper_*` families, so labels used only by server families are accepted there.
 
 **Example**
 
-```xml highlight={5-12}
+```xml highlight={5-16}
 <clickhouse>
     <listen_host>0.0.0.0</listen_host>
     <http_port>8123</http_port>
@@ -1268,6 +1283,10 @@ Settings:
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
         <errors>true</errors>
+        <labels>
+            <environment>production</environment>
+            <shard from_env="SHARD_NAME"></shard>
+        </labels>
     </prometheus>
 </clickhouse>
 ```
@@ -1284,6 +1303,8 @@ Queries are logged in the [system.query_log](/reference/system-tables/query_log)
 
 <SystemLogParameters/>
 
+The `enable_user_query_log` parameter (enabled by default) creates [`system.user_query_log`](/reference/system-tables/user_query_log), which shows every user their own records of the configured query log table without requiring access to the table itself. This only works when the query log is stored locally: if `engine` delegates to another server (for example, `Distributed`), disable `enable_user_query_log`, since `system.user_query_log` cannot enforce the per-user access check across a ClickHouse-protocol server boundary and refuses to read from such a backend.
+
 If the table does not exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
 **Example**
@@ -1298,6 +1319,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
+    <enable_user_query_log>true</enable_user_query_log>
 </query_log>
 ```
 
@@ -1458,7 +1480,7 @@ The default server configuration file `config.xml` contains the following settin
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
-    <symbolize>false</symbolize>
+    <symbolize>true</symbolize>
 </trace_log>
 ```
 
@@ -1519,6 +1541,34 @@ The default server configuration file `config.xml` contains the following settin
     <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
 </crash_log>
+```
+
+## create_union_system_log_tables {#create_union_system_log_tables}
+
+Requests the creation of `all_...` tables next to the system log tables (`system.all_query_log` for `system.query_log`, `system.all_text_log` for `system.text_log`, and so on). Such a table is a union of the corresponding log table, its rotated versions (`query_log_0`, `query_log_1`, ...) and/or the same tables across all replicas of a cluster, and allows querying them all at once without remembering constructs like `clusterAllReplicas(default, merge(system, '^query_log'))`.
+
+The section is optional. If it is present, at least one of the following settings has to be specified:
+
+| Setting                | Description                                                                                                                                     |
+|------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+| `merge_rotated_tables` | If `true`, the `all_...` table selects from the log table and its rotated versions with the `merge` table function.                            |
+| `cluster`              | If specified, the `all_...` table selects from all replicas of this cluster with the `clusterAllReplicas` table function (with `SETTINGS skip_unavailable_shards = 1`, so that unavailable replicas do not fail the queries). |
+
+If both settings are specified, the table is a union of the rotated tables across all replicas of the cluster.
+
+The option applies to all system log tables; it does not allow for a different configuration for different system logs. The tables are created in the same database as the system log tables at the first flush of each log and are automatically recreated when the structure of the log table changes (on rotation). They have no state, so it is safe to drop them at any time. The creation is supported only for the `Atomic`, `Replicated` and `Shared` database engines.
+
+<Note>
+When the `cluster` setting is used, the table definition references the cluster, and the cluster has to exist for the table to be loaded. If you remove the cluster from the configuration, also drop the `all_...` tables (they will be recreated according to the new configuration at the next flush).
+</Note>
+
+**Example**
+
+```xml
+<create_union_system_log_tables>
+    <merge_rotated_tables>true</merge_rotated_tables>
+    <cluster>default</cluster>
+</create_union_system_log_tables>
 ```
 
 ## custom_cached_disks_base_directory {#custom_cached_disks_base_directory}
@@ -1675,7 +1725,7 @@ Port for communicating with clients over the TCP protocol.
 ## tcp_port_secure {#tcp_port_secure}
 TCP port for secure communication with clients. Use it with [OpenSSL](#openSSL) settings.
 
-**Default value**
+- **Default:** `9440`
 
 ```xml
 <tcp_port_secure>9440</tcp_port_secure>
@@ -1761,7 +1811,7 @@ Settings for optional improvements in the access control system.
 | `select_from_information_schema_requires_grant` | Sets whether `SELECT * FROM information_schema.<table>` requires any grants and can be executed by any user. If set to true, then this query requires `GRANT SELECT ON information_schema.<table>`, just as for ordinary tables.                                                                                                                                                                                                                                                                                 | `true`  |
 | `select_from_system_db_requires_grant` | Sets whether `SELECT * FROM system.<table>` requires any grants and can be executed by any user. If set to true then this query requires `GRANT SELECT ON system.<table>` just as for non-system tables. Exceptions: a few system tables (`tables`, `columns`, `databases`, and some constant tables like `one`, `contributors`) are still accessible for everyone; and if there is a `SHOW` privilege (e.g. `SHOW USERS`) granted then the corresponding system table (i.e. `system.users`) will be accessible. | `true`  |
 | `settings_constraints_replace_previous` | Sets whether a constraint in a settings profile for some setting will cancel actions of the previous constraint (defined in other profiles) for that setting, including fields which are not set by the new constraint. It also enables the `changeable_in_readonly` constraint type.                                                                                                                                                                                                                            | `true`  |
-| `table_engines_require_grant` | Sets whether creating a table with a specific table engine requires a grant.                                                                                                                                                                                                                                                                                                                                                                                                                                     | `false` |
+| `table_engines_require_grant` | Sets whether creating a table with a specific table engine requires a grant. Not supported in ClickHouse Cloud.                                                                                                                                                                                                                                                                                                                                                                                                     | `false` |
 | `throw_on_unmatched_row_policies` | Sets whether reading from a table should throw an exception if the table has row policies, but none of them are for the current user | `false` |
 | `users_without_row_policies_can_read_rows` | Sets whether users without permissive row policies can still read rows using a `SELECT` query. For example, if there are two users A and B and a row policy is defined only for A, then if this setting is true, user B will see all rows. If this setting is false, user B will see no rows.                                                                                                                                                                                                                    | `true`  |
 
@@ -1951,12 +2001,16 @@ Path to a folder where a ClickHouse server stores user and role configurations c
 ## allow_plaintext_password {#allow_plaintext_password}
 Sets whether plaintext-password types (insecure) are allowed or not.
 
+- **Default:** `true`
+
 ```xml
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
 
 ## allow_no_password {#allow_no_password}
 Sets whether an insecure password type of no_password is allowed or not.
+
+- **Default:** `true`
 
 ```xml
 <allow_no_password>1</allow_no_password>
@@ -1965,12 +2019,16 @@ Sets whether an insecure password type of no_password is allowed or not.
 ## allow_implicit_no_password {#allow_implicit_no_password}
 Forbids creating a user with no password unless 'IDENTIFIED WITH no_password' is explicitly specified.
 
+- **Default:** `true`
+
 ```xml
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
 
 ## default_session_timeout {#default_session_timeout}
 Default session timeout, in seconds.
+
+- **Default:** `60`
 
 ```xml
 <default_session_timeout>60</default_session_timeout>
@@ -1984,6 +2042,8 @@ Accepted values are:
 - `sha256_password`
 - `double_sha1_password`
 - `bcrypt_password`
+
+- **Default:** `sha256_password`
 
 ```xml
 <default_password_type>sha256_password</default_password_type>
@@ -2206,6 +2266,8 @@ This also allows a mix of resolver types can be used.
 ## disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
 By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.
 
+- **Default:** `false`
+
 **no_proxy**
 
 By default, all requests will go through the proxy. In order to disable it for specific hosts, the `no_proxy` variable must be set.
@@ -2232,6 +2294,8 @@ The same applies to GitLab, even though it has a leading dot. Both `gitlab.com` 
 
 ## workload_path {#workload_path}
 The directory used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` queries. By default `/workload/` folder under server working directory is used.
+
+- **Default:** `<path>/workload/`
 
 **Example**
 
