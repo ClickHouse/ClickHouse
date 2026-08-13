@@ -316,6 +316,9 @@ struct AggregatedDataVariants : private boost::noncopyable
     bool empty() const { return type == Type::EMPTY; }
     /// Whether any rows were aggregated: `empty` only says no method was ever initialized,
     /// while a table that was flushed to disk keeps its type with zero rows.
+    /// `empty` is not the negation of `size` here, so the two checks are not redundant and
+    /// `readability-container-size-empty` does not apply.
+    /// NOLINTNEXTLINE(readability-container-size-empty)
     bool hasData() const { return !empty() && size() != 0; }
     void invalidate() { type = Type::EMPTY; }
     /// Tears the variants down after the aggregate states changed owner (`aggregator` must
