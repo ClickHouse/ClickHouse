@@ -43,6 +43,13 @@ The order of the dimensions in a row follows the order they have in the variable
 that uses all of them is read sequentially. The rows enumerate the last dimension first, which is
 the order in which a NetCDF file stores its data.
 
+A variable may use the same dimension more than once, as in `correlation(instrument, instrument)`.
+Every use is then an axis of the row space of its own, as if the uses were distinct dimensions of
+the same length: that file is read with `instrument * instrument` rows. A coordinate variable
+provides the values only along the first use of its dimension; along a repeated use the index is
+available through the setting `input_format_netcdf_add_dimension_columns`, in a column named after
+the dimension with the suffix `_index`.
+
 The classic format has no string type. A `char` variable is read as a String column whose length is
 the last dimension of the variable, so `char station_name(station, name_length)` is read as one
 string per station. The trailing zero bytes that pad a shorter string are removed.

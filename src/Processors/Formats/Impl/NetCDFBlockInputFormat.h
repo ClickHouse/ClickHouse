@@ -17,10 +17,12 @@ class SeekableReadBuffer;
 
 /// How the variables of a NetCDF file are mapped to the columns and the rows of a table.
 ///
-/// Every variable becomes a column, and the rows enumerate the Cartesian product of all the
-/// dimensions that the variables use. A variable that does not use some of these dimensions has the
-/// same value repeated for every index along them. This is the same table that the `to_dataframe`
-/// method of `xarray` produces.
+/// Every variable becomes a column, and the rows enumerate the Cartesian product of the axes of
+/// the row space. An axis is one use of a dimension: usually the axes are exactly the dimensions
+/// that the variables use, but a variable may use the same dimension more than once, as in
+/// `correlation(instrument, instrument)`, and then every occurrence is an axis of its own.
+/// A variable that does not use some of the axes has the same value repeated for every index along
+/// them. This is the same table that the `to_dataframe` method of `xarray` produces.
 struct NetCDFTableLayout
 {
     struct Column
@@ -28,11 +30,11 @@ struct NetCDFTableLayout
         String name;
         DataTypePtr type;
 
-        /// The variable the column reads, or nullptr when the column holds the index along a
-        /// dimension of the row space.
+        /// The variable the column reads, or nullptr when the column holds the index along an
+        /// axis of the row space.
         const NetCDFVariable * variable = nullptr;
-        /// The position of the dimension in the row space, for a column holding a dimension index.
-        size_t dimension_position = 0;
+        /// The position of the axis in the row space, for a column holding a dimension index.
+        size_t axis_position = 0;
 
         /// A `char` variable is read as a String whose length is the last dimension of the variable.
         bool is_string = false;
@@ -44,16 +46,20 @@ struct NetCDFTableLayout
         UInt64 element_size = 1;
         /// The number of values in the variable.
         UInt64 num_elements = 0;
-        /// The dimensions of the variable, without the one that holds the length of the strings.
-        std::vector<size_t> dimension_ids;
+        /// The axes of the variable, one per use of a dimension, without the dimension that holds
+        /// the length of the strings.
+        std::vector<size_t> axis_ids;
         /// The value that is read as NULL, in the representation of the file. Empty for a column
         /// that is not Nullable.
         String null_value;
     };
 
-    /// The dimensions of the file, in the order in which they enumerate the rows.
-    std::vector<size_t> row_dimensions;
-    std::vector<UInt64> row_dimension_lengths;
+    /// The dimension behind every axis. The first `header.dimensions.size()` axes are the first
+    /// uses of the dimensions themselves; an axis for a repeated use of a dimension comes after.
+    std::vector<size_t> axis_dimensions;
+    /// The axes of the row space, in the order in which they enumerate the rows.
+    std::vector<size_t> row_axes;
+    std::vector<UInt64> row_axis_lengths;
     UInt64 num_rows = 0;
     std::vector<Column> columns;
 

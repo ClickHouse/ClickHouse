@@ -21,6 +21,7 @@
 #include <base/arithmeticOverflow.h>
 
 #include <algorithm>
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -31,7 +32,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int THERE_IS_NO_COLUMN;
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
@@ -90,48 +90,48 @@ DataTypePtr getDataType(NetCDFType type)
     return nullptr;
 }
 
-/// Puts the dimensions in an order that agrees with the order of the dimensions of every variable,
-/// so that a variable that uses all of them is stored in exactly the order the rows are produced.
-/// Among the dimensions that are not ordered relative to each other, the one that is declared first
-/// in the file goes first.
-std::vector<size_t> orderRowDimensions(size_t num_dimensions, const std::vector<std::vector<size_t>> & variable_dimensions)
+/// Puts the axes in an order that agrees with the order of the axes of every variable, so that a
+/// variable that uses all of them is stored in exactly the order the rows are produced. Among the
+/// axes that are not ordered relative to each other, the one whose dimension is declared first in
+/// the file goes first.
+std::vector<size_t> orderRowAxes(size_t num_axes, const std::vector<std::vector<size_t>> & variable_axes)
 {
-    std::vector<bool> is_used(num_dimensions, false);
-    std::vector<std::unordered_set<size_t>> successors(num_dimensions);
-    std::vector<size_t> in_degree(num_dimensions, 0);
+    std::vector<bool> is_used(num_axes, false);
+    std::vector<std::unordered_set<size_t>> successors(num_axes);
+    std::vector<size_t> in_degree(num_axes, 0);
     size_t num_used = 0;
 
-    for (const auto & dimensions : variable_dimensions)
+    for (const auto & axes : variable_axes)
     {
-        for (size_t i = 0; i < dimensions.size(); ++i)
+        for (size_t i = 0; i < axes.size(); ++i)
         {
-            if (!is_used[dimensions[i]])
+            if (!is_used[axes[i]])
             {
-                is_used[dimensions[i]] = true;
+                is_used[axes[i]] = true;
                 ++num_used;
             }
 
-            if (i + 1 < dimensions.size() && successors[dimensions[i]].insert(dimensions[i + 1]).second)
-                ++in_degree[dimensions[i + 1]];
+            if (i + 1 < axes.size() && successors[axes[i]].insert(axes[i + 1]).second)
+                ++in_degree[axes[i + 1]];
         }
     }
 
     std::vector<size_t> order;
     order.reserve(num_used);
-    std::vector<bool> is_ordered(num_dimensions, false);
+    std::vector<bool> is_ordered(num_axes, false);
 
     while (order.size() < num_used)
     {
-        size_t chosen = num_dimensions;
-        for (size_t i = 0; i < num_dimensions && chosen == num_dimensions; ++i)
+        size_t chosen = num_axes;
+        for (size_t i = 0; i < num_axes && chosen == num_axes; ++i)
             if (is_used[i] && !is_ordered[i] && in_degree[i] == 0)
                 chosen = i;
 
-        /// The orders of the dimensions of two variables contradict each other, which is possible
-        /// only in a file where, for example, one variable has the dimensions (x, y) and another
-        /// one has (y, x). Any order will disagree with one of them, so take the first dimension
-        /// that is left.
-        for (size_t i = 0; i < num_dimensions && chosen == num_dimensions; ++i)
+        /// The orders of the axes of two variables contradict each other, which is possible only
+        /// in a file where, for example, one variable has the dimensions (x, y) and another one
+        /// has (y, x). Any order will disagree with one of them, so take the first axis that is
+        /// left.
+        for (size_t i = 0; i < num_axes && chosen == num_axes; ++i)
             if (is_used[i] && !is_ordered[i])
                 chosen = i;
 
@@ -212,28 +212,52 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
             effective_dimensions[i].pop_back();
             has_string_length_dimension[i] = true;
         }
-
-        std::unordered_set<size_t> distinct(effective_dimensions[i].begin(), effective_dimensions[i].end());
-        if (distinct.size() != effective_dimensions[i].size())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "The variable {} of the NetCDF file uses the same dimension more than once, which cannot be "
-                "represented as a table", variable.name);
     }
 
-    layout.row_dimensions = orderRowDimensions(header.dimensions.size(), effective_dimensions);
+    /// A variable may use the same dimension more than once, as in `correlation(instrument,
+    /// instrument)`, and then each occurrence is an axis of the row space of its own: such a
+    /// variable is read as one row per combination of the indexes along its axes. The first use of
+    /// a dimension is the axis with the id of the dimension itself, so that the k-th use of a
+    /// dimension means the same axis in every variable.
+    layout.axis_dimensions.resize(header.dimensions.size());
+    for (size_t i = 0; i < header.dimensions.size(); ++i)
+        layout.axis_dimensions[i] = i;
+
+    std::map<std::pair<size_t, size_t>, size_t> axis_of_repeated_use;
+    std::vector<std::vector<size_t>> variable_axes(header.variables.size());
+
+    for (size_t i = 0; i < header.variables.size(); ++i)
+    {
+        std::unordered_map<size_t, size_t> uses;
+        for (size_t dimension_id : effective_dimensions[i])
+        {
+            size_t use = uses[dimension_id]++;
+            if (use == 0)
+            {
+                variable_axes[i].push_back(dimension_id);
+            }
+            else
+            {
+                auto [it, inserted] = axis_of_repeated_use.emplace(
+                    std::pair{dimension_id, use}, layout.axis_dimensions.size());
+                if (inserted)
+                    layout.axis_dimensions.push_back(dimension_id);
+                variable_axes[i].push_back(it->second);
+            }
+        }
+    }
+
+    layout.row_axes = orderRowAxes(layout.axis_dimensions.size(), variable_axes);
 
     layout.num_rows = 1;
-    for (size_t dimension_id : layout.row_dimensions)
+    for (size_t axis_id : layout.row_axes)
     {
-        layout.row_dimension_lengths.push_back(header.dimensions[dimension_id].length);
-        if (common::mulOverflow(layout.num_rows, header.dimensions[dimension_id].length, layout.num_rows))
+        UInt64 length = header.dimensions[layout.axis_dimensions[axis_id]].length;
+        layout.row_axis_lengths.push_back(length);
+        if (common::mulOverflow(layout.num_rows, length, layout.num_rows))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                 "The number of rows of the NetCDF file does not fit in 64 bits");
     }
-
-    std::unordered_map<size_t, size_t> position_of_dimension;
-    for (size_t position = 0; position < layout.row_dimensions.size(); ++position)
-        position_of_dimension[layout.row_dimensions[position]] = position;
 
     std::unordered_map<std::string_view, size_t> variable_ids;
     for (size_t i = 0; i < header.variables.size(); ++i)
@@ -251,10 +275,10 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
         for (const auto & variable : header.variables)
             used_column_names.insert(variable.name);
 
-        for (size_t position = 0; position < layout.row_dimensions.size(); ++position)
+        for (size_t position = 0; position < layout.row_axes.size(); ++position)
         {
-            size_t dimension_id = layout.row_dimensions[position];
-            const auto & dimension = header.dimensions[dimension_id];
+            size_t axis_id = layout.row_axes[position];
+            const auto & dimension = header.dimensions[layout.axis_dimensions[axis_id]];
 
             /// A coordinate variable already provides the values along its dimension. It is a
             /// variable that has the name of the dimension and is one-dimensional over it - a
@@ -262,10 +286,12 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
             /// along the dimension is only available as a column of its own. The shape is judged
             /// after the string-length dimension of a `char` variable has been stripped: such a
             /// variable, as in `char station(station, nchar)`, is read as one string per index of
-            /// the dimension, which are exactly the values along the axis.
+            /// the dimension, which are exactly the values along the axis. A coordinate variable
+            /// describes only the axis of the first use of its dimension: along the axis of a
+            /// repeated use the index is available only as a column of its own.
             auto it = variable_ids.find(dimension.name);
             bool has_coordinate_variable = it != variable_ids.end()
-                && effective_dimensions[it->second] == std::vector<size_t>{dimension_id};
+                && variable_axes[it->second] == std::vector<size_t>{axis_id};
 
             if (has_coordinate_variable)
                 continue;
@@ -279,7 +305,7 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
             column.name = std::move(column_name);
             used_column_names.insert(column.name);
             column.type = std::make_shared<DataTypeUInt64>();
-            column.dimension_position = position;
+            column.axis_position = position;
             layout.columns.push_back(std::move(column));
         }
     }
@@ -294,12 +320,12 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
         column.is_string = variable.type == NetCDFType::Char;
         column.has_string_length_dimension = has_string_length_dimension[i];
         column.element_size = column.is_string ? string_lengths[i] : netCDFTypeSize(variable.type);
-        column.dimension_ids = effective_dimensions[i];
+        column.axis_ids = variable_axes[i];
         column.type = getDataType(variable.type);
 
         column.num_elements = 1;
-        for (size_t dimension_id : column.dimension_ids)
-            column.num_elements *= header.dimensions[dimension_id].length;
+        for (size_t axis_id : column.axis_ids)
+            column.num_elements *= header.dimensions[layout.axis_dimensions[axis_id]].length;
 
         /// A variable can declare the value that marks the data that is missing. There is no such
         /// convention for strings, where the padding of a shorter string plays that role.
@@ -398,9 +424,9 @@ void NetCDFBlockInputFormat::initialize()
     for (const auto & column : layout.columns)
         columns_by_name.emplace(column.name, &column);
 
-    std::unordered_map<size_t, size_t> position_of_dimension;
-    for (size_t position = 0; position < layout.row_dimensions.size(); ++position)
-        position_of_dimension[layout.row_dimensions[position]] = position;
+    std::unordered_map<size_t, size_t> position_of_axis;
+    for (size_t position = 0; position < layout.row_axes.size(); ++position)
+        position_of_axis[layout.row_axes[position]] = position;
 
     for (const auto & requested : getPort().getHeader())
     {
@@ -411,25 +437,25 @@ void NetCDFBlockInputFormat::initialize()
 
         ColumnState state;
         state.column = it->second;
-        state.strides.assign(layout.row_dimensions.size(), 0);
+        state.strides.assign(layout.row_axes.size(), 0);
 
         if (state.column->variable)
         {
             UInt64 stride = 1;
-            for (size_t i = state.column->dimension_ids.size(); i > 0; --i)
+            for (size_t i = state.column->axis_ids.size(); i > 0; --i)
             {
-                size_t dimension_id = state.column->dimension_ids[i - 1];
-                state.strides[position_of_dimension.at(dimension_id)] = stride;
-                stride *= netcdf_header.dimensions[dimension_id].length;
+                size_t axis_id = state.column->axis_ids[i - 1];
+                state.strides[position_of_axis.at(axis_id)] = stride;
+                stride *= netcdf_header.dimensions[layout.axis_dimensions[axis_id]].length;
             }
 
-            state.is_identity = state.column->dimension_ids == layout.row_dimensions;
-            state.is_constant = state.column->dimension_ids.empty();
+            state.is_identity = state.column->axis_ids == layout.row_axes;
+            state.is_constant = state.column->axis_ids.empty();
         }
         else
         {
-            /// The index along a dimension is its own position in the row space.
-            state.strides[state.column->dimension_position] = 1;
+            /// The index along an axis is its own position in the row space.
+            state.strides[state.column->axis_position] = 1;
         }
 
         states.push_back(std::move(state));
@@ -538,33 +564,33 @@ void NetCDFBlockInputFormat::getElementIndexes(
         return;
     }
 
-    size_t num_dimensions = layout.row_dimensions.size();
-    std::vector<UInt64> positions(num_dimensions);
+    size_t num_axes = layout.row_axes.size();
+    std::vector<UInt64> positions(num_axes);
     UInt64 rest = first_row;
-    for (size_t i = num_dimensions; i > 0; --i)
+    for (size_t i = num_axes; i > 0; --i)
     {
-        positions[i - 1] = rest % layout.row_dimension_lengths[i - 1];
-        rest /= layout.row_dimension_lengths[i - 1];
+        positions[i - 1] = rest % layout.row_axis_lengths[i - 1];
+        rest /= layout.row_axis_lengths[i - 1];
     }
 
     UInt64 index = 0;
-    for (size_t i = 0; i < num_dimensions; ++i)
+    for (size_t i = 0; i < num_axes; ++i)
         index += positions[i] * state.strides[i];
 
     for (UInt64 row = 0; row < count; ++row)
     {
         indexes[row] = index;
 
-        /// Move to the next row: increment the index along the last dimension and carry over.
-        for (size_t i = num_dimensions; i > 0; --i)
+        /// Move to the next row: increment the index along the last axis and carry over.
+        for (size_t i = num_axes; i > 0; --i)
         {
             ++positions[i - 1];
             index += state.strides[i - 1];
 
-            if (positions[i - 1] < layout.row_dimension_lengths[i - 1])
+            if (positions[i - 1] < layout.row_axis_lengths[i - 1])
                 break;
 
-            index -= state.strides[i - 1] * layout.row_dimension_lengths[i - 1];
+            index -= state.strides[i - 1] * layout.row_axis_lengths[i - 1];
             positions[i - 1] = 0;
         }
     }
@@ -858,6 +884,13 @@ For example, a file with the dimensions `time`, `lat`, `lon` and the variables `
 The order of the dimensions in a row follows the order they have in the variables, so a variable
 that uses all of them is read sequentially. The rows enumerate the last dimension first, which is
 the order in which a NetCDF file stores its data.
+
+A variable may use the same dimension more than once, as in `correlation(instrument, instrument)`.
+Every use is then an axis of the row space of its own, as if the uses were distinct dimensions of
+the same length: that file is read with `instrument * instrument` rows. A coordinate variable
+provides the values only along the first use of its dimension; along a repeated use the index is
+available through the setting `input_format_netcdf_add_dimension_columns`, in a column named after
+the dimension with the suffix `_index`.
 
 The classic format has no string type. A `char` variable is read as a String column whose length is
 the last dimension of the variable, so `char station_name(station, name_length)` is read as one
