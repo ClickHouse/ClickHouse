@@ -15,6 +15,24 @@ extern const int NOT_IMPLEMENTED;
 namespace DB::MongoProtocol
 {
 
+namespace
+{
+
+/// Whether the collection has a column of that name. A data skipping index is created on a column,
+/// while a Mongo application may create an index on a field no document has mentioned yet, which
+/// the schema of a ClickHouse table cannot express.
+bool fieldIsAColumn(const CollectionRef & collection, const String & field, std::shared_ptr<QueryExecutor> executor)
+{
+    auto answer = executor->execute(fmt::format(
+        "SELECT count() > 0 FROM system.columns WHERE database = {} AND table = {} AND name = {} FORMAT TSV",
+        quoteString(collection.database),
+        quoteString(collection.collection),
+        quoteString(field)));
+    return answer.starts_with('1');
+}
+
+}
+
 std::vector<Document> IndexHandler::handle(const std::vector<OpMessageSection> & sections, std::shared_ptr<QueryExecutor> executor)
 {
     auto collection = getCollectionRef(sections[0].documents[0], "createIndexes");
@@ -63,6 +81,33 @@ std::vector<Document> IndexHandler::handle(const std::vector<OpMessageSection> &
                     column->name.GetString());
 
             String column_name = column->name.GetString();
+
+            /** In Mongo an index may be created on a collection that does not exist yet, which
+              * creates it, and on a field no document has - a collection has no schema to
+              * contradict. Here an index is a data skipping index over a column, so both of those
+              * have nothing to index: `db.createCollection("users")` followed by
+              * `db.users.createIndex({email: 1})` would otherwise fall through to the
+              * `UNKNOWN_TABLE` or `UNKNOWN_IDENTIFIER` of the `ALTER` underneath, which says
+              * nothing about what a Mongo client can do instead - insert a document that has the
+              * field first.
+              */
+            if (!objectExists(executor, "TABLE", collection.getQualifiedName()))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Can not create an index on the collection '{}.{}', which does not exist: an index is created on the columns of an "
+                    "existing collection, so insert a document first",
+                    collection.database,
+                    collection.collection);
+
+            if (!fieldIsAColumn(collection, column_name, executor))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Can not create an index on the field '{}', which is not a column of the collection '{}.{}': insert a document that "
+                    "has the field first",
+                    column_name,
+                    collection.database,
+                    collection.collection);
+
             auto sql_query = fmt::format(
                 "ALTER TABLE {} ADD INDEX IF NOT EXISTS {} ({}) TYPE bloom_filter(0.02) GRANULARITY 8",
                 collection.getQualifiedName(),

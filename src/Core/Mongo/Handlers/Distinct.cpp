@@ -38,14 +38,22 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
     auto & allocator = pipeline.GetAllocator();
     pipeline.SetArray();
 
-    if (auto query_it = json_representation.FindMember("query");
-        query_it != json_representation.MemberEnd() && query_it->value.IsObject() && query_it->value.MemberCount() > 0)
+    if (auto query_it = json_representation.FindMember("query"); query_it != json_representation.MemberEnd())
     {
-        rapidjson::Value match(rapidjson::kObjectType);
-        rapidjson::Value filter;
-        filter.CopyFrom(query_it->value, allocator);
-        match.AddMember("$match", filter, allocator);
-        pipeline.PushBack(match, allocator);
+        /// A `query` that is not a document is a malformed request, as it is for a `find` and a
+        /// `count`: reading it as no filter at all would answer it with the distinct values of the
+        /// whole collection, which is a different - and wider - result than the one asked for.
+        if (!query_it->value.IsObject())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'query' of a 'distinct' command must be a document");
+
+        if (query_it->value.MemberCount() > 0)
+        {
+            rapidjson::Value match(rapidjson::kObjectType);
+            rapidjson::Value filter;
+            filter.CopyFrom(query_it->value, allocator);
+            match.AddMember("$match", filter, allocator);
+            pipeline.PushBack(match, allocator);
+        }
     }
 
     {

@@ -14,7 +14,9 @@ std::vector<Document> IsMasterHandler::handle(const std::vector<OpMessageSection
     BSON_APPEND_INT32(bson_doc, "maxBsonObjectSize", static_cast<int32_t>(MAX_BSON_OBJECT_SIZE));
     BSON_APPEND_INT32(bson_doc, "maxMessageSizeBytes", static_cast<int32_t>(MAX_MESSAGE_SIZE));
     BSON_APPEND_INT32(bson_doc, "maxWriteBatchSize", 100000);
-    BSON_APPEND_INT64(bson_doc, "localTime", static_cast<int64_t>(time(nullptr)) * 1000);
+    /// `localTime` is a BSON date rather than a number: a driver reads it as the time of the
+    /// server, and an integer of the same milliseconds is a different wire type.
+    BSON_APPEND_DATE_TIME(bson_doc, "localTime", static_cast<int64_t>(time(nullptr)) * 1000);
     BSON_APPEND_INT32(bson_doc, "logicalSessionTimeoutMinutes", 30);
     BSON_APPEND_INT32(bson_doc, "minWireVersion", 0);
     BSON_APPEND_INT32(bson_doc, "maxWireVersion", 19);

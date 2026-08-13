@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import datetime
 import logging
 import os
 import socket
@@ -1601,5 +1602,78 @@ def test_find_and_count_bounds_must_be_whole_numbers(started_cluster):
     with pytest.raises(pymongo.errors.OperationFailure) as error:
         database.command({"find": "whole_bounds", "skip": -1})
     assert "must not be negative" in str(error.value)
+
+    collection.drop()
+
+
+def test_distinct_rejects_a_malformed_query(started_cluster):
+    """The `query` of a `distinct` is a filter, so a value that is not a document is a malformed
+    request, the way it is for a `find` and a `count`. Reading it as no filter at all would answer
+    with the distinct values of the whole collection - a wider result than the one asked for."""
+    client = make_client()
+    database = client["db"]
+    collection = database["distinct_query"]
+    collection.drop()
+    collection.insert_many([{"k": "a", "v": 1}, {"k": "b", "v": 2}])
+
+    for query in (42, "a", [{"k": "a"}], True):
+        with pytest.raises(pymongo.errors.OperationFailure) as error:
+            database.command({"distinct": "distinct_query", "key": "k", "query": query})
+        assert "must be a document" in str(error.value)
+
+    # An absent and an empty `query` both mean the whole collection.
+    assert sorted(database.command({"distinct": "distinct_query", "key": "k"})["values"]) == ["a", "b"]
+    assert sorted(database.command({"distinct": "distinct_query", "key": "k", "query": {}})["values"]) == ["a", "b"]
+    assert database.command({"distinct": "distinct_query", "key": "k", "query": {"v": 2}})["values"] == ["b"]
+
+    collection.drop()
+
+
+def test_handshake_local_time_is_a_date(started_cluster):
+    """`localTime` of `isMaster`/`hello` is the time of the server, which is a BSON date: an
+    integer of the same milliseconds is a different wire type, and a driver or a tool that reads
+    the field expects to get a date out of it."""
+    client = make_client()
+    database = client["db"]
+
+    for command in ("isMaster", "hello"):
+        reply = database.command(command)
+        local_time = reply["localTime"]
+        assert isinstance(local_time, datetime.datetime), f"{command} returned {type(local_time)}"
+        # A BSON date carries no zone, and the driver decodes it as a naive UTC value by default.
+        if local_time.tzinfo is None:
+            local_time = local_time.replace(tzinfo=datetime.timezone.utc)
+        # The clocks of the server and of the test runner are the same clock here.
+        assert abs((datetime.datetime.now(datetime.timezone.utc) - local_time).total_seconds()) < 600
+
+
+def test_create_index_needs_the_field_to_be_a_column(started_cluster):
+    """An index is a data skipping index over a column, so the field has to be one. In MongoDB an
+    index may be created on a collection that does not exist yet - which creates it - and on a
+    field no document has; here both have nothing to index, and the error says what to do instead
+    rather than being the `UNKNOWN_TABLE`/`UNKNOWN_IDENTIFIER` of the DDL underneath."""
+    client = make_client()
+    database = client["db"]
+    collection = database["index_pre_schema"]
+    collection.drop()
+
+    # The collection does not exist at all.
+    with pytest.raises(pymongo.errors.OperationFailure) as error:
+        collection.create_index("email")
+    assert "does not exist" in str(error.value)
+
+    # Created explicitly, it holds whole documents and has no `email` column yet.
+    database.create_collection("index_pre_schema")
+    with pytest.raises(pymongo.errors.OperationFailure) as error:
+        collection.create_index("email")
+    assert "not a column" in str(error.value)
+
+    # A field the documents do have can be indexed.
+    collection.insert_one({"email": "a@b.c"})
+    collection.create_index("email")
+
+    with pytest.raises(pymongo.errors.OperationFailure) as error:
+        collection.create_index("nothing_has_this_field")
+    assert "not a column" in str(error.value)
 
     collection.drop()
