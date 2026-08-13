@@ -17,10 +17,13 @@ With ClickHouse Cloud [warehouses](/products/cloud/features/infrastructure/wareh
 
 ## Why isolate reads from writes {#why-isolate}
 
-- **Queries don't compete with ingestion.** A read-only service performs no background merges outside of system tables, so its resources are fully dedicated to read queries.
-- **Ingestion can't be disrupted by an expensive query.** An unbounded dashboard query or ad-hoc search runs on separate compute and can't slow down or back up your ingest pipeline.
-- **Each side scales independently.** The [sizing model](/clickstack/managing/estimating-resources) estimates ingest compute and query compute separately - its [worked example](/clickstack/managing/estimating-resources#worked-example) arrives at 58 vCPUs for ingest and 290 vCPUs for queries. A warehouse lets you provision each of those figures as its own service, and scale each as its side of the workload grows.
+- **Writes stop degrading reads.** Continuous OpenTelemetry ingestion - the inserts themselves, plus the background merges that follow them - competes with dashboard and search queries for CPU and memory. Read latency can degrade noticeably while ingestion is running, and recovers once it stops.
+- **Reads stop disrupting writes.** The contention runs both ways: a heavy ad-hoc query or an expensive dashboard render can exhaust memory on the service and fail inserts outright, not merely slow them down.
+- **Read-only compute is fully dedicated to queries.** Read-only services perform no background merges outside of system tables. They also idle without delay, unlike read-write services, which merges can keep awake.
+- **Each side is sized on its own.** The [sizing model](/clickstack/managing/estimating-resources) estimates ingest compute and query compute separately, and a warehouse lets you provision each as its own service. Above the model's 1 QPS baseline query compute dominates - its [worked example](/clickstack/managing/estimating-resources#worked-example) at 5 QPS arrives at 58 vCPUs for ingest against 290 for queries - so a small write service can feed a much larger read service.
+- **Idling and autoscaling are configured per service.** Each service has its own replica count, autoscaling and auto-idling settings, so the write service can stay always-on for continuous ingestion while the read service idles outside working hours.
 - **Storage isn't duplicated.** Services in a warehouse share the same object storage folder and the same tables, and [storage is billed only once](/products/cloud/features/infrastructure/warehouses#pricing).
+- **Access can be restricted per endpoint.** IP access lists are applied per service, so the write endpoint can be reachable only from your collectors and the read endpoint only from your ClickStack deployment. See our guide on [Network access control](/products/cloud/features/infrastructure/warehouses#network-access-control).
 
 ## Architecture {#architecture}
 
@@ -48,11 +51,13 @@ Create the database and the dedicated ingestion user on this service. Because al
 
 ```sql
 CREATE DATABASE otel;
-CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY 'ClickH0u3eRocks123!';
+CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY '<strong-password>';
 GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
 ```
 
-See our guide on [Creating an ingestion user](/clickstack/ingesting-data/collector#creating-an-ingestion-user) for further details.
+Generate the password with a tool such as `openssl rand -base64 24` and store it in a secret manager rather than in a manifest or shell history. See our guide on [Creating an ingestion user](/clickstack/ingesting-data/collector#creating-an-ingestion-user) for further details.
+
+If this service is already part of a warehouse, note that database-level DDL can hang when another service in it is idled - see [Administration and DDL](#administration).
 </Step>
 <Step title="Add a read-only service to the warehouse" id="add-read-only-service">
 
@@ -178,6 +183,19 @@ All schema changes must be run against the **read-write** service, including:
 
 Connect to the read-write service using the [SQL console or ClickHouse client](/clickstack/managing/admin). Because the warehouse shares storage and access controls, the changes are immediately visible to the read-only service. If you've [separated merges from ingestion](#separating-merges), statements can be submitted against either read-write service - but note that mutations are executed and tracked on the merge service.
 
+<Warning>
+**Database DDL can hang when another service is idled**
+
+`CREATE`, `RENAME` and `DROP DATABASE` statements can be blocked by idled or stopped services in the warehouse, causing them to hang. This is easy to hit in this topology, because read-only services idle without delay. Run database-level statements with [`distributed_ddl_task_timeout=0`](/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout), set per query or for the session:
+
+```sql
+CREATE DATABASE otel
+SETTINGS distributed_ddl_task_timeout=0
+```
+
+A service you stopped manually must be started again before queries will execute against it.
+</Warning>
+
 Materialized views are triggered by the insert, so they're executed by the read-write service. The read-only service queries their target tables like any other table, including the views [registered against a ClickStack source](/clickstack/managing/config#materialized-views-settings) for query acceleration.
 
 ## Alerts {#alerts}
@@ -194,9 +212,7 @@ Alert evaluation is a recurring query workload. Include it in the QPS you size t
 
 ## Further considerations {#considerations}
 
-**Restricting who can reach which endpoint.** IP filtering is applied per service, so you can restrict the read-write endpoint to your collectors and the read-only endpoint to your ClickStack deployment. See our guide on [Network access control](/products/cloud/features/infrastructure/warehouses#network-access-control).
-
-**Auto-idling.** Read-only services idle without delay, since they aren't kept awake by background merges. This makes them cheap to run for intermittent use, but the first query after idling pays a wake-up cost. If alerts run continuously, they'll generally keep the service awake.
+**Auto-idling.** The first query to a read-only service that has idled pays a wake-up cost, so intermittent use trades a little latency for lower spend. Alerts evaluating continuously will generally keep the service awake.
 
 **Backups.** Backups are taken on the primary service only, which covers the data for the whole warehouse. Restoring a backup creates a completely new service that isn't connected to the existing warehouse.
 
