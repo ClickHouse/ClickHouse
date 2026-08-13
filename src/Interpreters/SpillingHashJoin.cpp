@@ -275,6 +275,19 @@ void SpillingHashJoin::onBuildPhaseFinish()
     chosen_join->onBuildPhaseFinish();
 }
 
+bool SpillingHashJoin::hasPostBuildPhase() const
+{
+    /// `FillingRightJoinSideTransform` asks this right after `onBuildPhaseFinish`, so `chosen_join`
+    /// is already set. Stay defensive anyway: with no chosen join there is nothing to post-process.
+    return chosen_join && chosen_join->hasPostBuildPhase();
+}
+
+void SpillingHashJoin::runPostBuildPhase()
+{
+    if (chosen_join)
+        chosen_join->runPostBuildPhase();
+}
+
 void SpillingHashJoin::setEnableLazyColumnsIndexing(bool value)
 {
     if (hash_join)
@@ -359,8 +372,8 @@ bool SpillingHashJoin::alwaysReturnsEmptySet() const
 
 StepAnalysisReport SpillingHashJoin::getAnalysisReport() const
 {
-    /// This method always runs after `onBuildPhaseFinish`, so in practice we have already left
-    /// `COLLECTING` and `chosen_join` is set - the branch below is not strictly needed. We keep it
+    /// This method always runs after the built phase, so in principal we could have
+    /// written it without this if statement. However, we keep it
     /// for canonicity with the other accessors and safety in case the call order ever changes.
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
     {

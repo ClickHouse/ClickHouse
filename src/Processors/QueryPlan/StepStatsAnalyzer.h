@@ -6,9 +6,15 @@
 namespace DB
 {
 
+class IQueryPlanStep;
+
+using StepStatsAnalyzer = AnalyzedStepData (*)(const StepStatsContext & context, StepAnalysisReport report);
+
+StepStatsAnalyzer getStepStatsAnalyzer(const IQueryPlanStep * step);
+
 AnalyzedStepData analyzeDefaultStep(const StepStatsContext & context, StepAnalysisReport report);
 
-/// Per stage of a step analyzed data
+/// Per stage analyzed data
 AnalyzedStages buildAnalyzedStages(const StepStatsContext & context);
 
 /// Per step analyzed data

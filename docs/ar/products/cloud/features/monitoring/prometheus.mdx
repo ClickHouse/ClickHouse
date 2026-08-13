@@ -210,8 +210,8 @@ scrape_configs:
 
 * سجّل الدخول إلى حسابك في Grafana Cloud
 * أضف اتصالًا جديدًا باختيار **نقطة نهاية المقاييس**
-* اضبط عنوان URL الخاص بـ Scrape بحيث يشير إلى نقطة نهاية Prometheus، واستخدم المصادقة الأساسية لتهيئة اتصالك باستخدام مفتاح API/السر
-* اختبر الاتصال للتأكد من إمكانية الاتصال
+* اضبط عنوان URL الخاص بـ Scrape بحيث يشير إلى نقطة نهاية Prometheus، واستخدم المصادقة الأساسية لإعداد اتصالك باستخدام مفتاح واجهة برمجة تطبيقات/السر
+* اختبر الاتصال للتأكد من أنك قادر على الاتصال
 
 <Image img="/images/integrations/prometheus-grafana-metrics-endpoint.webp" size="md" alt="تهيئة نقطة نهاية مقاييس Grafana" border />
 
@@ -237,7 +237,7 @@ scrape_configs:
 
 من المفترض أن يُعِدّ ذلك Alloy باستخدام مكوّن `prometheus.remote_write` لإرسال البيانات إلى نقطة نهاية في Grafana Cloud باستخدام رمز مصادقة. بعد ذلك، لن يحتاج المستخدمون إلا إلى تعديل ملف إعداد Alloy (الموجود في `/etc/alloy/config.alloy` على Linux) لتضمين مكوّن scrape لـ نقطة نهاية Prometheus في ClickHouse Cloud.
 
-يوضح ما يلي مثالاً لإعداد Alloy يتضمن مكوّن `prometheus.scrape` لجمع المقاييس من ClickHouse Cloud Endpoint، بالإضافة إلى مكوّن `prometheus.remote_write` الذي يُضبط تلقائيًا. لاحظ أن مكوّن الإعداد `basic_auth` يحتوي على معرّف مفتاح Cloud API والقيمة السرية الخاصة به باعتبارهما اسم المستخدم وكلمة المرور، على الترتيب.
+يوضح ما يلي مثالاً لإعداد Alloy يتضمن مكوّن `prometheus.scrape` لجمع المقاييس من نقطة نهاية ClickHouse Cloud، بالإضافة إلى مكوّن `prometheus.remote_write` الذي يُضبط تلقائيًا. لاحظ أن مكوّن الإعداد `basic_auth` يحتوي على معرّف مفتاح Cloud واجهة برمجة تطبيقات والقيمة السرية الخاصة به باعتبارهما اسم المستخدم وكلمة المرور، على الترتيب.
 
 ```yaml
 prometheus.scrape "clickhouse_cloud" {
@@ -282,7 +282,7 @@ prometheus.scrape "clickhouse_cloud" {
   ### Grafana المُدارة ذاتيًا مع Alloy
 </div>
 
-يمكن لمستخدمي Grafana المُدارة ذاتيًا العثور على تعليمات تثبيت وكيل Alloy [هنا](https://grafana.com/docs/alloy/latest/get-started/install/). نفترض أن المستخدمين قد أعدّوا Alloy لإرسال مقاييس Prometheus إلى الوجهة المطلوبة. يتولى المكوّن `prometheus.scrape` أدناه جعل Alloy يجمع المقاييس من ClickHouse Cloud Endpoint. ونفترض أن `prometheus.remote_write` يستقبل المقاييس التي جُمعت. عدّل `forward_to key` ليشير إلى الوجهة المستهدفة إذا لم يكن موجودًا.
+يمكن لمستخدمي Grafana المُدارة ذاتيًا العثور على تعليمات تثبيت وكيل Alloy [هنا](https://grafana.com/docs/alloy/latest/get-started/install/). نفترض أن المستخدمين قد أعدّوا Alloy لإرسال مقاييس Prometheus إلى الوجهة المطلوبة. يتولى المكوّن `prometheus.scrape` أدناه جعل Alloy يجمع المقاييس من نقطة نهاية ClickHouse Cloud. ونفترض أن `prometheus.remote_write` يستقبل المقاييس التي جُمعت. عدّل `forward_to key` ليشير إلى الوجهة المستهدفة إذا لم يكن موجودًا.
 
 ```yaml
 // prometheus.scrape component causes Alloy to scrape the ClickHouse Cloud Prometheus endpoint.
@@ -341,11 +341,11 @@ instances:
 <Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="تكامل Prometheus وDatadog" />
 
 <div id="related">
-  ## صفحات ذات صلة
+  ## الصفحات ذات الصلة
 </div>
 
-* [نظرة عامة على المراقبة](/ar/products/cloud/features/monitoring/overview) — قارن بين جميع أساليب المراقبة في ClickHouse Cloud
+* [نظرة عامة على المراقبة](/ar/products/cloud/features/monitoring/overview) — قارِن جميع أساليب المراقبة في ClickHouse Cloud
 * [المراقبة في Cloud Console](/ar/products/cloud/features/monitoring/cloud-console) — لوحات معلومات مدمجة لا تتطلب أي أدوات خارجية
-* [تكاملات المجتمع والشركاء](/ar/products/cloud/features/monitoring/integrations) — تكامل Datadog agent وحلول المجتمع
-* [الاستعلام من جداول النظام](/ar/products/cloud/features/monitoring/system-tables) — وصول مباشر عبر SQL إلى مقاييس النظام
-* [نقطة نهاية Prometheus لـ Managed Postgres](/ar/products/managed-postgres/monitoring/prometheus) — اسحب المقاييس من خدمات Managed Postgres لديك
+* [تكاملات المجتمع والشركاء](/ar/products/cloud/features/monitoring/integrations) — تكامل Datadog agent وحلول من المجتمع
+* [الاستعلام عن جداول النظام](/ar/products/cloud/features/monitoring/system-tables) — وصول مباشر عبر SQL إلى مقاييس النظام
+* [نقطة نهاية Prometheus لـ Managed Postgres](/ar/products/managed-postgres/monitoring/prometheus) — اجلب المقاييس من خدمات Managed Postgres لديك

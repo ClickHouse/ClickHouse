@@ -53,9 +53,7 @@ ClickHouse Cloud は、いくつかの認証方式を使って Azure Blob Storag
 </Warning>
 
 <Steps>
-  <Step>
-    ### ClickHouse Cloud の egress IPs を確認する
-
+  <Step title="ClickHouse Cloud の egress IPs を確認する" id="find-egress-ips">
     IP ベースのファイアウォールルールを設定するには、ClickHouse Cloud のリージョンに対応する egress IP アドレスを許可リストに追加する必要があります。
 
     次のコマンドを実行して、リージョンごとの egress IPs と ingress IPs の一覧を取得します。
@@ -90,9 +88,7 @@ ClickHouse Cloud は、いくつかの認証方式を使って Azure Blob Storag
     詳細は [&quot;Cloud IP addresses&quot;](/ja/products/cloud/guides/data-sources/cloud-endpoints-api) を参照してください。
   </Step>
 
-  <Step>
-    ### Azure Storage のファイアウォールを設定する
-
+  <Step title="Azure Storage のファイアウォールを設定する" id="configure-firewall">
     Azure Portal で対象の Storage Account に移動します
 
     1. **Networking** → **Firewalls and virtual networks** に移動します

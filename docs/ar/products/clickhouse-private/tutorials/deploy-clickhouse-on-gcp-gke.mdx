@@ -30,9 +30,7 @@ description: "يوضح هذا الدليل التعليمي كيفية نشر Cl
 ***
 
 <Steps>
-  <Step stepNumber={0}>
-    ## الخطوة 0: إعداد حساب الخدمة
-
+  <Step stepNumber={0} title="الخطوة 0: إعداد حساب الخدمة" id="step-0-service-account-setup">
     في بيئات FedRAMP التي تُقيَّد فيها مصادقة المستخدم المباشرة، أنشئ حساب خدمة لاستخدامه في انتحال الهوية.
 
     ### الخيار 1: عبر وحدة تحكم GCP
@@ -109,9 +107,7 @@ description: "يوضح هذا الدليل التعليمي كيفية نشر Cl
     ***
   </Step>
 
-  <Step stepNumber={1}>
-    ## الخطوة 1: ضبط متغيرات البيئة (`00-env.sh`)
-
+  <Step stepNumber={1} title={<>الخطوة 1: ضبط متغيرات البيئة (<code>00-env.sh</code>)</>} id="step-1-set-environment-variables-00-envsh">
     أنشئ هذا الملف واستورده قبل تشغيل أي سكريبتات أخرى. حدِّث جميع القيم لتناسب بيئتك.
 
     ```bash expandable
@@ -225,9 +221,7 @@ description: "يوضح هذا الدليل التعليمي كيفية نشر Cl
     ***
   </Step>
 
-  <Step stepNumber={2}>
-    ## الخطوة 2: إنشاء Artifact Registry (`01-artifact-registry.sh`)
-
+  <Step stepNumber={2} title={<>الخطوة 2: إنشاء Artifact Registry (<code>01-artifact-registry.sh</code>)</>} id="step-2-create-artifact-registry-01-artifact-registrysh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -269,9 +263,7 @@ description: "يوضح هذا الدليل التعليمي كيفية نشر Cl
     ***
   </Step>
 
-  <Step stepNumber={3}>
-    ## الخطوة 3: نسخ صور الحاويات (`02-copy-images.sh`)
-
+  <Step stepNumber={3} title={<>الخطوة 3: نسخ صور الحاويات (<code>02-copy-images.sh</code>)</>} id="step-3-copy-container-images-02-copy-imagessh">
     يتطلب هذا استخدام [skopeo](https://github.com/containers/skopeo) للاحتفاظ بجميع المعماريات.
 
     ```bash expandable
@@ -348,9 +340,7 @@ description: "يوضح هذا الدليل التعليمي كيفية نشر Cl
     ***
   </Step>
 
-  <Step stepNumber={4}>
-    ## الخطوة 4: تهيئة VPC والشبكة الفرعية (`03-vpc-subnet.sh`)
-
+  <Step stepNumber={4} title={<>الخطوة 4: تهيئة VPC والشبكة الفرعية (<code>03-vpc-subnet.sh</code>)</>} id="step-4-configure-vpc-and-subnet-03-vpc-subnetsh">
     يفترض هذا السكربت أن لديك VPC حالية مع مضيف Bastion. وينشئ شبكة GKE الفرعية أو يحدّثها بالنطاقات الثانوية المطلوبة.
 
     **مهم: متطلبات حدود CIDR** - كتل `/14`: يجب أن يكون الأوكتت الثالث قابلاً للقسمة على 4 (مثل: `10.244.0.0`، وليس `10.245.0.0`) - كتل `/20`: يجب أن تكون قيمة الأوكتت الرابع 0، وأن يكون الأوكتت الثالث على حد 16 (مثل: `10.252.0.0`)
@@ -433,9 +423,7 @@ description: "يوضح هذا الدليل التعليمي كيفية نشر Cl
     ***
   </Step>
 
-  <Step stepNumber={5}>
-    ## الخطوة 5: إنشاء Cloud NAT (`04-cloud-nat.sh`)
-
+  <Step stepNumber={5} title={<>الخطوة 5: إنشاء Cloud NAT (<code>04-cloud-nat.sh</code>)</>} id="step-5-create-cloud-nat-04-cloud-natsh">
     تتطلب عُقد GKE الخاصة Cloud NAT لتمكين حركة المرور الصادرة إلى الإنترنت.
 
     ```bash expandable
@@ -489,9 +477,7 @@ description: "يوضح هذا الدليل التعليمي كيفية نشر Cl
     ***
   </Step>
 
-  <Step stepNumber={6}>
-    ## الخطوة 6: إنشاء حساب خدمة في GCP (`05-service-account.sh`)
-
+  <Step stepNumber={6} title={<>الخطوة 6: إنشاء حساب خدمة في GCP (`05-service-account.sh`)</>} id="step-6-create-gcp-service-account-05-service-accountsh">
     ```bash
     #!/bin/bash
     set -e
@@ -522,9 +508,7 @@ description: "يوضح هذا الدليل التعليمي كيفية نشر Cl
     ***
   </Step>
 
-  <Step stepNumber={7}>
-    ## الخطوة 7: إنشاء حاوية GCS (`06-gcs-bucket.sh`)
-
+  <Step stepNumber={7} title={<>الخطوة 7: إنشاء حاوية GCS (<code>06-gcs-bucket.sh</code>)</>} id="step-7-create-gcs-bucket-06-gcs-bucketsh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -573,9 +557,7 @@ description: "يوضح هذا الدليل التعليمي كيفية نشر Cl
     ***
   </Step>
 
-  <Step stepNumber={8}>
-    ## الخطوة 8: إنشاء عنقود GKE (`07-gke-cluster.sh`)
-
+  <Step stepNumber={8} title={<>الخطوة 8: إنشاء عنقود GKE (<code>07-gke-cluster.sh</code>)</>} id="step-8-create-gke-cluster-07-gke-clustersh">
     ينشئ **عنقود GKE خاصًا بالكامل** -- لا تملك العقد العاملة سوى عناوين IP داخلية، وليس لطبقة التحكم نقطة نهاية عامة، ويجب أن يتم كل الوصول من داخل شبكة VPC عبر مضيف bastion.
 
     ```bash expandable
@@ -655,9 +637,7 @@ description: "يوضح هذا الدليل التعليمي كيفية نشر Cl
     ***
   </Step>
 
-  <Step stepNumber={9}>
-    ## الخطوة 9: إنشاء مجموعات العقد (`08-node-pools.sh`)
-
+  <Step stepNumber={9} title={<>الخطوة 9: إنشاء مجموعات العقد (<code>08-node-pools.sh</code>)</>} id="step-9-create-node-pools-08-node-poolssh">
     | مجموعة العقد | نوع الآلة                                   | القرص                        | الوسوم                   | Taints                                      |
     | ------------ | ------------------------------------------- | ---------------------------- | ------------------------ | ------------------------------------------- |
     | Keeper       | n2-standard-4 (dev) / n2-standard-8 (prod)  | 20GB pd-ssd                  | `clickhouseGroup=keeper` | `clickhouse.com/do-not-schedule:NoSchedule` |
@@ -732,9 +712,7 @@ description: "يوضح هذا الدليل التعليمي كيفية نشر Cl
     ***
   </Step>
 
-  <Step stepNumber={10}>
-    ## الخطوة 10: نشر DaemonSet للقرص Local SSD (`09-local-ssd-daemonset.sh`)
-
+  <Step stepNumber={10} title={<>الخطوة 10: نشر DaemonSet للقرص Local SSD (<code>09-local-ssd-daemonset.sh</code>)</>} id="step-10-deploy-local-ssd-daemonset-09-local-ssd-daemonsetsh">
     يستخدم GKE Container-Optimized OS نظام ملفات جذريًا للقراءة فقط، لذا لا يمكننا إنشاء `/nvme`. تقوم DaemonSet بتهيئة القرص Local SSD وتثبيته على `/mnt/disks/ssd0`.
 
     **مهم:** انشر هذا **قبل** عنقود ClickHouse لتجنّب حالات التسابق.
@@ -834,9 +812,7 @@ description: "يوضح هذا الدليل التعليمي كيفية نشر Cl
     ***
   </Step>
 
-  <Step stepNumber={11}>
-    ## الخطوة 11: إضافة تسميات الطوبولوجيا (`10-topology-labels.sh`)
-
+  <Step stepNumber={11} title={<>الخطوة 11: إضافة تسميات الطوبولوجيا (<code>10-topology-labels.sh</code>)</>} id="step-11-add-topology-labels-10-topology-labelssh">
     ```bash
     #!/bin/bash
     set -e
@@ -871,9 +847,7 @@ description: "يوضح هذا الدليل التعليمي كيفية نشر Cl
     ***
   </Step>
 
-  <Step stepNumber={12}>
-    ## الخطوة 12: تثبيت المتطلبات الأساسية لـ Kubernetes
-
+  <Step stepNumber={12} title="الخطوة 12: تثبيت المتطلبات الأساسية لـ Kubernetes" id="step-12-install-kubernetes-prerequisites">
     ### تثبيت VolumeSnapshot CRDs (`11-volumesnapshot-crds.sh`)
 
     ```bash
@@ -1027,9 +1001,7 @@ description: "يوضح هذا الدليل التعليمي كيفية نشر Cl
     ***
   </Step>
 
-  <Step stepNumber={13}>
-    ## الخطوة 13: خطوات FIPS (شرطية)
-
+  <Step stepNumber={13} title="الخطوة 13: خطوات FIPS (اختياريًا)" id="step-13-fips-steps-conditional">
     تخطَّ هذا القسم إذا كان `ENABLE_FIPS=false`.
 
     ### إنشاء شهادات FIPS (`14-create-fips-certs.sh`)
@@ -1099,9 +1071,7 @@ description: "يوضح هذا الدليل التعليمي كيفية نشر Cl
     ***
   </Step>
 
-  <Step stepNumber={14}>
-    ## الخطوة 14: تثبيت الـ Operator (`16-install-operator.sh`)
-
+  <Step stepNumber={14} title={<>الخطوة 14: تثبيت الـ Operator (<code>16-install-operator.sh</code>)</>} id="step-14-install-operator-16-install-operatorsh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -1154,9 +1124,7 @@ description: "يوضح هذا الدليل التعليمي كيفية نشر Cl
     ***
   </Step>
 
-  <Step stepNumber={15}>
-    ## الخطوة 15: نشر مجموعة ClickHouse (`17-install-cluster.sh`)
-
+  <Step stepNumber={15} title={<>الخطوة 15: نشر مجموعة ClickHouse (<code>17-install-cluster.sh</code>)</>} id="step-15-deploy-clickhouse-cluster-17-install-clustersh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -1270,9 +1238,7 @@ description: "يوضح هذا الدليل التعليمي كيفية نشر Cl
     ***
   </Step>
 
-  <Step stepNumber={16}>
-    ## الخطوة 16: ربط Workload Identity (`18-bind-helm-workload-identity.sh`)
-
+  <Step stepNumber={16} title={<>الخطوة 16: ربط Workload Identity (<code>18-bind-helm-workload-identity.sh</code>)</>} id="step-16-bind-workload-identity-18-bind-helm-workload-identitysh">
     ينشئ مخطط Helm حساب الخدمة (`ch-${CLUSTER_NAME}-sa`) الخاص به. يجب ربط Workload Identity بحساب الخدمة هذا للوصول إلى GCS.
 
     **مهم:** تبدأ حاويات Keeper وقرون الخادم التي أُنشئت خلال الخطوة 15 قبل إنشاء هذا الربط، لذا ستفشل مع ظهور أخطاء GCS 403. يعيد هذا البرنامج النصي تشغيل القرون بعد إتمام الربط.
@@ -1373,9 +1339,7 @@ description: "يوضح هذا الدليل التعليمي كيفية نشر Cl
     ***
   </Step>
 
-  <Step stepNumber={17}>
-    ## الخطوة 17: التحقق من التثبيت
-
+  <Step stepNumber={17} title="الخطوة 17: التحقق من التثبيت" id="step-17-verify-installation">
     ### الوضع القياسي (من دون TLS)
 
     ```text

@@ -8,7 +8,11 @@ Cada inserção cria uma nova parte contendo arquivos de coluna ordenados e comp
 
 Com o tempo, processos em segundo plano mesclam partes menores em partes maiores para reduzir a fragmentação e melhorar o desempenho das consultas.
 
-<Image img="/images/bestpractices/simple_merges.webp" size="md" alt="Mesclagens simples" />
+<div className="ch-image-md">
+  <Frame>
+    <img src="/images/bestpractices/simple_merges.webp" alt="Mesclagens simples" />
+  </Frame>
+</div>
 
 Embora seja tentador disparar manualmente essa mesclagem usando:
 
@@ -20,7 +24,7 @@ OPTIMIZE TABLE <table> FINAL;
 operações que consomem muitos recursos e podem afetar o desempenho do cluster.
 
 <Info>
-  **`OPTIMIZE FINAL` vs `FINAL`**
+  **OPTIMIZE FINAL vs FINAL**
 
   `OPTIMIZE FINAL` não é o mesmo que `FINAL`, cujo uso às vezes é necessário
   para obter resultados sem duplicatas, como no `ReplacingMergeTree`. Em geral,

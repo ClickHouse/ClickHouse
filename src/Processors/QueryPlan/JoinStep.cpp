@@ -4,7 +4,9 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
@@ -51,6 +53,9 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join,
     description.emplace_back("Type", kind);
     description.emplace_back("Strictness", strictness);
     description.emplace_back("Algorithm", join->getName());
+
+    if (const auto join_expression_value = table_join.getJoinExpressionValue())
+        description.emplace_back("Constant expression value", *join_expression_value ? "true" : "false");
 
     if (table_join.strictness() == JoinStrictness::Asof)
         description.emplace_back("ASOF inequality", toString(table_join.getAsofInequality()));
@@ -224,33 +229,49 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
             fmt::format("JoinStep: [{}] and [{}]", pipeline_output_header.dumpNames(), expected_output_header->dumpNames()));
     }
 
+    if (dataflow_cache_updater)
+    {
+        joined_pipeline->addSimpleTransform([&](const SharedHeader & header)
+        { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
+    }
+
     return joined_pipeline;
 }
 
-StepAnalysisReport JoinStep::getAnalysisReport(const ProcessorsByGroup & processors_by_group) const
+JoinAnalysisCounters JoinStep::collectMergeJoinCounters(StepProcessors step_processors) const
 {
-    if (join->getName() != "FullSortingMergeJoin")
-        return join->getAnalysisReport();
-
     JoinAnalysisCounters counters;
-    for (const auto & [group, processors] : processors_by_group)
+    MatchedRowsAccumulator matched_left;
+    MatchedRowsAccumulator matched_right;
+    for (const auto * proc : step_processors)
     {
-        for (const auto * proc : processors)
-        {
-            if (const auto * merge_join = typeid_cast<const MergeJoinTransform *>(proc))
-            {
-                const auto c = merge_join->getJoinAnalysisCounters();
-                counters.left_rows += c.left_rows;
-                counters.matched_left += c.matched_left;
-                counters.right_rows += c.right_rows;
-                counters.matched_right += c.matched_right;
-            }
-        }
-    }
+        const auto * merge_join = typeid_cast<const MergeJoinTransform *>(proc);
+        if (!merge_join)
+            continue;
 
-    return buildMatchedRowsReport(counters);
+        const auto join_counters = merge_join->getJoinAnalysisCounters();
+        counters.left_rows += join_counters.left_rows;
+        counters.right_rows += join_counters.right_rows;
+        matched_left.add(join_counters.matched_left);
+        matched_right.add(join_counters.matched_right);
+    }
+    counters.matched_left = matched_left.get();
+    counters.matched_right = matched_right.get();
+
+    return counters;
 }
 
+StepAnalysisReport JoinStep::getAnalysisReport(StepProcessors step_processors) const
+{
+    /// Only EXPLAIN ANALYZE asks for a report, and it turns the analyze mode on for the whole query,
+    /// so every join it reaches must have been told to collect statistics
+    chassert(join->getTableJoin().collectAnalyzeStats(), "JoinStep analyzed without the analyze mode");
+
+    if (!typeid_cast<const FullSortingMergeJoin *>(join.get()))
+        return join->getAnalysisReport();
+
+    return buildMatchedRowsReport(collectMergeJoinCounters(step_processors));
+}
 
 bool JoinStep::allowPushDownToRight() const
 {
@@ -285,7 +306,7 @@ String JoinStep::getStepGroupName(size_t group) const
         case JoinStage::Build: return "build";
         case JoinStage::Probe: return "probe";
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JoinStageA group {}", group);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JoinStage group {}", group);
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const
@@ -346,20 +367,7 @@ void JoinStep::describeActions(FormatSettings & settings) const
     }
 
     if (settings.pretty && !settings.inside_explain_analyze)
-    {
-        for (const auto & group : QueryPlanFormat::collectJoinInputColumns(*this))
-        {
-            String label = group.label;
-            if (!label.empty())
-                label[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(label[0])));
-
-            settings.out << prefix << label << ':';
-            for (const auto & metric : group.metrics)
-                if (const auto * text = std::get_if<std::string>(&metric.value))
-                    settings.out << ' ' << *text;
-            settings.out << '\n';
-        }
-    }
+        QueryPlanFormat::formatJoinOutputColumns(settings.out, *this, prefix);
 }
 
 void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -481,9 +489,10 @@ void FilledJoinStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(JoiningTransform::transformHeader(*input_headers.front(), join));
 }
 
-
-StepAnalysisReport FilledJoinStep::getAnalysisReport(const ProcessorsByGroup & /*processors_by_group*/) const
+StepAnalysisReport FilledJoinStep::getAnalysisReport(StepProcessors /*step_processors*/) const
 {
+    chassert(join->getTableJoin().collectAnalyzeStats(), "FilledJoinStep analyzed without the analyze mode");
+
     return join->getAnalysisReport();
 }
 

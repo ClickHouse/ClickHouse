@@ -34,7 +34,11 @@ ClickHouse で処理されるデータは通常、ClickHouse server が稼働し
 </div>
 
 [`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) および [`Log`](/ja/reference/engines/table-engines/log-family/log)
-ファミリーに属するテーブルエンジンでは、型がそれぞれ `s3`、`azure_blob_storage`、`hdfs` (未サポート) のディスクを使用して、データを `S3`、`AzureBlobStorage`、`HDFS` (未サポート) に保存できます。
+ファミリーのテーブルエンジンでは、型がそれぞれ `s3`、`azure_blob_storage`、`hdfs` (未サポート) のディスクを使用して、データを `S3`、`AzureBlobStorage`、`HDFS` (未サポート) に保存できます。
+
+<Note>
+  `s3` ディスクタイプは、Alibaba Cloud Object Storage Service などの S3 互換オブジェクトストレージプロバイダでも使用できます。`endpoint` にはプロバイダの S3 互換エンドポイントを設定し、プロバイダ固有の互換性要件がある場合はそれも考慮してください。
+</Note>
 
 ディスクの設定には、次のものが必要です。
 

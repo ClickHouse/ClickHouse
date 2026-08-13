@@ -6,7 +6,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
-#include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <fmt/format.h>

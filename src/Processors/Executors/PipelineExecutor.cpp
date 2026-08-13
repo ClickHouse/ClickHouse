@@ -1,4 +1,3 @@
-#include <iterator>
 #include <memory>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Scheduler/MemoryReservation.h>
@@ -131,8 +130,11 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
     {
         /// If exception was thrown while pipeline initialization, it means that query pipeline was not build correctly.
         /// It is logical error, and we need more information about pipeline.
+        /// Label the nodes with addresses so that they can be matched against the endpoints
+        /// named by the exception (e.g. from `ExecutingGraph::addEdge`) even when `getUniqID`
+        /// degrades to the `_0` suffix because `CurrentThread` is not initialized.
         WriteBufferFromOwnString buf;
-        printPipeline(*processors, buf);
+        printPipeline(*processors, buf, /* with_profile = */ false, /* with_addresses = */ true);
         buf.finalize();
         exception.addMessage("Query pipeline:\n" + buf.str());
 
@@ -303,24 +305,26 @@ void PipelineExecutor::setCollectWorkIntervals(bool collect_work_intervals_)
     collect_work_intervals = collect_work_intervals_;
 }
 
-WorkIntervals PipelineExecutor::takeWorkIntervals()
+WorkIntervalsPerThread PipelineExecutor::takeWorkIntervals()
 {
     if (!collect_work_intervals)
-        return {}; 
-    
-    WorkIntervals result;
+        return {};
+
+    WorkIntervalsPerThread result;
+    result.reserve(tasks.getNumThreads());
 
     for (size_t thread_ind = 0; thread_ind < tasks.getNumThreads(); ++thread_ind)
     {
-        auto working_interval_from_context = tasks.getThreadContext(thread_ind).takeWorkIntervals();
+        auto intervals_of_thread = tasks.getThreadContext(thread_ind).takeWorkIntervals();
+        if (intervals_of_thread.empty())
+            continue;
 
-        for (auto & interval : working_interval_from_context)
+        for (auto & interval : intervals_of_thread)
             interval.start_of_interval_ns -= query_start_ns;
 
-        result.insert(result.end(), 
-                std::make_move_iterator(working_interval_from_context.begin()),
-                std::make_move_iterator(working_interval_from_context.end()));
+        result.push_back(std::move(intervals_of_thread));
     }
+
     return result;
 }
 
@@ -660,7 +664,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// to the full ceiling so the growth check in the block becomes a no-op.
     desired_threads = lazy_allocation ? 1 : num_threads;
 
-    query_start_ns = clock_gettime_ns(CLOCK_MONOTONIC);
+    query_start_ns = clock_gettime_ns();
 
     Queue queue;
     Queue async_queue;

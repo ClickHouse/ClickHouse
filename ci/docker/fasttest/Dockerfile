@@ -1,12 +1,25 @@
 # docker build -t clickhouse/fasttest .
 FROM ubuntu:24.04
 
-# ARG for quick switch to a given ubuntu mirror
+# ARG for quick switch to a given ubuntu mirror. Defaults stay canonical so local
+# builds are unchanged; CI passes the in-region AWS mirror on the command line
+# (see ci/praktika/docker.py). amd64 base images use archive.ubuntu.com, arm64
+# uses ports.ubuntu.com, so rewrite both. On 24.04 the sources live in the deb822
+# file /etc/apt/sources.list.d/ubuntu.sources, so rewrite every apt source file.
+# The runners have no IPv6 egress, so force IPv4 to avoid hanging on IPv6 connect
+# attempts (this is a CI-only image, never pulled by end users, so forcing IPv4
+# here is safe). Also retry transient apt failures.
 ARG apt_archive="http://archive.ubuntu.com"
-RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
-ARG LLVM_APT_VERSION="1:21.1.5~"
+ARG apt_ports_archive="http://ports.ubuntu.com"
+RUN find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -print0 | xargs -0 -r sed -i \
+        -e "s|http://archive.ubuntu.com|$apt_archive|g" \
+        -e "s|https://archive.ubuntu.com|$apt_archive|g" \
+        -e "s|http://ports.ubuntu.com|$apt_ports_archive|g" \
+        -e "s|https://ports.ubuntu.com|$apt_ports_archive|g" \
+    && printf 'Acquire::ForceIPv4 "true";\nAcquire::Retries "5";\n' > /etc/apt/apt.conf.d/99-clickhouse-ci
+ARG LLVM_APT_VERSION="1:22.1.8~"
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=21
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=22
 
 # We need ca-certificates first to be able to update all repos. This is why it's run twice
 RUN apt-get update \
@@ -55,6 +68,7 @@ RUN apt-get update \
         libclang-${LLVM_VERSION}-dev \
         libclang-rt-${LLVM_VERSION}-dev \
         lld-${LLVM_VERSION} \
+        lldb-${LLVM_VERSION} \
         llvm-${LLVM_VERSION}-dev \
         libmpfr6 \
         lsof \
@@ -114,6 +128,15 @@ COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
 # Give suid to gdb to grant it attach permissions
 RUN chmod u+s /opt/gdb/bin/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
+
+# lldb (installed with clang above) is the native debugger used by
+# clickhouse-test's `print_c_stacktraces` to dump server backtraces.
+# Symlink the versioned binary into /usr/bin so callers can run `lldb`
+# directly, and grant suid so non-root tests can still attach. gdb is kept
+# above for the fuzzer, perf comparison, stress, upgrade, and
+# integration-test harnesses that still drive it directly.
+RUN ln -sf /usr/lib/llvm-${LLVM_VERSION}/bin/lldb /usr/bin/lldb \
+    && chmod u+s /usr/lib/llvm-${LLVM_VERSION}/bin/lldb
 
 # This symlink is required by gcc to find the lld linker
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld

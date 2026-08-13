@@ -133,16 +133,16 @@ Une insertion en bloc avec une taille de lot raisonnable réduit le nombre de pa
 pendant l’ingestion, ce qui se traduit par des écritures sur disque plus efficaces et moins d’opérations
 de fusion.
 
-Les métriques clés pour repérer des insertions non optimisées sont **Inserted Rows/sec** et
-**Max Parts for Partition**
+Les métriques clés pour repérer des insertions non optimisées sont **Ligne inséré** et
+**Nombre maximal de part par partition**
 
 <Image img="/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp" size="lg" alt="Insertions non regroupées" />
 
-L’exemple ci-dessus montre deux pics de **Inserted Rows/sec** et de **Max Parts for Partition**
+L’exemple ci-dessus montre deux pics de **Ligne inséré** et de **Nombre maximal de part par partition**
 entre 13h et 14h. Cela indique que nous ingérons les données à un rythme raisonnable.
 
-On observe ensuite un autre pic important de **Max Parts for Partition** après 16h, mais un
-**Inserted Rows/sec** très faible. Beaucoup de parts sont créées alors que
+On observe ensuite un autre pic important de **Nombre maximal de part par partition** après 16h, mais un
+**Ligne inséré** très faible. Beaucoup de parts sont créées alors que
 très peu de données sont générées, ce qui indique que la taille des parts est
 sous-optimale.
 

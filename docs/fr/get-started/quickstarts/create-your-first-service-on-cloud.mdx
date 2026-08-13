@@ -1,7 +1,7 @@
 ---
 sidebarTitle: "Créez votre premier service Cloud"
 title: "Créez votre premier service Cloud et chargez un jeu de données d’exemple"
-useCases: ['All']
+useCases: ['Tous']
 products: ['Cloud']
 description: "Créez un service ClickHouse Cloud, découvrez la console SQL et chargez un jeu de données d’exemple pour commencer à interroger des données réelles en quelques minutes."
 ---
@@ -14,9 +14,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <BackToQuickstarts />
 
 <div className="mt-2 flex flex-wrap gap-2">
-  <Badge size="lg" color="blue">Analytique en temps réel</Badge>
+  <Badge size="lg" color="blue">Analyse en temps réel</Badge>
   <Badge size="lg" color="blue">Data warehousing</Badge>
-  <Badge size="lg" color="blue">Observability</Badge>
+  <Badge size="lg" color="blue">Observabilité</Badge>
   <Badge size="lg" color="blue">IA/ML</Badge>
   <Badge size="lg" color="orange">Cloud</Badge>
 </div>
@@ -37,9 +37,7 @@ Dans ce guide de démarrage rapide, vous allez créer votre premier service Clic
 À la fin, vous disposerez d’un service ClickHouse Cloud opérationnel, avec des données chargées, prêt à servir de base pour le reste de la série de guides de démarrage rapide.
 
 <Steps titleSize="h3">
-  <Step>
-    ### Inscrivez-vous à ClickHouse Cloud
-
+  <Step title="Inscrivez-vous à ClickHouse Cloud" id="sign-up-for-clickhouse-cloud">
     Accédez à [console.clickhouse.cloud](https://console.clickhouse.cloud/). La page de connexion s’affiche. En bas de la page, cliquez sur **Register** à côté de &quot;Don&#39;t have an account yet?&quot;.
 
     <Frame caption="Cliquez sur Register pour créer un nouveau compte">
@@ -66,9 +64,7 @@ Dans ce guide de démarrage rapide, vous allez créer votre premier service Clic
     Une fois l’adresse vérifiée, connectez-vous avec votre nouvelle adresse e-mail et votre mot de passe.
   </Step>
 
-  <Step>
-    ### Créer un nouveau service
-
+  <Step title="Créer un nouveau service" id="create-a-new-service">
     Après votre première connexion, vous accéderez directement à la page de configuration du service. Configurez les éléments suivants :
 
     | Paramètre                      | Recommandation                                                                                                                         |
@@ -91,9 +87,7 @@ Dans ce guide de démarrage rapide, vous allez créer votre premier service Clic
     </Frame>
   </Step>
 
-  <Step>
-    ### Charger un jeu de données d’exemple
-
+  <Step title="Charger un jeu de données d’exemple" id="load-an-example-dataset">
     Cliquez sur **Data sources** dans la barre latérale gauche. Vous verrez plusieurs options pour importer des données dans votre service.
 
     <Frame caption="Page Data sources avec des options de chargement des données">
@@ -115,9 +109,7 @@ Dans ce guide de démarrage rapide, vous allez créer votre premier service Clic
     L’importation prendra une à deux minutes. Une fois terminée, vous pourrez interroger les données.
   </Step>
 
-  <Step>
-    ### Interroger les données
-
+  <Step title="Interroger les données" id="query-the-data">
     Cliquez sur **SQL Console** dans la barre latérale de gauche pour ouvrir l’éditeur de requêtes intégré. C’est là que vous rédigerez et exécuterez des requêtes SQL directement dans votre navigateur, sans avoir besoin d’outils externes.
 
     Essayez quelques requêtes pour explorer les données sur les prix de l’immobilier au Royaume-Uni.
@@ -152,7 +144,9 @@ Dans ce guide de démarrage rapide, vous allez créer votre premier service Clic
   </Step>
 </Steps>
 
-## Étapes suivantes
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
 
 Vous disposez maintenant d’un service ClickHouse Cloud en cours d’exécution, avec 30 millions de lignes de données réelles chargées. Ce service et ce jeu de données sont utilisés dans le reste de la série de guides de démarrage rapide.
 

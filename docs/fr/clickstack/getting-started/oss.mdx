@@ -9,7 +9,7 @@ keywords: ['ClickStack Open Source', 'premiers pas', 'déploiement Docker', 'Hyp
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-Pour déployer **ClickStack Open Source**, dans lequel vous exécutez et administrez vous-même ClickHouse et la ClickStack UI, nous fournissons des images Docker préconstruites qui regroupent l’UI, un OTel collector et ClickHouse dans un seul conteneur, ce qui facilite la prise en main pour le développement local, les tests et les déploiements autogérés.
+Pour déployer **ClickStack Open Source**, dans lequel vous exécutez et administrez vous-même ClickHouse et la ClickStack UI, nous fournissons des images Docker préconstruites qui regroupent l’UI, un collecteur OpenTelemetry et ClickHouse dans un seul conteneur, ce qui facilite la prise en main pour le développement local, les tests et les déploiements autogérés.
 
 <Tip>
   Une version managée de ClickStack est également disponible — voir [Managed ClickStack](/fr/clickstack/getting-started/managed).
@@ -20,16 +20,14 @@ Ces images sont basées sur le paquet Debian officiel de ClickHouse et sont disp
 L’option la plus simple est une **distribution à image unique** qui inclut tous les composants principaux de la stack dans une seule image :
 
 * **HyperDX UI**
-* **OpenTelemetry (OTel) collector**
+* **collecteur OpenTelemetry**
 * **ClickHouse**
 
 Cette image tout-en-un vous permet de lancer l’intégralité de la stack avec une seule commande, ce qui la rend idéale pour les tests, l’expérimentation ou les déploiements locaux rapides.
 
 <Steps>
-  <Step>
-    ## Déployer la stack avec Docker
-
-    La commande suivante lance un OTel collector (sur les ports 4317 et 4318), la HyperDX UI (sur le port 8080) et ClickHouse (8123).
+  <Step title="Déployer la stack avec Docker" id="deploy-stack-with-docker">
+    La commande suivante lance un collecteur OpenTelemetry (sur les ports 4317 et 4318), la HyperDX UI (sur le port 8080) et ClickHouse (8123).
 
     ```shell
     docker run --name clickstack -p 8123:8123 -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest clickstack
@@ -64,9 +62,7 @@ Cette image tout-en-un vous permet de lancer l’intégralité de la stack avec 
     </Tip>
   </Step>
 
-  <Step>
-    ## Accéder à la ClickStack UI
-
+  <Step title="Accéder à la ClickStack UI" id="navigate-to-hyperdx-ui">
     Rendez-vous sur [http://localhost:8080](http://localhost:8080) pour accéder à la ClickStack UI (HyperDX).
 
     Créez un utilisateur en renseignant un nom d’utilisateur et un mot de passe conformes aux exigences de complexité.
@@ -76,15 +72,13 @@ Cette image tout-en-un vous permet de lancer l’intégralité de la stack avec 
     HyperDX se connectera automatiquement au cluster local et créera des sources de données pour les logs, les traces, les métriques et les sessions, afin que vous puissiez explorer le produit immédiatement.
   </Step>
 
-  <Step>
-    ## Explorer le produit
-
+  <Step title="Explorer le produit" id="explore-the-product">
     Une fois la stack déployée, essayez l’un de nos jeux de données d’exemple.
 
     Pour continuer à utiliser le cluster local :
 
     * [Jeu de données d’exemple](/fr/clickstack/example-datasets/sample-data) - Chargez un jeu de données d’exemple depuis notre démo publique. Diagnostiquez un problème simple.
-    * [Fichiers locaux et métriques](/fr/clickstack/example-datasets/local-data) - Chargez des fichiers locaux et surveillez le système sur OSX ou Linux à l’aide d’un OTel collector local.
+    * [Fichiers locaux et métriques](/fr/clickstack/example-datasets/local-data) - Chargez des fichiers locaux et surveillez le système sur OSX ou Linux à l’aide d’un collecteur OpenTelemetry local.
 
     <br />
 
@@ -114,16 +108,14 @@ Pour plus de détails sur ce mode de déploiement, consultez [&quot;Mode local u
   ### Version hébergée
 </div>
 
-Vous pouvez utiliser une version hébergée de ClickStack en mode local, accessible sur [play-clickstack.clickhouse.com](https://play-clickstack.clickstack.com).
+Vous pouvez utiliser une version hébergée de ClickStack en mode local, accessible sur [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com).
 
 <div id="self-hosted-version">
   ### Version auto-hébergée
 </div>
 
 <Steps>
-  <Step>
-    ### Exécuter avec Docker
-
+  <Step title="Exécuter avec Docker" id="run-local-with-docker">
     L’image du mode local auto-hébergé inclut également un collecteur OpenTelemetry, la ClickStack UI et un serveur ClickHouse préconfigurés. Vous pouvez ainsi ingérer facilement les données de télémétrie de vos applications et les visualiser avec un minimum de configuration externe. Pour commencer avec la version auto-hébergée, exécutez simplement le conteneur Docker en redirigeant les ports appropriés :
 
     ```shell
@@ -133,9 +125,7 @@ Vous pouvez utiliser une version hébergée de ClickStack en mode local, accessi
     Contrairement à l’image &quot;All in one&quot;, vous ne serez pas invité à créer un utilisateur, car **le mode local n’inclut pas d’authentification**.
   </Step>
 
-  <Step>
-    ### Renseigner les identifiants de connexion
-
+  <Step title="Renseigner les identifiants de connexion" id="complete-connection-credentials">
     Pour vous connecter à votre propre **cluster ClickHouse externe**, vous pouvez saisir manuellement vos identifiants de connexion.
 
     Vous pouvez également, pour découvrir rapidement le produit, cliquer sur **Se connecter au serveur de démonstration** afin d’accéder à des jeux de données préchargés et d’essayer ClickStack sans configuration.

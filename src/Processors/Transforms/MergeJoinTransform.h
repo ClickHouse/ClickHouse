@@ -47,6 +47,22 @@ struct JoinKeyRow
     Columns row;
 };
 
+struct MatchedRows
+{
+    size_t left = 0;
+    size_t right = 0;
+
+    size_t & side(size_t source_num) { return source_num == 0 ? left : right; }
+};
+
+struct MatchedRanges
+{
+    JoinKeyRow left;
+    JoinKeyRow right;
+
+    JoinKeyRow & side(size_t source_num) { return source_num == 0 ? left : right; }
+};
+
 /// Remembers previous key if it was joined in previous block
 class AnyJoinState : boost::noncopyable
 {
@@ -63,6 +79,10 @@ public:
 
     /// for LEFT/RIGHT join use previously joined row from other table.
     Chunk value;
+
+    bool count_matches = false;
+    /// key of the last equal range of each side that found a partner on the other side
+    MatchedRanges matched;
 };
 
 /// Accumulate blocks with same key and cross-join them
@@ -159,17 +179,10 @@ private:
 };
 
 
-struct AsofRightRowRef
-{
-    size_t chunk_generation = 0;
-    size_t row = 0;
-    bool operator==(const AsofRightRowRef &) const = default;
-};
-
 class AsofJoinState : boost::noncopyable
 {
 public:
-    void set(const FullMergeJoinCursor & rcursor, size_t rpos, size_t chunk_generation);
+    void set(const FullMergeJoinCursor & rcursor, size_t rpos);
     void reset();
 
     bool hasMatch(const FullMergeJoinCursor & cursor, ASOFJoinInequality asof_inequality) const
@@ -181,7 +194,7 @@ public:
 
     JoinKeyRow key;
     Chunk value;
-    AsofRightRowRef value_ref;
+    size_t value_row = 0;
 };
 
 /*
@@ -239,7 +252,8 @@ public:
                        JoinStrictness strictness_,
                        const TableJoin::JoinOnClause & on_clause_,
                        SharedHeaders & input_headers,
-                       size_t max_block_size_);
+                       size_t max_block_size_,
+                       JoinAnalyzeMode analyze_mode_ = JoinAnalyzeMode::None);
 
     MergeJoinAlgorithm(JoinPtr join_ptr, SharedHeaders & input_headers, size_t max_block_size_);
 
@@ -253,16 +267,8 @@ public:
     void logElapsed(double seconds);
     MergedStats getMergedStats() const override;
 
-    /// Participation counters for EXPLAIN ANALYZE (total and matched rows per side).
-    JoinAnalysisCounters getJoinAnalysisCounters() const
-    {
-        return {
-            .left_rows = stat.num_rows[0],
-            .matched_left = stat.matched_left,
-            .right_rows = stat.num_rows[1],
-            .matched_right = stat.matched_right,
-        };
-    }
+    /// Participation counters for EXPLAIN ANALYZE -- total and matched rows per side
+    JoinAnalysisCounters getJoinAnalysisCounters() const;
 
 private:
     std::optional<Status> handleAnyJoinState();
@@ -274,11 +280,12 @@ private:
     std::optional<Status> handleAsofJoinState();
     Status asofJoin();
 
-    void countAsofMatch(AsofRightRowRef right_ref);
-
     void getEmptyResultColumns(MutableColumns & result_cols, size_t pos) const;
     MutableColumns getEmptyResultColumns() const;
     Columns getEmptyResultColumns(size_t pos) const;
+    /// Types of the columns produced by getEmptyResultColumns() (left header ++ right header),
+    /// used to fill non-joined rows with the proper type default instead of a raw zero.
+    DataTypes getOutputTypes() const;
 
     Chunk createBlockWithDefaults(size_t source_num);
     Chunk createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const;
@@ -295,10 +302,10 @@ private:
     AnyJoinState any_join_state;
     std::unique_ptr<AllJoinState> all_join_state;
     AsofJoinState asof_join_state;
-    std::optional<AsofRightRowRef> last_asof_matched_right;
 
     JoinKind kind;
     JoinStrictness strictness;
+    JoinAnalyzeMode analyze_mode;
 
     size_t max_block_size;
     int null_direction_hint = 1;
@@ -309,9 +316,8 @@ private:
         size_t num_rows[2] = {0, 0};
         size_t num_bytes[2] = {0, 0};
 
-        /// Distinct rows of each side that ended up in the output with a partner.
-        size_t matched_left = 0;
-        size_t matched_right = 0;
+        /// Rows of each side that found a partner on the other side.
+        MatchedRows matched_rows;
 
         size_t max_blocks_loaded = 0;
     };

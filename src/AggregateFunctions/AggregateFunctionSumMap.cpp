@@ -320,7 +320,11 @@ public:
                 break;
             }
             default:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown version {}, of -Map aggregate function serialization state", *version);
+                /// The version comes from the AggregateFunction data type parameter, which is
+                /// user/data-controlled and not validated at type creation. Throw a catchable
+                /// exception instead of LOGICAL_ERROR (which aborts debug/sanitizer builds).
+                /// Symmetric with deserialize() below.
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected version {} of -Map aggregate function serialization state", *version);
         }
 
         for (const auto & elem : merged_maps)
@@ -341,6 +345,10 @@ public:
         readVarUInt(size, buf);
 
         FormatSettings format_settings;
+        /// Bool keys/values must be read as 0/1 int Fields, matching what add() stores from the
+        /// UInt8 column. Otherwise a bool-tagged Field reaches FieldVisitorSum on merge and throws
+        /// "Cannot sum Bools" (and breaks key dedup / zero-compaction). Same as MergeTreePartition::load.
+        format_settings.binary.read_bool_field_as_int = true;
         std::function<void(size_t, Array &)> deserialize;
         switch (*version)
         {
@@ -1067,7 +1075,7 @@ GROUP BY timeslot;
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMapFiltered<false, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMapFiltered<false, false>>(keys_type, values_types, arguments, params);
-    }, {}});
+    }, {.description = R"DOC(Like sumMap, but sums the values only for the keys that are present in a given whitelist of keys.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
 
     factory.registerFunction("sumMapFilteredWithOverflow", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
@@ -1075,7 +1083,7 @@ GROUP BY timeslot;
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMapFiltered<true, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMapFiltered<true, false>>(keys_type, values_types, arguments, params);
-    }, {}});
+    }, {.description = R"DOC(Like sumMapFiltered, but performs the summation without checking for numeric overflow (the result keeps the argument's value type).)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
 }
 
 }

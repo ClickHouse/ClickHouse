@@ -1,8 +1,8 @@
 ---
 slug: /use-cases/observability/clickstack/overview
-title: 'ClickStack - el stack de observabilidad de ClickHouse'
+title: 'ClickStack - la pila de observabilidad de ClickHouse'
 sidebarTitle: 'Resumen'
-description: 'Resumen de ClickStack: el stack de observabilidad de ClickHouse'
+description: 'Resumen de ClickStack: la pila de observabilidad de ClickHouse'
 doc_type: 'guide'
 keywords: ['clickstack', 'observabilidad', 'logs', 'monitorización', 'plataforma']
 ---
@@ -111,10 +111,10 @@ La arquitectura de ClickStack varía según cómo se implemente. Existen diferen
 
     Managed ClickStack consta de los siguientes componentes:
 
-    1. **ClickStack UI (HyperDX)**
+    1. **UI de ClickStack (HyperDX)**
        La UI de HyperDX está totalmente integrada en ClickHouse Cloud y se gestiona como parte del servicio. Ofrece búsqueda de logs, exploración de trazas, dashboards, alertas y correlación entre tipos de telemetría, con autenticación y control de acceso integrados.
 
-    2. **OpenTelemetry Collector (autogestionado)**
+    2. **OpenTelemetry collector (autogestionado)**
        Los usuarios ejecutan un OpenTelemetry Collector que recibe datos de telemetría de sus aplicaciones e infraestructura. Este collector reenvía los datos mediante OTLP a ClickHouse Cloud. Aunque puede usarse cualquier OpenTelemetry Collector compatible con los estándares, recomendamos encarecidamente la **distribución de ClickStack**, que viene preconfigurada y optimizada para la ingestión en ClickHouse y funciona desde el primer momento con los esquemas de ClickStack.
 
     3. **ClickHouse Cloud**
@@ -142,14 +142,14 @@ La arquitectura de ClickStack varía según cómo se implemente. Existen diferen
 
     Open Source ClickStack consta de tres componentes principales:
 
-    1. **ClickStack UI (HyperDX)**
+    1. **UI de ClickStack (HyperDX)**
        Una interfaz fácil de usar diseñada para la observabilidad. Admite tanto consultas de estilo Lucene como consultas SQL, dashboards interactivos, alertas, exploración de trazas y mucho más, todo optimizado para usar ClickHouse como backend.
 
     2. **OpenTelemetry collector**
        Un collector creado a medida y configurado con un esquema predefinido optimizado para la ingestión en ClickHouse. Recibe logs, métricas y trazas a través de protocolos OpenTelemetry y los escribe directamente en ClickHouse mediante inserciones por lotes eficientes.
 
     3. **ClickHouse**
-       La base de datos analítica de alto rendimiento que actúa como almacén central de datos para eventos amplios. ClickHouse permite búsquedas, filtrado y agregación rápidos a escala, aprovechando su motor columnar y su compatibilidad nativa con JSON.
+       La base de datos analítica de alto rendimiento que actúa como almacén central de datos para wide events. ClickHouse permite búsquedas, filtrado y agregación rápidos a escala, aprovechando su motor columnar y su compatibilidad nativa con JSON.
 
     Además de estos tres componentes, ClickStack usa una **instancia de MongoDB** para almacenar el estado de la aplicación, como dashboards, cuentas de usuario y ajustes de configuración.
 

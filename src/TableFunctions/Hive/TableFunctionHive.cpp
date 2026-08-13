@@ -131,7 +131,7 @@ StoragePtr TableFunctionHive::executeImpl(
 
 
 void registerTableFunctionHive(TableFunctionFactory & factory_);
-void registerTableFunctionHive(TableFunctionFactory & factory_) { factory_.registerFunction<TableFunctionHive>({}); }
+void registerTableFunctionHive(TableFunctionFactory & factory_) { factory_.registerFunction<TableFunctionHive>({.description = R"DOC(Reads data from an Apache Hive table. Takes the Hive metastore URL, the Hive database name and the table name, and exposes the underlying data (stored in HDFS or S3) as a ClickHouse table.)DOC", .category = FunctionDocumentation::Category::TableFunction}); }
 
 }
 

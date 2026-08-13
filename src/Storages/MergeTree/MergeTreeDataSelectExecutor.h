@@ -65,15 +65,25 @@ public:
     /// Get an estimation for the number of marks we are going to read.
     /// Reads nothing. Secondary indexes are not used.
     /// This method is used to select best projection for table.
+    /// `top_k_filter_info` is the TopK stamp of the read this analysis is performed for (if any):
+    /// the query condition cache consult inside must observe the same TopK gating and key salting
+    /// as the read itself, otherwise a projection candidate would be analyzed as an apparent plain
+    /// read and could reuse plain `SELECT ... WHERE` entries that
+    /// `use_query_condition_cache_for_top_k = 0` is supposed to gate off.
+    /// A caller which cannot know the TopK stamp of the read - because the estimate runs before
+    /// `tryOptimizeTopK` - must pass `use_query_condition_cache = false` instead, so that the estimate
+    /// neither consults nor populates the cache under the plain condition hash.
     ReadFromMergeTree::AnalysisResultPtr estimateNumMarksToRead(
         RangesInDataParts parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
+        const std::optional<TopKFilterInfo> & top_k_filter_info,
         ContextPtr context,
         size_t num_streams,
-        PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr) const;
+        PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
+        bool use_query_condition_cache = true) const;
 
     static MarkRanges markRangesFromPKRange(
         const RangesInDataPart & part_with_ranges,

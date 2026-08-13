@@ -61,7 +61,7 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
-#include <Analyzer/Utils.h>
+#include <Analyzer/TableFunctionNode.h>
 
 
 namespace ProfileEvents
@@ -256,43 +256,69 @@ namespace
 
     using ExplainAnalyzedSyntaxVisitor = InDepthNodeVisitor<ExplainAnalyzedSyntaxMatcher, true>;
 
-    class TableFunctionSecretsVisitor : public InDepthQueryTreeVisitor<TableFunctionSecretsVisitor>
+    /// Recursively hide every constant inside a secret argument, preserving the expression structure
+    /// (e.g. an `encrypt` key built as `leftPad('...', 16, '*')`). Constants already masked by
+    /// `resolveFunction` are left untouched so their mask ids survive; the rest are hidden here for the
+    /// dump-only path where the analysis passes did not run (`run_passes = 0`).
+    void maskConstantsInSubtree(QueryTreeNodePtr & node)
+    {
+        if (auto * constant = node->as<ConstantNode>())
+        {
+            if (!constant->isMasked())
+                constant->setMaskId();
+            return;
+        }
+        for (auto & child : node->getChildren())
+            if (child)
+                maskConstantsInSubtree(child);
+    }
+
+    class SecretArgumentsDumpVisitor : public InDepthQueryTreeVisitor<SecretArgumentsDumpVisitor>
     {
         friend class InDepthQueryTreeVisitor;
-        bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child [[maybe_unused]])
+        static bool needChildVisit(VisitQueryTreeNodeType &, VisitQueryTreeNodeType &)
         {
-            QueryTreeNodeType type = parent->getNodeType();
-            return type == QueryTreeNodeType::QUERY || type == QueryTreeNodeType::JOIN || type == QueryTreeNodeType::TABLE_FUNCTION;
+            /// A secret-bearing function can hide under any carrier (a `UNION`, a scalar subquery, an
+            /// expression list), so descend everywhere; `visitImpl` selects the ones to mask.
+            return true;
         }
 
         void visitImpl(VisitQueryTreeNodeType & query_tree_node)
         {
-            auto * table_function_node_ptr = query_tree_node->as<TableFunctionNode>();
-            if (!table_function_node_ptr)
-                return;
-
-            if (FunctionSecretArgumentsFinder::Result secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node_ptr).getResult(); secret_arguments.count)
+            if (auto * table_function_node = query_tree_node->as<TableFunctionNode>())
             {
-                auto & argument_nodes = table_function_node_ptr->getArguments().getNodes();
+                auto secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node).getResult();
+                if (!secret_arguments.hasSecrets())
+                    return;
 
-                for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
-                {
-                    ConstantNode * constant_node = nullptr;
-                    if (secret_arguments.are_named)
+                /// A table-function secret value that is not a constant (an identifier or a constant
+                /// expression, e.g. a computed url) is hidden whole: the whole argument is the
+                /// credential carrier, and a tree dump cannot represent partial masking. Fail closed.
+                forEachSecretArgumentNode(
+                    table_function_node->getArguments().getNodes(),
+                    secret_arguments,
+                    [](size_t, QueryTreeNodePtr & node)
                     {
-                        auto * function_node = argument_nodes[n]->as<FunctionNode>();
-                        if (function_node && function_node->getArguments().getNodes().size() >= 2)
-                            constant_node = function_node->getArguments().getNodes().at(1)->as<ConstantNode>();
-                    }
+                        if (auto * constant = node->as<ConstantNode>())
+                            constant->setMaskId();
+                        else
+                            node = std::make_shared<ConstantNode>(Field("[HIDDEN]"));
+                    });
+            }
+            else if (auto * function_node = query_tree_node->as<FunctionNode>())
+            {
+                auto secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node).getResult();
+                if (!secret_arguments.hasSecrets())
+                    return;
 
-                    if (!constant_node)
-                    {
-                        constant_node = argument_nodes[n]->as<ConstantNode>();
-                    }
-
-                    if (constant_node)
-                        constant_node->setMaskId();
-                }
+                /// An ordinary secret function (`encrypt`/`decrypt`/`HMAC`, ...) is not masked by
+                /// `resolveFunction` when the dump runs with the analysis passes disabled. Its secret
+                /// is carried in constants (a literal key or one built by an expression), so hide every
+                /// constant inside the secret argument, keeping the structure visible.
+                forEachSecretArgumentNode(
+                    function_node->getArguments().getNodes(),
+                    secret_arguments,
+                    [](size_t, QueryTreeNodePtr & node) { maskConstantsInSubtree(node); });
             }
         }
     };
@@ -469,9 +495,6 @@ struct QueryAnalyzeSettings
 
     constexpr static char name[] = "ANALYZE";
 
-    /// Collect per-processor work intervals during execution to report per-step and per-branch wall time.
-    bool branch_time = false;
-
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
         {"actions", query_plan_options.actions},
@@ -485,7 +508,8 @@ struct QueryAnalyzeSettings
         {"input_headers", query_plan_options.input_headers},
         {"column_structure", query_plan_options.column_structure},
         {"processors", query_plan_options.processors_profile},
-        {"branch_time", branch_time},
+        {"matches", query_plan_options.matches},
+        {"time", query_plan_options.time},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -638,12 +662,6 @@ bool explainQueryTree(
     auto query_tree = buildQueryTree(explained_query, query_context);
     bool need_newline = false;
 
-    if (!query_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
-    {
-        TableFunctionSecretsVisitor visitor;
-        visitor.visit(query_tree);
-    }
-
     if (settings.run_passes)
     {
         auto query_tree_pass_manager = QueryTreePassManager(query_context);
@@ -658,6 +676,15 @@ bool explainQueryTree(
         }
 
         query_tree_pass_manager.run(query_tree, pass_index);
+    }
+
+    /// Mask secrets only after the passes: the masked tree is used solely for the dump below, so
+    /// redaction (which may replace a non-constant secret value with a hidden constant) can never
+    /// change how the query is analyzed. With run_passes = 0 the tree is dumped without analysis.
+    if (!query_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+    {
+        SecretArgumentsDumpVisitor visitor;
+        visitor.visit(query_tree);
     }
 
     if (settings.dump_tree)
@@ -728,22 +755,6 @@ static void formatHeaderExplainAnalyze(
     out << "\n";
 }
 
-static void rejectStreamingForExplainAnalyze(const QueryTreeNodePtr & query_tree)
-{
-    for (const auto & node : extractTableExpressions(query_tree, /*add_array_join*/ false, /*recursive*/ true))
-    {
-        std::optional<TableExpressionModifiers> modifiers;
-        if (const auto * table_node = node->as<TableNode>())
-            modifiers = table_node->getTableExpressionModifiers();
-        else if (const auto * table_function_node = node->as<TableFunctionNode>())
-            modifiers = table_function_node->getTableExpressionModifiers();
-
-        if (modifiers && modifiers->hasStream())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "EXPLAIN ANALYZE is not supported for streaming (FROM ... STREAM) queries");
-    }
-}
-
 struct InterpreterExplainQuery::AnalyzedInnerQuery
 {
     QueryPlan plan;
@@ -753,7 +764,7 @@ struct InterpreterExplainQuery::AnalyzedInnerQuery
     bool ignore_limits = false;
     UInt64 planning_ns = 0;
     ExplainPlanOptions query_plan_options;
-    bool branch_time = false;
+    bool time = false;
 };
 
 InterpreterExplainQuery::InterpreterExplainQuery(const ASTPtr & query_, ContextPtr context_, const SelectQueryOptions & options_)
@@ -803,14 +814,17 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
 
     const auto analyze_settings = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings());
     result->query_plan_options = analyze_settings.query_plan_options;
-    result->branch_time = analyze_settings.branch_time;
+    result->time = analyze_settings.query_plan_options.time;
+
+    /// This is the only place that turns join statistics on, and it must happen before any interpreter
+    /// is built. Every join of the query reads the mode from the context, so joins in nested plans get it as well.
+    planning_context->setJoinAnalyzeMode(
+        result->query_plan_options.matches ? JoinAnalyzeMode::Exact : JoinAnalyzeMode::Derived);
 
     Stopwatch watch;
-    QueryTreeNodePtr query_tree;
     if (planning_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), planning_context, inner_options);
-        query_tree = interpreter.getQueryTree();
         result->context = interpreter.getContext();
         result->parallel_replicas_builder = interpreter.getQueryPlanWithParallelReplicasBuilder();
         /// Force planning so the effective ignore flags settle before we read them.
@@ -827,9 +841,6 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
         result->ignore_quota = interpreter.ignoreQuota();
         result->ignore_limits = interpreter.ignoreLimits();
     }
-
-    if (query_tree)
-        rejectStreamingForExplainAnalyze(query_tree);
 
     result->planning_ns = watch.elapsed();
 
@@ -1190,7 +1201,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
             optimization_settings.query_plan_with_parallel_replicas_builder = parallel_replicas_builder;
-            optimization_settings.collect_analyze_stats = true;
 
             watch.restart();
             plan.optimize(optimization_settings);
@@ -1245,7 +1255,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             step_wall_clock_registry->populateFromPlan(plan);
             pipeline.setStepWallClockRegistry(std::move(step_wall_clock_registry));
 
-            pipeline.setCollectWorkIntervals(analyzed.branch_time);
+            pipeline.setCollectWorkIntervals(analyzed.time);
 
             CompletedPipelineExecutor executor(pipeline);
 

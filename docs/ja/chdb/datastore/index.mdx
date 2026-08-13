@@ -1,0 +1,200 @@
+---
+title: 'DataStore: SQL 最適化を備えた pandas互換 API'
+sidebarTitle: '概要'
+slug: /chdb/datastore
+description: 'DataStore は、高性能なデータ分析に向けて、SQL 最適化を備えた pandas互換 API を提供します'
+keywords: ['chdb', 'datastore', 'pandas', 'dataframe', 'sql', 'lazy evaluation']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+DataStore は、使い慣れた pandas DataFrame インターフェイスと SQL によるクエリ最適化の力を組み合わせた、chDB の pandas-compatible API です。pandas スタイルのコードを書きながら、ClickHouse のパフォーマンスを活用できます。
+
+<div id="key-features">
+  ## 主な機能
+</div>
+
+* **Pandas 互換性**: 209 の pandas DataFrame メソッド、56 の `.str` メソッド、42 以上の `.dt` メソッド
+* **SQL 最適化**: 操作は自動的に最適化された SQL クエリへコンパイルされます
+* **遅延評価**: 結果が必要になるまで操作の実行を遅らせます
+* **630+ API メソッド**: データ操作のための包括的な API
+* **ClickHouse 拡張機能**: pandas にはない追加のアクセサ (`.arr`、`.json`、`.url`、`.ip`、`.geo`)
+
+<div id="architecture">
+  ## アーキテクチャ
+</div>
+
+<Image size="md" img="/images/chdb/datastore_architecture.png" alt="DataStore アーキテクチャ" />
+
+DataStore は、**遅延評価** と **デュアルエンジン実行** を採用しています。
+
+1. **遅延操作チェーン**: 操作は記録されますが、すぐには実行されません
+2. **スマートなエンジン選択**: QueryPlanner が各セグメントを最適なエンジンに振り分けます (SQL は chDB、複雑な操作は Pandas)
+3. **中間結果のキャッシュ**: 反復的な探索を高速化するため、各ステップの結果がキャッシュされます
+
+詳しくは [実行モデル](/ja/chdb/datastore/execution-model) を参照してください。
+
+<div id="migration">
+  ## Pandas からのワンライナーでの移行
+</div>
+
+```python
+# Before (pandas)
+import pandas as pd
+df = pd.read_csv("data.csv")
+result = df[df['age'] > 25].groupby('city')['salary'].mean()
+
+# After (DataStore) - just change the import!
+from chdb import datastore as pd
+df = pd.read_csv("data.csv")
+result = df[df['age'] > 25].groupby('city')['salary'].mean()
+```
+
+既存のpandasコードは変更なしでそのまま動作し、ClickHouseエンジン上で実行されます。
+
+<div id="performance">
+  ## パフォーマンス比較
+</div>
+
+DataStore は、特に集計や複雑なパイプラインにおいて、pandas と比べて大幅に高いパフォーマンスを発揮します。
+
+| Operation        | Pandas  | DataStore | Speedup    |
+| ---------------- | ------- | --------- | ---------- |
+| GroupBy count    | 347ms   | 17ms      | **19.93x** |
+| Complex pipeline | 2,047ms | 380ms     | **5.39x**  |
+| Filter+Sort+Head | 1,537ms | 350ms     | **4.40x**  |
+| GroupBy agg      | 406ms   | 141ms     | **2.88x**  |
+
+*1,000万行でのベンチマークです。詳しくは [ベンチマークスクリプト](https://github.com/chdb-io/chdb/blob/main/refs/benchmark_datastore_vs_pandas.py) と [パフォーマンスガイド](/ja/chdb/guides/pandas-performance) を参照してください。*
+
+<div id="when-to-use">
+  ## DataStore を使うタイミング
+</div>
+
+**次のような場合は DataStore を使用します。**
+
+* 大規模なデータセット (数百万行) を扱う場合
+* 集計や groupby 操作を行う場合
+* ファイル、データベース、または Cloud ストレージ内のデータをクエリする場合
+* 複雑なデータパイプラインを構築する場合
+* より高いパフォーマンスで pandas API を使いたい場合
+
+**次のような場合は raw SQL API を使用します。**
+
+* SQL を直接書きたい場合
+* クエリ実行を細かく制御する必要がある場合
+* pandas API では利用できない ClickHouse 固有の機能を使う場合
+
+<div id="comparison">
+  ## 機能比較
+</div>
+
+| 機能                    | Pandas | Polars | DuckDB | DataStore     |
+| --------------------- | ------ | ------ | ------ | ------------- |
+| Pandas API 互換性        | -      | 一部     | いいえ    | **完全**        |
+| 遅延実行                  | いいえ    | はい     | はい     | **はい**        |
+| SQL クエリ対応             | いいえ    | はい     | はい     | **はい**        |
+| ClickHouse 関数         | いいえ    | いいえ    | いいえ    | **はい**        |
+| String/DateTime アクセサ  | はい     | はい     | いいえ    | **はい + 追加機能** |
+| Array/JSON/URL/IP/Geo | いいえ    | 一部     | いいえ    | **はい**        |
+| ファイルへの直接クエリ           | いいえ    | はい     | はい     | **はい**        |
+| Cloud ストレージ対応         | いいえ    | 限定的    | はい     | **はい**        |
+
+<div id="api-stats">
+  ## API統計
+</div>
+
+| カテゴリ             | 件数       | 対応率                        |
+| ---------------- | -------- | -------------------------- |
+| DataFrame メソッド   | 209      | pandas の 100%              |
+| Series.str アクセサ  | 56       | pandas の 100%              |
+| Series.dt アクセサ   | 42+      | 100%超 (ClickHouse の拡張を含む)  |
+| Series.arr アクセサ  | 37       | ClickHouse固有               |
+| Series.json アクセサ | 13       | ClickHouse固有               |
+| Series.url アクセサ  | 15       | ClickHouse固有               |
+| Series.ip アクセサ   | 9        | ClickHouse固有               |
+| Series.geo アクセサ  | 14       | ClickHouse固有               |
+| **APIメソッド総数**    | **630+** | -                          |
+
+<div id="navigation">
+  ## ドキュメントのナビゲーション
+</div>
+
+<div id="getting-started">
+  ### はじめに
+</div>
+
+* [クイックスタート](/ja/chdb/datastore/quickstart) - インストールと基本的な使い方
+* [Pandas からの移行](/ja/chdb/guides/migration-from-pandas) - 移行手順ガイド
+
+<div id="api-reference">
+  ### API リファレンス
+</div>
+
+* [Factory Methods](/ja/chdb/datastore/factory-methods) - さまざまなソースから DataStore を作成
+* [Query Building](/ja/chdb/datastore/query-building) - SQL スタイルのクエリ操作
+* [Pandas Compatibility](/ja/chdb/datastore/pandas-compat) - pandas 互換の 209 個のメソッド
+* [Accessors](/ja/chdb/datastore/accessors) - String、DateTime、Array、JSON、URL、IP、Geo のアクセサ
+* [Aggregation](/ja/chdb/datastore/aggregation) - 集計関数とウィンドウ関数
+* [I/O Operations](/ja/chdb/datastore/io) - データの読み取りと書き込み
+
+<div id="advanced-topics">
+  ### 応用トピック
+</div>
+
+* [実行モデル](/ja/chdb/datastore/execution-model) - 遅延評価とキャッシュ
+* [クラスリファレンス](/ja/chdb/datastore/class-reference) - 完全版のAPIリファレンス
+
+<div id="configuration-debugging">
+  ### 設定とデバッグ
+</div>
+
+* [設定](/ja/chdb/configuration/index) - すべての設定オプション
+* [パフォーマンスモード](/ja/chdb/configuration/performance-mode) - 最大のスループットを実現する SQL 優先モード
+* [デバッグ](/ja/chdb/debugging/index) - Explain、プロファイリング、ログ
+
+<div id="pandas-user-guides">
+  ### Pandasユーザーガイド
+</div>
+
+* [Pandasクックブック](/ja/chdb/guides/pandas-cookbook) - よくあるパターン
+* [主な違い](/ja/chdb/guides/pandas-differences) - pandasとの重要な違い
+* [パフォーマンスガイド](/ja/chdb/guides/pandas-performance) - 最適化のヒント
+* [Pandasユーザー向けSQL](/ja/chdb/guides/pandas-to-sql) - pandasの操作の裏で使われるSQLを理解する
+
+<div id="quick-example">
+  ## 簡単な使用例
+</div>
+
+```python
+from chdb import datastore as pd
+
+# Read data from various sources
+ds = pd.read_csv("sales.csv")
+# or: ds = pd.DataStore.uri("s3://bucket/sales.parquet")
+# or: ds = pd.DataStore.from_mysql("mysql://user:pass@host/db/table")
+
+# Familiar pandas operations - automatically optimized to SQL
+result = (ds
+    .filter(ds['amount'] > 1000)           # WHERE amount > 1000
+    .groupby('region')                      # GROUP BY region
+    .agg({'amount': ['sum', 'mean']})       # SUM(amount), AVG(amount)
+    .sort_values('sum', ascending=False)    # ORDER BY sum DESC
+    .head(10)                               # LIMIT 10
+)
+
+# View the generated SQL
+print(result.to_sql())
+
+# Execute and get results
+df = result.to_df()  # Returns pandas DataFrame
+```
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+* **DataStore は初めてですか？** [クイックスタートガイド](/ja/chdb/datastore/quickstart)から始めましょう
+* **pandas から移行する場合** [移行ガイド](/ja/chdb/guides/migration-from-pandas)をご覧ください
+* **さらに詳しく知りたいですか？** [API リファレンス](/ja/chdb/datastore/class-reference)をご覧ください

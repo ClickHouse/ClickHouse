@@ -131,7 +131,7 @@ public:
 
     void setCollectWorkIntervals(bool collect_work_intervals_) { collect_work_intervals = collect_work_intervals_; }
     /// Moves the collected intervals out; the pipeline holds none afterwards.
-    WorkIntervals takeWorkIntervals() { return std::move(work_intervals); }
+    WorkIntervalsPerThread takeWorkIntervals() { return std::move(work_intervals); }
 
     void writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer);
     void finalizeWriteInQueryResultCache();
@@ -196,7 +196,7 @@ private:
     bool concurrency_control = false;
     bool collect_work_intervals = false;
 
-    WorkIntervals work_intervals;
+    WorkIntervalsPerThread work_intervals;
 
     friend class PushingPipelineExecutor;
     friend class PullingPipelineExecutor;

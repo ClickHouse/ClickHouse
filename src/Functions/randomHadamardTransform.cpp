@@ -17,19 +17,27 @@
 /** randomHadamardTransform(vector [, seed] [, output_dims])
   *
   * Applies a randomized Hadamard transform to a float vector:
-  *     y = (1 / sqrt(k)) * (H * D * x_padded)[0 : k]
-  * where D is a diagonal matrix of deterministic +-1 signs derived from `seed`, H is the
-  * (unnormalized) Walsh-Hadamard matrix, and the input is zero-padded to m = the next power of
-  * two of its length. This is an orthogonal, norm-preserving "rotation" that also spreads a
-  * vector's energy across all coordinates, making the per-coordinate distribution approximately
-  * Gaussian and data-independent -- useful as a preprocessing step before scalar quantization,
-  * and (with truncation) as a Johnson-Lindenstrauss / subsampled-randomized-Hadamard projection.
+  *     y = (1 / sqrt(k)) * (H * D * x)[0 : k]
+  * where D is a diagonal matrix of deterministic +-1 signs derived from `seed` and H is the
+  * (unnormalized) Walsh-Hadamard transform. This is an orthogonal, norm-preserving "rotation" that
+  * also spreads a vector's energy across all coordinates, making the per-coordinate distribution
+  * approximately Gaussian and data-independent -- useful as a preprocessing step before scalar
+  * quantization, and (with truncation) as a Johnson-Lindenstrauss / subsampled-randomized-Hadamard
+  * projection.
+  *
+  * The FULL transform (no truncation) keeps the input length: it is exact for a power of two (a plain
+  * FWHT), for 2^k * m with m in {12, 20} (an exact Kronecker product with a +-1 Hadamard factor), and
+  * for 2^k * m with any other odd m up to max_hartley_block (an exact Kronecker product with a dense
+  * Discrete Hartley Transform factor). A full transform of any other length -- one whose odd part
+  * exceeds max_hartley_block -- would require zero-padding to a longer power of two and is rejected
+  * instead, so the output length is never silently changed. (A truncated projection, below, still
+  * accepts an arbitrary length.)
   *
   * - seed (optional, default 0): selects the deterministic sign pattern; the same seed always
   *   produces the same transform.
-  * - output_dims (optional, default m): keep only the first `output_dims` coordinates. The
-  *   1/sqrt(output_dims) scaling makes the result norm-preserving for the full transform and
-  *   norm-preserving in expectation when truncated. Must not exceed m.
+  * - output_dims (optional, default the transform length): keep only the first `output_dims`
+  *   coordinates. The 1/sqrt(output_dims) scaling makes the result norm-preserving for the full
+  *   transform and norm-preserving in expectation when truncated. Must not exceed the transform length.
   *
   * The result has the same element type as the input. An empty input array yields an empty array.
   *
@@ -43,7 +51,17 @@
   *   variable CLICKHOUSE_RHT_KERNEL = "scalar" | "neon" (default: neon on AArch64, scalar elsewhere).
   * - When the length is 2^k * m with m in {12, 20} (orders with a Hadamard matrix), the transform
   *   is the exact Kronecker product H_(2^k) (x) H_m applied without padding, so the output keeps the
-  *   input dimension. H_m is built once via the Paley construction. See hadamardOrderFor / kronecker*.
+  *   input dimension. H_m is built once via the Paley construction. See kroneckerFactorFor / kronecker*.
+  * - Any other odd m up to max_hartley_block has no +-1 Hadamard matrix (those exist only for orders
+  *   1, 2, and multiples of 4), so for the length 2^k * m family (e.g. 3584 = 512 * 7, 1152 = 128 * 9)
+  *   the small factor is a real orthogonal Discrete Hartley Transform matrix C_m applied with float
+  *   multiplies: the exact Kronecker product H_(2^k) (x) C_m, again without padding. See
+  *   buildHartleyMatrix / kroneckerHartleyScalar. Unlike the +-1 Hadamard factors, C_m's rows do not
+  *   have uniform leverage, so a truncated prefix of them is a position-biased projection instead of a
+  *   valid SRHT one. The exact C_m path is therefore used only for the full transform; a genuine
+  *   truncation (output_dims < length) of a Hartley-family length (and of any length that has no exact
+  *   factor) falls back to the zero-padded power-of-two FWHT, which does have the uniform-leverage
+  *   property.
   */
 namespace DB
 {
@@ -53,6 +71,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -169,6 +188,7 @@ private:
         PaddedPODArray<Mask> sign_masks;
         size_t sign_dim = 0;
         HmMasks<Compute> hm;
+        HartleyMatrix<Compute> hc;
         PaddedPODArray<Compute> buffer;
         size_t written = 0;
         size_t start = 0;
@@ -178,11 +198,58 @@ private:
             const size_t length = offsets[row] - start;
             if (length != 0)
             {
-                /// Exact Kronecker transform for length = 2^k * m (m in {12, 20}); otherwise zero-pad
-                /// to the next power of two. The working dimension is the input length in the exact
-                /// case and the padded length otherwise.
-                const auto [kron_m, kron_blocks] = hadamardOrderFor(length);
-                const size_t working_dim = kron_m ? length : std::bit_ceil(length);
+                /// Exact Kronecker transform for length = 2^k * m: m in {12, 20} via a +-1 Hadamard
+                /// factor, or any other odd m up to max_hartley_block via a DHT factor. A power of two
+                /// is transformed directly by the FWHT. Any other length has no exact transform.
+                auto [kron_m, kron_blocks, kron_kind] = kroneckerFactorFor(length);
+
+                /// `projecting` -- the caller passed an explicit `output_dims`, so the output length is
+                /// user-specified and internal zero-padding is invisible; such a call accepts any length.
+                /// `truncating` -- a projection that actually drops coordinates (`output_dims < length`),
+                /// which is the only case that needs the uniform row leverage of a +-1 Hadamard factor.
+                const bool projecting = fixed_out_dims != 0;
+                const bool truncating = projecting && fixed_out_dims < length;
+
+                /// A truncated projection (SRHT) needs uniform row leverage, which only the +-1 Hadamard
+                /// small factor has. The dense Hartley (DHT) factor C_m is orthogonal, so the FULL
+                /// transform is norm-preserving, but its rows do NOT have uniform leverage -- e.g. for
+                /// length 18 and output_dims 2 a one-hot input at lane 1 comes out with squared norm ~1.49
+                /// while lane 8 gives ~0.51. So a genuine truncation of a Hartley-family length (and of any
+                /// unfactored length) uses the zero-padded power-of-two FWHT instead, whose flat +-1 rows
+                /// give a correct truncated projection. The +-1 Hadamard factors (m in {12, 20}) keep
+                /// uniform leverage under truncation and are used as-is.
+                if (truncating && kron_kind != SmallFactorKind::Hadamard)
+                {
+                    kron_m = 0;
+                    kron_blocks = 0;
+                    kron_kind = SmallFactorKind::None;
+                }
+
+                /// Determine the working dimension:
+                ///  - an exact Kronecker factor (Hadamard for the full or truncated transform, Hartley for
+                ///    the full transform) works on the input length itself -- no padding;
+                ///  - a power of two is already exact for the FWHT -- no padding;
+                ///  - a projection of any other length (any explicit output_dims) zero-pads to the next
+                ///    power of two -- the output length is output_dims regardless, so padding does not
+                ///    change the visible shape, and an explicit output_dims is documented to accept any
+                ///    length;
+                ///  - a FULL transform (no output_dims) of any other length cannot be done exactly, and
+                ///    zero-padding it would silently return a longer vector, so it is rejected instead.
+                size_t working_dim = 0;
+                if (kron_m)
+                    working_dim = length;
+                else if (std::has_single_bit(length))
+                    working_dim = length;
+                else if (projecting)
+                    working_dim = std::bit_ceil(length);
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Function {} cannot transform a vector of length {} without zero-padding: its largest "
+                        "odd factor exceeds the maximum supported small-factor order {}. Supported lengths are "
+                        "a power of two, or 2^k * m with an odd m in [1, {}]. Pass a smaller output_dims to "
+                        "request a truncated (subsampled) projection of an arbitrary length instead.",
+                        name, length, HadamardTransform::max_hartley_block, HadamardTransform::max_hartley_block);
+
                 const size_t k = fixed_out_dims ? fixed_out_dims : working_dim;
                 if (k > working_dim)
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
@@ -201,7 +268,8 @@ private:
                 Out * out = result.data() + written;
 
                 /// Populate the working buffer: cast to the compute type and apply the +-1 sign as a
-                /// sign-bit flip (no multiply); zero-pad the tail to the working dimension.
+                /// sign-bit flip (no multiply); zero-pad the tail to the working dimension (only the
+                /// truncated-projection path has working_dim > length; the exact paths do not pad).
                 buffer.resize(working_dim);
                 for (size_t i = 0; i < length; ++i)
                     buffer[i] = applySign<Compute>(static_cast<Compute>(in[i]), signs[i]);
@@ -210,7 +278,15 @@ private:
 
                 /// Core transform via the selected kernel: an exact Kronecker product for the
                 /// supported non-power-of-two dimensions, or a fast Walsh-Hadamard transform otherwise.
-                if (kron_m)
+                if (kron_kind == SmallFactorKind::Hartley)
+                {
+                    /// Dense DHT small factor (any odd order up to max_hartley_block): scalar-only, so
+                    /// kernel-independent.
+                    if (hc.order != kron_m)
+                        buildHartleyMatrix<Compute>(hc, kron_m);
+                    kroneckerHartleyScalar<Compute>(buffer.data(), kron_blocks, kron_m, hc);
+                }
+                else if (kron_m)
                 {
                     if (hm.order != kron_m)
                         buildHmMasks<Compute>(hm, kron_m);
@@ -265,42 +341,57 @@ REGISTER_FUNCTION(RandomHadamardTransform)
 {
     FunctionDocumentation::Description description = R"DOCS_MD(
 Applies a randomized Hadamard transform to a float vector: `y = (1/sqrt(k)) * (H * D * x)`, where
-`D` is a diagonal matrix of deterministic +/-1 signs chosen by `seed`, `H` is the Walsh-Hadamard
-matrix, and the input is zero-padded to `m`, the next power of two of its length.
+`D` is a diagonal matrix of deterministic +/-1 signs chosen by `seed` and `H` is the Walsh-Hadamard
+transform.
 
 The transform is an orthogonal, **norm-preserving** rotation that spreads a vector's energy evenly
 across coordinates, making the per-coordinate distribution approximately Gaussian and
 data-independent. It is useful as a preprocessing step before scalar quantization, and -- when
 truncated -- as a Johnson-Lindenstrauss / subsampled-randomized-Hadamard (SRHT) random projection.
 
-When the input length is `2^k * m` with `m` in `{12, 20}` (orders that have a Hadamard matrix, e.g.
-`768 = 64 * 12`, `1536 = 128 * 12`, `3072 = 256 * 12`, `2560 = 128 * 20`), an exact Kronecker
-transform `H_(2^k) (x) H_m` is used instead of padding, so the output keeps the input dimension
-rather than growing to the next power of two. All other lengths are zero-padded to `m`, the next
-power of two.
+The full transform (no truncation) keeps the input length. It is exact for the following lengths:
+
+- a power of two (a plain fast Walsh-Hadamard transform);
+- `2^k * m` with `m` in `{12, 20}` (orders that have a `+/-1` Hadamard matrix, e.g. `768 = 64 * 12`,
+  `1536 = 128 * 12`, `3072 = 256 * 12`, `2560 = 128 * 20`), applied as the exact Kronecker transform
+  `H_(2^k) (x) H_m` (no float multiplies);
+- `2^k * m` with any other odd `m` up to `64` (orders that have no `+/-1` Hadamard matrix -- those
+  exist only for orders `1`, `2`, and multiples of `4`), applied as the exact Kronecker transform
+  `H_(2^k) (x) C_m`, where `C_m` is a real orthogonal Discrete Hartley Transform matrix. This covers
+  the remaining embedding families such as `3584 = 512 * 7`, `1152 = 128 * 9`, `1408 = 128 * 11`.
+
+A full transform of a length whose largest odd factor exceeds `64` has no exact form and would need
+zero-padding to a longer power of two; it is **rejected with an exception** rather than silently
+returning a longer vector. Use a supported length, or pass `output_dims` to compute a truncated
+projection of an arbitrary length (see below).
 
 The result has the same element type as the input; an empty input array returns an empty array.
 
 - `seed` (optional, default `0`): selects the sign pattern; the same seed always yields the same
   transform.
 - `output_dims` (optional, default the transform length): keeps only the first `output_dims`
-  coordinates. The `1/sqrt(output_dims)` scaling keeps the result norm-preserving for the full
-  transform and norm-preserving in expectation when truncated. It must not exceed the transform
-  length (the next power of two, or the input length for the exact Kronecker case).
+  coordinates, turning the transform into a random projection that accepts **any** length. The
+  `1/sqrt(output_dims)` scaling keeps the result norm-preserving for the full transform and
+  norm-preserving in expectation when truncated. It must not exceed the transform length. Because a
+  truncated prefix of the Discrete Hartley factor `C_m` does not have the uniform leverage of a
+  `+/-1` Hadamard matrix, a truncating `output_dims` on a Hartley-family length (or on any length
+  without an exact factor) uses the zero-padded power-of-two transform, which does keep that property.
 )DOCS_MD";
     FunctionDocumentation::Syntax syntax = "randomHadamardTransform(vector[, seed[, output_dims]])";
     FunctionDocumentation::Arguments arguments = {
         {"vector", "Vector to transform.", {"Array(BFloat16)", "Array(Float32)", "Array(Float64)"}},
         {"seed", "Optional. Seed for the deterministic +/-1 signs (default 0).", {"UInt*"}},
-        {"output_dims", "Optional. Truncate the result to this many leading coordinates (default: the full transform length, which is the input length for exact Kronecker dimensions and otherwise the next power of two).", {"UInt*"}}};
-    FunctionDocumentation::ReturnedValue returned_value = {"The transformed vector (same element type as the input). Its length is the transform length: the input length for exact Kronecker dimensions, otherwise the input padded to the next power of two; optionally truncated to output_dims.", {"Array(BFloat16)", "Array(Float32)", "Array(Float64)"}};
+        {"output_dims", "Optional. Truncate the result to this many leading coordinates (default: the full transform length, which equals the input length for every supported dimension). Passing output_dims also enables the transform for lengths that have no exact full-transform form.", {"UInt*"}}};
+    FunctionDocumentation::ReturnedValue returned_value = {"The transformed vector (same element type as the input). Its length is the transform length (the input length for a full transform of a supported dimension), optionally truncated to output_dims.", {"Array(BFloat16)", "Array(Float32)", "Array(Float64)"}};
     FunctionDocumentation::Examples examples = {
-        {"Full transform (length padded to a power of two)",
-         "SELECT length(randomHadamardTransform([1, 2, 3]::Array(Float32)))", "4"},
+        {"Full transform of a power-of-two length",
+         "SELECT length(randomHadamardTransform([1, 2, 3, 4]::Array(Float32)))", "4"},
         {"Norm is preserved",
          "SELECT round(arraySum(x -> x * x, randomHadamardTransform([1, 2, 3, 4]::Array(Float32))) - 30, 4)", "0"},
-        {"Truncated projection to 3 dimensions",
-         "SELECT length(randomHadamardTransform([1, 2, 3, 4, 5, 6, 7, 8]::Array(Float32), 42, 3))", "3"}};
+        {"Truncated projection to 3 dimensions (accepts any length)",
+         "SELECT length(randomHadamardTransform([1, 2, 3, 4, 5, 6, 7, 8]::Array(Float32), 42, 3))", "3"},
+        {"Exact transform of a 2^k * m dimension keeps the input length (no padding)",
+         "SELECT length(randomHadamardTransform(CAST(range(1152), 'Array(Float32)')))", "1152"}};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

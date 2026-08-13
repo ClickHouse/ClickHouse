@@ -3,15 +3,16 @@
 #include <Core/Block_fwd.h>
 #include <Core/Names.h>
 #include <Core/Field.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <functional>
 #include <list>
 #include <memory>
-#include <optional>
 #include <vector>
 #include <IO/WriteBufferFromString.h>
 
@@ -80,6 +81,13 @@ struct ExplainPlanOptions
     bool pretty = false;
     /// For EXPLAIN ANALYZE: print the per-processor elapsed time distribution (min/median/max/sum).
     bool processors_profile = false;
+    /// For EXPLAIN ANALYZE: make joins do the extra per-row bookkeeping needed for the matched
+    /// Off by default because the work lands in the probe loop and creates biases in time and parallelism
+    /// durin colleciton
+    bool matches = false;
+    /// Collect per-processor work intervals during execution to report per-step and per-branch wall time.
+    /// Gives access to more elaborative time metrics, affects the performance of a query
+    bool time = false;
 
     SettingsChanges toSettingsChanges() const;
 };
@@ -106,6 +114,11 @@ public:
     const SharedHeader & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
     void serialize(WriteBuffer & out, size_t max_supported_version) const;
+    /// Serialization for a distributed-plan worker task: every subquery set ships as its built
+    /// values (a `TupleValues` record bounded by `sets_transfer_limits`), and a set without
+    /// complete values is an error, because a `SubqueryPlan` record would make every task re-run
+    /// the subquery.
+    void serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
@@ -202,7 +215,15 @@ public:
     static void cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes);
 
 private:
-    struct SerializationFlags;
+    struct SerializationFlags
+    {
+        /// Query-plan serialization version of the stream, set on deserialize from the leading version field.
+        UInt64 version = 0;
+        bool skip_data = false;
+        /// See `serializeForDistributedTask`.
+        bool sets_must_be_ready = false;
+        SizeLimits sets_transfer_limits = {};
+    };
 
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
@@ -252,6 +273,12 @@ struct QueryPlanAndSets
 
 std::string debugExplainStep(IQueryPlanStep & step);
 std::string debugExplainPlan(const QueryPlan & plan);
+
+/// First step of the subtree which cannot be serialized for remote execution, or nullptr if all can.
+/// Steps for which `ignore` returns true are accepted anyway, e.g. planner markers that are replaced
+/// before the plan is shipped.
+const QueryPlan::Node * findNonSerializableStep(
+    const QueryPlan::Node * root, const std::function<bool(const IQueryPlanStep &)> & ignore = {});
 
 
 struct ExchangeDescription

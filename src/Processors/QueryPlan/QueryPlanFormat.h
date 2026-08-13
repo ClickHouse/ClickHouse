@@ -69,6 +69,8 @@ struct ExplainFormatSettings
     bool compact = false;
     bool pretty = false;
     bool compact_repeated_processor_chains = false;
+    /// Set when the plan is rendered as part of EXPLAIN ANALYZE: steps can skip parts of their
+    /// static description that the analyzed stats replace (e.g. the join estimation block).
     bool inside_explain_analyze = false;
     const PrettyColumnNameMap & pretty_names;
     const PrettyRuntimeFilterNameMap & runtime_filter_names;
@@ -78,6 +80,8 @@ namespace QueryPlanFormat
 {
     String trimColumnIdentifier(std::string_view name);
     void formatOutputColumns(const PrettyColumnNameMap & pretty_names, WriteBuffer & out, const IQueryPlanStep & step, const String & prefix);
+    void formatJoinOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix);
+    /// Input column lists of a join as metric groups, appended to its EXPLAIN ANALYZE report.
     std::vector<MetricGroup> collectJoinInputColumns(const JoinStep & step);
 
     String formatNodePretty(

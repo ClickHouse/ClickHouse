@@ -58,9 +58,9 @@ OpenTelemetry collector 提供[多个发行版](https://github.com/open-telemetr
   ### 收集日志
 </div>
 
-使用collector的主要优势在于，它能让服务快速卸载数据，而将重试、批次处理、加密，甚至敏感数据过滤等后续工作交由 Collector 负责。
+使用 collector 的主要优势在于，它能让服务快速卸载数据，而将重试、批次处理、加密，甚至敏感数据过滤等后续工作交由 Collector 负责。
 
-Collector 将其三个主要处理阶段称为 [receiver](https://opentelemetry.io/docs/collector/configuration/#receivers)、[processor](https://opentelemetry.io/docs/collector/configuration/#processors) 和 [exporter](https://opentelemetry.io/docs/collector/configuration/#exporters)。receiver 用于采集数据，可以是拉取式，也可以是推送式。处理器可对消息进行转换和富集。exporter 则负责将数据发送到下游服务。理论上，这个服务也可以是另一个collector，但在下面的初步说明中，我们假设所有数据都直接发送到 ClickHouse。
+Collector 将其三个主要处理阶段称为 [receiver](https://opentelemetry.io/docs/collector/configuration/#receivers)、[处理器](https://opentelemetry.io/docs/collector/configuration/#processors) 和 [exporter](https://opentelemetry.io/docs/collector/configuration/#exporters)。receiver 用于采集数据，可以是拉取式，也可以是推送式。处理器可对消息进行转换和富集。exporter 则负责将数据发送到下游服务。理论上，这个服务也可以是另一个 collector，但在下面的初步说明中，我们假设所有数据都直接发送到 ClickHouse。
 
 <Image img="/images/use-cases/observability/observability-3.webp" alt="收集日志" size="md" />
 
@@ -68,15 +68,15 @@ Collector 将其三个主要处理阶段称为 [receiver](https://opentelemetry.
 
 collector 提供两种用于收集日志的主要 receiver：
 
-**通过 OTLP** - 在这种情况下，日志会通过 OTLP 协议由 OpenTelemetry SDK 直接发送 (推送) 到collector。[OpenTelemetry demo](https://opentelemetry.io/docs/demo/) 就采用了这种方式，其中各语言中的 OTLP exporter 都默认使用本地collector端点。在这种情况下，collector 必须配置 OTLP receiver——参见上方的 [demo 配置](https://github.com/ClickHouse/opentelemetry-demo/blob/main/src/otelcollector/otelcol-config.yml#L5-L12)。这种方式的优势在于，日志数据会自动包含 trace ID，从而便于用户后续根据特定日志定位对应的 trace，反之亦然。
+**通过 OTLP** - 在这种情况下，日志会通过 OTLP 协议由 OpenTelemetry SDK 直接发送 (推送) 到 collector。[OpenTelemetry Demo](https://opentelemetry.io/docs/demo/) 就采用了这种方式，其中各语言中的 OTLP exporter 都默认使用本地 collector 端点。在这种情况下，collector 必须配置 OTLP receiver——参见上方的 [demo 配置](https://github.com/ClickHouse/opentelemetry-demo/blob/main/src/otelcollector/otelcol-config.yml#L5-L12)。这种方式的优势在于，日志数据会自动包含 trace ID，从而便于用户后续根据特定日志定位对应的 trace，反之亦然。
 
 <Image img="/images/use-cases/observability/observability-4.webp" alt="通过 otlp 收集日志" size="md" />
 
 这种方式要求用户使用其[对应语言的 SDK](https://opentelemetry.io/docs/languages/)对代码进行埋点。
 
-* **通过 Filelog receiver 抓取** - 该 receiver 会持续跟踪磁盘上的文件，并生成日志消息，然后将其发送到 ClickHouse。该 receiver 可处理多种复杂任务，例如检测多行消息、处理日志轮转、通过检查点机制增强重启后的稳健性，以及提取结构。该 receiver 还可以跟踪 Docker 和 Kubernetes 容器日志，并以 Helm 图表形式部署，[从中提取结构](https://opentelemetry.io/blog/2024/otel-collector-container-log-parser/)，再结合 pod (容器组) 详情对其进行富化。
+* **通过 Filelog receiver 抓取** - 该 receiver 会持续跟踪磁盘上的文件，并生成日志消息，然后将其发送到 ClickHouse。该 receiver 可处理多种复杂任务，例如检测多行消息、处理日志轮转、通过检查点机制增强重启后的稳健性，以及提取结构。该 receiver 还可以跟踪 Docker 和 Kubernetes 容器日志，并可作为 Helm 图表部署，[从中提取结构](https://opentelemetry.io/blog/2024/otel-collector-container-log-parser/)，再结合 pod 详情对其进行富化。
 
-<Image img="/images/use-cases/observability/observability-5.webp" alt="File 日志 receiver" size="md" />
+<Image img="/images/use-cases/observability/observability-5.webp" alt="File log receiver" size="md" />
 
 **大多数部署都会结合使用上述 receiver。我们建议用户阅读[collector 文档](https://opentelemetry.io/docs/collector/)，熟悉基本概念，以及[配置结构](https://opentelemetry.io/docs/collector/configuration/)和[安装方法](https://opentelemetry.io/docs/collector/installation/)。**
 
@@ -652,7 +652,7 @@ SETTINGS ttl_only_drop_parts = 1
 
 <Image img="/images/use-cases/observability/observability-6.webp" alt="异步插入" size="md" />
 
-启用[异步插入](/zh/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)后，当 ClickHouse ① 收到插入查询时，查询中的数据会先②立即写入内存 buffer。到③下一次 buffer flush 时，buffer 中的数据会被[排序](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns)，并作为一个part写入数据库存储。请注意，在数据 flush 到数据库存储之前，这些数据无法被查询到；buffer flush 是[可配置的](/zh/concepts/features/operations/insert/asyncinserts)。
+启用[异步插入](/zh/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)后，当 ClickHouse ① 收到插入查询时，查询中的数据会先②立即写入内存 buffer。到③下一次 buffer flush 时，buffer 中的数据会被[排序](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns)，并作为一个分片写入数据库存储。请注意，在数据 flush 到数据库存储之前，这些数据无法被查询到；buffer flush 是[可配置的](/zh/concepts/features/operations/insert/asyncinserts)。
 
 要为 collector 启用异步插入，请在 connection string 中添加 `async_insert=1`。我们建议使用 `wait_for_async_insert=1` (默认值) 以获得交付保障——更多详情请参见[这里](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)。
 
@@ -678,7 +678,7 @@ SETTINGS ttl_only_drop_parts = 1
   ### 仅使用 agent
 </div>
 
-在仅使用 agent 的架构中，用户将 OTel collector 作为 agent 部署在边缘。这些 agent 从本地应用接收 trace (例如以 sidecar 容器的形式) ，并从服务器和 Kubernetes 节点收集日志。在这种模式下，agent 会将数据直接发送到 ClickHouse。
+在仅使用 agent 的架构中，用户将 OTel collector 作为 agent 部署在边缘。这些 agent 从本地应用接收链路追踪 (例如以 sidecar 容器的形式) ，并从服务器和 Kubernetes 节点收集日志。在这种模式下，agent 会将数据直接发送到 ClickHouse。
 
 <Image img="/images/use-cases/observability/observability-7.webp" alt="仅使用 agent" size="md" />
 
@@ -721,11 +721,11 @@ exporters:
   otlp:
     endpoint: localhost:4317
     tls:
-      insecure: true # 如果使用安全连接，请设置为 false
+      insecure: true # Set to false if you are using a secure connection
 service:
   telemetry:
     metrics:
-      address: 0.0.0.0:9888 # 已修改，因为同一主机上运行了 2 个 collector
+      address: 0.0.0.0:9888 # Modified as 2 collectors running on same host
   pipelines:
     logs:
       receivers: [filelog]

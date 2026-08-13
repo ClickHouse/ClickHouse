@@ -2,7 +2,6 @@
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -91,6 +90,11 @@ DirectKeyValueJoin::DirectKeyValueJoin(std::shared_ptr<TableJoin> table_join_,
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Strictness {} and kind {} is not supported by direct JOIN",
             table_join->strictness(), table_join->kind());
     }
+
+    /// This join looks rows up by the equality key only, so a mixed `ON` condition reaching here
+    /// would be dropped instead of applied.
+    if (table_join->getMixedJoinExpression())
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Direct JOIN cannot evaluate a mixed JOIN ON condition");
 
     LOG_TRACE(log, "Using direct join");
 }
@@ -227,7 +231,7 @@ StepAnalysisReport DirectKeyValueJoin::getAnalysisReport() const
     StepAnalysisReport report;
     const UInt64 left_rows = left_rows_total.load(std::memory_order_relaxed);
     const UInt64 matched_left = left_rows_matched.load(std::memory_order_relaxed);
-    report.push_back({"left", joinSideMetrics(left_rows, matched_left)});
+    report.push_back({MetricGroupKey::Left, joinSideMetrics(left_rows, matched_left)});
     return report;
 }
 
