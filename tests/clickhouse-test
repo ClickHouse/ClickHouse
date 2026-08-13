@@ -2394,7 +2394,7 @@ class TestCase:
         current_value = os.environ.get("CLICKHOUSE_CLIENT_OPT", "")
         os.environ["CLICKHOUSE_CLIENT_OPT"] = f"{current_value} --allow_repeated_settings".strip()
 
-        # Must precede the feature_tag_overrides() block below, which returns early.
+        # Must precede the `feature_tag_overrides` block below, which returns early.
         if "use_query_cache=1" in os.environ["CLICKHOUSE_CLIENT_OPT"] and (
             self.has_non_throw_overflow_mode_in_test()
         ):
