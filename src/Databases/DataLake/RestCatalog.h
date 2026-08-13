@@ -245,13 +245,10 @@ private:
     AccessToken retrieveGoogleCloudAccessTokenFromRefreshToken() const;
 };
 
-/// Builds the JSON body for `POST .../namespaces/{ns}/tables/{table}` (Iceberg REST update).
-///
-/// Returns `nullptr` when `new_snapshot` is null (nothing to commit). Throws
-/// `DB::Exception(DATALAKE_DATABASE_ERROR)` with a specific message when the metadata
-/// blob is malformed (e.g. missing `current-schema-id`, no schema object matching it).
 /// Builds the JSON body for a schema-update commit via the Iceberg REST catalog.
-/// Includes schema deduplication, sort-order incompatibility reset, and last-column-id.
+/// Includes an assert-current-schema-id requirement (when previous_schema_id >= 0),
+/// schema deduplication against existing schemas in metadata, and last-column-id
+/// propagation when adding a new schema.
 Poco::JSON::Object::Ptr buildUpdateSchemaRequestBody(
     const String & namespace_name,
     const String & table_name,
