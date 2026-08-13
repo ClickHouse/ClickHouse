@@ -473,14 +473,26 @@ void considerEnablingParallelReplicas(
                     {
                         /// Redo on the shipped plan what was done to the probe: hand it the index analysis
                         /// the single-node plan already produced.
-                        if (const auto * shipped_top = findTopNodeOfReplicasPlan(shipped_plan->getRootNode()))
+                        /// Hand the shipped plan the single-node index analysis. Unlike the probe, it must
+                        /// be overwritten even when the shipped read already carries one: there the `IN` right
+                        /// argument is a temporary table whose set is not built when the key condition is
+                        /// evaluated, so nothing prunes and the analysis selects far more marks than the
+                        /// single-node one the decision was based on (measured on TPC-H q03: 1045 marks
+                        /// against 614, and three times the rows read).
+                        const auto * shipped_top = findTopNodeOfReplicasPlan(shipped_plan->getRootNode());
+                        ReadFromMergeTree * shipped_reading_step = shipped_top ? findReadingStep(*shipped_top) : nullptr;
+                        if (shipped_reading_step
+                            && &shipped_reading_step->getMergeTreeData() == &source_reading_step->getMergeTreeData())
                         {
-                            if (ReadFromMergeTree * shipped_reading_step = findReadingStep(*shipped_top);
-                                shipped_reading_step && shipped_reading_step->getAnalyzedResult() == nullptr
-                                && &shipped_reading_step->getMergeTreeData() == &source_reading_step->getMergeTreeData())
-                            {
-                                shipped_reading_step->setAnalyzedResult(analysis);
-                            }
+                            shipped_reading_step->setAnalyzedResult(analysis);
+                        }
+                        else if (shipped_reading_step)
+                        {
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR,
+                                "Shipped parallel replicas plan reads {} but the single-node plan reads {}",
+                                shipped_reading_step->getStorageID().getNameForLogs(),
+                                source_reading_step->getStorageID().getNameForLogs());
                         }
                         moveSetsFromLocalPlanToReplicasPlan(query_plan, *shipped_plan, /*allow_unmatched_sets*/ true);
                         query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*shipped_plan));
