@@ -243,7 +243,7 @@ public:
         DiskPtr db_disk,
         String dropped_metadata_path,
         DroppedTableCleanupOptions options);
-    void undropTable(StorageID table_id);
+    void undropTable(StorageID table_id, std::function<void()> throw_if_cancelled = {});
 
     void waitTableFinallyDropped(const UUID & uuid, std::function<void()> throw_if_cancelled = {});
 

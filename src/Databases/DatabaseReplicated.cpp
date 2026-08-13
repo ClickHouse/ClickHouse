@@ -1314,10 +1314,14 @@ void DatabaseReplicated::assertDigest(const ContextPtr & local_context)
     {
         if (auto txn = local_context->getZooKeeperMetadataTransaction())
         {
-            txn->addFinalizer([this, local_context]()
+            /// Weak because the `Context` owns this transaction. It cannot expire here:
+            /// `commit` runs the finalizer while its caller still holds that `Context`.
+            txn->addFinalizer([this, weak_context = ContextWeakPtr{local_context}]()
             {
+                auto context = weak_context.lock();
+                chassert(context);
                 std::lock_guard lock{metadata_mutex};
-                assertDigestWithProbability(local_context);
+                assertDigestWithProbability(context);
             });
         }
     }
@@ -1333,10 +1337,13 @@ void DatabaseReplicated::assertDigestInTransactionOrInline(const ContextPtr & lo
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     if (txn)
     {
-        txn->addFinalizer([this, local_context]()
+        /// Weak for the same reason as in `assertDigest` above.
+        txn->addFinalizer([this, weak_context = ContextWeakPtr{local_context}]()
         {
+            auto context = weak_context.lock();
+            chassert(context);
             std::lock_guard lock{metadata_mutex};
-            assertDigestWithProbability(local_context);
+            assertDigestWithProbability(context);
         });
     }
     else
@@ -2289,7 +2296,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
         create.attach = true;
 
     if (create.select && create.isView())
-        ApplyWithSubqueryVisitor(context_).visit(*create.select);
+        ApplyWithSubqueryVisitor::visit(*create.select);
 
     return ast;
 }
