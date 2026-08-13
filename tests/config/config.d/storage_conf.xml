@@ -143,7 +143,13 @@
             <local_remote>
                 <volumes>
                     <local><disk>default</disk></local>
-                    <remote><disk>s3_disk</disk></remote>
+                    <!-- A part always starts on the 'local' volume, even when its move TTL
+                         expired while the INSERT was still running. The background mover
+                         ignores this setting, so TTL moves still happen. -->
+                    <remote>
+                        <disk>s3_disk</disk>
+                        <perform_ttl_move_on_insert>0</perform_ttl_move_on_insert>
+                    </remote>
                 </volumes>
             </local_remote>
             <s3_cache>
