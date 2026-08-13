@@ -851,31 +851,127 @@ String StorageNATS::getConsumerName() const
 namespace
 {
 
-/// `nats_credential_file` and `nats_credentials` are two ways to provide the same credentials, so only one
-/// of them may be specified. A source specified in the query (in the `SETTINGS` clause or as a named-collection
-/// override) is more specific than one stored in the named collection, so it replaces it instead of conflicting
-/// with it - otherwise a named collection with one of the sources could not be reused by a table which provides
-/// the other one.
-void resolveCredentialSource(NATSSettings & nats_settings, bool credential_file_from_collection, bool credentials_from_collection)
+constexpr std::string_view CREDENTIAL_FILE_ONLY_FROM_CONFIG_MESSAGE
+    = "`nats_credential_file` can only be specified in a named collection defined in the server configuration file, "
+      "or as `nats.credential_file` in the server configuration itself. "
+      "Pass the contents of the file in `nats_credentials` instead";
+
+/// `nats_credential_file` and `nats_credentials` are two ways to provide the same credentials - a path to a
+/// file on the server filesystem, and the contents of that file - so only one of them may be specified.
+/// A source specified in the query (in the `SETTINGS` clause or as a named-collection override) is more
+/// specific than one stored in the named collection, so it replaces it instead of conflicting with it -
+/// otherwise a named collection with one of the sources could not be reused by a table which provides the
+/// other one.
+///
+/// `credential_file_assigned_by_query` and `credentials_assigned_by_query` say whether the query assigned
+/// the key, in either spelling: as a named-collection override, or in the `SETTINGS` clause, which is
+/// applied on top of the collection values. They are about provenance rather than about the resulting
+/// value: an assignment of the empty string is an assignment too, and dropping the credentials the
+/// operator configured is exactly what has to be refused.
+void resolveCredentialSource(
+    NATSSettings & nats_settings,
+    const NamedCollection * named_collection,
+    bool collection_defined_in_config,
+    bool credential_file_assigned_by_query,
+    bool credentials_assigned_by_query,
+    bool loading_from_existing_metadata)
 {
-    const bool credential_file_set = !nats_settings[NATSSetting::nats_credential_file].value.empty();
+    /// The value the named collection defines itself, before a query override of the same key.
+    auto value_in_collection = [&](const std::string & key) -> String
+    {
+        if (!named_collection)
+            return {};
+        if (named_collection->isQueryOverridden(key))
+            return named_collection->getValueBeforeQueryOverride(key).value_or("");
+        return named_collection->getOrDefault<String>(key, "");
+    };
+
+    const String credential_file_in_collection = value_in_collection("nats_credential_file");
+    const String credentials_in_collection = value_in_collection("nats_credentials");
+
     const bool credentials_set = !nats_settings[NATSSetting::nats_credentials].value.empty();
 
-    const bool credential_file_from_query = credential_file_set && !credential_file_from_collection;
+    const bool credential_file_from_collection = !credential_file_in_collection.empty() && !credential_file_assigned_by_query;
+    const bool credentials_from_collection = !credentials_in_collection.empty() && !credentials_assigned_by_query;
+
+    const bool credential_file_from_query
+        = !nats_settings[NATSSetting::nats_credential_file].value.empty() && !credential_file_from_collection;
     const bool credentials_from_query = credentials_set && !credentials_from_collection;
 
     if (credential_file_from_query && credentials_from_query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "You can specify only one of `nats_credential_file` and `nats_credentials`");
 
-    if (credential_file_from_collection && credentials_from_collection)
+    if (!credential_file_in_collection.empty() && !credentials_in_collection.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The named collection can specify only one of `nats_credential_file` and `nats_credentials`");
+
+    /// Credentials the operator explicitly locked (`<nats_credential_file overridable="false">`) cannot be
+    /// replaced from a query. `tryGetNamedCollectionWithOverrides` checks this for the engine-argument
+    /// spelling - `nats_credentials` inherits the permission of the path key it replaces, see
+    /// `findOverrideForbiddingKey` - but the `SETTINGS` clause is applied on top of the collection values
+    /// without passing through that check, so the permission is enforced here for both spellings. It is
+    /// enforced when loading from metadata as well, for the same reason it is enforced there for the
+    /// engine-argument spelling: the lock is a policy on a named collection that is still in use, and the
+    /// alternative is to authenticate with credentials the operator forbade. The default is `true` rather
+    /// than `allow_named_collection_override_by_default` for the same reason it is there: passing the
+    /// contents is the only way to supply these credentials from SQL, so the operator states the
+    /// permission with the attribute.
+    if (credentials_assigned_by_query && named_collection)
+    {
+        /// Only one of the two can be non-empty here, so this names the key the operator locked.
+        for (const auto * key : {"nats_credential_file", "nats_credentials"})
+        {
+            if (!value_in_collection(key).empty() && !named_collection->isOverridable(key, /* default_value= */ true))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
+        }
+    }
+
+    /// A path to a credentials file is only accepted from the server configuration file: the server opens
+    /// the file with its own privileges, and during authentication the credentials are sent to `nats_url`,
+    /// which comes from the same query. So taking a path from SQL would let anyone who can define a `NATS`
+    /// source probe the local filesystem and exfiltrate files the server can read to a NATS server they
+    /// control. Loading from previously-validated metadata (server startup, force-restore, and short-syntax
+    /// `ATTACH`) is exempt, so tables created before this restriction keep working after an upgrade.
+    if (!loading_from_existing_metadata)
+    {
+        /// Checked on provenance, before the resulting value below: an override of a configured path with
+        /// the empty string carries no path of its own, so it would pass a check on the value while
+        /// silently dropping the credentials the operator configured.
+        if (credential_file_assigned_by_query)
+        {
+            /// Outside the server configuration file the path key is not accepted at all, overridden or
+            /// not, so the override rejection would name the wrong remedy.
+            if (!collection_defined_in_config)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", CREDENTIAL_FILE_ONLY_FROM_CONFIG_MESSAGE);
+
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`nats_credential_file` cannot be overridden in a query. "
+                "Pass the contents of the file in `nats_credentials` instead");
+        }
+
+        /// An empty `nats_credentials` never replaces the credentials the collection carries with other
+        /// ones - it can only silently drop them, whichever form they are stored in. When the collection
+        /// carries no credentials at all there is nothing to drop, and the empty assignment stays the
+        /// no-op it is for a table which uses no named collection.
+        if (credentials_assigned_by_query && !credentials_set
+            && (!credential_file_in_collection.empty() || !credentials_in_collection.empty()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The credentials of the named collection cannot be dropped by an empty `nats_credentials`");
+    }
 
     if (credential_file_from_query && credentials_from_collection)
         nats_settings[NATSSetting::nats_credentials] = String{};
     else if (credentials_from_query && credential_file_from_collection)
         nats_settings[NATSSetting::nats_credential_file] = String{};
+
+    /// Whatever path is left is the one the collection defines, and it is accepted only when the
+    /// collection itself comes from the server configuration file.
+    if (!loading_from_existing_metadata && !nats_settings[NATSSetting::nats_credential_file].value.empty()
+        && !collection_defined_in_config)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", CREDENTIAL_FILE_ONLY_FROM_CONFIG_MESSAGE);
 }
 
 }
@@ -886,19 +982,18 @@ void registerStorageNATS(StorageFactory & factory)
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         auto nats_settings = std::make_unique<NATSSettings>();
-        /// Whether a credential source comes from the named collection itself rather than from a query override.
-        bool credential_file_from_collection = false;
-        bool credentials_from_collection = false;
+        /// Whether the query assigned a credential source, in either spelling.
+        bool credential_file_assigned_by_query = false;
+        bool credentials_assigned_by_query = false;
         /// Whether the named collection is defined in the server configuration file rather than created by SQL.
         bool collection_defined_in_config = false;
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
+        auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id);
+        if (named_collection)
         {
             nats_settings->loadFromNamedCollection(named_collection);
 
-            credential_file_from_collection = !(*nats_settings)[NATSSetting::nats_credential_file].value.empty()
-                && !named_collection->isQueryOverridden("nats_credential_file");
-            credentials_from_collection = !(*nats_settings)[NATSSetting::nats_credentials].value.empty()
-                && !named_collection->isQueryOverridden("nats_credentials");
+            credential_file_assigned_by_query = named_collection->isQueryOverridden("nats_credential_file");
+            credentials_assigned_by_query = named_collection->isQueryOverridden("nats_credentials");
             collection_defined_in_config = named_collection->getSourceId() == NamedCollection::SourceId::CONFIG;
         }
         else if (!args.storage_def->settings)
@@ -914,9 +1009,9 @@ void registerStorageNATS(StorageFactory & factory)
             for (const auto & change : args.storage_def->settings->changes)
             {
                 if (change.name == "nats_credential_file")
-                    credential_file_from_collection = false;
+                    credential_file_assigned_by_query = true;
                 else if (change.name == "nats_credentials")
-                    credentials_from_collection = false;
+                    credentials_assigned_by_query = true;
             }
         }
 
@@ -929,23 +1024,13 @@ void registerStorageNATS(StorageFactory & factory)
         if (!(*nats_settings)[NATSSetting::nats_subjects].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_subjects` setting");
 
-        resolveCredentialSource(*nats_settings, credential_file_from_collection, credentials_from_collection);
-
-        /// A path to a credentials file is only accepted from the server configuration file: the server opens
-        /// the file with its own privileges, and during authentication the credentials are sent to `nats_url`,
-        /// which comes from the same query. So taking a path from SQL would let anyone who can define a `NATS`
-        /// source probe the local filesystem and exfiltrate files the server can read to a NATS server they
-        /// control. Loading from previously-validated metadata (server startup, force-restore, and short-syntax
-        /// `ATTACH`) is exempt, so tables created before this restriction keep working after an upgrade.
-        if (!(*nats_settings)[NATSSetting::nats_credential_file].value.empty()
-            && !(credential_file_from_collection && collection_defined_in_config)
-            && !isLoadingFromExistingMetadata(args.mode)
-            && !args.query.attach_short_syntax)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "`nats_credential_file` can only be specified in a named collection defined in the server configuration file, "
-                "or as `nats.credential_file` in the server configuration itself. "
-                "Pass the contents of the file in `nats_credentials` instead");
+        resolveCredentialSource(
+            *nats_settings,
+            named_collection.get(),
+            collection_defined_in_config,
+            credential_file_assigned_by_query,
+            credentials_assigned_by_query,
+            isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax);
 
         if ((*nats_settings)[NATSSetting::nats_consumer_name].changed && !(*nats_settings)[NATSSetting::nats_stream].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "To use NATS jet stream, you must specify `nats_stream` setting");
@@ -1026,7 +1111,7 @@ Optional parameters:
 - `nats_password` - NATS password.
 - `nats_token` - NATS auth token.
 - `nats_credential_file` - Path to a NATS credentials file. It is accepted only from a named collection defined in the server configuration file, or as `nats.credential_file` in the server configuration itself, because the server opens the path with its own privileges. In a query, pass the contents of the file in `nats_credentials` instead.
-- `nats_credentials` - NATS credentials content (the same payload as in a `.creds` file with user JWT and seed).
+- `nats_credentials` - NATS credentials content (the same payload as in a `.creds` file with user JWT and seed). Because it is the only spelling a query can use, it replaces a `nats_credential_file` inherited from a named collection instead of conflicting with it - unless the operator locked that path with `<nats_credential_file overridable="false">`. It cannot be assigned the empty string to drop the credentials a named collection carries.
 - `nats_startup_connect_tries` - Number of connect tries at startup. Default: `5`.
 - `nats_max_rows_per_message` — The maximum number of rows written in one NATS message for row-based formats. (default : `1`).
 - `nats_commit_on_select` - Commit messages when query is made. Applies to JetStream only; core NATS has no acknowledgements. Default: `0`.
