@@ -178,6 +178,15 @@ SQLQueryPiece applyFunctionOverRange(
     SQLQueryPiece res = argument;
     res.node = node;
     res.type = ResultType::INSTANT_VECTOR;
+    res.step_invariant = false;
+
+    const bool argument_is_step_invariant = argument.step_invariant;
+    const auto aggregation_start_time = argument_is_step_invariant ? argument.start_time : start_time;
+    const auto aggregation_end_time = argument_is_step_invariant ? argument.end_time : end_time;
+    const auto aggregation_step = argument_is_step_invariant ? argument.step : step;
+    const auto aggregation_grid_size = stepsInTimeSeriesRange(
+        aggregation_start_time, aggregation_end_time, aggregation_step);
+    const auto result_grid_size = stepsInTimeSeriesRange(start_time, end_time, step);
 
     bool has_group = false;
     ASTPtr timestamps;
@@ -288,12 +297,26 @@ SQLQueryPiece applyFunctionOverRange(
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
-    builder.select_list.push_back(addParametersToAggregateFunction(
+    auto aggregate_values = addParametersToAggregateFunction(
         makeASTFunction(impl_info->ch_function_name, std::move(timestamps), std::move(values)),
-        timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
-        timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
-        timeSeriesDurationToAST(step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type)));
+        timeSeriesTimestampToAST(aggregation_start_time, context.timestamp_data_type),
+        timeSeriesTimestampToAST(aggregation_end_time, context.timestamp_data_type),
+        timeSeriesDurationToAST(aggregation_step, context.timestamp_data_type),
+        timeSeriesDurationToAST(window, context.timestamp_data_type));
+
+    if (argument_is_step_invariant)
+    {
+        /// A fixed subquery is evaluated once by Prometheus. Take the result at the end of its inner grid and
+        /// repeat it on the outer grid instead of sliding the inner range over the outer evaluation timestamps.
+        aggregate_values = makeASTFunction(
+            "arrayResize",
+            make_intrusive<ASTLiteral>(Array{}),
+            make_intrusive<ASTLiteral>(result_grid_size),
+            makeASTFunction(
+                "arrayElement", std::move(aggregate_values), make_intrusive<ASTLiteral>(aggregation_grid_size)));
+    }
+
+    builder.select_list.push_back(std::move(aggregate_values));
 
     builder.select_list.back()->setAlias(ColumnNames::Values);
 

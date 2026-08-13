@@ -65,6 +65,11 @@ struct SQLQueryPiece
     /// Operators and functions drop the metric name, i.e. the tag named '__name__.
     bool metric_name_dropped = false;
 
+    /// The value is independent of the outer evaluation step. This is set for a range vector produced by a
+    /// subquery with a fixed @ modifier. Such a range vector keeps its inner grid, while a function consuming it
+    /// evaluates the complete grid once and repeats the result for the outer query steps.
+    bool step_invariant = false;
+
     /// `start_time`, `end_time`, `step` are used only if `store_method` is one of
     /// [CONST_SCALAR, CONST_STRING, SCALAR_GRID, VECTOR_GRID].
     /// If `store_method` is CONST_STRING then `start_time` is always equal to `end_time`.

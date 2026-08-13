@@ -603,6 +603,36 @@ def test_at_start_and_end_modifiers():
         [["[('__name__','test')]", "[('1970-01-01 00:02:10.000',13),('1970-01-01 00:03:10.000',13),('1970-01-01 00:04:10.000',13)]"]],
     )
 
+    # A subquery has its own inner time grid. A fixed @ modifier must preserve that
+    # grid so the outer range function can consume the complete range vector.
+    do_range_query_test(
+        "last_over_time(test[5m:1m] @ start())",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "1"], [190, "1"], [250, "1"]]}]}',
+        [["[('__name__','test')]", "[('1970-01-01 00:02:10.000',1),('1970-01-01 00:03:10.000',1),('1970-01-01 00:04:10.000',1)]"]],
+    )
+
+    do_range_query_test(
+        "last_over_time(test[5m:1m] @ end())",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "13"], [190, "13"], [250, "13"]]}]}',
+        [["[('__name__','test')]", "[('1970-01-01 00:02:10.000',13),('1970-01-01 00:03:10.000',13),('1970-01-01 00:04:10.000',13)]"]],
+    )
+
+    # Numeric @ on a subquery uses the same fixed-grid path.
+    do_range_query_test(
+        "last_over_time(test[5m:1m] @ 250)",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "13"], [190, "13"], [250, "13"]]}]}',
+        [["[('__name__','test')]", "[('1970-01-01 00:02:10.000',13),('1970-01-01 00:03:10.000',13),('1970-01-01 00:04:10.000',13)]"]],
+    )
+
 
 def test_range_selectors():
     do_query_test(
