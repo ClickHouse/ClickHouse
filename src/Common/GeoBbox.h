@@ -499,25 +499,20 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
         const_fields.push_back(std::move(field));
     }
 
-    /// This predicate doesn't reference an accepted geometry column at all -- it carries no
-    /// pruning information here. But with `short_circuit_function_evaluation = 'disable'` it
-    /// is still evaluated on every row, so if one of its constant geometry arguments failed to
-    /// extract (and is therefore guaranteed to raise on evaluation), that must still veto
-    /// pruning -- otherwise pruning could proceed using only an unrelated, valid conjunct's
-    /// bbox, silently hiding the exception this conjunct is guaranteed to raise.
-    if (!input_child)
-        return any_extraction_failed ? NodeBboxStatus::Failed : NodeBboxStatus::NotApplicable;
-
-    /// A constant geometry argument that fails to extract or validate is guaranteed to raise
-    /// on evaluation, regardless of whether other, non-constant arguments (e.g. an extra
-    /// column) are also present. This must be checked -- and, on failure, veto pruning via
-    /// `Failed` -- before `has_extra_non_constant` is allowed to downgrade the result to
-    /// `NoInfo`; otherwise an extra non-constant argument would mask an invalid constant one.
+    /// A constant geometry argument that fails to extract is guaranteed to raise on evaluation,
+    /// regardless of whether an accepted-column input is present. This -- and every validation
+    /// below -- must be checked unconditionally, before `!input_child` or `has_extra_non_constant`
+    /// are allowed to downgrade the result to `NotApplicable`/`NoInfo`: with
+    /// `short_circuit_function_evaluation = 'disable'` this node is still evaluated on every row
+    /// even when it doesn't reference the accepted column (e.g. a sibling `and` conjunct on a
+    /// *different* geometry column), so an invalid constant geometry here must still veto pruning
+    /// for the whole conjunction -- otherwise pruning could proceed using only an unrelated,
+    /// valid conjunct's bbox, silently hiding the exception this conjunct is guaranteed to raise.
     if (any_extraction_failed)
         return NodeBboxStatus::Failed;
 
     if (const_fields.empty())
-        return NodeBboxStatus::NoInfo;
+        return input_child ? NodeBboxStatus::NoInfo : NodeBboxStatus::NotApplicable;
 
     /// Two or more constant geometry arguments on a non-`pointInPolygon` predicate aren't
     /// assembled into one combined shape (see the comment above), so no bbox can be derived --
@@ -532,7 +527,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
             if (!extractBboxFromFieldValue(field, field_acc) || !field_acc.valid)
                 return NodeBboxStatus::Failed;
         }
-        return NodeBboxStatus::NoInfo;
+        return input_child ? NodeBboxStatus::NoInfo : NodeBboxStatus::NotApplicable;
     }
 
     /// A single constant geometry argument is self-contained (shell + holes, or a full
@@ -569,10 +564,14 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     if (!ok)
         return NodeBboxStatus::Failed;
 
-    /// Only now -- after the constant geometry argument(s) are confirmed extractable and valid
-    /// -- can an extra non-constant argument downgrade the result to "no info": the predicate's
-    /// truth may depend on that argument, so its bbox can't be used to prune, but there's also
-    /// no invalid geometry to fail closed for.
+    /// Only now -- after every constant geometry argument is confirmed extractable and valid --
+    /// can the absence of an accepted-column input, or the presence of an extra non-constant
+    /// argument, downgrade the result to `NotApplicable`/`NoInfo`: this node's truth may not be
+    /// derivable as a bbox on the accepted column, but there's also no invalid geometry to fail
+    /// closed for.
+    if (!input_child)
+        return NodeBboxStatus::NotApplicable;
+
     if (has_extra_non_constant)
         return NodeBboxStatus::NoInfo;
 

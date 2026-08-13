@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexLegacyHypothesis.h>
-#include <Storages/MergeTree/MergeTreeIndexSpatialBbox.h>
 
 #include <Columns/IColumn.h>
 #include <Interpreters/ExpressionActions.h>
