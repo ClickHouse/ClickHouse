@@ -209,11 +209,8 @@ class ReleaseInfo:
     commit_sha: str
     latest: bool
     codename: str
-    # Whether the branch has already advanced to a newer release than this one
-    # (a "late" / superseded recovery). Controls the floating minor/major docker
-    # tags: they move only when this is not a late recovery. `latest` above is
-    # whether the branch is the latest release branch (controls `latest`).
-    is_late_recovery: bool = True
+    # True once the branch tip has moved past this release (its post-release bump landed, or a newer release advanced it further), so this is no longer the branch's current release.
+    is_bump_landed: bool = True
     # Whether this run re-publishes an existing release instead of creating one
     # (tag/version-bump/changelog) — true for an already-released or
     # out-of-order ref.
@@ -282,8 +279,8 @@ class ReleaseInfo:
         release_tag = None
         latest_release = False
         codename = ""
-        # A new release cuts a fresh minor, so it is never a late recovery; recomputed for patch below.
-        self.is_late_recovery = False
+        # A new release starts a fresh minor with no prior bump landed; recomputed for patch below.
+        self.is_bump_landed = False
 
         if release_type == "new":
             if commit_ref != "master":
@@ -318,13 +315,10 @@ class ReleaseInfo:
                 verbose=True,
             )
 
-            # The branch's current version, read from the version file at its tip
-            # (not from release tags). If this commit's version is older than the
-            # branch tip, the branch has already moved to a newer release, so this
-            # ref is behind / superseded.
+            # Branch-tip version (version file, not tags): if it is ahead of this commit, the post-release bump already landed, so this is no longer the branch's current release.
             with checkout(f"origin/{release_branch}"):
                 branch_version = CHVersion.get_current_version()
-            self.is_late_recovery = version.is_older(branch_version)
+            self.is_bump_landed = version.is_older(branch_version)
 
             if is_latest_release_branch(release_branch, repo=GITHUB_REPOSITORY):
                 print("This is going to be the latest release!")
@@ -353,7 +347,7 @@ class ReleaseInfo:
         #   * ref older than the branch tip (a raw SHA behind it) -> out of order, refuse;
         #   * ref whose computed release tag already exists here -> recovery (a rerun of the same SHA);
         #   * otherwise -> create the next release.
-        # The tag ref is checked before the is_late_recovery guard so a superseded release can still be recovered by its tag.
+        # The tag ref is checked before the is_bump_landed guard so a release whose bump already landed can still be recovered by its tag.
         if Git.tag_exists(commit_ref):
             self.is_recovery = True
             assert release_tag == commit_ref, (
@@ -361,10 +355,10 @@ class ReleaseInfo:
                 f"describes [{release_tag}]; refusing to re-publish a different "
                 f"release"
             )
-        elif self.is_late_recovery:
+        elif self.is_bump_landed:
             raise RuntimeError(
                 f"Refusing out-of-order release [{release_tag}] from [{commit_ref}]: "
-                f"branch [{release_branch}] is already on a newer release. Pass a "
+                f"branch [{release_branch}] tip is already ahead of it. Pass a "
                 f"release tag to recover an existing release, or the branch to "
                 f"release its next commit."
             )

@@ -332,12 +332,12 @@ def main():
     # without erroring and just re-exports repos / rebuilds docker.
     # If a prior step failed (ok is False) the prepared flags are unread; default to recovery so no creation step fires.
     is_recovery = True
-    is_late_recovery = True
+    is_bump_landed = True
     if ok:
         with open(RELEASE_INFO_FILE) as f:
             _prepared = json.load(f)
         is_recovery = _prepared["is_recovery"]
-        is_late_recovery = _prepared["is_late_recovery"]
+        is_bump_landed = _prepared["is_bump_landed"]
 
     # skip-repo / skip-docker mark a partial run that only re-publishes artifacts
     # for an already-created release (repo/Docker recovery). If the ref resolves
@@ -679,13 +679,8 @@ def main():
         with open(RELEASE_INFO_FILE) as f:
             release_info = json.load(f)
         release_tag = release_info["release_tag"]
-        # not is_late_recovery: this release is the latest on its branch →
-        # publish the floating minor/major tags. is_latest: its branch is the
-        # latest release branch → additionally publish `latest`. These decide the
-        # floating tags by whether the release is current, so recovery of the
-        # current release re-applies them while recovery of a superseded one (a
-        # late recovery) only re-publishes its exact version tag.
-        is_late_recovery = release_info["is_late_recovery"]
+        # Branch head (bump not landed) → move floating minor/major tags; is_latest also moves `latest`. A later recovery (bump landed) leaves them as they are.
+        is_bump_landed = release_info["is_bump_landed"]
         is_latest = release_info["latest"]
 
         def _make_docker_build(
@@ -713,13 +708,8 @@ def main():
                     label_version = f"{version_string}{version_suffix}"
                     # Always publish the exact version tag.
                     tags = [f"--tag={image}:{version_string}{version_suffix}"]
-                    # Floating minor/major tags must point at the latest release
-                    # on the branch, so move them only when this release is that
-                    # latest one (not a late recovery) — true for a normal release
-                    # and for recovery of the current release, false for recovery
-                    # of a superseded tag (which would otherwise move them back to
-                    # an older image).
-                    if not is_late_recovery:
+                    # Move the floating minor/major tags only for the branch head (bump not landed), so a later recovery does not point them back at an older image.
+                    if not is_bump_landed:
                         tags += [
                             f"--tag={image}:{version_minor}{version_suffix}",
                             f"--tag={image}:{version_major}{version_suffix}",
@@ -867,11 +857,8 @@ def main():
     # step already failed, so a failed publish leaves the branch un-bumped and
     # recoverable. ("new" bumps earlier, above, because the merge step below
     # merges the master bump PR it opens.)
-    # Gated on `not is_late_recovery` so any current-release recovery still
-    # completes the bump — including a skip-repo / skip-docker rerun that finishes
-    # the other publish half — while a superseded (late) recovery never rewrites
-    # the version.
-    if not is_late_recovery and args.release_type == "patch":
+    # `not is_bump_landed`: a recovery whose bump has not landed still completes it (skip-repo/skip-docker included); once landed, no rerun rewrites the version.
+    if not is_bump_landed and args.release_type == "patch":
         step(
             name="Bump CH Version and Update Contributors' List",
             command=[
