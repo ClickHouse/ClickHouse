@@ -75,9 +75,8 @@ public:
         }
         else if (auto * lambda_node = node->as<LambdaNode>())
         {
-            /// The lambda caches its own result type, so replacing a column inside its body leaves that
-            /// cache stale and the mismatch resurfaces later as a header type mismatch. Recompute it from
-            /// the rewritten body, keeping the argument types.
+            /// The lambda caches a result type derived from its body, so recompute it from the
+            /// rewritten body, keeping the argument types.
             const auto * lambda_type = typeid_cast<const DataTypeFunction *>(lambda_node->getResultType().get());
             if (!lambda_type)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -107,7 +106,8 @@ public:
 private:
     const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map;
     const ContextPtr & context;
-    /// Nodes a replacement happened at or under. The tree being visited owns every entry.
+    /// Nodes a replacement happened at or under. Only tested for membership, and no node is
+    /// allocated during the visit, so a released address cannot be aliased by a node tested later.
     std::unordered_set<const IQueryTreeNode *> replaced_subtrees;
 };
 
