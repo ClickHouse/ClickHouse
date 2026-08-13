@@ -8,6 +8,7 @@
 #include <Coordination/KeeperServer.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/FailPoint.h>
 #include <Common/scope_guard_safe.h>
 
 #include <Poco/Util/XMLConfiguration.h>
@@ -239,6 +240,88 @@ TEST(KeeperDispatcher, SessionIDErrorReachesRealWaiter)
     catch (const Coordination::Exception & e)
     {
         EXPECT_EQ(e.code, Coordination::Error::ZCONNECTIONLOSS);
+    }
+
+    std::lock_guard lock(keeper_dispatcher.new_session_id_mutex);
+    EXPECT_EQ(keeper_dispatcher.new_session_id_requests.count(internal_id), 0u) << "the waiter entry leaked";
+}
+
+/// A request accepted before the shutdown flag was set is discarded without a response: the drains
+/// do not synthesize one, and the old dispatcher's requestThread abandons what it already popped.
+/// Routing cannot cover that, so the waiter is completed once no dispatcher can produce a response.
+TEST(KeeperDispatcher, PendingSessionIDRequestsFailOnShutdown)
+{
+    DispatcherFixture fixture;
+    fixture.dispatcher.reset();
+
+    /// Drives the real KeeperDispatcher::shutdown, so removing its call reddens this arm. Neither
+    /// dispatcher is constructed and `server` is left null: shutdown skips both, and the waiter
+    /// must still be completed.
+    DB::KeeperDispatcher keeper_dispatcher;
+    keeper_dispatcher.keeper_context = fixture.keeper_context;
+
+    constexpr int64_t internal_id = 31;
+    std::future<int64_t> future;
+    {
+        std::lock_guard lock(keeper_dispatcher.new_session_id_mutex);
+        auto [it, inserted] = keeper_dispatcher.new_session_id_requests.try_emplace(internal_id);
+        ASSERT_TRUE(inserted);
+        future = it->second.get_future();
+    }
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::timeout)
+        << "the waiter completed before shutdown";
+
+    keeper_dispatcher.shutdown(/*closed_all_connections=*/ true);
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::ready)
+        << "the waiter was left to time out across shutdown";
+    try
+    {
+        FAIL() << "getSessionID returned session id " << future.get() << " instead of the error";
+    }
+    catch (const Coordination::Exception & e)
+    {
+        EXPECT_EQ(e.code, Coordination::Error::ZSESSIONEXPIRED);
+    }
+
+    std::lock_guard lock(keeper_dispatcher.new_session_id_mutex);
+    EXPECT_EQ(keeper_dispatcher.new_session_id_requests.count(internal_id), 0u) << "the waiter entry leaked";
+}
+
+/// setShutdownCalled is one-shot, so a shutdown step that throws before the normal cleanup point
+/// is the waiters' only chance to be completed.
+TEST(KeeperDispatcher, PendingSessionIDRequestsFailOnThrowingShutdown)
+{
+    DispatcherFixture fixture;
+    fixture.dispatcher.reset();
+
+    DB::KeeperDispatcher keeper_dispatcher;
+    keeper_dispatcher.keeper_context = fixture.keeper_context;
+
+    constexpr int64_t internal_id = 37;
+    std::future<int64_t> future;
+    {
+        std::lock_guard lock(keeper_dispatcher.new_session_id_mutex);
+        auto [it, inserted] = keeper_dispatcher.new_session_id_requests.try_emplace(internal_id);
+        ASSERT_TRUE(inserted);
+        future = it->second.get_future();
+    }
+
+    DB::FailPointInjection::enableFailPoint("keeper_shutdown_throw_after_flag");
+    SCOPE_EXIT({ DB::FailPointInjection::disableFailPoint("keeper_shutdown_throw_after_flag"); });
+
+    keeper_dispatcher.shutdown(/*closed_all_connections=*/ true);
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::ready)
+        << "a shutdown that threw left the waiter to time out";
+    try
+    {
+        FAIL() << "getSessionID returned session id " << future.get() << " instead of the error";
+    }
+    catch (const Coordination::Exception & e)
+    {
+        EXPECT_EQ(e.code, Coordination::Error::ZSESSIONEXPIRED);
     }
 
     std::lock_guard lock(keeper_dispatcher.new_session_id_mutex);

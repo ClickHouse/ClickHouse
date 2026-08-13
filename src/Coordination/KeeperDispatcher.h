@@ -25,6 +25,8 @@
 
 /// White-box unit test that registers a getSessionID waiter (befriended inside KeeperDispatcher).
 class KeeperDispatcher_SessionIDErrorReachesRealWaiter_Test;
+class KeeperDispatcher_PendingSessionIDRequestsFailOnShutdown_Test;
+class KeeperDispatcher_PendingSessionIDRequestsFailOnThrowingShutdown_Test;
 
 #include <future>
 
@@ -37,6 +39,8 @@ class KeeperDispatcher
 {
 private:
     friend class ::KeeperDispatcher_SessionIDErrorReachesRealWaiter_Test;
+    friend class ::KeeperDispatcher_PendingSessionIDRequestsFailOnShutdown_Test;
+    friend class ::KeeperDispatcher_PendingSessionIDRequestsFailOnThrowingShutdown_Test;
 
     using ClusterUpdateQueue = ConcurrentBoundedQueue<ClusterUpdateAction>;
 
@@ -123,6 +127,10 @@ private:
 
     /// The only place that knows which responses do not go to a per-session response callback.
     bool tryRouteSpecialResponse(const KeeperResponseForSession & response) noexcept;
+
+    /// Completes every waiter that can no longer receive a response. Call once no dispatcher can
+    /// produce one.
+    void failPendingSessionIDRequests() noexcept;
 
 public:
     KeeperDispatcher();

@@ -168,6 +168,7 @@ static struct InitFiu
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(keeper_fault_on_watch_request) \
     REGULAR(keeper_shutdown_delay_before_queue_check) \
+    REGULAR(keeper_shutdown_throw_after_flag) \
     REGULAR(lazy_pipe_fds_fail_close) \
     REGULAR(claim_inject_stale_part_dir) \
     PAUSEABLE(infinite_sleep) \
