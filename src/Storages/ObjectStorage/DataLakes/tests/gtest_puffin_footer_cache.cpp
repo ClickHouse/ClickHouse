@@ -136,3 +136,84 @@ TEST(PuffinFooterMemo, ClearDropsFooterEntries)
     ASSERT_NE(cache.getOrSetFooter(*footer_key, load_footer), nullptr);
     EXPECT_EQ(footer_loads, 2u);
 }
+
+TEST(PuffinFooterMemo, SizeZeroDoesNotInsert)
+{
+    PuffinFilesCache cache("SLRU", /*max_size_in_bytes=*/0, 100, 0.5);
+    const auto footer_key = PuffinFilesCache::tryCreateFooterKey("Local:////test", "coalesced.puffin", "etag-1");
+    ASSERT_TRUE(footer_key.has_value());
+
+    size_t footer_loads = 0;
+    auto load_footer = [&]()
+    {
+        ++footer_loads;
+        return loadFixtureFooter();
+    };
+
+    ASSERT_NE(cache.getOrSetFooter(*footer_key, load_footer), nullptr);
+    ASSERT_NE(cache.getOrSetFooter(*footer_key, load_footer), nullptr);
+    EXPECT_EQ(footer_loads, 2u);
+    EXPECT_EQ(cache.footerMemoEntries(), 0u);
+    EXPECT_EQ(cache.footerMemoBytes(), 0u);
+}
+
+TEST(PuffinFooterMemo, SizeZeroClearsMemo)
+{
+    PuffinFilesCache cache("SLRU", 1'000'000, 100, 0.5);
+    const auto footer_key = PuffinFilesCache::tryCreateFooterKey("Local:////test", "coalesced.puffin", "etag-1");
+    ASSERT_TRUE(footer_key.has_value());
+
+    size_t footer_loads = 0;
+    auto load_footer = [&]()
+    {
+        ++footer_loads;
+        return loadFixtureFooter();
+    };
+
+    ASSERT_NE(cache.getOrSetFooter(*footer_key, load_footer), nullptr);
+    EXPECT_EQ(footer_loads, 1u);
+    EXPECT_EQ(cache.footerMemoEntries(), 1u);
+    EXPECT_GT(cache.footerMemoBytes(), 0u);
+
+    cache.setMaxSizeInBytes(0);
+    EXPECT_EQ(cache.footerMemoEntries(), 0u);
+    EXPECT_EQ(cache.footerMemoBytes(), 0u);
+
+    ASSERT_NE(cache.getOrSetFooter(*footer_key, load_footer), nullptr);
+    EXPECT_EQ(footer_loads, 2u);
+    EXPECT_EQ(cache.footerMemoEntries(), 0u);
+
+    cache.setMaxSizeInBytes(1'000'000);
+    ASSERT_NE(cache.getOrSetFooter(*footer_key, load_footer), nullptr);
+    ASSERT_NE(cache.getOrSetFooter(*footer_key, load_footer), nullptr);
+    EXPECT_EQ(footer_loads, 3u);
+    EXPECT_EQ(cache.footerMemoEntries(), 1u);
+}
+
+TEST(PuffinFooterMemo, ByteBudgetEvictsOnShrink)
+{
+    PuffinFilesCache cache("SLRU", 1'000'000, 100, 0.5);
+    const auto footer_key = PuffinFilesCache::tryCreateFooterKey("Local:////test", "coalesced.puffin", "etag-1");
+    ASSERT_TRUE(footer_key.has_value());
+
+    size_t footer_loads = 0;
+    auto load_footer = [&]()
+    {
+        ++footer_loads;
+        return loadFixtureFooter();
+    };
+
+    ASSERT_NE(cache.getOrSetFooter(*footer_key, load_footer), nullptr);
+    const UInt64 memo_bytes = cache.footerMemoBytes();
+    ASSERT_GT(memo_bytes, 1u);
+
+    /// Shrinking below current memo weight must drop retained footers.
+    cache.setMaxSizeInBytes(1);
+    EXPECT_EQ(cache.footerMemoEntries(), 0u);
+    EXPECT_EQ(cache.footerMemoBytes(), 0u);
+
+    ASSERT_NE(cache.getOrSetFooter(*footer_key, load_footer), nullptr);
+    EXPECT_EQ(footer_loads, 2u);
+    /// Single fixture footer exceeds a 1-byte budget, so it must not be re-inserted.
+    EXPECT_EQ(cache.footerMemoEntries(), 0u);
+}

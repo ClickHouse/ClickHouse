@@ -141,7 +141,7 @@ The following limitations apply to deletion vectors:
 - Writing deletion vectors is not supported
 - `DELETE` / `UPDATE` mutations on Iceberg format version 3+ tables are rejected (writers must not add position-delete files)
 
-Parsed deletion vectors can be cached in memory when `use_puffin_files_cache` is enabled and the puffin file has a non-empty `etag`. Empty deletion vectors are cached as well, so repeated reads do not re-fetch the puffin file. Parsed footers for coalesced multi-DV Puffin files are memoized with that cache (same identity: storage, path, `etag`) so slices share one footer parse. The cache can be cleared with `SYSTEM DROP PUFFIN FILES CACHE`.
+Parsed deletion vectors can be cached in memory when `use_puffin_files_cache` is enabled and the puffin file has a non-empty `etag`. Empty deletion vectors are cached as well, so repeated reads do not re-fetch the puffin file. Parsed footers for coalesced multi-DV Puffin files are memoized with that cache (same identity: storage, path, `etag`) so slices share one footer parse; the memo shares `puffin_files_cache_size` / max-entry limits and is dropped when the cache is disabled (`puffin_files_cache_size=0`) or cleared. The cache can be cleared with `SYSTEM DROP PUFFIN FILES CACHE`.
 
 ### Basic usage {#basic-usage}
  ```sql

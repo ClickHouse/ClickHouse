@@ -96,6 +96,7 @@ struct PuffinFooterCacheKeyHash
 
 /// Cache for parsed content loaded from Puffin files (deletion vectors today, indexes later).
 /// Also memoizes parsed footers so coalesced multi-DV Puffins parse the footer once per file.
+/// Footer memo shares `puffin_files_cache_size` / max-entry limits (size 0 disables memoization).
 class PuffinFilesCache : public CacheBase<PuffinFilesCacheKey, PuffinFilesCacheCell, PuffinFilesCacheKeyHash, PuffinFilesCacheWeightFunction>
 {
 public:
@@ -129,27 +130,47 @@ public:
     void setMaxSizeInBytes(size_t max_size_in_bytes);
     void setMaxCount(size_t max_count);
 
-    /// Small memo (not a weighted LRU): footers are tiny; bound by entry count only.
+    /// Test/observability helpers for the footer memo.
+    size_t footerMemoEntries() const;
+    UInt64 footerMemoBytes() const;
+
+    /// Small memo (not a weighted LRU): shares byte/count limits with the DV cache.
     template <typename LoadFunc>
     FooterBlobsPtr getOrSetFooter(const PuffinFooterCacheKey & key, LoadFunc && load_fn)
     {
         {
             std::lock_guard lock(footer_mutex);
-            if (auto it = footer_memo.find(key); it != footer_memo.end())
-                return it->second;
+            if (footer_memo_max_bytes != 0)
+            {
+                if (auto it = footer_memo.find(key); it != footer_memo.end())
+                    return it->second.blobs;
+            }
         }
 
         auto blobs = load_fn();
 
         std::lock_guard lock(footer_mutex);
+        if (footer_memo_max_bytes == 0)
+            return blobs;
+
         if (auto it = footer_memo.find(key); it != footer_memo.end())
-            return it->second;
+            return it->second.blobs;
 
-        if (footer_memo_max_count > 0 && footer_memo.size() >= footer_memo_max_count)
-            footer_memo.clear();
+        const UInt64 entry_bytes = approximateFooterEntryBytes(key, blobs);
+        /// A single entry larger than the whole budget is not memoized (caller still gets blobs).
+        if (entry_bytes > footer_memo_max_bytes)
+            return blobs;
 
-        footer_memo.emplace(key, blobs);
-        return blobs;
+        if ((footer_memo_max_count > 0 && footer_memo.size() >= footer_memo_max_count)
+            || footer_memo_bytes > footer_memo_max_bytes - entry_bytes)
+        {
+            clearFooterMemoUnlocked();
+        }
+
+        auto [it, inserted] = footer_memo.emplace(key, FooterMemoEntry{blobs, entry_bytes});
+        if (inserted)
+            footer_memo_bytes += entry_bytes;
+        return it->second.blobs;
     }
 
     template <typename LoadFunc>
@@ -263,12 +284,23 @@ public:
     }
 
 private:
+    struct FooterMemoEntry
+    {
+        FooterBlobsPtr blobs;
+        UInt64 memory_bytes = 0;
+    };
+
     static DataLakeObjectMetadata::ExcludedRowsPtr cloneExcludedRows(const PuffinFilesCacheCell & cell);
+    static UInt64 approximateFooterEntryBytes(const PuffinFooterCacheKey & key, const FooterBlobsPtr & blobs);
+
+    void clearFooterMemoUnlocked();
 
     LoggerPtr log;
     mutable std::mutex footer_mutex;
-    std::unordered_map<PuffinFooterCacheKey, FooterBlobsPtr, PuffinFooterCacheKeyHash> footer_memo;
+    std::unordered_map<PuffinFooterCacheKey, FooterMemoEntry, PuffinFooterCacheKeyHash> footer_memo;
     size_t footer_memo_max_count = 0;
+    size_t footer_memo_max_bytes = 0;
+    UInt64 footer_memo_bytes = 0;
 
     void onEntryRemoval(size_t weight_loss, const MappedPtr &) override;
 };
