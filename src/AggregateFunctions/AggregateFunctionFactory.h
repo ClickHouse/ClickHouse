@@ -98,7 +98,8 @@ public:
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
         AggregateFunctionStateVariant state_variant = AggregateFunctionStateVariant::Aggregation,
-        bool from_declared_state_type = false) const;
+        bool from_declared_state_type = false,
+        bool from_declared_simple_aggregate_function = false) const;
 
     /// Get properties if the aggregate function exists.
     std::optional<AggregateFunctionProperties> tryGetProperties(String name, NullsAction action) const;
@@ -174,7 +175,8 @@ private:
         const DataTypes & types_without_low_cardinality,
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
-        AggregateFunctionStateVariant state_variant) const;
+        AggregateFunctionStateVariant state_variant,
+        bool allow_skipping_variant_nulls = true) const;
 
     using AggregateFunctions = std::unordered_map<String, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     using ActionMap = NameToNameMap;

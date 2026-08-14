@@ -150,11 +150,12 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
     AggregateFunctionProperties properties;
     /// NullsAction is not part of the type definition, instead it will have transformed the function into a different one
     auto action = NullsAction::EMPTY;
-    /// A declared state type: resolve it independently of the current query settings
-    /// (see `from_declared_state_type` in AggregateFunctionFactory).
+    /// A declared SimpleAggregateFunction stores raw values, so keep its historical Variant NULL handling when
+    /// reconstructing it. Unlike AggregateFunction states, its values are re-aggregated during merges.
     function = AggregateFunctionFactory::instance().get(
         function_name, action, argument_types, params_row, properties,
-        AggregateFunctionStateVariant::Aggregation, /*from_declared_state_type=*/ true);
+        AggregateFunctionStateVariant::Aggregation, /*from_declared_state_type=*/ true,
+        /*from_declared_simple_aggregate_function=*/ true);
 
     DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(function);
 

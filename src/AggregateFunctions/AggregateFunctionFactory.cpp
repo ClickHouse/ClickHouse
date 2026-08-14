@@ -117,7 +117,8 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     const Array & parameters,
     AggregateFunctionProperties & out_properties,
     AggregateFunctionStateVariant state_variant,
-    bool from_declared_state_type) const
+    bool from_declared_state_type,
+    bool from_declared_simple_aggregate_function) const
 {
     /// This to prevent costly string manipulation in parsing the aggregate function combinators.
     /// Example: avgArrayArrayArrayArray...(1000 times)...Array
@@ -161,7 +162,8 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
                 /// resolved function in AggregateFunctionVariantNull (see there), so the NULL rows of the
                 /// Variant are skipped exactly as the adapter's cast to Nullable(supertype) would skip them.
                 if (auto native = tryResolveNatively(
-                        name, action, types_without_low_cardinality, parameters, out_properties, state_variant))
+                        name, action, types_without_low_cardinality, parameters, out_properties, state_variant,
+                        /*allow_skipping_variant_nulls=*/ !from_declared_simple_aggregate_function))
                     return native;
             }
 
@@ -182,7 +184,8 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     /// adapter to reconstruct the matching state layout, so allow it.
     return getWithoutVariantAdapter(
         name, action, types_without_low_cardinality, parameters, out_properties, state_variant,
-        /*apply_variant_adapter_to_nested=*/ true);
+        /*apply_variant_adapter_to_nested=*/ true,
+        /*allow_skipping_variant_nulls=*/ !from_declared_simple_aggregate_function);
 }
 
 AggregateFunctionPtr AggregateFunctionFactory::getWithoutVariantAdapter(
@@ -243,13 +246,14 @@ AggregateFunctionPtr AggregateFunctionFactory::tryResolveNatively(
     const DataTypes & types_without_low_cardinality,
     const Array & parameters,
     AggregateFunctionProperties & out_properties,
-    AggregateFunctionStateVariant state_variant) const
+    AggregateFunctionStateVariant state_variant,
+    bool allow_skipping_variant_nulls) const
 {
     try
     {
         return getWithoutVariantAdapter(
             name, action, types_without_low_cardinality, parameters, out_properties, state_variant,
-            /*apply_variant_adapter_to_nested=*/ false);
+            /*apply_variant_adapter_to_nested=*/ false, allow_skipping_variant_nulls);
     }
     catch (const Exception & e)
     {
