@@ -6,6 +6,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/NamedCollections/NamedCollections.h>
@@ -249,20 +250,42 @@ std::optional<std::string> tryGetUsedNamedCollectionName(const String & engine_n
 
     if (it->second.features.named_collection_argument_is_ambiguous)
     {
-        /// For `Remote` the same identifier is a valid positional argument (a cluster name) when the
-        /// named-collection lookup does not resolve, so syntax alone cannot prove that the table uses
-        /// a collection. Replicate the decision the engine's own argument parsing would make at this
-        /// moment (which is exactly what a non-lazy load of the same metadata does): the
-        /// named-collection branch is taken only when a collection with that name exists, and only
-        /// `key = value` overrides may follow the collection name there — a positional argument list
-        /// never looks like that.
-        NamedCollectionFactory::instance().loadIfNot();
-        if (!NamedCollectionFactory::instance().exists(*collection_name))
-            return std::nullopt;
-        for (auto ast = std::next(asts.begin()); ast != asts.end(); ++ast)
+        /// For `Remote` the same identifier is also a valid positional argument (a cluster name), so
+        /// the flag alone does not prove that the table uses a collection. Replicate the decision the
+        /// engine's own argument parsing would make on the same AST — which is exactly what a
+        /// non-lazy load of the same metadata does.
+        ///
+        /// `SETTINGS` are not positional arguments: `parseRemoteFunctionArguments` collects them
+        /// separately before it looks at the argument shape, so they are skipped here as well.
+        ASTs positional_args;
+        for (const auto & ast : asts)
         {
-            const auto * function = (*ast)->as<ASTFunction>();
-            if (!function || function->name != "equals")
+            if (!ast->as<ASTSetQuery>())
+                positional_args.push_back(ast);
+        }
+
+        /// A `key = value` second argument occurs only in the named-collection form: no positional
+        /// signature of `Remote` accepts one there, so the engine reports a missing collection
+        /// instead of reparsing the arguments positionally (`throw_unknown_collection` in
+        /// `parseRemoteFunctionArguments`). The shape alone proves the reference, and the dependency
+        /// is registered without looking at the collection namespace, exactly like for the engines
+        /// whose first identifier is never ambiguous - so a collection that is missing at load time
+        /// (say, after a drop with `check_named_collection_dependencies = 0`) is protected when it is
+        /// recreated later.
+        const auto * second_arg = positional_args.size() >= 2 ? positional_args[1]->as<ASTFunction>() : nullptr;
+        if (!second_arg || second_arg->name != "equals")
+        {
+            /// Anything else is a positional argument list (`Remote(cluster, system, one)`), which
+            /// never references a collection.
+            if (positional_args.size() >= 2)
+                return std::nullopt;
+
+            /// A single identifier (`Remote(x)`) is a collection reference exactly when a collection
+            /// with that name exists at this moment, and a cluster name otherwise: the meaning of the
+            /// stored definition itself depends on the namespace here, and the engine resolves it the
+            /// same way at the same moment.
+            NamedCollectionFactory::instance().loadIfNot();
+            if (!NamedCollectionFactory::instance().exists(*collection_name))
                 return std::nullopt;
         }
     }

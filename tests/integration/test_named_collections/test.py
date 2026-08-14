@@ -1276,6 +1276,60 @@ def test_drop_not_used_by_lazily_loaded_remote_table(cluster):
     node.query("DROP DATABASE lazy_remote_db")
 
 
+def test_drop_collection_recreated_under_lazily_loaded_remote_table(cluster):
+    """A `key = value` second argument occurs only in the named-collection form of `Remote`: no
+    positional signature accepts one there, so this shape is unambiguous even though the engine's
+    first identifier generally is not. The dependency must therefore be registered from the shape
+    alone, without looking at the collection namespace - otherwise a collection that is missing at
+    load time (here, after a drop with `check_named_collection_dependencies = 0`) is never
+    re-registered and can be dropped again once it is recreated."""
+    node = cluster.instances["node"]
+
+    node.query("DROP DATABASE IF EXISTS lazy_remote_recreate_db")
+    node.query("DROP NAMED COLLECTION IF EXISTS lazy_remote_collection")
+
+    node.query(
+        "CREATE DATABASE lazy_remote_recreate_db ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+    )
+    node.query(
+        "CREATE NAMED COLLECTION lazy_remote_collection AS "
+        "host = 'localhost', database = 'system', table = 'one'"
+    )
+    node.query(
+        "CREATE TABLE lazy_remote_recreate_db.r (dummy UInt8) "
+        "ENGINE = Remote(lazy_remote_collection, database = 'system')"
+    )
+
+    # An unchecked drop removes the collection while the table still references it.
+    node.query(
+        "DROP NAMED COLLECTION lazy_remote_collection",
+        settings={"check_named_collection_dependencies": 0},
+    )
+
+    # The table is brought back as a proxy while the collection does not exist.
+    node.restart_clickhouse()
+
+    assert (
+        node.query(
+            "SELECT engine FROM system.tables WHERE database = 'lazy_remote_recreate_db' AND name = 'r'"
+        ).strip()
+        == "TableProxy"
+    )
+
+    node.query(
+        "CREATE NAMED COLLECTION lazy_remote_collection AS "
+        "host = 'localhost', database = 'system', table = 'one'"
+    )
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION lazy_remote_collection"
+    )
+
+    # The collection is released once the table is gone.
+    node.query("DROP TABLE lazy_remote_recreate_db.r")
+    node.query("DROP NAMED COLLECTION lazy_remote_collection")
+    node.query("DROP DATABASE lazy_remote_recreate_db")
+
+
 def test_drop_while_used_by_lazily_loaded_table_function(cluster):
     """A table created with `CREATE TABLE ... AS f(...)` carries a table function instead of an engine
     in its stored definition, and a database with `lazy_load_tables = 1` deliberately does not attach
