@@ -355,11 +355,26 @@ size_t requiredBytes(size_t count, size_t elem_size)
     return bytes;
 }
 
+/// Zeroes the value slots of the invisible rows of a fixed-width column, whose values sit at
+/// `value_size` byte strides in `data`. Their bytes are undefined per the Arrow spec, so they must not
+/// surface as values: dropping an ancestor null map (a struct read as a plain `Tuple`) turns such a row
+/// into a visible one. All-zero bytes are the default of every fixed-width type the decoder builds.
+void defaultInvisibleFixed(char * data, size_t value_size, size_t rows, const InvisibleRowsMask * invisible_rows)
+{
+    if (!invisible_rows)
+        return;
+    for (size_t i = 0; i < rows; ++i)
+        if ((*invisible_rows)[i])
+            memset(data + i * value_size, 0, value_size);
+}
+
 /// Fills a fixed-width ClickHouse column (ColumnVector / ColumnDecimal) by copying `value_size`
 /// bytes per row from the source buffer. For decimals `value_size` may be smaller than the Arrow
 /// storage width, so the low (little-endian) bytes are taken per value.
 template <typename Col>
-void fillFixed(IColumn & column, size_t rows, const RecordBatchDecoder::Slice & values, size_t arrow_value_size)
+void fillFixed(
+    IColumn & column, size_t rows, const RecordBatchDecoder::Slice & values, size_t arrow_value_size,
+    const InvisibleRowsMask * invisible_rows)
 {
     using V = typename Col::ValueType;
     checkBufferSize(values, requiredBytes(rows, arrow_value_size), "values");
@@ -379,6 +394,7 @@ void fillFixed(IColumn & column, size_t rows, const RecordBatchDecoder::Slice & 
         for (size_t i = 0; i < rows; ++i)
             memcpy(dst + i * sizeof(V), values.ptr + i * arrow_value_size, sizeof(V));
     }
+    defaultInvisibleFixed(reinterpret_cast<char *>(data.data()), sizeof(V), rows, invisible_rows);
 }
 
 }
@@ -440,10 +456,10 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             {
                 switch (type.bit_width)
                 {
-                    case 8: fillFixed<ColumnInt8>(*column, rows, values, 1); break;
-                    case 16: fillFixed<ColumnInt16>(*column, rows, values, 2); break;
-                    case 32: fillFixed<ColumnInt32>(*column, rows, values, 4); break;
-                    case 64: fillFixed<ColumnInt64>(*column, rows, values, 8); break;
+                    case 8: fillFixed<ColumnInt8>(*column, rows, values, 1, invisible_rows); break;
+                    case 16: fillFixed<ColumnInt16>(*column, rows, values, 2, invisible_rows); break;
+                    case 32: fillFixed<ColumnInt32>(*column, rows, values, 4, invisible_rows); break;
+                    case 64: fillFixed<ColumnInt64>(*column, rows, values, 8, invisible_rows); break;
                     default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unsupported Arrow int bit width {}", type.bit_width);
                 }
             }
@@ -451,10 +467,10 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             {
                 switch (type.bit_width)
                 {
-                    case 8: fillFixed<ColumnUInt8>(*column, rows, values, 1); break;
-                    case 16: fillFixed<ColumnUInt16>(*column, rows, values, 2); break;
-                    case 32: fillFixed<ColumnUInt32>(*column, rows, values, 4); break;
-                    case 64: fillFixed<ColumnUInt64>(*column, rows, values, 8); break;
+                    case 8: fillFixed<ColumnUInt8>(*column, rows, values, 1, invisible_rows); break;
+                    case 16: fillFixed<ColumnUInt16>(*column, rows, values, 2, invisible_rows); break;
+                    case 32: fillFixed<ColumnUInt32>(*column, rows, values, 4, invisible_rows); break;
+                    case 64: fillFixed<ColumnUInt64>(*column, rows, values, 8, invisible_rows); break;
                     default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unsupported Arrow int bit width {}", type.bit_width);
                 }
             }
@@ -464,9 +480,9 @@ ColumnPtr RecordBatchDecoder::decodeInner(
         {
             const Slice values = nextBuffer();
             if (type.float_precision == flatbuf::Precision_DOUBLE)
-                fillFixed<ColumnFloat64>(*column, rows, values, 8);
+                fillFixed<ColumnFloat64>(*column, rows, values, 8, invisible_rows);
             else if (type.float_precision == flatbuf::Precision_SINGLE)
-                fillFixed<ColumnFloat32>(*column, rows, values, 4);
+                fillFixed<ColumnFloat32>(*column, rows, values, 4, invisible_rows);
             else
             {
                 /// half-float -> Float32
@@ -475,7 +491,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 data.resize(rows);
                 const auto * src = reinterpret_cast<const UInt16 *>(values.ptr);
                 for (size_t i = 0; i < rows; ++i)
-                    data[i] = convertFloat16ToFloat32(src[i]);
+                    data[i] = isInvisible(invisible_rows, i) ? 0 : convertFloat16ToFloat32(src[i]);
             }
             break;
         }
@@ -487,6 +503,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             data.resize(rows);
             const auto * bits = reinterpret_cast<const uint8_t *>(values.ptr);
             expandBitmapToBytes(bits, rows, data.data(), /*invert=*/false);
+            defaultInvisibleFixed(reinterpret_cast<char *>(data.data()), sizeof(UInt8), rows, invisible_rows);
             break;
         }
         case TypeKind::Decimal:
@@ -505,7 +522,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                         ErrorCodes::INCORRECT_DATA,
                         "Arrow decimal bit width {} is too small for the {}-byte ClickHouse decimal",
                         type.decimal_bit_width, ch_value_size);
-                fillFixed<ColumnDecimal<Decimal>>(*column, rows, values, arrow_value_size);
+                fillFixed<ColumnDecimal<Decimal>>(*column, rows, values, arrow_value_size, invisible_rows);
             };
             switch (column->getDataType())
             {
@@ -527,17 +544,10 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 /// library reader's numeric type-hint behavior); `buildChunk` then casts it to the number.
                 if (date32_as_number)
                 {
-                    fillFixed<ColumnInt32>(*column, rows, values, sizeof(Int32));
-                    /// The raw read skips the range check, but invisible slots still hold undefined
-                    /// bytes that must not surface as values (a dropped struct null map turns such
-                    /// rows into visible ones); default them like the checked branch below does.
-                    if (invisible_rows)
-                    {
-                        auto & data = assert_cast<ColumnInt32 &>(*column).getData();
-                        for (size_t i = 0; i < rows; ++i)
-                            if ((*invisible_rows)[i])
-                                data[i] = 0;
-                    }
+                    /// The raw read skips the range check; `fillFixed` still defaults the invisible
+                    /// slots, whose bytes must not surface as values (a dropped struct null map turns
+                    /// such rows into visible ones), exactly as the checked branch below does.
+                    fillFixed<ColumnInt32>(*column, rows, values, sizeof(Int32), invisible_rows);
                     break;
                 }
                 /// Otherwise enforce the same range/overflow contract as the library reader
@@ -609,7 +619,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 data.resize(rows);
                 const auto * src = reinterpret_cast<const Int64 *>(values.ptr);
                 for (size_t i = 0; i < rows; ++i)
-                    data[i] = static_cast<UInt32>(src[i] / 1000);
+                    data[i] = isInvisible(invisible_rows, i) ? 0 : static_cast<UInt32>(src[i] / 1000);
             }
             break;
         }
@@ -617,7 +627,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
         {
             /// Maps to DateTime64(unit*3); the raw int64 value is exactly the underlying value at that scale.
             const Slice values = nextBuffer();
-            fillFixed<ColumnDecimal<DateTime64>>(*column, rows, values, 8);
+            fillFixed<ColumnDecimal<DateTime64>>(*column, rows, values, 8, invisible_rows);
             break;
         }
         case TypeKind::Time:
@@ -636,14 +646,14 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                     data[i] = Time64(src[i]);
                 break;
             }
-            fillFixed<ColumnDecimal<Time64>>(*column, rows, values, 8);
+            fillFixed<ColumnDecimal<Time64>>(*column, rows, values, 8, invisible_rows);
             break;
         }
         case TypeKind::Duration:
         {
             /// Maps to Interval (stored as Int64); the raw int64 count in the duration's unit.
             const Slice values = nextBuffer();
-            fillFixed<ColumnInt64>(*column, rows, values, 8);
+            fillFixed<ColumnInt64>(*column, rows, values, 8, invisible_rows);
             break;
         }
         case TypeKind::Utf8:
@@ -690,8 +700,10 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                         prev, end, data_slice.length);
                 /// A valid all-empty string array has a zero-length (hence `nullptr`) data buffer; forming
                 /// `data_slice.ptr + prev` would be undefined pointer arithmetic on null even though no bytes
-                /// are read. Insert the empty value without touching the data pointer.
-                if (end == prev)
+                /// are read. Insert the empty value without touching the data pointer. An invisible slot's
+                /// bytes are undefined, so they are not copied either (the offsets themselves stay validated
+                /// above: monotonicity and the data bound are structural, not value-level, properties).
+                if (end == prev || isInvisible(invisible_rows, i))
                     string_column.insertData("", 0);
                 else
                     string_column.insertData(data_slice.ptr + prev, static_cast<size_t>(end - prev));
@@ -779,6 +791,14 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 for (size_t i = 0; i < rows; ++i)
                 {
                     auto * dst = reinterpret_cast<uint8_t *>(&data[i]);
+                    /// The bytes of an invisible slot are undefined; a self-describing `uuid` extension
+                    /// field decodes straight into `UUID` here, with no later rewrite that could default
+                    /// them, so they must not be copied at all.
+                    if (isInvisible(invisible_rows, i))
+                    {
+                        memset(dst, 0, 16);
+                        continue;
+                    }
                     memcpy(dst, values.ptr + i * 16, 16);
                     std::reverse(dst, dst + 8);
                     std::reverse(dst + 8, dst + 16);
@@ -790,6 +810,10 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             chars.resize(rows * n);
             if (rows)
                 memcpy(chars.data(), values.ptr, rows * n);
+            /// A `UUID` / `IPv6` / big-integer type hint reinterprets these raw bytes verbatim
+            /// (`reinterpretFixedStringLeaf`), so defaulting the invisible slots here is what keeps their
+            /// undefined bytes out of those targets as well.
+            defaultInvisibleFixed(reinterpret_cast<char *>(chars.data()), n, rows, invisible_rows);
             break;
         }
         case TypeKind::List:
