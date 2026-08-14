@@ -10,15 +10,13 @@
 # drain is in flight becomes the first recorded cancellation reason, never reaches `abortDrain`, and
 # the user has to wait for the replicas to reach end-of-stream.
 #
-# The interleaving is fixed by three failpoints instead of timing (the first two are the ones
-# `04512_distributed_limit_no_more_packets_race` uses to reach the same drain deterministically):
-#   fp1 parks the synchronous reader inside `read`, so the `LIMIT` closing the output port delegates
-#       the drain to it instead of draining on the cancelling thread;
-#   fp2 parks `finish` once that delegation has happened, so fp1 is only released afterwards;
-#   fp3 parks the drain loop right before it checks the abort flag - the `KILL QUERY` is issued
+# The interleaving is fixed by two failpoints instead of timing (the same sequence as
+# `04512_distributed_limit_no_more_packets_race`):
+#   fp1 parks the synchronous reader inside `read`;
+#   fp2 parks the drain loop right before it checks the abort flag - the `KILL QUERY` is issued
 #       there, so it is guaranteed to arrive while the drain is in flight (`KILL ... ASYNC` returns
 #       only after `PipelineExecutor::cancel` has synchronously cancelled every processor).
-# Releasing fp3 then makes the loop leave through `drain_should_stop`, which is what the `text_log`
+# Releasing fp2 then makes the loop leave through `drain_should_stop`, which is what the `text_log`
 # assertion checks: without the fix the loop keeps draining and the message is never written.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -26,12 +24,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 FP_RECV="remote_query_executor_receive_packet_pause"
-FP_FINISH="remote_query_executor_finish_drain_pause"
 FP_DRAIN="remote_query_executor_drain_packet_pause"
 
 function cleanup()
 {
-    for fp in "$FP_RECV" "$FP_FINISH" "$FP_DRAIN"; do
+    for fp in "$FP_RECV" "$FP_DRAIN"; do
         $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $fp" 2>/dev/null ||:
     done
     wait 2>/dev/null ||:
@@ -77,7 +74,7 @@ function wait_pause()
 # assertion below cannot match a row left by a previous run.
 query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_$$_drain_abort"
 
-if arm "$FP_RECV" && arm "$FP_FINISH" && arm "$FP_DRAIN"; then
+if arm "$FP_RECV" && arm "$FP_DRAIN"; then
     # `LIMIT 1` without `ORDER BY`: the sibling shard delivers a row and closes the output port,
     # so `finish` drains the parked source's executor. `async_socket_for_remote=0` picks the
     # synchronous read path the delegation happens on.
@@ -88,10 +85,9 @@ if arm "$FP_RECV" && arm "$FP_FINISH" && arm "$FP_DRAIN"; then
         --query "SELECT x FROM ${CLICKHOUSE_DATABASE}.dist LIMIT 1 FORMAT Null" 2>"$err" &
     QPID=$!
 
-    if wait_pause "$FP_RECV" && wait_pause "$FP_FINISH"; then
-        # Release `finish` and then the reader: the reader takes ownership of the delegated drain
-        # and parks in the drain loop on fp3.
-        $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_FINISH"
+    if wait_pause "$FP_RECV"; then
+        # Release the reader so the `LIMIT` closes its output port and it starts the soft drain.
+        # The drain parks on fp2 before its first packet, which establishes the required window.
         $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_RECV"
 
         if wait_pause "$FP_DRAIN"; then
@@ -103,7 +99,7 @@ if arm "$FP_RECV" && arm "$FP_FINISH" && arm "$FP_DRAIN"; then
         fi
     fi
 
-    for fp in "$FP_FINISH" "$FP_RECV" "$FP_DRAIN"; do
+    for fp in "$FP_RECV" "$FP_DRAIN"; do
         $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $fp"
     done
 
