@@ -6,7 +6,9 @@ not an ip	::
 2149-06-06	2013-04-29 17:31:44
 -- MATERIALIZE COLUMN rebuilds the default on a mutation thread
 16	120
+16	16120
 -- mutation expression containing casts
+16	-16
 16	120
 -- the settings the resolver snapshots stay in effect
 2013-04-29 17:31:44

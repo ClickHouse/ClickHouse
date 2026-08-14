@@ -11,15 +11,22 @@ INSERT INTO t_cast_expired_overflow (d) VALUES ('2149-06-07'), ('2020-01-01');
 SELECT d, dt FROM t_cast_expired_overflow ORDER BY d;
 
 SELECT '-- MATERIALIZE COLUMN rebuilds the default on a mutation thread';
-DROP TABLE IF EXISTS t_cast_expired_mutation;
-CREATE TABLE t_cast_expired_mutation (a String, m Int64 MATERIALIZED toInt64OrDefault(a), b Int64) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_cast_expired_mutation (a, b) SELECT toString(number), number FROM numbers(16);
-ALTER TABLE t_cast_expired_mutation MATERIALIZE COLUMN m SETTINGS mutations_sync = 2;
-SELECT count(), sum(m) FROM t_cast_expired_mutation;
+DROP TABLE IF EXISTS t_cast_expired_materialize;
+CREATE TABLE t_cast_expired_materialize (a String, m Int64 MATERIALIZED toInt64OrDefault(a)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_cast_expired_materialize (a) SELECT toString(number) FROM numbers(16);
+-- Metadata-only: the stored bytes still hold the old expression's values.
+ALTER TABLE t_cast_expired_materialize MODIFY COLUMN m Int64 MATERIALIZED toInt64OrDefault(a) + 1000;
+SELECT count(), sum(m) FROM t_cast_expired_materialize;
+ALTER TABLE t_cast_expired_materialize MATERIALIZE COLUMN m SETTINGS mutations_sync = 2;
+SELECT count(), sum(m) FROM t_cast_expired_materialize;
 
 SELECT '-- mutation expression containing casts';
-ALTER TABLE t_cast_expired_mutation UPDATE b = toInt64OrDefault(a) WHERE toInt8OrDefault(a) >= 0 SETTINGS mutations_sync = 2;
-SELECT count(), sum(b) FROM t_cast_expired_mutation;
+DROP TABLE IF EXISTS t_cast_expired_update;
+CREATE TABLE t_cast_expired_update (a String, b Int64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_cast_expired_update SELECT toString(number), -1 FROM numbers(16);
+SELECT count(), sum(b) FROM t_cast_expired_update;
+ALTER TABLE t_cast_expired_update UPDATE b = toInt64OrDefault(a) WHERE toInt8OrDefault(a) >= 0 SETTINGS mutations_sync = 2;
+SELECT count(), sum(b) FROM t_cast_expired_update;
 
 SELECT '-- the settings the resolver snapshots stay in effect';
 SELECT CAST(toDate('2149-06-07') AS DateTime('UTC')) SETTINGS date_time_overflow_behavior = 'ignore';
@@ -40,4 +47,5 @@ SELECT accurateCastOrNull('', 'Int8'), accurateCastOrNull('-128', 'Int8'), accur
 
 DROP TABLE t_cast_expired_insert;
 DROP TABLE t_cast_expired_overflow;
-DROP TABLE t_cast_expired_mutation;
+DROP TABLE t_cast_expired_materialize;
+DROP TABLE t_cast_expired_update;
