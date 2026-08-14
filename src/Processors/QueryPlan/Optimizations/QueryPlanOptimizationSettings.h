@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Joins.h>
 #include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
@@ -141,6 +142,7 @@ struct QueryPlanOptimizationSettings
 
     /// If lazy materialization optimisation is enabled
     bool optimize_lazy_materialization = false;
+    bool optimize_lazy_materialization_for_object_storage = false;
     size_t max_limit_for_lazy_materialization = 0;
 
     /// If lazy FINAL optimization for ReplacingMergeTree is enabled
@@ -157,6 +159,7 @@ struct QueryPlanOptimizationSettings
     /// If full text search using index in payload is enabled.
     bool direct_read_from_text_index;
     bool enable_full_text_index;
+    bool query_plan_optimize_count_from_text_index;
 
     bool use_skip_indexes_for_top_k;
     bool use_top_k_dynamic_filtering;
