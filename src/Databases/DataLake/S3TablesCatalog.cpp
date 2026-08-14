@@ -64,7 +64,7 @@ S3TablesCatalog::S3TablesCatalog(
     const String & region_,
     const CatalogSettings & catalog_settings_,
     DB::ContextPtr context_)
-    : RestCatalog(warehouse_, base_url_, "", "", false, context_)
+    : RestCatalog(warehouse_, base_url_, "", "", false, catalog_settings_.namespaces, context_)
     , region(region_)
     , storage_endpoint(catalog_settings_.storage_endpoint)
 {
@@ -151,9 +151,10 @@ DB::Names S3TablesCatalog::getTables() const
 bool S3TablesCatalog::tryGetTableMetadata(
     const std::string & namespace_name,
     const std::string & table_name,
+    DB::ContextPtr context_,
     TableMetadata & result) const
 {
-    if (!RestCatalog::tryGetTableMetadata(namespace_name, table_name, result))
+    if (!RestCatalog::tryGetTableMetadata(namespace_name, table_name, context_, result))
         return false;
 
     if (!result.requiresCredentials())

@@ -109,7 +109,11 @@ StorageURLCluster::StorageURLCluster(
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)
+void StorageURLCluster::updateQueryToSendIfNeeded(
+    ASTPtr & query,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & context,
+    bool /*make_cluster_function*/)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -171,7 +175,7 @@ RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
         context->getSettingsRef()[Setting::glob_expansion_max_elements],
         predicate,
         metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
-        hive_partition_columns_to_read_from_file_path,
+        getHivePartitionColumnsWithoutVirtuals(metadata),
         context
     );
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};

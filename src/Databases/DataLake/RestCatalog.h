@@ -57,6 +57,7 @@ public:
         const std::string & auth_header_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
+        const std::string & namespaces_,
         DB::ContextPtr context_);
 
     ~RestCatalog() override = default;
@@ -70,11 +71,13 @@ public:
     void getTableMetadata(
         const std::string & namespace_name,
         const std::string & table_name,
+        DB::ContextPtr context_,
         TableMetadata & result) const override;
 
     bool tryGetTableMetadata(
         const std::string & namespace_name,
         const std::string & table_name,
+        DB::ContextPtr context_,
         TableMetadata & result) const override;
 
     std::optional<StorageType> getStorageType() const override;
@@ -113,6 +116,7 @@ protected:
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
+        const std::string & namespaces_,
         DB::ContextPtr context_);
 
     void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
@@ -159,6 +163,26 @@ protected:
     mutable std::map<std::pair<std::string, std::string>, VendedStorageCredentials> credentials_cache
         TSA_GUARDED_BY(credentials_cache_mutex);
 
+public:
+    class AllowedNamespaces
+    {
+    public:
+        AllowedNamespaces() {}
+        explicit AllowedNamespaces(const std::string & namespaces_);
+
+        /// Check if nested namespaces (nested=true) or tables (nested=false) are allowed in namespace
+        bool isNamespaceAllowed(const std::string & namespace_, bool nested) const;
+
+    private:
+        /// List of allowed nested namespaces
+        std::unordered_map<std::string, AllowedNamespaces> nested_namespaces;
+        /// Tables from current level are allowed
+        bool allow_tables = false;
+    };
+
+protected:
+    AllowedNamespaces allowed_namespaces;
+
     Poco::Net::HTTPBasicCredentials credentials{};
 
     DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
@@ -188,6 +212,7 @@ protected:
     bool getTableMetadataImpl(
         const std::string & namespace_name,
         const std::string & table_name,
+        DB::ContextPtr context_,
         TableMetadata & result,
         bool allow_credentials_cache = true) const;
 
@@ -235,6 +260,7 @@ public:
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
+        const std::string & namespaces_,
         DB::ContextPtr context_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
@@ -266,6 +292,7 @@ public:
         const std::string & google_adc_client_secret_,
         const std::string & google_adc_refresh_token_,
         const std::string & google_adc_quota_project_id_,
+        const std::string & namespaces_,
         DB::ContextPtr context_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override

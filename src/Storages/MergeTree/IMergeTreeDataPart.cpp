@@ -384,6 +384,42 @@ void IMergeTreeDataPart::setMinMaxIndex(MinMaxIndexPtr minmax_index) const
     minmax_idx = std::move(minmax_index);
 }
 
+Block IMergeTreeDataPart::MinMaxIndex::getBlock(const MergeTreeData & data) const
+{
+    if (!initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to get block from uninitialized MinMax index.");
+
+    Block block;
+
+    const auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), false);
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+
+    /// The minmax index may also contain block number/offset columns at the end,
+    /// they are not part of the partition key, so take only the partition key columns.
+    const auto minmax_columns = MergeTreeData::getMinMaxColumns(
+        partition_key, data.getSettings(), MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
+
+    size_t i = 0;
+    for (const auto & [column_name, data_type] : minmax_columns)
+    {
+        const auto column = data_type->createColumn();
+
+        auto range = hyperrectangle.at(i);
+        range.shrinkToIncludedIfPossible();
+
+        const auto & min_val = range.left;
+        const auto & max_val = range.right;
+
+        column->insert(min_val);
+        column->insert(max_val);
+
+        block.insert(ColumnWithTypeAndName(column->getPtr(), data_type, column_name));
+        ++i;
+    }
+
+    return block;
+}
+
 void IMergeTreeDataPart::incrementStateMetric(MergeTreeDataPartState state_) const
 {
     switch (state_)

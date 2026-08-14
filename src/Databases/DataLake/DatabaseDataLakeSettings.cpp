@@ -50,6 +50,7 @@ namespace ErrorCodes
     DECLARE(String, dlf_access_key_id, "", "Access id of DLF token for Paimon REST Catalog", 0) \
     DECLARE(String, dlf_access_key_secret, "", "Access secret of DLF token for Paimon REST Catalog", 0) \
     DECLARE(Bool, force_add_bucket, false, "Add bucket name to the metadata path", 0) \
+    DECLARE(String, namespaces, "*", "Comma-separated list of allowed namespaces", 0) \
 
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS) \
