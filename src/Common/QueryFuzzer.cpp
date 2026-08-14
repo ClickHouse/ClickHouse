@@ -5241,7 +5241,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// AI function, so it is not grouped for name-swapping.
         {"aiSimilarity"},
         /// AI functions: text + a per-function arg (categories / instruction / target_language) + optional params map
-        {"aiClassify", "aiExtract", "aiTranslate", "aiFilter"},
+        {"aiClassify", "aiExtract", "aiTranslate", "aiFilter", "aiRedact"},
         /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
         {"greatCircleDistance", "geoDistance", "greatCircleAngle"},
         /// Geo coordinate projections (longitude, latitude[, zone/precision] → Tuple/String)
