@@ -2,9 +2,12 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
 #include <Core/ConstantValue.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register.h>
 
 #include <gtest/gtest.h>
 
@@ -58,4 +61,41 @@ TEST(EvaluateConstantExpression, ColumnApiPreservesExactType)
     const auto value = evaluateConstantExpressionAsColumn(array_literal, context);
     EXPECT_EQ(value.getType()->getName(), "Array(Bool)");
     ASSERT_EQ(value.getColumn()->size(), 1u);
+}
+
+/// The `Field`-returning `evaluateConstantExpression` on a NON-literal constant goes through the
+/// `materializeToField` compatibility bridge, which must read the value via the column's `operator[]`
+/// (matching the historical non-literal path, including the `Bool`->`UInt64` canonicalization and the
+/// unwrapping of a `Nullable`). The analyzer path is forced so a non-literal reaches that bridge rather
+/// than being folded to a literal.
+TEST(EvaluateConstantExpression, NonLiteralFieldBridge)
+{
+    tryRegisterFunctions();
+
+    auto context = Context::createCopy(getContext().context);
+    context->setSetting("allow_experimental_analyzer", Field(true));
+
+    /// Plain arithmetic: value is preserved.
+    {
+        const ASTPtr expr = makeASTFunction("plus",
+            make_intrusive<ASTLiteral>(Field(UInt64(2))), make_intrusive<ASTLiteral>(Field(UInt64(3))));
+        const Field field = evaluateConstantExpression(expr, context).first;
+        EXPECT_EQ(field, Field(UInt64(5)));
+    }
+
+    /// A `Bool` result reaches the bridge as a non-literal and canonicalizes to `UInt64` (historical).
+    {
+        const ASTPtr expr = makeASTFunction("equals",
+            make_intrusive<ASTLiteral>(Field(UInt64(1))), make_intrusive<ASTLiteral>(Field(UInt64(1))));
+        const Field field = evaluateConstantExpression(expr, context).first;
+        EXPECT_EQ(field, Field(UInt64(1)));
+        EXPECT_EQ(field.getType(), Field::Types::UInt64);
+    }
+
+    /// A `Nullable` wrapper: a non-NULL value materializes to the underlying value.
+    {
+        const ASTPtr expr = makeASTFunction("toNullable", make_intrusive<ASTLiteral>(Field(UInt64(7))));
+        const Field field = evaluateConstantExpression(expr, context).first;
+        EXPECT_EQ(field, Field(UInt64(7)));
+    }
 }

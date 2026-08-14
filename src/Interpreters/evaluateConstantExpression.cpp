@@ -243,12 +243,14 @@ static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExp
 /// entry points below (for callers not yet migrated to the column API) for NON-literal nodes only;
 /// literal nodes take the tag-preserving fast path (see `getFieldAndDataTypeFromLiteral`). Reading the value back
 /// with `operator[]` canonicalizes nested tags (`Bool`->`UInt64`), matching the historical behavior
-/// of the non-literal path, which also returned `(*result_column)[0]`.
+/// of the non-literal path, which also returned `(*result_column)[0]`. Read via the column's
+/// `operator[]` directly (not `ConstantValue::getField`, which uses `IColumn::get`) so this bridge stays
+/// byte-for-byte compatible with that historical path.
 static std::optional<EvaluateConstantExpressionResult> materializeToField(std::optional<EvaluateConstantExpressionColumnResult> column_result)
 {
     if (!column_result)
         return {};
-    return std::make_pair(column_result->getField(), column_result->getType());
+    return std::make_pair((*column_result->getColumn())[0], column_result->getType());
 }
 
 std::optional<EvaluateConstantExpressionColumnResult> tryEvaluateConstantExpressionAsColumn(const ASTPtr & node, const ContextPtr & context)
