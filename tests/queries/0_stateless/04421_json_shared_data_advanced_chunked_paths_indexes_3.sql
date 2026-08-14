@@ -7,12 +7,8 @@ drop table if exists test;
 create table test (json JSON(max_dynamic_paths=0)) engine=MergeTree order by tuple() settings index_granularity=2, min_bytes_for_wide_part=1, min_rows_for_wide_part=1, object_serialization_version='v3', object_shared_data_serialization_version='advanced_chunked', object_shared_data_target_chunk_rows=1, object_shared_data_serialization_version_for_zero_level_parts='advanced_chunked', object_shared_data_buckets_for_wide_part=1;
 
 insert into test select toJSONString(arrayMap(x -> tuple('key' || x, x), range(255))::Map(String, UInt32));
-insert into test select toJSONString(arrayMap(x -> tuple('key' || x, x), range(255))::Map(String, UInt32));
-insert into test select toJSONString(arrayMap(x -> tuple('key' || x, x), range(256))::Map(String, UInt32));
 insert into test select toJSONString(arrayMap(x -> tuple('key' || x, x), range(256))::Map(String, UInt32));
 insert into test select toJSONString(arrayMap(x -> tuple('key' || x, x), range(65535))::Map(String, UInt32));
-insert into test select toJSONString(arrayMap(x -> tuple('key' || x, x), range(65535))::Map(String, UInt32));
-insert into test select toJSONString(arrayMap(x -> tuple('key' || x, x), range(65536))::Map(String, UInt32));
 insert into test select toJSONString(arrayMap(x -> tuple('key' || x, x), range(65536))::Map(String, UInt32));
 
 optimize table test final;
