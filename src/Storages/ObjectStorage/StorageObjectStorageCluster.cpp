@@ -52,6 +52,16 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
     if (!configuration->isArchive() && !path.hasGlobs())
         return path.path;
 
+    /// For pure brace expansions, one of the expanded path strings is sufficient to infer
+    /// hive partition columns. Avoid probing object metadata, because all explicit keys may
+    /// be absent or later filtered out.
+    if (!configuration->isArchive() && containsOnlyEnumGlobs(path.path))
+    {
+        auto expanded = expandSelectionGlob(path.path);
+        if (!expanded.empty())
+            return expanded.front();
+    }
+
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
     query_settings.throw_on_zero_files_match = false;
@@ -345,4 +355,3 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 }
 
 }
-

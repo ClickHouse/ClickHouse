@@ -369,10 +369,30 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     if (!match_web_paths_only && reading_path.hasGlobs() && hasExactlyOneBracketsExpansion(reading_path.path))
     {
         auto paths = expandSelectionGlob(reading_path.path);
+        ExpressionActionsPtr deferred_filter_actions;
+
+        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context, hive_columns))
+        {
+            Strings filter_paths;
+            filter_paths.reserve(paths.size());
+            for (const auto & path : paths)
+                filter_paths.push_back(fs::path(configuration->getNamespace()) / path);
+
+            if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
+            {
+                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                VirtualColumnUtils::filterByPathOrFile(paths, filter_paths, actions, virtual_columns, hive_columns, local_context);
+            }
+            else
+            {
+                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            }
+        }
+
         iterator = std::make_unique<KeysIterator>(
             paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,
-            file_progress_callback);
+            file_progress_callback, deferred_filter_actions, hive_columns, configuration->getNamespace(), local_context);
     }
     else if (reading_path.hasGlobs())
     {
