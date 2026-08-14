@@ -4,6 +4,7 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/GCSCommon.h>
 #include <Common/BlobStorageLogWriter.h>
+#include <Common/Scheduler/ResourceGuard.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/logger_useful.h>
@@ -118,6 +119,7 @@ void ReadBufferFromGCS::initialize()
         generation_match = gcs::IfGenerationMatch(*expected_generation);
 
     Stopwatch watch;
+    ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, data_capacity);
     /// GCS ReadRange is right-open [begin, end), which matches read_until_position (exclusive).
     if (read_until_position)
     {
@@ -179,6 +181,7 @@ bool ReadBufferFromGCS::nextImpl()
         to_read = std::min(to_read, static_cast<size_t>(read_until_position - offset));
 
     Stopwatch watch;
+    ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, to_read);
     read_stream->read(data_ptr, static_cast<std::streamsize>(to_read));
     const size_t elapsed_microseconds = watch.elapsedMicroseconds();
     const size_t bytes_read = static_cast<size_t>(read_stream->gcount());

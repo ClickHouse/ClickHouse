@@ -242,6 +242,13 @@ GCSCredentialSource chooseGCSCredentialSource(const GCSObjectStorageSettings & s
 
 void resolveGCSCredentialsToken(GCSObjectStorageSettings & settings, const ContextPtr & context)
 {
+    const size_t configured_adc_fields = !settings.google_adc_client_id.empty()
+        + !settings.google_adc_client_secret.empty()
+        + !settings.google_adc_refresh_token.empty();
+    if (configured_adc_fields != 0 && configured_adc_fields != 3)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The native GCS `google_adc_client_id`, `google_adc_client_secret`, and `google_adc_refresh_token` settings must be specified together");
+
     if (settings.google_adc_refresh_token.empty())
         return;
 

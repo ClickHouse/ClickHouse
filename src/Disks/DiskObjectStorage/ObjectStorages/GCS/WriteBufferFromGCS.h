@@ -44,6 +44,7 @@ public:
 private:
     void finalizeImpl() override;
     void cancelImpl() noexcept override;
+    void logUploadResult(Int32 error_code, const String & error_message);
 
     std::shared_ptr<google::cloud::storage::Client> client;
     const String bucket;
@@ -56,6 +57,7 @@ private:
 
     size_t total_bytes_written = 0;
     UInt64 total_time_microseconds = 0;
+    bool upload_result_logged = false;
 
     LoggerPtr log = getLogger("WriteBufferFromGCS");
 };

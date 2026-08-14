@@ -41,6 +41,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 hdfs_replication;
+    extern const SettingsBool use_native_gcs;
 }
 
 namespace ErrorCodes
@@ -258,6 +259,10 @@ static void registerGCSObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
+        if (!context->getSettingsRef()[Setting::use_native_gcs])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The native GCS object storage backend is experimental. Set `use_native_gcs = 1` to use `object_storage_type = gcs`");
+
         auto settings = GCSObjectStorageSettings::loadFromConfig(config, config_prefix, context);
         auto endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         auto client = getGCSClient(settings, context);

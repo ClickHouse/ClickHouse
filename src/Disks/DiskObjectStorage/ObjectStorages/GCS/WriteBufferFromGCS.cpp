@@ -97,6 +97,23 @@ WriteBufferFromGCS::~WriteBufferFromGCS()
         cancel();
 }
 
+void WriteBufferFromGCS::logUploadResult(Int32 error_code, const String & error_message)
+{
+    if (!blob_log || upload_result_logged)
+        return;
+
+    blob_log->addEvent(
+        BlobStorageLogElement::EventType::Upload,
+        bucket,
+        key,
+        /* local_path_ */ {},
+        total_bytes_written,
+        total_time_microseconds,
+        error_code,
+        error_message);
+    upload_result_logged = true;
+}
+
 void WriteBufferFromGCS::nextImpl()
 {
     const size_t bytes_to_write = offset();
@@ -108,8 +125,12 @@ void WriteBufferFromGCS::nextImpl()
     total_time_microseconds += watch.elapsedMicroseconds();
 
     if (!write_stream->good())
+    {
+        const auto & status = write_stream->last_status();
+        logUploadResult(static_cast<Int32>(status.code()), status.message());
         throwFromGCSStatus(write_stream->last_status(),
             fmt::format("while writing '{}' in bucket '{}'", key, bucket));
+    }
 
     total_bytes_written += bytes_to_write;
 
@@ -131,16 +152,7 @@ void WriteBufferFromGCS::finalizeImpl()
     /// Record the upload in `system.blob_storage_log` (like the S3 and Azure backends do), including
     /// the failed outcome. The stream is a single (internally resumable) upload, so one event covers
     /// the whole object.
-    if (blob_log)
-        blob_log->addEvent(
-            BlobStorageLogElement::EventType::Upload,
-            bucket,
-            key,
-            /* local_path_ */ {},
-            total_bytes_written,
-            total_time_microseconds,
-            result ? 0 : static_cast<Int32>(result.status().code()),
-            result ? "" : result.status().message());
+    logUploadResult(result ? 0 : static_cast<Int32>(result.status().code()), result ? "" : result.status().message());
 
     if (!result)
         throwFromGCSStatus(result.status(),
