@@ -24,14 +24,11 @@ void CompressedWriteBuffer::setupBufferForNextBlock()
 {
     static_assert(COMPRESSED_BLOCK_PREFIX_SIZE == sizeof(CityHash_v1_0_2::uint128) + ICompressionCodec::getHeaderSize());
 
-    /// Zero-copy NONE path: point the working buffer directly into `out`, reserving the prefix in
-    /// front. The window must fit a whole block plus the prefix, or the data would be re-chunked
-    /// into smaller frames; `out` may grow later, so this is re-checked for every block.
+    /// Write directly into exclusive `out` for `NONE` when a whole frame fits.
     if (codec->isNone() && out_buffer_is_exclusive)
     {
         const size_t required_size = block_size + COMPRESSED_BLOCK_PREFIX_SIZE;
 
-        /// A flush frees the beginning of `out`, but helps only if `out` is large enough at all.
         if (out.available() < required_size && out.buffer().size() >= required_size)
             out.next();
 
@@ -63,8 +60,7 @@ void CompressedWriteBuffer::nextImpl()
 
     if (expected_out_position)
     {
-        /// Zero-copy path: the data is already in `out`, after the room reserved for the checksum
-        /// and the header; fill them in place and advance `out`.
+        /// Ensure no other writer moved exclusive `out`.
         if (out.position() != expected_out_position)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "CompressedWriteBuffer: the position of the output buffer declared exclusive was moved by someone else, "
@@ -72,7 +68,6 @@ void CompressedWriteBuffer::nextImpl()
 
         char * header_ptr = out.position() + sizeof(CityHash_v1_0_2::uint128);
 
-        /// NONE stores data as is, so the compressed payload size equals the uncompressed size.
         UInt32 compressed_size = codec->writeHeader(header_ptr, decompressed_size, decompressed_size);
 
         CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(header_ptr, compressed_size);
@@ -120,8 +115,7 @@ void CompressedWriteBuffer::nextImpl()
         }
     }
 
-    /// Increase the block size for next blocks if the adaptive buffer size is used and nextImpl
-    /// was called because the block is full, not because of an explicit flush.
+    /// Grow only after a full adaptive block.
     if (!available() && use_adaptive_buffer_size && block_size < adaptive_buffer_max_size)
         block_size = std::min(block_size * 2, adaptive_buffer_max_size);
 
@@ -138,8 +132,6 @@ void CompressedWriteBuffer::finalizeImpl()
 
 CompressedWriteBuffer::CompressedWriteBuffer(
     WriteBuffer & out_, CompressionCodecPtr codec_, size_t buf_size, bool use_adaptive_buffer_size_, size_t adaptive_buffer_initial_size)
-    /// The adaptive buffer grows from the initial size up to buf_size (the max), so the
-    /// initial allocation must not exceed it (see WriteBufferFromFileDescriptor for details).
     : BufferWithOwnMemory<WriteBuffer>(use_adaptive_buffer_size_ ? std::min(adaptive_buffer_initial_size, buf_size) : buf_size)
     , out(out_)
     , codec(std::move(codec_))

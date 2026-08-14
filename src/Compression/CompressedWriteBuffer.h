@@ -20,12 +20,8 @@ public:
         bool use_adaptive_buffer_size_ = false,
         size_t adaptive_buffer_initial_size = DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE);
 
-    /// Declares that this buffer is the sole writer of `out`, enabling the zero-copy path for the
-    /// NONE codec: the working buffer points directly into `out`, and nextImpl fills the checksum
-    /// and the header in front of the data in place instead of copying the payload (enforced:
-    /// nextImpl throws LOGICAL_ERROR if out.position() has moved). Call before writing any data
-    /// and before anything captures the working buffer (e.g. a wrapping HashingWriteBuffer).
-    /// Must not be used when `out` is shared, e.g. by the per-column streams of compact parts.
+    /// Enables zero-copy `NONE` writes when this is the only writer of `out`.
+    /// Call before writes or constructing a wrapper that captures the working buffer.
     void declareOutBufferExclusive();
 
     /// The amount of compressed data
@@ -55,8 +51,7 @@ public:
 private:
     void nextImpl() override;
 
-    /// Choose where the caller writes the next block: directly into `out` (zero-copy NONE path)
-    /// or into the owned buffer.
+    /// Select the direct or owned buffer for the next block.
     void setupBufferForNextBlock();
 
     /// finalize call does not affect the out buffer.
@@ -75,8 +70,7 @@ private:
     bool use_adaptive_buffer_size;
     size_t adaptive_buffer_max_size;
 
-    /// The size of the block that is currently being filled. It equals adaptive_buffer_max_size,
-    /// unless the adaptive buffer size is used, in which case it starts small and grows up to it.
+    /// Current block size, growing up to adaptive_buffer_max_size.
     size_t block_size;
 
     PODArray<char> compressed_buffer;
@@ -84,8 +78,7 @@ private:
     /// See declareOutBufferExclusive.
     bool out_buffer_is_exclusive = false;
 
-    /// Zero-copy NONE path: where out.position() stood when the working buffer was pointed into
-    /// `out`, so nextImpl can check it has not moved. nullptr when the working buffer is the owned one.
+    /// Expected `out` position for a direct block; nullptr for an owned block.
     char * expected_out_position = nullptr;
 };
 
