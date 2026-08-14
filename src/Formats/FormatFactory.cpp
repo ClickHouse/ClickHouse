@@ -1126,6 +1126,22 @@ void FormatFactory::markOutputFormatNotTTYFriendly(const String & name)
     target = false;
 }
 
+void FormatFactory::markOutputFormatMayProduceRawBytes(const String & name)
+{
+    auto & target = getOrCreateCreators(name).may_produce_raw_bytes;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as producing raw bytes", name);
+    target = true;
+}
+
+void FormatFactory::registerOutputFormatMayProduceRawBytesChecker(const String & name, MayProduceRawBytesChecker checker)
+{
+    auto & target = getOrCreateCreators(name).may_produce_raw_bytes_checker;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Raw bytes checker for format {} is already registered", name);
+    target = std::move(checker);
+}
+
 void FormatFactory::setContentType(const String & name, const String & content_type)
 {
     getOrCreateCreators(name).content_type = [=](const std::optional<FormatSettings> &){ return content_type; };
@@ -1216,6 +1232,14 @@ bool FormatFactory::checkIfOutputFormatIsTTYFriendly(const String & name) const
 {
     const auto & target = getCreators(name);
     return target.is_tty_friendly;
+}
+
+bool FormatFactory::checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings, const Block & header) const
+{
+    const auto & target = getCreators(name);
+    if (target.may_produce_raw_bytes)
+        return true;
+    return target.may_produce_raw_bytes_checker && target.may_produce_raw_bytes_checker(settings, header);
 }
 
 bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const

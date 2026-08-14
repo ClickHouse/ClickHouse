@@ -557,7 +557,6 @@
                 "reference/functions/aggregate-functions/exponentialTimeDecayedSum",
                 "reference/functions/aggregate-functions/first_value",
                 "reference/functions/aggregate-functions/flame_graph",
-                "reference/functions/aggregate-functions/gini",
                 "reference/functions/aggregate-functions/groupArray",
                 "reference/functions/aggregate-functions/groupArrayArray",
                 "reference/functions/aggregate-functions/groupArrayInsertAt",
