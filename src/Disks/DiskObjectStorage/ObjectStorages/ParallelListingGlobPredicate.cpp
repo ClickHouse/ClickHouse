@@ -101,7 +101,7 @@ std::optional<std::string> chooseDelimitedListingStartPrefix(
     const std::string & glob_path,
     const std::string & key_prefix,
     const std::function<bool(const std::string & prefix)> & is_prefix_allowed,
-    const std::function<std::vector<std::string>(const std::string & widened_prefix)> & list_loose_objects_sample)
+    const std::function<std::vector<std::string>(const std::string & widened_prefix)> & list_widened_level_sample)
 {
     if (is_prefix_allowed(key_prefix))
         return key_prefix;
@@ -123,14 +123,13 @@ std::optional<std::string> chooseDelimitedListingStartPrefix(
     if (splitPathComponents(widened_prefix).size() + min_segments_below > splitPathComponents(glob_path).size())
         return std::nullopt;
 
-    /// Non-matching sub-"directories" the wider prefix exposes are pruned per common-prefix entry, but its
-    /// *loose objects* have no such guard: a key outside `key_prefix`'s region is one the narrower serial
-    /// listing would never fetch, and paging through many of them is strictly worse than staying serial.
-    /// Sample the widened level's first page (its lexicographically first entries, so leading junk shows up
-    /// here if anywhere) and keep such shapes serial. This is the only check that costs a listing request,
-    /// so it comes last. Loose objects sorting after the region on later pages are cut off at listing time
-    /// by the root range's `leastKeyAfterPrefixRegion` bound instead.
-    for (const auto & key : list_loose_objects_sample(widened_prefix))
+    /// Loose objects are not pruned, while common prefixes are pruned only after their containing page was
+    /// fetched; either kind before the fixed prefix makes the widened walk strictly worse. Sample the
+    /// widened level's first page (its lexicographically first entries, so leading junk shows up here if
+    /// anywhere) and keep such shapes serial. This is the only check that costs a listing request, so it
+    /// comes last. Entries sorting after the region on later pages are cut off at listing time by the root
+    /// range's `leastKeyAfterPrefixRegion` bound instead.
+    for (const auto & key : list_widened_level_sample(widened_prefix))
     {
         if (!key.starts_with(key_prefix))
             return std::nullopt;

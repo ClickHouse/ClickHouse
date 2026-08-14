@@ -1707,17 +1707,18 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
                 key_prefix,
                 [&](const std::string & prefix) { return object_storage->supportsDelimitedListingFromPrefix(prefix); },
                 /// Invoked (once) only when the walk would start from a prefix wider than `key_prefix`:
-                /// samples the loose objects on the first delimited page of the widened level, whose keys
-                /// decide whether the widened walk would scan objects the serial listing never fetches.
-                /// Tags-free — only the keys matter here.
+                /// samples every entry on the first delimited page of the widened level. Entries outside
+                /// the fixed prefix's region would force the widened walk to fetch pages the serial
+                /// listing never needs. Tags-free — only the paths matter here.
                 [&](const std::string & widened_prefix)
                 {
                     auto page = object_storage->listObjectsSingleLevel(
                         widened_prefix, "/", page_size, /* with_tags */ false, /* start_after */ {}, /* continuation_token */ {});
                     std::vector<std::string> keys;
-                    keys.reserve(page.objects.size());
+                    keys.reserve(page.objects.size() + page.common_prefixes.size());
                     for (const auto & object : page.objects)
                         keys.push_back(object->getPath());
+                    keys.insert(keys.end(), page.common_prefixes.begin(), page.common_prefixes.end());
                     return keys;
                 });
         }
