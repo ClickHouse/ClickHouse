@@ -7,6 +7,8 @@
 -- over the test runner's client-level randomization. force_optimize_projection_name keeps each
 -- arm on the aggregate-projection merge path, and the exact surviving-row counts below hold only
 -- while both hold, so an arm that stops covering the null place fails instead of passing.
+-- Each oracle counts NULL as a mismatch, because sum() skips NULL rows and a bare s != k
+-- therefore stays 0 when a surviving row comes back NULL instead of its aggregate.
 
 DROP TABLE IF EXISTS t_orfill;
 
@@ -20,29 +22,29 @@ INSERT INTO t_orfill SELECT number + 1000, number % 97, number + 1000 FROM numbe
 INSERT INTO t_orfill SELECT number + 2000, number % 97, number + 2000 FROM numbers(1000);
 
 SELECT 'no overflow';
-SELECT count(), sum(s != k) FROM (SELECT k, sumOrNull(v) AS s FROM t_orfill GROUP BY k)
+SELECT count(), sum(s IS NULL OR s != k) FROM (SELECT k, sumOrNull(v) AS s FROM t_orfill GROUP BY k)
 SETTINGS optimize_use_projections = 1, max_threads = 1;
 
 SELECT 'overflow any OrNull';
-SELECT count(), sum(s != k) FROM (SELECT k, sumOrNull(v) AS s FROM t_orfill GROUP BY k)
+SELECT count(), sum(s IS NULL OR s != k) FROM (SELECT k, sumOrNull(v) AS s FROM t_orfill GROUP BY k)
 SETTINGS optimize_use_projections = 1, max_threads = 1, optimize_aggregation_in_order = 0,
     max_rows_to_group_by = 10, group_by_overflow_mode = 'any',
     force_optimize_projection_name = 'p';
 
 SELECT 'overflow any OrDefault';
-SELECT count(), sum(s != k) FROM (SELECT k, sumOrDefault(v) AS s FROM t_orfill GROUP BY k)
+SELECT count(), sum(s IS NULL OR s != k) FROM (SELECT k, sumOrDefault(v) AS s FROM t_orfill GROUP BY k)
 SETTINGS optimize_use_projections = 1, max_threads = 1, optimize_aggregation_in_order = 0,
     max_rows_to_group_by = 10, group_by_overflow_mode = 'any',
     force_optimize_projection_name = 'p';
 
 SELECT 'overflow any OrNull(Tuple)';
-SELECT count(), sum(s.1 != k) FROM (SELECT k, sumTupleOrNull(tuple(v)) AS s FROM t_orfill GROUP BY k)
+SELECT count(), sum(s.1 IS NULL OR s.1 != k) FROM (SELECT k, sumTupleOrNull(tuple(v)) AS s FROM t_orfill GROUP BY k)
 SETTINGS optimize_use_projections = 1, max_threads = 1, optimize_aggregation_in_order = 0,
     max_rows_to_group_by = 10, group_by_overflow_mode = 'any',
     force_optimize_projection_name = 'p';
 
 SELECT 'overflow any Tuple(OrNull)';
-SELECT count(), sum(s.1 != k) FROM (SELECT k, sumOrNullTuple(tuple(v)) AS s FROM t_orfill GROUP BY k)
+SELECT count(), sum(s.1 IS NULL OR s.1 != k) FROM (SELECT k, sumOrNullTuple(tuple(v)) AS s FROM t_orfill GROUP BY k)
 SETTINGS optimize_use_projections = 1, max_threads = 1, optimize_aggregation_in_order = 0,
     max_rows_to_group_by = 10, group_by_overflow_mode = 'any',
     force_optimize_projection_name = 'p';
@@ -52,13 +54,13 @@ SELECT 'overflow any two keys';
 -- drop it and the aggregation really uses the fixed-keys (keys128) method.
 SELECT count() > 0 FROM (EXPLAIN SELECT k, k2, sumOrNull(v) FROM t_orfill GROUP BY k, k2)
 WHERE explain ILIKE '%Keys: k, k2%';
-SELECT count(), sum(s != k) FROM (SELECT k, k2, sumOrNull(v) AS s FROM t_orfill GROUP BY k, k2)
+SELECT count(), sum(s IS NULL OR s != k) FROM (SELECT k, k2, sumOrNull(v) AS s FROM t_orfill GROUP BY k, k2)
 SETTINGS optimize_use_projections = 1, max_threads = 1, optimize_aggregation_in_order = 0,
     max_rows_to_group_by = 10, group_by_overflow_mode = 'any',
     force_optimize_projection_name = 'p2';
 
 SELECT 'overflow throw';
-SELECT count(), sum(s != k) FROM (SELECT k, sumOrNull(v) AS s FROM t_orfill GROUP BY k)
+SELECT count(), sum(s IS NULL OR s != k) FROM (SELECT k, sumOrNull(v) AS s FROM t_orfill GROUP BY k)
 SETTINGS optimize_use_projections = 1, max_threads = 1, optimize_aggregation_in_order = 0,
     max_rows_to_group_by = 10, group_by_overflow_mode = 'throw'; -- { serverError TOO_MANY_ROWS }
 
