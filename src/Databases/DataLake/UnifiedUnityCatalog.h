@@ -62,6 +62,8 @@ public:
         return table_metadata.getTableFormat();
     }
 
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
+
 private:
     const std::string base_url_str;
     const std::filesystem::path base_url;
@@ -110,6 +112,13 @@ private:
         TableMetadata & result) const;
 
     void getDeltaCredentials(const std::string & table_id, TableMetadata & metadata) const;
+
+    /// Asks the catalog for temporary read credentials for a table.
+    Poco::JSON::Object::Ptr requestReadCredentials(const std::string & table_id) const;
+
+    /// Return `nullptr` when the response carries no credentials of that kind.
+    std::shared_ptr<IStorageCredentials> parseS3Credentials(const Poco::JSON::Object::Ptr & response) const;
+    std::shared_ptr<IStorageCredentials> parseAzureCredentials(const Poco::JSON::Object::Ptr & response) const;
 
     std::shared_ptr<RestCatalog> getIcebergRestCatalog() const;
 };

@@ -8,8 +8,10 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Common/Exception.h>
 #include <Common/checkStackSize.h>
 #include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Interpreters/Context.h>
@@ -359,41 +361,67 @@ bool UnifiedUnityCatalog::tryGetDeltaTableMetadata(
     if (result.requiresSchema())
     {
         DB::NamesAndTypesList schema;
-        auto columns_json = object->getArray("columns");
-        for (size_t i = 0; i < columns_json->size(); ++i)
+        try
         {
-            const auto column_json = columns_json->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
-            std::string name = column_json->getValue<String>("name");
-            auto is_nullable = column_json->getValue<bool>("nullable");
-            const auto type_json_str = column_json->get("type_json").extract<String>();
-            DB::DataTypePtr data_type;
+            auto columns_json = object->getArray("columns");
+            for (size_t i = 0; i < columns_json->size(); ++i)
+            {
+                const auto column_json = columns_json->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
+                std::string name = column_json->getValue<String>("name");
+                auto is_nullable = column_json->getValue<bool>("nullable");
+                const auto type_json_str = column_json->get("type_json").extract<String>();
+                DB::DataTypePtr data_type;
 
-            try
-            {
-                if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
+                try
                 {
-                    String type_name = type_json_str.substr(1, type_json_str.size() - 2);
-                    auto data_type_from_str = DB::DeltaLakeMetadata::getSimpleTypeByName(type_name);
-                    data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
+                    /// OSS Unity catalog reports a simple type as a bare quoted name, such as `"integer"`,
+                    /// where Databricks reports the JSON object every type gets there. Both forms occur.
+                    if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
+                    {
+                        String type_name = type_json_str.substr(1, type_json_str.size() - 2);
+                        auto data_type_from_str = DB::DeltaLakeMetadata::getSimpleTypeByName(type_name);
+                        data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
+                    }
+                    else
+                    {
+                        Poco::JSON::Parser parser;
+                        auto parsed_json_type = parser.parse(type_json_str);
+                        data_type = DB::DeltaLakeMetadata::getFieldType(
+                            parsed_json_type.extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
+                    }
                 }
-                else
+                catch (DB::Exception & e)
                 {
-                    Poco::JSON::Parser parser;
-                    auto parsed_json_type = parser.parse(type_json_str);
-                    data_type = DB::DeltaLakeMetadata::getFieldType(
-                        parsed_json_type.extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
+                    e.addMessage("while parsing the type of column `{}` of Delta table `{}`: {}",
+                        name, full_table_name, type_json_str);
+                    throw;
                 }
+                schema.push_back({name, data_type});
             }
-            catch (DB::Exception & e)
-            {
-                e.addMessage("while parsing the type of column `{}` of Delta table `{}`: {}",
-                    name, full_table_name, type_json_str);
-                throw;
-            }
-            schema.push_back({name, data_type});
+            LOG_TEST(log, "Parsed schema: {}", schema.toString());
         }
+        catch (...)
+        {
+            /// Tables that are not Delta can use types ClickHouse has no mapping for, such as the
+            /// Databricks `NULL` type. They are unreadable anyway, so keep them listed without a
+            /// schema instead of failing the whole catalog; `SHOW CREATE TABLE` then reports no columns.
+            if (result.isDefaultReadableTable())
+                throw;
+
+            LOG_DEBUG(
+                log,
+                "Cannot read table `{}` because of schema parsing exception `{}`, "
+                "but it is not a Delta table, so we ignore this error",
+                full_table_name, DB::getCurrentExceptionMessage(false));
+            return true;
+        }
+
         result.setSchema(schema);
     }
+
+    /// The UUID is what `getCredentialsConfigurationCallback` uses to refresh expired credentials.
+    if (hasValueAndItsNotNone("table_id", object))
+        result.setTableUUID(object->get("table_id").extract<String>());
 
     if (result.isDefaultReadableTable() && result.requiresCredentials())
         getDeltaCredentials(object->get("table_id"), result);
@@ -408,6 +436,27 @@ void UnifiedUnityCatalog::getDeltaCredentials(const std::string & table_id, Tabl
     if (storage_type != StorageType::S3 && storage_type != StorageType::Azure)
         return;
 
+    const Poco::JSON::Object::Ptr & response = requestReadCredentials(table_id);
+
+    std::shared_ptr<IStorageCredentials> creds;
+    switch (storage_type)
+    {
+        case StorageType::S3:
+            creds = parseS3Credentials(response);
+            break;
+        case StorageType::Azure:
+            creds = parseAzureCredentials(response);
+            break;
+        default:
+            break;
+    }
+
+    if (creds)
+        metadata.setStorageCredentials(creds);
+}
+
+Poco::JSON::Object::Ptr UnifiedUnityCatalog::requestReadCredentials(const std::string & table_id) const
+{
     Poco::JSON::Object request_body;
     request_body.set("table_id", table_id);
     request_body.set("operation", "READ");
@@ -415,38 +464,47 @@ void UnifiedUnityCatalog::getDeltaCredentials(const std::string & table_id, Tabl
     auto callback = [&request_body](std::ostream & os) { request_body.stringify(os); };
 
     auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
-    const Poco::JSON::Object::Ptr & response = json.extract<Poco::JSON::Object::Ptr>();
+    return json.extract<Poco::JSON::Object::Ptr>();
+}
 
-    std::shared_ptr<IStorageCredentials> creds;
-    switch (storage_type)
+std::shared_ptr<IStorageCredentials> UnifiedUnityCatalog::parseS3Credentials(const Poco::JSON::Object::Ptr & response) const
+{
+    if (!hasValueAndItsNotNone("aws_temp_credentials", response))
+        return nullptr;
+
+    const Poco::JSON::Object::Ptr & creds_object = response->getObject("aws_temp_credentials");
+    return std::make_shared<S3Credentials>(
+        creds_object->get("access_key_id").extract<String>(),
+        creds_object->get("secret_access_key").extract<String>(),
+        creds_object->get("session_token").extract<String>());
+}
+
+std::shared_ptr<IStorageCredentials> UnifiedUnityCatalog::parseAzureCredentials(const Poco::JSON::Object::Ptr & response) const
+{
+    if (!hasValueAndItsNotNone("azure_user_delegation_sas", response))
+        return nullptr;
+
+    const Poco::JSON::Object::Ptr & creds_object = response->getObject("azure_user_delegation_sas");
+    return std::make_shared<AzureCredentials>(creds_object->get("sas_token").extract<String>());
+}
+
+/// Only S3 refreshes credentials: `StorageAzureConfiguration::createObjectStorage` discards the callback.
+ICatalog::CredentialsRefreshCallback UnifiedUnityCatalog::getCredentialsConfigurationCallback(const DB::StorageID & table_id)
+{
+    if (!table_id.hasUUID())
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Cannot build a Unity credentials refresh callback for `{}`: StorageID has no UUID",
+            table_id.getNameForLogs());
+
+    const String unity_table_id = toString(table_id.uuid);
+
+    return [this, unity_table_id]() -> std::shared_ptr<IStorageCredentials>
     {
-        case StorageType::S3:
-        {
-            if (hasValueAndItsNotNone("aws_temp_credentials", response))
-            {
-                const Poco::JSON::Object::Ptr & creds_object = response->getObject("aws_temp_credentials");
-                creds = std::make_shared<S3Credentials>(
-                    creds_object->get("access_key_id").extract<String>(),
-                    creds_object->get("secret_access_key").extract<String>(),
-                    creds_object->get("session_token").extract<String>());
-            }
-            break;
-        }
-        case StorageType::Azure:
-        {
-            if (hasValueAndItsNotNone("azure_user_delegation_sas", response))
-            {
-                const Poco::JSON::Object::Ptr & creds_object = response->getObject("azure_user_delegation_sas");
-                creds = std::make_shared<AzureCredentials>(creds_object->get("sas_token").extract<String>());
-            }
-            break;
-        }
-        default:
-            break;
-    }
+        LOG_DEBUG(log, "Update credentials in the catalog");
 
-    if (creds)
-        metadata.setStorageCredentials(creds);
+        return parseS3Credentials(requestReadCredentials(unity_table_id));
+    };
 }
 
 std::shared_ptr<RestCatalog> UnifiedUnityCatalog::getIcebergRestCatalog() const
