@@ -26,6 +26,23 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+void validateDeletionVectorV1Fields(const std::vector<Int32> & fields, size_t blob_index)
+{
+    if (fields.empty())
+        return;
+
+    /// Spark / Iceberg file-scoped DVs use the reserved `_pos` id as a singleton marker.
+    if (fields.size() == 1 && fields[0] == ICEBERG_ROW_POSITION_FIELD_ID)
+        return;
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Puffin blob {}: deletion-vector-v1 has unsupported non-empty 'fields' "
+        "(only [] or [{}] / Iceberg _pos are accepted; column-scoped DVs are not supported)",
+        blob_index,
+        ICEBERG_ROW_POSITION_FIELD_ID);
+}
+
 namespace
 {
 
@@ -255,13 +272,7 @@ const PuffinBlob & bindDeletionVectorBlob(
             matched_index);
     }
 
-    if (!matched->fields.empty())
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Puffin blob {}: deletion-vector-v1 must have an empty 'fields' list",
-            matched_index);
-    }
+    validateDeletionVectorV1Fields(matched->fields, matched_index);
 
     const auto ref_it = matched->properties.find("referenced-data-file");
     if (ref_it == matched->properties.end() || ref_it->second.empty())

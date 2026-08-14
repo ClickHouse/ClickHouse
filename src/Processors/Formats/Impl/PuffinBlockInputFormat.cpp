@@ -281,11 +281,7 @@ void requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_inde
             "Puffin blob {}: deletion-vector-v1 snapshot-id and sequence-number must be -1",
             blob_index);
 
-    if (!blob.fields.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Puffin blob {}: deletion-vector-v1 must have an empty 'fields' list",
-            blob_index);
+    validateDeletionVectorV1Fields(blob.fields, blob_index);
 
     static constexpr const char * required_properties[] = {"referenced-data-file", "cardinality"};
     for (const char * key : required_properties)

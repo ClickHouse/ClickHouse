@@ -66,3 +66,21 @@ TEST(DeletionVectorBeforeEqualityFilter, CorrectOrderKeepsFileRowMapping)
     shrinkWithoutAppliedFilter(chunk, IColumn::Filter{1, 0, 1});
     EXPECT_EQ(readValues(chunk), (std::vector<UInt64>{0, 3}));
 }
+
+/// Documents why StorageObjectStorageSource must run DV before equality FilterTransform:
+/// reversing the order maps DV positions onto dense post-equality indices and keeps the
+/// wrong survivors ({0, 2} instead of {0, 3}).
+TEST(DeletionVectorBeforeEqualityFilter, WrongOrderProducesWrongSurvivors)
+{
+    Chunk chunk = makeChunkWithFileRowNumbers({0, 1, 2, 3});
+
+    /// Equality first: drop value 1 → dense [0, 2, 3], applied_filter unset.
+    shrinkWithoutAppliedFilter(chunk, IColumn::Filter{1, 0, 1, 1});
+    ASSERT_EQ(readValues(chunk), (std::vector<UInt64>{0, 2, 3}));
+
+    /// DV still targets file position 2, but ChunkInfoRowNumbers still starts at 0 over the
+    /// shrunk chunk, so index 2 (value 3) is removed instead of original file row 2.
+    DeletionVectorTransform::transform(chunk, *makeExcludedRows({2}));
+    EXPECT_EQ(readValues(chunk), (std::vector<UInt64>{0, 2}));
+    EXPECT_NE(readValues(chunk), (std::vector<UInt64>{0, 3}));
+}

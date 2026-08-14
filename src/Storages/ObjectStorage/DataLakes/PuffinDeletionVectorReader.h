@@ -4,6 +4,7 @@
 #include <Processors/Formats/Impl/PuffinBlockInputFormat.h>
 #include <base/types.h>
 
+#include <limits>
 #include <string_view>
 #include <vector>
 #include <optional>
@@ -28,6 +29,14 @@ constexpr size_t PUFFIN_FOOTER_MAX_PAYLOAD_SIZE = 16 * 1024 * 1024;
 /// Sized for one max DV blob + max footer (header magic + blob + footer magic + payload + trailer).
 constexpr size_t PUFFIN_NON_SEEKABLE_MAX_BUFFERED_SIZE = PUFFIN_MAGIC_SIZE + PUFFIN_DV_MAX_BLOB_SIZE
     + PUFFIN_MAGIC_SIZE + PUFFIN_FOOTER_MAX_PAYLOAD_SIZE + PUFFIN_FOOTER_TRAILER_SIZE;
+
+/// Iceberg reserved `_pos` field id (`std::numeric_limits<Int32>::max() - 2`). Spark / Iceberg
+/// writers put this singleton in deletion-vector-v1 puffin `fields` for file-scoped DVs.
+constexpr Int32 ICEBERG_ROW_POSITION_FIELD_ID = std::numeric_limits<Int32>::max() - 2;
+
+/// File-scoped DVs may use `fields=[]` or `fields=[ICEBERG_ROW_POSITION_FIELD_ID]`.
+/// Any other list is treated as unsupported column-scoped deletion vectors.
+void validateDeletionVectorV1Fields(const std::vector<Int32> & fields, size_t blob_index);
 
 /// Validate that [offset, offset + length) fits within file_size.
 void validatePuffinBlobBounds(Int64 offset, Int64 length, size_t file_size, std::string_view context = "Puffin deletion vector");

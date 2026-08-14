@@ -22,6 +22,58 @@ def upload_table(cluster, storage_type, table_name):
     )
 
 
+def add_equality_deletes_by_id(spark, table_name, ids):
+    """Commit an Iceberg equality-delete file for the given `id` values.
+
+    Spark SQL DELETE on v3 only writes deletion vectors, so equality deletes are
+    produced by writing a Parquet file with Spark (correct long boxing) and
+    registering it via Iceberg RowDelta.
+    """
+    jvm = spark._jvm
+    ice = jvm.org.apache.iceberg
+    table = ice.spark.Spark3Util.loadIcebergTable(
+        spark._jsparkSession, f"spark_catalog.default.{table_name}"
+    )
+
+    id_field_id = int(table.schema().findField("id").fieldId())
+    file_name = f"eq-delete-{uuid.uuid4()}.parquet"
+    delete_path = table.locationProvider().newDataLocation(file_name)
+
+    # Spark DataFrame write keeps BIGINT as Long — avoids py4j Integer boxing.
+    spark.createDataFrame([(int(v),) for v in ids], "id: long").coalesce(1).write.mode(
+        "overwrite"
+    ).parquet(delete_path)
+
+    # coalesce(1) still writes a directory; pick the single part file.
+    hadoop_path = jvm.org.apache.hadoop.fs.Path(delete_path)
+    fs = hadoop_path.getFileSystem(spark.sparkContext._jsc.hadoopConfiguration())
+    statuses = fs.listStatus(hadoop_path)
+    part_path = None
+    part_size = 0
+    for status in statuses:
+        name = status.getPath().getName()
+        if name.startswith("part-") and name.endswith(".parquet"):
+            part_path = status.getPath().toString()
+            part_size = int(status.getLen())
+            break
+    if part_path is None:
+        raise RuntimeError(f"No parquet part file written under {delete_path}")
+
+    equality_field_ids = spark.sparkContext._gateway.new_array(jvm.int, 1)
+    equality_field_ids[0] = id_field_id
+
+    delete_file = (
+        ice.FileMetadata.deleteFileBuilder(table.spec())
+        .ofEqualityDeletes(equality_field_ids)
+        .withPath(part_path)
+        .withFileSizeInBytes(part_size)
+        .withRecordCount(len(ids))
+        .withFormat(ice.FileFormat.PARQUET)
+        .build()
+    )
+    table.newRowDelta().addDeletes(delete_file).commit()
+
+
 @pytest.mark.parametrize("run_on_cluster", [False, True])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_deletion_vectors(started_cluster_iceberg_with_spark, storage_type, run_on_cluster):
@@ -479,3 +531,114 @@ def test_deletion_vectors_reject_mutations(started_cluster_iceberg_with_spark, s
     assert get_array(instance.query(f"SELECT id FROM {table_name}")) == [
         x for x in range(20) if x not in (1, 2, 3)
     ]
+
+
+@pytest.mark.parametrize("run_on_cluster", [False, True])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_deletion_vectors_with_equality_deletes(
+    started_cluster_iceberg_with_spark, storage_type, run_on_cluster
+):
+    """DV + equality deletes on the same table must keep correct survivors.
+
+    Guards StorageObjectStorageSource transform order: DV must run before equality
+    FilterTransform (see gtest_deletion_vector_before_equality_filter).
+    """
+    if storage_type == "local" and run_on_cluster:
+        pytest.skip("Local storage with cluster execution is not supported")
+
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    table_name = "test_dv_with_eq_" + storage_type + "_" + get_uuid_str()
+
+    # Small unpartitioned file so DV and equality deletes both apply to the same data file.
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (id bigint) USING iceberg
+        TBLPROPERTIES (
+            'format-version' = '3',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {table_name} SELECT id FROM range(0, 20)")
+    # Deletion vector removes file positions for these ids (values equal positions here).
+    spark.sql(f"DELETE FROM {table_name} WHERE id IN (2, 7)")
+    # Equality deletes remove by value after DV materialization.
+    add_equality_deletes_by_id(spark, table_name, [1, 5])
+
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+
+    expression = get_creation_expression(
+        storage_type,
+        table_name,
+        started_cluster_iceberg_with_spark,
+        run_on_cluster=run_on_cluster,
+        table_function=True,
+    )
+
+    deleted = {1, 2, 5, 7}
+    expected = [x for x in range(20) if x not in deleted]
+    spark_ids = sorted(int(r[0]) for r in spark.sql(f"SELECT id FROM {table_name}").collect())
+    assert spark_ids == expected
+
+    assert int(instance.query(f"SELECT count() FROM {expression}")) == len(expected)
+    assert get_array(instance.query(f"SELECT id FROM {expression}")) == expected
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+def test_deletion_vectors_cluster_bucket_split(started_cluster_iceberg_with_spark, storage_type):
+    """icebergCluster bucket splitting must preserve DV (and clone) metadata end-to-end."""
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    table_name = "test_dv_cluster_bucket_" + storage_type + "_" + get_uuid_str()
+    deleted_ids = [2, 5, 7, 100]
+
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (id bigint) USING iceberg
+        TBLPROPERTIES (
+            'format-version' = '3',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read',
+            'write.parquet.row-group-size-bytes' = '1'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {table_name} SELECT id FROM range(0, 200)")
+    spark.sql(
+        f"DELETE FROM {table_name} WHERE id IN ({', '.join(str(x) for x in deleted_ids)})"
+    )
+
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+
+    expression = get_creation_expression(
+        storage_type,
+        table_name,
+        started_cluster_iceberg_with_spark,
+        run_on_cluster=True,
+        table_function=True,
+    )
+    expected = [x for x in range(200) if x not in deleted_ids]
+    settings = {
+        "cluster_table_function_split_granularity": "bucket",
+        "cluster_table_function_buckets_batch_size": 1,
+    }
+
+    assert (
+        int(instance.query(f"SELECT count() FROM {expression}", settings=settings))
+        == len(expected)
+    )
+    assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == expected
+    # Trivial count path must match under bucket splits (need_only_count + DV cardinality).
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {expression}",
+                settings={**settings, "optimize_trivial_count_query": 1},
+            )
+        )
+        == len(expected)
+    )

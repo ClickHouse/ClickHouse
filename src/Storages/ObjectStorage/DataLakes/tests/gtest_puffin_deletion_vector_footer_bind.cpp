@@ -197,7 +197,7 @@ TEST(PuffinDeletionVectorFooterBind, RejectsBindToNonDeletionVectorBlob)
     }
 }
 
-TEST(PuffinDeletionVectorFooterBind, RejectsNonEmptyFields)
+TEST(PuffinDeletionVectorFooterBind, RejectsColumnScopedFields)
 {
     auto blobs = readFixtureBlobs();
     ASSERT_FALSE(blobs.empty());
@@ -211,8 +211,19 @@ TEST(PuffinDeletionVectorFooterBind, RejectsNonEmptyFields)
     catch (const Exception & e)
     {
         EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
-        EXPECT_NE(e.message().find("must have an empty 'fields' list"), std::string::npos);
+        EXPECT_NE(e.message().find("unsupported non-empty 'fields'"), std::string::npos);
     }
+}
+
+TEST(PuffinDeletionVectorFooterBind, AcceptsIcebergRowPositionFieldMarker)
+{
+    auto blobs = readFixtureBlobs();
+    ASSERT_FALSE(blobs.empty());
+    /// Spark-written file-scoped DVs use fields=[_pos] (2147483645), not [].
+    blobs[0].fields = {ICEBERG_ROW_POSITION_FIELD_ID};
+
+    EXPECT_NO_THROW(
+        bindDeletionVectorBlob(blobs, /*content_offset=*/4, /*content_size_in_bytes=*/44, "/data/file_a.parquet", 2));
 }
 
 TEST(PuffinDeletionVectorFooterBind, RejectsNonMinusOneSnapshotOrSequence)

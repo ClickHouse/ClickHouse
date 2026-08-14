@@ -137,7 +137,7 @@ The following limitations apply to deletion vectors:
 
 - Only `deletion-vector-v1` Puffin blobs are supported
 - Data files must be in Parquet format
-- Column-scoped deletion vectors (`fields` in the Puffin blob) are not supported
+- Column-scoped deletion vectors (user column ids in puffin `fields`) are not supported. Writers may set `fields` to `[]` or to the Iceberg reserved `_pos` id (`2147483645`) for file-scoped deletion vectors.
 - Writing deletion vectors is not supported
 - `DELETE` / `UPDATE` mutations on Iceberg format version 3+ tables are rejected (writers must not add position-delete files)
 
