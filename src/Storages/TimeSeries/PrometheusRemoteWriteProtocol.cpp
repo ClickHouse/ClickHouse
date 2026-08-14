@@ -30,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TIME_SERIES_TAGS;
 }
 
 namespace
@@ -107,13 +108,14 @@ Block makeBlock(
 
         for (const auto & element : time_series)
         {
-            bool inserted_metric_name = false;
+            std::string_view metric_name;
+            bool has_metric_name = false;
             for (const auto & label : element.labels())
             {
-                if (!inserted_metric_name && label.name() == TimeSeriesTagNames::MetricName)
+                if (!has_metric_name && label.name() == TimeSeriesTagNames::MetricName)
                 {
-                    metric_name_column->insertData(label.value().data(), label.value().size());
-                    inserted_metric_name = true;
+                    metric_name = label.value();
+                    has_metric_name = true;
                 }
                 else
                 {
@@ -121,8 +123,12 @@ Block makeBlock(
                     tags_values->insertData(label.value().data(), label.value().size());
                 }
             }
-            if (!inserted_metric_name)
-                metric_name_column->insertDefault();
+            if (metric_name.empty())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TIME_SERIES_TAGS,
+                    "Metric name is missing: a time series has no `{}` label with a non-empty value",
+                    TimeSeriesTagNames::MetricName);
+            metric_name_column->insertData(metric_name.data(), metric_name.size());
             tags_offsets->insert(tags_names->size());
 
             for (const auto & sample : element.samples())
