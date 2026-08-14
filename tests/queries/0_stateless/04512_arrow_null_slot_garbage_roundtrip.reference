@@ -1,20 +1,11 @@
 -- { echoOn }
 
-SELECT * FROM file(currentDatabase() || '_04512_plain.arrow', 'Arrow') SETTINGS input_format_arrow_use_native_reader = 1;
+SELECT * FROM file(currentDatabase() || '_04512_plain.arrow', 'Arrow');
 \N
-SELECT * FROM file(currentDatabase() || '_04512_plain.arrow', 'Arrow') SETTINGS input_format_arrow_use_native_reader = 0;
+SELECT * FROM file(currentDatabase() || '_04512_plain.arrowstream', 'ArrowStream');
 \N
-SELECT * FROM file(currentDatabase() || '_04512_plain.arrowstream', 'ArrowStream') SETTINGS input_format_arrow_use_native_reader = 1;
+SELECT * FROM file(currentDatabase() || '_04512_struct.arrow', 'Arrow');
 \N
-SELECT * FROM file(currentDatabase() || '_04512_plain.arrowstream', 'ArrowStream') SETTINGS input_format_arrow_use_native_reader = 0;
-\N
-SELECT * FROM file(currentDatabase() || '_04512_struct.arrow', 'Arrow') SETTINGS input_format_arrow_use_native_reader = 1;
-\N
-SELECT * FROM file(currentDatabase() || '_04512_struct.arrow', 'Arrow') SETTINGS input_format_arrow_use_native_reader = 0;
-\N
-SELECT * FROM file(currentDatabase() || '_04512_visible.arrow', 'Arrow') SETTINGS input_format_arrow_use_native_reader = 1; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT * FROM file(currentDatabase() || '_04512_visible.arrow', 'Arrow') SETTINGS input_format_arrow_use_native_reader = 0; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT toInt32(d) FROM file(currentDatabase() || '_04512_visible.arrow', 'Arrow', 'd Date32') SETTINGS input_format_arrow_use_native_reader = 1, date_time_overflow_behavior = 'saturate';
-120530
-SELECT toInt32(d) FROM file(currentDatabase() || '_04512_visible.arrow', 'Arrow', 'd Date32') SETTINGS input_format_arrow_use_native_reader = 0, date_time_overflow_behavior = 'saturate';
-120530
+SELECT * FROM file(currentDatabase() || '_04512_visible.arrow', 'Arrow'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toInt32(d) FROM file(currentDatabase() || '_04512_visible.arrow', 'Arrow', 'd Date32') SETTINGS date_time_overflow_behavior = 'saturate';
+2932896
