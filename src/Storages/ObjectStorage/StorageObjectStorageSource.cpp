@@ -981,12 +981,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
     }
 
-    /// The count-from-cache shortcut builds a `ConstChunkGenerator` without opening the read buffer, so a
-    /// requested `_headers` virtual column (the HTTP response headers of the data `GET`) would have to fall
-    /// back to the metadata-probe headers (usually a `HEAD`), which can differ from the actual `GET`
-    /// response. Skip the shortcut when `_headers` is requested so the real `GET` headers are used.
-    const bool headers_requested = read_from_format_info.requested_virtual_columns.contains("_headers");
-
     /// Equality-delete FilterTransform evaluates predicates against column values, but need_only_count
     /// emits default-filled chunks — so disable the fast path for equality deletes only.
     /// Position deletes and deletion vectors filter by row index (preserved on synthetic chunks);
@@ -999,7 +993,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const bool effective_need_only_count = need_only_count;
 #endif
 
-    const bool can_use_count_cache = effective_need_only_count && !headers_requested
+    const bool can_use_count_cache = effective_need_only_count
         && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
         && canUseCountFromFilesCache(object_info);
 
