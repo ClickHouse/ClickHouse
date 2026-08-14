@@ -1,5 +1,12 @@
+-- Tags: no-old-analyzer
+--
 -- Regression test for a LOGICAL_ERROR in `ReadFromMergeTree::removeUnusedColumns`:
 -- "Unexpected number of kept output positions after removing unused columns from ReadFromMergeTree".
+--
+-- Bare `database` below is the parenthesis-less `currentDatabase()` alias, which only the analyzer
+-- resolves; the old analyzer reads it as a column and fails with UNKNOWN_IDENTIFIER. It is load
+-- bearing and cannot be spelled `currentDatabase()`: that form folds the whole `PREWHERE` to a
+-- constant before the read set is computed, so `ver` is never pruned and the bug is not reached.
 --
 -- A column that `FINAL` reads for merging (`ver`, `is_deleted`, `sign`) but that `PREWHERE` had
 -- consumed was added back to the read set, so the recomputed step header was longer than the
