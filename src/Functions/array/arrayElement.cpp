@@ -2796,8 +2796,8 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
 )";
     FunctionDocumentation::Syntax syntax_null = "arrayElementOrNull(arr, n)";
     FunctionDocumentation::Arguments arguments_null = {
-        {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Array((U)Int*)`](/sql-reference/data-types/array)."}
+        {"arr", "The array to search. [`Array(T)`](/reference/data-types/array)."},
+        {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_null = {"When `n` is a scalar, returns `Nullable(T)` if `T` can be wrapped in `Nullable`, otherwise `T`. When `n` is an array, returns `Array(Nullable(T))` if `T` can be wrapped in `Nullable`, otherwise `Array(T)`.", {"Nullable(T)", "Array(Nullable(T))"}};
     FunctionDocumentation::Examples examples_null = {
