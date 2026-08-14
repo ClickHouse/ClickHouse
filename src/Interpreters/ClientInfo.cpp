@@ -250,6 +250,16 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
 
         if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO)
             writeBinary(http_referer, out);
+
+        /// Suppressed when `with_trailing_fields = false`: the embedded `ClientInfo` of the persisted async
+        /// `Distributed` insert header must keep the pre-existing layout, or older binaries draining newer
+        /// queue files would misinterpret the rest of the header. There these are stored as trailing header
+        /// fields instead (see `DistributedSink`).
+        if (with_trailing_fields && server_protocol_revision >= DBMS_MIN_REVISION_WITH_HTTP_HANDLER_IN_CLIENT_INFO)
+        {
+            writeBinary(http_handler_name, out);
+            writeBinary(http_request_url, out);
+        }
     }
 
     if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO)
@@ -392,6 +402,14 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
 
         if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO)
             readBinary(http_referer, in);
+
+        /// See the note in `write`: absent from the embedded `ClientInfo` of the persisted async
+        /// `Distributed` insert header, where they are stored as trailing header fields instead.
+        if (with_trailing_fields && client_protocol_revision >= DBMS_MIN_REVISION_WITH_HTTP_HANDLER_IN_CLIENT_INFO)
+        {
+            readBinary(http_handler_name, in);
+            readBinary(http_request_url, in);
+        }
     }
 
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO)
@@ -559,6 +577,12 @@ void ClientInfo::setFromHTTPRequest(const Poco::Net::HTTPRequest & request)
         http_method = ClientInfo::HTTPMethod::GET;
     else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
         http_method = ClientInfo::HTTPMethod::POST;
+    else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT)
+        http_method = ClientInfo::HTTPMethod::PUT;
+    else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_DELETE)
+        http_method = ClientInfo::HTTPMethod::DELETE;
+    else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
+        http_method = ClientInfo::HTTPMethod::HEAD;
 
     http_user_agent = request.get("User-Agent", "");
     http_referer = request.get("Referer", "");
@@ -586,6 +610,12 @@ String toString(ClientInfo::HTTPMethod method)
             return "POST";
         case ClientInfo::HTTPMethod::OPTIONS:
             return "OPTIONS";
+        case ClientInfo::HTTPMethod::PUT:
+            return "PUT";
+        case ClientInfo::HTTPMethod::DELETE:
+            return "DELETE";
+        case ClientInfo::HTTPMethod::HEAD:
+            return "HEAD";
     }
 }
 
