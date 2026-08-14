@@ -328,6 +328,7 @@ void AsynchronousInsertQueue::flushAndShutdown()
             chassert(dump_by_first_update_threads[i].joinable());
             dump_by_first_update_threads[i].join();
 
+            std::lock_guard lock(shard.mutex);
             if (flush_on_shutdown)
             {
                 for (auto & [_, elem] : shard.queue)
@@ -356,6 +357,8 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
 {
     for (const auto & shard : queue_shards)
     {
+        /// Note, not required, but it is not a hot path
+        std::lock_guard lock(shard.mutex);
         for (const auto & [first_update, elem] : shard.queue)
         {
             const auto & insert_query = elem.key.query->as<const ASTInsertQuery &>();
@@ -612,11 +615,11 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
 
         auto max_busy_timeout_exceeded = [&shard, &settings, &now, &flush_time_points]() -> bool
         {
-            if (!settings[Setting::async_insert_use_adaptive_busy_timeout] || !shard.last_insert_time || !flush_time_points.first)
+            if (!settings[Setting::async_insert_use_adaptive_busy_timeout] || !TSA_SUPPRESS_WARNING_FOR_READ(shard.last_insert_time) || !flush_time_points.first)
                 return false;
 
             auto max_ms = Milliseconds(settings[Setting::async_insert_busy_timeout_max_ms].totalMilliseconds());
-            return *shard.last_insert_time + max_ms < now && *flush_time_points.first + max_ms < *flush_time_points.second;
+            return *TSA_SUPPRESS_WARNING_FOR_READ(shard.last_insert_time) + max_ms < now && *flush_time_points.first + max_ms < *flush_time_points.second;
         };
 
         /// Here we check whether we have hit the limit on the maximum data size in the buffer or
@@ -761,8 +764,8 @@ void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)
 
         for (size_t i = 0; i < pool_size; ++i)
         {
-            std::lock_guard lock(queue_shards[i].mutex);
             auto & shard = queue_shards[i];
+            std::lock_guard lock(shard.mutex);
             auto & queue = shard.queue;
 
             for (auto it = queue.begin(); it != queue.end();)
@@ -867,7 +870,7 @@ void AsynchronousInsertQueue::flushAll()
     LOG_DEBUG(log, "Finished flushing of asynchronous insert queue");
 }
 
-void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
+void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     auto & shard = queue_shards[shard_num];
 
@@ -882,7 +885,7 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
             shard.are_tasks_available.wait_for(
                 lock,
                 rel_time,
-                [&shard, this]
+                [&shard, this] TSA_NO_THREAD_SAFETY_ANALYSIS
                 {
                     if (shutdown)
                         return true;
