@@ -1,5 +1,6 @@
 #include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -175,6 +176,10 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         {
             command.data_type = data_type_factory.get(ast_col_decl.getType());
             applyNullModifier(command.data_type, ast_col_decl.null_modifier);
+            /// A stored column has to spell its state version out in the metadata the same way
+            /// `CREATE TABLE` does (see `InterpreterCreateQuery::getColumnType`): an unversioned
+            /// name in stored metadata denotes the layout from before the function became versioned.
+            pinCurrentStateVersionToAggregateFunctions(command.data_type);
         }
         if (ast_col_decl.getDefaultExpression())
         {
@@ -241,6 +246,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         {
             command.data_type = data_type_factory.get(ast_col_decl.getType());
             applyNullModifier(command.data_type, ast_col_decl.null_modifier);
+            /// Deliberately NOT pinning the current state version here, unlike ADD COLUMN above.
+            /// `DataTypeAggregateFunction::equals` ignores the state version, so a version change is
+            /// a metadata-only conversion (`isMetadataOnlyConversion`) and the existing parts keep
+            /// the older layout. A rewrite could not repair them either: a version 0 state does not
+            /// carry its skip degree, so deserializing and re-serializing it as version 1 would only
+            /// record a skip degree of 0. Pinning would therefore make the metadata claim a layout the
+            /// stored data does not have. `MODIFY COLUMN` keeps whatever version the user spells out,
+            /// so a column can still be moved to the current layout for future writes explicitly, with
+            /// `MODIFY COLUMN ... AggregateFunction(1, quantileDeterministic, ...)`.
         }
 
         if (ast_col_decl.getDefaultExpression())
