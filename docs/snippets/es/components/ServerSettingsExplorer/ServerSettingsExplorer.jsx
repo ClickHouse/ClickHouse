@@ -1,14 +1,14 @@
-const ServerSettingsExplorer = () => {
+const ServerSettingsExplorer = ({ href: baseRoute }) => {
   // El renderizador de producción de Mintlify evalúa el componente exportado sin
-  // preservar las vinculaciones a nivel de módulo. El estado perezoso mantiene los datos generados en
-  // ese ámbito de evaluación y los construye solo una vez por montaje.
+  // preservar los enlaces de ámbito de módulo. El estado diferido mantiene los datos
+  // generados en ese ámbito de evaluación y los construye solo una vez por montaje.
   const [entries] = useState(() => [
     {
       label: "access_control_*",
       count: 2,
       settings: [
-        { name: "access_control_improvements", href: "/es/reference/settings/server-settings/settings/access-control#access_control_improvements" },
-        { name: "access_control_path", href: "/es/reference/settings/server-settings/settings/access-control#access_control_path" }
+        { name: "access_control_improvements", path: "/access-control#access_control_improvements" },
+        { name: "access_control_path", path: "/access-control#access_control_path" }
       ],
       children: []
     },
@@ -16,16 +16,8 @@ const ServerSettingsExplorer = () => {
       label: "aggregate_function_*",
       count: 2,
       settings: [
-        {
-          name: "aggregate_function_group_array_action_when_limit_is_reached",
-          href: "/es/reference/settings/server-settings/settings/aggregate-function#aggregate_function_group_array_action_when_limit_is_reached",
-          default: "throw"
-        },
-        {
-          name: "aggregate_function_group_array_max_element_size",
-          href: "/es/reference/settings/server-settings/settings/aggregate-function#aggregate_function_group_array_max_element_size",
-          default: "16777215"
-        }
+        { name: "aggregate_function_group_array_action_when_limit_is_reached", path: "/aggregate-function#aggregate_function_group_array_action_when_limit_is_reached", default: "throw" },
+        { name: "aggregate_function_group_array_max_element_size", path: "/aggregate-function#aggregate_function_group_array_max_element_size", default: "16777215" }
       ],
       children: []
     },
@@ -33,12 +25,12 @@ const ServerSettingsExplorer = () => {
       label: "allow_*",
       count: 6,
       settings: [
-        { name: "allow_feature_tier", href: "/es/reference/settings/server-settings/settings/allow#allow_feature_tier", default: "0" },
-        { name: "allow_impersonate_user", href: "/es/reference/settings/server-settings/settings/allow#allow_impersonate_user", default: "0" },
-        { name: "allow_implicit_no_password", href: "/es/reference/settings/server-settings/settings/allow#allow_implicit_no_password", default: "true" },
-        { name: "allow_no_password", href: "/es/reference/settings/server-settings/settings/allow#allow_no_password", default: "true" },
-        { name: "allow_plaintext_password", href: "/es/reference/settings/server-settings/settings/allow#allow_plaintext_password", default: "true" },
-        { name: "allow_use_jemalloc_memory", href: "/es/reference/settings/server-settings/settings/allow#allow_use_jemalloc_memory", default: "1" }
+        { name: "allow_feature_tier", path: "/allow#allow_feature_tier", default: "0" },
+        { name: "allow_impersonate_user", path: "/allow#allow_impersonate_user", default: "0" },
+        { name: "allow_implicit_no_password", path: "/allow#allow_implicit_no_password", default: "true" },
+        { name: "allow_no_password", path: "/allow#allow_no_password", default: "true" },
+        { name: "allow_plaintext_password", path: "/allow#allow_plaintext_password", default: "true" },
+        { name: "allow_use_jemalloc_memory", path: "/allow#allow_use_jemalloc_memory", default: "1" }
       ],
       children: []
     },
@@ -46,9 +38,9 @@ const ServerSettingsExplorer = () => {
       label: "allow_experimental_*",
       count: 3,
       settings: [
-        { name: "allow_experimental_executable_udf_drivers", href: "/es/reference/settings/server-settings/settings/allow-experimental#allow_experimental_executable_udf_drivers", default: "0" },
-        { name: "allow_experimental_webassembly_udf", href: "/es/reference/settings/server-settings/settings/allow-experimental#allow_experimental_webassembly_udf", default: "0" },
-        { name: "allow_experimental_webterminal", href: "/es/reference/settings/server-settings/settings/allow-experimental#allow_experimental_webterminal", default: "1" }
+        { name: "allow_experimental_executable_udf_drivers", path: "/allow-experimental#allow_experimental_executable_udf_drivers", default: "0" },
+        { name: "allow_experimental_webassembly_udf", path: "/allow-experimental#allow_experimental_webassembly_udf", default: "0" },
+        { name: "allow_experimental_webterminal", path: "/allow-experimental#allow_experimental_webterminal", default: "1" }
       ],
       children: []
     },
@@ -56,8 +48,8 @@ const ServerSettingsExplorer = () => {
       label: "async_insert_*",
       count: 2,
       settings: [
-        { name: "async_insert_queue_flush_on_shutdown", href: "/es/reference/settings/server-settings/settings/async-insert#async_insert_queue_flush_on_shutdown", default: "1" },
-        { name: "async_insert_threads", href: "/es/reference/settings/server-settings/settings/async-insert#async_insert_threads", default: "16" }
+        { name: "async_insert_queue_flush_on_shutdown", path: "/async-insert#async_insert_queue_flush_on_shutdown", default: "1" },
+        { name: "async_insert_threads", path: "/async-insert#async_insert_threads", default: "16" }
       ],
       children: []
     },
@@ -65,8 +57,8 @@ const ServerSettingsExplorer = () => {
       label: "async_load_*",
       count: 2,
       settings: [
-        { name: "async_load_databases", href: "/es/reference/settings/server-settings/settings/async-load#async_load_databases", default: "1" },
-        { name: "async_load_system_database", href: "/es/reference/settings/server-settings/settings/async-load#async_load_system_database", default: "0" }
+        { name: "async_load_databases", path: "/async-load#async_load_databases", default: "1" },
+        { name: "async_load_system_database", path: "/async-load#async_load_system_database", default: "0" }
       ],
       children: []
     },
@@ -74,9 +66,9 @@ const ServerSettingsExplorer = () => {
       label: "asynchronous_*",
       count: 3,
       settings: [
-        { name: "asynchronous_heavy_metrics_update_period_s", href: "/es/reference/settings/server-settings/settings/asynchronous#asynchronous_heavy_metrics_update_period_s", default: "120" },
-        { name: "asynchronous_insert_log", href: "/es/reference/settings/server-settings/settings/asynchronous#asynchronous_insert_log" },
-        { name: "asynchronous_metric_log", href: "/es/reference/settings/server-settings/settings/asynchronous#asynchronous_metric_log" }
+        { name: "asynchronous_heavy_metrics_update_period_s", path: "/asynchronous#asynchronous_heavy_metrics_update_period_s", default: "120" },
+        { name: "asynchronous_insert_log", path: "/asynchronous#asynchronous_insert_log" },
+        { name: "asynchronous_metric_log", path: "/asynchronous#asynchronous_metric_log" }
       ],
       children: []
     },
@@ -84,9 +76,9 @@ const ServerSettingsExplorer = () => {
       label: "asynchronous_metrics_*",
       count: 3,
       settings: [
-        { name: "asynchronous_metrics_enable_heavy_metrics", href: "/es/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_enable_heavy_metrics", default: "0" },
-        { name: "asynchronous_metrics_keeper_metrics_only", href: "/es/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_keeper_metrics_only", default: "0" },
-        { name: "asynchronous_metrics_update_period_s", href: "/es/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_update_period_s", default: "1" }
+        { name: "asynchronous_metrics_enable_heavy_metrics", path: "/asynchronous-metrics#asynchronous_metrics_enable_heavy_metrics", default: "0" },
+        { name: "asynchronous_metrics_keeper_metrics_only", path: "/asynchronous-metrics#asynchronous_metrics_keeper_metrics_only", default: "0" },
+        { name: "asynchronous_metrics_update_period_s", path: "/asynchronous-metrics#asynchronous_metrics_update_period_s", default: "1" }
       ],
       children: []
     },
@@ -94,14 +86,14 @@ const ServerSettingsExplorer = () => {
       label: "background_*",
       count: 8,
       settings: [
-        { name: "background_buffer_flush_schedule_pool_size", href: "/es/reference/settings/server-settings/settings/background#background_buffer_flush_schedule_pool_size", default: "16" },
-        { name: "background_common_pool_size", href: "/es/reference/settings/server-settings/settings/background#background_common_pool_size", default: "8" },
-        { name: "background_distributed_schedule_pool_size", href: "/es/reference/settings/server-settings/settings/background#background_distributed_schedule_pool_size", default: "16" },
-        { name: "background_fetches_pool_size", href: "/es/reference/settings/server-settings/settings/background#background_fetches_pool_size", default: "16" },
-        { name: "background_message_broker_schedule_pool_size", href: "/es/reference/settings/server-settings/settings/background#background_message_broker_schedule_pool_size", default: "16" },
-        { name: "background_move_pool_size", href: "/es/reference/settings/server-settings/settings/background#background_move_pool_size", default: "8" },
-        { name: "background_pool_size", href: "/es/reference/settings/server-settings/settings/background#background_pool_size", default: "16" },
-        { name: "background_streaming_schedule_pool_size", href: "/es/reference/settings/server-settings/settings/background#background_streaming_schedule_pool_size", default: "16" }
+        { name: "background_buffer_flush_schedule_pool_size", path: "/background#background_buffer_flush_schedule_pool_size", default: "16" },
+        { name: "background_common_pool_size", path: "/background#background_common_pool_size", default: "8" },
+        { name: "background_distributed_schedule_pool_size", path: "/background#background_distributed_schedule_pool_size", default: "16" },
+        { name: "background_fetches_pool_size", path: "/background#background_fetches_pool_size", default: "16" },
+        { name: "background_message_broker_schedule_pool_size", path: "/background#background_message_broker_schedule_pool_size", default: "16" },
+        { name: "background_move_pool_size", path: "/background#background_move_pool_size", default: "8" },
+        { name: "background_pool_size", path: "/background#background_pool_size", default: "16" },
+        { name: "background_streaming_schedule_pool_size", path: "/background#background_streaming_schedule_pool_size", default: "16" }
       ],
       children: []
     },
@@ -109,12 +101,8 @@ const ServerSettingsExplorer = () => {
       label: "background_merges_*",
       count: 2,
       settings: [
-        { name: "background_merges_mutations_concurrency_ratio", href: "/es/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio", default: "2" },
-        {
-          name: "background_merges_mutations_scheduling_policy",
-          href: "/es/reference/settings/server-settings/settings/background-merges#background_merges_mutations_scheduling_policy",
-          default: "round_robin"
-        }
+        { name: "background_merges_mutations_concurrency_ratio", path: "/background-merges#background_merges_mutations_concurrency_ratio", default: "2" },
+        { name: "background_merges_mutations_scheduling_policy", path: "/background-merges#background_merges_mutations_scheduling_policy", default: "round_robin" }
       ],
       children: []
     },
@@ -122,14 +110,10 @@ const ServerSettingsExplorer = () => {
       label: "background_schedule_*",
       count: 4,
       settings: [
-        { name: "background_schedule_pool_initial_size", href: "/es/reference/settings/server-settings/settings/background-schedule#background_schedule_pool_initial_size", default: "16" },
-        { name: "background_schedule_pool_log", href: "/es/reference/settings/server-settings/settings/background-schedule#background_schedule_pool_log" },
-        {
-          name: "background_schedule_pool_max_parallel_tasks_per_type_ratio",
-          href: "/es/reference/settings/server-settings/settings/background-schedule#background_schedule_pool_max_parallel_tasks_per_type_ratio",
-          default: "0.8"
-        },
-        { name: "background_schedule_pool_size", href: "/es/reference/settings/server-settings/settings/background-schedule#background_schedule_pool_size", default: "512" }
+        { name: "background_schedule_pool_initial_size", path: "/background-schedule#background_schedule_pool_initial_size", default: "16" },
+        { name: "background_schedule_pool_log", path: "/background-schedule#background_schedule_pool_log" },
+        { name: "background_schedule_pool_max_parallel_tasks_per_type_ratio", path: "/background-schedule#background_schedule_pool_max_parallel_tasks_per_type_ratio", default: "0.8" },
+        { name: "background_schedule_pool_size", path: "/background-schedule#background_schedule_pool_size", default: "512" }
       ],
       children: []
     },
@@ -137,8 +121,8 @@ const ServerSettingsExplorer = () => {
       label: "backup_*",
       count: 2,
       settings: [
-        { name: "backup_log", href: "/es/reference/settings/server-settings/settings/backup#backup_log" },
-        { name: "backup_threads", href: "/es/reference/settings/server-settings/settings/backup#backup_threads", default: "16" }
+        { name: "backup_log", path: "/backup#backup_log" },
+        { name: "backup_threads", path: "/backup#backup_threads", default: "16" }
       ],
       children: []
     },
@@ -146,8 +130,8 @@ const ServerSettingsExplorer = () => {
       label: "backups_*",
       count: 2,
       settings: [
-        { name: "backups", href: "/es/reference/settings/server-settings/settings/backups#backups" },
-        { name: "backups_io_thread_pool_queue_size", href: "/es/reference/settings/server-settings/settings/backups#backups_io_thread_pool_queue_size", default: "0" }
+        { name: "backups", path: "/backups#backups" },
+        { name: "backups_io_thread_pool_queue_size", path: "/backups#backups_io_thread_pool_queue_size", default: "0" }
       ],
       children: []
     },
@@ -155,8 +139,8 @@ const ServerSettingsExplorer = () => {
       label: "compiled_expression_*",
       count: 2,
       settings: [
-        { name: "compiled_expression_cache_elements_size", href: "/es/reference/settings/server-settings/settings/compiled-expression#compiled_expression_cache_elements_size", default: "10000" },
-        { name: "compiled_expression_cache_size", href: "/es/reference/settings/server-settings/settings/compiled-expression#compiled_expression_cache_size", default: "134217728" }
+        { name: "compiled_expression_cache_elements_size", path: "/compiled-expression#compiled_expression_cache_elements_size", default: "10000" },
+        { name: "compiled_expression_cache_size", path: "/compiled-expression#compiled_expression_cache_size", default: "134217728" }
       ],
       children: []
     },
@@ -164,10 +148,10 @@ const ServerSettingsExplorer = () => {
       label: "concurrent_threads_*",
       count: 4,
       settings: [
-        { name: "concurrent_threads_lazy_allocation", href: "/es/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_lazy_allocation", default: "1" },
-        { name: "concurrent_threads_scheduler", href: "/es/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler", default: "max_min_fair" },
-        { name: "concurrent_threads_soft_limit_num", href: "/es/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num", default: "0" },
-        { name: "concurrent_threads_soft_limit_ratio_to_cores", href: "/es/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores", default: "2" }
+        { name: "concurrent_threads_lazy_allocation", path: "/concurrent-threads#concurrent_threads_lazy_allocation", default: "1" },
+        { name: "concurrent_threads_scheduler", path: "/concurrent-threads#concurrent_threads_scheduler", default: "max_min_fair" },
+        { name: "concurrent_threads_soft_limit_num", path: "/concurrent-threads#concurrent_threads_soft_limit_num", default: "0" },
+        { name: "concurrent_threads_soft_limit_ratio_to_cores", path: "/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores", default: "2" }
       ],
       children: []
     },
@@ -175,9 +159,9 @@ const ServerSettingsExplorer = () => {
       label: "cpu_slot_*",
       count: 3,
       settings: [
-        { name: "cpu_slot_preemption", href: "/es/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption", default: "1" },
-        { name: "cpu_slot_preemption_timeout_ms", href: "/es/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption_timeout_ms", default: "1000" },
-        { name: "cpu_slot_quantum_ns", href: "/es/reference/settings/server-settings/settings/cpu-slot#cpu_slot_quantum_ns", default: "10000000" }
+        { name: "cpu_slot_preemption", path: "/cpu-slot#cpu_slot_preemption", default: "1" },
+        { name: "cpu_slot_preemption_timeout_ms", path: "/cpu-slot#cpu_slot_preemption_timeout_ms", default: "1000" },
+        { name: "cpu_slot_quantum_ns", path: "/cpu-slot#cpu_slot_quantum_ns", default: "10000000" }
       ],
       children: []
     },
@@ -185,8 +169,8 @@ const ServerSettingsExplorer = () => {
       label: "custom_*",
       count: 2,
       settings: [
-        { name: "custom_cached_disks_base_directory", href: "/es/reference/settings/server-settings/settings/custom#custom_cached_disks_base_directory" },
-        { name: "custom_settings_prefixes", href: "/es/reference/settings/server-settings/settings/custom#custom_settings_prefixes" }
+        { name: "custom_cached_disks_base_directory", path: "/custom#custom_cached_disks_base_directory" },
+        { name: "custom_settings_prefixes", path: "/custom#custom_settings_prefixes" }
       ],
       children: []
     },
@@ -194,15 +178,11 @@ const ServerSettingsExplorer = () => {
       label: "database_catalog_*",
       count: 5,
       settings: [
-        { name: "database_catalog_drop_error_cooldown_sec", href: "/es/reference/settings/server-settings/settings/database-catalog#database_catalog_drop_error_cooldown_sec", default: "5" },
-        { name: "database_catalog_drop_table_concurrency", href: "/es/reference/settings/server-settings/settings/database-catalog#database_catalog_drop_table_concurrency", default: "16" },
-        {
-          name: "database_catalog_unused_dir_cleanup_period_sec",
-          href: "/es/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_cleanup_period_sec",
-          default: "86400"
-        },
-        { name: "database_catalog_unused_dir_hide_timeout_sec", href: "/es/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_hide_timeout_sec", default: "3600" },
-        { name: "database_catalog_unused_dir_rm_timeout_sec", href: "/es/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_rm_timeout_sec", default: "2592000" }
+        { name: "database_catalog_drop_error_cooldown_sec", path: "/database-catalog#database_catalog_drop_error_cooldown_sec", default: "5" },
+        { name: "database_catalog_drop_table_concurrency", path: "/database-catalog#database_catalog_drop_table_concurrency", default: "16" },
+        { name: "database_catalog_unused_dir_cleanup_period_sec", path: "/database-catalog#database_catalog_unused_dir_cleanup_period_sec", default: "86400" },
+        { name: "database_catalog_unused_dir_hide_timeout_sec", path: "/database-catalog#database_catalog_unused_dir_hide_timeout_sec", default: "3600" },
+        { name: "database_catalog_unused_dir_rm_timeout_sec", path: "/database-catalog#database_catalog_unused_dir_rm_timeout_sec", default: "2592000" }
       ],
       children: []
     },
@@ -210,8 +190,8 @@ const ServerSettingsExplorer = () => {
       label: "database_replicated_*",
       count: 2,
       settings: [
-        { name: "database_replicated_allow_detach_permanently", href: "/es/reference/settings/server-settings/settings/database-replicated#database_replicated_allow_detach_permanently", default: "1" },
-        { name: "database_replicated_drop_broken_tables", href: "/es/reference/settings/server-settings/settings/database-replicated#database_replicated_drop_broken_tables", default: "0" }
+        { name: "database_replicated_allow_detach_permanently", path: "/database-replicated#database_replicated_allow_detach_permanently", default: "1" },
+        { name: "database_replicated_drop_broken_tables", path: "/database-replicated#database_replicated_drop_broken_tables", default: "0" }
       ],
       children: []
     },
@@ -219,10 +199,10 @@ const ServerSettingsExplorer = () => {
       label: "default_*",
       count: 4,
       settings: [
-        { name: "default_database", href: "/es/reference/settings/server-settings/settings/default#default_database", default: "default" },
-        { name: "default_password_type", href: "/es/reference/settings/server-settings/settings/default#default_password_type", default: "sha256_password" },
-        { name: "default_profile", href: "/es/reference/settings/server-settings/settings/default#default_profile", default: "default" },
-        { name: "default_session_timeout", href: "/es/reference/settings/server-settings/settings/default#default_session_timeout", default: "60" }
+        { name: "default_database", path: "/default#default_database", default: "default" },
+        { name: "default_password_type", path: "/default#default_password_type", default: "sha256_password" },
+        { name: "default_profile", path: "/default#default_profile", default: "default" },
+        { name: "default_session_timeout", path: "/default#default_session_timeout", default: "60" }
       ],
       children: []
     },
@@ -230,8 +210,8 @@ const ServerSettingsExplorer = () => {
       label: "default_replica_*",
       count: 2,
       settings: [
-        { name: "default_replica_name", href: "/es/reference/settings/server-settings/settings/default-replica#default_replica_name", default: "{replica}" },
-        { name: "default_replica_path", href: "/es/reference/settings/server-settings/settings/default-replica#default_replica_path", default: "/clickhouse/tables/{uuid}/{shard}" }
+        { name: "default_replica_name", path: "/default-replica#default_replica_name", default: "{replica}" },
+        { name: "default_replica_path", path: "/default-replica#default_replica_path", default: "/clickhouse/tables/{uuid}/{shard}" }
       ],
       children: []
     },
@@ -239,9 +219,9 @@ const ServerSettingsExplorer = () => {
       label: "dictionaries_*",
       count: 3,
       settings: [
-        { name: "dictionaries_config", href: "/es/reference/settings/server-settings/settings/dictionaries#dictionaries_config" },
-        { name: "dictionaries_lazy_load", href: "/es/reference/settings/server-settings/settings/dictionaries#dictionaries_lazy_load", default: "1" },
-        { name: "dictionaries_lib_path", href: "/es/reference/settings/server-settings/settings/dictionaries#dictionaries_lib_path", default: "/var/lib/clickhouse/dictionaries_lib/" }
+        { name: "dictionaries_config", path: "/dictionaries#dictionaries_config" },
+        { name: "dictionaries_lazy_load", path: "/dictionaries#dictionaries_lazy_load", default: "1" },
+        { name: "dictionaries_lib_path", path: "/dictionaries#dictionaries_lib_path", default: "/var/lib/clickhouse/dictionaries_lib/" }
       ],
       children: []
     },
@@ -249,13 +229,9 @@ const ServerSettingsExplorer = () => {
       label: "disable_*",
       count: 3,
       settings: [
-        { name: "disable_insertion_and_mutation", href: "/es/reference/settings/server-settings/settings/disable#disable_insertion_and_mutation", default: "0" },
-        { name: "disable_internal_dns_cache", href: "/es/reference/settings/server-settings/settings/disable#disable_internal_dns_cache", default: "0" },
-        {
-          name: "disable_tunneling_for_https_requests_over_http_proxy",
-          href: "/es/reference/settings/server-settings/settings/disable#disable_tunneling_for_https_requests_over_http_proxy",
-          default: "false"
-        }
+        { name: "disable_insertion_and_mutation", path: "/disable#disable_insertion_and_mutation", default: "0" },
+        { name: "disable_internal_dns_cache", path: "/disable#disable_internal_dns_cache", default: "0" },
+        { name: "disable_tunneling_for_https_requests_over_http_proxy", path: "/disable#disable_tunneling_for_https_requests_over_http_proxy", default: "false" }
       ],
       children: []
     },
@@ -263,12 +239,12 @@ const ServerSettingsExplorer = () => {
       label: "disk_connections_*",
       count: 6,
       settings: [
-        { name: "disk_connections_hard_limit", href: "/es/reference/settings/server-settings/settings/disk-connections#disk_connections_hard_limit", default: "200000" },
-        { name: "disk_connections_rcvbuf", href: "/es/reference/settings/server-settings/settings/disk-connections#disk_connections_rcvbuf", default: "204800" },
-        { name: "disk_connections_sndbuf", href: "/es/reference/settings/server-settings/settings/disk-connections#disk_connections_sndbuf", default: "0" },
-        { name: "disk_connections_soft_limit", href: "/es/reference/settings/server-settings/settings/disk-connections#disk_connections_soft_limit", default: "5000" },
-        { name: "disk_connections_store_limit", href: "/es/reference/settings/server-settings/settings/disk-connections#disk_connections_store_limit", default: "10000" },
-        { name: "disk_connections_warn_limit", href: "/es/reference/settings/server-settings/settings/disk-connections#disk_connections_warn_limit", default: "8000" }
+        { name: "disk_connections_hard_limit", path: "/disk-connections#disk_connections_hard_limit", default: "200000" },
+        { name: "disk_connections_rcvbuf", path: "/disk-connections#disk_connections_rcvbuf", default: "204800" },
+        { name: "disk_connections_sndbuf", path: "/disk-connections#disk_connections_sndbuf", default: "0" },
+        { name: "disk_connections_soft_limit", path: "/disk-connections#disk_connections_soft_limit", default: "5000" },
+        { name: "disk_connections_store_limit", path: "/disk-connections#disk_connections_store_limit", default: "10000" },
+        { name: "disk_connections_warn_limit", path: "/disk-connections#disk_connections_warn_limit", default: "8000" }
       ],
       children: []
     },
@@ -276,13 +252,13 @@ const ServerSettingsExplorer = () => {
       label: "distributed_*",
       count: 7,
       settings: [
-        { name: "distributed_ddl.cleanup_delay_period", href: "/es/reference/settings/server-settings/settings/distributed#distributed_ddl.cleanup_delay_period", default: "60" },
-        { name: "distributed_ddl.max_tasks_in_queue", href: "/es/reference/settings/server-settings/settings/distributed#distributed_ddl.max_tasks_in_queue", default: "1000" },
-        { name: "distributed_ddl.path", href: "/es/reference/settings/server-settings/settings/distributed#distributed_ddl.path", default: "/clickhouse/task_queue/ddl/" },
-        { name: "distributed_ddl.pool_size", href: "/es/reference/settings/server-settings/settings/distributed#distributed_ddl.pool_size", default: "1" },
-        { name: "distributed_ddl.profile", href: "/es/reference/settings/server-settings/settings/distributed#distributed_ddl.profile", default: '""' },
-        { name: "distributed_ddl.replicas_path", href: "/es/reference/settings/server-settings/settings/distributed#distributed_ddl.replicas_path", default: "/clickhouse/task_queue/replicas/" },
-        { name: "distributed_ddl.task_max_lifetime", href: "/es/reference/settings/server-settings/settings/distributed#distributed_ddl.task_max_lifetime", default: "604800" }
+        { name: "distributed_ddl.cleanup_delay_period", path: "/distributed#distributed_ddl.cleanup_delay_period", default: "60" },
+        { name: "distributed_ddl.max_tasks_in_queue", path: "/distributed#distributed_ddl.max_tasks_in_queue", default: "1000" },
+        { name: "distributed_ddl.path", path: "/distributed#distributed_ddl.path", default: "/clickhouse/task_queue/ddl/" },
+        { name: "distributed_ddl.pool_size", path: "/distributed#distributed_ddl.pool_size", default: "1" },
+        { name: "distributed_ddl.profile", path: "/distributed#distributed_ddl.profile", default: '""' },
+        { name: "distributed_ddl.replicas_path", path: "/distributed#distributed_ddl.replicas_path", default: "/clickhouse/task_queue/replicas/" },
+        { name: "distributed_ddl.task_max_lifetime", path: "/distributed#distributed_ddl.task_max_lifetime", default: "604800" }
       ],
       children: []
     },
@@ -290,17 +266,9 @@ const ServerSettingsExplorer = () => {
       label: "distributed_cache_*",
       count: 3,
       settings: [
-        {
-          name: "distributed_cache_apply_throttling_settings_from_client",
-          href: "/es/reference/settings/server-settings/settings/distributed-cache#distributed_cache_apply_throttling_settings_from_client",
-          default: "1"
-        },
-        {
-          name: "distributed_cache_keep_up_free_connections_ratio",
-          href: "/es/reference/settings/server-settings/settings/distributed-cache#distributed_cache_keep_up_free_connections_ratio",
-          default: "0.1"
-        },
-        { name: "distributed_cache_write_pool_size", href: "/es/reference/settings/server-settings/settings/distributed-cache#distributed_cache_write_pool_size", default: "100" }
+        { name: "distributed_cache_apply_throttling_settings_from_client", path: "/distributed-cache#distributed_cache_apply_throttling_settings_from_client", default: "1" },
+        { name: "distributed_cache_keep_up_free_connections_ratio", path: "/distributed-cache#distributed_cache_keep_up_free_connections_ratio", default: "0.1" },
+        { name: "distributed_cache_write_pool_size", path: "/distributed-cache#distributed_cache_write_pool_size", default: "100" }
       ],
       children: []
     },
@@ -308,8 +276,8 @@ const ServerSettingsExplorer = () => {
       label: "distributed_ddl_*",
       count: 2,
       settings: [
-        { name: "distributed_ddl", href: "/es/reference/settings/server-settings/settings/distributed-ddl#distributed_ddl" },
-        { name: "distributed_ddl_use_initial_user_and_roles", href: "/es/reference/settings/server-settings/settings/distributed-ddl#distributed_ddl_use_initial_user_and_roles", default: "0" }
+        { name: "distributed_ddl", path: "/distributed-ddl#distributed_ddl" },
+        { name: "distributed_ddl_use_initial_user_and_roles", path: "/distributed-ddl#distributed_ddl_use_initial_user_and_roles", default: "0" }
       ],
       children: []
     },
@@ -317,8 +285,8 @@ const ServerSettingsExplorer = () => {
       label: "dns_allow_*",
       count: 2,
       settings: [
-        { name: "dns_allow_resolve_names_to_ipv4", href: "/es/reference/settings/server-settings/settings/dns-allow#dns_allow_resolve_names_to_ipv4", default: "1" },
-        { name: "dns_allow_resolve_names_to_ipv6", href: "/es/reference/settings/server-settings/settings/dns-allow#dns_allow_resolve_names_to_ipv6", default: "1" }
+        { name: "dns_allow_resolve_names_to_ipv4", path: "/dns-allow#dns_allow_resolve_names_to_ipv4", default: "1" },
+        { name: "dns_allow_resolve_names_to_ipv6", path: "/dns-allow#dns_allow_resolve_names_to_ipv6", default: "1" }
       ],
       children: []
     },
@@ -326,8 +294,8 @@ const ServerSettingsExplorer = () => {
       label: "dns_cache_*",
       count: 2,
       settings: [
-        { name: "dns_cache_max_entries", href: "/es/reference/settings/server-settings/settings/dns-cache#dns_cache_max_entries", default: "10000" },
-        { name: "dns_cache_update_period", href: "/es/reference/settings/server-settings/settings/dns-cache#dns_cache_update_period", default: "15" }
+        { name: "dns_cache_max_entries", path: "/dns-cache#dns_cache_max_entries", default: "10000" },
+        { name: "dns_cache_update_period", path: "/dns-cache#dns_cache_update_period", default: "15" }
       ],
       children: []
     },
@@ -335,8 +303,8 @@ const ServerSettingsExplorer = () => {
       label: "drop_distributed_*",
       count: 2,
       settings: [
-        { name: "drop_distributed_cache_pool_size", href: "/es/reference/settings/server-settings/settings/drop-distributed#drop_distributed_cache_pool_size", default: "8" },
-        { name: "drop_distributed_cache_queue_size", href: "/es/reference/settings/server-settings/settings/drop-distributed#drop_distributed_cache_queue_size", default: "1000" }
+        { name: "drop_distributed_cache_pool_size", path: "/drop-distributed#drop_distributed_cache_pool_size", default: "8" },
+        { name: "drop_distributed_cache_queue_size", path: "/drop-distributed#drop_distributed_cache_queue_size", default: "1000" }
       ],
       children: []
     },
@@ -344,8 +312,8 @@ const ServerSettingsExplorer = () => {
       label: "enable_*",
       count: 2,
       settings: [
-        { name: "enable_azure_sdk_logging", href: "/es/reference/settings/server-settings/settings/enable#enable_azure_sdk_logging", default: "0" },
-        { name: "enable_webterminal", href: "/es/reference/settings/server-settings/settings/enable#enable_webterminal", default: "1" }
+        { name: "enable_azure_sdk_logging", path: "/enable#enable_azure_sdk_logging", default: "0" },
+        { name: "enable_webterminal", path: "/enable#enable_webterminal", default: "1" }
       ],
       children: []
     },
@@ -353,9 +321,9 @@ const ServerSettingsExplorer = () => {
       label: "encryption_header_*",
       count: 3,
       settings: [
-        { name: "encryption_header_cache_policy", href: "/es/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_policy", default: "SLRU" },
-        { name: "encryption_header_cache_size", href: "/es/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size", default: "52428800" },
-        { name: "encryption_header_cache_size_ratio", href: "/es/reference/settings/server-settings/settings/encryption-header#encryption_header_cache_size_ratio", default: "0.5" }
+        { name: "encryption_header_cache_policy", path: "/encryption-header#encryption_header_cache_policy", default: "SLRU" },
+        { name: "encryption_header_cache_size", path: "/encryption-header#encryption_header_cache_size", default: "52428800" },
+        { name: "encryption_header_cache_size_ratio", path: "/encryption-header#encryption_header_cache_size_ratio", default: "0.5" }
       ],
       children: []
     },
@@ -363,8 +331,8 @@ const ServerSettingsExplorer = () => {
       label: "format_*",
       count: 2,
       settings: [
-        { name: "format_parsing_thread_pool_queue_size", href: "/es/reference/settings/server-settings/settings/format#format_parsing_thread_pool_queue_size", default: "10000" },
-        { name: "format_schema_path", href: "/es/reference/settings/server-settings/settings/format#format_schema_path", default: "/var/lib/clickhouse/format_schemas/" }
+        { name: "format_parsing_thread_pool_queue_size", path: "/format#format_parsing_thread_pool_queue_size", default: "10000" },
+        { name: "format_schema_path", path: "/format#format_schema_path", default: "/var/lib/clickhouse/format_schemas/" }
       ],
       children: []
     },
@@ -372,8 +340,8 @@ const ServerSettingsExplorer = () => {
       label: "global_profiler_*",
       count: 2,
       settings: [
-        { name: "global_profiler_cpu_time_period_ns", href: "/es/reference/settings/server-settings/settings/global-profiler#global_profiler_cpu_time_period_ns", default: "10000000000" },
-        { name: "global_profiler_real_time_period_ns", href: "/es/reference/settings/server-settings/settings/global-profiler#global_profiler_real_time_period_ns", default: "10000000000" }
+        { name: "global_profiler_cpu_time_period_ns", path: "/global-profiler#global_profiler_cpu_time_period_ns", default: "10000000000" },
+        { name: "global_profiler_real_time_period_ns", path: "/global-profiler#global_profiler_real_time_period_ns", default: "10000000000" }
       ],
       children: []
     },
@@ -381,8 +349,8 @@ const ServerSettingsExplorer = () => {
       label: "graphite_*",
       count: 2,
       settings: [
-        { name: "graphite", href: "/es/reference/settings/server-settings/settings/graphite#graphite" },
-        { name: "graphite_rollup", href: "/es/reference/settings/server-settings/settings/graphite#graphite_rollup" }
+        { name: "graphite", path: "/graphite#graphite" },
+        { name: "graphite_rollup", path: "/graphite#graphite_rollup" }
       ],
       children: []
     },
@@ -390,9 +358,9 @@ const ServerSettingsExplorer = () => {
       label: "http_*",
       count: 3,
       settings: [
-        { name: "http_handlers", href: "/es/reference/settings/server-settings/settings/http#http_handlers" },
-        { name: "http_options_response", href: "/es/reference/settings/server-settings/settings/http#http_options_response" },
-        { name: "http_server_default_response", href: "/es/reference/settings/server-settings/settings/http#http_server_default_response", default: '"Ok.\\n"' }
+        { name: "http_handlers", path: "/http#http_handlers" },
+        { name: "http_options_response", path: "/http#http_options_response" },
+        { name: "http_server_default_response", path: "/http#http_server_default_response", default: '"Ok.\\n"' }
       ],
       children: []
     },
@@ -400,12 +368,12 @@ const ServerSettingsExplorer = () => {
       label: "http_connections_*",
       count: 6,
       settings: [
-        { name: "http_connections_hard_limit", href: "/es/reference/settings/server-settings/settings/http-connections#http_connections_hard_limit", default: "200000" },
-        { name: "http_connections_rcvbuf", href: "/es/reference/settings/server-settings/settings/http-connections#http_connections_rcvbuf", default: "0" },
-        { name: "http_connections_sndbuf", href: "/es/reference/settings/server-settings/settings/http-connections#http_connections_sndbuf", default: "0" },
-        { name: "http_connections_soft_limit", href: "/es/reference/settings/server-settings/settings/http-connections#http_connections_soft_limit", default: "100" },
-        { name: "http_connections_store_limit", href: "/es/reference/settings/server-settings/settings/http-connections#http_connections_store_limit", default: "1000" },
-        { name: "http_connections_warn_limit", href: "/es/reference/settings/server-settings/settings/http-connections#http_connections_warn_limit", default: "500" }
+        { name: "http_connections_hard_limit", path: "/http-connections#http_connections_hard_limit", default: "200000" },
+        { name: "http_connections_rcvbuf", path: "/http-connections#http_connections_rcvbuf", default: "0" },
+        { name: "http_connections_sndbuf", path: "/http-connections#http_connections_sndbuf", default: "0" },
+        { name: "http_connections_soft_limit", path: "/http-connections#http_connections_soft_limit", default: "100" },
+        { name: "http_connections_store_limit", path: "/http-connections#http_connections_store_limit", default: "1000" },
+        { name: "http_connections_warn_limit", path: "/http-connections#http_connections_warn_limit", default: "500" }
       ],
       children: []
     },
@@ -413,8 +381,8 @@ const ServerSettingsExplorer = () => {
       label: "iceberg_catalog_*",
       count: 2,
       settings: [
-        { name: "iceberg_catalog_threadpool_pool_size", href: "/es/reference/settings/server-settings/settings/iceberg-catalog#iceberg_catalog_threadpool_pool_size", default: "50" },
-        { name: "iceberg_catalog_threadpool_queue_size", href: "/es/reference/settings/server-settings/settings/iceberg-catalog#iceberg_catalog_threadpool_queue_size", default: "10000" }
+        { name: "iceberg_catalog_threadpool_pool_size", path: "/iceberg-catalog#iceberg_catalog_threadpool_pool_size", default: "50" },
+        { name: "iceberg_catalog_threadpool_queue_size", path: "/iceberg-catalog#iceberg_catalog_threadpool_queue_size", default: "10000" }
       ],
       children: []
     },
@@ -422,8 +390,8 @@ const ServerSettingsExplorer = () => {
       label: "iceberg_compaction_*",
       count: 2,
       settings: [
-        { name: "iceberg_compaction_threadpool_pool_size", href: "/es/reference/settings/server-settings/settings/iceberg-compaction#iceberg_compaction_threadpool_pool_size", default: "50" },
-        { name: "iceberg_compaction_threadpool_queue_size", href: "/es/reference/settings/server-settings/settings/iceberg-compaction#iceberg_compaction_threadpool_queue_size", default: "1000000" }
+        { name: "iceberg_compaction_threadpool_pool_size", path: "/iceberg-compaction#iceberg_compaction_threadpool_pool_size", default: "50" },
+        { name: "iceberg_compaction_threadpool_queue_size", path: "/iceberg-compaction#iceberg_compaction_threadpool_queue_size", default: "1000000" }
       ],
       children: []
     },
@@ -431,10 +399,10 @@ const ServerSettingsExplorer = () => {
       label: "iceberg_metadata_*",
       count: 4,
       settings: [
-        { name: "iceberg_metadata_files_cache_max_entries", href: "/es/reference/settings/server-settings/settings/iceberg-metadata#iceberg_metadata_files_cache_max_entries", default: "1000" },
-        { name: "iceberg_metadata_files_cache_policy", href: "/es/reference/settings/server-settings/settings/iceberg-metadata#iceberg_metadata_files_cache_policy", default: "SLRU" },
-        { name: "iceberg_metadata_files_cache_size", href: "/es/reference/settings/server-settings/settings/iceberg-metadata#iceberg_metadata_files_cache_size", default: "134217728" },
-        { name: "iceberg_metadata_files_cache_size_ratio", href: "/es/reference/settings/server-settings/settings/iceberg-metadata#iceberg_metadata_files_cache_size_ratio", default: "0.5" }
+        { name: "iceberg_metadata_files_cache_max_entries", path: "/iceberg-metadata#iceberg_metadata_files_cache_max_entries", default: "1000" },
+        { name: "iceberg_metadata_files_cache_policy", path: "/iceberg-metadata#iceberg_metadata_files_cache_policy", default: "SLRU" },
+        { name: "iceberg_metadata_files_cache_size", path: "/iceberg-metadata#iceberg_metadata_files_cache_size", default: "134217728" },
+        { name: "iceberg_metadata_files_cache_size_ratio", path: "/iceberg-metadata#iceberg_metadata_files_cache_size_ratio", default: "0.5" }
       ],
       children: []
     },
@@ -442,16 +410,8 @@ const ServerSettingsExplorer = () => {
       label: "iceberg_scheduler_*",
       count: 2,
       settings: [
-        {
-          name: "iceberg_scheduler_compaction_threadpool_pool_size",
-          href: "/es/reference/settings/server-settings/settings/iceberg-scheduler#iceberg_scheduler_compaction_threadpool_pool_size",
-          default: "50"
-        },
-        {
-          name: "iceberg_scheduler_compaction_threadpool_queue_size",
-          href: "/es/reference/settings/server-settings/settings/iceberg-scheduler#iceberg_scheduler_compaction_threadpool_queue_size",
-          default: "1000000"
-        }
+        { name: "iceberg_scheduler_compaction_threadpool_pool_size", path: "/iceberg-scheduler#iceberg_scheduler_compaction_threadpool_pool_size", default: "50" },
+        { name: "iceberg_scheduler_compaction_threadpool_queue_size", path: "/iceberg-scheduler#iceberg_scheduler_compaction_threadpool_queue_size", default: "1000000" }
       ],
       children: []
     },
@@ -459,10 +419,10 @@ const ServerSettingsExplorer = () => {
       label: "index_mark_*",
       count: 4,
       settings: [
-        { name: "index_mark_cache_policy", href: "/es/reference/settings/server-settings/settings/index-mark#index_mark_cache_policy", default: "SLRU" },
-        { name: "index_mark_cache_prewarm_ratio", href: "/es/reference/settings/server-settings/settings/index-mark#index_mark_cache_prewarm_ratio", default: "0.95" },
-        { name: "index_mark_cache_size", href: "/es/reference/settings/server-settings/settings/index-mark#index_mark_cache_size", default: "5368709120" },
-        { name: "index_mark_cache_size_ratio", href: "/es/reference/settings/server-settings/settings/index-mark#index_mark_cache_size_ratio", default: "0.3" }
+        { name: "index_mark_cache_policy", path: "/index-mark#index_mark_cache_policy", default: "SLRU" },
+        { name: "index_mark_cache_prewarm_ratio", path: "/index-mark#index_mark_cache_prewarm_ratio", default: "0.95" },
+        { name: "index_mark_cache_size", path: "/index-mark#index_mark_cache_size", default: "5368709120" },
+        { name: "index_mark_cache_size_ratio", path: "/index-mark#index_mark_cache_size_ratio", default: "0.3" }
       ],
       children: []
     },
@@ -470,9 +430,9 @@ const ServerSettingsExplorer = () => {
       label: "index_uncompressed_*",
       count: 3,
       settings: [
-        { name: "index_uncompressed_cache_policy", href: "/es/reference/settings/server-settings/settings/index-uncompressed#index_uncompressed_cache_policy", default: "SLRU" },
-        { name: "index_uncompressed_cache_size", href: "/es/reference/settings/server-settings/settings/index-uncompressed#index_uncompressed_cache_size", default: "0" },
-        { name: "index_uncompressed_cache_size_ratio", href: "/es/reference/settings/server-settings/settings/index-uncompressed#index_uncompressed_cache_size_ratio", default: "0.5" }
+        { name: "index_uncompressed_cache_policy", path: "/index-uncompressed#index_uncompressed_cache_policy", default: "SLRU" },
+        { name: "index_uncompressed_cache_size", path: "/index-uncompressed#index_uncompressed_cache_size", default: "0" },
+        { name: "index_uncompressed_cache_size_ratio", path: "/index-uncompressed#index_uncompressed_cache_size_ratio", default: "0.5" }
       ],
       children: []
     },
@@ -480,8 +440,8 @@ const ServerSettingsExplorer = () => {
       label: "interserver_*",
       count: 2,
       settings: [
-        { name: "interserver_listen_host", href: "/es/reference/settings/server-settings/settings/interserver#interserver_listen_host", default: "listen_host" },
-        { name: "interserver_tables_status_require_auth", href: "/es/reference/settings/server-settings/settings/interserver#interserver_tables_status_require_auth", default: "1" }
+        { name: "interserver_listen_host", path: "/interserver#interserver_listen_host", default: "listen_host" },
+        { name: "interserver_tables_status_require_auth", path: "/interserver#interserver_tables_status_require_auth", default: "1" }
       ],
       children: []
     },
@@ -489,9 +449,9 @@ const ServerSettingsExplorer = () => {
       label: "interserver_http_*",
       count: 3,
       settings: [
-        { name: "interserver_http_credentials", href: "/es/reference/settings/server-settings/settings/interserver-http#interserver_http_credentials" },
-        { name: "interserver_http_host", href: "/es/reference/settings/server-settings/settings/interserver-http#interserver_http_host", default: '""' },
-        { name: "interserver_http_port", href: "/es/reference/settings/server-settings/settings/interserver-http#interserver_http_port", default: "0" }
+        { name: "interserver_http_credentials", path: "/interserver-http#interserver_http_credentials" },
+        { name: "interserver_http_host", path: "/interserver-http#interserver_http_host", default: '""' },
+        { name: "interserver_http_port", path: "/interserver-http#interserver_http_port", default: "0" }
       ],
       children: []
     },
@@ -499,8 +459,8 @@ const ServerSettingsExplorer = () => {
       label: "interserver_https_*",
       count: 2,
       settings: [
-        { name: "interserver_https_host", href: "/es/reference/settings/server-settings/settings/interserver-https#interserver_https_host", default: '""' },
-        { name: "interserver_https_port", href: "/es/reference/settings/server-settings/settings/interserver-https#interserver_https_port", default: "0" }
+        { name: "interserver_https_host", path: "/interserver-https#interserver_https_host", default: '""' },
+        { name: "interserver_https_port", path: "/interserver-https#interserver_https_port", default: "0" }
       ],
       children: []
     },
@@ -508,14 +468,10 @@ const ServerSettingsExplorer = () => {
       label: "jemalloc_*",
       count: 4,
       settings: [
-        {
-          name: "jemalloc_collect_global_profile_samples_in_trace_log",
-          href: "/es/reference/settings/server-settings/settings/jemalloc#jemalloc_collect_global_profile_samples_in_trace_log",
-          default: "0"
-        },
-        { name: "jemalloc_max_background_threads_num", href: "/es/reference/settings/server-settings/settings/jemalloc#jemalloc_max_background_threads_num", default: "0" },
-        { name: "jemalloc_merge_tree_arenas", href: "/es/reference/settings/server-settings/settings/jemalloc#jemalloc_merge_tree_arenas", default: "1" },
-        { name: "jemalloc_profiler_sampling_rate", href: "/es/reference/settings/server-settings/settings/jemalloc#jemalloc_profiler_sampling_rate", default: "19" }
+        { name: "jemalloc_collect_global_profile_samples_in_trace_log", path: "/jemalloc#jemalloc_collect_global_profile_samples_in_trace_log", default: "0" },
+        { name: "jemalloc_max_background_threads_num", path: "/jemalloc#jemalloc_max_background_threads_num", default: "0" },
+        { name: "jemalloc_merge_tree_arenas", path: "/jemalloc#jemalloc_merge_tree_arenas", default: "1" },
+        { name: "jemalloc_profiler_sampling_rate", path: "/jemalloc#jemalloc_profiler_sampling_rate", default: "19" }
       ],
       children: []
     },
@@ -523,8 +479,8 @@ const ServerSettingsExplorer = () => {
       label: "jemalloc_enable_*",
       count: 2,
       settings: [
-        { name: "jemalloc_enable_background_threads", href: "/es/reference/settings/server-settings/settings/jemalloc-enable#jemalloc_enable_background_threads", default: "1" },
-        { name: "jemalloc_enable_global_profiler", href: "/es/reference/settings/server-settings/settings/jemalloc-enable#jemalloc_enable_global_profiler", default: "0" }
+        { name: "jemalloc_enable_background_threads", path: "/jemalloc-enable#jemalloc_enable_background_threads", default: "1" },
+        { name: "jemalloc_enable_global_profiler", path: "/jemalloc-enable#jemalloc_enable_global_profiler", default: "0" }
       ],
       children: []
     },
@@ -532,13 +488,9 @@ const ServerSettingsExplorer = () => {
       label: "jemalloc_flush_*",
       count: 3,
       settings: [
-        { name: "jemalloc_flush_profile_interval_bytes", href: "/es/reference/settings/server-settings/settings/jemalloc-flush#jemalloc_flush_profile_interval_bytes", default: "0" },
-        { name: "jemalloc_flush_profile_on_memory_exceeded", href: "/es/reference/settings/server-settings/settings/jemalloc-flush#jemalloc_flush_profile_on_memory_exceeded", default: "0" },
-        {
-          name: "jemalloc_flush_profile_on_memory_exceeded_interval",
-          href: "/es/reference/settings/server-settings/settings/jemalloc-flush#jemalloc_flush_profile_on_memory_exceeded_interval",
-          default: "0"
-        }
+        { name: "jemalloc_flush_profile_interval_bytes", path: "/jemalloc-flush#jemalloc_flush_profile_interval_bytes", default: "0" },
+        { name: "jemalloc_flush_profile_on_memory_exceeded", path: "/jemalloc-flush#jemalloc_flush_profile_on_memory_exceeded", default: "0" },
+        { name: "jemalloc_flush_profile_on_memory_exceeded_interval", path: "/jemalloc-flush#jemalloc_flush_profile_on_memory_exceeded_interval", default: "0" }
       ],
       children: []
     },
@@ -546,8 +498,8 @@ const ServerSettingsExplorer = () => {
       label: "keeper_*",
       count: 2,
       settings: [
-        { name: "keeper_hosts", href: "/es/reference/settings/server-settings/settings/keeper#keeper_hosts", default: '""' },
-        { name: "keeper_multiread_batch_size", href: "/es/reference/settings/server-settings/settings/keeper#keeper_multiread_batch_size", default: "10000" }
+        { name: "keeper_hosts", path: "/keeper#keeper_hosts", default: '""' },
+        { name: "keeper_multiread_batch_size", path: "/keeper#keeper_multiread_batch_size", default: "10000" }
       ],
       children: []
     },
@@ -555,8 +507,8 @@ const ServerSettingsExplorer = () => {
       label: "keeper_server.socket_*",
       count: 2,
       settings: [
-        { name: "keeper_server.socket_receive_timeout_sec", href: "/es/reference/settings/server-settings/settings/keeper-server-socket#keeper_server.socket_receive_timeout_sec", default: "300" },
-        { name: "keeper_server.socket_send_timeout_sec", href: "/es/reference/settings/server-settings/settings/keeper-server-socket#keeper_server.socket_send_timeout_sec", default: "300" }
+        { name: "keeper_server.socket_receive_timeout_sec", path: "/keeper-server-socket#keeper_server.socket_receive_timeout_sec", default: "300" },
+        { name: "keeper_server.socket_send_timeout_sec", path: "/keeper-server-socket#keeper_server.socket_send_timeout_sec", default: "300" }
       ],
       children: []
     },
@@ -564,8 +516,8 @@ const ServerSettingsExplorer = () => {
       label: "license_*",
       count: 2,
       settings: [
-        { name: "license_file", href: "/es/reference/settings/server-settings/settings/license#license_file", default: '""' },
-        { name: "license_public_key_for_testing", href: "/es/reference/settings/server-settings/settings/license#license_public_key_for_testing", default: '""' }
+        { name: "license_file", path: "/license#license_file", default: '""' },
+        { name: "license_public_key_for_testing", path: "/license#license_public_key_for_testing", default: '""' }
       ],
       children: []
     },
@@ -573,10 +525,10 @@ const ServerSettingsExplorer = () => {
       label: "listen_*",
       count: 4,
       settings: [
-        { name: "listen_backlog", href: "/es/reference/settings/server-settings/settings/listen#listen_backlog", default: "4096" },
-        { name: "listen_host", href: "/es/reference/settings/server-settings/settings/listen#listen_host" },
-        { name: "listen_reuse_port", href: "/es/reference/settings/server-settings/settings/listen#listen_reuse_port", default: "0" },
-        { name: "listen_try", href: "/es/reference/settings/server-settings/settings/listen#listen_try", default: "0" }
+        { name: "listen_backlog", path: "/listen#listen_backlog", default: "4096" },
+        { name: "listen_host", path: "/listen#listen_host" },
+        { name: "listen_reuse_port", path: "/listen#listen_reuse_port", default: "0" },
+        { name: "listen_try", path: "/listen#listen_try", default: "0" }
       ],
       children: []
     },
@@ -584,8 +536,8 @@ const ServerSettingsExplorer = () => {
       label: "load_marks_*",
       count: 2,
       settings: [
-        { name: "load_marks_threadpool_pool_size", href: "/es/reference/settings/server-settings/settings/load-marks#load_marks_threadpool_pool_size", default: "50" },
-        { name: "load_marks_threadpool_queue_size", href: "/es/reference/settings/server-settings/settings/load-marks#load_marks_threadpool_queue_size", default: "10000" }
+        { name: "load_marks_threadpool_pool_size", path: "/load-marks#load_marks_threadpool_pool_size", default: "50" },
+        { name: "load_marks_threadpool_queue_size", path: "/load-marks#load_marks_threadpool_queue_size", default: "10000" }
       ],
       children: []
     },
@@ -593,8 +545,8 @@ const ServerSettingsExplorer = () => {
       label: "logger.async_*",
       count: 2,
       settings: [
-        { name: "logger.async", href: "/es/reference/settings/server-settings/settings/logger-async#logger.async", default: "1" },
-        { name: "logger.async_queye_max_size", href: "/es/reference/settings/server-settings/settings/logger-async#logger.async_queye_max_size", default: "65536" }
+        { name: "logger.async", path: "/logger-async#logger.async", default: "1" },
+        { name: "logger.async_queye_max_size", path: "/logger-async#logger.async_queye_max_size", default: "65536" }
       ],
       children: []
     },
@@ -602,8 +554,8 @@ const ServerSettingsExplorer = () => {
       label: "logger.console_*",
       count: 2,
       settings: [
-        { name: "logger.console", href: "/es/reference/settings/server-settings/settings/logger-console#logger.console", default: "0" },
-        { name: "logger.console_log_level", href: "/es/reference/settings/server-settings/settings/logger-console#logger.console_log_level", default: "trace" }
+        { name: "logger.console", path: "/logger-console#logger.console", default: "0" },
+        { name: "logger.console_log_level", path: "/logger-console#logger.console_log_level", default: "trace" }
       ],
       children: []
     },
@@ -611,10 +563,10 @@ const ServerSettingsExplorer = () => {
       label: "mark_cache_*",
       count: 4,
       settings: [
-        { name: "mark_cache_policy", href: "/es/reference/settings/server-settings/settings/mark-cache#mark_cache_policy", default: "SLRU" },
-        { name: "mark_cache_prewarm_ratio", href: "/es/reference/settings/server-settings/settings/mark-cache#mark_cache_prewarm_ratio", default: "0.95" },
-        { name: "mark_cache_size", href: "/es/reference/settings/server-settings/settings/mark-cache#mark_cache_size", default: "5368709120" },
-        { name: "mark_cache_size_ratio", href: "/es/reference/settings/server-settings/settings/mark-cache#mark_cache_size_ratio", default: "0.5" }
+        { name: "mark_cache_policy", path: "/mark-cache#mark_cache_policy", default: "SLRU" },
+        { name: "mark_cache_prewarm_ratio", path: "/mark-cache#mark_cache_prewarm_ratio", default: "0.95" },
+        { name: "mark_cache_size", path: "/mark-cache#mark_cache_size", default: "5368709120" },
+        { name: "mark_cache_size_ratio", path: "/mark-cache#mark_cache_size_ratio", default: "0.5" }
       ],
       children: []
     },
@@ -622,31 +574,31 @@ const ServerSettingsExplorer = () => {
       label: "max_*",
       count: 25,
       settings: [
-        { name: "max_active_parts_loading_thread_pool_size", href: "/es/reference/settings/server-settings/settings/max#max_active_parts_loading_thread_pool_size", default: "64" },
-        { name: "max_authentication_methods_per_user", href: "/es/reference/settings/server-settings/settings/max#max_authentication_methods_per_user", default: "100" },
-        { name: "max_backup_bandwidth_for_server", href: "/es/reference/settings/server-settings/settings/max#max_backup_bandwidth_for_server", default: "0" },
-        { name: "max_build_vector_similarity_index_thread_pool_size", href: "/es/reference/settings/server-settings/settings/max#max_build_vector_similarity_index_thread_pool_size", default: "16" },
-        { name: "max_connections", href: "/es/reference/settings/server-settings/settings/max#max_connections", default: "4096" },
-        { name: "max_entries_for_hash_table_stats", href: "/es/reference/settings/server-settings/settings/max#max_entries_for_hash_table_stats", default: "10000" },
-        { name: "max_fetch_partition_thread_pool_size", href: "/es/reference/settings/server-settings/settings/max#max_fetch_partition_thread_pool_size", default: "64" },
-        { name: "max_held_snapshots", href: "/es/reference/settings/server-settings/settings/max#max_held_snapshots", default: "0" },
-        { name: "max_http_index_page_size", href: "/es/reference/settings/server-settings/settings/max#max_http_index_page_size", default: "10485760" },
-        { name: "max_keep_alive_requests", href: "/es/reference/settings/server-settings/settings/max#max_keep_alive_requests", default: "10000" },
-        { name: "max_materialized_views_count_for_table", href: "/es/reference/settings/server-settings/settings/max#max_materialized_views_count_for_table", default: "0" },
-        { name: "max_merges_bandwidth_for_server", href: "/es/reference/settings/server-settings/settings/max#max_merges_bandwidth_for_server", default: "0" },
-        { name: "max_mutations_bandwidth_for_server", href: "/es/reference/settings/server-settings/settings/max#max_mutations_bandwidth_for_server", default: "0" },
-        { name: "max_open_files", href: "/es/reference/settings/server-settings/settings/max#max_open_files", default: "0" },
-        { name: "max_os_cpu_wait_time_ratio_to_drop_connection", href: "/es/reference/settings/server-settings/settings/max#max_os_cpu_wait_time_ratio_to_drop_connection", default: "0" },
-        { name: "max_outdated_parts_loading_thread_pool_size", href: "/es/reference/settings/server-settings/settings/max#max_outdated_parts_loading_thread_pool_size", default: "32" },
-        { name: "max_part_num_to_warn", href: "/es/reference/settings/server-settings/settings/max#max_part_num_to_warn", default: "100000" },
-        { name: "max_partition_size_to_drop", href: "/es/reference/settings/server-settings/settings/max#max_partition_size_to_drop", default: "50000000000" },
-        { name: "max_parts_cleaning_thread_pool_size", href: "/es/reference/settings/server-settings/settings/max#max_parts_cleaning_thread_pool_size", default: "128" },
-        { name: "max_per_cpu_untracked_memory", href: "/es/reference/settings/server-settings/settings/max#max_per_cpu_untracked_memory", default: "8388608" },
-        { name: "max_session_timeout", href: "/es/reference/settings/server-settings/settings/max#max_session_timeout" },
-        { name: "max_temporary_data_on_disk_size", href: "/es/reference/settings/server-settings/settings/max#max_temporary_data_on_disk_size", default: "0" },
-        { name: "max_unexpected_parts_loading_thread_pool_size", href: "/es/reference/settings/server-settings/settings/max#max_unexpected_parts_loading_thread_pool_size", default: "8" },
-        { name: "max_waiting_queries", href: "/es/reference/settings/server-settings/settings/max#max_waiting_queries", default: "0" },
-        { name: "max_zookeeper_pooled_connections", href: "/es/reference/settings/server-settings/settings/max#max_zookeeper_pooled_connections", default: "0" }
+        { name: "max_active_parts_loading_thread_pool_size", path: "/max#max_active_parts_loading_thread_pool_size", default: "64" },
+        { name: "max_authentication_methods_per_user", path: "/max#max_authentication_methods_per_user", default: "100" },
+        { name: "max_backup_bandwidth_for_server", path: "/max#max_backup_bandwidth_for_server", default: "0" },
+        { name: "max_build_vector_similarity_index_thread_pool_size", path: "/max#max_build_vector_similarity_index_thread_pool_size", default: "16" },
+        { name: "max_connections", path: "/max#max_connections", default: "4096" },
+        { name: "max_entries_for_hash_table_stats", path: "/max#max_entries_for_hash_table_stats", default: "10000" },
+        { name: "max_fetch_partition_thread_pool_size", path: "/max#max_fetch_partition_thread_pool_size", default: "64" },
+        { name: "max_held_snapshots", path: "/max#max_held_snapshots", default: "0" },
+        { name: "max_http_index_page_size", path: "/max#max_http_index_page_size", default: "10485760" },
+        { name: "max_keep_alive_requests", path: "/max#max_keep_alive_requests", default: "10000" },
+        { name: "max_materialized_views_count_for_table", path: "/max#max_materialized_views_count_for_table", default: "0" },
+        { name: "max_merges_bandwidth_for_server", path: "/max#max_merges_bandwidth_for_server", default: "0" },
+        { name: "max_mutations_bandwidth_for_server", path: "/max#max_mutations_bandwidth_for_server", default: "0" },
+        { name: "max_open_files", path: "/max#max_open_files", default: "0" },
+        { name: "max_os_cpu_wait_time_ratio_to_drop_connection", path: "/max#max_os_cpu_wait_time_ratio_to_drop_connection", default: "0" },
+        { name: "max_outdated_parts_loading_thread_pool_size", path: "/max#max_outdated_parts_loading_thread_pool_size", default: "32" },
+        { name: "max_part_num_to_warn", path: "/max#max_part_num_to_warn", default: "100000" },
+        { name: "max_partition_size_to_drop", path: "/max#max_partition_size_to_drop", default: "50000000000" },
+        { name: "max_parts_cleaning_thread_pool_size", path: "/max#max_parts_cleaning_thread_pool_size", default: "128" },
+        { name: "max_per_cpu_untracked_memory", path: "/max#max_per_cpu_untracked_memory", default: "8388608" },
+        { name: "max_session_timeout", path: "/max#max_session_timeout" },
+        { name: "max_temporary_data_on_disk_size", path: "/max#max_temporary_data_on_disk_size", default: "0" },
+        { name: "max_unexpected_parts_loading_thread_pool_size", path: "/max#max_unexpected_parts_loading_thread_pool_size", default: "8" },
+        { name: "max_waiting_queries", path: "/max#max_waiting_queries", default: "0" },
+        { name: "max_zookeeper_pooled_connections", path: "/max#max_zookeeper_pooled_connections", default: "0" }
       ],
       children: []
     },
@@ -654,8 +606,8 @@ const ServerSettingsExplorer = () => {
       label: "max_backups_*",
       count: 2,
       settings: [
-        { name: "max_backups_io_thread_pool_free_size", href: "/es/reference/settings/server-settings/settings/max-backups#max_backups_io_thread_pool_free_size", default: "0" },
-        { name: "max_backups_io_thread_pool_size", href: "/es/reference/settings/server-settings/settings/max-backups#max_backups_io_thread_pool_size", default: "1000" }
+        { name: "max_backups_io_thread_pool_free_size", path: "/max-backups#max_backups_io_thread_pool_free_size", default: "0" },
+        { name: "max_backups_io_thread_pool_size", path: "/max-backups#max_backups_io_thread_pool_size", default: "1000" }
       ],
       children: []
     },
@@ -663,9 +615,9 @@ const ServerSettingsExplorer = () => {
       label: "max_concurrent_*",
       count: 3,
       settings: [
-        { name: "max_concurrent_insert_queries", href: "/es/reference/settings/server-settings/settings/max-concurrent#max_concurrent_insert_queries", default: "0" },
-        { name: "max_concurrent_queries", href: "/es/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries", default: "0" },
-        { name: "max_concurrent_select_queries", href: "/es/reference/settings/server-settings/settings/max-concurrent#max_concurrent_select_queries", default: "0" }
+        { name: "max_concurrent_insert_queries", path: "/max-concurrent#max_concurrent_insert_queries", default: "0" },
+        { name: "max_concurrent_queries", path: "/max-concurrent#max_concurrent_queries", default: "0" },
+        { name: "max_concurrent_select_queries", path: "/max-concurrent#max_concurrent_select_queries", default: "0" }
       ],
       children: []
     },
@@ -673,13 +625,9 @@ const ServerSettingsExplorer = () => {
       label: "max_database_*",
       count: 3,
       settings: [
-        { name: "max_database_num_to_throw", href: "/es/reference/settings/server-settings/settings/max-database#max_database_num_to_throw", default: "0" },
-        { name: "max_database_num_to_warn", href: "/es/reference/settings/server-settings/settings/max-database#max_database_num_to_warn", default: "1000" },
-        {
-          name: "max_database_replicated_create_table_thread_pool_size",
-          href: "/es/reference/settings/server-settings/settings/max-database#max_database_replicated_create_table_thread_pool_size",
-          default: "1"
-        }
+        { name: "max_database_num_to_throw", path: "/max-database#max_database_num_to_throw", default: "0" },
+        { name: "max_database_num_to_warn", path: "/max-database#max_database_num_to_warn", default: "1000" },
+        { name: "max_database_replicated_create_table_thread_pool_size", path: "/max-database#max_database_replicated_create_table_thread_pool_size", default: "1" }
       ],
       children: []
     },
@@ -687,8 +635,8 @@ const ServerSettingsExplorer = () => {
       label: "max_dictionary_*",
       count: 2,
       settings: [
-        { name: "max_dictionary_num_to_throw", href: "/es/reference/settings/server-settings/settings/max-dictionary#max_dictionary_num_to_throw", default: "0" },
-        { name: "max_dictionary_num_to_warn", href: "/es/reference/settings/server-settings/settings/max-dictionary#max_dictionary_num_to_warn", default: "1000" }
+        { name: "max_dictionary_num_to_throw", path: "/max-dictionary#max_dictionary_num_to_throw", default: "0" },
+        { name: "max_dictionary_num_to_warn", path: "/max-dictionary#max_dictionary_num_to_warn", default: "1000" }
       ],
       children: []
     },
@@ -696,12 +644,8 @@ const ServerSettingsExplorer = () => {
       label: "max_distributed_*",
       count: 2,
       settings: [
-        { name: "max_distributed_cache_read_bandwidth_for_server", href: "/es/reference/settings/server-settings/settings/max-distributed#max_distributed_cache_read_bandwidth_for_server", default: "0" },
-        {
-          name: "max_distributed_cache_write_bandwidth_for_server",
-          href: "/es/reference/settings/server-settings/settings/max-distributed#max_distributed_cache_write_bandwidth_for_server",
-          default: "0"
-        }
+        { name: "max_distributed_cache_read_bandwidth_for_server", path: "/max-distributed#max_distributed_cache_read_bandwidth_for_server", default: "0" },
+        { name: "max_distributed_cache_write_bandwidth_for_server", path: "/max-distributed#max_distributed_cache_write_bandwidth_for_server", default: "0" }
       ],
       children: []
     },
@@ -709,8 +653,8 @@ const ServerSettingsExplorer = () => {
       label: "max_format_*",
       count: 2,
       settings: [
-        { name: "max_format_parsing_thread_pool_free_size", href: "/es/reference/settings/server-settings/settings/max-format#max_format_parsing_thread_pool_free_size", default: "0" },
-        { name: "max_format_parsing_thread_pool_size", href: "/es/reference/settings/server-settings/settings/max-format#max_format_parsing_thread_pool_size", default: "100" }
+        { name: "max_format_parsing_thread_pool_free_size", path: "/max-format#max_format_parsing_thread_pool_free_size", default: "0" },
+        { name: "max_format_parsing_thread_pool_size", path: "/max-format#max_format_parsing_thread_pool_size", default: "100" }
       ],
       children: []
     },
@@ -718,8 +662,8 @@ const ServerSettingsExplorer = () => {
       label: "max_io_*",
       count: 2,
       settings: [
-        { name: "max_io_thread_pool_free_size", href: "/es/reference/settings/server-settings/settings/max-io#max_io_thread_pool_free_size", default: "0" },
-        { name: "max_io_thread_pool_size", href: "/es/reference/settings/server-settings/settings/max-io#max_io_thread_pool_size", default: "100" }
+        { name: "max_io_thread_pool_free_size", path: "/max-io#max_io_thread_pool_free_size", default: "0" },
+        { name: "max_io_thread_pool_size", path: "/max-io#max_io_thread_pool_size", default: "100" }
       ],
       children: []
     },
@@ -727,8 +671,8 @@ const ServerSettingsExplorer = () => {
       label: "max_local_*",
       count: 2,
       settings: [
-        { name: "max_local_read_bandwidth_for_server", href: "/es/reference/settings/server-settings/settings/max-local#max_local_read_bandwidth_for_server", default: "0" },
-        { name: "max_local_write_bandwidth_for_server", href: "/es/reference/settings/server-settings/settings/max-local#max_local_write_bandwidth_for_server", default: "0" }
+        { name: "max_local_read_bandwidth_for_server", path: "/max-local#max_local_read_bandwidth_for_server", default: "0" },
+        { name: "max_local_write_bandwidth_for_server", path: "/max-local#max_local_write_bandwidth_for_server", default: "0" }
       ],
       children: []
     },
@@ -736,8 +680,8 @@ const ServerSettingsExplorer = () => {
       label: "max_named_*",
       count: 2,
       settings: [
-        { name: "max_named_collection_num_to_throw", href: "/es/reference/settings/server-settings/settings/max-named#max_named_collection_num_to_throw", default: "0" },
-        { name: "max_named_collection_num_to_warn", href: "/es/reference/settings/server-settings/settings/max-named#max_named_collection_num_to_warn", default: "1000" }
+        { name: "max_named_collection_num_to_throw", path: "/max-named#max_named_collection_num_to_throw", default: "0" },
+        { name: "max_named_collection_num_to_warn", path: "/max-named#max_named_collection_num_to_warn", default: "1000" }
       ],
       children: []
     },
@@ -745,8 +689,8 @@ const ServerSettingsExplorer = () => {
       label: "max_pending_*",
       count: 2,
       settings: [
-        { name: "max_pending_mutations_execution_time_to_warn", href: "/es/reference/settings/server-settings/settings/max-pending#max_pending_mutations_execution_time_to_warn", default: "86400" },
-        { name: "max_pending_mutations_to_warn", href: "/es/reference/settings/server-settings/settings/max-pending#max_pending_mutations_to_warn", default: "500" }
+        { name: "max_pending_mutations_execution_time_to_warn", path: "/max-pending#max_pending_mutations_execution_time_to_warn", default: "86400" },
+        { name: "max_pending_mutations_to_warn", path: "/max-pending#max_pending_mutations_to_warn", default: "500" }
       ],
       children: []
     },
@@ -754,12 +698,8 @@ const ServerSettingsExplorer = () => {
       label: "max_prefixes_*",
       count: 2,
       settings: [
-        {
-          name: "max_prefixes_deserialization_thread_pool_free_size",
-          href: "/es/reference/settings/server-settings/settings/max-prefixes#max_prefixes_deserialization_thread_pool_free_size",
-          default: "0"
-        },
-        { name: "max_prefixes_deserialization_thread_pool_size", href: "/es/reference/settings/server-settings/settings/max-prefixes#max_prefixes_deserialization_thread_pool_size", default: "100" }
+        { name: "max_prefixes_deserialization_thread_pool_free_size", path: "/max-prefixes#max_prefixes_deserialization_thread_pool_free_size", default: "0" },
+        { name: "max_prefixes_deserialization_thread_pool_size", path: "/max-prefixes#max_prefixes_deserialization_thread_pool_size", default: "100" }
       ],
       children: []
     },
@@ -767,9 +707,9 @@ const ServerSettingsExplorer = () => {
       label: "max_remote_*",
       count: 3,
       settings: [
-        { name: "max_remote_read_connections", href: "/es/reference/settings/server-settings/settings/max-remote#max_remote_read_connections", default: "1000" },
-        { name: "max_remote_read_network_bandwidth_for_server", href: "/es/reference/settings/server-settings/settings/max-remote#max_remote_read_network_bandwidth_for_server", default: "0" },
-        { name: "max_remote_write_network_bandwidth_for_server", href: "/es/reference/settings/server-settings/settings/max-remote#max_remote_write_network_bandwidth_for_server", default: "0" }
+        { name: "max_remote_read_connections", path: "/max-remote#max_remote_read_connections", default: "1000" },
+        { name: "max_remote_read_network_bandwidth_for_server", path: "/max-remote#max_remote_read_network_bandwidth_for_server", default: "0" },
+        { name: "max_remote_write_network_bandwidth_for_server", path: "/max-remote#max_remote_write_network_bandwidth_for_server", default: "0" }
       ],
       children: []
     },
@@ -777,17 +717,9 @@ const ServerSettingsExplorer = () => {
       label: "max_replicated_*",
       count: 3,
       settings: [
-        {
-          name: "max_replicated_fetches_network_bandwidth_for_server",
-          href: "/es/reference/settings/server-settings/settings/max-replicated#max_replicated_fetches_network_bandwidth_for_server",
-          default: "0"
-        },
-        {
-          name: "max_replicated_sends_network_bandwidth_for_server",
-          href: "/es/reference/settings/server-settings/settings/max-replicated#max_replicated_sends_network_bandwidth_for_server",
-          default: "0"
-        },
-        { name: "max_replicated_table_num_to_throw", href: "/es/reference/settings/server-settings/settings/max-replicated#max_replicated_table_num_to_throw", default: "0" }
+        { name: "max_replicated_fetches_network_bandwidth_for_server", path: "/max-replicated#max_replicated_fetches_network_bandwidth_for_server", default: "0" },
+        { name: "max_replicated_sends_network_bandwidth_for_server", path: "/max-replicated#max_replicated_sends_network_bandwidth_for_server", default: "0" },
+        { name: "max_replicated_table_num_to_throw", path: "/max-replicated#max_replicated_table_num_to_throw", default: "0" }
       ],
       children: []
     },
@@ -795,8 +727,8 @@ const ServerSettingsExplorer = () => {
       label: "max_server_memory_usage_*",
       count: 2,
       settings: [
-        { name: "max_server_memory_usage", href: "/es/reference/settings/server-settings/settings/max-server-memory-usage#max_server_memory_usage", default: "0" },
-        { name: "max_server_memory_usage_to_ram_ratio", href: "/es/reference/settings/server-settings/settings/max-server-memory-usage#max_server_memory_usage_to_ram_ratio", default: "0.9" }
+        { name: "max_server_memory_usage", path: "/max-server-memory-usage#max_server_memory_usage", default: "0" },
+        { name: "max_server_memory_usage_to_ram_ratio", path: "/max-server-memory-usage#max_server_memory_usage_to_ram_ratio", default: "0.9" }
       ],
       children: []
     },
@@ -804,8 +736,8 @@ const ServerSettingsExplorer = () => {
       label: "max_snapshot_*",
       count: 2,
       settings: [
-        { name: "max_snapshot_commit_thread_pool_free_size", href: "/es/reference/settings/server-settings/settings/max-snapshot#max_snapshot_commit_thread_pool_free_size", default: "0" },
-        { name: "max_snapshot_commit_thread_pool_size", href: "/es/reference/settings/server-settings/settings/max-snapshot#max_snapshot_commit_thread_pool_size", default: "16" }
+        { name: "max_snapshot_commit_thread_pool_free_size", path: "/max-snapshot#max_snapshot_commit_thread_pool_free_size", default: "0" },
+        { name: "max_snapshot_commit_thread_pool_size", path: "/max-snapshot#max_snapshot_commit_thread_pool_size", default: "16" }
       ],
       children: []
     },
@@ -813,9 +745,9 @@ const ServerSettingsExplorer = () => {
       label: "max_table_*",
       count: 3,
       settings: [
-        { name: "max_table_num_to_throw", href: "/es/reference/settings/server-settings/settings/max-table#max_table_num_to_throw", default: "0" },
-        { name: "max_table_num_to_warn", href: "/es/reference/settings/server-settings/settings/max-table#max_table_num_to_warn", default: "5000" },
-        { name: "max_table_size_to_drop", href: "/es/reference/settings/server-settings/settings/max-table#max_table_size_to_drop", default: "50000000000" }
+        { name: "max_table_num_to_throw", path: "/max-table#max_table_num_to_throw", default: "0" },
+        { name: "max_table_num_to_warn", path: "/max-table#max_table_num_to_warn", default: "5000" },
+        { name: "max_table_size_to_drop", path: "/max-table#max_table_size_to_drop", default: "50000000000" }
       ],
       children: []
     },
@@ -823,8 +755,8 @@ const ServerSettingsExplorer = () => {
       label: "max_thread_*",
       count: 2,
       settings: [
-        { name: "max_thread_pool_free_size", href: "/es/reference/settings/server-settings/settings/max-thread#max_thread_pool_free_size", default: "1000" },
-        { name: "max_thread_pool_size", href: "/es/reference/settings/server-settings/settings/max-thread#max_thread_pool_size", default: "10000" }
+        { name: "max_thread_pool_free_size", path: "/max-thread#max_thread_pool_free_size", default: "1000" },
+        { name: "max_thread_pool_size", path: "/max-thread#max_thread_pool_size", default: "10000" }
       ],
       children: []
     },
@@ -832,8 +764,8 @@ const ServerSettingsExplorer = () => {
       label: "max_view_*",
       count: 2,
       settings: [
-        { name: "max_view_num_to_throw", href: "/es/reference/settings/server-settings/settings/max-view#max_view_num_to_throw", default: "0" },
-        { name: "max_view_num_to_warn", href: "/es/reference/settings/server-settings/settings/max-view#max_view_num_to_warn", default: "10000" }
+        { name: "max_view_num_to_throw", path: "/max-view#max_view_num_to_throw", default: "0" },
+        { name: "max_view_num_to_warn", path: "/max-view#max_view_num_to_warn", default: "10000" }
       ],
       children: []
     },
@@ -841,18 +773,14 @@ const ServerSettingsExplorer = () => {
       label: "memory_worker_*",
       count: 8,
       settings: [
-        { name: "memory_worker_correct_memory_tracker", href: "/es/reference/settings/server-settings/settings/memory-worker#memory_worker_correct_memory_tracker", default: "0" },
-        { name: "memory_worker_decay_adjustment_period_ms", href: "/es/reference/settings/server-settings/settings/memory-worker#memory_worker_decay_adjustment_period_ms", default: "5000" },
-        { name: "memory_worker_dynamic_hard_limit", href: "/es/reference/settings/server-settings/settings/memory-worker#memory_worker_dynamic_hard_limit", default: "1" },
-        { name: "memory_worker_period_ms", href: "/es/reference/settings/server-settings/settings/memory-worker#memory_worker_period_ms", default: "0" },
-        { name: "memory_worker_purge_dirty_pages_threshold_ratio", href: "/es/reference/settings/server-settings/settings/memory-worker#memory_worker_purge_dirty_pages_threshold_ratio", default: "0.2" },
-        {
-          name: "memory_worker_purge_total_memory_threshold_ratio",
-          href: "/es/reference/settings/server-settings/settings/memory-worker#memory_worker_purge_total_memory_threshold_ratio",
-          default: "0.9"
-        },
-        { name: "memory_worker_rss_speculative_reserve_ratio", href: "/es/reference/settings/server-settings/settings/memory-worker#memory_worker_rss_speculative_reserve_ratio", default: "1" },
-        { name: "memory_worker_use_cgroup", href: "/es/reference/settings/server-settings/settings/memory-worker#memory_worker_use_cgroup", default: "1" }
+        { name: "memory_worker_correct_memory_tracker", path: "/memory-worker#memory_worker_correct_memory_tracker", default: "0" },
+        { name: "memory_worker_decay_adjustment_period_ms", path: "/memory-worker#memory_worker_decay_adjustment_period_ms", default: "5000" },
+        { name: "memory_worker_dynamic_hard_limit", path: "/memory-worker#memory_worker_dynamic_hard_limit", default: "1" },
+        { name: "memory_worker_period_ms", path: "/memory-worker#memory_worker_period_ms", default: "0" },
+        { name: "memory_worker_purge_dirty_pages_threshold_ratio", path: "/memory-worker#memory_worker_purge_dirty_pages_threshold_ratio", default: "0.2" },
+        { name: "memory_worker_purge_total_memory_threshold_ratio", path: "/memory-worker#memory_worker_purge_total_memory_threshold_ratio", default: "0.9" },
+        { name: "memory_worker_rss_speculative_reserve_ratio", path: "/memory-worker#memory_worker_rss_speculative_reserve_ratio", default: "1" },
+        { name: "memory_worker_use_cgroup", path: "/memory-worker#memory_worker_use_cgroup", default: "1" }
       ],
       children: []
     },
@@ -860,8 +788,8 @@ const ServerSettingsExplorer = () => {
       label: "merge_*",
       count: 2,
       settings: [
-        { name: "merge_tree", href: "/es/reference/settings/server-settings/settings/merge#merge_tree" },
-        { name: "merge_workload", href: "/es/reference/settings/server-settings/settings/merge#merge_workload", default: "default" }
+        { name: "merge_tree", path: "/merge#merge_tree" },
+        { name: "merge_workload", path: "/merge#merge_workload", default: "default" }
       ],
       children: []
     },
@@ -869,8 +797,8 @@ const ServerSettingsExplorer = () => {
       label: "merges_mutations_*",
       count: 2,
       settings: [
-        { name: "merges_mutations_memory_usage_soft_limit", href: "/es/reference/settings/server-settings/settings/merges-mutations#merges_mutations_memory_usage_soft_limit", default: "0" },
-        { name: "merges_mutations_memory_usage_to_ram_ratio", href: "/es/reference/settings/server-settings/settings/merges-mutations#merges_mutations_memory_usage_to_ram_ratio", default: "0.5" }
+        { name: "merges_mutations_memory_usage_soft_limit", path: "/merges-mutations#merges_mutations_memory_usage_soft_limit", default: "0" },
+        { name: "merges_mutations_memory_usage_to_ram_ratio", path: "/merges-mutations#merges_mutations_memory_usage_to_ram_ratio", default: "0.5" }
       ],
       children: []
     },
@@ -878,8 +806,8 @@ const ServerSettingsExplorer = () => {
       label: "min_*",
       count: 2,
       settings: [
-        { name: "min_allocation_size_to_throw_on_memory_limit", href: "/es/reference/settings/server-settings/settings/min#min_allocation_size_to_throw_on_memory_limit", default: "0" },
-        { name: "min_os_cpu_wait_time_ratio_to_drop_connection", href: "/es/reference/settings/server-settings/settings/min#min_os_cpu_wait_time_ratio_to_drop_connection", default: "0" }
+        { name: "min_allocation_size_to_throw_on_memory_limit", path: "/min#min_allocation_size_to_throw_on_memory_limit", default: "0" },
+        { name: "min_os_cpu_wait_time_ratio_to_drop_connection", path: "/min#min_os_cpu_wait_time_ratio_to_drop_connection", default: "0" }
       ],
       children: []
     },
@@ -887,12 +815,8 @@ const ServerSettingsExplorer = () => {
       label: "mlock_executable_*",
       count: 2,
       settings: [
-        { name: "mlock_executable", href: "/es/reference/settings/server-settings/settings/mlock-executable#mlock_executable", default: "0" },
-        {
-          name: "mlock_executable_min_total_memory_amount_bytes",
-          href: "/es/reference/settings/server-settings/settings/mlock-executable#mlock_executable_min_total_memory_amount_bytes",
-          default: "5000000000"
-        }
+        { name: "mlock_executable", path: "/mlock-executable#mlock_executable", default: "0" },
+        { name: "mlock_executable_min_total_memory_amount_bytes", path: "/mlock-executable#mlock_executable_min_total_memory_amount_bytes", default: "5000000000" }
       ],
       children: []
     },
@@ -900,8 +824,8 @@ const ServerSettingsExplorer = () => {
       label: "mysql_*",
       count: 2,
       settings: [
-        { name: "mysql_port", href: "/es/reference/settings/server-settings/settings/mysql#mysql_port" },
-        { name: "mysql_require_secure_transport", href: "/es/reference/settings/server-settings/settings/mysql#mysql_require_secure_transport", default: "0" }
+        { name: "mysql_port", path: "/mysql#mysql_port" },
+        { name: "mysql_require_secure_transport", path: "/mysql#mysql_require_secure_transport", default: "0" }
       ],
       children: []
     },
@@ -909,12 +833,12 @@ const ServerSettingsExplorer = () => {
       label: "oom_canary_*",
       count: 6,
       settings: [
-        { name: "oom_canary_enable", href: "/es/reference/settings/server-settings/settings/oom-canary#oom_canary_enable", default: "0" },
-        { name: "oom_canary_initial_backoff_seconds", href: "/es/reference/settings/server-settings/settings/oom-canary#oom_canary_initial_backoff_seconds", default: "1" },
-        { name: "oom_canary_max_backoff_seconds", href: "/es/reference/settings/server-settings/settings/oom-canary#oom_canary_max_backoff_seconds", default: "60" },
-        { name: "oom_canary_max_rapid_relaunches", href: "/es/reference/settings/server-settings/settings/oom-canary#oom_canary_max_rapid_relaunches", default: "10" },
-        { name: "oom_canary_relaunch", href: "/es/reference/settings/server-settings/settings/oom-canary#oom_canary_relaunch", default: "1" },
-        { name: "oom_canary_size", href: "/es/reference/settings/server-settings/settings/oom-canary#oom_canary_size", default: "104857600" }
+        { name: "oom_canary_enable", path: "/oom-canary#oom_canary_enable", default: "0" },
+        { name: "oom_canary_initial_backoff_seconds", path: "/oom-canary#oom_canary_initial_backoff_seconds", default: "1" },
+        { name: "oom_canary_max_backoff_seconds", path: "/oom-canary#oom_canary_max_backoff_seconds", default: "60" },
+        { name: "oom_canary_max_rapid_relaunches", path: "/oom-canary#oom_canary_max_rapid_relaunches", default: "10" },
+        { name: "oom_canary_relaunch", path: "/oom-canary#oom_canary_relaunch", default: "1" },
+        { name: "oom_canary_size", path: "/oom-canary#oom_canary_size", default: "104857600" }
       ],
       children: []
     },
@@ -922,9 +846,9 @@ const ServerSettingsExplorer = () => {
       label: "openSSL.client.requireTLSv1_*",
       count: 3,
       settings: [
-        { name: "openSSL.client.requireTLSv1", href: "/es/reference/settings/server-settings/settings/openssl-client-requiretlsv1#openssl.client.requiretlsv1", default: "0" },
-        { name: "openSSL.client.requireTLSv1_1", href: "/es/reference/settings/server-settings/settings/openssl-client-requiretlsv1#openssl.client.requiretlsv1_1", default: "0" },
-        { name: "openSSL.client.requireTLSv1_2", href: "/es/reference/settings/server-settings/settings/openssl-client-requiretlsv1#openssl.client.requiretlsv1_2", default: "0" }
+        { name: "openSSL.client.requireTLSv1", path: "/openssl-client-requiretlsv1#openssl.client.requiretlsv1", default: "0" },
+        { name: "openSSL.client.requireTLSv1_1", path: "/openssl-client-requiretlsv1#openssl.client.requiretlsv1_1", default: "0" },
+        { name: "openSSL.client.requireTLSv1_2", path: "/openssl-client-requiretlsv1#openssl.client.requiretlsv1_2", default: "0" }
       ],
       children: []
     },
@@ -932,9 +856,9 @@ const ServerSettingsExplorer = () => {
       label: "openSSL.server.requireTLSv1_*",
       count: 3,
       settings: [
-        { name: "openSSL.server.requireTLSv1", href: "/es/reference/settings/server-settings/settings/openssl-server-requiretlsv1#openssl.server.requiretlsv1", default: "0" },
-        { name: "openSSL.server.requireTLSv1_1", href: "/es/reference/settings/server-settings/settings/openssl-server-requiretlsv1#openssl.server.requiretlsv1_1", default: "0" },
-        { name: "openSSL.server.requireTLSv1_2", href: "/es/reference/settings/server-settings/settings/openssl-server-requiretlsv1#openssl.server.requiretlsv1_2", default: "0" }
+        { name: "openSSL.server.requireTLSv1", path: "/openssl-server-requiretlsv1#openssl.server.requiretlsv1", default: "0" },
+        { name: "openSSL.server.requireTLSv1_1", path: "/openssl-server-requiretlsv1#openssl.server.requiretlsv1_1", default: "0" },
+        { name: "openSSL.server.requireTLSv1_2", path: "/openssl-server-requiretlsv1#openssl.server.requiretlsv1_2", default: "0" }
       ],
       children: []
     },
@@ -942,8 +866,8 @@ const ServerSettingsExplorer = () => {
       label: "os_*",
       count: 2,
       settings: [
-        { name: "os_collect_psi_metrics", href: "/es/reference/settings/server-settings/settings/os#os_collect_psi_metrics", default: "1" },
-        { name: "os_cpu_busy_time_threshold", href: "/es/reference/settings/server-settings/settings/os#os_cpu_busy_time_threshold", default: "1000000" }
+        { name: "os_collect_psi_metrics", path: "/os#os_collect_psi_metrics", default: "1" },
+        { name: "os_cpu_busy_time_threshold", path: "/os#os_cpu_busy_time_threshold", default: "1000000" }
       ],
       children: []
     },
@@ -951,17 +875,9 @@ const ServerSettingsExplorer = () => {
       label: "os_threads_*",
       count: 3,
       settings: [
-        {
-          name: "os_threads_nice_value_distributed_cache_tcp_handler",
-          href: "/es/reference/settings/server-settings/settings/os-threads#os_threads_nice_value_distributed_cache_tcp_handler",
-          default: "0"
-        },
-        { name: "os_threads_nice_value_merge_mutate", href: "/es/reference/settings/server-settings/settings/os-threads#os_threads_nice_value_merge_mutate", default: "0" },
-        {
-          name: "os_threads_nice_value_zookeeper_client_send_receive",
-          href: "/es/reference/settings/server-settings/settings/os-threads#os_threads_nice_value_zookeeper_client_send_receive",
-          default: "0"
-        }
+        { name: "os_threads_nice_value_distributed_cache_tcp_handler", path: "/os-threads#os_threads_nice_value_distributed_cache_tcp_handler", default: "0" },
+        { name: "os_threads_nice_value_merge_mutate", path: "/os-threads#os_threads_nice_value_merge_mutate", default: "0" },
+        { name: "os_threads_nice_value_zookeeper_client_send_receive", path: "/os-threads#os_threads_nice_value_zookeeper_client_send_receive", default: "0" }
       ],
       children: []
     },
@@ -969,13 +885,13 @@ const ServerSettingsExplorer = () => {
       label: "page_cache_*",
       count: 7,
       settings: [
-        { name: "page_cache_free_memory_ratio", href: "/es/reference/settings/server-settings/settings/page-cache#page_cache_free_memory_ratio", default: "0.15" },
-        { name: "page_cache_history_window_ms", href: "/es/reference/settings/server-settings/settings/page-cache#page_cache_history_window_ms", default: "1000" },
-        { name: "page_cache_max_size", href: "/es/reference/settings/server-settings/settings/page-cache#page_cache_max_size", default: "0" },
-        { name: "page_cache_min_size", href: "/es/reference/settings/server-settings/settings/page-cache#page_cache_min_size", default: "104857600" },
-        { name: "page_cache_policy", href: "/es/reference/settings/server-settings/settings/page-cache#page_cache_policy", default: "SLRU" },
-        { name: "page_cache_shards", href: "/es/reference/settings/server-settings/settings/page-cache#page_cache_shards", default: "4" },
-        { name: "page_cache_size_ratio", href: "/es/reference/settings/server-settings/settings/page-cache#page_cache_size_ratio", default: "0.5" }
+        { name: "page_cache_free_memory_ratio", path: "/page-cache#page_cache_free_memory_ratio", default: "0.15" },
+        { name: "page_cache_history_window_ms", path: "/page-cache#page_cache_history_window_ms", default: "1000" },
+        { name: "page_cache_max_size", path: "/page-cache#page_cache_max_size", default: "0" },
+        { name: "page_cache_min_size", path: "/page-cache#page_cache_min_size", default: "104857600" },
+        { name: "page_cache_policy", path: "/page-cache#page_cache_policy", default: "SLRU" },
+        { name: "page_cache_shards", path: "/page-cache#page_cache_shards", default: "4" },
+        { name: "page_cache_size_ratio", path: "/page-cache#page_cache_size_ratio", default: "0.5" }
       ],
       children: []
     },
@@ -983,10 +899,10 @@ const ServerSettingsExplorer = () => {
       label: "paimon_metadata_*",
       count: 4,
       settings: [
-        { name: "paimon_metadata_files_cache_max_entries", href: "/es/reference/settings/server-settings/settings/paimon-metadata#paimon_metadata_files_cache_max_entries", default: "1000" },
-        { name: "paimon_metadata_files_cache_policy", href: "/es/reference/settings/server-settings/settings/paimon-metadata#paimon_metadata_files_cache_policy", default: "SLRU" },
-        { name: "paimon_metadata_files_cache_size", href: "/es/reference/settings/server-settings/settings/paimon-metadata#paimon_metadata_files_cache_size", default: "1073741824" },
-        { name: "paimon_metadata_files_cache_size_ratio", href: "/es/reference/settings/server-settings/settings/paimon-metadata#paimon_metadata_files_cache_size_ratio", default: "0.5" }
+        { name: "paimon_metadata_files_cache_max_entries", path: "/paimon-metadata#paimon_metadata_files_cache_max_entries", default: "1000" },
+        { name: "paimon_metadata_files_cache_policy", path: "/paimon-metadata#paimon_metadata_files_cache_policy", default: "SLRU" },
+        { name: "paimon_metadata_files_cache_size", path: "/paimon-metadata#paimon_metadata_files_cache_size", default: "1073741824" },
+        { name: "paimon_metadata_files_cache_size_ratio", path: "/paimon-metadata#paimon_metadata_files_cache_size_ratio", default: "0.5" }
       ],
       children: []
     },
@@ -994,10 +910,10 @@ const ServerSettingsExplorer = () => {
       label: "parquet_metadata_*",
       count: 4,
       settings: [
-        { name: "parquet_metadata_cache_max_entries", href: "/es/reference/settings/server-settings/settings/parquet-metadata#parquet_metadata_cache_max_entries", default: "5000" },
-        { name: "parquet_metadata_cache_policy", href: "/es/reference/settings/server-settings/settings/parquet-metadata#parquet_metadata_cache_policy", default: "SLRU" },
-        { name: "parquet_metadata_cache_size", href: "/es/reference/settings/server-settings/settings/parquet-metadata#parquet_metadata_cache_size", default: "536870912" },
-        { name: "parquet_metadata_cache_size_ratio", href: "/es/reference/settings/server-settings/settings/parquet-metadata#parquet_metadata_cache_size_ratio", default: "0.5" }
+        { name: "parquet_metadata_cache_max_entries", path: "/parquet-metadata#parquet_metadata_cache_max_entries", default: "5000" },
+        { name: "parquet_metadata_cache_policy", path: "/parquet-metadata#parquet_metadata_cache_policy", default: "SLRU" },
+        { name: "parquet_metadata_cache_size", path: "/parquet-metadata#parquet_metadata_cache_size", default: "536870912" },
+        { name: "parquet_metadata_cache_size_ratio", path: "/parquet-metadata#parquet_metadata_cache_size_ratio", default: "0.5" }
       ],
       children: []
     },
@@ -1005,8 +921,8 @@ const ServerSettingsExplorer = () => {
       label: "parts_kill_delay_period_*",
       count: 2,
       settings: [
-        { name: "parts_kill_delay_period", href: "/es/reference/settings/server-settings/settings/parts-kill-delay-period#parts_kill_delay_period", default: "30" },
-        { name: "parts_kill_delay_period_random_add", href: "/es/reference/settings/server-settings/settings/parts-kill-delay-period#parts_kill_delay_period_random_add", default: "10" }
+        { name: "parts_kill_delay_period", path: "/parts-kill-delay-period#parts_kill_delay_period", default: "30" },
+        { name: "parts_kill_delay_period_random_add", path: "/parts-kill-delay-period#parts_kill_delay_period_random_add", default: "10" }
       ],
       children: []
     },
@@ -1014,8 +930,8 @@ const ServerSettingsExplorer = () => {
       label: "parts_killer_*",
       count: 2,
       settings: [
-        { name: "parts_killer_max_condemned_parts_per_batch", href: "/es/reference/settings/server-settings/settings/parts-killer#parts_killer_max_condemned_parts_per_batch", default: "100000" },
-        { name: "parts_killer_pool_size", href: "/es/reference/settings/server-settings/settings/parts-killer#parts_killer_pool_size", default: "128" }
+        { name: "parts_killer_max_condemned_parts_per_batch", path: "/parts-killer#parts_killer_max_condemned_parts_per_batch", default: "100000" },
+        { name: "parts_killer_pool_size", path: "/parts-killer#parts_killer_pool_size", default: "128" }
       ],
       children: []
     },
@@ -1023,8 +939,8 @@ const ServerSettingsExplorer = () => {
       label: "postgresql_*",
       count: 2,
       settings: [
-        { name: "postgresql_port", href: "/es/reference/settings/server-settings/settings/postgresql#postgresql_port" },
-        { name: "postgresql_require_secure_transport", href: "/es/reference/settings/server-settings/settings/postgresql#postgresql_require_secure_transport", default: "0" }
+        { name: "postgresql_port", path: "/postgresql#postgresql_port" },
+        { name: "postgresql_require_secure_transport", path: "/postgresql#postgresql_require_secure_transport", default: "0" }
       ],
       children: []
     },
@@ -1032,8 +948,8 @@ const ServerSettingsExplorer = () => {
       label: "prefetch_threadpool_*",
       count: 2,
       settings: [
-        { name: "prefetch_threadpool_pool_size", href: "/es/reference/settings/server-settings/settings/prefetch-threadpool#prefetch_threadpool_pool_size", default: "100" },
-        { name: "prefetch_threadpool_queue_size", href: "/es/reference/settings/server-settings/settings/prefetch-threadpool#prefetch_threadpool_queue_size", default: "10000" }
+        { name: "prefetch_threadpool_pool_size", path: "/prefetch-threadpool#prefetch_threadpool_pool_size", default: "100" },
+        { name: "prefetch_threadpool_queue_size", path: "/prefetch-threadpool#prefetch_threadpool_queue_size", default: "10000" }
       ],
       children: []
     },
@@ -1041,10 +957,10 @@ const ServerSettingsExplorer = () => {
       label: "primary_index_*",
       count: 4,
       settings: [
-        { name: "primary_index_cache_policy", href: "/es/reference/settings/server-settings/settings/primary-index#primary_index_cache_policy", default: "SLRU" },
-        { name: "primary_index_cache_prewarm_ratio", href: "/es/reference/settings/server-settings/settings/primary-index#primary_index_cache_prewarm_ratio", default: "0.95" },
-        { name: "primary_index_cache_size", href: "/es/reference/settings/server-settings/settings/primary-index#primary_index_cache_size", default: "5368709120" },
-        { name: "primary_index_cache_size_ratio", href: "/es/reference/settings/server-settings/settings/primary-index#primary_index_cache_size_ratio", default: "0.5" }
+        { name: "primary_index_cache_policy", path: "/primary-index#primary_index_cache_policy", default: "SLRU" },
+        { name: "primary_index_cache_prewarm_ratio", path: "/primary-index#primary_index_cache_prewarm_ratio", default: "0.95" },
+        { name: "primary_index_cache_size", path: "/primary-index#primary_index_cache_size", default: "5368709120" },
+        { name: "primary_index_cache_size_ratio", path: "/primary-index#primary_index_cache_size_ratio", default: "0.5" }
       ],
       children: []
     },
@@ -1052,12 +968,12 @@ const ServerSettingsExplorer = () => {
       label: "query_*",
       count: 6,
       settings: [
-        { name: "query_cache", href: "/es/reference/settings/server-settings/settings/query#query_cache" },
-        { name: "query_log", href: "/es/reference/settings/server-settings/settings/query#query_log" },
-        { name: "query_masking_rules", href: "/es/reference/settings/server-settings/settings/query#query_masking_rules" },
-        { name: "query_metric_log", href: "/es/reference/settings/server-settings/settings/query#query_metric_log" },
-        { name: "query_thread_log", href: "/es/reference/settings/server-settings/settings/query#query_thread_log" },
-        { name: "query_views_log", href: "/es/reference/settings/server-settings/settings/query#query_views_log" }
+        { name: "query_cache", path: "/query#query_cache" },
+        { name: "query_log", path: "/query#query_log" },
+        { name: "query_masking_rules", path: "/query#query_masking_rules" },
+        { name: "query_metric_log", path: "/query#query_metric_log" },
+        { name: "query_thread_log", path: "/query#query_thread_log" },
+        { name: "query_views_log", path: "/query#query_views_log" }
       ],
       children: []
     },
@@ -1065,10 +981,10 @@ const ServerSettingsExplorer = () => {
       label: "query_cache.max_*",
       count: 4,
       settings: [
-        { name: "query_cache.max_entries", href: "/es/reference/settings/server-settings/settings/query-cache-max#query_cache.max_entries", default: "1024" },
-        { name: "query_cache.max_entry_size_in_bytes", href: "/es/reference/settings/server-settings/settings/query-cache-max#query_cache.max_entry_size_in_bytes", default: "1048576" },
-        { name: "query_cache.max_entry_size_in_rows", href: "/es/reference/settings/server-settings/settings/query-cache-max#query_cache.max_entry_size_in_rows", default: "30000000" },
-        { name: "query_cache.max_size_in_bytes", href: "/es/reference/settings/server-settings/settings/query-cache-max#query_cache.max_size_in_bytes", default: "1073741824" }
+        { name: "query_cache.max_entries", path: "/query-cache-max#query_cache.max_entries", default: "1024" },
+        { name: "query_cache.max_entry_size_in_bytes", path: "/query-cache-max#query_cache.max_entry_size_in_bytes", default: "1048576" },
+        { name: "query_cache.max_entry_size_in_rows", path: "/query-cache-max#query_cache.max_entry_size_in_rows", default: "30000000" },
+        { name: "query_cache.max_size_in_bytes", path: "/query-cache-max#query_cache.max_size_in_bytes", default: "1073741824" }
       ],
       children: []
     },
@@ -1076,9 +992,9 @@ const ServerSettingsExplorer = () => {
       label: "query_condition_*",
       count: 3,
       settings: [
-        { name: "query_condition_cache_policy", href: "/es/reference/settings/server-settings/settings/query-condition#query_condition_cache_policy", default: "SLRU" },
-        { name: "query_condition_cache_size", href: "/es/reference/settings/server-settings/settings/query-condition#query_condition_cache_size", default: "104857600" },
-        { name: "query_condition_cache_size_ratio", href: "/es/reference/settings/server-settings/settings/query-condition#query_condition_cache_size_ratio", default: "0.5" }
+        { name: "query_condition_cache_policy", path: "/query-condition#query_condition_cache_policy", default: "SLRU" },
+        { name: "query_condition_cache_size", path: "/query-condition#query_condition_cache_size", default: "104857600" },
+        { name: "query_condition_cache_size_ratio", path: "/query-condition#query_condition_cache_size_ratio", default: "0.5" }
       ],
       children: []
     },
@@ -1086,8 +1002,8 @@ const ServerSettingsExplorer = () => {
       label: "remote_*",
       count: 2,
       settings: [
-        { name: "remote_servers", href: "/es/reference/settings/server-settings/settings/remote#remote_servers" },
-        { name: "remote_url_allow_hosts", href: "/es/reference/settings/server-settings/settings/remote#remote_url_allow_hosts" }
+        { name: "remote_servers", path: "/remote#remote_servers" },
+        { name: "remote_url_allow_hosts", path: "/remote#remote_url_allow_hosts" }
       ],
       children: []
     },
@@ -1095,9 +1011,9 @@ const ServerSettingsExplorer = () => {
       label: "replicated_fetches_*",
       count: 3,
       settings: [
-        { name: "replicated_fetches_http_connection_timeout", href: "/es/reference/settings/server-settings/settings/replicated-fetches#replicated_fetches_http_connection_timeout", default: "0" },
-        { name: "replicated_fetches_http_receive_timeout", href: "/es/reference/settings/server-settings/settings/replicated-fetches#replicated_fetches_http_receive_timeout", default: "0" },
-        { name: "replicated_fetches_http_send_timeout", href: "/es/reference/settings/server-settings/settings/replicated-fetches#replicated_fetches_http_send_timeout", default: "0" }
+        { name: "replicated_fetches_http_connection_timeout", path: "/replicated-fetches#replicated_fetches_http_connection_timeout", default: "0" },
+        { name: "replicated_fetches_http_receive_timeout", path: "/replicated-fetches#replicated_fetches_http_receive_timeout", default: "0" },
+        { name: "replicated_fetches_http_send_timeout", path: "/replicated-fetches#replicated_fetches_http_send_timeout", default: "0" }
       ],
       children: []
     },
@@ -1105,11 +1021,11 @@ const ServerSettingsExplorer = () => {
       label: "s3_*",
       count: 5,
       settings: [
-        { name: "s3_allow_server_credentials_for_system_table_disks", href: "/es/reference/settings/server-settings/settings/s3#s3_allow_server_credentials_for_system_table_disks", default: "0" },
-        { name: "s3_credentials_provider_max_cache_size", href: "/es/reference/settings/server-settings/settings/s3#s3_credentials_provider_max_cache_size", default: "100" },
-        { name: "s3_load_table_anonymously_if_credentials_restricted", href: "/es/reference/settings/server-settings/settings/s3#s3_load_table_anonymously_if_credentials_restricted", default: "1" },
-        { name: "s3_max_redirects", href: "/es/reference/settings/server-settings/settings/s3#s3_max_redirects", default: "10" },
-        { name: "s3_retry_attempts", href: "/es/reference/settings/server-settings/settings/s3#s3_retry_attempts", default: "500" }
+        { name: "s3_allow_server_credentials_for_system_table_disks", path: "/s3#s3_allow_server_credentials_for_system_table_disks", default: "0" },
+        { name: "s3_credentials_provider_max_cache_size", path: "/s3#s3_credentials_provider_max_cache_size", default: "100" },
+        { name: "s3_load_table_anonymously_if_credentials_restricted", path: "/s3#s3_load_table_anonymously_if_credentials_restricted", default: "1" },
+        { name: "s3_max_redirects", path: "/s3#s3_max_redirects", default: "10" },
+        { name: "s3_retry_attempts", path: "/s3#s3_retry_attempts", default: "500" }
       ],
       children: []
     },
@@ -1117,8 +1033,8 @@ const ServerSettingsExplorer = () => {
       label: "s3queue_*",
       count: 2,
       settings: [
-        { name: "s3queue_disable_streaming", href: "/es/reference/settings/server-settings/settings/s3queue#s3queue_disable_streaming", default: "0" },
-        { name: "s3queue_log", href: "/es/reference/settings/server-settings/settings/s3queue#s3queue_log" }
+        { name: "s3queue_disable_streaming", path: "/s3queue#s3queue_disable_streaming", default: "0" },
+        { name: "s3queue_log", path: "/s3queue#s3queue_log" }
       ],
       children: []
     },
@@ -1126,8 +1042,8 @@ const ServerSettingsExplorer = () => {
       label: "show_*",
       count: 2,
       settings: [
-        { name: "show_addresses_in_stack_traces", href: "/es/reference/settings/server-settings/settings/show#show_addresses_in_stack_traces", default: "1" },
-        { name: "show_license_expiration_warnings", href: "/es/reference/settings/server-settings/settings/show#show_license_expiration_warnings", default: "1" }
+        { name: "show_addresses_in_stack_traces", path: "/show#show_addresses_in_stack_traces", default: "1" },
+        { name: "show_license_expiration_warnings", path: "/show#show_license_expiration_warnings", default: "1" }
       ],
       children: []
     },
@@ -1135,9 +1051,9 @@ const ServerSettingsExplorer = () => {
       label: "shutdown_wait_*",
       count: 3,
       settings: [
-        { name: "shutdown_wait_backups_and_restores", href: "/es/reference/settings/server-settings/settings/shutdown-wait#shutdown_wait_backups_and_restores", default: "1" },
-        { name: "shutdown_wait_unfinished", href: "/es/reference/settings/server-settings/settings/shutdown-wait#shutdown_wait_unfinished", default: "5" },
-        { name: "shutdown_wait_unfinished_queries", href: "/es/reference/settings/server-settings/settings/shutdown-wait#shutdown_wait_unfinished_queries", default: "0" }
+        { name: "shutdown_wait_backups_and_restores", path: "/shutdown-wait#shutdown_wait_backups_and_restores", default: "1" },
+        { name: "shutdown_wait_unfinished", path: "/shutdown-wait#shutdown_wait_unfinished", default: "5" },
+        { name: "shutdown_wait_unfinished_queries", path: "/shutdown-wait#shutdown_wait_unfinished_queries", default: "0" }
       ],
       children: []
     },
@@ -1145,8 +1061,8 @@ const ServerSettingsExplorer = () => {
       label: "skip_*",
       count: 2,
       settings: [
-        { name: "skip_binary_checksum_checks", href: "/es/reference/settings/server-settings/settings/skip#skip_binary_checksum_checks", default: "0" },
-        { name: "skip_check_for_incorrect_settings", href: "/es/reference/settings/server-settings/settings/skip#skip_check_for_incorrect_settings", default: "0" }
+        { name: "skip_binary_checksum_checks", path: "/skip#skip_binary_checksum_checks", default: "0" },
+        { name: "skip_check_for_incorrect_settings", path: "/skip#skip_check_for_incorrect_settings", default: "0" }
       ],
       children: []
     },
@@ -1154,8 +1070,8 @@ const ServerSettingsExplorer = () => {
       label: "snapshot_cleaner_*",
       count: 2,
       settings: [
-        { name: "snapshot_cleaner_period", href: "/es/reference/settings/server-settings/settings/snapshot-cleaner#snapshot_cleaner_period", default: "120" },
-        { name: "snapshot_cleaner_pool_size", href: "/es/reference/settings/server-settings/settings/snapshot-cleaner#snapshot_cleaner_pool_size", default: "128" }
+        { name: "snapshot_cleaner_period", path: "/snapshot-cleaner#snapshot_cleaner_period", default: "120" },
+        { name: "snapshot_cleaner_pool_size", path: "/snapshot-cleaner#snapshot_cleaner_pool_size", default: "128" }
       ],
       children: []
     },
@@ -1163,8 +1079,8 @@ const ServerSettingsExplorer = () => {
       label: "startup_*",
       count: 2,
       settings: [
-        { name: "startup_mv_delay_ms", href: "/es/reference/settings/server-settings/settings/startup#startup_mv_delay_ms", default: "0" },
-        { name: "startup_scripts.throw_on_error", href: "/es/reference/settings/server-settings/settings/startup#startup_scripts.throw_on_error", default: "0" }
+        { name: "startup_mv_delay_ms", path: "/startup#startup_mv_delay_ms", default: "0" },
+        { name: "startup_scripts.throw_on_error", path: "/startup#startup_scripts.throw_on_error", default: "0" }
       ],
       children: []
     },
@@ -1172,9 +1088,9 @@ const ServerSettingsExplorer = () => {
       label: "storage_*",
       count: 3,
       settings: [
-        { name: "storage_configuration", href: "/es/reference/settings/server-settings/settings/storage#storage_configuration" },
-        { name: "storage_metadata_write_full_object_key", href: "/es/reference/settings/server-settings/settings/storage#storage_metadata_write_full_object_key", default: "1" },
-        { name: "storage_shared_set_join_use_inner_uuid", href: "/es/reference/settings/server-settings/settings/storage#storage_shared_set_join_use_inner_uuid", default: "1" }
+        { name: "storage_configuration", path: "/storage#storage_configuration" },
+        { name: "storage_metadata_write_full_object_key", path: "/storage#storage_metadata_write_full_object_key", default: "1" },
+        { name: "storage_shared_set_join_use_inner_uuid", path: "/storage#storage_shared_set_join_use_inner_uuid", default: "1" }
       ],
       children: []
     },
@@ -1182,12 +1098,12 @@ const ServerSettingsExplorer = () => {
       label: "storage_connections_*",
       count: 6,
       settings: [
-        { name: "storage_connections_hard_limit", href: "/es/reference/settings/server-settings/settings/storage-connections#storage_connections_hard_limit", default: "200000" },
-        { name: "storage_connections_rcvbuf", href: "/es/reference/settings/server-settings/settings/storage-connections#storage_connections_rcvbuf", default: "0" },
-        { name: "storage_connections_sndbuf", href: "/es/reference/settings/server-settings/settings/storage-connections#storage_connections_sndbuf", default: "0" },
-        { name: "storage_connections_soft_limit", href: "/es/reference/settings/server-settings/settings/storage-connections#storage_connections_soft_limit", default: "100" },
-        { name: "storage_connections_store_limit", href: "/es/reference/settings/server-settings/settings/storage-connections#storage_connections_store_limit", default: "1000" },
-        { name: "storage_connections_warn_limit", href: "/es/reference/settings/server-settings/settings/storage-connections#storage_connections_warn_limit", default: "500" }
+        { name: "storage_connections_hard_limit", path: "/storage-connections#storage_connections_hard_limit", default: "200000" },
+        { name: "storage_connections_rcvbuf", path: "/storage-connections#storage_connections_rcvbuf", default: "0" },
+        { name: "storage_connections_sndbuf", path: "/storage-connections#storage_connections_sndbuf", default: "0" },
+        { name: "storage_connections_soft_limit", path: "/storage-connections#storage_connections_soft_limit", default: "100" },
+        { name: "storage_connections_store_limit", path: "/storage-connections#storage_connections_store_limit", default: "1000" },
+        { name: "storage_connections_warn_limit", path: "/storage-connections#storage_connections_warn_limit", default: "500" }
       ],
       children: []
     },
@@ -1195,8 +1111,8 @@ const ServerSettingsExplorer = () => {
       label: "tables_loader_*",
       count: 2,
       settings: [
-        { name: "tables_loader_background_pool_size", href: "/es/reference/settings/server-settings/settings/tables-loader#tables_loader_background_pool_size", default: "0" },
-        { name: "tables_loader_foreground_pool_size", href: "/es/reference/settings/server-settings/settings/tables-loader#tables_loader_foreground_pool_size", default: "0" }
+        { name: "tables_loader_background_pool_size", path: "/tables-loader#tables_loader_background_pool_size", default: "0" },
+        { name: "tables_loader_foreground_pool_size", path: "/tables-loader#tables_loader_foreground_pool_size", default: "0" }
       ],
       children: []
     },
@@ -1204,8 +1120,8 @@ const ServerSettingsExplorer = () => {
       label: "tcp_close_*",
       count: 2,
       settings: [
-        { name: "tcp_close_connection_after_queries_num", href: "/es/reference/settings/server-settings/settings/tcp-close#tcp_close_connection_after_queries_num", default: "0" },
-        { name: "tcp_close_connection_after_queries_seconds", href: "/es/reference/settings/server-settings/settings/tcp-close#tcp_close_connection_after_queries_seconds", default: "0" }
+        { name: "tcp_close_connection_after_queries_num", path: "/tcp-close#tcp_close_connection_after_queries_num", default: "0" },
+        { name: "tcp_close_connection_after_queries_seconds", path: "/tcp-close#tcp_close_connection_after_queries_seconds", default: "0" }
       ],
       children: []
     },
@@ -1213,8 +1129,8 @@ const ServerSettingsExplorer = () => {
       label: "tcp_port_*",
       count: 2,
       settings: [
-        { name: "tcp_port", href: "/es/reference/settings/server-settings/settings/tcp-port#tcp_port" },
-        { name: "tcp_port_secure", href: "/es/reference/settings/server-settings/settings/tcp-port#tcp_port_secure", default: "9440" }
+        { name: "tcp_port", path: "/tcp-port#tcp_port" },
+        { name: "tcp_port_secure", path: "/tcp-port#tcp_port_secure", default: "9440" }
       ],
       children: []
     },
@@ -1222,8 +1138,8 @@ const ServerSettingsExplorer = () => {
       label: "temporary_data_*",
       count: 2,
       settings: [
-        { name: "temporary_data_in_cache", href: "/es/reference/settings/server-settings/settings/temporary-data#temporary_data_in_cache", default: '""' },
-        { name: "temporary_data_in_distributed_cache", href: "/es/reference/settings/server-settings/settings/temporary-data#temporary_data_in_distributed_cache", default: "0" }
+        { name: "temporary_data_in_cache", path: "/temporary-data#temporary_data_in_cache", default: '""' },
+        { name: "temporary_data_in_distributed_cache", path: "/temporary-data#temporary_data_in_distributed_cache", default: "0" }
       ],
       children: []
     },
@@ -1231,18 +1147,18 @@ const ServerSettingsExplorer = () => {
       label: "text_index_*",
       count: 12,
       settings: [
-        { name: "text_index_header_cache_max_entries", href: "/es/reference/settings/server-settings/settings/text-index#text_index_header_cache_max_entries", default: "100000" },
-        { name: "text_index_header_cache_policy", href: "/es/reference/settings/server-settings/settings/text-index#text_index_header_cache_policy", default: "SLRU" },
-        { name: "text_index_header_cache_size", href: "/es/reference/settings/server-settings/settings/text-index#text_index_header_cache_size", default: "1073741824" },
-        { name: "text_index_header_cache_size_ratio", href: "/es/reference/settings/server-settings/settings/text-index#text_index_header_cache_size_ratio", default: "0.5" },
-        { name: "text_index_postings_cache_max_entries", href: "/es/reference/settings/server-settings/settings/text-index#text_index_postings_cache_max_entries", default: "1000000" },
-        { name: "text_index_postings_cache_policy", href: "/es/reference/settings/server-settings/settings/text-index#text_index_postings_cache_policy", default: "SLRU" },
-        { name: "text_index_postings_cache_size", href: "/es/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size", default: "2147483648" },
-        { name: "text_index_postings_cache_size_ratio", href: "/es/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size_ratio", default: "0.5" },
-        { name: "text_index_tokens_cache_max_entries", href: "/es/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_max_entries", default: "1000000" },
-        { name: "text_index_tokens_cache_policy", href: "/es/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_policy", default: "SLRU" },
-        { name: "text_index_tokens_cache_size", href: "/es/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size", default: "1073741824" },
-        { name: "text_index_tokens_cache_size_ratio", href: "/es/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size_ratio", default: "0.5" }
+        { name: "text_index_header_cache_max_entries", path: "/text-index#text_index_header_cache_max_entries", default: "100000" },
+        { name: "text_index_header_cache_policy", path: "/text-index#text_index_header_cache_policy", default: "SLRU" },
+        { name: "text_index_header_cache_size", path: "/text-index#text_index_header_cache_size", default: "1073741824" },
+        { name: "text_index_header_cache_size_ratio", path: "/text-index#text_index_header_cache_size_ratio", default: "0.5" },
+        { name: "text_index_postings_cache_max_entries", path: "/text-index#text_index_postings_cache_max_entries", default: "1000000" },
+        { name: "text_index_postings_cache_policy", path: "/text-index#text_index_postings_cache_policy", default: "SLRU" },
+        { name: "text_index_postings_cache_size", path: "/text-index#text_index_postings_cache_size", default: "2147483648" },
+        { name: "text_index_postings_cache_size_ratio", path: "/text-index#text_index_postings_cache_size_ratio", default: "0.5" },
+        { name: "text_index_tokens_cache_max_entries", path: "/text-index#text_index_tokens_cache_max_entries", default: "1000000" },
+        { name: "text_index_tokens_cache_policy", path: "/text-index#text_index_tokens_cache_policy", default: "SLRU" },
+        { name: "text_index_tokens_cache_size", path: "/text-index#text_index_tokens_cache_size", default: "1073741824" },
+        { name: "text_index_tokens_cache_size_ratio", path: "/text-index#text_index_tokens_cache_size_ratio", default: "0.5" }
       ],
       children: []
     },
@@ -1250,8 +1166,8 @@ const ServerSettingsExplorer = () => {
       label: "threadpool_local_*",
       count: 2,
       settings: [
-        { name: "threadpool_local_fs_reader_pool_size", href: "/es/reference/settings/server-settings/settings/threadpool-local#threadpool_local_fs_reader_pool_size", default: "100" },
-        { name: "threadpool_local_fs_reader_queue_size", href: "/es/reference/settings/server-settings/settings/threadpool-local#threadpool_local_fs_reader_queue_size", default: "10000" }
+        { name: "threadpool_local_fs_reader_pool_size", path: "/threadpool-local#threadpool_local_fs_reader_pool_size", default: "100" },
+        { name: "threadpool_local_fs_reader_queue_size", path: "/threadpool-local#threadpool_local_fs_reader_queue_size", default: "10000" }
       ],
       children: []
     },
@@ -1259,8 +1175,8 @@ const ServerSettingsExplorer = () => {
       label: "threadpool_remote_*",
       count: 2,
       settings: [
-        { name: "threadpool_remote_fs_reader_pool_size", href: "/es/reference/settings/server-settings/settings/threadpool-remote#threadpool_remote_fs_reader_pool_size", default: "250" },
-        { name: "threadpool_remote_fs_reader_queue_size", href: "/es/reference/settings/server-settings/settings/threadpool-remote#threadpool_remote_fs_reader_queue_size", default: "10000" }
+        { name: "threadpool_remote_fs_reader_pool_size", path: "/threadpool-remote#threadpool_remote_fs_reader_pool_size", default: "250" },
+        { name: "threadpool_remote_fs_reader_queue_size", path: "/threadpool-remote#threadpool_remote_fs_reader_queue_size", default: "10000" }
       ],
       children: []
     },
@@ -1268,8 +1184,8 @@ const ServerSettingsExplorer = () => {
       label: "threadpool_writer_*",
       count: 2,
       settings: [
-        { name: "threadpool_writer_pool_size", href: "/es/reference/settings/server-settings/settings/threadpool-writer#threadpool_writer_pool_size", default: "100" },
-        { name: "threadpool_writer_queue_size", href: "/es/reference/settings/server-settings/settings/threadpool-writer#threadpool_writer_queue_size", default: "10000" }
+        { name: "threadpool_writer_pool_size", path: "/threadpool-writer#threadpool_writer_pool_size", default: "100" },
+        { name: "threadpool_writer_queue_size", path: "/threadpool-writer#threadpool_writer_queue_size", default: "10000" }
       ],
       children: []
     },
@@ -1277,8 +1193,8 @@ const ServerSettingsExplorer = () => {
       label: "tmp_*",
       count: 2,
       settings: [
-        { name: "tmp_path", href: "/es/reference/settings/server-settings/settings/tmp#tmp_path", default: "/var/lib/clickhouse/tmp/" },
-        { name: "tmp_policy", href: "/es/reference/settings/server-settings/settings/tmp#tmp_policy", default: '""' }
+        { name: "tmp_path", path: "/tmp#tmp_path", default: "/var/lib/clickhouse/tmp/" },
+        { name: "tmp_policy", path: "/tmp#tmp_policy", default: '""' }
       ],
       children: []
     },
@@ -1286,8 +1202,8 @@ const ServerSettingsExplorer = () => {
       label: "top_level_*",
       count: 2,
       settings: [
-        { name: "top_level_domains_list", href: "/es/reference/settings/server-settings/settings/top-level#top_level_domains_list" },
-        { name: "top_level_domains_path", href: "/es/reference/settings/server-settings/settings/top-level#top_level_domains_path", default: "/var/lib/clickhouse/top_level_domains/" }
+        { name: "top_level_domains_list", path: "/top-level#top_level_domains_list" },
+        { name: "top_level_domains_path", path: "/top-level#top_level_domains_path", default: "/var/lib/clickhouse/top_level_domains/" }
       ],
       children: []
     },
@@ -1295,10 +1211,10 @@ const ServerSettingsExplorer = () => {
       label: "total_memory_*",
       count: 4,
       settings: [
-        { name: "total_memory_profiler_sample_max_allocation_size", href: "/es/reference/settings/server-settings/settings/total-memory#total_memory_profiler_sample_max_allocation_size", default: "0" },
-        { name: "total_memory_profiler_sample_min_allocation_size", href: "/es/reference/settings/server-settings/settings/total-memory#total_memory_profiler_sample_min_allocation_size", default: "0" },
-        { name: "total_memory_profiler_step", href: "/es/reference/settings/server-settings/settings/total-memory#total_memory_profiler_step", default: "0" },
-        { name: "total_memory_tracker_sample_probability", href: "/es/reference/settings/server-settings/settings/total-memory#total_memory_tracker_sample_probability", default: "0" }
+        { name: "total_memory_profiler_sample_max_allocation_size", path: "/total-memory#total_memory_profiler_sample_max_allocation_size", default: "0" },
+        { name: "total_memory_profiler_sample_min_allocation_size", path: "/total-memory#total_memory_profiler_sample_min_allocation_size", default: "0" },
+        { name: "total_memory_profiler_step", path: "/total-memory#total_memory_profiler_step", default: "0" },
+        { name: "total_memory_tracker_sample_probability", path: "/total-memory#total_memory_tracker_sample_probability", default: "0" }
       ],
       children: []
     },
@@ -1306,9 +1222,9 @@ const ServerSettingsExplorer = () => {
       label: "uncompressed_cache_*",
       count: 3,
       settings: [
-        { name: "uncompressed_cache_policy", href: "/es/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_policy", default: "SLRU" },
-        { name: "uncompressed_cache_size", href: "/es/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size", default: "0" },
-        { name: "uncompressed_cache_size_ratio", href: "/es/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size_ratio", default: "0.5" }
+        { name: "uncompressed_cache_policy", path: "/uncompressed-cache#uncompressed_cache_policy", default: "SLRU" },
+        { name: "uncompressed_cache_size", path: "/uncompressed-cache#uncompressed_cache_size", default: "0" },
+        { name: "uncompressed_cache_size_ratio", path: "/uncompressed-cache#uncompressed_cache_size_ratio", default: "0.5" }
       ],
       children: []
     },
@@ -1316,12 +1232,12 @@ const ServerSettingsExplorer = () => {
       label: "unique_key_*",
       count: 6,
       settings: [
-        { name: "unique_key_bitmap_cache_policy", href: "/es/reference/settings/server-settings/settings/unique-key#unique_key_bitmap_cache_policy", default: "SLRU" },
-        { name: "unique_key_bitmap_cache_size_bytes", href: "/es/reference/settings/server-settings/settings/unique-key#unique_key_bitmap_cache_size_bytes", default: "1073741824" },
-        { name: "unique_key_bitmap_cache_size_ratio", href: "/es/reference/settings/server-settings/settings/unique-key#unique_key_bitmap_cache_size_ratio", default: "0.5" },
-        { name: "unique_key_index_cache_policy", href: "/es/reference/settings/server-settings/settings/unique-key#unique_key_index_cache_policy", default: "SLRU" },
-        { name: "unique_key_index_cache_size_bytes", href: "/es/reference/settings/server-settings/settings/unique-key#unique_key_index_cache_size_bytes", default: "1073741824" },
-        { name: "unique_key_index_cache_size_ratio", href: "/es/reference/settings/server-settings/settings/unique-key#unique_key_index_cache_size_ratio", default: "0.5" }
+        { name: "unique_key_bitmap_cache_policy", path: "/unique-key#unique_key_bitmap_cache_policy", default: "SLRU" },
+        { name: "unique_key_bitmap_cache_size_bytes", path: "/unique-key#unique_key_bitmap_cache_size_bytes", default: "1073741824" },
+        { name: "unique_key_bitmap_cache_size_ratio", path: "/unique-key#unique_key_bitmap_cache_size_ratio", default: "0.5" },
+        { name: "unique_key_index_cache_policy", path: "/unique-key#unique_key_index_cache_policy", default: "SLRU" },
+        { name: "unique_key_index_cache_size_bytes", path: "/unique-key#unique_key_index_cache_size_bytes", default: "1073741824" },
+        { name: "unique_key_index_cache_size_ratio", path: "/unique-key#unique_key_index_cache_size_ratio", default: "0.5" }
       ],
       children: []
     },
@@ -1329,9 +1245,9 @@ const ServerSettingsExplorer = () => {
       label: "use_*",
       count: 3,
       settings: [
-        { name: "use_minimalistic_part_header_in_zookeeper", href: "/es/reference/settings/server-settings/settings/use#use_minimalistic_part_header_in_zookeeper" },
-        { name: "use_separate_cache_arena", href: "/es/reference/settings/server-settings/settings/use#use_separate_cache_arena", default: "1" },
-        { name: "use_shared_merge_tree_log_pipeline", href: "/es/reference/settings/server-settings/settings/use#use_shared_merge_tree_log_pipeline", default: "0" }
+        { name: "use_minimalistic_part_header_in_zookeeper", path: "/use#use_minimalistic_part_header_in_zookeeper" },
+        { name: "use_separate_cache_arena", path: "/use#use_separate_cache_arena", default: "1" },
+        { name: "use_shared_merge_tree_log_pipeline", path: "/use#use_shared_merge_tree_log_pipeline", default: "0" }
       ],
       children: []
     },
@@ -1339,10 +1255,10 @@ const ServerSettingsExplorer = () => {
       label: "user_*",
       count: 4,
       settings: [
-        { name: "user_directories", href: "/es/reference/settings/server-settings/settings/user#user_directories" },
-        { name: "user_files_path", href: "/es/reference/settings/server-settings/settings/user#user_files_path", default: "/var/lib/clickhouse/user_files/" },
-        { name: "user_profile_events_per_cpu", href: "/es/reference/settings/server-settings/settings/user#user_profile_events_per_cpu", default: "1" },
-        { name: "user_scripts_path", href: "/es/reference/settings/server-settings/settings/user#user_scripts_path", default: "/var/lib/clickhouse/user_scripts/" }
+        { name: "user_directories", path: "/user#user_directories" },
+        { name: "user_files_path", path: "/user#user_files_path", default: "/var/lib/clickhouse/user_files/" },
+        { name: "user_profile_events_per_cpu", path: "/user#user_profile_events_per_cpu", default: "1" },
+        { name: "user_scripts_path", path: "/user#user_scripts_path", default: "/var/lib/clickhouse/user_scripts/" }
       ],
       children: []
     },
@@ -1350,8 +1266,8 @@ const ServerSettingsExplorer = () => {
       label: "user_defined_*",
       count: 2,
       settings: [
-        { name: "user_defined_executable_functions_config", href: "/es/reference/settings/server-settings/settings/user-defined#user_defined_executable_functions_config" },
-        { name: "user_defined_path", href: "/es/reference/settings/server-settings/settings/user-defined#user_defined_path" }
+        { name: "user_defined_executable_functions_config", path: "/user-defined#user_defined_executable_functions_config" },
+        { name: "user_defined_path", path: "/user-defined#user_defined_path" }
       ],
       children: []
     },
@@ -1359,8 +1275,8 @@ const ServerSettingsExplorer = () => {
       label: "users_*",
       count: 2,
       settings: [
-        { name: "users_config", href: "/es/reference/settings/server-settings/settings/users#users_config" },
-        { name: "users_to_ignore_early_memory_limit_check", href: "/es/reference/settings/server-settings/settings/users#users_to_ignore_early_memory_limit_check", default: '""' }
+        { name: "users_config", path: "/users#users_config" },
+        { name: "users_to_ignore_early_memory_limit_check", path: "/users#users_to_ignore_early_memory_limit_check", default: '""' }
       ],
       children: []
     },
@@ -1368,10 +1284,10 @@ const ServerSettingsExplorer = () => {
       label: "vector_similarity_*",
       count: 4,
       settings: [
-        { name: "vector_similarity_index_cache_max_entries", href: "/es/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_max_entries", default: "10000000" },
-        { name: "vector_similarity_index_cache_policy", href: "/es/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_policy", default: "SLRU" },
-        { name: "vector_similarity_index_cache_size", href: "/es/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size", default: "5368709120" },
-        { name: "vector_similarity_index_cache_size_ratio", href: "/es/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size_ratio", default: "0.5" }
+        { name: "vector_similarity_index_cache_max_entries", path: "/vector-similarity#vector_similarity_index_cache_max_entries", default: "10000000" },
+        { name: "vector_similarity_index_cache_policy", path: "/vector-similarity#vector_similarity_index_cache_policy", default: "SLRU" },
+        { name: "vector_similarity_index_cache_size", path: "/vector-similarity#vector_similarity_index_cache_size", default: "5368709120" },
+        { name: "vector_similarity_index_cache_size_ratio", path: "/vector-similarity#vector_similarity_index_cache_size_ratio", default: "0.5" }
       ],
       children: []
     },
@@ -1379,8 +1295,8 @@ const ServerSettingsExplorer = () => {
       label: "workload_*",
       count: 2,
       settings: [
-        { name: "workload_path", href: "/es/reference/settings/server-settings/settings/workload#workload_path", default: "<path>/workload/" },
-        { name: "workload_zookeeper_path", href: "/es/reference/settings/server-settings/settings/workload#workload_zookeeper_path" }
+        { name: "workload_path", path: "/workload#workload_path", default: "<path>/workload/" },
+        { name: "workload_zookeeper_path", path: "/workload#workload_zookeeper_path" }
       ],
       children: []
     },
@@ -1388,8 +1304,8 @@ const ServerSettingsExplorer = () => {
       label: "zookeeper_*",
       count: 2,
       settings: [
-        { name: "zookeeper", href: "/es/reference/settings/server-settings/settings/zookeeper#zookeeper" },
-        { name: "zookeeper_log", href: "/es/reference/settings/server-settings/settings/zookeeper#zookeeper_log" }
+        { name: "zookeeper", path: "/zookeeper#zookeeper" },
+        { name: "zookeeper_log", path: "/zookeeper#zookeeper_log" }
       ],
       children: []
     },
@@ -1397,150 +1313,130 @@ const ServerSettingsExplorer = () => {
       label: "Otros",
       count: 120,
       settings: [
-        { name: "abort_on_logical_error", href: "/es/reference/settings/server-settings/settings/other#abort_on_logical_error", default: "0" },
-        { name: "allowed_disks_for_table_engines", href: "/es/reference/settings/server-settings/settings/other#allowed_disks_for_table_engines", default: '""' },
-        { name: "auth_use_forwarded_address", href: "/es/reference/settings/server-settings/settings/other#auth_use_forwarded_address", default: "false" },
-        { name: "bcrypt_workfactor", href: "/es/reference/settings/server-settings/settings/other#bcrypt_workfactor", default: "12" },
-        { name: "blob_storage_log", href: "/es/reference/settings/server-settings/settings/other#blob_storage_log" },
-        { name: "builtin_dictionaries_reload_interval", href: "/es/reference/settings/server-settings/settings/other#builtin_dictionaries_reload_interval" },
-        { name: "cache_size_to_ram_max_ratio", href: "/es/reference/settings/server-settings/settings/other#cache_size_to_ram_max_ratio", default: "0.5" },
-        { name: "cannot_allocate_thread_fault_injection_probability", href: "/es/reference/settings/server-settings/settings/other#cannot_allocate_thread_fault_injection_probability", default: "0" },
-        { name: "cgroups_memory_usage_observer_wait_time", href: "/es/reference/settings/server-settings/settings/other#cgroups_memory_usage_observer_wait_time", default: "15" },
-        { name: "compression", href: "/es/reference/settings/server-settings/settings/other#compression" },
-        { name: "config_reload_interval_ms", href: "/es/reference/settings/server-settings/settings/other#config_reload_interval_ms", default: "2000" },
-        { name: "config-file", href: "/es/reference/settings/server-settings/settings/other#config-file", default: "config.xml" },
-        { name: "core_dump", href: "/es/reference/settings/server-settings/settings/other#core_dump" },
-        { name: "crash_log", href: "/es/reference/settings/server-settings/settings/other#crash_log" },
-        { name: "create_union_system_log_tables", href: "/es/reference/settings/server-settings/settings/other#create_union_system_log_tables" },
-        { name: "database_atomic_delay_before_drop_table_sec", href: "/es/reference/settings/server-settings/settings/other#database_atomic_delay_before_drop_table_sec", default: "480" },
-        { name: "dead_letter_queue", href: "/es/reference/settings/server-settings/settings/other#dead_letter_queue" },
-        { name: "dictionary_background_reconnect_interval", href: "/es/reference/settings/server-settings/settings/other#dictionary_background_reconnect_interval", default: "1000" },
-        { name: "disk_transaction_wait_for_blob_removal", href: "/es/reference/settings/server-settings/settings/other#disk_transaction_wait_for_blob_removal", default: "1" },
-        { name: "display_secrets_in_show_and_select", href: "/es/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select", default: "0" },
-        { name: "dns_max_consecutive_failures", href: "/es/reference/settings/server-settings/settings/other#dns_max_consecutive_failures", default: "5" },
+        { name: "abort_on_logical_error", path: "/other#abort_on_logical_error", default: "0" },
+        { name: "allowed_disks_for_table_engines", path: "/other#allowed_disks_for_table_engines", default: '""' },
+        { name: "auth_use_forwarded_address", path: "/other#auth_use_forwarded_address", default: "false" },
+        { name: "bcrypt_workfactor", path: "/other#bcrypt_workfactor", default: "12" },
+        { name: "blob_storage_log", path: "/other#blob_storage_log" },
+        { name: "builtin_dictionaries_reload_interval", path: "/other#builtin_dictionaries_reload_interval" },
+        { name: "cache_size_to_ram_max_ratio", path: "/other#cache_size_to_ram_max_ratio", default: "0.5" },
+        { name: "cannot_allocate_thread_fault_injection_probability", path: "/other#cannot_allocate_thread_fault_injection_probability", default: "0" },
+        { name: "cgroups_memory_usage_observer_wait_time", path: "/other#cgroups_memory_usage_observer_wait_time", default: "15" },
+        { name: "compression", path: "/other#compression" },
+        { name: "config_reload_interval_ms", path: "/other#config_reload_interval_ms", default: "2000" },
+        { name: "config-file", path: "/other#config-file", default: "config.xml" },
+        { name: "core_dump", path: "/other#core_dump" },
+        { name: "crash_log", path: "/other#crash_log" },
+        { name: "create_union_system_log_tables", path: "/other#create_union_system_log_tables" },
+        { name: "database_atomic_delay_before_drop_table_sec", path: "/other#database_atomic_delay_before_drop_table_sec", default: "480" },
+        { name: "dead_letter_queue", path: "/other#dead_letter_queue" },
+        { name: "dictionary_background_reconnect_interval", path: "/other#dictionary_background_reconnect_interval", default: "1000" },
+        { name: "disk_transaction_wait_for_blob_removal", path: "/other#disk_transaction_wait_for_blob_removal", default: "1" },
+        { name: "display_secrets_in_show_and_select", path: "/other#display_secrets_in_show_and_select", default: "0" },
+        { name: "dns_max_consecutive_failures", path: "/other#dns_max_consecutive_failures", default: "5" },
         {
           name: "dynamic_user_defined_executable_functions_path",
-          href: "/es/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path",
+          path: "/other#dynamic_user_defined_executable_functions_path",
           default: "/var/lib/clickhouse/dynamic_user_defined_executable_functions/"
         },
-        { name: "encryption", href: "/es/reference/settings/server-settings/settings/other#encryption" },
-        { name: "enforce_keeper_component_tracking", href: "/es/reference/settings/server-settings/settings/other#enforce_keeper_component_tracking", default: "0" },
-        { name: "error_log", href: "/es/reference/settings/server-settings/settings/other#error_log" },
-        { name: "filesystem_caches_path", href: "/es/reference/settings/server-settings/settings/other#filesystem_caches_path", default: '""' },
-        { name: "google_protos_path", href: "/es/reference/settings/server-settings/settings/other#google_protos_path", default: "/usr/share/clickhouse/protos/" },
-        { name: "handshake_timeout_milliseconds", href: "/es/reference/settings/server-settings/settings/other#handshake_timeout_milliseconds", default: "30000" },
-        { name: "hdfs.libhdfs3_conf", href: "/es/reference/settings/server-settings/settings/other#hdfs.libhdfs3_conf", default: '""' },
-        { name: "hsts_max_age", href: "/es/reference/settings/server-settings/settings/other#hsts_max_age" },
-        { name: "iceberg_background_schedule_pool_size", href: "/es/reference/settings/server-settings/settings/other#iceberg_background_schedule_pool_size", default: "10" },
-        { name: "ignore_empty_sql_security_in_create_view_query", href: "/es/reference/settings/server-settings/settings/other#ignore_empty_sql_security_in_create_view_query", default: "1" },
-        { name: "include_from", href: "/es/reference/settings/server-settings/settings/other#include_from", default: '""' },
-        { name: "insert_deduplication_version", href: "/es/reference/settings/server-settings/settings/other#insert_deduplication_version", default: "new_unified_hash" },
-        { name: "io_thread_pool_queue_size", href: "/es/reference/settings/server-settings/settings/other#io_thread_pool_queue_size", default: "10000" },
-        { name: "keep_alive_timeout", href: "/es/reference/settings/server-settings/settings/other#keep_alive_timeout", default: "30" },
-        { name: "ldap_servers", href: "/es/reference/settings/server-settings/settings/other#ldap_servers" },
-        { name: "logger", href: "/es/reference/settings/server-settings/settings/other#logger" },
-        { name: "logger.count", href: "/es/reference/settings/server-settings/settings/other#logger.count", default: "1" },
-        { name: "logger.errorlog", href: "/es/reference/settings/server-settings/settings/other#logger.errorlog", default: '""' },
-        { name: "logger.formatting.type", href: "/es/reference/settings/server-settings/settings/other#logger.formatting.type", default: "json" },
-        { name: "logger.level", href: "/es/reference/settings/server-settings/settings/other#logger.level", default: "trace" },
-        { name: "logger.log", href: "/es/reference/settings/server-settings/settings/other#logger.log", default: '""' },
-        { name: "logger.rotation", href: "/es/reference/settings/server-settings/settings/other#logger.rotation", default: "100M" },
-        { name: "logger.shutdown_level", href: "/es/reference/settings/server-settings/settings/other#logger.shutdown_level", default: '""' },
-        { name: "logger.size", href: "/es/reference/settings/server-settings/settings/other#logger.size", default: "100M" },
-        { name: "logger.startup_level", href: "/es/reference/settings/server-settings/settings/other#logger.startup_level", default: '""' },
-        { name: "logger.stream_compress", href: "/es/reference/settings/server-settings/settings/other#logger.stream_compress", default: "0" },
-        { name: "logger.syslog_level", href: "/es/reference/settings/server-settings/settings/other#logger.syslog_level", default: "trace" },
-        { name: "logger.use_syslog", href: "/es/reference/settings/server-settings/settings/other#logger.use_syslog", default: "0" },
-        { name: "macros", href: "/es/reference/settings/server-settings/settings/other#macros" },
-        { name: "message_queue_disable_insertion", href: "/es/reference/settings/server-settings/settings/other#message_queue_disable_insertion", default: "0" },
-        { name: "metric_log", href: "/es/reference/settings/server-settings/settings/other#metric_log" },
-        { name: "mmap_cache_size", href: "/es/reference/settings/server-settings/settings/other#mmap_cache_size", default: "1024" },
-        { name: "mutation_workload", href: "/es/reference/settings/server-settings/settings/other#mutation_workload", default: "default" },
-        { name: "named_collections_storage.type", href: "/es/reference/settings/server-settings/settings/other#named_collections_storage.type", default: "local" },
-        { name: "oom_score", href: "/es/reference/settings/server-settings/settings/other#oom_score", default: "0" },
-        { name: "openSSL", href: "/es/reference/settings/server-settings/settings/other#openssl" },
-        { name: "openSSL.client.caConfig", href: "/es/reference/settings/server-settings/settings/other#openssl.client.caconfig", default: '""' },
-        { name: "openSSL.client.cacheSessions", href: "/es/reference/settings/server-settings/settings/other#openssl.client.cachesessions", default: "0" },
-        { name: "openSSL.client.certificateFile", href: "/es/reference/settings/server-settings/settings/other#openssl.client.certificatefile", default: '""' },
-        { name: "openSSL.client.cipherList", href: "/es/reference/settings/server-settings/settings/other#openssl.client.cipherlist", default: "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" },
-        { name: "openSSL.client.disableProtocols", href: "/es/reference/settings/server-settings/settings/other#openssl.client.disableprotocols", default: '""' },
-        { name: "openSSL.client.extendedVerification", href: "/es/reference/settings/server-settings/settings/other#openssl.client.extendedverification", default: "0" },
-        { name: "openSSL.client.fips", href: "/es/reference/settings/server-settings/settings/other#openssl.client.fips", default: "0" },
-        {
-          name: "openSSL.client.invalidCertificateHandler.name",
-          href: "/es/reference/settings/server-settings/settings/other#openssl.client.invalidcertificatehandler.name",
-          default: "RejectCertificateHandler"
-        },
-        { name: "openSSL.client.loadDefaultCAFile", href: "/es/reference/settings/server-settings/settings/other#openssl.client.loaddefaultcafile", default: "1" },
-        { name: "openSSL.client.preferServerCiphers", href: "/es/reference/settings/server-settings/settings/other#openssl.client.preferserverciphers", default: "0" },
-        { name: "openSSL.client.privateKeyFile", href: "/es/reference/settings/server-settings/settings/other#openssl.client.privatekeyfile", default: '""' },
-        {
-          name: "openSSL.client.privateKeyPassphraseHandler.name",
-          href: "/es/reference/settings/server-settings/settings/other#openssl.client.privatekeypassphrasehandler.name",
-          default: "KeyConsoleHandler"
-        },
-        { name: "openSSL.client.verificationDepth", href: "/es/reference/settings/server-settings/settings/other#openssl.client.verificationdepth", default: "9" },
-        { name: "openSSL.client.verificationMode", href: "/es/reference/settings/server-settings/settings/other#openssl.client.verificationmode", default: "relaxed" },
-        { name: "openSSL.server.caConfig", href: "/es/reference/settings/server-settings/settings/other#openssl.server.caconfig", default: '""' },
-        { name: "openSSL.server.cacheSessions", href: "/es/reference/settings/server-settings/settings/other#openssl.server.cachesessions", default: "0" },
-        { name: "openSSL.server.certificateFile", href: "/es/reference/settings/server-settings/settings/other#openssl.server.certificatefile", default: '""' },
-        { name: "openSSL.server.cipherList", href: "/es/reference/settings/server-settings/settings/other#openssl.server.cipherlist", default: "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" },
-        { name: "openSSL.server.disableProtocols", href: "/es/reference/settings/server-settings/settings/other#openssl.server.disableprotocols", default: '""' },
-        { name: "openSSL.server.extendedVerification", href: "/es/reference/settings/server-settings/settings/other#openssl.server.extendedverification", default: "0" },
-        { name: "openSSL.server.fips", href: "/es/reference/settings/server-settings/settings/other#openssl.server.fips", default: "0" },
-        {
-          name: "openSSL.server.invalidCertificateHandler.name",
-          href: "/es/reference/settings/server-settings/settings/other#openssl.server.invalidcertificatehandler.name",
-          default: "RejectCertificateHandler"
-        },
-        { name: "openSSL.server.loadDefaultCAFile", href: "/es/reference/settings/server-settings/settings/other#openssl.server.loaddefaultcafile", default: "1" },
-        { name: "openSSL.server.preferServerCiphers", href: "/es/reference/settings/server-settings/settings/other#openssl.server.preferserverciphers", default: "0" },
-        { name: "openSSL.server.privateKeyFile", href: "/es/reference/settings/server-settings/settings/other#openssl.server.privatekeyfile", default: '""' },
-        {
-          name: "openSSL.server.privateKeyPassphraseHandler.name",
-          href: "/es/reference/settings/server-settings/settings/other#openssl.server.privatekeypassphrasehandler.name",
-          default: "KeyConsoleHandler"
-        },
-        { name: "openSSL.server.sessionCacheSize", href: "/es/reference/settings/server-settings/settings/other#openssl.server.sessioncachesize", default: "20480" },
-        { name: "openSSL.server.sessionIdContext", href: "/es/reference/settings/server-settings/settings/other#openssl.server.sessionidcontext", default: "application.name" },
-        { name: "openSSL.server.sessionTimeout", href: "/es/reference/settings/server-settings/settings/other#openssl.server.sessiontimeout", default: "2" },
-        { name: "openSSL.server.verificationDepth", href: "/es/reference/settings/server-settings/settings/other#openssl.server.verificationdepth", default: "9" },
-        { name: "openSSL.server.verificationMode", href: "/es/reference/settings/server-settings/settings/other#openssl.server.verificationmode", default: "relaxed" },
-        { name: "opentelemetry_span_log", href: "/es/reference/settings/server-settings/settings/other#opentelemetry_span_log" },
-        { name: "part_log", href: "/es/reference/settings/server-settings/settings/other#part_log" },
-        { name: "path", href: "/es/reference/settings/server-settings/settings/other#path", default: "/var/lib/clickhouse/" },
-        { name: "per_cpu_untracked_memory_thread_buffer", href: "/es/reference/settings/server-settings/settings/other#per_cpu_untracked_memory_thread_buffer", default: "32768" },
-        { name: "point_in_polygon_cache_size", href: "/es/reference/settings/server-settings/settings/other#point_in_polygon_cache_size", default: "268435456" },
-        {
-          name: "prefixes_deserialization_thread_pool_thread_pool_queue_size",
-          href: "/es/reference/settings/server-settings/settings/other#prefixes_deserialization_thread_pool_thread_pool_queue_size",
-          default: "10000"
-        },
-        { name: "prepare_system_log_tables_on_startup", href: "/es/reference/settings/server-settings/settings/other#prepare_system_log_tables_on_startup", default: "0" },
-        { name: "process_query_plan_packet", href: "/es/reference/settings/server-settings/settings/other#process_query_plan_packet", default: "0" },
-        { name: "processors_profile_log", href: "/es/reference/settings/server-settings/settings/other#processors_profile_log" },
-        { name: "prometheus", href: "/es/reference/settings/server-settings/settings/other#prometheus" },
-        { name: "prometheus.keeper_metrics_only", href: "/es/reference/settings/server-settings/settings/other#prometheus.keeper_metrics_only", default: "0" },
-        { name: "proxy", href: "/es/reference/settings/server-settings/settings/other#proxy" },
-        { name: "remap_executable", href: "/es/reference/settings/server-settings/settings/other#remap_executable", default: "0" },
-        { name: "replica_group_name", href: "/es/reference/settings/server-settings/settings/other#replica_group_name", default: '""' },
-        { name: "replicated_merge_tree", href: "/es/reference/settings/server-settings/settings/other#replicated_merge_tree" },
-        { name: "restore_threads", href: "/es/reference/settings/server-settings/settings/other#restore_threads", default: "16" },
-        { name: "send_crash_reports", href: "/es/reference/settings/server-settings/settings/other#send_crash_reports" },
-        { name: "series_keeper_path", href: "/es/reference/settings/server-settings/settings/other#series_keeper_path", default: "/clickhouse/series" },
-        { name: "ssh_server", href: "/es/reference/settings/server-settings/settings/other#ssh_server" },
-        { name: "table_engines_require_grant", href: "/es/reference/settings/server-settings/settings/other#table_engines_require_grant", default: "false" },
-        { name: "tcp_ssh_port", href: "/es/reference/settings/server-settings/settings/other#tcp_ssh_port" },
-        { name: "text_log", href: "/es/reference/settings/server-settings/settings/other#text_log" },
-        { name: "thread_pool_queue_size", href: "/es/reference/settings/server-settings/settings/other#thread_pool_queue_size", default: "10000" },
-        { name: "throw_on_unknown_workload", href: "/es/reference/settings/server-settings/settings/other#throw_on_unknown_workload", default: "0" },
-        { name: "timezone", href: "/es/reference/settings/server-settings/settings/other#timezone" },
-        { name: "trace_log", href: "/es/reference/settings/server-settings/settings/other#trace_log" },
-        { name: "url_scheme_mappers", href: "/es/reference/settings/server-settings/settings/other#url_scheme_mappers" },
-        { name: "validate_tcp_client_information", href: "/es/reference/settings/server-settings/settings/other#validate_tcp_client_information", default: "0" },
-        { name: "wait_dictionaries_load_at_startup", href: "/es/reference/settings/server-settings/settings/other#wait_dictionaries_load_at_startup", default: "1" },
-        { name: "webassembly_udf_engine", href: "/es/reference/settings/server-settings/settings/other#webassembly_udf_engine", default: "wasmtime" },
-        { name: "webterminal_allowed_origins", href: "/es/reference/settings/server-settings/settings/other#webterminal_allowed_origins", default: '""' }
+        { name: "encryption", path: "/other#encryption" },
+        { name: "enforce_keeper_component_tracking", path: "/other#enforce_keeper_component_tracking", default: "0" },
+        { name: "error_log", path: "/other#error_log" },
+        { name: "filesystem_caches_path", path: "/other#filesystem_caches_path", default: '""' },
+        { name: "google_protos_path", path: "/other#google_protos_path", default: "/usr/share/clickhouse/protos/" },
+        { name: "handshake_timeout_milliseconds", path: "/other#handshake_timeout_milliseconds", default: "30000" },
+        { name: "hdfs.libhdfs3_conf", path: "/other#hdfs.libhdfs3_conf", default: '""' },
+        { name: "hsts_max_age", path: "/other#hsts_max_age" },
+        { name: "iceberg_background_schedule_pool_size", path: "/other#iceberg_background_schedule_pool_size", default: "10" },
+        { name: "ignore_empty_sql_security_in_create_view_query", path: "/other#ignore_empty_sql_security_in_create_view_query", default: "1" },
+        { name: "include_from", path: "/other#include_from", default: '""' },
+        { name: "insert_deduplication_version", path: "/other#insert_deduplication_version", default: "new_unified_hash" },
+        { name: "io_thread_pool_queue_size", path: "/other#io_thread_pool_queue_size", default: "10000" },
+        { name: "keep_alive_timeout", path: "/other#keep_alive_timeout", default: "30" },
+        { name: "ldap_servers", path: "/other#ldap_servers" },
+        { name: "logger", path: "/other#logger" },
+        { name: "logger.count", path: "/other#logger.count", default: "1" },
+        { name: "logger.errorlog", path: "/other#logger.errorlog", default: '""' },
+        { name: "logger.formatting.type", path: "/other#logger.formatting.type", default: "json" },
+        { name: "logger.level", path: "/other#logger.level", default: "trace" },
+        { name: "logger.log", path: "/other#logger.log", default: '""' },
+        { name: "logger.rotation", path: "/other#logger.rotation", default: "100M" },
+        { name: "logger.shutdown_level", path: "/other#logger.shutdown_level", default: '""' },
+        { name: "logger.size", path: "/other#logger.size", default: "100M" },
+        { name: "logger.startup_level", path: "/other#logger.startup_level", default: '""' },
+        { name: "logger.stream_compress", path: "/other#logger.stream_compress", default: "0" },
+        { name: "logger.syslog_level", path: "/other#logger.syslog_level", default: "trace" },
+        { name: "logger.use_syslog", path: "/other#logger.use_syslog", default: "0" },
+        { name: "macros", path: "/other#macros" },
+        { name: "message_queue_disable_insertion", path: "/other#message_queue_disable_insertion", default: "0" },
+        { name: "metric_log", path: "/other#metric_log" },
+        { name: "mmap_cache_size", path: "/other#mmap_cache_size", default: "1024" },
+        { name: "mutation_workload", path: "/other#mutation_workload", default: "default" },
+        { name: "named_collections_storage.type", path: "/other#named_collections_storage.type", default: "local" },
+        { name: "oom_score", path: "/other#oom_score", default: "0" },
+        { name: "openSSL", path: "/other#openssl" },
+        { name: "openSSL.client.caConfig", path: "/other#openssl.client.caconfig", default: '""' },
+        { name: "openSSL.client.cacheSessions", path: "/other#openssl.client.cachesessions", default: "0" },
+        { name: "openSSL.client.certificateFile", path: "/other#openssl.client.certificatefile", default: '""' },
+        { name: "openSSL.client.cipherList", path: "/other#openssl.client.cipherlist", default: "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" },
+        { name: "openSSL.client.disableProtocols", path: "/other#openssl.client.disableprotocols", default: '""' },
+        { name: "openSSL.client.extendedVerification", path: "/other#openssl.client.extendedverification", default: "0" },
+        { name: "openSSL.client.fips", path: "/other#openssl.client.fips", default: "0" },
+        { name: "openSSL.client.invalidCertificateHandler.name", path: "/other#openssl.client.invalidcertificatehandler.name", default: "RejectCertificateHandler" },
+        { name: "openSSL.client.loadDefaultCAFile", path: "/other#openssl.client.loaddefaultcafile", default: "1" },
+        { name: "openSSL.client.preferServerCiphers", path: "/other#openssl.client.preferserverciphers", default: "0" },
+        { name: "openSSL.client.privateKeyFile", path: "/other#openssl.client.privatekeyfile", default: '""' },
+        { name: "openSSL.client.privateKeyPassphraseHandler.name", path: "/other#openssl.client.privatekeypassphrasehandler.name", default: "KeyConsoleHandler" },
+        { name: "openSSL.client.verificationDepth", path: "/other#openssl.client.verificationdepth", default: "9" },
+        { name: "openSSL.client.verificationMode", path: "/other#openssl.client.verificationmode", default: "relaxed" },
+        { name: "openSSL.server.caConfig", path: "/other#openssl.server.caconfig", default: '""' },
+        { name: "openSSL.server.cacheSessions", path: "/other#openssl.server.cachesessions", default: "0" },
+        { name: "openSSL.server.certificateFile", path: "/other#openssl.server.certificatefile", default: '""' },
+        { name: "openSSL.server.cipherList", path: "/other#openssl.server.cipherlist", default: "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" },
+        { name: "openSSL.server.disableProtocols", path: "/other#openssl.server.disableprotocols", default: '""' },
+        { name: "openSSL.server.extendedVerification", path: "/other#openssl.server.extendedverification", default: "0" },
+        { name: "openSSL.server.fips", path: "/other#openssl.server.fips", default: "0" },
+        { name: "openSSL.server.invalidCertificateHandler.name", path: "/other#openssl.server.invalidcertificatehandler.name", default: "RejectCertificateHandler" },
+        { name: "openSSL.server.loadDefaultCAFile", path: "/other#openssl.server.loaddefaultcafile", default: "1" },
+        { name: "openSSL.server.preferServerCiphers", path: "/other#openssl.server.preferserverciphers", default: "0" },
+        { name: "openSSL.server.privateKeyFile", path: "/other#openssl.server.privatekeyfile", default: '""' },
+        { name: "openSSL.server.privateKeyPassphraseHandler.name", path: "/other#openssl.server.privatekeypassphrasehandler.name", default: "KeyConsoleHandler" },
+        { name: "openSSL.server.sessionCacheSize", path: "/other#openssl.server.sessioncachesize", default: "20480" },
+        { name: "openSSL.server.sessionIdContext", path: "/other#openssl.server.sessionidcontext", default: "application.name" },
+        { name: "openSSL.server.sessionTimeout", path: "/other#openssl.server.sessiontimeout", default: "2" },
+        { name: "openSSL.server.verificationDepth", path: "/other#openssl.server.verificationdepth", default: "9" },
+        { name: "openSSL.server.verificationMode", path: "/other#openssl.server.verificationmode", default: "relaxed" },
+        { name: "opentelemetry_span_log", path: "/other#opentelemetry_span_log" },
+        { name: "part_log", path: "/other#part_log" },
+        { name: "path", path: "/other#path", default: "/var/lib/clickhouse/" },
+        { name: "per_cpu_untracked_memory_thread_buffer", path: "/other#per_cpu_untracked_memory_thread_buffer", default: "32768" },
+        { name: "point_in_polygon_cache_size", path: "/other#point_in_polygon_cache_size", default: "268435456" },
+        { name: "prefixes_deserialization_thread_pool_thread_pool_queue_size", path: "/other#prefixes_deserialization_thread_pool_thread_pool_queue_size", default: "10000" },
+        { name: "prepare_system_log_tables_on_startup", path: "/other#prepare_system_log_tables_on_startup", default: "0" },
+        { name: "process_query_plan_packet", path: "/other#process_query_plan_packet", default: "0" },
+        { name: "processors_profile_log", path: "/other#processors_profile_log" },
+        { name: "prometheus", path: "/other#prometheus" },
+        { name: "prometheus.keeper_metrics_only", path: "/other#prometheus.keeper_metrics_only", default: "0" },
+        { name: "proxy", path: "/other#proxy" },
+        { name: "remap_executable", path: "/other#remap_executable", default: "0" },
+        { name: "replica_group_name", path: "/other#replica_group_name", default: '""' },
+        { name: "replicated_merge_tree", path: "/other#replicated_merge_tree" },
+        { name: "restore_threads", path: "/other#restore_threads", default: "16" },
+        { name: "send_crash_reports", path: "/other#send_crash_reports" },
+        { name: "series_keeper_path", path: "/other#series_keeper_path", default: "/clickhouse/series" },
+        { name: "ssh_server", path: "/other#ssh_server" },
+        { name: "table_engines_require_grant", path: "/other#table_engines_require_grant", default: "false" },
+        { name: "tcp_ssh_port", path: "/other#tcp_ssh_port" },
+        { name: "text_log", path: "/other#text_log" },
+        { name: "thread_pool_queue_size", path: "/other#thread_pool_queue_size", default: "10000" },
+        { name: "throw_on_unknown_workload", path: "/other#throw_on_unknown_workload", default: "0" },
+        { name: "timezone", path: "/other#timezone" },
+        { name: "trace_log", path: "/other#trace_log" },
+        { name: "url_scheme_mappers", path: "/other#url_scheme_mappers" },
+        { name: "validate_tcp_client_information", path: "/other#validate_tcp_client_information", default: "0" },
+        { name: "wait_dictionaries_load_at_startup", path: "/other#wait_dictionaries_load_at_startup", default: "1" },
+        { name: "webassembly_udf_engine", path: "/other#webassembly_udf_engine", default: "wasmtime" },
+        { name: "webterminal_allowed_origins", path: "/other#webterminal_allowed_origins", default: '""' }
       ],
       children: []
     }
@@ -1635,7 +1531,7 @@ const ServerSettingsExplorer = () => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "configuración" : "configuraciones"}`
+    const countLabel = `${entry.count} ${entry.count === 1 ? "ajuste" : "ajustes"}`
 
     return (
       <div key={key} className="min-w-max">
@@ -1675,7 +1571,7 @@ const ServerSettingsExplorer = () => {
                 <span className="flex min-w-0 items-start">
                   <span aria-hidden="true" className="w-4 shrink-0" />
                   {branch(branchPrefix(childContinuations, itemIsLast))}
-                  <a href={`https://clickhouse.com/docs${item.value.href}`} className="min-w-0 whitespace-normal no-underline hover:underline" style={{ overflowWrap: "anywhere" }}>
+                  <a href={`https://clickhouse.com/docs${baseRoute}${item.value.path}`} className="min-w-0 whitespace-normal no-underline hover:underline" style={{ overflowWrap: "anywhere" }}>
                     {item.value.name.split("_").map((part, index, parts) => (
                       <span key={`${part}-${index}`}>
                         {part}
@@ -1715,18 +1611,18 @@ const ServerSettingsExplorer = () => {
           <path d="m21 21-4.3-4.3" />
         </svg>
         <input
-          aria-label="Buscar settings"
+          aria-label="Buscar ajustes"
           type="search"
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="Buscar settings, p. ej. réplicas paralelas o %materialized%"
+          placeholder="Buscar ajustes, p. ej. réplicas paralelas o %materialized%"
           className="w-full rounded-lg border border-gray-500 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-600 focus:border-gray-600 focus:outline-0 focus-visible:outline-0 dark:border-white/30 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-[#fdff75]"
         />
       </div>
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            {matchingCount} {matchingCount === 1 ? "setting coincidente" : "settings coincidentes"}
+            {matchingCount} {matchingCount === 1 ? "ajuste coincidente" : "ajustes coincidentes"}
           </span>
         </div>
       )}
@@ -1750,7 +1646,7 @@ const ServerSettingsExplorer = () => {
         {filteredEntries.length > 0 ? (
           filteredEntries.map((entry, index) => renderGroup(entry, [], index === filteredEntries.length - 1))
         ) : (
-          <div className="py-2 text-gray-500 dark:text-gray-400">No hay settings coincidentes</div>
+          <div className="py-2 text-gray-500 dark:text-gray-400">No se encontraron ajustes</div>
         )}
       </div>
     </div>

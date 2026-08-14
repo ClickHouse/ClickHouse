@@ -7,37 +7,37 @@
       "versionId": "138b2ddf9c6f3544641c95967a19e82eb07861ef53f1f01da0818d45f243060e",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T11:34:57.737Z",
+          "updatedAt": "2026-08-14T15:03:14.343Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-14T11:34:57.984Z",
+          "updatedAt": "2026-08-14T15:03:14.477Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-14T11:34:58.185Z",
+          "updatedAt": "2026-08-14T15:03:14.603Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T11:34:58.365Z",
+          "updatedAt": "2026-08-14T15:03:14.718Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-14T11:34:58.536Z",
+          "updatedAt": "2026-08-14T15:03:14.874Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-14T11:34:58.736Z",
+          "updatedAt": "2026-08-14T15:03:14.993Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-14T11:34:58.922Z",
+          "updatedAt": "2026-08-14T15:03:15.107Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-14T11:34:59.104Z",
+          "updatedAt": "2026-08-14T15:03:15.222Z",
           "fileName": "docs.json",
-          "postProcessHash": "d44681c7e63bc71af23b7813b413bb378cb8ae987b2a0272c885112a91e56493"
+          "postProcessHash": "08f86263d38049f519fb9dde8d6c017533d62c26bf8c2092b595e0ba09e2a66e"
         }
       },
       "fileName": "docs.json",
@@ -18045,47 +18045,47 @@
     },
     {
       "fileId": "7e85a59dd5368e7ef7319e6042198ef6c6d3ab02be34fca79ca6891ed4541b57",
-      "versionId": "569108639f2ef683be3160745dbbafb88c3d16c7c72f06bcd264b350837ceb05",
+      "versionId": "bf64df12b0d80cd02687e54b204e6e02a2c37b3a02eb19ce95d24abe39f5cdc5",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.050Z",
-          "fileName": "es/reference/settings/formats.mdx",
-          "postProcessHash": "bda8c714f07e575cd842ce0f0377848f85f8655b912290d4288fcd54f1f529f3"
+        "ru": {
+          "updatedAt": "2026-08-14T15:03:18.368Z",
+          "fileName": "ru/reference/settings/formats.mdx",
+          "postProcessHash": "33d44d6f29c287ec56fd6c8101c8b70dcb308459672b9abcf29d3c292d2ac501"
         },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.050Z",
-          "fileName": "ja/reference/settings/formats.mdx",
-          "postProcessHash": "32ce5f36f2badc680194abbe8066176530329f0036a943d0b9bc0580b8e78db7"
+        "es": {
+          "updatedAt": "2026-08-14T15:03:18.369Z",
+          "fileName": "es/reference/settings/formats.mdx",
+          "postProcessHash": "a79714bdc2aa0e4cb38dfd166bd20da4848bb0d14e79a1335232091026a76e72"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:06.050Z",
+          "updatedAt": "2026-08-14T15:03:18.370Z",
           "fileName": "ko/reference/settings/formats.mdx",
-          "postProcessHash": "605dc05e5652ef7cc104930d5b061812a64b8f3389d704f69e6fd0f1cc8429f3"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.050Z",
-          "fileName": "pt-BR/reference/settings/formats.mdx",
-          "postProcessHash": "ad4387fa4693de1aa3ea55d46a2a18732c9a401419feef1b3a0cab29f7a6b926"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.050Z",
-          "fileName": "ru/reference/settings/formats.mdx",
-          "postProcessHash": "d437698a0a9382b1fcdb518f86651cfd9cd23970d5760cbefe16c4d71aa5aab3"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.050Z",
-          "fileName": "zh/reference/settings/formats.mdx",
-          "postProcessHash": "14e4b79d8c454a55090e0bb91ed4b4feeda6039772cbb0813266b8edc567ffb6"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.051Z",
-          "fileName": "ar/reference/settings/formats.mdx",
-          "postProcessHash": "9e5fb52f1958b4ac01809d5ef251bd7ad59c2c9ab713ca6e8af105373d930b76"
+          "postProcessHash": "8c723685bcc94d386b78d3105f70b7398e3429ee2706382e75c9cb8c53bf5cbc"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.051Z",
+          "updatedAt": "2026-08-14T15:03:18.372Z",
           "fileName": "fr/reference/settings/formats.mdx",
-          "postProcessHash": "d7668a0c9e94bc97d9fd8526472fc4b805651d6d90793bd911337d0689430468"
+          "postProcessHash": "e58404ddf731a3da6feb108dfcc8ddb86bb4da9c3a0db9d37619b259c8b02ec8"
+        },
+        "ja": {
+          "updatedAt": "2026-08-14T15:03:18.375Z",
+          "fileName": "ja/reference/settings/formats.mdx",
+          "postProcessHash": "15f0e79b582782f2690c04016f4f45b7d6d5e0be2fbbd9913a4525c6c9d6e582"
+        },
+        "ar": {
+          "updatedAt": "2026-08-14T15:03:18.376Z",
+          "fileName": "ar/reference/settings/formats.mdx",
+          "postProcessHash": "05d80eaf842831553b8194888c4558c86d5827bca45ee2f2915464aadb5f1060"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-14T15:03:18.377Z",
+          "fileName": "pt-BR/reference/settings/formats.mdx",
+          "postProcessHash": "33a4e0914d8afb078fac0e5239aa515e092c9462c90517798a52dfbd8076a009"
+        },
+        "zh": {
+          "updatedAt": "2026-08-14T15:03:18.386Z",
+          "fileName": "zh/reference/settings/formats.mdx",
+          "postProcessHash": "b53ca0f6adadddaca8e3b2f15bdbc86d6804274ed3278c37090d29e17661d605"
         }
       },
       "fileName": "reference/settings/formats.mdx",
@@ -18141,47 +18141,47 @@
     },
     {
       "fileId": "9af31ffbc1c60e56dfa1cecf237cbc849216d969021b350f9268aa665a2cf871",
-      "versionId": "cd0a81417a58c40fe233d95dc617128a7f65500041cc8d0abb5e65525724ba11",
+      "versionId": "391b3837d3819b844fe977528f82764e5ebe30222f1b57faada1eedba8ff2b9f",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.051Z",
-          "fileName": "es/reference/settings/merge-tree-settings.mdx",
-          "postProcessHash": "6860544df0d6d0e2bf1915f54070955ff0e7edf796f3be55f047bb5e5e97f005"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.051Z",
-          "fileName": "ja/reference/settings/merge-tree-settings.mdx",
-          "postProcessHash": "fb49c0bac4d79558ce2f9377444f04779433e481fe907b7df87788eb59702d84"
+        "ar": {
+          "updatedAt": "2026-08-14T15:03:18.371Z",
+          "fileName": "ar/reference/settings/merge-tree-settings.mdx",
+          "postProcessHash": "1104d07d41a0bef23481f27e8294a5877318757b34bdd98b2aa3b2d7ac6068cd"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:06.052Z",
+          "updatedAt": "2026-08-14T15:03:18.371Z",
           "fileName": "ko/reference/settings/merge-tree-settings.mdx",
-          "postProcessHash": "e617759451e835824ad551d17e3354a97eec3b00844d4726548982ecdbab6fa3"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.052Z",
-          "fileName": "pt-BR/reference/settings/merge-tree-settings.mdx",
-          "postProcessHash": "d85fee1d49d5a506e720ff5e179cfe1d4621cc10e2d85fe43dfdc41d7fdc837e"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.052Z",
-          "fileName": "ru/reference/settings/merge-tree-settings.mdx",
-          "postProcessHash": "5c548fc6662ad17643486e2f9790f2a3f19df93cada788494f92f66b6b9d9d3d"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.052Z",
-          "fileName": "zh/reference/settings/merge-tree-settings.mdx",
-          "postProcessHash": "bf6ae7713e100407be9413c0e03daa9f4de91ae150a3443eb440e4c87bb7026c"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.052Z",
-          "fileName": "ar/reference/settings/merge-tree-settings.mdx",
-          "postProcessHash": "680e11a958bf2d87a98826de5090d2ad5474848a4be68369e2d99198b1a70712"
+          "postProcessHash": "d30f4bd24c834b0a5bbe58ed3b17d3f2c3b34f30c453ab2c75c662295f0d0c39"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.052Z",
+          "updatedAt": "2026-08-14T15:03:18.373Z",
           "fileName": "fr/reference/settings/merge-tree-settings.mdx",
-          "postProcessHash": "b2a3cc0f90983f06ebe056708d06d060de3d544fc966066b4a2e5715ee34a3a6"
+          "postProcessHash": "845e1d5321f6e471e37d464473066e011e9db4f1cbacc815ca3144c90cfa7eee"
+        },
+        "zh": {
+          "updatedAt": "2026-08-14T15:03:18.374Z",
+          "fileName": "zh/reference/settings/merge-tree-settings.mdx",
+          "postProcessHash": "b76447334f2053519b56dd48cf0899a661384df332a7e9ea75ffaae92c11b6ad"
+        },
+        "ja": {
+          "updatedAt": "2026-08-14T15:03:18.374Z",
+          "fileName": "ja/reference/settings/merge-tree-settings.mdx",
+          "postProcessHash": "57ea05c902a7ea40b0b7711d41171c7d3673b69d1c3f5c8edf4db59839fcd113"
+        },
+        "ru": {
+          "updatedAt": "2026-08-14T15:03:18.374Z",
+          "fileName": "ru/reference/settings/merge-tree-settings.mdx",
+          "postProcessHash": "72075a7cbf67411cbdc39d00d15422230dff180950ff5a53949843c06cb01f44"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-14T15:03:18.375Z",
+          "fileName": "pt-BR/reference/settings/merge-tree-settings.mdx",
+          "postProcessHash": "d493b0ab9c1f7eb8b148a46963ca7cc261fbe2c9f6de27761fc083387d4d254f"
+        },
+        "es": {
+          "updatedAt": "2026-08-14T15:03:18.388Z",
+          "fileName": "es/reference/settings/merge-tree-settings.mdx",
+          "postProcessHash": "e5edb7516bc47409fa16abb4d52bbdfe93edc97eb2ee5416e93009a87562c5ac"
         }
       },
       "fileName": "reference/settings/merge-tree-settings.mdx",
@@ -18189,47 +18189,47 @@
     },
     {
       "fileId": "699078d2cd4a07aaac7863f14784bec963cc3545451260a1fd2af7931980aa05",
-      "versionId": "dd57678a527206e6717355101ef57f7bf12b07cef52fcbae9e6997b7d6ed6976",
+      "versionId": "6307f157956aa7df02ca15acccf0f8d930add7858b0c4632dd29fb26f382c3e5",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.052Z",
-          "fileName": "es/reference/settings/session-settings.mdx",
-          "postProcessHash": "baca9d40c5b39d359e826361d6ce20d5c0f9924bd24c90cc9479c71d192157de"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.052Z",
-          "fileName": "ja/reference/settings/session-settings.mdx",
-          "postProcessHash": "07eb35095390cbcd1155d281a48155abcc103a273e1f8563990d746669cdb05b"
+        "fr": {
+          "updatedAt": "2026-08-14T15:03:18.368Z",
+          "fileName": "fr/reference/settings/session-settings.mdx",
+          "postProcessHash": "210a2fce6cbe9d5436e9bb630e8553e093bb62087e6c543b34bdeb5852b55b5f"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:06.052Z",
+          "updatedAt": "2026-08-14T15:03:18.369Z",
           "fileName": "ko/reference/settings/session-settings.mdx",
-          "postProcessHash": "0c30c8798c1ea489dad9ebfbf010d72950a5c6c29905b277e7f710f5955d6f21"
+          "postProcessHash": "b90d50d73a5d076a1f12115d9a17cd61cc69ece8a2ac2d12db89a494b77d9799"
         },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.052Z",
-          "fileName": "pt-BR/reference/settings/session-settings.mdx",
-          "postProcessHash": "9348be1271e9e3a0325453c1313d95753e55ff8a4e4268953bede1f9ef4fa839"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.052Z",
-          "fileName": "ru/reference/settings/session-settings.mdx",
-          "postProcessHash": "be14e0fe5611ff09060b57bb730c2fc8bd2a1da20635d3c6b0f8188bd98aa513"
+        "ja": {
+          "updatedAt": "2026-08-14T15:03:18.369Z",
+          "fileName": "ja/reference/settings/session-settings.mdx",
+          "postProcessHash": "4c4f2030403cc8d16e768529e4b795210427ad38674b0ab01325d6d95cf7f473"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:06.053Z",
+          "updatedAt": "2026-08-14T15:03:18.371Z",
           "fileName": "zh/reference/settings/session-settings.mdx",
-          "postProcessHash": "02bd6cec2118d2e1b4540ac5fef2aba655eacc6fc9fd17b411047729373b263e"
+          "postProcessHash": "8000216dc8b5577236029cd31f44cf2af029f0aca99a5bb0108de234daaf8db5"
+        },
+        "ru": {
+          "updatedAt": "2026-08-14T15:03:18.372Z",
+          "fileName": "ru/reference/settings/session-settings.mdx",
+          "postProcessHash": "5be1592ca54e7136aa9e9beb25ee7818123d119e648dca2a52dfa3d89b17901a"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:06.053Z",
+          "updatedAt": "2026-08-14T15:03:18.376Z",
           "fileName": "ar/reference/settings/session-settings.mdx",
-          "postProcessHash": "04a126acdedce5b3a8a5f8be0ca7ed7dac9c06c0c4692331b4aefdb1250465dc"
+          "postProcessHash": "241f22bae0256aa85b7042e557a6dde3b6b39386ea1878c0fa14e0d2af470d76"
         },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:06.053Z",
-          "fileName": "fr/reference/settings/session-settings.mdx",
-          "postProcessHash": "8d432542f2db00389bfd2788900d9932fd75aae95cb630aad0992a0e6f7b186e"
+        "es": {
+          "updatedAt": "2026-08-14T15:03:18.376Z",
+          "fileName": "es/reference/settings/session-settings.mdx",
+          "postProcessHash": "0e061f2688e3fda91cb854afd537782335105a5e3e75d4373d6b57cf213547a0"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-14T15:03:18.387Z",
+          "fileName": "pt-BR/reference/settings/session-settings.mdx",
+          "postProcessHash": "130eaa625e10ec9a8eccb6587cc971c4588a823ce0ff55cc3011477c3af2b51b"
         }
       },
       "fileName": "reference/settings/session-settings.mdx",
@@ -66765,47 +66765,47 @@
     },
     {
       "fileId": "86c6989c8e9f271288d5c9ca94dffa00447128861b84382f7d651421f900756c",
-      "versionId": "a5f5b81c973fd5202f8ea0cb8e95e1c1492b78e1f06df2c59b3cf0a666a6623b",
+      "versionId": "fd632de50ffd3a91da2e87472d81f94a45b492f0fc7231089ba3efbb37c603c9",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:07.349Z",
-          "fileName": "es/reference/settings/server-settings/settings.mdx",
-          "postProcessHash": "bfee94e1377f074ced07f793680afa25e89d09a167620baba4b045ac2ec773ee"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:07.349Z",
-          "fileName": "ja/reference/settings/server-settings/settings.mdx",
-          "postProcessHash": "2e411a0c5182e9b996b2af61e0f241ea9c09840cdf24e4fc243a2e414c648062"
-        },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:07.350Z",
+          "updatedAt": "2026-08-14T15:03:18.366Z",
           "fileName": "ko/reference/settings/server-settings/settings.mdx",
-          "postProcessHash": "b03bcd268be76a7625487c0849732a79a8969c942bbec5261e049f3e3ea54a4c"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:07.350Z",
-          "fileName": "pt-BR/reference/settings/server-settings/settings.mdx",
-          "postProcessHash": "741189c3549b77d20320280f824809a4e88513c5d26cb381485e027bb7ab06b9"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:07.350Z",
-          "fileName": "ru/reference/settings/server-settings/settings.mdx",
-          "postProcessHash": "748ea8066bab352e93d36f86b8c81b71bae8b2d2bbafc1fe22606dfc89f0e36b"
+          "postProcessHash": "6be86a0c410a952c31edb717f8cf7bb0babd89afb7f22fc321ca7ed6969420e5"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:07.350Z",
+          "updatedAt": "2026-08-14T15:03:18.366Z",
           "fileName": "zh/reference/settings/server-settings/settings.mdx",
-          "postProcessHash": "df22a79d252def9a4cedb4f0e946a3ca7a2928d7450f267cddb7088430c2fdf9"
+          "postProcessHash": "769784dd6f0c04b37f46bc190162a85d2b0d4ac5e2ce94f6dae28d2db0a36f8d"
         },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:07.350Z",
-          "fileName": "ar/reference/settings/server-settings/settings.mdx",
-          "postProcessHash": "737c3d9fdbdd61b5891c0de29f17112175262918597e822a5e99f493d95d29bc"
+        "es": {
+          "updatedAt": "2026-08-14T15:03:18.367Z",
+          "fileName": "es/reference/settings/server-settings/settings.mdx",
+          "postProcessHash": "61cff8ccb510fd4531d495b1c56fd1434216bcd9a92d5f4dc1e611681bf69428"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:07.350Z",
+          "updatedAt": "2026-08-14T15:03:18.370Z",
           "fileName": "fr/reference/settings/server-settings/settings.mdx",
-          "postProcessHash": "92f9db0ee962a052d776fa12297b7c1a9ec0172d5ff1ec198bcbcae0247d475b"
+          "postProcessHash": "fef7a9d9208856c11f74941db22596272a8f0f51a8cfb3ed6c2a0a1ca73ae310"
+        },
+        "ru": {
+          "updatedAt": "2026-08-14T15:03:18.373Z",
+          "fileName": "ru/reference/settings/server-settings/settings.mdx",
+          "postProcessHash": "99de86f17716982cc51477c599555bce427a27f456244bb8ba4ba62772d95231"
+        },
+        "ja": {
+          "updatedAt": "2026-08-14T15:03:18.387Z",
+          "fileName": "ja/reference/settings/server-settings/settings.mdx",
+          "postProcessHash": "1feda733acef4018ff6929e73aa1794325c6d08dc4128f16bae4699ebb06e51d"
+        },
+        "ar": {
+          "updatedAt": "2026-08-14T15:03:18.388Z",
+          "fileName": "ar/reference/settings/server-settings/settings.mdx",
+          "postProcessHash": "0ad4707beccf58fa1061da86ba8c7ff6d4016d250b0691f8c3f2fb92ce591b62"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-14T15:03:18.389Z",
+          "fileName": "pt-BR/reference/settings/server-settings/settings.mdx",
+          "postProcessHash": "63ab87ccdb3ab977c55fdf7591b222cacedcbf1c7bbbd95187318eb364ef2a3e"
         }
       },
       "fileName": "reference/settings/server-settings/settings.mdx",
@@ -132813,47 +132813,47 @@
     },
     {
       "fileId": "885c7a7569b8bd30705bbc508949d9f978b52b987b96453eb526a8db9607260c",
-      "versionId": "ff77de6db2073f7c2bb74c5838be639eee2cea6415bc49f3d08a2afbd0ad1849",
+      "versionId": "87ff47f2f6b24668fee9076a49ebb78e908b7677b33071022024324671f3ecdc",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.778Z",
-          "fileName": "snippets/es/components/FormatSettingsExplorer/FormatSettingsExplorer.jsx",
-          "postProcessHash": "59a04835a762665824c847288d13be7980fbe422a1a2a85cc3d7101c65791a11"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.778Z",
-          "fileName": "snippets/ja/components/FormatSettingsExplorer/FormatSettingsExplorer.jsx",
-          "postProcessHash": "730f74edcd4147197c93cb51f96fa11f5e72a65783cad59962e31ab3131b4112"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.778Z",
-          "fileName": "snippets/ko/components/FormatSettingsExplorer/FormatSettingsExplorer.jsx",
-          "postProcessHash": "f8b7f8c6a36d18aa38c0db9798999b48d2277da1ebf9cf29d2f6913657332999"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.778Z",
-          "fileName": "snippets/pt-BR/components/FormatSettingsExplorer/FormatSettingsExplorer.jsx",
-          "postProcessHash": "911182b5a986276d6edcd84ffcffc70ca40caaba653d6e428af4854891cea937"
-        },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:08.779Z",
+          "updatedAt": "2026-08-14T15:03:18.390Z",
           "fileName": "snippets/ru/components/FormatSettingsExplorer/FormatSettingsExplorer.jsx",
-          "postProcessHash": "d2e1720f302392319617b89f812c4fbff2240d6623458977041ea059cc1e14fd"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.779Z",
-          "fileName": "snippets/zh/components/FormatSettingsExplorer/FormatSettingsExplorer.jsx",
-          "postProcessHash": "234c7b8578abd205f850406c1998e244d29c8428084a683a1537b93257b1aa80"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.779Z",
-          "fileName": "snippets/ar/components/FormatSettingsExplorer/FormatSettingsExplorer.jsx",
-          "postProcessHash": "5bfbaa5b75872ee1afdfcd577d16fbf0c092f2a3ec34c67a5f3ca0a218f5d811"
+          "postProcessHash": "32d9723aee918b016d5ad7bccef8ec9666c5ad0bf276ca665d0c081fcd096359"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.780Z",
+          "updatedAt": "2026-08-14T15:03:18.391Z",
           "fileName": "snippets/fr/components/FormatSettingsExplorer/FormatSettingsExplorer.jsx",
-          "postProcessHash": "9a93043e0c40b6c4ca0235083043f61e9ed9d27570c0f3b429cfe3d3a29169d7"
+          "postProcessHash": "51914bc34bfdf78ccd75601e9e3563cbb2cc250a5c0907f3bc65c83c760d70e7"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-14T15:03:18.393Z",
+          "fileName": "snippets/pt-BR/components/FormatSettingsExplorer/FormatSettingsExplorer.jsx",
+          "postProcessHash": "cc91c764a78f3264711af6abbbdcb799987c063413880ce124bf44a1aff1cf7b"
+        },
+        "ko": {
+          "updatedAt": "2026-08-14T15:03:18.397Z",
+          "fileName": "snippets/ko/components/FormatSettingsExplorer/FormatSettingsExplorer.jsx",
+          "postProcessHash": "4cb552157070a7eea95ffa6b236c1d9c879c6b35337a50893ccc76be9be01698"
+        },
+        "ar": {
+          "updatedAt": "2026-08-14T15:03:18.398Z",
+          "fileName": "snippets/ar/components/FormatSettingsExplorer/FormatSettingsExplorer.jsx",
+          "postProcessHash": "3b940da6097f3049afa3b04f896b4b3363921c955281058f5fb77c75e634f4b7"
+        },
+        "es": {
+          "updatedAt": "2026-08-14T15:03:18.399Z",
+          "fileName": "snippets/es/components/FormatSettingsExplorer/FormatSettingsExplorer.jsx",
+          "postProcessHash": "d0193b2caab885aeaf31dfc6aba8a23d671b6217e3369ffdb20b419a9abfb016"
+        },
+        "ja": {
+          "updatedAt": "2026-08-14T15:03:18.400Z",
+          "fileName": "snippets/ja/components/FormatSettingsExplorer/FormatSettingsExplorer.jsx",
+          "postProcessHash": "abd7b7a3d467771180bf4e0e2405928d190847fc3f33cb25aa45e6db90b22515"
+        },
+        "zh": {
+          "updatedAt": "2026-08-14T15:03:18.400Z",
+          "fileName": "snippets/zh/components/FormatSettingsExplorer/FormatSettingsExplorer.jsx",
+          "postProcessHash": "02337e89a34befdf722885c74b0997f33f8a2fb483b43cbb4e42d364544be929"
         }
       },
       "fileName": "snippets/components/FormatSettingsExplorer/FormatSettingsExplorer.jsx",
@@ -132909,47 +132909,47 @@
     },
     {
       "fileId": "947c1b428867ba271468892d501f7ea5e7ab8b869ff107369c746aca139471a5",
-      "versionId": "4f58d02d9c49090cf2ff24f0f7098d565cee4769670c7c74b95cd4f08ee0bc49",
+      "versionId": "328baa1ecb31da37053039f09bffaca0e98c9b80364e75af8b58267ff93d6864",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:08.789Z",
+          "updatedAt": "2026-08-14T15:03:18.392Z",
           "fileName": "snippets/es/components/MergeTreeSettingsExplorer/MergeTreeSettingsExplorer.jsx",
-          "postProcessHash": "b3d3e7554c89ea38e055aae0d018cda48bcdc27e331d50cb1597010ee7f6736f"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.790Z",
-          "fileName": "snippets/ja/components/MergeTreeSettingsExplorer/MergeTreeSettingsExplorer.jsx",
-          "postProcessHash": "5356597459f4e89f6591a0bc01fbc34fa31aa15b1f60ceb4a6d5e54c05138f1f"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.790Z",
-          "fileName": "snippets/ko/components/MergeTreeSettingsExplorer/MergeTreeSettingsExplorer.jsx",
-          "postProcessHash": "a378bc7dfc181fff0cce2a170c54377b6d63ddf9a1bebac02948a54d2d8cb2ca"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.791Z",
-          "fileName": "snippets/pt-BR/components/MergeTreeSettingsExplorer/MergeTreeSettingsExplorer.jsx",
-          "postProcessHash": "ff59cfb054d80b2e9905f0872bc06e0b992269e1746efc741c9d9138c4ad8e12"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.791Z",
-          "fileName": "snippets/ru/components/MergeTreeSettingsExplorer/MergeTreeSettingsExplorer.jsx",
-          "postProcessHash": "01ba05ef7f2c7f99257d3ef45d27bbf76db3b4820cd6456a8046fa5f6c531255"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.791Z",
-          "fileName": "snippets/zh/components/MergeTreeSettingsExplorer/MergeTreeSettingsExplorer.jsx",
-          "postProcessHash": "20d538d8d7c95c8011eafdde14135983e6e219d6e7370c918687f97cea7c4efe"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.792Z",
-          "fileName": "snippets/ar/components/MergeTreeSettingsExplorer/MergeTreeSettingsExplorer.jsx",
-          "postProcessHash": "cedee9eeb9ef62786792470ef9ea505ee986a4f01e98d6fc35ccfa06e420811c"
+          "postProcessHash": "3df380ebc942359f91e27b8dbb9e89566b9cd84220b5d83c13e3b04e8336a158"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.792Z",
+          "updatedAt": "2026-08-14T15:03:18.397Z",
           "fileName": "snippets/fr/components/MergeTreeSettingsExplorer/MergeTreeSettingsExplorer.jsx",
-          "postProcessHash": "cb8c857ca95cafe77f88f563cef236187d31a98e47eb506028dbd5ce06d1655e"
+          "postProcessHash": "0018d5dc0b880ef2777bc0e4c595cb100d7cb231fe2b0465d694f68cdb41bd10"
+        },
+        "zh": {
+          "updatedAt": "2026-08-14T15:03:18.397Z",
+          "fileName": "snippets/zh/components/MergeTreeSettingsExplorer/MergeTreeSettingsExplorer.jsx",
+          "postProcessHash": "dd1c24ce720c93e15a648c2ab101290f09f144e4c26f8071ff905fffb5b2e3cb"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-14T15:03:18.401Z",
+          "fileName": "snippets/pt-BR/components/MergeTreeSettingsExplorer/MergeTreeSettingsExplorer.jsx",
+          "postProcessHash": "1b82e5f01b3abf6e17b79adefa66139e1b7a2b14840c83635b3655637a4b8c8c"
+        },
+        "ru": {
+          "updatedAt": "2026-08-14T15:03:18.402Z",
+          "fileName": "snippets/ru/components/MergeTreeSettingsExplorer/MergeTreeSettingsExplorer.jsx",
+          "postProcessHash": "907c2475a4c01b09356dfa3135b1699d3145b52dcc7230f98b79ccc270576d88"
+        },
+        "ar": {
+          "updatedAt": "2026-08-14T15:03:18.403Z",
+          "fileName": "snippets/ar/components/MergeTreeSettingsExplorer/MergeTreeSettingsExplorer.jsx",
+          "postProcessHash": "08dffef90f0c626e116df8505e6f2f396d1505793848fff998764bab36be7e53"
+        },
+        "ko": {
+          "updatedAt": "2026-08-14T15:03:18.403Z",
+          "fileName": "snippets/ko/components/MergeTreeSettingsExplorer/MergeTreeSettingsExplorer.jsx",
+          "postProcessHash": "63f84db9f19034cd602dba2aa85d27a9c52f9cb0f2b370be75b306bf7b96af9a"
+        },
+        "ja": {
+          "updatedAt": "2026-08-14T15:03:18.405Z",
+          "fileName": "snippets/ja/components/MergeTreeSettingsExplorer/MergeTreeSettingsExplorer.jsx",
+          "postProcessHash": "9971a1df52aaca986fa523d6394f7dc6825204ecd50d30844672dac104f2c5d7"
         }
       },
       "fileName": "snippets/components/MergeTreeSettingsExplorer/MergeTreeSettingsExplorer.jsx",
@@ -133053,47 +133053,47 @@
     },
     {
       "fileId": "eb52266a889c115f97151576274e08d7f77ccaae9f016730d4b4b1310ec2ab2d",
-      "versionId": "adb97a3efb525e63aff94b7dc13e31ee39439145044388b4f6297e2060372980",
+      "versionId": "e956d257e4bd832e409667c26aaee72f5e5b484e8af238215b7b2cfa33742d57",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.806Z",
-          "fileName": "snippets/es/components/ServerSettingsExplorer/ServerSettingsExplorer.jsx",
-          "postProcessHash": "cebd4da0b9dcbbbe2a6abaa9c7b675470fa3aeff4c55698f73bb5d15458d1212"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.807Z",
-          "fileName": "snippets/ja/components/ServerSettingsExplorer/ServerSettingsExplorer.jsx",
-          "postProcessHash": "927e5d5a54409f44302340b643320f7f43d5b0b880142b249b52148b09d94262"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.807Z",
-          "fileName": "snippets/ko/components/ServerSettingsExplorer/ServerSettingsExplorer.jsx",
-          "postProcessHash": "7cce20f5386c3a6baf0b67167d630d5fb06a2049e74e78a18926cae7a698e951"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.807Z",
-          "fileName": "snippets/pt-BR/components/ServerSettingsExplorer/ServerSettingsExplorer.jsx",
-          "postProcessHash": "3e3236ee20e25e9857d1d364e9e87b4b348d77334d6de7322dbe467a074be364"
-        },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:08.808Z",
+          "updatedAt": "2026-08-14T15:03:18.390Z",
           "fileName": "snippets/ru/components/ServerSettingsExplorer/ServerSettingsExplorer.jsx",
-          "postProcessHash": "f289e22a6f02fa3a26e65ada97deda9976757ef8212134371ed7871ea43b8bb2"
+          "postProcessHash": "023614ed0cf65542dcdde12ee364e85343a9de8b91d4452c82c4beffe03dd97e"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.808Z",
+          "updatedAt": "2026-08-14T15:03:18.391Z",
           "fileName": "snippets/zh/components/ServerSettingsExplorer/ServerSettingsExplorer.jsx",
-          "postProcessHash": "aa95447ecba82941e136f4464d8a133ff4224b4013bc23b5f517548bc7500ca7"
+          "postProcessHash": "5769b009f9679ec897e1613f42dcd73fd8cec8ace2464c409e33cf7cc1fff7ae"
         },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.808Z",
-          "fileName": "snippets/ar/components/ServerSettingsExplorer/ServerSettingsExplorer.jsx",
-          "postProcessHash": "535f0340f7f470621be001a6753fe7611fc41412e8a54c35fe5f5554c35958e7"
+        "pt-BR": {
+          "updatedAt": "2026-08-14T15:03:18.394Z",
+          "fileName": "snippets/pt-BR/components/ServerSettingsExplorer/ServerSettingsExplorer.jsx",
+          "postProcessHash": "93fec7b1f426203aeee4f0a1b0be98c819ef08e2f99ced92f4ad0cb7e982ef4a"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.809Z",
+          "updatedAt": "2026-08-14T15:03:18.395Z",
           "fileName": "snippets/fr/components/ServerSettingsExplorer/ServerSettingsExplorer.jsx",
-          "postProcessHash": "0a4d126645f033e46a6c6dd6d229cab3baf56dd1ea544e6d4162d4511862f6d8"
+          "postProcessHash": "1baa85c7f7a097de10d6218fbd1209d50bbafe17aabe7bcdba8767528903e225"
+        },
+        "es": {
+          "updatedAt": "2026-08-14T15:03:18.395Z",
+          "fileName": "snippets/es/components/ServerSettingsExplorer/ServerSettingsExplorer.jsx",
+          "postProcessHash": "8dfd5c66ef72cd284c37ff5980f59ef9c890573c52b733aa98294c215cfc3619"
+        },
+        "ko": {
+          "updatedAt": "2026-08-14T15:03:18.396Z",
+          "fileName": "snippets/ko/components/ServerSettingsExplorer/ServerSettingsExplorer.jsx",
+          "postProcessHash": "ce73d29fda31985723ef3c8b0bdb904ac5c389f21362fad0ab60ec5a87fa4707"
+        },
+        "ar": {
+          "updatedAt": "2026-08-14T15:03:18.399Z",
+          "fileName": "snippets/ar/components/ServerSettingsExplorer/ServerSettingsExplorer.jsx",
+          "postProcessHash": "c0c34f7d6b8d8644e319b1cce840ab25303b9efd3734100b7a1646247cac8566"
+        },
+        "ja": {
+          "updatedAt": "2026-08-14T15:03:18.401Z",
+          "fileName": "snippets/ja/components/ServerSettingsExplorer/ServerSettingsExplorer.jsx",
+          "postProcessHash": "408074d9e32c4154b228e729509811dcf1d62260b1db877bf317540d229a6161"
         }
       },
       "fileName": "snippets/components/ServerSettingsExplorer/ServerSettingsExplorer.jsx",
@@ -133101,47 +133101,47 @@
     },
     {
       "fileId": "beae25d2c914e80cd3eabd20c69372fe24307f3a61a21998e7dbaeca9fd7a5c1",
-      "versionId": "9dbbd1e415b68b5d6acf0b407cddd9034b456424077187b899c45cd9c946599a",
+      "versionId": "9b6a0e3a5f34162f41e15b14b75b9e55d0261d6eb1071bddc1b8ac0c3cb24e7a",
       "translations": {
         "fr": {
-          "updatedAt": "2026-08-14T11:35:04.474Z",
+          "updatedAt": "2026-08-14T15:03:18.394Z",
           "fileName": "snippets/fr/components/SessionSettingsExplorer/SessionSettingsExplorer.jsx",
-          "postProcessHash": "e11eb74eb33a9721ca983e6338b52ea2dd6ccbb536f7a4159a111199c67f8367"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T11:35:04.477Z",
-          "fileName": "snippets/ar/components/SessionSettingsExplorer/SessionSettingsExplorer.jsx",
-          "postProcessHash": "3a7be6c33de222dbf6b5d01a57b0aaa518332363f5aeb05763e5c8850e868f87"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T11:35:04.484Z",
-          "fileName": "snippets/ko/components/SessionSettingsExplorer/SessionSettingsExplorer.jsx",
-          "postProcessHash": "fe2e444cd6afa1ab78ab6d4df1334d0b3f4ab87d1a958a90765c463d18f95655"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T11:35:04.500Z",
-          "fileName": "snippets/zh/components/SessionSettingsExplorer/SessionSettingsExplorer.jsx",
-          "postProcessHash": "bbd21ce3acbefb03f28bd4d598f609cfa211c1ca6410380368cc85e80072365b"
+          "postProcessHash": "b11023b0e2f1f2d9e789b981bf7dd393a58279bc12701e916f7c13b4dbdadcca"
         },
         "es": {
-          "updatedAt": "2026-08-14T11:35:04.502Z",
+          "updatedAt": "2026-08-14T15:03:18.404Z",
           "fileName": "snippets/es/components/SessionSettingsExplorer/SessionSettingsExplorer.jsx",
-          "postProcessHash": "66dc57cd631200b0187079670f1bfc731196c8df7d05655292534a9caae97a7f"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T11:35:04.518Z",
-          "fileName": "snippets/pt-BR/components/SessionSettingsExplorer/SessionSettingsExplorer.jsx",
-          "postProcessHash": "b377309d0f81c012731de073d11fca7b486b7f4d4d59edd9574b099be126a985"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T11:35:04.546Z",
-          "fileName": "snippets/ru/components/SessionSettingsExplorer/SessionSettingsExplorer.jsx",
-          "postProcessHash": "58cef1b10eb6e0036820275d285ecb381121a3ca5d68c1c1574c7f71a4c1af8b"
+          "postProcessHash": "accec2f6198dbd3e64c8cc6266e28dc4d39f058217aa9aba2a9deb5ad1d59ee6"
         },
         "ja": {
-          "updatedAt": "2026-08-14T11:35:04.548Z",
+          "updatedAt": "2026-08-14T15:03:18.405Z",
           "fileName": "snippets/ja/components/SessionSettingsExplorer/SessionSettingsExplorer.jsx",
-          "postProcessHash": "095db66101cd8d266a45a46dbe9e009dba877c736afd63e7d9f3c015574d042c"
+          "postProcessHash": "1624eda65f06a300ff3597a7c5f4443c42b9a75ec1a1c19b0169dd67e19df548"
+        },
+        "ru": {
+          "updatedAt": "2026-08-14T15:03:18.406Z",
+          "fileName": "snippets/ru/components/SessionSettingsExplorer/SessionSettingsExplorer.jsx",
+          "postProcessHash": "5c4ad4d24ffb61254d217aa52c5cc6c703a51d1cabab58e29e4bb298089b6e9c"
+        },
+        "zh": {
+          "updatedAt": "2026-08-14T15:03:18.407Z",
+          "fileName": "snippets/zh/components/SessionSettingsExplorer/SessionSettingsExplorer.jsx",
+          "postProcessHash": "9d3b9ce35f426d3e8cf9a9e8218f9450d9902d525f1ed1c181af0db9b3bd805d"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-14T15:03:18.408Z",
+          "fileName": "snippets/pt-BR/components/SessionSettingsExplorer/SessionSettingsExplorer.jsx",
+          "postProcessHash": "f95c73c86eb5c978ed7c4fd91354dcbd23eebec065edbac56ab668b87594f1f6"
+        },
+        "ko": {
+          "updatedAt": "2026-08-14T15:03:18.409Z",
+          "fileName": "snippets/ko/components/SessionSettingsExplorer/SessionSettingsExplorer.jsx",
+          "postProcessHash": "30ae488411b456ae08b78faec4a2c976fffad26c128897fbd9f6eaf5ff757fe8"
+        },
+        "ar": {
+          "updatedAt": "2026-08-14T15:03:18.410Z",
+          "fileName": "snippets/ar/components/SessionSettingsExplorer/SessionSettingsExplorer.jsx",
+          "postProcessHash": "7472ab32859faa4576041c9841aba01893e9a9dda87bd8b1c4c8cce58a7f6dfe"
         }
       },
       "fileName": "snippets/components/SessionSettingsExplorer/SessionSettingsExplorer.jsx",

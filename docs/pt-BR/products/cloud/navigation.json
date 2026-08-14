@@ -89,8 +89,7 @@
             {
               "group": "Backups",
               "pages": [
-                "pt-BR/products/cloud/features/backups/overview",
-                "pt-BR/products/cloud/features/backups/faq"
+                "pt-BR/products/cloud/features/backups/overview"
               ]
             },
             "pt-BR/products/cloud/features/support",

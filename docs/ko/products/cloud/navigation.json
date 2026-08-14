@@ -89,8 +89,7 @@
             {
               "group": "Backups",
               "pages": [
-                "ko/products/cloud/features/backups/overview",
-                "ko/products/cloud/features/backups/faq"
+                "ko/products/cloud/features/backups/overview"
               ]
             },
             "ko/products/cloud/features/support",

@@ -89,8 +89,7 @@
             {
               "group": "Backups",
               "pages": [
-                "ar/products/cloud/features/backups/overview",
-                "ar/products/cloud/features/backups/faq"
+                "ar/products/cloud/features/backups/overview"
               ]
             },
             "ar/products/cloud/features/support",
