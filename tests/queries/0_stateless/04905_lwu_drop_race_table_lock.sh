@@ -16,10 +16,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE_1}" < /dev/null
 ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLICKHOUSE_DATABASE_1} ENGINE = Memory" < /dev/null
 
+# Every DROP the test's logic depends on pins ignore_drop_queries_probability: the stress runner
+# injects 0.2 and clickhouse-client --fake-drop (upgrade check) injects 1, and for a storage that
+# keeps data on disk the injection returns success without dropping anything.
 function setup_table()
 {
     ${CLICKHOUSE_CLIENT} --query "
-        DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.t SYNC;
+        DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.t SYNC SETTINGS ignore_drop_queries_probability = 0;
 
         CREATE TABLE ${CLICKHOUSE_DATABASE_1}.t (id UInt64, c2 String)
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04905_$1/', '1')
@@ -48,7 +51,7 @@ function race_with_drop()
 
     local observed=0
     local seen
-    for _ in $(seq 1 300); do
+    for _ in $(seq 1 150); do
         seen=$(${CLICKHOUSE_CLIENT} --query "
             SYSTEM FLUSH LOGS text_log;
             SELECT count() FROM system.text_log
@@ -65,13 +68,22 @@ function race_with_drop()
         fi
         # The updater has exited, so the window can no longer be entered.
         kill -0 "$updater" 2>/dev/null || break
-        sleep 0.2
+        sleep 0.5
     done
 
     local drop=skipped
     if [ "$observed" -eq 1 ]; then
-        if ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.t SYNC" < /dev/null > /dev/null 2>&1; then
+        if ${CLICKHOUSE_CLIENT} --query "
+            DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.t SYNC
+            SETTINGS ignore_drop_queries_probability = 0" < /dev/null > /dev/null 2>&1; then
             drop=ok
+            # A drop that reported success without removing the table took no lock and proved
+            # nothing, so it is reported as its own outcome instead of counting as a win.
+            if [ "$(${CLICKHOUSE_CLIENT} --query "
+                EXISTS ${CLICKHOUSE_DATABASE_1}.t
+                SETTINGS enable_parallel_replicas = 0" < /dev/null 2>/dev/null)" != 0 ]; then
+                drop=ignored
+            fi
         else
             drop=failed
         fi
@@ -98,7 +110,7 @@ race_with_drop alter --enable_lightweight_update 1 --alter_update_mode 'lightwei
 # An Alias table resolves a different storage, so the update has to hold the target's lock as well.
 setup_table alias
 ${CLICKHOUSE_CLIENT} --allow_experimental_alias_table_engine 1 --query "
-    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.a SYNC;
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.a SYNC SETTINGS ignore_drop_queries_probability = 0;
     CREATE TABLE ${CLICKHOUSE_DATABASE_1}.a ENGINE = Alias('${CLICKHOUSE_DATABASE_1}', 't');
 " < /dev/null
 race_with_drop alias --allow_experimental_alias_table_engine 1 --enable_lightweight_update 1 \
