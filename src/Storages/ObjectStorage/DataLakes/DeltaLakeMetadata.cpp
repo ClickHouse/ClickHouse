@@ -650,6 +650,7 @@ static bool isDeltaKernelEnabled(ContextPtr context, ObjectStorageType storage_t
     return supports_delta_kernel && context->getSettingsRef()[Setting::allow_delta_kernel_rs] ;
 }
 
+#if USE_DELTA_KERNEL_RS
 static bool hasAuthorizationHeader(const StorageObjectStorageConfigurationPtr & configuration)
 {
 #if USE_AWS_S3
@@ -670,6 +671,7 @@ static bool hasAuthorizationHeader(const StorageObjectStorageConfigurationPtr & 
     return false;
 #endif
 }
+#endif
 
 bool DeltaLakeMetadata::supportsTotalRows(ContextPtr context, ObjectStorageType storage_type)
 {
