@@ -6,6 +6,7 @@
 #include "config.h"
 
 #include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/KeeperStateMachine.h>
@@ -94,6 +95,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 nuraft_max_bytes_in_flight_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_uncommitted_log_entries;
     extern const CoordinationSettingsUInt64 nuraft_append_entries_backward_probe_throttle_threshold;
+    extern const CoordinationSettingsMilliseconds nuraft_snapshot_sync_ctx_timeout_ms;
     extern const CoordinationSettingsBool use_new_dispatcher;
 }
 
@@ -257,22 +259,6 @@ std::string checkAndGetSuperdigest(const String & user_and_digest)
             ErrorCodes::INVALID_CONFIG_PARAMETER, "Incorrect superdigest in keeper_server config. Must be 'super:base64string'");
 
     return user_and_digest;
-}
-
-int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name, LoggerPtr log)
-{
-    if (value > std::numeric_limits<int32_t>::max())
-    {
-        LOG_WARNING(
-            log,
-            "Got {} value for setting '{}' which is bigger than int32_t max value, lowering value to {}.",
-            value,
-            name,
-            std::numeric_limits<int32_t>::max());
-        return std::numeric_limits<int32_t>::max();
-    }
-
-    return static_cast<int32_t>(value);
 }
 
 }
@@ -561,10 +547,8 @@ void KeeperServer::forceRecovery()
     raft_instance->update_params(params);
 }
 
-void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
+nuraft::raft_params buildRaftParams(const CoordinationSettings & coordination_settings, LoggerPtr log)
 {
-    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
-
     nuraft::raft_params params;
     params.parallel_log_appending_ = true;
     params.heart_beat_interval_
@@ -626,8 +610,23 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         coordination_settings[CoordinationSetting::nuraft_append_entries_backward_probe_throttle_threshold],
         "nuraft_append_entries_backward_probe_throttle_threshold",
         log);
+    /// 0 leaves NuRaft deriving the budget from `raft_limits_response_limit` * `heart_beat_interval_ms`, which is a
+    /// per-round-trip responsiveness budget rather than an allowance for the time a follower needs to apply a snapshot.
+    params.snapshot_sync_ctx_timeout_ = getValueOrMaxInt32AndLogWarning(
+        coordination_settings[CoordinationSetting::nuraft_snapshot_sync_ctx_timeout_ms].totalMilliseconds(),
+        "nuraft_snapshot_sync_ctx_timeout_ms",
+        log);
 
     params.return_method_ = nuraft::raft_params::async_handler;
+
+    return params;
+}
+
+void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
+{
+    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
+
+    nuraft::raft_params params = buildRaftParams(coordination_settings, log);
 
     nuraft::asio_service::options asio_opts{};
 
