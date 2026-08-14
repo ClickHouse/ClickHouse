@@ -1,13 +1,13 @@
 part_name	String
 mark_number	UInt64
 rows_in_granule	UInt64
-toTime(c1)	Time
+toTimeWithFixedDate(c1)	DateTime
 1000
 304
 part_name	String
 mark_number	UInt64
 rows_in_granule	UInt64
-toTime(c1)	Time
+toTimeWithFixedDate(c1)	DateTime
 1000
 304
 2000
@@ -15,6 +15,6 @@ toTime(c1)	Time
 part_name	String
 mark_number	UInt64
 rows_in_granule	UInt64
-toTime(c1)	Time
+toTimeWithFixedDate(c1)	DateTime
 2000
 304

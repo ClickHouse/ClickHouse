@@ -39,6 +39,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -159,6 +160,7 @@ namespace Setting
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
     extern const SettingsBool stop_refreshable_materialized_views_on_startup;
+    extern const SettingsBool use_legacy_to_time;
 }
 
 namespace ServerSetting
@@ -207,6 +209,20 @@ namespace ErrorCodes
 }
 
 namespace fs = std::filesystem;
+
+namespace
+{
+
+void replaceLegacyToTimeInCreateQuery(ASTPtr & ast)
+{
+    if (auto * function = ast->as<ASTFunction>(); function && Poco::toLower(function->name) == "totime")
+        function->name = "toTimeWithFixedDate";
+
+    for (auto & child : ast->children)
+        replaceLegacyToTimeInCreateQuery(child);
+}
+
+}
 
 InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
     : WithMutableContext(context_), query_ptr(query_ptr_)
@@ -3420,6 +3436,11 @@ BlockIO InterpreterCreateQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
+
+    /// A CREATE query persists its expressions. Make the setting-dependent legacy spelling explicit
+    /// before persisting it, so future evaluation does not depend on the session setting.
+    if (!create.attach && !create.database && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
+        replaceLegacyToTimeInCreateQuery(query_ptr);
 
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
 
