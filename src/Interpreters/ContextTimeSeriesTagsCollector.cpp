@@ -19,6 +19,7 @@
 #include <IO/Operators.h>
 
 #include <algorithm>
+#include <optional>
 #include <boost/container_hash/hash.hpp>
 #include <city.h>
 
@@ -82,6 +83,28 @@ namespace
             res.data = &nullable_column->getNestedColumn();
         }
         return res;
+    }
+
+    /// Raw data of an identifier column of the standard id type of a TimeSeries samples table:
+    /// Tuple(UInt64, UUID) — the type the default id generator produces and the leading component
+    /// of the samples table sorting key (id, timestamp), see normalizeTimeSeriesDefinition.
+    struct StandardIDColumns
+    {
+        const UInt64 * first = nullptr;
+        const UUID * second = nullptr;
+    };
+
+    /// Returns the raw columns if `column` stores identifiers of the standard id type.
+    std::optional<StandardIDColumns> tryGetStandardIDColumns(const IColumn & column)
+    {
+        const auto * tuple = typeid_cast<const ColumnTuple *>(&column);
+        if (!tuple || tuple->tupleSize() != 2)
+            return {};
+        const auto * first_column = typeid_cast<const ColumnUInt64 *>(&tuple->getColumn(0));
+        const auto * second_column = typeid_cast<const ColumnVector<UUID> *>(&tuple->getColumn(1));
+        if (!first_column || !second_column)
+            return {};
+        return StandardIDColumns{first_column->getData().data(), second_column->getData().data()};
     }
 
     /// Serializes identifiers from a column to be used as keys in the mapping.
@@ -1015,20 +1038,10 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByID(con
     VectorWithMemoryTracking<Group> res;
     res.reserve(num_rows);
 
-    /// Raw pointers for the canonical id type Tuple(UInt64, UUID): equality of consecutive rows
-    /// is then two integer comparisons instead of a virtual compareAt chain per row.
-    const UInt64 * raw_first = nullptr;
-    const UUID * raw_second = nullptr;
-    if (const auto * tuple = typeid_cast<const ColumnTuple *>(unwrapped.data); tuple && tuple->tupleSize() == 2)
-    {
-        const auto * first_column = typeid_cast<const ColumnUInt64 *>(&tuple->getColumn(0));
-        const auto * second_column = typeid_cast<const ColumnVector<UUID> *>(&tuple->getColumn(1));
-        if (first_column && second_column)
-        {
-            raw_first = first_column->getData().data();
-            raw_second = second_column->getData().data();
-        }
-    }
+    /// For the standard id key the consecutive-row comparison below is two integer comparisons
+    /// instead of a virtual compareAt chain per row.
+    const std::optional<StandardIDColumns> standard_id = tryGetStandardIDColumns(*unwrapped.data);
+    const bool is_standard_key = standard_id.has_value();
 
     SharedLockGuard lock{mutex};
 
@@ -1038,8 +1051,8 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByID(con
     {
         if (i > 0 && prev_group != INVALID_GROUP)
         {
-            const bool same_as_previous = raw_first
-                ? (raw_first[i] == raw_first[i - 1] && raw_second[i] == raw_second[i - 1])
+            const bool same_as_previous = is_standard_key
+                ? (standard_id->first[i] == standard_id->first[i - 1] && standard_id->second[i] == standard_id->second[i - 1])
                 : (unwrapped.data->compareAt(i, i - 1, *unwrapped.data, /* nan_direction_hint = */ 1) == 0);
             if (same_as_previous)
             {
