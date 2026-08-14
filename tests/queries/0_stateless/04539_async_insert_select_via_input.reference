@@ -1,0 +1,13 @@
+1	hello_row	hello
+Ok	Preprocessed
+2	world_row
+0
+3	remote_row	remote_hdr
+4	fallback_row	fallback_hdr
+0
+DEDUPLICATION_IS_NOT_POSSIBLE
+TIMEOUT_EXCEEDED
+UNKNOWN_TABLE
+3
+UNKNOWN_TABLE
+QUERY_WAS_CANCELLED

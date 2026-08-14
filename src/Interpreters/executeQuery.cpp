@@ -94,8 +94,12 @@
 #include <Processors/Formats/Framing/FramingFormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Access/Common/AccessType.h>
+#include <Interpreters/QueryMetadataCache.h>
+#include <Interpreters/AsyncInsertSelectViaInput.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -215,6 +219,9 @@ namespace Setting
     extern const SettingsBool use_query_cache;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
+    extern const SettingsUInt64 async_insert_max_data_size;
+    extern const SettingsBool insert_allow_materialized_columns;
+    extern const SettingsString insert_deduplication_token;
     extern const SettingsBool implicit_select;
     extern const SettingsBool enforce_strict_identifier_format;
     extern const SettingsMap http_response_headers;
@@ -1661,7 +1668,8 @@ static BlockIO executeQueryImpl(
         ASTInsertQuery * insert_query = nullptr;
         if (out_ast)
             insert_query = out_ast->as<ASTInsertQuery>();
-        bool async_insert_enabled = settings[Setting::async_insert];
+        bool async_insert = insert_query && settings[Setting::async_insert];
+        StoragePtr input_function_destination;
 
         /// Resolve database before trying to use async insert feature - to properly hash the query.
         StoragePtr insert_table;
@@ -1676,7 +1684,7 @@ static BlockIO executeQueryImpl(
             {
                 insert_table = DatabaseCatalog::instance().tryGetTable(insert_query->table_id, context);
                 if (insert_table)
-                    async_insert_enabled |= insert_table->areAsynchronousInsertsEnabled();
+                    async_insert |= insert_table->areAsynchronousInsertsEnabled();
             }
         }
 
@@ -1689,9 +1697,27 @@ static BlockIO executeQueryImpl(
                 insert_query->tryFindInputFunction(input_function);
                 if (input_function)
                 {
+
+                    /// Resolve destination before input(), so input('auto') sees the same
+                    /// context as the sync path and missing tables throw UNKNOWN_TABLE.
+                    input_function_destination = insert_table;
+                    if (!input_function_destination)
+                    {
+                        InterpreterInsertQuery destination_interpreter(
+                            out_ast, context,
+                            settings[Setting::insert_allow_materialized_columns],
+                            /* no_squash */ false, /* no_destination */ false, /* async_insert */ false);
+                        input_function_destination = destination_interpreter.getTable(*insert_query);
+                    }
+
+                    /// Refresh dynamic external schema before snapshotting metadata, like
+                    /// InterpreterInsertQuery::execute does for the synchronous path.
+                    if (input_function_destination)
+                        input_function_destination->updateExternalDynamicMetadataIfExists(context);
+
                     /// For input('auto'), make sure that Context::insertion_table_info is set.
-                    if (insert_table && !context->hasInsertionTableColumnsDescription())
-                        InterpreterInsertQuery::setInsertContextValues(context, *insert_query, insert_table);
+                    if (input_function_destination && !context->hasInsertionTableColumnsDescription())
+                        InterpreterInsertQuery::setInsertContextValues(context, *insert_query, input_function_destination);
 
                     const ASTSelectQuery * select_query_hint = insert_query->select->as<ASTSelectQuery>();
                     if (!select_query_hint)
@@ -1723,25 +1749,39 @@ static BlockIO executeQueryImpl(
         std::shared_ptr<const EnabledQuota> quota;
         std::unique_ptr<IInterpreter> interpreter;
 
-        bool async_insert = false;
+        const bool async_insert_requested = async_insert; /// remember original intent before decision block may demote it
         auto * queue = context->tryGetAsynchronousInsertQueue();
         auto logger = getLogger("executeQuery");
 
-        if (insert_query && async_insert_enabled)
+        if (async_insert)
         {
             String reason;
 
             if (!queue)
                 reason = "asynchronous insert queue is not configured";
             else if (insert_query->select)
-                reason = "insert query has select";
-            else if (insert_query->hasInlinedData())
-                async_insert = true;
+            {
+                if (!input_function_destination)
+                    reason = "insert query has select";
+            }
+            else if (!insert_query->hasInlinedData())
+                /// No inlined data: demote silently, without the synchronous-fallback log (data is
+                /// received separately and the async decision is made on that path).
+                async_insert = false;
 
             if (!reason.empty())
+            {
+                async_insert = false;
                 LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously (reason: {})", reason);
+            }
         }
 
+        /// Context keeps only a weak ref, so keep this cache owned by BlockIO for both paths.
+        if (settings[Setting::enable_shared_storage_snapshot_in_query])
+        {
+            query_metadata_cache = std::make_shared<QueryMetadataCache>();
+            context->setQueryMetadataCache(query_metadata_cache);
+        }
 
         bool quota_checked = false;
 
@@ -1776,47 +1816,56 @@ static BlockIO executeQueryImpl(
             if (http_continue_callback && !internal)
                 http_continue_callback();
 
-            auto result = queue->pushQueryWithInlinedData(out_ast, context);
-
-            if (result.status == AsynchronousInsertQueue::PushResult::OK)
+            auto finish_async_insert_push = [&](AsynchronousInsertQueue::PushResult && push_result)
             {
                 // Increment InsertQuery for async insert with inline data
                 ProfileEvents::increment(ProfileEvents::InsertQuery);
-
                 if (settings[Setting::wait_for_async_insert])
                 {
                     auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
                     auto source = std::make_shared<WaitForAsyncInsertSource>(
-                        std::move(result.future),
+                        std::move(push_result.future),
                         timeout,
                         context->getProcessListElement(),
                         context->getProgressCallback());
                     res.pipeline = QueryPipeline(Pipe(std::move(source)));
                     res.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(Block())));
                 }
-
                 const auto & table_id = insert_query->table_id;
                 if (!table_id.empty())
                     context->setInsertionTable(table_id);
-            }
-            else if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
+            };
+
+            if (input_function_destination)
+                buildAsyncInsertSelectViaInputPipeline(
+                    res, *insert_query, out_ast, input_function_destination, queue, context, settings, logger);
+            else
             {
-                async_insert = false;
+                auto result = queue->pushQueryWithInlinedData(out_ast, context);
 
-                if (insert_query->data)
+                if (result.status == AsynchronousInsertQueue::PushResult::OK)
                 {
-                    /// Reset inlined data because it will be
-                    /// available from tail read buffer.
-                    insert_query->end = insert_query->data;
-                    insert_query->data = nullptr;
+                    finish_async_insert_push(std::move(result));
                 }
+                else if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
+                {
+                    async_insert = false;
 
-                insert_query->tail = std::move(result.insert_data_buffer);
-                LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously because it has too much data");
+                    if (insert_query->data)
+                    {
+                        /// Reset inlined data because it will be
+                        /// available from tail read buffer.
+                        insert_query->end = insert_query->data;
+                        insert_query->data = nullptr;
+                    }
+
+                    insert_query->tail = std::move(result.insert_data_buffer);
+                    LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously because it has too much data");
+                }
             }
         }
 
-        if (!async_insert && async_insert_enabled)
+        if (!async_insert && async_insert_requested)
         {
             /// Invoke HTTP 100-Continue callback if it was not invoked yet
             if (http_continue_callback && !internal)
@@ -1899,12 +1948,6 @@ static BlockIO executeQueryImpl(
                         e.addMessage("while starting a transaction with 'implicit_transaction'");
                         throw;
                     }
-                }
-
-                if (settings[Setting::enable_shared_storage_snapshot_in_query])
-                {
-                    query_metadata_cache = std::make_shared<QueryMetadataCache>();
-                    context->setQueryMetadataCache(query_metadata_cache);
                 }
 
                 if (out_ast)
