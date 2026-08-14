@@ -209,7 +209,11 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
     ASTPtr query;
     bool is_storage_merge = typeid_cast<const StorageMerge *>(storage.get());
-    if (storage->isRemote() || is_storage_merge)
+    /// Such a read carries no filter of its own, and only planning it again applies the policy -
+    /// with the read-column widening and the FINAL / PREWHERE ordering that policy implies.
+    bool needs_row_policy = isRowPolicyPushedIntoRead(storage, context);
+    bool replan_through_interpreter = storage->isRemote() || is_storage_merge || needs_row_policy;
+    if (replan_through_interpreter)
     {
         auto table_expression = make_intrusive<ASTTableExpression>();
         if (table_function_ast)
@@ -251,13 +255,28 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     }
 
     QueryPlan reading_plan;
-    if (storage->isRemote() || is_storage_merge)
+    if (replan_through_interpreter)
     {
         SelectQueryOptions options(QueryProcessingStage::FetchColumns);
         options.ignore_rename_columns = true;
-        InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), context, options);
+
+        auto interpreter_context = context;
+        if (needs_row_policy)
+        {
+            auto row_policy_context = Context::createCopy(context);
+            /// The initiator has already lowered `additional_table_filters` into an explicit filter step
+            /// of the shipped plan, so re-resolving the setting here would apply it a second time.
+            row_policy_context->setSetting("additional_table_filters", Map{});
+            /// Parallelism of the read is decided by the step, not by this node's setting.
+            row_policy_context->setSetting(
+                "allow_experimental_parallel_reading_from_replicas",
+                reading_from_table && reading_from_table->useParallelReplicas());
+            interpreter_context = std::move(row_policy_context);
+        }
+
+        InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), interpreter_context, options);
         reading_plan = std::move(interpreter).extractQueryPlan();
-        reading_plan.addInterpreterContext(context);
+        reading_plan.addInterpreterContext(std::move(interpreter_context));
     }
     else
     {

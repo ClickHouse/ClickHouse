@@ -54,6 +54,8 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 
+#include <Access/EnabledRowPolicies.h>
+
 namespace DB
 {
 namespace Setting
@@ -94,6 +96,28 @@ String dumpQueryPlan(const QueryPlan & query_plan)
     query_plan.explainPlan(query_plan_buffer, ExplainPlanOptions{true, true, true, true});
 
     return query_plan_buffer.str();
+}
+
+RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const ContextPtr & query_context)
+{
+    auto storage_id = storage->getStorageID();
+    if (!storage_id.hasDatabase())
+        return nullptr;
+    auto row_policy_filter = query_context->getRowPolicyFilter(
+        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
+        return nullptr;
+    return row_policy_filter;
+}
+
+bool isRowPolicyPushedIntoRead(const StoragePtr & storage, const ContextPtr & query_context)
+{
+    /// A non-nullopt PREWHERE-column contract makes the verdict depend on the columns of the policy
+    /// that resolved, and effective policies are per node, so no other node can reproduce it.
+    if (!storage->supportsPrewhere() || storage->isRemote() || storage->supportedPrewhereColumns().has_value())
+        return false;
+
+    return getEffectiveRowPolicyFilter(storage, query_context) != nullptr;
 }
 
 String dumpQueryPipeline(const QueryPlan & query_plan)

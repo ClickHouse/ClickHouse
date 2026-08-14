@@ -26,8 +26,24 @@
 namespace DB
 {
 
+struct RowPolicyFilter;
+using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
+
 /// Dump query plan
 String dumpQueryPlan(const QueryPlan & query_plan);
+
+/// Effective SELECT row policy filter for the table, or nullptr when the table has no row
+/// policies for the current user or their conjunction is always-true. The filter depends on
+/// the passed context: effective policies are resolved per node and per user.
+RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const ContextPtr & query_context);
+
+/// True if the planner puts a SELECT row policy for this storage into
+/// `SelectQueryInfo::row_level_filter` rather than into an explicit filter step above the read.
+/// `row_level_filter` is not part of the serialized plan, so a read shipped as a serialized plan
+/// (`serialize_query_plan`) reaches the executing node with the policy missing and must be planned
+/// again there. Restricted to storages whose PREWHERE-column contract is `nullopt`: for those the
+/// decision does not depend on which policy resolved, so any node reaches the same verdict.
+bool isRowPolicyPushedIntoRead(const StoragePtr & storage, const ContextPtr & query_context);
 
 /// Dump query plan result pipeline
 String dumpQueryPipeline(const QueryPlan & query_plan);
