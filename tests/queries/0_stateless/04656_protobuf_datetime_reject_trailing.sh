@@ -24,8 +24,8 @@ printf '\x15\x0a\x132024-01-15 10:11:12' \
 printf '\x19\x0a\x172024-01-15 10:11:12.500' \
     | $CLICKHOUSE_CLIENT --query "INSERT INTO protobuf_datetime64_trailing SETTINGS format_schema = '$SCHEMA' FORMAT Protobuf"
 
-$CLICKHOUSE_CLIENT --query "SELECT ts FROM protobuf_datetime_trailing"
-$CLICKHOUSE_CLIENT --query "SELECT ts FROM protobuf_datetime64_trailing"
+$CLICKHOUSE_CLIENT --query "SELECT toString(ts, 'UTC') FROM protobuf_datetime_trailing"
+$CLICKHOUSE_CLIENT --query "SELECT toString(ts, 'UTC') FROM protobuf_datetime64_trailing"
 
 printf '\x0e\x0a\x0c2024 April 4' \
     | $CLICKHOUSE_CLIENT --input_format_allow_errors_num 0 --input_format_allow_errors_ratio 0 \
