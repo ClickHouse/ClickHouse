@@ -127,25 +127,27 @@ def test_writes_reject_field_id_settings(
     ambient_table = make_table_name("ambient")
     ambient_settings = {
         "output_format_parquet_auto_assign_field_ids": 1,
-        "output_format_parquet_column_field_ids": "{'x': '1'}",
+        # Deliberately disagree with Iceberg's metadata IDs (`x` = 1, `y` = 2).
+        # A leaked setting would therefore make the file unreadable by ID.
+        "output_format_parquet_column_field_ids": "{'x': '101', 'y': '102'}",
     }
     create_iceberg_table(
         storage_type,
         instance,
         ambient_table,
         started_cluster_iceberg_no_spark,
-        "(x Int32)",
+        "(x Int32, y Int32)",
         format_version,
         settings=ambient_settings,
     )
     instance.query(
-        f"INSERT INTO {ambient_table} VALUES (1);", settings=ambient_settings
+        f"INSERT INTO {ambient_table} VALUES (1, 2);", settings=ambient_settings
     )
     assert (
         instance.query(
             f"SELECT * FROM {ambient_table} ORDER BY ALL", settings=ambient_settings
         )
-        == "1\n"
+        == "1\t2\n"
     )
 
     # The same ambient settings must not break writes through the Iceberg
@@ -160,7 +162,7 @@ def test_writes_reject_field_id_settings(
         table_function=True,
     )
     instance.query(
-        f"INSERT INTO FUNCTION {table_function_expr} VALUES (2);",
+        f"INSERT INTO FUNCTION {table_function_expr} VALUES (3, 4);",
         settings={"allow_insert_into_iceberg": 1, **ambient_settings},
     )
     assert (
@@ -168,7 +170,7 @@ def test_writes_reject_field_id_settings(
             f"SELECT * FROM {table_function_expr} ORDER BY ALL",
             settings=ambient_settings,
         )
-        == "1\n2\n"
+        == "1\t2\n3\t4\n"
     )
 
     # The two settings are tracked independently: naming one of them in the

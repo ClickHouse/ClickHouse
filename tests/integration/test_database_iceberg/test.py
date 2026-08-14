@@ -1114,7 +1114,10 @@ def test_ambient_parquet_field_id_settings_are_ignored(started_cluster):
 
     field_id_settings = {
         "output_format_parquet_auto_assign_field_ids": 1,
-        "output_format_parquet_column_field_ids": "{'x': '1'}",
+        # Deliberately disagree with the Iceberg metadata IDs (`x` = 1, `y` = 2).
+        # This makes the regression distinguish ignored ambient settings from
+        # settings that were forwarded to the Parquet writer.
+        "output_format_parquet_column_field_ids": "{'x': '101', 'y': '102'}",
     }
     write_settings = {
         "allow_insert_into_iceberg": 1,
@@ -1124,25 +1127,29 @@ def test_ambient_parquet_field_id_settings_are_ignored(started_cluster):
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
     create_clickhouse_iceberg_table(
-        started_cluster, node, root_namespace, table_name, "(x String)"
+        started_cluster, node, root_namespace, table_name, "(x String, y String)"
     )
     table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
-    node.query(f"INSERT INTO {table_ref} VALUES ('AAPL');", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('AAPL', 'NASDAQ');", settings=write_settings)
     assert (
-        node.query(f"SELECT * FROM {table_ref}", settings=field_id_settings) == "AAPL\n"
+        node.query(f"SELECT * FROM {table_ref}", settings=field_id_settings)
+        == "AAPL\tNASDAQ\n"
     )
 
     # The values are reset before the `FormatSettings` are built, so even a
     # malformed ambient value is ignored rather than parsed and rejected.
     node.query(
-        f"INSERT INTO {table_ref} VALUES ('MSFT');",
+        f"INSERT INTO {table_ref} VALUES ('MSFT', 'NASDAQ');",
         settings={
             "allow_insert_into_iceberg": 1,
             "write_full_path_in_iceberg_metadata": 1,
             "output_format_parquet_column_field_ids": "{'x': 'not_an_integer'}",
         },
     )
-    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "AAPL\nMSFT\n"
+    assert (
+        node.query(f"SELECT * FROM {table_ref} ORDER BY ALL")
+        == "AAPL\tNASDAQ\nMSFT\tNASDAQ\n"
+    )
 
 
 def test_create_gzip_metadata(started_cluster):
