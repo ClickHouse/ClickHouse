@@ -1313,10 +1313,14 @@ void DatabaseReplicated::assertDigest(const ContextPtr & local_context)
     {
         if (auto txn = local_context->getZooKeeperMetadataTransaction())
         {
-            txn->addFinalizer([this, local_context]()
+            /// Weak because the `Context` owns this transaction. It cannot expire here:
+            /// `commit` runs the finalizer while its caller still holds that `Context`.
+            txn->addFinalizer([this, weak_context = ContextWeakPtr{local_context}]()
             {
+                auto context = weak_context.lock();
+                chassert(context);
                 std::lock_guard lock{metadata_mutex};
-                assertDigestWithProbability(local_context);
+                assertDigestWithProbability(context);
             });
         }
     }
@@ -1332,10 +1336,13 @@ void DatabaseReplicated::assertDigestInTransactionOrInline(const ContextPtr & lo
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     if (txn)
     {
-        txn->addFinalizer([this, local_context]()
+        /// Weak for the same reason as in `assertDigest` above.
+        txn->addFinalizer([this, weak_context = ContextWeakPtr{local_context}]()
         {
+            auto context = weak_context.lock();
+            chassert(context);
             std::lock_guard lock{metadata_mutex};
-            assertDigestWithProbability(local_context);
+            assertDigestWithProbability(context);
         });
     }
     else
@@ -1730,10 +1737,11 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             dropped_dictionaries += table->isDictionary();
             table->flushAndShutdown(/*is_drop=*/true);
 
-            if (table->getName() == "MaterializedView" || table->getName() == "WindowView")
+            if (table->getName() == "MaterializedView" || table->getName() == "WindowView" || table->getName() == "TimeSeries")
             {
-                /// We have to drop MV inner table, so MV will not try to do it implicitly breaking some invariants.
-                /// Also we have to commit metadata transaction, because it's not committed by default for inner tables of MVs.
+                /// These storages own inner tables. Drop them here, while the recovery metadata transaction is
+                /// available: the deferred drop runs without one, so the inner DROP would be re-routed into the
+                /// replicated DDL log, rejected, and retried forever, and waitTableFinallyDropped never returns.
                 /// Yep, I hate inner tables of materialized views.
                 auto mv_drop_inner_table_context = make_query_context();
                 table->dropInnerTableIfAny(/* sync */ true, mv_drop_inner_table_context);
@@ -2287,7 +2295,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
         create.attach = true;
 
     if (create.select && create.isView())
-        ApplyWithSubqueryVisitor(context_).visit(*create.select);
+        ApplyWithSubqueryVisitor::visit(*create.select);
 
     return ast;
 }
@@ -3059,7 +3067,7 @@ Parameters can be omitted, in such case missing parameters are substituted with 
 
 If `zoo_path` contains macro `{uuid}`, it is required to specify explicit UUID or add [ON CLUSTER](/reference/statements/distributed-ddl) to create statement to ensure all replicas use the same UUID for this database.
 
-For [ReplicatedMergeTree](/engines/table-engines/mergetree-family/replication) tables if no arguments provided, then default arguments are used: `/clickhouse/tables/{uuid}/{shard}` and `{replica}`. These can be changed in the server settings [default_replica_path](/reference/settings/server-settings/settings/default-replica#default_replica_path) and [default_replica_name](/reference/settings/server-settings/settings/default-replica#default_replica_name). Macro `{uuid}` is unfolded to table's uuid, `{shard}` and `{replica}` are unfolded to values from server config, not from database engine arguments. But in the future, it will be possible to use `shard_name` and `replica_name` of Replicated database.
+For [ReplicatedMergeTree](/reference/engines/table-engines/mergetree-family/replication) tables if no arguments provided, then default arguments are used: `/clickhouse/tables/{uuid}/{shard}` and `{replica}`. These can be changed in the server settings [default_replica_path](/reference/settings/server-settings/settings/default-replica#default_replica_path) and [default_replica_name](/reference/settings/server-settings/settings/default-replica#default_replica_name). Macro `{uuid}` is unfolded to table's uuid, `{shard}` and `{replica}` are unfolded to values from server config, not from database engine arguments. But in the future, it will be possible to use `shard_name` and `replica_name` of Replicated database.
 
 Auxiliary ZooKeeper cluster is also supported for storing metadata of a replicated database instead of using the default ZooKeeper cluster. We can use SQL to create the replicated database with auxiliary ZooKeeper cluster as follows:
 
@@ -3075,7 +3083,7 @@ First, the DDL request tries to execute on the initiator (the host that original
 
 The behavior in case of errors is regulated by the [distributed_ddl_output_mode](/reference/settings/session-settings/distributed-ddl#distributed_ddl_output_mode) setting, for a `Replicated` database it is better to set it to `null_status_on_timeout` — i.e. if some hosts did not have time to execute the request for [distributed_ddl_task_timeout](/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout), then do not throw an exception, but show the `NULL` status for them in the table.
 
-The [system.clusters](/reference/system-tables/clusters) system table contains a cluster named like the replicated database, which consists of all replicas of the database. This cluster is updated automatically when creating/deleting replicas, and it can be used for [Distributed](/engines/table-engines/special/distributed) tables.
+The [system.clusters](/reference/system-tables/clusters) system table contains a cluster named like the replicated database, which consists of all replicas of the database. This cluster is updated automatically when creating/deleting replicas, and it can be used for [Distributed](/reference/engines/table-engines/special/distributed) tables.
 
 When creating a new replica of the database, this replica creates tables by itself. If the replica has been unavailable for a long time and has lagged behind the replication log — it checks its local metadata with the current metadata in ZooKeeper, moves the extra tables with data to a separate non-replicated database (so as not to accidentally delete anything superfluous), creates the missing tables, updates the table names if they have been renamed. The data is replicated at the `ReplicatedMergeTree` level, i.e. if the table is not replicated, the data will not be replicated (the database is responsible only for metadata).
 

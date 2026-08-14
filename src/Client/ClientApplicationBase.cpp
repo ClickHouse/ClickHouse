@@ -55,15 +55,19 @@ void interruptSignalHandler(int signum)
     if (auto * instance = ClientApplicationBase::instanceRawPtr(); instance)
         if (auto * base = dynamic_cast<ClientApplicationBase *>(instance); base)
             if (base->tryStopQuery())
-                safeExit(128 + signum);
+                /// No leak check: in signal context it deadlocks if the interrupt landed under
+                /// the allocator lock. Quiet, because here stderr is program output, not a log.
+                safeExit(128 + signum, LeakCheck::SkipQuietly);
 }
 
 ClientApplicationBase::~ClientApplicationBase()
 {
     try
     {
+#if defined(OS_HAS_SIGNAL_HANDLERS)
         writeSignalIDtoSignalPipe(SignalListener::StopThread);
         signal_listener_thread.join();
+#endif
         HandledSignals::instance().reset();
     }
     catch (...)
@@ -167,7 +171,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
     /// Set application name for help messages based on how the binary was invoked
     std::string_view argv0_view(argv0 ? argv0 : "");
     std::string name_with_dash = "clickhouse-" + getName();
-    if (argv0_view.find(name_with_dash) != std::string_view::npos)
+    if (argv0_view.contains(name_with_dash))
         app_name = name_with_dash;
     else
         app_name = "clickhouse " + getName();
@@ -270,8 +274,12 @@ void ClientApplicationBase::init(int argc, char ** argv)
     }
 
     fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    /// Without signals nothing ever writes to the signal pipe, so there is nothing to listen
+    /// for - and the blocking read of that pipe is all the listener thread does.
     signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
     signal_listener_thread.start(*signal_listener);
+#endif
 }
 
 

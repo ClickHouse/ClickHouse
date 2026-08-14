@@ -83,6 +83,7 @@ void registerStorageYTsaurus(StorageFactory & factory);
 #endif
 
 void registerStorageRedis(StorageFactory & factory);
+void registerStorageBigQuery(StorageFactory & factory);
 
 
 #if USE_RDKAFKA
@@ -196,6 +197,7 @@ void registerStorages()
 
     registerStorageYTsaurus(factory);
     registerStorageRedis(factory);
+    registerStorageBigQuery(factory);
 
 #if USE_RDKAFKA
     registerStorageKafka(factory);

@@ -1,6 +1,7 @@
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 #include <Common/Exception.h>
+#include <Common/UTF8Helpers.h>
 
 #include "config.h"
 
@@ -42,6 +43,12 @@ namespace
     using ResultType = PrometheusQueryResultType;
     using Node = PrometheusQueryTree::Node;
 
+    size_t convertCodePointPositionToByteOffset(std::string_view query, size_t position)
+    {
+        return UTF8::computeBytesBeforeCodePoint(
+            reinterpret_cast<const UInt8 *>(query.data()), query.size(), position);
+    }
+
     /// Handles errors while a promql query is parsed.
     class ErrorListener : public antlr4::BaseErrorListener
     {
@@ -68,9 +75,19 @@ namespace
         {
             chassert(!msg.empty());
 
+            /// Only the first error is reported, so there is nothing to compute for the later ones.
+            /// This early return is what keeps the parse linear: the lexer recovers from an
+            /// unrecognized character by skipping it and calling this listener again for the next
+            /// one, and converting an error position to a byte offset scans the query from its
+            /// start, so doing it for every error would be quadratic in the query length (e.g. a
+            /// query padded with a megabyte of NUL bytes used to keep a thread busy for tens of
+            /// minutes, uncancellable because it happens during analysis).
+            if (hasError())
+                return;
+
             size_t pos = 0;
             if (offending_symbol)
-                pos = offending_symbol->getStartIndex();
+                pos = convertCodePointPositionToByteOffset(promql_query, offending_symbol->getStartIndex());
             else  /// `offending_symbol` can be null if `recognizer` is a lexer.
                 pos = convertLineAndPositionInLine(line, position_in_line);
 
@@ -78,7 +95,7 @@ namespace
         }
 
         /// ANTLR4's lexer returns the position of an error as a line number and a position in that line;
-        /// we need to convert them to a char index.
+        /// we need to convert them to a byte offset.
         size_t convertLineAndPositionInLine(size_t line, size_t position_in_line) const
         {
             size_t char_index = 0;
@@ -96,13 +113,71 @@ namespace
                     }
                 }
             }
-            return std::max(char_index + position_in_line, promql_query.length());
+            auto line_suffix = promql_query.substr(char_index);
+            return char_index + UTF8::computeBytesBeforeCodePoint(
+                reinterpret_cast<const UInt8 *>(line_suffix.data()), line_suffix.size(), position_in_line);
         }
 
     private:
         std::string_view promql_query;
         size_t error_pos = String::npos;
         String error_message;
+    };
+
+    /// A lexer that gives up on the rest of the input after the first unrecognized character.
+    /// The stock lexer recovers by skipping just that character and carrying on, so an input with
+    /// a long tail of bad bytes (e.g. a `FixedString` padded with NUL bytes) reports one error per
+    /// byte. Only the first error is ever reported and a parse with a recorded error always fails,
+    /// so lexing the remainder is wasted work - a megabyte of NUL bytes used to keep a thread busy
+    /// for minutes, uncancellable because parsing happens during query analysis.
+    /// It also validates multiline STRING tokens as they are emitted, before a later lexer or parser
+    /// error can hide an earlier invalid quoted string.
+    class PromQLLexerBailingOutOnError : public antlr4_grammars::PromQLLexer
+    {
+    public:
+        explicit PromQLLexerBailingOutOnError(
+            antlr4::CharStream * input_, std::string_view promql_query_, ErrorListener & error_listener_)
+            : PromQLLexer(input_), promql_query(promql_query_), error_listener(error_listener_) {}
+
+        std::unique_ptr<antlr4::Token> nextToken() override
+        {
+            auto next_token = PromQLLexer::nextToken();
+            if (!error_listener.hasError() && next_token->getType() == STRING && next_token->getLine() != getLine())
+            {
+                const String token_text = next_token->getText();
+                if (!token_text.starts_with('`'))
+                {
+                    String parsed_string;
+                    String error_message;
+                    size_t error_pos = 0;
+                    if (!PrometheusQueryParsingUtil::tryParseStringLiteral(
+                            token_text, parsed_string, &error_message, &error_pos))
+                    {
+                        const size_t token_pos = convertCodePointPositionToByteOffset(promql_query, next_token->getStartIndex());
+                        error_listener.setError(error_message, token_pos + error_pos);
+                        stopLexing();
+                    }
+                }
+            }
+            return next_token;
+        }
+
+        void recover(const antlr4::LexerNoViableAltException &) override
+        {
+            /// Pretend the input ended here, so that the lexer emits EOF and stops.
+            stopLexing();
+        }
+
+    private:
+        void stopLexing()
+        {
+            antlr4::CharStream * stream = getInputStream();
+            stream->seek(stream->size());
+            hitEOF = true;
+        }
+
+        std::string_view promql_query;
+        ErrorListener & error_listener;
     };
 
     [[noreturn]] void throwInconsistentSchema(std::string_view context_name, std::string_view token)
@@ -149,7 +224,10 @@ namespace
 
         static String getText(const antlr4::tree::TerminalNode * ctx) { return ctx->getSymbol()->getText(); }
 
-        static size_t getStartPos(const antlr4::tree::TerminalNode * ctx) { return ctx->getSymbol()->getStartIndex(); }
+        size_t getStartPos(const antlr4::tree::TerminalNode * ctx) const
+        {
+            return convertCodePointPositionToByteOffset(promql_query, ctx->getSymbol()->getStartIndex());
+        }
 
         bool parseStringLiteral(const antlr4::tree::TerminalNode * ctx, String & result)
         {
@@ -878,7 +956,7 @@ bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view
     ErrorListener error_listener{input};
     antlr4::ANTLRInputStream input_stream{input};
 
-    antlr4_grammars::PromQLLexer promql_lexer{&input_stream};
+    PromQLLexerBailingOutOnError promql_lexer{&input_stream, input, error_listener};
     promql_lexer.removeErrorListeners();
     promql_lexer.addErrorListener(&error_listener);
 
