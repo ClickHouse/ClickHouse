@@ -349,8 +349,13 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
                 : nullptr;
             auto relation_profile = estimator->estimateRelationProfile(nullptr, nullptr, prewhere_node);
 
-            statistics.estimated_row_count = Float64(relation_profile.rows);
-            statistics.max_row_count = std::max<Float64>(statistics.max_row_count, statistics.estimated_row_count);
+            /// Index analysis already bounds the read: it cannot emit more than `selected_rows`.
+            /// Without a `PREWHERE` the profile carries no filter, its row count is only the
+            /// statistics' total, so the index-analysis estimate stays.
+            if (prewhere_node)
+                statistics.estimated_row_count = analyzed_result
+                    ? std::min(Float64(relation_profile.rows), Float64(analyzed_result->selected_rows))
+                    : Float64(relation_profile.rows);
             for (const auto & [column_name, column_stats] : relation_profile.column_stats)
                 statistics.column_statistics[column_name].num_distinct_values = column_stats.num_distinct_values;
             /// The profile carries no byte sizes; leaving the default 1 byte per row would make wide
