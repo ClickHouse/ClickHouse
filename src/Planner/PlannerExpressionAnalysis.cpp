@@ -536,10 +536,19 @@ SortAnalysisResult analyzeSort(
         }
     }
 
+    /// `materializeNode` wraps the node and aliases the wrapper back to the original name, so the
+    /// `materialize(...)` node is an intermediate rather than an output. `Filling` fills by it, so it has to
+    /// stay in the stream; remember the names here, where they are known.
+    NameSet materialized_sort_column_names;
+
     if (has_with_fill)
     {
         for (auto & output_node : before_sort_actions_outputs)
+        {
             output_node = &before_sort_actions->dag.materializeNode(*output_node);
+            if (!output_node->children.empty())
+                materialized_sort_column_names.insert(output_node->children.front()->result_name);
+        }
     }
 
     auto actions_step_before_sort = std::make_unique<ActionsChainStep>(before_sort_actions);
@@ -562,33 +571,28 @@ SortAnalysisResult analyzeSort(
 
         /** A step's available output columns are every node of its dag - the intermediates of a computed
           * expression included - because a later step is allowed to *reference* any of them. Passing all of
-          * them through as outputs turns "referenceable" into "must be in the stream", which pins the
-          * intermediates of the projection into the header of the `Filling` step. Two query trees that
-          * differ only by whether an `ALIAS` column was inlined into its defining expression then produce
-          * different headers - `v * 2` contributes its `2` and the un-inlined `a_v` does not - and a
-          * distributed query planned one way and executed the other cannot reconcile them.
+          * them through as outputs turns "referenceable" into "must be in the stream", which pins those
+          * intermediates into the header of the `Filling` step. Two query trees that differ only by whether
+          * an `ALIAS` column was inlined into its defining expression then produce different headers -
+          * `v * 2` contributes its `2` and the un-inlined `a_v` does not - and a distributed query planned
+          * one way and executed the other cannot reconcile them.
           *
-          * So the projection's own intermediates are held back. Everything else is passed through as
-          * before, including the sort columns materialized just above, which is what `Filling` fills by.
-          * They all stay inputs either way, so an INTERPOLATE expression naming one still resolves.
+          * Pass through only what belongs in the stream: the columns the previous step emits, the sort
+          * columns and the `materialize(...)` wrappers `Filling` fills by. Everything else stays an input,
+          * so the chain still asks the previous step to produce it and an INTERPOLATE expression naming one
+          * still resolves; it just does not travel on as a column.
           */
         const auto & available_columns = actions_chain.getLastStepAvailableOutputColumns();
 
-        NameSet projection_intermediates;
+        NameSet columns_to_pass_through = materialized_sort_column_names;
+        for (const auto & column : before_sort_actions->dag.getResultColumns())
+            columns_to_pass_through.insert(column.name);
+
         const size_t last_step_index = actions_chain.getLastStepIndex();
         const bool know_previous_step = last_step_index > 0;
         if (know_previous_step)
-        {
-            const auto & previous_dag = actions_chain.at(last_step_index - 1)->getActions()->dag;
-
-            NameSet previous_stream_columns;
-            for (const auto & column : previous_dag.getResultColumns())
-                previous_stream_columns.insert(column.name);
-
-            for (const auto & node : previous_dag.getNodes())
-                if (!previous_stream_columns.contains(node.result_name))
-                    projection_intermediates.insert(node.result_name);
-        }
+            for (const auto & column : actions_chain.at(last_step_index - 1)->getActions()->dag.getResultColumns())
+                columns_to_pass_through.insert(column.name);
 
         /** The INTERPOLATE expressions themselves are turned into actions later, in `Planner`, against a dag
           * built from this step's *header*. Whatever they name therefore has to survive as a column here,
@@ -615,7 +619,7 @@ SortAnalysisResult analyzeSort(
             referenced_by_interpolate_dag.removeUnusedActions(/*allow_remove_inputs=*/true, /*allow_constant_folding=*/false);
 
             for (const auto & name : referenced_by_interpolate_dag.getRequiredColumnsNames())
-                projection_intermediates.erase(name);
+                columns_to_pass_through.insert(name);
         }
 
         for (const auto & out : available_columns)
@@ -625,7 +629,8 @@ SortAnalysisResult analyzeSort(
 
             const auto * input_node = &before_interpolate_actions_dag.addInput(out);
 
-            if (!projection_intermediates.contains(out.name))
+            /// With no preceding step to consult, keep the previous behaviour and pass everything through.
+            if (!know_previous_step || columns_to_pass_through.contains(out.name))
                 before_interpolate_actions_dag.getOutputs().push_back(input_node);
         }
 
