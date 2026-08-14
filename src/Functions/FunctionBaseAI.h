@@ -146,10 +146,6 @@ public:
     /// Result of `embedTexts`. `embeddings` is aligned 1:1 with the `inputs` argument of `embedTexts`. An
     /// entry is empty when that input was not embedded (quota exceeded, or a failed request with
     /// `ai_function_throw_on_error` disabled).
-    ///
-    /// `AIAPICalls` and `AIInputTokens` are reported by `embedTexts` itself, including when it rethrows,
-    /// so they are not carried here. The row counters are left to the caller, which decides what a row
-    /// means: texts for `aiEmbed`, pairs of texts for `aiSimilarity`.
     struct EmbeddingResult
     {
         VectorWithMemoryTracking<VectorWithMemoryTracking<Float32>> embeddings;

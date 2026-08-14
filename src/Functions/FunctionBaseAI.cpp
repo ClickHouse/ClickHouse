@@ -393,7 +393,6 @@ FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
     EmbeddingResult result;
     result.embeddings.resize(inputs.size());
 
-    /// Owned here rather than returned in `result`, which a rethrow would discard.
     UInt64 api_calls = 0;
     UInt64 input_tokens = 0;
 
