@@ -163,6 +163,20 @@ SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9998-06-01 00:00:00', 
 -- Without FROM the sequence is anchored at a data value and nothing is provable up front.
 SELECT count() FROM (SELECT toDateTime64('9999-06-01 00:00:00', 0, 'UTC') AS t ORDER BY t DESC WITH FILL TO toDateTime64('9999-01-01 00:00:00', 0, 'UTC') STEP INTERVAL -1 MONTH);
 
+SELECT 'an INTERVAL step that wraps around the column type before an in-range TO is rejected';
+
+-- The calendar arithmetic of an INTERVAL step is performed in the storage type of the column, so a step whose
+-- result would leave that type wraps around instead of crossing TO: the value it wrapped from is above the type
+-- maximum, hence above TO, so filling has already overshot the bound and every value it generates from there on
+-- is spurious - and the wrapped-around sequence keeps cycling below TO, so the query does not terminate either.
+SELECT t FROM (SELECT toDateTime('2106-01-01 00:00:00', 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime('2106-01-01 00:00:00', 'UTC') TO 4294967295 STEP INTERVAL 100 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- The wraparound may strike many steps after FROM.
+SELECT t FROM (SELECT toDateTime('2000-01-01 00:00:00', 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime('2000-01-01 00:00:00', 'UTC') TO 4294967295 STEP INTERVAL 50 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- Date wraps around its UInt16 the same way.
+SELECT d FROM (SELECT toDate('2148-01-01') AS d ORDER BY d ASC WITH FILL FROM toDate('2148-01-01') TO 65535 STEP INTERVAL 5 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- A sequence that crosses TO before it reaches the boundary of the storage type terminates and is accepted.
+SELECT count(), min(t), max(t) FROM (SELECT toDateTime('2106-01-01 00:00:00', 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime('2106-01-01 00:00:00', 'UTC') TO toDateTime('2106-01-05 00:00:00', 'UTC') STEP INTERVAL 1 DAY);
+
 SELECT 'in-range filling is unchanged';
 
 SELECT groupArray(x) FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH FILL FROM 1 TO 10);

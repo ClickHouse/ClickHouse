@@ -464,8 +464,14 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
   * query when it provably stagnates before reaching TO. The walk is bounded: a sequence that takes more steps
   * than the budget to settle (a fine-grained step over a huge span) is accepted as before - the walk must never
   * misjudge a terminating sequence, and the calendar arithmetic has no closed form that could shortcut it.
-  * A sequence that wraps around instead of clamping (DateTime within UInt32) never repeats the same value twice
-  * in a row, so the walk does not misdiagnose it; whether it cycles below TO forever remains undetected.
+  * A sequence that wraps around instead of clamping (a DateTime within its UInt32 storage) does not stagnate at
+  * a fixed point, and it is equally broken: `WITH FILL FROM toDateTime('2106-01-01 00:00:00', 'UTC') TO
+  * 4294967295 STEP INTERVAL 100 YEAR` jumps from 2106 back to 2069 and keeps cycling below TO forever. The walk
+  * therefore rejects any step that does not advance the sequence towards TO, not only the fixed point. A step
+  * that goes backwards is always a wraparound of the storage type, and the value it wrapped from is above the
+  * type maximum, hence above TO: the sequence has already overshot the bound, so every value generated from
+  * there on is spurious - out of order and past the TO the query asked for - whether or not the wrapped-around
+  * walk happens to land on a value beyond TO later on and terminate.
   *
   * Without FROM the sequence is anchored at a data value and nothing about it is provable up front, and
   * STALENESS replaces TO as the effective bound with the last data value plus the staleness, which the
@@ -494,7 +500,17 @@ static void checkIntervalStepFillCanReachFillTo(const FillColumnDescription & de
                 applyVisitor(FieldVisitorToString(), descr.fill_from),
                 applyVisitor(FieldVisitorToString(), value));
 
-        value = next;
+        if (!less(value, next, direction))
+            throw Exception(
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "WITH FILL can never reach the TO value {}: starting from the FROM value {}, the INTERVAL step turns back at "
+                "value {} (the arithmetic wraps around the boundary of the ORDER BY column type), so filling would generate "
+                "values past the TO value in the wrong order",
+                applyVisitor(FieldVisitorToString(), descr.fill_to),
+                applyVisitor(FieldVisitorToString(), descr.fill_from),
+                applyVisitor(FieldVisitorToString(), value));
+
+        value = std::move(next);
     }
 }
 
