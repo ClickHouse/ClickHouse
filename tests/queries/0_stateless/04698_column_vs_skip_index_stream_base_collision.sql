@@ -1,6 +1,11 @@
 -- Tags: no-random-merge-tree-settings
 -- The arms below pin the merge-tree settings that decide whether a colliding stream exists at all
 -- (part type, sparse ratio, packing threshold, hashing), so runner injection would invert them.
+-- packed_skip_index_max_bytes: a fully packed substream lives inside skp_idx.packed and takes no
+-- name in the part directory, so it can only collide with a column whose own on-disk name is
+-- logical. Where a filesystem forces every name to a hash (APFS), the pair stops sharing anything
+-- and refusing it would be wrong. Pinning packing off keeps each arm on the per-file producer,
+-- which is the one that takes a directory entry, so the arms assert the same thing everywhere.
 
 SET mutations_sync = 2;
 
@@ -8,7 +13,7 @@ SET mutations_sync = 2;
 -- `_` and alphanumerics, so this collides at default settings.
 CREATE TABLE t_plain (k UInt64, `skp_idx_a` UInt64, s String, INDEX a(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, packed_skip_index_max_bytes = 0;
 INSERT INTO t_plain SELECT number, number, toString(number) FROM numbers(10); -- { serverError INCORRECT_FILE_NAME }
 SELECT 'plain', count() FROM t_plain;
 DROP TABLE t_plain;
@@ -16,7 +21,8 @@ DROP TABLE t_plain;
 -- Same pair with index-name escaping off: the index base is unchanged either way.
 CREATE TABLE t_esc (k UInt64, `skp_idx_a` UInt64, s String, INDEX a(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, escape_index_filenames = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, escape_index_filenames = 0,
+         packed_skip_index_max_bytes = 0;
 INSERT INTO t_esc SELECT number, number, toString(number) FROM numbers(10); -- { serverError INCORRECT_FILE_NAME }
 DROP TABLE t_esc;
 
@@ -26,7 +32,7 @@ CREATE TABLE t_sparse (k UInt64, `skp_idx_a` UInt64 CODEC(NONE), s String,
     INDEX `a.sparse.idx`(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, escape_index_filenames = 0,
-         ratio_of_defaults_for_sparse_serialization = 0.0;
+         ratio_of_defaults_for_sparse_serialization = 0.0, packed_skip_index_max_bytes = 0;
 INSERT INTO t_sparse SELECT number, 0, toString(number) FROM numbers(10); -- { serverError INCORRECT_FILE_NAME }
 DROP TABLE t_sparse;
 
@@ -35,7 +41,7 @@ CREATE TABLE t_tuple (k UInt64, `skp_idx_t` Tuple(a UInt64, b String) CODEC(NONE
     INDEX `t%2Ea.sparse.idx`(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, escape_index_filenames = 0,
-         ratio_of_defaults_for_sparse_serialization = 0.0;
+         ratio_of_defaults_for_sparse_serialization = 0.0, packed_skip_index_max_bytes = 0;
 INSERT INTO t_tuple SELECT number, (0, ''), toString(number) FROM numbers(10); -- { serverError INCORRECT_FILE_NAME }
 DROP TABLE t_tuple;
 
@@ -44,7 +50,8 @@ SET allow_experimental_dynamic_type = 1;
 CREATE TABLE t_dyn (k UInt64, `skp_idx_a` Dynamic, s String,
     INDEX `a.variant_discr`(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, escape_index_filenames = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, escape_index_filenames = 0,
+         packed_skip_index_max_bytes = 0;
 INSERT INTO t_dyn SELECT number, number, toString(number) FROM numbers(10); -- { serverError INCORRECT_FILE_NAME }
 DROP TABLE t_dyn;
 
@@ -112,7 +119,8 @@ CREATE TABLE t_vert (k UInt64, `skp_idx_a` UInt64, s String, INDEX a(s) TYPE set
 ENGINE = MergeTree ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          vertical_merge_algorithm_min_rows_to_activate = 1,
-         vertical_merge_algorithm_min_columns_to_activate = 1;
+         vertical_merge_algorithm_min_columns_to_activate = 1,
+         packed_skip_index_max_bytes = 0;
 INSERT INTO t_vert SELECT number, number, toString(number) FROM numbers(10); -- { serverError INCORRECT_FILE_NAME }
 DROP TABLE t_vert;
 
@@ -122,7 +130,8 @@ CREATE TABLE t_vert_merge (k UInt64, `skp_idx_a` UInt64, s String)
 ENGINE = MergeTree ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          vertical_merge_algorithm_min_rows_to_activate = 1,
-         vertical_merge_algorithm_min_columns_to_activate = 1;
+         vertical_merge_algorithm_min_columns_to_activate = 1,
+         packed_skip_index_max_bytes = 0;
 INSERT INTO t_vert_merge SELECT number, number, toString(number) FROM numbers(10);
 INSERT INTO t_vert_merge SELECT number + 10, number, toString(number + 10) FROM numbers(10);
 ALTER TABLE t_vert_merge ADD INDEX a(s) TYPE set(100) GRANULARITY 1;
@@ -177,7 +186,7 @@ CREATE TABLE t_proj_collide (k UInt64, v UInt64, `skp_idx_auto_minmax_index_v` U
         WITH SETTINGS (add_minmax_index_for_numeric_columns = 1))
 ENGINE = MergeTree ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-         add_minmax_index_for_numeric_columns = 0;
+         add_minmax_index_for_numeric_columns = 0, packed_skip_index_max_bytes = 0;
 INSERT INTO t_proj_collide SELECT number, number, number FROM numbers(10); -- { serverError INCORRECT_FILE_NAME }
 DROP TABLE t_proj_collide;
 
@@ -186,7 +195,7 @@ DROP TABLE t_proj_collide;
 -- and only reading the column revealed the corruption.
 CREATE TABLE t_carry (k UInt64, s String, INDEX a(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, packed_skip_index_max_bytes = 0;
 INSERT INTO t_carry SELECT number, toString(number) FROM numbers(10);
 ALTER TABLE t_carry ADD COLUMN `skp_idx_a` UInt64 DEFAULT 7;
 ALTER TABLE t_carry UPDATE `skp_idx_a` = 5 WHERE 1; -- { serverError UNFINISHED }
@@ -198,9 +207,13 @@ DROP TABLE t_carry;
 
 -- A 0-row part cannot share anything, so the empty covering part that DROP PARTITION and the
 -- replicated lost-part heal both commit through must not be rejected.
+-- packed_skip_index_max_bytes: an empty part writes no archive, but on an object-storage disk the
+-- commit still opens skp_idx.packed and fails with FILE_DOESNT_EXIST. That is independent of this
+-- check (pristine master fails identically, and a non-colliding ADD COLUMN reaches it too), so the
+-- arm pins packing off to keep asserting what it is about.
 CREATE TABLE t_empty_ok (k UInt64, s String, INDEX a(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree PARTITION BY (k < 5) ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, packed_skip_index_max_bytes = 0;
 INSERT INTO t_empty_ok SELECT number, toString(number) FROM numbers(10);
 ALTER TABLE t_empty_ok ADD COLUMN `skp_idx_a` UInt64 DEFAULT 7;
 ALTER TABLE t_empty_ok DROP PARTITION 0;
@@ -212,7 +225,8 @@ DROP TABLE t_empty_ok;
 -- collision is already in place when the merge runs.
 CREATE TABLE t_ttl_ok (k UInt64, d DateTime, s String, INDEX a(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k TTL d + INTERVAL 1 SECOND
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, merge_with_ttl_timeout = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, merge_with_ttl_timeout = 0,
+         packed_skip_index_max_bytes = 0;
 SYSTEM STOP MERGES t_ttl_ok;
 INSERT INTO t_ttl_ok SELECT number, toDateTime('2000-01-01'), toString(number) FROM numbers(10);
 ALTER TABLE t_ttl_ok ADD COLUMN `skp_idx_a` UInt64 DEFAULT 7;
@@ -228,7 +242,7 @@ CREATE TABLE t_ttl_vert_ok (k UInt64, d DateTime, s String, c1 UInt64, c2 UInt64
 ENGINE = MergeTree ORDER BY k TTL d + INTERVAL 1 SECOND
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, merge_with_ttl_timeout = 0,
          enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 1,
-         vertical_merge_algorithm_min_columns_to_activate = 1;
+         vertical_merge_algorithm_min_columns_to_activate = 1, packed_skip_index_max_bytes = 0;
 SYSTEM STOP MERGES t_ttl_vert_ok;
 INSERT INTO t_ttl_vert_ok
     SELECT number, toDateTime('2000-01-01'), toString(number), number, number, number FROM numbers(10);
@@ -243,7 +257,8 @@ DROP TABLE t_ttl_vert_ok;
 -- share marks in a part that has none, so both must stay quiet.
 CREATE TABLE t_empty_mut_ok (k UInt64, d DateTime, s String, INDEX a(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k TTL d + INTERVAL 1 SECOND
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, merge_with_ttl_timeout = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, merge_with_ttl_timeout = 0,
+         packed_skip_index_max_bytes = 0;
 SYSTEM STOP MERGES t_empty_mut_ok;
 INSERT INTO t_empty_mut_ok SELECT number, toDateTime('2000-01-01'), toString(number) FROM numbers(10);
 ALTER TABLE t_empty_mut_ok ADD COLUMN `skp_idx_a` UInt64 DEFAULT 7;
@@ -261,7 +276,8 @@ DROP TABLE t_empty_mut_ok;
 CREATE TABLE t_carry_copy (k UInt64, s String, INDEX a(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-         always_use_copy_instead_of_hardlinks = 1, storage_policy = 'default';
+         always_use_copy_instead_of_hardlinks = 1, storage_policy = 'default',
+         packed_skip_index_max_bytes = 0;
 INSERT INTO t_carry_copy SELECT number, toString(number) FROM numbers(10);
 ALTER TABLE t_carry_copy ADD COLUMN `skp_idx_a` UInt64 DEFAULT 7;
 ALTER TABLE t_carry_copy UPDATE `skp_idx_a` = 5 WHERE 1; -- { serverError UNFINISHED }
@@ -276,7 +292,7 @@ DROP TABLE t_carry_copy;
 -- A mutation that rewrites every column carries indices through its own loops, at a different site.
 CREATE TABLE t_carry_full (k UInt64, s String, INDEX a(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, packed_skip_index_max_bytes = 0;
 INSERT INTO t_carry_full SELECT number, toString(number) FROM numbers(10);
 ALTER TABLE t_carry_full ADD COLUMN `skp_idx_a` UInt64 DEFAULT 7;
 ALTER TABLE t_carry_full DELETE WHERE k = 3; -- { serverError UNFINISHED }
@@ -290,7 +306,7 @@ DROP TABLE t_carry_full;
 -- `from -> to` filename map, which also carries drops.
 CREATE TABLE t_rename (k UInt64, s String, other UInt64, INDEX a(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, packed_skip_index_max_bytes = 0;
 INSERT INTO t_rename SELECT number, toString(number), number FROM numbers(10);
 ALTER TABLE t_rename RENAME COLUMN other TO `skp_idx_a`; -- { serverError UNFINISHED }
 SELECT 't_rename', countIf(latest_fail_reason LIKE '%INCORRECT_FILE_NAME%'
@@ -367,7 +383,8 @@ DROP TABLE t_nested_ok;
 CREATE TABLE t_nested_collide (k UInt64, `skp_idx_nested` Nested(a UInt32, b UInt32), s String,
     INDEX `nested.size0`(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, escape_index_filenames = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, escape_index_filenames = 0,
+         packed_skip_index_max_bytes = 0;
 INSERT INTO t_nested_collide SELECT number, [1, 2], [3, 4], toString(number) FROM numbers(10); -- { serverError INCORRECT_FILE_NAME }
 DROP TABLE t_nested_collide;
 
@@ -375,7 +392,7 @@ DROP TABLE t_nested_collide;
 -- the carried column must be claimed too or the two silently share one marks file.
 CREATE TABLE t_carry_col (k UInt64, `skp_idx_a` UInt64, s String)
 ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, packed_skip_index_max_bytes = 0;
 INSERT INTO t_carry_col SELECT number, number, toString(number) FROM numbers(10);
 ALTER TABLE t_carry_col ADD INDEX a(s) TYPE set(100) GRANULARITY 1;
 ALTER TABLE t_carry_col MATERIALIZE INDEX a; -- { serverError UNFINISHED }
