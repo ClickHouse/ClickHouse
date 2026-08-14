@@ -35,6 +35,11 @@ public:
     /// Index is the offset in FindResult
     UsedFlagsForColumns per_offset_flags;
 
+    /// The same, but one container per disjunct: the offsets of different maps are unrelated, so they
+    /// cannot share `per_offset_flags`. Used by `ANY INNER JOIN`, which emits one row per key of every
+    /// disjunct, and therefore claims a key of one map rather than a row of the right table.
+    std::vector<UsedFlagsForColumns> per_clause_offset_flags;
+
     bool need_flags{};
 
     /// Update size for vector with flags.
@@ -53,6 +58,17 @@ public:
             if (per_offset_flags.size() < size) [[unlikely]]
                 per_offset_flags = std::vector<std::atomic_bool>(size);
         }
+    }
+
+    /// One flag per cell of every disjunct's map. Calling this invalidates existing flags, so it must
+    /// happen after the build phase filled the maps and before the probe phase reads them.
+    void reinitPerClauseOffsets(const std::vector<size_t> & sizes)
+    {
+        need_flags = true;
+        per_clause_offset_flags.clear();
+        per_clause_offset_flags.reserve(sizes.size());
+        for (size_t size : sizes)
+            per_clause_offset_flags.emplace_back(size);
     }
 
     /// Update size for vector with flags same as `reinit` but allows the updated size to be smaller.
@@ -227,6 +243,24 @@ public:
             return per_offset_flags[off].compare_exchange_strong(expected, true);
         }
 
+    }
+
+    /// Claim the key of one disjunct: only the first left row reaching this cell emits a row for it.
+    template <bool use_flags>
+    bool setUsedOncePerClause(size_t clause_idx, size_t offset)
+    {
+        if constexpr (!use_flags)
+            return true;
+
+        chassert(clause_idx < per_clause_offset_flags.size(), "per-clause flags were not sized for the build phase");
+        auto & flag = per_clause_offset_flags[clause_idx][offset];
+
+        /// fast check to prevent heavy CAS with seq_cst order
+        if (flag.load(std::memory_order_relaxed))
+            return false;
+
+        bool expected = false;
+        return flag.compare_exchange_strong(expected, true);
     }
 
     template <bool use_flags, bool flag_per_row>

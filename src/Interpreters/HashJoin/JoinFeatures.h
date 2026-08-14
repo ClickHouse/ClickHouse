@@ -25,7 +25,14 @@ struct JoinFeatures
       * (key1, attr1, key1, attr2)
       * (key1, attr1, key1, attr3)
       */
-    static constexpr bool need_replication = is_all_join || (is_any_join && right) || (is_semi_join && right);
+    /// `ANY INNER JOIN` is in this list because with several disjuncts a left row is joined once per
+    /// disjunct whose key it claims, so it may need more than one output row.
+    static constexpr bool need_replication = is_all_join || (is_any_join && (right || inner)) || (is_semi_join && right);
+
+    /// Whether a left row is joined with every right row that matches it, as opposed to one of them.
+    /// Weaker than `need_replication`: `ANY INNER JOIN` may output several rows for one left row, but
+    /// only one per disjunct.
+    static constexpr bool join_every_match = is_all_join || (is_any_join && right) || (is_semi_join && right);
 
     /// Whether we need to filter rows from the left table that do not have matches in the right table.
     static constexpr bool need_filter = !need_replication && (inner || right || (is_semi_join && left) || (is_anti_join && left));
