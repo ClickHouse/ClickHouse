@@ -93,6 +93,7 @@ namespace FailPoints
 {
     extern const char keepermap_fail_drop_data[];
     extern const char keeper_map_delete_pause_before_multi[];
+    extern const char keepermap_create_pause_before_drop_lock_version[];
 }
 
 namespace ErrorCodes
@@ -531,7 +532,9 @@ StorageKeeperMap::StorageKeeperMap(
                         /// Backward compatibility: tables created before 25.1 don't have
                         /// the drop_lock_version node. Create it if missing so the set below
                         /// doesn't fail with ZNONODE (same pattern as drop() uses).
-                        client->createIfNotExists(zk_dropped_lock_version_path, "");
+                        /// A concurrent drop may have removed the parent already; the tryMulti below handles that.
+                        FailPointInjection::pauseFailPoint(FailPoints::keepermap_create_pause_before_drop_lock_version);
+                        client->tryCreate(zk_dropped_lock_version_path, "", zkutil::CreateMode::Persistent);
 
                         Coordination::Requests drop_lock_requests{
                             zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral),
