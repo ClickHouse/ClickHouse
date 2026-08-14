@@ -653,14 +653,11 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"allow_archive_path_syntax", trueOrFalseSettingNoOracle},
     {"allow_asynchronous_read_from_io_pool_for_merge_tree", trueOrFalseSettingNoOracle},
     {"allow_changing_replica_until_first_data_packet", trueOrFalseSettingNoOracle},
-    /// Swaps the whole Delta Lake reader implementation, so both values must return the same rows
-    {"allow_delta_kernel_rs", trueOrFalseSetting},
     {"allow_dynamic_type_in_join_keys", trueOrFalseSettingNoOracle},
     {"allow_experimental_eval_table_function", trueOrFalseSettingNoOracle},
     {"allow_experimental_url_wildcard_from_index_pages", trueOrFalseSettingNoOracle},
     {"allow_get_client_http_header", trueOrFalseSettingNoOracle},
     {"allow_introspection_functions", trueOrFalseSetting},
-    /// Changes the common type picked for numeric arguments, so results may differ
     {"allow_lossy_numeric_supertype", CHSetting(trueOrFalse, {"0", "1"}, true)},
     {"allow_minmax_index_for_json", trueOrFalseSettingNoOracle},
     {"allow_nullable_tuple_in_extracted_subcolumns", trueOrFalseSettingNoOracle},
