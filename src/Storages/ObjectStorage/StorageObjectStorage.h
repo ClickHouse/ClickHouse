@@ -157,6 +157,8 @@ public:
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
 
+    RefreshCursorStorePtr getRefreshCursorStore() override;
+
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 

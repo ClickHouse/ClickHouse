@@ -10,6 +10,7 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Context.h>
 #include <Core/Streaming/StreamingCursorResult.h>
+#include <Storages/MaterializedView/RefreshCursorStore.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
@@ -1305,6 +1306,10 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>("query");
     Stopwatch stopwatch;
 
+    /// Set when the target commits the incremental cursor atomically with the data (e.g. Iceberg), so
+    /// the refresh must not also persist it in the Keeper znode (see the read-back after success).
+    bool cursor_persisted_by_target = false;
+
     try
     {
         refresh_context = view->createRefreshContext(log_comment);
@@ -1326,8 +1331,17 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             refresh_context->setSetting("enable_parallel_replicas", Field(UInt64{0}));
             refresh_context->setSetting("parallel_replicas_for_non_replicated_merge_tree", Field(UInt64{0}));
 
-            if (!execution.znode.cursor.empty())
-                stream_cursor = streamingCursorToTree(deserializeStreamingCursor(execution.znode.cursor));
+            /// A transactional target (e.g. Iceberg) keeps the cursor with its data and provides a store to
+            /// read it back; otherwise resume from the cursor persisted in the Keeper coordination znode.
+            String stored_cursor = execution.znode.cursor;
+            if (auto cursor_store = view->getTargetTable()->getRefreshCursorStore(); cursor_store && cursor_store->isTransactional())
+            {
+                cursor_persisted_by_target = true;
+                stored_cursor = cursor_store->load(refresh_context);
+            }
+
+            if (!stored_cursor.empty())
+                stream_cursor = streamingCursorToTree(deserializeStreamingCursor(stored_cursor));
             refresh_context->setStreamingCursorResult(std::make_shared<StreamingCursorResult>());
         }
 
@@ -1508,7 +1522,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         view->dropTempTable(table_to_drop.value(), refresh_context, out_error_message);
 
     /// Incremental refresh: read the cursor the streaming source advanced to and persist it (Part C).
-    if (auto streaming_cursor_result = refresh_context->getStreamingCursorResult())
+    /// A transactional target already committed it atomically with the data, so leave the znode cursor empty.
+    if (auto streaming_cursor_result = refresh_context->getStreamingCursorResult(); streaming_cursor_result && !cursor_persisted_by_target)
         out_cursor = serializeStreamingCursor(streaming_cursor_result->get());
 
     return new_table_id.uuid;

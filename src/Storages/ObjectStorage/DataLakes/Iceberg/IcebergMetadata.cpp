@@ -407,6 +407,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_deletes;
+    std::optional<String> refresh_cursor;
 
     if (snapshot_object->has(f_summary))
     {
@@ -421,6 +422,9 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         {
             total_position_deletes = summary_object->getValue<Int64>(f_total_position_deletes);
         }
+
+        if (summary_object->has(f_refresh_cursor))
+            refresh_cursor = summary_object->getValue<String>(f_refresh_cursor);
     }
 
     if (!snapshot_object->has(f_schema_id))
@@ -434,7 +438,16 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         schema_id,
         total_rows,
         total_bytes,
-        total_position_deletes);
+        total_position_deletes,
+        refresh_cursor);
+}
+
+std::optional<String> IcebergMetadata::getRefreshCursor(ContextPtr local_context) const
+{
+    auto state = getRelevantState(local_context);
+    if (!state.first)
+        return std::nullopt;
+    return state.first->refresh_cursor;
 }
 
 IcebergDataSnapshotPtr

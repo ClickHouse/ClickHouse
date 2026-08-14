@@ -107,6 +107,8 @@ public:
     bool supportsWrites() const override { return true; }
     bool supportsParallelInsert() const override { return true; }
 
+    std::optional<String> getRefreshCursor(ContextPtr local_context) const override;
+
     IcebergHistory getHistory(ContextPtr local_context) const;
 
     /// Returns file records contributed by a single manifest list entry of `data_snapshot`.

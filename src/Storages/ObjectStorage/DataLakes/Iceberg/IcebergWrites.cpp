@@ -15,6 +15,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Databases/DataLake/Common.h>
+#include <Core/Streaming/StreamingCursorResult.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeRefreshCursorStore.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
@@ -1123,6 +1125,13 @@ bool IcebergStorageSink::initializeMetadata()
     Int64 total_data_files = 0;
     for (const auto & [_, writer] : writer_per_partition_key)
         total_data_files += static_cast<Int64>(writer.getDataFiles().size());
+
+    /// Incremental refreshable-MV write: the streaming source filled the cursor on the query context;
+    /// embed it (as stored) so it commits atomically with these data files. Absent for plain inserts.
+    std::optional<String> refresh_cursor;
+    if (auto streaming_cursor_result = context->getStreamingCursorResult())
+        refresh_cursor = refreshCursorToStorage(serializeStreamingCursor(streaming_cursor_result->get()));
+
     auto [new_snapshot, manifest_list_path] = MetadataGenerator(metadata).generateNextMetadata(
         filename_generator,
         metadata_info.path,
@@ -1132,7 +1141,11 @@ bool IcebergStorageSink::initializeMetadata()
         total_chunks_size,
         /* num_partitions */ static_cast<Int64>(writer_per_partition_key.size()),
         /* added_delete_files */ 0,
-        /* num_deleted_rows */ 0);
+        /* num_deleted_rows */ 0,
+        /* user_defined_snapshot_id */ std::nullopt,
+        /* user_defined_timestamp */ std::nullopt,
+        MetadataGenerator::SnapshotOperation::Append,
+        refresh_cursor);
     auto storage_manifest_list_name = resolver.resolve(manifest_list_path);
 
 
