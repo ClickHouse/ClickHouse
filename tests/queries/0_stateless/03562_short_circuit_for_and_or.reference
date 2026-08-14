@@ -18,6 +18,13 @@ DateTime64(3)
 1
 Test scoped lambda shadows a builtin function
 42
+Test folded logical expressions preserve their result types
+Nullable(UInt8)
+Bool
+Test aggregate and arrayJoin branches are not erased
+0
+1
+1
 Check the read_rows of the above queries to ensure that the short circuit is working
 1
 0

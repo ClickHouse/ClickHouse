@@ -104,7 +104,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     /// CREATE TABLE t ENGINE = MergeTree ORDER BY () AS
     /// WITH (SELECT path FROM table_with_paths) AS path SELECT * FROM s3(path, NOSIGN);
     /// or a default (empty) value substituted for a parameterized view parameter.
-    const bool only_analyze_subquery = only_analyze
+    const bool only_analyze_subquery = (only_analyze || early_short_circuit_type_inference_in_process)
         && !table_function_arguments_in_resolve_process
         && !parameterized_view_arguments_in_resolve_process;
 
@@ -118,7 +118,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     bool can_use_global_scalars = !only_analyze_subquery && !(context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), *context));
 
-    auto & scalars_cache = can_use_global_scalars ? scalar_subquery_to_scalar_value_global : scalar_subquery_to_scalar_value_local;
+    auto & scalars_cache = early_short_circuit_type_inference_in_process
+        ? scalar_subquery_to_scalar_value_type_only
+        : (can_use_global_scalars ? scalar_subquery_to_scalar_value_global : scalar_subquery_to_scalar_value_local);
 
     if (scalars_cache.contains(node_with_hash))
     {

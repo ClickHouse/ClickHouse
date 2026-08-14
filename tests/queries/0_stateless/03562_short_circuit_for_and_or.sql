@@ -37,6 +37,14 @@ SELECT defaultValueOfArgumentType(CAST(NULL AS Nullable(UInt8))) IS NULL;
 SELECT 'Test scoped lambda shadows a builtin function';
 WITH (x -> 42) AS toTypeName SELECT toTypeName(number) FROM numbers(1);
 
+SELECT 'Test folded logical expressions preserve their result types';
+SELECT toTypeName(0 AND CAST(NULL AS Nullable(UInt8)));
+SELECT toTypeName(1 OR CAST(0 AS Bool));
+
+SELECT 'Test aggregate and arrayJoin branches are not erased';
+SELECT 0 AND sum(number) FROM numbers(10);
+SELECT 1 OR arrayJoin([1, 2]);
+
 SELECT 'Check the read_rows of the above queries to ensure that the short circuit is working';
 SYSTEM FLUSH LOGS query_log;
 

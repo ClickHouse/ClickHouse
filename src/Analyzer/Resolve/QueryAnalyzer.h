@@ -340,6 +340,7 @@ private:
     /// Global scalar subquery to scalar value map
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_local;
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_global;
+    std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_type_only;
 
     std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> node_to_scope_map;
 
@@ -348,6 +349,11 @@ private:
     std::map<IQueryTreeNode::Hash, FunctionBasePtr> functions_cache;
 
     const bool only_analyze;
+
+    /// True while resolving a cloned AND/OR expression to infer its real result type and detect
+    /// semantic carriers. Scalar subqueries are analyzed without execution, and the regular early
+    /// short-circuit hook is disabled to avoid recursion.
+    bool early_short_circuit_type_inference_in_process = false;
 
     /// True while arguments of a table function are resolved. Table functions are resolved
     /// into storages even in only-analyze mode (the storage is required to infer the query

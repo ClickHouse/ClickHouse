@@ -20,7 +20,7 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/SetUtils.h>
 
-#include <Common/logger_useful.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
 #include <Core/Settings.h>
@@ -51,6 +51,8 @@
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
+
+#include <base/scope_guard.h>
 
 
 namespace DB
@@ -101,80 +103,43 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
 }
 
-/** Attempts to compute a decisive constant result for an AND/OR expression before all
- * arguments are analyzed. Nested AND/OR expressions are processed recursively. Unresolved
- * arguments use UInt8 only as a placeholder; no type-dependent function is evaluated here.
- */
-ConstantNodePtr getEarlyConstantResultForAndOr(
+/** Finds a decisive constant in an AND/OR expression before its arguments are analyzed.
+  * Nested expressions with the same function name are processed recursively. The returned value
+  * is independent of unresolved argument values and types: false decides AND, true decides OR.
+  */
+std::optional<bool> getEarlyShortCircuitResultForAndOr(
     const QueryTreeNodePtr & node,
-    IdentifierResolveScope & scope,
     const String & function_name_to_fold)
 {
-    FunctionNodePtr function_node = std::static_pointer_cast<FunctionNode>(node);
-    auto function_name = function_node->getFunctionName();
-    if (function_name != function_name_to_fold
+    const auto * function_node = node->as<FunctionNode>();
+    if (!function_node
+        || function_node->getFunctionName() != function_name_to_fold
         || !function_node->getParameters().getNodes().empty()
         || function_node->getNullsAction() != NullsAction::EMPTY
         || function_node->isWindowFunction())
-        return nullptr;
+        return {};
 
-    ColumnsWithTypeAndName arg_columns;
-    auto & arg_nodes = function_node->getArguments().getNodes();
-    arg_columns.reserve(arg_nodes.size());
-
-    for (const auto & arg : arg_nodes)
+    const bool decisive_value = function_name_to_fold == "or";
+    for (const auto & argument : function_node->getArguments().getNodes())
     {
-        ColumnWithTypeAndName col;
-        if (const auto * cn = arg->as<ConstantNode>())
+        std::optional<bool> argument_value;
+        if (const auto * constant_node = argument->as<ConstantNode>())
         {
-            col.column = cn->getColumn();
-            col.type = arg->getResultType();
+            const auto & type = constant_node->getResultType();
+            const auto value = constant_node->getValue();
+            if (isNativeNumber(removeNullable(type)) && !value.isNull())
+                argument_value = applyVisitor(FieldVisitorConvertToNumber<bool>(), value);
         }
-        else if (arg->as<FunctionNode>())
+        else if (argument->as<FunctionNode>())
         {
-            auto res = getEarlyConstantResultForAndOr(arg, scope, function_name_to_fold);
-            if (res)
-            {
-                col.column = res->getColumn();
-                col.type = res->getResultType();
-            }
-            else
-                col.type = std::make_shared<DataTypeUInt8>();
+            argument_value = getEarlyShortCircuitResultForAndOr(argument, function_name_to_fold);
         }
-        else
-            col.type = std::make_shared<DataTypeUInt8>();
-        arg_columns.emplace_back(std::move(col));
+
+        if (argument_value && *argument_value == decisive_value)
+            return decisive_value;
     }
 
-    FunctionOverloadResolverPtr resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
-    if (resolver)
-    {
-        FunctionBasePtr base;
-        try
-        {
-            base = resolver->build(arg_columns);
-        }
-        catch (const Exception & e)
-        {
-            LOG_DEBUG(&Poco::Logger::get("QueryAnalyzer"), "Function {} failed to build with error: {}", function_name, e.message());
-            return nullptr;
-        }
-
-        if (!base->isSuitableForConstantFolding())
-            return nullptr;
-
-        // Try to get constant result for non-const arguments
-        ColumnPtr result = base->getConstantResultForNonConstArguments(arg_columns, base->getResultType());
-        if (const auto * column_const = result ? typeid_cast<const ColumnConst *>(result.get()) : nullptr)
-        {
-            auto const_node = std::make_shared<ConstantNode>(
-                ConstantValue{column_const->getPtr(), base->getResultType()});
-            if (!function_node->getAlias().empty())
-                const_node->setAlias(function_node->getAlias());
-            return const_node;
-        }
-    }
-    return nullptr;
+    return {};
 }
 }
 
@@ -678,7 +643,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
       * only after checking scoped lambdas and registered UDFs, so a builtin cannot bypass a
       * user-defined function with the same name.
       */
-    if (scope.context->getSettingsRef()[Setting::enable_function_early_short_circuit]
+    if (!early_short_circuit_type_inference_in_process
+        && scope.context->getSettingsRef()[Setting::enable_function_early_short_circuit]
         && (function_name == "and" || function_name == "or")
         && parameters.empty()
         && function_node_ptr->getNullsAction() == NullsAction::EMPTY
@@ -687,12 +653,39 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         && !UserDefinedSQLFunctionFactory::instance().tryGet(function_name)
         && !UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters)) /// NOLINT(readability-static-accessed-through-instance)
     {
-        auto const_res = getEarlyConstantResultForAndOr(node, scope, function_name);
-        if (const_res)
+        auto short_circuit_result = getEarlyShortCircuitResultForAndOr(node, function_name);
+        if (short_circuit_result)
         {
-            auto value_string = const_res->getValueStringRepresentation();
-            node = std::move(const_res);
-            return { value_string };
+            /// Resolve a clone in type-only mode. Scalar subqueries are analyzed but not executed,
+            /// which gives the logical expression its real Nullable/Bool result type. It also
+            /// discovers aggregates and arrayJoin before they can be erased by the early fold.
+            auto node_for_type_inference = node->clone();
+            {
+                const bool previous_type_inference_state = early_short_circuit_type_inference_in_process;
+                early_short_circuit_type_inference_in_process = true;
+                SCOPE_EXIT({ early_short_circuit_type_inference_in_process = previous_type_inference_state; });
+
+                resolveExpressionNode(
+                    node_for_type_inference,
+                    scope,
+                    false /*allow_lambda_expression*/,
+                    false /*allow_table_expression*/,
+                    false /*ignore_alias*/,
+                    allow_niladic_functions);
+            }
+
+            if (!hasAggregateFunctionNodes(node_for_type_inference) && !hasFunctionNode(node_for_type_inference, "arrayJoin"))
+            {
+                auto result_type = node_for_type_inference->getResultType();
+                auto result_column = result_type->createColumnConst(1, static_cast<UInt8>(*short_circuit_result));
+                auto const_res = std::make_shared<ConstantNode>(std::move(result_column), std::move(result_type));
+                if (!function_node_ptr->getAlias().empty())
+                    const_res->setAlias(function_node_ptr->getAlias());
+
+                auto value_string = const_res->getValueStringRepresentation();
+                node = std::move(const_res);
+                return { value_string };
+            }
         }
     }
 
