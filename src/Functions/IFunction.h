@@ -5,6 +5,7 @@
 #include <Core/IResolvedFunction.h>
 #include <Core/Names.h>
 #include <Core/ValuesWithType.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <DataTypes/IDataType_fwd.h>
 #include <Functions/ComparisonOrderDomain.h>
@@ -54,7 +55,7 @@ struct FunctionExecutionProfile
 
     /// For short-circuit lazy executed arguments, their execution must be profiled, with the first element
     /// of the pair indicating the argument's index.
-    std::vector<std::pair<size_t, FunctionExecutionProfile>> argument_profiles;
+    VectorWithMemoryTracking<std::pair<size_t, FunctionExecutionProfile>> argument_profiles;
 };
 
 /// The simplest executable object.
