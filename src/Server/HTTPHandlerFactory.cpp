@@ -21,6 +21,10 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
+#include <Common/SQLDefinedHandlers/SQLDefinedHandler.h>
+#include <base/find_symbols.h>
+
 
 namespace DB
 {
@@ -52,6 +56,67 @@ public:
         applyHTTPResponseHeaders(response, http_response_headers_override);
         response.redirect(url);
     }
+};
+
+/// Matches incoming requests against the registry of SQL-defined handlers (CREATE HANDLER).
+/// Consulted after all configuration-defined handlers, so config handlers always take priority.
+/// SQL-defined handlers are tried in lexicographic order of their names.
+class SQLDefinedHTTPHandlerFactory : public HTTPRequestHandlerFactory
+{
+public:
+    SQLDefinedHTTPHandlerFactory(
+        IServer & server_,
+        std::string protocol_name_,
+        std::optional<String> default_session_user_)
+        : server(server_)
+        , protocol_name(std::move(protocol_name_))
+        , default_session_user(std::move(default_session_user_))
+    {
+    }
+
+    std::unique_ptr<HTTPRequestHandler> createRequestHandler(const HTTPServerRequest & request) override
+    {
+        auto handlers = SQLDefinedHandlersFactory::instance().getAll();
+        if (!handlers || handlers->empty())
+            return nullptr;
+
+        /// Match against the URL path only, without the query string and fragment.
+        const auto & uri = request.getURI();
+        const char * path_end = find_first_symbols<'?', '#'>(uri.data(), uri.data() + uri.size());
+        const String path(uri.data(), path_end);
+
+        const String & method = request.getMethod();
+
+        /// Mirror the method semantics of config-defined HTTP handlers (see `allowGetAndHeadRequest` /
+        /// `allowRESTMethods` in HTTPHandlerFactory.h): `HEAD` reuses the handler declared for `GET`, and every
+        /// path/protocol match answers `OPTIONS` so the generic preflight/CORS branch in `HTTPHandler::handleRequest`
+        /// can respond. `ParserCreateHandlerQuery` never stores `HEAD`/`OPTIONS`, so these cannot be matched directly.
+        const bool is_head = method == Poco::Net::HTTPRequest::HTTP_HEAD;
+        const bool is_options = method == Poco::Net::HTTPRequest::HTTP_OPTIONS;
+
+        for (const auto & [name, handler] : *handlers)
+        {
+            const bool method_matches = handler->matchesMethod(method)
+                || (is_head && handler->matchesMethod(Poco::Net::HTTPRequest::HTTP_GET))
+                || is_options;
+
+            if (handler->matchesProtocol(protocol_name)
+                && method_matches
+                && handler->matchesURL(path))
+            {
+                HTTPHandlerConnectionConfig connection_config;
+                connection_config.default_session_user = default_session_user;
+                return std::make_unique<SQLDefinedQueryHandler>(server, connection_config, *handler);
+            }
+        }
+
+        return nullptr;
+    }
+
+private:
+    IServer & server;
+    std::string protocol_name;
+    std::optional<String> default_session_user;
 };
 
 HTTPRequestHandlerFactoryPtr createRedirectHandlerFactory(
@@ -311,16 +376,23 @@ static inline HTTPRequestHandlerFactoryPtr createHTTPHandlerFactory(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & name,
     AsynchronousMetrics & async_metrics,
-    const std::string & http_handlers_key = "http_handlers",
-    const std::optional<String> & default_session_user = {})
+    const std::string & http_handlers_key,
+    const std::string & protocol_name,
+    const std::optional<String> & default_session_user)
 {
+    std::shared_ptr<HTTPRequestHandlerFactoryMain> factory;
     if (config.has(http_handlers_key))
     {
-        return createHandlersFactoryFromConfig(server, config, name, http_handlers_key, async_metrics, default_session_user);
+        factory = createHandlersFactoryFromConfig(server, config, name, http_handlers_key, async_metrics, default_session_user);
+    }
+    else
+    {
+        factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
+        addDefaultHandlersFactory(*factory, server, config, async_metrics, default_session_user);
     }
 
-    auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
-    addDefaultHandlersFactory(*factory, server, config, async_metrics, default_session_user);
+    /// SQL-defined handlers (CREATE HANDLER) are matched after all configuration-defined handlers.
+    factory->addHandler(std::make_shared<SQLDefinedHTTPHandlerFactory>(server, protocol_name, default_session_user));
     return factory;
 }
 
@@ -342,10 +414,11 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(
     AsynchronousMetrics & async_metrics,
     const std::string & name,
     const std::string & http_handlers_key,
+    const std::string & protocol_name,
     const std::optional<String> & default_session_user)
 {
     if (name == "HTTPHandler-factory" || name == "HTTPSHandler-factory")
-        return createHTTPHandlerFactory(server, config, name, async_metrics, http_handlers_key.empty() ? "http_handlers" : http_handlers_key, default_session_user);
+        return createHTTPHandlerFactory(server, config, name, async_metrics, http_handlers_key.empty() ? "http_handlers" : http_handlers_key, protocol_name, default_session_user);
     if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
         return createInterserverHTTPHandlerFactory(server, name, config);
     if (name == "PrometheusHandler-factory")
