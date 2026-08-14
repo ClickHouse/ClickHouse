@@ -9,4 +9,6 @@ OUTPUT=${1:-$SOURCE_DIR/SilkThreadLocalStorageSanitizerPass.so}
 # shellcheck disable=SC2046
 "$CXX" -O2 -fPIC -shared $("$LLVM_CONFIG" --cxxflags) "$SOURCE_DIR/SilkThreadLocalStorageSanitizerPass.cpp" -o "$OUTPUT"
 
+"$CXX" -fpass-plugin="$OUTPUT" -fsyntax-only -x c++ /dev/null
+
 echo "Built $OUTPUT"

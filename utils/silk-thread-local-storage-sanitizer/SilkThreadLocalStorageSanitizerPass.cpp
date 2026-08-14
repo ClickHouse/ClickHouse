@@ -9,7 +9,11 @@
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Passes/PassBuilder.h>
+#if __has_include(<llvm/Plugins/PassPlugin.h>)
+#include <llvm/Plugins/PassPlugin.h>
+#else
 #include <llvm/Passes/PassPlugin.h>
+#endif
 
 namespace
 {
