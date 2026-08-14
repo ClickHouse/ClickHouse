@@ -667,8 +667,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     {
         /// Ordinary views never evaluate column defaults over an insert block, so a default over a
         /// virtual column is inert there and must not be rejected.
+        /// The rejection of a default over a virtual column applies only to a definition created now:
+        /// a table created by an affected version may already carry one, and re-stating its definition
+        /// through a full-definition `ATTACH TABLE` must keep loading it (see
+        /// `04630_default_over_virtual_column`), so it is not part of the `is_fresh_definition` checks.
         NameSet insert_time_default_columns;
-        if (check_defaults_over_virtual_columns)
+        if (check_defaults_over_virtual_columns && mode <= LoadingStrictnessLevel::CREATE)
             insert_time_default_columns = default_expr_info.insert_time_default_columns;
         defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(
             default_expr_info.expr_list, columns_for_default_validation, context_, insert_time_default_columns);

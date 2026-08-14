@@ -25,6 +25,18 @@ ATTACH TABLE t_attach_cycle
     b UInt8 DEFAULT a + 1
 ) ENGINE = MergeTree ORDER BY tuple(); -- { serverError CYCLIC_ALIASES }
 
+-- A default over a virtual column is rejected only for a definition created now: a table created by
+-- an affected version already carries one, and re-stating its definition through a full-definition
+-- `ATTACH TABLE` must keep loading it.
+ATTACH TABLE t_attach_virtual
+(
+    c0 String MATERIALIZED _table,
+    c1 UInt16
+) ENGINE = MergeTree ORDER BY tuple();
+
+SELECT 'legacy attach over a virtual column ok';
+DROP TABLE t_attach_virtual;
+
 -- A valid full definition still attaches and works like CREATE.
 ATTACH TABLE t_attach_ok
 (
