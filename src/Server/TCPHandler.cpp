@@ -803,6 +803,11 @@ void TCPHandler::runImpl()
 
                     std::lock_guard lock(*callback_mutex);
 
+                    /// The initiator may have given up on this replica while it was planning, and it
+                    /// stops waiting for this announcement when it does. Look for the `Cancel` packet
+                    /// now rather than at the next interactive-delay tick, so the announcement is not
+                    /// written into a socket nobody reads.
+                    receivePacketsExpectCancel(*query_state, /* force= */ true);
                     checkIfQueryCanceled(*query_state);
 
                     try
@@ -3049,9 +3054,9 @@ void TCPHandler::processCancel(QueryState & state)
     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
 }
 
-void TCPHandler::receivePacketsExpectCancel(QueryState & state)
+void TCPHandler::receivePacketsExpectCancel(QueryState & state, bool force)
 {
-    if (after_check_cancelled.elapsed() / 1000 < interactive_delay)
+    if (!force && after_check_cancelled.elapsed() / 1000 < interactive_delay)
         return;
 
     after_check_cancelled.restart();
