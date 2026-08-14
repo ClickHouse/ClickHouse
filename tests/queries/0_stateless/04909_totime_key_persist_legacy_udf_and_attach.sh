@@ -32,17 +32,19 @@ ${CLICKHOUSE_CLIENT} -q "
 SELECT 'attach', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_attach_key';
 "
 
-# A definition stored without the legacy setting must survive a replay under it unchanged.
-${CLICKHOUSE_CLIENT} --allow_experimental_time_time64_type 1 --use_legacy_to_time 0 --multiquery -q "
+# The explicit legacy spelling is what makes the physical key type independent of the reloading
+# session: it must still read as DateTime after a replay under the default setting.
+${CLICKHOUSE_CLIENT} --allow_experimental_time_time64_type 1 --use_legacy_to_time 1 --describe_compact_output 1 --multiquery -q "
 CREATE TABLE t_replayed_key (c0 DateTime) ENGINE = MergeTree() ORDER BY toTime(c0);
 INSERT INTO t_replayed_key SELECT toDateTime('2024-01-01 12:34:56');
+SELECT 'stored_key_type';
+DESCRIBE mergeTreeIndex(currentDatabase(), t_replayed_key);
 DETACH TABLE t_replayed_key;
 "
 
-${CLICKHOUSE_CLIENT} --allow_experimental_time_time64_type 1 --use_legacy_to_time 1 --describe_compact_output 1 --multiquery -q "
+${CLICKHOUSE_CLIENT} --allow_experimental_time_time64_type 1 --use_legacy_to_time 0 --describe_compact_output 1 --multiquery -q "
 ATTACH TABLE t_replayed_key;
 SELECT 'replayed', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_replayed_key';
--- The physical key type on disk is what a mismatch would corrupt, so assert it rather than a count.
 SELECT 'replayed_key_type';
 DESCRIBE mergeTreeIndex(currentDatabase(), t_replayed_key);
 "
