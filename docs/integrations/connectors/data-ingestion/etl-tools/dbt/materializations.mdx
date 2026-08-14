@@ -199,10 +199,6 @@ Use `query` to define a full projection query:
 
 #### Index projections {#index-projections}
 
-<Note>
-Requires ClickHouse 25.6 or later.
-</Note>
-
 Use `index` as syntax sugar for lightweight [index projections](https://clickhouse.com/blog/clickhouse-release-25-06#index-projections) that use the `_part_offset` virtual column. Pass a single column name or a list of columns to order by:
 
 ```sql
