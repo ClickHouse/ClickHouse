@@ -62,9 +62,14 @@ cleanup()
 trap cleanup EXIT
 cleanup
 
+# Pin to the local `default` policy: the raw fabricated `txn_version.txt` below only parses on a
+# local disk, and `cleanup` derives the fabricated-part path from the `default` disk. The
+# `no-object-storage` tag does not protect harnesses that set an object-storage default policy
+# without passing `--s3-storage` to clickhouse-test (e.g. the Stress check).
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE ${TABLE} (x UInt32)
     ENGINE = MergeTree ORDER BY x
+    SETTINGS storage_policy = 'default'
 "
 
 # One insert creates a committed part (`all_1_1_0`) with valid data files that we

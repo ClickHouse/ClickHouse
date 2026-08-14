@@ -3,6 +3,9 @@
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
+#include <Common/CurrentThread.h>
+#include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -20,6 +23,11 @@
 
 #include <limits>
 
+namespace ProfileEvents
+{
+    extern const Event TextIndexTemporarySegmentsWritten;
+}
+
 namespace DB
 {
 
@@ -33,10 +41,18 @@ namespace ErrorCodes
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
+    extern const MergeTreeSettingsNonZeroUInt64 text_index_max_memory_usage_before_flush;
+    extern const MergeTreeSettingsNonZeroUInt64 text_index_max_processed_tokens_before_flush;
 }
 
 namespace
 {
+
+Int64 getCurrentThreadMemoryUsage()
+{
+    const auto & thread = CurrentThread::get();
+    return thread.memory_tracker.get() + thread.untracked_memory.load();
+}
 
 CompressionCodecPtr makeMarksCompressionCodec(const String & marks_compression_codec)
 {
@@ -104,7 +120,8 @@ BuildTextIndexTransform::BuildTextIndexTransform(
     MutableDataPartStoragePtr temporary_storage_,
     MergeTreeWriterSettings writer_settings_,
     CompressionCodecPtr default_codec_,
-    String marks_file_extension_)
+    String marks_file_extension_,
+    const MergeTreeSettings & storage_settings)
     : ISimpleTransform(header, header, false)
     , index_file_prefix(std::move(index_file_prefix_))
     , indexes(std::move(indexes_))
@@ -113,6 +130,9 @@ BuildTextIndexTransform::BuildTextIndexTransform(
     , default_codec(std::move(default_codec_))
     , marks_file_extension(std::move(marks_file_extension_))
     , segment_numbers(indexes.size(), 0)
+    , estimated_allocated_bytes(indexes.size(), 0)
+    , max_processed_tokens(storage_settings[MergeTreeSetting::text_index_max_processed_tokens_before_flush])
+    , max_allocated_bytes(storage_settings[MergeTreeSetting::text_index_max_memory_usage_before_flush])
 {
 
     for (size_t i = 0; i < indexes.size(); ++i)
@@ -142,19 +162,21 @@ void BuildTextIndexTransform::aggregate(const Block & block)
     if (block.rows() == 0)
         return;
 
-    /// Threshold for the number of processed tokens to flush the segment.
-    /// Calculating used RAM or number of processed unique tokens adds significant overhead,
-    /// so we use a simple trade-off threshold, which is reasonable in normal scenarios.
-    static constexpr size_t max_processed_tokens = 100'000'000;
     num_processed_rows += block.rows();
 
     for (size_t i = 0; i < indexes.size(); ++i)
     {
         size_t pos = 0;
         auto & aggregator_text = typeid_cast<MergeTreeIndexAggregatorText &>(*aggregators[i]);
+        const auto memory_usage_before_update = getCurrentThreadMemoryUsage();
         aggregator_text.update(block, &pos, block.rows());
+        const auto memory_usage_after_update = getCurrentThreadMemoryUsage();
 
-        if (aggregator_text.getNumProcessedTokens() > max_processed_tokens)
+        if (memory_usage_after_update > memory_usage_before_update)
+            estimated_allocated_bytes[i] += static_cast<size_t>(memory_usage_after_update - memory_usage_before_update);
+
+        if (aggregator_text.getNumProcessedTokens() > max_processed_tokens
+            || estimated_allocated_bytes[i] > max_allocated_bytes)
             writeTemporarySegment(i);
     }
 }
@@ -193,6 +215,7 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
 
     auto & aggregator_text = typeid_cast<MergeTreeIndexAggregatorText &>(*aggregators[i]);
     auto granule = aggregator_text.getGranuleAndReset();
+    estimated_allocated_bytes[i] = 0;
     aggregator_text.setCurrentRow(num_processed_rows);
 
     auto [streams, streams_holders] = makeOutputStreams(
@@ -208,6 +231,8 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
 
     for (auto & stream : streams_holders)
         stream->finalize();
+
+    ProfileEvents::increment(ProfileEvents::TextIndexTemporarySegmentsWritten);
 }
 
 static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex & index)

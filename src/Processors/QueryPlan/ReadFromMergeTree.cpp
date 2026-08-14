@@ -1997,6 +1997,55 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     = settings[Setting::split_parts_ranges_into_intersecting_and_non_intersecting_final] &&
                           !reader_settings.read_in_order;
 
+                bool split_intersecting_parts_ranges_into_layers = settings[Setting::split_intersecting_parts_ranges_into_layers_final];
+
+                /// In case of read-in-order, all layer streams are consumed by a single downstream merging transform,
+                /// which cannot start until every layer produces its first block. With a small query limit the result
+                /// is expected to come from the first layer only, so splitting into layers would only add work-ahead
+                /// that is thrown away once the limit is reached, and would delay the first block. Keep a single
+                /// lazy merging stream instead.
+                /// Use the hard read limit, which is set only when nothing filters the stream above the reading.
+                /// With a filter the query consumes limit / selectivity rows, and the selectivity is unknown here:
+                /// for a rare-value filter the single merging stream would process most of the table sequentially,
+                /// many times slower than the parallel layered merge.
+                const UInt64 hard_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
+                if (split_intersecting_parts_ranges_into_layers && reader_settings.read_in_order && hard_limit)
+                {
+                    /// The limit counts rows after the FINAL collapse, while source rows may contain multiple
+                    /// versions of the same key. A merge collapses them, so a part of non-zero level contains a
+                    /// key at most once (at most twice for Collapsing engines), while an unmerged part may
+                    /// contain arbitrarily many versions of a key (e.g. inserted with optimize_on_insert = 0)
+                    /// and gives no lower bound on the collapsed size. Count only rows of merged parts and
+                    /// divide by the number of parts to estimate a layer's output; keep layers unless the
+                    /// limit fits into one layer even under this worst-case duplication.
+                    /// The estimate deliberately counts rows that FINAL may still drop (is_deleted tombstones,
+                    /// Collapsing rows cancelling across parts, rows masked by lightweight deletes): they are
+                    /// assumed to be a small fraction of the data.
+                    size_t merged_parts_rows = 0;
+                    for (const auto & part : new_parts)
+                        if (part.data_part->info.level > 0)
+                            merged_parts_rows += part.getRowsCount();
+
+                    const size_t max_collapsed_rows_per_key_in_merged_part
+                        = (data.merging_params.mode == MergeTreeData::MergingParams::Collapsing
+                           || data.merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
+                        ? 2
+                        : 1;
+
+                    const size_t rows_per_layer = std::max<size_t>(
+                        merged_parts_rows / max_layers / new_parts.size() / max_collapsed_rows_per_key_in_merged_part, 1);
+                    if (hard_limit < rows_per_layer)
+                    {
+                        LOG_TRACE(
+                            log,
+                            "Skipping split of intersecting ranges into layers for FINAL: reading in order with limit {} "
+                            "is expected to consume less than one layer of at least {} rows",
+                            hard_limit,
+                            rows_per_layer);
+                        split_intersecting_parts_ranges_into_layers = false;
+                    }
+                }
+
                 SplitPartsWithRangesByPrimaryKeyResult split_ranges_result = splitPartsWithRangesByPrimaryKey(
                     storage_snapshot->metadata->getPrimaryKey(),
                     storage_snapshot->metadata->getSortingKey(),
@@ -2006,7 +2055,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     context,
                     std::move(in_order_reading_step_getter),
                     split_parts_ranges_into_intersecting_and_non_intersecting_final,
-                    settings[Setting::split_intersecting_parts_ranges_into_layers_final]);
+                    split_intersecting_parts_ranges_into_layers);
 
                 for (auto && non_intersecting_parts_range : split_ranges_result.non_intersecting_parts_ranges)
                     non_intersecting_parts_by_primary_key.push_back(std::move(non_intersecting_parts_range));

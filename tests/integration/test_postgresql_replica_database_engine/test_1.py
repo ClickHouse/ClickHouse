@@ -546,6 +546,46 @@ def test_merge_table_over_materialized_postgresql(started_cluster):
         instance.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
 
+def test_merge_table_over_materialized_postgresql_database(started_cluster):
+    """
+    Reading a MaterializedPostgreSQL database through Merge forces FINAL on the child read:
+    getTablesIterator must return StorageMaterializedPostgreSQL wrappers instead of the
+    nested ReplacingMergeTree tables, so that Merge over the database reads with the
+    forced FINAL and the `_sign = 1` filter (otherwise stale and deleted row versions
+    would be exposed).
+    """
+    table_name = "postgresql_replica_final_db"
+    pg_manager.create_postgres_table(table_name)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(3)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    pg_manager.execute(f"UPDATE {table_name} SET value = 42 WHERE key = 1")
+    pg_manager.execute(f"DELETE FROM {table_name} WHERE key = 2")
+    check_tables_are_synchronized(instance, table_name)
+
+    expected = "0\t0\n1\t42\n"
+    direct_query = (
+        f"SELECT key, value FROM test_database.{table_name} ORDER BY key, value"
+    )
+    merge_query = (
+        f"SELECT key, value FROM merge('test_database', '^{table_name}$')"
+        " ORDER BY key, value"
+    )
+
+    for query in [direct_query, merge_query]:
+        explain = instance.query(f"EXPLAIN actions=1 {query}")
+        assert "FINAL: 1" in explain, explain
+
+    assert instance.query(direct_query) == expected
+    assert instance.query(merge_query) == expected
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

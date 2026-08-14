@@ -49,7 +49,11 @@ trap recover_leaked_table EXIT
 recover_leaked_table
 
 # --- Simulate a previous failed attempt that leaked a permanently detached table. ---
-$CLICKHOUSE_CLIENT -q "CREATE TABLE ${TABLE} (x UInt32) ENGINE = MergeTree ORDER BY x"
+# Pin to the local `default` policy: `recover_leaked_table` derives the fabricated-part path from
+# the `default` disk, so the table's data must live there for the `rm -rf` to hit it. The
+# `no-object-storage` tag does not protect harnesses that set an object-storage default policy
+# without passing `--s3-storage` to clickhouse-test (e.g. the Stress check).
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ${TABLE} (x UInt32) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'default'"
 $CLICKHOUSE_CLIENT -q "INSERT INTO ${TABLE} VALUES (42)"
 $CLICKHOUSE_CLIENT -q "DETACH TABLE ${TABLE} PERMANENTLY"
 
@@ -105,6 +109,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.detached_tables
     WHERE database = currentDatabase() AND table = '${TABLE}'"
 
-# ...and the name must be free for a fresh `CREATE TABLE`.
-$CLICKHOUSE_CLIENT -q "CREATE TABLE ${TABLE} (x UInt32) ENGINE = MergeTree ORDER BY x"
+# ...and the name must be free for a fresh `CREATE TABLE` (pinned to `default` for consistency
+# with the fixture table above; both must resolve to the same local disk).
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ${TABLE} (x UInt32) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'default'"
 echo OK

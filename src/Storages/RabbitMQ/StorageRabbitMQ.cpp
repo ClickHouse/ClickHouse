@@ -39,6 +39,8 @@
 
 #include <base/range.h>
 
+#include <utility>
+
 #include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
@@ -1181,7 +1183,13 @@ void StorageRabbitMQ::threadFunc()
             const bool rabbit_connected = connection->isConnected() || connection->reconnect();
             const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
             const bool deps_ready = num_views == 0 || hasDependencies(table_id);
-            const bool run_cycle = rabbit_connected && deps_ready && stream_control.claimCycle(last_seen_refresh_epoch);
+            /// True only when this cycle is the one out-of-order cycle a `SYSTEM REFRESH` grants to a
+            /// stopped table. Sampled inside `claimCycle` from the same blocked-state read the claim itself
+            /// is decided from, so neither a `STOP` racing in right after an ordinary cycle was admitted nor
+            /// a `START` racing in right after the permit was consumed can misreport it.
+            bool claimed_blocked_refresh = false;
+            const bool run_cycle
+                = rabbit_connected && deps_ready && stream_control.claimCycle(last_seen_refresh_epoch, &claimed_blocked_refresh);
 
             if (num_views && run_cycle)
             {
@@ -1195,7 +1203,12 @@ void StorageRabbitMQ::threadFunc()
 
                     LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
-                    bool continue_reading = streamToViews(cycle_epoch);
+                    /// The claimed blocked-REFRESH permit is spent on this cycle: have the source drive the
+                    /// AMQP loop itself so the permit is not wasted (see RabbitMQSource). Every following
+                    /// iteration is an ordinary cycle (the loop below breaks while blocked) and keeps the
+                    /// fast empty return, letting the looping task deliver.
+                    const bool drive_loop_on_worker = std::exchange(claimed_blocked_refresh, false);
+                    bool continue_reading = streamToViews(cycle_epoch, drive_loop_on_worker);
                     if (!continue_reading)
                         break;
 
@@ -1228,9 +1241,12 @@ void StorageRabbitMQ::threadFunc()
 
     try
     {
-        /// If there is no running select, stop the loop which was
-        /// activated by previous select.
-        if (connection->getHandler().loopRunning())
+        /// If there is no running select, stop the loop which was activated by previous select.
+        /// Also stop it when armed (loop_state == RUN) but not yet spinning while blocked: otherwise
+        /// a queued looping task can take the sole message-broker worker and spin forever, starving
+        /// later REFRESH/START. stopLoopIfNoReaders() keeps the direct-SELECT readers_count guard.
+        auto & handler = connection->getHandler();
+        if (handler.loopRunning() || (handler.getLoopState() == Loop::RUN && stream_control.isBlocked()))
             stopLoopIfNoReaders();
     }
     catch (...)
@@ -1253,7 +1269,7 @@ void StorageRabbitMQ::threadFunc()
     }
 }
 
-bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch)
+bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worker)
 {
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -1285,7 +1301,8 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch)
         auto source = std::make_shared<RabbitMQSource>(
             *this, storage_snapshot, new_context, Names{}, block_size,
             max_execution_time_ms, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode],
-            reject_unhandled_messages, /* ack_in_suffix */false, log, cycle_epoch);
+            reject_unhandled_messages, /* ack_in_suffix */false, log, cycle_epoch,
+            /* drive_loop_on_worker */drive_loop_on_worker);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
@@ -1318,6 +1335,9 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch)
     std::atomic_size_t rows = 0;
     block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
 
+    /// Pump deliveries via the background looping task. On the self-driving path the source also
+    /// drives the loop itself as a fallback for when a message-broker worker is starved; startup_mutex
+    /// serializes the two, so uv_run is never driven concurrently and the loop always makes progress.
     if (!connection->getHandler().loopRunning())
         startLoop();
 
@@ -1436,8 +1456,14 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch)
         return false;
     }
 
-    LOG_TEST(log, "Will start background loop to let messages be pushed to channel");
-    startLoop();
+    /// A self-driving blocked REFRESH cycle drove the loop itself and must not leave the background
+    /// looping task running: the table is stopped (no continuous streaming follows), and with a single
+    /// message-broker worker a lingering loop would monopolize it and block later REFRESH/START cycles.
+    if (!drive_loop_on_worker)
+    {
+        LOG_TEST(log, "Will start background loop to let messages be pushed to channel");
+        startLoop();
+    }
 
 
     /// Reschedule.

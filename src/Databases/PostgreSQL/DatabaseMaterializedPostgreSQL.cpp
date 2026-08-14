@@ -531,8 +531,33 @@ void DatabaseMaterializedPostgreSQL::drop(ContextPtr local_context)
 DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
     ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
 {
-    /// Modify context into nested_context and pass query to Atomic database.
-    return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name, skip_not_loaded);
+    /// Internal queries (replication machinery, DDL, backups) work on the nested ReplacingMergeTree
+    /// tables directly. If materialized_tables is empty, all access goes to the nested tables as
+    /// well - it is the case after replication_handler was shutdown (see tryGetTable).
+    if (local_context->isInternalQuery() || materialized_tables.empty())
+        return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name, skip_not_loaded);
+
+    /// For user-facing enumeration return the StorageMaterializedPostgreSQL wrappers, consistently
+    /// with tryGetTable. Otherwise consumers reading data through the iterator (e.g. StorageMerge)
+    /// would read the nested tables directly - without the `_sign = 1` filter and the forced
+    /// `FINAL` - exposing stale and deleted row versions.
+    Tables tables;
+    {
+        std::lock_guard lock(tables_mutex);
+        for (const auto & [table_name, storage] : materialized_tables)
+        {
+            if (filter_by_table_name && !filter_by_table_name(table_name))
+                continue;
+
+            /// A table is considered to exist once its nested table was created (see tryGetTable).
+            if (!storage->as<StorageMaterializedPostgreSQL>()->hasNested())
+                continue;
+
+            tables.emplace(table_name, storage);
+        }
+    }
+
+    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
 }
 
 
@@ -584,7 +609,11 @@ DatabaseMaterializedPostgreSQL::getTablesForBackup(const FilterByNameFunction & 
         }
     }
 
-    return DatabaseAtomic::getTablesForBackup(filter, local_context);
+    /// Enumerate through the nested context: the base implementation lists tables via
+    /// `getTablesIterator`, which for user-facing (non-internal) contexts returns the
+    /// `StorageMaterializedPostgreSQL` wrappers, while backups must keep backing up the nested
+    /// ReplacingMergeTree tables directly.
+    return DatabaseAtomic::getTablesForBackup(filter, StorageMaterializedPostgreSQL::makeNestedTableContext(local_context));
 }
 
 void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory);
