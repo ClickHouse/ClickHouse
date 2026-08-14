@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Common/Exception.h>
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTToJSON.h>
@@ -312,6 +313,76 @@ TEST(TreeHashCompleteness, FormatRoundTripHashesEqual)
 
     /// The specifier must not be silently dropped from a formatted ALTER.
     EXPECT_TRUE(parse("ALTER TABLE t ADD COLUMN x UInt64 PRIMARY KEY")->formatWithSecretsOneLine().contains("PRIMARY KEY"));
+}
+
+TEST(TreeHashCompleteness, MemberOnlyClausesAreSignificant)
+{
+    /// `ASTCheckTableQuery::partition` / `part_name`, `ASTWatchQuery::limit_length` /
+    /// `is_watch_events` and `ASTOptimizeQuery::deduplicate_by_columns` are kept outside `children`,
+    /// so `CloneHashesEqual` above would pass for them even if a clone dropped them.
+    EXPECT_NE(hashOf("CHECK TABLE t"), hashOf("CHECK TABLE t PARTITION 1"));
+    EXPECT_NE(hashOf("CHECK TABLE t PARTITION 1"), hashOf("CHECK TABLE t PARTITION 2"));
+    EXPECT_NE(hashOf("CHECK TABLE t"), hashOf("CHECK TABLE t PART 'all_1_1_0'"));
+    EXPECT_NE(hashOf("CHECK TABLE t PART 'all_1_1_0'"), hashOf("CHECK TABLE t PART 'all_2_2_0'"));
+
+    EXPECT_NE(hashOf("WATCH t"), hashOf("WATCH t LIMIT 5"));
+    EXPECT_NE(hashOf("WATCH t LIMIT 5"), hashOf("WATCH t LIMIT 6"));
+    EXPECT_NE(hashOf("WATCH t"), hashOf("WATCH t EVENTS"));
+
+    EXPECT_NE(hashOf("OPTIMIZE TABLE t DEDUPLICATE"), hashOf("OPTIMIZE TABLE t DEDUPLICATE BY a"));
+    EXPECT_NE(hashOf("OPTIMIZE TABLE t DEDUPLICATE BY a"), hashOf("OPTIMIZE TABLE t DEDUPLICATE BY b"));
+
+    /// Every one of them is printed, so it survives a format+parse round trip and a clone.
+    for (const std::string query : {
+             "CHECK TABLE t PARTITION 1",
+             "CHECK TABLE t PART 'all_1_1_0'",
+             "WATCH t EVENTS LIMIT 5",
+             "OPTIMIZE TABLE t DEDUPLICATE BY a, b",
+         })
+    {
+        ASTPtr ast = parse(query);
+        const auto hash = ast->getTreeHash(/*ignore_aliases=*/ false);
+        EXPECT_EQ(ast->clone()->getTreeHash(/*ignore_aliases=*/ false), hash) << query;
+        EXPECT_EQ(hashOf(ast->formatWithSecretsOneLine()), hash) << query;
+    }
+}
+
+TEST(TreeHashCompleteness, ViewsRejectAPrimaryKeyTheyCannotFormat)
+{
+    /// A plain view has no storage definition, and a materialized view with `TO [db].[table]` must
+    /// not have one, so a PRIMARY KEY in the column list used to be normalized into a synthesized
+    /// storage definition that formatting printed as a table-level PRIMARY KEY - which no longer
+    /// parsed back (and would have made the view unloadable from its metadata). Found by the AST
+    /// fuzzer.
+    for (const std::string query : {
+             "CREATE VIEW v (a UInt8 PRIMARY KEY) AS SELECT 1 AS a",
+             "CREATE VIEW v (a UInt8, PRIMARY KEY a) AS SELECT 1 AS a",
+             "CREATE MATERIALIZED VIEW v TO t (a UInt8 PRIMARY KEY) AS SELECT 1 AS a",
+             "CREATE MATERIALIZED VIEW v TO t (a UInt8, PRIMARY KEY a) AS SELECT 1 AS a",
+         })
+        EXPECT_THROW(parse(query), Exception) << query;
+
+    /// A materialized view with an inner table keeps it: there the storage definition is its own.
+    for (const std::string query : {
+             "CREATE MATERIALIZED VIEW v (a UInt8 PRIMARY KEY) ENGINE = MergeTree AS SELECT 1 AS a",
+             "CREATE MATERIALIZED VIEW v (a UInt8 PRIMARY KEY) AS SELECT 1 AS a",
+         })
+    {
+        ASTPtr ast = parse(query);
+        EXPECT_EQ(hashOf(ast->formatWithSecretsOneLine()), ast->getTreeHash(/*ignore_aliases=*/ false)) << query;
+    }
+}
+
+TEST(TreeHashCompleteness, ExplicitNilUuidClauseIsNormalizedAway)
+{
+    /// `has_uuid_clause` is true even for the all-zero UUID, but formatting prints the clause only
+    /// for a non-`Nil` value, so the flag must stay outside the hash: hashing it would make the
+    /// formatted query hash differently than the original and raise `Inconsistent AST formatting`
+    /// in a debug build. See the comment on `ASTCreateQuery::has_uuid_clause`.
+    const std::string nil_clause = "ATTACH TABLE t UUID '00000000-0000-0000-0000-000000000000'";
+    ASTPtr ast = parse(nil_clause);
+    EXPECT_EQ(ast->formatWithSecretsOneLine(), "ATTACH TABLE t");
+    EXPECT_EQ(hashOf(ast->formatWithSecretsOneLine()), ast->getTreeHash(/*ignore_aliases=*/ false));
 }
 
 TEST(TreeHashCompleteness, ExplicitUuidIsSignificant)

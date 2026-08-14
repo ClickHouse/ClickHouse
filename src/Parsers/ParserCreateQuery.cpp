@@ -1842,6 +1842,21 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (sql_security)
         query->set(query->sql_security, sql_security);
 
+    /// A PRIMARY KEY declared in the column list is normalized into the storage definition below.
+    /// A plain view has no storage, and a materialized view with `TO [db].[table]` must not declare
+    /// one - the same rule that rejects an explicit `ENGINE` above. Without this check the parser
+    /// synthesizes a storage definition that formatting prints as a table-level `PRIMARY KEY`, and
+    /// the formatted query no longer parses back - which also means such a view could not be loaded
+    /// from its metadata after a restart.
+    if (query->columns_list && (query->columns_list->primary_key || query->columns_list->primary_key_from_columns))
+    {
+        if (is_ordinary_view)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "PRIMARY KEY is not allowed in the column list of a view");
+        if (to_table)
+            throw Exception(
+                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'PRIMARY KEY'");
+    }
+
     if (query->columns_list && query->columns_list->primary_key)
     {
         /// If engine is not set will use default one

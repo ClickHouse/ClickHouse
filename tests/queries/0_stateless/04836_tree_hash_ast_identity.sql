@@ -54,3 +54,18 @@ DROP TABLE IF EXISTS t_04836;
 CREATE TABLE t_04836 (a UInt8 PRIMARY KEY, b String PRIMARY KEY) ENGINE = MergeTree;
 SELECT primary_key FROM system.tables WHERE database = currentDatabase() AND name = 't_04836';
 DROP TABLE t_04836;
+
+-- A view has no storage definition to hold a PRIMARY KEY declared in its column list, and a
+-- materialized view with `TO [db].[table]` must not have one; the parser used to synthesize one
+-- anyway, and the formatted query no longer parsed back - so the view could not be loaded from its
+-- own metadata after a restart.
+CREATE VIEW v_04836 (a UInt8 PRIMARY KEY) AS SELECT 1 AS a; -- { serverError SYNTAX_ERROR }
+CREATE VIEW v_04836 (a UInt8, PRIMARY KEY a) AS SELECT 1 AS a; -- { serverError SYNTAX_ERROR }
+CREATE MATERIALIZED VIEW v_04836 TO t_04836 (a UInt8 PRIMARY KEY) AS SELECT 1 AS a; -- { serverError SYNTAX_ERROR }
+CREATE MATERIALIZED VIEW v_04836 TO t_04836 (a UInt8, PRIMARY KEY a) AS SELECT 1 AS a; -- { serverError SYNTAX_ERROR }
+
+-- A materialized view with an inner table keeps it: the storage definition is its own.
+DROP TABLE IF EXISTS mv_04836;
+CREATE MATERIALIZED VIEW mv_04836 (a UInt8 PRIMARY KEY) ENGINE = MergeTree AS SELECT 1 AS a;
+SELECT primary_key FROM system.tables WHERE database = currentDatabase() AND name = 'mv_04836';
+DROP TABLE mv_04836;
