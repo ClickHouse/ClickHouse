@@ -2870,11 +2870,9 @@ Rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equival
 Additionally, exact equality predicates of the form `nullIf(key, sentinel) = const` (where `sentinel != const` and types match exactly) are rewritten to `key = const` so primary key, partition, and skip indexes on `key` can prune granules directly. Range and disjunctive nullIf pruning is not supported.
 )", 0) \
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
-Require joined subqueries and table functions to have an alias, but only when a missing alias would introduce a real ambiguity: that is, when the unaliased subquery or table function exposes a column whose name also occurs in another table expression of the same join or matches an in-scope expression alias that shadows it (expression aliases shadow join-tree columns when `prefer_column_name_to_alias = 0`, the default), so that a bare identifier could not be qualified unambiguously. When there is no such name collision the missing alias is harmless and is allowed. Set to `0` to never require an alias.
+Require an alias for a joined subquery or table function only when an exposed column collides with another join column or a shadowing expression alias. Set to `0` to never require an alias.
 
-The relaxation is conservative: when the names a table expression or an enclosing `ARRAY JOIN` exposes cannot be determined before resolution (for example an `ARRAY JOIN` over a `COLUMNS(...)` matcher), the absence of a collision cannot be proven and the old strict behavior is kept, so an alias may still be required without an actual collision.
-
-The collision-based relaxation applies only to the analyzer (`enable_analyzer = 1`, the default). The deprecated pre-analyzer path (`enable_analyzer = 0`) keeps the old strict behavior and requires an alias for every joined subquery and table function.
+An alias is also required when exposed names cannot be determined before resolution.
 )", 0) \
     DECLARE(Bool, empty_result_for_aggregation_by_empty_set, false, R"(
 Return empty result when aggregating without keys on empty set.

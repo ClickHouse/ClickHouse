@@ -1097,8 +1097,14 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
     auto collides_with_enclosing_array_join_alias = [&](const String & column_name)
     {
         for (const auto & array_join_alias_names : enclosing_array_join_alias_names_stack)
-            if (array_join_alias_names.query_scope == &scope && array_join_alias_names.names.contains(column_name))
-                return true;
+        {
+            if (array_join_alias_names.query_scope != &scope)
+                continue;
+
+            for (const auto & name : array_join_alias_names.names)
+                if (column_name == name || (column_name.starts_with(name) && column_name.size() > name.size() && column_name[name.size()] == '.'))
+                    return true;
+        }
         return false;
     };
 
@@ -1113,9 +1119,15 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
     /// to qualify it, hence a self alias does not count as a collision.
     auto scope_alias_shadows_column = [&](const String & column_name)
     {
-        auto it = scope.aliases.alias_name_to_expression_node.find(column_name);
+        const auto dot_pos = column_name.find('.');
+        const auto alias_name = column_name.substr(0, dot_pos);
+        auto it = scope.aliases.alias_name_to_expression_node.find(alias_name);
         if (it == scope.aliases.alias_name_to_expression_node.end())
             return false;
+        /// Compound alias lookup resolves the first identifier part first. Thus an alias `n`
+        /// can shadow the subcolumn `n.x` as well.
+        if (dot_pos != String::npos)
+            return true;
         if (const auto * identifier_node = it->second->as<IdentifierNode>())
             return identifier_node->getIdentifier().getFullName() != column_name;
         return true;
@@ -5623,6 +5635,8 @@ static bool getColumnsFromTableExpression(
                     if (!column_node)
                         return false;
                     existing_columns.insert(column_node->getColumnName());
+                    for (const auto & subcolumn_name : column_node->getResultType()->getSubcolumnNames())
+                        existing_columns.insert(column_node->getColumnName() + "." + subcolumn_name);
                 }
 
                 nodes_to_process.push(array_join_node->getTableExpressionNode().get());
@@ -5720,14 +5734,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
     resolveQueryJoinTreeNode(join_node_typed.getLeftTableExpressionNode(), scope, expressions_visitor);
 
-    /// Reject a left operand that is already invalid regardless of its siblings before resolving the right one,
-    /// which can execute a table function: the historical fail-fast order is kept for such queries.
-    validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getLeftTableExpressionNode(), {}, scope);
-
     resolveQueryJoinTreeNode(join_node_typed.getRightTableExpressionNode(), scope, expressions_visitor);
 
-    /// The rest of the validation needs the sibling columns of the whole join to tell whether a missing alias
-    /// introduces a real ambiguity, so it runs only after both table expressions are resolved.
+    /// Both sides are resolved now, so validate each one against the complete join column set.
     QueryTreeNodes join_table_expressions{join_node_typed.getLeftTableExpressionNode(), join_node_typed.getRightTableExpressionNode()};
     validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getLeftTableExpressionNode(), join_table_expressions, scope);
     validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getRightTableExpressionNode(), join_table_expressions, scope);

@@ -316,17 +316,8 @@ private:
     /// CTEs that are currently in resolve process
     QueryTreeNodePtrWithHashSet ctes_in_resolve_process;
 
-    /// Aliases introduced by enclosing `ARRAY JOIN` clauses whose table expression is currently in resolve process.
-    /// These shadow join-tree columns just like `WITH` / projection aliases, so a joined subquery/table function that
-    /// exposes a colliding column name still needs an explicit alias even though the `ARRAY JOIN` aliases are only
-    /// registered in the scope after the inner join tree is validated (see `validateJoinTableExpressionWithoutAlias`).
-    /// When an `ARRAY JOIN` expression is neither aliased nor a plain identifier (e.g. a `COLUMNS(...)` matcher),
-    /// the names it will expose are unknown before resolution, and `all_names_known` is set to false so that the
-    /// validation falls back to the strict behavior instead of missing a collision.
-    /// The aliases shadow bare identifiers only inside the query that contains the `ARRAY JOIN`, so each entry
-    /// records that query's resolve scope (`query_scope`), and the validation consults only the entries whose
-    /// scope matches the join being validated. Without this, an outer `ARRAY JOIN ... AS x` would force an alias
-    /// on an unaliased subquery joined *inside a nested subquery*, where the outer alias is not visible at all.
+    /// `ARRAY JOIN` names are registered only after its inner join tree is resolved, so track them while resolving it.
+    /// They are visible only in the query that contains the `ARRAY JOIN`.
     struct EnclosingArrayJoinNames
     {
         NameSet names;

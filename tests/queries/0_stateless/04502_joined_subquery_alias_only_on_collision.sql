@@ -114,10 +114,21 @@ SELECT a FROM numbers(1), (SELECT 2 AS not_a) ARRAY JOIN [30] AS a;
 -- ... and the restriction can still be disabled entirely.
 SELECT a FROM numbers(1), (SELECT 2 AS a) ARRAY JOIN [30] AS a SETTINGS joined_subquery_requires_alias = 0;
 
+SELECT `a.x`
+FROM (SELECT [tuple(1)] AS arr) ARRAY JOIN arr AS a
+INNER JOIN (SELECT 2 AS `a.x`) ON true; -- { serverError ALIAS_REQUIRED }
+
+SELECT `a.x`
+FROM (SELECT [tuple(1)] AS arr) ARRAY JOIN [tuple(30)] AS a
+INNER JOIN (SELECT 2 AS `a.x`) ON true; -- { serverError ALIAS_REQUIRED }
+
 -- With `prefer_column_name_to_alias = 1` the shadowing goes the other way: the bare identifier binds to
 -- the join-tree column and the scope alias does not make it unreachable, so a scope-alias collision does
 -- not require the subquery alias in that mode.
 WITH 1 AS x SELECT x FROM numbers(1), (SELECT 2 AS x) SETTINGS prefer_column_name_to_alias = 1;
+
+WITH CAST(tuple(1), 'Tuple(x UInt8)') AS n
+SELECT `n.x` FROM numbers(1), (SELECT 2 AS `n.x`); -- { serverError ALIAS_REQUIRED }
 
 -- An `ARRAY JOIN` expression that is neither aliased nor a plain identifier (here a `COLUMNS(...)` matcher)
 -- exposes names that are only known after resolution, so the validation cannot prove the absence of a
@@ -224,10 +235,8 @@ SELECT arr_t.id, rhs.id, elem FROM arr_t ARRAY JOIN arr1 AS elem INNER JOIN (SEL
 -- Disabling the setting keeps the pre-existing permissive behavior for the wrapped case as well.
 SELECT x FROM (SELECT [1] AS arr, 2 AS x) ARRAY JOIN arr INNER JOIN (SELECT 0 AS x) AS rhs ON true SETTINGS joined_subquery_requires_alias = 0;
 
--- The verdict for a collision with an in-scope expression alias does not depend on the sibling table
--- expressions, so it is reached before they are resolved: the error is `ALIAS_REQUIRED` and not the
--- failure of the unresolvable table function on the right, which is never even looked at.
-WITH 1 AS x SELECT x FROM (SELECT 2 AS x) INNER JOIN nonexistent_table_function_04502() ON true; -- { serverError ALIAS_REQUIRED }
+-- Validation runs after both operands have resolved.
+WITH 1 AS x SELECT x FROM (SELECT 2 AS x) INNER JOIN nonexistent_table_function_04502() ON true; -- { serverError UNKNOWN_FUNCTION }
 
 -- Without such a collision the verdict does need the sibling columns, so the right operand is resolved
 -- first and its own error is reported.
