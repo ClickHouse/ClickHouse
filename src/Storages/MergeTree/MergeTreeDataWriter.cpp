@@ -974,7 +974,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         /// summary of the part and must not carry a fingerprint.
         if (!new_data_part->ttl_infos.table_ttl.has_epoch_timestamps)
         {
-            new_data_part->ttl_infos.table_ttl_expression = rows_ttl.result_column;
+            new_data_part->ttl_infos.table_ttl_expression = getRowsTTLExpressionFingerprint(rows_ttl);
             new_data_part->ttl_infos.table_ttl_timezone = getRowsTTLTimeZoneFingerprint(rows_ttl);
         }
     }

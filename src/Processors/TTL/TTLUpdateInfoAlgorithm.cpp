@@ -65,7 +65,7 @@ void TTLUpdateInfoAlgorithm::finalize(const MutableDataPartPtr & data_part) cons
         }
         else
         {
-            data_part->ttl_infos.table_ttl_expression = description.result_column;
+            data_part->ttl_infos.table_ttl_expression = getRowsTTLExpressionFingerprint(description);
             data_part->ttl_infos.table_ttl_timezone = getRowsTTLTimeZoneFingerprint(description);
         }
         data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);

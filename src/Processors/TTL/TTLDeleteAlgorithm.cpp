@@ -92,7 +92,7 @@ void TTLDeleteAlgorithm::finalize(const MutableDataPartPtr & data_part) const
             }
             else
             {
-                data_part->ttl_infos.table_ttl_expression = description.result_column;
+                data_part->ttl_infos.table_ttl_expression = getRowsTTLExpressionFingerprint(description);
                 data_part->ttl_infos.table_ttl_timezone = getRowsTTLTimeZoneFingerprint(description);
             }
         }

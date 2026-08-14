@@ -3801,13 +3801,13 @@ bool MutateTask::prepare()
             && source_ttl_infos.moves_ttl.empty() && source_ttl_infos.recompression_ttl.empty()
             && source_ttl_infos.group_by_ttl.empty();
 
-        /// The delta proof below interprets both the part's stored TTL expression and the new one
-        /// under the CURRENT column definitions, and shifts the part's stored TTL timestamps by the
-        /// proven constant. That is only sound when those timestamps were computed under the same
-        /// column semantics: a part can legitimately lag metadata-only alters (its `metadata_version`
-        /// is older than the table's), so with any outstanding on-the-fly conversion - a rename, an
-        /// on-the-fly mutation, or a patch part - the data the TTL reads is not what is physically
-        /// stored, and the fast path must not be attempted.
+        /// The delta proof below requires the part's stored TTL expression to shift the same column that
+        /// the new TTL reads under the CURRENT column definitions, and then shifts the part's stored TTL
+        /// timestamps by the proven constant. That is only sound when those timestamps were computed under
+        /// the same column semantics: a part can legitimately lag metadata-only alters (its
+        /// `metadata_version` is older than the table's), so with any outstanding on-the-fly conversion -
+        /// a rename, an on-the-fly mutation, or a patch part - the data the TTL reads is not what is
+        /// physically stored, and the fast path must not be attempted.
         const bool part_lags_conversions = !alter_conversions->getRenameMap().empty()
             || alter_conversions->hasMutations() || alter_conversions->hasPatches();
 
@@ -3827,11 +3827,9 @@ bool MutateTask::prepare()
         if (part_has_only_rows_ttl && !part_lags_conversions && table_has_only_rows_ttl)
         {
             auto rows_ttl = ctx->metadata_snapshot->getRowsTTL();
-            new_ttl_expression = rows_ttl.result_column;
+            new_ttl_expression = getRowsTTLExpressionFingerprint(rows_ttl);
             new_ttl_timezone = getRowsTTLTimeZoneFingerprint(rows_ttl);
-            delta = tryComputeConstantTTLDelta(
-                source_ttl_infos.table_ttl_expression, rows_ttl,
-                ctx->metadata_snapshot->getColumns(), ctx->metadata_snapshot->getPrimaryKey(), ctx->context);
+            delta = tryComputeConstantTTLDelta(source_ttl_infos.table_ttl_expression, rows_ttl);
 
             /// A successful proof references exactly one source column (checked inside the proof).
             /// The part must physically store that column with exactly its current type. Otherwise

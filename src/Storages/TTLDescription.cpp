@@ -1332,10 +1332,10 @@ std::optional<TTLShiftedColumn> tryAnalyzeTTLShift(const ASTPtr & node)
 }
 
 /// See the comment on the exported `tryComputeConstantTTLDelta` in the header: this is the same proof,
-/// with the old rows TTL already parsed and built into a `TTLDescription`.
-std::optional<time_t> tryComputeConstantTTLDelta(const TTLDescription & old_ttl, const TTLDescription & new_ttl)
+/// with the old rows TTL already parsed.
+std::optional<time_t> tryComputeConstantTTLDelta(const ASTPtr & old_expression_ast, const TTLDescription & new_ttl)
 {
-    if (!old_ttl.expression_ast || !new_ttl.expression_ast)
+    if (!new_ttl.expression_ast)
         return {};
 
     /// The optimization is only sound when `new_ttl(row) - old_ttl(row)` is the same constant for every
@@ -1343,26 +1343,24 @@ std::optional<time_t> tryComputeConstantTTLDelta(const TTLDescription & old_ttl,
     /// column shifted by constant fixed-length intervals. Everything else - other columns (which make
     /// the delta row-dependent, e.g. `if(id = 0, ...)`), calendar month/year intervals, non-literal
     /// intervals, arbitrary functions - is rejected here, falling back to a regular rewrite.
-    auto old_shift = tryAnalyzeTTLShift(old_ttl.expression_ast);
+    auto old_shift = tryAnalyzeTTLShift(old_expression_ast);
     auto new_shift = tryAnalyzeTTLShift(new_ttl.expression_ast);
     if (!old_shift || !new_shift || old_shift->column_name != new_shift->column_name)
         return {};
 
-    /// The shifted identifier must be the one and only source column of both expressions. This also
-    /// rejects an ALIAS column, whose analyzed source columns would carry the underlying names.
-    auto get_single_column_type = [&](const TTLDescription & ttl) -> DataTypePtr
-    {
-        if (ttl.expression_columns.size() != 1 || ttl.expression_columns.front().name != old_shift->column_name)
-            return nullptr;
-        return ttl.expression_columns.front().type;
-    };
-
-    DataTypePtr old_type = get_single_column_type(old_ttl);
-    DataTypePtr new_type = get_single_column_type(new_ttl);
-    if (!old_type || !new_type || !old_type->equals(*new_type))
+    /// The shifted identifier must be the one and only source column of the new expression, which is the
+    /// one built and validated against the current table structure. This also rejects an ALIAS column,
+    /// whose analyzed source columns would carry the underlying names instead. The old expression shifts
+    /// an identifier of the same name, so both read that same column - and if the name does not resolve
+    /// to a column of the table at all (the old expression may name one that has been dropped since the
+    /// part was written), it cannot equal the new expression's source column and is rejected right here,
+    /// without the old expression ever being resolved or evaluated.
+    if (new_ttl.expression_columns.size() != 1 || new_ttl.expression_columns.front().name != new_shift->column_name)
         return {};
 
-    WhichDataType which(old_type);
+    const auto & column_type = new_ttl.expression_columns.front().type;
+
+    WhichDataType which(column_type);
     if (which.isDate() || which.isDate32())
     {
         /// Hour/minute/second intervals turn a `Date` expression into a `DateTime` one, whose time zone
@@ -1383,8 +1381,8 @@ std::optional<time_t> tryComputeConstantTTLDelta(const TTLDescription & old_ttl,
         if (old_shift->has_day_or_week_interval || new_shift->has_day_or_week_interval)
         {
             const auto & time_zone = which.isDateTime()
-                ? assert_cast<const DataTypeDateTime &>(*old_type).getTimeZone()
-                : assert_cast<const DataTypeDateTime64 &>(*old_type).getTimeZone();
+                ? assert_cast<const DataTypeDateTime &>(*column_type).getTimeZone()
+                : assert_cast<const DataTypeDateTime64 &>(*column_type).getTimeZone();
             if (!time_zone.hasFixedOffset())
                 return {};
         }
@@ -1399,6 +1397,24 @@ std::optional<time_t> tryComputeConstantTTLDelta(const TTLDescription & old_ttl,
     return delta;
 }
 
+}
+
+String getRowsTTLExpressionFingerprint(const TTLDescription & rows_ttl)
+{
+    if (!rows_ttl.expression_ast)
+        return {};
+
+    /// Only an expression the fast path could ever accept is recorded. The fingerprint exists solely so a
+    /// later `MATERIALIZE TTL` can prove a constant shift against it, which means parsing it back, and
+    /// restricting it to that shape - an identifier plus constant fixed-length intervals - keeps the
+    /// recorded string trivially round-trippable. A fingerprint that does not parse then means a `ttl.txt`
+    /// saying something no server wrote, rather than an expression whose formatting is not reparseable.
+    if (!tryAnalyzeTTLShift(rows_ttl.expression_ast))
+        return {};
+
+    /// Formatted rather than `result_column` (the expression's `getColumnName`), which writes identifiers
+    /// raw: a column name that needs quoting (``TTL `create time` + INTERVAL 1 DAY``) would not round-trip.
+    return rows_ttl.expression_ast->formatWithSecretsOneLine();
 }
 
 String getRowsTTLTimeZoneFingerprint(const TTLDescription & rows_ttl)
@@ -1416,37 +1432,24 @@ String getRowsTTLTimeZoneFingerprint(const TTLDescription & rows_ttl)
     return DateLUT::serverTimezoneInstance().getTimeZone();
 }
 
-std::optional<time_t> tryComputeConstantTTLDelta(
-    const String & old_ttl_expression, const TTLDescription & new_ttl,
-    const ColumnsDescription & columns, const KeyDescription & primary_key, const ContextPtr & context)
+std::optional<time_t> tryComputeConstantTTLDelta(const String & old_ttl_expression, const TTLDescription & new_ttl)
 {
     if (old_ttl_expression.empty())
         return {};
 
-    try
-    {
-        ParserTTLExpressionList parser;
-        ASTPtr definition_ast = parseQuery(
-            parser, old_ttl_expression.data(), old_ttl_expression.data() + old_ttl_expression.size(),
-            "rows TTL expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    /// The stored fingerprint is a rows-TTL expression that a ClickHouse server wrote with
+    /// `getRowsTTLExpressionFingerprint`, so it parses by construction; a parse failure means the part's
+    /// `ttl.txt` says something we did not write, which is worth escalating rather than silently
+    /// downgrading to a rewrite. Only the *shape* of the parsed expression is then inspected - it is
+    /// never resolved against the table's columns nor evaluated - so an expression that is no longer
+    /// valid for the current table structure is not an error here, it is simply not a shift of the new
+    /// TTL and yields `std::nullopt`.
+    ParserExpression parser;
+    ASTPtr old_expression_ast = parseQuery(
+        parser, old_ttl_expression.data(), old_ttl_expression.data() + old_ttl_expression.size(),
+        "rows TTL expression fingerprint", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
-        /// The stored fingerprint is a single unconditional DELETE TTL expression that was already
-        /// validated when the part was written, so it is rebuilt exactly as when loading existing
-        /// metadata: no validation, lenient build.
-        TTLTableDescription old_ttl = TTLTableDescription::getTTLForTableFromAST(
-            definition_ast, columns, context, primary_key, TTLValidationMode::Attach);
-
-        if (!old_ttl.rows_ttl.expression_ast)
-            return {};
-
-        return tryComputeConstantTTLDelta(old_ttl.rows_ttl, new_ttl);
-    }
-    catch (...)
-    {
-        /// The stored expression may be unparseable or invalid for the current table structure;
-        /// it is Ok to swallow the exception here: the caller falls back to a full rewrite.
-        return {};
-    }
+    return tryComputeConstantTTLDelta(old_expression_ast, new_ttl);
 }
 
 TTLDescription TTLDescription::getTTLFromAST(

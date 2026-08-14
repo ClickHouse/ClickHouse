@@ -202,8 +202,10 @@ struct TTLTableDescription
 /// when `new_ttl(row) - old_ttl(row)` does not depend on the row.
 ///
 /// The old rows TTL is given as its serialized expression string, as stored in the part's TTL info
-/// fingerprint; it is parsed and built against `columns`/`primary_key`, and any parse/build failure
-/// yields `std::nullopt` (fall back).
+/// fingerprint (see `getRowsTTLExpressionFingerprint`). It is parsed - a fingerprint that does not parse
+/// means a corrupt `ttl.txt` and the exception propagates - but it is deliberately never resolved against
+/// the table's columns nor evaluated: only its shape is compared with `new_ttl`. An expression naming a
+/// column the table no longer has therefore yields `std::nullopt` (fall back) instead of an error.
 ///
 /// This proves that condition structurally: both expressions must be the same single date/time column
 /// shifted by constant fixed-length intervals (`col`, `col + INTERVAL N DAY`, `col - toIntervalHour(N)`,
@@ -217,10 +219,19 @@ struct TTLTableDescription
 /// (several referenced columns, calendar month/year intervals, non-literal intervals, arbitrary
 /// functions, DST-sensitive day/week intervals, or an unsupported result type). A `std::nullopt` result
 /// means the fast path must not be used and the caller must fall back to a regular `MATERIALIZE TTL`
-/// rewrite. The function never throws for an unoptimizable input; it returns `std::nullopt` instead.
-std::optional<time_t> tryComputeConstantTTLDelta(
-    const String & old_ttl_expression, const TTLDescription & new_ttl,
-    const ColumnsDescription & columns, const KeyDescription & primary_key, const ContextPtr & context);
+/// rewrite. An input that is merely unoptimizable never throws - it yields `std::nullopt`; the one thing
+/// that does throw is a fingerprint that does not parse, which is not an unoptimizable TTL but a corrupt
+/// part.
+std::optional<time_t> tryComputeConstantTTLDelta(const String & old_ttl_expression, const TTLDescription & new_ttl);
+
+/// The rows-TTL expression a part's stored TTL timestamps were computed under, as recorded next to them in
+/// `ttl.txt` (see `MergeTreeDataPartTTLInfos::table_ttl_expression`). Since the only reader is the fast
+/// `MATERIALIZE TTL` path, which parses it back to prove its shift, this records only what that path could
+/// accept: an expression of the shape `tryComputeConstantTTLDelta` recognizes, formatted (rather than
+/// `TTLDescription::result_column`, the expression's `getColumnName`, which writes identifiers raw and so
+/// would not round-trip a column name that needs quoting). Returns an empty string - meaning "unknown", the
+/// same as no fingerprint at all - for any other expression.
+String getRowsTTLExpressionFingerprint(const TTLDescription & rows_ttl);
 
 /// The name of the time zone whose semantics a part's stored rows-TTL timestamps depend on. It is the
 /// column's time zone when the TTL reads a single `DateTime`/`DateTime64` column (`addDays` preserves the

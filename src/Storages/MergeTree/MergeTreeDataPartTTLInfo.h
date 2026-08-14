@@ -48,9 +48,10 @@ struct MergeTreeDataPartTTLInfos
     TTLInfoMap columns_ttl;
     MergeTreeDataPartTTLInfo table_ttl;
 
-    /// The rows-TTL (DELETE) expression under which `table_ttl` was computed, stored as its serialized
-    /// result-column expression (matching the keys used in the other TTL maps). Empty means unknown:
-    /// e.g. a part written by an older server, or a merge whose source parts disagree on the expression.
+    /// The rows-TTL (DELETE) expression under which `table_ttl` was computed, formatted by
+    /// `getRowsTTLExpressionFingerprint`. Empty means unknown: a part written by an older server, a merge
+    /// whose source parts disagree on the expression, or an expression the fast path could never shift
+    /// anyway (only shiftable ones are recorded - see `getRowsTTLExpressionFingerprint`).
     /// The fast `MATERIALIZE TTL` optimization uses this to verify that a part's stored TTL timestamps really
     /// correspond to the expression it is shifting from; otherwise it falls back to a full rewrite.
     String table_ttl_expression;
