@@ -401,14 +401,11 @@ namespace
                 /// above are compatible with DoubleDelta (DateTime64/DateTime/UInt32). The "value" column
                 /// gets plain ZSTD: specialized floating-point codecs such as Gorilla proved unreliable in
                 /// practice. Explicitly declared columns keep whatever the user wrote.
-                auto make_zstd = []
-                {
-                    return makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{1}));
-                };
                 if (auto * timestamp_decl = add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type)))
-                    timestamp_decl->setCodec(makeASTFunction("CODEC", make_intrusive<ASTIdentifier>("DoubleDelta"), make_zstd()));
+                    timestamp_decl->setCodec(makeASTFunction(
+                        "CODEC", make_intrusive<ASTIdentifier>("DoubleDelta"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{1}))));
                 if (auto * value_decl = add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type)))
-                    value_decl->setCodec(makeASTFunction("CODEC", make_zstd()));
+                    value_decl->setCodec(makeASTFunction("CODEC", makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{1}))));
 
                 break;
             }
