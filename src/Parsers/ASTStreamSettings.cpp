@@ -96,10 +96,12 @@ ASTPtr ASTStreamSettings::clone() const
 
 void ASTStreamSettings::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    /// The cursor tree and the watermark column/idle timeout are not children (only the
-    /// watermark expression is, see `setWatermark`), so hash them explicitly.
+    /// The cursor tree, the watermark column/idle timeout and the two modifier flags are not
+    /// children (only the watermark expression is, see `setWatermark`), so hash them explicitly.
     /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
-    static_assert(sizeof(void *) != 8 || sizeof(*this) == 64, "If members were added to ASTStreamSettings, hash them here unless they are purely cosmetic.");
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 72, "If members were added to ASTStreamSettings, hash them here unless they are purely cosmetic.");
+    hash_state.update(subscribe_for_updates);
+    hash_state.update(unordered);
     hash_state.update(cursor != nullptr);
     if (cursor)
         updateCursorTreeHash(hash_state, *cursor);
