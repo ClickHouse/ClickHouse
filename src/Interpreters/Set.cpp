@@ -613,14 +613,9 @@ void NO_INLINE Set::executeImplCase(
     typename Method::State state(key_columns, key_sizes, nullptr);
 
     /// Clustered key columns (e.g. a primary key prefix) arrive in runs of equal consecutive
-    /// rows: reuse the previous row's result then. Comparing raw fixed-width values is much
-    /// cheaper than hashing the key, and for unclustered data it adds only a few loads per row.
-    /// Bitwise comparison is sound only for POD layouts (a value = fixed-width raw bytes in one
-    /// contiguous buffer), which is exactly what collectFixedSizeKeySlices accepts: there bitwise
-    /// equality implies key equality, and the set methods hash those same bytes, so the reused
-    /// result matches what findKey would return. Bitwise-different duplicates (e.g. 0.0 and -0.0)
-    /// merely take the normal lookup path; strings, arrays, Nullable and other non-POD layouts
-    /// fail the check and never use this fast path.
+    /// rows: reuse the previous row's result after a cheap bitwise comparison instead of
+    /// hashing the key. Applicable only to POD column layouts, where bitwise equality implies
+    /// key equality.
     std::vector<std::pair<const char *, size_t>> key_slices;
     bool can_compare_with_previous = !has_null_map;
     if (can_compare_with_previous)
