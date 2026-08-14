@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database
+# Tags: no-ordinary-database, no-parallel
 # - no-ordinary-database: `system.dropped_tables_parts` is filled only for Atomic databases,
 #   where a dropped table is kept for `database_atomic_delay_before_drop_table_sec`.
+# - no-parallel: the test switches the `slowdown_system_parts_enumeration` failpoint, which is
+#   a server-global switch, so a concurrently running instance of this test could turn it off
+#   in the middle of the checks.
 #
 # Tests that the eager readers of the `system.parts` family honor `max_execution_time` with
 # `timeout_overflow_mode = 'break'`: the query stops early and returns the rows collected so far
@@ -23,8 +26,8 @@
 #   the full result of a 20-part table takes at least 10 seconds;
 # - the per-column checkpoints of `system.parts_columns` and `system.projection_parts_columns`:
 #   the failpoint sleeps 1 second per `COLUMNS_CANCELLATION_CHECK_PERIOD` (128) enumerated
-#   columns of a part, so building the full result over a single part with 1301 columns takes
-#   at least 10 seconds;
+#   columns of a part, so building the full result over a single part with 641 columns takes
+#   at least 5 seconds;
 # - the stop callback inside the parts-snapshot walks of MergeTree: for the tables with the
 #   '_snap' name marker the failpoint sleeps 500 ms per enumerated part inside the walk itself
 #   and polls the callback on every part (its regular cadence of 8192 parts cannot be reached
@@ -35,9 +38,11 @@
 # In all cases a query with a 1 second deadline must finish well under the full build time,
 # and it can only do so by stopping at the checkpoints. Without the checkpoints these queries
 # keep building rows long past the deadline and the elapsed time assertions fail.
-# The failpoint only slows down the specially named tables, so concurrently running tests are not
-# affected, and only upper bounds are asserted, so concurrently running instances of this test are
-# not affected either.
+#
+# The elapsed time is taken from `system.query_log`, not measured around the client invocation:
+# the startup of `clickhouse-client` alone takes seconds in the debug and sanitizer builds, which
+# is of the same order as the durations being asserted. For the same reason all the timed queries
+# are sent in a single client invocation.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -46,8 +51,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # A table with several parts and a projection: exercises the checkpoints of the per-part loops.
 NUM_PARTS=20
 # A table with many columns in a single part: exercises the checkpoints of the column-enumeration
-# loops, which fire every 128 enumerated columns: 1301 columns give 10 checkpoints per part.
-NUM_WIDE_COLUMNS=1300
+# loops, which fire every 128 enumerated columns: 641 columns give 5 checkpoints per part.
+NUM_WIDE_COLUMNS=640
+# A query that stops at the first checkpoint after the deadline takes about a second, while the
+# full result takes at least five seconds to build.
+MAX_DURATION_MS=3000
 
 WIDE_COLUMNS=$(for i in $(seq 1 $NUM_WIDE_COLUMNS); do echo -n ", c$i UInt64"; done)
 
@@ -129,47 +137,55 @@ $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT slowdown_system_parts_enumer
     check_break_query dropped_tables_parts dropped_tables_parts t_slowdown_system_parts_dropped $NUM_PARTS
 } | $CLICKHOUSE_CLIENT
 
-# $1 - a label, $2 - the system table, $3 - the source table, $4 - the select list (default: name).
-# With the failpoint enabled, building the full result takes at least 10 seconds,
-# and a query with a 1 second deadline must stop at the checkpoints and finish much earlier.
-function check_fast()
+# $1 - the position of the check, $2 - a label, $3 - the system table, $4 - the source table,
+# $5 - the select list (default: name).
+# With the failpoint enabled, building the full result takes at least five seconds, and a query
+# with a 1 second deadline must stop at the checkpoints and finish much earlier. The elapsed time
+# of every query is looked up afterwards in `system.query_log` by its `log_comment`, which also
+# gives the checks their deterministic output order.
+function timed_query()
 {
-    local start end
-    start=$(date +%s)
-    $CLICKHOUSE_CLIENT --query "
-    SELECT ${4:-name} FROM system.$2 WHERE database = currentDatabase() AND table = '$3'
+    echo "
+    SELECT ${5:-name} FROM system.$3 WHERE database = currentDatabase() AND table = '$4'
     FORMAT Null
-    SETTINGS max_execution_time = 1, timeout_overflow_mode = 'break';
+    SETTINGS max_execution_time = 1, timeout_overflow_mode = 'break', log_comment = 'timed_04839_$1 $2';
     "
-    end=$(date +%s)
-    echo "fast $1 $((end - start < 6))"
 }
 
-check_fast parts parts t_slowdown_system_parts
-check_fast parts_columns parts_columns t_slowdown_system_parts
-check_fast projection_parts projection_parts t_slowdown_system_parts
-check_fast projection_parts_columns projection_parts_columns t_slowdown_system_parts
-check_fast parts_columns_wide parts_columns t_slowdown_system_parts_wide
-check_fast projection_parts_columns_wide projection_parts_columns t_slowdown_system_parts_wide
-check_fast dropped_tables_parts dropped_tables_parts t_slowdown_system_parts_dropped
+{
+    timed_query 01 parts parts t_slowdown_system_parts
+    timed_query 02 parts_columns parts_columns t_slowdown_system_parts
+    timed_query 03 projection_parts projection_parts t_slowdown_system_parts
+    timed_query 04 projection_parts_columns projection_parts_columns t_slowdown_system_parts
+    timed_query 05 parts_columns_wide parts_columns t_slowdown_system_parts_wide
+    timed_query 06 projection_parts_columns_wide projection_parts_columns t_slowdown_system_parts_wide
+    timed_query 07 dropped_tables_parts dropped_tables_parts t_slowdown_system_parts_dropped
 
-# The '_snap' fixture times out inside the parts-snapshot walk in MergeTree (500 ms per part,
-# at least 10 seconds for the full walk). Selecting the _state column switches to the walks over
-# all part states (getAllDataPartsVector / getAllProjectionPartsVector instead of the
-# ForInternalUsage helpers), so both pairs of helpers are covered.
-check_fast parts_snap parts t_slowdown_system_parts_snap
-check_fast parts_snap_state parts t_slowdown_system_parts_snap 'name, _state'
-check_fast projection_parts_snap projection_parts t_slowdown_system_parts_snap
-check_fast projection_parts_snap_state projection_parts t_slowdown_system_parts_snap 'name, _state'
+    # The '_snap' fixture times out inside the parts-snapshot walk in MergeTree (500 ms per part,
+    # at least 10 seconds for the full walk). Selecting the _state column switches to the walks
+    # over all part states (getAllDataPartsVector / getAllProjectionPartsVector instead of the
+    # ForInternalUsage helpers), so both pairs of helpers are covered.
+    timed_query 08 parts_snap parts t_slowdown_system_parts_snap
+    timed_query 09 parts_snap_state parts t_slowdown_system_parts_snap 'name, _state'
+    timed_query 10 projection_parts_snap projection_parts t_slowdown_system_parts_snap
+    timed_query 11 projection_parts_snap_state projection_parts t_slowdown_system_parts_snap 'name, _state'
 
-# The '_meta' fixture times out inside the column-metadata prepass (1 second per 128 enumerated
-# metadata columns, at least 10 seconds for the full prepass over 1301 columns).
-check_fast parts_columns_meta parts_columns t_slowdown_system_parts_meta
-check_fast projection_parts_columns_meta projection_parts_columns t_slowdown_system_parts_meta
+    # The '_meta' fixture times out inside the column-metadata prepass (1 second per 128 enumerated
+    # metadata columns, at least 5 seconds for the full prepass over 641 columns).
+    timed_query 12 parts_columns_meta parts_columns t_slowdown_system_parts_meta
+    timed_query 13 projection_parts_columns_meta projection_parts_columns t_slowdown_system_parts_meta
+} | $CLICKHOUSE_CLIENT
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT slowdown_system_parts_enumeration"
 
 $CLICKHOUSE_CLIENT --query "
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'fast ' || splitByChar(' ', log_comment)[2] || ' ' || toString(query_duration_ms < $MAX_DURATION_MS)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, 'timed_04839_')
+ORDER BY log_comment;
+
 DROP TABLE t_break_result;
 DROP TABLE t_slowdown_system_parts_wide;
 DROP TABLE t_slowdown_system_parts_snap;

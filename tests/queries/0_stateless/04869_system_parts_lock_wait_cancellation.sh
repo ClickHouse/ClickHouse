@@ -57,7 +57,10 @@ function wait_for_query()
         [ "$result" == "1" ] && return
         sleep 0.1
     done
+    # The lock contention is the precondition of the whole test, so a query that never started
+    # must fail it instead of letting the check below pass on an unblocked lock request.
     echo "query $1 did not start in time"
+    exit 1
 }
 
 wait_for_query "$READER_QUERY_ID"
@@ -75,18 +78,27 @@ sleep 1
 # The deadline expires while the query waits for the share lock of the table, and in the 'break'
 # mode it must return the rows collected so far instead of waiting out the reader or the
 # lock_acquire_timeout.
-start=$(date +%s)
 $CLICKHOUSE_CLIENT --query "
 SELECT name FROM system.parts WHERE database = '$ORDINARY_DB' AND table = 't_parts_lock_wait'
 FORMAT Null
-SETTINGS max_execution_time = 1, timeout_overflow_mode = 'break', lock_acquire_timeout = 60;
+SETTINGS max_execution_time = 1, timeout_overflow_mode = 'break', lock_acquire_timeout = 60,
+         log_comment = '04869_break_query';
 "
-end=$(date +%s)
-echo "break query returned early $((end - start < 6))"
 
 # Let the DROP TABLE proceed without waiting out the whole reader sleep.
 $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$READER_QUERY_ID' SYNC FORMAT Null"
 
 wait $reader_pid $drop_pid 2>/dev/null || true
 
-$CLICKHOUSE_CLIENT --query "DROP DATABASE $ORDINARY_DB"
+# The elapsed time is taken from `system.query_log` instead of being measured around the client
+# invocation: the startup of `clickhouse-client` alone takes seconds in the debug and sanitizer
+# builds, which is of the same order as the duration being asserted.
+$CLICKHOUSE_CLIENT --query "
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'break query returned early ' || toString(count() = 1 AND max(query_duration_ms) < 6000)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '04869_break_query';
+
+DROP DATABASE $ORDINARY_DB;
+"
