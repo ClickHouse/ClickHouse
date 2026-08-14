@@ -160,19 +160,6 @@ bool hasNestedQueryOrUnion(const IQueryTreeNode & node)
     return false;
 }
 
-bool hasIdentifierOrColumn(const IQueryTreeNode & node)
-{
-    const auto node_type = node.getNodeType();
-    if (node_type == QueryTreeNodeType::IDENTIFIER || node_type == QueryTreeNodeType::COLUMN)
-        return true;
-
-    for (const auto & child : node.getChildren())
-        if (child && hasIdentifierOrColumn(*child))
-            return true;
-
-    return false;
-}
-
 bool hasUnsafeFunctionForEarlyShortCircuit(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     if (const auto * function = node->as<FunctionNode>())
@@ -198,13 +185,21 @@ bool hasUnsafeFunctionForEarlyShortCircuit(const QueryTreeNodePtr & node, const 
 
 bool isSafeCountScalarSubqueryForEarlyShortCircuit(const QueryNode & query)
 {
-    if (hasNestedQueryOrUnion(query)
-        || hasIdentifierOrColumn(query)
+    const auto & join_tree = query.getJoinTreeNode();
+    if (!join_tree
+        || join_tree->getNodeType() != QueryTreeNodeType::TABLE
+        || hasNestedQueryOrUnion(query)
+        || query.hasWith()
+        || query.hasPrewhere()
+        || query.hasWhere()
         || query.hasGroupBy()
         || query.hasHaving()
         || query.hasWindow()
         || query.hasQualify()
-        || query.hasLimitBy())
+        || query.hasOrderBy()
+        || query.hasLimitBy()
+        || query.hasLimit()
+        || query.hasOffset())
         return false;
 
     const auto & projection = query.getProjection().getNodes();
