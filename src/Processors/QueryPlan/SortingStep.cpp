@@ -210,8 +210,6 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
 
 void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
 {
-    checkMaxStreamsPerHierarchicalMerge(max_streams_per_hierarchical_merge);
-
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
     settings[QueryPlanSerializationSetting::max_rows_to_sort] = size_limits.max_rows;
     settings[QueryPlanSerializationSetting::max_bytes_to_sort] = size_limits.max_bytes;
