@@ -109,7 +109,7 @@ REGISTER_FUNCTION(ArrayCount)
 Returns the number of elements for which `func(arr1[i], ..., arrN[i])` returns true.
 If `func` is not specified, it returns the number of non-zero elements in the array.
 
-`arrayCount` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
+`arrayCount` is a [higher-order function](/reference/functions/regular-functions/overview#higher-order-functions).
 
 :::note Use setting `array_count_legacy_uint32_result` to return `UInt32`
 Version 26.8 introduced a backward-incompatible change: `arrayCount` returns `UInt64` instead of `UInt32`, so that the result is exact for arrays with more than `4294967295` matching elements.
@@ -133,5 +133,4 @@ During a rolling upgrade of a cluster, a distributed query initiated by a not-ye
 }
 
 }
-
 
