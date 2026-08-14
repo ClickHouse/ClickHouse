@@ -12,7 +12,7 @@ namespace DB::JemallocMergeTreeArena
 ///     `ColumnSize`/`IndexSize` maps, `MinMaxIndex`, `VersionMetadataOnDisk`,
 ///     `index_granularity_info`, and the primary index / index-granularity arrays themselves.
 ///   - metadata shared across parts of a table (see `SharedPartColumns.h`): `NamesAndTypesList`,
-///     `column_name_to_position`, the `serializations` map and `ColumnsSubstreams`.
+///     `column_storage_key_to_position`, the `serializations` map and `ColumnsSubstreams`.
 ///   - per-table metadata: the `MergeTreeData` object's mutable schema state — `ColumnsDescription`,
 ///     `VirtualColumnsDescription`, `StorageInMemoryMetadata` clones, the `serialization_hints`
 ///     aggregation across active parts, and the `shared_part_columns_cache` populated from

@@ -1,4 +1,6 @@
 #include <DataTypes/DataTypesNumber.h>
+#include <Storages/MergeTree/ColumnIdHelper.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -106,7 +108,8 @@ bool injectRequiredColumnsRecursively(
         if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_part))
             column_name_in_part = alter_conversions->getColumnOldName(column_name_in_part);
 
-        auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
+        auto column_in_part = data_part_info_for_reader.tryGetColumn(
+            getColumnIdOrPartName(*column_in_storage, column_name_in_part));
 
         bool share_nested = true;
         if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage))
@@ -221,11 +224,16 @@ NameSet injectRequiredColumns(
         /// (to be resolvable by the StorageSnapshot). This handles cases where the table schema has changed
         /// since the part was created: columns may have been added (not in the part) or dropped (not in metadata).
         const auto & part_columns = data_part_info_for_reader.getColumns();
+        const auto column_id_mapping = storage_snapshot->metadata->getActiveColumnIdMapping();
+
         NamesAndTypesList available_columns;
         for (const auto & column : part_columns)
         {
-            if (storage_snapshot->tryGetColumn(options, column.name))
-                available_columns.push_back(column);
+            /// The name goes back to the caller to be resolved in the current schema, so a part column
+            /// that outlived a metadata-only RENAME has to be offered under its current name.
+            auto current_name = tryGetCurrentColumnName(column, column_id_mapping.get());
+            if (current_name && storage_snapshot->tryGetColumn(options, *current_name))
+                available_columns.emplace_back(*current_name, column.type, column.column_id);
         }
 
         if (available_columns.empty())
@@ -241,8 +249,8 @@ NameSet injectRequiredColumns(
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
-    const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation_)
-    : data_part(data_part_), allow_subcolumns_sizes_calculation(allow_subcolumns_sizes_calculation_)
+    const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, const StorageMetadataPtr & storage_metadata_, bool allow_subcolumns_sizes_calculation_)
+    : data_part(data_part_), storage_metadata(storage_metadata_), allow_subcolumns_sizes_calculation(allow_subcolumns_sizes_calculation_)
 {
     number_of_rows_in_part = data_part->rows_count;
     /// Initialize with sample block until update won't called.
@@ -272,7 +280,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         if (typeid_cast<const ColumnConst *>(column_data.get()))
             continue;
 
-        auto column_from_part = data_part->tryGetColumn(column_name);
+        auto column_from_part = data_part->tryGetColumnBySnapshotName(column_name, storage_metadata);
         if ((!column_from_part || !column_from_part->isSubcolumn()) && column_data->valuesHaveFixedSize())
         {
             size_t size_of_value = column_data->sizeOfValueIfFixed();
@@ -287,9 +295,12 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
             /// If column isn't fixed and doesn't have checksum, than take first
             ColumnSize column_size;
             if (info.is_subcolumn && allow_subcolumns_sizes_calculation)
-                column_size = data_part->getSubcolumnSize(column_name);
+                column_size = data_part->getSubcolumnSize(*column_from_part);
             else
-                column_size = data_part->getColumnSize(column_from_part ? column_from_part->getNameInStorage() : column_name);
+                /// A persistent virtual (`_row_exists`) is not in the schema, so it misses the resolver
+                /// above, yet the part does hold and size it -- under its name, as no mapping covers a
+                /// virtual. Hence the name key rather than nothing.
+                column_size = data_part->getColumnSize(column_from_part ? column_from_part->getColumnId() : ColumnId{column_name});
 
             info.bytes_per_row_global = column_size.data_uncompressed
                 ? static_cast<double>(column_size.data_uncompressed) / static_cast<double>(number_of_rows_in_part)

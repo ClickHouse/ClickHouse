@@ -39,10 +39,13 @@ public:
 
     bool hasColumnFiles(const NameAndTypePair & column) const override;
 
-    std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
+    std::optional<time_t> getColumnModificationTime(const ColumnId & column_id) const override;
 
     void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
     void removeMarksFromCache(MarkCache * mark_cache) const override;
+
+    std::optional<ColumnMarksLocation> getColumnMarksLocation(
+        const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const override;
 
     static void loadIndexGranularityImpl(
         MergeTreeIndexGranularityPtr & index_granularity_ptr,
@@ -62,7 +65,7 @@ private:
 
     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 
-    ColumnSize calculateSubcolumnSize(const String & subcolumn_name) const override;
+    ColumnSize calculateSubcolumnSize(const NameAndTypePair & subcolumn) const override;
 
     void addStreamToColumnSize(const String & stream_name, ColumnSize & size) const;
 

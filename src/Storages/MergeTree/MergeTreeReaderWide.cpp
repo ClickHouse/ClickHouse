@@ -22,6 +22,11 @@ namespace DB
 namespace
 {
     constexpr auto DATA_FILE_EXTENSION = ".bin";
+
+    /// Keys of the reader's per-column maps: the substreams caches are shared by a column and its
+    /// subcolumns, so they key by the parent's id alone; the prefix-state map is per (sub)column.
+    String substreamsCacheKey(const NameAndTypePair & column) { return column.getColumnId().value(); }
+    String prefixStateKey(const NameAndTypePair & column) { return column.getStorageKey().value(); }
 }
 
 namespace ErrorCodes
@@ -69,6 +74,8 @@ MergeTreeReaderWide::MergeTreeReaderWide(
             if (!isColumnDroppedByPendingMutation(i) && !isSystemColumnInvalidated(i))
                 addStreams(columns_to_read[i], serializations[i]);
         }
+
+        collectNestedOffsetsSiblings();
     }
     catch (...)
     {
@@ -132,7 +139,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
 
         try
         {
-            auto & cache = caches[columns_to_read[pos].getNameInStorage()];
+            auto & cache = caches[substreamsCacheKey(columns_to_read[pos])];
             prefetchForColumn(
                 priority, columns_to_read[pos], serializations[pos], from_mark, continue_reading, cache);
         }
@@ -186,8 +193,8 @@ size_t MergeTreeReaderWide::readRows(
             try
             {
                 size_t column_size_before_reading = column->size();
-                auto & cache = caches[column_to_read.getNameInStorage()];
-                auto & deserialize_states_cache = deserialize_states_caches[column_to_read.getNameInStorage()];
+                auto & cache = caches[substreamsCacheKey(column_to_read)];
+                auto & deserialize_states_cache = deserialize_states_caches[substreamsCacheKey(column_to_read)];
 
                 readData(
                     column_to_read,
@@ -199,6 +206,8 @@ size_t MergeTreeReaderWide::readRows(
                     rows_offset,
                     cache,
                     deserialize_states_cache);
+
+                shareNestedOffsetsWithSiblings(pos, cache);
 
                 /// For elements of Nested, column_size_before_reading may be greater than column size
                 ///  if offsets are not empty and were already read, but elements are empty.
@@ -304,6 +313,61 @@ void MergeTreeReaderWide::addStreams(
         partially_read_columns.insert(name_and_type.name);
 }
 
+/// The offsets substream every Array column reads through; a flattened Nested group shares one on
+/// disk, named after the group rather than the column.
+static const ISerialization::SubstreamPath & offsetsSubstreamPath()
+{
+    static const ISerialization::SubstreamPath path{{ISerialization::Substream::ArraySizes}};
+    return path;
+}
+
+/// Which columns share an offsets stream with which. Flattened Nested siblings ("n.x", "n.y") do, and
+/// under column IDs they stay separate top-level columns -- `Nested::convertToSubcolumns` skips
+/// id-carrying ones -- so each gets its own substreams cache instead of the group's single one.
+void MergeTreeReaderWide::collectNestedOffsetsSiblings()
+{
+    std::unordered_map<String, std::vector<size_t>> by_offsets_stream;
+    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+    {
+        if (isColumnDroppedByPendingMutation(pos) || columns_to_read[pos].column_id.empty())
+            continue;
+
+        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+            columns_to_read[pos], offsetsSubstreamPath(), ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+
+        if (stream_name)
+            by_offsets_stream[*stream_name].push_back(pos);
+    }
+
+    nested_offsets_siblings.resize(columns_to_read.size());
+    for (const auto & [_, group] : by_offsets_stream)
+    {
+        /// Only the siblings a column is read BEFORE: the read fills their caches, never its own.
+        for (size_t i = 0; i + 1 < group.size(); ++i)
+            nested_offsets_siblings[group[i]].assign(group.begin() + i + 1, group.end());
+    }
+}
+
+/// Hands the offsets just read for column @pos to the siblings still to come; without it the second
+/// sibling reads from wherever the first left the shared stream, surfacing far away as siblings
+/// disagreeing on the row count. Only the offsets -- sharing the whole cache would alias the values.
+void MergeTreeReaderWide::shareNestedOffsetsWithSiblings(size_t pos, ISerialization::SubstreamsCache & cache)
+{
+    if (nested_offsets_siblings[pos].empty())
+        return;
+
+    auto cached = ISerialization::getColumnWithNumReadRowsFromSubstreamsCache(&cache, offsetsSubstreamPath());
+    if (!cached)
+        return;
+
+    const auto & [offsets_column, num_read_rows] = *cached;
+    for (size_t sibling : nested_offsets_siblings[pos])
+    {
+        ISerialization::addColumnWithNumReadRowsToSubstreamsCache(
+            &caches[substreamsCacheKey(columns_to_read[sibling])], offsetsSubstreamPath(), offsets_column, num_read_rows);
+    }
+}
+
 MergeTreeReaderWide::FileStreams::iterator MergeTreeReaderWide::addStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name)
 {
     auto context = data_part_info_for_read->getContext();
@@ -359,15 +423,19 @@ ReadBuffer * MergeTreeReaderWide::getStream(
     auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", checksums, storage_settings);
     if (!stream_name)
     {
-        /// We allow missing streams only for columns/subcolumns that are not present in this part.
+        /// A miss is expected when the part holds no slot for the id at all -- the column is new to
+        /// the table, or a DROP + re-ADD gave it a fresh id (see ColumnIdMapping.h). Fill defaults.
+        if (!data_part_info_for_read->getColumnPosition(name_and_type.getColumnId()))
+            return nullptr;
+
         auto column = data_part_info_for_read->getColumnsDescription().tryGetColumn(GetColumnsOptions::AllPhysical, name_and_type.getNameInStorage());
         if (column && (!name_and_type.isSubcolumn() || column->type->hasSubcolumn(name_and_type.getSubcolumnName())))
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Stream {} for column {} with type {} is not found",
-                ISerialization::getFileNameForStream(
-                    name_and_type.name, substream_path, ISerialization::StreamFileNameSettings(*storage_settings)),
+                ISerialization::getFileNameForStreamByColumnId(
+                    name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings)),
                     name_and_type.name,
                     name_and_type.type->getName());
         }
@@ -405,7 +473,7 @@ void MergeTreeReaderWide::deserializePrefix(
     ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
     ISerialization::StreamCallback prefixes_prefetch_callback)
 {
-    const auto & name = name_and_type.name;
+    const auto name = prefixStateKey(name_and_type);
     if (!deserialize_state_map.contains(name))
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
@@ -518,8 +586,8 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns,
 
             try
             {
-                auto & cache = caches[columns_to_read[pos].getNameInStorage()];
-                auto & deserialize_states_cache = deserialize_states_caches[columns_to_read[pos].getNameInStorage()];
+                auto & cache = caches[substreamsCacheKey(columns_to_read[pos])];
+                auto & deserialize_states_cache = deserialize_states_caches[substreamsCacheKey(columns_to_read[pos])];
                 deserializePrefix(
                     serializations[pos],
                     columns_to_read[pos],
@@ -561,7 +629,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsWithPrefetch(size_t num_
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
             if (stream_name && !prefetched_streams.contains(*stream_name))
             {
-                if (ReadBuffer * buf = getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, caches[name_and_type.getNameInStorage()]))
+                if (ReadBuffer * buf = getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, caches[substreamsCacheKey(name_and_type)]))
                 {
                     buf->prefetch(priority);
                     prefetched_streams.insert(*stream_name);
@@ -603,7 +671,7 @@ void MergeTreeReaderWide::prefetchForColumn(
     /// If we already deserialized prefixes, we can use deserialization state during streams enumeration to enumerate dynamic subcolumns.
     if (!deserialize_binary_bulk_state_map.empty())
     {
-        auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withDeserializeState(deserialize_binary_bulk_state_map[name_and_type.name]);
+        auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withDeserializeState(deserialize_binary_bulk_state_map[prefixStateKey(name_and_type)]);
         ISerialization::EnumerateStreamsSettings settings;
         serialization->enumerateStreams(settings, callback, data);
     }
@@ -691,7 +759,7 @@ void MergeTreeReaderWide::readData(
     };
 
     deserialize_settings.continuous_reading = continue_reading;
-    auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
+    auto & deserialize_state = deserialize_binary_bulk_state_map[prefixStateKey(name_and_type)];
 
     serialization->deserializeBinaryBulkWithMultipleStreams(
         column, rows_offset, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
@@ -716,7 +784,7 @@ std::unordered_map<String, std::vector<String>> MergeTreeReaderWide::getAllColum
                 column_to_streams[name_and_type.name].push_back(*stream_name);
         };
 
-        auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withDeserializeState(deserialize_binary_bulk_state_map[name_and_type.name]);
+        auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withDeserializeState(deserialize_binary_bulk_state_map[prefixStateKey(name_and_type)]);
         ISerialization::EnumerateStreamsSettings settings;
         serialization->enumerateStreams(settings, callback, data);
     }

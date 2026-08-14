@@ -1275,7 +1275,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 "`Poco::LRUCache<String, ColumnSize>` delegates inside each `IMergeTreeDataPart`, the "
                 "per-part `ColumnSize`/`IndexSize` maps, `MinMaxIndex`, `VersionMetadataOnDisk`, and the "
                 "`MergeTreeDataPart{Compact,Wide}` object itself), metadata shared across parts of a table "
-                "(`NamesAndTypesList`, `column_name_to_position`, the `serializations` map and "
+                "(`NamesAndTypesList`, `column_storage_key_to_position`, the `serializations` map and "
                 "`ColumnsSubstreams`, see `SharedPartColumns.h`) plus per-table metadata "
                 "(`StorageInMemoryMetadata` / `ColumnsDescription` / `VirtualColumnsDescription` clones "
                 "set up by `setProperties`, the `serialization_hints` aggregation, and the "

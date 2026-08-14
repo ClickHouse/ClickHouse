@@ -8,7 +8,7 @@ namespace DB
 /// subcolumns in order of their serialization, so we can avoid seeks back in the data files.
 /// This function determines this order.
 std::vector<size_t> getSubcolumnsDeserializationOrder(
-    const String & column_name,
+    const NameAndTypePair & column,
     const std::vector<ISerialization::SubstreamData> & subcolumns_data,
     const std::vector<String> & substreams_in_serialization_order,
     ISerialization::EnumerateStreamsSettings & enumerate_settings,

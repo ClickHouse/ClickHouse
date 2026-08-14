@@ -56,9 +56,12 @@ public:
 
     const ColumnsSubstreams & getColumnsSubstreams() const override { return data_part->getColumnsSubstreams(); }
 
-    std::optional<size_t> getColumnPosition(const String & column_name) const override { return data_part->getColumnPosition(column_name); }
+    std::optional<size_t> getColumnPosition(const ColumnId & column_id) const override { return data_part->getColumnPosition(column_id); }
+    std::optional<NameAndTypePair> tryGetColumn(const ColumnId & column_id) const override { return data_part->tryGetColumn(column_id); }
 
-    std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const override { return data_part->tryGetColumn(column_name); }
+    /// The name is one of the part's own, so resolving it against the part's columns is what the
+    /// caller means -- and it yields the id the size getters below need.
+    std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const override { return data_part->tryGetColumnByNameUnsafe(column_name); }
 
     bool isSystemColumnInvalidated(const String & column_name) const override { return data_part->isSystemColumnInvalidated(column_name); }
 
@@ -71,14 +74,19 @@ public:
 
     String getParentPartName() const override { return data_part->getParentPartName(); }
 
-    ColumnSize getColumnSize(const String & column_name) const override { return data_part->getColumnSize(column_name); }
+    ColumnSize getColumnSize(const ColumnId & column_id) const override { return data_part->getColumnSize(column_id); }
 
     std::shared_ptr<const std::unordered_map<String, ColumnSize>> getColumnSizes() const override
     {
         return data_part->getColumnSizes();
     }
 
-    ColumnSize getSubcolumnSize(const String & subcolumn_name) const override { return data_part->getSubcolumnSize(subcolumn_name); }
+    ColumnSize getSubcolumnSize(const NameAndTypePair & subcolumn) const override
+    {
+        /// @subcolumn is a read request, so it needs resolving (`tryGetColumnByRequest`) before sizing.
+        auto subcolumn_in_part = data_part->tryGetColumnByRequest(subcolumn);
+        return subcolumn_in_part ? data_part->getSubcolumnSize(*subcolumn_in_part) : ColumnSize{};
+    }
 
     const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
 
@@ -94,7 +102,7 @@ public:
 
     const SerializationInfoByName & getSerializationInfos() const override { return data_part->getSerializationInfos(); }
 
-    SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.name); }
+    SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.getStorageKey()); }
 
     String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
 

@@ -154,6 +154,12 @@ public:
     /// Try to get column by name, returns empty optional if column not found
     std::optional<NameAndTypePair> tryGetByName(const std::string & name) const;
 
+    /// The same by column id, for a list that a data part keys by id rather than by name.
+    std::optional<NameAndTypePair> tryGetByColumnId(const ColumnId & column_id) const;
+
+    /// The id this list holds `name` under, or `name` itself when no column has it.
+    ColumnId getColumnIdByName(const std::string & name) const;
+
     /// Try to get column position by name, returns number of columns if column isn't found
     size_t getPosByName(const std::string & name) const noexcept;
 

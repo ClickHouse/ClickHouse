@@ -7,6 +7,8 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/ColumnIdHelper.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
@@ -65,7 +67,7 @@ IMergeTreeReader::IMergeTreeReader(
     , alter_conversions(data_part_info_for_read->getAlterConversions())
     , original_requested_columns(columns_)
     , converted_requested_columns((*storage_settings_)[MergeTreeSetting::share_nested_offsets]
-        ? Nested::convertToSubcolumns(columns_)
+        ? Nested::convertToSubcolumns(columns_, /*skip_columns_with_id=*/true)
         : columns_)
     , virtual_fields(virtual_fields_)
 {
@@ -83,7 +85,7 @@ IMergeTreeReader::IMergeTreeReader(
 
         if (column.isSubcolumn())
         {
-            NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
+            NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage(), column.column_id};
             serializations_of_full_columns.emplace(column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage));
         }
     }
@@ -346,12 +348,8 @@ bool IMergeTreeReader::isSubcolumnOffsetsOfNested(const String & name_in_storage
     return nested_column && isNested(nested_column->type);
 }
 
-String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_column) const
-{
-    auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
-    return Nested::concatenateName(name_pair.first, name_pair.second);
-}
-
+/// The rename-chain name path. Only id-less requests reach here: `tryResolveInPart` and
+/// `getColumnInPart` both answer an id-carrying request before consulting names.
 std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(const NameAndTypePair & required_column) const
 {
     auto name_in_storage = required_column.getNameInStorage();
@@ -368,14 +366,39 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
     return {name_in_storage, subcolumn_name};
 }
 
+std::optional<NameAndTypePair> IMergeTreeReader::tryResolveInPart(const NameAndTypePair & required_column) const
+{
+    /// An id-carrying request resolves by ID, never by name (see `ColumnIdHelper.h`): after DROP + ADD
+    /// the part can still list a same-named dead column of the old type.
+    if (!required_column.column_id.empty())
+    {
+        auto part_column = data_part_info_for_read->tryGetColumn(required_column.getColumnId());
+        if (!part_column || !required_column.isSubcolumn())
+            return part_column;
+
+        /// A subcolumn of an ID-identified parent (e.g. a Tuple element) has no ID of its own:
+        /// resolve it within the part's parent column.
+        return part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical,
+            Nested::concatenateName(part_column->getNameInStorage(), required_column.getSubcolumnName()));
+    }
+
+    auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
+    return part_columns.tryGetColumnOrSubcolumn(
+        GetColumnsOptions::AllPhysical, Nested::concatenateName(name_pair.first, name_pair.second));
+}
+
 NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const
 {
-    auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
-    auto name_in_part = Nested::concatenateName(name_pair.first, name_pair.second);
-    auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
+    auto column_in_part = tryResolveInPart(required_column);
 
     if (!column_in_part)
     {
+        /// An id-carrying request has no rename chain to walk: the column is simply absent from
+        /// this part and reads as defaults of the requested (current) type.
+        if (!required_column.column_id.empty())
+            return required_column;
+
+        auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
         /// If column is missing in part, return column with required type but with name that should be
         /// in part according to renames to avoid ambiguity in case of transitive renames.
         ///
@@ -386,20 +409,20 @@ NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & requir
         return NameAndTypePair{name_pair.first, name_pair.second, required_column.getTypeInStorage(), required_column.type};
     }
 
+    /// A subcolumn resolves through the columns description, which drops IDs -- re-stamp so the
+    /// pair keeps addressing the part's ID-keyed maps.
+    if (!required_column.column_id.empty())
+        column_in_part->setColumnId(required_column.column_id);
+
     return *column_in_part;
 }
 
 SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair & required_column) const
 {
-    auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
-    auto name_in_part = Nested::concatenateName(name_pair.first, name_pair.second);
-    auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
+    auto column_in_part = tryResolveInPart(required_column);
 
     if (!column_in_part)
-    {
-        NameAndTypePair missed_column{name_pair.first, name_pair.second, required_column.getTypeInStorage(), required_column.type};
-        return IDataType::getSerialization(missed_column);
-    }
+        return IDataType::getSerialization(getColumnInPart(required_column));
 
     const auto & infos = data_part_info_for_read->getSerializationInfos();
 
@@ -420,10 +443,11 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
         return serialization;
     }
 
-    if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
-        return IDataType::getSerialization(*column_in_part, *it->second);
+    /// `column_in_part` can come from the columns description, which drops ids, so the key comes off
+    /// the request instead.
+    const String record_key = getColumnIdOrPartName(required_column, column_in_part->getNameInStorage()).value();
 
-    return IDataType::getSerialization(*column_in_part, infos.getSettings());
+    return infos.getSerialization(*column_in_part, record_key);
 }
 
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
@@ -440,13 +464,14 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
                             "Expected {}, got {}", num_columns, res_columns.size());
         }
 
-        /// We check types manually while iterating to avoid unnecessary copies
+        /// We check types manually while iterating to avoid unnecessary copies.
         Block copy_block;
         auto name_and_type = getColumns().begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
             if (res_columns[pos] == nullptr)
                 continue;
+            /// Already resolved against the part, by stamped column ID where there is one.
             const auto & column_in_part = columns_to_read[pos];
             if (column_in_part.type->equals(*name_and_type->type))
                 continue;
@@ -506,22 +531,24 @@ IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) 
         return offsets_streams;
     };
 
-    auto required_name_in_storage = Nested::extractTableName(required_column.getNameInStorage());
-    auto required_offsets_streams = get_offsets_streams(getSerializationInPart(required_column), required_name_in_storage);
+    /// Which columns share an offsets stream is an id-space question -- that is how the stream is
+    /// named (see getFileNameForStreamByColumnId). The names built below only pair the two sides up.
+    auto required_id_prefix = Nested::extractTableName(required_column.getColumnId().value());
+    auto required_offsets_streams = get_offsets_streams(getSerializationInPart(required_column), required_id_prefix);
 
     size_t max_matched_streams = 0;
     std::optional<ColumnForOffsets> result;
 
-    /// Find column that has maximal number of matching
-    /// offsets columns with required_column.
-    for (const auto & part_column : Nested::convertToSubcolumns(data_part_info_for_read->getColumns()))
+    /// Find column that has maximal number of matching offsets columns with required_column. Match
+    /// the part's own flat columns: folding one onto its Nested parent would key the result by a
+    /// prefix the part has no slot under.
+    for (const auto & part_column : data_part_info_for_read->getColumns())
     {
-        auto name_in_storage = Nested::extractTableName(part_column.name);
-        if (name_in_storage != required_name_in_storage)
+        if (Nested::extractTableName(part_column.getColumnId().value()) != required_id_prefix)
             continue;
 
         auto serialization = data_part_info_for_read->getSerialization(part_column);
-        auto offsets_streams = get_offsets_streams(serialization, name_in_storage);
+        auto offsets_streams = get_offsets_streams(serialization, required_id_prefix);
         NameToIndexMap offsets_streams_map(offsets_streams.begin(), offsets_streams.end());
 
         size_t i = 0;
@@ -611,10 +638,15 @@ MergeTreeReaderPtr createMergeTreeReader(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
+    /// Stamp the requested columns with their storage ids off the snapshot, so the reader keys files by id.
+    NamesAndTypesList columns = columns_to_read;
+    if (const auto mapping = storage_snapshot->metadata->getActiveColumnIdMapping())
+        mapping->stampColumnIds(columns);
+
     if (read_info->isCompactPart())
         return createMergeTreeReaderCompact(
             read_info,
-            columns_to_read,
+            columns,
             storage_snapshot,
             storage_settings,
             mark_ranges,
@@ -629,7 +661,7 @@ MergeTreeReaderPtr createMergeTreeReader(
     if (read_info->isWidePart())
         return createMergeTreeReaderWide(
             read_info,
-            columns_to_read,
+            columns,
             storage_snapshot,
             storage_settings,
             mark_ranges,

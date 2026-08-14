@@ -40,12 +40,15 @@ public:
 
     bool hasColumnFiles(const NameAndTypePair & column) const override;
 
-    std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
+    std::optional<time_t> getColumnModificationTime(const ColumnId & column_id) const override;
 
     std::optional<String> getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
 
     void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
     void removeMarksFromCache(MarkCache * mark_cache) const override;
+
+    std::optional<ColumnMarksLocation> getColumnMarksLocation(
+        const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const override;
 
     ~MergeTreeDataPartCompact() override;
 
@@ -60,6 +63,10 @@ protected:
     void doCheckConsistency(bool require_part_metadata) const override;
 
 private:
+     /// Entries every mark of this part's single marks file holds: one per substream when the part
+     /// was written with substream marks, one per column otherwise.
+     size_t getNumColumnsInMark() const;
+
      /// Loads marks index granularity into memory
      void loadIndexGranularity() override;
 

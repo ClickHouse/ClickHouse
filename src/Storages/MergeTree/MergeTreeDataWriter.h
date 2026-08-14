@@ -115,7 +115,8 @@ public:
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
         bool merge_is_needed,
-        ContextPtr context);
+        ContextPtr context,
+        ColumnIdMappingPtr column_id_mapping);
 
     /// For mutation: MATERIALIZE PROJECTION.
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
@@ -124,7 +125,8 @@ public:
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
         size_t block_num,
-        ContextPtr context);
+        ContextPtr context,
+        ColumnIdMappingPtr column_id_mapping);
 
     static Block mergeBlock(
         Block && block,
@@ -152,7 +154,8 @@ private:
         const ProjectionDescription & projection,
         MergeTreeIndices indices,
         bool merge_is_needed,
-        bool try_adaptive_codec);
+        bool try_adaptive_codec,
+        ColumnIdMappingPtr column_id_mapping);
 
     MergeTreeData & data;
     LoggerPtr log;

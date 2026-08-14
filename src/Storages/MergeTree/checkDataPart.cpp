@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -146,6 +147,25 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     }
 }
 
+/// `columns.txt` spells ids, and `columns_list` -- the list the part loaded from that same file --
+/// carries each token as its column's id, so names cannot be compared after a metadata-only RENAME.
+/// Positional: a compact part's reader seeks a column by its `columns.txt` ordinal.
+static bool columnsMatchInIdSpace(const NamesAndTypesList & columns_txt, const NamesAndTypesList & columns_list)
+{
+    if (columns_txt.size() != columns_list.size())
+        return false;
+
+    auto expected = columns_list.begin();
+    for (const auto & column : columns_txt)
+    {
+        if (column.getColumnId() != expected->getColumnId() || !column.type->equals(*expected->type))
+            return false;
+        ++expected;
+    }
+
+    return true;
+}
+
 static IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     const IDataPartStorage & data_part_storage,
@@ -171,13 +191,18 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
     {
         auto buf = data_part_storage.readFile("columns.txt", read_settings, std::nullopt);
-        columns_txt.readText(*buf);
+        /// The comparison below is in ID space, so this reader has to accept an ID-keyed list --
+        /// refusing the version would fail the check on every part that carries IDs.
+        columns_txt.readText(*buf, /*check_eof=*/true, /*allow_column_ids=*/true);
         assertEOF(*buf);
     }
 
-    if (columns_txt != columns_list)
+    if (!columnsMatchInIdSpace(columns_txt, columns_list))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Columns doesn't match in part {}. Expected: {}. Found: {}",
             data_part_storage.getFullPath(), columns_list.toString(), columns_txt.toString());
+
+    /// Read `serialization.json` the way the part's own loader read it (`loadColumns`).
+    const bool column_ids_active = data_part->storage.getActiveColumnIdMapping() != nullptr;
 
     /// Real checksums based on contents of data. Must correspond to checksums.txt. If not - it means the data is broken.
     IMergeTreeDataPart::Checksums checksums_data;
@@ -204,7 +229,10 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         try
         {
             auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt);
-            serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
+            if (column_ids_active)
+                serialization_infos = SerializationInfoByName::readJSONWithColumnIds(columns_list, *serialization_file);
+            else
+                serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
         }
         catch (...)
         {
@@ -216,14 +244,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                 getCurrentExceptionMessage(true));
         }
     }
-
-    auto get_serialization = [&serialization_infos](const auto & column)
-    {
-        auto it = serialization_infos.find(column.name);
-        return it == serialization_infos.end()
-            ? column.type->getSerialization(serialization_infos.getSettings())
-            : column.type->getSerialization(*it->second);
-    };
 
     /// This function calculates only checksum of file content (compressed or uncompressed).
     auto checksum_file = [&](const String & file_name)
@@ -281,7 +301,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             settings.enumerate_dynamic_streams = false;
             for (const auto & column : columns_list)
             {
-                auto serialization = get_serialization(column);
+                auto serialization = serialization_infos.getSerialization(column);
                 auto data = ISerialization::SubstreamData(serialization)
                     .withType(column.type)
                     .withColumn(data_part->getColumnSample(column));
@@ -379,7 +399,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             if (projection_columns.empty())
             {
                 auto buf = projection_storage->readFile("columns.txt", read_settings, std::nullopt);
-                projection_columns.readText(*buf);
+                /// A projection part is written with the parent's mapping, so its list can be
+                /// ID-keyed too.
+                projection_columns.readText(*buf, /*check_eof=*/true, /*allow_column_ids=*/true);
                 assertEOF(*buf);
             }
 

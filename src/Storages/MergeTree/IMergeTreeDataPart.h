@@ -47,6 +47,8 @@ class Block;
 struct ColumnSize;
 class DeserializationPrefixesCache;
 class MergeTreeData;
+class ColumnIdMapping;
+using ColumnIdMappingPtr = std::shared_ptr<const ColumnIdMapping>;
 struct FutureMergedMutatedPart;
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
@@ -120,6 +122,17 @@ enum class DataPartRemovalState : uint8_t
     REMOVE_RETRY,
 };
 
+/// Where one column stream's marks live: which marks file, and which entry of each mark. A Wide part
+/// keeps a marks file per stream with one entry per mark; a Compact part one file per part with an
+/// entry per column or substream. Always naming the stream lets callers cache loaders by that name.
+struct ColumnMarksLocation
+{
+    String marks_stream_name;
+    size_t index_in_mark;
+    /// Width of the marks file: how many entries every mark holds.
+    size_t columns_in_mark;
+};
+
 /// Description of the data part.
 /// Warning: `IStorage` must outlive all its `IMergeTreeDataPart`s. Whenever you hold a
 ///          MergeTreeDataPartPtr you must also hold the corresponding StoragePtr.
@@ -157,13 +170,14 @@ public:
     virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
 
     /// NOTE: Returns zeros if column files are not found in checksums.
-    /// Otherwise return information about column size on disk.
-    ColumnSize getColumnSize(const String & column_name) const;
+    /// Otherwise return information about column size on disk. Keyed by stable storage id.
+    ColumnSize getColumnSize(const ColumnId & column_id) const;
     ColumnSizeByNameConstPtr getColumnSizes() const;
-    /// Return the size of all files required to read the specified subcolumn.
-    ColumnSize getSubcolumnSize(const String & /*subcolumn_name*/) const;
+    /// Return the size of all files required to read the specified subcolumn. Takes the whole pair: a
+    /// subcolumn has no id of its own, so it is keyed by the parent's id plus its name (`getStorageKey`).
+    ColumnSize getSubcolumnSize(const NameAndTypePair & subcolumn) const;
 
-    virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
+    virtual std::optional<time_t> getColumnModificationTime(const ColumnId & column_id) const = 0;
 
     /// NOTE: Returns zeros if secondary indexes are not found in checksums.
     /// Otherwise return information about secondary index size on disk.
@@ -199,12 +213,18 @@ public:
     String getTypeName() const { return getType().toString(); }
 
     /// We could have separate method like setMetadata, but it's much more convenient to set it up with columns
+    /// `new_infos` must be keyed by the columns' stamped IDs (`getColumnId`); a caller holding
+    /// name-keyed writer stats runs `reKeyToColumnIds` first.
     void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version);
 
     void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_);
 
+    /// True when at least one of this part's columns carries a `column_id` (stamped at write /
+    /// merge time), i.e. this part's files are named by column IDs. Derived from `columns`.
+    bool hasStampedColumnIds() const { return shared_part_columns->has_stamped_column_ids; }
+
     /// Re-home the small, part-lifetime metadata that build paths may populate outside the
-    /// dedicated MergeTree arena (`partition`, `ttl_infos`, `expired_columns`, and for patch parts
+    /// dedicated MergeTree arena (`partition`, `ttl_infos`, `expired_column_ids`, and for patch parts
     /// `source_parts_set`) into that arena. A cheap copy of small objects; call once these members
     /// are final. `columns` / `serializations` are handled by `setColumns`, the minmax index by
     /// `setMinMaxIndex` / the population sites.
@@ -221,8 +241,21 @@ public:
     const ColumnsSubstreams & getColumnsSubstreams() const { return *columns_substreams; }
     StorageMetadataPtr getMetadataSnapshot() const;
 
-    NameAndTypePair getColumn(const String & name) const;
-    std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const;
+    /// Return this part's own column carrying the given stable storage id (top-level; a subcolumn
+    /// shares its parent's id). The result is an id-carrying NameAndTypePair.
+    std::optional<NameAndTypePair> tryGetColumn(const ColumnId & column_id) const;
+
+    /// This part's own (sub)column for a name in @snapshot's schema: part-own name and type, subcolumn
+    /// preserved. `nullopt` if the snapshot lacks the name or this part lacks the column.
+    std::optional<NameAndTypePair> tryGetColumnBySnapshotName(const String & current_name, const StorageMetadataPtr & snapshot) const;
+    /// The same for a caller that already holds the resolved pair.
+    std::optional<NameAndTypePair> tryGetColumnByRequest(const NameAndTypePair & requested) const;
+
+    /// Unsafe: resolve by name off the part's OWN columns. The caller must hold a bare part-own name
+    /// (never a current/renamed name, which the part may not carry yet) and have no column id in
+    /// scope -- prefer the id overloads.
+    std::optional<NameAndTypePair> tryGetColumnByNameUnsafe(const String & column_name) const;
+    SerializationPtr tryGetSerializationByNameUnsafe(const String & column_name) const;
 
     /// Get sample column from part. For ordinary columns it just creates column using it's type.
     /// For columns with dynamic structure it reads sample column with 0 rows from the part.
@@ -232,8 +265,10 @@ public:
 
     const PartSerializations & getSerializations() const { return *serializations; }
 
-    SerializationPtr getSerialization(const String & column_name) const;
-    SerializationPtr tryGetSerialization(const String & column_name) const;
+    /// Serialization lookup by stable storage id (as produced by NameAndTypePair::getColumnId(),
+    /// subcolumns as "<id>.<subpath>" -- see NameAndTypePair::getStorageKey). No name->id resolution.
+    SerializationPtr getSerialization(const ColumnId & column_id) const;
+    SerializationPtr tryGetSerialization(const ColumnId & column_id) const;
 
     void remove();
 
@@ -253,6 +288,12 @@ public:
 
     /// Removes marks from cache for all columns in part.
     virtual void removeMarksFromCache(MarkCache * mark_cache) const = 0;
+
+    /// Locate the marks of one of @column's streams; an empty @substream_path asks for the stream
+    /// carrying the column itself. @column must be this part's own slot (see tryGetColumnBySnapshotName)
+    /// -- streams are addressed by its stamped id. `nullopt` if the part keeps no marks for that stream.
+    virtual std::optional<ColumnMarksLocation> getColumnMarksLocation(
+        const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const = 0;
 
     /// Loads index marks for secondary indices and saves them into the index mark cache.
     void loadIndexMarksToCache(MarkCache * index_mark_cache) const;
@@ -274,11 +315,10 @@ public:
 
     /// Returns column position in part structure or std::nullopt if it's missing in part.
     ///
-    /// NOTE: Doesn't take column renames into account, if some column renames
-    /// take place, you must take original name of column for this part from
-    /// storage and pass it to this method.
-    std::optional<size_t> getColumnPosition(const String & column_name) const;
-    const NameToNumber & getColumnPositions() const { return shared_part_columns->column_name_to_position; }
+    /// `column_id` is a storage key as produced by `NameAndTypePair::getColumnId`. An empty or
+    /// unknown id yields nullopt.
+    std::optional<size_t> getColumnPosition(const ColumnId & column_id) const;
+    const NameToNumber & getColumnPositions() const { return shared_part_columns->column_storage_key_to_position; }
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
@@ -431,12 +471,17 @@ public:
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
+        /// Resolves the partition key's column ids against `part_columns` (see `NamesAndTypesList::getColumnIdByName`).
+        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings, const NamesAndTypesList & part_columns) const;
+        /// Names each file after the matching pair in `columns`, whose names must be column ids already.
         [[nodiscard]] WrittenFiles store(const NamesAndTypesList & columns, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
 
         void update(const Block & block, const NamesAndTypesList & columns);
         void merge(const MinMaxIndex & other);
         Names getProbablyWrittenFiles(const IMergeTreeDataPart & part) const;
+        /// The only place a minmax file name is spelled. Its argument is an already resolved and
+        /// escaped key from one of the `getFileColumnName` overloads below, never a raw column name.
+        static String getFileName(const String & file_column_name) { return "minmax_" + file_column_name + ".idx"; }
         /// For Store
         static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
         /// For Load
@@ -458,8 +503,9 @@ public:
 
     Checksums checksums;
 
-    /// Columns with values, that all have been zeroed by expired ttl
-    NameSet expired_columns;
+    /// Columns with values, that all have been zeroed by expired ttl. Keyed by column ID, so
+    /// consumers match it against a part's own columns without resolving a column name.
+    ColumnIdSet expired_column_ids;
 
     NameSet invalidated_system_columns;
     bool isSystemColumnInvalidated(const String & column_name) const;
@@ -600,7 +646,11 @@ public:
         bool if_not_loaded = false,
         bool only_metadata = false);
 
-    /// If checksums.txt exists, reads file's checksums (and sizes) from it
+    /// Reads checksums (and sizes) from checksums.txt, without the recovery `loadChecksums` does.
+    /// False only when the file is absent -- i.e. exactly when that recovery is needed.
+    bool tryPreloadChecksums();
+
+    /// As above, but recovers by recalculating the checksums when checksums.txt is absent.
     void loadChecksums(bool require);
     bool areChecksumsLoaded() const { return !checksums.empty(); }
 
@@ -831,7 +881,14 @@ protected:
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
     /// Calculate the size of all files required to read a specified subcolumn.
-    virtual ColumnSize calculateSubcolumnSize(const String & /*subcolumn_name*/) const { return {}; }
+    virtual ColumnSize calculateSubcolumnSize(const NameAndTypePair & /*subcolumn*/) const { return {}; }
+
+    /// Check `substreams`' column keys against this part's column names, where that comparison is
+    /// meaningful at all.
+    void validateSubstreamColumnNames(const ColumnsSubstreams & substreams) const;
+
+    /// Throws unless @column carries an id on a part whose files are named by ids.
+    void checkColumnIdIsStamped(const NameAndTypePair & column) const;
 
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
@@ -854,7 +911,7 @@ private:
     mutable std::atomic<MergeTreeDataPartState> state{MergeTreeDataPartState::Temporary};
 
     /// Schema-derived metadata shared with all other parts of the table that store the same
-    /// columns: the column list, the name-to-position map (in compact parts order of columns
+    /// columns: the column list, the storage-key-to-position map (in compact parts order of columns
     /// is necessary) and the columns descriptions (for more convenient access to columns by
     /// name and getting subcolumns; the collected-nested variant is used while reading from
     /// wide parts). Cannot be changed after part initialization. Obtained from (and returned
@@ -870,7 +927,8 @@ private:
     /// Kept per-part: it holds the row/default counters of this part's data.
     SerializationInfoByName serialization_infos{{}};
 
-    /// Serializations for every columns and subcolumns by their names.
+    /// Serializations for every column and subcolumn, keyed by stable storage key (a subcolumn as
+    /// `"<id>.<subpath>"`, see `NameAndTypePair::getStorageKey`).
     /// Shared across parts of the table with the same serialization kinds; the per-column pieces
     /// inside are shared even when only some columns have the same kinds. Never null.
     PartSerializationsPtr serializations = SharedPartColumns::getEmptySerializations();
@@ -885,6 +943,13 @@ private:
 
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require, bool load_metadata_version);
+
+    /// When a column ID mapping is active, every entry in the on-disk column list (columns.txt)
+    /// is a column ID rather than a current column name. Translate each back to its column name
+    /// and attach the column ID as metadata.
+    NamesAndTypesList remapColumnIdsToColumnNames(
+        const NamesAndTypesList & loaded_columns,
+        const ColumnIdMapping & mapping) const;
 
     /// Reads columns substreams from columns_substreams.txt.
     void loadColumnsSubstreams();
@@ -941,6 +1006,9 @@ private:
     void decrementStateMetric(MergeTreeDataPartState state) const;
 
     void checkConsistencyBase() const;
+
+    /// Id under which a partition-key column's `minmax_<id>.idx` is named in THIS part.
+    String minmaxColumnId(const String & column_name) const;
 
     /// Returns the name of projection for projection part, empty string for regular part.
     String getProjectionName() const;

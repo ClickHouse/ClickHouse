@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
+#include <Core/NamesAndTypes.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -10,7 +11,7 @@ namespace ErrorCodes
 }
 
 std::vector<size_t> getSubcolumnsDeserializationOrder(
-    const String & column_name,
+    const NameAndTypePair & column,
     const std::vector<ISerialization::SubstreamData> & subcolumns_data,
     const std::vector<String> & substreams_in_serialization_order,
     ISerialization::EnumerateStreamsSettings & enumerate_settings,
@@ -34,7 +35,7 @@ std::vector<size_t> getSubcolumnsDeserializationOrder(
             if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
                 return;
 
-            String substream_name = ISerialization::getFileNameForStream(column_name, substream_path, stream_file_name_settings);
+            String substream_name = ISerialization::getFileNameForStreamByColumnId(column, substream_path, stream_file_name_settings);
             auto it = substream_to_pos.find(substream_name);
             if (it == substream_to_pos.end())
             {
@@ -42,12 +43,12 @@ std::vector<size_t> getSubcolumnsDeserializationOrder(
                 auto stream_file_name_settings_copy = stream_file_name_settings;
                 if (ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(substream_path, stream_file_name_settings_copy))
                 {
-                    substream_name = ISerialization::getFileNameForStream(column_name, substream_path, stream_file_name_settings_copy);
+                    substream_name = ISerialization::getFileNameForStreamByColumnId(column, substream_path, stream_file_name_settings_copy);
                     it = substream_to_pos.find(substream_name);
                 }
 
                 if (it == substream_to_pos.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected substream {} for column {}", substream_name, column_name);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected substream {} for column {}", substream_name, column.name);
             }
 
             substreams_positions.push_back(it->second);

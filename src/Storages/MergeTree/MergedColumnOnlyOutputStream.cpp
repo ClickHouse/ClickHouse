@@ -89,15 +89,20 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
 
     auto columns = new_part->getColumns();
     auto serialization_infos = new_part->getSerializationInfos();
+
+    /// Into the part's key space, or `replaceData` misses the join and loses the chosen kinds.
+    new_serialization_infos.reKeyToColumnIds(columns);
     serialization_infos.replaceData(new_serialization_infos);
 
-    NameSet empty_columns;
-    for (const auto & column : writer->getColumnsSample())
+    /// Only the columns this stream wrote are its to remove, and its sample block names them logically.
+    const auto & columns_sample = writer->getColumnsSample();
+    ColumnIdSet empty_column_ids;
+    for (const auto & column : columns)
     {
-        if (new_part->expired_columns.contains(column.name))
-            empty_columns.emplace(column.name);
+        if (new_part->expired_column_ids.contains(column.getColumnId()) && columns_sample.has(column.name))
+            empty_column_ids.emplace(column.getColumnId());
     }
-    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, empty_columns, serialization_infos, checksums);
+    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, empty_column_ids, serialization_infos, checksums);
 
     for (const String & removed_file : removed_files)
     {

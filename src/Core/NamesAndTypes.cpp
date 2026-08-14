@@ -343,6 +343,22 @@ std::optional<NameAndTypePair> NamesAndTypesList::tryGetByName(const std::string
     return {};
 }
 
+std::optional<NameAndTypePair> NamesAndTypesList::tryGetByColumnId(const ColumnId & column_id) const
+{
+    for (const NameAndTypePair & column : *this)
+    {
+        if (column.getColumnId() == column_id)
+            return column;
+    }
+    return {};
+}
+
+ColumnId NamesAndTypesList::getColumnIdByName(const std::string & name) const
+{
+    auto column = tryGetByName(name);
+    return column ? column->getColumnId() : ColumnId{name};
+}
+
 size_t NamesAndTypesList::getPosByName(const std::string &name) const noexcept
 {
     size_t pos = 0;

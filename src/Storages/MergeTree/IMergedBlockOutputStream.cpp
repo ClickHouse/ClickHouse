@@ -48,36 +48,33 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const MergeTreeDataPartPtr & data_part,
     NamesAndTypesList & columns,
-    const NameSet & empty_columns,
+    const ColumnIdSet & empty_column_ids,
     SerializationInfoByName & serialization_infos,
     MergeTreeData::DataPart::Checksums & checksums)
 {
     /// For compact part we have to override whole file with data, it's not
     /// worth it
-    if (empty_columns.empty() || isCompactPart(data_part))
+    if (empty_column_ids.empty() || isCompactPart(data_part))
         return {};
 
     /// A part must keep at least one physical column: `loadColumns` and `loadIndexGranularity`
     /// throw NO_FILE_IN_DATA_PART "No columns in part" for a zero-column part.
-    NameSet columns_to_remove = empty_columns;
+    ColumnIdSet ids_to_remove = empty_column_ids;
     size_t columns_kept = 0;
     for (const auto & column : columns)
-        columns_kept += !columns_to_remove.contains(column.name);
+        columns_kept += !ids_to_remove.contains(column.getColumnId());
 
     if (columns_kept == 0 && !columns.empty())
-        columns_to_remove.erase(columns.back().name);
+        ids_to_remove.erase(columns.back().getColumnId());
 
-    if (columns_to_remove.empty())
+    if (ids_to_remove.empty())
         return {};
-
-    for (const auto & column : columns_to_remove)
-        LOG_TRACE(data_part->storage.log, "Skipping expired/empty column {} for part {}", column, data_part->name);
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
     for (const auto & column : columns)
     {
-        data_part->getSerialization(column.name)->enumerateStreams(
+        data_part->getSerialization(column.getStorageKey())->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
                 auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", checksums, data_part->storage.getSettings());
@@ -88,15 +85,21 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
 
     NameSet remove_files;
     const String mrk_extension = data_part->getMarksFileExtension();
-    for (const auto & column_name : columns_to_remove)
+    for (const auto & column : columns)
     {
-        auto serialization = data_part->tryGetSerialization(column_name);
+        if (!ids_to_remove.contains(column.getColumnId()))
+            continue;
+
+        LOG_TRACE(data_part->storage.log, "Skipping expired/empty column {} for part {}", column.name, data_part->name);
+
+        auto serialization = data_part->tryGetSerialization(column.getStorageKey());
         if (!serialization)
             continue;
 
         ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", checksums, data_part->storage.getSettings());
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                column, substream_path, ".bin", checksums, data_part->storage.getSettings());
 
             /// Delete files if they are no longer shared with another column.
             if (stream_name && --stream_counts[*stream_name] == 0)
@@ -107,7 +110,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         };
 
         serialization->enumerateStreams(callback);
-        serialization_infos.erase(column_name);
+        serialization_infos.erase(column.getStorageKey().value());
     }
 
     /// Remove files on disk and checksums
@@ -126,18 +129,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     }
 
     /// Remove columns from columns array
-    for (const String & empty_column_name : columns_to_remove)
-    {
-        auto find_func = [&empty_column_name](const auto & pair) -> bool
-        {
-            return pair.name == empty_column_name;
-        };
-        auto remove_it
-            = std::find_if(columns.begin(), columns.end(), find_func);
-
-        if (remove_it != columns.end())
-            columns.erase(remove_it);
-    }
+    columns.remove_if([&](const auto & column) { return ids_to_remove.contains(column.getColumnId()); });
 
     return remove_files;
 }

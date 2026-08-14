@@ -699,6 +699,10 @@ public:
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
 
+    /// The mapping only once it is active, i.e. parts are being written with IDs. An inactive mapping
+    /// (a leftover from a failed activation) must not make renames metadata-only.
+    ColumnIdMappingPtr getActiveColumnIdMapping() const;
+
     /// Check the set of data parts on disk and load if needed, assuming the data on disk can change under the hood.
     /// This method allows read-only replicas of tables on a shared storage.
     /// `refreshDataParts` is the background-task entry point: it reschedules itself afterwards.

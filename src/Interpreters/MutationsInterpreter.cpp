@@ -1301,8 +1301,9 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
             {
                 /// Check if the type of this column is changed and there are projections that have this column in the primary key or indices
-                /// that depend on it. We should rebuild such projections and indices
-                const auto & column = merge_tree_data_part->tryGetColumn(command.column_name);
+                /// that depend on it. We should rebuild such projections and indices.
+                /// The part's stored pair (its on-disk type) may differ from the command's target.
+                auto column = merge_tree_data_part->tryGetColumnBySnapshotName(command.column_name, metadata_snapshot);
                 if (column && command.data_type && !column->type->equals(*command.data_type))
                 {
                     for (const auto & projection : metadata_snapshot->getProjections())

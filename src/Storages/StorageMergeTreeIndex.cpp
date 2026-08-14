@@ -13,7 +13,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
@@ -41,7 +40,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int NOT_IMPLEMENTED;
 }
 
 class MergeTreeIndexSource final : public ISource, WithContext
@@ -53,7 +51,8 @@ public:
         SharedHeader minmax_header_,
         MergeTreeData::DataPartsVector data_parts_,
         ContextPtr context_,
-        bool with_marks_)
+        bool with_marks_,
+        StorageMetadataHandle source_metadata_)
         : ISource(header_)
         , WithContext(context_)
         , header(std::move(header_))
@@ -61,6 +60,7 @@ public:
         , minmax_header(std::move(minmax_header_))
         , data_parts(std::move(data_parts_))
         , with_marks(with_marks_)
+        , source_metadata(std::move(source_metadata_))
     {
     }
 
@@ -77,15 +77,9 @@ protected:
         const auto & part = data_parts[part_index];
         const auto & index_granularity = part->index_granularity;
 
-        std::shared_ptr<MergeTreeMarksLoader> marks_loader;
-        if (with_marks && isCompactPart(part))
-        {
-            marks_loader = createMarksLoader(
-                part,
-                MergeTreeDataPartCompact::DATA_FILE_NAME,
-                part->index_granularity_info.mark_type.with_substreams ? part->getColumnsSubstreams().getTotalSubstreams()
-                                                                       : part->getColumns().size());
-        }
+        /// Both caches below describe one part, so drop what the previous part left.
+        part_streams_by_logical_name.reset();
+        marks_loaders.clear();
 
         size_t num_columns = header->columns();
         size_t num_rows = index_granularity->getMarksCount();
@@ -164,7 +158,7 @@ protected:
             }
             else if (auto [first, second] = Nested::splitName(column_name, true); with_marks && second == "mark")
             {
-                result_columns[pos] = fillMarks(part, marks_loader, *column_type, first);
+                result_columns[pos] = fillMarks(part, *column_type, first);
             }
             else
             {
@@ -195,55 +189,68 @@ private:
             local_context->getSettingsRef()[Setting::use_streaming_marks_compression]);
     }
 
-    ColumnPtr fillMarks(
-        MergeTreeDataPartPtr part,
-        std::shared_ptr<MergeTreeMarksLoader> marks_loader,
-        const IDataType & data_type,
-        const String & column_name)
+    /// A stream as the part addresses it -- by the column's stamped ID.
+    struct PartStream
     {
-        size_t col_idx = 0;
-        bool has_marks_in_part = false;
+        NameAndTypePair column_in_part;
+        ISerialization::SubstreamPath substream_path;
+    };
+
+    /// A stream name as `getFileNameForStream` derives it from a column's CURRENT logical name --
+    /// never `getFileNameForStreamByColumnId`. The header's `<stream>.mark` columns are named this way
+    /// (see TableFunctionMergeTreeIndex), and the name is all `fillMarks` is handed.
+    using LogicalStreamName = String;
+
+    using PartStreamByLogicalName = std::unordered_map<LogicalStreamName, PartStream>;
+
+    PartStreamByLogicalName buildPartStreamsByLogicalName(const MergeTreeDataPartPtr & part) const
+    {
+        PartStreamByLogicalName streams;
+        ISerialization::StreamFileNameSettings stream_file_name_settings(*part->storage.getSettings());
+
+        for (const auto & column : source_metadata->getColumns().getAllPhysical())
+        {
+            auto column_in_part = part->tryGetColumnBySnapshotName(column.name, source_metadata);
+            if (!column_in_part)
+                continue;
+
+            /// The header also asks for the stream carrying the column itself, which for some types
+            /// (e.g. Tuple) is not among the substreams. Insert it first so that it wins over an
+            /// equally named substream, matching how the header was built.
+            streams.emplace(escapeForFileName(column.name), PartStream{*column_in_part, {}});
+
+            auto serialization = part->tryGetSerialization(column_in_part->getStorageKey());
+            if (!serialization)
+                continue;
+
+            serialization->enumerateStreams([&](const auto & substream_path)
+            {
+                auto stream_name = ISerialization::getFileNameForStream(column.name, substream_path, stream_file_name_settings);
+                streams.emplace(std::move(stream_name), PartStream{*column_in_part, substream_path});
+            });
+        }
+
+        return streams;
+    }
+
+    ColumnPtr fillMarks(const MergeTreeDataPartPtr & part, const IDataType & data_type, const LogicalStreamName & logical_stream_name)
+    {
         size_t num_rows = part->index_granularity->getMarksCount();
 
-        if (isWidePart(part))
-        {
-            if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(column_name, ".bin", part->checksums))
-            {
-                col_idx = 0;
-                has_marks_in_part = true;
-                marks_loader = createMarksLoader(part, *stream_name, /*num_columns=*/ 1);
-            }
-        }
-        else if (isCompactPart(part))
-        {
-            if (part->index_granularity_info.mark_type.with_substreams)
-            {
-                if (auto col_idx_opt = part->getColumnsSubstreams().tryGetSubstreamPosition(column_name))
-                {
-                    col_idx = *col_idx_opt;
-                    has_marks_in_part = true;
-                }
-            }
-            else
-            {
-                auto unescaped_name = unescapeForFileName(column_name);
-                if (auto col_idx_opt = part->getColumnPosition(unescaped_name))
-                {
-                    col_idx = *col_idx_opt;
-                    has_marks_in_part = true;
-                }
-            }
-        }
-        else
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Parts with type {} are not supported", part->getTypeName());
-        }
+        if (!part_streams_by_logical_name)
+            part_streams_by_logical_name = buildPartStreamsByLogicalName(part);
 
-        if (!has_marks_in_part)
-        {
-            auto column = data_type.createColumnConstWithDefaultValue(num_rows);
-            return column->convertToFullColumnIfConst();
-        }
+        std::optional<ColumnMarksLocation> marks_location;
+        if (auto it = part_streams_by_logical_name->find(logical_stream_name); it != part_streams_by_logical_name->end())
+            marks_location = part->getColumnMarksLocation(it->second.column_in_part, it->second.substream_path);
+
+        /// The part stores nothing for this stream, so the column has no marks here.
+        if (!marks_location)
+            return data_type.createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
+
+        auto & marks_loader = marks_loaders[marks_location->marks_stream_name];
+        if (!marks_loader)
+            marks_loader = createMarksLoader(part, marks_location->marks_stream_name, marks_location->columns_in_mark);
 
         auto compressed = ColumnUInt64::create(num_rows);
         auto uncompressed = ColumnUInt64::create(num_rows);
@@ -255,7 +262,7 @@ private:
 
         for (size_t i = 0; i < num_rows; ++i)
         {
-            auto mark = marks_getter->getMark(i, col_idx);
+            auto mark = marks_getter->getMark(i, marks_location->index_in_mark);
 
             compressed_data[i] = mark.offset_in_compressed_file;
             uncompressed_data[i] = mark.offset_in_decompressed_block;
@@ -272,8 +279,16 @@ private:
     SharedHeader minmax_header;
     MergeTreeData::DataPartsVector data_parts;
     bool with_marks;
+    /// Source table's live metadata, captured once at pipeline init (this source holds no
+    /// StorageSnapshot of the source table). It carries the current logical names the header is built
+    /// from, and resolves them to a part's columns by their stable IDs.
+    StorageMetadataHandle source_metadata;
 
     size_t part_index = 0;
+
+    std::optional<PartStreamByLogicalName> part_streams_by_logical_name;
+    /// Keyed by marks stream name, so a Wide part gets a loader per column and a Compact part one.
+    std::unordered_map<String, std::shared_ptr<MergeTreeMarksLoader>> marks_loaders;
 };
 
 const ColumnWithTypeAndName StorageMergeTreeIndex::part_name_column{std::make_shared<DataTypeString>(), "part_name"};
@@ -433,13 +448,16 @@ void ReadFromMergeTreeIndex::initializePipeline(QueryPipelineBuilder & pipeline,
         filtered_parts.size(),
         storage->source_table->getStorageID().getNameForLogs());
 
+    auto source_metadata = storage->source_table->getInMemoryMetadataPtr(context, false);
+
     pipeline.init(Pipe(std::make_shared<MergeTreeIndexSource>(
         getOutputHeader(),
         storage->key_sample_block,
         storage->minmax_sample_block,
         std::move(filtered_parts),
         context,
-        storage->with_marks)));
+        storage->with_marks,
+        std::move(source_metadata))));
 }
 
 }

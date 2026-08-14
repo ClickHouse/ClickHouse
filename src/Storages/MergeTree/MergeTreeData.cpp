@@ -5,6 +5,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
+#include <Storages/MergeTree/ColumnIdHelper.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
@@ -955,6 +957,17 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
                             "{} key contains nullable columns, "
                             "but merge tree setting `allow_nullable_key` is disabled", key_name);
     }
+}
+
+ColumnIdMappingPtr MergeTreeData::getActiveColumnIdMapping() const
+{
+    /// Off the live metadata, bypassing the per-query cache: a mapping change publishes a fresh
+    /// pointer, and a cached snapshot would hand out the pre-change one.
+    auto metadata = getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
+    const auto & mapping = metadata->column_id_mapping;
+    if (mapping && mapping->isActive())
+        return mapping;
+    return nullptr;
 }
 
 void MergeTreeData::checkProperties(
@@ -7721,10 +7734,14 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const Data
 
 void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(const DataPartPtr & part) const
 {
+    auto mapping = getActiveColumnIdMapping();
     for (const auto & column : part->getColumns())
     {
-        ColumnSize & total_column_size = column_sizes[column.name];
-        ColumnSize part_column_size = part->getColumnSize(column.name);
+        auto key = tryGetCurrentColumnName(column, mapping.get());
+        if (!key)
+            continue;
+        ColumnSize & total_column_size = column_sizes[*key];
+        ColumnSize part_column_size = part->getColumnSize(column.getColumnId());
         total_column_size.add(part_column_size);
     }
 
@@ -7776,6 +7793,8 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, 
         return result;
     }
 
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+
     /// Exact subcolumn sizes are derived per active part from the required substreams.
     /// Snapshot the parts under the lock and release it before the per-part size calculation,
     /// which reads part-local state and would otherwise block part commits and merges.
@@ -7790,9 +7809,9 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, 
     {
         for (const auto & col_name : subcolumn_names)
         {
-            auto column = part->tryGetColumn(col_name);
-            if (column && column->isSubcolumn())
-                result[col_name].add(part->getSubcolumnSize(col_name));
+            auto subcolumn = part->tryGetColumnBySnapshotName(col_name, metadata_snapshot);
+            if (subcolumn && subcolumn->isSubcolumn())
+                result[col_name].add(part->getSubcolumnSize(*subcolumn));
         }
     }
 
@@ -7806,10 +7825,15 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
     if (!are_columns_and_secondary_indices_sizes_calculated)
         return;
 
+    auto mapping = getActiveColumnIdMapping();
     for (const auto & column : part->getColumns())
     {
-        ColumnSize & total_column_size = column_sizes[column.name];
-        ColumnSize part_column_size = part->getColumnSize(column.name);
+        /// Same key as the addition made, or the subtraction lands on another column's total.
+        auto key = tryGetCurrentColumnName(column, mapping.get());
+        if (!key)
+            continue;
+        ColumnSize & total_column_size = column_sizes[*key];
+        ColumnSize part_column_size = part->getColumnSize(column.getColumnId());
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {

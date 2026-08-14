@@ -130,13 +130,15 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
     const MergeTreeWriterSettings & writer_settings,
     MergeTreeIndexGranularityPtr computed_index_granularity)
 {
+    /// `column_positions` (the part's position map) is keyed by stable storage id; the columns_list
+    /// pairs carry the same id, so order by id.
     NamesAndTypesList ordered_columns_list;
     std::copy_if(columns_list.begin(), columns_list.end(), std::back_inserter(ordered_columns_list),
-        [&column_positions](const auto & column) { return column_positions.contains(column.name); });
+        [&column_positions](const auto & column) { return column_positions.contains(column.getColumnId().value()); });
 
     /// Order of writing is important in compact format
     ordered_columns_list.sort([&column_positions](const auto & lhs, const auto & rhs)
-        { return column_positions.at(lhs.name) < column_positions.at(rhs.name); });
+        { return column_positions.at(lhs.getColumnId().value()) < column_positions.at(rhs.getColumnId().value()); });
 
     return std::make_unique<MergeTreeDataPartWriterCompact>(
         data_part_name_, logger_name_, serializations_, data_part_storage_,
@@ -201,6 +203,11 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
     }
 }
 
+size_t MergeTreeDataPartCompact::getNumColumnsInMark() const
+{
+    return index_granularity_info.mark_type.with_substreams ? getColumnsSubstreams().getTotalSubstreams() : getColumns().size();
+}
+
 void MergeTreeDataPartCompact::loadIndexGranularity()
 {
     if (getColumns().empty())
@@ -209,7 +216,7 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     loadIndexGranularityImpl(
         index_granularity,
         index_granularity_info,
-        index_granularity_info.mark_type.with_substreams ? getColumnsSubstreams().getTotalSubstreams() : getColumns().size(),
+        getNumColumnsInMark(),
         getDataPartStorage(),
         *storage.getSettings());
 }
@@ -233,7 +240,7 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
         /*save_marks_in_cache=*/ true,
         context->getReadSettings(),
         /*load_marks_threadpool_=*/ nullptr,
-        index_granularity_info.mark_type.with_substreams ? getColumnsSubstreams().getTotalSubstreams() : getColumns().size(),
+        getNumColumnsInMark(),
         context->getSettingsRef()[Setting::use_streaming_marks_compression]);
 
     loader.loadMarks();
@@ -249,9 +256,37 @@ void MergeTreeDataPartCompact::removeMarksFromCache(MarkCache * mark_cache) cons
     mark_cache->remove(key);
 }
 
+std::optional<ColumnMarksLocation> MergeTreeDataPartCompact::getColumnMarksLocation(
+    const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const
+{
+    checkColumnIdIsStamped(column);
+
+    auto column_position = getColumnPosition(column.getColumnId());
+    if (!column_position)
+        return std::nullopt;
+
+    if (!index_granularity_info.mark_type.with_substreams)
+    {
+        /// One mark per column, so only the stream carrying the column itself has marks here.
+        if (!substream_path.empty())
+            return std::nullopt;
+
+        return ColumnMarksLocation{
+            .marks_stream_name = DATA_FILE_NAME, .index_in_mark = *column_position, .columns_in_mark = getNumColumnsInMark()};
+    }
+
+    auto substream_position = getColumnsSubstreams().tryGetSubstreamPosition(
+        *column_position, column, substream_path, storage.getSettings());
+    if (!substream_position)
+        return std::nullopt;
+
+    return ColumnMarksLocation{
+        .marks_stream_name = DATA_FILE_NAME, .index_in_mark = *substream_position, .columns_in_mark = getNumColumnsInMark()};
+}
+
 bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const
 {
-    if (!getColumnPosition(column.getNameInStorage()))
+    if (!getColumnPosition(column.getColumnId()))
         return false;
 
     auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
@@ -260,7 +295,7 @@ bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) co
     return (bin_checksum != checksums.files.end() && mrk_checksum != checksums.files.end());
 }
 
-std::optional<time_t> MergeTreeDataPartCompact::getColumnModificationTime(const String & /* column_name */) const
+std::optional<time_t> MergeTreeDataPartCompact::getColumnModificationTime(const ColumnId & /* column_id */) const
 {
     return getDataPartStorage().getFileLastModified(DATA_FILE_NAME_WITH_EXTENSION).epochTime();
 }

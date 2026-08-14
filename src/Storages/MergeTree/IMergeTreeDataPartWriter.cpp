@@ -145,12 +145,16 @@ PlainMarksByName IMergeTreeDataPartWriter::releaseCachedIndexMarks()
     return res;
 }
 
-SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & column_name) const
+SerializationPtr IMergeTreeDataPartWriter::getSerialization(const NameAndTypePair & column) const
 {
-    auto it = serializations.find(column_name);
+    /// `serializations` is keyed by stable storage id (see IMergeTreeDataPart::setColumns); the id
+    /// rides on the pair, so key off it directly -- no name->id resolution.
+    const String key = column.getStorageKey().value();
+
+    auto it = serializations.find(key);
     if (it == serializations.end())
         throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-            "There is no column or subcolumn {} in part {}", column_name, data_part_name);
+            "There is no column or subcolumn {} in part {}", column.name, data_part_name);
 
     return it->second;
 }

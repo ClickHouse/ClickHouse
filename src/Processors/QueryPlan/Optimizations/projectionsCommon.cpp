@@ -339,8 +339,10 @@ static bool projectionPartHasRequiredColumns(
 
     for (const auto & name : required_column_names)
     {
-        /// (1) Stored by the projection part.
-        if (projection_part.tryGetColumn(name))
+        /// (1) Stored by the projection part, resolved by its own name: `checkAlterIsPossible` has
+        /// rejected RENAME of a projection-referenced column since long before column IDs, so those
+        /// stored names never go stale.
+        if (projection_part.tryGetColumnByNameUnsafe(name))
             continue;
 
         /// (2) Virtual column, provided by the reading step.
@@ -349,7 +351,7 @@ static bool projectionPartHasRequiredColumns(
 
         /// (3) Drift: the parent part still stores the column, or it is not a stored table column,
         /// so the projection part is stale for it and must not be read.
-        if (parent_part.tryGetColumn(name)
+        if (parent_part.tryGetColumnBySnapshotName(name, parent_metadata)
             || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name))
             return false;
 

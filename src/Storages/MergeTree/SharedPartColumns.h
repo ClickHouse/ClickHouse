@@ -28,7 +28,7 @@ class ColumnsDescription;
 /// a `shared_ptr` to one immutable `SharedPartColumns` bundle interned in a per-`MergeTreeData` cache
 /// keyed by the stored column list (see `MergeTreeData::getSharedPartColumnsForColumns`).
 ///
-/// The members that are a pure function of the column list (`columns`, `column_name_to_position`,
+/// The members that are a pure function of the column list (`columns`, `column_storage_key_to_position`,
 /// `columns_description{,_with_collected_nested}`) live directly in the bundle. The members that also
 /// depend on the per-part serialization kinds (the `serializations` map and `columns_substreams`) are
 /// interned in secondary caches nested inside the bundle, so they deduplicate across all parts whose
@@ -62,14 +62,14 @@ public:
         /// The serialization of the column itself followed by the serializations of its
         /// subcolumns in enumeration order.
         std::vector<SerializationPtr> serializations;
-        /// The lookup name of every serialization above (the column name, then the subcolumn full
+        /// The lookup name of every serialization above (the storage key, then the subcolumn full
         /// names). Stored so that the name lookup map can be assembled from interned groups
         /// without re-enumerating the subcolumns.
         std::vector<String> names;
     };
     using ColumnGroupPtr = std::shared_ptr<const ColumnGroup>;
 
-    /// Column name or subcolumn full name -> (column position, index within the column's group).
+    /// Storage key of a column or subcolumn -> (column position, index within the column's group).
     using NameToSlot = std::unordered_map<String, std::pair<UInt32, UInt32>>;
     using NameToSlotPtr = std::shared_ptr<const NameToSlot>;
 
@@ -109,8 +109,8 @@ using PartSerializationsPtr = std::shared_ptr<const PartSerializations>;
 class SharedPartColumns
 {
 public:
-    /// The keys are views into the names of the `columns` member of the owning bundle, which is
-    /// immutable and outlives the map, so the names are not duplicated.
+    /// The keys are views into the `columns` member of the owning bundle, which is immutable and
+    /// outlives the map, so the keys are not duplicated.
     using NameToNumber = std::unordered_map<std::string_view, size_t>;
 
     SharedPartColumns(
@@ -121,7 +121,7 @@ public:
         String interning_key_);
 
     /// What makes two column lists interchangeable for a data part, and therefore the interning key of a
-    /// bundle: the names of the columns, their full type names and the identities of the custom
+    /// bundle: the ids and names of the columns, their full type names and the identities of the custom
     /// serializations attached to them from outside the type. `NamesAndTypesList` equality is not enough:
     /// it compares types with `IDataType::equals`, which ignores custom names at any depth
     /// (`Nullable(Bool)` against `Nullable(UInt8)`) although a part persists the name it was declared
@@ -129,7 +129,10 @@ public:
     static String describeColumns(const NamesAndTypesList & columns);
 
     const NamesAndTypesList columns;
-    const NameToNumber column_name_to_position;
+    /// Keyed by storage id (`NameAndTypePair::getColumnId`).
+    const NameToNumber column_storage_key_to_position;
+    /// Whether the list carries ids of its own. A pure function of it, hence interned with it.
+    const bool has_stamped_column_ids;
     const std::shared_ptr<const ColumnsDescription> columns_description;
     /// Aliases `columns_description` when `Nested::collect` produces no distinct list
     /// (or when the `share_nested_offsets` setting is disabled).

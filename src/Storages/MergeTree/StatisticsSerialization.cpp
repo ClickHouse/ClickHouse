@@ -10,16 +10,17 @@
 namespace DB
 {
 
-static String getStatisticsFilename(const String & column_name)
+static String getStatisticsFilename(const String & column_name, const NamesAndTypesList & part_columns)
 {
     /// Note, we cannot use replaceFileNameToHashIfNeeded(), since we do not handle hashes->column names for statistics in getColumnForStatisticsFile()
-    return String(STATS_FILE_PREFIX) + escapeForFileName(column_name) + String(STATS_FILE_SUFFIX);
+    return String(STATS_FILE_PREFIX) + escapeForFileName(part_columns.getColumnIdByName(column_name).value()) + String(STATS_FILE_SUFFIX);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> serializeStatisticsPacked(
     IDataPartStorage & data_part_storage,
     MergeTreeDataPartChecksums & out_checksums,
     const ColumnsStatistics & statistics,
+    const NamesAndTypesList & part_columns,
     const CompressionCodecPtr & compression_codec,
     const WriteSettings & write_settings)
 {
@@ -27,7 +28,7 @@ std::unique_ptr<WriteBufferFromFileBase> serializeStatisticsPacked(
 
     for (const auto & [column_name, stat] : statistics)
     {
-        String filename = getStatisticsFilename(column_name);
+        String filename = getStatisticsFilename(column_name, part_columns);
         auto out = packed_writer.writeFile(filename, write_settings);
 
         CompressedWriteBuffer compressor(*out, compression_codec, 1024 * 1024);
@@ -54,6 +55,7 @@ WrittenFiles serializeStatisticsWide(
     IDataPartStorage & data_part_storage,
     MergeTreeDataPartChecksums & out_checksums,
     const ColumnsStatistics & statistics,
+    const NamesAndTypesList & part_columns,
     const CompressionCodecPtr & compression_codec,
     const WriteSettings & write_settings)
 {
@@ -61,7 +63,7 @@ WrittenFiles serializeStatisticsWide(
 
     for (const auto & [column_name, stat] : statistics)
     {
-        String filename = getStatisticsFilename(column_name);
+        String filename = getStatisticsFilename(column_name, part_columns);
 
         /// Buffer chain: plain_file <- plain_hashing <- compressor <- compressed_hashing
         auto plain_file = data_part_storage.writeFile(filename, 4096, write_settings);

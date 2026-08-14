@@ -137,7 +137,9 @@ static NameSet getAllPossibleStreamNames(
     /// add columns with marks of its substreams to the table.
     for (const auto & part : data_parts)
     {
-        serialization = part->tryGetSerialization(column.name);
+        /// `column` came from the pinned metadata snapshot's getAllPhysical(), so it already carries
+        /// the authoritative id; query the part by that id, not the part's own name index.
+        serialization = part->tryGetSerialization(column.getStorageKey());
         if (serialization && ISerialization::hasKind(serialization->getKindStack(), ISerialization::Kind::SPARSE))
         {
             serialization->enumerateStreams(callback);

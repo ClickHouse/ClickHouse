@@ -239,7 +239,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
                     columns[res_index++]->insertDefault();
             }
 
-            ColumnSize column_size = part->getColumnSize(column.name);
+            ColumnSize column_size = part->getColumnSize(column.getColumnId());
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_size.data_compressed + column_size.marks);
             if (columns_mask[src_index++])
@@ -250,7 +250,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
                 columns[res_index++]->insert(column_size.marks);
             if (columns_mask[src_index++])
             {
-                if (auto column_modification_time = part->getColumnModificationTime(column.name))
+                if (auto column_modification_time = part->getColumnModificationTime(column.getColumnId()))
                     columns[res_index++]->insert(UInt64(column_modification_time.value()));
                 else
                     columns[res_index++]->insertDefault();

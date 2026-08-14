@@ -34,14 +34,16 @@ namespace DB
 namespace
 {
 
-/// The keys view into the names of `columns`, which belongs to the same bundle and outlives the map.
+/// The keys view into `columns`, which belongs to the same bundle and outlives the map. Spelled out
+/// rather than taken from `getColumnId`, which returns a fresh `ColumnId` by value: a view of that
+/// would dangle. Whole columns only, so no subcolumn name has to be built.
 SharedPartColumns::NameToNumber buildColumnPositions(const NamesAndTypesList & columns)
 {
     SharedPartColumns::NameToNumber positions;
     positions.reserve(columns.size());
     size_t pos = 0;
     for (const auto & column : columns)
-        positions.emplace(std::string_view(column.name), pos++);
+        positions.emplace(column.column_id.empty() ? column.name : column.column_id.value(), pos++);
     return positions;
 }
 
@@ -104,7 +106,9 @@ SharedPartColumns::SharedPartColumns(
     bool collect_nested_,
     String interning_key_)
     : columns(std::move(columns_))
-    , column_name_to_position(buildColumnPositions(columns))
+    , column_storage_key_to_position(buildColumnPositions(columns))
+    , has_stamped_column_ids(std::any_of(
+          columns.begin(), columns.end(), [](const auto & column) { return !column.column_id.empty(); }))
     , columns_description(std::move(columns_description_))
     , columns_description_with_collected_nested(std::move(columns_description_with_collected_nested_))
     , collect_nested(collect_nested_)
@@ -123,6 +127,10 @@ String SharedPartColumns::describeColumns(const NamesAndTypesList & columns)
     WriteBufferFromOwnString out;
     for (const auto & column : columns)
     {
+        /// The id belongs in the key even though it is a function of the name within one schema: after
+        /// `DROP x` and `ADD x` the table holds parts whose `x` carries the old id and parts whose `x`
+        /// carries the new one, and on the name alone the two would share a bundle.
+        writeStringBinary(column.getColumnId().value(), out);
         writeStringBinary(column.name, out);
         writeStringBinary(column.type->getName(), out);
 
@@ -162,7 +170,9 @@ std::vector<SharedPartColumns::SerializationGroupKey> SharedPartColumns::buildSe
     UInt32 position = 0;
     for (const auto & column : columns)
     {
-        auto it = infos.find(column.name);
+        /// `serialization.json` is keyed the same way the part's columns are -- by ID once the part
+        /// has them, by name before that.
+        auto it = infos.find(column.getColumnId().value());
 
         SerializationGroupKey key;
         key.column_position = position;
@@ -189,20 +199,18 @@ std::vector<SharedPartColumns::SerializationGroupKey> SharedPartColumns::buildSe
 
 PartSerializations::ColumnGroupPtr SharedPartColumns::buildSerializationGroup(const NameAndTypePair & column, const SerializationInfoByName & infos) const
 {
-    auto it = infos.find(column.name);
-    auto serialization = it == infos.end()
-        ? IDataType::getSerialization(column, infos.getSettings())
-        : IDataType::getSerialization(column, *it->second);
+    const String storage_key = column.getColumnId().value();
+    auto serialization = infos.getSerialization(column);
 
     auto group = std::make_shared<PartSerializations::ColumnGroup>();
     group->serializations.push_back(serialization);
-    group->names.push_back(column.name);
+    group->names.push_back(storage_key);
 
     IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
     {
-        auto full_name = Nested::concatenateName(column.name, subname);
+        auto full_name = Nested::concatenateName(storage_key, subname);
         /// Don't override the column serialization with subcolumn serialization if column with the same name exists.
-        if (!column_name_to_position.contains(full_name))
+        if (!column_storage_key_to_position.contains(full_name))
         {
             group->names.push_back(std::move(full_name));
             group->serializations.push_back(subdata.serialization);
@@ -233,7 +241,7 @@ SharedPartColumns::SerializationsCacheKey SharedPartColumns::buildSerializations
         for (const auto & column : columns)
         {
             size_t offset = out.count();
-            if (auto it = infos.find(column.name); it != infos.end())
+            if (auto it = infos.find(column.getColumnId().value()); it != infos.end())
             {
                 it->second->serialializeKindStackBinary(out);
                 auto entry_settings = normalizeSettingsForKey(it->second->getSettings());

@@ -440,17 +440,16 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
 
         part_stat.approx_size_of_mark = read_info.approx_size_of_mark;
 
-        auto update_stat_for_column = [&](const auto & column_name)
+        /// The task columns are resolved against the current schema, so ask the part by id, the same
+        /// way `MergeTreeReadPoolBase::getSizeOfColumns` does. A column the part does not hold reports
+        /// zero, which is what the missing-column branch this replaced contributed.
+        auto update_stat_for_column = [&](const NameAndTypePair & column)
         {
             size_t column_size = 0;
-            auto column = read_info.data_part_info->tryGetColumn(column_name);
-            if (column)
-            {
-                if (column->isSubcolumn() && settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading])
-                    column_size = read_info.data_part_info->getSubcolumnSize(column_name).data_compressed;
-                else
-                    column_size = read_info.data_part_info->getColumnSize(column->getNameInStorage()).data_compressed;
-            }
+            if (column.isSubcolumn() && settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading])
+                column_size = read_info.data_part_info->getSubcolumnSize(column).data_compressed;
+            else
+                column_size = read_info.data_part_info->getColumnSize(column.getColumnId()).data_compressed;
 
             part_stat.estimated_memory_usage_for_single_prefetch += std::min<size_t>(column_size, settings[Setting::prefetch_buffer_size]);
             ++part_stat.required_readers_num;
@@ -462,11 +461,11 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
         /// But here we make a more approximate lowering (because we do not have loaded marks yet),
         /// while in adjustBufferSize it will be presize.
         for (const auto & column : read_info.task_columns.columns)
-            update_stat_for_column(column.name);
+            update_stat_for_column(column);
 
         for (const auto & pre_columns : read_info.task_columns.pre_columns)
             for (const auto & column : pre_columns)
-                update_stat_for_column(column.name);
+                update_stat_for_column(column);
     }
 }
 

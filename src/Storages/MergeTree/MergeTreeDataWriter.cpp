@@ -18,6 +18,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -722,6 +723,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     const auto & global_settings = context->getSettingsRef();
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+    /// The mapping rides the pinned metadata_snapshot (folded there with the schema), so the
+    /// stamp is taken from the same schema version the part's columns come from.
+    const auto column_id_mapping = metadata_snapshot->getActiveColumnIdMapping();
+    if (column_id_mapping)
+        column_id_mapping->stampColumnIds(columns);
 
     /// Do not write _block_number and _block_offset for 0-level parts: block number is not known on this step.
     const auto minmax_columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
@@ -941,6 +947,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             column.column = recursiveRemoveSparse(column.column);
     }
 
+    /// The stats above were accumulated under column names; `setColumns` wants the part's key space.
+    infos.reKeyToColumnIds(columns);
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
     new_data_part->setSourcePartsSet(std::move(source_parts_set));
     new_data_part->rows_count = block.rows();
@@ -973,7 +981,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.rows_where_ttl[ttl_entry.result_column], block, true);
 
     for (const auto & [name, ttl_entry] : metadata_snapshot->getColumnTTLs())
-        updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[name], block, true);
+    {
+        const String ttl_key = columns.getColumnIdByName(name).value();
+        updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[ttl_key], block, true);
+    }
 
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
     for (const auto & ttl_entry : recompression_ttl_entries)
@@ -1047,7 +1058,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             if (projection_block.rows())
             {
                 auto proj_temp_part
-                    = writeProjectionPart(data, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false, context);
+                    = writeProjectionPart(data, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false, context, column_id_mapping);
                 new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
 
                 if (global_settings[Setting::finalize_projection_parts_synchronously])
@@ -1095,7 +1106,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     const ProjectionDescription & projection,
     MergeTreeIndices indices,
     bool merge_is_needed,
-    bool try_adaptive_codec)
+    bool try_adaptive_codec,
+    ColumnIdMappingPtr column_id_mapping)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     const auto & metadata_snapshot = projection.metadata;
@@ -1117,6 +1129,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+    /// Projection columns are the projection's SELECT output (group-by keys plus synthetic
+    /// aggregates like `sum(c)`); the aggregates are never in the base table's column-ID mapping.
+    /// Use the lenient stamp rather than the strict base-table write stamp.
+    if (column_id_mapping)
+        column_id_mapping->stampColumnIdsLenient(columns);
     SerializationInfo::Settings settings
     {
         static_cast<double>((*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
@@ -1131,6 +1148,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
+    /// The stats above were accumulated under column names; `setColumns` wants the part's key space.
+    infos.reKeyToColumnIds(columns);
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
 
     projection_part_storage->createDirectories();
@@ -1236,7 +1255,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
     bool merge_is_needed,
-    ContextPtr context)
+    ContextPtr context,
+    ColumnIdMappingPtr column_id_mapping)
 {
     const auto & query_settings = context->getSettingsRef();
     auto indices = collectSkipIndicesToMaterialize(
@@ -1255,7 +1275,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         projection,
         std::move(indices),
         merge_is_needed,
-        /*try_adaptive_codec=*/ false);
+        /*try_adaptive_codec=*/ false,
+        std::move(column_id_mapping));
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -1266,7 +1287,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
     size_t block_num,
-    ContextPtr context)
+    ContextPtr context,
+    ColumnIdMappingPtr column_id_mapping)
 {
     const auto & table_settings = data.getSettings();
     auto indices = collectSkipIndicesToMaterialize(
@@ -1286,7 +1308,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         projection,
         std::move(indices),
         /*merge_is_needed=*/ true,
-        /*try_adaptive_codec=*/ true);
+        /*try_adaptive_codec=*/ true,
+        std::move(column_id_mapping));
 
     new_part->part->temp_projection_block_number = block_num;
     return new_part;

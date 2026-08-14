@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
@@ -75,7 +76,11 @@ public:
 
     virtual const ColumnsSubstreams & getColumnsSubstreams() const = 0;
 
-    virtual std::optional<size_t> getColumnPosition(const String & column_name) const = 0;
+    /// Direct lookup by stable storage id (IMergeTreeDataPart::getColumnPosition).
+    virtual std::optional<size_t> getColumnPosition(const ColumnId & column_id) const = 0;
+
+    /// The part's own stored column carrying this id (id-carrying pair, part's on-disk type).
+    virtual std::optional<NameAndTypePair> tryGetColumn(const ColumnId & column_id) const = 0;
 
     /// Look up a (sub)column present in the part, if any.
     virtual std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const = 0;
@@ -93,9 +98,11 @@ public:
     /// (size predictor falls back to a default estimate) and `getColumnSizes` returns null. The map is
     /// returned by shared pointer, not by value, so hot callers (e.g. the per-block dataflow-statistics
     /// callback) reuse the part's cached map instead of copying it on every block.
-    virtual ColumnSize getColumnSize(const String & column_name) const = 0;
+    /// Both take what the caller already resolved: an id, or the whole pair for a subcolumn, whose
+    /// id is its parent's.
+    virtual ColumnSize getColumnSize(const ColumnId & column_id) const = 0;
     virtual std::shared_ptr<const std::unordered_map<String, ColumnSize>> getColumnSizes() const = 0;
-    virtual ColumnSize getSubcolumnSize(const String & subcolumn_name) const = 0;
+    virtual ColumnSize getSubcolumnSize(const NameAndTypePair & subcolumn) const = 0;
 
     /// MergeTree settings governing how the part is read.
     virtual MergeTreeSettingsPtr getStorageSettings() const = 0;
