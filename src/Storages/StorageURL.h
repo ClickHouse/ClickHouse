@@ -447,7 +447,9 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const ContextPtr & context_,
-        const String & compression_method_);
+        const String & compression_method_,
+        const HTTPHeaderEntries & headers_ = {},
+        const String & http_method_ = "");
 
     void read(
         QueryPlan & query_plan,

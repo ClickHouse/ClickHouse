@@ -153,7 +153,9 @@ bool ReadWriteBufferFromHTTP::checkIfActuallySeekable()
 {
     if (!file_info)
         file_info = getFileInfo();
-    return file_info->seekable;
+    /// Non-GET reads are not seekable: a seek would re-issue the request with a Range header
+    /// that servers ignore for POST, degrading into the retry loop (see supportsReadAt()).
+    return method == Poco::Net::HTTPRequest::HTTP_GET && file_info->seekable;
 }
 
 String ReadWriteBufferFromHTTP::getFileName() const
@@ -413,6 +415,18 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
             /// Retry 200 OK
             if (response.getStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK)
             {
+                /// For non-GET reads a ranged retry cannot succeed: servers ignore the Range
+                /// header for POST, so each retry would re-execute the whole request. A plain
+                /// Exception (unlike the HTTPException below) is not retried by doWithRetries().
+                if (method != Poco::Net::HTTPRequest::HTTP_GET)
+                    throw Exception(
+                        ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
+                        "Server does not support resuming a {} read from offset {} (response status: {}, reason: {})",
+                        method,
+                        getOffset(),
+                        toString(response.getStatus()),
+                        response.getReason());
+
                 String explanation = fmt::format(
                     "Cannot read with range: [{}, {}] (response status: {}, reason: {}), will retry",
                     getOffset(), read_range.end ? toString(*read_range.end) : "-",
@@ -746,6 +760,15 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
 {
     if (file_info)
         return *file_info;
+
+    /// A HEAD pre-request describes the GET representation of the URL, not the response to a
+    /// non-GET method: POST-only servers reject it (a wasted round trip), and endpoints that
+    /// execute on HEAD would run the workload twice. Report empty file info without probing.
+    if (method != Poco::Net::HTTPRequest::HTTP_GET)
+    {
+        file_info = HTTPFileInfo{};
+        return *file_info;
+    }
 
     /// May be disabled in case the user knows in advance that the server doesn't support HEAD requests.
     /// Allows to avoid making unnecessary requests in such cases.

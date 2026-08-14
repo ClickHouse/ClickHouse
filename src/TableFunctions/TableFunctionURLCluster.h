@@ -29,7 +29,9 @@ public:
                                       " - cluster, uri, format\n"
                                       " - cluster, uri, format, structure\n"
                                       " - cluster, uri, format, structure, compression_method\n"
-                                      "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
+                                      "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`) "
+                                      "and an optional `http_method = 'POST'` key-value argument "
+                                      "(POST overrides the default GET for SELECT; POST or PUT override the default POST for INSERT)";
 
     String getName() const override
     {

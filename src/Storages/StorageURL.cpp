@@ -161,6 +161,7 @@ static void validateHTTPMethod(const String & http_method)
 /// GET and POST responses for the same URL are unrelated data sources, so the effective
 /// read method is part of the schema cache key. GET keeps the plain URL as the key
 /// (and as the user-visible `source` in system.schema_inference_cache).
+/// StorageXDBC reads are genuine POSTs, so its num-rows cache entries intentionally live in the POST: namespace.
 static String schemaCacheSource(const String & url, const String & read_method)
 {
     if (read_method == Poco::Net::HTTPRequest::HTTP_GET)
@@ -416,6 +417,9 @@ StorageURLSource::StorageURLSource(
     , storage_id(std::move(storage_id_))
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
 {
+    /// Must be the effective read method (the result of getReadMethod): raw "" or "PUT" would create unreachable schema-cache namespaces.
+    chassert(http_method_ == Poco::Net::HTTPRequest::HTTP_GET || http_method_ == Poco::Net::HTTPRequest::HTTP_POST);
+
     /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
     initialize = [=, this]()
     {
@@ -1593,13 +1597,18 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
     const Poco::Net::HTTPBasicCredentials & credentials,
     const ContextPtr & context)
 {
+    /// The HEAD/GET metadata this probe fetches describes the GET representation of the URL,
+    /// not the POST response, so POST-read cache validation deliberately has no modification
+    /// time and degrades to the `schema_inference_cache_require_modification_time_for_url` rule.
+    if (read_method != Poco::Net::HTTPRequest::HTTP_GET)
+        return std::nullopt;
+
     const auto & settings = context->getSettingsRef();
 
     auto uri = Poco::URI(url);
 
     auto buf = BuilderRWBufferFromHTTP(uri)
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
-                   .withMethod(read_method)
                    .withSettings(context->getReadSettings())
                    .withTimeouts(getHTTPTimeouts(context))
                    .withHostFilter(&context->getRemoteHostFilter())
@@ -1653,8 +1662,11 @@ StorageURLWithFailover::StorageURLWithFailover(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const ContextPtr & context_,
-    const String & compression_method_)
-    : StorageURL("", table_id_, format_name_, format_settings_, columns_, constraints_, String{}, context_, compression_method_)
+    const String & compression_method_,
+    const HTTPHeaderEntries & headers_,
+    const String & http_method_)
+    : StorageURL(
+        "", table_id_, format_name_, format_settings_, columns_, constraints_, String{}, context_, compression_method_, headers_, http_method_)
 {
     for (const auto & uri_option : uri_options_)
     {
@@ -1778,7 +1790,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
                     if (has_http_method_arg)
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
-                            "URL table function can have only one `http_method` key-value argument. {}",
+                            "The URL table function/engine can have only one `http_method` key-value argument. {}",
                             bad_arguments_error_message);
 
                     auto ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(equals_args[1], context);
@@ -2676,17 +2688,23 @@ void registerStorageURL(StorageFactory & factory)
 
             /// The index-page listing requests are plain GET; a silent fallback to probing the
             /// literal `*` URL would read different files, so reject the combination explicitly.
-            /// PUT applies to writes only, so PUT-configured reads take the listing path like GET.
-            if (urlPathHasListableGlobs(config.url)
+            /// Only on a user-issued `CREATE`: pre-existing tables (e.g. with `http_method` coming
+            /// from a named collection) must keep loading on ATTACH / server startup / RESTORE and
+            /// fall through to the plain `StorageURL` backend below.
+            if (args.mode <= LoadingStrictnessLevel::CREATE
+                && urlPathHasListableGlobs(config.url)
                 && IStorageURLBase::chooseReadMethod(config.http_method) == Poco::Net::HTTPRequest::HTTP_POST)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
                     config.url);
 
-            const bool use_object_storage
-                = IStorageURLBase::chooseReadMethod(config.http_method) == Poco::Net::HTTPRequest::HTTP_GET
-                && urlPathHasListableGlobs(config.url);
+            /// The engine serves both reads and writes; `http_method='PUT'` exists only for writes,
+            /// and the web object-storage backend behind index-page wildcards cannot write. So a
+            /// configured `http_method` keeps the plain literal-URL `StorageURL` backend exactly as
+            /// before this argument existed. (The read-only `url()` table function routes
+            /// PUT-configured SELECTs to the listing path instead — an intentional asymmetry.)
+            const bool use_object_storage = config.http_method.empty() && urlPathHasListableGlobs(config.url);
 
             if (!use_object_storage)
             {
@@ -2824,8 +2842,12 @@ The method can be overridden with the `http_method` key-value argument (also ava
 `http_method='POST'` makes `SELECT` queries use `POST` instead of the default `GET`, for servers
 that accept only `POST`; for `INSERT` queries, `PUT` can be specified instead of the default
 `POST`. `PUT` applies to writes only: a `SELECT` through a configuration with `http_method='PUT'`
-still uses `GET`. `http_method='POST'` cannot be combined with `*`/`**` wildcards expanded from
-[HTTP index pages](#wildcards-with-http-index-pages) — such tables are rejected.
+still uses `GET`. A configured `http_method` also disables `*`/`**` wildcard expansion from
+[HTTP index pages](#wildcards-with-http-index-pages): `http_method='PUT'` keeps the table on the
+plain literal-URL backend so that writes keep working (the object-storage backend serving such
+wildcards cannot write), and creating a table with `http_method='POST'` and such wildcards is
+rejected. If a named collection sets both `http_method` and `method`, `http_method` takes
+precedence.
 
 ```sql
 CREATE TABLE post_only_source (word String, value UInt64)

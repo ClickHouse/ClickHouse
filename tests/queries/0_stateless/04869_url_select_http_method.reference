@@ -7,12 +7,23 @@ BAD_ARGUMENTS
 5
 BAD_ARGUMENTS
 BAD_ARGUMENTS
+BAD_ARGUMENTS
 NOT_IMPLEMENTED
+1
 6
 6
+7
+8
+1
+42
+1
+62352_aliascap	[2]
 62352_cache	[2]
 62352_engine	[2]
 62352_get	[1]
 62352_infer	[2]
+62352_kvorder	[2]
+62352_methodalias	[2]
 62352_post	[2]
 62352_put_read	[1]
+62352_winsert	[2]

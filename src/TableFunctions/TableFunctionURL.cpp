@@ -4,7 +4,6 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IdentifierNode.h>
-#include <Poco/Net/HTTPRequest.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -21,6 +20,8 @@
 #include <Storages/ObjectStorage/Web/Configuration.h>
 #include <Storages/StorageURLCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>
+
+#include <Poco/Net/HTTPRequest.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
@@ -362,7 +363,11 @@ StoragePtr TableFunctionURL::getStorage(
     /// The index-page listing requests are plain GET; a silent fallback to probing the
     /// literal `*` URL would read different files, so reject the combination explicitly.
     /// PUT applies to writes only, so PUT-configured reads take the listing path like GET.
-    if (!is_insert_query && urlPathHasListableGlobs(source)
+    /// An INSERT with auto-deduced structure (empty `columns`) is rejected too: its schema
+    /// inference happens inside the storage constructor, which would otherwise POST-probe
+    /// the literal `*` URL. An INSERT with explicit structure legitimately writes to the
+    /// literal URL and stays allowed.
+    if ((!is_insert_query || columns.empty()) && urlPathHasListableGlobs(source)
         && IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_POST)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -453,14 +458,17 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
         ColumnsDescription columns;
         String sample_path = filename;
 
-        if (!is_insert_query && urlPathHasListableGlobs(filename)
+        if (urlPathHasListableGlobs(filename)
             && IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_POST)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
                 filename);
 
-        if (IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_GET
+        /// INSERT-time inference must not attempt index-page listing; it falls through to the
+        /// literal-URL probe below instead.
+        if (!is_insert_query
+            && IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_GET
             && urlPathHasListableGlobs(filename))
         {
             checkExperimentalURLWildcardFromIndexPages(context);
@@ -557,7 +565,7 @@ url(URL [,format] [,structure] [,headers] [,http_method='POST'])
 | `format`    | [Format](/reference/formats/index) of the data. Type: [String](/reference/data-types/string).                                                  |
 | `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string).     |
 | `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
-| `http_method` | Key-value argument overriding the HTTP method: `http_method='POST'` makes `SELECT` queries use `POST` instead of the default `GET` (for servers that accept only `POST`); for `INSERT` queries, `POST` (the default) or `PUT` can be specified. The same value can be set through the `http_method` key of a [named collection](/reference/operations/named-collections). `PUT` applies to writes only: a `SELECT` through a configuration with `http_method='PUT'` still uses `GET`. `http_method='POST'` cannot be combined with `*`/`**` wildcards expanded from HTTP index pages — such queries are rejected. |
+| `http_method` | Key-value argument overriding the HTTP method: `http_method='POST'` makes `SELECT` queries use `POST` instead of the default `GET` (for servers that accept only `POST`); for `INSERT` queries, `POST` (the default) or `PUT` can be specified. The same value can be set through the `http_method` key of a [named collection](/reference/operations/named-collections). `PUT` applies to writes only: a `SELECT` through a configuration with `http_method='PUT'` still uses `GET`. `http_method='POST'` cannot be combined with `*`/`**` wildcards expanded from HTTP index pages — such queries are rejected. If a named collection sets both `http_method` and `method`, `http_method` takes precedence. |
 
 ## Returned value {#returned-value}
 
