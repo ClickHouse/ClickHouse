@@ -942,6 +942,15 @@
     {
       "expandable": true,
       "expanded": false,
+      "group": "Interfaces",
+      "pages": [
+        "reference/interfaces/specs/NativeProtocol",
+        "reference/interfaces/specs/NativeFormat"
+      ]
+    },
+    {
+      "expandable": true,
+      "expanded": false,
       "group": "Settings",
       "pages": [
         "reference/settings/index",
