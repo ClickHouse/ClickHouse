@@ -30,7 +30,9 @@
 
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -73,6 +75,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Common/ProfileEvents.h>
@@ -1629,7 +1632,7 @@ static BlockIO executeQueryImpl(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "A query whose data streams over the connection cannot be run in the background");
 
-                executeQueryInBackground(std::string_view(begin, end), context);
+                executeQueryInBackground(std::string_view(begin, end), out_ast, context);
                 BlockIO io;
                 io.dispatched = true;
                 return io;
@@ -2575,8 +2578,32 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     return std::make_pair(std::move(ast), std::move(res));
 }
 
-void executeQueryInBackground(std::string_view query, ContextMutablePtr context)
+void executeQueryInBackground(std::string_view query, const ASTPtr & ast, ContextMutablePtr context)
 {
+    /// Best-effort check that INSERT/OPTIMIZE query's target table exists.
+    /// (For other queries, it's not trivial to check this).
+    {
+        std::optional<StorageID> target_table_id;
+
+        if (const auto * insert_query = ast->as<ASTInsertQuery>();
+            insert_query && !insert_query->table_function)
+        {
+            if (insert_query->table_id)
+                target_table_id = insert_query->table_id;
+            else if (auto table = insert_query->getTable(); !table.empty())
+                target_table_id = StorageID{insert_query->getDatabase(), table};
+        }
+        else if (const auto * optimize_query = ast->as<ASTOptimizeQuery>();
+            optimize_query && optimize_query->cluster.empty())
+        {
+            if (auto table = optimize_query->getTable(); !table.empty())
+                target_table_id = StorageID{optimize_query->getDatabase(), table};
+        }
+
+        if (target_table_id)
+            DatabaseCatalog::instance().getTable(context->resolveStorageID(*target_table_id), context);
+    }
+
     const auto & settings = context->getSettingsRef();
     if (settings[Setting::implicit_transaction] && settings[Setting::throw_on_unsupported_query_inside_transaction])
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Background queries with 'implicit_transaction' are not supported");
