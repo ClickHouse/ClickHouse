@@ -337,7 +337,7 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     /// Outside clickhouse-local, do not probe paths outside of user_files: instead of leaking
     /// whether such a file exists through the error message, claim the table and let the `file`
     /// engine report the access error.
-    if (!is_local && !fileOrSymlinkPathStartsWith(path, context_->getUserFilesPath()))
+    if (!is_local && !weaklyCanonicalPathStartsWith(path, context_->getUserFilesPath()))
         return true;
 
     /// The result of this probe is reported to the user (`EXISTS TABLE` returns it, and the

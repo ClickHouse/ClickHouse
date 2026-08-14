@@ -700,7 +700,7 @@ void checkCreationIsAllowed(
         return;
 
     /// "/dev/null" is allowed for perf testing
-    if (!fileOrSymlinkPathStartsWith(table_path, db_dir_path) && table_path != "/dev/null")
+    if (!weaklyCanonicalPathStartsWith(table_path, db_dir_path) && table_path != "/dev/null")
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File `{}` is not inside user files path", table_path);
 
     if (can_be_directory)
@@ -753,8 +753,6 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
         ? (fs::path(user_files_absolute_path) / fs_pattern)
         : fs_pattern;
 
-    /// Do not use fs::canonical or fs::weakly_canonical.
-    /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
     String pattern = fs::absolute(resolved_pattern).lexically_normal();
 
     if (pattern.contains(PartitionedSink::PARTITION_ID_WILDCARD))
@@ -786,12 +784,8 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
         can_be_directory = false;
     }
 
-    /// Validate against `user_files_absolute_path`, the same namespace the patterns were resolved in.
-    /// Validating against the raw `user_files_path` would reject ordinary relative reads on a
-    /// deployment where `user_files_path` itself is a symlink: the resolved path lives under the
-    /// canonicalized root and no longer lexically starts with the raw root.
     for (const auto & path : all_paths)
-        checkCreationIsAllowed(context, user_files_absolute_path, path, can_be_directory);
+        checkCreationIsAllowed(context, user_files_path, path, can_be_directory);
 
     return all_paths;
 }

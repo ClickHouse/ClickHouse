@@ -64,7 +64,7 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context) : m
         }
         const auto user_files_path = context->getUserFilesPath();
         errors_file_path = fs::path(user_files_path) / path_in_setting;
-        if (!fileOrSymlinkPathStartsWith(errors_file_path, user_files_path))
+        if (!weaklyCanonicalPathStartsWith(errors_file_path, user_files_path))
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                             "Cannot log errors in path `{}`, because it is not inside user files path",
                             errors_file_path);

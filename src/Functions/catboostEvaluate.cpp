@@ -83,7 +83,7 @@ public:
         if (context->getApplicationType() != Context::ApplicationType::LOCAL)
         {
             const String user_files_path = context->getUserFilesPath();
-            if (!fileOrSymlinkPathStartsWith(model_path, user_files_path))
+            if (!weaklyCanonicalPathStartsWith(model_path, user_files_path))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                     "CatBoost model path must be inside the user_files directory ({})", user_files_path);
         }

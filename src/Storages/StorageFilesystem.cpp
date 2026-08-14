@@ -308,7 +308,7 @@ private:
 
                 fs::path child_path = fs::absolute(child.path()).lexically_normal();
 
-                if (path_info->need_check && !fileOrSymlinkPathStartsWith(child_path.string(), path_info->user_files_absolute_path_string))
+                if (path_info->need_check && !weaklyCanonicalPathStartsWith(child_path.string(), path_info->user_files_absolute_path_string))
                 {
                     LOG_DEBUG(getLogger("StorageFilesystem"), "Path {} is not inside user_files {}",
                         child_path.string(), path_info->user_files_absolute_path_string);
@@ -592,7 +592,7 @@ public:
             file_path = fs::path(s);
         }
 
-        if (path_info->need_check && !fileOrSymlinkPathStartsWith(file_path.string(), path_info->user_files_absolute_path_string))
+        if (path_info->need_check && !weaklyCanonicalPathStartsWith(file_path.string(), path_info->user_files_absolute_path_string))
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Path {} is not inside user_files {}",
                 file_path.string(), path_info->user_files_absolute_path_string);
 

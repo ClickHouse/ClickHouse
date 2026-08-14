@@ -288,7 +288,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
         else
             rocksdb_dir = fs::absolute(rocksdb_dir).lexically_normal();
 
-        if (!is_local && !fileOrSymlinkPathStartsWith(rocksdb_dir, user_files_path))
+        if (!is_local && !weaklyCanonicalPathStartsWith(rocksdb_dir, user_files_path))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path must be inside user-files path");
     }
 
