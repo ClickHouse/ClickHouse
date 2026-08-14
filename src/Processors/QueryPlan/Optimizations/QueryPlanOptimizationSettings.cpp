@@ -46,6 +46,8 @@ namespace Setting
     extern const SettingsBool query_plan_convert_outer_join_to_inner_join;
     extern const SettingsBool query_plan_short_circuit_constant_false_join;
     extern const SettingsBool query_plan_direct_read_from_text_index;
+    extern const SettingsBool query_plan_optimize_count_from_text_index;
+    extern const SettingsBool optimize_trivial_count_query;
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsBool query_plan_execute_functions_after_sorting;
     extern const SettingsBool query_plan_filter_push_down;
@@ -216,6 +218,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     use_query_condition_cache_for_top_k = from[Setting::use_query_condition_cache_for_top_k];
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];
+    /// The count optimization recovers the search query from the index read tasks that only the direct-read rewrite builds.
+    /// TODO(ahmadov): extract the predicate-to-search-query analysis into a shared helper, so the count optimization works without direct read.
+    query_plan_optimize_count_from_text_index = direct_read_from_text_index
+        && from[Setting::query_plan_optimize_count_from_text_index]
+        && from[Setting::optimize_trivial_count_query];
     enable_full_text_index = from[Setting::enable_full_text_index];
     read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
     correlated_subqueries_use_in_memory_buffer = from[Setting::correlated_subqueries_use_in_memory_buffer]
