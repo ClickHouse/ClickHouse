@@ -13,6 +13,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -42,7 +44,29 @@ std::vector<SpatialFilter> extractSpatialFilters(
     {
         collectConjunctiveSpatialBboxes(
             output, visited,
-            [&sample_block](const ActionsDAG::Node & child) { return sample_block.has(child.result_name); },
+            [&sample_block](const ActionsDAG::Node & child)
+            {
+                if (!sample_block.has(child.result_name))
+                    return false;
+
+                /// A `Variant`/`Dynamic`-typed geometry column (e.g. GeoParquet's `Geometry` type
+                /// for a mixed/unknown-kind column) can store a different geometry kind in each
+                /// row group. `MergeTree`'s `spatial_bbox` index can never face this: its
+                /// `spatialBboxIndexValidator` requires the indexed column to structurally reduce
+                /// to `Tuple(Float64,Float64)` (see `MergeTreeIndexSpatialBbox.cpp`), which rejects
+                /// `Variant`/`Dynamic` columns at index-creation time. GeoParquet exposes such
+                /// columns directly and has no equivalent guard, so accepting one here would derive
+                /// a bbox from `geospatial_statistics.bbox` and prune row groups without knowing
+                /// whether the predicate is guaranteed to accept every kind actually stored in it --
+                /// a row group whose real geometries are all e.g. `Point` is guaranteed to raise
+                /// `ILLEGAL_TYPE_OF_ARGUMENT` once evaluated, and pruning it away using only the
+                /// constant query bbox would silently hide that exception.
+                const auto & type = sample_block.getByName(child.result_name).type;
+                if (typeid_cast<const DataTypeVariant *>(type.get()) || typeid_cast<const DataTypeDynamic *>(type.get()))
+                    return false;
+
+                return true;
+            },
             [&](const ActionsDAG::Node & col_node, const QueryBbox & bbox)
             {
                 SpatialFilter filter;
