@@ -658,7 +658,8 @@ Block mergeBlockWithPipe(
 /**
  * Returns ColumnVector data as PaddedPodArray.
 
- * If column is constant parameter backup_storage is used to store values.
+ * If the column has to be converted to a full one, parameter backup_storage is used to store values,
+ * because the converted column may not be owned by anything that outlives this call.
  */
 /// TODO: Remove
 template <typename T>
@@ -667,7 +668,6 @@ static const PaddedPODArray<T> & getColumnVectorData(
     const ColumnPtr column,
     PaddedPODArray<T> & backup_storage)
 {
-    bool is_const_column = isColumnConst(*column);
     auto full_column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
     auto vector_col = checkAndGetColumn<ColumnVector<T>>(full_column.get());
 
@@ -679,12 +679,13 @@ static const PaddedPODArray<T> & getColumnVectorData(
             TypeName<T>);
     }
 
-    if (is_const_column)
+    /// A different pointer means a conversion happened (Const, Sparse or ColumnReplicated; a Tuple
+    /// never reaches here because the check above requires a ColumnVector), so the data may live
+    /// only in a column owned by `full_column` and die at return: copy it. An unconverted column is
+    /// kept alive by `column` itself.
+    if (full_column.get() != column.get())
     {
-        // With type conversion and const columns we need to use backup storage here
-        auto & data = vector_col->getData();
-        backup_storage.assign(data);
-
+        backup_storage.assign(vector_col->getData());
         return backup_storage;
     }
 
