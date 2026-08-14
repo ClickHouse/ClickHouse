@@ -375,7 +375,7 @@ try
 
     DB::ServerUUID::load(path + "/uuid", log);
 
-    std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
+    std::string include_from_path = config().getString("include_from", "");
 
     PlacementInfo::PlacementInfo::instance().initialize(config());
 
