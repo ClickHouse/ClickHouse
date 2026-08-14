@@ -5,6 +5,10 @@
 -- With prewhere splitting disabled the whole PREWHERE is a single step, so the guard cannot protect
 -- anything; that is a separate hazard of the WHERE -> PREWHERE move. Pin the setting, it is randomized in CI.
 SET enable_multiple_prewhere_read_steps = 1;
+SET optimize_move_to_prewhere = 1;
+-- Statistics can estimate the throwing condition as more selective than its guard and order it first,
+-- which is a separate hazard from the grouping this test covers. Also randomized in CI.
+SET use_statistics = 0;
 
 DROP TABLE IF EXISTS t_prewhere_guard_json;
 
