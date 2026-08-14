@@ -1464,6 +1464,11 @@ bool FileCache::doTryReserve(
         return false;
     }
 
+    /// Evicted segments are gone from the cache, so they must stop counting against the queries
+    /// which cached them - which are not necessarily the query evicting them here.
+    for (const auto & [key, offset] : evicted_entries)
+        query_limit->unchargeEvictedSegment(key, offset);
+
     bool added_new_main_entry = !main_priority_iterator;
     bool added_new_query_entry = false;
     bool main_size_incremented = false;
@@ -1471,8 +1476,7 @@ bool FileCache::doTryReserve(
 
     /// With a per-query limit the write lock is taken on every reservation, because the
     /// per-query mirror is guarded by it and has to be updated on every reservation.
-    if (!main_priority_iterator || eviction_candidates.requiresAfterEvictWrite()
-        || query_context || !evicted_entries.empty())
+    if (!main_priority_iterator || eviction_candidates.requiresAfterEvictWrite() || query_context)
     {
         auto lock = cache_guard.writeLock();
         eviction_candidates.afterEvictWrite(lock);
@@ -1488,11 +1492,6 @@ bool FileCache::doTryReserve(
                 lock,
                 nullptr);
         }
-
-        /// Evicted segments are gone from the cache, so they must stop counting against the
-        /// queries which cached them - which are not necessarily the query evicting them here.
-        for (const auto & [key, offset] : evicted_entries)
-            query_limit->unchargeEvictedSegment(key, offset, lock);
 
         if (query_context)
         {

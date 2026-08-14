@@ -43,9 +43,9 @@ public:
     /// a new budget for the same query.
     std::vector<QueryContextPtr> removeQueryContext(QueryContextPtr & context);
 
-    /// Uncharge an evicted segment from every live query: it may have been cached by a query
-    /// other than the one which evicted it (or by several queries at once).
-    void unchargeEvictedSegment(const FileCacheKey & key, size_t offset, const CachePriorityGuard::WriteLock &);
+    /// Uncharge an evicted segment from every live query: it may have been cached by a query other
+    /// than the one which evicted it (or by several queries at once).
+    void unchargeEvictedSegment(const FileCacheKey & key, size_t offset);
 
     /// Whether `size` more bytes fit into what `query_id` has left. True when it is not limited or
     /// its context is gone: then nothing is charged for those bytes anyway.
@@ -98,6 +98,11 @@ public:
             const Key & key,
             size_t offset,
             const CachePriorityGuard::WriteLock &);
+
+        /// The segment is gone from the cache: stop counting its bytes. The record and its queue
+        /// entry stay, both because another thread may hold that entry while reserving and because
+        /// a segment re-created at the same `key`:`offset` reuses the record. No-op without one.
+        void unchargeEvicted(const Key & key, size_t offset);
 
         /// Give back space which was reserved but not written, at most what is charged for
         /// `key`:`offset`. No-op without a record.

@@ -4106,6 +4106,44 @@ TEST_F(FileCacheTest, QueryLimitSurvivesReadBufferLifetime)
     ASSERT_FALSE(fixture.reserveAndDownload(100, 10, 10, cache_base_path2));
 }
 
+TEST_F(FileCacheTest, QueryLimitUnchargeKeepsRecordsUsable)
+{
+    /// Uncharging a segment evicted by another query must not remove the record: a thread which is
+    /// reserving holds that record's queue entry between the two cache locks, and removing it made
+    /// the reservation fail on an invalid iterator.
+    ServerUUID::setRandomForUnitTests();
+
+    const std::string cache_path = caches_dir / "test_query_limit_uncharge";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path,
+                                 /* background_download_queue_size_limit */0,
+                                 /* background_download_threads */0,
+                                 /* write_cache_per_user_directory */false);
+
+    const auto key = DB::FileCacheKey::fromPath("uncharge_key");
+    const auto & origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
+
+    CachePriorityGuard cache_guard;
+    CacheStateGuard state_guard;
+    FileCacheQueryLimit::QueryContext context(/* query_cache_size */100, /* recache_on_query_limit_exceeded */false);
+
+    /// A reservation in flight: the record exists, its size is not accounted yet.
+    auto it = context.add(key_metadata, /* offset */0, /* size */0, cache_guard.writeLock());
+    ASSERT_TRUE(it != nullptr);
+
+    /// Another query evicts that segment meanwhile.
+    context.unchargeEvicted(key, /* offset */0);
+
+    /// The reservation still completes and is accounted.
+    it->incrementSize(10, state_guard.lock());
+    ASSERT_EQ(context.getPriority().getSize(state_guard.lock()), 10u);
+
+    /// Evicting it now takes the accounted bytes back.
+    context.unchargeEvicted(key, /* offset */0);
+    ASSERT_EQ(context.getPriority().getSize(state_guard.lock()), 0u);
+}
+
 TEST_F(FileCacheTest, QueryLimitChargesReservationsWithoutAQuery)
 {
     /// A background download continues a segment from a thread which belongs to no query. Those

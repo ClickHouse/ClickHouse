@@ -112,15 +112,14 @@ void FileCacheQueryLimit::sweepDroppableContextsUnlocked(
     live_contexts.store(query_map.size(), std::memory_order_release);
 }
 
-void FileCacheQueryLimit::unchargeEvictedSegment(
-    const FileCacheKey & key, size_t offset, const CachePriorityGuard::WriteLock & lock)
+void FileCacheQueryLimit::unchargeEvictedSegment(const FileCacheKey & key, size_t offset)
 {
     if (!hasQueryContexts())
         return;
 
     std::lock_guard map_lock(query_map_mutex);
     for (auto & [_, context] : query_map)
-        context->tryRemove(key, offset, lock);
+        context->unchargeEvicted(key, offset);
 }
 
 bool FileCacheQueryLimit::fitsIntoQueryLimit(const String & query_id, size_t size)
@@ -234,6 +233,17 @@ bool FileCacheQueryLimit::QueryContext::tryRemove(
     record->second->remove(lock);
     records.erase(record);
     return true;
+}
+
+void FileCacheQueryLimit::QueryContext::unchargeEvicted(const Key & key, size_t offset)
+{
+    std::lock_guard records_lock(records_mutex);
+    auto record = records.find({key, offset});
+    if (record == records.end())
+        return;
+
+    if (const size_t charged = record->second->getEntry()->size)
+        record->second->decrementSize(charged);
 }
 
 void FileCacheQueryLimit::QueryContext::tryDecrementSize(const Key & key, size_t offset, size_t size)
