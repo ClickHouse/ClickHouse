@@ -303,7 +303,7 @@ String IndicesDescription::explicitToString() const
             list.children.push_back(index.definition_ast);
     }
 
-    return list.formatWithSecretsOneLine();
+    return list.formatIgnoringRedundantParentheses();
 }
 
 String IndicesDescription::allToString() const
@@ -315,7 +315,7 @@ String IndicesDescription::allToString() const
     for (const auto & index : *this)
         list.children.push_back(index.definition_ast);
 
-    return list.formatWithSecretsOneLine();
+    return list.formatIgnoringRedundantParentheses();
 }
 
 
