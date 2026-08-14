@@ -13,7 +13,7 @@ MOCK_PORT = 8080
 REMOTE_STORAGE_ROOT = "/var/lib/clickhouse/user_files/unity_gcs_storage"
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node")
+node = cluster.add_instance("node", with_minio=True)
 
 
 def copy_directory_to_container(local_root, container_id, remote_root):
@@ -59,7 +59,7 @@ def test_gcs_vended_credentials_fall_back_from_delta_kernel(started_cluster):
         CREATE DATABASE unity
         ENGINE = DataLakeCatalog('http://resolver:{MOCK_PORT}/api/2.1/unity-catalog')
         SETTINGS warehouse = 'warehouse', catalog_credential = 'catalog-token', catalog_type = 'unity',
-            vended_credentials = true, storage_endpoint = 'http://resolver:{MOCK_PORT}/storage', storage_uri_style = 'path'
+            vended_credentials = true, storage_endpoint = 'http://resolver:{MOCK_PORT}', storage_uri_style = 'path'
         """,
         settings={"allow_experimental_database_unity_catalog": 1},
     )

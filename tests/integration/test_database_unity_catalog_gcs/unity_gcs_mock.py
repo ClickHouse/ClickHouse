@@ -6,7 +6,6 @@ from urllib.parse import parse_qs, unquote, urlparse
 from xml.sax.saxutils import escape
 
 
-STORAGE_PREFIX = "/storage/"
 BUCKET = "bucket"
 CATALOG_TOKEN = "Bearer catalog-token"
 STORAGE_TOKEN = "Bearer gcp-token"
@@ -124,16 +123,15 @@ class Handler(BaseHTTPRequestHandler):
         if not self.check_authorization(STORAGE_TOKEN):
             return
 
-        key = parsed.path.removeprefix(STORAGE_PREFIX)
-        if key == BUCKET or key == BUCKET + "/":
+        if parsed.path == f"/{BUCKET}":
             self.list_objects(parsed)
             return
 
-        bucket_prefix = BUCKET + "/"
-        if not key.startswith(bucket_prefix):
+        bucket_prefix = f"/{BUCKET}/"
+        if not parsed.path.startswith(bucket_prefix):
             self.send_body(404, "Not found", "text/plain")
             return
-        self.get_object(key.removeprefix(bucket_prefix))
+        self.get_object(parsed.path.removeprefix(bucket_prefix))
 
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -141,7 +139,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_body(200, "OK", "text/plain")
         elif parsed.path.startswith("/api/2.1/unity-catalog/"):
             self.handle_catalog_get(parsed)
-        elif parsed.path.startswith(STORAGE_PREFIX):
+        elif parsed.path == f"/{BUCKET}" or parsed.path.startswith(f"/{BUCKET}/"):
             self.handle_storage(parsed)
         else:
             self.send_body(404, "Not found", "text/plain")
