@@ -1,0 +1,14 @@
+-- old analyzer
+LowCardinality(UInt8)	LowCardinality(UInt8)
+LowCardinality(UInt8)
+('a',1)
+('b',0)
+1
+1
+-- new analyzer
+LowCardinality(UInt8)	LowCardinality(UInt8)
+LowCardinality(UInt8)
+('a',1)
+('b',0)
+1
+1

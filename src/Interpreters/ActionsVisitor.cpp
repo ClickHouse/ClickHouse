@@ -24,6 +24,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -32,6 +33,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 
 #include <Storages/StorageSet.h>
@@ -1309,9 +1311,24 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 /// Do not evaluate subquery and create sets. We replace "in*" function to "in*IgnoreSet".
 
                 auto argument_name = node.arguments->children.at(0)->getColumnName();
+
+                /// The second argument stands in for the set that is not built yet; the `IgnoreSet`
+                /// variants never look at it. It must still be a constant of a type that is neither
+                /// `LowCardinality` nor `Nullable`, like the `Set` column the real `in` is given during
+                /// execution: the general typing rule wraps the result in `LowCardinality` only when
+                /// every other argument is a constant (`IFunctionOverloadResolver::getReturnType`).
+                /// Passing the left operand twice would type `in` over a full `LowCardinality` operand
+                /// as plain `UInt8` here while execution yields `LowCardinality(UInt8)`, and a query
+                /// reading such a column across a subquery boundary would then hit the type check in
+                /// `ActionsDAG::updateHeader`.
+                ColumnConstPtr ignored_set_column = ColumnConst::create(ColumnUInt8::create(1, static_cast<UInt8>(0)), 1);
+                auto ignored_set_type = std::make_shared<DataTypeUInt8>();
+                auto ignored_set_name = data.getUniqueName("__ignored_set");
+                data.addColumn(std::move(ignored_set_column), ignored_set_type, ignored_set_name);
+
                 data.addFunction(
                     FunctionFactory::instance().get(node.name + "IgnoreSet", data.getContext()),
-                    {argument_name, argument_name},
+                    {argument_name, ignored_set_name},
                     column_name);
             }
             return;
