@@ -75,10 +75,22 @@ ExpressionStep::ExpressionStep(SharedHeader input_header_, ActionsDAG actions_da
 
 void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
+    const auto & actions_settings = settings.getActionsSettings();
+    /// An adaptive instance of ExpressionActions collects the execution statistics and is not thread safe,
+    /// so every stream needs its own one. A plain instance is shared between all the streams.
+    const bool expression_per_stream = actions_settings.enable_adaptive_short_circuit_lazy_execution;
 
+    auto expression = ExpressionActions::create(expression_per_stream ? actions_dag.clone() : std::move(actions_dag), actions_settings);
+
+    bool is_first_stream = true;
     pipeline.addSimpleTransform([&](const SharedHeader & header)
-                                { return std::make_shared<ExpressionTransform>(header, expression, dataflow_cache_updater); });
+    {
+        auto stream_expression = expression;
+        if (expression_per_stream && !std::exchange(is_first_stream, false))
+            stream_expression = ExpressionActions::create(actions_dag.clone(), actions_settings);
+
+        return std::make_shared<ExpressionTransform>(header, std::move(stream_expression), dataflow_cache_updater);
+    });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
     {
