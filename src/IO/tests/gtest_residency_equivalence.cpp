@@ -289,7 +289,7 @@ public:
     {
         CacheWriterPtr writer_ptr;
         for (auto & r : provider.resolve(objects.front(), /*object_file_offset=*/0, cell))
-            if (r.kind == ICacheProvider::Resolution::Kind::Miss && r.writer)
+            if (r.kind == ICacheProvider::CacheResolution::Kind::Miss && r.writer)
             {
                 writer_ptr = std::move(r.writer);
                 break;

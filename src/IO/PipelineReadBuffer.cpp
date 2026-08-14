@@ -207,10 +207,10 @@ size_t PipelineReadBuffer::readBigAt(
             const auto span = window.peek();
             if (span.size == 0)
                 break;
-            if (span.offset != offset + total_copied)
+            if (span.logical_offset != offset + total_copied)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "PipelineReadBuffer::readBigAt: window not contiguous at {} (expected {})",
-                    span.offset, offset + total_copied);
+                    span.logical_offset, offset + total_copied);
             const size_t copy = std::min(span.size, want - total_copied);
             std::memcpy(to + total_copied, span.data, copy);
             total_copied += copy;
@@ -317,10 +317,10 @@ bool PipelineReadBuffer::nextImpl()
     auto span = chain.peek();
     /// Expose only up to the boundary; the surplus stays in the chain
     /// (unconsumed) and serves the resume after the next advance.
-    if (read_until && span.offset + span.size > *read_until)
+    if (read_until && span.logical_offset + span.size > *read_until)
     {
-        chassert(*read_until > span.offset);
-        span.size = *read_until - span.offset;
+        chassert(*read_until > span.logical_offset);
+        span.size = *read_until - span.logical_offset;
     }
 
     /// Report the read so `MergeTreeReadPool`'s slow-read backoff still sees it.
@@ -336,9 +336,9 @@ bool PipelineReadBuffer::nextImpl()
     internal_buffer = Buffer(span.data, span.data + span.size);
     working_buffer = internal_buffer;
     pos = working_buffer.begin();
-    read_position = span.offset + span.size;
+    read_position = span.logical_offset + span.size;
     LOG_TEST(log, "nextImpl: serving {} bytes at offset {}, read_position advanced to {}",
-        span.size, span.offset, read_position);
+        span.size, span.logical_offset, read_position);
     return true;
 }
 

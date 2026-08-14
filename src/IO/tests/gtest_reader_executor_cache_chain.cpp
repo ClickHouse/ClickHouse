@@ -486,8 +486,10 @@ TEST_F(ReaderExecutorCacheChain, RequestMapWideHoleIsNotObservedOrPopulated)
     /// Only the two covered ranges were populated; the wide hole [4*seg,12*seg)
     /// has no cache segment. A fresh warm probe over the hole is all-miss.
     {
+        // `resolve`'s 2nd arg is the ask's OBJECT-LOCAL start; objects.front() is at file
+        // base 0, so it equals the file offset (4 * segment_size).
         auto view = probeView(*makeDiskProvider(fc), objects.front(),
-            /*object_file_offset=*/0, ByteRange{4 * segment_size, 8 * segment_size});
+            4 * segment_size, ByteRange{4 * segment_size, 8 * segment_size});
         EXPECT_TRUE(view->allMiss()) << "the wide hole was never observed or populated";
     }
     /// The covered ranges DID populate.

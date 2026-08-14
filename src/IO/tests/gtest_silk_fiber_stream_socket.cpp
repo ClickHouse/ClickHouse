@@ -4,15 +4,14 @@
 
 #if USE_SILK && USE_SSL
 
-#include <IO/SilkFiberJob.h>
 #include <IO/SilkFiberStreamSocketImpl.h>
 #include <IO/SilkSecureFiberStreamSocketImpl.h>
 #include <IO/SocketPeerClosed.h>
 #include <IO/tests/gtest_silk_environment.h>
 
 #include <Common/Exception.h>
+#include <Common/SilkThrottler.h>
 #include <Common/Stopwatch.h>
-#include <Common/Throttler.h>
 #include <Common/tests/gtest_ephemeral_certificate.h>
 
 #include <silk/fibers/fiber.h>
@@ -34,8 +33,6 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
-#include <fcntl.h>
-
 #include <cstdint>
 #include <latch>
 #include <string>
@@ -44,6 +41,9 @@
 namespace
 {
 
+/// Share the ONE process-wide Silk environment with the other silk gtests -
+/// `FiberScheduler::initialize` aborts on double-init, and gtest runs every
+/// registered environment regardless of the test filter.
 ::testing::Environment * const silk_env = DB::tests::registerSilkEnvironment();
 
 
@@ -90,17 +90,16 @@ TYPED_TEST(SilkFiberSocketTest, RequestResponse)
 
     struct Params
     {
-        DB::SilkFiberJobHeader header;
-        uint16_t port = 0;
-        Poco::Net::StreamSocketImpl * impl = nullptr;
+        uint16_t port;
+        Poco::Net::StreamSocketImpl * impl;
     };
 
     silk::FiberFuture client_future;
-    const int run_result = DB::runSilkFiber(
+    const int run_result = silk::FiberScheduler::run(
         +[](Params * p) noexcept -> int
         {
             Poco::Net::StreamSocket socket(p->impl);
-            const auto throttler = std::make_shared<DB::Throttler>(/*max_speed_*/ 1'000'000);
+            const auto throttler = std::make_shared<Silk::Throttler>(/*max_speed_*/ 1'000'000);
             socket.setSendThrottler(throttler);
             socket.setReceiveThrottler(throttler);
             socket.bind(Poco::Net::SocketAddress("127.0.0.1", 0), /*reuseAddress*/ true);
@@ -126,8 +125,7 @@ TYPED_TEST(SilkFiberSocketTest, RequestResponse)
             socket.close();
             return 0;
         },
-        Params{{}, port, this->policy.makeClient()},
-        0,
+        Params{port, this->policy.makeClient()},
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -157,14 +155,13 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
 
     struct Params
     {
-        DB::SilkFiberJobHeader header;
-        uint16_t port = 0;
-        Poco::Net::StreamSocketImpl * impl = nullptr;
-        std::latch * negative_poll_done = nullptr;
+        uint16_t port;
+        Poco::Net::StreamSocketImpl * impl;
+        std::latch * negative_poll_done;
     };
 
     silk::FiberFuture client_future;
-    const int run_result = DB::runSilkFiber(
+    const int run_result = silk::FiberScheduler::run(
         +[](Params * p) noexcept -> int
         {
             Poco::Net::StreamSocket socket(p->impl);
@@ -194,8 +191,7 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
             socket.close();
             return 0;
         },
-        Params{{}, port, this->policy.makeClient(), &negative_poll_done},
-        0,
+        Params{port, this->policy.makeClient(), &negative_poll_done},
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -228,13 +224,12 @@ TYPED_TEST(SilkFiberSocketTest, ConnectRefused)
 
     struct Params
     {
-        DB::SilkFiberJobHeader header;
-        uint16_t port = 0;
-        Poco::Net::StreamSocketImpl * impl = nullptr;
+        uint16_t port;
+        Poco::Net::StreamSocketImpl * impl;
     };
 
     silk::FiberFuture client_future;
-    const int run_result = DB::runSilkFiber(
+    const int run_result = silk::FiberScheduler::run(
         +[](Params * p) noexcept -> int
         {
             Poco::Net::StreamSocket socket(p->impl);
@@ -243,8 +238,7 @@ TYPED_TEST(SilkFiberSocketTest, ConnectRefused)
                 Poco::Net::ConnectionRefusedException);
             return 0;
         },
-        Params{{}, closed_port, this->policy.makeClient()},
-        0,
+        Params{closed_port, this->policy.makeClient()},
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -259,13 +253,12 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
 
     struct Params
     {
-        DB::SilkFiberJobHeader header;
-        uint16_t port = 0;
-        Poco::Net::StreamSocketImpl * impl = nullptr;
+        uint16_t port;
+        Poco::Net::StreamSocketImpl * impl;
     };
 
     silk::FiberFuture client_future;
-    const int run_result = DB::runSilkFiber(
+    const int run_result = silk::FiberScheduler::run(
         +[](Params * p) noexcept -> int
         {
             Poco::Net::StreamSocket socket(p->impl);
@@ -277,18 +270,17 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
             char pong[1] = {};
             EXPECT_EQ(socket.receiveBytes(pong, sizeof(pong)), 1);
 
-            socket.setSendThrottler(std::make_shared<DB::Throttler>(/*max_speed_*/ 1, /*limit_*/ 1, "Send limit exceeded"));
+            socket.setSendThrottler(std::make_shared<Silk::Throttler>(/*max_speed_*/ 1, /*limit_*/ 1, "Send limit exceeded"));
             EXPECT_THROW(socket.sendBytes("x", 1), DB::Exception);
 
-            socket.setReceiveThrottler(std::make_shared<DB::Throttler>(/*max_speed_*/ 1, /*limit_*/ 1, "Receive limit exceeded"));
+            socket.setReceiveThrottler(std::make_shared<Silk::Throttler>(/*max_speed_*/ 1, /*limit_*/ 1, "Receive limit exceeded"));
             char buf[1] = {};
             EXPECT_THROW(socket.receiveBytes(buf, sizeof(buf)), DB::Exception);
 
             socket.close();
             return 0;
         },
-        Params{{}, port, this->policy.makeClient()},
-        0,
+        Params{port, this->policy.makeClient()},
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -302,8 +294,8 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
 }
 
 
-/// Secure-only: the bug is TLS-specific (`silkBioRead`/`silkBioWrite` ignoring `O_NONBLOCK`
-/// surfaces through `SSL_peek`, not through a raw, BIO-less socket read). Reuses the
+/// Secure-only: the bug is TLS-specific (a blocking-only `silkBioRead`/`silkBioWrite` surfaces
+/// through `SSL_peek`, not through a raw, BIO-less socket read). Reuses the
 /// `SecurePolicy policy` member from the typed fixture rather than redeclaring it.
 using SilkFiberSecureSocketTest = SilkFiberSocketTest<SecurePolicy>;
 
@@ -315,7 +307,6 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
 
     struct Params
     {
-        DB::SilkFiberJobHeader header;
         uint16_t port;
         Poco::Net::StreamSocketImpl * impl;
         uint64_t * elapsed_us;
@@ -326,7 +317,7 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
     DB::SocketState state = DB::SocketState::Closed;
 
     silk::FiberFuture client_future;
-    const int run_result = DB::runSilkFiber(
+    const int run_result = silk::FiberScheduler::run(
         +[](Params * p) noexcept -> int
         {
             Poco::Net::StreamSocket socket(p->impl);
@@ -338,15 +329,15 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
             char pong[1] = {};
             EXPECT_EQ(socket.receiveBytes(pong, sizeof(pong)), 1);
 
-            /// A long receive timeout. Pre-fix, `silkBioRead` ignores `O_NONBLOCK` and always
+            /// A long receive timeout. Pre-fix, `silkBioRead` has no non-blocking mode and always
             /// parks the caller in a fiber wait up to this timeout, so a slow probe below proves
             /// the bug; a fast one proves the fix.
             socket.setReceiveTimeout(Poco::Timespan(5, 0));
 
             /// The actual production sequence (`DB::getSocketState(StreamSocket)`, the core of the
-            /// connection pool's staleness check in `HTTPConnectionPool.cpp`): it flips the fd
-            /// non-blocking with a raw `fcntl` - not `Socket::setBlocking`, which silk sockets
-            /// reject - and calls `SSL_peek`, which reaches OpenSSL's socket BIO, i.e. `silkBioRead`.
+            /// connection pool's staleness check in `HTTPConnectionPool.cpp`): it puts the silk
+            /// socket into don't-wait mode with `setDontWait` - `Socket::setBlocking(false)` is rejected
+            /// by silk sockets - and calls `SSL_peek`, which reaches OpenSSL's socket BIO, i.e. `silkBioRead`.
             Stopwatch watch;
             *p->state = DB::getSocketState(socket);
             *p->elapsed_us = watch.elapsedMicroseconds();
@@ -354,8 +345,7 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
             socket.close();
             return 0;
         },
-        Params{{}, port, policy.makeClient(), &elapsed_us, &state},
-        0,
+        Params{port, policy.makeClient(), &elapsed_us, &state},
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -372,17 +362,17 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
     EXPECT_EQ(state, DB::SocketState::Idle);
     EXPECT_LT(elapsed_us, 500'000U)
         << "getSocketState() took " << elapsed_us
-        << "us: silkBioRead ignored O_NONBLOCK and blocked on the receive timeout instead of "
-           "returning EAGAIN immediately";
+        << "us: silkBioRead ignored non-blocking mode and blocked on the receive timeout instead "
+           "of returning EAGAIN immediately";
 }
 
 
 /// The same bug at the raw level, without any ClickHouse helper: a plain `SSL_peek` on a
 /// non-blocking TLS connection with no data pending must return `SSL_ERROR_WANT_READ`
 /// immediately. This is exactly how a non-blocking consumer uses the socket - and the only way,
-/// since silk sockets reject `Socket::setBlocking(false)`, so O_NONBLOCK is set on the raw fd
-/// directly and only OpenSSL's BIO (`silkBioRead`) ever observes it. Pre-fix, `silkBioRead`
-/// ignores the flag and parks the caller for the full receive timeout.
+/// since silk sockets reject `Socket::setBlocking(false)`: the socket is put into don't-wait
+/// mode with `setDontWait` and only `silkBioRead` ever observes it. Pre-fix, the BIO has no
+/// non-blocking mode and parks the caller for the full receive timeout.
 TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
 {
     auto listener = policy.makeListener();
@@ -390,7 +380,6 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
 
     struct Params
     {
-        DB::SilkFiberJobHeader header;
         uint16_t port;
         Poco::Net::StreamSocketImpl * impl;
         uint64_t * elapsed_us;
@@ -401,7 +390,7 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
     int ssl_error = 0;
 
     silk::FiberFuture client_future;
-    const int run_result = DB::runSilkFiber(
+    const int run_result = silk::FiberScheduler::run(
         +[](Params * p) noexcept -> int
         {
             Poco::Net::StreamSocket socket(p->impl);
@@ -414,14 +403,11 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
 
             socket.setReceiveTimeout(Poco::Timespan(5, 0));
 
-            /// Flip O_NONBLOCK on the raw fd - what any non-blocking user must do here, since
-            /// `Socket::setBlocking(false)` throws on a silk socket. Only the BIO sees this flag.
-            const int fd = socket.impl()->sockfd();
-            const int old_flags = ::fcntl(fd, F_GETFL, 0);
-            ::fcntl(fd, F_SETFL, old_flags | O_NONBLOCK);
-
-            auto * secure = dynamic_cast<Poco::Net::SecureStreamSocketImpl *>(socket.impl());
+            /// Put the socket into don't-wait mode - what any non-blocking user must do here,
+            /// since `Socket::setBlocking(false)` throws on a silk socket.
+            auto * secure = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(socket.impl());
             SSL * ssl = secure->ssl();
+            secure->setDontWait(true);
 
             char c = 0;
             ERR_clear_error();
@@ -430,12 +416,11 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
             *p->ssl_error = SSL_get_error(ssl, res);
             *p->elapsed_us = watch.elapsedMicroseconds();
 
-            ::fcntl(fd, F_SETFL, old_flags);
+            secure->setDontWait(false);
             socket.close();
             return 0;
         },
-        Params{{}, port, policy.makeClient(), &elapsed_us, &ssl_error},
-        0,
+        Params{port, policy.makeClient(), &elapsed_us, &ssl_error},
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -451,8 +436,8 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
     EXPECT_EQ(ssl_error, SSL_ERROR_WANT_READ);
     EXPECT_LT(elapsed_us, 500'000U)
         << "SSL_peek() took " << elapsed_us
-        << "us on an idle non-blocking connection: silkBioRead ignored O_NONBLOCK and blocked on "
-           "the receive timeout instead of returning EAGAIN immediately";
+        << "us on an idle non-blocking connection: silkBioRead ignored non-blocking mode and "
+           "blocked on the receive timeout instead of returning EAGAIN immediately";
 }
 
 

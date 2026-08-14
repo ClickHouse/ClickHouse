@@ -10,7 +10,7 @@
 ///     S  = bytes fetched from source        (ReaderExecutorBytesFromSource; the bandwidth base)
 ///     Wc = cache writes                     (ReaderExecutorCachePopulateRequests)
 ///     Rc = cache reads                      (ReaderExecutorCacheGetRequests)
-/// The load-independent KPI is cost per MiB requested: costMs / (ReaderExecutorRequestedBytes MiB).
+/// The load-independent KPI is cost per MiB requested: costMs / (ReaderExecutorDeliveredBytes MiB).
 ///
 /// Geometry is production sizes compressed by COMPRESSION (see the constants): all
 /// ratios (segment / window / block / alignment / min_bytes_for_seek) preserved, so
@@ -74,7 +74,7 @@ namespace ProfileEvents
     extern const Event ReaderExecutorSourceRequests;
     extern const Event ReaderExecutorIncompleteConnections;
     extern const Event ReaderExecutorBytesFromSource;
-    extern const Event ReaderExecutorRequestedBytes;
+    extern const Event ReaderExecutorDeliveredBytes;
     extern const Event ReaderExecutorCachePopulateRequests;
     extern const Event ReaderExecutorCacheGetRequests;
 }
@@ -230,7 +230,7 @@ private:
             c[ProfileEvents::ReaderExecutorCachePopulateRequests],
             c[ProfileEvents::ReaderExecutorCacheGetRequests],
             c[ProfileEvents::ReaderExecutorBytesFromSource],
-            c[ProfileEvents::ReaderExecutorRequestedBytes],
+            c[ProfileEvents::ReaderExecutorDeliveredBytes],
         };
     }
 

@@ -29,7 +29,7 @@ struct ReaderExecutorStats
         /// pool-reusable; the metric's `I`).
         IncompleteConnections,
         /// Useful bytes delivered to read requests (cost denominator).
-        RequestedBytes,
+        DeliveredBytes,
         CacheGetMicroseconds,
         CachePopulateMicroseconds,
         SourceReadMicroseconds,

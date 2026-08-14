@@ -98,7 +98,7 @@ namespace ProfileEvents
     extern const Event ReaderExecutorBytesFromPageCache;
     extern const Event ReaderExecutorBytesFromFilesystemCache;
     extern const Event ReaderExecutorSourceRequests;
-    extern const Event ReaderExecutorRequestedBytes;
+    extern const Event ReaderExecutorDeliveredBytes;
     extern const Event ReaderExecutorModeledCostMicroseconds;
     extern const Event ReaderExecutorCacheGetRequests;
     extern const Event ReaderExecutorCachePopulateRequests;
@@ -1540,7 +1540,7 @@ TEST(ReaderExecutorDecryptor, ConcurrentDecryptIsReentrant)
             .buffer = buf,
             .buffer_offset = 0,
             .size = header_str.size(),
-            .offset = 0,
+            .logical_offset = 0,
         });
     }
 
@@ -3536,7 +3536,10 @@ TEST(ReaderExecutor, CacheLookupSplitByObjectBoundary)
         EXPECT_EQ(a.range_in_file.size, 300u);
 
         EXPECT_EQ(b.remote_path, "blob_B");
-        EXPECT_EQ(b.object_file_offset, 300u);
+        /// The 2nd resolve arg is the ask's OBJECT-LOCAL start: object B is read from its own
+        /// first byte, so it is 0 (not the blob base 300). The boundary split is still proven
+        /// by remote_path (blob_A/blob_B) and range_in_file ([0,300)/[300,500)).
+        EXPECT_EQ(b.object_file_offset, 0u);
         EXPECT_EQ(b.range_in_file.offset, 300u);
         EXPECT_EQ(b.range_in_file.size, 200u);
     }
@@ -4704,7 +4707,7 @@ TEST(ReaderExecutor, ProfileEventsCountSourceReadsAndBytes)
 
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 4u);
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), size);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorRequestedBytes), size);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorDeliveredBytes), size);
     /// No cache tiers configured: the cache counters stay 0.
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorCacheGetRequests), 0u);
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorCachePopulateRequests), 0u);
@@ -4734,7 +4737,7 @@ TEST(ReaderExecutor, ModeledCostMatchesFormula)
     }
 
     const auto cost = tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds);
-    const auto requested = tg.get(ProfileEvents::ReaderExecutorRequestedBytes);
+    const auto requested = tg.get(ProfileEvents::ReaderExecutorDeliveredBytes);
     EXPECT_EQ(cost, 30000u * 4 + 20000u);  // 4 reads + 1 MiB
     EXPECT_EQ(requested, size);
 

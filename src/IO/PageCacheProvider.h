@@ -126,11 +126,11 @@ public:
 
     /// A page-cache block is written whole (first-writer-wins, no later
     /// completion); the probe reports one miss range per block.
-    bool fillsWholeCell() const override { return true; }
+    bool fillsWholeSegment() const override { return true; }
 
     /// Resolve `range` into per-block hits (readers) and misses (whole-block
     /// writers when populating); see the definition.
-    VectorWithMemoryTracking<Resolution> resolve(
+    VectorWithMemoryTracking<CacheResolution> resolve(
         const StoredObject & object, size_t object_file_offset, ByteRange range) override;
 
 private:

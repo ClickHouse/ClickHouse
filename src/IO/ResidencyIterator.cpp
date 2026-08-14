@@ -16,9 +16,9 @@ CacheViewPtr probeView(
     auto view = std::make_unique<CacheView>();
     for (auto & r : provider.resolve(object, object_file_offset, span))
     {
-        if (r.kind == ICacheProvider::Resolution::Kind::Hit)
+        if (r.kind == ICacheProvider::CacheResolution::Kind::Hit)
             view->hit_entries.push_back(HitEntry{r.range, std::move(r.reader)});
-        else if (r.kind == ICacheProvider::Resolution::Kind::Miss)
+        else if (r.kind == ICacheProvider::CacheResolution::Kind::Miss)
             view->miss_entries.push_back(MissEntry{r.range, std::move(r.writer)});
     }
     return view;

@@ -15,14 +15,14 @@ namespace DB::tests
 class SpanProbeMockBase : public ICacheProvider
 {
 public:
-    VectorWithMemoryTracking<Resolution> resolve(
+    VectorWithMemoryTracking<CacheResolution> resolve(
         const StoredObject & object, size_t object_file_offset, ByteRange range) override
     {
         auto view = buildProbeView(object, object_file_offset, range);
         auto & hits = view->hit_entries;
         auto & misses = view->miss_entries;
 
-        VectorWithMemoryTracking<Resolution> out;
+        VectorWithMemoryTracking<CacheResolution> out;
         out.reserve(hits.size() + misses.size());
         size_t hi = 0;
         size_t mi = 0;
@@ -33,12 +33,12 @@ public:
                 || (hi < hits.size() && hits[hi].range.offset <= misses[mi].range.offset);
             if (take_hit)
             {
-                out.push_back(Resolution{Resolution::Kind::Hit, hits[hi].range, std::move(hits[hi].reader), nullptr});
+                out.push_back(CacheResolution{CacheResolution::Kind::Hit, hits[hi].range, std::move(hits[hi].reader), nullptr});
                 ++hi;
             }
             else
             {
-                out.push_back(Resolution{Resolution::Kind::Miss, misses[mi].range, nullptr, std::move(misses[mi].writer)});
+                out.push_back(CacheResolution{CacheResolution::Kind::Miss, misses[mi].range, nullptr, std::move(misses[mi].writer)});
                 ++mi;
             }
         }

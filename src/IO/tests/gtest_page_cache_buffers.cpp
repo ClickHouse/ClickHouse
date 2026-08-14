@@ -24,7 +24,7 @@ CacheViewPtr openWriters(ICacheProvider & provider, const StoredObject & object,
     auto view = std::make_unique<CacheView>();
     for (auto c : cells)
         for (auto & r : provider.resolve(object, object_file_offset, c))
-            if (r.kind == ICacheProvider::Resolution::Kind::Miss)
+            if (r.kind == ICacheProvider::CacheResolution::Kind::Miss)
                 view->miss_entries.push_back(MissEntry{r.range, std::move(r.writer)});
     return view;
 }

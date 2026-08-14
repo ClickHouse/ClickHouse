@@ -241,10 +241,10 @@ PageCacheProvider::PageCacheProvider(
 /// uncached block is one miss cell carrying its whole-block writer when the
 /// provider populates (bypass leaves it writer-less). The plan fills the misses
 /// through those writers.
-VectorWithMemoryTracking<ICacheProvider::Resolution> PageCacheProvider::resolve(
+VectorWithMemoryTracking<ICacheProvider::CacheResolution> PageCacheProvider::resolve(
     const StoredObject & /*object*/, size_t /*object_file_offset*/, ByteRange range)
 {
-    VectorWithMemoryTracking<ICacheProvider::Resolution> out;
+    VectorWithMemoryTracking<ICacheProvider::CacheResolution> out;
     const size_t blk = block_size;
     const size_t file_size = file_size_in_bytes;
     if (range.offset >= file_size)
@@ -266,8 +266,8 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> PageCacheProvider::resolve(
         auto cell = probe(pos);
         if (!cell)
         {
-            Resolution miss;
-            miss.kind = Resolution::Kind::Miss;
+            CacheResolution miss;
+            miss.kind = CacheResolution::Kind::Miss;
             miss.range = ByteRange{pos, std::min(blk, file_size - pos)};
             if (populatesOnMiss())
                 miss.writer = std::make_unique<PageCacheWriter>(
@@ -295,8 +295,8 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> PageCacheProvider::resolve(
             if (!held)
                 break;
         }
-        Resolution hit;
-        hit.kind = Resolution::Kind::Hit;
+        CacheResolution hit;
+        hit.kind = CacheResolution::Kind::Hit;
         hit.range = ByteRange{run_start, run_end - run_start};
         hit.reader = std::make_unique<PageCacheReader>(hit.range, std::move(cells));
         pos = run_end;

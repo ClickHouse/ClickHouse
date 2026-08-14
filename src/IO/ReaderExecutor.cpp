@@ -336,7 +336,7 @@ void ReaderExecutor::preparePlan(size_t position_phys, size_t coverage_ahead)
 
 ChainedBuffers ReaderExecutor::finishWindow(ChainedBuffers chain)
 {
-    stats.add(Stats::RequestedBytes, chain.range().size);
+    stats.add(Stats::DeliveredBytes, chain.range().size);
     /// Feed the consumption estimator with what was actually served (physical space).
     if (chain.range().size)
     position += chain.range().size;
@@ -592,7 +592,7 @@ ChainedBuffers ReaderExecutor::fetchEncryptionHeader()
                     return chain.slice(header_range);
                 }
             }
-            if (cache->populatesOnMiss() && !cache->fillsWholeCell() && !view->misses().empty())
+            if (cache->populatesOnMiss() && !cache->fillsWholeSegment() && !view->misses().empty())
                 populate_views.emplace_back(cache.get(), std::move(view));
         }
     }
@@ -675,8 +675,8 @@ ChainedBuffers ReaderExecutor::decryptWindow(ChainedBuffers && cipher)
     {
         auto block = std::make_shared<OwnedChainedBuffer>(node.size);
         std::memcpy(block->data(), node.data(), node.size);
-        decryptInPlace(block->data(), node.size, node.offset);
-        plain.append(ChainedBufferNode{block, 0, node.size, node.offset});
+        decryptInPlace(block->data(), node.size, node.logical_offset);
+        plain.append(ChainedBufferNode{block, 0, node.size, node.logical_offset});
     }
     return plain;
 }
@@ -2402,7 +2402,7 @@ void ReaderExecutor::Display::wait(ByteRange window_phys, ChainedBuffers & out, 
                 continue;
             for (const auto & u : covered.subtract(ByteRange{lo, hi - lo}))
             {
-                ChainedBuffers c = w.writer->waitAndReadSiblingLed(u);
+                ChainedBuffers c = w.writer->waitAndRead(u);
                 if (!c.covers(u))
                     continue;   /// no live writer / raced reset / short commit - the caller's fallback fetches it
                 out.append(c.slice(u));
@@ -2481,7 +2481,7 @@ VectorWithMemoryTracking<ReaderExecutor::PieceObservation> ReaderExecutor::obser
     struct TierTraits { CacheTier tier; bool whole_cell; bool populates; };
     VectorWithMemoryTracking<TierTraits> traits;
     for (const auto & cache : caches_)
-        traits.push_back(TierTraits{cache->tier(), cache->fillsWholeCell(), cache->populatesOnMiss()});
+        traits.push_back(TierTraits{cache->tier(), cache->fillsWholeSegment(), cache->populatesOnMiss()});
 
     VectorWithMemoryTracking<PieceObservation> pieces;
     size_t piece_file_start = span.offset;
@@ -2530,17 +2530,18 @@ VectorWithMemoryTracking<ReaderExecutor::PieceObservation> ReaderExecutor::obser
             {
                 for (const auto & sub : subtracted.subtract(ask))
                 {
-                    for (auto & res : caches_[ci]->resolve(piece.object, piece.object_file_offset, sub))
+                    /// `resolve` takes the ask's OBJECT-LOCAL start; `sub` is in file coords, so
+                    /// subtract the object's file base to lift it into the object's own space.
+                    const size_t sub_object_offset = sub.offset - piece.object_file_offset;
+                    for (auto & res : caches_[ci]->resolve(piece.object, sub_object_offset, sub))
                     {
-                        if (res.kind == ICacheProvider::Resolution::Kind::End)
-                            continue;
                         /// Already collected by an earlier ask of this tier (a
                         /// wide segment spanning the split): skip whole.
                         if (tier_emitted.subtract(res.range).empty())
                             continue;
                         tier_emitted.add(res.range);
 
-                        if (res.kind == ICacheProvider::Resolution::Kind::Hit)
+                        if (res.kind == ICacheProvider::CacheResolution::Kind::Hit)
                         {
                             const size_t lo = std::max(res.range.offset, sub.offset);
                             if (lo >= res.range.end())
@@ -2552,7 +2553,7 @@ VectorWithMemoryTracking<ReaderExecutor::PieceObservation> ReaderExecutor::obser
                             subtracted.add(clamped);
                             coverage.add(clamped);
                         }
-                        else if (res.kind == ICacheProvider::Resolution::Kind::Miss)
+                        else if (res.kind == ICacheProvider::CacheResolution::Kind::Miss)
                         {
                             if (!traits[ci].populates)
                                 continue;

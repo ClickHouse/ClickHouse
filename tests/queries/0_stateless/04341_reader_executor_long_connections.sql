@@ -31,7 +31,8 @@ INSERT INTO t_reader_executor_lc_off SELECT number, number * 2, randomPrintableA
 SET use_reader_executor = 1;
 SET remote_filesystem_read_method = 'read';   -- avoid the async-prefetch stage
 SET enable_filesystem_cache = 0;               -- avoid the filesystem-cache stage so the executor engages
-SET max_read_buffer_size = 65536;              -- small windows -> many sequential reads per object
+SET max_read_buffer_size = 65536;              -- small transport buffer
+SET reader_executor_window_size = 65536;       -- small serve windows -> many sequential reads per object
 
 -- Keep the scan contiguous so reuse is deterministic. The `ReaderExecutorLongConnectionHits > 0` assertion below
 -- needs the held connection to serve more than one window, which only happens on contiguous forward
@@ -58,7 +59,7 @@ SELECT
     ProfileEvents['ReaderExecutorLongConnectionOpened'] > 0,
     ProfileEvents['ReaderExecutorLongConnectionHits'] > 0,
     ProfileEvents['ReaderExecutorLongConnectionBytes'] > 0,
-    ProfileEvents['ReaderExecutorBytesFromSource'] >= ProfileEvents['ReaderExecutorRequestedBytes']
+    ProfileEvents['ReaderExecutorBytesFromSource'] >= ProfileEvents['ReaderExecutorDeliveredBytes']
 FROM system.query_log
 WHERE log_comment = '04341_long_conn_on' AND type = 'QueryFinish' AND current_database = currentDatabase()
 ORDER BY event_time_microseconds DESC LIMIT 1;

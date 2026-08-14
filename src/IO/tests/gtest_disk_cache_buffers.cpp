@@ -177,7 +177,7 @@ CacheViewPtr openWriters(ICacheProvider & provider, const StoredObject & object,
     auto view = std::make_unique<CacheView>();
     for (auto c : cells)
         for (auto & r : provider.resolve(object, object_file_offset, c))
-            if (r.kind == ICacheProvider::Resolution::Kind::Miss)
+            if (r.kind == ICacheProvider::CacheResolution::Kind::Miss)
                 view->miss_entries.push_back(MissEntry{r.range, std::move(r.writer)});
     return view;
 }
@@ -316,7 +316,7 @@ TEST_F(DiskCacheBuffers, GapAtFrontWritesOnlyContiguousPrefix)
 
 /// (d) the residency probe (`lookAt`) is READ-ONLY: over an uncached range it creates NO
 /// segments (a later getOrSet/openWriter sees them still empty); misses
-/// carry writer==nullptr and cache-aligned ranges.
+/// carry writer==nullptr over the EXACT ask extent (read-only never rounds to the boundary).
 TEST_F(DiskCacheBuffers, ProbeIsReadOnly)
 {
     auto provider = makeProvider();
@@ -327,16 +327,14 @@ TEST_F(DiskCacheBuffers, ProbeIsReadOnly)
     // A read-only provider observes without allocating (a populating provider's
     // resolve would open writers + create segments here). Probe a sub-range
     // unaligned on both ends within the object.
-    auto view = probeView(*ro, object, 0, ByteRange{kSegmentSize / 2, kSegmentSize});
+    auto view = probeView(*ro, object, kSegmentSize / 2, ByteRange{kSegmentSize / 2, kSegmentSize});
     EXPECT_TRUE(view->allMiss());
-    ASSERT_FALSE(view->misses().empty());
-    for (const auto & m : view->misses())
-    {
-        EXPECT_EQ(m.writer, nullptr);
-        // Cache-aligned to the boundary.
-        EXPECT_EQ(m.range.offset % kSegmentSize, 0u);
-        EXPECT_EQ(m.range.size % kSegmentSize, 0u);
-    }
+    // Read-only misses are the EXACT ask extent, not rounded out to the cache boundary.
+    ASSERT_EQ(view->misses().size(), 1u);
+    const auto & m = view->misses()[0];
+    EXPECT_EQ(m.writer, nullptr);
+    EXPECT_EQ(m.range.offset, kSegmentSize / 2);
+    EXPECT_EQ(m.range.size, kSegmentSize);
 
     // Read-only: a subsequent openWriter over the same aligned range sees a
     // fresh EMPTY segment (the probe did not create or fill anything).
@@ -437,11 +435,11 @@ TEST_F(DiskCacheBuffers, HitTracksPartialWrite)
     EXPECT_EQ(flatten(got), std::string(quarter, 'R'));
 
     // The rest of the segment is still a miss: writer==nullptr (read-only view),
-    // cache-ALIGNED to the segment boundary, and covering the uncommitted tail.
+    // over the EXACT uncommitted tail (read-only never rounds to the boundary).
     ASSERT_FALSE(view->misses().empty());
     EXPECT_EQ(view->misses()[0].writer, nullptr);
-    EXPECT_EQ(view->misses()[0].range.offset % kSegmentSize, 0u);
-    EXPECT_GE(view->misses()[0].range.end(), kSegmentSize);
+    EXPECT_EQ(view->misses()[0].range.offset, quarter);
+    EXPECT_EQ(view->misses()[0].range.end(), kSegmentSize);
 }
 
 
@@ -519,7 +517,7 @@ TEST_F(DiskCacheBuffers, FreshClaimServesCommittedPrefixInsteadOfRefetching)
 /// A fresh claim whose overlap is ALREADY fully committed (a partial segment's prefix covers the
 /// whole ask) takes the downloader role via `getOrSetDownloader` to read `cwo` exactly, finds
 /// nothing to fetch, and RELEASES it immediately - returning an EMPTY `Claim`. Otherwise the role
-/// would leak and a later `waitAndReadSiblingLed` self-deadlocks: a thread cannot wait on a segment
+/// would leak and a later `waitAndRead` self-deadlocks: a thread cannot wait on a segment
 /// it downloads (`FileSegment::wait` asserts `!isDownloaderUnlocked`). Pins the Step-1 regression
 /// the real-disk sequential-eviction test caught.
 TEST_F(DiskCacheBuffers, ClaimOverFullyCommittedOverlapReleasesRole)
@@ -542,7 +540,7 @@ TEST_F(DiskCacheBuffers, ClaimOverFullyCommittedOverlapReleasesRole)
     }
 
     /// If the role leaked, this self-waits and trips `chassert(!isDownloaderUnlocked)`.
-    ChainedBuffers got = writer.waitAndReadSiblingLed(ByteRange{0, half});
+    ChainedBuffers got = writer.waitAndRead(ByteRange{0, half});
     ASSERT_TRUE(got.covers(ByteRange{0, half}));
     EXPECT_EQ(flatten(got), std::string(half, 'A'));
 }
@@ -643,10 +641,11 @@ TEST_F(DiskCacheBuffers, WriteAcrossTwoSegments)
 
 
 /// (i) object at a non-zero file offset: all public ByteRanges are FILE-LEVEL while
-/// the cache keys object-local. Writing the object's only segment at its file-level
-/// offset commits the file-level range; a probeView returns a hit whose
-/// range is file-level. A second, partially-uncached object-with-offset yields a
-/// MISS that is file-level and cache-aligned in FILE space relative to the offset.
+/// `resolve`'s 2nd arg is the ask's OBJECT-LOCAL start (0 here - reads begin at the
+/// object's first byte); the object's file base lives in the ByteRange offset. Writing
+/// the object's only segment at its file-level offset commits the file-level range; a
+/// probeView returns a file-level hit. A second, partially-uncached object-with-offset
+/// yields a file-level MISS - here the uncached tail is exactly the second file segment.
 TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
 {
     auto provider = makeProvider();
@@ -656,7 +655,7 @@ TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
     auto object = makeObject("obj_i", kSegmentSize);
 
     auto view_misses = openWriters(*provider, 
-        object, object_file_offset, {ByteRange{kSegmentSize, kSegmentSize}}); const auto & misses = view_misses->misses();
+        object, 0, {ByteRange{kSegmentSize, kSegmentSize}}); const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     ASSERT_NE(misses[0].writer, nullptr);
     auto & writer = *misses[0].writer;
@@ -675,7 +674,7 @@ TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
     // provider, held for the whole test so its reader-anchored views stay valid.
     auto ro = makeReadOnlyProvider(cache);
     auto view = probeView(
-        *ro, object, object_file_offset, ByteRange{kSegmentSize, kSegmentSize});
+        *ro, object, 0, ByteRange{kSegmentSize, kSegmentSize});
     ASSERT_TRUE(view->allHit());
     ASSERT_EQ(view->hits().size(), 1u);
     const auto & hit = view->hits()[0];
@@ -693,14 +692,14 @@ TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
     // relative to the offset.
     auto object2 = makeObject("obj_i2", 2 * kSegmentSize);
     auto view_misses2 = openWriters(*provider, 
-        object2, object_file_offset, {ByteRange{kSegmentSize, kSegmentSize}}); const auto & misses2 = view_misses2->misses();
+        object2, 0, {ByteRange{kSegmentSize, kSegmentSize}}); const auto & misses2 = view_misses2->misses();
     ASSERT_EQ(misses2.size(), 1u);
     ASSERT_NE(misses2[0].writer, nullptr);
     ASSERT_EQ(claimedWrite(*misses2[0].writer, makeChain(kSegmentSize, kSegmentSize, 'G')), kSegmentSize);
     view_misses2->miss_entries.clear();
 
     auto view2 = probeView(
-        *ro, object2, object_file_offset, ByteRange{kSegmentSize, 2 * kSegmentSize});
+        *ro, object2, 0, ByteRange{kSegmentSize, 2 * kSegmentSize});
     ASSERT_FALSE(view2->allHit());
     ASSERT_FALSE(view2->misses().empty());
     const auto & miss = view2->misses()[0];
@@ -747,12 +746,13 @@ TEST_F(DiskCacheBuffers, PartialFillFinalizationShrinks)
     ASSERT_TRUE(got.covers(ByteRange{0, half}));
     EXPECT_EQ(flatten(got), std::string(half, 'S'));
 
-    // The uncommitted remainder is a miss (cache-aligned, writer-null read-only view).
+    // The uncommitted remainder is a miss (writer-null read-only view) over the EXACT
+    // uncommitted tail - read-only never rounds to the boundary.
     ASSERT_FALSE(view->misses().empty());
     const auto & miss = view->misses()[0];
     EXPECT_EQ(miss.writer, nullptr);
-    EXPECT_EQ(miss.range.offset % kSegmentSize, 0u);
-    EXPECT_GE(miss.range.end(), kSegmentSize);
+    EXPECT_EQ(miss.range.offset, half);
+    EXPECT_EQ(miss.range.end(), kSegmentSize);
 }
 
 

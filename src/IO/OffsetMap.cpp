@@ -35,6 +35,7 @@ void OffsetMap::build(const StoredObjects & objects)
             total_size = StoredObject::UnknownSize;
             segments.push_back(Segment{
                 .object = obj,
+                .object_offset = 0,
                 .file_offset = 0,
                 .size = StoredObject::UnknownSize,
             });
@@ -42,6 +43,7 @@ void OffsetMap::build(const StoredObjects & objects)
         }
         segments.push_back(Segment{
             .object = obj,
+            .object_offset = 0,
             .file_offset = total_size,
             .size = obj.bytes_size,
         });
@@ -51,8 +53,13 @@ void OffsetMap::build(const StoredObjects & objects)
 
 VectorWithMemoryTracking<OffsetMap::ObjectRange> OffsetMap::map(ByteRange file_range) const
 {
+    /// Callers may request past `total_size`: the executor's plan window over-reaches near EOF.
+    /// The scan clips every overlap to the segments, so an over-long range yields only the
+    /// in-file part (empty once fully past the last segment).
     VectorWithMemoryTracking<ObjectRange> result;
 
+    /// Linear scan: a read spans a handful of objects at most (usually one), so a lookup index
+    /// would not pay off.
     for (const auto & seg : segments)
     {
         size_t seg_start = seg.file_offset;
@@ -64,7 +71,7 @@ VectorWithMemoryTracking<OffsetMap::ObjectRange> OffsetMap::map(ByteRange file_r
 
         size_t overlap_start = std::max(seg_start, file_range.offset);
         size_t overlap_end = std::min(seg_end, req_end);
-        size_t offset_in_object = overlap_start - seg_start;
+        size_t offset_in_object = seg.object_offset + (overlap_start - seg_start);
 
         result.push_back(ObjectRange{
             .object = seg.object,

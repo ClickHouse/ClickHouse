@@ -114,9 +114,8 @@ public:
     /// violation and trips a `chassert` in `build()`.
     void setAlreadyCompleteSource(BufferCreator creator, StoredObjects objects, const ReadSettings & read_settings);
 
-    /// Joins multiple stored objects into a single seekable buffer via
-    /// `ReadBufferFromRemoteFSGather`. Required when one logical file maps to
-    /// multiple blobs (object storage); not needed for local disk.
+    /// -- Gather stage (ReadBufferFromRemoteFSGather) --
+    /// Joins an object's multiple blobs into one seekable buffer (object storage only, not local disk).
     void needGather();
 
     void needFilesystemCache(FileCachePtr cache, FilesystemCacheSettings cache_settings, std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
@@ -142,10 +141,12 @@ public:
         String custom_file_version,
         PageCacheSettings page_cache_settings);
 
-    /// Sits between Gather and MemoryCache, with fallback to Gather. Mix
-    /// credentials into the cache key for table-engine reads (`s3(...)` etc.)
-    /// where different users may access the same path with different
-    /// credentials.
+    /// -- Distributed cache stage (sits between Gather and MemoryCache) --
+    /// Implementation is in the DistributedCache module (ENABLE_DISTRIBUTED_CACHE).
+    /// When enabled, reads go through the distributed cache with fallback to Gather.
+    /// @param include_credentials_in_cache_key  When true, object storage credentials are
+    ///        included in the cache key hash. Set to true for table engine reads (s3(...), etc.)
+    ///        where different users may access the same path with different credentials.
     void needDistributedCache(bool include_credentials_in_cache_key = false);
 
     void needAsyncPrefetch(
@@ -156,16 +157,17 @@ public:
     /// Used only by the `ReaderExecutor` path.
     void needPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool);
 
-    /// Used only by the `ReaderExecutor` live-buffer optimization.
+    /// Let the `ReaderExecutor` path reuse held source connections, bounded by this limit. When it is
+    /// not set, the executor uses the stateless one-shot path.
     void needLongConnectionLimit(std::shared_ptr<LongConnectionLimit> limit);
 
     /// `key_finder` is invoked at build time with the key fingerprint parsed
     /// from the encryption header and must return the decryption key.
     void needDecryption(String path, size_t buffer_size, KeyFinderFunc key_finder);
 
-    /// Let the executor cache this file's encryption headers in `cache`. Set only for encrypted disks
-    /// on random-object-key backends (see `DiskEncrypted::prepareRead`); deterministic-path backends
-    /// and url / external reads leave it null, so a reused key can't serve a stale header.
+    /// Let the executor cache this file's encryption headers in `cache`. Set it only for encrypted
+    /// disks on random-object-key backends (see `DiskEncrypted::prepareRead`). Deterministic-path
+    /// backends and url or external reads leave it null, so a reused key cannot serve a stale header.
     void needEncryptionHeaderCache(std::shared_ptr<EncryptionHeaderCache> cache) { encryption_header_cache = std::move(cache); }
 
     std::unique_ptr<ReadBufferFromFileBase> build() const;
