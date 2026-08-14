@@ -731,6 +731,8 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
         w.writeUInt("seconds", seconds);
     if (untracked_memory_size != 0)
         w.writeUInt("untracked_memory_size", untracked_memory_size);
+    if (query_result_cache_type.has_value())
+        w.writeString("query_result_cache_type", *query_result_cache_type);
     if (query_result_cache_tag.has_value())
         w.writeString("query_result_cache_tag", *query_result_cache_tag);
     if (!filesystem_cache_name.empty())
@@ -906,6 +908,8 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     disk = r.getString("disk");
     seconds = r.getUInt("seconds");
     untracked_memory_size = r.getUInt("untracked_memory_size");
+    if (r.has("query_result_cache_type"))
+        query_result_cache_type = r.getString("query_result_cache_type");
     if (r.has("query_result_cache_tag"))
         query_result_cache_tag = r.getString("query_result_cache_tag");
     filesystem_cache_name = r.getString("filesystem_cache_name");

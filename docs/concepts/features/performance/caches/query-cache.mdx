@@ -177,10 +177,8 @@ additionally be stored on disk so that they survive a restart and so that the ca
 
 The disk cache is controlled by two query-level settings (both `false` by default):
 
-- [enable_writes_to_query_cache_disk](/reference/settings/session-settings/enable#enable_writes_to_query_cache_disk) controls whether query results are
-  written to the disk cache (in addition to the in-memory cache).
-- [enable_reads_from_query_cache_disk](/reference/settings/session-settings/enable#enable_reads_from_query_cache_disk) controls whether the server may
-  serve a query result from the disk cache (after a memory cache miss).
+- `enable_writes_to_query_cache_disk` controls whether query results are written to the disk cache (in addition to the in-memory cache).
+- `enable_reads_from_query_cache_disk` controls whether the server may serve a query result from the disk cache (after a memory cache miss).
 
 ```sql
 SELECT some_expensive_calculation(column_1, column_2)
@@ -211,8 +209,8 @@ The location and capacity of the disk cache are configured via [server configura
 </query_cache>
 ```
 
-The `max_disk_size_in_bytes` and `max_disk_entries` limits are applied immediately on configuration reload, but `disk` and `path` are
-only read at server startup and require a server restart to take effect.
+On configuration reload, the `max_disk_size_in_bytes` and `max_disk_entries` limits affect future cache inserts. Existing entries are
+evicted lazily. The `disk` and `path` settings are only read at server startup and require a server restart to take effect.
 
 Column `type` in system table [system.query_cache](/reference/system-tables/query_cache) shows whether an entry is stored in `Memory` or on
 `Disk`. By default `SYSTEM DROP QUERY CACHE` clears both. To clear only one tier, use `SYSTEM DROP QUERY CACHE TYPE 'Memory'` or
