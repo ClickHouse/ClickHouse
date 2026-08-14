@@ -518,7 +518,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     ///
     /// So run the pipeline against a clone of `source`, leaving the original intact. Some source steps
     /// cannot be cloned — most notably `ReadFromPreparedSource`, which wraps an already-materialized,
-    /// single-use `Pipe` (dictionary, many system table, and remote reads go through it), and
+    /// single-use `Pipe`, and `ReadFromRemote`, which owns mutable state for a remote execution. Also,
     /// `DelayedCreatingSetsStep`, which a nested `IN` subquery adds to the source plan. The latter is left
     /// non-clonable on purpose: it holds the inner subqueries by shared pointer, and building it consumes
     /// each inner `source` (`DelayedCreatingSetsStep::makePlansForSets` calls `FutureSetFromSubquery::build`,
@@ -526,10 +526,10 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// speculative pass would consume the inner sources and mutate the canonical inner sets anyway — giving
     /// no real preservation. A `MATERIALIZED` CTE referenced by a local `IN` subquery is the same kind of
     /// shape: its source plan contains a `DelayedMaterializingCTEsStep`, which is also non-clonable, so it
-    /// takes the destructive fallback too — again identical to the pre-PR behavior for that shape. For any
-    /// non-clonable source, fall back to the original destructive build so
-    /// primary key analysis is still performed for such subqueries (as it always was); only the rare
-    /// silent-failure case stays unrecoverable there, exactly as before this change.
+    /// cannot be cloned either. For any non-clonable source, skip this speculative optimization and let
+    /// `DelayedCreatingSetsStep` build the set from the preserved source. Consuming the only source here
+    /// is not safe: if the speculative pipeline stops before `Set::finishInsert`, the main pipeline has no
+    /// way to build the set and reaches `FunctionIn` with a not-ready set.
     ///
     /// The non-destructive path is also skipped when there is a `GLOBAL IN` / `GLOBAL JOIN` external
     /// table. Such a build must stream the subquery output into the external table *during* the pipeline
@@ -554,18 +554,20 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         {
             if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
                 throw;
+
+            /// The in-place build is only an index optimization. Keep the authoritative source for the
+            /// deferred build when it cannot be cloned instead of risking an unrecoverable partial build.
+            return nullptr;
         }
     }
 
-    /// Run the cloned subquery as a distributed plan; `source` itself stays untouched. The
-    /// fallback below runs locally: a plan that cannot be cloned (e.g. it reads from an
-    /// already-created `Pipe`) cannot be serialized for a worker either.
+    /// Run the cloned subquery as a distributed plan; `source` itself stays untouched.
     if (plan && context->getSettingsRef()[Setting::make_distributed_plan])
         convertSetSourceForDistributedPlan(*plan, context);
 
     /// On the non-destructive path the speculative pipeline builds into this temporary set; it is
-    /// published into `set_and_key` only after the build fully succeeds (see below). It stays null on the
-    /// destructive fallback, which builds directly into the canonical `set_and_key->set`.
+    /// published into `set_and_key` only after the build fully succeeds (see below). It stays null for
+    /// the external-table path, which builds directly into the canonical `set_and_key->set`.
     SetPtr speculative_set;
 
     if (source_preserved)
@@ -603,10 +605,9 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     }
     else
     {
-        /// Destructive fallback for non-clonable sources: `build` consumes `source` and binds the
-        /// `CreatingSetStep` to the canonical `set_and_key` (as this code always did). On a silent failure
-        /// `source` is gone, so the deferred build cannot rebuild — exactly the previous behavior; the set
-        /// is never reused with partial rows, because the deferred build throws "Not-ready Set" instead.
+        /// A `GLOBAL IN` / `GLOBAL JOIN` external table must be filled while the source runs, so this path
+        /// keeps the existing destructive build described above. Non-clonable local sources returned
+        /// before reaching this branch and retain their source for the deferred build.
         auto prepared_sets_cache = context->getPreparedSetsCache();
         /// A distributed plan ships the set's values to worker tasks, and a cached set has none.
         if (settings[Setting::make_distributed_plan])
