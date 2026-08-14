@@ -1096,6 +1096,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     MergeTreeIndices indices,
     bool merge_is_needed,
     bool try_adaptive_codec,
+    ContextPtr context,
     const MergeTreeSettingsPtr & base_data_settings)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
@@ -1214,7 +1215,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
-        data.getContext()->getWriteSettings(),
+        context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr),
         try_adaptive_codec);
 
@@ -1258,6 +1259,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         std::move(indices),
         merge_is_needed,
         /*try_adaptive_codec=*/ false,
+        context,
         /*base_data_settings=*/ {});
 }
 
@@ -1293,6 +1295,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         std::move(indices),
         /*merge_is_needed=*/ true,
         /*try_adaptive_codec=*/ true,
+        context,
         base_data_settings);
 
     new_part->part->temp_projection_block_number = block_num;

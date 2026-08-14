@@ -160,6 +160,7 @@ private:
         MergeTreeIndices indices,
         bool merge_is_needed,
         bool try_adaptive_codec,
+        ContextPtr context,
         const MergeTreeSettingsPtr & base_data_settings);
 
     MergeTreeData & data;
