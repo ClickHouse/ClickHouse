@@ -248,7 +248,7 @@ bool UnifiedUnityCatalog::empty() const
     return true;
 }
 
-DB::Names UnifiedUnityCatalog::getTables() const
+CatalogTables UnifiedUnityCatalog::getTables() const
 {
     static constexpr auto CACHE_TTL = std::chrono::seconds(30);
 
@@ -264,7 +264,7 @@ DB::Names UnifiedUnityCatalog::getTables() const
         table_json_cache.clear();
     }
 
-    DB::Names result;
+    CatalogTables result;
     auto all_schemas = getSchemas("");
     for (const auto & schema : all_schemas)
     {
@@ -279,6 +279,17 @@ DB::Names UnifiedUnityCatalog::getTables() const
     }
 
     return result;
+}
+
+DataLake::ICatalog::Namespaces UnifiedUnityCatalog::getNamespaces() const
+{
+    /// Unity schemas are flat — they cannot contain nested namespaces.
+    return getSchemas("");
+}
+
+CatalogTables UnifiedUnityCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+{
+    return getTablesForSchema(namespace_name);
 }
 
 bool UnifiedUnityCatalog::existsTable(const std::string & schema_name, const std::string & table_name) const
@@ -501,14 +512,14 @@ std::shared_ptr<RestCatalog> UnifiedUnityCatalog::getIcebergRestCatalog() const
     return iceberg_rest_catalog;
 }
 
-DB::Names UnifiedUnityCatalog::getTablesForSchema(const std::string & schema, size_t limit) const
+CatalogTables UnifiedUnityCatalog::getTablesForSchema(const std::string & schema, size_t limit) const
 {
     Poco::URI::QueryParameters params;
     params.push_back({"catalog_name", warehouse});
     params.push_back({"schema_name", schema});
     params.push_back({"max_results", DB::toString(limit)});
 
-    DB::Names tables;
+    CatalogTables tables;
     do
     {
         String json_str;
@@ -530,7 +541,10 @@ DB::Names UnifiedUnityCatalog::getTablesForSchema(const std::string & schema, si
                 const auto current_table_json = tables_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
                 const auto table_name = current_table_json->get("name").extract<String>();
                 auto qualified_name = schema + "." + table_name;
-                tables.push_back(qualified_name);
+                tables.push_back(CatalogTable{
+                    .name = qualified_name,
+                    .is_readable = detectTableFormat(current_table_json) != DataLakeTableFormat::UNKNOWN,
+                });
 
                 {
                     std::lock_guard lock(table_cache_mutex);
