@@ -39,6 +39,7 @@ node_zk = cluster.add_instance(
     main_configs=["configs/config_zk_ordinary_xml_subtree.xml"],
     user_configs=["configs/config_zk_users.xml"],
     with_zookeeper=True,
+    stay_alive=True,
 )
 # from_zk on an ordinary (non-<include>) element such as <merge_tree> with a YAML (non-'<')
 # value: it must be kept as literal text, not autodetected as YAML, so the setting inside is
@@ -264,6 +265,25 @@ def test_config_zk_leaf_entity_encoded_stays_literal(start_cluster):
     `>` must now be stored raw rather than entity-encoded.
     """
     assert get_log_comment(node_zk, "zk_entity_encoded") == "a&amp;b\n"
+
+
+def test_config_zk_leaf_crlf_preprocessed_fallback(start_cluster):
+    """A saved preprocessed config must preserve CR/LF when ZooKeeper is unavailable.
+
+    The initial load verifies the in-memory DOM path. Stop ZooKeeper and restart the server to
+    force `loadConfigWithZooKeeperIncludes` to parse the saved preprocessed config instead.
+    `XMLWriter` must serialize CR as a character reference; a literal CR would be normalized to
+    LF by the XML parser during the fallback reload.
+    """
+    cluster.stop_zookeeper_nodes(["zoo1"])
+    node_zk.restart_clickhouse()
+    assert (
+        node_zk.query(
+            "SELECT hex(value) FROM system.settings WHERE name = 'log_comment'",
+            user="zk_leaf_crlf",
+        )
+        == "610D0A62\n"
+    )
 
 
 def test_config_zk_ordinary_element_xml_subtree(start_cluster):
