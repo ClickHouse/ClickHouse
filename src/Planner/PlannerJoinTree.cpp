@@ -403,7 +403,7 @@ bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
     return false;
 }
 
-} // namespace
+}
 
 /// Declared in `Planner/Utils.h` so the `EXPLAIN QUERY TREE` / `EXPLAIN SYNTAX` access check
 /// (`InterpreterExplainQuery`) can reproduce the planner's trivial-read column choice for views.
