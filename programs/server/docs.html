@@ -489,7 +489,7 @@
             --hover-bg: #F7F7F7;
             --active-bg: #F3F3F3;
             --code-bg: #F1F1F1;
-            --pre-bg: #171717;
+            --pre-bg: #FFFFFF;
             --link: #242424;
             --primary: #F3C600;
             --topbar-height: 3rem;
@@ -508,7 +508,7 @@
             --hover-bg: #1B1B1B;
             --active-bg: #252525;
             --code-bg: #262626;
-            --pre-bg: #090909;
+            --pre-bg: #282828;
             --link: #EEEEEE;
             color-scheme: dark;
         }
@@ -632,7 +632,7 @@
 
         #sidebar-tools {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 2.65rem;
+            grid-template-columns: minmax(0, 1fr) 2.25rem;
             gap: 0.5rem;
             padding: 0.8rem 1.65rem 1.2rem;
         }
@@ -646,64 +646,101 @@
             position: absolute;
             z-index: 1;
             top: 50%;
-            left: 0.85rem;
+            left: 0.875rem;
             width: 1rem;
             height: 1rem;
             transform: translateY(-50%);
             fill: none;
-            stroke: var(--muted-strong);
-            stroke-width: 1.8;
+            color: #3F3F3F;
+            stroke: currentColor;
+            stroke-width: 1.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
             pointer-events: none;
         }
         #search {
             width: 100%;
-            height: 2.55rem;
-            border: 1px solid var(--border);
-            border-radius: 0.4rem;
-            background: var(--panel-bg);
-            color: var(--fg);
-            padding: 0 2.8rem 0 2.45rem;
+            height: 2.25rem;
+            border: 0;
+            border-radius: 0.25rem;
+            background: #FFFFFF;
+            color: #707070;
+            padding: 0 2.75rem 0 2.375rem;
             outline: none;
             font-size: 0.875rem;
             font-weight: 400;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+            line-height: 1.5rem;
+            box-shadow: 0 0 0 1px rgba(156, 163, 175, 0.3);
+            transition: box-shadow 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
         }
         #search::placeholder {
-            color: var(--muted);
+            color: #707070;
+            opacity: 1;
         }
-        #search:focus {
-            border-color: var(--muted);
-            box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
+        #search:hover,
+        #search:focus-visible {
+            box-shadow: 0 0 0 1px rgba(63, 63, 63, 0.3);
         }
         #search-shortcut {
             position: absolute;
             top: 50%;
-            right: 0.65rem;
+            right: 0.75rem;
             transform: translateY(-50%);
-            color: var(--muted);
-            font-size: 0.7rem;
+            color: #707070;
+            font-family: inherit;
+            font-size: 0.75rem;
+            font-weight: 600;
+            line-height: 1rem;
             pointer-events: none;
+        }
+        [data-theme="dark"] #search {
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            background: rgba(255, 255, 255, 0.06);
+            color: #CECECE;
+            box-shadow: none;
+        }
+        [data-theme="dark"] #search::placeholder,
+        [data-theme="dark"] #search-icon,
+        [data-theme="dark"] #search-shortcut {
+            color: #CECECE;
+        }
+        [data-theme="dark"] #search:hover,
+        [data-theme="dark"] #search:focus-visible {
+            border-color: rgba(255, 255, 255, 0.14);
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: none;
         }
         #connection-settings {
             position: relative;
         }
         #connection-settings > summary {
-            width: 2.65rem;
-            height: 2.55rem;
+            width: 2.25rem;
+            height: 2.25rem;
             display: grid;
             place-items: center;
-            border: 1px solid var(--border);
-            border-radius: 0.4rem;
+            border: 0;
+            border-radius: 0.25rem;
             background: var(--panel-bg);
             cursor: pointer;
             list-style: none;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+            box-shadow: 0 0 0 1px rgba(156, 163, 175, 0.3);
         }
         #connection-settings > summary::-webkit-details-marker {
             display: none;
         }
         #connection-settings > summary:hover {
             background: var(--hover-bg);
+            box-shadow: 0 0 0 1px rgba(63, 63, 63, 0.3);
+        }
+        [data-theme="dark"] #connection-settings > summary {
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            background: rgba(255, 255, 255, 0.06);
+            box-shadow: none;
+        }
+        [data-theme="dark"] #connection-settings > summary:hover {
+            border-color: rgba(255, 255, 255, 0.14);
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: none;
         }
         #connection-settings > summary svg {
             width: 1.05rem;
@@ -1218,20 +1255,106 @@
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
             font-size: 0.86em;
         }
-        #doc pre {
-            border: 1px solid color-mix(in srgb, #FFFFFF 10%, transparent);
-            border-radius: 0.55rem;
-            padding: 1rem 1.1rem;
-            line-height: 1.55;
-            box-shadow: inset 0 1px rgba(255, 255, 255, 0.04);
+        #doc .code-wrapper {
+            position: relative;
+            margin: 1.25rem 0 2rem;
+            overflow: hidden;
+            border: 1px solid rgba(28, 28, 28, 0.1);
+            border-radius: 0.25rem;
+            background: #FFFFFF;
         }
-        #doc pre code {
-            color: #EEEEEE;
+        [data-theme="dark"] #doc .code-wrapper {
+            border-color: rgba(255, 255, 255, 0.1);
+            background: #282828;
+        }
+        #doc .code-wrapper pre {
+            margin: 0;
+            border: 0;
+            border-radius: 0;
+            background: transparent;
+            color: #1F2328;
+            padding: 0.875rem 1rem;
+            font-size: 0.8125rem;
+            line-height: 1.25;
+            box-shadow: none;
+            scrollbar-width: none;
+        }
+        #doc .code-wrapper pre::-webkit-scrollbar {
+            display: none;
+        }
+        [data-theme="dark"] #doc .code-wrapper pre {
+            background: #282828;
+            color: #D4D4D4;
+        }
+        #doc .code-wrapper pre code {
+            display: block;
+            min-width: max-content;
+            padding: 0 2.75rem 0 0;
+            background: transparent;
+            color: inherit;
+            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
+            font-size: inherit;
+            line-height: inherit;
         }
         #doc .code-wrapper .copy-button {
-            border-radius: 0.3rem;
-            font-family: inherit;
+            position: absolute;
+            top: 0.75rem;
+            right: 1rem;
+            width: 1.625rem;
+            height: 1.625rem;
+            display: grid;
+            place-items: center;
+            padding: 0;
+            border: 0;
+            border-radius: 0.375rem;
+            background: transparent;
+            color: #9CA3AF;
+            opacity: 1;
+            cursor: pointer;
+            transition: color 0.15s ease, background-color 0.15s ease;
         }
+        #doc .code-wrapper .copy-button:hover {
+            background: #F3F4F6;
+            color: #6B7280;
+        }
+        #doc .code-wrapper .copy-button:focus-visible {
+            outline: 2px solid #6B7280;
+            outline-offset: 1px;
+        }
+        #doc .code-wrapper .copy-button svg {
+            width: 1rem;
+            height: 1rem;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 1.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        [data-theme="dark"] #doc .code-wrapper .copy-button {
+            color: rgba(255, 255, 255, 0.4);
+        }
+        [data-theme="dark"] #doc .code-wrapper .copy-button:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.65);
+        }
+        #doc pre .q-kw  { color: #1F2328; }
+        #doc pre .q-id  { color: #00838F; }
+        #doc pre .q-fn  { color: #875F00; }
+        #doc pre .q-num { color: #008700; }
+        #doc pre .q-str { color: #006400; }
+        #doc pre .q-qid { color: #00757E; }
+        #doc pre .q-com { color: #6E7781; }
+        #doc pre .q-op  { color: #1F2328; }
+        #doc pre .q-err { color: #CF222E; }
+        [data-theme="dark"] #doc pre .q-kw  { color: #D4D4D4; }
+        [data-theme="dark"] #doc pre .q-id  { color: #00CDCD; }
+        [data-theme="dark"] #doc pre .q-fn  { color: #CDCD00; }
+        [data-theme="dark"] #doc pre .q-num { color: #00D700; }
+        [data-theme="dark"] #doc pre .q-str { color: #00CD00; }
+        [data-theme="dark"] #doc pre .q-qid { color: #00D7D7; }
+        [data-theme="dark"] #doc pre .q-com { color: #9E9E9E; }
+        [data-theme="dark"] #doc pre .q-op  { color: #D4D4D4; }
+        [data-theme="dark"] #doc pre .q-err { color: #FF6E40; }
         #doc table {
             width: 100%;
             display: block;
@@ -1621,9 +1744,9 @@
         </nav>
         <div id="sidebar-tools">
             <div id="search-bar">
-                <svg id="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+                <svg id="search-icon" viewBox="0 0 18 18" aria-hidden="true"><path d="M15.25 15.25L11.285 11.285"/><path d="M7.75 12.75C10.5114 12.75 12.75 10.5114 12.75 7.75C12.75 4.98858 10.5114 2.75 7.75 2.75C4.98858 2.75 2.75 4.98858 2.75 7.75C2.75 10.5114 4.98858 12.75 7.75 12.75Z"/></svg>
                 <input spellcheck="false" autocomplete="off" id="search" type="text"
-                       aria-label="Search source reference" placeholder="Search…" />
+                       aria-label="Search source reference" placeholder="Search..." />
                 <kbd id="search-shortcut">⌘K</kbd>
             </div>
             <details id="connection-settings">
@@ -3032,8 +3155,8 @@
         if (el) el.scrollIntoView({ block: 'start' });
     }
 
-    /// Add a "Copy" button to every code block; it copies the code (not the button label) to the
-    /// clipboard and briefly confirms. The button lives in a non-scrolling wrapper around the `pre`,
+    /// Add a copy button to every code block; it copies the code and briefly confirms. The button
+    /// lives in a non-scrolling wrapper around the `pre`,
     /// so it stays pinned to the right edge regardless of the code block's horizontal scroll.
     function addCopyButtons(body) {
         for (const pre of body.querySelectorAll('pre')) {
@@ -3047,17 +3170,28 @@
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'copy-button';
-            button.textContent = 'Copy';
+            button.setAttribute('aria-label', 'Copy the contents from the code block');
+            button.title = 'Copy';
+            const copy_icon = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M14.25 5.25H7.25C6.14543 5.25 5.25 6.14543 5.25 7.25V14.25C5.25 15.3546 6.14543 16.25 7.25 16.25H14.25C15.3546 16.25 16.25 15.3546 16.25 14.25V7.25C16.25 6.14543 15.3546 5.25 14.25 5.25Z"/><path d="M2.80103 11.998L1.77203 5.07397C1.61003 3.98097 2.36403 2.96397 3.45603 2.80197L10.38 1.77297C11.313 1.63397 12.19 2.16297 12.528 3.00097"/></svg>';
+            const copied_icon = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M3.75 9L7.25 12.5L14.25 5.5"/></svg>';
+            button.innerHTML = copy_icon;
             button.addEventListener('click', async () => {
                 const code = pre.querySelector('code');
                 const text = code ? code.textContent : pre.textContent;
                 try {
                     await navigator.clipboard.writeText(text);
-                    button.textContent = 'Copied!';
+                    button.innerHTML = copied_icon;
+                    button.setAttribute('aria-label', 'Copied');
+                    button.title = 'Copied';
                 } catch (e) {
-                    button.textContent = 'Error';
+                    button.setAttribute('aria-label', 'Could not copy the code block');
+                    button.title = 'Could not copy';
                 }
-                setTimeout(() => { button.textContent = 'Copy'; }, 1200);
+                setTimeout(() => {
+                    button.innerHTML = copy_icon;
+                    button.setAttribute('aria-label', 'Copy the contents from the code block');
+                    button.title = 'Copy';
+                }, 1200);
             });
             wrapper.appendChild(button);
         }
