@@ -729,10 +729,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
                         column.settings.removeSetting(setting);
                 }
 
-                /// The default is replaced only when the command carries one. A command that only
-                /// restates the type keeps the default the column currently has, which is what the
-                /// preceding commands of the same ALTER have already written here. Removals are
-                /// handled by the `to_remove` branches above.
+                /// Restating the type is not a default decision, so the column keeps the default it
+                /// currently has. Removals are handled by the `to_remove` branches above.
                 if (default_expression)
                 {
                     column.default_desc.kind = default_kind;
@@ -1851,8 +1849,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (command.codec)
             {
-                /// `default_kind` is meaningful only together with `default_expression`: it holds its
-                /// enumerator's zero value on a command that carries no default.
+                /// `default_kind` holds its enumerator's zero value unless `default_expression` is set.
                 const bool becomes_physical = command.default_expression
                     && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized);
                 if (all_columns.hasAlias(column_name) && !becomes_physical)
