@@ -1,8 +1,7 @@
 #pragma once
 
-#include <optional>
 #include <memory>
-#include <mutex>
+#include <optional>
 #include <span>
 #include <unordered_map>
 
@@ -237,6 +236,10 @@ public:
         const Hyperrectangle * key_bounds = nullptr) const;
 
     const KeyOrder & getKeyOrder() const { return key_order; }
+
+    /// Whether the reference-based overloads below can be used with this condition: their atom ranges
+    /// are prepared when it is built (see `use_column_refs_for_primary_key_index_analysis`).
+    bool hasPreparedRangesForRefs() const { return prepare_range_for_refs; }
 
     /// Same as the optimized (sparse) overload above, but avoids materializing the key values as `Field`:
     /// a boundary is a reference into the index column it comes from (see `ColumnValueRef`).
@@ -791,5 +794,9 @@ private:
     };
 
     PreparedRangeForRefs prepared_range_for_refs;
+
+    /// Whether `prepared_range_for_refs` is built at all, i.e. whether the reference representation
+    /// may be used for this condition (`use_column_refs_for_primary_key_index_analysis`).
+    bool prepare_range_for_refs = false;
 };
 }

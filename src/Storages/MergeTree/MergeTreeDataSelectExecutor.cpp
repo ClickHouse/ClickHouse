@@ -1963,8 +1963,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
     /// Reference the index columns instead of materializing their values as `Field`. This is a
     /// representation of the same sparse key information, so it only applies on top of it.
-    const bool use_column_refs
-        = use_sparse_pk_representation && settings[Setting::use_column_refs_for_primary_key_index_analysis];
+    const bool use_column_refs = use_sparse_pk_representation
+        && settings[Setting::use_column_refs_for_primary_key_index_analysis]
+        /// The condition prepares its atom ranges for this representation only when it was built with
+        /// the setting enabled, which is not necessarily the case for a condition built elsewhere.
+        && key_condition.hasPreparedRangesForRefs();
 
     /// If until index 4 of PK key columns is used in the filter, then used_key_prefix_size would be 5.
     /// There is no need to process later key columns.

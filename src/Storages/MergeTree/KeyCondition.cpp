@@ -68,6 +68,7 @@ namespace Setting
 {
     extern const SettingsBool allow_key_condition_coalesce_rewrite;
     extern const SettingsBool analyze_index_with_space_filling_curves;
+    extern const SettingsBool use_column_refs_for_primary_key_index_analysis;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsTimezone session_timezone;
 }
@@ -1467,6 +1468,8 @@ KeyCondition::KeyCondition(
     }
 
     auto info = BuildInfo {.key_expr = key_expr_, .key_subexpr_names = getAllSubexpressionNames(*key_expr_)};
+
+    prepare_range_for_refs = context->getSettingsRef()[Setting::use_column_refs_for_primary_key_index_analysis];
 
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves(info);
@@ -4708,6 +4711,11 @@ static DataTypePtr getRangeTypeForRPNElement(const KeyCondition::RPNElement & el
 
 void KeyCondition::rebuildPreparedRangeForRefs()
 {
+    /// Only the reference representation consumes these, and preparing them costs a column per atom
+    /// boundary, so do not pay for it when that representation is not going to be used.
+    if (!prepare_range_for_refs)
+        return;
+
     auto & prepared = prepared_range_for_refs;
 
     prepared.ranges.clear();
@@ -5639,7 +5647,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
 {
     /// The RPN element ranges, pre-converted once into the `ColumnValueRef` representation.
     const auto & prepared = prepared_range_for_refs;
-    chassert(prepared.ranges.size() == rpn.size());
+    if (prepared.ranges.size() != rpn.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "The reference representation of the atom ranges was not prepared for this KeyCondition "
+            "({} prepared ranges for {} RPN elements)",
+            prepared.ranges.size(),
+            rpn.size());
 
     absl::InlinedVector<BoolMask, 16> rpn_stack;
 
@@ -6532,6 +6546,7 @@ Ranges KeyCondition::extractBounds() const
         /// the whole RPN to be representable by plain range operations.
         KeyCondition one_conjunct(
             ThisIsPrivate{}, key_columns, key_data_types, num_key_columns, single_point, date_time_overflow_behavior_ignore);
+        one_conjunct.prepare_range_for_refs = prepare_range_for_refs;
         one_conjunct.rpn.assign(rpn.begin() + start, rpn.begin() + end);
         one_conjunct.rebuildPreparedRangeForRefs();
 
@@ -8061,6 +8076,7 @@ void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, s
 
             /// The split conditions keep the original key column positions, so the key order carries over.
             condition->key_order = key_order;
+            condition->prepare_range_for_refs = prepare_range_for_refs;
             add_rpn_ranges(*condition, *this, ranges);
             out_column_conditions.emplace_back(i, std::move(condition));
         }
