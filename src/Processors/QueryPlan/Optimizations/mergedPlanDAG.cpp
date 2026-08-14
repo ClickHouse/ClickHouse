@@ -25,8 +25,42 @@ std::optional<size_t> MergedPlanDAG::getDenseSource(const ActionsDAG::Node * nod
     return *node_sources.begin();
 }
 
+std::optional<size_t> MergedPlanDAG::getSourceToRecomputeOn(const ActionsDAG::Node * node) const
+{
+    const auto dense_source = getDenseSource(node);
+    if (dense_source && sources[*dense_source].may_be_stuffed)
+        return dense_source;
+
+    return {};
+}
+
 namespace
 {
+
+/// Which side of a join can end up with rows its columns took no part in. A kind that keeps every row of
+/// one side has to fill the other side in for the rows that matched nothing there.
+std::pair<bool, bool> findStuffedSides(JoinKind kind)
+{
+    switch (kind)
+    {
+        case JoinKind::Inner:
+        case JoinKind::Cross:
+        case JoinKind::Comma:
+            return {false, false};
+        /// Includes LEFT ANTI, where the right side stands at its defaults for every row produced.
+        case JoinKind::Left:
+            return {false, true};
+        case JoinKind::Right:
+            return {true, false};
+        case JoinKind::Full:
+            return {true, true};
+        /// `PASTE` matches rows by position rather than by a condition. Take the careful answer.
+        case JoinKind::Paste:
+            return {true, true};
+    }
+
+    return {true, true};
+}
 
 /// `unite` and `mergeInplace` splice their nodes onto the end of the list, so what a merge added is the
 /// tail behind whatever was last before it.
@@ -210,6 +244,7 @@ std::optional<MergedPlanDAG> buildImpl(QueryPlan::Node & node)
 
         merged->sources.append_range(std::move(right->sources));
         merged->filter_nodes.append_range(right->filter_nodes);
+        merged->join_condition_nodes.append_range(right->join_condition_nodes);
         merged->nodes_below_joins.insert(right->nodes_below_joins.begin(), right->nodes_below_joins.end());
 
         ActionsDAG::NodeMapping clone_mapping;
@@ -223,12 +258,29 @@ std::optional<MergedPlanDAG> buildImpl(QueryPlan::Node & node)
             return {};
         dag_outputs.resize(step_dag.getOutputs().size());
 
-        for (const auto & residual_condition : join_step->getJoinOperator().residual_filter)
+        const auto & join_operator = join_step->getJoinOperator();
+
+        /// A source stays stuffable once any join above it can leave its columns unmatched.
+        const auto [left_is_stuffed, right_is_stuffed] = findStuffedSides(join_operator.kind);
+        for (size_t source = 0; source < merged->sources.size(); ++source)
         {
-            auto it = clone_mapping.find(residual_condition.getNode());
-            if (it == clone_mapping.end())
-                return {};
-            merged->filter_nodes.push_back(it->second);
+            const bool side_is_stuffed = source < source_shift ? left_is_stuffed : right_is_stuffed;
+            merged->sources[source].may_be_stuffed |= side_is_stuffed;
+        }
+
+        for (const auto * conditions : {&join_operator.residual_filter, &join_operator.expression})
+        {
+            for (const auto & condition : *conditions)
+            {
+                auto it = clone_mapping.find(condition.getNode());
+                if (it == clone_mapping.end())
+                    return {};
+
+                if (conditions == &join_operator.residual_filter)
+                    merged->filter_nodes.push_back(it->second);
+                else
+                    merged->join_condition_nodes.push_back(it->second);
+            }
         }
 
         if (!outputsMatchHeader(merged->getOutputs(), *step->getOutputHeader()))
