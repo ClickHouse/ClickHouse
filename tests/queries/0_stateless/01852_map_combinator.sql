@@ -58,6 +58,7 @@ SELECT countMapMerge(state) FROM (SELECT countMapState(number % 3) AS state FROM
 
 -- all `NaN` keys are the same key regardless of the payload, and `-0` is the same key as `+0`
 SELECT length(mapKeys(m)), arraySort(mapValues(m)) FROM (SELECT sumMap(1, arrayJoin([nan, reinterpretAsFloat64(reverse(unhex('7FF8000000000001'))), reinterpretAsFloat64(reverse(unhex('FFF8000000000000'))), 0., -0.])) AS m);
+SELECT length(mapKeys(m)), arraySort(mapValues(m)) FROM (SELECT sumMap(1, arrayJoin([nan::BFloat16, reinterpretAsBFloat16(reverse(unhex('7FC1'))), reinterpretAsBFloat16(reverse(unhex('FFC1'))), 0::BFloat16, -0::BFloat16])) AS m);
 
 DROP TABLE IF EXISTS sum_map_decimal;
 

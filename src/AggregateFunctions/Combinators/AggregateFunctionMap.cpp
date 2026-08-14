@@ -53,10 +53,15 @@ struct CompareHelperHash
 {
     size_t operator()(const T & x) const
     {
-        if constexpr (is_floating_point<T>)
+        if constexpr (is_floating_point<T> || std::is_same_v<T, BFloat16>)
         {
             /// An arbitrary, but the same value for every `NaN`.
-            if (isNaN(x))
+            if constexpr (std::is_same_v<T, BFloat16>)
+            {
+                if (x.isNaN())
+                    return 0x8ff4c1b3d6a7e59fULL;
+            }
+            else if (isNaN(x))
                 return 0x8ff4c1b3d6a7e59fULL;
             if (x == T(0))
                 return std::hash<T>()(T(0));
