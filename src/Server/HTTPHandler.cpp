@@ -461,7 +461,7 @@ void HTTPHandler::processQuery(
     bool any_path_feature_enabled = settings[Setting::http_allow_database_as_path]
                                   || settings[Setting::http_allow_table_as_file]
                                   || settings[Setting::http_allow_filters_as_path];
-    if (any_path_feature_enabled)
+    if (parsesHTTPPath() && any_path_feature_enabled)
     {
         const String & raw_uri = request.getURI();
         String path_only = raw_uri;

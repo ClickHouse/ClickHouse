@@ -60,6 +60,10 @@ public:
 
     virtual bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) = 0;
 
+    /// Only the dynamic query handler interprets arbitrary request paths as query inputs. Configured
+    /// and SQL-defined handlers own their matched path and must execute their stored query unchanged.
+    virtual bool parsesHTTPPath() const { return false; }
+
     /// `body` is the request body wrapped in the transport decompression chain - the same object the query
     /// itself would read. Handlers must read the body only through it, never through `request.getStream()`
     /// directly: the wrapper snapshots the inner buffer state on construction, so bytes taken from the inner
@@ -241,6 +245,8 @@ public:
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
     bool customizeQueryParam(ContextMutablePtr context, const std::string &key, const std::string &value) override;
+
+    bool parsesHTTPPath() const override { return true; }
 };
 
 class PredefinedQueryHandler : public HTTPHandler
