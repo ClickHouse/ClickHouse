@@ -692,7 +692,7 @@ private:
                 ASTs expanded_columns;
                 for (size_t i = 0; i < columns.size(); ++i)
                 {
-                    ASTPtr element = makeASTFunction("tupleElement", ident("kql_mv_expand"), literal(i + 1));
+                    ASTPtr element = makeASTFunction("tupleElement", ident("kql_mv_expand"), lit(i + 1));
                     element->setAlias(columns[i]->as<ASTIdentifier>()->shortName());
                     expanded_columns.push_back(std::move(element));
                 }
@@ -782,7 +782,6 @@ private:
 
         /// Do not use `USING` even when both key names agree: unlike Kusto it coalesces the
         /// matching columns, while Kusto joins that return both sides keep both key columns.
-        {
         {
             /// Qualify both sides with the subquery aliases: `on $left.a == $right.b` must
             /// stay unambiguous when both inputs expose both names.
