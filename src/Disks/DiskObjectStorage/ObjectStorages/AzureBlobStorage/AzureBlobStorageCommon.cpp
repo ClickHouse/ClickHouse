@@ -623,20 +623,24 @@ void RequestSettings::validateUploadSettings() const
             "Setting azure_strict_upload_part_size ({}) can't be greater than setting azure_max_upload_part_size ({})",
             ReadableSize(strict_upload_part_size), ReadableSize(max_upload_part_size));
 
+    if (min_upload_part_size == 0)
+    {
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting azure_min_upload_part_size ({}) cannot be zero",
+            ReadableSize(min_upload_part_size));
+    }
+
+    if (max_upload_part_size < min_upload_part_size)
+    {
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting azure_max_upload_part_size ({}) can't be less than setting azure_min_upload_part_size ({})",
+            ReadableSize(max_upload_part_size), ReadableSize(min_upload_part_size));
+    }
+
     if (strict_upload_part_size == 0)
     {
-        if (min_upload_part_size == 0)
-            throw Exception(
-                ErrorCodes::INVALID_SETTING_VALUE,
-                "Setting azure_min_upload_part_size ({}) cannot be zero",
-                ReadableSize(min_upload_part_size));
-
-        if (max_upload_part_size < min_upload_part_size)
-            throw Exception(
-                ErrorCodes::INVALID_SETTING_VALUE,
-                "Setting azure_max_upload_part_size ({}) can't be less than setting azure_min_upload_part_size ({})",
-                ReadableSize(max_upload_part_size), ReadableSize(min_upload_part_size));
-
         if (upload_part_size_multiply_factor == 0)
             throw Exception(
                 ErrorCodes::INVALID_SETTING_VALUE,

@@ -1959,7 +1959,11 @@ def test_reject_zero_min_upload_part_size(cluster):
 
     error = node.query_and_get_error(
         "INSERT INTO test_reject_zero_min_upload VALUES (1, 'a')",
-        settings={"azure_min_upload_part_size": 0},
+        settings={
+            "azure_min_upload_part_size": 0,
+            "azure_max_upload_part_size": 100,
+            "azure_strict_upload_part_size": 100,
+        },
     )
     assert "INVALID_SETTING_VALUE" in error, error
     assert "azure_min_upload_part_size" in error, error
