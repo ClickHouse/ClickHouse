@@ -5322,17 +5322,20 @@ Apply TTL for old data, after ALTER MODIFY TTL query
     DECLARE(String, function_implementation, "", R"(
 Choose function implementation for specific target or variant (experimental). If empty enable all of them.
 )", 0) \
-    DECLARE(UInt64, uuid_type_version, 1, R"(
+    DECLARE(UUIDTypeVersion, uuid_type_version, 1, R"(
 Controls which concrete data type the type name `UUID` resolves to in `CREATE TABLE` and `ALTER TABLE ... ADD/MODIFY COLUMN`.
 
-The `UUID` type sorts by the second half of the value for historical reasons, which is unexpected. The [UUID2](/sql-reference/data-types/uuid2) type is a variant with correct (lexicographic) sorting.
+The `UUID` type sorts by the second half of the value for historical reasons, which is unexpected. The [UUID2](/reference/data-types/uuid2) type is a variant with correct (lexicographic) sorting.
 
 Possible values:
 
 - 1 — The name `UUID` resolves to the `UUID` type (the historical behavior).
 - 2 — The name `UUID` resolves to the `UUID2` type.
 
-The resolved concrete type is materialized in the table definition, so reading an existing table does not depend on the value of this setting. This covers every expression a `CREATE` or `ALTER` persists: column declarations, `DEFAULT` / `MATERIALIZED` / `ALIAS` expressions, `ORDER BY`, `PRIMARY KEY`, `PARTITION BY`, `SAMPLE BY` and TTL expressions, skipping indices, constraints, projections, dictionary attributes, the query of `CREATE TABLE ... AS SELECT` and of views, and mutation expressions. It also covers type names that appear inside a string literal rather than as a type: cast expressions (`CAST(x AS UUID)`, `x::UUID`, which the parser canonicalizes into `CAST(x, 'UUID')`), and the functions that declare their result type by name, such as `reinterpret(x, 'UUID')`, `defaultValueOfTypeName('UUID')` and the `JSONExtract` family (`JSONExtract(json, 'UUID')`, `JSONExtractKeysAndValues`, and their case-insensitive variants). The explicit type names `UUID1` (an alias of `UUID`) and `UUID2` are not affected by this setting.
+Any other value is rejected: because the setting decides which type is persisted, a mistyped value must not silently
+create a table with the historical type.
+
+The resolved concrete type is materialized in the table definition, so reading an existing table does not depend on the value of this setting. This covers every expression a `CREATE` or `ALTER` persists: column declarations, `DEFAULT` / `MATERIALIZED` / `ALIAS` expressions, `ORDER BY`, `PRIMARY KEY`, `PARTITION BY`, `SAMPLE BY` and TTL expressions, skipping indices, constraints, projections, dictionary attributes, the query of `CREATE TABLE ... AS SELECT` and of views, and mutation expressions. It also covers type names that appear inside a string literal rather than as a type: cast expressions (`CAST(x AS UUID)`, `x::UUID`, which the parser canonicalizes into `CAST(x, 'UUID')`), and the functions that declare their result type by name, such as `reinterpret(x, 'UUID')`, `defaultValueOfTypeName('UUID')` and the `JSONExtract` family (`JSONExtract(json, 'UUID')`, `JSONExtractKeysAndValues`, and their case-insensitive variants). It also covers the schema of a table function given as a whole columns declaration list in a string, such as `file('data.csv', 'CSV', 'id UUID')`, `format`, `input` and `generateRandom`; such a string is materialized at creation time, and it is never resolved through this setting when an already persisted definition is executed. The explicit type names `UUID1` (an alias of `UUID`) and `UUID2` are not affected by this setting.
 )", 0) \
     DECLARE(Bool, data_type_default_nullable, false, R"(
 Allows data types without explicit modifiers [NULL or NOT NULL](/reference/statements/create/table#null-or-not-null-modifiers) in column definition will be [Nullable](/reference/data-types/nullable).

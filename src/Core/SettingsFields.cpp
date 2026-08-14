@@ -651,4 +651,40 @@ void SettingFieldNonZeroUInt64::checkValueNonZero() const
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "A setting's value has to be greater than 0");
 }
 
+SettingFieldUUIDTypeVersion::SettingFieldUUIDTypeVersion(UInt64 x) : SettingFieldUInt64(x)
+{
+    checkValue();
+}
+
+SettingFieldUUIDTypeVersion::SettingFieldUUIDTypeVersion(const DB::Field & f) : SettingFieldUInt64(f)
+{
+    checkValue();
+}
+
+SettingFieldUUIDTypeVersion & SettingFieldUUIDTypeVersion::operator=(UInt64 x)
+{
+    SettingFieldUInt64::operator=(x);
+    checkValue();
+    return *this;
+}
+
+SettingFieldUUIDTypeVersion & SettingFieldUUIDTypeVersion::operator=(const DB::Field & f)
+{
+    SettingFieldUInt64::operator=(f);
+    checkValue();
+    return *this;
+}
+
+void SettingFieldUUIDTypeVersion::parseFromString(const String & str)
+{
+    SettingFieldUInt64::parseFromString(str);
+    checkValue();
+}
+
+void SettingFieldUUIDTypeVersion::checkValue() const
+{
+    if (value != 1 && value != 2)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of uuid_type_version has to be either 1 or 2, got {}", value);
+}
+
 }
