@@ -51,13 +51,6 @@ namespace
         return unalignedLoadBigEndian<UInt32>(data);
     }
 
-    /// RocksDB is not exception-safe, so a storage failure must be reported as a
-    /// status instead of unwinding through its frames.
-    rocksdb::IOStatus currentExceptionToIOStatus()
-    {
-        return rocksdb::IOStatus::IOError(getCurrentExceptionMessage(/*with_stacktrace=*/false));
-    }
-
     /// `FSRandomAccessFile` backed by a `ReadBuffer`. `readBigAt` is positional
     /// and lock-free; the `seek`+`read` fallback needs the mutex.
     /// `supportsReadAt` is probed once in the ctor (it may be slow).
@@ -96,7 +89,7 @@ namespace
             }
             catch (...)
             {
-                return currentExceptionToIOStatus();
+                return rocksdb::IOStatus::IOError(getCurrentExceptionMessage(/*with_stacktrace=*/false));
             }
         }
 
@@ -134,7 +127,7 @@ namespace
             }
             catch (...)
             {
-                return currentExceptionToIOStatus();
+                return rocksdb::IOStatus::IOError(getCurrentExceptionMessage(/*with_stacktrace=*/false));
             }
         }
 
@@ -149,7 +142,7 @@ namespace
             }
             catch (...)
             {
-                return currentExceptionToIOStatus();
+                return rocksdb::IOStatus::IOError(getCurrentExceptionMessage(/*with_stacktrace=*/false));
             }
         }
 
@@ -166,7 +159,7 @@ namespace
             }
             catch (...)
             {
-                return currentExceptionToIOStatus();
+                return rocksdb::IOStatus::IOError(getCurrentExceptionMessage(/*with_stacktrace=*/false));
             }
         }
 

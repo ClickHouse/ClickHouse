@@ -42,7 +42,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
-    extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNIQUE_KEY_DENSE_INDEX_UNREADABLE;
 }
