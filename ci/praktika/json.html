@@ -2546,10 +2546,8 @@
 
         if (nameParams.length > 1) {
             const { data, updated, status } = results[0]; // First request result
-            if (status === 403) {
-                return { error: 403, message: 'Report does not exist or expired' };
-            }
-            if (updated) {
+            // A null json1 is supported: getTargetResults then resolves the node from task0.
+            if (status !== 403 && updated) {
                 runtimeCache.json1 = data;
                 hasNewData = true;
             }

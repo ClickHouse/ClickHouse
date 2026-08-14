@@ -7,12 +7,14 @@ and the event feed. Think twice before adding one — and update all mapping
 tables (GH._STATUS_TO_GH, CIDB._STATUS_TO_CIDB) and these tests.
 """
 
+import dataclasses
+import json
 import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
-from ci.praktika.result import Result
+from ci.praktika.result import Result, ResultInfo
 
 
 # The canonical set of all statuses.  If you add a new status, you MUST
@@ -221,3 +223,26 @@ def test_create_from_omits_child_info_by_default():
     subs = [Result("hook_bad", Result.Status.FAIL, info="ERROR: something is wrong")]
     r = Result.create_from(name="Pre Hooks", results=subs)
     assert r.info == ""
+
+
+# --- add_error on a sub-result must survive the workflow report round trip ---
+# A job that loses its runner never uploads its own result_<job>.json, so the only
+# copy of the reason is the one _finish_workflow writes onto the sub-result inside
+# the workflow report. json.html resolves that node out of the workflow report and
+# renders ext["errors"], so the entry has to survive serialization.
+
+def test_add_error_on_sub_result_survives_workflow_serialization():
+    name = "AST fuzzer (amd_debug, targeted)"
+    child = Result(name, Result.Status.ERROR)
+    healthy = Result("AST fuzzer (amd_debug)", Result.Status.OK)
+    workflow = Result("PR", Result.Status.ERROR, results=[healthy, child])
+
+    child.add_error(ResultInfo.NOT_FINALIZED)
+
+    restored = Result.from_dict(json.loads(json.dumps(dataclasses.asdict(workflow))))
+    by_name = {r.name: r for r in restored.results}
+    assert by_name[name].ext["errors"] == [
+        {"message": ResultInfo.NOT_FINALIZED, "from": name}
+    ]
+    # Only the failed job is annotated.
+    assert "errors" not in by_name["AST fuzzer (amd_debug)"].ext
