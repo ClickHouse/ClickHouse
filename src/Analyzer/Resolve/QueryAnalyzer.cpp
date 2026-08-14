@@ -1103,7 +1103,9 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
 
             for (const auto & name : array_join_alias_names.names)
                 if (column_name == name || (column_name.starts_with(name) && column_name.size() > name.size() && column_name[name.size()] == '.'))
+                {
                     return true;
+                }
         }
         return false;
     };
