@@ -193,16 +193,14 @@ QueryPlanOptimizationSettings::ParallelReplicasPlan buildQueryPlanForAutomaticPa
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
     ctx->setSetting("force_primary_key", false);
-    /// Arm before the tree is built: a `GLOBAL IN` / `GLOBAL JOIN` rewrite materializes its subquery
+    /// Decide before the tree is built: a `GLOBAL IN` / `GLOBAL JOIN` rewrite materializes its subquery
     /// while building the plan, and the probe is discarded often enough that paying for those rows here
-    /// is waste. Also arm the query context - the plan is built through several derived contexts, and the
-    /// one that reaches `executeSubqueryNode` is not this copy.
-    if (defer_materialization)
-    {
-        ctx->armDeferredSubqueryMaterialization();
-        if (ctx->hasQueryContext())
-            ctx->getQueryContext()->armDeferredSubqueryMaterialization();
-    }
+    /// is waste. Set it on the query context too - the plan is built through several derived contexts,
+    /// and the one that reaches `executeSubqueryNode` is not this copy. This is written on every build,
+    /// including the one that must materialize, because the same `ctx` is reused for both.
+    ctx->setDeferredSubqueryMaterialization(defer_materialization);
+    if (ctx->hasQueryContext())
+        ctx->getQueryContext()->setDeferredSubqueryMaterialization(defer_materialization);
     InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, std::forward<Args>(interpreter_args)...);
     auto plan = std::move(interpreter).extractQueryPlan();
     auto optimization_settings = QueryPlanOptimizationSettings(ctx);

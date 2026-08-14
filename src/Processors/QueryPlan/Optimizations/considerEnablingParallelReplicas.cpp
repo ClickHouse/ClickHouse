@@ -493,12 +493,17 @@ void considerEnablingParallelReplicas(
                 {
                     auto materialized = optimization_settings.query_plan_with_parallel_replicas_builder(
                         built_sets, /*defer_materialization*/ false);
-                    if (!materialized.plan)
+                    /// `materialization_deferred` must be false here - this build was asked to
+                    /// materialize. Check it anyway: a plan that still holds empty temporary tables
+                    /// would run and return wrong results rather than fail, so decline instead.
+                    if (!materialized.plan || materialized.materialization_deferred)
                     {
                         LOG_DEBUG(
                             getLogger("optimizeTree"),
-                            "Could not rebuild the parallel replicas plan with its subqueries materialized. "
-                            "Not enabling parallel replicas reading");
+                            "Could not rebuild the parallel replicas plan with its subqueries materialized "
+                            "(plan built: {}, still deferred: {}). Not enabling parallel replicas reading",
+                            materialized.plan != nullptr,
+                            materialized.materialization_deferred);
                         return;
                     }
                     plan_with_parallel_replicas = std::move(materialized.plan);

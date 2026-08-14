@@ -1950,7 +1950,10 @@ public:
     /// built without materializing the subqueries a `GLOBAL IN` / `GLOBAL JOIN` rewrite would otherwise
     /// execute. Arming this makes such a build create the temporary tables empty and record that it did;
     /// the caller rebuilds the plan for real before executing it. See `considerEnablingParallelReplicas`.
-    void armDeferredSubqueryMaterialization();
+    /// Set on every plan build, not only the deferring one: the same `Context` is reused for the probe
+    /// and for the rebuild that materializes for real, so leaving a previous build's arming in place
+    /// would make the rebuild defer too and execute a plan whose temporary tables are empty.
+    void setDeferredSubqueryMaterialization(bool defer);
     bool isSubqueryMaterializationDeferred() const;
     void setSubqueryMaterializationDeferred();
     bool wasSubqueryMaterializationDeferred() const;

@@ -8634,9 +8634,9 @@ PreparedSetsCachePtr Context::getPreparedSetsCache() const
     return prepared_sets_cache;
 }
 
-void Context::armDeferredSubqueryMaterialization()
+void Context::setDeferredSubqueryMaterialization(bool defer)
 {
-    deferred_subquery_materialization = std::make_shared<std::atomic_bool>(false);
+    deferred_subquery_materialization = defer ? std::make_shared<std::atomic_bool>(false) : nullptr;
 }
 
 bool Context::isSubqueryMaterializationDeferred() const
