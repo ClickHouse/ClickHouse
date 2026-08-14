@@ -966,7 +966,8 @@ void resolveCredentialSource(
         /// Checked on provenance, before the resulting value below: an override of a configured path with
         /// the empty string carries no path of its own, so it would pass a check on the value while
         /// silently dropping the credentials the operator configured.
-        if (credential_file_assigned_by_query)
+        if (credential_file_assigned_by_query
+            && (!nats_settings[NATSSetting::nats_credential_file].value.empty() || !credential_file_in_collection.empty()))
         {
             /// Outside the server configuration file the path key is not accepted at all, overridden or
             /// not, so the override rejection would name the wrong remedy.

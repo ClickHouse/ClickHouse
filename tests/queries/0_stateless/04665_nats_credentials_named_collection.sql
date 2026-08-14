@@ -38,6 +38,13 @@ SETTINGS nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSO
     nats_startup_connect_tries = 1, nats_reconnect_wait = 1,
     nats_credential_file = '/var/nats.creds', nats_credentials = 'user JWT and seed'; -- { serverError BAD_ARGUMENTS }
 
+-- An empty path without a named collection is a no-op, retained for compatibility with queries that
+-- conditionally specify the setting. It cannot access a server-side file.
+CREATE TABLE nats_empty_credential_file (key UInt64) ENGINE = NATS
+SETTINGS nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSONEachRow',
+    nats_startup_connect_tries = 1, nats_reconnect_wait = 1,
+    nats_credential_file = ''; -- { serverError CANNOT_CONNECT_NATS }
+
 CREATE TABLE nats_both_overridden (key UInt64)
 ENGINE = NATS(04665_nats_credential_file, nats_credential_file = '/var/other.creds', nats_credentials = 'user JWT and seed'); -- { serverError BAD_ARGUMENTS }
 
