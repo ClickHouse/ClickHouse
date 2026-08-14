@@ -217,3 +217,31 @@ TEST(PuffinFooterMemo, ByteBudgetEvictsOnShrink)
     /// Single fixture footer exceeds a 1-byte budget, so it must not be re-inserted.
     EXPECT_EQ(cache.footerMemoEntries(), 0u);
 }
+
+TEST(PuffinFooterMemo, CountLimitEvictsOneEntryNotAll)
+{
+    PuffinFilesCache cache("SLRU", 1'000'000, /*max_count=*/1, 0.5);
+    const auto key_a = PuffinFilesCache::tryCreateFooterKey("Local:////test", "a.puffin", "etag-a");
+    const auto key_b = PuffinFilesCache::tryCreateFooterKey("Local:////test", "b.puffin", "etag-b");
+    ASSERT_TRUE(key_a.has_value());
+    ASSERT_TRUE(key_b.has_value());
+
+    size_t footer_loads = 0;
+    auto load_footer = [&]()
+    {
+        ++footer_loads;
+        return loadFixtureFooter();
+    };
+
+    ASSERT_NE(cache.getOrSetFooter(*key_a, load_footer), nullptr);
+    EXPECT_EQ(cache.footerMemoEntries(), 1u);
+
+    ASSERT_NE(cache.getOrSetFooter(*key_b, load_footer), nullptr);
+    /// Evict one victim for room — do not wipe the memo to empty before insert.
+    EXPECT_EQ(cache.footerMemoEntries(), 1u);
+    EXPECT_EQ(footer_loads, 2u);
+
+    /// The retained entry must be key_b (key_a was the only victim).
+    ASSERT_NE(cache.getOrSetFooter(*key_b, load_footer), nullptr);
+    EXPECT_EQ(footer_loads, 2u);
+}

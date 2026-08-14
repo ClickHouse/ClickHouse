@@ -135,6 +135,9 @@ public:
     UInt64 footerMemoBytes() const;
 
     /// Small memo (not a weighted LRU): shares byte/count limits with the DV cache.
+    /// Concurrent misses on the same key each run `load_fn` (no stampede / waiter token);
+    /// only coalesced sequential slice loads share one parse. On insert, entries are dropped
+    /// one-by-one until the new entry fits — not a full memo clear.
     template <typename LoadFunc>
     FooterBlobsPtr getOrSetFooter(const PuffinFooterCacheKey & key, LoadFunc && load_fn)
     {
@@ -161,10 +164,19 @@ public:
         if (entry_bytes > footer_memo_max_bytes)
             return blobs;
 
-        if ((footer_memo_max_count > 0 && footer_memo.size() >= footer_memo_max_count)
+        while ((footer_memo_max_count > 0 && footer_memo.size() >= footer_memo_max_count)
             || footer_memo_bytes > footer_memo_max_bytes - entry_bytes)
         {
-            clearFooterMemoUnlocked();
+            if (footer_memo.empty())
+                break;
+
+            auto victim = footer_memo.begin();
+            const UInt64 victim_bytes = victim->second.memory_bytes;
+            footer_memo.erase(victim);
+            if (footer_memo_bytes >= victim_bytes)
+                footer_memo_bytes -= victim_bytes;
+            else
+                footer_memo_bytes = 0;
         }
 
         auto [it, inserted] = footer_memo.emplace(key, FooterMemoEntry{blobs, entry_bytes});
