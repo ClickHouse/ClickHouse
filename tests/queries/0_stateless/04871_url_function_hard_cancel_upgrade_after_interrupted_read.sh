@@ -213,7 +213,7 @@ fi
 EXCEPTION_CODE=""
 for _ in {1..300}; do
     $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
-    EXCEPTION_CODE=$($CLICKHOUSE_CLIENT --query "SELECT exception_code FROM system.query_log WHERE query_id = '$QUERY_ID' AND type = 'ExceptionWhileProcessing' LIMIT 1")
+    EXCEPTION_CODE=$($CLICKHOUSE_CLIENT --query "SELECT exception_code FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$QUERY_ID' AND type = 'ExceptionWhileProcessing' LIMIT 1")
     [[ -n "$EXCEPTION_CODE" ]] && break
     sleep 0.1
 done
