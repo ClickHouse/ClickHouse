@@ -414,7 +414,12 @@ CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
     return {};
 }
 
-void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
+void ICatalog::createTable(
+    const String & /*namespace_name*/,
+    const String & /*table_name*/,
+    const String & /*new_metadata_path*/,
+    Poco::JSON::Object::Ptr /*metadata_content*/,
+    DB::CompressionMethod /*metadata_compression_method*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
         "CREATE TABLE is not supported for this DataLakeCatalog catalog type; "

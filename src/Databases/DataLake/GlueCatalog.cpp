@@ -52,6 +52,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 
@@ -640,7 +641,12 @@ void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
     glue_client->CreateDatabase(create_request);
 }
 
-void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const
+void GlueCatalog::createTable(
+    const String & namespace_name,
+    const String & table_name,
+    const String & new_metadata_path,
+    Poco::JSON::Object::Ptr metadata_content,
+    DB::CompressionMethod metadata_compression_method) const
 {
     createNamespaceIfNotExists(namespace_name);
 
@@ -658,13 +664,19 @@ void GlueCatalog::createTable(const String & namespace_name, const String & tabl
         TableMetadata dummy_metadata;
         auto [object_storage, bucket_name, table_path] = createObjectStorageForEarlyTableAccess(table_location, dummy_metadata);
 
-        String metadata_filename = table_path + "/metadata/v1.metadata.json";
+        /// Name the file exactly like `IcebergMetadata::createInitial` does: the Iceberg spec extension
+        /// (gzip -> "gz"), not the raw setting token, so other engines can locate the metadata file.
+        String compression_suffix = DB::toIcebergMetadataCompressionExtension(metadata_compression_method);
+        if (!compression_suffix.empty())
+            compression_suffix = "." + compression_suffix;
+
+        String metadata_filename = fmt::format("{}/metadata/v1{}.metadata.json", table_path, compression_suffix);
 
         std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         Poco::JSON::Stringifier::stringify(metadata_content, oss, 4);
         String metadata_str = DB::removeEscapedSlashes(oss.str());
 
-        DB::Iceberg::writeMessageToFile(metadata_str, metadata_filename, object_storage, getContext(), "*", "");
+        DB::Iceberg::writeMessageToFile(metadata_str, metadata_filename, object_storage, getContext(), "*", "", metadata_compression_method);
 
         written_metadata_storage = object_storage;
         written_metadata_file = metadata_filename;

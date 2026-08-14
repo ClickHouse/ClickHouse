@@ -49,6 +49,7 @@
 #include <Common/logger_useful.h>
 
 #include <Formats/FormatFactory.h>
+#include <IO/CompressionMethod.h>
 
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -118,6 +119,7 @@ namespace Setting
     extern const SettingsBool data_lake_delete_data_on_drop;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
+    extern const SettingsString iceberg_metadata_compression_method;
 }
 
 namespace DataLakeStorageSetting
@@ -1164,7 +1166,13 @@ void DatabaseDataLake::createTable(
         order_by,
         context_);
 
-    catalog->createTable(namespace_name, table_name, /* metadata_path */ "", metadata_content);
+    /// Catalogs that write the initial metadata file themselves (they get an empty `metadata_path`) must
+    /// honour `iceberg_metadata_compression_method` too, otherwise the native CREATE TABLE path would
+    /// diverge from the explicit Iceberg engine path, which applies it in `IcebergMetadata::createInitial`.
+    const auto compression_method_str = context_->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
+    const auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
+
+    catalog->createTable(namespace_name, table_name, /* metadata_path */ "", metadata_content, compression_method);
 
     LOG_INFO(log, "Created table {}.{}", namespace_name, table_name);
 }

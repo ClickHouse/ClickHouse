@@ -1724,7 +1724,14 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     }
 }
 
-void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr metadata_content) const
+/// `metadata_compression_method` is unused here: the REST server writes and names the initial metadata
+/// file itself, we only send it the metadata content.
+void RestCatalog::createTable(
+    const String & namespace_name,
+    const String & table_name,
+    const String & /*new_metadata_path*/,
+    Poco::JSON::Object::Ptr metadata_content,
+    DB::CompressionMethod /*metadata_compression_method*/) const
 {
     String location = metadata_content->getValue<String>("location");
 

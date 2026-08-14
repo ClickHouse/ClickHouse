@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
 #include <Common/SettingsChanges.h>
+#include <IO/CompressionMethod.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
@@ -250,7 +251,16 @@ public:
     virtual String getDefaultBaseLocation() const { return ""; }
 
     /// Creates new table in catalog.
-    virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const;
+    /// `metadata_compression_method` is the codec requested by `iceberg_metadata_compression_method`. It is
+    /// only meaningful for catalogs that write the initial metadata file themselves (i.e. when
+    /// `new_metadata_path` is empty): they must name the file `v1.<ext>.metadata.json` and compress its
+    /// contents accordingly, exactly like `DB::Iceberg::IcebergMetadata::createInitial` does.
+    virtual void createTable(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr metadata_content,
+        DB::CompressionMethod metadata_compression_method) const;
 
     /// Updates metadata in catalog.
     virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
