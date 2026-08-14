@@ -2,7 +2,10 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/UUID.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitors.h>
@@ -1012,17 +1015,37 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByID(con
     VectorWithMemoryTracking<Group> res;
     res.reserve(num_rows);
 
+    /// Raw pointers for the canonical id type Tuple(UInt64, UUID): equality of consecutive rows
+    /// is then two integer comparisons instead of a virtual compareAt chain per row.
+    const UInt64 * raw_first = nullptr;
+    const UUID * raw_second = nullptr;
+    if (const auto * tuple = typeid_cast<const ColumnTuple *>(unwrapped.data); tuple && tuple->tupleSize() == 2)
+    {
+        const auto * first_column = typeid_cast<const ColumnUInt64 *>(&tuple->getColumn(0));
+        const auto * second_column = typeid_cast<const ColumnVector<UUID> *>(&tuple->getColumn(1));
+        if (first_column && second_column)
+        {
+            raw_first = first_column->getData().data();
+            raw_second = second_column->getData().data();
+        }
+    }
+
     SharedLockGuard lock{mutex};
 
     /// Id columns arrive in long runs of equal values (samples are sorted by id), so reuse the previous row's group.
     Group prev_group = INVALID_GROUP;
     for (size_t i = 0; i != num_rows; ++i)
     {
-        if (i > 0 && prev_group != INVALID_GROUP
-            && unwrapped.data->compareAt(i, i - 1, *unwrapped.data, /* nan_direction_hint = */ 1) == 0)
+        if (i > 0 && prev_group != INVALID_GROUP)
         {
-            res.push_back(prev_group);
-            continue;
+            const bool same_as_previous = raw_first
+                ? (raw_first[i] == raw_first[i - 1] && raw_second[i] == raw_second[i - 1])
+                : (unwrapped.data->compareAt(i, i - 1, *unwrapped.data, /* nan_direction_hint = */ 1) == 0);
+            if (same_as_previous)
+            {
+                res.push_back(prev_group);
+                continue;
+            }
         }
         const char * begin = nullptr;
         auto key = unwrapped.data->serializeValueIntoArena(i, temp_arena, begin, /* settings = */ nullptr);
