@@ -400,7 +400,7 @@ private:
     /// For:
     /// - elapsed_ns
     /// - num_executed_jobs
-    /// - query_plan_step_wall_clock_ptr
+    /// - query_plan_step_wall_clock_cache
     friend class ExecutionThreadContext;
     /// For
     /// - input_wait_elapsed_ns
@@ -422,7 +422,12 @@ private:
     const IQueryPlanStep * query_plan_step = nullptr;
     String step_uniq_id;
     size_t query_plan_step_group = 0;
-    StepWallClock * query_plan_step_wall_clock_ptr = nullptr;
+
+    struct StepWallClockCache
+    {
+        size_t group = 0;
+        StepWallClock * wall_clock_ptr = nullptr;
+    } query_plan_step_wall_clock_cache;
 
     size_t processor_index = 0;
     String plan_step_name;

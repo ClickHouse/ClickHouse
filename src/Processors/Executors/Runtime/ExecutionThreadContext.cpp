@@ -104,12 +104,15 @@ bool ExecutionThreadContext::executeTask()
         /// and are not attributed to any query plan step, so there is no clock for them.
         if (const auto * step = node->processor()->getQueryPlanStep())
         {
-            auto & cached_clock = node->processor()->query_plan_step_wall_clock_ptr;
+            auto & cached_clock = node->processor()->query_plan_step_wall_clock_cache;
             /// We will search in the registry only initially or when the group of the processor changed
-            if (!cached_clock)
-                cached_clock = step_to_wall_clock_registry->find(step, group);
+            if (!cached_clock.wall_clock_ptr || cached_clock.group != group)
+            {
+                cached_clock.wall_clock_ptr = step_to_wall_clock_registry->find(step, group);
+                cached_clock.group = group;
+            }
 
-            clock = cached_clock;
+            clock = cached_clock.wall_clock_ptr;
             chassert(clock);
             if (clock)
                 clock->onEnter();
