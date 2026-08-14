@@ -53,7 +53,10 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT wasm_guest_pause"
 # and the host function fires the wasm_guest_pause failpoint — proving that
 # guest code actually started executing inside `expression->execute` of
 # TotalsHavingTransform::transform.
-${CLICKHOUSE_CLIENT} --query_id="$query_id" --allow_experimental_analyzer=1 --query "
+# The client is timeout-bounded: the guest loop is infinite, so if the kill stops propagating into
+# `cancelExecution` the query never terminates. Without the bound the `wait` below would hang the
+# whole check until the global test timeout instead of failing this test locally.
+timeout 60 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --allow_experimental_analyzer=1 --query "
     SELECT number % 2 AS k, count()
     FROM numbers(10)
     GROUP BY k WITH TOTALS
@@ -93,8 +96,8 @@ wait
 # ("WASM execution was stopped by request" under wasmtime, a cost-limit trap under WasmEdge) is
 # rethrown by `ISimpleTransform::work` first. Both prove the KILL interrupted the running guest:
 # the guest loop is infinite, so without the interruption the query would never terminate and the
-# test would hang in `wait`.
-grep -qE "QUERY_WAS_CANCELLED|WASM_ERROR" "$output_file" || { echo "FAIL: query was not cancelled"; exit 1; }
+# client would be killed by its `timeout`, leaving neither error in the output.
+grep -qE "QUERY_WAS_CANCELLED|WASM_ERROR" "$output_file" || { echo "FAIL: query was not cancelled"; cat "$output_file"; exit 1; }
 
 # Clean up
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "DROP FUNCTION IF EXISTS infinite_loop_04813"

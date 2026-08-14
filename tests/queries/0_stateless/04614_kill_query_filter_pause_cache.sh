@@ -33,7 +33,9 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT filter_transform_pause"
 # Start a filter query with use_query_condition_cache=1 that will pause at the failpoint.
 # WHERE v > 999999 rejects all rows (num_filtered_rows == 0 for every block),
 # which would normally trigger a cache write in doTransform.
-${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
+# The client is timeout-bounded: if a regression makes the killed query never observe the
+# cancellation, the test must fail here instead of hanging the whole check in `wait`.
+timeout 60 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
     SELECT count()
     FROM 04614_t
     WHERE v > 999999
@@ -61,8 +63,8 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT filter_transform_pause"
 
 wait
 
-# Assert cancellation was detected, not normal completion
-grep -qF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not cancelled"; exit 1; }
+# Assert cancellation was detected, not normal completion (or a client killed by its `timeout`)
+grep -qF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not cancelled"; cat "$output_file"; exit 1; }
 
 # Cache should NOT have been seeded after cancellation
 cache_after=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.query_condition_cache")

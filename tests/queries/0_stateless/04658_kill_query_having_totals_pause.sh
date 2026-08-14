@@ -18,8 +18,10 @@ trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT totals_having_transform_
 # Enable failpoint before starting the query
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT totals_having_transform_pause"
 
-# Start a HAVING query with totals that will pause at the failpoint
-${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
+# Start a HAVING query with totals that will pause at the failpoint.
+# The client is timeout-bounded: if a regression makes the killed query never observe the
+# cancellation, the test must fail here instead of hanging the whole check in `wait`.
+timeout 60 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
     SELECT number % 10 AS k, count()
     FROM numbers(1000000)
     GROUP BY k WITH TOTALS
@@ -48,7 +50,7 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT totals_having_transform_pause"
 
 wait
 
-# Assert cancellation was detected, not normal completion
-grep -qF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not cancelled"; exit 1; }
+# Assert cancellation was detected, not normal completion (or a client killed by its `timeout`)
+grep -qF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not cancelled"; cat "$output_file"; exit 1; }
 
 echo "OK"

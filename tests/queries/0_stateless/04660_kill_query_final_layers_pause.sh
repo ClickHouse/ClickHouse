@@ -39,8 +39,10 @@ output_file="${CLICKHOUSE_TMP}/kill_query_final_layers_pause_${CLICKHOUSE_DATABA
 # Enable the failpoint before starting the query
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT filter_transform_pause"
 
-# Start the layered FINAL query; it will pause inside the inner FilterTransform of FilterSortedStreamByRange
-${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
+# Start the layered FINAL query; it will pause inside the inner FilterTransform of FilterSortedStreamByRange.
+# The client is timeout-bounded: if the cancellation stops reaching the inner transform, the test must
+# fail here instead of hanging the whole check in `wait`.
+timeout 60 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
     SELECT count() FROM t_final_layers FINAL
     FORMAT Null
     SETTINGS max_threads = 4, enable_vertical_final = 0, split_intersecting_parts_ranges_into_layers_final = 1

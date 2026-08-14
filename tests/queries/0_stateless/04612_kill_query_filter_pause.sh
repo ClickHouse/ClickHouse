@@ -17,8 +17,10 @@ trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT filter_transform_pause" 
 # Enable failpoint before starting the query
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT filter_transform_pause"
 
-# Start a filter query that will pause at the failpoint
-${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
+# Start a filter query that will pause at the failpoint.
+# The client is timeout-bounded: if a regression makes the killed query never observe the
+# cancellation, the test must fail here instead of hanging the whole check in `wait`.
+timeout 60 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
     SELECT count()
     FROM numbers(100000000)
     WHERE sipHash64(number) % 2 = 1
@@ -46,7 +48,7 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT filter_transform_pause"
 
 wait
 
-# Assert cancellation was detected, not normal completion
-grep -qF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not cancelled"; exit 1; }
+# Assert cancellation was detected, not normal completion (or a client killed by its `timeout`)
+grep -qF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not cancelled"; cat "$output_file"; exit 1; }
 
 echo "OK"

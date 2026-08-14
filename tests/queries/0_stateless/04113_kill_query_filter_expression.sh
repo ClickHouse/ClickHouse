@@ -9,8 +9,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 query_id="kill_query_expression_${CLICKHOUSE_DATABASE}_$RANDOM"
 output_file="${CLICKHOUSE_TMP}/kill_query_expression_${CLICKHOUSE_DATABASE}.out"
 
-# Deep nested sipHash64() functions - requires expression evaluation to be cancelled properly
-$CLICKHOUSE_CLIENT --query_id="$query_id" --query "
+# Deep nested sipHash64() functions - requires expression evaluation to be cancelled properly.
+# The client is timeout-bounded: if the cancellation is not observed inside the expression
+# evaluation, the query grinds through all 100 million rows and the `wait` below would hold the
+# whole check; the test has to fail locally instead. The bound is generous compared to the other
+# kill-query tests because here a whole 10-million-row block of nested `sipHash64` calls can be in
+# flight when the kill arrives, and the cancellation is only observed between two actions.
+timeout 300 $CLICKHOUSE_CLIENT --query_id="$query_id" --query "
     SELECT count()
     FROM numbers(100000000)
     WHERE sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(number))))))))))))))))))))) % 2 =1
@@ -26,7 +31,7 @@ $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_i
 
 wait
 
-# Assert cancellation was detected, not normal completion
-grep -qF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not cancelled"; exit 1; }
+# Assert cancellation was detected, not normal completion (or a client killed by its `timeout`)
+grep -qF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not cancelled"; cat "$output_file"; exit 1; }
 
 echo "OK"

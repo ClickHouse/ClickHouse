@@ -60,7 +60,10 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT wasm_guest_pause"
 # totals port, so after the input is exhausted `prepareTotals` evaluates the HAVING expression
 # for the totals row, where count() = 8 — the only call with a non-zero argument, which fires
 # _wasm_signal_ready and then loops forever inside `expression->execute` of `prepareTotals`.
-${CLICKHOUSE_CLIENT} --query_id="$query_id" --allow_experimental_analyzer=1 --query "
+# The client is timeout-bounded: the guest loop is infinite, so if the kill stops propagating into
+# `cancelExecution` the query never terminates. Without the bound the `wait` below would hang the
+# whole check until the global test timeout instead of failing this test locally.
+timeout 60 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --allow_experimental_analyzer=1 --query "
     SELECT number AS k, count()
     FROM numbers(8)
     GROUP BY k WITH TOTALS
@@ -101,8 +104,8 @@ wait
 # a cost-limit trap under WasmEdge) is rethrown first — in `prepareTotals` the main stream is
 # already drained, so the latter is the usual outcome. Both prove the KILL interrupted the
 # running guest: the guest loop is infinite, so without the interruption the query would never
-# terminate and the test would hang in `wait`.
-grep -qE "QUERY_WAS_CANCELLED|WASM_ERROR" "$output_file" || { echo "FAIL: query was not cancelled"; exit 1; }
+# terminate and the client would be killed by its `timeout`, leaving neither error in the output.
+grep -qE "QUERY_WAS_CANCELLED|WASM_ERROR" "$output_file" || { echo "FAIL: query was not cancelled"; cat "$output_file"; exit 1; }
 
 # Clean up
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "DROP FUNCTION IF EXISTS infinite_loop_04816"

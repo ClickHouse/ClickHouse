@@ -20,8 +20,10 @@ trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT totals_having_transform_
 # Enable the failpoint before starting the query
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT totals_having_transform_totals_pause"
 
-# `TabSeparated` prints the totals row, so `prepareTotals` evaluates `HAVING` for it
-${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
+# `TabSeparated` prints the totals row, so `prepareTotals` evaluates `HAVING` for it.
+# The client is timeout-bounded: if a regression makes the killed query never observe the
+# cancellation, the test must fail here instead of hanging the whole check in `wait`.
+timeout 60 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
     SELECT number % 10 AS k, count()
     FROM numbers(100000)
     GROUP BY k WITH TOTALS

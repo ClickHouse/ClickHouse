@@ -26,8 +26,11 @@ trap disable_failpoints EXIT
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT totals_having_transform_totals_start_pause"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT totals_having_transform_totals_pause"
 
-# `TabSeparated` prints the totals row, so the totals port is consumed and `prepareTotals` runs
-${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
+# `TabSeparated` prints the totals row, so the totals port is consumed and `prepareTotals` runs.
+# The client is timeout-bounded as a backstop for the `wait` calls below: the poll loop already
+# fails the test when the cancelled query keeps doing the totals work, but the client must not be
+# able to outlive it and hold the whole check.
+timeout 60 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
     SELECT number % 10 AS k, count()
     FROM numbers(100000)
     GROUP BY k WITH TOTALS
