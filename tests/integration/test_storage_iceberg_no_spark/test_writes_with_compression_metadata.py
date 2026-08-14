@@ -82,3 +82,39 @@ def test_reads_legacy_gzip_metadata_extension(started_cluster_iceberg_no_spark, 
         reopen_query,
         settings={"iceberg_metadata_compression_method": "gzip"},
     ) == '123\t1\n'
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_after_metadata_compression_switch(started_cluster_iceberg_no_spark, storage_type):
+    # Regression test: `getLatestOrExplicitMetadataFileAndVersion` resolves the
+    # compression of the *current* metadata file from its name (e.g. `.gz.metadata.json`),
+    # but `getPlan` (full-table `OPTIMIZE`, not `OPTIMIZE ... MANIFEST`) used to discard
+    # that resolved codec and re-read the file with the write-target codec from the
+    # current query's settings instead. If the table's on-disk metadata was written
+    # with a different `iceberg_metadata_compression_method` than the `OPTIMIZE` query
+    # uses, the stale codec fails to decompress the file.
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_after_compression_switch_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_no_spark, "(x String, y Int64)", 2)
+
+    # Write the table's metadata with gzip compression.
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES ('a', 1);",
+        settings={"iceberg_metadata_compression_method": "gzip"},
+    )
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES ('b', 2);",
+        settings={"iceberg_metadata_compression_method": "gzip"},
+    )
+    listing = instance.exec_in_container(["bash", "-c", f"ls {_metadata_dir(TABLE_NAME)}"])
+    assert ".gz.metadata.json" in listing
+
+    # OPTIMIZE with the default (uncompressed) metadata codec must still be able to
+    # read the gzip-compressed metadata file that is actually on disk.
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={"allow_experimental_iceberg_compaction": 1},
+    )
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == 'a\t1\nb\t2\n'
