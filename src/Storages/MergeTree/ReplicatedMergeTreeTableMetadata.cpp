@@ -38,8 +38,10 @@ namespace ErrorCodes
     extern const int METADATA_MISMATCH;
 }
 
-/// Strip the purely cosmetic `parenthesized` flag everywhere in the tree, so that what is written
-/// to Keeper matches the canonical form an older replica stores and compares this text against.
+/// Strip the purely cosmetic `parenthesized` flag everywhere in the tree, so that a key expression
+/// this replica stores locally is the canonical one, whatever an older leader wrote to Keeper.
+/// For the text written to Keeper, `formatIgnoringRedundantParentheses` does the same at format
+/// time, without touching the AST.
 static void stripArtificialParens(IAST & ast)
 {
     ast.setParenthesized(false);
@@ -78,8 +80,7 @@ String ReplicatedMergeTreeTableMetadata::formatDefinition(const ASTPtr & ast)
         return "";
     auto ast_normalized = ast->clone();
     FunctionNameNormalizer::visit(ast_normalized.get());
-    stripArtificialParens(*ast_normalized);
-    return ast_normalized->formatWithSecretsOneLine();
+    return ast_normalized->formatIgnoringRedundantParentheses();
 }
 
 /// Same as `formatDefinition`, but for the comma-separated lists of declarations
@@ -95,8 +96,7 @@ String ReplicatedMergeTreeTableMetadata::formatDefinitionList(const ASTs & defin
     for (const auto & definition : definitions)
         list.children.push_back(definition->clone());
 
-    stripArtificialParens(list);
-    return list.formatWithSecretsOneLine();
+    return list.formatIgnoringRedundantParentheses();
 }
 
 namespace
