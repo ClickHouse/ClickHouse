@@ -286,16 +286,17 @@ public:
         bool is_dynamic,
         const FormatSettings &)
     {
-        emitValue(path, JSONBloomRole::Scalar, data_type.getPtr(), source_column, row, is_dynamic);
+        emitValue(path, path, JSONBloomRole::Scalar, data_type.getPtr(), source_column, row, is_dynamic);
     }
 
 private:
     class NestedConsumer
     {
     public:
-        NestedConsumer(JSONBloomExtractor & extractor_, String prefix_, JSONBloomRole role_)
+        NestedConsumer(JSONBloomExtractor & extractor_, String hash_prefix_, String logical_prefix_, JSONBloomRole role_)
             : extractor(extractor_)
-            , prefix(std::move(prefix_))
+            , hash_prefix(std::move(hash_prefix_))
+            , logical_prefix(std::move(logical_prefix_))
             , role(role_)
         {
         }
@@ -303,7 +304,7 @@ private:
         void beginRow() {}
         void endRow() {}
         void consumeNull(std::string_view, bool) {}
-        bool shouldConsumePath(std::string_view path) const { return extractor.shouldConsumePath(appendPath(prefix, path)); }
+        bool shouldConsumePath(std::string_view path) const { return extractor.shouldConsumePath(appendPath(logical_prefix, path)); }
 
         void consumeValue(
             std::string_view path,
@@ -315,17 +316,26 @@ private:
             bool is_dynamic,
             const FormatSettings &)
         {
-            extractor.emitValue(appendPath(prefix, path), role, data_type.getPtr(), source_column, row, is_dynamic);
+            extractor.emitValue(
+                appendPath(hash_prefix, path),
+                appendPath(logical_prefix, path),
+                role,
+                data_type.getPtr(),
+                source_column,
+                row,
+                is_dynamic);
         }
 
     private:
         JSONBloomExtractor & extractor;
-        String prefix;
+        String hash_prefix;
+        String logical_prefix;
         JSONBloomRole role;
     };
 
     void emitDynamic(
-        std::string_view path,
+        std::string_view hash_path,
+        std::string_view logical_path,
         JSONBloomRole role,
         const ColumnDynamic & dynamic_column,
         size_t row)
@@ -363,14 +373,15 @@ private:
 
             auto column = type->createColumn();
             serialization->deserializeBinary(*column, buffer, {});
-            emitValue(path, role, type, *column, 0, true);
+            emitValue(hash_path, logical_path, role, type, *column, 0, true);
             return;
         }
 
         const auto & variant_type = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type);
         const auto & type = variant_type.getVariant(discriminator);
         emitValue(
-            path,
+            hash_path,
+            logical_path,
             role,
             type,
             variant_column.getVariantByGlobalDiscriminator(discriminator),
@@ -379,7 +390,8 @@ private:
     }
 
     void emitArray(
-        std::string_view path,
+        std::string_view hash_path,
+        std::string_view logical_path,
         const DataTypeArray & array_type,
         const ColumnArray & array_column,
         size_t row,
@@ -392,11 +404,19 @@ private:
         const size_t end = offsets[row];
 
         for (size_t element = begin; element != end; ++element)
-            emitValue(path, JSONBloomRole::ArrayElement, nested_type, nested_column, element, is_dynamic || isDynamic(nested_type));
+            emitValue(
+                hash_path,
+                logical_path,
+                JSONBloomRole::ArrayElement,
+                nested_type,
+                nested_column,
+                element,
+                is_dynamic || isDynamic(nested_type));
     }
 
     void emitMap(
-        std::string_view path,
+        std::string_view hash_path,
+        std::string_view logical_path,
         const DataTypeMap & map_type,
         const ColumnMap & map_column,
         size_t row,
@@ -419,11 +439,19 @@ private:
         const size_t end = offsets[row];
 
         for (size_t element = begin; element != end; ++element)
-            emitValue(appendMapKey(path, key_type, *full_keys, element), JSONBloomRole::MapValue, value_type, values, element, false);
+            emitValue(
+                appendMapKey(hash_path, key_type, *full_keys, element),
+                logical_path,
+                JSONBloomRole::MapValue,
+                value_type,
+                values,
+                element,
+                false);
     }
 
     void emitTuple(
-        std::string_view path,
+        std::string_view hash_path,
+        std::string_view logical_path,
         JSONBloomRole role,
         const DataTypeTuple & tuple_type,
         const ColumnTuple & tuple_column,
@@ -434,7 +462,14 @@ private:
         const auto & element_names = tuple_type.getElementNames();
         const auto & columns = tuple_column.getColumns();
         for (size_t i = 0; i != element_types.size(); ++i)
-            emitValue(appendPath(path, element_names[i]), role, element_types[i], *columns[i], row, is_dynamic);
+            emitValue(
+                appendPath(hash_path, element_names[i]),
+                appendPath(logical_path, element_names[i]),
+                role,
+                element_types[i],
+                *columns[i],
+                row,
+                is_dynamic);
     }
 
     void emitScalar(
@@ -458,19 +493,20 @@ private:
     }
 
     void emitValue(
-        std::string_view path,
+        std::string_view hash_path,
+        std::string_view logical_path,
         JSONBloomRole role,
         DataTypePtr type,
         const IColumn & source_column,
         size_t row,
         bool is_dynamic)
     {
-        if (path_matcher.shouldSkip(path))
+        if (path_matcher.shouldSkip(logical_path))
             return;
 
         if (isDynamic(type))
         {
-            emitDynamic(path, role, assert_cast<const ColumnDynamic &>(source_column), row);
+            emitDynamic(hash_path, logical_path, role, assert_cast<const ColumnDynamic &>(source_column), row);
             return;
         }
 
@@ -487,30 +523,30 @@ private:
                 || typeid_cast<const DataTypeMap *>(type.get())
                 || typeid_cast<const DataTypeTuple *>(type.get())
                 || type->hasDynamicStructure()))
-            hashes.insert(dynamicComplexPresenceHash(path, role));
+            hashes.insert(dynamicComplexPresenceHash(hash_path, role));
 
         if (const auto * object_type = typeid_cast<const DataTypeObject *>(type.get()))
         {
-            NestedConsumer consumer(*this, String(path), role);
+            NestedConsumer consumer(*this, String(hash_path), String(logical_path), role);
             enumerateJSONValues(assert_cast<const ColumnObject &>(column), *object_type, consumer, row, 1);
             return;
         }
 
         if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
         {
-            emitArray(path, *array_type, assert_cast<const ColumnArray &>(column), row, is_dynamic);
+            emitArray(hash_path, logical_path, *array_type, assert_cast<const ColumnArray &>(column), row, is_dynamic);
             return;
         }
 
         if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
         {
-            emitMap(path, *map_type, assert_cast<const ColumnMap &>(column), row, is_dynamic);
+            emitMap(hash_path, logical_path, *map_type, assert_cast<const ColumnMap &>(column), row, is_dynamic);
             return;
         }
 
         if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
         {
-            emitTuple(path, role, *tuple_type, assert_cast<const ColumnTuple &>(column), row, is_dynamic);
+            emitTuple(hash_path, logical_path, role, *tuple_type, assert_cast<const ColumnTuple &>(column), row, is_dynamic);
             return;
         }
 
@@ -523,7 +559,7 @@ private:
             return;
         }
 
-        emitScalar(path, role, type, column, row, is_dynamic);
+        emitScalar(hash_path, role, type, column, row, is_dynamic);
     }
 
     HashSet<UInt64> & hashes;
@@ -541,6 +577,7 @@ bool hashMatchesFilter(const BloomFilterPtr & bloom_filter, UInt64 hash, size_t 
 struct JSONPathMatch
 {
     String path;
+    String logical_path;
     DataTypePtr type;
     DataTypePtr cast_type;
     JSONBloomRole role = JSONBloomRole::Scalar;
@@ -667,6 +704,7 @@ std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & n
             key_type->getDefaultSerialization()->deserializeWholeText(*key_column, buffer, {});
             return JSONPathMatch{
                 appendMapKey(subcolumn_name, key_type, *key_column, 0),
+                String(subcolumn_name),
                 map_type->getValueType(),
                 nullptr,
                 JSONBloomRole::MapValue};
@@ -733,7 +771,14 @@ std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & n
             });
         }
 
-        return JSONPathMatch{std::move(path), subcolumn_type, nullptr, JSONBloomRole::Scalar, indexes_missing_values};
+        String logical_path = path;
+        return JSONPathMatch{
+            std::move(path),
+            std::move(logical_path),
+            subcolumn_type,
+            nullptr,
+            JSONBloomRole::Scalar,
+            indexes_missing_values};
     }
 
     return std::nullopt;
@@ -780,6 +825,7 @@ std::optional<JSONPathMatch> tryMatchJSONPath(const RPNBuilderTreeNode & node, c
             return std::nullopt;
 
         match->path = appendPath(match->path, element_name);
+        match->logical_path = appendPath(match->logical_path, element_name);
         match->type = dag_node->result_type;
         match->cast_type = nullptr;
         return match;
@@ -1216,7 +1262,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
 
         auto key_node = function.getArgumentAt(0);
         auto path = tryMatchJSONPath(key_node, header);
-        if (!path || path_matcher->shouldSkip(path->path) || path->cast_type || isDynamic(removeJSONBloomWrappers(path->type)))
+        if (!path || path_matcher->shouldSkip(path->logical_path) || path->cast_type || isDynamic(removeJSONBloomWrappers(path->type)))
             return false;
 
         auto future_set = function.getArgumentAt(1).tryGetPreparedSet();
@@ -1262,7 +1308,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
     }
 
     auto path = tryMatchJSONPath(*key_node, header);
-    if (!path || path_matcher->shouldSkip(path->path))
+    if (!path || path_matcher->shouldSkip(path->logical_path))
         return false;
 
     if (function_name == "equals")
