@@ -132,6 +132,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsBool commit_on_select;
     extern const ObjectStorageQueueSettingsBool deduplication_v2;
     extern const ObjectStorageQueueSettingsUInt32 persistent_processing_node_ttl_seconds;
+    extern const ObjectStorageQueueSettingsUInt32 persistent_processing_node_abandoned_reclaim_ttl_seconds;
     extern const ObjectStorageQueueSettingsUInt32 after_processing_retries;
     extern const ObjectStorageQueueSettingsString after_processing_move_uri;
     extern const ObjectStorageQueueSettingsString after_processing_move_prefix;
@@ -441,6 +442,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
+        (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_abandoned_reclaim_ttl_seconds],
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]);
@@ -642,7 +644,7 @@ void ReadFromObjectStorageQueue::createIterator(const ActionsDAG::Node * predica
     if (iterator)
         return;
 
-    iterator = storage->createFileIterator(context, predicate);
+    iterator = storage->createFileIterator(context, predicate, /* track_active_registry */ false);
 }
 
 
@@ -951,7 +953,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         std::lock_guard streaming_lock(streaming_mutex);
         if (!streaming_file_iterator || streaming_file_iterator->isFinished())
         {
-            streaming_file_iterator = createFileIterator(queue_context, nullptr);
+            streaming_file_iterator = createFileIterator(queue_context, nullptr, /* track_active_registry */ true);
         }
         file_iterator = streaming_file_iterator;
     }
@@ -1313,6 +1315,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "cleanup_interval_min_ms",
     "use_persistent_processing_nodes",
     "persistent_processing_node_ttl_seconds",
+    "persistent_processing_node_abandoned_reclaim_ttl_seconds",
     "after_processing_retries",
     "after_processing_move_uri",
     "after_processing_move_prefix",
@@ -1347,6 +1350,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "cleanup_interval_min_ms",
     "use_persistent_processing_nodes",
     "persistent_processing_node_ttl_seconds",
+    "persistent_processing_node_abandoned_reclaim_ttl_seconds",
     "after_processing_retries",
     "after_processing_move_uri",
     "after_processing_move_prefix",
@@ -1718,7 +1722,8 @@ const ObjectStorageQueueTableMetadata & StorageObjectStorageQueue::getTableMetad
 }
 
 std::shared_ptr<StorageObjectStorageQueue::FileIterator>
-StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
+StorageObjectStorageQueue::createFileIterator(
+    ContextPtr local_context, const ActionsDAG::Node * predicate, bool track_active_registry)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::createFileIterator");
 
@@ -1748,6 +1753,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         log,
         enable_hash_ring_filtering_copy,
         file_deletion_enabled,
+        track_active_registry,
         shutdown_called);
 }
 
@@ -1785,6 +1791,8 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = static_cast<UInt32>(cleanup_interval_ms.first);
     settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = static_cast<UInt32>(cleanup_interval_ms.second);
     settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(files_metadata->getPersistentProcessingNodeTTLSeconds());
+    settings[ObjectStorageQueueSetting::persistent_processing_node_abandoned_reclaim_ttl_seconds]
+        = static_cast<UInt32>(files_metadata->getPersistentProcessingNodeAbandonedReclaimTTLSeconds());
     settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = files_metadata->usePersistentProcessingNode();
     const auto & file_statuses_cache = files_metadata->getFileStatusesCache();
     settings[ObjectStorageQueueSetting::metadata_cache_size_bytes] = file_statuses_cache.maxSizeInBytes();

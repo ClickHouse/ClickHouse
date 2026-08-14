@@ -508,6 +508,16 @@ In case of non-graceful server termination, it is possible that we can have not 
 
 Default value: `21600` (6 hours).
 
+### `persistent_processing_node_abandoned_reclaim_ttl_seconds` {#persistent-processing-node-abandoned-reclaim-ttl-seconds}
+
+Persistent processing nodes and bucket locks are periodically refreshed while they are owned by an active server process. If the exact active-registry entry recorded in a claim is absent and the claim has not been refreshed for this TTL, the claim can be cleaned up before `persistent_processing_node_ttl_seconds` expires.
+
+The active-registry check and this TTL are both required. A transient Keeper session loss therefore does not make a claim immediately eligible for cleanup.
+
+A replica that stays inactive for longer than this TTL while holding claims — for example, one paused with `SYSTEM STOP`, one whose queue has no attached materialized views, or one disconnected from Keeper for that long — has its claims reclaimed so that other replicas can process the corresponding buckets and files. This is intended behavior, not an error: when the replica becomes active again, it detects the loss, releases the reclaimed work without finalizing it, and re-acquires what it needs on the next streaming cycle.
+
+Default value: `600` (10 minutes).
+
 ## S3-related settings {#s3-settings}
 
 Engine supports all s3 related settings. For more information about S3 settings see [here](/reference/engines/table-engines/integrations/s3).

@@ -37,6 +37,7 @@ public:
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
+        const std::string & active_registry_id_,
         const std::string & zookeeper_name_,
         ObjectStorageQueueBucketingMode bucketing_mode_,
         ObjectStorageQueuePartitioningMode partitioning_mode_,
@@ -54,6 +55,7 @@ public:
     static BucketHolderPtr tryAcquireBucket(
         const std::filesystem::path & zk_path,
         const Bucket & bucket,
+        const std::string & registry_id,
         bool use_persistent_processing_nodes_,
         const std::atomic<size_t> & persistent_processing_node_ttl_seconds_,
         const std::string & zookeeper_name_,
@@ -169,6 +171,7 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
         const Bucket & bucket_,
         const std::string & bucket_lock_path_,
         const std::string & processor_info_,
+        const std::string & active_registry_id_,
         const std::atomic<size_t> & persistent_processing_node_ttl_seconds_,
         LoggerPtr log_,
         const std::string & zookeeper_name_);
@@ -197,6 +200,7 @@ private:
     BucketInfoPtr bucket_info;
     Stopwatch age_watch;
     int32_t bucket_lock_version = 0;
+    const std::string active_registry_id;
     /// A reference, not a snapshot: the setting is changeable at runtime,
     /// and release must use the same TTL as the cleanup.
     const std::atomic<size_t> & persistent_processing_node_ttl_seconds;

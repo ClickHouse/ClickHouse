@@ -57,6 +57,7 @@ public:
             LoggerPtr logger_,
             bool enable_hash_ring_filtering_,
             bool file_deletion_on_processed_enabled_,
+            bool track_active_registry_,
             std::atomic<bool> & shutdown_called_);
 
         bool isFinished();
@@ -97,6 +98,7 @@ public:
         const StorageID storage_id;
         const bool use_buckets_for_processing;
         const size_t buckets_num = 0;
+        const std::string active_registry_id;
 
         ObjectStorageIteratorPtr object_storage_iterator;
         std::unique_ptr<re2::RE2> matcher;
