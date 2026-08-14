@@ -295,3 +295,44 @@ SELECT id FROM mergeTreeProjection(currentDatabase(), 'blocknum_rls_proj', 'p') 
 
 DROP ROW POLICY rp_blocknum_rls_proj ON blocknum_rls_proj;
 DROP TABLE blocknum_rls_proj;
+
+-- _parent_part_offset is a projection-only name absent on the parent, so a parent policy binding to it
+-- would diverge from the parent (where the read errors) - refused.
+DROP TABLE IF EXISTS pparent_rls_proj;
+DROP ROW POLICY IF EXISTS rp_pparent_rls_proj ON pparent_rls_proj;
+
+CREATE TABLE pparent_rls_proj (id UInt64, val UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO pparent_rls_proj VALUES (1, 10), (2, 20), (3, 30);
+
+ALTER TABLE pparent_rls_proj ADD PROJECTION p (SELECT _part_offset, id, val ORDER BY val);
+ALTER TABLE pparent_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_pparent_rls_proj ON pparent_rls_proj FOR SELECT USING _parent_part_offset = 0 TO ALL;
+
+SELECT '-- policy on the projection-only _parent_part_offset name: read is refused';
+SELECT id FROM mergeTreeProjection(currentDatabase(), 'pparent_rls_proj', 'p') ORDER BY id; -- { serverError ACCESS_DENIED }
+
+DROP ROW POLICY rp_pparent_rls_proj ON pparent_rls_proj;
+DROP TABLE pparent_rls_proj;
+
+-- A row policy on the table function itself (_table_function.*) must not be dropped by the parent policy;
+-- the two cannot be combined here, so the read is refused rather than losing the table-function restriction.
+DROP TABLE IF EXISTS tf_rls_proj;
+DROP ROW POLICY IF EXISTS rp_tf_rls_proj ON _table_function.*;
+DROP ROW POLICY IF EXISTS rp_tf_parent_rls_proj ON tf_rls_proj;
+
+CREATE TABLE tf_rls_proj (id UInt64, dept String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tf_rls_proj VALUES (1, 'eng'), (2, 'fin'), (3, 'eng');
+
+ALTER TABLE tf_rls_proj ADD PROJECTION p (SELECT id, dept ORDER BY dept);
+ALTER TABLE tf_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_tf_rls_proj ON _table_function.* FOR SELECT USING 0 TO ALL;
+CREATE ROW POLICY rp_tf_parent_rls_proj ON tf_rls_proj FOR SELECT USING dept = 'eng' TO ALL;
+
+SELECT '-- table-function row policy combined with a parent policy: read is refused';
+SELECT id FROM mergeTreeProjection(currentDatabase(), 'tf_rls_proj', 'p') ORDER BY id; -- { serverError ACCESS_DENIED }
+
+DROP ROW POLICY rp_tf_rls_proj ON _table_function.*;
+DROP ROW POLICY rp_tf_parent_rls_proj ON tf_rls_proj;
+DROP TABLE tf_rls_proj;
