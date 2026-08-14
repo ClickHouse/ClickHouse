@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Joins.h>
 #include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
@@ -101,6 +102,7 @@ struct QueryPlanOptimizationSettings
     bool use_query_condition_cache;
     bool use_query_condition_cache_for_top_k;
     bool read_in_order_through_join;
+    bool read_in_order_through_spilling_join;
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
     bool push_limit_by_into_sort;
@@ -161,6 +163,7 @@ struct QueryPlanOptimizationSettings
     /// If full text search using index in payload is enabled.
     bool direct_read_from_text_index;
     bool enable_full_text_index;
+    bool query_plan_optimize_count_from_text_index;
 
     bool use_skip_indexes_for_top_k;
     bool use_top_k_dynamic_filtering;
