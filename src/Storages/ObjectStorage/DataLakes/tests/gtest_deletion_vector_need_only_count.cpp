@@ -96,7 +96,9 @@ TEST(RoaringBitmapRangeCardinality, SumOfRowGroupRangesMatchesWholeFile)
 
 TEST(DeletionVectorNeedOnlyCount, ConstChunkUsesRangeCardinality)
 {
-    /// Large enough that a dense Filter would be expensive; const columns stay O(1).
+    /// Large enough that a dense column Filter would be expensive; const columns stay O(1) via
+    /// cloneResized. When deletes land in-range we still record `applied_filter` (O(N) mask) so a
+    /// later row-number consumer can map dense indices back to file rows.
     constexpr size_t num_rows = 5'000'000;
     Chunk chunk = makeConstCountChunk(num_rows, /*row_num_offset=*/0);
 
@@ -104,7 +106,20 @@ TEST(DeletionVectorNeedOnlyCount, ConstChunkUsesRangeCardinality)
     EXPECT_EQ(chunk.getNumRows(), num_rows - 3);
     ASSERT_EQ(chunk.getNumColumns(), 1u);
     EXPECT_TRUE(isColumnConst(*chunk.getColumns()[0]));
-    EXPECT_FALSE(chunk.getChunkInfos().get<ChunkInfoRowNumbers>()->applied_filter.has_value());
+
+    const auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
+    ASSERT_TRUE(chunk_info->applied_filter.has_value());
+    const auto & filter = chunk_info->applied_filter.value();
+    ASSERT_EQ(filter.size(), num_rows);
+    EXPECT_EQ(filter[0], 0);
+    EXPECT_EQ(filter[1], 0);
+    EXPECT_EQ(filter[num_rows - 1], 0);
+    EXPECT_EQ(filter[2], 1);
+
+    size_t kept = 0;
+    for (UInt8 bit : filter)
+        kept += bit != 0;
+    EXPECT_EQ(kept, chunk.getNumRows());
 }
 
 TEST(DeletionVectorNeedOnlyCount, ConstChunkHonorsRowNumOffset)
@@ -113,6 +128,28 @@ TEST(DeletionVectorNeedOnlyCount, ConstChunkHonorsRowNumOffset)
     /// Deletes at absolute positions 99 (before), 105 (inside), 110 (end exclusive / outside).
     DeletionVectorTransform::transform(chunk, *makeExcludedRows({99, 105, 110}));
     EXPECT_EQ(chunk.getNumRows(), 9u);
+
+    const auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
+    ASSERT_TRUE(chunk_info->applied_filter.has_value());
+    const auto & filter = chunk_info->applied_filter.value();
+    ASSERT_EQ(filter.size(), 10u);
+    EXPECT_EQ(filter[5], 0);
+    EXPECT_EQ(filter[0], 1);
+}
+
+TEST(DeletionVectorNeedOnlyCount, ConstChunkThenSecondBitmapUsesAppliedFilter)
+{
+    /// Simulates DV const-count path followed by another DeletionVectorTransform (as
+    /// IcebergBitmapPositionDeleteTransform does). Without applied_filter the second pass would
+    /// treat the shrunk const chunk as consecutive file rows and delete the wrong positions.
+    Chunk chunk = makeConstCountChunk(/*num_rows=*/8, /*row_num_offset=*/10);
+    DeletionVectorTransform::transform(chunk, *makeExcludedRows({11, 14}));
+    EXPECT_EQ(chunk.getNumRows(), 6u);
+    ASSERT_TRUE(chunk.getChunkInfos().get<ChunkInfoRowNumbers>()->applied_filter.has_value());
+
+    /// Delete absolute file row 16 (dense survivor index 4 after the first pass).
+    DeletionVectorTransform::transform(chunk, *makeExcludedRows({16}));
+    EXPECT_EQ(chunk.getNumRows(), 5u);
 }
 
 TEST(DeletionVectorNeedOnlyCount, MaterializedChunkStillUsesDenseFilter)
