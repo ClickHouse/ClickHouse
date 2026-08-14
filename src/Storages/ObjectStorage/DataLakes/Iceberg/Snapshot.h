@@ -16,18 +16,35 @@ struct IcebergDataSnapshot
     DB::ManifestFileCacheKeys manifest_list_entries;
     Int64 snapshot_id;
     Int64 schema_id_on_snapshot_commit;
-    /// Row-count hint from the snapshot summary (`total-records`). Only used to log a
-    /// warning when it disagrees with the row count derived from the manifest files; never
-    /// used as a data source, because the summary is maintained incrementally by writers
-    /// and a corrupted commit in the table history poisons it silently.
+    /// From snapshot summary (`total-records`). Preferred by the trivial COUNT shortcut when
+    /// `allowsSnapshotTotalRowsShortcut` holds; otherwise compared to the manifest-derived count
+    /// for a mismatch warning. Summary totals are maintained incrementally by writers and can be
+    /// poisoned by a bad commit in table history.
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_delete_rows;
     /// Rows in equality-delete files (snapshot summary). Not a count of deleted data rows;
-    /// used only to fail closed trivial COUNT when equality deletes are present.
+    /// used only to fail closed / gate the trivial COUNT shortcut.
     std::optional<size_t> total_equality_delete_rows;
     std::optional<String> partition_key;
     std::optional<String> sorting_key;
+
+    std::optional<size_t> getTotalRows() const
+    {
+        if (!total_rows.has_value() || !total_position_delete_rows.has_value())
+            return std::nullopt;
+        /// Fail closed on inconsistent summary: unsigned subtract would wrap to a huge COUNT.
+        if (*total_position_delete_rows > *total_rows)
+            return std::nullopt;
+        return *total_rows - *total_position_delete_rows;
+    }
+
+    /// Summary `total-equality-deletes` is optional. Only trust the cheap `getTotalRows` shortcut
+    /// when the field is present and explicitly zero; absent or >0 must fall through / fail closed.
+    bool allowsSnapshotTotalRowsShortcut() const
+    {
+        return total_equality_delete_rows.has_value() && *total_equality_delete_rows == 0;
+    }
 };
 
 using IcebergDataSnapshotPtr = std::shared_ptr<IcebergDataSnapshot>;

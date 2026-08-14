@@ -1203,30 +1203,29 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
 
     /// Equality deletes remove data rows by value match; summary `total-equality-deletes` counts
     /// rows in delete files, not deleted data rows. Fail closed when the field is present and > 0.
+    /// If the field is absent, skip the summary shortcut and scan manifests for EQUALITY_DELETE files.
     if (actual_data_snapshot->total_equality_delete_rows.has_value()
         && *actual_data_snapshot->total_equality_delete_rows > 0)
         return {};
 
-    /// Row counts stored in the metadata layers above the manifest files are not used as
-    /// data sources, because writers derive them instead of measuring them against the data:
-    /// - the snapshot summary's `total-records` / `total-position-deletes` are maintained
-    ///   incrementally (parent total plus this commit's delta), so a single corrupted commit
-    ///   anywhere in the table history silently poisons every later snapshot -- observed in
-    ///   the wild, making SELECT count() disagree with a full scan of the very same table;
-    /// - the manifest-list per-entry `added_rows_count`/`existing_rows_count` are stamped
-    ///   from snapshot summary fields by some writers (ClickHouse itself among them): a
-    ///   rewritten manifest list can list every manifest with `added_rows_count = 0` taken
-    ///   from a compaction snapshot's `added-records = 0`, so trusting these counts turned
-    ///   count() into 0 on a perfectly healthy table;
-    /// - subtracting live position-delete / deletion-vector `record_count` from data-file
-    ///   totals is also unsafe: position delete records may be duplicated across delete
-    ///   files, may reference data files no longer in the snapshot, and Iceberg readers
-    ///   ignore matching parquet position deletes when a DV applies (so raw subtraction
-    ///   double-counts).
-    /// The manifest files are the ground truth: the per-data-file `record_count` is a
-    /// required field in every format version, so summing it over the live data files is
-    /// exact when no live delete files exist. Any live equality / position deletes (including
-    /// puffin deletion vectors) fail closed to a real scan.
+    /// Prefer the snapshot-summary shortcut when equality deletes are explicitly zero. This avoids
+    /// opening every manifest for typical append-only tables (same fast path as before this PR).
+    if (actual_data_snapshot->allowsSnapshotTotalRowsShortcut())
+    {
+        if (auto total_rows = actual_data_snapshot->getTotalRows(); total_rows.has_value())
+        {
+            ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
+            return total_rows;
+        }
+    }
+
+    /// Fall through when the summary shortcut is unavailable. Manifest-list
+    /// `added_rows_count`/`existing_rows_count` are not used (some writers stamp them from
+    /// snapshot summary and can report 0 after compaction). Subtracting live position-delete /
+    /// deletion-vector `record_count` from data-file totals is also unsafe (duplicates, stale
+    /// references, DV supersession of parquet position deletes). Sum required per-data-file
+    /// `record_count` over live data files only when no live delete files exist; otherwise fail
+    /// closed to a real scan.
     UInt64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
@@ -1248,15 +1247,18 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
             return {};
     }
 
-    if (actual_data_snapshot->total_rows.has_value() && *actual_data_snapshot->total_rows != result)
+    if (auto summary_total_rows = actual_data_snapshot->getTotalRows();
+        summary_total_rows.has_value() && *summary_total_rows != result)
+    {
         LOG_WARNING(
             log,
             "Iceberg snapshot summary of table {} claims {} total rows, but its manifest files describe {} rows. "
             "The snapshot summary is inconsistent with the table data (possibly a corrupted commit in the table "
             "history), using the row count from the manifest files",
             persistent_components.table_location,
-            *actual_data_snapshot->total_rows,
+            *summary_total_rows,
             result);
+    }
 
     ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
     return static_cast<size_t>(result);
