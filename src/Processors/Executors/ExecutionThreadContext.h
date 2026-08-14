@@ -72,7 +72,7 @@ public:
 
     WorkIntervals takeWorkIntervals();
 
-    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, bool collect_work_intervals_, const StepWallClockRegistry * step_wall_clock_registry_ , ReadProgressCallback * callback)
+    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, bool collect_work_intervals_, const StepWallClockRegistry * step_wall_clock_registry_, ReadProgressCallback * callback)
         : read_progress_callback(callback)
         , step_to_wall_clock_registry(step_wall_clock_registry_)
         , thread_number(thread_number_)

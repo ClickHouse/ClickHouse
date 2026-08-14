@@ -173,7 +173,7 @@ public:
 
 private:
     QueryPlanResourceHolder resources;
-     
+
     ProgressCallback progress_callback;
     std::shared_ptr<const EnabledQuota> quota;
     UInt64 normalized_query_hash = 0;
