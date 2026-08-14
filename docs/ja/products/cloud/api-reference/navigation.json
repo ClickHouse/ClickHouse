@@ -129,6 +129,7 @@
     "group": "Prometheus",
     "pages": [
       "GET /v1/organizations/{organizationId}/prometheus",
+      "products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
       "products/cloud/api-reference/prometheus/postgres-org-prometheus-get",
       "products/cloud/api-reference/prometheus/postgres-instance-prometheus-get"
@@ -209,7 +210,8 @@
       "products/cloud/api-reference/postgres/postgres-instance-config-patch",
       "products/cloud/api-reference/postgres/postgres-instance-metrics-get",
       "products/cloud/api-reference/postgres/slow-query-patterns-get-list",
-      "products/cloud/api-reference/postgres/slow-query-pattern-get"
+      "products/cloud/api-reference/postgres/slow-query-pattern-get",
+      "products/cloud/api-reference/postgres/postgres-logs-get-list"
     ]
   }
 ]
