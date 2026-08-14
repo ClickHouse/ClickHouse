@@ -28,12 +28,14 @@ from ci.praktika.result import Result
 
 def test_selected_test_name_resolves_to_source_file():
     assert (
-        Targeting.functional_test_source_file("00001_select_1") == "00001_select_1.sql"
+        Targeting.functional_test_source_file("00001_select_1")
+        == "00001_select_1.sql"
     )
     # Changed tests are selected with a trailing dot so that the name matches
     # that one test only.
     assert (
-        Targeting.functional_test_source_file("00001_select_1.") == "00001_select_1.sql"
+        Targeting.functional_test_source_file("00001_select_1.")
+        == "00001_select_1.sql"
     )
 
 
@@ -112,9 +114,7 @@ def test_failures_are_reported_even_when_no_tests_is_allowed(tmp_path):
 
 
 def test_generic_no_tests_banner_does_not_hide_runner_failure(tmp_path):
-    output = (
-        "ERROR: Process Worker 1 was killed with exit code -9\nNo tests were run.\n"
-    )
+    output = "ERROR: Process Worker 1 was killed with exit code -9\nNo tests were run.\n"
     result = _process(tmp_path, output, 1, allow_no_tests=True)
     assert result.status == Result.Status.FAIL
 

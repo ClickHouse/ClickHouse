@@ -567,9 +567,7 @@ def main():
     if is_shared_catalog or is_parallel_replicas:
         pass
     else:
-        if allow_oversubscription(
-            args.options, test_options, is_flaky_check, is_targeted_check
-        ):
+        if allow_oversubscription(args.options, test_options, is_flaky_check, is_targeted_check):
             # Plain binary job runs fast; allow higher concurrency
             nproc = int(Utils.cpu_count() * 1.2)
         elif is_database_replicated:
@@ -617,9 +615,7 @@ def main():
         if is_per_test_coverage:
             runner_options += " --collect-per-test-coverage"
         else:
-            runner_options += (
-                " --no-random-settings --no-random-merge-tree-settings  --no-long"
-            )
+            runner_options += " --no-random-settings --no-random-merge-tree-settings  --no-long"
 
     diagnostics_dir = f"{temp_dir}/random-settings-diagnostics"
     runner_options += f" --random-settings-diagnostics-dir {diagnostics_dir}"
@@ -694,7 +690,9 @@ def main():
             for bt, url in build_urls.items():
                 bt_path = bt_paths[bt]
                 if not info.is_local_run or not Path(bt_path).is_file():
-                    Shell.run(f"wget -nv -O {bt_path} {url}", verbose=True, strict=True)
+                    Shell.run(
+                        f"wget -nv -O {bt_path} {url}", verbose=True, strict=True
+                    )
                     Shell.run(f"chmod +x {bt_path}", verbose=True)
         Shell.run(
             f"cp {temp_dir}/clickhouse_{build_types[0]} {temp_dir}/clickhouse",
@@ -1014,7 +1012,10 @@ def main():
                 ):
                     print(
                         "SETUP FAILURE: "
-                        + (CH.stateful_setup_error or "prepare_stateful_data failed")
+                        + (
+                            CH.stateful_setup_error
+                            or "prepare_stateful_data failed"
+                        )
                     )
                     res = False
                 elif not CH.insert_system_zookeeper_config():
@@ -1388,7 +1389,9 @@ def main():
                 )
             else:
                 diag_status = Result.Status.OK
-                diag_info = f"Diagnosed {len(diag_results)} out of {len(failed_tests)} failed test(s)"
+                diag_info = (
+                    f"Diagnosed {len(diag_results)} out of {len(failed_tests)} failed test(s)"
+                )
             results.append(
                 Result(
                     name="Diagnostics",
@@ -1575,9 +1578,7 @@ def main():
 
                 # Merge all profraw files to current directory
                 joined_test_options = "_".join(test_options) if test_options else "all"
-                joined_test_options = joined_test_options.replace(" ", "_").replace(
-                    "/", "_"
-                )
+                joined_test_options = joined_test_options.replace(" ", "_").replace("/", "_")
                 merged_file = f"./ft-{joined_test_options}.profdata"
                 merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=warn {' '.join(profraw_files)} -o {merged_file} 2>&1"
                 merge_output = Shell.get_output(merge_cmd, verbose=True)

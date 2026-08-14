@@ -253,9 +253,7 @@ class FTResultsProcessor:
         if s.hung:
             state = Result.Status.FAIL
             test_results.append(
-                Result(
-                    "Some queries hung", Result.Status.FAIL, info="Some queries hung"
-                )
+                Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
             )
         elif runner_exit_code in ABORTED_RUN_EXIT_CODES:
             state = Result.Status.FAIL
@@ -290,9 +288,7 @@ class FTResultsProcessor:
                 # a reproduction too.
                 if not is_bugfix_validation:
                     failed_results[0].status = Result.Status.ERROR
-            test_results.append(
-                Result("Server died", Result.Status.FAIL, info="Server died")
-            )
+            test_results.append(Result("Server died", Result.Status.FAIL, info="Server died"))
         elif runner_exit_code == MAX_FAILURES_EXIT_CODE:
             # The run stopped early because too many tests failed
             # (`--max-failures` / `--max-failures-chain`). Unlike the aborted-run
@@ -328,11 +324,7 @@ class FTResultsProcessor:
             info = "The test runner was terminated unexpectedly"
         elif s.retries:
             test_results.append(
-                Result(
-                    "Some tests restarted",
-                    Result.Status.SKIPPED,
-                    info="Some tests restarted",
-                )
+                Result("Some tests restarted", Result.Status.SKIPPED, info="Some tests restarted")
             )
         else:
             pass
