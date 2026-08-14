@@ -77,7 +77,7 @@ def test_http_commands_cli_response(started_cluster):
         )
     )
     assert response.status_code == 200
-    assert response.json()["cwd"] == "/"
+    assert "cwd" not in response.json()
 
     with keeper_utils.KeeperClient.from_cluster(
         cluster, keeper_ip=leader.ip_address, port=9181
@@ -126,13 +126,38 @@ def test_http_commands_cd_returns_cwd(started_cluster):
     )
     assert cd_missing.status_code == 200
     body = cd_missing.json()
-    assert body["cwd"] == f"/{dirname}"  # unchanged on failure
+    assert "cwd" not in body  # unchanged on failure
     assert "does not exist" in body["result"]
 
     with keeper_utils.KeeperClient.from_cluster(
         cluster, keeper_ip=leader.ip_address, port=9181
     ) as client:
         client.rmr(dirname)
+
+
+def test_http_commands_rejects_invalid_cwd(started_cluster):
+    leader: ClickHouseInstance = keeper_utils.get_leader(cluster, [node1, node2, node3])
+
+    empty_cwd_response = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(host=leader.ip_address, port=9182),
+        params={"command": "ls", "cwd": ""},
+    )
+    assert empty_cwd_response.status_code == 200
+
+    for invalid_cwd in ("..", "relative/path"):
+        response = requests.get(
+            "http://{host}:{port}/api/v1/commands".format(host=leader.ip_address, port=9182),
+            params={"command": "ls", "cwd": invalid_cwd},
+        )
+        assert response.status_code == 400
+        assert "Invalid cwd" in response.text
+
+    complete_response = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(host=leader.ip_address, port=9182),
+        params={"complete": "ls", "cwd": ".."},
+    )
+    assert complete_response.status_code == 400
+    assert "Invalid cwd" in complete_response.text
 
 def test_http_commands_complete(started_cluster):
     leader = keeper_utils.get_leader(cluster, [node1, node2, node3])

@@ -2155,9 +2155,7 @@
         }).toString())
             .then(response => response.json())
             .then(data => {
-                /// Backend returns cwd after CLI commands (including `cd`) so the
-                /// dashboard does not reimplement path parsing / existence checks.
-                if (typeof data.cwd === "string" && data.cwd !== "") {
+                if (data.cwd) {
                     cli_cwd = data.cwd;
                     updateCwdDisplay();
                 }
