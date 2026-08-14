@@ -23,9 +23,13 @@ struct TimeSeriesSettings;
 void normalizeTimeSeriesDefinition(
     ASTCreateQuery & create_query, const ContextPtr & context, LoadingStrictnessLevel mode, bool is_restore_from_backup);
 
-/// Raw data of an identifier column of the standard id type of a TimeSeries samples table:
-/// Tuple(UInt64, UUID) — the type the default id generator produces and the leading component
-/// of the samples table sorting key (id, timestamp).
+/// The id type of the samples table when it isn't specified explicitly: Tuple(UInt64, UUID),
+/// where the first component is a hash of the metric name and the second is a hash of all tags
+/// (see TimeSeriesIDGenerator::getDefault). The id is the leading component of the samples
+/// table sorting key (id, timestamp).
+DataTypePtr standardTimeSeriesIDDataType();
+
+/// Raw data of an identifier column of the standard id type (see standardTimeSeriesIDDataType).
 struct StandardTimeSeriesIDColumns
 {
     const UInt64 * first = nullptr;

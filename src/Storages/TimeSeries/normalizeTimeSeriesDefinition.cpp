@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -316,7 +317,7 @@ namespace
         if (!scalar_type)
             scalar_type = std::make_shared<DataTypeFloat64>();
         if (!id_type)
-            id_type = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUUID>()});
+            id_type = standardTimeSeriesIDDataType();
 
         /// Validate types.
         {
@@ -1116,16 +1117,24 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
 
 
 
+DataTypePtr standardTimeSeriesIDDataType()
+{
+    return std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUUID>()});
+}
+
 std::optional<StandardTimeSeriesIDColumns> tryGetStandardTimeSeriesIDColumns(const IColumn & column)
 {
-    const auto * tuple = typeid_cast<const ColumnTuple *>(&column);
-    if (!tuple || tuple->tupleSize() != 2)
+    /// A structural match against the single definition of the standard id type, so a future
+    /// change of that type cannot silently bypass this function.
+    static const String standard_column_name = standardTimeSeriesIDDataType()->createColumn()->getName();
+    if (column.getName() != standard_column_name)
         return {};
-    const auto * first_column = typeid_cast<const ColumnUInt64 *>(&tuple->getColumn(0));
-    const auto * second_column = typeid_cast<const ColumnVector<UUID> *>(&tuple->getColumn(1));
-    if (!first_column || !second_column)
-        return {};
-    return StandardTimeSeriesIDColumns{first_column->getData().data(), second_column->getData().data()};
+
+    /// Must be kept in sync with standardTimeSeriesIDDataType (asserted by the casts below).
+    const auto & tuple = assert_cast<const ColumnTuple &>(column);
+    const auto & first_column = assert_cast<const ColumnUInt64 &>(tuple.getColumn(0));
+    const auto & second_column = assert_cast<const ColumnVector<UUID> &>(tuple.getColumn(1));
+    return StandardTimeSeriesIDColumns{first_column.getData().data(), second_column.getData().data()};
 }
 
 }
