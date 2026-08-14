@@ -341,31 +341,128 @@
             text-decoration: underline dotted;
         }
 
-        /* `:::note`-style admonitions, modelled on the documentation website. The tinted background
-           is blended into the panel background so it works in both light and dark themes. */
+        /* Match the hosted documentation callouts: a compact, borderless state tint with an inline
+           icon. The label stays available to assistive technology; only custom titles are visible. */
         #doc .admonition {
-            --adm-color: #888;
-            border-left: 4px solid var(--adm-color);
-            background: color-mix(in srgb, var(--adm-color) 12%, var(--panel-bg));
-            padding: 0.6rem 1rem;
+            --adm-background: rgb(41.176% 43.137% 47.451% / 0.1);
+            --adm-content: #53575F;
+            --adm-icon: lch(36.838 5.2307 266.96 / 0.75);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
             margin: 1rem 0;
+            padding: 0.75rem;
+            overflow: hidden;
+            border: 0;
+            border-radius: 0.25rem;
+            background: var(--adm-background);
         }
-        #doc .admonition-title {
-            font-weight: bold;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            font-size: 9pt;
-            margin-bottom: 0.3rem;
-            color: var(--adm-color);
+        #doc .admonition-icon {
+            width: 1.25rem;
+            min-width: 1.25rem;
+            height: 1.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            align-self: center;
+            flex: 0 0 auto;
+            color: var(--adm-icon);
         }
-        #doc .admonition > :last-child {
+        #doc .admonition-icon svg {
+            width: 1.25rem;
+            height: 1.25rem;
+            display: block;
+            overflow: hidden;
+        }
+        #doc .admonition-content {
+            width: 100%;
+            min-width: 0;
+            color: var(--adm-content);
+            font-size: 0.875rem;
+            line-height: 1.25rem;
+        }
+        #doc .admonition-content > p,
+        #doc .admonition-content > ul,
+        #doc .admonition-content > ol {
+            margin-top: 1.25em;
+            margin-bottom: 1.25em;
+        }
+        #doc .admonition-content > :first-child {
+            margin-top: 0;
+        }
+        #doc .admonition-content > :last-child {
             margin-bottom: 0;
         }
-        #doc .admonition-note    { --adm-color: #2F7FF7; }
-        #doc .admonition-tip     { --adm-color: #18A974; }
-        #doc .admonition-info    { --adm-color: #0099B8; }
-        #doc .admonition-warning { --adm-color: #D79400; }
-        #doc .admonition-danger  { --adm-color: #E5403A; }
+        #doc .admonition-content a {
+            color: inherit;
+            text-decoration: underline;
+            text-decoration-thickness: 2px;
+            text-underline-offset: 2px;
+        }
+        #doc .admonition-content code:not(pre code) {
+            padding: 0.125rem 0.5rem;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 0.375rem;
+            background: rgba(255, 255, 255, 0.6);
+            color: inherit;
+            font-size: 0.875em;
+            line-height: 1.5;
+        }
+        #doc .admonition-info {
+            --adm-background: rgb(26.275% 49.412% 93.725% / 0.1);
+            --adm-content: #53575F;
+            --adm-icon: lch(53.426 64.605 278.98 / 0.75);
+        }
+        #doc .admonition-tip,
+        #doc .admonition-success,
+        #doc .admonition-check {
+            --adm-background: rgb(20% 100% 26.667% / 0.1);
+            --adm-content: #008A0B;
+            --adm-icon: lch(49.786 70.246 135.31 / 0.75);
+        }
+        #doc .admonition-warning {
+            --adm-background: rgb(100% 46.667% 16.078% / 0.1);
+            --adm-content: #A33C00;
+            --adm-icon: lch(40.227 66.602 51.059 / 0.75);
+        }
+        #doc .admonition-danger,
+        #doc .admonition-error {
+            --adm-background: rgb(100% 13.725% 13.725% / 0.1);
+            --adm-content: #C10000;
+            --adm-icon: lch(41.001 86.638 40.858 / 0.75);
+        }
+        [data-theme="dark"] #doc .admonition {
+            --adm-background: rgb(62.745% 62.745% 62.745% / 0.2);
+            --adm-content: #C0C0C0;
+            --adm-icon: lch(77.704 0 none / 0.75);
+        }
+        [data-theme="dark"] #doc .admonition-info {
+            --adm-background: rgb(26.275% 49.412% 93.725% / 0.2);
+            --adm-content: #D0DFFB;
+            --adm-icon: lch(88.343 15.514 266.4 / 0.75);
+        }
+        [data-theme="dark"] #doc .admonition-tip,
+        [data-theme="dark"] #doc .admonition-success,
+        [data-theme="dark"] #doc .admonition-check {
+            --adm-background: rgb(20% 100% 26.667% / 0.2);
+            --adm-content: #CCFFD0;
+            --adm-icon: lch(95.558 28.893 143.93 / 0.75);
+        }
+        [data-theme="dark"] #doc .admonition-warning {
+            --adm-background: rgb(100% 46.667% 16.078% / 0.2);
+            --adm-content: #FFB88F;
+            --adm-icon: lch(80.892 39.042 53.918 / 0.75);
+        }
+        [data-theme="dark"] #doc .admonition-danger,
+        [data-theme="dark"] #doc .admonition-error {
+            --adm-background: rgb(100% 13.725% 13.725% / 0.2);
+            --adm-content: #FFBABA;
+            --adm-icon: lch(82.069 27.695 22.026 / 0.75);
+        }
+        [data-theme="dark"] #doc .admonition-content code:not(pre code) {
+            border: 0;
+            background: rgba(255, 255, 255, 0.05);
+        }
 
         #status {
             font-size: 9pt;
@@ -1169,12 +1266,6 @@
             background: var(--hover-bg);
             padding: 0.8rem 1rem 0.8rem 2.65rem;
             color: var(--muted-strong);
-        }
-        #doc .admonition {
-            border: 1px solid color-mix(in srgb, var(--adm-color) 25%, var(--border));
-            border-left: 4px solid var(--adm-color);
-            border-radius: 0.45rem;
-            padding: 0.8rem 1rem;
         }
         #doc .source-link {
             font-size: 0.65em;
@@ -2019,6 +2110,22 @@
        Markdown rendering setup.
        ---------------------------------------------------------------------------------------- */
 
+    function admonitionIcon(variant) {
+        if (variant === 'tip' || variant === 'success' || variant === 'check') {
+            return `<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M 4.0216 15.9727 C 4.0216 16.1941 4.0855 16.4101 4.2074 16.5947 L 4.81 17.4979 C 4.9946 17.7747 5.4137 18 5.7467 18 H 7.9149 C 8.2468 18 8.6659 17.775 8.8505 17.4979 L 9.451 16.5951 C 9.5543 16.439 9.6391 16.1601 9.6391 15.9727 L 9.6436 14.5945 H 4.0181 L 4.0216 15.9727 Z M 6.8308 0 C 3.2453 0.0113 0.6429 2.9171 0.6429 6.1563 C 0.6429 7.7167 1.2209 9.1392 2.1744 10.2278 C 2.7556 10.8901 3.663 12.2751 4.0104 13.443 C 4.0115 13.4518 4.0137 13.4612 4.0148 13.4706 H 9.6473 C 9.6483 13.4612 9.6505 13.4524 9.6517 13.443 C 9.9988 12.2751 10.9065 10.8901 11.4877 10.2278 C 12.4422 9.1695 13.0189 7.749 13.0189 6.1563 C 13.0189 2.7705 10.2483 0.0001 6.8308 0 Z M 10.2202 9.1449 C 9.6696 9.7724 8.9882 10.7727 8.4956 11.8131 H 5.1692 C 4.6766 10.7727 3.9953 9.7724 3.445 9.1452 C 2.7257 8.3257 2.3305 7.2463 2.3305 6.1563 C 2.3305 3.9835 4.0216 1.6964 6.7992 1.6876 C 9.3131 1.6876 11.3312 3.7058 11.3312 6.1563 C 11.3312 7.2463 10.9374 8.3257 10.2202 9.1449 Z M 6.2683 2.8127 C 4.7178 2.8127 3.4556 4.0749 3.4556 5.6254 C 3.4556 5.9364 3.7072 6.188 4.0181 6.188 C 4.3291 6.188 4.5807 5.9348 4.5807 5.6254 C 4.5807 4.6948 5.3376 3.9378 6.2683 3.9378 C 6.5792 3.9378 6.8308 3.6865 6.8308 3.3756 C 6.8308 3.0647 6.5777 2.8127 6.2683 2.8127 Z" fill="currentColor"/></svg>`;
+        }
+        if (variant === 'info') {
+            return `<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M 7.2 0 C 3.2231 0 0 3.2231 0 7.2 C 0 11.1768 3.2231 14.4 7.2 14.4 C 11.1768 14.4 14.4 11.1768 14.4 7.2 C 14.4 3.2231 11.1768 0 7.2 0 Z M 7.2 13.05 C 3.9741 13.05 1.35 10.4257 1.35 7.2 C 1.35 3.9743 3.9741 1.35 7.2 1.35 C 10.426 1.35 13.05 3.9743 13.05 7.2 C 13.05 10.4257 10.426 13.05 7.2 13.05 Z M 8.325 9.45 H 7.875 V 6.975 C 7.875 6.6038 7.5741 6.3 7.2 6.3 H 6.3 C 5.9288 6.3 5.625 6.6038 5.625 6.975 C 5.625 7.3462 5.9288 7.65 6.3 7.65 H 6.525 V 9.45 H 6.075 C 5.7038 9.45 5.4 9.7538 5.4 10.125 C 5.4 10.4962 5.7038 10.8 6.075 10.8 H 8.325 C 8.6977 10.8 9 10.4977 9 10.125 C 9 9.7523 8.6991 9.45 8.325 9.45 Z M 7.2 5.4 C 7.697 5.4 8.1 4.997 8.1 4.5 C 8.1 4.003 7.697 3.6 7.2 3.6 C 6.703 3.6 6.3 4.0022 6.3 4.5 C 6.3 4.9978 6.7022 5.4 7.2 5.4 Z" fill="currentColor"/></svg>`;
+        }
+        if (variant === 'warning') {
+            return `<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M 9 6.75 v 1.5 m 0 3 h 0.0075 m -5.2035 3 h 10.392 c 1.155 0 1.8765 -1.2503 1.299 -2.25 L 10.299 3 c -0.5775 -0.9997 -2.0205 -0.9997 -2.598 0 L 2.505 12 c -0.5775 0.9997 0.144 2.25 1.299 2.25 z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+        }
+        if (variant === 'danger' || variant === 'error') {
+            return `<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M 0.6012 10.2656 c -0.4535 -0.784 -0.4535 -1.7473 0 -2.5312 L 3.7055 2.359 c 0.4535 -0.784 1.2867 -1.2656 2.1938 -1.2656 l 6.2086 0 c 0.9035 0 1.7402 0.4816 2.1938 1.2656 L 17.3988 7.7344 c 0.4535 0.784 0.4535 1.7473 0 2.5312 L 14.2945 15.641 c -0.4535 0.784 -1.2867 1.2656 -2.1938 1.2656 l -6.2086 0 c -0.9035 0 -1.7402 -0.4816 -2.1938 -1.2656 L 0.6012 10.2656 z m 1.4625 -1.6875 c -0.1512 0.2602 -0.1512 0.5836 0 0.8438 l 3.1043 5.3754 c 0.1512 0.2602 0.4289 0.4219 0.7313 0.4219 l 6.2086 0 c 0.3023 0 0.5801 -0.1617 0.7313 -0.4219 L 15.9398 9.4219 c 0.1512 -0.2602 0.1512 -0.5836 0 -0.8438 L 12.8355 3.2027 c -0.1512 -0.2602 -0.4289 -0.4219 -0.7313 -0.4219 l -6.2086 0 c -0.3023 0 -0.5801 0.1617 -0.7313 0.4219 L 2.0602 8.5781 z M 9 4.5 c 0.4676 0 0.8438 0.3762 0.8438 0.8438 l 0 3.9375 c 0 0.4676 -0.3762 0.8438 -0.8438 0.8438 s -0.8438 -0.3762 -0.8438 -0.8438 l 0 -3.9375 c 0 -0.4676 0.3762 -0.8438 0.8438 -0.8438 z M 7.875 12.375 a 1.125 1.125 0 1 1 2.25 0 1.125 1.125 0 1 1 -2.25 0 z" fill="currentColor"/></svg>`;
+        }
+        return `<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M 9 1.6714 C 13.0371 1.6714 16.3286 4.9629 16.3286 9 C 16.3286 13.0371 13.0371 16.3286 9 16.3286 C 7.0574 16.3252 5.1953 15.552 3.8217 14.1783 C 2.448 12.8047 1.6748 10.9426 1.6714 9 C 1.6714 4.9629 4.9629 1.6714 9 1.6714 Z M 9 0 C 4.0371 0 0 4.0371 0 9 C 0 13.9629 4.0371 18 9 18 C 13.9629 18 18 13.9629 18 9 C 18 4.0371 13.9629 0 9 0 Z M 10.2857 3.8571 H 7.7143 V 10.2857 H 10.2857 V 3.8571 Z M 10.2857 11.5714 H 7.7143 V 14.1429 H 10.2857 V 11.5714 Z" fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"/></svg>`;
+    }
+
     /// `:::note ... :::` admonitions (as used on the documentation website). Implemented as a
     /// block-level Marked extension so that the body is itself rendered as Markdown.
     const admonitionExtension = {
@@ -2032,11 +2139,13 @@
             const rule = /^:::([a-zA-Z]+)[ \t]*(.*)\n([\s\S]*?)\n:::[ \t]*(?:\n|$)/;
             const match = rule.exec(src);
             if (match) {
+                let title = match[2].trim();
+                if (title.startsWith('[') && title.endsWith(']')) title = title.slice(1, -1).trim();
                 const token = {
                     type: 'admonition',
                     raw: match[0],
                     variant: match[1].toLowerCase(),
-                    title: (match[2] || match[1]).trim(),
+                    title,
                     tokens: [],
                 };
                 this.lexer.blockTokens(match[3], token.tokens);
@@ -2045,9 +2154,13 @@
         },
         renderer(token) {
             const inner = this.parser.parse(token.tokens);
-            return `<div class="admonition admonition-${escapeHTML(token.variant)}">`
-                + `<div class="admonition-title">${escapeHTML(token.title)}</div>`
-                + inner + `</div>`;
+            const variant = token.variant;
+            const label = variant.charAt(0).toUpperCase() + variant.slice(1);
+            const title = token.title && token.title.toLowerCase() !== variant
+                ? `<p><strong>${escapeHTML(token.title)}</strong></p>` : '';
+            return `<div class="admonition admonition-${escapeHTML(variant)}" role="note" aria-label="${escapeHTML(label)}" data-callout-type="${escapeHTML(variant)}">`
+                + `<div class="admonition-icon" data-component-part="callout-icon">${admonitionIcon(variant)}</div>`
+                + `<div class="admonition-content" data-component-part="callout-content">${title}${inner}</div></div>`;
         },
     };
 
@@ -2305,6 +2418,9 @@
         'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
         'strong', 'em', 'b', 'i', 'u', 's', 'del', 'ins', 'sub', 'sup', 'kbd', 'samp',
         'abbr', 'mark', 'small', 'wbr',
+        /// Inline callout state icons. Only the inert shape elements and their presentation
+        /// attributes are allowed; executable or resource-loading SVG elements remain excluded.
+        'svg', 'path',
         /// Disclosure widgets: some embedded docs wrap notes in `<details><summary>...`, e.g. the
         /// "Implementation details" sections of the `uniq` and `uniqCombined` aggregate functions.
         /// Dropping them (with their subtree) made those sections disappear from the rendered page.
@@ -2320,8 +2436,12 @@
         /// `class` and `style` are needed by KaTeX (inline layout) and our admonitions; the rest are
         /// harmless presentational or accessibility attributes. `href`/`src` are additionally
         /// scheme-checked below.
-        'class', 'style', 'id', 'title', 'colspan', 'rowspan', 'align', 'start', 'aria-hidden',
+        'class', 'style', 'id', 'title', 'colspan', 'rowspan', 'align', 'start', 'role',
+        'aria-hidden', 'aria-label', 'data-callout-type', 'data-component-part',
         'href', 'src', 'alt', 'target', 'rel', 'open',
+        /// Presentation-only attributes for the allowlisted callout SVG shapes.
+        'viewbox', 'd', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
+        'fill-rule', 'clip-rule',
         /// MathML presentation attributes used by KaTeX.
         'mathvariant', 'displaystyle', 'scriptlevel', 'stretchy', 'accent', 'accentunder',
         'width', 'height', 'depth', 'lspace', 'rspace', 'voffset', 'fence', 'separator',
