@@ -902,7 +902,7 @@ void StorageObjectStorage::drop()
     /// The drop's commit point, which configuration->drop() orders between data deletion and metadata
     /// deletion so that a failure on either side leaves the table reconstructable for a retry.
     /// Non-Iceberg engines and cleanup-disabled drops just run this commit.
-    auto commit = [this]
+    auto commit = [this, delete_data_on_drop]
     {
         fiu_do_on(FailPoints::iceberg_drop_catalog_remove_fail, {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure during Iceberg drop catalog removal");
@@ -911,7 +911,7 @@ void StorageObjectStorage::drop()
         if (catalog)
         {
             const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-            catalog->dropTable(namespace_name, table_name);
+            catalog->dropTable(namespace_name, table_name, delete_data_on_drop);
         }
     };
 
