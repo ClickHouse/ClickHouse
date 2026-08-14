@@ -2,6 +2,8 @@
 
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 
+#include <fmt/format.h>
+
 using namespace DB;
 
 namespace
@@ -17,6 +19,114 @@ namespace
     {
         PrometheusQueryTree query_tree{input};
         return typeid_cast<const PrometheusQueryTree::StringLiteral &>(*query_tree.getRoot()).string;
+    }
+
+    void expectRoundTrip(std::string_view input, std::string_view expected)
+    {
+        PrometheusQueryTree query_tree{input};
+        const auto serialized = query_tree.toString();
+        EXPECT_EQ(serialized, expected) << input;
+
+        PrometheusQueryTree reparsed;
+        String error_message;
+        size_t error_pos = 0;
+        ASSERT_TRUE(reparsed.tryParse(serialized, 3, &error_message, &error_pos))
+            << input << ": " << error_message << " at position " << error_pos;
+        EXPECT_EQ(reparsed.getResultType(), query_tree.getResultType()) << input;
+        EXPECT_EQ(reparsed.dumpTree(), query_tree.dumpTree()) << input;
+    }
+}
+
+
+TEST(PromQLParser, QuotedSelectorIdentifiers)
+{
+    EXPECT_EQ(parse(R"({"http.server.request.duration"})"), R"(
+{"http.server.request.duration"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'http.server.request.duration'
+)");
+
+    EXPECT_EQ(parse(R"({"rpc.server.duration", "service.name"="api"})"), R"(
+{"rpc.server.duration","service.name"="api"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'rpc.server.duration'
+        service.name EQ 'api'
+)");
+
+    EXPECT_EQ(parse(R"(up{"service.name"=~"api.*"})"), R"(
+up{"service.name"=~"api.*"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'up'
+        service.name RE 'api.*'
+)");
+
+    expectRoundTrip(R"({""="value"})", R"({""="value"})");
+    expectRoundTrip(R"({"métric.name","服务.name"="api"})", R"({"métric.name","服务.name"="api"})");
+    expectRoundTrip(R"({"NaN"})", R"({"NaN"})");
+    expectRoundTrip(R"({"Inf"})", R"({"Inf"})");
+    expectRoundTrip(R"(up{"NaN"="x"})", R"(up{"NaN"="x"})");
+    expectRoundTrip(R"(up{"Inf"="x"})", R"(up{"Inf"="x"})");
+}
+
+
+TEST(PromQLParser, ReservedKeywordMetricNames)
+{
+    /// A bare keyword in the position of an operand is a binary operator or a modifier,
+    /// so such metric names must stay quoted, otherwise the serialized query doesn't parse back.
+    for (const auto * const keyword :
+         {"and", "or", "unless", "atan2", "by", "without", "on", "ignoring", "group_left", "group_right", "offset", "bool"})
+    {
+        expectRoundTrip(fmt::format(R"({{"{}"}})", keyword), fmt::format(R"({{"{}"}})", keyword));
+        expectRoundTrip(fmt::format(R"({}{{job="x"}})", keyword), fmt::format(R"({{"{}",job="x"}})", keyword));
+        expectRoundTrip(fmt::format(R"(up * {{"{}"}})", keyword), fmt::format(R"(up * {{"{}"}})", keyword));
+    }
+}
+
+
+TEST(PromQLParser, InvalidQuotedSelectorIdentifiers)
+{
+    for (const auto * const query : {R"({""})", R"({"\xff"})"})
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_FALSE(error_message.empty()) << query;
+    }
+}
+
+
+TEST(PromQLParser, EmptyMetricNameMatcher)
+{
+    for (const auto * const query : {R"({__name__="",a="x"})", R"({"__name__"="",a="x"})"})
+        expectRoundTrip(query, R"({__name__="",a="x"})");
+}
+
+
+TEST(PromQLParser, MultipleMetricNameMatchers)
+{
+    expectRoundTrip(R"({"bar",__name__="baz"})", R"({"bar","baz"})");
+    expectRoundTrip(R"({"bar",__name__=~"ba.*"})", R"({"bar",__name__=~"ba.*"})");
+    expectRoundTrip(R"({"foo","bar"})", R"({"foo","bar"})");
+    expectRoundTrip(R"({__name__="foo",__name__="bar"})", R"({"foo","bar"})");
+}
+
+
+TEST(PromQLParser, DuplicateMetricName)
+{
+    for (const auto * const query : {R"(up{"other.metric"})", R"(up{"up"})", R"(up{"__name__"="other"})"})
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_NE(error_message.find("metric name must not be set twice"), String::npos) << query;
     }
 }
 
