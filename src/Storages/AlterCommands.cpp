@@ -1,12 +1,15 @@
 #include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Analyzer/QueryTreeBuilder.h>
@@ -63,6 +66,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_json_lazy_type_hints;
+    extern const SettingsBool allow_metadata_only_named_tuple_alter;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
@@ -175,6 +179,10 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         {
             command.data_type = data_type_factory.get(ast_col_decl.getType());
             applyNullModifier(command.data_type, ast_col_decl.null_modifier);
+            /// A stored column has to spell its state version out in the metadata the same way
+            /// `CREATE TABLE` does (see `InterpreterCreateQuery::getColumnType`): an unversioned
+            /// name in stored metadata denotes the layout from before the function became versioned.
+            pinCurrentStateVersionToAggregateFunctions(command.data_type);
         }
         if (ast_col_decl.getDefaultExpression())
         {
@@ -241,6 +249,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         {
             command.data_type = data_type_factory.get(ast_col_decl.getType());
             applyNullModifier(command.data_type, ast_col_decl.null_modifier);
+            /// Deliberately NOT pinning the current state version here, unlike ADD COLUMN above.
+            /// `DataTypeAggregateFunction::equals` ignores the state version, so a version change is
+            /// a metadata-only conversion (`isMetadataOnlyConversion`) and the existing parts keep
+            /// the older layout. A rewrite could not repair them either: a version 0 state does not
+            /// carry its skip degree, so deserializing and re-serializing it as version 1 would only
+            /// record a skip degree of 0. Pinning would therefore make the metadata claim a layout the
+            /// stored data does not have. `MODIFY COLUMN` keeps whatever version the user spells out,
+            /// so a column can still be moved to the current layout for future writes explicitly, with
+            /// `MODIFY COLUMN ... AggregateFunction(1, quantileDeterministic, ...)`.
         }
 
         if (ast_col_decl.getDefaultExpression())
@@ -1301,16 +1318,7 @@ bool isTrueMetadataOnlyConversion(const IDataType * from, const IDataType * to)
     }
 }
 
-/// Metadata-only ALTER (no data rewrite): either byte-identical (`isTrueMetadataOnlyConversion`)
-/// or a lazy cast (`isLazyMetadataConversion`).
-bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to, const ContextPtr & context)
-{
-    return isTrueMetadataOnlyConversion(from, to) || isLazyMetadataConversion(from, to, context);
-}
-
-}
-
-bool isLazyMetadataConversion(const IDataType * from, const IDataType * to, const ContextPtr & context)
+bool isJSONLazyMetadataConversion(const IDataType * from, const IDataType * to, const ContextPtr & context)
 {
     if (!context || !context->getSettingsRef()[Setting::allow_experimental_json_lazy_type_hints])
         return false;
@@ -1347,36 +1355,155 @@ bool isLazyMetadataConversion(const IDataType * from, const IDataType * to, cons
     }
 }
 
+/// True for named-Tuple subfield additions through `Array` and `Map` wrappers.
+/// Existing fields must keep their names and order. `nested_lazy_settings` records other lazy
+/// conversions required by retained fields and is merged only if the whole Tuple change is valid.
+bool isNamedTupleSubfieldAddition(
+    const IDataType * from,
+    const IDataType * to,
+    const ContextPtr & context,
+    std::set<std::string_view> & nested_lazy_settings)
+{
+    if (!context || !context->getSettingsRef()[Setting::allow_metadata_only_named_tuple_alter])
+        return false;
+
+    if (from->equals(*to))
+        return false;
+
+    /// Unwrap Array
+    if (const auto * arr_from = typeid_cast<const DataTypeArray *>(from))
+    {
+        const auto * arr_to = typeid_cast<const DataTypeArray *>(to);
+        if (!arr_to)
+            return false;
+        return isNamedTupleSubfieldAddition(
+            arr_from->getNestedType().get(), arr_to->getNestedType().get(), context, nested_lazy_settings);
+    }
+
+    if (typeid_cast<const DataTypeNullable *>(from))
+        return false;
+
+    /// Unwrap Map (check key equality)
+    if (const auto * map_from = typeid_cast<const DataTypeMap *>(from))
+    {
+        const auto * map_to = typeid_cast<const DataTypeMap *>(to);
+        if (!map_to)
+            return false;
+        if (!map_from->getKeyType()->equals(*map_to->getKeyType()))
+            return false;
+        return isNamedTupleSubfieldAddition(
+            map_from->getValueType().get(), map_to->getValueType().get(), context, nested_lazy_settings);
+    }
+
+    /// Tuple level: check names present, ordering preserved, existing fields compatible
+    const auto * tuple_from = typeid_cast<const DataTypeTuple *>(from);
+    const auto * tuple_to = typeid_cast<const DataTypeTuple *>(to);
+    if (!tuple_from || !tuple_to
+        || !tuple_from->hasExplicitNames() || !tuple_to->hasExplicitNames())
+        return false;
+
+    const auto & from_names = tuple_from->getElementNames();
+    const auto & from_types = tuple_from->getElements();
+    const auto & to_names = tuple_to->getElementNames();
+    const auto & to_types = tuple_to->getElements();
+
+    bool found_addition = to_names.size() > from_names.size();
+    std::optional<size_t> last_to_index;
+    for (size_t i = 0; i < from_names.size(); ++i)
+    {
+        auto to_index = tuple_to->tryGetPositionByName(from_names[i]);
+        if (!to_index || (last_to_index && *to_index <= *last_to_index))
+            return false;
+        last_to_index = to_index;
+        const IDataType * old_elem = from_types[i].get();
+        const IDataType * new_elem = to_types[*to_index].get();
+        if (old_elem->equals(*new_elem))
+            continue;
+
+        if (isNamedTupleSubfieldAddition(old_elem, new_elem, context, nested_lazy_settings))
+        {
+            found_addition = true;
+            continue;
+        }
+        if (isJSONLazyMetadataConversion(old_elem, new_elem, context))
+        {
+            nested_lazy_settings.emplace("allow_experimental_json_lazy_type_hints");
+            continue;
+        }
+        if (!isTrueMetadataOnlyConversion(old_elem, new_elem))
+            return false;
+    }
+    return found_addition;
+}
+
+/// Collects every setting that enables a lazy conversion for this type change. Lazy conversions
+/// change the on-disk representation without scheduling an immediate mutation. Checks are
+/// independent because one conversion may be enabled by more than one mechanism.
+std::set<std::string_view> getLazyMetadataConversionSettings(
+    const IDataType * from, const IDataType * to, const ContextPtr & context)
+{
+    std::set<std::string_view> settings;
+    if (!context)
+        return settings;
+
+    std::set<std::string_view> named_tuple_nested_settings;
+    if (isNamedTupleSubfieldAddition(from, to, context, named_tuple_nested_settings))
+    {
+        settings.emplace("allow_metadata_only_named_tuple_alter");
+        settings.insert(named_tuple_nested_settings.begin(), named_tuple_nested_settings.end());
+    }
+
+    if (isJSONLazyMetadataConversion(from, to, context))
+        settings.emplace("allow_experimental_json_lazy_type_hints");
+
+    return settings;
+}
+
+}
+
 bool AlterCommand::isSettingsAlter() const
 {
     return type == MODIFY_SETTING || type == RESET_SETTING;
 }
 
-bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const
+MutationStageDecision AlterCommand::getMutationStageDecision(
+    const StorageInMemoryMetadata & metadata, const ContextPtr & context) const
 {
+    MutationStageDecision decision;
     if (ignore)
-        return false;
+        return decision;
 
-    /// We remove properties on metadata level
     if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY)
-        return false;
+        return decision;
 
     if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN || type == DROP_STATISTICS)
-        return true;
+    {
+        decision.requires_mutation = true;
+        return decision;
+    }
 
-    /// Drop alias is metadata alter, in other case mutation is required.
     if (type == DROP_COLUMN)
-        return metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name);
+    {
+        decision.requires_mutation = metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name);
+        return decision;
+    }
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
-        return false;
+        return decision;
 
     for (const auto & column : metadata.columns.getAllPhysical())
     {
-        if (column.name == column_name && !isMetadataOnlyConversion(column.type.get(), data_type.get(), context))
-            return true;
+        if (column.name != column_name)
+            continue;
+
+        if (isTrueMetadataOnlyConversion(column.type.get(), data_type.get()))
+            return decision;
+
+        decision.lazy_settings = getLazyMetadataConversionSettings(column.type.get(), data_type.get(), context);
+        decision.requires_mutation = decision.lazy_settings.empty();
+        return decision;
     }
-    return false;
+    return decision;
 }
 
 bool AlterCommand::isCommentAlter() const
@@ -1439,7 +1566,7 @@ bool AlterCommand::isDropOrRename() const
 
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
 {
-    if (!isRequireMutationStage(metadata, context))
+    if (!getMutationStageDecision(metadata, context).requires_mutation)
     {
         /// Even though this command doesn't require a mutation, we still need to apply it
         /// to the metadata so that subsequent commands see the updated state. For example,
