@@ -78,6 +78,15 @@ $CLICKHOUSE_CLIENT -q "ATTACH TABLE url_nc_62352"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM url_nc_62352" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
 $CLICKHOUSE_CLIENT -q "DROP TABLE url_nc_62352"
 $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION nc_62352"
+# A collection-sourced http_method must not break scheme dispatch (collections could always
+# carry the key with any URL): url(nc) delegates with the key ignored — the error, if any,
+# comes from the delegate backend, never from the http_method guard. The inline key-value
+# argument is new syntax and is still rejected before dispatch.
+$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS nc_disp_62352"
+$CLICKHOUSE_CLIENT -q "CREATE NAMED COLLECTION nc_disp_62352 AS url = 'file:///nonexistent_62352.csv', format = 'CSV', structure = 'x String', http_method = 'PUT'"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM url(nc_disp_62352)" 2>&1 | grep -c 'does not support http_method'
+$CLICKHOUSE_CLIENT -q "SELECT * FROM url('file:///nonexistent_62352.csv', 'CSV', 'x String', http_method='POST')" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
+$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION nc_disp_62352"
 
 # 8. The schema-inference cache is method-aware: with the cache enabled (the default), a
 #    repeated POST inference stays all-POST. For POST reads no cache-validation probe is sent

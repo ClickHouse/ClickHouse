@@ -153,8 +153,10 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast, ContextPtr context)
 
 void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & context)
 {
+    bool configuration_from_named_collection = false;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
     {
+        configuration_from_named_collection = true;
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
 
         filename = configuration.url;
@@ -208,10 +210,19 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
                 storageEngineNameForURLScheme(target), filename);
 
         if (!configuration.http_method.empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The url table function does not support http_method when dispatching to the {} engine (URL '{}')",
-                storageEngineNameForURLScheme(target), filename);
+        {
+            /// Named collections accepted `http_method` for any URL scheme before it applied
+            /// to reads, so a collection-sourced value keeps delegating with the key ignored,
+            /// mirroring the URL engine's non-CREATE loads. Only the inline key-value argument
+            /// is new syntax with no legacy usage, so only it is rejected.
+            if (configuration_from_named_collection)
+                configuration.http_method.clear();
+            else
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The url table function does not support http_method when dispatching to the {} engine (URL '{}')",
+                    storageEngineNameForURLScheme(target), filename);
+        }
 
         buildDelegate(target, context);
         return;
