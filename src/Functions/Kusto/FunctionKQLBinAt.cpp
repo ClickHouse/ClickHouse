@@ -1,4 +1,8 @@
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -23,6 +27,115 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 
 namespace
 {
+
+/// Fixed-point datetime arithmetic is deliberately kept out of a `dateDiff` plan. A
+/// `DateTime64` tick is an integer and can exceed the `Int64` nanosecond range; widening it
+/// before subtracting also makes the calculation independent of the display time zone.
+class FunctionKQLDateTimeBinAt final : public IFunction
+{
+public:
+    static constexpr auto name = "kqlDateTimeBinAt";
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionKQLDateTimeBinAt>(); }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 3; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!isDateTimeOrDateTime64(removeNullable(arguments[0])) || !isInterval(removeNullable(arguments[1]))
+            || !isDateTimeOrDateTime64(removeNullable(arguments[2])))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} expects a datetime, a timespan and a datetime", getName());
+        return makeNullable(removeNullable(arguments[0]));
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t rows) const override
+    {
+        struct Operand
+        {
+            ColumnPtr full;
+            const IColumn * values;
+            const NullMap * nulls = nullptr;
+        };
+        std::array<Operand, 3> operands;
+        for (size_t i = 0; i < operands.size(); ++i)
+        {
+            operands[i].full = arguments[i].column->convertToFullColumnIfConst();
+            operands[i].values = operands[i].full.get();
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(operands[i].values))
+            {
+                operands[i].nulls = &nullable->getNullMapData();
+                operands[i].values = &nullable->getNestedColumn();
+            }
+        }
+
+        const auto & value_type = *removeNullable(arguments[0].type);
+        const auto & fixed_type = *removeNullable(arguments[2].type);
+        const auto kind = assert_cast<const DataTypeInterval &>(*removeNullable(arguments[1].type)).getKind();
+        auto nested = removeNullable(arguments[0].type)->createColumn();
+        auto nulls = ColumnUInt8::create();
+        auto & null_map = nulls->getData();
+
+        for (size_t row = 0; row < rows; ++row)
+        {
+            if ((operands[0].nulls && (*operands[0].nulls)[row]) || (operands[1].nulls && (*operands[1].nulls)[row])
+                || (operands[2].nulls && (*operands[2].nulls)[row]))
+            {
+                nested->insertDefault();
+                null_map.push_back(1);
+                continue;
+            }
+
+            const Int128 bin = Int128(assert_cast<const ColumnInt64 &>(*operands[1].values).getData()[row]) * kind.toAvgNanoseconds();
+            if (bin <= 0)
+            {
+                nested->insertDefault();
+                null_map.push_back(1);
+                continue;
+            }
+
+            const Int128 fixed = nanosecondsAt(*operands[2].values, fixed_type, row);
+            const Int128 span = nanosecondsAt(*operands[0].values, value_type, row) - fixed;
+            Int128 quotient = span / bin;
+            if (span % bin != 0 && span < 0)
+                --quotient;
+            insertNanoseconds(*nested, value_type, fixed + quotient * bin);
+            null_map.push_back(0);
+        }
+        return ColumnNullable::create(std::move(nested), std::move(nulls));
+    }
+
+private:
+    static Int128 nanosecondsAt(const IColumn & column, const IDataType & type, size_t row)
+    {
+        if (const auto * datetime64 = typeid_cast<const DataTypeDateTime64 *>(&type))
+        {
+            Int128 value = assert_cast<const ColumnDecimal<DateTime64> &>(column).getData()[row].value;
+            for (UInt32 scale = datetime64->getScale(); scale < 9; ++scale)
+                value *= 10;
+            for (UInt32 scale = 9; scale < datetime64->getScale(); ++scale)
+                value /= 10;
+            return value;
+        }
+        return Int128(assert_cast<const ColumnUInt32 &>(column).getData()[row]) * 1'000'000'000;
+    }
+
+    static void insertNanoseconds(IColumn & column, const IDataType & type, Int128 value)
+    {
+        if (const auto * datetime64 = typeid_cast<const DataTypeDateTime64 *>(&type))
+        {
+            for (UInt32 scale = datetime64->getScale(); scale < 9; ++scale)
+                value /= 10;
+            for (UInt32 scale = 9; scale < datetime64->getScale(); ++scale)
+                value *= 10;
+            assert_cast<ColumnDecimal<DateTime64> &>(column).getData().push_back(DateTime64(Int64(value)));
+            return;
+        }
+        assert_cast<ColumnUInt32 &>(column).getData().push_back(UInt32(value / 1'000'000'000));
+    }
+};
 
 /** `kqlBinAt(value, binSize, fixedPoint)` - Kusto's `bin_at()`, rounding a value down to a
   * multiple of `binSize` counted from `fixedPoint` rather than from zero.
@@ -126,26 +239,7 @@ private:
                 return FunctionFactory::instance().get("toStartOfInterval", getContext())->build(arguments);
             }
 
-            /// `fixedPoint + bin(value - fixedPoint, binSize)` over integer nanoseconds. The
-            /// bins may align before or after the fixed point, and `kqlBin` turns a negative
-            /// bin size into a null per row.
-            KQLPlanBuilder plan(getContext());
-            const size_t value_slot = plan.argument(arguments[0].type);
-            size_t bin_slot = plan.argument(retypedAsTicks(arguments[1].type));
-            const size_t fixed_slot = plan.argument(arguments[2].type);
-
-            if (bin_kind.toAvgNanoseconds() != 1)
-            {
-                const size_t ticks = plan.constant(std::make_shared<DataTypeInt64>(), Field(bin_kind.toAvgNanoseconds()));
-                bin_slot = plan.step("multiply", {bin_slot, ticks});
-            }
-
-            const size_t unit = plan.constant(std::make_shared<DataTypeString>(), Field("nanosecond"));
-            const size_t difference = plan.step("dateDiff", {unit, fixed_slot, value_slot});
-            const size_t rounded = plan.step("kqlBin", {difference, bin_slot});
-            const size_t shift = plan.step("toIntervalNanosecond", {rounded});
-            plan.step("plus", {fixed_slot, shift});
-            return std::move(plan).finish(name, arguments);
+            return FunctionFactory::instance().get(FunctionKQLDateTimeBinAt::name, getContext())->build(arguments);
         }
 
         if (!value_is_null_literal && isInterval(value_type))
@@ -229,6 +323,7 @@ private:
 
 REGISTER_FUNCTION(KQLBinAt)
 {
+    factory.registerFunction<FunctionKQLDateTimeBinAt>();
     FunctionDocumentation bin_at_documentation{
         .description = R"(
 Rounds a value down to a multiple of `binSize` counted from `fixedPoint`, as the Kusto Query

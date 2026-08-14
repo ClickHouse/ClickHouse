@@ -130,26 +130,14 @@ private:
                 return FunctionFactory::instance().get("toStartOfInterval", getContext())->build(arguments);
             }
 
-            /// `epoch + bin(value - epoch, binSize)` over integer nanoseconds, the same lowering
-            /// `kqlBinAt` uses with the Unix epoch as the fixed point - the origin
-            /// `toStartOfInterval` aligns fixed-length bins to, so the alignment is unchanged.
-            /// `kqlBin` over the ticks turns a negative bin size into a null per row.
+            /// Delegate the fixed-point arithmetic to `kqlDateTimeBinAt`. It works over widened
+            /// physical ticks, avoiding both timezone-sensitive `dateDiff` and `Int64`
+            /// nanosecond overflow for valid `DateTime64` values.
             KQLPlanBuilder plan(getContext());
             const size_t value_slot = plan.argument(arguments[0].type);
-            size_t bin_slot = plan.argument(retypedAsTicks(arguments[1].type));
-            const size_t epoch = plan.constant(std::make_shared<DataTypeDateTime>("UTC"), Field(UInt64(0)));
-
-            if (interval_kind.toAvgNanoseconds() != 1)
-            {
-                const size_t ticks = plan.constant(std::make_shared<DataTypeInt64>(), Field(interval_kind.toAvgNanoseconds()));
-                bin_slot = plan.step("multiply", {bin_slot, ticks});
-            }
-
-            const size_t unit = plan.constant(std::make_shared<DataTypeString>(), Field("nanosecond"));
-            const size_t difference = plan.step("dateDiff", {unit, epoch, value_slot});
-            const size_t rounded = plan.step("kqlBin", {difference, bin_slot});
-            const size_t shift = plan.step("toIntervalNanosecond", {rounded});
-            plan.step("plus", {epoch, shift});
+            const size_t bin_slot = plan.argument(arguments[1].type);
+            const size_t epoch = plan.constant(arguments[0].type, Field(UInt64(0)));
+            plan.step("kqlDateTimeBinAt", {value_slot, bin_slot, epoch});
             return std::move(plan).finish(name, arguments);
         }
 
