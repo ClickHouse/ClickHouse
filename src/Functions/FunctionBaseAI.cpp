@@ -3,6 +3,7 @@
 #include <Access/ContextAccess.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
+#include <base/scope_guard.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
 #include <algorithm>
@@ -129,27 +130,6 @@ Field parseAIParamValue(AIParamKind kind, const String & raw, std::string_view n
     }
     std::unreachable();
 }
-
-/// Flushes the AI counters to `ProfileEvents` on every exit from the row loop. Rejecting an
-/// incomplete response throws out of `executeImpl`, so a plain increment after the loop would leave
-/// `system.query_log` reporting zero usage for a query the provider had already charged for.
-struct AICountersFlusher
-{
-    UInt64 & api_calls;
-    UInt64 & input_tokens;
-    UInt64 & output_tokens;
-    UInt64 & rows_processed;
-    UInt64 & rows_skipped;
-
-    ~AICountersFlusher()
-    {
-        ProfileEvents::increment(ProfileEvents::AIAPICalls, api_calls);
-        ProfileEvents::increment(ProfileEvents::AIInputTokens, input_tokens);
-        ProfileEvents::increment(ProfileEvents::AIOutputTokens, output_tokens);
-        ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
-        ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
-    }
-};
 
 /// Read a parameter's fallback value from the named collection (used when `inherit_from_collection`).
 Field readAIParamFromCollection(AIParamKind kind, const NamedCollectionPtr & collection, std::string_view name)
@@ -540,7 +520,16 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     UInt64 rows_processed = 0;
     UInt64 rows_skipped = 0;
 
-    AICountersFlusher counters_flusher{total_api_calls, total_input_tokens, total_output_tokens, rows_processed, rows_skipped};
+    /// Flush the AI counters to `ProfileEvents` on every exit from the row loop. Rejecting an
+    /// incomplete response throws out of `executeImpl`, so a plain increment after the loop would
+    /// leave `system.query_log` reporting zero usage for a query the provider had already charged for.
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls);
+        ProfileEvents::increment(ProfileEvents::AIInputTokens, total_input_tokens);
+        ProfileEvents::increment(ProfileEvents::AIOutputTokens, total_output_tokens);
+        ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
+        ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
+    });
 
     for (size_t i = 0; i < input_rows_count; ++i)
     {
