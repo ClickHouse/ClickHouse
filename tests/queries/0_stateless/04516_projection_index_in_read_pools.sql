@@ -1,9 +1,9 @@
--- Test for use_projection_index_in_read_pools: mark ranges fully filtered out by a projection
+-- Test for use_indexes_refiner_in_read_pools: mark ranges fully filtered out by a projection
 -- index are dropped inside MergeTree read pools before read tasks are created for them.
 
 SET optimize_use_projections = 1, optimize_use_projection_filtering = 1;
 SET min_table_rows_to_use_projection_index = 0;
-SET use_projection_index_in_read_pools = 1;
+SET use_indexes_refiner_in_read_pools = 1;
 -- Pin the plain pools by default (the prefetched and parallel-replicas pools are
 -- enabled explicitly in dedicated queries below).
 SET enable_parallel_replicas = 0;
