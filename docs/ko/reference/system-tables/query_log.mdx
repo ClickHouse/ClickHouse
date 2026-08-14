@@ -100,13 +100,15 @@ ClickHouse는 테이블의 데이터를 자동으로 삭제하지 않습니다. 
 * `client_version_patch` ([UInt32](/ko/reference/data-types/int-uint)) — clickhouse-client 또는 다른 TCP 클라이언트 버전의 패치 번호입니다.
 * `script_query_number` ([UInt32](/ko/reference/data-types/int-uint)) — clickhouse-client에서 여러 쿼리를 포함한 스크립트의 쿼리 번호입니다.
 * `script_line_number` ([UInt32](/ko/reference/data-types/int-uint)) — clickhouse-client에서 여러 쿼리가 포함된 스크립트 내 쿼리 시작 줄 번호입니다.
-* `http_method` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리를 시작한 HTTP 메서드입니다. 가능한 값: 0 — 쿼리가 TCP 인터페이스에서 시작되었습니다. 1 — GET 메서드가 사용되었습니다. 2 — POST 메서드가 사용되었습니다.
+* `http_method` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리를 시작한 HTTP 메서드입니다. 가능한 값: 0 — 쿼리가 TCP 인터페이스에서 시작되었습니다. 1 — GET 메서드가 사용되었습니다. 2 — POST 메서드가 사용되었습니다. 4 — PUT 메서드가 사용되었습니다. 5 — DELETE 메서드가 사용되었습니다. 6 — HEAD 메서드가 사용되었습니다.
 * `http_user_agent` ([LowCardinality(String)](/ko/reference/data-types/lowcardinality)) — HTTP 쿼리로 전달되는 HTTP header UserAgent입니다.
 * `http_referer` ([String](/ko/reference/data-types/string)) — HTTP 쿼리로 전달되는 HTTP 헤더 Referer(쿼리를 보내는 페이지의 절대 주소 또는 부분 주소를 포함합니다).
 * `forwarded_for` ([String](/ko/reference/data-types/string)) — HTTP 쿼리와 함께 전달되는 HTTP 헤더 X-Forwarded-For입니다.
 * `quota_key` ([String](/ko/reference/data-types/string)) — 쿼터 설정에서 지정된 quota 키입니다(keyed 참조).
 * `distributed_depth` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리가 서버 사이에서 몇 번 전달되었는지.
 * `revision` ([UInt32](/ko/reference/data-types/int-uint)) — ClickHouse 리비전.
+* `http_handler_name` ([String](/ko/reference/data-types/string)) — 쿼리를 호출한 SQL로 정의된 HTTP handler(CREATE HANDLER)의 이름입니다. 이러한 handler를 통해 쿼리가 호출되지 않은 경우 빈 문자열입니다.
+* `http_request_url` ([String](/ko/reference/data-types/string)) — 쿼리를 호출한 HTTP request 경로(쿼리 문자열 제외)입니다. 민감한 request 매개변수가 유지되지 않도록 쿼리 문자열은 생략됩니다. HTTP가 아닌 쿼리의 경우 빈 문자열입니다.
 * `log_comment` ([String](/ko/reference/data-types/string)) — 로그 설명입니다. `max&#95;query&#95;size`를 초과하지 않는 임의의 문자열로 설정할 수 있습니다. 정의되지 않은 경우 빈 문자열입니다.
 * `thread_ids` ([Array(UInt64)](/ko/reference/data-types/array)) — 쿼리 실행에 참여하는 스레드 ID입니다. 이러한 스레드가 동시에 실행된 것은 아닐 수 있습니다.
 * `peak_threads_usage` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리를 실행하는 데 동시에 사용된 스레드 수의 최댓값입니다.

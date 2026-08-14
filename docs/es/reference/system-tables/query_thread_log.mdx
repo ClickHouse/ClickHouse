@@ -79,7 +79,7 @@ Puede usar la configuración [log&#95;queries&#95;probability](/es/reference/set
 * `client_version_patch` ([UInt32](/es/reference/data-types/int-uint)) — Componente de parche de la versión de clickhouse-client o de cualquier otro cliente TCP.
 * `script_query_number` ([UInt32](/es/reference/data-types/int-uint)) — Un número secuencial de consulta en un script con múltiples consultas.
 * `script_line_number` ([UInt32](/es/reference/data-types/int-uint)) — Número de línea en un script con varias consultas donde comienza la consulta actual.
-* `http_method` ([UInt8](/es/reference/data-types/int-uint)) — Método HTTP que inició la consulta. Valores posibles: 0 — La consulta se inició desde la interfaz TCP, 1 — se utilizó el método GET., 2 — se utilizó el método POST.
+* `http_method` ([UInt8](/es/reference/data-types/int-uint)) — Método HTTP que inició la consulta. Valores posibles: 0 — La consulta se inició desde la interfaz TCP, 1 — se utilizó el método GET., 2 — se utilizó el método POST, 4 — se utilizó el método PUT, 5 — se utilizó el método DELETE, 6 — se utilizó el método HEAD.
 * `http_user_agent` ([LowCardinality(String)](/es/reference/data-types/lowcardinality)) — El encabezado UserAgent que se pasa en la solicitud HTTP.
 * `http_referer` ([String](/es/reference/data-types/string)) — encabezado HTTP `Referer` enviado en la consulta HTTP (contiene una dirección absoluta o parcial de la página que realiza la consulta).
 * `forwarded_for` ([String](/es/reference/data-types/string)) — encabezado HTTP `X-Forwarded-For` incluido en la consulta HTTP.

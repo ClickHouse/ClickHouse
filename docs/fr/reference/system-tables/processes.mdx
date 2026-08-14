@@ -40,7 +40,7 @@ Cette table système sert à implémenter la requête `SHOW PROCESSLIST`.
 * `client_version_major` ([UInt64](/fr/reference/data-types/int-uint)) — Version majeure de clickhouse-client ou d’un autre client TCP.
 * `client_version_minor` ([UInt64](/fr/reference/data-types/int-uint)) — Version mineure de clickhouse-client ou d’un autre client TCP.
 * `client_version_patch` ([UInt64](/fr/reference/data-types/int-uint)) — Composant de correctif de la version de clickhouse-client ou d’un autre client TCP.
-* `http_method` ([UInt8](/fr/reference/data-types/int-uint)) — Méthode HTTP ayant initié la requête. Valeurs possibles : 0 — La requête a été lancée depuis l’interface TCP. 1 — La méthode GET a été utilisée. 2 — La méthode POST a été utilisée.
+* `http_method` ([UInt8](/fr/reference/data-types/int-uint)) — Méthode HTTP ayant initié la requête. Valeurs possibles : 0 — La requête a été lancée depuis l’interface TCP. 1 — La méthode GET a été utilisée. 2 — La méthode POST a été utilisée. 4 — La méthode PUT a été utilisée. 5 — La méthode DELETE a été utilisée. 6 — La méthode HEAD a été utilisée.
 * `http_user_agent` ([String](/fr/reference/data-types/string)) — En-tête HTTP UserAgent transmis avec la requête HTTP.
 * `http_referer` ([String](/fr/reference/data-types/string)) — En-tête HTTP Referer transmis avec la requête HTTP (contient une adresse absolue ou partielle de la page à l’origine de la requête).
 * `forwarded_for` ([String](/fr/reference/data-types/string)) — En-tête HTTP X-Forwarded-For transmis avec la requête HTTP.

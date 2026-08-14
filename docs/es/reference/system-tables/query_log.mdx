@@ -101,13 +101,15 @@ Puede usar la configuración [log&#95;formatted&#95;queries](/es/reference/setti
 * `client_version_patch` ([UInt32](/es/reference/data-types/int-uint)) — Número de parche de la versión de clickhouse-client o de otro cliente TCP.
 * `script_query_number` ([UInt32](/es/reference/data-types/int-uint)) — El número de la consulta dentro de un script con varias consultas para clickhouse-client.
 * `script_line_number` ([UInt32](/es/reference/data-types/int-uint)) — El número de línea donde comienza la consulta en un script con múltiples consultas para clickhouse-client.
-* `http_method` ([UInt8](/es/reference/data-types/int-uint)) — Método HTTP que inició la consulta. Valores posibles: 0 — La consulta se inició desde la interfaz TCP, 1 — se usó el método GET, 2 — se usó el método POST.
+* `http_method` ([UInt8](/es/reference/data-types/int-uint)) — Método HTTP que inició la consulta. Valores posibles: 0 — La consulta se inició desde la interfaz TCP, 1 — se usó el método GET, 2 — se usó el método POST, 4 — se usó el método PUT, 5 — se usó el método DELETE, 6 — se usó el método HEAD.
 * `http_user_agent` ([LowCardinality(String)](/es/reference/data-types/lowcardinality)) — encabezado HTTP UserAgent que se envía en la consulta HTTP.
 * `http_referer` ([String](/es/reference/data-types/string)) — cabecera HTTP Referer incluida en la consulta HTTP (contiene una dirección absoluta o parcial de la página que realiza la consulta).
 * `forwarded_for` ([String](/es/reference/data-types/string)) — encabezado HTTP X-Forwarded-For incluido en la consulta HTTP.
 * `quota_key` ([String](/es/reference/data-types/string)) — La clave de cuota especificada en la configuración de quotas (consulte keyed).
 * `distributed_depth` ([UInt64](/es/reference/data-types/int-uint)) — Cuántas veces se reenviò una consulta entre servidores.
 * `revision` ([UInt32](/es/reference/data-types/int-uint)) — revisión de ClickHouse.
+* `http_handler_name` ([String](/es/reference/data-types/string)) — Nombre del controlador HTTP definido mediante SQL (CREATE HANDLER) que invocó la consulta. Vacío si la consulta no se invocó a través de dicho controlador.
+* `http_request_url` ([String](/es/reference/data-types/string)) — La ruta de la solicitud HTTP (sin la cadena de consulta) que invocó la consulta. La cadena de consulta se omite para que los parámetros sensibles de la solicitud no persistan. Vacío para consultas no HTTP.
 * `log_comment` ([String](/es/reference/data-types/string)) — Comentario del registro. Puede establecerse como una cadena arbitraria de no más de max&#95;query&#95;size. Una cadena vacía si no está definido.
 * `thread_ids` ([Array(UInt64)](/es/reference/data-types/array)) — Identificadores de los hilos que participan en la ejecución de la consulta. Es posible que estos hilos no se hayan ejecutado simultáneamente.
 * `peak_threads_usage` ([UInt64](/es/reference/data-types/int-uint)) — Número máximo de hilos simultáneos que ejecutan la consulta.
