@@ -715,23 +715,30 @@ public:
             return {};
     }
 
+    /// `build` computes the result type from `Impl::getReturnType`, which is the authoritative
+    /// logic for these functions: it also accepts `Dynamic` / `Variant` JSON arguments and wraps
+    /// nullable inputs itself, neither of which the advertised signature expresses. Route both
+    /// return-type entry points through the same logic, so that a direct `getReturnType` call
+    /// agrees with `build` instead of evaluating the documentation-only signature.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return calculateResultType(arguments);
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return calculateResultType(columns);
+    }
+
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {
-        bool has_nothing_argument = false;
-        for (const auto & arg : arguments)
-            has_nothing_argument |= isNothing(arg.type);
-
         DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
         NullPresence null_presence = getNullPresense(arguments);
-        DataTypePtr return_type;
-        if (has_nothing_argument)
-            return_type = std::make_shared<DataTypeNothing>();
-        else if (null_presence.has_null_constant)
-            return_type = makeNullable(std::make_shared<DataTypeNothing>());
-        else if (null_presence.has_nullable)
-            return_type = makeNullable(json_return_type);
-        else
-            return_type = json_return_type;
+        DataTypePtr return_type = wrapReturnType(arguments, json_return_type, null_presence);
 
         DataTypes argument_types;
         argument_types.reserve(arguments.size());
@@ -742,6 +749,29 @@ public:
     }
 
 private:
+    /// Applies the `Nothing` / `Nullable` handling on top of the type `Impl` computed.
+    static DataTypePtr wrapReturnType(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & json_return_type, const NullPresence & null_presence)
+    {
+        for (const auto & arg : arguments)
+        {
+            if (isNothing(arg.type))
+                return std::make_shared<DataTypeNothing>();
+        }
+
+        if (null_presence.has_null_constant)
+            return makeNullable(std::make_shared<DataTypeNothing>());
+        if (null_presence.has_nullable)
+            return makeNullable(json_return_type);
+        return json_return_type;
+    }
+
+    static DataTypePtr calculateResultType(const ColumnsWithTypeAndName & arguments)
+    {
+        DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
+        return wrapReturnType(arguments, json_return_type, getNullPresense(arguments));
+    }
+
     const bool allow_simdjson;
     FormatSettings format_settings;
 };

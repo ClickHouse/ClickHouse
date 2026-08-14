@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <Columns/ColumnConst.h>
+#include <Core/Field.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
@@ -163,5 +165,49 @@ TEST(TypesOnlyReturnTypePath, ValueDependentDocumentationSignaturesFallBackToNot
     catch (const Exception & e)
     {
         EXPECT_EQ(e.code(), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH) << e.message();
+    }
+}
+
+/// `JSONOverloadResolver` builds its result type from `Impl::getReturnType`, which accepts shapes
+/// the advertised (documentation-only) signature does not describe: a `Dynamic` JSON argument, and
+/// a `Nullable` input whose wrapper the resolver adds itself. Both return-type entry points must
+/// therefore route through that same logic, so that a direct `getReturnType` call cannot disagree
+/// with the function the analyzer actually builds.
+TEST(TypesOnlyReturnTypePath, JSONResolverReturnTypeAgreesWithBuild)
+{
+    tryRegisterFunctions();
+
+    auto make_arguments = [](const std::vector<String> & argument_types, const std::vector<String> & constant_values)
+    {
+        ColumnsWithTypeAndName columns;
+        for (size_t i = 0; i < argument_types.size(); ++i)
+        {
+            auto type = DataTypeFactory::instance().get(argument_types[i]);
+            if (i < constant_values.size() && !constant_values[i].empty())
+                columns.emplace_back(type->createColumnConst(1, Field(constant_values[i])), type, String{});
+            else
+                columns.emplace_back(type->createColumn(), type, String{});
+        }
+        return columns;
+    };
+
+    for (const auto & [function_name, argument_types, constant_values, expected] :
+         std::initializer_list<std::tuple<String, std::vector<String>, std::vector<String>, String>>{
+             {"JSONHas", {"String", "String"}, {"", "a"}, "UInt8"},
+             /// The signature is rooted at `String`, so without the shim the nullable wrapper
+             /// that `build` adds would be dropped.
+             {"JSONHas", {"Nullable(String)", "String"}, {"", "a"}, "Nullable(UInt8)"},
+             {"JSONLength", {"Nullable(String)"}, {}, "Nullable(UInt64)"},
+             /// The signature does not describe a `Dynamic` JSON argument at all.
+             {"JSONHas", {"Dynamic", "String"}, {"", "a"}, "UInt8"},
+             {"JSONExtract", {"String", "String"}, {"", "UInt64"}, "UInt64"},
+             {"JSONExtract", {"Nullable(String)", "String"}, {"", "UInt64"}, "Nullable(UInt64)"}})
+    {
+        auto resolver = FunctionFactory::instance().get(function_name, getContext().context);
+        auto arguments = make_arguments(argument_types, constant_values);
+
+        auto built = resolver->build(arguments)->getResultType();
+        EXPECT_EQ(built->getName(), expected) << function_name;
+        EXPECT_EQ(resolver->getReturnType(arguments)->getName(), built->getName()) << function_name;
     }
 }
