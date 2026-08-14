@@ -42,3 +42,4 @@ Carol	engineering
 -- policy on the _block_number virtual: read is refused
 -- policy on the projection-only _parent_part_offset name: read is refused
 -- table-function row policy combined with a parent policy: read is refused
+-- pending on-the-fly mutation under a row policy: read is refused

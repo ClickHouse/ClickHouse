@@ -51,8 +51,10 @@ void StorageFromMergeTreeProjection::read(
     auto row_policy_filter = context->getRowPolicyFilter(
         parent_storage_id.getDatabaseName(), parent_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
 
+    const bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
+
     Names read_column_names = column_names;
-    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+    if (has_row_policy)
     {
         /// aggregate projections fold many parent rows into one state, so a per-row policy can't be applied
         if (projection->type != ProjectionDescription::Type::Normal)
@@ -123,6 +125,15 @@ void StorageFromMergeTreeProjection::read(
 
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & parts = snapshot_data.parts;
+
+    /// on-the-fly data mutations and patch parts are applied to the parent read but not to the projection
+    /// (mutations_snapshot is cleared below), so under a policy the projection could show stale hidden rows
+    if (has_row_policy
+        && (snapshot_data.mutations_snapshot->hasDataMutations() || snapshot_data.mutations_snapshot->hasPatchParts()))
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot read from projection `{}` of table {} under a row policy while it has unmaterialized "
+            "mutations, since the projection may show stale values the policy would hide",
+            projection->name, parent_storage_id.getNameForLogs());
 
     RangesInDataParts projection_parts;
     for (const auto & part : *parts)

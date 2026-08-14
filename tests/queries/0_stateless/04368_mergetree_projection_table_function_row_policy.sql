@@ -343,3 +343,26 @@ SELECT id FROM mergeTreeProjection(currentDatabase(), 'tf_rls_proj', 'p') ORDER 
 DROP ROW POLICY rp_tf_rls_proj ON _table_function.*;
 DROP ROW POLICY rp_tf_parent_rls_proj ON tf_rls_proj;
 DROP TABLE tf_rls_proj;
+
+-- an on-the-fly mutation applies to the parent read but not the projection, so the projection is stale - refused.
+DROP TABLE IF EXISTS onfly_rls_proj;
+DROP ROW POLICY IF EXISTS rp_onfly_rls_proj ON onfly_rls_proj;
+
+CREATE TABLE onfly_rls_proj (id UInt64, visible UInt8) ENGINE = MergeTree ORDER BY id;
+INSERT INTO onfly_rls_proj VALUES (1, 1), (2, 1), (3, 1);
+
+ALTER TABLE onfly_rls_proj ADD PROJECTION p (SELECT id, visible ORDER BY id);
+ALTER TABLE onfly_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+SYSTEM STOP MERGES onfly_rls_proj;
+ALTER TABLE onfly_rls_proj UPDATE visible = 0 WHERE id = 1 SETTINGS mutations_sync = 0;
+
+CREATE ROW POLICY rp_onfly_rls_proj ON onfly_rls_proj FOR SELECT USING visible TO ALL;
+
+SELECT '-- pending on-the-fly mutation under a row policy: read is refused';
+SELECT id FROM mergeTreeProjection(currentDatabase(), 'onfly_rls_proj', 'p') ORDER BY id
+SETTINGS apply_mutations_on_fly = 1; -- { serverError ACCESS_DENIED }
+
+DROP ROW POLICY rp_onfly_rls_proj ON onfly_rls_proj;
+SYSTEM START MERGES onfly_rls_proj;
+DROP TABLE onfly_rls_proj;
