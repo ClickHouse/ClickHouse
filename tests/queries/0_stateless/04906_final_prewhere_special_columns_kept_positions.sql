@@ -6,7 +6,9 @@
 -- caller's position vector.
 --
 -- `query_plan_remove_unused_columns` is randomized off in 5% of CI runs and solely gates the
--- pruning path, so every query below pins it.
+-- pruning path, so every query below pins it. Every fixture stops merges and asserts it still has
+-- more than one active part: once collapsed, a deduplication oracle is satisfied by data that never
+-- needed a merge, so an arm that stopped reading the merging column would still look correct.
 
 DROP TABLE IF EXISTS t_replacing_is_deleted_04906;
 CREATE TABLE t_replacing_is_deleted_04906
@@ -16,6 +18,7 @@ CREATE TABLE t_replacing_is_deleted_04906
     ver UInt64,
     is_deleted UInt8
 ) ENGINE = ReplacingMergeTree(ver, is_deleted) ORDER BY key;
+SYSTEM STOP MERGES t_replacing_is_deleted_04906;
 
 -- One part per INSERT and no OPTIMIZE: the merge must run for the results below to deduplicate,
 -- so an arm that stopped reading `ver`/`is_deleted` would return the pre-merge rows.
@@ -24,6 +27,10 @@ INSERT INTO t_replacing_is_deleted_04906 VALUES (1, 'test2', 2, 0);
 INSERT INTO t_replacing_is_deleted_04906 VALUES (2, 'test3', 1, 0);
 INSERT INTO t_replacing_is_deleted_04906 VALUES (2, 'test4', 2, 1);
 INSERT INTO t_replacing_is_deleted_04906 VALUES (3, 'test5', 1, 1);
+
+SELECT '--- fixture is multi-part';
+SELECT count() > 1 AS multi_part FROM system.parts
+WHERE database = currentDatabase() AND table = 't_replacing_is_deleted_04906' AND active;
 
 SELECT '--- replacing with is_deleted';
 SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key
@@ -35,19 +42,31 @@ SELECT '--- through merge()';
 SELECT key, someCol FROM merge(currentDatabase(), '^t_replacing_is_deleted_04906$') FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key
 SETTINGS query_plan_remove_unused_columns = 1;
 
--- The filter reaches PREWHERE through the optimizer rather than the query text.
-SELECT '--- filter moved to prewhere by the optimizer';
-SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL WHERE (ver > 0) OR (database != '') ORDER BY key
-SETTINGS query_plan_remove_unused_columns = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
-
--- The step header is rebuilt again after FINAL here, and again by lazy materialization below.
 SELECT '--- prewhere applied after final';
 SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key
 SETTINGS apply_prewhere_after_final = 1, query_plan_remove_unused_columns = 1;
 
+-- Lazy materialization rebuilds the step header once more, so it is pinned rather than left to the
+-- 5% of runs that randomize it off. The assertion below shows the lazy step is present.
 SELECT '--- lazy materialization';
 SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key LIMIT 1
-SETTINGS query_plan_remove_unused_columns = 1;
+SETTINGS query_plan_remove_unused_columns = 1, query_plan_optimize_lazy_materialization = 1;
+SELECT count() > 0 AS lazy_read_step
+FROM (
+    EXPLAIN PLAN header = 1
+    SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key LIMIT 1
+    SETTINGS explain_query_plan_default = 'legacy', query_plan_remove_unused_columns = 1,
+             query_plan_optimize_lazy_materialization = 1
+)
+WHERE explain LIKE '%LazilyReadFromMergeTree%';
+SELECT count() > 0 AS lazy_read_step
+FROM (
+    EXPLAIN PLAN header = 1
+    SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key LIMIT 1
+    SETTINGS explain_query_plan_default = 'legacy', query_plan_remove_unused_columns = 1,
+             query_plan_optimize_lazy_materialization = 0
+)
+WHERE explain LIKE '%LazilyReadFromMergeTree%';
 
 -- Two output columns carrying one name, and one column selected twice: both must keep exactly
 -- two columns.
@@ -59,6 +78,58 @@ SETTINGS query_plan_remove_unused_columns = 1;
 
 DROP TABLE t_replacing_is_deleted_04906;
 
+-- The filter reaches PREWHERE through the optimizer rather than the query text. The merging column
+-- must be in the sorting key: `MergeTreeWhereOptimizer::cannotBeMoved` refuses to move a non
+-- sorting-key table column under FINAL.
+DROP TABLE IF EXISTS t_optmoved_04906;
+CREATE TABLE t_optmoved_04906
+(
+    key Int64,
+    someCol String,
+    ver UInt64,
+    is_deleted UInt8
+) ENGINE = ReplacingMergeTree(ver, is_deleted) ORDER BY (key, is_deleted);
+SYSTEM STOP MERGES t_optmoved_04906;
+
+INSERT INTO t_optmoved_04906 VALUES (1, 'test1', 1, 0);
+INSERT INTO t_optmoved_04906 VALUES (1, 'test2', 2, 0);
+INSERT INTO t_optmoved_04906 VALUES (2, 'test3', 1, 0);
+
+SELECT '--- fixture is multi-part';
+SELECT count() > 1 AS multi_part FROM system.parts
+WHERE database = currentDatabase() AND table = 't_optmoved_04906' AND active;
+
+SELECT '--- filter moved to prewhere by the optimizer';
+SELECT key, someCol FROM t_optmoved_04906 FINAL WHERE is_deleted = 0 ORDER BY key
+SETTINGS query_plan_remove_unused_columns = 1, optimize_move_to_prewhere = 1,
+         optimize_move_to_prewhere_if_final = 1, query_plan_optimize_prewhere = 1;
+SELECT key, someCol FROM t_optmoved_04906 FINAL WHERE is_deleted = 0 ORDER BY key
+SETTINGS query_plan_remove_unused_columns = 0, optimize_move_to_prewhere = 1,
+         optimize_move_to_prewhere_if_final = 1, query_plan_optimize_prewhere = 1;
+
+-- The move only happens with `optimize_move_to_prewhere_if_final`, whose default is false, so the
+-- second arm is the control showing this oracle can be false.
+SELECT count() > 0 AS filter_moved_to_prewhere
+FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT key, someCol FROM t_optmoved_04906 FINAL WHERE is_deleted = 0
+    SETTINGS explain_query_plan_default = 'legacy', query_plan_remove_unused_columns = 1,
+             optimize_move_to_prewhere = 1, optimize_move_to_prewhere_if_final = 1,
+             query_plan_optimize_prewhere = 1
+)
+WHERE explain LIKE '%Prewhere filter%';
+SELECT count() > 0 AS filter_moved_to_prewhere
+FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT key, someCol FROM t_optmoved_04906 FINAL WHERE is_deleted = 0
+    SETTINGS explain_query_plan_default = 'legacy', query_plan_remove_unused_columns = 1,
+             optimize_move_to_prewhere = 1, optimize_move_to_prewhere_if_final = 0,
+             query_plan_optimize_prewhere = 1
+)
+WHERE explain LIKE '%Prewhere filter%';
+
+DROP TABLE t_optmoved_04906;
+
 DROP TABLE IF EXISTS t_replacing_04906;
 CREATE TABLE t_replacing_04906
 (
@@ -66,10 +137,15 @@ CREATE TABLE t_replacing_04906
     someCol String,
     ver UInt64
 ) ENGINE = ReplacingMergeTree(ver) ORDER BY key;
+SYSTEM STOP MERGES t_replacing_04906;
 
 INSERT INTO t_replacing_04906 VALUES (1, 'test1', 1);
 INSERT INTO t_replacing_04906 VALUES (1, 'test2', 2);
 INSERT INTO t_replacing_04906 VALUES (2, 'test3', 1);
+
+SELECT '--- fixture is multi-part';
+SELECT count() > 1 AS multi_part FROM system.parts
+WHERE database = currentDatabase() AND table = 't_replacing_04906' AND active;
 
 SELECT '--- replacing without is_deleted';
 SELECT key, someCol FROM t_replacing_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key
@@ -124,11 +200,16 @@ CREATE TABLE t_collapsing_04906
     someCol String,
     sign Int8
 ) ENGINE = CollapsingMergeTree(sign) ORDER BY key;
+SYSTEM STOP MERGES t_collapsing_04906;
 
 INSERT INTO t_collapsing_04906 VALUES (1, 'test1', 1);
 INSERT INTO t_collapsing_04906 VALUES (1, 'test1', -1);
 INSERT INTO t_collapsing_04906 VALUES (2, 'test2', 1);
 INSERT INTO t_collapsing_04906 VALUES (3, 'test3', 1);
+
+SELECT '--- fixture is multi-part';
+SELECT count() > 1 AS multi_part FROM system.parts
+WHERE database = currentDatabase() AND table = 't_collapsing_04906' AND active;
 
 SELECT '--- collapsing';
 SELECT key, someCol FROM t_collapsing_04906 FINAL PREWHERE (sign = 1) OR (database != '') ORDER BY key
@@ -146,11 +227,16 @@ CREATE TABLE t_versioned_collapsing_04906
     sign Int8,
     ver UInt64
 ) ENGINE = VersionedCollapsingMergeTree(sign, ver) ORDER BY key;
+SYSTEM STOP MERGES t_versioned_collapsing_04906;
 
 INSERT INTO t_versioned_collapsing_04906 VALUES (1, 'test1', 1, 1);
 INSERT INTO t_versioned_collapsing_04906 VALUES (1, 'test1', -1, 1);
 INSERT INTO t_versioned_collapsing_04906 VALUES (2, 'test2', 1, 2);
 INSERT INTO t_versioned_collapsing_04906 VALUES (3, 'test3', 1, 1);
+
+SELECT '--- fixture is multi-part';
+SELECT count() > 1 AS multi_part FROM system.parts
+WHERE database = currentDatabase() AND table = 't_versioned_collapsing_04906' AND active;
 
 SELECT '--- versioned collapsing';
 SELECT key, someCol FROM t_versioned_collapsing_04906 FINAL PREWHERE (sign = 1) OR (database != '') ORDER BY key
