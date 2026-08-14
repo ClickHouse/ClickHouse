@@ -447,6 +447,15 @@ public:
     /// See IFunctionBase::isSpatialPredicate.
     virtual bool isSpatialPredicate() const { return false; }
 
+    /// See IFunctionBase::hasMultiArgConstGeometryBboxConvention / tryGetMultiArgConstGeometryBbox.
+    virtual bool hasMultiArgConstGeometryBboxConvention() const { return false; }
+    virtual bool tryGetMultiArgConstGeometryBbox(
+        const std::vector<const Field *> & /*args*/, // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        double & /*xmin*/, double & /*ymin*/, double & /*xmax*/, double & /*ymax*/) const { return false; }
+
+    /// See IFunctionBase::requiresValidConstGeometry.
+    virtual bool requiresValidConstGeometry() const { return true; }
+
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
     /// You pass data types with empty DataTypeFunction for lambda arguments.

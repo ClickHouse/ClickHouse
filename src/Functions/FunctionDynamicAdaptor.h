@@ -72,13 +72,20 @@ public:
 
     bool isSpatialPredicate() const override { return function_overload_resolver->isSpatialPredicate(); }
 
-    /// Unlike isSpatialPredicate(), these need a concrete resolved IFunction to answer (they combine
-    /// concrete Field arguments, or read a per-call setting like `validate_polygons`). We only hold
-    /// an IFunctionOverloadResolver here -- the concrete function per alternative isn't picked until
-    /// per-row dispatch in ExecutableFunctionDynamicAdaptor -- so there is nothing to delegate to;
-    /// keep the IFunctionBase defaults (false / true, the safe choices) explicitly.
-    bool hasMultiArgConstGeometryBboxConvention() const override { return false; }
-    bool requiresValidConstGeometry() const override { return true; }
+    /// These delegate to the resolver rather than a per-alternative concrete function: for the
+    /// builtins that answer them non-trivially (e.g. `pointInPolygon`), the underlying IFunction is
+    /// already constructed (from settings such as `validate_polygons`) before overload resolution
+    /// ever wraps it here, so the resolver's answer is the same regardless of which Dynamic
+    /// alternative ends up dispatched to at the row level -- there is no dependency on the concrete
+    /// alternative type, only on the constant Field arguments and construction-time settings.
+    bool hasMultiArgConstGeometryBboxConvention() const override { return function_overload_resolver->hasMultiArgConstGeometryBboxConvention(); }
+    bool tryGetMultiArgConstGeometryBbox(
+        const std::vector<const Field *> & args, // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        double & xmin, double & ymin, double & xmax, double & ymax) const override
+    {
+        return function_overload_resolver->tryGetMultiArgConstGeometryBbox(args, xmin, ymin, xmax, ymax);
+    }
+    bool requiresValidConstGeometry() const override { return function_overload_resolver->requiresValidConstGeometry(); }
 
 private:
     /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Dynamic column.
