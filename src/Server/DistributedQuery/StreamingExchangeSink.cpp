@@ -189,7 +189,15 @@ ISink::Status StreamingExchangeSink::prepare()
 
     input.setNeeded();
     if (!input.hasData())
+    {
+        /// There is no input right now, but some data waits in the buffers. Send it even if
+        /// there is less than `FLUSH_BUFFER_TO_SOCKET_THRESHOLD` of it; otherwise it would
+        /// sit here until the next chunk arrives, and that can take a long time.
+        const size_t unsent = current_send_buffer.size() - current_send_position_in_buffer;
+        if (unsent > 0 || out->count() > 0)
+            return Status::Async;
         return Status::NeedData;
+    }
 
     current_chunk = input.pull(true);
     has_input = true;
