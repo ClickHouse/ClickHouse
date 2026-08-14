@@ -109,9 +109,15 @@ void ReadManager::init(
     flushMemoryUsageDiff(std::move(diff));
 }
 
-ReadManager::~ReadManager()
+void ReadManager::shutdownTasks()
 {
     shutdown->shutdown();
+    reader.prefetcher.shutdownTasks();
+}
+
+ReadManager::~ReadManager()
+{
+    shutdownTasks();
 }
 
 void ReadManager::cancel() noexcept
