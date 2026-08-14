@@ -233,10 +233,12 @@ public:
     /// See KeyCondition::checkInRange for explanation of relevant parameters.
     BoolMask checkInRange(const std::vector<int> & key_col_to_sparse_pos, const Ranges & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point = false) const;
 
-    /// Same as checkInRange, but works on RangeRef to avoid materialization of Field values from columns.
+    /// Same as the optimized overload above, but the key values are references into the index columns
+    /// (see `ColumnValueRef`) instead of `Field` values materialized out of them.
     BoolMask checkInRange(
-        std::span<const RangeRef> key_ranges,
-        const DataTypes & data_types,
+        const std::vector<int> & key_col_to_sparse_pos,
+        std::span<const RangeRef> sparse_key_ranges,
+        const DataTypes & sparse_data_types,
         bool single_point,
         ColumnsWithTypeAndName & key_columns,
         PrimaryKeyIndexAnalysisContext & index_analysis_context) const;

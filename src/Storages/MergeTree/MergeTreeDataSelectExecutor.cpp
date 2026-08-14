@@ -46,6 +46,7 @@
 #include <Core/Settings.h>
 #include <Core/RangeRef.h>
 #include <Core/UUID.h>
+#include <Interpreters/convertFieldToType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -1960,6 +1961,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const bool use_sparse_pk_representation
         = settings[Setting::use_lightweight_primary_key_index_analysis];
 
+    /// Reference the index columns instead of materializing their values as `Field`. This is a
+    /// representation of the same sparse key information, so it only applies on top of it.
+    const bool use_column_refs
+        = use_sparse_pk_representation && settings[Setting::use_column_refs_for_primary_key_index_analysis];
+
     /// If until index 4 of PK key columns is used in the filter, then used_key_prefix_size would be 5.
     /// There is no need to process later key columns.
     const size_t used_key_prefix_size = key_condition.getUsedKeyPrefixSize();
@@ -2016,6 +2022,14 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     DataTypes sparse_key_types;
     std::vector<UInt8> equal_boundaries_mask;
 
+    /// The same boundaries in the reference representation, used instead of the two above when
+    /// `use_column_refs` is set. Applying a monotonic function chain to a reference produces a whole
+    /// result column, which is cached in `key_columns_block` (indexed by `pk_index_analysis_context`)
+    /// and reused across all the mark ranges of this part.
+    std::vector<ColumnValueRef> sparse_key_left_refs;
+    std::vector<ColumnValueRef> sparse_key_right_refs;
+    PrimaryKeyIndexAnalysisContext pk_index_analysis_context;
+
     if (use_sparse_pk_representation)
     {
         /// If earlier columns have high cardinality, then later columns may not be loaded
@@ -2049,7 +2063,19 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         {
             chassert(i < index->size());
             chassert(index->at(i));
-            index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
+
+            /// The reference representation compares the index column against the atom values and the
+            /// `IN` set columns directly, and a comparison of two columns requires both to be of the
+            /// same kind. Those are prepared `LowCardinality`-stripped (`MergeTreeSetIndex` stores the
+            /// set stripped, and so does `KeyCondition::rebuildPreparedRangeForRefs`), so strip the
+            /// index column too. One index value per mark makes this cheap.
+            if (use_column_refs)
+                index_columns->emplace_back(
+                    recursiveRemoveLowCardinality(index->at(i)),
+                    recursiveRemoveLowCardinality(primary_key.data_types[i]),
+                    primary_key.column_names[i]);
+            else
+                index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
         }
 
         /// Keep used_key_indices entries that are loaded, plus unloaded ones covered by a partition-minmax bound.
@@ -2074,15 +2100,24 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             std::lower_bound(used_key_indices.begin(), used_key_indices.end(), num_used_prefix_key_columns_loaded_in_memory)
             - used_key_indices.begin());
 
-        sparse_key_left.resize(num_sparse_keys_loaded_in_memory);
-        sparse_key_right.resize(num_sparse_keys_loaded_in_memory);
+        if (use_column_refs)
+        {
+            sparse_key_left_refs.resize(num_sparse_keys_loaded_in_memory);
+            sparse_key_right_refs.resize(num_sparse_keys_loaded_in_memory);
+        }
+        else
+        {
+            sparse_key_left.resize(num_sparse_keys_loaded_in_memory);
+            sparse_key_right.resize(num_sparse_keys_loaded_in_memory);
+        }
 
         /// Datatypes are always same regardless of `MarkRange`, so we construct it only once.
         sparse_key_types.reserve(sparse_keys_size);
         for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
         {
             size_t key_col = used_key_indices[sparse_pos];
-            sparse_key_types.emplace_back(primary_key.data_types[key_col]);
+            sparse_key_types.emplace_back(
+                use_column_refs ? recursiveRemoveLowCardinality(primary_key.data_types[key_col]) : primary_key.data_types[key_col]);
         }
 
         /// Equality bitmap for the key columns present in the in-memory index (not only sparse):
@@ -2139,6 +2174,23 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         };
     }
 
+    /// The key columns block passed to the reference-based analysis is `index_columns`, so the leading
+    /// `index_columns->size()` entries are the index columns; the analysis appends its cached function
+    /// result columns after them.
+    pk_index_analysis_context.num_index_columns = index_columns->size();
+
+    /// The counterpart of `create_field_ref` for the reference representation: nothing is materialized,
+    /// the boundary is the (column, row) pair itself.
+    auto create_value_ref = [index_columns](size_t row, size_t column) -> ColumnValueRef
+    {
+        const IColumn * col = (*index_columns)[column].column.get();
+        chassert(col);
+        // NULL_LAST
+        if (col->isNullAt(row))
+            return ColumnValueRef::positiveInfinity();
+        return ColumnValueRef::normal(col, row);
+    };
+
     /// For index columns that are also covered by the part's partition minmax index, use minmax bounds
     /// instead of (-inf, +inf). The same bounds are consulted by the full and the sparse key representation.
     /// Indexed by full primary key position (not by sparse position), so the sparse path can look up the
@@ -2160,6 +2212,52 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             const auto slot = (*pk_to_minmax_slot)[i];
             if (slot)
                 index_bounds[i] = hyperrectangle[*slot];
+        }
+    }
+
+    /// The same bounds in the reference representation. A bound is a per-part constant, so its value is
+    /// materialized once here into a one-row column that `index_bounds_refs` points into.
+    RangeRefs index_bounds_refs;
+    std::vector<ColumnPtr> index_bounds_columns;
+    if (use_column_refs)
+    {
+        index_bounds_refs.reserve(num_analyzed_key_columns);
+        index_bounds_columns.reserve(2 * num_analyzed_key_columns);
+
+        /// A bound that cannot be represented as a value of the key column's type (an infinity, a NULL,
+        /// or a value the type cannot hold) stays an infinity, which only widens the range.
+        auto make_bound_ref = [&](const FieldRef & bound, const DataTypePtr & type, bool is_left_bound) -> ColumnValueRef
+        {
+            if (bound.isNull() || bound.isNegativeInfinity() || bound.isPositiveInfinity())
+                return is_left_bound ? ColumnValueRef::negativeInfinity() : ColumnValueRef::positiveInfinity();
+
+            Field converted = tryConvertFieldToType(bound, *type);
+            if (converted.isNull())
+                return is_left_bound ? ColumnValueRef::negativeInfinity() : ColumnValueRef::positiveInfinity();
+
+            auto column = type->createColumn();
+            column->insert(converted);
+            column->protect();
+            const IColumn * column_ptr = column.get();
+            index_bounds_columns.emplace_back(std::move(column));
+            return ColumnValueRef::normal(column_ptr, 0);
+        };
+
+        for (size_t i = 0; i < num_analyzed_key_columns; ++i)
+        {
+            const DataTypePtr type = recursiveRemoveLowCardinality(primary_key.data_types[i]);
+            RangeRef bound_ref = RangeRef::createWholeUniverse(isNullableOrLowCardinalityNullable(type));
+
+            const auto & bound = index_bounds[i];
+            bound_ref.left = make_bound_ref(bound.left, type, /*is_left_bound*/ true);
+            bound_ref.right = make_bound_ref(bound.right, type, /*is_left_bound*/ false);
+            /// Keep the whole-universe includedness when a side stayed unbounded.
+            if (bound_ref.left.isNormal())
+                bound_ref.left_included = bound.left_included;
+            if (bound_ref.right.isNormal())
+                bound_ref.right_included = bound.right_included;
+
+            index_bounds_refs.push_back(bound_ref);
         }
     }
 
@@ -2200,8 +2298,16 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     for (size_t sparse_pos = 0; sparse_pos < num_sparse_keys_loaded_in_memory; ++sparse_pos)
                     {
                         const size_t key_col = used_key_indices[sparse_pos];
-                        create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
-                        sparse_key_right[sparse_pos] = key_order.physicalEndExtreme(key_col);
+                        if (use_column_refs)
+                        {
+                            sparse_key_left_refs[sparse_pos] = create_value_ref(range.begin, key_col);
+                            sparse_key_right_refs[sparse_pos] = key_order.physicalEndExtremeRef(key_col);
+                        }
+                        else
+                        {
+                            create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
+                            sparse_key_right[sparse_pos] = key_order.physicalEndExtreme(key_col);
+                        }
                     }
                 }
                 else
@@ -2222,10 +2328,30 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     for (size_t sparse_pos = 0; sparse_pos < num_sparse_keys_loaded_in_memory; ++sparse_pos)
                     {
                         const size_t key_col = used_key_indices[sparse_pos];
-                        create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
-                        create_field_ref(range.end, key_col, sparse_key_right[sparse_pos]);
+                        if (use_column_refs)
+                        {
+                            sparse_key_left_refs[sparse_pos] = create_value_ref(range.begin, key_col);
+                            sparse_key_right_refs[sparse_pos] = create_value_ref(range.end, key_col);
+                        }
+                        else
+                        {
+                            create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
+                            create_field_ref(range.end, key_col, sparse_key_right[sparse_pos]);
+                        }
                     }
                 }
+
+                if (use_column_refs)
+                    return key_condition.checkInRange(
+                        used_key_indices,
+                        sparse_key_left_refs.data(),
+                        sparse_key_right_refs.data(),
+                        sparse_key_types,
+                        equal_boundaries_mask,
+                        *index_columns,
+                        pk_index_analysis_context,
+                        initial_mask,
+                        &index_bounds_refs);
 
                 return key_condition.checkInRange(
                     used_key_indices,

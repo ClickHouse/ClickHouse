@@ -1021,12 +1021,20 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
 }
 
 BoolMask MergeTreeSetIndex::checkInRange(
-    std::span<const RangeRef> key_ranges,
-    const DataTypes & data_types,
+    const std::vector<int> & key_col_to_sparse_pos,
+    std::span<const RangeRef> sparse_key_ranges,
+    const DataTypes & sparse_data_types,
     bool single_point,
     ColumnsWithTypeAndName & key_columns,
     PrimaryKeyIndexAnalysisContext & index_analysis_context) const
 {
+    auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
+    {
+        bool is_key_col_present = (key_column < key_col_to_sparse_pos.size() && key_col_to_sparse_pos[key_column] != -1);
+        const size_t sparse_pos = is_key_col_present ? static_cast<size_t>(key_col_to_sparse_pos[key_column]) : 0;
+        return {is_key_col_present, sparse_pos};
+    };
+
     size_t tuple_size = indexes_mapping.size();
 
     std::vector<RangeRef> ranges;
@@ -1035,8 +1043,18 @@ BoolMask MergeTreeSetIndex::checkInRange(
     for (size_t i = 0; i < tuple_size; ++i)
     {
         const auto & mapping = indexes_mapping[i];
+        auto [is_key_col_present, sparse_pos] = get_sparse_info(mapping.key_index);
 
-        std::optional<RangeRef> new_range = key_ranges[mapping.key_index];
+        if (!is_key_col_present)
+        {
+            /// We have no range information for this key column: treat it as completely unconstrained.
+            /// As in the `Field`-based overload, the more relaxed [-inf, +inf] is used rather than
+            /// (-inf, +inf), because it is not known whether the column is nullable.
+            ranges.emplace_back(ColumnValueRef::negativeInfinity(), true, ColumnValueRef::positiveInfinity(), true);
+            continue;
+        }
+
+        std::optional<RangeRef> new_range = sparse_key_ranges[sparse_pos];
 
         /// Unlike the Range/Field version of `checkInRange`, we do not have the luxury to only transform the particular range
         /// bounds that are necessary for comparison. We have to transform the entire marks column. Since only other option is to materialize
@@ -1044,12 +1062,17 @@ BoolMask MergeTreeSetIndex::checkInRange(
         /// very poor performance.
         if (!mapping.functions.empty())
         {
+            /// A constant-coordinate key column (one analysed through its partition-minmax bound rather
+            /// than per-mark values) has no index column to apply the chain to.
+            if (mapping.key_index >= index_analysis_context.num_index_columns)
+                return {true, true};
+
             new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
-                key_ranges[mapping.key_index],
+                sparse_key_ranges[sparse_pos],
                 mapping.key_index,
                 key_columns,
                 mapping.functions,
-                data_types[mapping.key_index],
+                sparse_data_types[sparse_pos],
                 index_analysis_context,
                 single_point);
         }

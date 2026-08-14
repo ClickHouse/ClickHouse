@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <utility>
+#include <vector>
 
 #include <Columns/IColumn.h>
 #include <base/defines.h>
@@ -69,6 +70,10 @@ struct RangeRef
     static RangeRef createWholeUniverseWithoutNull();
     static RangeRef createRightBounded(const ColumnValueRef & right_point, bool right_included, bool with_null = false);
     static RangeRef createLeftBounded(const ColumnValueRef & left_point, bool left_included, bool with_null = false);
+    /// Same, but bounded within the given universe instead of (-inf, +inf): the unconstrained side takes
+    /// the universe's bound (e.g. a column's partition minmax) rather than -/+ infinity.
+    static RangeRef createRightBounded(const ColumnValueRef & right_point, bool right_included, const RangeRef & universe);
+    static RangeRef createLeftBounded(const ColumnValueRef & left_point, bool left_included, const RangeRef & universe);
 
     void invert();
 
@@ -111,7 +116,17 @@ inline RangeRef RangeRef::createWholeUniverseWithoutNull()
 
 inline RangeRef RangeRef::createRightBounded(const ColumnValueRef & right_point, bool right_included, bool with_null)
 {
-    RangeRef r = with_null ? createWholeUniverse() : createWholeUniverseWithoutNull();
+    return createRightBounded(right_point, right_included, with_null ? createWholeUniverse() : createWholeUniverseWithoutNull());
+}
+
+inline RangeRef RangeRef::createLeftBounded(const ColumnValueRef & left_point, bool left_included, bool with_null)
+{
+    return createLeftBounded(left_point, left_included, with_null ? createWholeUniverse() : createWholeUniverseWithoutNull());
+}
+
+inline RangeRef RangeRef::createRightBounded(const ColumnValueRef & right_point, bool right_included, const RangeRef & universe)
+{
+    RangeRef r = universe;
     r.right = right_point;
     r.right_included = right_included;
     // Special case for [-Inf, -Inf]
@@ -120,9 +135,9 @@ inline RangeRef RangeRef::createRightBounded(const ColumnValueRef & right_point,
     return r;
 }
 
-inline RangeRef RangeRef::createLeftBounded(const ColumnValueRef & left_point, bool left_included, bool with_null)
+inline RangeRef RangeRef::createLeftBounded(const ColumnValueRef & left_point, bool left_included, const RangeRef & universe)
 {
-    RangeRef r = with_null ? createWholeUniverse() : createWholeUniverseWithoutNull();
+    RangeRef r = universe;
     r.left = left_point;
     r.left_included = left_included;
     // Special case for [+Inf, +Inf]
@@ -185,5 +200,7 @@ inline bool RangeRef::isInfinite() const
 {
     return left.isNegativeInfinity() && right.isPositiveInfinity();
 }
+
+using RangeRefs = std::vector<RangeRef>;
 
 }

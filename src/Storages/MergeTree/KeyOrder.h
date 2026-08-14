@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Range.h>
+#include <Core/RangeRef.h>
 
 #include <algorithm>
 #include <vector>
@@ -38,6 +39,17 @@ public:
     FieldRef physicalStartExtreme(size_t column) const
     {
         return isReversed(column) ? FieldRef(POSITIVE_INFINITY) : FieldRef(NEGATIVE_INFINITY);
+    }
+
+    /// The same two extremes in the reference representation.
+    ColumnValueRef physicalEndExtremeRef(size_t column) const
+    {
+        return isReversed(column) ? ColumnValueRef::negativeInfinity() : ColumnValueRef::positiveInfinity();
+    }
+
+    ColumnValueRef physicalStartExtremeRef(size_t column) const
+    {
+        return isReversed(column) ? ColumnValueRef::positiveInfinity() : ColumnValueRef::negativeInfinity();
     }
 
     /// Whether NULLs are stored physically last on this column: they are on an ascending column and

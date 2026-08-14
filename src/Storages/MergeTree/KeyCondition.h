@@ -64,6 +64,11 @@ struct PrimaryKeyIndexAnalysisContext
 
     using FunctionResultColumnIndex = std::unordered_map<FunctionResultColumnKey, size_t, FunctionResultColumnKeyHash>;
     FunctionResultColumnIndex function_result_column_to_index;
+
+    /// Number of leading entries of the key columns block that are index columns, i.e. the key columns
+    /// with per-mark values. Everything after them is a cached function result column appended by the
+    /// analysis itself, so a key column at position >= this has no column to apply a function chain to.
+    size_t num_index_columns = 0;
 };
 
 
@@ -182,12 +187,14 @@ public:
         const Hyperrectangle & sparse_hyperrectangle,
         const DataTypes & sparse_data_types) const;
 
-    /// Same as checkInHyperrectangle, but works on RangeRef to avoid materialization of Field values from columns.
+    /// Same as the optimized overload above, but the key values are references into the index columns
+    /// (see `ColumnValueRef`) instead of `Field` values materialized out of them.
     BoolMask checkInHyperrectangle(
-        std::span<const RangeRef> hyperrectangle,
+        const std::vector<int> & key_col_to_sparse_pos,
+        std::span<const RangeRef> sparse_hyperrectangle,
+        const DataTypes & sparse_data_types,
         ColumnsWithTypeAndName & key_columns_block,
-        PrimaryKeyIndexAnalysisContext & index_analysis_context,
-        const DataTypes & data_types) const;
+        PrimaryKeyIndexAnalysisContext & index_analysis_context) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
@@ -231,15 +238,21 @@ public:
 
     const KeyOrder & getKeyOrder() const { return key_order; }
 
-    /// Same as checkInRange, but avoids materialization of Field values from columns.
+    /// Same as the optimized (sparse) overload above, but avoids materializing the key values as `Field`:
+    /// a boundary is a reference into the index column it comes from (see `ColumnValueRef`).
+    /// `key_columns_block` holds the index columns of the analysed key prefix, and also caches the columns
+    /// produced by applying monotonic function chains to them; `index_analysis_context` indexes that cache.
+    /// Both are owned by the caller and reused across all mark ranges of a part.
     BoolMask checkInRange(
-        size_t used_key_size,
+        const std::vector<size_t> & sparse_key_indices,
+        const ColumnValueRef * sparse_left_keys,
+        const ColumnValueRef * sparse_right_keys,
+        const DataTypes & sparse_data_types,
+        const std::vector<UInt8> & equal_boundaries_mask,
         ColumnsWithTypeAndName & key_columns_block,
-        const ColumnValueRef * left_keys,
-        const ColumnValueRef * right_keys,
-        const DataTypes & data_types,
         PrimaryKeyIndexAnalysisContext & index_analysis_context,
-        BoolMask initial_mask = BoolMask(false, false)) const;
+        BoolMask initial_mask = BoolMask(false, false),
+        const RangeRefs * key_bounds = nullptr) const;
 
     /// Same as checkInRange, but calculate only may_be_true component of a result.
     /// This is more efficient than checkInRange(...).can_be_true.
@@ -751,6 +764,10 @@ private:
     /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.
     KeyOrder key_order;
 
+    /// The ranges of the RPN atoms, converted once into the reference representation so that the
+    /// reference-based `checkInHyperrectangle` can compare them against the index columns directly.
+    /// A value that has no representation as a value of the key column's type (an infinity, or a
+    /// constant the type cannot hold) becomes the corresponding infinity, as it does for `Field`.
     struct PreparedRangeForRefs
     {
         struct PreparedValue
@@ -764,6 +781,10 @@ private:
             PreparedValue left;
             PreparedValue right;
             RangeRef range;
+
+            /// Whether `range` was built for this atom at all. An atom whose key column has no known
+            /// type has no prepared range, and the reference-based analysis has to treat it as unknown.
+            bool valid = false;
         };
 
         std::vector<PreparedRange> ranges;
