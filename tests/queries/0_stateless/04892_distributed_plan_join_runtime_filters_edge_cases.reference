@@ -1,0 +1,17 @@
+-- tiny probe side, huge build side: the filter cannot arrive in time, rows pass unfiltered
+100
+-- Nullable key is not transportable, the local filter stays
+BuildRuntimeFilter (Build runtime join filter on __table2.sid)
+100
+-- persisted exchanges
+100
+-- streaming exchanges
+100
+-- early close under LIMIT
+10
+-- two joins, each with its own filter
+ReceiveRuntimeFilter
+ReceiveRuntimeFilter
+SendRuntimeFilter (Build runtime join filter on __table3.tid)
+SendRuntimeFilter (Build runtime join filter on __table2.tid)
+100

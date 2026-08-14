@@ -1,0 +1,49 @@
+-- shuffle join, setting off
+GatherExchange
+JoinLogical
+ShuffleExchange (by hash([__table1.bid]))
+Filter column: __applyFilter(_runtime_filter_UNIQ_ID, __table1.bid) (removed)
+FUNCTION __applyFilter(_runtime_filter_UNIQ_ID :: 1, bid :: 0) -> __applyFilter(_runtime_filter_UNIQ_ID, __table1.bid) UInt8 : 3
+ShuffleExchange (by hash([__table2.sid]))
+BuildRuntimeFilter (Build runtime join filter on __table2.sid)
+Filter id: _runtime_filter_UNIQ_ID
+100
+-- shuffle join, setting on
+GatherExchange
+JoinLogical
+ShuffleExchange (by hash([__table1.bid]))
+ReceiveRuntimeFilter
+Filter id: _runtime_filter_UNIQ_ID
+Filter column: __applyFilter(_runtime_filter_UNIQ_ID, __table1.bid) (removed)
+FUNCTION __applyFilter(_runtime_filter_UNIQ_ID :: 1, bid :: 0) -> __applyFilter(_runtime_filter_UNIQ_ID, __table1.bid) UInt8 : 3
+ShuffleExchange (by hash([__table2.sid]))
+SendRuntimeFilter (Build runtime join filter on __table2.sid)
+Filter id: _runtime_filter_UNIQ_ID
+100
+-- broadcast join, setting on
+GatherExchange
+JoinLogical
+Filter column: __applyFilter(_runtime_filter_UNIQ_ID, __table1.bid) (removed)
+FUNCTION __applyFilter(_runtime_filter_UNIQ_ID :: 1, bid :: 0) -> __applyFilter(_runtime_filter_UNIQ_ID, __table1.bid) UInt8 : 3
+BroadcastExchange
+BuildRuntimeFilter (Build runtime join filter on __table2.sid)
+Filter id: _runtime_filter_UNIQ_ID
+100
+-- multiple keys, setting on
+ReceiveRuntimeFilter
+ReceiveRuntimeFilter
+SendRuntimeFilter (Build runtime join filter on __table2.sid)
+SendRuntimeFilter (Build runtime join filter on __table2.sid)
+100
+-- empty build side, setting on
+0
+-- anti join keeps its local filter
+GatherExchange
+JoinLogical
+ShuffleExchange (by hash([__table1.bid]))
+Filter column: __applyFilter(_runtime_filter_UNIQ_ID, __table1.bid) (removed)
+FUNCTION __applyFilter(_runtime_filter_UNIQ_ID :: 1, bid :: 0) -> __applyFilter(_runtime_filter_UNIQ_ID, __table1.bid) UInt8 : 3
+ShuffleExchange (by hash([__table2.sid]))
+BuildRuntimeFilter (Build runtime join filter on __table2.sid)
+Filter id: _runtime_filter_UNIQ_ID
+99900

@@ -1,0 +1,15 @@
+-- nested joins: receives go to the fact scan fragment
+GatherExchange
+ShuffleExchange (by hash([__table1.k1]))
+ShuffleExchange (by hash([__table1.k2]))
+ReceiveRuntimeFilter
+ReceiveRuntimeFilter
+ReadFromMergeTree (default.fact)
+ShuffleExchange (by hash([__table3.d2]))
+SendRuntimeFilter (Build runtime join filter on __table3.d2)
+ReadFromMergeTree (default.dim2)
+ShuffleExchange (by hash([__table2.d1]))
+SendRuntimeFilter (Build runtime join filter on __table2.d1)
+ReadFromMergeTree (default.dim1)
+100
+100

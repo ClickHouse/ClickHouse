@@ -1,0 +1,7 @@
+-- build side larger than the probe site: transport refused
+BuildRuntimeFilter (Build runtime join filter on __table2.lid)
+100
+-- small build side against a large probe site: transport admitted
+ReceiveRuntimeFilter
+SendRuntimeFilter (Build runtime join filter on __table2.sid)
+100
