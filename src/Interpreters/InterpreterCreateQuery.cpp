@@ -85,6 +85,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/hasNullable.h>
 
+#include <Databases/DatabaseBackup.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseOnDisk.h>
@@ -2259,6 +2260,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             /// Don't check dependencies during DROP of the view, because we will recreate
             /// it with the same name and all dependencies will remain valid.
             drop_context->setSetting("check_table_dependencies", false);
+            drop_context->setDDLOrOnClusterInternal(true);
             InterpreterDropQuery interpreter(drop_ast, drop_context);
             interpreter.execute();
         }
@@ -2548,6 +2550,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     {
         ContextMutablePtr drop_context = Context::createCopy(current_context);
         drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
+        drop_context->setDDLOrOnClusterInternal(true);
         /// Bypass = "the size guard was already enforced upstream; do not re-check or consume `force_drop_table` twice".
         if (bypass_size_guard)
         {
@@ -3430,7 +3433,15 @@ BlockIO InterpreterCreateQuery::execute()
 
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
+        {
+            /// Authorize here: this is the last point that still runs as the real user, and worker legs
+            /// run with no user by default.
+            if (is_create_database && create.storage && create.storage->engine
+                && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
+                DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
+
             return executeQueryOnCluster(create);
+        }
     }
 
     getContext()->checkAccess(getRequiredAccess());

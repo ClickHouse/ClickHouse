@@ -63,7 +63,7 @@ blob="${CLICKHOUSE_TMP}/04819_dynamic.native"
 # nested type.
 $CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&client_protocol_version=54337" --data-binary "$query" > "$blob"
 echo "old peer: $(announced_version "$blob")"
-$CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&client_protocol_version=54489" --data-binary "$query" > "$blob"
+$CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&client_protocol_version=54491" --data-binary "$query" > "$blob"
 echo "current peer: $(announced_version "$blob")"
 
 # A versioned announcement carries a version 1 payload.

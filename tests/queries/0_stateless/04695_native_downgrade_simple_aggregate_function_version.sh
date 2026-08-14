@@ -46,7 +46,7 @@ echo "no revision: $(announced_version "$default_blob")"
 
 # A current peer gets version 1 states and is told so.
 new_blob="${CLICKHOUSE_TMP}/04695_new.native"
-$CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&client_protocol_version=54489" --data-binary "$query" > "$new_blob"
+$CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&client_protocol_version=54491" --data-binary "$query" > "$new_blob"
 echo "current peer: $(announced_version "$new_blob")"
 
 # The state itself is unchanged by any of this.
