@@ -48,6 +48,14 @@ SELECT ('a', 'b') IN (rhs) FROM (SELECT materialize(CAST('not a tuple' AS Nullab
 -- the NULL reaches the comparison instead of being reported absent.
 SELECT CAST(NULL AS Nullable(Tuple(UInt8, UInt8))) IN (rhs), nullIn(CAST(NULL AS Nullable(Tuple(UInt8, UInt8))), rhs) FROM (SELECT materialize(CAST(NULL AS Nullable(String))) AS rhs) SETTINGS enable_nullable_tuple_type = 1;
 \N	1
+-- A tuple with a bare `Nothing` element has no default value to substitute, so it keeps the
+-- plain cast and stays resolvable. The element may sit at the top level or nested inside
+-- another tuple, and the tuple may come from a column type or from an expression.
+CREATE TABLE t_nothing (lhs Tuple(UInt8, Nothing), rhs Nullable(String)) ENGINE = Memory;
+SELECT lhs IN (rhs), lhs NOT IN (rhs) FROM t_nothing;
+SELECT (1, arrayJoin([])) IN (rhs), (1, arrayJoin([])) NOT IN (rhs) FROM t_nothing;
+CREATE TABLE t_nothing_nested (lhs Tuple(UInt8, Tuple(Nothing)), rhs Nullable(String)) ENGINE = Memory;
+SELECT lhs IN (rhs), lhs NOT IN (rhs) FROM t_nothing_nested;
 -- Casting a FixedString to a tuple is unsupported for either nullability, so both keep the
 -- same error rather than the nullable one gaining support.
 SELECT ('a', 'b') IN (rhs) FROM (SELECT materialize(CAST(NULL AS Nullable(FixedString(9)))) AS rhs); -- { serverError TYPE_MISMATCH }

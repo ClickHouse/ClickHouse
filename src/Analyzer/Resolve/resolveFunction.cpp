@@ -474,6 +474,18 @@ static QueryTreeNodePtr buildScalarInComparison(
     return raw_if;
 }
 
+/// A bare `Nothing` has no default value. A tuple's default is built element by element, so one
+/// such element makes the whole tuple's default unavailable; the defaults of the other composites
+/// are empty containers or a literal NULL, which is why the recursion stops at them.
+static bool canSerializeDefault(const DataTypePtr & type)
+{
+    if (isNothing(type))
+        return false;
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+        return std::all_of(tuple_type->getElements().begin(), tuple_type->getElements().end(), canSerializeDefault);
+    return true;
+}
+
 /// Serializes the default value of `type` the way `CAST(String -> type)` parses it back.
 static QueryTreeNodePtr makeSerializedDefaultConstant(const DataTypePtr & type)
 {
@@ -1632,9 +1644,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         /// `short_circuit_function_evaluation` does, and the guard answers those rows so the
                         /// substitute is never compared. `CAST(FixedString -> Tuple)` is unsupported for
                         /// either nullability, hence `isString` rather than `isStringOrFixedString`.
+                        /// A type with no representable default keeps the plain cast below.
                         const bool substitute_null = isString(removeNullable(removeLowCardinality(right_type)))
                             && isNullableOrLowCardinalityNullable(right_type)
-                            && !isNullableOrLowCardinalityNullable(left_type);
+                            && !isNullableOrLowCardinalityNullable(left_type)
+                            && canSerializeDefault(left_type);
                         QueryTreeNodePtr compared_argument = right_argument;
                         bool guard_null = false;
                         if (isStringOrFixedString(removeNullable(removeLowCardinality(right_type)))
