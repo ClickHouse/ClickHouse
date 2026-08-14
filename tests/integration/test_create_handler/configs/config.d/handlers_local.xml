@@ -1,0 +1,44 @@
+<clickhouse>
+    <!-- SQL-defined handlers are stored on the local disk. -->
+    <query_rules_storage>
+        <type>local</type>
+    </query_rules_storage>
+
+    <!-- A configuration-defined handler, used to verify that config handlers have
+         priority over SQL-defined handlers on the same URL. -->
+    <http_handlers>
+        <rule>
+            <url>/config_priority</url>
+            <methods>GET</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT 'from_config'</query>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+
+    <!-- A named composable http protocol on a separate port, used to verify PROTOCOL scoping. -->
+    <protocols>
+        <myproto>
+            <type>http</type>
+            <host>0.0.0.0</host>
+            <port>8124</port>
+        </myproto>
+    </protocols>
+
+    <remote_servers>
+        <lc>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica><host>local1</host><port>9000</port></replica>
+                <replica><host>local2</host><port>9000</port></replica>
+            </shard>
+            <allow_distributed_ddl_queries>true</allow_distributed_ddl_queries>
+        </lc>
+    </remote_servers>
+
+    <distributed_ddl>
+        <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
+</clickhouse>
