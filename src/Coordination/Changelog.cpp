@@ -625,6 +625,9 @@ struct ChangelogReadResult
     /// how many entries was already written in it.
     uint64_t total_entries_read_from_log{0};
 
+    /// Physical bytes consumed while validating complete records, including records skipped for retention.
+    uint64_t total_bytes_read_from_log{0};
+
     /// First index in log
     uint64_t log_start_index{0};
 
@@ -729,6 +732,7 @@ public:
                     entry_storage.cleanAfter(record.header.index - 1);
 
                 result.total_entries_read_from_log += 1;
+                result.total_bytes_read_from_log = read_buf->count();
 
                 /// Read but skip this entry because our state is already more fresh
                 if (record.header.index < start_log_index)
@@ -820,14 +824,14 @@ ChangelogFileStartupReadResult readChangelogFile(
     result.read_result.compressed_log = false; /// parallel path never runs when a file is compressed
     const auto & filepath = file_description->path;
 
-    /// Bound is [max(from, start), to]; reserve up front instead of growing incrementally.
-    const uint64_t first_in_scope_index = std::max(file_description->from_log_index, start_log_index);
-    if (file_description->to_log_index >= first_in_scope_index)
-        result.entries.reserve(file_description->to_log_index - first_in_scope_index + 1);
-
     std::unique_ptr<ReadBuffer> read_buf;
     try
     {
+        /// Bound is [max(from, start), to]; reserve up front instead of growing incrementally.
+        const uint64_t first_in_scope_index = std::max(file_description->from_log_index, start_log_index);
+        if (file_description->to_log_index >= first_in_scope_index)
+            result.entries.reserve(file_description->to_log_index - first_in_scope_index + 1);
+
         read_buf = file_description->disk->readFile(filepath, read_settings);
     }
     catch (...)
@@ -846,6 +850,7 @@ ChangelogFileStartupReadResult readChangelogFile(
             auto record = readChangelogRecord(*read_buf, filepath);
 
             result.read_result.total_entries_read_from_log += 1;
+            result.read_result.total_bytes_read_from_log = read_buf->count();
 
             if (record.header.index >= start_log_index)
             {
@@ -958,9 +963,15 @@ StitchState replayStartupMetadata(
 {
     StitchState stitch_state;
 
-    bool has_entries = false;
-    uint64_t accumulated_min_index = 0;
-    uint64_t accumulated_max_index = 0;
+    auto accumulated_min_index = [&]
+    {
+        return stitch_state.segments.front().first_index;
+    };
+    auto accumulated_max_index = [&]
+    {
+        const auto & segment = stitch_state.segments.back();
+        return segment.first_index + segment.count - 1;
+    };
 
     /// Keep only entries with index <= cutoff_index (mirrors LogEntryStorage::cleanAfter(cutoff_index)).
     auto trim_after = [&](uint64_t cutoff_index)
@@ -981,10 +992,6 @@ StitchState replayStartupMetadata(
         }
         stitch_state.config_owner.erase(stitch_state.config_owner.upper_bound(cutoff_index), stitch_state.config_owner.end());
 
-        if (cutoff_index < accumulated_min_index)
-            has_entries = false;
-        else
-            accumulated_max_index = cutoff_index;
     };
 
     for (size_t i = 0; i < results.size(); ++i)
@@ -1013,10 +1020,7 @@ StitchState replayStartupMetadata(
 
                 stitch_state.remove_logs_before_index = file_description->from_log_index;
 
-                /// Reset accumulator: everything before the gap.
-                has_entries = false;
-                accumulated_min_index = 0;
-                accumulated_max_index = 0;
+                /// Reset retained metadata: everything before the gap.
                 stitch_state.segments.clear();
                 stitch_state.config_owner.clear();
                 stitch_state.last_log_read_result.reset();
@@ -1042,33 +1046,18 @@ StitchState replayStartupMetadata(
         {
             const auto & entry = result.entries[offset];
 
-            if (has_entries && entry.index >= accumulated_min_index && entry.index <= accumulated_max_index)
+            if (!stitch_state.segments.empty() && entry.index >= accumulated_min_index() && entry.index <= accumulated_max_index())
                 trim_after(entry.index - 1);
 
             chassert(entry.index >= start_to_read_from); /// only such records are retained
 
-            if (!has_entries)
-            {
-                has_entries = true;
-                accumulated_min_index = entry.index;
-            }
-            accumulated_max_index = entry.index;
-
             /// True when this record is physically the very next one (same file, no gap) after the
             /// last kept segment, so it can extend that segment instead of starting a new one.
-            auto extends_last_segment = [&]
+            auto * last_segment = stitch_state.segments.empty() ? nullptr : &stitch_state.segments.back();
+            if (last_segment && last_segment->result_idx == i && last_segment->first_offset + last_segment->count == offset)
             {
-                if (stitch_state.segments.empty())
-                    return false;
-                auto & last_segment = stitch_state.segments.back();
-                return last_segment.result_idx == i && last_segment.first_offset + last_segment.count == offset;
-            };
-
-            if (extends_last_segment())
-            {
-                auto & last_segment = stitch_state.segments.back();
-                chassert(entry.index == last_segment.first_index + last_segment.count);
-                ++last_segment.count;
+                chassert(entry.index == last_segment->first_index + last_segment->count);
+                ++last_segment->count;
             }
             else
                 stitch_state.segments.push_back(
@@ -1125,7 +1114,7 @@ void materializeEntryStorage(
     std::optional<size_t> previous_result_idx;
     for (const auto & segment : stitch_state.segments)
     {
-        /// result_idx is non-decreasing, so once we move past a file its entries are no longer needed.
+        /// result_idx is non-decreasing, so once we move past a file its entries are no longer needed; reset them to reduce memory usage.
         if (previous_result_idx && *previous_result_idx != segment.result_idx)
             results[*previous_result_idx].entries = {};
         previous_result_idx = segment.result_idx;
@@ -1338,11 +1327,7 @@ void LogEntryStorage::updateTermInfoWithNewEntry(uint64_t index, uint64_t term)
 
 void LogEntryStorage::addEntryWithLocation(uint64_t index, const LogEntryPtr & log_entry, LogLocation log_location)
 {
-    auto entry_size = logEntrySize(log_entry);
-    while (!latest_logs_cache.hasSpaceAvailable(entry_size))
-        latest_logs_cache.popOldestEntry();
-    latest_logs_cache.addEntry(index, entry_size, log_entry);
-
+    addEntryToLatestCache(index, log_entry);
     addLocation(index, log_entry->get_term(), log_entry->get_val_type(), log_entry, std::move(log_location));
 }
 
@@ -1372,7 +1357,10 @@ void LogEntryStorage::addLocation(uint64_t index, uint64_t term, int32_t value_t
 
 void LogEntryStorage::addEntryToLatestCache(uint64_t index, const LogEntryPtr & log_entry)
 {
-    latest_logs_cache.addEntry(index, logEntrySize(log_entry), log_entry);
+    const auto entry_size = logEntrySize(log_entry);
+    while (!latest_logs_cache.hasSpaceAvailable(entry_size))
+        latest_logs_cache.popOldestEntry();
+    latest_logs_cache.addEntry(index, entry_size, log_entry);
 }
 
 void LogEntryStorage::reserveLocations(size_t count)
@@ -3934,11 +3922,7 @@ void Changelog::readChangelogAndInitWriterParallelLocked(
     for (const auto & result : results)
     {
         total_entries += result.read_result.total_entries_read_from_log;
-        if (!result.entries.empty())
-        {
-            const auto & last = result.entries.back();
-            total_bytes += last.position + last.size_in_file;
-        }
+        total_bytes += result.read_result.total_bytes_read_from_log;
     }
     ProfileEvents::increment(ProfileEvents::KeeperChangelogStartupReadEntries, total_entries);
     ProfileEvents::increment(ProfileEvents::KeeperChangelogStartupReadBytes, total_bytes);
@@ -3968,6 +3952,7 @@ void Changelog::readChangelogAndInitWriterParallelLocked(
     {
         const auto last_index = max_log_id.load(std::memory_order_relaxed);
         auto last_entry = entry_storage.getEntry(last_index);
+        chassert(last_entry);
         entry_storage.addEntryToLatestCache(last_index, last_entry);
     }
 }
