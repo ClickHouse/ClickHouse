@@ -353,7 +353,7 @@ private:
     std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
 
     /// EEL variant: decide validity and the resulting (kind, strictness) using the per-operator
-    /// TES descriptors in `dpsub_data.eel_operators` (einbaubar test with orientation), which
+    /// TES descriptors in `dpsub_data.eel_operators`, which
     /// supports semi/anti reordering. Returns nullopt to reject the split.
     std::optional<std::pair<JoinKind, JoinStrictness>> isValidJoinOrderMaskEEL(UInt32 left_mask, UInt32 right_mask) const;
 
@@ -867,10 +867,10 @@ std::optional<std::pair<JoinKind, JoinStrictness>>
 JoinOrderOptimizer::isValidJoinOrderMaskEEL(UInt32 left_mask, UInt32 right_mask) const
 {
     /// Per-operator EEL validity. The enumerator only proposes connected, non-overlapping
-    /// (left_mask, right_mask) pairs. A split is valid iff at most one non-freely-reorderable
-    /// operator (outer/semi/anti/full) "straddles" it, and that operator is `einbaubar` in some
-    /// orientation. Freely-reorderable inner joins impose no constraint here; connectivity and
-    /// predicate placement are handled by `collectJoinEdgesMask`.
+    /// (left_mask, right_mask) pairs. We find the single non-freely-reorderable operator
+    /// (outer/semi/anti/full) that sits at this boundary and check it is `einbaubar`.
+    /// Freely-reorderable inner joins impose no constraint here; connectivity and predicate
+    /// placement are handled by the enumerator and `collectJoinEdgesMask`.
     const UInt32 combined = left_mask | right_mask;
 
     const EelOperator * boundary = nullptr;
@@ -879,31 +879,36 @@ JoinOrderOptimizer::isValidJoinOrderMaskEEL(UInt32 left_mask, UInt32 right_mask)
         if (op.freely_reorderable)
             continue;
 
-        const bool in_left = (op.relations & left_mask) != 0;
-        const bool in_right = (op.relations & right_mask) != 0;
-        if (!in_left || !in_right)
-            continue; /// entirely on one side -> resolved below this join, or not here at all
+        /// An operator is "at this boundary" when its ON predicate (NEL) spans the split -- that
+        /// is the operator whose predicate is applied here. Using the operator's *relation set*
+        /// to detect straddling is wrong: every ancestor operator's relation set is a superset,
+        /// so it would spuriously "straddle" lower splits. We also treat an operator as involved
+        /// if its relation set straddles *and* is fully contained in this subset, to cover
+        /// predicate-less / lopsided-ON operators without flagging ancestors.
+        const bool within = (op.relations & ~combined) == 0;
+        const bool nel_crosses = (op.nel & left_mask) && (op.nel & right_mask);
+        const bool rel_straddles = (op.relations & left_mask) && (op.relations & right_mask);
+        if (!nel_crosses && !(rel_straddles && within))
+            continue;
 
-        /// The operator's relations straddle this split, so it must be the operator applied at
-        /// this join. Two straddling non-reorderable operators cannot both sit at one binary
-        /// node -> this ordering is impossible.
+        /// The operator is applied across this boundary but not all of its relations are present
+        /// yet -> it cannot be applied here, so joining across its predicate is illegal.
+        if (!within)
+            return std::nullopt;
+
+        /// Two non-reorderable operators cannot both sit at one binary node -> impossible order.
         if (boundary)
             return std::nullopt;
         boundary = &op;
     }
 
-    /// No outer/semi/anti operator straddles -> a plain inner join (connectivity already checked).
+    /// No outer/semi/anti operator sits here -> a plain inner join (connectivity already checked).
     if (!boundary)
         return std::make_pair(JoinKind::Inner, JoinStrictness::All);
 
-    /// All of the boundary operator's relations must be present in this subset; otherwise it
-    /// cannot be applied here and joining across it is illegal.
-    if (boundary->relations & ~combined)
-        return std::nullopt;
+    auto subset_of = [](const UInt32 a, const UInt32 b) { return (a & ~b) == 0; };
 
-    auto subset_of = [](UInt32 a, UInt32 b) { return (a & ~b) == 0; };
-
-    /// einbaubar: forward orientation keeps the operator's left/right inputs as (left_mask,
+    /// forward orientation keeps the operator's left/right inputs as (left_mask,
     /// right_mask); the mirrored orientation swaps them (only satisfiable for a commutative
     /// operator, or when the required sides genuinely fit the other way). `reverseJoinKind`
     /// flips Left<->Right (and Full/Inner unchanged), which for semi/anti flips the preserved
