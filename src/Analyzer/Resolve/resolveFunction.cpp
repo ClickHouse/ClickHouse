@@ -715,6 +715,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// Ok. Some functions require the value of a constant argument to infer or validate
                 /// their result (for example, tupleElement's index). A type-only scalar placeholder
                 /// cannot provide it, so fall back to the regular path which evaluates the scalar.
+                type_inference_succeeded = false;
             }
 
             if (type_inference_succeeded
