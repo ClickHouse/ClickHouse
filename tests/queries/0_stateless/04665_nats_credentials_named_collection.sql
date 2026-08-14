@@ -64,6 +64,18 @@ SETTINGS nats_credential_file = '/var/other.creds', nats_credentials = 'user JWT
 CREATE TABLE nats_both_in_settings_over_credentials (key UInt64) ENGINE = NATS(04665_nats_credentials)
 SETTINGS nats_credentials = 'another user JWT and seed', nats_credential_file = '/var/nats.creds'; -- { serverError BAD_ARGUMENTS }
 
+-- An inline credential already stored in the collection is a same-key override, so both query
+-- spellings must honor the global override policy.
+SET allow_named_collection_override_by_default = 0;
+
+CREATE TABLE nats_credentials_override_disabled (key UInt64)
+ENGINE = NATS(04665_nats_credentials, nats_credentials = 'another user JWT and seed'); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE nats_credentials_in_settings_override_disabled (key UInt64) ENGINE = NATS(04665_nats_credentials)
+SETTINGS nats_credentials = 'another user JWT and seed'; -- { serverError BAD_ARGUMENTS }
+
+SET allow_named_collection_override_by_default = 1;
+
 DROP NAMED COLLECTION 04665_nats_credential_file;
 DROP NAMED COLLECTION 04665_nats_credentials;
 DROP NAMED COLLECTION 04665_nats_both;
