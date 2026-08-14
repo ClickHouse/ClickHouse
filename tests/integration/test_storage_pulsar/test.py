@@ -9,7 +9,7 @@ from helpers.test_tools import TSV
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/macros.xml"],
+    main_configs=["configs/macros.xml", "configs/remote_hosts.xml"],
     user_configs=["configs/users.xml"],
     with_pulsar=True,
 )
@@ -540,6 +540,39 @@ def test_max_rows_per_message_zero_rejected(pulsar_cluster):
         )
     )
     assert "BAD_ARGUMENTS" in error
+
+
+def test_remote_host_filter_applies_to_service_url(pulsar_cluster):
+    # The engine dials the brokers of `pulsar_service_url`, so the address must pass the
+    # server's outbound allowlist (`configs/remote_hosts.xml` allows only this cluster's
+    # broker), like every other remote surface. Otherwise anyone allowed to create a table
+    # could make the server connect to an arbitrary host.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+
+    def create(service_url):
+        return instance.query_and_get_error(
+            f"""
+            CREATE TABLE test.pulsar_reader (key UInt64, value UInt64)
+            ENGINE = Pulsar
+            SETTINGS pulsar_service_url = '{service_url}',
+                     pulsar_topic_list = 'host_filter_topic',
+                     pulsar_group_name = 'host_filter_group',
+                     pulsar_format = 'JSONEachRow'
+            """
+        )
+
+    assert "UNACCEPTABLE_URL" in create("pulsar://not-allowed-host:6650")
+    # A different port on the allowed host is a different entry in the allowlist.
+    assert "UNACCEPTABLE_URL" in create("pulsar://pulsar1:6651")
+    # Every broker of a multi-broker service URL is checked, not only the first one.
+    assert "UNACCEPTABLE_URL" in create("pulsar://pulsar1:6650,not-allowed-host:6650")
+    # An address without a scheme is not a valid service URL.
+    assert "BAD_ARGUMENTS" in create("pulsar1:6650")
+
+    # The allowed broker of this cluster still works.
+    instance.query(
+        pulsar_table("test.pulsar_reader", "host_filter_topic", "host_filter_group")
+    )
 
 
 def test_macros_expansion(pulsar_cluster):

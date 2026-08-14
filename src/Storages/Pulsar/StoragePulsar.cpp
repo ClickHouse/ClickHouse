@@ -26,8 +26,11 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Common/Macros.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
+#include <Common/parseAddress.h>
 
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -153,6 +156,54 @@ private:
 
 namespace
 {
+
+/// The engine opens outbound connections to the brokers listed in `pulsar_service_url`, so the
+/// address must pass the server's outbound allowlist (`remote_url_allow_hosts`), like every other
+/// remote surface (`RabbitMQ`, `ArrowFlight`, ...). Called before the client is constructed.
+void checkServiceURLIsAllowed(const String & service_url, const ContextPtr & context)
+{
+    /// A service URL is `<scheme>://host[:port]`, optionally listing several brokers as
+    /// `pulsar://host1:6650,host2:6650`. The scheme also defines the default port.
+    static constexpr std::pair<std::string_view, UInt16> schemes[]
+        = {{"pulsar+ssl://", 6651}, {"pulsar://", 6650}, {"https://", 443}, {"http://", 80}};
+
+    std::string_view rest{service_url};
+    UInt16 default_port = 0;
+    bool scheme_found = false;
+    for (const auto & [scheme, port] : schemes)
+    {
+        if (rest.starts_with(scheme))
+        {
+            rest.remove_prefix(scheme.size());
+            default_port = port;
+            scheme_found = true;
+            break;
+        }
+    }
+
+    if (!scheme_found)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid `pulsar_service_url` '{}': it must start with one of the `pulsar://`, `pulsar+ssl://`, "
+            "`http://`, `https://` schemes",
+            service_url);
+
+    /// A trailing path is not a part of the broker address.
+    if (auto slash = rest.find('/'); slash != std::string_view::npos)
+        rest = rest.substr(0, slash);
+
+    std::vector<String> addresses;
+    boost::split(addresses, String{rest}, [](char c) { return c == ','; });
+    for (auto & address : addresses)
+    {
+        boost::trim(address);
+        if (address.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid `pulsar_service_url` '{}': empty broker address", service_url);
+
+        const auto [host, port] = parseAddress(address, default_port);
+        context->getRemoteHostFilter().checkHostAndPort(host, toString(port));
+    }
+}
 
 pulsar::ClientConfiguration createClientConfiguration()
 {
@@ -702,6 +753,14 @@ void registerStoragePulsar(StorageFactory & factory)
         if (!(*pulsar_settings)[PulsarSetting::pulsar_service_url].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_service_url` setting");
 
+        /// Validate the address the server is about to dial against `remote_url_allow_hosts`.
+        /// Unconditionally - for an `ATTACH` too, so that a table created before the allowlist was
+        /// tightened cannot keep connecting to a host that is no longer allowed.
+        Macros::MacroExpansionInfo macros_info{.table_id = args.table_id};
+        checkServiceURLIsAllowed(
+            args.getContext()->getMacros()->expand((*pulsar_settings)[PulsarSetting::pulsar_service_url].value, macros_info),
+            args.getContext());
+
         if (!(*pulsar_settings)[PulsarSetting::pulsar_group_name].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_group_name` setting");
 
@@ -804,7 +863,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Required parameters:
 
-- `pulsar_service_url` – The Pulsar broker URL, for example, `pulsar://localhost:6650`.
+- `pulsar_service_url` – The Pulsar broker URL, for example, `pulsar://localhost:6650`. Several brokers can be listed as `pulsar://host1:6650,host2:6650`. Every listed host must be allowed by the [remote_url_allow_hosts](/operations/server-configuration-parameters/settings#remote_url_allow_hosts) server setting, otherwise the table is not created and `UNACCEPTABLE_URL` is thrown.
 - `pulsar_group_name` – The subscription name. All consumers sharing the same group name belong to the same subscription.
 - `pulsar_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](/reference/formats/index) section.
 - `pulsar_topic_list` – A comma-separated list of Pulsar topics to consume from. Writing via `INSERT` is supported only when the list contains exactly one topic; an `INSERT` into a table with multiple topics throws `NOT_IMPLEMENTED`.

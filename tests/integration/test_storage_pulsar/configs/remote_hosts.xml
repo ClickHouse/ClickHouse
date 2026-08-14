@@ -1,0 +1,7 @@
+<clickhouse>
+    <!-- Only the broker of this test cluster may be dialed, so that a Pulsar table
+         pointing anywhere else is rejected by the outbound host filter. -->
+    <remote_url_allow_hosts>
+        <host>pulsar1:6650</host>
+    </remote_url_allow_hosts>
+</clickhouse>
