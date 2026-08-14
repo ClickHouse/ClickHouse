@@ -2560,11 +2560,15 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
             "The URL engine does not support headers(...) when dispatching to the {} engine (URL '{}')",
             engine_name, configuration.url);
 
-    /// Rejected for fresh CREATEs only: named collections have been accepting `http_method`
-    /// regardless of the URL scheme, so pre-existing tables whose collection resolves to a
-    /// non-HTTP scheme must keep attaching after upgrade — the delegated backend ignores
-    /// the key, as it always did.
-    if (!configuration.http_method.empty() && args.mode <= LoadingStrictnessLevel::CREATE)
+    /// Rejected for fresh definitions only: CREATE, and full-definition ATTACH (new user
+    /// input, unlike short-syntax `ATTACH TABLE t` loading stored metadata) — the pattern
+    /// used by other engines. Named collections have been accepting `http_method` regardless
+    /// of the URL scheme, so pre-existing tables whose collection resolves to a non-HTTP
+    /// scheme must keep loading after upgrade — the delegated backend ignores the key, as
+    /// it always did.
+    const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
+        || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+    if (!configuration.http_method.empty() && is_fresh_definition)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The URL engine does not support http_method when dispatching to the {} engine (URL '{}')",
@@ -2702,10 +2706,14 @@ void registerStorageURL(StorageFactory & factory)
 
             /// The index-page listing requests are plain GET; a silent fallback to probing the
             /// literal `*` URL would read different files, so reject the combination explicitly.
-            /// Only on a user-issued `CREATE`: pre-existing tables (e.g. with `http_method` coming
-            /// from a named collection) must keep loading on ATTACH / server startup / RESTORE and
-            /// fall through to the plain `StorageURL` backend below.
-            if (args.mode <= LoadingStrictnessLevel::CREATE
+            /// Only for fresh definitions (CREATE, and full-definition ATTACH, which is new user
+            /// input): pre-existing tables (e.g. with `http_method` coming from a named
+            /// collection) must keep loading on short-syntax ATTACH / server startup / RESTORE
+            /// and fall through to the plain `StorageURL` backend below; their reads enforce
+            /// the same invariant at use time.
+            const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
+                || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+            if (is_fresh_definition
                 && urlPathHasListableGlobs(config.url)
                 && IStorageURLBase::chooseReadMethod(config.http_method) == Poco::Net::HTTPRequest::HTTP_POST)
                 throw Exception(
