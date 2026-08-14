@@ -197,9 +197,13 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafPreservesSimpleAggrega
     ASSERT_EQ(asAgg(assigned).getVersion(), 0u);
 
     /// The custom name came along, so the column is still recognised as a SimpleAggregateFunction
-    /// one, and it prints identically.
+    /// one - and it announces the version the payload is actually written with: the custom name
+    /// keeps its own copy of the argument types, and for `SimpleAggregateFunction` over an
+    /// `AggregateFunction` that argument is the state type itself, so it has to be downgraded with
+    /// the storage type or the receiver would read one version too many out of the state.
     ASSERT_NE(dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(assigned->getCustomName()), nullptr);
-    ASSERT_EQ(assigned->getName(), name_before);
+    ASSERT_EQ(assigned->getName(), "SimpleAggregateFunction(anyLast, AggregateFunction(sumMap, Array(UInt64), Array(UInt64)))");
+    ASSERT_NE(assigned->getName(), name_before);
 
     /// The shared source type is untouched - this is the race that used to force version 0 onto it
     /// for every other query as a side effect of serving one old client.
@@ -209,10 +213,12 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafPreservesSimpleAggrega
 
 /// The custom name does not have to sit on the versioned leaf itself: in
 /// `SimpleAggregateFunction(anyLast, Array(AggregateFunction(...)))` it sits on the Array, while the
-/// leaf that gets replaced is one level below. Rebuilding the wrapper therefore has to carry its
-/// customization over too, or the column silently degrades to a plain Array and stops being
-/// recognised as a simple-aggregate one by the AggregatingMergeTree and SummingMergeTree algorithms.
-GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafPreservesCustomNameOnWrapper)
+/// leaf that would be replaced is one level below. A rebuilt Array cannot carry that name faithfully
+/// (only the leaf replacement knows how to rebuild it), so the type is left exactly as it was rather
+/// than replaced with one that lies about its name - the announced type and the payload still agree,
+/// and the column stays recognisable as a simple-aggregate one by the AggregatingMergeTree and
+/// SummingMergeTree merge algorithms.
+GTEST_TEST(DataTypeAggregateFunctionVersion, CustomNameOnWrapperKeepsTheTypeAsItIs)
 {
     tryRegisterAggregateFunctions();
 
@@ -224,13 +230,7 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafPreservesCustomNameOnW
     DataTypePtr assigned = simple;
     setVersionToAggregateFunctions(assigned, /*if_empty=*/false, /*revision=*/std::nullopt);
 
-    /// The leaf under the Array was replaced, so the Array itself was rebuilt ...
-    ASSERT_NE(assigned.get(), simple.get());
-    const auto * assigned_array = typeid_cast<const DataTypeArray *>(assigned.get());
-    ASSERT_NE(assigned_array, nullptr);
-    ASSERT_EQ(asAgg(assigned_array->getNestedType()).getVersion(), 0u);
-
-    /// ... and the name on the wrapper came along with it.
+    ASSERT_EQ(assigned.get(), simple.get());
     ASSERT_NE(dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(assigned->getCustomName()), nullptr);
     ASSERT_EQ(assigned->getName(), name_before);
 
@@ -274,10 +274,12 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderVariantKeepsDiscr
 {
     tryRegisterAggregateFunctions();
 
-    /// `String` sorts after `AggregateFunction(...)`, so the declared order is not the sorted one.
     DataTypePtr variant = DataTypeFactory::instance().get(
         "Variant(String, AggregateFunction(sumMap, Array(UInt64), Array(UInt64)))");
     const auto & source_variants = typeid_cast<const DataTypeVariant &>(*variant).getVariants();
+    /// The factory sorts the alternatives by name, so the state is the first one here.
+    ASSERT_EQ(source_variants[0]->getName(), "AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))");
+    ASSERT_EQ(source_variants[1]->getName(), "String");
 
     DataTypePtr assigned = variant;
     setVersionToAggregateFunctions(assigned, /*if_empty=*/true, /*revision=*/std::nullopt);
@@ -286,13 +288,14 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderVariantKeepsDiscr
     const auto & assigned_variants = typeid_cast<const DataTypeVariant &>(*assigned).getVariants();
     ASSERT_EQ(assigned_variants.size(), source_variants.size());
 
-    /// Same discriminators: the aggregate function alternative is still the second one, now at
-    /// version 0, and the `String` one is untouched.
-    ASSERT_EQ(assigned_variants[0]->getName(), source_variants[0]->getName());
-    ASSERT_EQ(asAgg(assigned_variants[1]).getVersion(), 0u);
+    /// Same discriminators: the state is still the first alternative, now at version 0, and the
+    /// `String` one is still the second - the rebuild keeps the original order instead of sorting
+    /// the alternatives by their new names.
+    ASSERT_EQ(asAgg(assigned_variants[0]).getVersion(), 0u);
+    ASSERT_EQ(assigned_variants[1]->getName(), "String");
 
     /// The shared source type is untouched.
-    ASSERT_EQ(asAgg(source_variants[1]).getVersion(), 1u);
+    ASSERT_EQ(asAgg(source_variants[0]).getVersion(), 1u);
 }
 
 /// Two alternatives that differ only in a spelled-out version would become the same type once both
@@ -302,9 +305,12 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VariantAlternativesCollapsingIsAnEr
 {
     tryRegisterAggregateFunctions();
 
+    /// Version 0 is not printed, so these two alternatives have different names - and the same name
+    /// once both are forced to version 0.
     DataTypePtr variant = DataTypeFactory::instance().get(
-        "Variant(AggregateFunction(sumMap, Array(UInt64), Array(UInt64)), "
+        "Variant(AggregateFunction(0, sumMap, Array(UInt64), Array(UInt64)), "
         "AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))");
+    ASSERT_EQ(typeid_cast<const DataTypeVariant &>(*variant).getVariants().size(), 2u);
 
     DataTypePtr assigned = variant;
     ASSERT_THROW(
