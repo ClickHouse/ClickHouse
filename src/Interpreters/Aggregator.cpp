@@ -2820,6 +2820,17 @@ void Aggregator::addArenasToAggregateColumns(
     }
 }
 
+void Aggregator::fillKeyColumnsWithSingleKey(
+    Columns & key_columns,
+    size_t key_row,
+    MutableColumns & final_key_columns) const
+{
+    for (size_t i = 0; i < params.keys_size; ++i)
+    {
+        final_key_columns[i]->insertFrom(*key_columns[i].get(), key_row);
+    }
+}
+
 void Aggregator::createStatesAndFillKeyColumnsWithSingleKey(
     AggregatedDataVariants & data_variants,
     Columns & key_columns,
@@ -2830,10 +2841,7 @@ void Aggregator::createStatesAndFillKeyColumnsWithSingleKey(
     createAggregateStates(place);
     data_variants.without_key = place;
 
-    for (size_t i = 0; i < params.keys_size; ++i)
-    {
-        final_key_columns[i]->insertFrom(*key_columns[i].get(), key_row);
-    }
+    fillKeyColumnsWithSingleKey(key_columns, key_row, final_key_columns);
 }
 
 Aggregator::AggregatedChunk Aggregator::prepareChunkAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const
