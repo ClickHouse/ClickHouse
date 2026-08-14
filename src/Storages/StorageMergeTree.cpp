@@ -13,6 +13,8 @@
 #include <Core/UUID.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
+#include <Disks/IVolume.h>
+#include <Disks/StoragePolicy.h>
 #include <Disks/supportWritingWithAppend.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/copyData.h>
@@ -1754,11 +1756,11 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             /// table's own mutex, so with a cheaper local-source admission guess several tables could pass
             /// tryReserve concurrently and then all upgrade themselves to the real remote estimate,
             /// pushing the reserved total past the soft limit - exactly the remote-writer burst the
-            /// reservation exists to prevent. Admit against the worst case over the disks this table's
-            /// storage policy can write to: remote whenever any policy disk is remote, sized by the
-            /// largest multipart write buffers among the remote disks (a zero ceiling - every remote disk
-            /// is e.g. HDFS without multipart buffers - correctly degrades to the local per-stream
-            /// estimate). The tagger's actual disk choice below then only keeps or lowers the reservation.
+            /// reservation exists to prevent. Admit against the worst case over the disks this merge can
+            /// actually be given (see the candidate destinations below): remote whenever any of them is
+            /// remote, sized by the largest multipart write buffers among those remote disks (a zero
+            /// ceiling - every reachable remote disk is e.g. HDFS without multipart buffers - correctly
+            /// degrades to the local per-stream estimate). The tagger's actual disk choice below then only keeps or lowers the reservation.
             /// The MergeTree settings the merge runs with: read ONCE here and carried to the task through
             /// the selected entry, so the merge (MergeTask reads them for max_compress_block_size, the
             /// projection decisions, the vertical-merge rules, ...) cannot observe a different value than
@@ -1801,14 +1803,62 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             /// without a parallel upload scheduler the writer uploads inline and holds far fewer buffers.
             const auto merge_write_settings = merge_context->getWriteSettings();
 
+            /// The disks this merge can actually land on. CurrentlyMergingPartsTagger reserves either on the
+            /// destination of a move TTL rule, or - through balancedReservation /
+            /// tryReserveSpacePreferringTTLRules - on a volume no earlier than the last volume any source
+            /// part sits on: both take the source parts' max volume index as the min volume index of
+            /// StoragePolicy::reserve / getVolume. Earlier volumes of the policy are therefore impossible
+            /// destinations, and letting one of them mark the output as remote - or contribute its multipart
+            /// ceiling - would reject merges for upload memory that can never be allocated. Every move TTL
+            /// destination is a candidate: which rule applies is decided from the source parts' TTL infos
+            /// against the clock at reservation time, so a merge waiting in the background queue can still
+            /// move to any of them once a boundary passes.
+            const auto storage_policy = getStoragePolicy();
+            size_t min_reachable_volume_index = 0;
+            for (const auto & part : future_part->parts)
+            {
+                const auto volume_index = storage_policy->tryGetVolumeIndexByDiskName(part->getDataPartStorage().getDiskName());
+                if (!volume_index)
+                {
+                    /// A part on a disk that is no longer part of the policy: keep the reachable set at its
+                    /// widest instead of guessing, which can only over-price this guess.
+                    min_reachable_volume_index = 0;
+                    break;
+                }
+                min_reachable_volume_index = std::max(min_reachable_volume_index, *volume_index);
+            }
+
+            Disks candidate_destination_disks;
+            const auto & policy_volumes = storage_policy->getVolumes();
+            for (size_t volume_index = min_reachable_volume_index; volume_index < policy_volumes.size(); ++volume_index)
+            {
+                const auto & volume_disks = policy_volumes[volume_index]->getDisks();
+                candidate_destination_disks.insert(candidate_destination_disks.end(), volume_disks.begin(), volume_disks.end());
+            }
+
+            for (const auto & move_ttl : metadata_snapshot->getMoveTTLs())
+            {
+                const auto destination = getDestinationForMoveTTL(move_ttl);
+                if (!destination)
+                    continue;
+
+                if (destination->isVolume())
+                {
+                    const auto & volume_disks = std::static_pointer_cast<IVolume>(destination)->getDisks();
+                    candidate_destination_disks.insert(candidate_destination_disks.end(), volume_disks.begin(), volume_disks.end());
+                }
+                else if (destination->isDisk())
+                    candidate_destination_disks.push_back(std::static_pointer_cast<IDisk>(destination));
+            }
+
             bool output_may_be_on_remote_disk = false;
             std::optional<CompactionStatistics::DiskWriteBufferMemory> admission_write_buffer_memory;
-            for (const auto & disk : getStoragePolicy()->getDisks())
+            for (const auto & disk : candidate_destination_disks)
             {
                 /// A read-only disk can never be the merge's destination: the disk-space reservation below
                 /// (CurrentlyMergingPartsTagger) goes through StoragePolicy::reserve / VolumeJBOD, which
-                /// skip read-only volumes and disks. Such a disk still appears in getDisks() (a policy
-                /// mixing a writable local disk with a read-only object-storage one is legitimate), and
+                /// skip read-only volumes and disks. Such a disk still belongs to a reachable volume (a
+                /// policy mixing a writable local disk with a read-only object-storage one is legitimate), and
                 /// letting it mark the output as remote - or contribute its multipart ceiling - would
                 /// reject merges for upload memory on a destination that is impossible to pick.
                 if (disk->isReadOnly() || !disk->isRemote())

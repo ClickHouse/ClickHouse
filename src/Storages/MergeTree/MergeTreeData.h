@@ -340,8 +340,18 @@ public:
     /// StorageMergeTree::movePartitionToTable to avoid lock ordering issues between two tables.
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
-    MergeTreeDataPartFormat
-    choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const;
+    /// `base_settings`, when set, is used instead of the live table settings (a projection's own
+    /// `WITH SETTINGS` are still applied on top of it). A merge freezes the settings it runs with at
+    /// selection time, so every part format it decides - including the formats of the temporary and
+    /// read-back projection parts - must be decided from that same snapshot: a concurrent
+    /// `ALTER ... MODIFY SETTING` of the wide-part thresholds would otherwise make the merge write a
+    /// format whose per-stream buffers its memory reservation did not price.
+    MergeTreeDataPartFormat choosePartFormat(
+        size_t bytes_uncompressed,
+        size_t rows_count,
+        UInt32 part_level,
+        ProjectionDescriptionRawPtr projection,
+        const MergeTreeSettingsPtr & base_settings = {}) const;
 
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
 

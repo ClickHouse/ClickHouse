@@ -6046,13 +6046,18 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
 }
 
 MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
-    size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const
+    size_t bytes_uncompressed,
+    size_t rows_count,
+    UInt32 part_level,
+    ProjectionDescriptionRawPtr projection,
+    const MergeTreeSettingsPtr & base_settings) const
 {
     using PartType = MergeTreeDataPartType;
     using PartStorageType = MergeTreeDataPartStorageType;
 
     String out_reason;
-    const auto settings = getSettings(projection ? &projection->settings_changes : nullptr);
+    const auto * settings_changes = projection ? &projection->settings_changes : nullptr;
+    const auto settings = base_settings ? applySettingsChanges(base_settings, settings_changes) : getSettings(settings_changes);
     if (!canUsePolymorphicParts(*settings, out_reason))
         return {PartType::Wide, PartStorageType::Full};
 

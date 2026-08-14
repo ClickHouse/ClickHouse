@@ -80,7 +80,11 @@ bool MergeProjectionPartsTask::executeStep()
         ++block_num;
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
         MergeTreeData::DataPartsVector const_selected_parts(selected_parts.begin(), selected_parts.end());
-        projection_future_part->assign(std::move(const_selected_parts), /*patch_parts_=*/ {}, &projection);
+        /// The read-back merge's part format is decided from the same frozen settings snapshot the merge
+        /// that produced these temporary parts priced its reservation against (see below), so a concurrent
+        /// ALTER ... MODIFY SETTING of the wide-part thresholds cannot turn the read-back part Wide behind
+        /// the reservation's back.
+        projection_future_part->assign(std::move(const_selected_parts), /*patch_parts_=*/ {}, &projection, base_data_settings);
         projection_future_part->name = fmt::format("{}_{}", projection.name, ++block_num);
         projection_future_part->part_info = {"all", 0, 0, 0};
 

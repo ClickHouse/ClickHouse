@@ -1785,6 +1785,14 @@ UInt64 estimateNeededMemoryForMerge(
             || (projection_mode != DeduplicateMergeProjectionMode::THROW && projection_mode != DeduplicateMergeProjectionMode::DROP));
     if (merge_processes_projections)
     {
+        /// Both projection paths resolve their own settings and part formats from the settings snapshot the
+        /// merge runs with - the very snapshot this estimate is priced against, frozen at selection time -
+        /// so hold it as a shared pointer for the calls below. Resolving them from the live table settings
+        /// instead would reintroduce the selection-vs-execution drift the snapshot exists to remove: a
+        /// concurrent ALTER ... MODIFY SETTING would change the projection writer's buffers or its
+        /// wide-part decision after the admission gate already accepted the merge at the old price.
+        const MergeTreeSettingsPtr base_settings = std::make_shared<const MergeTreeSettings>(settings);
+
         /// An expired column (absent from every source part with no default expression, the full
         /// expired_columns set computed above) makes the merge rebuild every projection that requires it,
         /// again before checking whether the source parts have the projection.
@@ -1868,14 +1876,14 @@ UInt64 estimateNeededMemoryForMerge(
             /// WITH SETTINGS clause the changes are empty and this resolves to the table settings.
             const auto projection_settings_holder = projection.settings_changes.empty()
                 ? nullptr
-                : future_part.parts.front()->storage.getSettings(&projection.settings_changes);
+                : future_part.parts.front()->storage.applySettingsChanges(base_settings, &projection.settings_changes);
             const MergeTreeSettings & projection_settings
                 = projection_settings_holder ? *projection_settings_holder : settings;
 
             if (!rebuild_projection)
             {
                 FutureMergedMutatedPart projection_future_part;
-                projection_future_part.assign(std::move(projection_parts), /*patch_parts_=*/ {}, &projection);
+                projection_future_part.assign(std::move(projection_parts), /*patch_parts_=*/ {}, &projection, base_settings);
                 /// A projection part is never subject to a pending on-fly rename (renaming a column used
                 /// in a projection is forbidden, and the nested merge runs over the projection's own
                 /// columns), so the recursion needs no mutations snapshot.
@@ -2027,7 +2035,7 @@ UInt64 estimateNeededMemoryForMerge(
                     scale_chunk_down(min_insert_block_size_bytes, projection_chunk_bytes);
 
                 const auto temp_projection_format = future_part.parts.front()->storage.choosePartFormat(
-                    projection_chunk_bytes, projection_chunk_rows, future_part.part_info.level, &projection);
+                    projection_chunk_bytes, projection_chunk_rows, future_part.part_info.level, &projection, base_settings);
                 const bool temp_projection_is_compact = temp_projection_format.part_type == MergeTreeDataPartType::Compact;
                 const size_t projection_streams = temp_projection_is_compact ? 1 : projection_wide_stream_counts.total;
 
@@ -2044,7 +2052,7 @@ UInt64 estimateNeededMemoryForMerge(
                 /// ways: toward Wide only bounded by the data-proportional term below, toward Compact only
                 /// weakening the throttling of concurrent merges.
                 const auto read_back_projection_format = future_part.parts.front()->storage.choosePartFormat(
-                    projection_uncompressed_bytes, projection_rows, future_part.part_info.level, &projection);
+                    projection_uncompressed_bytes, projection_rows, future_part.part_info.level, &projection, base_settings);
                 const bool read_back_projection_is_compact
                     = read_back_projection_format.part_type == MergeTreeDataPartType::Compact;
                 const size_t read_back_streams = read_back_projection_is_compact ? 1 : projection_wide_stream_counts.total;

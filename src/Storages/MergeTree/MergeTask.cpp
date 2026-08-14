@@ -1517,7 +1517,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
     {
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-            *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+            *global_ctx->data,
+            result,
+            projection,
+            global_ctx->new_data_part.get(),
+            ++ctx->projection_block_num,
+            global_ctx->context,
+            global_ctx->base_data_settings);
 
         tmp_part->finalize();
         tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1559,7 +1565,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+                *global_ctx->data,
+                result,
+                projection,
+                global_ctx->new_data_part.get(),
+                ++ctx->projection_block_num,
+                global_ctx->context,
+                global_ctx->base_data_settings);
 
             temp_part->finalize();
             temp_part->part->getDataPartStorage().commitTransaction();
@@ -2190,7 +2202,11 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             projection_parts.back()->name);
 
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
-        projection_future_part->assign(std::move(projection_parts), /*patch_parts_=*/ {}, projection);
+        /// The already existing projection parts are merged with the same frozen settings snapshot this
+        /// merge runs with, so the format of the merged projection part - and therefore the per-stream
+        /// buffers the nested merge allocates - is the one the memory reservation priced.
+        projection_future_part->assign(
+            std::move(projection_parts), /*patch_parts_=*/ {}, projection, global_ctx->base_data_settings);
         projection_future_part->name = projection->name;
         projection_future_part->path = global_ctx->future_part->path + "/" + projection->name + ".proj/";
         projection_future_part->part_info = MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION;
@@ -3082,7 +3098,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
     MergeTreeWriterSettings writer_settings(
         global_ctx->data->getContext()->getSettingsRef(),
         global_ctx->context->getWriteSettings(),
-        global_ctx->data->getSettings(),
+        global_ctx->data_settings,
         global_ctx->new_data_part,
         global_ctx->new_data_part->index_granularity_info.mark_type.adaptive,
         /*rewrite_primary_key=*/ false,
@@ -3099,7 +3115,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         std::move(writer_settings),
         global_ctx->compression_codec,
         global_ctx->new_data_part->index_granularity_info.mark_type.getFileExtension(),
-        *global_ctx->data->getSettings());
+        *global_ctx->data_settings);
 
     /// Pass original header as output header to remove temporary columns added by the transform.
     /// This is important to make this part's plan compatible with other parts' plans that don't materialize indexes.
