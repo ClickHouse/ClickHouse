@@ -8,9 +8,13 @@
 -- Pin everything the plan shape depends on: the pass itself, the join runtime filters off (they
 -- add extra `Filter` steps), a stable join side, and no deferral to the read-in-order
 -- through-join pass (so the positive control reliably grafts).
+-- `query_plan_max_limit_for_top_k_optimization` is randomized by the test harness and gates the
+-- pass on the `LIMIT` value, so it is pinned too: with the randomized value of 1 not even the
+-- positive control grafts and the oracle stops discriminating.
 SET query_plan_top_k_through_join = 1, query_plan_read_in_order_through_join = 0,
     query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0,
-    enable_parallel_replicas = 0, make_distributed_plan = 0, max_threads = 1;
+    enable_parallel_replicas = 0, make_distributed_plan = 0, max_threads = 1,
+    query_plan_max_limit_for_top_k_optimization = 1000;
 
 DROP TABLE IF EXISTS l04891;
 DROP TABLE IF EXISTS r04891;

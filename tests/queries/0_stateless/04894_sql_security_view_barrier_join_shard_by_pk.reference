@@ -1,0 +1,5 @@
+plain tables are sharded:	1
+a view that hides nothing is sharded:	1
+the invoker twin is sharded:	1
+the sealed view is not sharded:	1
+results:	999999	999999
