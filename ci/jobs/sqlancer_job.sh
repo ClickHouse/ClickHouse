@@ -471,8 +471,10 @@ fi
 
 # The console filter above hides ordinary fuzzer output, so show the tail when
 # sqlancer itself misbehaved - that is where "jar not found", a bad option or an
-# OOM kill shows up.
-if [ "$JAVA_EXIT" -ne 0 ] || [ -z "$QUERY_STATS" ]; then
+# OOM kill shows up. Not when findings explain the non-zero exit: sqlancer exits
+# with its error code whenever a worker died on an assertion, and the analysis
+# above already says what happened.
+if [ -z "$QUERY_STATS" ] || { [ "$JAVA_EXIT" -ne 0 ] && [ "$FAILURE_COUNT" -eq 0 ]; }; then
     echo "=== last 30 lines of sqlancer.out ==="
     tail -n 30 "$OUTPUT_FILE" || true
 fi
