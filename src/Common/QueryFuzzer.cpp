@@ -432,7 +432,9 @@ Field QueryFuzzer::getRandomField(int type)
         }
         case 3: {
             /// Date/Date32 boundary values as strings — stress date parsing and arithmetic.
-            /// Date range is [1970-01-01, 2149-06-06], Date32 range is [1900-01-01, 2299-12-31].
+            /// Date range is [1970-01-01, 2149-06-06], Date32 range is [0000-01-01, 9999-12-31].
+            /// 1900 and 2299 are kept as the date LUT's edges, past which reads take a cctz
+            /// escape path, and `10000-01-01` as the one value no date type can parse.
             static constexpr const char * date_values[]
                 = {"0000-01-01",
                    "1899-12-31",
@@ -445,7 +447,8 @@ Field QueryFuzzer::getRandomField(int type)
                    "2149-06-06",
                    "2299-12-31",
                    "2300-01-01",
-                   "9999-12-31"};
+                   "9999-12-31",
+                   "10000-01-01"};
             return String(date_values[fuzz_rand() % std::size(date_values)]);
         }
         case 4: {
@@ -469,6 +472,8 @@ Field QueryFuzzer::getRandomField(int type)
             /// DateTime range is [1970-01-01 00:00:00, 2106-02-07 06:28:15]. DateTime64 spans up to
             /// [0001-01-01 00:00:00, 9999-12-31 23:59:59] at low scales, narrowing at higher scales
             /// (scale 9 tops out near 2262-04-11); the out-of-range values below intentionally stress overflow.
+            /// The `0000` year is not redundant next to `0001`: every DateTime string parser reads
+            /// it as the current year, so its value changes from one year to the next.
             static constexpr const char * datetime_values[]
                 = {"0000-01-01 00:00:00",
                    "0001-01-01 00:00:00",

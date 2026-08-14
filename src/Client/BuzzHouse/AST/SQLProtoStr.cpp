@@ -544,14 +544,14 @@ CONV_FN(SpecialVal, val)
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATE32:
-            ret += "'1900-01-01'";
+            ret += "'0000-01-01'";
             if (val.paren())
             {
                 ret += "::Date32";
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DATE32:
-            ret += "'2299-12-31'";
+            ret += "'9999-12-31'";
             if (val.paren())
             {
                 ret += "::Date32";
