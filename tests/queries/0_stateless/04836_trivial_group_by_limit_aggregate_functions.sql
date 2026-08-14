@@ -20,6 +20,10 @@ SET optimize_trivial_group_by_limit_query = 1;
 SET max_threads = 16;
 SET max_block_size = 1000;
 
+-- A user-supplied equal cap with the default `throw` mode must retain its exception
+-- contract; the optimization must not replace it with the approximate `any` mode.
+SELECT toString(number), count() FROM numbers(10) GROUP BY number LIMIT 5 SETTINGS max_rows_to_group_by = 5; -- { serverError TOO_MANY_ROWS }
+
 -- UInt64 key, count + sum.
 WITH lim AS (SELECT toUInt64(number % 997) AS k, count() AS c, sum(number) AS s FROM numbers_mt(100000) GROUP BY k LIMIT 10),
      tru AS (SELECT toUInt64(number % 997) AS k, count() AS c, sum(number) AS s FROM numbers_mt(100000) GROUP BY k)

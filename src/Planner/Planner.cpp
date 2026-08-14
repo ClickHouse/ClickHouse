@@ -2457,12 +2457,13 @@ void Planner::buildPlanForQueryNode()
             {
                 trivial_group_by_limit = getTrivialGroupByLimit(query_node, settings);
 
-                /// Respect a user-set tighter `max_rows_to_group_by`: keep the user's approximate
-                /// ANY-mode semantics untouched. When the values are equal, proceeding only makes
-                /// the values of the kept keys exact — this also covers the aggregate-free case
-                /// where `OptimizeTrivialGroupByLimitPass` has already set the very same value.
+                /// Respect a user-set tighter `max_rows_to_group_by`. Equality is safe only with
+                /// the approximate ANY-mode semantics; otherwise forcing ANY below would replace
+                /// the user's `throw` or `break` contract.
                 const UInt64 user_max_rows = settings[Setting::max_rows_to_group_by];
-                if (trivial_group_by_limit && user_max_rows != 0 && user_max_rows < *trivial_group_by_limit)
+                if (trivial_group_by_limit && user_max_rows != 0
+                    && (user_max_rows < *trivial_group_by_limit
+                        || (user_max_rows == *trivial_group_by_limit && settings[Setting::group_by_overflow_mode] != OverflowMode::ANY)))
                     trivial_group_by_limit.reset();
             }
 
