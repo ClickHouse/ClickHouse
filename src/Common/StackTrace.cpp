@@ -652,7 +652,7 @@ static bool isStdFunctionPlumbing(const String & symbol_name)
 // trampolines from libc++'s `__functional` headers): their demangled names are huge - they spell out
 // the whole captured lambda type - and they say nothing that the surrounding frames don't already say.
 // Replace parts from @c replacements with shorter aliases
-static String collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
+String StackTrace::collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
 {
     if (symbol_name.empty())
         return "?";
@@ -744,7 +744,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         }
 
         if (frame.symbol.has_value())
-            out << collapseDemangledNames(frame.file, frame.symbol.value());
+            out << StackTrace::collapseDemangledNames(frame.file, frame.symbol.value());
         else
             out << "?";
 
