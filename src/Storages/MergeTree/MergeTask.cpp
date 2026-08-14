@@ -2818,6 +2818,7 @@ public:
             merge_block_size_bytes,
             max_dynamic_subcolumns,
             blocks_are_granules_size,
+            sorting_queue_strategy,
             cleanup,
             time_of_merge
         );
