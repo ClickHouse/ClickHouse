@@ -3096,6 +3096,20 @@ void PostgreSQLReplicationHandler::removeTableFromPublication(pqxx::nontransacti
         LOG_WARNING(log, "Did not remove table {} from publication, because table does not exist in PostgreSQL (publication: {})",
                     doubleQuoteWithSchema(table_name), publication_name);
     }
+    catch (const pqxx::sql_error & e)
+    {
+        /// Same reason: removing a table from replication must also succeed when the table is not part of
+        /// the publication - PostgreSQL rejects `ALTER PUBLICATION ... DROP TABLE` for such a table. That is
+        /// a reachable state: an `ATTACH TABLE` that failed before its publication ALTER leaves the table
+        /// attached (see `DatabaseMaterializedPostgreSQL::attachTable`, which keeps a failed attach visible
+        /// when the nested table could not be dropped), and `DETACH TABLE ... PERMANENTLY` is how such a
+        /// table is removed. The publication can also have been altered externally.
+        if (std::string_view(e.what()).find("is not part of the publication") == std::string_view::npos)
+            throw;
+
+        LOG_WARNING(log, "Did not remove table {} from publication, because it is not part of it (publication: {})",
+                    doubleQuoteWithSchema(table_name), publication_name);
+    }
 }
 
 

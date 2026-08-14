@@ -912,7 +912,19 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         metadata.setConstraints(args.constraints);
         metadata.setComment(args.comment);
 
-        if (args.mode <= LoadingStrictnessLevel::CREATE
+        /// The experimental opt-in is required for every fresh table definition, not only for `CREATE`:
+        /// a user `ATTACH TABLE ... ENGINE = MaterializedPostgreSQL(...)` that spells out the full
+        /// definition instantiates a brand new experimental table (the metadata file does not have to
+        /// exist yet), so letting it through would be a plain bypass of the opt-in. Only a replay of an
+        /// already-persisted definition is exempt - server startup / force-restore, and the short
+        /// `ATTACH TABLE name` syntax, which re-reads the stored definition: those were validated when
+        /// the table was originally created, and re-checking them would make a server stop loading a
+        /// table just because the setting was turned off later. This is the same distinction the
+        /// coordination validator below draws.
+        const bool is_fresh_table_definition = args.mode <= LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+
+        if (is_fresh_table_definition
             && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_materialized_postgresql_table])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "MaterializedPostgreSQL is an experimental table engine."
                                 " You can enable it with the `allow_experimental_materialized_postgresql_table` setting");
@@ -1048,6 +1060,7 @@ This table engine is experimental. To use it, set `allow_experimental_materializ
 ```sql
 SET allow_experimental_materialized_postgresql_table=1
 ```
+The setting is required for every fresh table definition: for `CREATE TABLE`, and also for an `ATTACH TABLE` that spells out the full table definition. Only replaying an already-persisted definition - server startup, and the short `ATTACH TABLE name` syntax - does not need it, so a table created earlier keeps loading after the setting has been turned off.
 :::
 
 If more than one table is required, it is highly recommended to use the [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql) database engine instead of the table engine and use the `materialized_postgresql_tables_list` setting, which specifies the tables to be replicated (will also be possible to add database `schema`). It will be much better in terms of CPU, fewer connections and fewer replication slots inside the remote PostgreSQL database.

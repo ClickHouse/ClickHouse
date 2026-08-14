@@ -43,6 +43,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+    extern const SettingsBool allow_experimental_database_materialized_postgresql;
 }
 
 namespace MaterializedPostgreSQLSetting
@@ -64,6 +65,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int CANNOT_BACKUP_TABLE;
     extern const int FAULT_INJECTED;
     extern const int POSTGRESQL_REPLICATION_INTERNAL_ERROR;
@@ -73,6 +75,7 @@ namespace FailPoints
 {
     extern const char materialized_postgresql_fail_nested_table_drop[];
     extern const char materialized_postgresql_fail_nested_drop_on_detach[];
+    extern const char materialized_postgresql_fail_nested_drop_on_attach[];
     extern const char materialized_postgresql_fail_database_startup[];
     extern const char materialized_postgresql_pause_after_stop_replication[];
 }
@@ -599,31 +602,74 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
         }
         catch (...)
         {
-            /// This is a failed attach table: unpublish the wrapper, restore the persisted tables-list
-            /// setting and remove the already created nested table. The rollback of the setting is
-            /// best-effort: if it fails too, the original error still propagates, and the leftover list
-            /// entry is repaired by the next successful ATTACH / DETACH PERMANENTLY of the same table.
-            if (wrapper_published)
+            /// This is a failed attach table. The nested table created by `createTable` is dropped
+            /// FIRST, and the visible state (the wrapper and the persisted tables-list setting) is
+            /// rolled back only once that drop really succeeded - the same transactional boundary as
+            /// the failed-DETACH path. Rolling the visible state back while the physical nested table
+            /// survives (its drop can fail on a disk error, or with Keeper unavailable for a replicated
+            /// nested table) would make the failure unrecoverable: the retried ATTACH would collide
+            /// with the leftover table instead of starting clean.
+            bool nested_dropped = false;
+            try
             {
-                std::lock_guard tables_lock(tables_mutex);
-                materialized_tables.erase(table_name);
+                /// Simulates that cleanup drop failing (a filesystem error, or Keeper disappearing while a
+                /// replicated nested table removes its own metadata). The failpoint of
+                /// `DatabaseMaterializedPostgreSQL::dropTable` does not fire here: this calls the base
+                /// implementation directly.
+                fiu_do_on(FailPoints::materialized_postgresql_fail_nested_drop_on_attach,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED,
+                        "Injected failure while dropping the nested table of a failed attach");
+                });
+
+                DatabaseAtomic::dropTable(current_context, table_name, true);
+                nested_dropped = true;
             }
-            if (tables_list_altered)
+            catch (...)
             {
-                try
+                tryLogCurrentException(log, fmt::format(
+                    "Failed to drop the nested table after a failed attach of table `{}`", table_name));
+            }
+
+            if (nested_dropped)
+            {
+                if (wrapper_published)
                 {
-                    auto rollback_query = createAlterSettingsQuery(
-                        SettingChange("materialized_postgresql_tables_list", original_tables_list));
-                    InterpreterAlterQuery(rollback_query, current_context).execute();
+                    std::lock_guard tables_lock(tables_mutex);
+                    materialized_tables.erase(table_name);
                 }
-                catch (...)
+                if (tables_list_altered)
                 {
-                    tryLogCurrentException(log, fmt::format(
-                        "Failed to restore materialized_postgresql_tables_list after a failed attach of table `{}`",
-                        table_name));
+                    /// Best-effort: if this fails too, the original error still propagates, and the
+                    /// leftover list entry is repaired by the next successful ATTACH / DETACH
+                    /// PERMANENTLY of the same table.
+                    try
+                    {
+                        auto rollback_query = createAlterSettingsQuery(
+                            SettingChange("materialized_postgresql_tables_list", original_tables_list));
+                        InterpreterAlterQuery(rollback_query, current_context).execute();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, fmt::format(
+                            "Failed to restore materialized_postgresql_tables_list after a failed attach of table `{}`",
+                            table_name));
+                    }
                 }
             }
-            DatabaseAtomic::dropTable(current_context, table_name, true);
+            else
+            {
+                /// The nested table is still there, so the attach stays visible: the wrapper, the persisted
+                /// tables-list entry and the nested table keep describing the same table. That state can
+                /// really be recovered from - `DETACH TABLE ... PERMANENTLY` removes the table (it tolerates
+                /// a table that never made it into the publication, see `removeTableFromPublication`), after
+                /// which the `ATTACH TABLE` can be retried from a clean state. Rolling the visible state back
+                /// instead would leave an invisible nested table that nothing can remove any more, and every
+                /// retry of the attach would collide with it.
+                LOG_WARNING(log, "Table `{}` could not be added to replication, and the nested table created for "
+                    "it could not be dropped either, so the table stays attached (but does not replicate). "
+                    "Remove it with DETACH TABLE ... PERMANENTLY and retry the ATTACH TABLE", table_name);
+            }
             throw;
         }
     }
@@ -1280,6 +1326,20 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         /// was created must not turn its stored definition into a server that cannot boot.
         const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
 
+        /// `InterpreterCreateQuery` enforces the experimental opt-in only for `CREATE DATABASE`
+        /// (it skips the check for every `ATTACH`, so that a database created earlier keeps loading
+        /// after the setting is turned off). A user `ATTACH DATABASE ... ENGINE =
+        /// MaterializedPostgreSQL(...)` that spells out the full definition does not replay anything
+        /// though - it instantiates a brand new experimental database - so without the check here it
+        /// would be a plain bypass of the opt-in. Enforce it on exactly the paths that are treated as
+        /// fresh user input below (an internal metadata replay and the short `ATTACH DATABASE name`
+        /// syntax stay exempt).
+        if (args.create_query.attach && !is_internal_metadata_replay && !args.create_query.attach_short_syntax
+            && !args.context->getSettingsRef()[Setting::allow_experimental_database_materialized_postgresql])
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
+                            "MaterializedPostgreSQL is an experimental database engine. "
+                            "Enable allow_experimental_database_materialized_postgresql to use it");
+
         /// A named collection may specify the endpoint as `addresses_expr`, which fills only
         /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
         /// below is built from `host` / `port`. This engine keeps a single replication connection,
@@ -1385,6 +1445,7 @@ This database engine is experimental. To use it, set `allow_experimental_databas
 ```sql
 SET allow_experimental_database_materialized_postgresql=1
 ```
+The setting is required for every fresh database definition: for `CREATE DATABASE`, and also for an `ATTACH DATABASE` that spells out the full engine definition. Only replaying an already-persisted definition - server startup, and the short `ATTACH DATABASE name` syntax - does not need it, so a database created earlier keeps loading after the setting has been turned off.
 :::
 
 ## Creating a database {#creating-a-database}
@@ -1423,6 +1484,8 @@ After `MaterializedPostgreSQL` database is created, it does not automatically de
 ```sql
 ATTACH TABLE postgres_database.new_table;
 ```
+
+An `ATTACH TABLE` becomes durable only once the table has really joined the publication and the running replication: on failure the table, its entry in [`materialized_postgresql_tables_list`](#materialized-postgresql-tables-list) and the nested table created for it are removed together, so a failed attach can simply be retried. If the nested table cannot be removed either (for example a disk error), the table is deliberately left attached instead of becoming an invisible leftover that every retry would collide with; remove it with `DETACH TABLE ... PERMANENTLY` (see below) and retry the attach.
 
 :::warning
 Before version 22.1, adding a table to replication left a non-removed temporary replication slot (named `{db_name}_ch_replication_slot_tmp`). If attaching tables in ClickHouse version before 22.1, make sure to delete it manually (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`). Otherwise disk usage will grow. This issue is fixed in 22.1.

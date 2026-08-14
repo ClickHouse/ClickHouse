@@ -3376,3 +3376,36 @@ def test_full_attach_table_definition_is_validated(started_cluster):
     )
     assert "ReplicatedReplacingMergeTree" in error
     assert "test_attach_table_full_def" not in instance.query("SHOW TABLES").split()
+
+
+def test_full_attach_database_definition_requires_experimental_setting(started_cluster):
+    # A full-definition ATTACH DATABASE instantiates a brand new experimental database, so it needs the
+    # experimental opt-in exactly like a CREATE. InterpreterCreateQuery skips that check for every ATTACH
+    # (so that a database created earlier keeps loading after the setting is turned off), which would make
+    # this a plain bypass of the opt-in.
+    error = instance.query_and_get_error(
+        f"ATTACH DATABASE test_attach_experimental "
+        f"UUID '11111111-2222-3333-4444-777777777777' "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}')",
+        settings={"allow_experimental_database_materialized_postgresql": 0},
+    )
+    assert "experimental database engine" in error, error
+    assert "test_attach_experimental" not in instance.query("SHOW DATABASES").split()
+
+
+def test_full_attach_table_definition_requires_experimental_setting(started_cluster):
+    # Same as test_full_attach_database_definition_requires_experimental_setting, for the single-table
+    # engine: the gate used to apply to CREATE only, so a full-definition ATTACH TABLE bypassed it.
+    error = instance.query_and_get_error(
+        f"ATTACH TABLE test_attach_table_experimental "
+        f"UUID '11111111-2222-3333-4444-888888888888' (key Int64, value Int64) "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'test_table', 'postgres', '{pg_pass}') "
+        f"PRIMARY KEY key",
+        settings={"allow_experimental_materialized_postgresql_table": 0},
+    )
+    assert "experimental table engine" in error, error
+    assert (
+        "test_attach_table_experimental" not in instance.query("SHOW TABLES").split()
+    )
