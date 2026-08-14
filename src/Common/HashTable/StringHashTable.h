@@ -472,6 +472,14 @@ public:
             std::forward<Func>(func));
     }
 
+    /// The canonical hash of a key: the same value `emplace` / `find` would compute for it, so it
+    /// can be saved and handed back to the `hash_value` overloads.
+    ///
+    /// Carries the same precondition as `dispatchOnKeyClass` above, because it is the very same
+    /// packing: the key bytes must be readable in 8-byte chunks, so pass only keys whose memory
+    /// allows that - a `ColumnString` / `ColumnFixedString` data slice, or an arena key holder -
+    /// and never a `std::string` or a lone unpadded buffer. Every caller already satisfies it by
+    /// construction: they hash exactly the keys they then `emplace` or `find` in the same table.
     size_t ALWAYS_INLINE hash(const Key & x) const
     {
         return dispatchOnKeyClass(
