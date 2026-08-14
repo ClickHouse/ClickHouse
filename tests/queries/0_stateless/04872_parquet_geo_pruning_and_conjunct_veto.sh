@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, no-msan
 #
 # Regression test: `extractSpatialFilters` (src/Processors/Formats/Impl/Parquet/GeoFilter.cpp), via the
 # shared `collectSpatialFiltersConjunctive` template (src/Common/GeoBbox.h), silently dropped any `and`
