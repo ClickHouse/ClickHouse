@@ -445,6 +445,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     const auto & src_header = pipeline.getSharedHeader();
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
 
+    /// Note: `min_rows_per_stream_for_gradual_resize` / `min_bytes_per_stream_for_gradual_resize` are not applied here.
+    /// The `GROUPING SETS` pipeline copies every stream into one branch per grouping set and aggregates each branch
+    /// separately, so it keeps the strict resize and builds one partial state per stream per grouping set.
+    /// This no-op contract is documented in the descriptions of both settings.
     if (!grouping_sets_params.empty())
     {
         const size_t grouping_sets_size = grouping_sets_params.size();
