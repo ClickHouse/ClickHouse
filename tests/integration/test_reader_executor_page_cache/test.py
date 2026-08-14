@@ -88,7 +88,9 @@ def test_reader_executor_populates_and_serves_page_cache(started_cluster):
     )
     warm_src, _, _, warm_hits = _profile_events(node, warm_id)
     assert warm_hits > 0, "warm read did not hit the page cache"
-    assert warm_src < cold_src, "warm read did not read fewer source bytes than the cold read"
+    assert (
+        warm_src < cold_src
+    ), "warm read did not read fewer source bytes than the cold read"
 
     node.query("DROP TABLE t_re_page_cache")
     node.query("SYSTEM DROP PAGE CACHE")
