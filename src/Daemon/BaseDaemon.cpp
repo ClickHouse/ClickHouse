@@ -619,7 +619,7 @@ void BaseDaemon::setupWatchdog()
         /// Temporarily close the logging thread and open it in each process later
         auto * async_channel = dynamic_cast<OwnAsyncSplitChannel *>(logger().getChannel());
         if (async_channel)
-            async_channel->close();
+            async_channel->closeAndJoinThreads();
         pid = fork();
 
 #if USE_JEMALLOC

@@ -292,9 +292,9 @@ void OwnAsyncSplitChannel::open()
     catch (...)
     {
         /// Fail closed: a partially opened channel would keep accepting messages into queues that no
-        /// consumer drains, silently losing diagnostics. Tear back down - log() delivers synchronously
-        /// while the channel is stopped - and let the caller handle it.
-        close();
+        /// consumer drains, silently losing diagnostics. A failed join must also propagate: unwinding
+        /// with a live async logger could overlap static destruction.
+        closeAndJoinThreads();
         throw;
     }
 }
