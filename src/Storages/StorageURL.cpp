@@ -1303,6 +1303,16 @@ void IStorageURLBase::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    /// A pre-existing table may carry a combination that CREATE now rejects (e.g. a named
+    /// collection edited to a wildcard URL after the table was created): ATTACH deliberately
+    /// keeps loading such tables, so enforce the invariant at use instead of silently
+    /// issuing a POST to the literal `*` URL (plain-URL reads do not expand these wildcards).
+    if (urlPathHasListableGlobs(uri) && chooseReadMethod(http_method) == Poco::Net::HTTPRequest::HTTP_POST)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
+            uri);
+
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = clampClusterFunctionNumStreams(
             local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
@@ -2550,7 +2560,11 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
             "The URL engine does not support headers(...) when dispatching to the {} engine (URL '{}')",
             engine_name, configuration.url);
 
-    if (!configuration.http_method.empty())
+    /// Rejected for fresh CREATEs only: named collections have been accepting `http_method`
+    /// regardless of the URL scheme, so pre-existing tables whose collection resolves to a
+    /// non-HTTP scheme must keep attaching after upgrade — the delegated backend ignores
+    /// the key, as it always did.
+    if (!configuration.http_method.empty() && args.mode <= LoadingStrictnessLevel::CREATE)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The URL engine does not support http_method when dispatching to the {} engine (URL '{}')",

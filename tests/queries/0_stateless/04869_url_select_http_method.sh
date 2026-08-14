@@ -67,6 +67,17 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM urlCluster('test_cluster_two_shards_localho
 $CLICKHOUSE_CLIENT -q "CREATE TABLE url_wild_put_62352 (x String) ENGINE = URL('http://localhost:1/files/*.csv', CSV, http_method='PUT')"
 $CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE url_wild_put_62352" | grep -c "http_method"
 $CLICKHOUSE_CLIENT -q "DROP TABLE url_wild_put_62352"
+# A pre-existing table can carry POST + wildcard (a named collection edited after the table
+# was created): ATTACH keeps loading it, and the read path rejects it at use time.
+$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS nc_62352"
+$CLICKHOUSE_CLIENT -q "CREATE NAMED COLLECTION nc_62352 AS url = 'http://localhost:1/plain.csv', format = 'CSV', http_method = 'POST'"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE url_nc_62352 (x String) ENGINE = URL(nc_62352)"
+$CLICKHOUSE_CLIENT -q "ALTER NAMED COLLECTION nc_62352 SET url = 'http://localhost:1/files/*.csv'"
+$CLICKHOUSE_CLIENT -q "DETACH TABLE url_nc_62352"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE url_nc_62352"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM url_nc_62352" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
+$CLICKHOUSE_CLIENT -q "DROP TABLE url_nc_62352"
+$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION nc_62352"
 
 # 8. The schema-inference cache is method-aware: with the cache enabled (the default), a
 #    repeated POST inference stays all-POST. For POST reads no cache-validation probe is sent
