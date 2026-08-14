@@ -6895,9 +6895,12 @@ Allow to use the filesystem cache in passive mode - benefit from the existing ca
     DECLARE_WITH_ALIAS(Bool, filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit, true, R"(
 Skip download from remote filesystem if exceeds query cache size
 )", 0, skip_download_if_exceeds_query_cache) \
-    DECLARE(UInt64, filesystem_cache_max_download_size, (128UL * 1024 * 1024 * 1024), R"(
-Max remote filesystem cache size that can be downloaded by a single query
-)", 0) \
+    DECLARE_WITH_ALIAS(UInt64, filesystem_cache_query_limit_bytes, 0, R"(
+How much data a single query may write into the filesystem cache. `0` disables the limit.
+Requires `enable_filesystem_query_cache_limit` in the cache configuration. When the limit is
+reached, `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` decides whether
+the query stops caching or evicts what it cached itself to make room.
+)", 0, filesystem_cache_max_download_size) \
     DECLARE(Bool, throw_on_error_from_cache_on_write_operations, false, R"(
 Ignore error from cache when caching on write operations (INSERT, merges)
 )", 0) \

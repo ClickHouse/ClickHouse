@@ -228,7 +228,8 @@ public:
     size_t getReserveGranularity() const { return reserve_granularity.load(std::memory_order_relaxed); }
 
     /// `charged_query_id`, if given, receives the query charged for the reservation in its per-query
-    /// limit, or an empty string when it is charged to no query.
+    /// limit, or an empty string when it is charged to no query. `owner_query_id` is charged when
+    /// the reserving thread belongs to no query itself, as a background download does.
     bool tryReserve(
         FileSegment & file_segment,
         size_t size,
@@ -236,7 +237,8 @@ public:
         const OriginInfo & origin,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason,
-        String * charged_query_id = nullptr);
+        String * charged_query_id = nullptr,
+        const String & owner_query_id = {});
 
     bool tryIncreasePriority(FileSegment & file_segment);
 
@@ -263,12 +265,15 @@ public:
     /// Give back `size` bytes reserved for `key`:`offset` but never written to `query_id`.
     void unchargeQueryLimitSurplus(const String & query_id, const Key & key, size_t offset, size_t size);
 
-    /// Whether writes into this cache are charged to the query which makes them.
-    bool hasQueryLimit() const { return query_limit != nullptr; }
+    /// Whether any query currently writes into this cache under a per-query limit. False both when
+    /// the cache does not permit the limit and while no query enables it, which is the default.
+    bool isQueryLimitInUse() const { return query_limit && query_limit->hasQueryContexts(); }
 
-    /// Whether `size` still fits into the per-query write limit of the current query.
-    /// True when there is no such limit.
-    bool fitsIntoCurrentQueryLimit(size_t size) const;
+    /// Whether `size` more bytes fit into what `query_id` has left to write into this cache.
+    bool fitsIntoQueryLimit(const String & query_id, size_t size) const;
+
+    /// Number of queries currently limited in this cache. For tests and introspection.
+    size_t getQueryLimitContextsCount() const { return query_limit ? query_limit->getQueryContextsCount() : 0; }
 
     using IterateFunc = std::function<void(const FileSegmentInfo &)>;
     void iterate(IterateFunc && func, const UserID & user_id);
@@ -468,7 +473,8 @@ private:
         const OriginInfo & origin_info,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason,
-        String * charged_query_id);
+        String * charged_query_id,
+        const String & owner_query_id);
 
     bool doEviction(
         EvictionInfo & main_eviction_info,

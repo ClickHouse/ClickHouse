@@ -283,6 +283,7 @@ FileSegment::DownloadState & FileSegment::getOrCreateDownloadDataUnlocked(const 
 void FileSegment::resetDownloadDataUnlocked(const FileSegmentGuard::Lock &)
 {
     download_data.reset();
+    has_query_limit_owner.store(false, std::memory_order_relaxed);
 }
 
 String FileSegment::getOrSetDownloader()
@@ -742,10 +743,20 @@ bool FileSegment::reserve(
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
 
+    /// The query charged for what is reserved for this segment so far, so that a reservation made
+    /// by a thread which belongs to no query (a background download) is charged to it as well.
+    String owner_query_id;
+    if (has_query_limit_owner.load(std::memory_order_relaxed))
+    {
+        auto lk = lock();
+        if (download_data)
+            owner_query_id = download_data->query_limit_owner;
+    }
+
     String charged_query_id;
     bool reserved = cache->tryReserve(
         *this, size_to_reserve, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds,
-        failure_reason, &charged_query_id);
+        failure_reason, &charged_query_id, owner_query_id);
 
     if (!reserved)
     {
@@ -753,14 +764,17 @@ bool FileSegment::reserve(
         return false;
     }
 
-    if (cache->hasQueryLimit())
+    /// The write which follows consumes the previous reserve-ahead, so the query charged now owns
+    /// the whole outstanding one. Nothing to record while no query is charged for this segment.
+    if (!charged_query_id.empty() || has_query_limit_owner.load(std::memory_order_relaxed))
     {
-        /// The write which follows consumes the previous reserve-ahead, so the query charged now
-        /// owns the whole outstanding one.
         auto lk = lock();
         chassert(download_data || download_state == State::DETACHED);
         if (download_data)
+        {
             download_data->query_limit_owner = charged_query_id;
+            has_query_limit_owner.store(!charged_query_id.empty(), std::memory_order_relaxed);
+        }
     }
 
     return true;
@@ -964,6 +978,9 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
         {
             cache->unchargeQueryLimitSurplus(download_data->query_limit_owner, key(), offset(), surplus);
             download_data->query_limit_owner.clear();
+            has_query_limit_owner.store(false, std::memory_order_relaxed);
+            /// `resetDownloadDataUnlocked` clears the mark as well, for the paths which drop the
+            /// whole download state without giving a surplus back.
         }
         reserved_size = downloaded_size.load();
     }
@@ -1118,14 +1135,13 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
                 bool added_to_download_queue = false;
                 size_t background_download_size = allow_background_download ? getSizeForBackgroundDownloadUnlocked(segment_lock) : 0;
 
-                /// A background download reserves from a thread without a query context, so its
-                /// bytes are charged to no query. Do not start one which would write more than the
-                /// current query has left, keeping in mind that the reserved part is charged already.
-                /// The size is recomputed by the download thread, so this decides only whether to
-                /// start at all.
+                /// The continuation reserves on a thread with no query of its own, charged to the
+                /// query which owns this segment's reservation. Starting one that query has no
+                /// budget for would only fail the reservation and leave the segment unfinishable.
                 if (const size_t reserved_ahead = reserved_size - current_downloaded_size;
-                    background_download_size > reserved_ahead
-                    && !cache->fitsIntoCurrentQueryLimit(background_download_size - reserved_ahead))
+                    background_download_size > reserved_ahead && download_data
+                    && !cache->fitsIntoQueryLimit(
+                        download_data->query_limit_owner, background_download_size - reserved_ahead))
                 {
                     background_download_size = 0;
                 }

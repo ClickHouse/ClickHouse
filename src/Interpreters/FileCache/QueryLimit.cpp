@@ -19,6 +19,11 @@ static bool isQueryInitialized()
         && !CurrentThread::getQueryId().empty();
 }
 
+bool FileCacheQueryLimit::isCurrentThreadInQuery()
+{
+    return isQueryInitialized();
+}
+
 FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetCurrentQueryContextUnlocked() const
 {
     if (!isQueryInitialized())
@@ -32,10 +37,34 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetCurrentQueryCont
 
 FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext()
 {
-    std::lock_guard lock(query_map_mutex);
-    return tryGetCurrentQueryContextUnlocked();
+    if (!hasQueryContexts())
+        return nullptr;
+
+    /// Destroyed after the lock is released.
+    std::vector<QueryContextPtr> doomed;
+    {
+        std::lock_guard lock(query_map_mutex);
+        if (auto context = tryGetCurrentQueryContextUnlocked())
+            return context;
+
+        /// This query is not limited, yet some context is still here. Sweep the finished ones, so
+        /// that a context left behind by a query which is long gone does not keep every reservation
+        /// in this cache taking this lock.
+        sweepDroppableContextsUnlocked(doomed, /* keep_query_id */{}, /* only_finished_queries */true);
+    }
+    return nullptr;
 }
 
+
+FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContextById(const String & query_id)
+{
+    if (query_id.empty() || !hasQueryContexts())
+        return nullptr;
+
+    std::lock_guard lock(query_map_mutex);
+    auto query_iter = query_map.find(query_id);
+    return query_iter == query_map.end() ? nullptr : query_iter->second;
+}
 
 std::vector<FileCacheQueryLimit::QueryContextPtr>
 FileCacheQueryLimit::removeQueryContext(QueryContextPtr & context)
@@ -48,43 +77,68 @@ FileCacheQueryLimit::removeQueryContext(QueryContextPtr & context)
     {
         std::lock_guard lock(query_map_mutex);
 
-        /// Drop this holder's own reference to the context under the lock, before looking at
-        /// use_count() below. use_count() is not a synchronization primitive, so the decision must
-        /// be made after every reference change to the context is serialized by this mutex (which
-        /// also guards getOrSetQueryContext). Deciding before dropping the reference (or dropping it
-        /// outside the lock) is a TOCTOU: two holders releasing at once can both observe the shared
-        /// count and both skip the erase, orphaning the map entry (see #109508).
+        /// Drop this holder's own reference to the context under the lock, before the sweep below
+        /// looks at use_count(). use_count() is not a synchronization primitive, so the decision
+        /// must be made after every reference change to the context is serialized by this mutex
+        /// (which also guards getOrSetQueryContext). Deciding before dropping the reference (or
+        /// dropping it outside the lock) is a TOCTOU: two holders releasing at once can both observe
+        /// the shared count and both skip the erase, orphaning the map entry (see #109508).
         context.reset();
 
-        /// Sweep the contexts of finished queries: this holder's own query may still be running
-        /// (then its context must stay), and the last holder of an already finished query is not
-        /// necessarily this one.
-        for (auto it = query_map.begin(); it != query_map.end();)
-        {
-            if (it->second.use_count() == 1 && it->second->canBeDroppedWithoutHolders())
-            {
-                doomed.push_back(std::move(it->second));
-                it = query_map.erase(it);
-            }
-            else
-                ++it;
-        }
+        sweepDroppableContextsUnlocked(doomed, /* keep_query_id */{}, /* only_finished_queries */false);
     }
     return doomed;
+}
+
+void FileCacheQueryLimit::sweepDroppableContextsUnlocked(
+    std::vector<QueryContextPtr> & doomed, const String & keep_query_id, bool only_finished_queries)
+{
+    for (auto it = query_map.begin(); it != query_map.end();)
+    {
+        /// The map entry is the only owner left and the query is gone. A context of an untracked
+        /// query (no thread group) is only dropped by its own holder, which is the one thing known
+        /// to end its lifetime.
+        const bool droppable = only_finished_queries
+            ? it->second->isQueryFinished()
+            : it->second->canBeDroppedWithoutHolders();
+        if (it->first != keep_query_id && it->second.use_count() == 1 && droppable)
+        {
+            doomed.push_back(std::move(it->second));
+            it = query_map.erase(it);
+        }
+        else
+            ++it;
+    }
+    live_contexts.store(query_map.size(), std::memory_order_release);
 }
 
 void FileCacheQueryLimit::unchargeEvictedSegment(
     const FileCacheKey & key, size_t offset, const CachePriorityGuard::WriteLock & lock)
 {
+    if (!hasQueryContexts())
+        return;
+
     std::lock_guard map_lock(query_map_mutex);
     for (auto & [_, context] : query_map)
         context->tryRemove(key, offset, lock);
 }
 
+bool FileCacheQueryLimit::fitsIntoQueryLimit(const String & query_id, size_t size)
+{
+    auto query_context = tryGetQueryContextById(query_id);
+    if (!query_context)
+        return true;
+
+    /// Approximate values are enough: this only decides whether to start writing more.
+    const auto & priority = query_context->getPriority();
+    const size_t limit = priority.getSizeLimitApprox();
+    return limit == 0 || priority.getSizeApprox() + size <= limit;
+}
+
 void FileCacheQueryLimit::unchargeSurplus(
     const String & query_id, const FileCacheKey & key, size_t offset, size_t size)
 {
-    if (query_id.empty() || !size)
+    if (query_id.empty() || !size || !hasQueryContexts())
         return;
 
     std::lock_guard map_lock(query_map_mutex);
@@ -102,23 +156,34 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
     if (query_id.empty())
         return nullptr;
 
-    /// Declared before the lock, so that a replaced context is destroyed after it is released.
-    QueryContextPtr doomed;
+    /// Declared before the lock, so that dropped contexts are destroyed after it is released.
+    std::vector<QueryContextPtr> doomed;
     {
         std::lock_guard lock(query_map_mutex);
-        auto [it, inserted] = query_map.emplace(query_id, nullptr);
+
+        /// A query which released its last holder before finishing leaves its context behind, and
+        /// only holder destruction sweeps them, which may never come again. Sweep here too, so that
+        /// the next query arriving in this cache cleans up after the previous ones.
+        sweepDroppableContextsUnlocked(doomed, query_id, /* only_finished_queries */true);
+
+        auto it = query_map.find(query_id);
         /// query_id is reusable, so an entry of a finished query must not be inherited by a new one.
-        if (!inserted && it->second->isQueryFinished())
+        if (it != query_map.end() && it->second->isQueryFinished())
         {
-            doomed = std::move(it->second);
-            inserted = true;
+            doomed.push_back(std::move(it->second));
+            query_map.erase(it);
+            it = query_map.end();
         }
 
-        if (inserted)
+        if (it == query_map.end())
         {
-            it->second = std::make_shared<QueryContext>(
-                settings.max_download_size_per_query,
+            /// Constructed before it goes into the map, so that a throwing constructor cannot leave
+            /// an empty entry behind.
+            auto context = std::make_shared<QueryContext>(
+                settings.query_limit_bytes,
                 !settings.skip_download_if_exceeds_per_query_cache_write_limit);
+            it = query_map.emplace(query_id, std::move(context)).first;
+            live_contexts.store(query_map.size(), std::memory_order_release);
         }
 
         return it->second;

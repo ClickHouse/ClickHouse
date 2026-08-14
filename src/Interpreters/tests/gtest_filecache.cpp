@@ -3804,7 +3804,7 @@ struct QueryLimitFixture
         const std::string & cache_name,
         const std::string & cache_path,
         const std::string & query_id_,
-        size_t max_download_size_per_query,
+        size_t query_limit_bytes,
         size_t reserve_granularity,
         size_t cache_max_size = 1000)
     {
@@ -3821,7 +3821,7 @@ struct QueryLimitFixture
         cache = std::make_unique<DB::FileCache>(cache_name, settings);
         cache->initialize();
 
-        read_settings.max_download_size_per_query = max_download_size_per_query;
+        read_settings.query_limit_bytes = query_limit_bytes;
         read_settings.skip_download_if_exceeds_per_query_cache_write_limit = true;
         query_id = query_id_;
         holder = cache->getQueryContextHolder(query_id, read_settings);
@@ -3861,7 +3861,7 @@ TEST_F(FileCacheTest, QueryLimitUnchargesEvictedSegments)
 
     QueryLimitFixture fixture(
         "query_limit_evicted", cache_base_path, query_id,
-        /* max_download_size_per_query */25, /* reserve_granularity */0, /* cache_max_size */20);
+        /* query_limit_bytes */25, /* reserve_granularity */0, /* cache_max_size */20);
     ASSERT_TRUE(fixture.holder != nullptr);
 
     ASSERT_TRUE(fixture.reserveAndDownload(0, 10, 10, cache_base_path));
@@ -3888,7 +3888,7 @@ TEST_F(FileCacheTest, QueryLimitSurplusGoesBackToTheQueryWhichReservedIt)
 
     QueryLimitFixture fixture(
         "query_limit_surplus_owner", cache_base_path3, owner_query_id,
-        /* max_download_size_per_query */12, /* reserve_granularity */0);
+        /* query_limit_bytes */12, /* reserve_granularity */0);
     ASSERT_TRUE(fixture.holder != nullptr);
 
     /// 8 of the 12 byte budget, of which only 2 bytes are written: 6 bytes of reserve-ahead.
@@ -3938,12 +3938,12 @@ TEST_F(FileCacheTest, QueryLimitUnchargesSegmentsEvictedByAnotherQuery)
     cache.initialize();
 
     FilesystemCacheSettings limited_settings;
-    limited_settings.max_download_size_per_query = 12;
+    limited_settings.query_limit_bytes = 12;
     limited_settings.skip_download_if_exceeds_per_query_cache_write_limit = true;
 
     /// The evicting query must not be limited itself, it has to reserve more than the cache holds.
     FilesystemCacheSettings unlimited_settings;
-    unlimited_settings.max_download_size_per_query = 1000;
+    unlimited_settings.query_limit_bytes = 1000;
     unlimited_settings.skip_download_if_exceeds_per_query_cache_write_limit = true;
 
     std::mutex mutex;
@@ -4024,7 +4024,7 @@ TEST_F(FileCacheTest, QueryLimitUnchargeDoesNotUnderflow)
 
     QueryLimitFixture fixture(
         "query_limit_underflow", cache_base_path3, query_id,
-        /* max_download_size_per_query */20, /* reserve_granularity */0);
+        /* query_limit_bytes */20, /* reserve_granularity */0);
     ASSERT_TRUE(fixture.holder != nullptr);
 
     ASSERT_TRUE(fixture.reserveAndDownload(0, 10, 10, cache_base_path3));
@@ -4039,7 +4039,7 @@ TEST_F(FileCacheTest, QueryLimitUnchargeDoesNotUnderflow)
 
 TEST_F(FileCacheTest, QueryLimitIsCumulative)
 {
-    /// `max_download_size_per_query` is a budget for the whole query, not for a single
+    /// `query_limit_bytes` is a budget for the whole query, not for a single
     /// reservation: two 10 byte segments must not both fit into a 15 byte budget.
     ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
@@ -4052,7 +4052,7 @@ TEST_F(FileCacheTest, QueryLimitIsCumulative)
 
     QueryLimitFixture fixture(
         "query_limit_cumulative", cache_base_path, query_id,
-        /* max_download_size_per_query */15, /* reserve_granularity */0);
+        /* query_limit_bytes */15, /* reserve_granularity */0);
     ASSERT_TRUE(fixture.holder != nullptr);
 
     ASSERT_TRUE(fixture.reserveAndDownload(0, 10, 10, cache_base_path));
@@ -4075,7 +4075,7 @@ TEST_F(FileCacheTest, QueryLimitReturnsReserveAheadSurplus)
 
     QueryLimitFixture fixture(
         "query_limit_surplus", cache_base_path3, query_id,
-        /* max_download_size_per_query */15, /* reserve_granularity */8);
+        /* query_limit_bytes */15, /* reserve_granularity */8);
     ASSERT_TRUE(fixture.holder != nullptr);
 
     ASSERT_TRUE(fixture.reserveAndDownload(0, 8, 2, cache_base_path3));
@@ -4098,12 +4098,111 @@ TEST_F(FileCacheTest, QueryLimitSurvivesReadBufferLifetime)
 
     QueryLimitFixture fixture(
         "query_limit_buffer_lifetime", cache_base_path2, query_id,
-        /* max_download_size_per_query */15, /* reserve_granularity */0);
+        /* query_limit_bytes */15, /* reserve_granularity */0);
     ASSERT_TRUE(fixture.holder != nullptr);
 
     ASSERT_TRUE(fixture.reserveAndDownload(0, 10, 10, cache_base_path2));
     fixture.recreateHolder();
     ASSERT_FALSE(fixture.reserveAndDownload(100, 10, 10, cache_base_path2));
+}
+
+TEST_F(FileCacheTest, QueryLimitChargesReservationsWithoutAQuery)
+{
+    /// A background download continues a segment from a thread which belongs to no query. Those
+    /// bytes must be charged to the query which reserved the segment so far, otherwise they escape
+    /// its budget entirely.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const std::string owner_query_id = "no_query_thread_owner";
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId(owner_query_id);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    QueryLimitFixture fixture(
+        "query_limit_no_query_thread", cache_base_path2, owner_query_id,
+        /* query_limit_bytes */12, /* reserve_granularity */0);
+    ASSERT_TRUE(fixture.holder != nullptr);
+
+    /// This query reserves 8 of its 12 byte budget for the segment and writes 4 of them.
+    auto segments = fixture.cache->getOrSet(
+        DB::FileCacheKey::fromPath("query_limit_key"), 0, 16, INT_MAX, {}, 0, FileCache::getCommonOrigin());
+    auto segment = *segments->begin();
+    ASSERT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+
+    std::string failure_reason;
+    ASSERT_TRUE(segment->reserve(8, 1000, failure_reason));
+
+    auto key_str = segment->key().toString();
+    fs::create_directories(fs::path(cache_base_path2) / key_str.substr(0, 3) / key_str);
+    std::string data(4, '0');
+    segment->write(data.data(), data.size(), segment->getCurrentWriteOffset());
+
+    /// Hand the download over, as completing a segment for background download does.
+    segment->resetDownloader();
+
+    /// Continuing the download from a thread without a query of its own needs 8 more bytes, which
+    /// do not fit into what the owner has left: 8 + 8 exceeds 12.
+    bool reserved_without_a_query = true;
+    std::thread download_thread([&]
+    {
+        EXPECT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+        std::string background_failure_reason;
+        reserved_without_a_query = segment->reserve(12, 1000, background_failure_reason);
+    });
+    download_thread.join();
+
+    ASSERT_FALSE(reserved_without_a_query);
+}
+
+TEST_F(FileCacheTest, QueryLimitContextIsDroppedWhenTheNextQueryArrives)
+{
+    /// A query which released its last holder before finishing leaves its context behind. It must
+    /// not stay for the lifetime of the cache: the next query arriving cleans it up.
+    ServerUUID::setRandomForUnitTests();
+
+    FilesystemCacheSettings read_settings;
+    read_settings.query_limit_bytes = 1024;
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path3;
+    settings[FileCacheSetting::max_size] = 1000;
+    settings[FileCacheSetting::max_elements] = 100;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::enable_filesystem_query_cache_limit] = true;
+
+    DB::FileCache cache("query_limit_context_sweep", settings);
+    cache.initialize();
+
+    /// The first query takes a holder and drops it while still running, then finishes.
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId("sweep_finished_query");
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+
+        auto holder = cache.getQueryContextHolder("sweep_finished_query", read_settings);
+        ASSERT_TRUE(holder != nullptr);
+        /// Dropping the holder must keep the context, the query is still running.
+        holder = nullptr;
+        ASSERT_TRUE(cache.isQueryLimitInUse());
+    }
+
+    /// The next query arrives: the finished query's context is gone, only this one is left.
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId("sweep_next_query");
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+
+        auto holder = cache.getQueryContextHolder("sweep_next_query", read_settings);
+        ASSERT_TRUE(holder != nullptr);
+        ASSERT_EQ(cache.getQueryLimitContextsCount(), 1u);
+    }
 }
 
 TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
@@ -4118,7 +4217,7 @@ TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
 
     const std::string query_id = "query_id_revive";
     FilesystemCacheSettings cache_settings;
-    cache_settings.max_download_size_per_query = 1024;
+    cache_settings.query_limit_bytes = 1024;
 
     /// holder1 takes the context; query_map and holder1 both reference it (use_count == 2).
     auto context1 = query_limit.getOrSetQueryContext(query_id, cache_settings);
@@ -4189,7 +4288,7 @@ TEST_F(FileCacheTest, QueryLimitConcurrentReleaseNoLeak)
 
     const std::string query_id = "query_id_concurrent_release";
     FilesystemCacheSettings cache_settings;
-    cache_settings.max_download_size_per_query = 1024;
+    cache_settings.query_limit_bytes = 1024;
 
     /// Two holders take the same context; query_map + both holders reference it (use_count == 3).
     auto context1 = query_limit.getOrSetQueryContext(query_id, cache_settings);

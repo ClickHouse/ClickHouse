@@ -304,6 +304,9 @@ private:
     /// downloaded_size should always be less or equal to reserved_size
     std::atomic<size_t> downloaded_size = 0;
     std::atomic<size_t> reserved_size = 0;
+    /// Whether `DownloadState::query_limit_owner` is set, readable without the segment lock so that
+    /// a reservation which is charged to no query does not have to take it.
+    std::atomic<bool> has_query_limit_owner = false;
 
     /// State needed only while a segment is being downloaded. Created lazily when a downloader
     /// is assigned and freed once the segment reaches a terminal state (DOWNLOADED/DETACHED),

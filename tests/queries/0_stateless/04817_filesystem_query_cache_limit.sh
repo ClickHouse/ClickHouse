@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `filesystem_cache_max_download_size` limits how much a single query writes into the filesystem
+# `filesystem_cache_query_limit_bytes` limits how much a single query writes into the filesystem
 # cache in total, not how much a single space reservation takes. The two tables hold the same data
 # and neither is cached before its read, so the only difference is the limit.
 
@@ -35,8 +35,11 @@ SETTINGS min_bytes_for_wide_part = 0, disk = disk(
 CREATE TABLE test_with_limit AS test_no_limit;
 
 SET enable_filesystem_cache_on_write_operations = 0;
+SET max_insert_threads = 1;
 INSERT INTO test_no_limit SELECT number, toString(rand64()) FROM numbers(500000);
 INSERT INTO test_with_limit SELECT number, toString(rand64()) FROM numbers(500000);
+SYSTEM STOP MERGES test_no_limit;
+SYSTEM STOP MERGES test_with_limit;
 "
 
 # How much a query writes into the cache is `CachedReadBufferCacheWriteBytes`, which is what the
@@ -45,9 +48,10 @@ INSERT INTO test_with_limit SELECT number, toString(rand64()) FROM numbers(50000
 written_bytes() {
     $CLICKHOUSE_CLIENT -m --query "
     SYSTEM FLUSH LOGS query_log;
-    SELECT ProfileEvents['CachedReadBufferCacheWriteBytes']
-    FROM system.query_log WHERE query_id = '$1' AND type = 'QueryFinish' AND current_database = currentDatabase()
-    ORDER BY event_time_microseconds DESC LIMIT 1;"
+    SELECT max(ProfileEvents['CachedReadBufferCacheWriteBytes'])
+    FROM (SELECT ProfileEvents FROM system.query_log
+          WHERE query_id = '$1' AND type = 'QueryFinish' AND current_database = currentDatabase()
+          ORDER BY event_time_microseconds DESC LIMIT 1);"
 }
 
 $CLICKHOUSE_CLIENT --query_id "no_limit_${CLICKHOUSE_DATABASE}" \
@@ -56,7 +60,7 @@ echo "no limit: writes more than the limit  $(( $(written_bytes "no_limit_${CLIC
 
 $CLICKHOUSE_CLIENT --query_id "with_limit_${CLICKHOUSE_DATABASE}" \
     --query "SELECT * FROM test_with_limit
-             SETTINGS ${cache_settings}, filesystem_cache_max_download_size = ${limit} FORMAT Null"
+             SETTINGS ${cache_settings}, filesystem_cache_query_limit_bytes = ${limit} FORMAT Null"
 echo "with limit: stays within the limit  $(( $(written_bytes "with_limit_${CLICKHOUSE_DATABASE}") <= limit ))"
 
 $CLICKHOUSE_CLIENT -m --query "DROP TABLE test_no_limit; DROP TABLE test_with_limit;"

@@ -1303,7 +1303,8 @@ bool FileCache::tryReserve(
     const OriginInfo & origin_info,
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason,
-    String * charged_query_id)
+    String * charged_query_id,
+    const String & owner_query_id)
 {
     CurrentMetrics::Increment increment(CurrentMetrics::FilesystemCacheReserveThreads);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
@@ -1330,7 +1331,7 @@ bool FileCache::tryReserve(
 
     const bool success = doTryReserve(
         file_segment, size, reserve_stat, origin_info, lock_wait_timeout_milliseconds,
-        failure_reason, charged_query_id);
+        failure_reason, charged_query_id, owner_query_id);
     if (!success)
         ProfileEvents::increment(ProfileEvents::FilesystemCacheFailedReserveAttempts);
     return success;
@@ -1343,7 +1344,8 @@ bool FileCache::doTryReserve(
     const OriginInfo & origin_info,
     size_t /* lock_wait_timeout_milliseconds */,
     std::string & failure_reason,
-    String * charged_query_id)
+    String * charged_query_id,
+    const String & owner_query_id)
 {
     auto main_priority_iterator = file_segment.getQueueIterator();
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -1376,14 +1378,27 @@ bool FileCache::doTryReserve(
         auto lock = cache_state_guard.lock();
 
         /// Check per-query cache limits.
-        if (query_limit)
+        if (isQueryLimitInUse())
         {
+            String charged_query;
             query_context = query_limit->tryGetQueryContext();
+            if (query_context)
+                charged_query = CurrentThread::getQueryId();
+            else if (!owner_query_id.empty() && !FileCacheQueryLimit::isCurrentThreadInQuery())
+            {
+                /// A background download reserves from a thread which belongs to no query at all,
+                /// so charge the query which reserved this segment so far - otherwise those bytes
+                /// escape the per-query limit. A thread which does belong to a query is never
+                /// charged for another one, whether or not its own query is limited.
+                query_context = query_limit->tryGetQueryContextById(owner_query_id);
+                charged_query = query_context ? owner_query_id : String{};
+            }
+
             if (query_context)
             {
                 /// Reported to the caller, which remembers who to give the unwritten part back to.
                 if (charged_query_id)
-                    *charged_query_id = CurrentThread::getQueryId();
+                    *charged_query_id = charged_query;
 
                 query_priority = &query_context->getPriority();
                 if (!query_priority->canFit(size, required_elements_num, lock, /* reservee */nullptr, origin_info)
@@ -1644,7 +1659,7 @@ bool FileCache::doEviction(
 
         /// Captured before `evict()` empties the candidates. Both passes are taken into account:
         /// the segments being evicted may have been cached by any query, not only by this one.
-        if (query_limit)
+        if (isQueryLimitInUse())
         {
             for (const auto & [key, key_candidates] : eviction_candidates)
                 for (const auto & candidate : key_candidates.candidates)
@@ -3318,26 +3333,16 @@ bool FileCache::doDynamicResizeImpl(
 FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
     const String & query_id, const FilesystemCacheSettings & cache_settings)
 {
-    if (!query_limit || cache_settings.max_download_size_per_query == 0)
+    if (!query_limit || cache_settings.query_limit_bytes == 0)
         return {};
 
     auto context = query_limit->getOrSetQueryContext(query_id, cache_settings);
     return std::make_unique<QueryContextHolder>(query_id, query_limit.get(), std::move(context));
 }
 
-bool FileCache::fitsIntoCurrentQueryLimit(size_t size) const
+bool FileCache::fitsIntoQueryLimit(const String & query_id, size_t size) const
 {
-    if (!query_limit)
-        return true;
-
-    auto query_context = query_limit->tryGetQueryContext();
-    if (!query_context)
-        return true;
-
-    /// Approximate values are enough here: this only decides whether to start writing more.
-    const auto & priority = query_context->getPriority();
-    const size_t limit = priority.getSizeLimitApprox();
-    return limit == 0 || priority.getSizeApprox() + size <= limit;
+    return !query_limit || query_limit->fitsIntoQueryLimit(query_id, size);
 }
 
 void FileCache::unchargeQueryLimitSurplus(const String & query_id, const Key & key, size_t offset, size_t size)
