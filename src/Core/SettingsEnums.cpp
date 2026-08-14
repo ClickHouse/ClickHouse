@@ -99,6 +99,11 @@ IMPLEMENT_SETTING_ENUM(DistributedProductMode, ErrorCodes::UNKNOWN_DISTRIBUTED_P
      {"global", DistributedProductMode::GLOBAL},
      {"allow",  DistributedProductMode::ALLOW}})
 
+IMPLEMENT_SETTING_ENUM(ObjectStorageClusterJoinMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"local",  ObjectStorageClusterJoinMode::LOCAL},
+     {"global", ObjectStorageClusterJoinMode::GLOBAL},
+     {"allow",  ObjectStorageClusterJoinMode::ALLOW}})
+
 
 IMPLEMENT_SETTING_ENUM(QueryResultCacheNondeterministicFunctionHandling, ErrorCodes::BAD_ARGUMENTS,
     {{"throw",  QueryResultCacheNondeterministicFunctionHandling::Throw},
@@ -515,4 +520,9 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"wildcard", FileLikeEngineDefaultPartitionStrategy::WILDCARD},
      {"hive", FileLikeEngineDefaultPartitionStrategy::HIVE}})
+
+IMPLEMENT_SETTING_AUTO_ENUM(MergeTreePartExportFileAlreadyExistsPolicy, ErrorCodes::BAD_ARGUMENTS);
+
+IMPLEMENT_SETTING_AUTO_ENUM(ExportPartitionAllOnError, ErrorCodes::BAD_ARGUMENTS);
+
 }

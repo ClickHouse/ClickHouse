@@ -1007,53 +1007,6 @@ private:
     const ColumnNameToColumnNodeMap & column_name_to_node;
 };
 
-class RewriteInToGlobalInVisitor : public InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>
-{
-public:
-    using Base = InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>;
-    using Base::Base;
-
-    void enterImpl(QueryTreeNodePtr & node)
-    {
-        if (auto * function_node = node->as<FunctionNode>(); function_node && isNameOfLocalInFunction(function_node->getFunctionName()))
-        {
-            auto * query = function_node->getArguments().getNodes()[1]->as<QueryNode>();
-            if (!query)
-                return;
-            bool no_replace = true;
-            for (const auto & table_node : extractTableExpressions(query->getJoinTree(), false, true))
-            {
-                const StorageDistributed * storage_distributed = nullptr;
-                if (const TableNode * table_node_typed = table_node->as<TableNode>())
-                    storage_distributed = typeid_cast<const StorageDistributed *>(table_node_typed->getStorage().get());
-                else if (const TableFunctionNode * table_function_node_typed = table_node->as<TableFunctionNode>())
-                    storage_distributed = typeid_cast<const StorageDistributed *>(table_function_node_typed->getStorage().get());
-
-                if (!storage_distributed)
-                {
-                    no_replace = false;
-                    break;
-                }
-            }
-            if (no_replace)
-                return;
-
-            auto result_function = std::make_shared<FunctionNode>(getGlobalInFunctionNameForLocalInFunctionName(function_node->getFunctionName()));
-            result_function->getArguments().getNodes() = std::move(function_node->getArguments().getNodes());
-            resolveOrdinaryFunctionNodeByName(*result_function, result_function->getFunctionName(), getContext());
-            node = result_function;
-        }
-    }
-
-    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr &)
-    {
-        if (auto * function_node = parent->as<FunctionNode>(); function_node && function_node->getFunctionName().starts_with("global"))
-            return false;
-
-        return true;
-    }
-};
-
 bool rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
 {
     bool rewrite = false;
@@ -1110,6 +1063,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
         auto table_function_node = std::make_shared<TableFunctionNode>(remote_table_function_node.getFunctionName());
         table_function_node->getArgumentsNode() = remote_table_function_node.getArgumentsNode();
+        table_function_node->setSettingsChanges(remote_table_function_node.getSettingsChanges());
 
         if (table_expression_modifiers)
             table_function_node->setTableExpressionModifiers(*table_expression_modifiers);
@@ -1213,10 +1167,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     {
         auto & query_node = query_tree_to_modify->as<QueryNode&>();
         if (query_node.hasWhere())
-        {
-            RewriteInToGlobalInVisitor visitor(query_context);
-            visitor.visit(query_node.getWhere());
-        }
+            rewriteInToGlobalIn(query_node.getWhere(), query_context);
 
         rewriteJoinToGlobalJoinIfNeeded(query_node.getJoinTree());
     }
@@ -1974,7 +1925,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     }
     if (auto src_storage_cluster = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
     {
-        return distributedWriteFromClusterStorage(*src_storage_cluster, query, local_context);
+        if (!src_storage_cluster->getClusterName(local_context).empty())
+            return distributedWriteFromClusterStorage(*src_storage_cluster, query, local_context);
     }
 
     return {};
