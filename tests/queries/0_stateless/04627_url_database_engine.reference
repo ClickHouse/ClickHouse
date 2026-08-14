@@ -1,0 +1,27 @@
+--- a URL as a table name in clickhouse-local
+Ok.
+0
+1
+2
+--- a file:// URL as a table name in clickhouse-local
+1	one
+2	two
+--- plain file names are resolved via the file:// base URL of the default database
+2
+--- glob patterns in plain file names
+2
+2
+--- unknown table names still produce UNKNOWN_TABLE
+UNKNOWN_TABLE
+UNKNOWN_TABLE
+--- CREATE TABLE in clickhouse-local is not shadowed by the URL database
+1
+--- URL database engine with a base URL in clickhouse-local
+Ok.
+CREATE DATABASE web
+ENGINE = URL('http://server/')
+--- URL database engine on the server
+Ok.
+Ok.
+--- the base URL must contain a scheme
+must contain a scheme

@@ -40,7 +40,7 @@ CLICKHOUSE_CI_LOGS_USER = "ci"
 
 
 class ClickHouseProc:
-    MINIO_LOG = f"{temp_dir}/minio.log"
+    SEAWEEDFS_LOG = f"{temp_dir}/seaweedfs.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
     KAFKA_LOG = f"{temp_dir}/kafka.log"
     LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_rows_to_read=0 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
@@ -54,21 +54,6 @@ class ClickHouseProc:
     # Per-table wall-clock cap for dump_system_tables (seconds). One stuck dump
     # must not exhaust the job's 9000s budget and get the whole job SIGKILLed.
     DUMP_SYSTEM_TABLE_TIMEOUT = 600
-    # How long a `SIGTRAP`ed server gets to write its core dump and exit
-    # (seconds) before `stop_server` escalates to `SIGKILL`. Coverage and
-    # sanitizer builds have a multi-GB address space, so the kernel needs far
-    # longer than the few seconds a release build takes.
-    TRAP_CORE_DUMP_TIMEOUT = 300
-    # `argv[0]` the servers are started with (see `self.command` below), used to
-    # tell the server apart from a process that has been given its recycled pid.
-    SERVER_ARGV0 = "clickhouse-server"
-    # How many times `stop_server` takes out a server that the watchdog brought
-    # back while the previous one was being stopped, before giving up on it.
-    RESPAWN_STOP_ATTEMPTS = 3
-    # How far up the process tree `stop_server` looks for the watchdogs above a
-    # respawned server. `BaseDaemon::setupWatchdog` adds exactly one level, so
-    # this is only a guard against walking an unexpectedly deep chain forever.
-    WATCHDOG_ANCESTOR_LIMIT = 8
 
     def __init__(
         self,
@@ -86,6 +71,15 @@ class ClickHouseProc:
         self.run_path0 = f"{temp_dir}/run_r0"
         self.run_path1 = f"{temp_dir}/run_r1"
         self.run_path2 = f"{temp_dir}/run_r2"
+        # Directory the job runs `clickhouse-test` from, if it wants cores of
+        # crashed client processes collected. A client started by a `.sh` test
+        # inherits this directory unless the test changes directory itself, and a
+        # relative `kernel.core_pattern` (the one CI runners use) writes the core
+        # into the dumping process's cwd, so this is where a client core lands.
+        # Jobs differ - `functional_tests.py` runs from the repository root while
+        # `fast_test.py` prefixes `cd {temp_dir}` - so the job declares it instead
+        # of it being guessed here.
+        self.client_core_path = None
         self.log_dir = f"{temp_dir}/var/log/clickhouse-server"
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
         self.config_file = f"{self.ch_config_dir}/config.xml"
@@ -117,7 +111,7 @@ class ClickHouseProc:
         self.proc_2 = None
         self.pid = 0
         int(Utils.cpu_count() / 2)
-        self.minio_proc = None
+        self.seaweedfs_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
         # The failing sub-command + its ClickHouse error tail from
@@ -163,37 +157,51 @@ class ClickHouseProc:
 </clickhouse>
 """)
 
-    def start_minio(self, test_type):
+    def start_seaweedfs(self, test_type):
         os.environ["TEMP_DIR"] = f"{Utils.cwd()}/ci/tmp"
         command = [
-            "./ci/jobs/scripts/functional_tests/setup_minio.sh",
+            "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
             test_type,
             "./tests",
         ]
-        with open(self.MINIO_LOG, "w") as log_file:
-            self.minio_proc = subprocess.Popen(
+        with open(self.SEAWEEDFS_LOG, "w") as log_file:
+            self.seaweedfs_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
-        print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
+        print(
+            f"Started setup_seaweedfs.sh asynchronously with PID {self.seaweedfs_proc.pid}"
+        )
 
-        # Wait for setup_minio.sh to fully exit, not just for the bucket to be
-        # listable: the server's S3 disks authenticate at startup and need the
-        # whole user/policy/ACL setup in place. The minio server is nohup'd and
-        # outlives the script, so waiting on the script is safe. Its internal
-        # waits are bounded (wait_for_it caps at 60s), so pad the timeout.
+        # Wait for setup_seaweedfs.sh to fully exit, not just for the bucket to
+        # be listable: the server's S3 disks authenticate at startup and need
+        # the whole identity/bucket setup in place. The seaweedfs server is
+        # nohup'd and outlives the script, so waiting on the script is safe.
+        # Its internal waits are bounded (60s each), so pad the timeout.
         try:
-            returncode = self.minio_proc.wait(timeout=120)
+            returncode = self.seaweedfs_proc.wait(timeout=240)
         except subprocess.TimeoutExpired:
-            print("Failed to start minio: setup_minio.sh did not finish in time")
-            self.minio_proc.kill()
+            print(
+                "Failed to start seaweedfs: setup_seaweedfs.sh did not finish in time"
+            )
+            self.seaweedfs_proc.kill()
             return False
         if returncode != 0:
-            print(f"setup_minio.sh exited with code {returncode}")
+            print(f"setup_seaweedfs.sh exited with code {returncode}")
             return False
 
-        # wait_for_it can exit 0 even if minio is down, so confirm the bucket.
-        if not Shell.check("/mc ls clickminio/test", verbose=False, retries=3):
-            print("Failed to start minio: bucket clickminio/test not reachable")
+        # pass the credentials explicitly: the setup script no longer writes
+        # ~/.aws, and without them the aws cli would sign with the runner's
+        # instance-role credentials, which SeaweedFS does not know
+        access_key = os.environ.get("SEAWEEDFS_ACCESS_KEY", "clickhouse")
+        secret_key = os.environ.get("SEAWEEDFS_SECRET_KEY", "clickhouse")
+        if not Shell.check(
+            f"AWS_ACCESS_KEY_ID={access_key} AWS_SECRET_ACCESS_KEY={secret_key} "
+            "AWS_DEFAULT_REGION=us-east-1 "
+            "aws --endpoint-url http://localhost:11111 s3 ls s3://test",
+            verbose=False,
+            retries=3,
+        ):
+            print("Failed to start seaweedfs: bucket test not reachable")
             return False
         return True
 
@@ -755,10 +763,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         """Gracefully stop only the ClickHouse server processes.
 
         Unlike `terminate`, this leaves the auxiliary services (Redpanda/Kafka,
-        MinIO) running. It is used between bugfix-validation iterations so the
+        SeaweedFS) running. It is used between bugfix-validation iterations so the
         server binary can be swapped and restarted without tearing down the
         rest of the test environment: otherwise a changed test relying on
-        Kafka or MinIO would pass under the first build type and spuriously
+        Kafka or SeaweedFS would pass under the first build type and spuriously
         "reproduce" a bug under the next one.
         """
         print("Stop ClickHouse processes")
@@ -770,248 +778,30 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             (self.proc_2, self.pid_file_replica_2, self.pid_2, self.run_path2),
         ):
             if proc and pid:
-                self._stop_one_server(proc, pid_file, pid, run_path, force)
+                if force:
+                    # Use clickhouse stop --force when this issue is fixed
+                    # https://github.com/ClickHouse/ClickHouse/issues/99142
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=10)
+                        continue
+                    except subprocess.TimeoutExpired:
+                        pass
+                elif Shell.check(
+                    f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
+                    verbose=True,
+                ):
+                    continue
+                print(
+                    f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
+                )
+                proc.send_signal(signal.SIGTRAP)
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
 
         return self
-
-    def _stop_one_server(self, proc, pid_file, startup_pid, run_path, force):
-        """Stop one server, whatever pid it runs under now.
-
-        The pid snapshotted when the server was started can be stale by
-        teardown time: with `CLICKHOUSE_WATCHDOG_RESTART=1`,
-        `BaseDaemon::setupWatchdog` respawns the server under a new pid - and
-        the new server rewrites the pid file - while the `sh -c` wrapper and the
-        watchdog above it keep theirs. Signalling the snapshot would then be a
-        no-op on a dead pid, and killing the wrapper does not stop the server,
-        so the live server would be left holding `<run_path>/status`. Hence the
-        pid file is reread here, and again after the teardown, in case the
-        watchdog got another server up in the meantime.
-        """
-        pid = self._current_server_pid(pid_file) or startup_pid
-        if force:
-            # Use clickhouse stop --force when this issue is fixed
-            # https://github.com/ClickHouse/ClickHouse/issues/99142
-            self._signal_server(pid, signal.SIGTERM, "TERM")
-            if self._wait_server_gone(pid, timeout=10):
-                self._reap_server_wrapper(proc)
-                self._stop_respawned_server(pid_file, run_path)
-                return
-        elif Shell.check(
-            f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
-            verbose=True,
-        ):
-            self._stop_respawned_server(pid_file, run_path)
-            return
-        print(
-            f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
-        )
-        self._signal_server(pid, signal.SIGTRAP, "TRAP")
-        if not self._wait_server_gone(pid, timeout=self.TRAP_CORE_DUMP_TIMEOUT):
-            # The server must not outlive this function: it holds an exclusive
-            # lock on `<run_path>/status`, and the later `clickhouse local`
-            # scraping of `system.*_log` from the same data directory then fails
-            # with `CANNOT_OPEN_FILE` ("Another server instance in same
-            # directory is already running"), losing every system table of that
-            # replica.
-            print(
-                f"ClickHouse process {pid} is still alive after TRAP - send KILL signal"
-            )
-            self._signal_server(pid, signal.SIGKILL, "KILL")
-            if not self._wait_server_gone(pid, timeout=60):
-                print(
-                    f"WARNING: ClickHouse process {pid} survived KILL - "
-                    f"system tables in {run_path} will not be scraped"
-                )
-        self._reap_server_wrapper(proc)
-        self._stop_respawned_server(pid_file, run_path)
-
-    @classmethod
-    def _current_server_pid(cls, pid_file) -> int:
-        """The pid of the live server the pid file names right now, or 0.
-
-        0 also when the file names a pid that is not a live server - it went
-        away, or the kernel has already handed its pid to something else.
-        """
-        try:
-            pid = int(Path(pid_file).read_text().strip())
-        except (OSError, ValueError):
-            return 0
-        return pid if cls._server_process_alive(pid) else 0
-
-    @classmethod
-    def _stop_respawned_server(cls, pid_file, run_path):
-        """Take out a server that came back while the previous one was stopped.
-
-        In `CLICKHOUSE_WATCHDOG_RESTART=1` mode the watchdog starts a fresh
-        server after an abnormal exit, so a new server - with a new pid in the
-        pid file - can be up and holding `<run_path>/status` by the time the
-        teardown of the previous one is over. Nothing may outlive this teardown
-        holding that lock, or the scraping of `system.*_log` loses every system
-        table of this replica.
-
-        A server that is back means something is bringing it back, so the
-        watchdog above it is taken out first. Killing the server alone cannot
-        win: the watchdog restarts it after every abnormal exit, so each
-        `SIGKILL` would only trigger the next restart and the loop below would
-        run out of attempts with yet another server alive and holding the lock.
-        """
-        for _ in range(cls.RESPAWN_STOP_ATTEMPTS):
-            pid = cls._current_server_pid(pid_file)
-            if not pid:
-                return
-            cls._stop_server_watchdogs(pid)
-            print(
-                f"ClickHouse process {pid} came up again after the teardown - send KILL signal"
-            )
-            cls._signal_server(pid, signal.SIGKILL, "KILL")
-            if not cls._wait_server_gone(pid, timeout=60):
-                break
-        pid = cls._current_server_pid(pid_file)
-        if pid:
-            print(
-                f"WARNING: ClickHouse process {pid} is still alive after the teardown - "
-                f"system tables in {run_path} will not be scraped"
-            )
-
-    @classmethod
-    def _stop_server_watchdogs(cls, pid) -> None:
-        """Kill the watchdog processes above the server `pid`, outermost first.
-
-        `BaseDaemon::setupWatchdog` keeps the original process as the watchdog
-        and forks the server below it, so the watchdog is the parent of the pid
-        in the pid file and shares its `argv[0]`. Outermost first, so an inner
-        watchdog cannot be restarted by an outer one while it is being killed.
-
-        Only called once a server has been seen coming back, so a watchdog is
-        never taken out on the normal teardown path, where it exits on its own
-        and gets to log the server's exit status.
-        """
-        for watchdog in cls._server_watchdog_pids(pid):
-            print(
-                f"ClickHouse watchdog process {watchdog} is bringing the server "
-                f"back - send KILL signal"
-            )
-            cls._signal_server(watchdog, signal.SIGKILL, "KILL")
-            if not cls._wait_server_gone(watchdog, timeout=60):
-                print(f"WARNING: ClickHouse watchdog process {watchdog} survived KILL")
-
-    @classmethod
-    def _server_watchdog_pids(cls, pid) -> list:
-        """The chain of watchdogs above the server `pid`, outermost first.
-
-        An ancestor counts as a watchdog only while it is a ClickHouse server
-        process itself (the same `argv[0]` check as everywhere else here): above
-        the watchdog sits the `sh -c ...` wrapper, and killing the wrapper is
-        `_reap_server_wrapper`'s business, not this function's.
-        """
-        watchdogs = []
-        for _ in range(cls.WATCHDOG_ANCESTOR_LIMIT):
-            pid = cls._parent_pid(pid)
-            if pid <= 1 or not cls._server_process_alive(pid):
-                break
-            watchdogs.append(pid)
-        watchdogs.reverse()
-        return watchdogs
-
-    @staticmethod
-    def _parent_pid(pid) -> int:
-        """The parent pid of `pid`, or 0 if it cannot be determined.
-
-        Read from `/proc/<pid>/status` rather than `/proc/<pid>/stat`, whose
-        fields cannot be split on whitespace: the second one is the command
-        name, in parentheses, and may itself contain spaces.
-        """
-        try:
-            with open(f"/proc/{pid}/status", "rb") as status:
-                for line in status:
-                    if line.startswith(b"PPid:"):
-                        return int(line.split()[1])
-        except (OSError, ValueError, IndexError):
-            return 0
-        return 0
-
-    @classmethod
-    def _server_process_alive(cls, pid) -> bool:
-        """Whether `pid` is still a live ClickHouse server process.
-
-        Checks what the process *is* instead of merely probing the pid: once the
-        server exits the kernel is free to hand its pid to an unrelated process,
-        and a `SIGKILL` aimed at a recycled pid would take that process out.
-
-        The identity is `argv[0]` of the process, compared exactly against
-        `clickhouse-server` after stripping the directory. A substring search
-        over the whole command line would not be an identity check at all: the
-        pid file is `<config dir>/clickhouse-server.pid`, so an unrelated
-        process that merely names it - or any other `clickhouse-server` path -
-        somewhere in its arguments would be taken for the server and signalled.
-        Nor is `clickhouse` alone accepted: the log scraping this teardown
-        exists to unblock runs `clickhouse local` in the very same directory.
-
-        `argv[0]` comes from `/proc/<pid>/cmdline` rather than from `ps`, which
-        truncates the command line to 80 columns when its output is not a
-        terminal and would lose a server started from a long path.
-        """
-        try:
-            with open(f"/proc/{pid}/cmdline", "rb") as cmdline:
-                argv0 = os.fsdecode(cmdline.read().split(b"\0", 1)[0])
-        except OSError:
-            # No such pid, or it is gone between the check and the read. A
-            # zombie reads back as an empty command line and is handled below:
-            # it holds no locks and its pid cannot be recycled yet.
-            return False
-        return os.path.basename(argv0) == cls.SERVER_ARGV0
-
-    @classmethod
-    def _signal_server(cls, pid, sig, name) -> bool:
-        """Send `sig` to the server process itself.
-
-        `pid` comes from the server's own `--pid-file`, which is the only handle
-        on the server proper: the servers are started with `Popen(shell=True)`,
-        so `Popen.pid` is the `sh -c ...` wrapper, and the server runs one more
-        fork below it (`BaseDaemon::setupWatchdog`). Signalling the wrapper only
-        killed the shell - the TRAP produced a useless `core.sh.*` dump instead
-        of a dump of the wedged server, and the orphaned server kept running.
-        """
-        if not cls._server_process_alive(pid):
-            print(f"ClickHouse process {pid} is already gone - {name} not sent")
-            return False
-        print(f"Send {name} signal to ClickHouse process {pid}")
-        try:
-            os.kill(pid, sig)
-        except OSError as e:
-            print(f"WARNING: Failed to send {name} to ClickHouse process {pid}: {e}")
-            return False
-        return True
-
-    @classmethod
-    def _wait_server_gone(cls, pid, timeout) -> bool:
-        deadline = time.time() + timeout
-        while True:
-            if not cls._server_process_alive(pid):
-                return True
-            if time.time() >= deadline:
-                return False
-            Utils.sleep(1)
-
-    @staticmethod
-    def _reap_server_wrapper(proc):
-        """Tear down the `sh -c ...` wrapper left above a stopped server.
-
-        The wrapper (and the watchdog between it and the server) normally exits
-        on its own within a moment of the server going away; kill it if it does
-        not, so it is not left behind as a stray process. It is not a way to
-        stop the server: the server is the wrapper's grandchild and survives it,
-        which is what `_stop_respawned_server` is for.
-        """
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            print(f"Wrapper process {proc.pid} is still alive - send KILL signal")
-            proc.kill()
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                print(f"WARNING: Wrapper process {proc.pid} survived KILL")
 
     def clean_logs(self):
         """
@@ -1042,8 +832,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res += self._collect_core_dumps()
                 res += self._collect_diagnostic_reports()
                 res += self._get_logs_archive_coordination()
-                if Path(self.MINIO_LOG).exists():
-                    res.append(self.MINIO_LOG)
+                if Path(self.SEAWEEDFS_LOG).exists():
+                    res.append(self.SEAWEEDFS_LOG)
                 if Path(self.AZURITE_LOG).exists():
                     res.append(self.AZURITE_LOG)
                 if Path(self.KAFKA_LOG).exists():
@@ -1065,9 +855,37 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return res
 
     def _collect_core_dumps(self) -> List[str]:
+        # Server cores land in `run_r*` because each server is started with
+        # `cwd=run_path` (see `start`) and is not a daemon, so
+        # `BaseDaemon`'s `chdir` into a `core_path` directory is skipped. Setting
+        # `--daemon` or a `core_path` would move them into `run_rN/cores/` and this
+        # glob would stop finding them.
         result = []
+        # One AES key for the whole job. Artifacts are uploaded under their
+        # basename alone, so a key per directory would emit several different
+        # `aes.key.rsa` files that overwrite each other in the report, leaving the
+        # cores of every directory but the last one undecryptable.
+        aes_key_path = f"{temp_dir}/aes.key"
         for run_dir in sorted(p_temp_dir.glob("run_r*")):
-            result.extend(ClickHouseService.collect_cores(run_dir))
+            result.extend(
+                ClickHouseService.collect_cores(
+                    run_dir,
+                    aes_key_path=aes_key_path,
+                    # `core.<comm>.<pid>` collides across replicas running the
+                    # same thread; keep the basenames distinct.
+                    name_prefix=f"{Path(run_dir).name}.",
+                )
+            )
+        # `Path.glob` yields nothing for a missing directory, so a declared path
+        # that does not exist needs no separate guard.
+        if self.client_core_path:
+            result.extend(
+                ClickHouseService.collect_cores(
+                    self.client_core_path,
+                    aes_key_path=aes_key_path,
+                    name_prefix="client.",
+                )
+            )
         return result
 
     @staticmethod
@@ -1200,6 +1018,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             f'grep -a -v "ASan is ignoring requested __asan_handle_no_return" | '
             f'grep -a -v "False positive error reports may follow" | '
             f'grep -a -v "For details see https://github.com/google/sanitizers" | '
+            f'grep -a -v -F -x "Not running the leak check: other threads are still running." | '
             "head -n 1 || true"
         )
         fatal_hits = Shell.get_output(
@@ -1409,9 +1228,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         self.restore_system_metadata_files_from_remote_database_disk()
 
+        # Caches created via the disk() function live one level deeper, under
+        # disks/<name>/status.
         cache_status_files = glob.glob(
             f"{self.ch_var_lib_dir}/filesystem_caches/*/status"
-        )
+        ) + glob.glob(f"{self.ch_var_lib_dir}/filesystem_caches/disks/*/status")
         if cache_status_files:
             print(
                 f"WARNING: Server died? Removing cache status files: {cache_status_files}"
@@ -1621,10 +1442,10 @@ if __name__ == "__main__":
                 res = ch.stop_log_exports()
             else:
                 res = True
-        elif command == "start_minio":
+        elif command == "start_seaweedfs":
             param = sys.argv[2]
             assert param in ["stateless"]
-            res = ch.start_minio(param)
+            res = ch.start_seaweedfs(param)
         elif command == "start_azurite":
             res = ch.start_azurite()
         else:

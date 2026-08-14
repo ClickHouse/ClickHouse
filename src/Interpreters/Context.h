@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
 #include <Common/Exception.h>
 #include <Common/MultiVersion.h>
@@ -93,7 +94,6 @@ class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
 class AsynchronousMetrics;
-class BackgroundSchedulePool;
 class MergeList;
 class MovesList;
 class ReplicatedFetchList;
@@ -373,6 +373,9 @@ protected:
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
     String current_database;
+    /// The SQL-defined HTTP handler name and the HTTP request URL are stored in `client_info` (see
+    /// `ClientInfo::http_handler_name` / `http_request_url`) so that they are serialized on distributed
+    /// fan-out and remain visible to `currentHandler()` / `currentRequestURL()` on remote shards.
     bool can_use_query_result_cache = false;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
@@ -434,6 +437,11 @@ protected:
     /// Max block numbers in partitions to read from MergeTree tables.
     /// Saved separately for each table uuid used in the query.
     std::unordered_map<UUID, PartitionIdToMaxBlockPtr> partition_id_to_max_block;
+
+    /// A pinned point-in-time storage snapshot to read instead of taking a fresh one, keyed by table uuid.
+    /// Used by atomic `CREATE MATERIALIZED VIEW ... POPULATE` to populate the view from the exact data
+    /// captured at the moment the view was subscribed to new inserts. See InterpreterCreateQuery.
+    std::unordered_map<UUID, StorageSnapshotPtr> pinned_storage_snapshots;
 
 public:
     /// Record entities accessed by current query, and store this information in system.query_log.
@@ -592,8 +600,9 @@ protected:
     /// so view-inner queries on the same node are unaffected.
     bool positional_arguments_already_resolved = false;
 
-    inline static ContextPtr global_context_instance;
-    inline static ContextPtr background_context_instance;   /// Global holder to maintain ownership of background_context
+    /// Defined out of line: a definition in the header gives every shared object its own copy.
+    static ContextPtr global_context_instance;
+    static ContextPtr background_context_instance;   /// Global holder to maintain ownership of background_context
 
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
@@ -1130,6 +1139,15 @@ public:
     String getCurrentDatabase() const;
     String getCurrentQueryId() const { return client_info.current_query_id; }
 
+    /// The name of the SQL-defined HTTP handler that invoked the query, if any (see `currentHandler`).
+    /// Stored in `client_info` so it is serialized on distributed fan-out (visible on remote shards).
+    String getHTTPHandlerName() const { return client_info.http_handler_name; }
+    void setHTTPHandlerName(const String & name) { client_info.http_handler_name = name; }
+    /// The HTTP request URL (path and query string) that invoked the query, if any (see `currentRequestURL`).
+    /// Stored in `client_info` so it is serialized on distributed fan-out (visible on remote shards).
+    String getHTTPRequestURL() const { return client_info.http_request_url; }
+    void setHTTPRequestURL(const String & url) { client_info.http_request_url = url; }
+
     /// Id of initiating query for distributed queries; or current query id if it's not a distributed query.
     String getInitialQueryId() const;
 
@@ -1610,12 +1628,24 @@ public:
     BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
     BackgroundTaskSchedulingSettings getBackgroundStreamingTaskSchedulingSettings() const;
 
-    BackgroundSchedulePool & getBufferFlushSchedulePool() const;
-    BackgroundSchedulePool & getSchedulePool() const;
-    BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
-    BackgroundSchedulePool & getDistributedSchedulePool() const;
-    BackgroundSchedulePool & getIcebergSchedulePool() const;
-    BackgroundSchedulePool & getStreamingSchedulePool() const;
+    /// Create the pool if needed and return it. Returns a `shared_ptr` (not a reference) so a
+    /// caller keeping the pool around cannot outlive it: `shutdown` clears the members while
+    /// background tasks may still hold their pool.
+    BackgroundSchedulePoolPtr getBufferFlushSchedulePool() const;
+    BackgroundSchedulePoolPtr getSchedulePool() const;
+    BackgroundSchedulePoolPtr getMessageBrokerSchedulePool() const;
+    BackgroundSchedulePoolPtr getDistributedSchedulePool() const;
+    BackgroundSchedulePoolPtr getIcebergSchedulePool() const;
+    BackgroundSchedulePoolPtr getStreamingSchedulePool() const;
+
+    /// Return the pool only if it has already been created, null otherwise, so that reading
+    /// `system.background_schedule_pool` does not instantiate one.
+    BackgroundSchedulePoolPtr getBufferFlushSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getMessageBrokerSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getDistributedSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getIcebergSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getStreamingSchedulePoolIfExists() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
@@ -1939,6 +1969,11 @@ public:
 
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
+
+    /// A pinned storage snapshot to be returned by the table's getStorageSnapshot instead of a fresh one.
+    /// Used by atomic `CREATE MATERIALIZED VIEW ... POPULATE`.
+    void setPinnedStorageSnapshot(const UUID & table_uuid, StorageSnapshotPtr snapshot);
+    StorageSnapshotPtr getPinnedStorageSnapshot(const UUID & table_uuid) const;
 
     const ServerSettings & getServerSettings() const;
 
