@@ -95,6 +95,39 @@ SELECT trim(explain) FROM (
     SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN other AS o ON f.id = o.id INNER JOIN small AS s ON m.val = s.val
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
+SELECT '-- A RIGHT outer join whose NULL-extended left side is rejected by the enclosing join converts.';
+SELECT count(), sum(f.v) FROM mid AS m RIGHT JOIN fact AS f ON f.id = m.id INNER JOIN small AS s ON m.val = s.val
+SETTINGS query_plan_convert_outer_join_to_inner_join_by_join_predicates = 0;
+
+SELECT count(), sum(f.v) FROM mid AS m RIGHT JOIN fact AS f ON f.id = m.id INNER JOIN small AS s ON m.val = s.val;
+
+SELECT trim(explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count(), sum(f.v) FROM mid AS m RIGHT JOIN fact AS f ON f.id = m.id INNER JOIN small AS s ON m.val = s.val
+) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
+
+SELECT '-- An enclosing RIGHT join drops non-matching rows of its left input and converts the LEFT join below.';
+SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id RIGHT JOIN small AS s ON m.val = s.val
+SETTINGS query_plan_convert_outer_join_to_inner_join_by_join_predicates = 0;
+
+SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id RIGHT JOIN small AS s ON m.val = s.val;
+
+SELECT trim(explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id RIGHT JOIN small AS s ON m.val = s.val
+) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
+
+SELECT '-- ANY strictness on the enclosing join also drops non-matching rows and converts.';
+SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER ANY JOIN small AS s ON m.val = s.val
+SETTINGS query_plan_convert_outer_join_to_inner_join_by_join_predicates = 0;
+
+SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER ANY JOIN small AS s ON m.val = s.val;
+
+SELECT trim(explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER ANY JOIN small AS s ON m.val = s.val
+) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
+
 DROP TABLE fact;
 DROP TABLE mid;
 DROP TABLE mid_nullable;

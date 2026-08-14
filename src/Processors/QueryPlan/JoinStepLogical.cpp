@@ -2247,6 +2247,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->right_relation = right_relation;
     result_step->dummy_stats = dummy_stats;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
+    result_step->not_null_filters_derived = not_null_filters_derived;
 
     return result_step;
 }

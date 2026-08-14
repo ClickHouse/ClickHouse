@@ -30,3 +30,18 @@ Type: INNER
 Type: INNER
 Type: INNER
 Type: INNER
+-- A RIGHT outer join whose NULL-extended left side is rejected by the enclosing join converts.
+20	890
+20	890
+Type: INNER
+Type: INNER
+-- An enclosing RIGHT join drops non-matching rows of its left input and converts the LEFT join below.
+20	890
+20	890
+Type: RIGHT
+Type: INNER
+-- ANY strictness on the enclosing join also drops non-matching rows and converts.
+2	4
+2	4
+Type: INNER
+Type: INNER
