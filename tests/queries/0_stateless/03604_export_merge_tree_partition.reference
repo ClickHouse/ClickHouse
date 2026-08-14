@@ -1,0 +1,31 @@
+Select from source table
+1	2020
+2	2020
+3	2020
+4	2021
+5	2021
+6	2022
+7	2022
+Select from destination table
+1	2020
+2	2020
+3	2020
+4	2021
+5	2021
+Export partition 2022
+Select from destination table again
+1	2020
+2	2020
+3	2020
+4	2021
+5	2021
+6	2022
+7	2022
+---- Data in roundtrip ReplicatedMergeTree table (should match s3_table)
+1	2020
+2	2020
+3	2020
+4	2021
+5	2021
+6	2022
+7	2022

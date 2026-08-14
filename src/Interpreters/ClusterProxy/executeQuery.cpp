@@ -505,6 +505,13 @@ void executeQuery(
             std::move(unavailable_shard_tracker));
 
         read_from_remote->setStepDescription("Read from remote replica");
+        /// The remote node is allowed to act as an initiator (and distribute the query further, e.g. over a swarm)
+        /// only when `remote()` wraps a table function, like `remote(host, s3Cluster(...))`.
+        /// For `remote(host, db, table)` the remote node must stay a secondary query: for intermediate processing
+        /// stages it returns a header made of internal column identifiers which the initiator matches by name,
+        /// and query tree optimizations enabled for initial queries change those names (see
+        /// 04045_merge_function_missing_columns_remote).
+        read_from_remote->setIsRemoteFunction(is_remote_function && table_func_ptr != nullptr);
         plan->addStep(std::move(read_from_remote));
         plan->addInterpreterContext(new_context);
         plans.emplace_back(std::move(plan));
