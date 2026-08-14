@@ -44,7 +44,8 @@ function race_with_drop()
 {
     local arm=$1
     shift
-    local qid="${CLICKHOUSE_DATABASE_1}_${arm}"
+    # Unique per invocation: a run reusing this server must not match an earlier run's row.
+    local qid="${CLICKHOUSE_DATABASE_1}_${arm}_${RANDOM}${RANDOM}"
 
     ${CLICKHOUSE_CLIENT} --query_id "$qid" "$@" < /dev/null > /dev/null 2>&1 &
     local updater=$!
