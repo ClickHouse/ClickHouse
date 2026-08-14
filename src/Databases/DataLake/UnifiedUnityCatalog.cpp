@@ -202,7 +202,6 @@ DataLakeTableFormat UnifiedUnityCatalog::detectTableFormat(const Poco::JSON::Obj
 
         if (UNIFORM_TABLES.contains(kind))
             return DataLakeTableFormat::ICEBERG;
-
         if (READABLE_DELTA_TABLES.contains(kind))
             return DataLakeTableFormat::DELTA;
         if (READABLE_ICEBERG_TABLES.contains(kind))
@@ -314,8 +313,11 @@ bool UnifiedUnityCatalog::tryGetTableMetadata(
 
         if (table_format == DataLakeTableFormat::ICEBERG)
         {
-            auto iceberg_catalog = getIcebergRestCatalog();
-            return iceberg_catalog->tryGetTableMetadata(schema_name, table_name, result);
+            /// The Unity tables API describes the table but does not serve its Iceberg metadata;
+            /// Databricks exposes that only through the Iceberg REST catalog endpoint.
+            /// See https://docs.databricks.com/aws/en/external-access/iceberg
+            auto rest_catalog = getIcebergRestCatalog();
+            return rest_catalog->tryGetTableMetadata(schema_name, table_name, result);
         }
 
         return tryGetDeltaTableMetadata(full_table_name, object, result);
@@ -459,16 +461,16 @@ std::shared_ptr<RestCatalog> UnifiedUnityCatalog::getIcebergRestCatalog() const
     ensureBearerToken();
     std::string rest_auth_header = "Authorization: Bearer " + access_token->token;
 
-    /// The RestCatalog authenticates via the ready-made auth header,
-    /// so it needs neither a credential nor an OAuth scope.
+    /// The RestCatalog authenticates via the ready-made auth header, which puts it in header mode.
+    /// It never mints a token of its own, so every other auth parameter is left empty.
     iceberg_rest_catalog = std::make_shared<RestCatalog>(
         warehouse,
         iceberg_rest_url,
         /* catalog_credential= */ "",
         /* auth_scope= */ "",
         rest_auth_header,
-        oauth_server_uri,
-        /* oauth_server_use_request_body= */ true,
+        /* oauth_server_uri= */ "",
+        /* oauth_server_use_request_body= */ false,
         getContext());
 
     return iceberg_rest_catalog;
