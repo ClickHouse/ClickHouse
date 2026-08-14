@@ -5,6 +5,7 @@
 
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/DataLake/HTTPBasedCatalogUtils.h>
+#include <Databases/DataLake/RestCatalog.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
@@ -13,8 +14,6 @@
 
 namespace DataLake
 {
-
-class RestCatalog;
 
 /// Unified Unity Catalog that supports both Delta and Iceberg tables
 /// in a single database, with auto-detection of table format.
@@ -67,8 +66,7 @@ private:
     std::string auth_scope;
     std::string oauth_server_uri;
     bool use_oauth = false;
-    mutable std::optional<std::string> bearer_token;
-    mutable std::chrono::system_clock::time_point token_expires_at{};
+    mutable std::optional<AccessToken> access_token;
     Poco::Net::HTTPBasicCredentials credentials{};
 
     /// Lazy-initialized RestCatalog for Iceberg table metadata,
@@ -83,9 +81,13 @@ private:
         const std::string & route,
         std::function<void(std::ostream &)> out_stream_callback) const;
 
-    DB::HTTPHeaderEntries getAuthHeaders() const;
-    std::string retrieveAccessToken() const;
-    void ensureBearerToken() const;
+    DB::HTTPHeaderEntries getAuthHeaders(bool force_refresh = false) const;
+
+    /// Fetches a token from the OAuth server.
+    AccessToken retrieveAccessToken() const;
+
+    /// `force_refresh` mints a new token even when the cached one has not expired yet.
+    void ensureBearerToken(bool force_refresh = false) const;
 
     ICatalog::Namespaces getSchemas(const std::string & base_prefix, size_t limit = 0) const;
     CatalogTables getTablesForSchema(const std::string & schema, size_t limit = 0) const;

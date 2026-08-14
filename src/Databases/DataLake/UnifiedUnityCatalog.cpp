@@ -82,13 +82,13 @@ UnifiedUnityCatalog::UnifiedUnityCatalog(
     else
     {
         use_oauth = false;
-        bearer_token = catalog_credential_;
+        access_token = AccessToken{.token = catalog_credential_, .expires_at = std::nullopt};
     }
 }
 
 UnifiedUnityCatalog::~UnifiedUnityCatalog() = default;
 
-std::string UnifiedUnityCatalog::retrieveAccessToken() const
+AccessToken UnifiedUnityCatalog::retrieveAccessToken() const
 {
     DB::HTTPHeaderEntries headers;
     headers.emplace_back("Content-Type", "application/x-www-form-urlencoded");
@@ -128,63 +128,65 @@ std::string UnifiedUnityCatalog::retrieveAccessToken() const
 
     const Poco::JSON::Object::Ptr & object = res_json.extract<Poco::JSON::Object::Ptr>();
 
-    auto token = object->get("access_token").extract<String>();
+    AccessToken result;
+    result.token = object->get("access_token").extract<String>();
 
+    /// Expire the cached token at 90% of its lifetime, to renew it before the server rejects it.
     if (object->has("expires_in"))
     {
         Int64 expires_in = object->getValue<Int64>("expires_in");
-        token_expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in * 9 / 10);
+        result.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in * 9 / 10);
     }
 
-    return token;
+    return result;
 }
 
-void UnifiedUnityCatalog::ensureBearerToken() const
+void UnifiedUnityCatalog::ensureBearerToken(bool force_refresh) const
 {
-    if (bearer_token.has_value())
+    if (access_token.has_value())
     {
-        if (!use_oauth)
+        if (!use_oauth || (!force_refresh && !access_token->isExpired()))
             return;
 
-        if (token_expires_at != std::chrono::system_clock::time_point{}
-            && std::chrono::system_clock::now() < token_expires_at)
-            return;
-
-        LOG_DEBUG(log, "Bearer token expired, refreshing via OAuth");
-        bearer_token.reset();
+        LOG_DEBUG(log, "Refreshing bearer token via OAuth ({})", force_refresh ? "rejected by the catalog" : "expired");
+        access_token.reset();
         iceberg_rest_catalog.reset();
     }
 
     if (!use_oauth)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No bearer token and not using OAuth");
 
-    bearer_token = retrieveAccessToken();
+    access_token = retrieveAccessToken();
 }
 
-DB::HTTPHeaderEntries UnifiedUnityCatalog::getAuthHeaders() const
+DB::HTTPHeaderEntries UnifiedUnityCatalog::getAuthHeaders(bool force_refresh) const
 {
-    ensureBearerToken();
-    return {DB::HTTPHeaderEntry("Authorization", "Bearer " + bearer_token.value())};
+    ensureBearerToken(force_refresh);
+    return {DB::HTTPHeaderEntry("Authorization", "Bearer " + access_token->token)};
 }
 
 std::pair<Poco::Dynamic::Var, std::string> UnifiedUnityCatalog::getJSONRequest(
     const std::string & route,
     const Poco::URI::QueryParameters & params) const
 {
-    const auto & context = getContext();
-    auto headers = getAuthHeaders();
-    return makeHTTPRequestAndReadJSON(base_url / route, context, credentials, params, headers);
+    return requestWithTokenRefresh(/* enable_refresh = */ use_oauth, [&](bool force_refresh)
+    {
+        return makeHTTPRequestAndReadJSON(
+            base_url / route, getContext(), credentials, params, getAuthHeaders(force_refresh));
+    });
 }
 
 std::pair<Poco::Dynamic::Var, std::string> UnifiedUnityCatalog::postJSONRequest(
     const std::string & route,
     std::function<void(std::ostream &)> out_stream_callback) const
 {
-    const auto & context = getContext();
-    auto headers = getAuthHeaders();
-    return makeHTTPRequestAndReadJSON(
-        base_url / route, context, credentials, {}, headers,
-        Poco::Net::HTTPRequest::HTTP_POST, std::move(out_stream_callback));
+    /// `out_stream_callback` is copied, not moved: the retry has to send the same body again.
+    return requestWithTokenRefresh(/* enable_refresh = */ use_oauth, [&](bool force_refresh)
+    {
+        return makeHTTPRequestAndReadJSON(
+            base_url / route, getContext(), credentials, {}, getAuthHeaders(force_refresh),
+            Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback);
+    });
 }
 
 DataLakeTableFormat UnifiedUnityCatalog::detectTableFormat(const Poco::JSON::Object::Ptr & table_json) const
@@ -452,7 +454,7 @@ std::shared_ptr<RestCatalog> UnifiedUnityCatalog::getIcebergRestCatalog() const
     std::string iceberg_rest_url = std::filesystem::path(base_url_str) / "iceberg-rest";
 
     ensureBearerToken();
-    std::string rest_auth_header = "Authorization: Bearer " + bearer_token.value();
+    std::string rest_auth_header = "Authorization: Bearer " + access_token->token;
 
     /// The RestCatalog authenticates via the ready-made auth header,
     /// so it needs neither a credential nor an OAuth scope.
