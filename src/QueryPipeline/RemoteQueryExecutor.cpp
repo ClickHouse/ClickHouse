@@ -894,6 +894,8 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
     /// so the round-trip would be pure overhead — skip it on both sides.
     const bool send_response = announcement.mode != CoordinationMode::Default;
 
+    announcement_received = true;
+
     auto response = extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
     if (send_response)
         connections->sendMergeTreeAllRangesAnnouncementResponse(response);
@@ -1139,7 +1141,17 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
     was_cancelled = true;
 
     if (read_context)
+    {
+        /// A replica that has not announced yet is still planning, and the only packet it owes us is
+        /// the announcement itself - which is worthless once we are cancelling, because it exists to
+        /// let the coordinator assign ranges we are no longer going to assign. Waiting for it means
+        /// waiting out that replica's whole planning phase (measured at ~290 ms on TPC-H q22 at
+        /// sf=100). Replicas that already announced are drained as before: they may be mid-block.
+        if (!announcement_received)
+            read_context->skipDrainOnCancel();
+
         read_context->cancel();
+    }
 
     /// Query could be cancelled during connection creation, query sending or data receiving.
     /// We should send cancel request if connections were already created, query were sent
