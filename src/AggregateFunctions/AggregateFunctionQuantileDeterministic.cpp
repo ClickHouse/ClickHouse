@@ -36,11 +36,6 @@ struct QuantileReservoirSamplerDeterministic
     using Data = ReservoirSamplerDeterministic<Value, ReservoirSamplerDeterministicOnEmpty::RETURN_NAN_OR_ZERO>;
     Data data;
 
-    /// Version 1 adds the skip degree to the serialized state, without which merging states that
-    /// were thinned out to different degrees gives a result that depends on how the rows were
-    /// distributed between them - which defeats the whole point of `quantileDeterministic`.
-    static constexpr size_t state_version = 1;
-
     void add(const Value &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method add without determinator is not implemented for ReservoirSamplerDeterministic");
@@ -57,14 +52,14 @@ struct QuantileReservoirSamplerDeterministic
         data.merge(rhs.data);
     }
 
-    void serialize(WriteBuffer & buf, size_t version) const
+    void serialize(WriteBuffer & buf) const
     {
-        data.write(buf, version);
+        data.write(buf);
     }
 
-    void deserialize(ReadBuffer & buf, size_t version)
+    void deserialize(ReadBuffer & buf)
     {
-        data.read(buf, version);
+        data.read(buf);
     }
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.

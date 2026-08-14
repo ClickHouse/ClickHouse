@@ -1,0 +1,12 @@
+<clickhouse>
+    <quotas>
+        <myQuota>
+            <interval>
+                <duration>31556952</duration>
+                <!-- Scaled by the output denominator (nanoseconds) the value exceeds the UInt64
+                     range: must be rejected on config load instead of overflowing in the cast. -->
+                <execution_time>1e19</execution_time>
+            </interval>
+        </myQuota>
+    </quotas>
+</clickhouse>

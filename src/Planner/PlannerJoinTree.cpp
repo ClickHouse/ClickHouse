@@ -2960,7 +2960,7 @@ JoinTreeQueryPlan buildQueryPlanForCrossJoinNode(
             outer_scope_columns,
             std::unordered_map<String, const ActionsDAG::Node *>{},
             settings[Setting::join_use_nulls],
-            JoinSettings(settings, query_context->getJoinAnalyzeMode()),
+            JoinSettings(settings),
             SortingStep::Settings(settings));
 
         auto right_table_label = getQueryDisplayLabel(table_expressions.at(i), display_internal_aliases);

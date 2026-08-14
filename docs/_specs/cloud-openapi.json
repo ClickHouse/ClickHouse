@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1064384",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1057301",
       "email": "support@clickhouse.com"
     }
   },
@@ -465,111 +465,6 @@
         "x-mint": {
           "content": "Returns Prometheus metrics for the services in an organization that the caller is authorized to view. Services the caller lacks view access to are omitted."
         }
-      }
-    },
-    "/v1/organizations/{organizationId}/prometheus/discovery": {
-      "get": {
-        "summary": "Discover Prometheus scrape targets for an organization",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns one Prometheus scrape target per service in the organization that the caller is authorized to view, in HTTP service discovery (http_sd) format. Services the caller lacks view access to, and services in a terminated, terminating, or (soft-)deleted state, are omitted — the response can have fewer groups than the organization has services. Point a Prometheus http_sd_configs job at this endpoint to discover and scrape all services automatically; targets are refreshed on every discovery poll, so created and deleted services are picked up without reconfiguration. Targets scrape with filtered_metrics=true by default; pass ?filtered_metrics=false to this endpoint to discover unfiltered targets.\n\nSample Prometheus scrape config:\n\n```yaml\nscrape_configs:\n  - job_name: clickhouse-cloud\n    http_sd_configs:\n      - url: https://api.clickhouse.cloud/v1/organizations/<organizationId>/prometheus/discovery\n        refresh_interval: 60s\n        basic_auth:\n          username: <key-id>\n          password: <key-secret>\n    basic_auth:\n      username: <key-id>\n      password: <key-secret>\n```\n\nThe `basic_auth` block must be set both under `http_sd_configs` (used to authenticate discovery polls against this endpoint) and on the scrape job itself (used to authenticate the actual per-service scrapes) — omitting either one is the most common misconfiguration.",
-        "operationId": "organizationPrometheusDiscoveryGet",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organizationId",
-            "description": "ID of the requested organization.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "query",
-            "name": "filtered_metrics",
-            "description": "Whether discovered targets carry filtered_metrics=true or =false as a scrape param. Accepts true or false; defaults to true — the opposite default from the per-service prometheus endpoint.",
-            "schema": {
-              "type": "string",
-              "format": "boolean"
-            },
-            "example": "true"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/PrometheusDiscoveryTargetGroup"
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "number",
-                      "description": "HTTP status code.",
-                      "example": 400
-                    },
-                    "error": {
-                      "type": "string",
-                      "description": "Detailed error description."
-                    },
-                    "requestId": {
-                      "type": "string",
-                      "description": "Unique id assigned to every request. UUIDv4",
-                      "format": "uuid"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "integer",
-                      "description": "HTTP status code.",
-                      "example": 500
-                    },
-                    "error": {
-                      "type": "string",
-                      "description": "Detailed error description."
-                    },
-                    "requestId": {
-                      "type": "string",
-                      "description": "Unique id assigned to every request. UUIDv4",
-                      "format": "uuid"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Prometheus"
-        ],
-        "x-badges": [
-          {
-            "name": "Beta",
-            "position": "after"
-          }
-        ]
       }
     },
     "/v1/organizations/{organizationId}/roles": {
@@ -8202,7 +8097,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/clickpipes/schemaDiscovery": {
       "post": {
         "summary": "Discover ClickPipe source schema",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Infers the schema (field names and ClickHouse data types) of a ClickPipe source without creating a pipe. Supported for Kafka, Kinesis, Pub/Sub, and object storage sources. Object storage inference runs on the destination service, which must be running.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Infers the schema (field names and ClickHouse data types) of a streaming ClickPipe source without creating a pipe. Supported for Kafka, Kinesis sources.",
         "operationId": "clickPipeSchemaDiscovery",
         "parameters": [
           {
@@ -20097,51 +19992,6 @@
           }
         }
       },
-      "PrometheusDiscoveryLabels": {
-        "properties": {
-          "__scheme__": {
-            "description": "URL scheme Prometheus must scrape the target with.",
-            "type": "string"
-          },
-          "__metrics_path__": {
-            "description": "Path of the per-service Prometheus metrics endpoint.",
-            "type": "string"
-          },
-          "__param_filtered_metrics": {
-            "description": "Value passed as the filtered_metrics query parameter on each scrape.",
-            "type": "string",
-            "format": "boolean"
-          },
-          "clickhouse_org_id": {
-            "description": "Organization ID the service belongs to.",
-            "type": "string",
-            "format": "uuid"
-          },
-          "clickhouse_service_id": {
-            "description": "Service ID.",
-            "type": "string",
-            "format": "uuid"
-          },
-          "clickhouse_discovery_service_name": {
-            "description": "Service name.",
-            "type": "string"
-          }
-        }
-      },
-      "PrometheusDiscoveryTargetGroup": {
-        "properties": {
-          "targets": {
-            "type": "array",
-            "description": "Host (and port) of the ClickHouse Cloud API.",
-            "items": {
-              "type": "string"
-            }
-          },
-          "labels": {
-            "$ref": "#/components/schemas/PrometheusDiscoveryLabels"
-          }
-        }
-      },
       "OrganizationPatchPrivateEndpoint": {
         "properties": {
           "id": {
@@ -24157,26 +24007,6 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/ClickPipePostKinesisSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "pubsub": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipePostPubSubSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "objectStorage": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipePostObjectStorageSource"
               },
               {
                 "type": "null"

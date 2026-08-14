@@ -36,14 +36,9 @@ void Prefetcher::init(ReadBuffer * reader_, const ReadOptions & options, FormatP
     range_sets.resize(1);
 }
 
-void Prefetcher::shutdownTasks()
-{
-    shutdown->shutdown();
-}
-
 Prefetcher::~Prefetcher()
 {
-    shutdownTasks();
+    shutdown->shutdown();
 
     /// Assert that all PrefetchHandle-s were destroyed.
     chassert(std::all_of(requests.begin(), requests.end(), [](const RequestState & req)

@@ -85,7 +85,7 @@ namespace DB
 class KeeperRequestDispatcher
 {
 public:
-    KeeperRequestDispatcher(KeeperServer * server_, KeeperSpecialResponseRouter special_response_router_);
+    explicit KeeperRequestDispatcher(KeeperServer * server_);
 
     /// Start response draining before Raft startup. NuRaft can commit catch-up
     /// entries during `KeeperServer::startup`, before request dispatch is safe.
@@ -124,8 +124,6 @@ public:
     void onResponseDeallocated(const Coordination::ZooKeeperResponse & response);
 
 private:
-    friend class KeeperRequestDispatcherTestAccessor;
-
     /// Suppose we get a write request from some session and put it in batch B and send that
     /// batch to leader. While B is still in flight, we get a read request from the same session.
     /// We'd like to execute that read as soon as B is committed. So we want a list of such
@@ -281,8 +279,6 @@ private:
 
     KeeperServer * server;
     KeeperContextPtr keeper_context;
-    /// Consulted before responses_queue; see KeeperSpecialResponseRouter.
-    KeeperSpecialResponseRouter special_response_router;
     LoggerPtr log;
 
     ThreadFromGlobalPool dispatch_thread;

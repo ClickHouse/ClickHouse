@@ -121,7 +121,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"client_version_patch", std::make_shared<DataTypeUInt32>(), "Patch component of the clickhouse-client or another TCP client version."},
         {"script_query_number", std::make_shared<DataTypeUInt32>(), "The query number in a script with multiple queries for clickhouse-client."},
         {"script_line_number", std::make_shared<DataTypeUInt32>(), "The line number of the query start in a script with multiple queries for clickhouse-client."},
-        {"http_method", std::make_shared<DataTypeUInt8>(), "HTTP method that initiated the query. Possible values: 0 - The query was launched from the TCP interface, 1 - GET method was used, 2 - POST method was used, 4 - PUT method was used, 5 - DELETE method was used, 6 - HEAD method was used."},
+        {"http_method", std::make_shared<DataTypeUInt8>(), "HTTP method that initiated the query. Possible values: 0 — The query was launched from the TCP interface, 1 — GET method was used, 2 — POST method was used."},
         {"http_user_agent", low_cardinality_string, "HTTP header UserAgent passed in the HTTP query."},
         {"http_referer", std::make_shared<DataTypeString>(), "HTTP header Referer passed in the HTTP query (contains an absolute or partial address of the page making the query)."},
         {"forwarded_for", std::make_shared<DataTypeString>(), "HTTP header X-Forwarded-For passed in the HTTP query."},
@@ -129,9 +129,6 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"distributed_depth", std::make_shared<DataTypeUInt64>(), "How many times a query was forwarded between servers."},
 
         {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse revision."},
-
-        {"http_handler_name", std::make_shared<DataTypeString>(), "Name of the SQL-defined HTTP handler (CREATE HANDLER) that invoked the query. Empty if the query was not invoked through such a handler."},
-        {"http_request_url", std::make_shared<DataTypeString>(), "The HTTP request path (without the query string) that invoked the query. The query string is omitted so that sensitive request parameters are not persisted. Empty for non-HTTP queries."},
 
         {"log_comment", std::make_shared<DataTypeString>(), "Log comment. It can be set to arbitrary string no longer than max_query_size. An empty string if it is not defined."},
 
@@ -249,9 +246,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     appendClientInfo(client_info, columns, i);
 
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(ClickHouseRevision::getVersionRevision());
-
-    typeid_cast<ColumnString &>(*columns[i++]).insertData(http_handler_name.data(), http_handler_name.size());
-    typeid_cast<ColumnString &>(*columns[i++]).insertData(http_request_url.data(), http_request_url.size());
 
     typeid_cast<ColumnString &>(*columns[i++]).insertData(log_comment.data(), log_comment.size());
 

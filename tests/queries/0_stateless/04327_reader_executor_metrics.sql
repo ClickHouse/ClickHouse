@@ -60,7 +60,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     ProfileEvents['ReaderExecutorSourceRequests'] > 0,
     ProfileEvents['ReaderExecutorBytesFromSource'] > 0,
-    ProfileEvents['ReaderExecutorDeliveredBytes'] = ProfileEvents['ReaderExecutorBytesFromSource'],
+    ProfileEvents['ReaderExecutorRequestedBytes'] = ProfileEvents['ReaderExecutorBytesFromSource'],
     ProfileEvents['ReaderExecutorWorkMicroseconds'] > 0,
     ProfileEvents['ReaderExecutorModeledCostMicroseconds'] >= 30000 * ProfileEvents['ReaderExecutorSourceRequests'],
     ProfileEvents['ReaderExecutorCacheGetRequests'] = 0,

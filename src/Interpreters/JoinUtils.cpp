@@ -724,7 +724,8 @@ Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & 
 
 bool hasNonJoinedBlocks(const TableJoin & table_join)
 {
-    return hasNonJoinedBlocks(table_join.kind(), table_join.strictness());
+    return table_join.strictness() != JoinStrictness::Asof && table_join.strictness() != JoinStrictness::Semi
+        && isRightOrFull(table_join.kind());
 }
 
 ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter)

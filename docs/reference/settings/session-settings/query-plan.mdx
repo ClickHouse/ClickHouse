@@ -279,15 +279,6 @@ Allow to merge filters in the query plan.
 
 Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN. 0 means the optimization is disabled.
 
-## query_plan_optimize_count_from_text_index {#query_plan_optimize_count_from_text_index}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New setting"}]}]}/>
-
-Allow to answer `SELECT count() ... WHERE <text search predicate>` directly from the text index posting-list cardinalities, without materializing the matching rows.
-Only takes effect when `query_plan_direct_read_from_text_index` is enabled.
-
 ## query_plan_optimize_join_order_algorithm {#query_plan_optimize_join_order_algorithm}
 
 <ExperimentalBadge/>

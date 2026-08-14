@@ -130,13 +130,7 @@ instantSelector
     ;
 
 labelMatcher
-    : selectorIdentifier labelMatcherOperator STRING
-    | STRING
-    ;
-
-selectorIdentifier
-    : labelName
-    | STRING
+    : labelName labelMatcherOperator STRING
     ;
 
 labelMatcherOperator

@@ -51,68 +51,33 @@ std::optional<JoinSemantics> getJoinSemanticsFromStep(IQueryPlanStep * step)
     return {};
 }
 
-/// Return `true` when the eventual physical join could have `hasDelayedBlocks()` that the
-/// second pass cannot get rid of, in which case `optimizeReadInOrder`'s second-pass traversal
-/// will not propagate read-in-order through the join (see `findReadingStep` in
-/// `optimizeReadInOrder.cpp`). Used to gate the deferral: if such delayed blocks are possible
-/// the deferral would silently disable both `topKThroughJoin` and the second-pass
-/// through-join pass.
+/// Return `true` when the eventual physical join could have `hasDelayedBlocks()`,
+/// in which case `optimizeReadInOrder`'s second-pass traversal will not propagate
+/// read-in-order through the join (see `findReadingStep` in `optimizeReadInOrder.cpp`).
+/// Used to gate the deferral: if delayed blocks are possible the deferral would
+/// silently disable both `topKThroughJoin` and the second-pass through-join pass.
 ///
-/// `allow_pinning_spilling_join` mirrors `query_plan_read_in_order_through_spilling_join`. When
-/// it is set, a join that reports delayed blocks only because it *might* spill
-/// (`SpillingHashJoin`, `canKeepLeftPipelineInOrder() == true`) is not a blocker: the second
-/// pass pins it in memory and it then keeps the left order. This is the steady state today,
-/// because `max_bytes_ratio_before_external_join` defaults to `0.5` and wraps every hash join
-/// in `SpillingHashJoin`.
-///
-/// For a physical `JoinStep` we read `hasDelayedBlocks()` / `canKeepLeftPipelineInOrder()`
-/// directly. For `JoinStepLogical` the algorithm is picked later from
-/// `JoinSettings::join_algorithms`, so we conservatively assume unavoidable delayed blocks are
-/// possible when the configured settings allow `JoinAlgorithm::GRACE_HASH` (never pinnable),
-/// or - unless pinning is allowed - when automatic spilling is configured via
-/// `max_bytes_*_before_external_join` (which can wrap the chosen hash join in
-/// `SpillingHashJoin`).
-///
-/// `JoinAlgorithm::AUTO` physicalizes to different joins (see the `AUTO` branch of
-/// `tryCreateJoin` in `PlannerJoins.cpp`):
-///  - with an effective spill threshold, temporary storage, and `GraceHashJoin::isSupported`,
-///    it returns `SpillingHashJoin` - pinnable, so not a blocker when pinning is allowed;
-///  - otherwise `JoinSwitcher` when `MergeJoin::isSupported` - a genuine blocker: it may
-///    switch to `MergeJoin` at runtime and is not pinnable;
-///  - otherwise plain `HashJoin` - no delayed blocks at all.
-/// With an effective spill threshold the `JoinSwitcher` outcome is unreachable: every join
-/// accepted by `MergeJoin::isSupported` (`ALL` x inner/left/right/full or `ANY`/`SEMI` x
-/// inner/left, one disjunct, no mixed condition) is also accepted by
-/// `GraceHashJoin::isSupported` (non-`ASOF` inner/left/right/full, one disjunct), so the
-/// `SpillingHashJoin` branch fires first. Therefore, when pinning is allowed and
-/// `getEffectiveMaxBytesBeforeExternalJoin() > 0` (the exact check the physicalization
-/// performs via `JoinAlgorithmParams`), `AUTO` is not a blocker either. The one remaining
-/// assumption is that temporary storage is configured (`TableJoin::getTempDataOnDisk`): a
-/// server without it makes `AUTO` fall back to `JoinSwitcher`, and the deferral then loses
-/// the top-k pushdown - a plan-shape pessimization, not a correctness issue, since nothing
-/// gets pinned.
-bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step, bool allow_pinning_spilling_join)
+/// For a physical `JoinStep` we read `hasDelayedBlocks()` directly. For
+/// `JoinStepLogical` the algorithm is picked later from `JoinSettings::join_algorithms`,
+/// so we conservatively assume delayed blocks are possible when the configured settings
+/// allow `JoinAlgorithm::GRACE_HASH` / `JoinAlgorithm::AUTO` (`JoinSwitcher`), or when
+/// automatic spilling is configured via `max_bytes_*_before_external_join` (which can
+/// wrap the chosen hash join in `SpillingHashJoin`).
+bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 {
     if (const auto * physical = typeid_cast<const JoinStep *>(&step))
     {
         const auto & join_ptr = physical->getJoin();
-        if (!join_ptr)
-            return true;
-        if (!join_ptr->hasDelayedBlocks())
-            return false;
-        return !(allow_pinning_spilling_join && join_ptr->canKeepLeftPipelineInOrder());
+        return !join_ptr || join_ptr->hasDelayedBlocks();
     }
     if (const auto * logical = typeid_cast<const JoinStepLogical *>(&step))
     {
         const auto & js = logical->getJoinSettings();
-        if (!allow_pinning_spilling_join
-            && (js.max_bytes_before_external_join > 0 || js.max_bytes_ratio_before_external_join > 0.0))
+        if (js.max_bytes_before_external_join > 0 || js.max_bytes_ratio_before_external_join > 0.0)
             return true;
-        const bool auto_is_pinnable_spilling_join
-            = allow_pinning_spilling_join && js.getEffectiveMaxBytesBeforeExternalJoin() > 0;
-        return std::ranges::any_of(js.join_algorithms, [&](JoinAlgorithm a)
+        return std::ranges::any_of(js.join_algorithms, [](JoinAlgorithm a)
         {
-            return a == JoinAlgorithm::GRACE_HASH || (a == JoinAlgorithm::AUTO && !auto_is_pinnable_spilling_join);
+            return a == JoinAlgorithm::GRACE_HASH || a == JoinAlgorithm::AUTO;
         });
     }
     /// Unknown step kind - be conservative.
@@ -180,9 +145,10 @@ bool joinDefeatsReadInOrderThroughJoin(const IQueryPlanStep & step)
     return true;
 }
 
-/// Walk down a single-child chain looking for a `ReadFromMergeTree` step. Used for the
-/// `MergeTree`-specific guards below (parallel replicas, `FINAL`); the deferral itself
-/// probes every reader `optimizeReadInOrder` supports, not only `MergeTree`.
+/// Walk down a single-child chain looking for a `ReadFromMergeTree` step. We use this
+/// to defer to `optimizeReadInOrder`'s through-join pass when the preserved input can
+/// stream rows in sort-key order from MergeTree's primary key. Inserting our explicit
+/// `Sort + Limit n` would mask that opportunity and force a materializing sort.
 const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node)
 {
     while (node)
@@ -396,7 +362,7 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     }
 
     /// Defer to `optimizeReadInOrder` (second-pass) when the preserved input can stream
-    /// rows in the requested sort order from the storage's sorting key. That path scans
+    /// rows in the requested sort order from MergeTree's primary key. That path scans
     /// only the rows the LIMIT will keep, without materializing a sort - strictly better
     /// than what we would do here. This mirrors the soundness sketch in the file header
     /// without the cost of an explicit Sort + Limit on top of the storage step.
@@ -416,15 +382,12 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// off is the join side stable enough to commit to the deferral.
     ///
     /// We additionally require that the eventual physical join cannot have delayed blocks
-    /// (`GraceHashJoin`, legacy `JoinSwitcher`). `optimizeReadInOrder`'s join traversal also
-    /// rejects those (`findReadingStep`), so deferring when such an algorithm is possible
-    /// would silently disable both optimizations whenever the planner picks one.
-    /// `SpillingHashJoin` is the exception: it reports delayed blocks only because it *might*
-    /// spill, and the second pass makes it keep the left order by pinning it in memory, so it
-    /// blocks the deferral only when `query_plan_read_in_order_through_spilling_join` forbids
-    /// that pinning. This matters for the steady state, because
-    /// `max_bytes_ratio_before_external_join` defaults to `0.5` and wraps every hash join in
-    /// `SpillingHashJoin`.
+    /// (`Grace`/`SpillingHashJoin`, legacy `JoinSwitcher`). `optimizeReadInOrder`'s join
+    /// traversal also rejects those (`!join->hasDelayedBlocks()` in `findReadingStep`), so
+    /// deferring when a delayed-block algorithm is possible would silently disable both
+    /// optimizations whenever the planner picks one - which is the steady state today,
+    /// because `max_bytes_ratio_before_external_join` defaults to `0.5` and wraps every
+    /// hash join in `SpillingHashJoin`.
     ///
     /// Finally, the eventual physical join must keep the read-in-order chain intact on the
     /// preserved side. Two merge-join algorithms break it: `partial_merge` builds a
@@ -440,37 +403,44 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         && settings.join_swap_table.has_value() && !settings.join_swap_table.value()
         && join_kind == JoinKind::Left
         && (join_strictness == JoinStrictness::All || join_strictness == JoinStrictness::Any)
-        && !joinMayHaveDelayedBlocks(*join_node->step, settings.read_in_order_through_spilling_join)
+        && !joinMayHaveDelayedBlocks(*join_node->step)
         && !joinDefeatsReadInOrderThroughJoin(*join_node->step);
     if (second_pass_can_apply)
     {
-        /// Probe full read-in-order applicability (direction, nulls direction, collator,
-        /// key-expression mapping) rather than just matching column names. A name-only match
-        /// defers even when `optimizeReadInOrder` cannot actually satisfy the `SortingStep`
-        /// (e.g. `ORDER BY ... COLLATE`), which would silently disable both optimizations.
-        ///
-        /// The probe covers every reading step pass 2 supports - `ReadFromMergeTree`,
-        /// `ReadFromMerge` and `ReadFromObjectStorageStep` - because
-        /// `buildInputOrderInfo(SortingStep &, ...)` installs the through-`JOIN` read-in-order
-        /// plan for all three. Probing only `ReadFromMergeTree` would keep the pushed-down
-        /// `Sort` + `Limit` for a preserved side reading from a `Merge` table or from object
-        /// storage even though pass 2 could have streamed it in order. The probe also mirrors
-        /// each reader's `requestReadingInOrder` rejections (reverse order with `FINAL` for
-        /// `MergeTree` and `Merge`, unsorted configuration for object storage), so a positive
-        /// probe means pass 2 will actually commit, not merely that the sort keys match.
-        SortingStep probe_sort_step(
-            preserved_input_node->step->getOutputHeader(),
-            description,
-            n,
-            sort_step->getSettings());
-        const bool read_in_order_useful = wouldReadInOrderBeUseful(
-            probe_sort_step,
-            *preserved_input_node,
-            settings.read_in_order_through_join,
-            settings.read_in_order_through_spilling_join);
+        if (const auto * reading = findMergeTreeRead(preserved_input_node))
+        {
+            /// Probe full read-in-order applicability (direction, nulls direction,
+            /// collator, key-expression mapping) rather than just matching column names.
+            /// A name-only match defers even when `optimizeReadInOrder` cannot actually
+            /// satisfy the `SortingStep` (e.g. `ORDER BY ... COLLATE`), which would
+            /// silently disable both optimizations.
+            SortingStep probe_sort_step(
+                preserved_input_node->step->getOutputHeader(),
+                description,
+                n,
+                sort_step->getSettings());
+            const bool read_in_order_useful = wouldReadInOrderBeUseful(
+                probe_sort_step,
+                reading->getStorageMetadata()->getSortingKey(),
+                *preserved_input_node);
 
-        if (read_in_order_useful)
-            return 0;
+            /// `wouldReadInOrderBeUseful` is unaware of `FINAL`-time gating: even when
+            /// the sort description matches the storage's sorting key, pass 2's
+            /// `ReadFromMergeTree::requestReadingInOrder` returns `false` for
+            /// `direction != 1 && query_info.isFinal()`. If we deferred here on the
+            /// strength of the column match, both optimizations would silently disable.
+            /// Guard conservatively: when reading `FINAL`, only defer if all sort columns
+            /// are ascending, since a single descending column is enough for the eventual
+            /// read direction to be -1 in the common case (storage key without reverse
+            /// flags). This may miss the rare reverse-storage-key case where pass 2 would
+            /// have succeeded, but never silently disables both passes.
+            const bool any_desc = std::ranges::any_of(
+                description, [](const SortColumnDescription & c) { return c.direction != 1; });
+            const bool final_blocks_pass2 = reading->isQueryWithFinal() && any_desc;
+
+            if (read_in_order_useful && !final_blocks_pass2)
+                return 0;
+        }
     }
 
     /// Build `Limit(n) <- Sort(K, limit=n)` and graft it on top of the preserved input.

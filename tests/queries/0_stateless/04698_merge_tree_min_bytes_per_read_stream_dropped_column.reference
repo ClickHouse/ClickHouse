@@ -1,6 +1,0 @@
--- the stale narrow column is still stored in the part --
-1
--- the read is wide enough for the cap to matter --
-1
--- a pending DROP COLUMN of the same name skips the bytes-aware cap --
-1

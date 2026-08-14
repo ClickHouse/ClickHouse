@@ -1829,7 +1829,6 @@ class MergeTreeSettingsRandomizer:
         ),
         "index_granularity_bytes": lambda: random.randint(1024, 30 * 1024 * 1024),
         "merge_max_block_size": lambda: random.randint(1, 8192 * 3),
-        "merge_use_batch_sorting_queue": lambda: random.randint(0, 1),
         "index_granularity": lambda: random.randint(1, 65536),
         "min_bytes_for_wide_part": threshold_generator(0.3, 0.3, 0, 1024 * 1024 * 1024),
         "compress_marks": lambda: random.randint(0, 1),

@@ -274,17 +274,7 @@ def test_cluster_recovery(started_cluster):
         else:
             raise Exception(f"Failed creating a node on {nodes[-2].name}")
 
-        # the leader election above can also fail this connect, so retry it
-        for _ in range(100):
-            try:
-                node_zks[-1] = get_fake_zk(nodes[-1].name, timeout=30.0)
-                break
-            except Exception as ex:
-                time.sleep(0.5)
-                print(f"Retrying connect to {nodes[-1].name}, exception {ex}")
-        else:
-            raise Exception(f"Failed connecting to {nodes[-1].name}")
-
+        node_zks[-1] = get_fake_zk(nodes[-1].name, timeout=30.0)
         wait_and_assert_data(node_zks[-1], "/test_force_recovery_last", "somedatalast")
 
         nodes[0].start_clickhouse()

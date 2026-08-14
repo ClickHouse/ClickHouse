@@ -32,9 +32,9 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 ```
 
-The expression list immediately after `SELECT` is required; all other clauses are optional.
+All clauses are optional, except for the required list of expressions immediately after `SELECT` which is covered in more detail [below](#select-clause).
 
-`SELECT` and its optional clauses are covered in separate sections:
+Specifics of each optional clause are covered in separate sections, which are listed in the same order as they are executed (except for `SELECT` and `DISTINCT`, listed first for convenience: their expressions are evaluated only after the preceding clauses finish, as described [below](#select-clause)):
 
 - [WITH clause](/reference/statements/select/with)
 - [SELECT clause](#select-clause)

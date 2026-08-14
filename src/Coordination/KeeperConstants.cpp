@@ -292,10 +292,6 @@
     M(KeeperWatchTriggeredNodeChildrenChanged) \
     M(KeeperChangelogWrittenBytes) \
     M(KeeperChangelogFileSyncMicroseconds) \
-    M(KeeperChangelogStartupReadMicroseconds) \
-    M(KeeperChangelogStartupStitchMicroseconds) \
-    M(KeeperChangelogStartupReadEntries) \
-    M(KeeperChangelogStartupReadBytes) \
     M(KeeperSnapshotWrittenBytes) \
     M(KeeperSnapshotFileSyncMicroseconds) \
     M(KeeperSnapshotRemoteLoaderErrors) \
@@ -421,9 +417,6 @@ extern const std::vector<Event> keeper_profile_events
     M(KeeperChangelogReadAheadThreads) \
     M(KeeperChangelogReadAheadThreadsActive) \
     M(KeeperChangelogReadAheadThreadsScheduled) \
-    M(KeeperChangelogStartupReadThreads) \
-    M(KeeperChangelogStartupReadThreadsActive) \
-    M(KeeperChangelogStartupReadThreadsScheduled) \
     M(KeeperBlockCacheBytes) \
     M(KeeperBlockCacheBlocks) \
     M(KeeperContainerNodes) \

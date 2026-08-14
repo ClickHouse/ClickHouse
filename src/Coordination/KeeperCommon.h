@@ -71,10 +71,6 @@ struct KeeperResponseForSession
 
 using KeeperResponsesForSessions = std::vector<KeeperResponseForSession>;
 
-/// Delivers a response whose waiter is not a per-session response callback, and returns whether it
-/// took the response. Required: both dispatchers reject an empty router at construction.
-using KeeperSpecialResponseRouter = std::function<bool(const KeeperResponseForSession &)>;
-
 struct KeeperRequestForSession
 {
     int64_t session_id{};

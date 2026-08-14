@@ -1,13 +1,13 @@
 #include <algorithm>
-#include <limits>
 #include <Common/StringUtils.h>
 #include <Access/Common/QuotaDefs.h>
+#include <Access/Common/QuotaValueFromText.h>
 #include <Common/Exception.h>
-#include <Common/NaNUtils.h>
-#include <Core/AccurateComparison.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
+
+#include <cmath>
 
 
 namespace DB
@@ -29,32 +29,48 @@ String QuotaTypeInfo::valueToString(QuotaValue value) const
 {
     if (!(value % output_denominator))
         return std::to_string(value / output_denominator);
-    return toString(static_cast<double>(value) / static_cast<double>(output_denominator));
+    /// The fraction is rendered from the stored integer rather than from a division of doubles, which
+    /// would round away the low bits of a value near the top of the range and make `SHOW CREATE QUOTA`
+    /// non-replayable (18446744073709551615 nanoseconds would be shown as the out-of-range
+    /// 18446744073.709553). The remainder is nonzero here, so it has a last nonzero digit to stop at.
+    String fraction = std::to_string(value % output_denominator);
+    fraction.insert(0, decimalZerosOfPowerOfTen(output_denominator) - fraction.size(), '0');
+    while (fraction.back() == '0')
+        fraction.pop_back();
+    return std::to_string(value / output_denominator) + "." + fraction;
 }
 
 QuotaValue QuotaTypeInfo::stringToValue(const String & str) const
 {
     if (output_denominator == 1)
-        return static_cast<QuotaValue>(parse<UInt64>(str));
-    return scaleToValue(parse<Float64>(str));
-}
+        /// Parse with overflow checking so that an out-of-range value from the configuration
+        /// (e.g. <queries>18446744073709551616</queries>) throws instead of silently wrapping around.
+        return static_cast<QuotaValue>(parseInt<UInt64>(str));
 
-QuotaValue QuotaTypeInfo::scaleToValue(Float64 unscaled) const
-{
-    const Float64 scaled = unscaled * static_cast<Float64>(output_denominator);
-
-    /// Casting a `Float64` that does not fit into `QuotaValue` is undefined behavior, so the range is checked first.
-    /// `accurate::greaterOp` is used instead of a naive comparison because `Float64(std::numeric_limits<QuotaValue>::max())`
-    /// rounds up, so a naive comparison still lets through values that are out of range - the same reasoning as in
-    /// `FieldVisitorConvertToNumber`.
-    if (!isFinite(scaled)
-        || accurate::greaterOp(scaled, std::numeric_limits<QuotaValue>::max())
-        || accurate::lessOp(scaled, std::numeric_limits<QuotaValue>::lowest()))
+    /// Reject a negative value by the sign bit rather than a `< 0` comparison: a tiny negative
+    /// value (e.g. -1e-400) underflows to -0.0, which compares equal to zero.
+    Float64 value = parse<Float64>(str);
+    if (std::signbit(value))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota value {} is out of range", str);
+    /// Take the scaled value from the text when it can be computed exactly: the Float64 above has
+    /// already been rounded to the nearest double, which loses the low bits of a value near the top of
+    /// the range and can push it out of the range altogether (the scaled value of the configured
+    /// <execution_time>18446744073.709551615</execution_time> is exactly QuotaValue max, but the
+    /// rounded product is 2^64). A text of an unknown form (e.g. inf) or a scaled value that does not
+    /// fit is left to the range check on the product below. A scaled value below a whole nanosecond
+    /// is truncated, as the cast of the product below truncates it.
+    if (auto parts = splitNumericLiteral(str))
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value {} is out of range for the quota type {}", unscaled, name);
+        if (auto exact_value = exactScaledValueOfNumericLiteral(*parts, output_denominator))
+            return *exact_value;
     }
-
-    return static_cast<QuotaValue>(scaled);
+    /// Bound the scaled value to the QuotaValue (UInt64) range before the cast: an out-of-range or
+    /// non-finite product makes static_cast<QuotaValue> undefined behavior.
+    Float64 scaled_value = value * static_cast<Float64>(output_denominator);
+    static constexpr Float64 uint64_max_plus_one_as_double = 18446744073709551616.0; /// 2^64, first double above UInt64 max
+    if (!std::isfinite(scaled_value) || scaled_value >= uint64_max_plus_one_as_double)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota value {} is out of range", str);
+    return static_cast<QuotaValue>(scaled_value);
 }
 
 String QuotaTypeInfo::valueToStringWithName(QuotaValue value) const
@@ -172,8 +188,8 @@ const QuotaTypeInfo & QuotaTypeInfo::get(QuotaType type)
         {
             static const auto info = make_info(
                 "EXECUTION_TIME",
-                "The current total amount of time (in nanoseconds) spent to execute queries within the current period of time",
-                "The maximum amount of time (in nanoseconds) allowed for all queries to execute within the specified period of time",
+                "The current total amount of time (in seconds, with nanosecond precision) spent to execute queries within the current period of time",
+                "The maximum amount of time (in seconds, with nanosecond precision) allowed for all queries to execute within the specified period of time",
                 1000000000 /* execution_time is stored in nanoseconds */
             );
             return info;

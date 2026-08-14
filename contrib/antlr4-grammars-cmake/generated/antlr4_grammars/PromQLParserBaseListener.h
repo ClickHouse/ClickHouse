@@ -72,9 +72,6 @@ public:
   virtual void enterLabelMatcher(PromQLParser::LabelMatcherContext * /*ctx*/) override { }
   virtual void exitLabelMatcher(PromQLParser::LabelMatcherContext * /*ctx*/) override { }
 
-  virtual void enterSelectorIdentifier(PromQLParser::SelectorIdentifierContext * /*ctx*/) override { }
-  virtual void exitSelectorIdentifier(PromQLParser::SelectorIdentifierContext * /*ctx*/) override { }
-
   virtual void enterLabelMatcherOperator(PromQLParser::LabelMatcherOperatorContext * /*ctx*/) override { }
   virtual void exitLabelMatcherOperator(PromQLParser::LabelMatcherOperatorContext * /*ctx*/) override { }
 

@@ -8,8 +8,6 @@
 #include <Storages/MergeTree/ConditionTemplate.h>
 
 #include <Common/logger_useful.h>
-#include <Common/FailPoint.h>
-#include <base/sleep.h>
 
 namespace CurrentMetrics
 {
@@ -31,11 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int MEMORY_LIMIT_EXCEEDED;
-}
-
-namespace FailPoints
-{
-    extern const char slowdown_skip_index_read_result_build[];
 }
 
 MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
@@ -208,10 +201,6 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
 
     ProfileEvents::increment(ProfileEvents::SelectedMarks, ranges.getNumberOfMarks());
     ProfileEvents::increment(ProfileEvents::SelectedRanges, ranges.size());
-
-    /// Placed before the cancellation check below, so tests can reliably
-    /// cancel the query mid-build and exercise the null-result path.
-    fiu_do_on(FailPoints::slowdown_skip_index_read_result_build, { sleepForMilliseconds(300); });
 
     if (is_cancelled)
         return {};

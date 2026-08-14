@@ -228,9 +228,6 @@ private:
 
     bool enable_analyzer = false;
 
-    /// Which statistics EXPLAIN ANALYZ` needs from this join
-    JoinAnalyzeMode analyze_mode = JoinAnalyzeMode::None;
-
     Names requiredJoinedNames() const;
 
     /// Create converting actions and change key column names if required
@@ -270,7 +267,7 @@ private:
 public:
     TableJoin() = default;
 
-    TableJoin(const Settings & settings, JoinAnalyzeMode analyze_mode_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
+    TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
     TableJoin(const JoinSettings & settings, bool join_use_nulls_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
 
     /// for StorageJoin
@@ -290,12 +287,6 @@ public:
 
     bool enableAnalyzer() const { return enable_analyzer; }
     void assertEnableAnalyzer() const;
-
-    JoinAnalyzeMode analyzeMode() const { return analyze_mode; }
-
-    bool collectAnalyzeStats() const { return analyze_mode != JoinAnalyzeMode::None; }
-    bool collectExactMatches() const { return analyze_mode == JoinAnalyzeMode::Exact; }
-
     TemporaryDataOnDiskScopePtr getTempDataOnDisk();
 
     ActionsDAG createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const;

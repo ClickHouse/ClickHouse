@@ -1,9 +1,5 @@
 [
   {
-    "source": "/products/cloud/features/backups/faq",
-    "destination": "/products/cloud/features/backups/overview"
-  },
-  {
     "source": "/products/cloud/guides/migration/oss-to-cloud-backup-restore",
     "destination": "/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
   },
@@ -1536,7 +1532,7 @@
     "source": "/cloud/features/backups"
   },
   {
-    "destination": "/products/cloud/features/backups/overview",
+    "destination": "/products/cloud/features/backups/faq",
     "source": "/cloud/features/backups/faq"
   },
   {

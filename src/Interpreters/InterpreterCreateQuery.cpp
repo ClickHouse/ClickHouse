@@ -565,12 +565,6 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
         setVersionToAggregateFunctions(column_type, true);
-    else
-        /// Spell the state version the column is going to be written with out in the type, so that
-        /// it gets into the table metadata and the data stays readable when a newer server changes
-        /// the default: an unversioned name in stored metadata denotes the layout from before the
-        /// function became versioned (the ATTACH branch above pins it to 0).
-        pinCurrentStateVersionToAggregateFunctions(column_type);
 
     if (col_decl.null_modifier)
     {
@@ -1024,19 +1018,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 is_refreshable_mv /* is_create_parameterized_view */);
         }
 
-        auto columns_from_select = as_select_sample->getNamesAndTypesList();
-        if (mode < LoadingStrictnessLevel::ATTACH)
-        {
-            /// A fresh `...State(...)` result type already spells its state version out, but an
-            /// inferred type can also come from an unversioned source (a `CREATE TABLE ... AS SELECT`
-            /// over an old table), so the version is pinned into the inferred types the same way it
-            /// is pinned into explicitly declared ones (see `getColumnType`) for it to reach the
-            /// stored metadata. On ATTACH the types are re-inferred rather than read from legacy
-            /// metadata, so they keep denoting the default version, as before.
-            for (auto & column : columns_from_select)
-                pinCurrentStateVersionToAggregateFunctions(column.type);
-        }
-        properties.columns = ColumnsDescription(std::move(columns_from_select));
+        properties.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
         properties.columns_inferred_from_select_query = true;
     }
     else if (create.as_table_function)

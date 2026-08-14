@@ -679,9 +679,6 @@
     M(1008, TEMPORARY_DATA_NOT_IN_CACHE) \
     M(1009, S3_OBJECT_CHANGED_DURING_READ) \
     M(1010, UNIQUE_KEY_DENSE_INDEX_UNREADABLE) \
-    M(1011, HANDLER_ALREADY_EXISTS) \
-    M(1012, HANDLER_DOESNT_EXIST) \
-    M(1013, AMBIGUOUS_HANDLER) \
     /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -698,7 +695,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1013;
+    constexpr ErrorCode END = 1010;
 
 #if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
     /** One `ErrorPairHolder` per error code, each holding two `Error` structs - the last message,

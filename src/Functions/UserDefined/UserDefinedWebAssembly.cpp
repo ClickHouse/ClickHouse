@@ -276,7 +276,7 @@ public:
 
             if (chunk && chunk.getNumColumns() != result_block.columns())
                 throw Exception(
-                    ErrorCodes::WASM_ERROR,
+                    ErrorCodes::LOGICAL_ERROR,
                     "Different number of columns in result chunks, expected {}, got {}",
                     result_block.dumpStructure(),
                     chunk.dumpStructure());
@@ -289,13 +289,6 @@ public:
             if (!has_data)
                 break;
         }
-
-        if (result_chunk.getNumColumns() != result_block.columns())
-            throw Exception(
-                ErrorCodes::WASM_ERROR,
-                "WebAssembly function returned a result with {} columns, expected {}",
-                result_chunk.getNumColumns(), result_block.columns());
-
         result_block.setColumns(result_chunk.detachColumns());
     }
 
