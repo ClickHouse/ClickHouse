@@ -577,7 +577,14 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             return {"date", true};
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
-            return {"timestamp", true};
+        {
+            /// ClickHouse stores epoch-based instants in DateTime/DateTime64 columns and the
+            /// Parquet writer sets isAdjustedToUTC=true. Iceberg `timestamptz` requires that
+            /// Parquet mapping; plain `timestamp` requires isAdjustedToUTC=false (issue #114854).
+            if (type->getTypeId() == TypeIndex::DateTime64 && getDecimalScale(*type) == 9)
+                return {Iceberg::f_timestamptz_ns, true};
+            return {Iceberg::f_timestamptz, true};
+        }
         case TypeIndex::Time:
             return {"time", true};
         case TypeIndex::String:
