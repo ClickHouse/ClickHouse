@@ -9,10 +9,7 @@
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/checkStackSize.h>
-#include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
-#include <IO/HTTPCommon.h>
-#include <IO/ConnectionTimeouts.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Interpreters/Context.h>
@@ -97,17 +94,12 @@ std::string UnifiedUnityCatalog::retrieveAccessToken() const
     headers.emplace_back("Content-Type", "application/x-www-form-urlencoded");
     headers.emplace_back("Accepts", "application/json; charset=UTF-8");
 
-    Poco::URI url;
-    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
-
     std::string effective_oauth_uri = oauth_server_uri;
     if (effective_oauth_uri.empty())
     {
         Poco::URI base(base_url_str);
         effective_oauth_uri = base.getScheme() + "://" + base.getHost() + "/oidc/v1/token";
     }
-
-    url = Poco::URI(effective_oauth_uri);
 
     /// The parameters always go into the request body, as RFC 6749 requires.
     /// The `oauth_server_use_request_body` setting is not honored here: `false` exists only for
@@ -122,28 +114,18 @@ std::string UnifiedUnityCatalog::retrieveAccessToken() const
     String body = fmt::format(
         "grant_type=client_credentials&scope={}&client_id={}&client_secret={}",
         encoded_auth_scope, encoded_client_id, encoded_client_secret);
-    out_stream_callback = [body = std::move(body)](std::ostream & os)
+    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [body_ = std::move(body)](std::ostream & os)
     {
-        os << body;
+        os << body_;
     };
 
-    const auto & context = getContext();
-    auto wb = DB::BuilderRWBufferFromHTTP(url)
-        .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
-        .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
-        .withSettings(context->getReadSettings())
-        .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
-        .withHostFilter(&context->getRemoteHostFilter())
-        .withOutCallback(std::move(out_stream_callback))
-        .withSkipNotFound(false)
-        .withHeaders(headers)
-        .create(credentials);
+    auto [res_json, json_str] = makeHTTPRequestAndReadJSON(
+        effective_oauth_uri, getContext(), credentials, {}, headers,
+        Poco::Net::HTTPRequest::HTTP_POST, std::move(out_stream_callback));
 
-    std::string json_str;
-    readJSONObjectPossiblyInvalid(json_str, *wb);
+    if (res_json.isEmpty())
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Empty response from OAuth server {}", effective_oauth_uri);
 
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var res_json = parser.parse(json_str);
     const Poco::JSON::Object::Ptr & object = res_json.extract<Poco::JSON::Object::Ptr>();
 
     auto token = object->get("access_token").extract<String>();
