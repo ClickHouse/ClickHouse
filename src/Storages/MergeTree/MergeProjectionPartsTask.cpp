@@ -15,21 +15,6 @@ MergeTreeData::MutableDataPartsVector MergeProjectionPartsTask::extractTemporary
     return tmp_parts_to_remove;
 }
 
-UInt64 MergeProjectionPartsTask::countPartsInAllLevels() const
-{
-    UInt64 total = 0;
-    for (const auto & [_, parts] : level_parts)
-        total += parts.size();
-    return total;
-}
-
-void MergeProjectionPartsTask::updatePartsRemaining(UInt64 in_flight)
-{
-    if (parent_merge_list_element)
-        parent_merge_list_element->current_projection_parts_remaining.store(
-            countPartsInAllLevels() + in_flight, std::memory_order_relaxed);
-}
-
 bool MergeProjectionPartsTask::executeStep()
 {
     auto & current_level_parts = level_parts[current_level];
@@ -53,7 +38,6 @@ bool MergeProjectionPartsTask::executeStep()
         }
         current_level = next_level;
         ++next_level;
-        updatePartsRemaining();
     }
     else if (selected_parts.size() == 1)
     {
@@ -72,7 +56,6 @@ bool MergeProjectionPartsTask::executeStep()
 
         LOG_DEBUG(log, "Forwarded part {} in level {} to next level", selected_parts[0]->name, current_level);
         next_level_parts.push_back(std::move(selected_parts[0]));
-        updatePartsRemaining();
     }
     else if (selected_parts.size() > 1)
     {
@@ -90,21 +73,11 @@ bool MergeProjectionPartsTask::executeStep()
             projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
         LOG_DEBUG(log, "Merged {} parts in level {} to {}", selected_parts.size(), current_level, projection_future_part->name);
-
-        auto child_merge_list_element = std::make_unique<MergeListElement>((*merge_entry)->table_id, projection_future_part, context);
-
-        if (parent_merge_list_element)
-        {
-            parent_merge_list_element->current_projection_parts_merging.store(selected_parts.size(), std::memory_order_relaxed);
-            updatePartsRemaining(selected_parts.size());
-            child_merge_list_element->parent_progress = &parent_merge_list_element->current_projection_progress;
-        }
-
         auto tmp_part_merge_task = mutator->mergePartsToTemporaryPart(
             projection_future_part,
             projection.metadata,
             merge_entry,
-            std::move(child_merge_list_element),
+            std::make_unique<MergeListElement>((*merge_entry)->table_id, projection_future_part, context),
             *table_lock_holder,
             time_of_merge,
             context,
@@ -120,20 +93,11 @@ bool MergeProjectionPartsTask::executeStep()
             ".tmp_proj");
 
         next_level_parts.push_back(executeHere(tmp_part_merge_task));
-
-        if (parent_merge_list_element)
-        {
-            parent_merge_list_element->current_projection_parts_merging.store(0, std::memory_order_relaxed);
-            parent_merge_list_element->current_projection_progress.store(0, std::memory_order_relaxed);
-        }
-
         /// FIXME (alesapin) we should use some temporary storage for this,
         /// not commit each subprojection part
         next_level_parts.back()->getDataPartStorage().commitTransaction();
         next_level_parts.back()->is_temp = true;
         next_level_parts.back()->temp_projection_block_number = block_num;
-
-        updatePartsRemaining();
     }
 
     /// Need execute again

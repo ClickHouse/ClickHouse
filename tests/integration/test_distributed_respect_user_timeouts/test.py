@@ -1,4 +1,5 @@
 import itertools
+import logging
 import os.path
 import timeit
 

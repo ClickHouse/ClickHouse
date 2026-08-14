@@ -66,7 +66,7 @@ void TableFunctionMergeTreeProjection::parseArguments(const ASTPtr & ast_functio
 ColumnsDescription TableFunctionMergeTreeProjection::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
-    auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = source_table->getInMemoryMetadataPtr();
 
     if (!metadata_snapshot->getProjections().has(projection_name))
         throw Exception(
@@ -86,18 +86,17 @@ StoragePtr TableFunctionMergeTreeProjection::executeImpl(
     bool /* is_insert_query */) const
 {
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
-    auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = source_table->getInMemoryMetadataPtr();
     ProjectionDescriptionRawPtr projection = &metadata_snapshot->getProjections().get(projection_name);
 
     StorageID storage_id(getDatabaseName(), table_name);
     auto res = std::make_shared<StorageFromMergeTreeProjection>(
-        std::move(storage_id), std::move(source_table), metadata_snapshot, projection);
+        std::move(storage_id), std::move(source_table), std::move(metadata_snapshot), projection);
 
     res->startup();
     return res;
 }
 
-void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeProjection>(

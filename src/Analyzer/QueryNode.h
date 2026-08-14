@@ -3,6 +3,7 @@
 #include <Common/SettingsChanges.h>
 
 #include <Core/NamesAndTypes.h>
+#include <Core/Field.h>
 
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>

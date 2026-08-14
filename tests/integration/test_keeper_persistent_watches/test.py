@@ -1,5 +1,7 @@
+import struct
 import time
 
+import logging
 import pytest
 import os
 import threading

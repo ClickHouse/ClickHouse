@@ -26,7 +26,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3HexRing final : public IFunction
+class FunctionH3HexRing : public IFunction
 {
 public:
     static constexpr auto name = "h3HexRing";

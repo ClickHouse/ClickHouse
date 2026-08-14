@@ -9,6 +9,8 @@ title: 'Buffer table engine'
 doc_type: 'reference'
 ---
 
+# Buffer table engine
+
 Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
 
 :::note

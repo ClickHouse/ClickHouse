@@ -8,6 +8,8 @@ title: 'Dynamic'
 doc_type: 'guide'
 ---
 
+# Dynamic
+
 This type allows to store values of any type inside it without knowing all of them in advance.
 
 To declare a column of `Dynamic` type, use the following syntax:

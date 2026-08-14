@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <base/sort.h>
 #include <AggregateFunctions/Helpers.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
@@ -41,7 +40,7 @@ void mergeEventsList(T & events_list, size_t prefix_size, bool prefix_sorted, bo
 {
     /// either sort whole container or do so partially merging ranges afterwards
     if (!prefix_sorted && !suffix_sorted)
-        ::stableSort(std::begin(events_list), std::end(events_list));
+        std::stable_sort(std::begin(events_list), std::end(events_list));
     else
     {
         const auto begin = std::begin(events_list);
@@ -49,10 +48,10 @@ void mergeEventsList(T & events_list, size_t prefix_size, bool prefix_sorted, bo
         const auto end = std::end(events_list);
 
         if (!prefix_sorted)
-            ::stableSort(begin, middle);
+            std::stable_sort(begin, middle);
 
         if (!suffix_sorted)
-            ::stableSort(middle, end);
+            std::stable_sort(middle, end);
 
         std::inplace_merge(begin, middle, end);
     }
@@ -104,7 +103,7 @@ struct AggregateFunctionWindowFunnelData
     {
         if (!sorted)
         {
-            ::stableSort(std::begin(events_list), std::end(events_list));
+            std::stable_sort(std::begin(events_list), std::end(events_list));
             sorted = true;
         }
     }
@@ -125,7 +124,7 @@ struct AggregateFunctionWindowFunnelData
     {
         readBinary(sorted, buf);
 
-        size_t size = 0;
+        size_t size;
         readBinary(size, buf);
 
         if (size > 100'000'000) /// The constant is arbitrary
@@ -134,8 +133,8 @@ struct AggregateFunctionWindowFunnelData
         events_list.clear();
         events_list.reserve(size);
 
-        T timestamp{};
-        UInt8 event = 0;
+        T timestamp;
+        UInt8 event;
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -225,7 +224,7 @@ struct AggregateFunctionWindowFunnelStrictOnceData
     {
         if (!sorted)
         {
-            ::stableSort(std::begin(events_list), std::end(events_list));
+            std::stable_sort(std::begin(events_list), std::end(events_list));
             sorted = true;
         }
     }
@@ -247,7 +246,7 @@ struct AggregateFunctionWindowFunnelStrictOnceData
     {
         readBinary(sorted, buf);
 
-        size_t events_size = 0;
+        size_t events_size;
         readBinary(events_size, buf);
 
         if (events_size > 100'000'000) /// Arbitrary limit to prevent excessive memory allocation
@@ -256,8 +255,8 @@ struct AggregateFunctionWindowFunnelStrictOnceData
         events_list.clear();
         events_list.reserve(events_size);
 
-        T timestamp{};
-        UInt8 event_type = 0;
+        T timestamp;
+        UInt8 event_type;
         UInt64 unique_id = 0;
 
         for (size_t i = 0; i < events_size; ++i)
@@ -371,15 +370,12 @@ private:
 
     UInt8 getEventLevelStrictOnce(const AggregateFunctionWindowFunnelStrictOnceData<T>::TimestampEvents & events_list) const
     {
-        /// Stores the timestamp of the first and last i-th level event happen within time window.
-        /// `event_path` must be zero-initialized: the full array is copied by `auto prev_path = it->event_path`
-        /// even though only the prefix [0..event_idx] is logically used, so leaving the tail uninitialized
-        /// would read indeterminate values under MSan/ASan.
+        /// Stores the timestamp of the first and last i-th level event happen within time window
         struct EventMatchTimeWindow
         {
-            UInt64 first_timestamp{};
-            UInt64 last_timestamp{};
-            std::array<UInt64, MAX_EVENTS> event_path{};
+            UInt64 first_timestamp;
+            UInt64 last_timestamp;
+            std::array<UInt64, MAX_EVENTS> event_path;
 
             EventMatchTimeWindow() = default;
             EventMatchTimeWindow(UInt64 first_ts, UInt64 last_ts)
@@ -570,7 +566,7 @@ public:
             this->data(place).advanceId();
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -667,7 +663,6 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
 
 }
 
-void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory & factory);
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("windowFunnel", {createAggregateFunctionWindowFunnel, {}});
