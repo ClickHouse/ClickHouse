@@ -54,21 +54,32 @@ $CLICKHOUSE_CLIENT -nm -q "
     INSERT INTO tokens SELECT 'v' || toString(number % 10) FROM numbers(1000);
 "
 
-# Sets ALLOC_BYTES to the bytes the server allocated while planning one query.
-# EXPLAIN runs index analysis without reading data, so the measurement is the matcher's cost.
+# Sets ALLOC_BYTES to the minimum bytes the server allocated while planning one query, over
+# several identical runs. EXPLAIN runs index analysis without reading data, so the measurement
+# is the matcher's cost.
+# A single run is not a stable oracle: whichever query happens to be the first to touch a cache
+# or spin up a thread pool absorbs a transient multi-megabyte allocation, and the dotted arm
+# always runs first in the loop below, so such a one-off inflates the ratio arbitrarily
+# (observed in CI: a 4216780-byte dotted arm against a 22224-byte control). A genuine quadratic
+# regression is deterministic and shows up in every run, so the minimum keeps discriminating.
+ALLOC_RUNS=3
 alloc_bytes_for() {
     local table="$1" unit="$2"
-    local query_id="04780-${CLICKHOUSE_DATABASE}-${table}-${unit}-${RANDOM}"
-    $CLICKHOUSE_CLIENT --query_id "$query_id" --max_query_size 1048576 --max_execution_time 300 -q "
-        SELECT count() FROM (
-            EXPLAIN indexes = 1
-            SELECT count() FROM ${table} WHERE position(repeat('${unit}', ${REPEATS}), s) = 1
-        )" >/dev/null
+    local query_id_prefix="04780-${CLICKHOUSE_DATABASE}-${table}-${unit}-${RANDOM}"
+    local run
+    for run in $(seq 1 $ALLOC_RUNS); do
+        $CLICKHOUSE_CLIENT --query_id "${query_id_prefix}-${run}" --max_query_size 1048576 --max_execution_time 300 -q "
+            SELECT count() FROM (
+                EXPLAIN indexes = 1
+                SELECT count() FROM ${table} WHERE position(repeat('${unit}', ${REPEATS}), s) = 1
+            )" >/dev/null
+    done
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log" >/dev/null
     ALLOC_BYTES=$($CLICKHOUSE_CLIENT -q "
-        SELECT ProfileEvents['MemoryAllocatedWithoutCheckBytes']
+        SELECT min(ProfileEvents['MemoryAllocatedWithoutCheckBytes'])
         FROM system.query_log
-        WHERE current_database = currentDatabase() AND query_id = '${query_id}' AND type = 'QueryFinish'")
+        WHERE current_database = currentDatabase() AND startsWith(query_id, '${query_id_prefix}-') AND type = 'QueryFinish'
+        HAVING count() = ${ALLOC_RUNS}")
     [ -n "$ALLOC_BYTES" ] && [ "$ALLOC_BYTES" -gt 0 ]
 }
 
