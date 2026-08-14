@@ -47,11 +47,17 @@ PY
 
 # Drop the in-memory metadata so the edited file is re-read.
 ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "DETACH TABLE ${TABLE}"
-${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --send_logs_level=fatal --query "ATTACH TABLE ${TABLE}"
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --allow_repeated_settings --send_logs_level=fatal --query "ATTACH TABLE ${TABLE}"
 
 # Must fail loudly instead of returning success without consolidating anything.
 ${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --use_iceberg_metadata_files_cache=0 \
     --query "OPTIMIZE TABLE ${TABLE} MANIFEST SETTINGS iceberg_manifest_min_count_to_compact=5" 2>&1 \
+    | grep -oF 'ICEBERG_SPECIFICATION_VIOLATION' | head -n1
+
+# Full compaction must reject it too. `getHistory` drops the unresolvable head silently, and the rewrite
+# then deletes the files only that head referenced, so this path has to fail before it starts.
+${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --use_iceberg_metadata_files_cache=0 \
+    --query "OPTIMIZE TABLE ${TABLE}" 2>&1 \
     | grep -oF 'ICEBERG_SPECIFICATION_VIOLATION' | head -n1
 
 # A `current-snapshot-id` of JSON null is the spec's way of saying "no current snapshot" and must stay
@@ -75,7 +81,7 @@ json.dump(meta, open(path, "w"))
 PY
 
 ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "DETACH TABLE ${NULL_TABLE}"
-${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --send_logs_level=fatal --query "ATTACH TABLE ${NULL_TABLE}"
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --allow_repeated_settings --send_logs_level=fatal --query "ATTACH TABLE ${NULL_TABLE}"
 
 # Assert the exit status as well as the output: grepping alone would print 0 for a client that failed
 # with a message that merely does not contain the word "Exception".

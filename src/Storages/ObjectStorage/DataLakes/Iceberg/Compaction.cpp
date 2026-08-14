@@ -225,6 +225,12 @@ static Plan getPlan(
     if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) != 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compaction is supported only for format_version 2.");
 
+    /// The rewrite is based on this object, so validate it here rather than at the caller: a live
+    /// `current-snapshot-id` missing from `snapshots` yields a partial history, and `clearOldFiles`
+    /// then deletes every listed object - losing the files only that head still referenced.
+    MetadataGenerator::validateParentSnapshotResolvable(
+        initial_metadata_object, getCurrentSnapshotIdOrNegative(initial_metadata_object));
+
     auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     auto schemas = initial_metadata_object->getArray(Iceberg::f_schemas);
     Poco::JSON::Array::Ptr current_schema;
