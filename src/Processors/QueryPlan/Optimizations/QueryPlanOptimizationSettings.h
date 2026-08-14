@@ -103,6 +103,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
     bool push_limit_by_into_sort;
+    bool query_plan_promote_planner_only_not_null_filters;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
@@ -224,6 +225,8 @@ struct QueryPlanOptimizationSettings
 
     bool parallel_replicas_filter_pushdown = false;
     bool enable_parallel_replicas = false;
+
+    double query_plan_max_selectivity_for_promoting_not_null_filters;
 };
 
 }

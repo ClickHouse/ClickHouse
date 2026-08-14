@@ -132,6 +132,8 @@ namespace Setting
     extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool query_plan_convert_outer_join_to_inner_join_by_join_predicates;
+    extern const SettingsBool query_plan_promote_planner_only_not_null_filters;
+    extern const SettingsDouble query_plan_max_selectivity_for_promoting_not_null_filters;
 }
 
 namespace ServerSetting
@@ -337,7 +339,12 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     parallel_replicas_filter_pushdown = from[Setting::parallel_replicas_filter_pushdown];
 
-    query_plan_convert_outer_join_to_inner_join_by_join_predicates = from[Setting::query_plan_convert_outer_join_to_inner_join_by_join_predicates];
+    query_plan_convert_outer_join_to_inner_join_by_join_predicates = from[Setting::query_plan_convert_outer_join_to_inner_join]
+        && from[Setting::query_plan_convert_outer_join_to_inner_join_by_join_predicates];
+
+    query_plan_promote_planner_only_not_null_filters = from[Setting::query_plan_promote_planner_only_not_null_filters];
+
+    query_plan_max_selectivity_for_promoting_not_null_filters = from[Setting::query_plan_max_selectivity_for_promoting_not_null_filters];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)

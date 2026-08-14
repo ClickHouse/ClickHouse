@@ -8442,7 +8442,13 @@ Enable converting the hash table to a flat array for joins when the key is a sin
 Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN. 0 means the optimization is disabled.
 )", 0) \
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join_by_join_predicates, true, R"(
-Allow to convert `OUTER JOIN` to `INNER JOIN` if another `JOIN` after `OUTER JOIN` always filters default values
+Allow to convert `OUTER JOIN` to `INNER JOIN` if another `JOIN` after `OUTER JOIN` always filters default values. Only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled.
+)", 0) \
+    DECLARE(Bool, query_plan_promote_planner_only_not_null_filters, true, R"(
+Allow `col IS NOT NULL` filters derived by the planner to be promoted to executable filters.
+)", 0) \
+    DECLARE(Double, query_plan_max_selectivity_for_promoting_not_null_filters, 0.5, R"(
+The maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be promoted to an executable filter.
 )", 0) \
     \
     /* ####################################################### */ \

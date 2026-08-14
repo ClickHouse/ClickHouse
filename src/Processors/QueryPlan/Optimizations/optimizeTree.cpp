@@ -220,8 +220,14 @@ void optimizeTreeSecondPass(
     };
 
     Stack stack;
-    stack.push_back({.node = &root});
 
+    if (optimization_settings.query_plan_promote_planner_only_not_null_filters)
+        traverseQueryPlan(stack, root, [&](auto & frame_node)
+        {
+            promotePlannerOnlyFilter(frame_node, optimization_settings);
+        });
+
+    stack.push_back({.node = &root});
     while (!stack.empty())
     {
         if (optimization_settings.query_plan_optimize_primary_key)
