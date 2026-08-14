@@ -79,7 +79,7 @@ REGISTER_FUNCTION(NotHas)
         {"Map basic usage", "SELECT notHas(map('a', 1, 'b', 2), 'c')", "1"},
         {"JSON basic usage", R"(SELECT notHas('{"a" : 1, "b" : {"c" : 2}}'::JSON, 'b.c'))", "0"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
