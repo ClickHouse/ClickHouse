@@ -482,6 +482,26 @@ static const std::map<std::string, std::string> inverse_relations =
     {"notHas", "has"},
 };
 
+/// `KeyCondition` can only build a set atom out of `has(constant_array, key)`, so that is the only shape where
+/// folding `NOT has(...)` into the single `notHas` leaf buys anything. `has(column, needle)` is deliberately left
+/// as `not(has(...))`: the text index and the bloom filter index analyzers recognize `has` but not `notHas`, so
+/// folding would turn the atom into `FUNCTION_UNKNOWN` for them. Their granule filtering does not suffer from that
+/// - a negated containment atom can never prune those indexes - but the condition becomes always unknown or true,
+/// which drops the index from the useful ones and, for a text index, takes the direct read from it down as well.
+static bool canFoldToInverseRelation(const std::string & name, const ActionsDAG::NodeRawConstPtrs & children)
+{
+    if (name != "has" && name != "notHas")
+        return true;
+
+    if (children.size() != 2)
+        return false;
+
+    /// The haystack must be constant, which is what `tryPrepareSetIndexForHas` requires of it. This mirrors
+    /// `RPNBuilderTreeNode::isConstant`; aliases need no unwrapping because `cloneDAGWithInversionPushDown`
+    /// elides them while cloning the arguments.
+    return children[0]->column != nullptr;
+}
+
 /// Returns the comparison operator after reversing comparison direction.
 ///
 /// This is needed when normalizing `const op key` into `key op const`, and when
@@ -1252,7 +1272,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false, child_boolean_context);
 
                 auto it = inverse_relations.find(name);
-                if (it != inverse_relations.end())
+                if (it != inverse_relations.end() && canFoldToInverseRelation(name, children))
                 {
                     const auto & func_name = need_inversion ? it->second : it->first;
                     auto function_builder = FunctionFactory::instance().get(func_name, context);
