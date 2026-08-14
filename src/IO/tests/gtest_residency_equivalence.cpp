@@ -288,7 +288,7 @@ public:
     void fabricatePartialCell(ICacheProvider & provider, ByteRange cell, size_t prefix)
     {
         CacheWriterPtr writer_ptr;
-        for (auto & r : provider.resolve(objects.front(), /*object_file_offset=*/0, cell))
+        for (auto & r : provider.resolve(objects.front(), /*object_offset=*/0, cell))
             if (r.kind == ICacheProvider::CacheResolution::Kind::Miss && r.writer)
             {
                 writer_ptr = std::move(r.writer);
