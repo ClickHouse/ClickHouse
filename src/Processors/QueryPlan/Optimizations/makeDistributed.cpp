@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTreeAtWorker.h>
 #endif
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/BlocksMarshallingStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -56,6 +57,14 @@ bool canExecuteRemotely(const QueryPlan::Node & node);
 /// True if all steps can be sent to a remote stateless worker.
 bool canExecuteRemotely(const QueryPlan::Node & node)
 {
+    /// `BlocksMarshallingStep` pre-serializes result blocks for the client connection of this
+    /// server (a shard gets it on the plan of a secondary query). It must run in the process
+    /// that owns that connection: its callback holds the connection's protocol version and
+    /// codec. A distributed plan executes every stage as a worker task, where the step would
+    /// run in the wrong process; a plan that carries it runs locally instead.
+    if (typeid_cast<const BlocksMarshallingStep *>(node.step.get()))
+        return false;
+
     if (node.children.empty())
     {
         if (typeid_cast<const ReadFromMergeTree *>(node.step.get()))
