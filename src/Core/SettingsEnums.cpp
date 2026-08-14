@@ -59,7 +59,8 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"direct",               JoinAlgorithm::DIRECT},
      {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
      {"parallel_full_sorting_merge", JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE},
-     {"grace_hash",           JoinAlgorithm::GRACE_HASH}})
+     {"grace_hash",           JoinAlgorithm::GRACE_HASH},
+     {"ie_join",              JoinAlgorithm::IE_JOIN}})
 
 
 IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
@@ -376,6 +377,7 @@ IMPLEMENT_SETTING_ENUM(
      {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
      {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
      {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST},
+     {"s3tables", DatabaseDataLakeCatalogType::S3_TABLES},
      {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
 
 IMPLEMENT_SETTING_ENUM(
@@ -484,7 +486,8 @@ IMPLEMENT_SETTING_ENUM(
 IMPLEMENT_SETTING_ENUM(
     MergeCoordinatorDistributionAlgorithm,
     ErrorCodes::BAD_ARGUMENTS,
-    {{"water_filling", MergeCoordinatorDistributionAlgorithm::WATER_FILLING}})
+    {{"water_filling", MergeCoordinatorDistributionAlgorithm::WATER_FILLING},
+     {"sainte_lague", MergeCoordinatorDistributionAlgorithm::SAINTE_LAGUE}})
 
 IMPLEMENT_SETTING_ENUM(
     DecorrelationJoinKind,

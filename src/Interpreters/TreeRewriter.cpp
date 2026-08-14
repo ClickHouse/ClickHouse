@@ -847,7 +847,11 @@ void expandGroupByAll(ASTSelectQuery * select_query)
 
 void expandOrderByAll(ASTSelectQuery * select_query, [[maybe_unused]] const TablesWithColumns & tables_with_columns)
 {
-    auto * all_elem = select_query->orderBy()->children[0]->as<ASTOrderByElement>();
+    const auto & order_by = select_query->orderBy();
+    if (!order_by || order_by->children.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ORDER BY ALL flag is set but there is no ORDER BY clause in the query");
+
+    auto * all_elem = order_by->children[0]->as<ASTOrderByElement>();
     if (!all_elem)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not order by asts.");
 
@@ -1434,7 +1438,11 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             /// back to an ordinary ORDER BY with `all` as a column reference.
             /// Replace the child with a fresh identifier AFTER normalization so that it
             /// refers to the table column named "all", not to any alias.
-            auto * all_elem = select_query->orderBy()->children[0]->as<ASTOrderByElement>();
+            const auto & order_by = select_query->orderBy();
+            if (!order_by || order_by->children.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "ORDER BY ALL flag is set but there is no ORDER BY clause in the query");
+
+            auto * all_elem = order_by->children[0]->as<ASTOrderByElement>();
             all_elem->children[0] = make_intrusive<ASTIdentifier>("all");
             select_query->order_by_all = false;
         }
