@@ -27,6 +27,11 @@ struct BuildQueryPipelineSettings
 
     bool enable_multiple_filters_transforms_for_and_chain;
 
+    /// True when the pipeline is built only to be described and is never executed, as `EXPLAIN PIPELINE` and
+    /// `EXPLAIN ESTIMATE` do. Steps must not report execution metrics to `QueryExecutionCounters` then:
+    /// they would be attributed to the `EXPLAIN` query itself, which executes none of them.
+    bool is_explain = false;
+
     ExpressionActionsSettings actions_settings;
     QueryStatusPtr process_list_element;
     ProgressCallback progress_callback;

@@ -14,6 +14,8 @@ DROP TABLE IF EXISTS t3;
 DROP TABLE IF EXISTS tj;
 DROP TABLE IF EXISTS ta;
 DROP TABLE IF EXISTS tb;
+DROP TABLE IF EXISTS m1;
+DROP TABLE IF EXISTS m2;
 
 CREATE TABLE t1 (a UInt64) ENGINE = Memory;
 CREATE TABLE t2 (a UInt64) ENGINE = Memory;
@@ -21,6 +23,9 @@ CREATE TABLE t3 (a UInt64) ENGINE = Memory;
 CREATE TABLE tj (a UInt64, b UInt64) ENGINE = Join(ANY, LEFT, a);
 CREATE TABLE ta (a UInt64, t UInt64) ENGINE = Memory;
 CREATE TABLE tb (a UInt64, t UInt64) ENGINE = Memory;
+-- `EXPLAIN ESTIMATE` reports parts and marks, so it needs MergeTree.
+CREATE TABLE m1 (a UInt64) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE m2 (a UInt64) ENGINE = MergeTree ORDER BY a;
 
 INSERT INTO t1 SELECT number FROM numbers(10);
 INSERT INTO t2 SELECT number FROM numbers(10);
@@ -28,6 +33,8 @@ INSERT INTO t3 SELECT number FROM numbers(10);
 INSERT INTO tj SELECT number, number FROM numbers(10);
 INSERT INTO ta SELECT number, number * 2 FROM numbers(10);
 INSERT INTO tb SELECT number, number FROM numbers(10);
+INSERT INTO m1 SELECT number FROM numbers(10);
+INSERT INTO m2 SELECT number FROM numbers(10);
 
 SELECT 'no join';
 SELECT count() FROM t1 FORMAT Null SETTINGS log_comment = '04891_join_count_none_new', enable_analyzer = 1;
@@ -184,6 +191,29 @@ WHERE current_database = currentDatabase()
   AND log_comment LIKE '04891\_join\_count\_ie%'
 ORDER BY log_comment;
 
+SELECT 'explain builds a pipeline without executing it';
+-- `EXPLAIN PIPELINE` and `EXPLAIN ESTIMATE` assemble a pipeline for the explained query and then throw it
+-- away, so the joins of the explained query must not be attributed to the query running the EXPLAIN.
+SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a)
+FORMAT Null
+SETTINGS log_comment = '04891_join_count_explain_pipeline', enable_analyzer = 1, join_algorithm = 'hash';
+SELECT count() > 0 FROM (EXPLAIN ESTIMATE SELECT count() FROM m1 JOIN m2 ON m1.a = m2.a)
+FORMAT Null
+SETTINGS log_comment = '04891_join_count_explain_estimate', enable_analyzer = 1, join_algorithm = 'hash';
+-- `EXPLAIN ANALYZE` does execute the pipeline, so its join is reported.
+SELECT count() > 0 FROM (EXPLAIN ANALYZE SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a)
+FORMAT Null
+SETTINGS log_comment = '04891_join_count_explain_analyze', enable_analyzer = 1, join_algorithm = 'hash';
+
+SYSTEM FLUSH LOGS query_log;
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND event_date >= yesterday()
+  AND log_comment LIKE '04891\_join\_count\_explain%'
+ORDER BY log_comment;
+
 SELECT 'grace hash spilling';
 -- With many buckets it writes the buckets it is not currently joining to disk.
 SELECT count() FROM (SELECT number AS a FROM numbers(10000)) g1 JOIN (SELECT number AS a FROM numbers(10000)) g2 ON g1.a = g2.a
@@ -269,3 +299,5 @@ DROP TABLE t3;
 DROP TABLE tj;
 DROP TABLE ta;
 DROP TABLE tb;
+DROP TABLE m1;
+DROP TABLE m2;

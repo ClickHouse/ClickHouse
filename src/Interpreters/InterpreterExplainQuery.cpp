@@ -1046,7 +1046,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto optimization_settings = QueryPlanOptimizationSettings(context);
                 optimization_settings.is_explain = true;
                 optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
-                auto pipeline = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
+                auto build_settings = BuildQueryPipelineSettings(context);
+                build_settings.is_explain = true;
+                auto pipeline = plan.buildQueryPipeline(optimization_settings, build_settings);
 
                 if (settings.graph)
                 {
@@ -1112,7 +1114,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             // Collect the selected marks, rows, parts during build query pipeline.
             // Hold on to the returned QueryPipelineBuilderPtr because `plan` may have pointers into
             // it (through QueryPlanResourceHolder).
-            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+            auto build_settings = BuildQueryPipelineSettings(context);
+            build_settings.is_explain = true;
+            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), build_settings);
 
             plan.explainEstimate(res_columns);
             insert_buf = false;
