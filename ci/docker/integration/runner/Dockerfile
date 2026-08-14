@@ -83,7 +83,8 @@ com.amazonaws:aws-java-sdk-bundle:1.12.262,\
 org.apache.hadoop:hadoop-azure:3.3.4,\
 com.microsoft.azure:azure-storage:8.6.6,\
 org.apache.spark:spark-avro_2.12:3.5.1,\
-org.apache.sedona:sedona-spark-3.5_2.12:1.6.1"\
+org.apache.sedona:sedona-spark-3.5_2.12:1.6.1,\
+org.apache.paimon:paimon-spark-3.5:1.1.1"\
     && /spark-3.5.5-bin-hadoop3/bin/spark-shell --packages "$packages" \
     && find /root/.ivy2/ -name '*.jar' -exec ln -sf {} /spark-3.5.5-bin-hadoop3/jars/ \;
 
