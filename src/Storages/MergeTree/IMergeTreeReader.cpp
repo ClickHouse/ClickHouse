@@ -61,6 +61,7 @@ IMergeTreeReader::IMergeTreeReader(
     , storage_settings(storage_settings_)
     , storage_snapshot(storage_snapshot_)
     , all_mark_ranges(all_mark_ranges_)
+    , last_mark_to_read(getLastMark(all_mark_ranges_))
     , alter_conversions(data_part_info_for_read->getAlterConversions())
     , original_requested_columns(columns_)
     , converted_requested_columns((*storage_settings_)[MergeTreeSetting::share_nested_offsets]
@@ -446,7 +447,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         {
             if (res_columns[pos] == nullptr)
                 continue;
-            auto column_in_part = getColumnInPart(*name_and_type);
+            const auto & column_in_part = columns_to_read[pos];
             if (column_in_part.type->equals(*name_and_type->type))
                 continue;
             copy_block.insert({res_columns[pos], column_in_part.type, name_and_type->name});
@@ -475,6 +476,12 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
             + " of type " + part_storage->getDiskType() + ")");
         throw;
     }
+}
+
+void IMergeTreeReader::updateAllMarkRanges(const MarkRanges & ranges)
+{
+    all_mark_ranges = ranges;
+    last_mark_to_read = getLastMark(all_mark_ranges);
 }
 
 std::optional<IMergeTreeReader::ColumnForOffsets>
