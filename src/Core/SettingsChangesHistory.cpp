@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.6",
         {
+            {"analyzer_compatibility_apply_final_to_all_joined_tables", true, false, "Fixed a bug in the analyzer where FINAL on the left-most table of a JOIN was incorrectly applied to the other joined tables as well. previous_value=true so `compatibility` with versions before 26.6 restores the old behavior."},
             {"analyzer_compatibility_allow_non_aggregate_in_having", false, false, "New compatibility setting. When enabled, the new analyzer mimics the legacy `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts instead of raising `NOT_AN_AGGREGATE`."},
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
@@ -50,7 +51,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_lightweight_primary_key_index_analysis", false, true, "New setting to optimize primary key index analysis for tables with long primary keys"},
             {"ai_function_embedding_max_batch_size", 100, 100, "New setting"},
             {"enable_nullable_tuple_type", false, false, "Nullable Tuple is now Beta. Added as an alias for 'allow_experimental_nullable_tuple_type'."},
-            {"ai_function_credentials", "", "", "New setting"},
+            {"ai_function_text_default_credentials", "", "", "New setting"},
+            {"ai_function_embedding_default_credentials", "", "", "New setting"},
             {"enable_sharding_aggregator", false, false, "New setting to enable sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase; this is efficient for high cardinality keys with evenly distributed data."},
             {"allow_experimental_text_index_lazy_apply", false, false, "New setting to gate experimental lazy posting list apply mode"},
             {"text_index_posting_list_apply_mode", "materialize", "materialize", "New setting for lazy posting list apply mode"},
@@ -86,6 +88,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_query_deduplication", false, false, "The setting is obsolete, the feature has been removed."},
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
             {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
+            {"allow_experimental_database_s3_tables", false, false, "New setting to enable experimental database S3 tables (AWS Iceberg REST catalog)."},
+            {"object_storage_cluster_join_mode", "allow", "allow", "New setting"},
+            {"export_merge_tree_partition_task_timeout_seconds", "3600", "86400", "Increase default value to make it more realistic"},
+            {"export_merge_tree_part_allow_lossy_cast", false, false, "New setting to gate lossy casts in EXPORT PART/PARTITION behind explicit acknowledgment"},
+            {"export_merge_tree_partition_retry_initial_backoff_seconds", 5, 5, "New setting for exponential back-off between failed part export retries in an export partition task"},
+            {"export_merge_tree_partition_retry_max_backoff_seconds", 300, 300, "New setting capping the exponential back-off between failed part export retries in an export partition task"},
+            {"export_merge_tree_partition_max_retries", 3, 3, "Obsolete and ignored: export partition tasks now retry retryable failures until the task timeout and fail immediately on non-retryable errors, instead of using a fixed retry budget"},
         });
 
         addSettingsChanges(settings_changes_history, "26.5",
@@ -148,6 +157,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
+            {"analyzer_compatibility_apply_final_to_all_joined_tables", true, true, "New compatibility setting controlling whether FINAL on the left-most table of a JOIN is applied to the other joined tables. Introduced with default true (the old behavior) for backports to versions before 26.6."},
             {"max_bytes_before_external_join", 0, 0, "New setting to control automatic spilling of hash joins to disk. Non-zero value enables spilling and sets the byte threshold."},
             {"allow_iceberg_remove_orphan_files", false, false, "New setting to gate Iceberg orphan file removal"},
             {"iceberg_orphan_files_older_than_seconds", 259200, 259200, "New setting for default orphan file age threshold"},
@@ -267,13 +277,15 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.1.3.20001.altinityantalya",
         {
-            // {"iceberg_partition_timezone", "", "", "New setting."},
+            {"iceberg_partition_timezone", "", "", "New setting."},
             // {"s3_propagate_credentials_to_other_storages", false, false, "New setting"},
-            // {"export_merge_tree_part_filename_pattern", "", "{part_name}_{checksum}", "New setting"},
+            {"export_merge_tree_part_filename_pattern", "", "{part_name}_{checksum}", "New setting"},
             // {"use_parquet_metadata_cache", false, true, "Enables cache of parquet file metadata."},
             // {"input_format_parquet_use_metadata_cache", true, false, "Obsolete. No-op"}, // https://github.com/Altinity/ClickHouse/pull/586
-            // {"object_storage_remote_initiator_cluster", "", "", "New setting."},
+            {"object_storage_remote_initiator_cluster", "", "", "New setting."},
             // {"iceberg_metadata_staleness_ms", 0, 0, "New setting allowing using cached metadata version at READ operations to prevent fetching from remote catalog"},
+            {"export_merge_tree_partition_task_timeout_seconds", 0, 3600, "New setting to control the timeout for export partition tasks."},
+            {"export_merge_tree_partition_manifest_ttl", 180, 86400, "Reasonable default for real usage"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {
@@ -358,7 +370,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
             {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_even_for_bad_queries", "New setting, replace insert_select_deduplicate"},
-
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
@@ -464,12 +475,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_database_unity_catalog", false, true, "Turned ON by default for Antalya (alias)."},
             {"allow_database_glue_catalog", false, true, "Turned ON by default for Antalya (alias)."},
             // {"input_format_parquet_use_metadata_cache", true, true, "New setting, turned ON by default"}, // https://github.com/Altinity/ClickHouse/pull/586
-            // {"iceberg_timezone_for_timestamptz", "UTC", "UTC", "New setting."},
-            // {"object_storage_remote_initiator", false, false, "New setting."},
-            // {"allow_experimental_iceberg_read_optimization", true, true, "New setting."},
-            // {"object_storage_cluster_join_mode", "allow", "allow", "New setting"},
-            // {"lock_object_storage_task_distribution_ms", 500, 500, "New setting."},
-            // {"allow_retries_in_cluster_requests", false, false, "New setting"},
+            {"iceberg_timezone_for_timestamptz", "UTC", "UTC", "New setting."},
+            {"object_storage_remote_initiator", false, false, "New setting."},
+            {"allow_experimental_iceberg_read_optimization", true, true, "New setting."},
+            {"lock_object_storage_task_distribution_ms", 500, 500, "New setting."},
+            {"allow_retries_in_cluster_requests", false, false, "New setting"},
             // {"allow_experimental_export_merge_tree_part", false, true, "Turned ON by default for Antalya."},
             // {"export_merge_tree_part_overwrite_file_if_exists", false, false, "New setting."},
             // {"export_merge_tree_partition_force_export", false, false, "New setting."},
@@ -485,8 +495,19 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             // {"export_merge_tree_partition_system_table_prefer_remote_information", true, true, "New setting."},
             // {"export_merge_tree_part_throw_on_pending_mutations", true, true, "New setting."},
             // {"export_merge_tree_part_throw_on_pending_patch_parts", true, true, "New setting."},
-            // {"object_storage_cluster", "", "", "Antalya: New setting"},
-            // {"object_storage_max_nodes", 0, 0, "Antalya: New setting"},
+            {"allow_experimental_export_merge_tree_part", false, true, "Turned ON by default for Antalya."},
+            {"export_merge_tree_part_overwrite_file_if_exists", false, false, "New setting."},
+            {"export_merge_tree_partition_force_export", false, false, "New setting."},
+            {"export_merge_tree_partition_manifest_ttl", 180, 180, "New setting."},
+            {"export_merge_tree_part_file_already_exists_policy", "skip", "skip", "New setting."},
+            {"export_merge_tree_part_max_bytes_per_file", 0, 0, "New setting."},
+            {"export_merge_tree_part_max_rows_per_file", 0, 0, "New setting."},
+            {"export_merge_tree_partition_all_on_error", "throw_first", "throw_first", "New setting."},
+            {"export_merge_tree_part_throw_on_pending_mutations", true, true, "New setting."},
+            {"export_merge_tree_part_throw_on_pending_patch_parts", true, true, "New setting."},
+            {"object_storage_cluster", "", "", "Antalya: New setting"},
+            {"object_storage_max_nodes", 0, 0, "Antalya: New setting"},
+            {"use_object_storage_list_objects_cache", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.8",
         {

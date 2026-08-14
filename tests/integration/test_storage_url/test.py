@@ -40,6 +40,38 @@ def test_partition_by():
     assert result.strip() == "1\t2\t3"
 
 
+def test_hive_partitioning_with_where_condition():
+    test_id = uuid.uuid4().hex[:8]
+    base_url = f"http://nginx:80/hive_url_cluster_{test_id}"
+
+    node1.query(
+        f"""
+        INSERT INTO FUNCTION url(url_file, url='{base_url}/date=2000-01-01/data.csv', format='CSVWithNames', structure='d UInt64')
+        SELECT number FROM numbers(10)
+        """
+    )
+
+    # 'ur' table function does not work with globs, so we have to test hive partitioning with a single file.
+    result = node1.query(
+        f"""
+        SELECT count() FROM url('{base_url}/date=2000-01-01/data.csv', 'CSVWithNames', 'd UInt64')
+        WHERE date='2000-01-01'
+        SETTINGS use_hive_partitioning=1
+        """
+    )
+    assert result.strip() == "10"
+
+    result = node1.query(
+        f"""
+        SELECT count() FROM urlCluster(
+            'test_cluster_two_shards', '{base_url}/date=2000-01-01/data.csv', 'CSVWithNames', 'd UInt64')
+        WHERE date='2000-01-01'
+        SETTINGS use_hive_partitioning=1
+        """
+    )
+    assert result.strip() == "10"
+
+
 def test_url_cluster():
     result = node1.query(
         "select * from urlCluster('test_cluster_two_shards', 'http://nginx:80/test_1', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')"

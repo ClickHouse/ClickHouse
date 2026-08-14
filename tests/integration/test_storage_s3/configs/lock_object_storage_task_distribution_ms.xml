@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <lock_object_storage_task_distribution_ms>0</lock_object_storage_task_distribution_ms>
+        </default>
+    </profiles>
+</clickhouse>

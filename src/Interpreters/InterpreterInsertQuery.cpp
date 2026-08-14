@@ -871,7 +871,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
             select_query = sq;
             if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
                 ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
-            ApplyWithSubqueryVisitor(local_context).visit(select.list_of_selects->children.at(0));
+            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
 
             JoinedTables joined_tables(Context::createCopy(local_context), *sq);
             if (joined_tables.tablesCount() == 1)
@@ -883,6 +883,9 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
 
     auto src_storage_cluster = std::dynamic_pointer_cast<IStorageCluster>(src_storage);
     if (!src_storage_cluster)
+        return {};
+
+    if (src_storage_cluster->getClusterName(local_context).empty())
         return {};
 
     if (!isInsertSelectTrivialEnoughForDistributedExecution(query))

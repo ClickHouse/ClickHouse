@@ -47,6 +47,7 @@
 #include <Common/JemallocCacheArena.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MovesList.h>
+#include <Storages/MergeTree/ExportList.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -60,6 +61,7 @@
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <IO/AsynchronousReader.h>
+#include <IO/ConnectionTimeouts.h>
 #include <IO/S3Settings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
@@ -176,6 +178,8 @@ namespace ProfileEvents
     extern const Event BackupThrottlerSleepMicroseconds;
     extern const Event MergesThrottlerBytes;
     extern const Event MergesThrottlerSleepMicroseconds;
+    extern const Event ExportsThrottlerBytes;
+    extern const Event ExportsThrottlerSleepMicroseconds;
     extern const Event MutationsThrottlerBytes;
     extern const Event MutationsThrottlerSleepMicroseconds;
     extern const Event QueryLocalReadThrottlerBytes;
@@ -272,6 +276,7 @@ namespace CurrentMetrics
     extern const Metric IndexUncompressedCacheCells;
     extern const Metric ZooKeeperSessionExpired;
     extern const Metric ZooKeeperConnectionLossStartedTimestampSeconds;
+    extern const Metric IsSwarmModeEnabled;
 }
 
 
@@ -387,6 +392,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_local_write_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_merges_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_mutations_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_exports_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_replicated_fetches_network_bandwidth_for_server;
@@ -593,6 +599,7 @@ struct ContextSharedPart : boost::noncopyable
     GlobalOvercommitTracker global_overcommit_tracker;
     MergeList merge_list;                                       /// The list of executable merge (for (Replicated)?MergeTree)
     MovesList moves_list;                                       /// The list of executing moves (for (Replicated)?MergeTree)
+    ExportsList exports_list;                                   /// The list of executing exports (for (Replicated)?MergeTree)
     ReplicatedFetchList replicated_fetch_list;
     RefreshSet refresh_set;                                 /// The list of active refreshes (for MaterializedView)
     ConfigurationPtr users_config TSA_GUARDED_BY(mutex);                              /// Config with the users, profiles and quotas sections.
@@ -638,6 +645,8 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable ThrottlerPtr distributed_cache_read_throttler;  /// A server-wide throttler for distributed cache read
     mutable ThrottlerPtr distributed_cache_write_throttler; /// A server-wide throttler for distributed cache write
+
+    mutable ThrottlerPtr exports_throttler;                 /// A server-wide throttler for exports
 
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex); /// Process ddl commands from zk.
@@ -735,6 +744,7 @@ struct ContextSharedPart : boost::noncopyable
     std::map<String, UInt16> server_ports TSA_GUARDED_BY(server_ports_mutex);
 
     std::atomic<bool> shutdown_called = false;
+    std::atomic<bool> swarm_mode_enabled = true;
 
     Stopwatch uptime_watch TSA_GUARDED_BY(mutex);
 
@@ -888,7 +898,7 @@ struct ContextSharedPart : boost::noncopyable
 
         std::lock_guard lock(mutex);
         config = config_value;
-        access_control->setExternalAuthenticatorsConfig(*config_value);
+        access_control->setExternalAuthenticatorsConfig(*config_value, ConnectionTimeouts::getHTTPTimeouts(Settings(), server_settings));
     }
 
     const Poco::Util::AbstractConfiguration & getConfigRefWithLock(const std::lock_guard<ContextSharedMutex> &) const TSA_REQUIRES(this->mutex)
@@ -914,6 +924,8 @@ struct ContextSharedPart : boost::noncopyable
       */
     void shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
+        swarm_mode_enabled = false;
+        CurrentMetrics::set(CurrentMetrics::IsSwarmModeEnabled, 0);
         bool is_shutdown_called = shutdown_called.exchange(true);
         if (is_shutdown_called)
             return;
@@ -1228,6 +1240,9 @@ struct ContextSharedPart : boost::noncopyable
 
         if (auto bandwidth = server_settings[ServerSetting::max_merges_bandwidth_for_server])
             merges_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::MergesThrottlerBytes, ProfileEvents::MergesThrottlerSleepMicroseconds);
+
+        if (auto bandwidth = server_settings[ServerSetting::max_exports_bandwidth_for_server])
+            exports_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::ExportsThrottlerBytes, ProfileEvents::ExportsThrottlerSleepMicroseconds);
     }
 };
 
@@ -1400,6 +1415,8 @@ MergeList & Context::getMergeList() { return shared->merge_list; }
 const MergeList & Context::getMergeList() const { return shared->merge_list; }
 MovesList & Context::getMovesList() { return shared->moves_list; }
 const MovesList & Context::getMovesList() const { return shared->moves_list; }
+ExportsList & Context::getExportsList() { return shared->exports_list; }
+const ExportsList & Context::getExportsList() const { return shared->exports_list; }
 ReplicatedFetchList & Context::getReplicatedFetchList() { return shared->replicated_fetch_list; }
 const ReplicatedFetchList & Context::getReplicatedFetchList() const { return shared->replicated_fetch_list; }
 RefreshSet & Context::getRefreshSet() { return shared->refresh_set; }
@@ -1951,8 +1968,9 @@ const AccessControl & Context::getAccessControl() const
 
 void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {
+    auto token_http_timeouts = ConnectionTimeouts::getHTTPTimeouts(getSettingsRef(), getServerSettings());
     std::lock_guard lock(shared->mutex);
-    shared->access_control->setExternalAuthenticatorsConfig(config);
+    shared->access_control->setExternalAuthenticatorsConfig(config, token_http_timeouts);
 }
 
 std::unique_ptr<GSSAcceptorContext> Context::makeGSSAcceptorContext() const
@@ -3449,8 +3467,11 @@ void Context::setCurrentQueryId(const String & query_id)
 
     client_info.current_query_id = query_id_to_set;
 
-    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+        && (getApplicationType() != ApplicationType::SERVER || client_info.initial_query_id.empty()))
+    {
         client_info.initial_query_id = client_info.current_query_id;
+    }
 }
 
 void Context::killCurrentQuery() const
@@ -3597,6 +3618,13 @@ void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_set
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
     (*settings)[Setting::workload]
         = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
+}
+
+void Context::makeQueryContextForExportPart()
+{
+    makeQueryContext();
+    classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
+    // Export part operations don't have a specific workload setting, so we leave the default workload
 }
 
 void Context::makeSessionContext()
@@ -5187,6 +5215,11 @@ ThrottlerPtr Context::getDistributedCacheWriteThrottler() const
     return shared->distributed_cache_write_throttler;
 }
 
+ThrottlerPtr Context::getExportsThrottler() const
+{
+    return shared->exports_throttler;
+}
+
 void Context::reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const
 {
     if (read_bandwidth)
@@ -5992,7 +6025,6 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) c
     throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "Requested cluster '{}' not found", cluster_name);
 }
 
-
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
     std::shared_ptr<Cluster> res = nullptr;
@@ -6011,6 +6043,21 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
     return res;
 }
 
+void Context::unregisterInAutodiscoveryClusters()
+{
+    std::lock_guard lock(shared->clusters_mutex);
+    if (!shared->cluster_discovery)
+        return;
+    shared->cluster_discovery->unregisterAll();
+}
+
+void Context::registerInAutodiscoveryClusters()
+{
+    std::lock_guard lock(shared->clusters_mutex);
+    if (!shared->cluster_discovery)
+        return;
+    shared->cluster_discovery->registerAll();
+}
 
 void Context::reloadClusterConfig() const
 {
@@ -7019,12 +7066,35 @@ void Context::stopServers(const ServerType & server_type) const
     shared->stop_servers_callback(server_type);
 }
 
-
 void Context::shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     shared->shutdown();
 }
 
+bool Context::stopSwarmMode()
+{
+    bool expected_is_enabled = true;
+    bool is_stopped_now = shared->swarm_mode_enabled.compare_exchange_strong(expected_is_enabled, false);
+    if (is_stopped_now)
+        CurrentMetrics::set(CurrentMetrics::IsSwarmModeEnabled, 0);
+    // return true if stop successful
+    return is_stopped_now;
+}
+
+bool Context::startSwarmMode()
+{
+    bool expected_is_enabled = false;
+    bool is_started_now = shared->swarm_mode_enabled.compare_exchange_strong(expected_is_enabled, true);
+    if (is_started_now)
+        CurrentMetrics::set(CurrentMetrics::IsSwarmModeEnabled, 1);
+    // return true if start successful
+    return is_started_now;
+}
+
+bool Context::isSwarmModeEnabled() const
+{
+    return shared->swarm_mode_enabled;
+}
 
 Context::ApplicationType Context::getApplicationType() const
 {

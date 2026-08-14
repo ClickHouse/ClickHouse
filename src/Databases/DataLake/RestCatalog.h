@@ -43,6 +43,7 @@ public:
         const std::string & auth_header_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
+        const std::string & namespaces_,
         DB::ContextPtr context_);
 
     ~RestCatalog() override = default;
@@ -56,11 +57,13 @@ public:
     void getTableMetadata(
         const std::string & namespace_name,
         const std::string & table_name,
+        DB::ContextPtr context_,
         TableMetadata & result) const override;
 
     bool tryGetTableMetadata(
         const std::string & namespace_name,
         const std::string & table_name,
+        DB::ContextPtr context_,
         TableMetadata & result) const override;
 
     std::optional<StorageType> getStorageType() const override;
@@ -99,6 +102,7 @@ protected:
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
+        const std::string & namespaces_,
         DB::ContextPtr context_);
 
     void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
@@ -133,6 +137,26 @@ protected:
     bool oauth_server_use_request_body;
     mutable MultiVersion<AccessToken> access_token;
 
+public:
+    class AllowedNamespaces
+    {
+    public:
+        AllowedNamespaces() {}
+        explicit AllowedNamespaces(const std::string & namespaces_);
+
+        /// Check if nested namespaces (nested=true) or tables (nested=false) are allowed in namespace
+        bool isNamespaceAllowed(const std::string & namespace_, bool nested) const;
+
+    private:
+        /// List of allowed nested namespaces
+        std::unordered_map<std::string, AllowedNamespaces> nested_namespaces;
+        /// Tables from current level are allowed
+        bool allow_tables = false;
+    };
+
+protected:
+    AllowedNamespaces allowed_namespaces;
+
     Poco::Net::HTTPBasicCredentials credentials{};
 
     DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
@@ -162,10 +186,19 @@ protected:
     bool getTableMetadataImpl(
         const std::string & namespace_name,
         const std::string & table_name,
+        DB::ContextPtr context_,
         TableMetadata & result) const;
 
     Config loadConfig();
-    virtual DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const;
+    virtual DB::HTTPHeaderEntries getAuthHeaders(
+        bool update_token,
+        const String & method = {},
+        const Poco::URI & url = {},
+        const DB::HTTPHeaderEntries & extra_headers = {},
+        const String & body = {}) const;
+
+    void validateAuthHeaders(const DB::HTTPHeaderEntry & header) const;
+
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 
     void sendRequest(
@@ -188,9 +221,11 @@ public:
         const std::string & onelake_tenant_id,
         const std::string & onelake_client_id,
         const std::string & onelake_client_secret,
+        const std::string & bearer_token_,
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
+        const std::string & namespaces_,
         DB::ContextPtr context_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
@@ -200,9 +235,13 @@ public:
 
     String getTenantId() const { return tenant_id; }
 
+    String getBearerToken() const;
+
 protected:
     /// Parameters for OneLake OAuth.
     const std::string tenant_id;
+    /// Set from `onelake_bearer_token`.
+    String bearer_token;
 };
 
 class BigLakeCatalog : public RestCatalog
@@ -218,6 +257,7 @@ public:
         const std::string & google_adc_client_secret_,
         const std::string & google_adc_refresh_token_,
         const std::string & google_adc_quota_project_id_,
+        const std::string & namespaces_,
         DB::ContextPtr context_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
@@ -225,7 +265,12 @@ public:
         return DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE;
     }
 
-    DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const override;
+    DB::HTTPHeaderEntries getAuthHeaders(
+        bool update_token,
+        const String & method = {},
+        const Poco::URI & url = {},
+        const DB::HTTPHeaderEntries & extra_headers = {},
+        const String & body = {}) const override;
 
     const std::string & getGoogleADCClientId() const { return google_adc_client_id; }
     const std::string & getGoogleADCClientSecret() const { return google_adc_client_secret; }
