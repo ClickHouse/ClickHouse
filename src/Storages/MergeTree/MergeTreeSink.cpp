@@ -467,9 +467,12 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
             /// and drop - a client retry of the same insert against a part that never existed, both
             /// in this process and, because the ADD records are already durable, after a restart.
             /// Unpublish them (dropPart writes compensating DROP records and erases the block IDs
-            /// from the in-memory map, all-or-nothing). Best effort: if the drop itself fails - e.g.
-            /// the same broken disk that failed the commit - the block IDs stay published, which is
-            /// no worse than before; do not let it mask the original error.
+            /// from the in-memory map, all-or-nothing). If the drop itself fails - e.g. the same
+            /// broken disk that failed the commit - it leaves the block IDs published, so fall back
+            /// to unpublishFailedPart, which cannot fail: it erases them from the in-memory map
+            /// without allocating and fences off the on-disk log, whose ADD records now no longer
+            /// match that map, so a restart discards the suspect history instead of replaying it.
+            /// Neither must mask the original error.
             if (deduplication_log)
             {
                 try
@@ -481,7 +484,8 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
                     tryLogCurrentException(
                         storage.log,
                         "Cannot roll back the deduplication log publication of a part that failed to commit; "
-                        "a retry of this insert may be wrongly deduplicated");
+                        "unpublishing its block IDs and discarding the deduplication history instead");
+                    deduplication_log->unpublishFailedPart(part->info);
                 }
             }
             throw;

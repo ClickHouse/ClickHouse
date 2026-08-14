@@ -153,6 +153,11 @@ void MergeTreeDeduplicationLog::load()
         /// the surviving ones.
         std::vector<MergeTreeDeduplicationLogRecord> records;
         std::vector<size_t> record_log_numbers;
+        /// Whether the newest log file could not be read to its end. Its records are
+        /// kept up to the point where reading stopped (a truncated tail of the newest
+        /// log is the normal shape after a crash), but the file must never be appended
+        /// to again - see below.
+        bool newest_log_is_truncated = false;
         for (auto & [log_number, desc] : existing_logs)
         {
             try
@@ -162,6 +167,7 @@ void MergeTreeDeduplicationLog::load()
             catch (...)
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__, "Error while loading MergeTree deduplication log on path " + desc.path);
+                newest_log_is_truncated = log_number == existing_logs.rbegin()->first;
             }
         }
 
@@ -184,7 +190,20 @@ void MergeTreeDeduplicationLog::load()
 
         /// Can happen in case we have unfinished log
         if (!current_writer)
-            current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+        {
+            /// Never append behind a tail that could not be read. `loadSingleLog` stops
+            /// at the first record it cannot parse, and it will stop at exactly the same
+            /// place on every future load, so anything appended after that point is
+            /// unreachable forever: the committed block ids recorded there would be
+            /// silently forgotten on the next restart and their inserts wrongly accepted
+            /// again as duplicates. Rotating starts a fresh, higher-numbered file, which
+            /// replays after the readable prefix of the truncated one, so new records
+            /// stay reachable.
+            if (newest_log_is_truncated)
+                rotate();
+            else
+                current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+        }
 
         /// A previous run may have left a lot of rolled-back record pairs that
         /// dropOutdatedLogs cannot reclaim; compact them away so replaying this log on
@@ -561,7 +580,7 @@ void MergeTreeDeduplicationLog::compactIfNeeded()
     compact();
 }
 
-void MergeTreeDeduplicationLog::compact()
+bool MergeTreeDeduplicationLog::compact()
 {
     /// Snapshot the entire live deduplication state into a single fresh log file and
     /// drop every older file. The in-memory map already holds exactly the records that
@@ -590,7 +609,7 @@ void MergeTreeDeduplicationLog::compact()
     /// compact - a half-done compaction without the marker is exactly the unprotected
     /// state it exists to prevent - and lose nothing but the space optimization.
     if (!markUnfinishedCompaction())
-        return;
+        return false;
 
     /// The writer the next operation appends to. On an append-capable disk that is the
     /// finalized snapshot file itself, reopened for appending. On a disk without append
@@ -666,7 +685,7 @@ void MergeTreeDeduplicationLog::compact()
         /// draining the pending set in prepareToWrite.
         if (orphan_logs_pending_neutralization.empty())
             clearCompactionMarker();
-        return;
+        return false;
     }
 
     /// Point of no return: the snapshot is durable and registered, and the new writer
@@ -719,8 +738,51 @@ void MergeTreeDeduplicationLog::compact()
     /// and prepareToWrite clears it once the pending set drains - deactivate the
     /// marker; if even that fails, prepareToWrite retries and fails operations closed,
     /// because a restart with an active marker discards everything written after it.
+    /// The whole retained history is now the snapshot of the live state, so anything an
+    /// earlier failure had abandoned in the older files is gone with them: a history that
+    /// had diverged is repaired, and the marker no longer has to fence it off.
+    history_diverged = false;
+
     if (orphan_logs_pending_neutralization.empty())
         clearCompactionMarker();
+
+    return true;
+}
+
+void MergeTreeDeduplicationLog::fenceOffDivergedHistory() noexcept
+{
+    try
+    {
+        /// Prefer repairing over fencing: the in-memory map is the authoritative state,
+        /// and rewriting it as a fresh snapshot that replaces every older file removes
+        /// the abandoned records outright, so nothing is lost. `compact` never throws
+        /// and reports whether it got that far.
+        if (!stopped && compact())
+            return;
+
+        /// The history could not be rewritten (or the log is already shutting down and
+        /// must not open new log files), so make the next `load` throw it away instead.
+        /// Losing up to one deduplication window of history can let a client retry
+        /// through as a visible duplicate; replaying a history that no longer matches
+        /// the live state can drop the data of a retry silently.
+        if (writeHistoryDiscardMarker())
+        {
+            history_fence_pending = false;
+            history_diverged = true;
+            return;
+        }
+
+        /// Nothing could be written at all. Keep every later operation failing closed
+        /// until the marker can be armed (see prepareToWrite): until then a restart
+        /// would replay the abandoned records as if the failed operation had happened.
+        history_fence_pending = true;
+    }
+    catch (...)
+    {
+        history_fence_pending = true;
+        tryLogCurrentException(
+            __PRETTY_FUNCTION__, "Cannot fence off the deduplication log history that diverged from the in-memory state");
+    }
 }
 
 bool MergeTreeDeduplicationLog::neutralizeOrphanLog(const std::string & path)
@@ -766,6 +828,19 @@ bool MergeTreeDeduplicationLog::neutralizeOrphanLog(const std::string & path)
 
 bool MergeTreeDeduplicationLog::markUnfinishedCompaction()
 {
+    if (writeHistoryDiscardMarker())
+        return true;
+
+    /// The failed write may still have left a non-empty file behind, and a non-empty
+    /// marker reads as active - a restart would discard the history. The compaction is
+    /// not going to start, so there is nothing to protect: clear it (or, if that fails
+    /// too, keep failing operations closed until a retry clears it in prepareToWrite).
+    clearCompactionMarker();
+    return false;
+}
+
+bool MergeTreeDeduplicationLog::writeHistoryDiscardMarker()
+{
     try
     {
         auto out = disk->writeFile(getCompactionMarkerPath(logs_dir), DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
@@ -785,12 +860,7 @@ bool MergeTreeDeduplicationLog::markUnfinishedCompaction()
     catch (...)
     {
         tryLogCurrentException(
-            __PRETTY_FUNCTION__, "Cannot persist the unfinished-compaction marker of the deduplication log; skipping the compaction");
-        /// The failed write may still have left a non-empty file behind, and a
-        /// non-empty marker reads as active - a restart would discard the history.
-        /// Clear it (or, if that fails too, keep failing operations closed until a
-        /// retry clears it in prepareToWrite).
-        clearCompactionMarker();
+            __PRETTY_FUNCTION__, "Cannot persist the marker that makes the next start discard the deduplication log history");
         return false;
     }
 }
@@ -887,6 +957,26 @@ void MergeTreeDeduplicationLog::discardHistoryAfterUnfinishedCompaction()
 
 void MergeTreeDeduplicationLog::prepareToWrite()
 {
+    /// The on-disk history diverged from the live state (a rollback record could not be
+    /// persisted) and could not be fenced off either. Retry arming the marker that makes
+    /// the next start discard the suspect history, and refuse to write anything until it
+    /// is armed: with the divergence unfenced, a restart replays an operation that never
+    /// took effect - deduplicating a client retry against a part that never became
+    /// active, which drops its data silently. Failing the operation loudly here is
+    /// recoverable, that is not.
+    if (history_fence_pending)
+    {
+        if (!writeHistoryDiscardMarker())
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "The deduplication log on disk no longer matches the in-memory deduplication state and the marker that would make "
+                "the next start discard it ({}) cannot be written; refusing to write new records because a restart would replay an "
+                "operation that was rolled back",
+                getCompactionMarkerPath(logs_dir));
+        history_fence_pending = false;
+        history_diverged = true;
+    }
+
     /// Retry neutralizing the files a failed compaction left behind (see the header).
     /// While one remains on disk with its stale content intact, a restart would replay
     /// it - after or before files holding the live state, either way reconstructing
@@ -911,7 +1001,11 @@ void MergeTreeDeduplicationLog::prepareToWrite()
         marker_still_active = true;
     }
 
-    if (marker_still_active && !clearCompactionMarker())
+    /// While the history is known to have diverged from the live state and has not been
+    /// rewritten from it, the marker is what keeps a restart from replaying that history:
+    /// it must survive the compaction bookkeeping above, which only knows that the failed
+    /// compaction itself is now fully rolled back.
+    if (marker_still_active && !history_diverged && !clearCompactionMarker())
         throw Exception(
             ErrorCodes::CORRUPTED_DATA,
             "The unfinished-compaction marker of the deduplication log ({}) can neither be removed nor emptied; refusing to write "
@@ -1036,6 +1130,7 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         /// erasing the rolled-back one - while an older server, which knows no
         /// marker, still replays the record as the erase that unpublishes the
         /// never-committed block id, keeping a downgrade safe.
+        bool compensated = false;
         try
         {
             /// If the exception came from `writeRecord` failing to write one of the
@@ -1083,13 +1178,24 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
                 /// retention's view of the surviving coverage.
                 --existing_logs.at(add_log_number).effective_entries_count;
             }
+            compensated = true;
         }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__,
                 "Cannot write compensating records to the deduplication log after a failed insertion; "
-                "a duplicate of this insert may be deduplicated wrongly after a server restart");
+                "the on-disk log no longer matches the in-memory deduplication state");
         }
+
+        /// The compensating records did not all reach disk, so the log still holds ADD
+        /// records of block IDs this insert has just unpublished: a restart would replay
+        /// them and silently deduplicate the client's retry against a part that never
+        /// committed. Repair the on-disk history from the (correct) in-memory state, or,
+        /// failing that, fence it off so the next start discards it - never carry on as
+        /// if the log were consistent. Nothing diverges when no ADD record made it to
+        /// disk in the first place.
+        if (!compensated && written != 0)
+            fenceOffDivergedHistory();
 
         throw;
     }
@@ -1203,6 +1309,7 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         /// they all stayed published in the in-memory map. See the analogous rollback
         /// in addPart for why the writer may need rotating to a fresh one first and
         /// why the cancelled records must not count towards log retention.
+        bool compensated = false;
         try
         {
             if (current_writer->isCanceled())
@@ -1228,13 +1335,21 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
                 /// rollback reconstructs (see the analogous rollback in addPart).
                 --existing_logs.at(drop_log_number).effective_entries_count;
             }
+            compensated = true;
         }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__,
                 "Cannot write compensating records to the deduplication log after a failed drop; "
-                "some of the dropped block ids may wrongly stop deduplicating after a server restart");
+                "the on-disk log no longer matches the in-memory deduplication state");
         }
+
+        /// Some DROP records stayed durable without their compensating CANCEL, so a
+        /// restart would erase block ids that are still published in the live map and
+        /// wrongly stop deduplicating them. Repair the history from the in-memory state,
+        /// or fence it off (see the analogous rollback in addPart).
+        if (!compensated && written != 0)
+            fenceOffDivergedHistory();
 
         throw;
     }
@@ -1246,6 +1361,39 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
     /// Reclaim the record pairs left behind by any rolled-back operations once enough
     /// of them have piled up (best effort, never throws).
     compactIfNeeded();
+}
+
+void MergeTreeDeduplicationLog::unpublishFailedPart(const MergeTreePartInfo & part_info) noexcept
+{
+    try
+    {
+        std::lock_guard lock(state_mutex);
+
+        if (deduplication_window == 0)
+            return;
+
+        /// Erase without collecting the block ids into a container first: allocating
+        /// there could throw and leave them published, which is exactly the outcome this
+        /// last-resort path exists to prevent. `eraseIf` only pops nodes, so it cannot
+        /// fail, and - unlike the ordinary `dropPart` - it does not have to be
+        /// all-or-nothing with the on-disk records: the part never became active, so
+        /// unpublishing its block ids can at worst let a retry through as a visible
+        /// duplicate, while leaving them published drops the retry's data silently.
+        const size_t erased = deduplication_map.eraseIf([&](const MergeTreePartInfo & info) { return part_info.contains(info); });
+
+        if (erased == 0)
+            return;
+
+        /// The ADD records of the erased block ids are still on disk, so the history no
+        /// longer replays to the live state: repair it from the live state, or fence it
+        /// off so the next start discards it.
+        fenceOffDivergedHistory();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            __PRETTY_FUNCTION__, "Cannot unpublish the block ids of a part that failed to commit from the deduplication log");
+    }
 }
 
 void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_window_)

@@ -99,6 +99,32 @@ public:
         }
     }
 
+    /// Erase every entry whose value satisfies the predicate, keeping the insertion
+    /// order of the rest. Only erases, so it never allocates and never throws - which
+    /// is what makes it usable on a failure path that must not be able to fail itself
+    /// (see MergeTreeDeduplicationLog::unpublishFailedPart, where collecting the keys
+    /// into a vector first could throw and leave the entries published).
+    /// Returns how many entries were erased.
+    template <typename Predicate>
+    size_t eraseIf(Predicate && predicate) noexcept
+    {
+        size_t erased = 0;
+        for (auto it = queue.begin(); it != queue.end();)
+        {
+            if (predicate(it->value))
+            {
+                map.erase(it->key);
+                it = queue.erase(it);
+                ++erased;
+            }
+            else
+            {
+                ++it;
+            }
+        }
+        return erased;
+    }
+
     bool erase(const std::string & key)
     {
         auto it = map.find(key);
@@ -198,6 +224,16 @@ public:
     /// Remove all covered parts from in memory table and add DROP records to the disk
     void dropPart(const MergeTreePartInfo & drop_part_info);
 
+    /// Last-resort counterpart of `dropPart` for a part that was published by `addPart`
+    /// but never became active, used when the ordinary `dropPart` rollback itself threw
+    /// (see MergeTreeSink::commitPart). Leaving the block ids published would silently
+    /// deduplicate - and drop - a client retry of that insert, so this must not be able
+    /// to fail: it erases the block ids from the in-memory map without allocating
+    /// (`LimitedOrderedHashMap::eraseIf`) and then fences off the on-disk history, which
+    /// still holds their ADD records and therefore no longer replays to the live state
+    /// (see fenceOffDivergedHistory). Never throws.
+    void unpublishFailedPart(const MergeTreePartInfo & part_info) noexcept;
+
     /// Load history from disk. Ignores broken logs.
     void load();
 
@@ -254,6 +290,20 @@ private:
     /// by the restart the still-active marker triggers.
     bool compaction_marker_pending_clear = false;
 
+    /// The on-disk history is known to have diverged from the live deduplication state
+    /// (a rollback record could not be persisted), but the marker that would make the
+    /// next restart discard that history could not be written either. Until it can,
+    /// operations fail closed in prepareToWrite: a restart right now would replay
+    /// records of an operation that never took effect and silently deduplicate its
+    /// retry away.
+    bool history_fence_pending = false;
+
+    /// The marker is armed because the on-disk history diverged from the live state, not
+    /// because a compaction is in flight. It must stay armed until the history is
+    /// rewritten from the live state (a successful `compact`), so the paths that clear
+    /// the marker once a failed compaction is fully rolled back must not clear this one.
+    bool history_diverged = false;
+
     bool stopped{false};
 
     /// Start new log
@@ -279,7 +329,29 @@ private:
     /// only drops an oldest prefix). Rewriting the in-memory map - which already holds
     /// exactly the surviving state - as an ADD-per-entry snapshot discards all that
     /// accumulated garbage while reconstructing the identical state on the next replay.
-    void compact();
+    /// Returns whether the snapshot became the whole retained history; on failure
+    /// nothing changed except that the failure barrier may now be armed (see
+    /// markUnfinishedCompaction and neutralizeOrphanLog). Never throws.
+    bool compact();
+
+    /// Restore the invariant that the on-disk history replays to the live deduplication
+    /// state, after that invariant has been broken by a rollback whose compensating
+    /// records could not be persisted: the failed operation's ADD (or DROP) records
+    /// stay durably on disk while the live map no longer reflects them, so a restart
+    /// would replay an operation that never took effect - wrongly deduplicating the
+    /// retry of a failed insert (silently dropping its data) or wrongly forgetting a
+    /// block id whose drop failed.
+    ///
+    /// Repair is attempted first: `compact` rewrites the live map - which is correct
+    /// and authoritative - as a fresh snapshot and drops every older file, so the
+    /// abandoned records are gone and the history is consistent again. Only if that is
+    /// impossible is the history fenced off instead, by arming the marker that makes
+    /// the next `load` discard all of it (see markUnfinishedCompaction): a discarded
+    /// window of deduplication history can at worst let a retry through as a visible
+    /// duplicate, while replaying a diverged history drops data silently. If even the
+    /// marker cannot be written, `history_fence_pending` keeps every later operation
+    /// failing closed until it can. Never throws.
+    void fenceOffDivergedHistory() noexcept;
 
     /// Remove a log file left behind by a failed compaction, or - if it cannot be
     /// removed - overwrite it with an empty file. A compaction snapshot is written at a
@@ -348,6 +420,14 @@ private:
     /// this exists to prevent).
     bool markUnfinishedCompaction();
 
+    /// Write the marker file itself, without any of the compaction-specific handling of
+    /// a failure. The marker means "the files on disk may not replay to the state this
+    /// server had", which an unfinished compaction is only one way to reach: a rollback
+    /// whose compensating records could not be persisted leaves the same kind of
+    /// divergence and arms the same marker (see fenceOffDivergedHistory).
+    /// Returns whether the marker is durably on disk.
+    bool writeHistoryDiscardMarker();
+
     /// Clear the unfinished-compaction marker (remove the file, or overwrite it with an
     /// empty one if the removal fails). Called once the on-disk history is consistent
     /// again: the compaction finished cleanly, its failure was fully rolled back, or
@@ -384,7 +464,12 @@ private:
     /// Also called from setDeduplicationWindowSize - the one path that can rotate the
     /// log or reopen a writer without an addPart or dropPart in front - before it
     /// rotates, clears the marker, or discards history, for the same reason.
-    /// Two kinds of damage from an earlier failure are repaired:
+    /// Three kinds of damage from an earlier failure are repaired:
+    /// - An on-disk history that diverged from the live state because a rollback record
+    ///   could not be persisted, and that could then not be fenced off either (see
+    ///   fenceOffDivergedHistory). Retry arming the marker; if it still fails, throw -
+    ///   fail closed - because a restart would replay an operation that never took
+    ///   effect and silently deduplicate its retry away.
     /// - A file left behind by a failed compaction that could neither be removed nor
     ///   emptied (see neutralizeOrphanLog). Retry the neutralization; if it still
     ///   fails, throw - fail closed - because appending to a lower-numbered file while

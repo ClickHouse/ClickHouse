@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <unordered_set>
 
@@ -444,6 +445,91 @@ public:
 
     bool broken = true;
     std::unordered_set<String> rewritten;
+};
+
+/// Write buffer whose flushes start failing from the Nth one, sharing the flush
+/// counter with every other buffer of the same disk (so the count spans the writer
+/// rotations a single operation can go through).
+class FailingFromNthFlushWriteBuffer : public WriteBufferFromFileDecorator
+{
+public:
+    FailingFromNthFlushWriteBuffer(
+        std::unique_ptr<WriteBufferFromFileBase> impl_,
+        size_t & flush_count_,
+        const size_t & fail_from_flush_,
+        size_t & sync_count_,
+        const size_t & fail_on_sync_)
+        : WriteBufferFromFileDecorator(std::move(impl_))
+        , sync_count(sync_count_)
+        , fail_on_sync(fail_on_sync_)
+        , flush_count(flush_count_)
+        , fail_from_flush(fail_from_flush_)
+    {
+    }
+
+    void nextImpl() override
+    {
+        ++flush_count;
+        if (flush_count >= fail_from_flush)
+            throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Injected write failure");
+        SwapHelper swap(*this, *impl);
+        impl->next();
+    }
+
+    void sync() override
+    {
+        ++sync_count;
+        if (sync_count == fail_on_sync)
+            throw Exception(ErrorCodes::CANNOT_FSYNC, "Injected sync failure");
+        WriteBufferFromFileDecorator::sync();
+    }
+
+    size_t & sync_count;
+    const size_t & fail_on_sync;
+
+private:
+    size_t & flush_count;
+    const size_t & fail_from_flush;
+};
+
+/// A DiskLocal that reproduces the regime in which a rollback cannot persist its
+/// compensating records: the fsync of a log rotation fails (so an insert whose ADD
+/// records are already durable is rolled back) and every flush of a numbered log file
+/// from the Nth onwards fails too (so neither the compensating record nor a compaction
+/// snapshot can be written). The unfinished-compaction marker - log number 0 - is
+/// handled separately through `marker_writable`, because whether the diverged history
+/// can still be fenced off is exactly what distinguishes the fencing path from the
+/// fail-closed one. Both knobs are public so a test can let the disk recover.
+class DiskFailingRotationSyncAndLogFlushes : public DiskLocal
+{
+public:
+    DiskFailingRotationSyncAndLogFlushes(const String & name_, const String & path_, size_t fail_on_sync_, size_t fail_from_flush_)
+        : DiskLocal(name_, path_), fail_on_sync(fail_on_sync_), fail_from_flush(fail_from_flush_)
+    {
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase>
+    writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) override
+    {
+        const bool is_marker = std::filesystem::path(path).stem() == "deduplication_log_0";
+        if (is_marker && !marker_writable)
+            throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Injected write failure");
+
+        auto impl = DiskLocal::writeFile(path, buf_size, mode, settings);
+        if (is_marker)
+            return impl;
+
+        return std::make_unique<FailingFromNthFlushWriteBuffer>(
+            std::move(impl), flush_count, fail_from_flush, sync_count, fail_on_sync);
+    }
+
+    size_t fail_on_sync;
+    size_t fail_from_flush;
+    bool marker_writable = true;
+
+private:
+    size_t flush_count = 0;
+    size_t sync_count = 0;
 };
 
 #ifdef MERGE_TREE_DEDUPLICATION_LOG_FIX_IS_PRESENT
@@ -2365,3 +2451,283 @@ TEST(MergeTreeDeduplicationLog, ReenablingDeduplicationInSameProcessNeutralizesP
 
     std::filesystem::remove_all(work_dir);
 }
+
+/// Regression test: a log file whose tail could not be read must never be appended to
+/// again. `loadSingleLog` stops at the first unparsable record and will stop at exactly
+/// the same place on every future load, so records appended behind that point are
+/// unreachable forever - a committed insert recorded there is silently forgotten by the
+/// next restart and a retry of it is wrongly accepted, duplicating its data. The newest
+/// log is the one this happens to in practice (a crash truncates the file being
+/// appended to), and it is also the only one the log would otherwise reopen for append.
+TEST(MergeTreeDeduplicationLog, TruncatedNewestLogIsNotAppendedTo)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_truncated_tail/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    /// deduplication_window == 2 gives rotate_interval == 4, so both inserts stay in the
+    /// first log file and it is still the newest one at the next start.
+    {
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        log.addPart({"block1"}, part("all_1_1_0"));
+        log.addPart({"block2"}, part("all_2_2_0"));
+        log.shutdown();
+    }
+
+    /// Simulate the torn tail a crash leaves behind: a trailing fragment that is not a
+    /// parsable record.
+    {
+        std::ofstream out(work_dir + "dedup_logs/deduplication_log_1.txt", std::ios::app);
+        out << "not-a-record";
+    }
+
+    {
+        /// The load stops at the fragment and keeps the readable prefix. The still small
+        /// prefix does not trigger a rotation, so without the fix the truncated file is
+        /// reopened for append and this insert lands behind the fragment.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        EXPECT_TRUE(log.addPart({"block3"}, part("all_3_3_0")).empty());
+        log.shutdown();
+    }
+
+    {
+        /// "block3" committed, so its retry must be deduplicated. Without the fix its ADD
+        /// record sits behind the unreadable fragment, the replay never reaches it, and
+        /// the retry is wrongly accepted - duplicating the data of a committed insert.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        EXPECT_FALSE(log.addPart({"block3"}, part("all_4_4_0")).empty());
+        log.shutdown();
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// Regression test: when the rollback of a failed insert cannot persist its compensating
+/// records, the on-disk log keeps the abandoned ADD records while the in-memory map no
+/// longer has them. Replaying such a log on the next start republishes block ids whose
+/// part never committed - so the client's retry of that very insert is deduplicated away
+/// and its data silently dropped - and, because those transient records consume
+/// deduplication-window slots, forgets committed block ids in their place. The log must
+/// not carry on as if the history were consistent. Here it can still be repaired:
+/// rewriting the in-memory state - which is correct and authoritative - as a fresh
+/// snapshot that replaces every older file leaves the abandoned records behind with them,
+/// so no history is lost at all.
+TEST(MergeTreeDeduplicationLog, UnpersistedRollbackRewritesTheDivergedHistory)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_diverged_repair/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const std::string logs_dir = work_dir + "dedup_logs";
+    auto count_logs = [&]() -> size_t
+    {
+        return std::distance(std::filesystem::directory_iterator(logs_dir), std::filesystem::directory_iterator());
+    };
+    const std::string marker_path = logs_dir + "/deduplication_log_0.txt";
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        /// Flush 1 is the ADD record of "block1" and flushes 2 to 4 the ADD records of the
+        /// three block ids of the next insert, all durable. That insert reaches
+        /// rotate_interval, and the rotation's fsync of the previous log file - sync 1 -
+        /// fails, so it is rolled back even though its ADD records are on disk. Flush 5,
+        /// the first compensating record of that rollback, fails as well: the log on disk
+        /// now says those block ids are published while the in-memory map says they are
+        /// not. Only that one flush fails, so the compaction that repairs the history can
+        /// write its snapshot.
+        auto disk = std::make_shared<DiskThrowingOnNthSyncAndNthFlush>(
+            "faulty", work_dir, /*fail_on_sync=*/ 1, /*fail_on_flush=*/ 5);
+        /// deduplication_window == 2 gives rotate_interval == 4.
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0")).empty());
+        EXPECT_ANY_THROW(log.addPart({"block2", "block3", "block4"}, part("all_2_2_0")));
+
+        /// The history was rewritten from the in-memory state: only the snapshot is left,
+        /// and no fence was needed, so nothing has to be discarded on the next start.
+        EXPECT_EQ(count_logs(), 1u);
+        EXPECT_FALSE(std::filesystem::exists(marker_path));
+
+        log.shutdown();
+    }
+
+    {
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        /// The rolled-back insert never committed, so its retry must be accepted. Without
+        /// the fix its abandoned ADD record is replayed as ordinary history and the retry is
+        /// deduplicated against a part that never became active, dropping the client's data.
+        /// Accepting it publishes one block id into a window of two, which cannot evict
+        /// anything the next check relies on.
+        EXPECT_TRUE(log.addPart({"block3"}, part("all_3_3_0")).empty());
+
+        /// The committed insert still deduplicates: repairing the history preserved it.
+        /// Without the fix the abandoned ADD records are replayed and, with a window of
+        /// two, evict "block1" - so its retry is wrongly accepted and its data duplicated.
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_9_9_0")).empty());
+
+        log.shutdown();
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// Same divergence as above, but the history cannot be rewritten either - the compaction
+/// snapshot is a numbered log file, so its flush fails too. The log must then fence the
+/// history off, making the next start discard it: a discarded deduplication window can at
+/// worst let a client retry through as a visible duplicate, while replaying a history that
+/// no longer matches the live state drops the data of a retry silently.
+TEST(MergeTreeDeduplicationLog, UnrepairableDivergedHistoryIsDiscardedOnRestart)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_diverged_fence/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const std::string marker_path = work_dir + "dedup_logs/deduplication_log_0.txt";
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        /// As above, except that every flush of a numbered log file from the fifth onwards
+        /// fails, so the compaction snapshot cannot be written either. Only the marker file
+        /// stays writable, which is the one thing the log needs to protect the next start.
+        auto disk = std::make_shared<DiskFailingRotationSyncAndLogFlushes>(
+            "faulty", work_dir, /*fail_on_sync=*/ 1, /*fail_from_flush=*/ 5);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0")).empty());
+        EXPECT_ANY_THROW(log.addPart({"block2", "block3", "block4"}, part("all_2_2_0")));
+
+        /// The history could not be repaired, so it is fenced off instead: the marker is
+        /// armed and makes the next start discard everything.
+        EXPECT_TRUE(std::filesystem::exists(marker_path) && std::filesystem::file_size(marker_path) > 0);
+
+        log.shutdown();
+    }
+
+    {
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        /// The retry of a block id from the rolled-back insert must be accepted. Without the
+        /// fix its abandoned ADD record is replayed and the retry is deduplicated against a
+        /// part that never became active, dropping the client's data.
+        EXPECT_TRUE(log.addPart({"block3"}, part("all_3_3_0")).empty());
+
+        /// The committed "block1" is forgotten together with the rest of the discarded
+        /// history. That is the price of fencing, and the safe direction: a retry of it is
+        /// accepted again as a visible duplicate rather than silently dropped.
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_9_9_0")).empty());
+
+        log.shutdown();
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// Regression test: if the diverged history can be neither rewritten nor fenced off -
+/// the marker cannot be written at all - the log must fail every later operation closed
+/// instead of accepting records it knows the next start would misinterpret. Operations
+/// resume as soon as the fence can be armed.
+TEST(MergeTreeDeduplicationLog, UnfenceableDivergedHistoryFailsOperationsClosed)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_fence_closed/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    auto disk = std::make_shared<DiskFailingRotationSyncAndLogFlushes>(
+        "faulty", work_dir, /*fail_on_sync=*/ 1, /*fail_from_flush=*/ 5);
+    /// The one file the disk never accepts, so the history can be neither rewritten (the
+    /// compaction arms the marker before it starts) nor fenced off.
+    disk->marker_writable = false;
+
+    MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+    log.load();
+
+    EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0")).empty());
+    EXPECT_ANY_THROW(log.addPart({"block2", "block3", "block4"}, part("all_2_2_0")));
+
+    /// Ordinary log writes recover, but the divergence is still unfenced: a restart would
+    /// replay the abandoned ADD records and deduplicate the retries of that insert away.
+    /// Any operation accepted now would be committed on top of a state the next start is
+    /// known to rebuild wrongly, so it must be refused instead.
+    disk->fail_on_sync = 0;
+    disk->fail_from_flush = std::numeric_limits<size_t>::max();
+    EXPECT_ANY_THROW(log.addPart({"block5"}, part("all_5_5_0")));
+    EXPECT_ANY_THROW(log.dropPart(part("all_1_1_0")));
+
+    /// Once the fence can be armed, operations resume.
+    disk->marker_writable = true;
+    EXPECT_TRUE(log.addPart({"block5"}, part("all_5_5_0")).empty());
+
+    log.shutdown();
+    std::filesystem::remove_all(work_dir);
+}
+
+#ifdef MERGE_TREE_DEDUPLICATION_LOG_FIX_IS_PRESENT
+/// Regression test for the last-resort rollback the sink falls back to when `dropPart`
+/// itself throws (MergeTreeSink::commitPart): the block ids of a part that never became
+/// active must stop deduplicating, in memory and across a restart, and unrelated
+/// committed block ids must keep deduplicating.
+TEST(MergeTreeDeduplicationLog, UnpublishFailedPartSurvivesRestart)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_unpublish/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0")).empty());
+        EXPECT_TRUE(log.addPart({"block2"}, part("all_2_2_0")).empty());
+
+        log.unpublishFailedPart(part("all_1_1_0"));
+
+        /// "block1" belonged to the part that failed to commit: its retry is accepted.
+        /// "block2" committed and still deduplicates.
+        EXPECT_FALSE(log.addPart({"block2"}, part("all_3_3_0")).empty());
+
+        log.shutdown();
+    }
+
+    {
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        /// The unpublished block id must not come back from the log either.
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_4_4_0")).empty());
+        log.shutdown();
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+#endif
