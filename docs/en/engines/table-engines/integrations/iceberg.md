@@ -143,6 +143,8 @@ The following limitations apply to deletion vectors:
 
 Parsed deletion vectors can be cached in memory when `use_puffin_files_cache` is enabled and the puffin file has a non-empty `etag`. Empty deletion vectors are cached as well, so repeated reads do not re-fetch the puffin file. Parsed footers for coalesced multi-DV Puffin files are memoized with that cache (same identity: storage, path, `etag`) so slices share one footer parse; the memo shares `puffin_files_cache_size` / max-entry limits and is dropped when the cache is disabled (`puffin_files_cache_size=0`) or cleared. The cache can be cleared with `SYSTEM DROP PUFFIN FILES CACHE`.
 
+For [`icebergCluster`](/sql-reference/table-functions/icebergCluster.md) (and `object_storage_cluster`), the initiator loads and materializes each data file's deletion vector while distributing tasks, then sends the resulting row bitmap to workers with the task. Workers apply the bitmap; they do not re-read the Puffin blob for that path. On wide v3 tables this can make the initiator a serialization point for deletion-vector I/O and decode.
+
 ### Basic usage {#basic-usage}
  ```sql
  SELECT * FROM example_table ORDER BY 1 

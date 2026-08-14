@@ -12,6 +12,12 @@ This is an extension to the [iceberg](/sql-reference/table-functions/iceberg.md)
 
 Allows processing files from Apache [Iceberg](https://iceberg.apache.org/) in parallel from many nodes in a specified cluster. On initiator it creates a connection to all nodes in the cluster and dispatches each file dynamically. On the worker node it asks the initiator about the next task to process and processes it. This is repeated until all tasks are finished.
 
+## Deletion vectors on cluster reads {#deletion-vectors-cluster}
+
+Iceberg v3 [deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) are loaded on the **initiator** while it distributes tasks: for each data file the initiator reads the Puffin blob, validates it, materializes deleted row positions, and attaches the bitmap to the task sent to workers. Workers apply that bitmap when reading Parquet; they do not fetch or parse the Puffin file again for that path. See [Processing of tables with deleted rows](/sql-reference/table-functions/iceberg.md#deleted-rows) for format limits and caching.
+
+On wide tables with many deletion vectors, initiator-side decode and per-task bitmap serialization can become a bottleneck even when Parquet reads are well parallelized across the cluster.
+
 ## Syntax {#syntax}
 
 ```sql

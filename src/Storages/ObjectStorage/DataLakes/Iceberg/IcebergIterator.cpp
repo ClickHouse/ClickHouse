@@ -377,6 +377,9 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             }
 
             const auto & parsed_entry = deletion_vector->parsed_entry;
+            /// For icebergCluster, next() runs on the initiator's task-distribution path: DV
+            /// I/O / CRC / roaring materialization happen here, then excluded_rows is sent on
+            /// the wire per task. Workers apply the bitmap and do not re-read the Puffin blob.
             auto excluded_rows = Iceberg::loadDeletionVector(
                 object_storage,
                 persistent_components.path_resolver.resolve(parsed_entry->file_path_key),
