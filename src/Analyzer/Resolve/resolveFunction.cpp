@@ -77,6 +77,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_function_early_short_circuit;
+    extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool execute_exists_as_scalar_subquery;
     extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsBool transform_null_in;
@@ -661,6 +662,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
       */
     if (!early_short_circuit_type_inference_in_process
         && scope.context->getSettingsRef()[Setting::enable_function_early_short_circuit]
+        && scope.context->getSettingsRef()[Setting::short_circuit_function_evaluation] != ShortCircuitFunctionEvaluation::DISABLE
         && (function_name == "and" || function_name == "or")
         && parameters.empty()
         && function_node_ptr->getNullsAction() == NullsAction::EMPTY

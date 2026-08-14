@@ -31,6 +31,7 @@ Test EXISTS falls back when its runtime value is unknown
 Test scalar cardinality and value-dependent arguments fall back to normal analysis
 1
 1
+Test disabled short-circuit evaluation is respected
 Check the read_rows of the above queries to ensure that the short circuit is working
 1
 0
