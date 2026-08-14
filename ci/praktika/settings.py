@@ -128,6 +128,8 @@ class _Settings:
 
     DOCKERHUB_USERNAME: str = ""
     DOCKERHUB_SECRET: str = ""
+    DOCKER_LAYER_COMPRESSION: str = "zstd"
+    DOCKER_LAYER_COMPRESSION_LEVEL: int = 3
 
     ######################################
     #        CI DB Settings              #
@@ -191,6 +193,8 @@ _USER_DEFINED_SETTINGS = [
     "VALIDATE_FILE_PATHS",
     "DOCKERHUB_USERNAME",
     "DOCKERHUB_SECRET",
+    "DOCKER_LAYER_COMPRESSION",
+    "DOCKER_LAYER_COMPRESSION_LEVEL",
     "READY_FOR_MERGE_CUSTOM_STATUS_NAME",
     "SECRET_CI_DB_URL",
     "SECRET_CI_DB_USER",
