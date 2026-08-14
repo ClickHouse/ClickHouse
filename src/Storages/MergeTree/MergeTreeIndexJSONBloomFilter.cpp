@@ -402,7 +402,7 @@ private:
         size_t row,
         bool is_dynamic)
     {
-        if (is_dynamic || map_type.getValueType()->hasDynamicStructure())
+        if (is_dynamic)
         {
             hashes.insert(unsupportedDynamicTypeHash());
             return;
@@ -660,9 +660,6 @@ std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & n
             const auto * map_type = typeid_cast<const DataTypeMap *>(unwrapped_subcolumn_type.get());
             if (!map_type)
                 continue;
-            if (map_type->getValueType()->hasDynamicStructure())
-                return std::nullopt;
-
             const auto key_type = removeJSONBloomWrappers(map_type->getKeyType());
             auto key_column = key_type->createColumn();
             ReadBufferFromString buffer(serialized_key);
@@ -732,11 +729,8 @@ std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & n
 
 std::optional<JSONPathMatch> tryMatchJSONPath(const RPNBuilderTreeNode & node, const Block & header)
 {
-    if (auto direct = tryMatchDirectJSONPath(node, header))
-        return direct;
-
     if (!node.isFunction())
-        return std::nullopt;
+        return tryMatchDirectJSONPath(node, header);
 
     const auto function = node.toFunctionNode();
     if ((function.getFunctionName() == "CAST" || function.getFunctionName() == "_CAST")
@@ -756,6 +750,29 @@ std::optional<JSONPathMatch> tryMatchJSONPath(const RPNBuilderTreeNode & node, c
         return match;
     }
 
+    if (function.getFunctionName() == "tupleElement" && function.getArgumentsSize() == 2)
+    {
+        auto match = tryMatchJSONPath(function.getArgumentAt(0), header);
+        const auto * dag_node = node.getDAGNode();
+        Field element;
+        DataTypePtr element_type;
+        if (!match || !dag_node || !function.getArgumentAt(1).tryGetConstant(element, element_type)
+            || element.getType() != Field::Types::String)
+            return std::nullopt;
+
+        const String & element_name = element.safeGet<String>();
+        const auto parent_type = removeJSONBloomWrappers(match->type);
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(parent_type.get());
+        if ((!tuple_type || !tuple_type->hasExplicitNames() || !tuple_type->tryGetPositionByName(element_name))
+            && !isObject(parent_type))
+            return std::nullopt;
+
+        match->path = appendPath(match->path, element_name);
+        match->type = dag_node->result_type;
+        match->cast_type = nullptr;
+        return match;
+    }
+
     if (function.getFunctionName() != "arrayElement" || function.getArgumentsSize() != 2)
         return std::nullopt;
 
@@ -765,7 +782,7 @@ std::optional<JSONPathMatch> tryMatchJSONPath(const RPNBuilderTreeNode & node, c
         return std::nullopt;
 
     const auto * map_type = typeid_cast<const DataTypeMap *>(removeJSONBloomWrappers(map_node.getDAGNode()->result_type).get());
-    if (!map_type || map_type->getValueType()->hasDynamicStructure())
+    if (!map_type)
         return std::nullopt;
 
     Field key;
