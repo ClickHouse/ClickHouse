@@ -26,7 +26,7 @@ metric_name2[...] = ...
 <Info>
   Это экспериментальная возможность, которая в будущих релизах может измениться с нарушением обратной совместимости.
   Включите использование движка таблицы TimeSeries
-  с помощью настройки [allow&#95;experimental&#95;time&#95;series&#95;table](/ru/reference/settings/session-settings#allow_experimental_time_series_table).
+  с помощью настройки [allow&#95;experimental&#95;time&#95;series&#95;table](/ru/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table).
   Введите команду `set allow_experimental_time_series_table = 1`.
 </Info>
 
@@ -115,7 +115,7 @@ CREATE TABLE my_table (time_series Array(Tuple(UInt32, Float32))) ENGINE=TimeSer
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32, value Float32)
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
 ```
 
 Если обе формы используются в одном операторе `CREATE TABLE`, объявленные типы должны совпадать.
@@ -144,11 +144,16 @@ SAMPLES INNER COLUMNS (timestamp UInt32, value Float32)
 
 Таблица *samples* должна содержать следующие столбцы:
 
-| Имя         | Обязательно? | Тип по умолчанию | Возможные типы          | Описание                                        |
-| ----------- | ------------ | ---------------- | ----------------------- | ----------------------------------------------- |
-| `id`        | [x]          | `UUID`           | любой                   | Идентифицирует комбинацию имени метрики и тегов |
-| `timestamp` | [x]          | `DateTime64(3)`  | `DateTime64(X)`         | Момент времени                                  |
-| `value`     | [x]          | `Float64`        | `Float32` или `Float64` | Значение, связанное с `timestamp`               |
+| Имя         | Обязательно? | Тип по умолчанию      | Возможные типы          | Описание                                        |
+| ----------- | ------------ | --------------------- | ----------------------- | ----------------------------------------------- |
+| `id`        | [x]          | `Tuple(UInt64, UUID)` | любой                   | Идентифицирует комбинацию имени метрики и тегов |
+| `timestamp` | [x]          | `DateTime64(3)`       | `DateTime64(X)`         | Момент времени                                  |
+| `value`     | [x]          | `Float64`             | `Float32` или `Float64` | Значение, связанное с `timestamp`               |
+
+Столбцы, которые движок создаёт самостоятельно, используют кодеки сжатия временных рядов:
+`timestamp CODEC(DoubleDelta, ZSTD(1))` и `value CODEC(Gorilla, ZSTD(1))`. Почти монотонные временные метки плохо
+сжимаются универсальными кодеками и в противном случае могут составлять основную часть размера таблицы samples на диске.
+См. также [Настройка типов столбцов](#adjusting-column-types).
 
 <div id="tags-table">
   ### Таблица tags
@@ -160,7 +165,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32, value Float32)
 
 | Имя                  | Обязательный? | Тип по умолчанию                      | Возможные типы                                                                                                          | Описание                                                                                                                                                                         |
 | -------------------- | ------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                 | [x]           | `UUID`                                | any (must match the type of `id` in the [samples](#samples-table) table)                                                | `id` идентифицирует комбинацию имени метрики и тегов. Выражение DEFAULT задаёт способ вычисления такого идентификатора                                                           |
+| `id`                 | [x]           | `Tuple(UInt64, UUID)`                 | any (must match the type of `id` in the [samples](#samples-table) table)                                                | `id` идентифицирует комбинацию имени метрики и тегов. Выражение DEFAULT задаёт способ вычисления такого идентификатора                                                           |
 | `metric_name`        | [x]           | `LowCardinality(String)`              | `String` or `LowCardinality(String)`                                                                                    | Имя метрики                                                                                                                                                                      |
 | `<tag_value_column>` | [ ]           | `String`                              | `String` or `LowCardinality(String)` or `LowCardinality(Nullable(String))`                                              | Значение конкретного тега; имя тега и имя соответствующего столбца задаются в настройке [tags&#95;to&#95;columns](#settings)                                                     |
 | `tags`               | [x]           | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | Карта тегов, за исключением тега `__name__`, содержащего имя метрики, а также тегов с именами, перечисленными в настройке [tags&#95;to&#95;columns](#settings)                   |
@@ -210,21 +215,21 @@ CREATE TABLE my_table
 ENGINE = TimeSeries
 SAMPLES INNER COLUMNS
 (
-    `id` UUID,
-    `timestamp` DateTime64(3),
-    `value` Float64
+    `id` Tuple(UInt64, UUID),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(Gorilla, ZSTD(1))
 )
-SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp)
+SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 TAGS INNER COLUMNS
 (
-    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `all_tags` Map(String, String) EPHEMERAL,
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
-TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1
+TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 METRICS INNER COLUMNS
 (
     `metric_family_name` String,
@@ -245,18 +250,19 @@ METRICS INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` UUID,
-    `timestamp` DateTime64(3),
-    `value` Float64
+    `id` Tuple(UInt64, UUID),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(Gorilla(8), ZSTD(1))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
+SETTINGS index_granularity = 32768
 ```
 
 ```sql
 CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `all_tags` Map(String, String) EPHEMERAL,
@@ -266,7 +272,7 @@ CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 ENGINE = AggregatingMergeTree
 PRIMARY KEY metric_name
 ORDER BY (metric_name, id)
-SETTINGS allow_dimensions_outside_sorting_key = 1
+SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 ```
 
 ```sql
@@ -279,6 +285,7 @@ CREATE TABLE default.`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 )
 ENGINE = ReplacingMergeTree
 ORDER BY metric_family_name
+SETTINGS index_granularity = 8192
 ```
 
 <div id="create-as">
@@ -298,18 +305,18 @@ ORDER BY metric_family_name
   ## Настройка типов столбцов
 </div>
 
-Вы можете настраивать типы столбцов во внутренних целевых таблицах с помощью предложения `INNER COLUMNS`. Например, чтобы хранить временные метки в микросекундах, а значения — как `Float32`:
+Вы можете настраивать типы столбцов во внутренних целевых таблицах с помощью предложения `INNER COLUMNS`. Например, чтобы хранить временные метки в микросекундах, а значения — как `Float32`, используйте:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+```
+
+Указание внутренних столбцов без кодеков означает использование для них кодека по умолчанию:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
-```
-
-То же выражение можно использовать, чтобы указать кодеки и другие атрибуты столбца:
-
-```sql
-CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(3) CODEC(DoubleDelta))
 ```
 
 <div id="id-column">
@@ -317,16 +324,18 @@ SAMPLES INNER COLUMNS (timestamp DateTime64(3) CODEC(DoubleDelta))
 </div>
 
 Столбец `id` содержит идентификаторы; каждый из них вычисляется для комбинации имени метрики и тегов.
-Тип и выражение `DEFAULT`, используемое для генерации идентификаторов, можно настроить с помощью конструкции `TAGS INNER COLUMNS`:
+Тип и выражение `DEFAULT`, используемое для генерации идентификаторов, можно настроить с помощью предложения `TAGS INNER COLUMNS`:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(metric_name, all_tags))
 ```
 
-Тип столбца `id` должен быть одним из следующих: `UUID`, `UInt64`, `UInt128` или `FixedString(16)`. Если выражение `DEFAULT` не указано, ClickHouse автоматически выберет его на основе типа `id`. Типы `id`, объявленные во внутренних таблицах samples и tags, должны совпадать.
+Столбец `id` может иметь любой сопоставимый тип, кроме Nullable. Типы `id`, объявленные во внутренних таблицах samples и tags, должны совпадать.
 
-Параметр `id_generator` позволяет выполнить ту же настройку без использования конструкции `INNER COLUMNS`:
+Если для столбца `id` не указано выражение `DEFAULT` и параметр `id_generator` не задан, ClickHouse автоматически выберет выражение `DEFAULT` на основе типа `id`, но только если тип `id` является одним из следующих: `UUID`, `UInt64`, `UInt128`, `FixedString(16)` или кортежем из двух таких типов. Для такого кортежа автоматически выбранное выражение вычисляет хеш имени метрики в первом компоненте и хеш всех тегов во втором компоненте.
+
+Параметр `id_generator` позволяет выполнить ту же настройку без использования предложения `INNER COLUMNS`:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
@@ -441,6 +450,8 @@ ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
 | `store_min_time_and_max_time`        | Bool       | true                 | Если установлено значение true, таблица будет хранить `min_time` и `max_time` для каждого временного ряда                                                                                                                                                        |
 | `aggregate_min_time_and_max_time`    | Bool       | true                 | При создании внутренней целевой таблицы `tags` этот флаг включает использование `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` вместо просто `Nullable(DateTime64(3))` в качестве типа столбца `min_time`; то же самое относится и к столбцу `max_time` |
 | `filter_by_min_time_and_max_time`    | Bool       | true                 | Если установлено значение true, таблица будет использовать столбцы `min_time` и `max_time` для фильтрации временных рядов                                                                                                                                        |
+| `samples_index_granularity`          | UInt64     | 32768                | Устанавливает `index_granularity` внутренней таблицы [samples](#samples-table). При явной установке переопределяет `index_granularity` из объявления движка. Игнорируется для внешней таблицы samples и движка, не относящегося к MergeTree                      |
+| `tags_index_granularity`             | UInt64     | 8192                 | Устанавливает `index_granularity` внутренней таблицы [tags](#tags-table). При явной установке переопределяет `index_granularity` из объявления движка. Игнорируется для внешней таблицы tags и движка, не относящегося к MergeTree                               |
 
 <div id="functions">
   # Функции

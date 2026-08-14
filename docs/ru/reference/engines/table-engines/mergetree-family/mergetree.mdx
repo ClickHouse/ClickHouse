@@ -28,7 +28,7 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
 * Движки таблиц `MergeTree` поддерживают различные виды статистики и методы сэмплирования, помогающие оптимизации запросов.
 
 <Note>
-  Несмотря на похожее название, движок [Merge](/ru/reference/engines/table-engines/special/merge) отличается от движков `*MergeTree`.
+  Несмотря на похожее название, движок [Merge](/ru/reference/engines/table-engines/special/merge) отличается от таблиц семейства `*MergeTree`.
 </Note>
 
 <div id="table_engine-mergetree-creating-a-table">
@@ -70,7 +70,9 @@ ORDER BY expr
 
 `ENGINE` — имя и параметры движка. `ENGINE = MergeTree()`. У движка `MergeTree` нет параметров.
 
-<div id="order_by">
+<a id="order_by" />
+
+<div id="order-by">
   #### ORDER BY
 </div>
 
@@ -81,7 +83,7 @@ ORDER BY expr
 Если первичный ключ не определён (то есть `PRIMARY KEY` не был указан), ClickHouse использует ключ сортировки в качестве первичного ключа.
 
 Если сортировка не нужна, можно использовать синтаксис `ORDER BY tuple()`.
-Либо, если настройка `create_table_empty_primary_key_by_default` включена, в команды `CREATE TABLE` неявно добавляется `ORDER BY ()`. См. [Выбор первичного ключа](#selecting-a-primary-key).
+Либо, если настройка `create_table_empty_primary_key_by_default` включена, в операторы `CREATE TABLE` неявно добавляется `ORDER BY ()`. См. [Выбор первичного ключа](#selecting-a-primary-key).
 
 <div id="partition-by">
   #### PARTITION BY
@@ -198,12 +200,12 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 Рассмотрим в качестве примера первичный ключ `(CounterID, Date)`. В этом случае сортировку и индекс можно представить следующим образом:
 
 ```text
-Все данные:     [---------------------------------------------]
+Whole data:     [---------------------------------------------]
 CounterID:      [aaaaaaaaaaaaaaaaaabbbbcdeeeeeeeeeeeeefgggggggghhhhhhhhhiiiiiiiiikllllllll]
 Date:           [1111111222222233331233211111222222333211111112122222223111112223311122333]
-Метки:           |      |      |      |      |      |      |      |      |      |      |
+Marks:           |      |      |      |      |      |      |      |      |      |      |
                 a,1    a,2    a,3    b,3    e,2    e,3    g,1    h,2    i,1    i,3    l,3
-Номера меток:    0      1      2      3      4      5      6      7      8      9      10
+Marks numbers:   0      1      2      3      4      5      6      7      8      9      10
 ```
 
 Если запрос к данным указывает:
@@ -220,7 +222,7 @@ Date:           [111111122222223333123321111122222233321111111212222222311111222
 
 ClickHouse не требует уникального первичного ключа. Вы можете вставлять несколько строк с одинаковым первичным ключом.
 
-Вы можете использовать выражения типа `Nullable` в секциях `PRIMARY KEY` и `ORDER BY`, но делать это настоятельно не рекомендуется. Чтобы включить эту возможность, включите настройку [allow&#95;nullable&#95;key](/ru/reference/settings/merge-tree-settings#allow_nullable_key). Для значений `NULL` в секции `ORDER BY` применяется принцип [NULLS&#95;LAST](/ru/reference/statements/select/order-by#sorting-of-special-values).
+Вы можете использовать выражения типа `Nullable` в предложениях `PRIMARY KEY` и `ORDER BY`, но делать это настоятельно не рекомендуется. Чтобы включить эту возможность, включите настройку [allow&#95;nullable&#95;key](/ru/reference/settings/merge-tree-settings/allow#allow_nullable_key). Для значений `NULL` в предложении `ORDER BY` применяется принцип [NULLS&#95;LAST](/ru/reference/statements/select/order-by#sorting-of-special-values).
 
 <div id="selecting-a-primary-key">
   ### Выбор первичного ключа
@@ -245,9 +247,9 @@ ClickHouse не требует уникального первичного кл�
 
 Длинный первичный ключ отрицательно скажется на производительности вставки и потреблении памяти, но дополнительные столбцы в первичном ключе не влияют на производительность ClickHouse при выполнении запросов `SELECT`.
 
-Вы можете создать таблицу без первичного ключа, используя синтаксис `ORDER BY tuple()`. В этом случае ClickHouse хранит данные в порядке их вставки. Если вы хотите сохранить порядок данных при вставке с помощью запросов `INSERT ... SELECT`, установите [max&#95;insert&#95;threads = 1](/ru/reference/settings/session-settings#max_insert_threads).
+Вы можете создать таблицу без первичного ключа, используя синтаксис `ORDER BY tuple()`. В этом случае ClickHouse хранит данные в порядке их вставки. Если вы хотите сохранить порядок данных при вставке с помощью запросов `INSERT ... SELECT`, установите [max&#95;insert&#95;threads = 1](/ru/reference/settings/session-settings/max-insert#max_insert_threads).
 
-Чтобы выбирать данные в исходном порядке, используйте [однопоточные](/ru/reference/settings/session-settings#max_threads) запросы `SELECT`.
+Чтобы выбирать данные в исходном порядке, используйте [однопоточные](/ru/reference/settings/session-settings/max-threads#max_threads) запросы `SELECT`.
 
 <div id="choosing-a-primary-key-that-differs-from-the-sorting-key">
   ### Выбор первичного ключа, отличающегося от ключа сортировки
@@ -307,7 +309,7 @@ ClickHouse будет использовать индекс первичного
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-Чтобы проверить, может ли ClickHouse использовать индекс при выполнении запроса, воспользуйтесь настройками [force&#95;index&#95;by&#95;date](/ru/reference/settings/session-settings#force_index_by_date) и [force&#95;primary&#95;key](/ru/reference/settings/session-settings#force_primary_key).
+Чтобы проверить, может ли ClickHouse использовать индекс при выполнении запроса, воспользуйтесь настройками [force&#95;index&#95;by&#95;date](/ru/reference/settings/session-settings/force#force_index_by_date) и [force&#95;primary&#95;key](/ru/reference/settings/session-settings/force#force_primary_key).
 
 Ключ партиционирования по месяцам позволяет считывать только те блоки данных, которые содержат даты из нужного диапазона. В этом случае блок данных может содержать данные для множества дат (вплоть до целого месяца). Внутри блока данные сортируются по первичному ключу, и дата может не быть в нём первым столбцом. Поэтому запрос только с условием по дате, без указания префикса первичного ключа, приведёт к чтению большего объёма данных, чем в случае с одной датой.
 
@@ -693,7 +695,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 Проекции похожи на [materialized views](/ru/reference/statements/create/view), но определяются на уровне частей данных. Они обеспечивают гарантии согласованности и автоматически используются в запросах.
 
 <Note>
-  При использовании проекций следует также учитывать настройку [force&#95;optimize&#95;projection](/ru/reference/settings/session-settings#force_optimize_projection).
+  При использовании проекций следует также учитывать настройку [force&#95;optimize&#95;projection](/ru/reference/settings/session-settings/force-optimize#force_optimize_projection).
 </Note>
 
 Проекции не поддерживаются в запросах `SELECT` с модификатором [FINAL](/ru/reference/statements/select/from#final-modifier).
@@ -975,7 +977,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 
 **См. также**
 
-* настройка [ttl&#95;only&#95;drop&#95;parts](/ru/reference/settings/merge-tree-settings#ttl_only_drop_parts)
+* настройка [ttl&#95;only&#95;drop&#95;parts](/ru/reference/settings/merge-tree-settings/other#ttl_only_drop_parts)
 
 <div id="disk-types">
   ## Типы дисков
@@ -1011,7 +1013,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 </div>
 
 * Диск — блочное устройство, смонтированное в файловую систему.
-* Диск по умолчанию — диск, соответствующий пути, указанному в настройке сервера [path](/ru/reference/settings/server-settings/settings#path).
+* Диск по умолчанию — диск, соответствующий пути, указанному в настройке сервера [path](/ru/reference/settings/server-settings/settings/other#path).
 * Том — упорядоченный набор одинаковых дисков (аналогично [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
 * Политика хранения — набор томов и правил перемещения данных между ними.
 
@@ -1176,7 +1178,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 Политика хранения `default` предполагает использование только одного тома, состоящего из одного диска, указанного в `<path>`.
 Вы можете изменить политику хранения после создания таблицы с помощью запроса [ALTER TABLE ... MODIFY SETTING]; новая политика должна включать все прежние диски и тома с теми же именами.
 
-Количество потоков, выполняющих фоновое перемещение частей, можно изменить с помощью настройки [background&#95;move&#95;pool&#95;size](/ru/reference/settings/server-settings/settings#background_move_pool_size).
+Количество потоков, выполняющих фоновое перемещение частей, можно изменить с помощью настройки [background&#95;move&#95;pool&#95;size](/ru/reference/settings/server-settings/settings/background#background_move_pool_size).
 
 <div id="details">
   ### Подробности
@@ -1206,7 +1208,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 После завершения фоновых слияний и мутаций старые части удаляются только спустя некоторое время (`old_parts_lifetime`).
 В течение этого времени они не перемещаются на другие тома или диски. Поэтому, пока части не будут окончательно удалены, они по-прежнему учитываются при расчете занятого дискового пространства.
 
-Пользователь может равномерно распределять новые крупные части по разным дискам тома [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) с помощью настройки [min&#95;bytes&#95;to&#95;rebalance&#95;partition&#95;over&#95;jbod](/ru/reference/settings/merge-tree-settings#min_bytes_to_rebalance_partition_over_jbod).
+Пользователь может равномерно распределять новые крупные части по разным дискам тома [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) с помощью настройки [min&#95;bytes&#95;to&#95;rebalance&#95;partition&#95;over&#95;jbod](/ru/reference/settings/merge-tree-settings/min-bytes#min_bytes_to_rebalance_partition_over_jbod).
 
 <div id="table_engine-mergetree-s3">
   ## Использование внешнего хранилища для хранения данных
@@ -1428,16 +1430,16 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
   Компактный набор однозначных сводных характеристик, вычисляемых по столбцу. В зависимости от типа столбца заполняются следующие компоненты:
 
+  * для любого столбца: количество строк, равных значению по умолчанию для данного типа (`0` для целых чисел и чисел с плавающей точкой, `''` для `String`, `[]` для `Array`, `NULL` для `Nullable` и т. д.), что позволяет оптимизатору оценивать предикаты `col = <default>` и фильтры `IS NULL`;
   * для любого столбца, значения которого представлены числами (целые числа, числа с плавающей точкой, `Decimal*`, `Date*`, `DateTime*`, `Enum*`, `IPv4`, ...): минимальное и максимальное значения, которые позволяют оценивать селективность фильтра диапазона и выполнять отсечение частей;
-  * для столбцов `String` и `FixedString`: суммарная длина в байтах всех значений, отличных от `NULL` (на её основе можно вычислить среднюю длину строки);
-  * для столбцов `Nullable` и `LowCardinality(Nullable)`: количество значений `NULL`, которое оптимизатор использует, чтобы исключать строки с `NULL` из оценок селективности.
+  * для столбцов `String` и `FixedString`: суммарная длина в байтах всех значений, отличных от `NULL` (на её основе можно вычислить среднюю длину строки).
 
-    Одна статистика `basic` может одновременно заполнять несколько таких компонентов — например, для столбца `Nullable(UInt32)` она отслеживает и числовые минимум/максимум, и количество значений `NULL`. По сравнению с `minmax`, `basic` дополнительно работает со столбцами `String` / `FixedString` и может быть объявлена для обёрток `Nullable` типов вроде `UUID` или `IPv6` исключительно для отслеживания количества значений `NULL`.
+    Одна статистика `basic` может одновременно заполнять несколько таких компонентов — например, для столбца `Nullable(UInt32)` она отслеживает и числовые минимум/максимум, и количество значений `NULL`. Поскольку количество значений по умолчанию определено для каждого типа столбца, `basic` может быть объявлена для любого столбца, включая составные типы, такие как `Array`, `Tuple` и `Map`.
 
 * `minmax` (устарело)
 
 <Note>
-  Статистика `minmax` устарела, и её больше нельзя создавать (`CREATE TABLE ... STATISTICS(minmax)` и `ALTER TABLE ... ADD/MODIFY STATISTICS ... TYPE minmax` возвращают ошибку). Существующие таблицы и части со статистикой `minmax` продолжают работать. Вместо неё используйте статистику `basic`.
+  Статистика `minmax` устарела. Вместо неё используйте статистику `basic`, которая является надмножеством `minmax`.
 </Note>
 
 * `tdigest`
@@ -1468,33 +1470,38 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
   ### Поддерживаемые типы данных
 </div>
 
-|             | (U)Int*, Float*, Decimal(*), Date*, булевый, Enum* | IPv4 | String или FixedString |
-| ----------- | -------------------------------------------------- | ---- | ---------------------- |
-| basic       | ✔                                                  | ✔    | ✔                      |
-| countmin    | ✔                                                  | ✔    | ✔                      |
-| minmax      | ✔                                                  | ✔    | ✗                      |
-| tdigest     | ✔                                                  | ✗    | ✗                      |
-| uniq        | ✔                                                  | ✔    | ✔                      |
-| uniq&#95;v2 | ✔                                                  | ✔    | ✔                      |
+|             | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String или FixedString | Любой другой тип                         |
+| ----------- | -------------------------------------------------- | ---- | ---------------------- | ---------------------------------------- |
+| basic       | ✔                                                  | ✔    | ✔                      | ✔ (только подсчёт значений по умолчанию) |
+| countmin    | ✔                                                  | ✔    | ✔                      | ✗                                        |
+| minmax      | ✔                                                  | ✔    | ✗                      | ✗                                        |
+| tdigest     | ✔                                                  | ✗    | ✗                      | ✗                                        |
+| uniq        | ✔                                                  | ✔    | ✔                      | ✗                                        |
+| uniq&#95;v2 | ✔                                                  | ✔    | ✔                      | ✗                                        |
 
-Для всего перечисленного выше также поддерживаются обертки `Nullable` и `LowCardinality(Nullable)` указанных типов. `Basic` также можно объявлять для оберток `Nullable` типов вроде `UUID` или `IPv6` исключительно для отслеживания количества `NULL`.
+Все перечисленные выше варианты также поддерживают обёртки `Nullable` и `LowCardinality(Nullable)` для указанных типов. `basic` также можно объявить для любого другого типа, включая составные типы, такие как `Array`, `Tuple` и `Map`; в этом случае он учитывает только количество значений по умолчанию.
 
 <div id="supported-operations">
   ### Поддерживаемые операции
 </div>
 
-|             | Фильтры равенства (==) | Фильтры диапазона (`>, >=, <, <=`) |
-| ----------- | ---------------------- | ---------------------------------- |
-| basic       | ✗                      | ✔ (только числовые столбцы)        |
-| countmin    | ✔                      | ✗                                  |
-| minmax      | ✗                      | ✔ (только числовые столбцы)        |
-| tdigest     | ✗                      | ✔ (только числовые столбцы)        |
-| uniq        | ✔                      | ✗                                  |
-| uniq&#95;v2 | ✔                      | ✗                                  |
+|             | Фильтры равенства (==)               | Фильтры диапазона (`>, >=, <, <=`) |
+| ----------- | ------------------------------------ | ---------------------------------- |
+| basic       | ✔ (только для значения по умолчанию) | ✔ (только для числовых столбцов)   |
+| countmin    | ✔                                    | ✗                                  |
+| minmax      | ✗                                    | ✔ (только для числовых столбцов)   |
+| tdigest     | ✗                                    | ✔ (только для числовых столбцов)   |
+| uniq        | ✔                                    | ✗                                  |
+| uniq&#95;v2 | ✔                                    | ✗                                  |
 
-Для `basic` в столбцах `String` / `FixedString` статистика учитывает только суммарную
-длину в байтах значений, отличных от NULL (используется для оценки средней длины строк), и количество значений NULL;
-фильтры диапазона и отсечение частей на её основе не применяются.
+`basic` даёт точный результат для фильтра равенства, только когда сравниваемое значение совпадает с внутренним
+значением по умолчанию, используемым для хранения в столбце (необработанное целое число `0` для числовых типов, `''` / N нулевых байтов для `String` /
+`FixedString`, `NULL` для столбцов `Nullable` и т. д.). В частности, для типов `Enum` быстрый путь
+срабатывает, только когда литерал элемента перечисления сопоставляется с необработанным целым числом `0`; если ни один элемент перечисления не имеет необработанного значения `0`,
+статистика не участвует в оценке равенства. Для других значений оптимизатор использует
+другую статистику.
+Для `basic` в столбцах `String` / `FixedString` статистика хранит суммарную длину в байтах значений, не равных `NULL`
+(используется для оценки средней длины строки), а также количество значений по умолчанию и `NULL`; фильтры диапазона и отсечение частей на её основе не выполняются.
 
 <div id="column-level-settings">
   ## Настройки на уровне столбцов

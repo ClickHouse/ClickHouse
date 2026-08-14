@@ -585,7 +585,8 @@ SELECT
 
 導入バージョン: v1.1.0
 
-URL に `name` パラメータが含まれている場合は、それを削除します。
+URL から、指定された各パラメータについて最初に出現する `name=value` を削除します。
+`name=` と表記されたパラメータのみが一致するため、値を持たないフラグパラメータはそのまま残ります。たとえば、`cutURLParameter('http://bigmir.net/?a&c=d', 'a')` は URL を変更せずに返します。
 この関数は、パラメータ名の文字をエンコードまたはデコードしません。たとえば、`Client ID` と `Client%20ID` は別のパラメータ名として扱われます。
 
 **構文**
@@ -601,7 +602,7 @@ cutURLParameter(url, name)
 
 **戻り値**
 
-`name` で指定した URL パラメータを削除した URL。 [`String`](/ja/reference/data-types/string)
+リクエストされた各パラメータについて、最初に出現する `name=value` を削除した URL。 [`String`](/ja/reference/data-types/string)
 
 **例**
 

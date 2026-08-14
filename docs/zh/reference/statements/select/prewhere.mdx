@@ -18,9 +18,9 @@ Prewhere 是一种用于更高效执行过滤的优化机制。即使未显式�
 
 一个查询可以同时指定 `PREWHERE` 和 `WHERE`。在这种情况下，`PREWHERE` 会先于 `WHERE` 执行。
 
-如果 [optimize&#95;move&#95;to&#95;prewhere](/zh/reference/settings/session-settings#optimize_move_to_prewhere) 设置为 0，则会禁用将表达式的一部分从 `WHERE` 自动移到 `PREWHERE` 的启发式规则。
+如果 [optimize&#95;move&#95;to&#95;prewhere](/zh/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) 设置为 0，则会禁用将表达式的一部分从 `WHERE` 自动移到 `PREWHERE` 的启发式规则。
 
-如果查询带有 [FINAL](/zh/reference/statements/select/from#final-modifier) modifier，`PREWHERE` 优化并不总是正确的。只有当 [optimize&#95;move&#95;to&#95;prewhere](/zh/reference/settings/session-settings#optimize_move_to_prewhere) 和 [optimize&#95;move&#95;to&#95;prewhere&#95;if&#95;final](/zh/reference/settings/session-settings#optimize_move_to_prewhere_if_final) 这两个设置都启用时，才会启用该优化。
+如果查询带有 [FINAL](/zh/reference/statements/select/from#final-modifier) modifier，`PREWHERE` 优化并不总是正确的。只有当 [optimize&#95;move&#95;to&#95;prewhere](/zh/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) 和 [optimize&#95;move&#95;to&#95;prewhere&#95;if&#95;final](/zh/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere_if_final) 这两个设置都启用时，才会启用该优化。
 
 <Note>
   `PREWHERE` 部分会在 `FINAL` 之前执行，因此，如果对不在表的 `ORDER BY` 部分中的字段使用 `PREWHERE`，`FROM ... FINAL` 查询的结果可能会出现偏差。

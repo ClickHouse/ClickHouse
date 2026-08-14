@@ -45,6 +45,8 @@ title: إعدادات الخادم خارج Source
 
 استخدم عنوان المصدر في المصادقة للعملاء المتصلين عبر وكيل.
 
+* **الافتراضي:** `false`
+
 <Note>
   يجب استخدام هذا الإعداد بحذر شديد، لأن العناوين المُمرَّرة يمكن انتحالها بسهولة. ولا ينبغي الوصول مباشرةً إلى الخوادم التي تقبل هذا النوع من المصادقة، بل يجب أن يتم ذلك حصراً عبر وكيل موثوق.
 </Note>
@@ -133,7 +135,9 @@ title: إعدادات الخادم خارج Source
 </div>
 
 عامل العمل لنوع المصادقة `bcrypt_password` الذي يستخدم [خوارزمية Bcrypt](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
-ويحدّد عامل العمل مقدار العمليات الحسابية والوقت اللازمين لحساب قيمة التجزئة والتحقق من كلمة المرور.
+ويحدِّد عامل العمل مقدار العمليات الحسابية والوقت اللازمين لحساب قيمة التجزئة والتحقق من كلمة المرور.
+
+* **القيمة الافتراضية:** `12`
 
 ```xml
 <bcrypt_workfactor>12</bcrypt_workfactor>
@@ -142,14 +146,18 @@ title: إعدادات الخادم خارج Source
 <Warning>
   بالنسبة إلى التطبيقات التي تُجري عمليات مصادقة بمعدل مرتفع،
   فكِّر في استخدام أساليب مصادقة بديلة بسبب
-  العبء الحوسبي لـ bcrypt عند استخدام قيم مرتفعة لعامل الكلفة.
+  العبء الحوسبي لـ bcrypt عند استخدام قيم مرتفعة لعامل العمل.
 </Warning>
 
 <div id="table_engines_require_grant">
   ## table_engines_require_grant
 </div>
 
+<CloudNotSupportedBadge />
+
 إذا ضُبطت هذه القيمة على true، فسيحتاج المستخدمون إلى grant لإنشاء جدول باستخدام engine محدد، مثل `GRANT TABLE ENGINE ON TinyLog to user`.
+
+* **الافتراضي:** `false`
 
 <Note>
   افتراضيًا، وللحفاظ على backward compatibility، يتجاهل إنشاء جدول باستخدام table engine محدد متطلبات grant، ولكن يمكنك تغيير هذا السلوك بضبط هذه القيمة على true.
@@ -198,7 +206,7 @@ title: إعدادات الخادم خارج Source
 * `min_part_size` – الحد الأدنى لحجم جزء البيانات.
 * `min_part_size_ratio` – نسبة حجم جزء البيانات إلى حجم الجدول.
 * `method` – طريقة الضغط. القيم المقبولة: `lz4`، `lz4hc`، `zstd`,`deflate_qpl`.
-* `level` – مستوى الضغط. راجع [Codecs](/ar/reference/statements/create/table#general-purpose-codecs).
+* `level` – مستوى الضغط. راجع [Codecs](/ar/reference/statements/create/table/codec#general-purpose-codecs).
 
 <Note>
   يمكنك تهيئة عدة أقسام `<case>`.
@@ -230,9 +238,9 @@ title: إعدادات الخادم خارج Source
   ## التشفير
 </div>
 
-يحدِّد أمرًا للحصول على مفتاح لاستخدامه مع [مرمِّزات التشفير](/ar/reference/statements/create/table#encryption-codecs). يجب كتابة المفتاح (أو المفاتيح) في متغيرات البيئة أو تعيينه في ملف الإعدادات.
+يحدِّد أمرًا للحصول على مفتاح لاستخدامه مع [مرمِّزات التشفير](/ar/reference/statements/create/table/codec#encryption-codecs). يجب كتابة المفتاح (أو المفاتيح) في متغيرات البيئة أو تعيينه في ملف الإعدادات.
 
-يمكن أن تكون المفاتيح بتنسيق hex أو string بطول 16 بايت.
+يمكن أن تكون المفاتيح بتنسيق سداسي عشري أو string بطول 16 بايت.
 
 **مثال**
 
@@ -250,7 +258,7 @@ title: إعدادات الخادم خارج Source
   لا يُنصح بتخزين المفاتيح في ملف الإعدادات، لأن ذلك غير آمن. يمكنك نقل المفاتيح إلى ملف إعدادات منفصل على قرص آمن، ثم وضع رابط رمزي لهذا الملف داخل المجلد `config.d/`.
 </Note>
 
-التحميل من الإعدادات عندما يكون المفتاح بصيغة ست عشرية:
+التحميل من الإعدادات عندما يكون المفتاح بصيغة سداسية عشرية:
 
 ```xml
 <encryption_codecs>
@@ -387,6 +395,8 @@ title: إعدادات الخادم خارج Source
 </div>
 
 ملف تعريف الإعدادات الافتراضي. توجد ملفات تعريف الإعدادات في الملف المحدد في الإعداد `user_config`.
+
+* **الافتراضي:** `default`
 
 **مثال**
 
@@ -576,6 +586,8 @@ title: إعدادات الخادم خارج Source
 الصفحة التي تُعرض تلقائيًا عند الوصول إلى خادم ClickHouse عبر HTTP(s).
 القيمة الافتراضية هي &quot;Ok.&quot; (مع محرف سطر جديد في النهاية)
 
+* **الافتراضي:** `"Ok.\n"`
+
 **مثال**
 
 يفتح `https://tabix.io/` عند الوصول إلى `http://localhost: http_port`.
@@ -640,6 +652,8 @@ title: إعدادات الخادم خارج Source
 
 قيد على المضيفات المسموح لها بتبادل البيانات بين خوادم ClickHouse.
 إذا كان Keeper مستخدمًا، فسيُطبَّق القيد نفسه على الاتصال بين مثيلات Keeper المختلفة.
+
+* **القيمة الافتراضية:** `listen_host`
 
 <Note>
   تكون القيمة افتراضيًا مساوية لإعداد [`listen_host`](#listen_host).
@@ -1151,7 +1165,7 @@ title: إعدادات الخادم خارج Source
 سيتكوّن العنقود الذي تُنشِئه قاعدة البيانات Replicated من النسخ المتماثلة ضمن المجموعة نفسها.
 لن تنتظر استعلامات DDL إلا النسخ المتماثلة ضمن المجموعة نفسها.
 
-تكون فارغة افتراضيًا.
+* **الافتراضي:** `""`
 
 **مثال**
 
@@ -1392,10 +1406,11 @@ title: إعدادات الخادم خارج Source
 * `events` – إتاحة المقاييس من جدول [system.events](/ar/reference/system-tables/events).
 * `asynchronous_metrics` – إتاحة قيم المقاييس الحالية من جدول [system.asynchronous&#95;metrics](/ar/reference/system-tables/asynchronous_metrics).
 * `errors` - إتاحة عدد الأخطاء بحسب رموز الخطأ التي حدثت منذ آخر إعادة تشغيل للخادم. ويمكن أيضًا الحصول على هذه المعلومات من [system.errors](/ar/reference/system-tables/errors).
+* `labels` – تسميات ثابتة تُضاف إلى كل مقياس مُتاح. يعرّف كل عنصر فرعي تسمية واحدة: اسم العنصر هو اسم التسمية (ويجب أن يطابق `[a-zA-Z_][a-zA-Z0-9_]*`) وقيمة العنصر هي قيمة التسمية. تدعم قيم التسميات استبدالات التهيئة القياسية، مثل السمة `from_env`. يُرفض اسم التسمية إذا بدأ بـ `__` (المحجوزة بواسطة Prometheus)، أو إذا تعارض مع تسمية تكتبها نقطة النهاية هذه بالفعل لأحد أقسامها المفعّلة، وإلا فستحمل العينة اسم التسمية نفسه مرتين. لذلك تتبع مجموعة الأسماء المحجوزة سطح التصدير النشط لنقطة النهاية: `le` عند تفعيل `histograms`؛ وتسميات `ClickHouse_Info` (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`) عند تفعيل `info`؛ وأي تسمية تستخدمها عائلة مقاييس مُدرَّج تكراري مُتاحة أو عائلة مقاييس ذات أبعاد (مثل `group` أو `direction` أو `operation_type`) عند تفعيل `histograms`/`dimensional_metrics`. ولأن ذلك يعتمد على ما تتيحه نقطة النهاية فعليًا، قد يكون الاسم صالحًا في نقطة نهاية ويُرفض في أخرى — فعلى سبيل المثال، تتيح نقطة نهاية Keeper `keeper_metrics_only` عائلات `keeper_*` فقط، لذا تُقبل فيها التسميات المستخدمة حصريًا من قِبل عائلات الخادم.
 
 **مثال**
 
-```xml highlight={5-12}
+```xml highlight={5-16}
 <clickhouse>
     <listen_host>0.0.0.0</listen_host>
     <http_port>8123</http_port>
@@ -1407,6 +1422,10 @@ title: إعدادات الخادم خارج Source
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
         <errors>true</errors>
+        <labels>
+            <environment>production</environment>
+            <shard from_env="SHARD_NAME"></shard>
+        </labels>
     </prometheus>
 </clickhouse>
 ```
@@ -1421,11 +1440,13 @@ curl 127.0.0.1:9363/metrics
   ## query_log
 </div>
 
-إعداد لتسجيل الاستعلامات الواردة عند استخدام الإعداد [log&#95;queries=1](/ar/reference/settings/session-settings).
+إعداد لتسجيل الاستعلامات الواردة عند استخدام الإعداد [log&#95;queries=1](/ar/reference/settings/session-settings/log-queries#log_queries).
 
-تُسجَّل الاستعلامات في جدول [system.query&#95;log](/ar/reference/system-tables/query_log)، وليس في ملف منفصل. يمكنك تغيير اسم الجدول من خلال المعامل `table` (انظر أدناه).
+تُسجَّل الاستعلامات في جدول [system.query&#95;log](/ar/reference/system-tables/query_log)، وليس في ملف منفصل. يمكنك تغيير اسم الجدول من خلال المعلمة `table` (انظر أدناه).
 
 <SystemLogParameters />
+
+تنشئ المعلمة `enable_user_query_log` (المفعّلة افتراضيًا) [`system.user_query_log`](/ar/reference/system-tables/user_query_log)، الذي يتيح لكل مستخدم الاطلاع على سجلاته الخاصة في جدول سجل الاستعلامات المُهيأ دون الحاجة إلى الوصول إلى الجدول نفسه. لا يعمل ذلك إلا عند تخزين سجل الاستعلامات محليًا: فإذا كان `engine` يفوّض التنفيذ إلى خادم آخر (مثل `Distributed`)، فعطّل `enable_user_query_log`، لأن `system.user_query_log` لا يمكنه فرض التحقق من الوصول لكل مستخدم عبر حدود خادم يستخدم بروتوكول ClickHouse، ويرفض القراءة من هذه الواجهة الخلفية.
 
 إذا لم يكن الجدول موجودًا، فسينشئه ClickHouse. وإذا تغيّرت بنية سجل الاستعلامات عند تحديث خادم ClickHouse، فستُعاد تسمية الجدول ذي البنية القديمة، ويُنشأ جدول جديد تلقائيًا.
 
@@ -1441,6 +1462,7 @@ curl 127.0.0.1:9363/metrics
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
+    <enable_user_query_log>true</enable_user_query_log>
 </query_log>
 ```
 
@@ -1516,7 +1538,7 @@ curl 127.0.0.1:9363/metrics
   ## query_thread_log
 </div>
 
-إعداد لتسجيل خيوط الاستعلامات المستلمة باستخدام الإعداد [log&#95;query&#95;threads=1](/ar/reference/settings/session-settings#log_query_threads).
+إعداد لتسجيل خيوط الاستعلامات المستلمة باستخدام الإعداد [log&#95;query&#95;threads=1](/ar/reference/settings/session-settings/log-query#log_query_threads).
 
 تُسجَّل الاستعلامات في جدول [system.query&#95;thread&#95;log](/ar/reference/system-tables/query_thread_log)، وليس في ملف منفصل. يمكنك تغيير اسم الجدول عبر المعلَمة `table` (انظر أدناه).
 
@@ -1543,7 +1565,7 @@ curl 127.0.0.1:9363/metrics
   ## query_views_log
 </div>
 
-إعداد لتسجيل العروض (الحيّة، والمادية، وغيرها) استنادًا إلى الاستعلامات المستلمة مع الإعداد [log&#95;query&#95;views=1](/ar/reference/settings/session-settings#log_query_views).
+إعداد لتسجيل العروض (الحيّة، والمادية، وغيرها) استنادًا إلى الاستعلامات المستلمة مع الإعداد [log&#95;query&#95;views=1](/ar/reference/settings/session-settings/log-query#log_query_views).
 
 تُسجَّل الاستعلامات في الجدول [system.query&#95;views&#95;log](/ar/reference/system-tables/query_views_log)، وليس في ملف منفصل. يمكنك تغيير اسم الجدول في المعلمة `table` (انظر أدناه).
 
@@ -1607,7 +1629,7 @@ curl 127.0.0.1:9363/metrics
 
 <SystemLogParameters />
 
-يحتوي ملف إعدادات الخادم الافتراضي `config.xml` على قسم الإعدادات التالي:
+يحتوي ملف تهيئة الخادم الافتراضي `config.xml` على قسم الإعدادات التالي:
 
 ```xml
 <trace_log>
@@ -1619,7 +1641,7 @@ curl 127.0.0.1:9363/metrics
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
-    <symbolize>false</symbolize>
+    <symbolize>true</symbolize>
 </trace_log>
 ```
 
@@ -1686,6 +1708,36 @@ curl 127.0.0.1:9363/metrics
     <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
 </crash_log>
+```
+
+<div id="create_union_system_log_tables">
+  ## create_union_system_log_tables
+</div>
+
+يطلب إنشاء جداول `all_...` بجانب جداول سجلات النظام (`system.all_query_log` لـ `system.query_log`، و`system.all_text_log` لـ `system.text_log`، وهكذا). ويكون هذا الجدول اتحادًا لجدول السجل المقابل وإصداراته المُدوَّرة (`query_log_0`، و`query_log_1`، ...) و/أو الجداول نفسها عبر جميع النسخ المتماثلة في العنقود، ويتيح الاستعلام عنها جميعًا دفعة واحدة دون الحاجة إلى تذكّر تراكيب مثل `clusterAllReplicas(default, merge(system, '^query_log'))`.
+
+هذا القسم اختياري. وإذا كان موجودًا، فيجب تحديد إعداد واحد على الأقل من الإعدادات التالية:
+
+| الإعداد                | الوصف                                                                                                                                                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `merge_rotated_tables` | إذا كانت قيمته `true`، يستعلم جدول `all_...` من جدول السجل وإصداراته المُدوَّرة باستخدام دالة الجدول `merge`.                                                                                                                        |
+| `cluster`              | إذا تم تحديده، يستعلم جدول `all_...` من جميع النسخ المتماثلة في هذا العنقود باستخدام دالة الجدول `clusterAllReplicas` (مع `SETTINGS skip_unavailable_shards = 1`، بحيث لا تؤدي النسخ المتماثلة غير المتاحة إلى فشل الاستعلامات). |
+
+إذا تم تحديد كلا الإعدادين، يكون الجدول اتحادًا للجداول المُدوَّرة عبر جميع النسخ المتماثلة في العنقود.
+
+ينطبق هذا الخيار على جميع جداول سجلات النظام، ولا يتيح إعدادات مختلفة لسجلات النظام المختلفة. تُنشأ الجداول في قاعدة البيانات نفسها التي تضم جداول سجلات النظام عند أول flush لكل سجل، ويُعاد إنشاؤها تلقائيًا عند تغيّر بنية جدول السجل (عند التدوير). ولا تحتفظ بأي حالة، لذا يمكن حذفها بأمان في أي وقت. لا يُدعم إنشاؤها إلا لمحركات قواعد البيانات `Atomic` و`Replicated` و`Shared`.
+
+<Note>
+  عند استخدام إعداد `cluster`، يشير تعريف الجدول إلى العنقود، ويجب أن يكون العنقود موجودًا حتى يُحمَّل الجدول. إذا أزلت العنقود من configuration، فاحذف أيضًا جداول `all_...` (ستُعاد إنشاؤها وفقًا لـ configuration الجديد عند flush التالي).
+</Note>
+
+**مثال**
+
+```xml
+<create_union_system_log_tables>
+    <merge_rotated_tables>true</merge_rotated_tables>
+    <cluster>default</cluster>
+</create_union_system_log_tables>
 ```
 
 <div id="custom_cached_disks_base_directory">
@@ -1806,7 +1858,7 @@ curl 127.0.0.1:9363/metrics
 
 **راجع أيضًا**
 
-* [skip&#95;unavailable&#95;shards](/ar/reference/settings/session-settings#skip_unavailable_shards)
+* [skip&#95;unavailable&#95;shards](/ar/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
 * [اكتشاف الكتلة](/ar/guides/oss/deployment-and-scaling/cluster-discovery)
 * [محرك قاعدة البيانات Replicated](/ar/reference/engines/database-engines/replicated)
 
@@ -1850,7 +1902,7 @@ curl 127.0.0.1:9363/metrics
 
 **انظر أيضًا**
 
-* [session&#95;timezone](/ar/reference/settings/session-settings#session_timezone)
+* [session&#95;timezone](/ar/reference/settings/session-settings/other#session_timezone)
 
 <div id="tcp_port">
   ## tcp_port
@@ -1870,7 +1922,7 @@ curl 127.0.0.1:9363/metrics
 
 منفذ TCP للاتصال الآمن ببرامج العميل. استخدمه مع إعدادات [OpenSSL](#openSSL).
 
-**القيمة الافتراضية**
+* **القيمة الافتراضية:** `9440`
 
 ```xml
 <tcp_port_secure>9440</tcp_port_secure>
@@ -1973,10 +2025,10 @@ curl 127.0.0.1:9363/metrics
 | `role_cache_expiration_time_seconds`            | يحدد عدد الثواني منذ آخر وصول التي يُخزَّن خلالها الدور في ذاكرة التخزين المؤقت للأدوار.                                                                                                                                                                                                                                                                                                                                                                                                     | `600`     |
 | `select_from_information_schema_requires_grant` | يحدد ما إذا كان `SELECT * FROM information_schema.<table>` يتطلب أي امتيازات، أو ما إذا كان يمكن لأي مستخدم تنفيذه. إذا ضُبط على true، فسيتطلب هذا الاستعلام `GRANT SELECT ON information_schema.<table>`، تمامًا كما هو الحال مع الجداول العادية.                                                                                                                                                                                                                                           | `true`    |
 | `select_from_system_db_requires_grant`          | يحدد ما إذا كان `SELECT * FROM system.<table>` يتطلب أي امتيازات، أو ما إذا كان يمكن لأي مستخدم تنفيذه. إذا ضُبط على true، فسيتطلب هذا الاستعلام `GRANT SELECT ON system.<table>` تمامًا كما هو الحال مع الجداول غير التابعة لـ system. الاستثناءات: يظل عدد قليل من جداول النظام (`tables` و`columns` و`databases` وبعض الجداول الثابتة مثل `one` و`contributors`) متاحًا للجميع؛ وإذا كان امتياز `SHOW` (مثل `SHOW USERS`) ممنوحًا، فسيكون جدول النظام المقابل (أي `system.users`) متاحًا. | `true`    |
-| `settings_constraints_replace_previous`         | يحدد ما إذا كان القيد في ملف تعريف الإعدادات لإعداد معيّن سيُلغي تأثير القيد السابق (المعرّف في ملفات تعريف أخرى) لذلك الإعداد، بما في ذلك الحقول التي لم يضبطها القيد الجديد. كما يفعّل نوع القيد `changeable_in_readonly`.                                                                                                                                                                                                                                                                      | `true`    |
-| `table_engines_require_grant`                   | يحدد ما إذا كان إنشاء جدول باستخدام table engine معيّن يتطلب امتيازًا.                                                                                                                                                                                                                                                                                                                                                                                                                       | `false`   |
-| `throw_on_unmatched_row_policies`               | يحدد ما إذا كانت القراءة من جدول يجب أن تؤدي إلى طرح استثناء إذا كانت للجدول سياسات الصفوف، لكن لا تنطبق أيٌّ منها على المستخدم الحالي                                                                                                                                                                                                                                                                                                                                                        | `false`   |
-| `users_without_row_policies_can_read_rows`      | يحدد ما إذا كان المستخدمون الذين ليست لديهم سياسات صفوف سماحية لا يزال بإمكانهم قراءة الصفوف باستخدام استعلام `SELECT`. على سبيل المثال، إذا كان هناك مستخدمان A وB وكانت سياسة صفوف معرّفة فقط للمستخدم A، فعندئذٍ إذا كان هذا الإعداد true فسيرى المستخدم B جميع الصفوف. وإذا كان هذا الإعداد false فلن يرى المستخدم B أي صفوف.                                                                                                                                                           | `true`    |
+| `settings_constraints_replace_previous`         | يحدد ما إذا كان القيد في ملف تعريف الإعدادات لإعداد معيّن سيُلغي تأثير القيد السابق (المعرّف في ملفات تعريف أخرى) لذلك الإعداد، بما في ذلك الحقول التي لم يضبطها القيد الجديد. كما يفعّل نوع القيد `changeable_in_readonly`.                                                                                                                                                                                                                                                                 | `true`    |
+| `table_engines_require_grant`                   | يحدد ما إذا كان إنشاء جدول باستخدام table engine معيّن يتطلب امتيازًا. غير مدعوم في ClickHouse Cloud.                                                                                                                                                                                                                                                                                                                                                                                        | `false`   |
+| `throw_on_unmatched_row_policies`               | يحدد ما إذا كانت القراءة من جدول يجب أن تؤدي إلى طرح استثناء إذا كانت للجدول سياسات الصفوف، لكن لا تنطبق أيٌّ منها على المستخدم الحالي                                                                                                                                                                                                                                                                                                                                                       | `false`   |
+| `users_without_row_policies_can_read_rows`      | يحدد ما إذا كان المستخدمون الذين ليست لديهم سياسات صفوف سماحية لا يزال بإمكانهم قراءة الصفوف باستخدام استعلام `SELECT`. على سبيل المثال، إذا كان هناك مستخدمان A وB وكانت سياسة صفوف معرّفة فقط للمستخدم A، فعندئذٍ إذا كان هذا الإعداد true فسيرى المستخدم B جميع الصفوف. وإذا كان هذا الإعداد false فلن يرى المستخدم B أي صفوف.                                                                                                                                                            | `true`    |
 
 مثال:
 
@@ -2128,7 +2180,7 @@ curl 127.0.0.1:9363/metrics
 </div>
 
 إدارة تنفيذ [استعلامات DDL الموزعة](/ar/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`) على مستوى العنقود.
-يعمل فقط إذا كان [ZooKeeper](/ar/reference/settings/server-settings/settings#zookeeper) مفعّلًا.
+يعمل فقط إذا كان [ZooKeeper](/ar/reference/settings/server-settings/settings/zookeeper#zookeeper) مفعّلًا.
 
 تتضمن الإعدادات القابلة للتهيئة ضمن `<distributed_ddl>` ما يلي:
 
@@ -2185,6 +2237,8 @@ curl 127.0.0.1:9363/metrics
 
 يحدّد ما إذا كان يُسمح بأنواع كلمات المرور ذات النص الواضح (غير الآمنة) أم لا.
 
+* **القيمة الافتراضية:** `true`
+
 ```xml
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
@@ -2194,6 +2248,8 @@ curl 127.0.0.1:9363/metrics
 </div>
 
 يحدِّد ما إذا كان يُسمح بنوع كلمة المرور غير الآمن `no_password` أم لا.
+
+* **القيمة الافتراضية:** `true`
 
 ```xml
 <allow_no_password>1</allow_no_password>
@@ -2205,6 +2261,8 @@ curl 127.0.0.1:9363/metrics
 
 يمنع إنشاء مستخدم من دون كلمة مرور ما لم يُحدَّد &#39;IDENTIFIED WITH no&#95;password&#39; صراحةً.
 
+* **القيمة الافتراضية:** `true`
+
 ```xml
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
@@ -2214,6 +2272,8 @@ curl 127.0.0.1:9363/metrics
 </div>
 
 المهلة الافتراضية لانتهاء الجلسة، بالثواني.
+
+* **الافتراضي:** `60`
 
 ```xml
 <default_session_timeout>60</default_session_timeout>
@@ -2228,9 +2288,14 @@ curl 127.0.0.1:9363/metrics
 القيم المقبولة هي:
 
 * `plaintext_password`
+
 * `sha256_password`
+
 * `double_sha1_password`
+
 * `bcrypt_password`
+
+* **الافتراضي:** `sha256_password`
 
 ```xml
 <default_password_type>sha256_password</default_password_type>
@@ -2246,7 +2311,7 @@ curl 127.0.0.1:9363/metrics
 * مسار المجلد الذي تُخزَّن فيه حسابات المستخدمين التي أُنشِئت بأوامر SQL.
 * مسار عقدة ZooKeeper التي تُخزَّن فيها حسابات المستخدمين التي أُنشِئت بأوامر SQL ويجري نسخها متماثلًا.
 
-إذا جرى تحديد هذا القسم، فلن يُستخدَم المسار من [users&#95;config](/ar/reference/settings/server-settings/settings#users_config) و[access&#95;control&#95;path](/ar/reference/settings/server-settings/settings#access_control_path).
+إذا جرى تحديد هذا القسم، فلن يُستخدَم المسار من [users&#95;config](/ar/reference/settings/server-settings/settings/users#users_config) و[access&#95;control&#95;path](/ar/reference/settings/server-settings/settings/access-control#access_control_path).
 
 يمكن أن يحتوي قسم `user_directories` على أي عدد من العناصر، ويعكس ترتيب العناصر أسبقيتها (كلما ارتفع العنصر، ارتفعت أسبقيته).
 
@@ -2460,6 +2525,8 @@ curl 127.0.0.1:9363/metrics
 
 افتراضيًا، يُستخدَم النفق (أي `HTTP CONNECT`) لإرسال طلبات `HTTPS` عبر وكيل `HTTP`. يمكن استخدام هذا الإعداد لتعطيل ذلك.
 
+* **الافتراضي:** `false`
+
 **no&#95;proxy**
 
 افتراضيًا، تمرّ جميع الطلبات عبر الوكيل. ولتعطيل ذلك لمضيفين محددين، يجب ضبط المتغير `no_proxy`.
@@ -2489,6 +2556,8 @@ curl 127.0.0.1:9363/metrics
 </div>
 
 الدليل المُستخدَم لتخزين جميع استعلامات `CREATE WORKLOAD` و`CREATE RESOURCE`. يُستخدَم افتراضيًا المجلد `/workload/` ضمن دليل عمل الخادم.
+
+* **الافتراضي:** `<path>/workload/`
 
 **مثال**
 

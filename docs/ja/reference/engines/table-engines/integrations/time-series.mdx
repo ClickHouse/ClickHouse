@@ -24,7 +24,7 @@ metric_name2[...] = ...
 
 <Info>
   これは実験的な機能であり、今後のリリースで後方互換性のない変更が行われる可能性があります。
-  [allow&#95;experimental&#95;time&#95;series&#95;table](/ja/reference/settings/session-settings#allow_experimental_time_series_table) 設定で
+  [allow&#95;experimental&#95;time&#95;series&#95;table](/ja/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) 設定で
   TimeSeries テーブルエンジン の使用を有効にします。
   `set allow_experimental_time_series_table = 1` コマンドを実行します。
 </Info>
@@ -114,7 +114,7 @@ CREATE TABLE my_table (time_series Array(Tuple(UInt32, Float32))) ENGINE=TimeSer
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32, value Float32)
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
 ```
 
 両方の形式を同じ `CREATE TABLE` ステートメント内で使用する場合、宣言する型は一致していなければなりません。
@@ -143,11 +143,16 @@ materialized view ではターゲットテーブルは 1 つであるのに対�
 
 *samples* テーブルには、次のカラムが必要です。
 
-| Name        | Mandatory? | Default type    | Possible types         | Description           |
-| ----------- | ---------- | --------------- | ---------------------- | --------------------- |
-| `id`        | [x]        | `UUID`          | any                    | メトリクス名とタグの組み合わせを識別します |
-| `timestamp` | [x]        | `DateTime64(3)` | `DateTime64(X)`        | 時点                    |
-| `value`     | [x]        | `Float64`       | `Float32` or `Float64` | `timestamp` に対応する値    |
+| Name        | Mandatory? | Default type          | Possible types         | Description           |
+| ----------- | ---------- | --------------------- | ---------------------- | --------------------- |
+| `id`        | [x]        | `Tuple(UInt64, UUID)` | any                    | メトリクス名とタグの組み合わせを識別します |
+| `timestamp` | [x]        | `DateTime64(3)`       | `DateTime64(X)`        | 時点                    |
+| `value`     | [x]        | `Float64`             | `Float32` or `Float64` | `timestamp` に対応する値    |
+
+エンジンが自動作成するカラムには、時系列圧縮コーデックが設定されます。
+`timestamp CODEC(DoubleDelta, ZSTD(1))` および `value CODEC(Gorilla, ZSTD(1))`。ほぼ単調なタイムスタンプは汎用コーデックではほとんど
+圧縮されず、samples テーブルのディスク上のサイズの大部分を占める可能性があります。
+[カラムの型の調整](#adjusting-column-types)も参照してください。
 
 <div id="tags-table">
   ### Tags テーブル
@@ -159,7 +164,7 @@ materialized view ではターゲットテーブルは 1 つであるのに対�
 
 | 名前                   | 必須? | デフォルト型                                | 使用可能な型                                                                                                                    | 説明                                                                                                               |
 | -------------------- | --- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `id`                 | [x] | `UUID`                                | 任意 ([samples](#samples-table) テーブルの `id` の型と一致している必要があります)                                                                | `id` は、メトリクス名とタグの組み合わせを識別します。DEFAULT 式は、この識別子の計算方法を指定します                                                         |
+| `id`                 | [x] | `Tuple(UInt64, UUID)`                 | 任意 ([samples](#samples-table) テーブルの `id` の型と一致している必要があります)                                                                | `id` は、メトリクス名とタグの組み合わせを識別します。DEFAULT 式は、この識別子の計算方法を指定します                                                         |
 | `metric_name`        | [x] | `LowCardinality(String)`              | `String` または `LowCardinality(String)`                                                                                     | メトリクス名                                                                                                           |
 | `<tag_value_column>` | [ ] | `String`                              | `String` または `LowCardinality(String)` または `LowCardinality(Nullable(String))`                                              | 特定のタグの値。タグ名と対応するカラム名は、[tags&#95;to&#95;columns](#settings) 設定で指定します                                              |
 | `tags`               | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` または `Map(LowCardinality(String), String)` または `Map(LowCardinality(String), LowCardinality(String))` | メトリクス名を含むタグ `__name__` と、[tags&#95;to&#95;columns](#settings) 設定で列挙された名前のタグを除外したタグのマップ                           |
@@ -209,21 +214,21 @@ CREATE TABLE my_table
 ENGINE = TimeSeries
 SAMPLES INNER COLUMNS
 (
-    `id` UUID,
-    `timestamp` DateTime64(3),
-    `value` Float64
+    `id` Tuple(UInt64, UUID),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(Gorilla, ZSTD(1))
 )
-SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp)
+SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 TAGS INNER COLUMNS
 (
-    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `all_tags` Map(String, String) EPHEMERAL,
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
-TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1
+TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 METRICS INNER COLUMNS
 (
     `metric_family_name` String,
@@ -244,18 +249,19 @@ METRICS INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` UUID,
-    `timestamp` DateTime64(3),
-    `value` Float64
+    `id` Tuple(UInt64, UUID),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(Gorilla(8), ZSTD(1))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
+SETTINGS index_granularity = 32768
 ```
 
 ```sql
 CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `all_tags` Map(String, String) EPHEMERAL,
@@ -265,7 +271,7 @@ CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 ENGINE = AggregatingMergeTree
 PRIMARY KEY metric_name
 ORDER BY (metric_name, id)
-SETTINGS allow_dimensions_outside_sorting_key = 1
+SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 ```
 
 ```sql
@@ -278,6 +284,7 @@ CREATE TABLE default.`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 )
 ENGINE = ReplacingMergeTree
 ORDER BY metric_family_name
+SETTINGS index_granularity = 8192
 ```
 
 <div id="create-as">
@@ -301,14 +308,14 @@ ORDER BY metric_family_name
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
 ```
 
-同じ句を使って、コーデックやその他のカラム属性を指定できます。
+内部カラムをコーデックなしで指定すると、デフォルトのコーデックが使用されます。
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(3) CODEC(DoubleDelta))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
 ```
 
 <div id="id-column">
@@ -323,7 +330,9 @@ CREATE TABLE my_table ENGINE=TimeSeries
 TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(metric_name, all_tags))
 ```
 
-`id` カラムの型は、`UUID`、`UInt64`、`UInt128`、または `FixedString(16)` のいずれかである必要があります。`DEFAULT` 式が指定されていない場合、ClickHouse は `id` の型に基づいて自動的に選択します。`samples` および `tags` の内部テーブルで宣言される `id` の型は一致している必要があります。
+`id` カラムには任意の比較可能な非 Nullable 型を使用できます。`samples` および `tags` の内部テーブルで宣言される `id` の型は一致している必要があります。
+
+`id` カラムに `DEFAULT` 式が指定されておらず、かつ `id_generator` 設定がされていない場合、`id` の型が `UUID`、`UInt64`、`UInt128`、`FixedString(16)`、またはこれらの型のうち2つからなるタプルである場合に限り、ClickHouse は `id` の型に基づいて `DEFAULT` 式を自動的に選択します。このようなタプルでは、自動的に選択される式により、最初の部分でメトリクス名のハッシュが、2番目の部分ですべてのタグのハッシュが計算されます。
 
 `id_generator` 設定では、`INNER COLUMNS` 句を使用せずに同じカスタマイズを行えます。
 
@@ -438,6 +447,8 @@ ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
 | `store_min_time_and_max_time`        | Bool       | true      | true に設定すると、テーブルは各時系列の `min_time` と `max_time` を保存します                                                                                                                              |
 | `aggregate_min_time_and_max_time`    | Bool       | true      | 内部ターゲット `tags` テーブルの作成時に、このフラグを有効にすると、`min_time` カラムの型として単なる `Nullable(DateTime64(3))` ではなく `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` を使用し、`max_time` カラムにも同様に適用されます |
 | `filter_by_min_time_and_max_time`    | Bool       | true      | true に設定すると、テーブルは時系列のフィルタリングに `min_time` カラムと `max_time` カラムを使用します                                                                                                                 |
+| `samples_index_granularity`          | UInt64     | 32768     | 内部 [samples](#samples-table) テーブルの `index_granularity` を設定します。明示的に設定した場合、エンジン宣言の `index_granularity` をオーバーライドします。外部 samples テーブルおよび MergeTree 以外のエンジンでは無視されます                      |
+| `tags_index_granularity`             | UInt64     | 8192      | 内部 [tags](#tags-table) テーブルの `index_granularity` を設定します。明示的に設定した場合、エンジン宣言の `index_granularity` をオーバーライドします。外部 tags テーブルおよび MergeTree 以外のエンジンでは無視されます                               |
 
 <div id="functions">
   # 関数

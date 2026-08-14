@@ -10,9 +10,26 @@ doc_type: 'referencia'
 
 import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
-import VersionHistory from "/snippets/es/components/VersionHistory/VersionHistory.jsx";
+import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHistory.jsx";
 
 Estos ajustes están disponibles en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se han generado automáticamente a partir del código fuente de ClickHouse.
+
+<div id="allow_experimental_adaptive_codec_selection">
+  ## allow_experimental_adaptive_codec_selection
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración."}]}]} />
+
+Cuando está habilitada, las operaciones de fusión y mutación eligen un códec por bloque para las columnas que utilizan el códec predeterminado (sin cláusula `CODEC` o con `CODEC(Default)`).
+Los candidatos son el códec predeterminado de la tabla (consulte la configuración `default_compression_codec`), `NONE` y códecs especializados adecuados para el tipo de columna.
+Actualmente, solo los tipos similares a los enteros son adaptativos.
+Se elige la salida más pequeña. Por tanto, la compresión nunca es peor que la predeterminada y los bloques incomprimibles se almacenan sin procesar.
+Una columna cuyo códec predeterminado incluye cifrado (por ejemplo, `AES_128_GCM_SIV`) nunca se selecciona de forma adaptativa, por lo que el cifrado siempre se aplica.
+Los códecs por bloque se muestran mediante la función de tabla [`mergeTreeCodecBlockCounts`](/es/reference/functions/table-functions/mergeTreeCodecBlockCounts).
 
 <div id="allow_experimental_replacing_merge_with_cleanup">
   ## allow_experimental_replacing_merge_with_cleanup

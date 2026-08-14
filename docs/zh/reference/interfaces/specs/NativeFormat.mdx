@@ -1148,16 +1148,16 @@ Field 'b' stream (3 strings, 6 bytes):
 
 地理类型实际上是对嵌套数组和 Tuple 的别名：
 
-| 类型字符串                        | 底层传输类型                    |
-| ---------------------------- | ------------------------- |
-| `Point`                      | `Tuple(Float64, Float64)` |
-| `Ring`, `LineString`         | `Array(Point)`            |
-| `Polygon`, `MultiLineString` | `Array(Ring)`             |
-| `MultiPolygon`               | `Array(Polygon)`          |
+| 类型字符串                              | 底层 wire 类型                    |
+| ---------------------------------- | ------------------------- |
+| `Point`                            | `Tuple(Float64, Float64)` |
+| `Ring`, `LineString`, `MultiPoint` | `Array(Point)`            |
+| `Polygon`, `MultiLineString`       | `Array(Ring)`             |
+| `MultiPolygon`                     | `Array(Polygon)`          |
 
 因此，`Point` 列的解码方式与 `Tuple(Float64, Float64)` 完全相同 (显示为 `(1,2)`) ，`Ring` 则与 `Array(Tuple(Float64, Float64))` 完全相同 (`[(0,0),(1,1)]`) ，更高层级的类型也以此类推。
 
-`Geometry` 也是别名，但它别名到的不是嵌套数组，而是 [`Variant`](#variant)：它的载荷是上述六种地理类型组成的 Variant。列头只携带类型字符串 `Geometry`——**不会**显式展开为该 Variant——因此解码器必须自行展开。与任何 `Variant` 一样，判别值遵循这些地理别名按规范名称排序后的顺序：`0` = `LineString`，`1` = `MultiLineString`，`2` = `MultiPolygon`，`3` = `Point`，`4` = `Polygon`，`5` = `Ring`。随后，每个选中的值都会按其对应的地理别名进行解码 (`NULL` 使用 `Variant` 的 `NULL` 判别值 `255`) 。
+`Geometry` 也是别名，但它别名到的不是嵌套数组，而是 [`Variant`](#variant)：它的载荷是上述七种地理类型组成的 Variant。列头只携带类型字符串 `Geometry`——**不会**显式展开为该 Variant——因此解码器必须自行展开。与用户显式写出的 `Variant` 不同，`Geometry` 的判别值**不**遵循按名称排序的顺序：为了兼容性，它们是固定的，新的地理类型只会追加到末尾。映射关系为：`0` = `LineString`，`1` = `MultiLineString`，`2` = `MultiPolygon`，`3` = `Point`，`4` = `Polygon`，`5` = `Ring`，`6` = `MultiPoint` (在 26.7 中添加——来自旧版服务器的 stream 不会包含判别值 `6`) 。随后，每个选中的值都会按其对应的地理别名进行解码 (`NULL` 使用 `Variant` 的 `NULL` 判别值 `255`) 。
 
 `SimpleAggregateFunction(func, T)` 是其值类型 `T` 的别名。它存储的是已完成最终计算的聚合值，因此其传输形式和显示结果与 `T` 完全一致 (`SimpleAggregateFunction(sum, UInt64)` 会按 `UInt64` 解码) 。只有这种单值类型形式才是以这种方式实现的别名；其底层类型本身也可以是复合类型。
 
@@ -1573,29 +1573,29 @@ flowchart LR
 
 | 字节     | 方法   | 主体编码                                                     |
 | ------ | ---- | -------------------------------------------------------- |
-| `0x02` | NONE | 主体为原始字节 (无压缩) 。帧仍会被发送；接收端会校验 checksum。                   |
+| `0x02` | NONE | 主体为原始字节 (无压缩) 。帧仍会被发送；接收方会校验校验和。                   |
 | `0x82` | LZ4  | 主体采用 **LZ4 块格式**——*不是* LZ4 frame format。没有 magic number。 |
 | `0x90` | ZSTD | 主体是原始的 zstd 单帧 stream (标准 zstd magic number 是主体的一部分) 。   |
 
-方法字节还会编码 [column-level codecs](/zh/reference/statements/create/table#column_compression_codec)。这些编解码器是按列应用在 MergeTree 的 磁盘 path 上，而不是用于整个流的分帧；但 `decompress=1` 的 HTTP 输入路径会从每个帧的方法字节中读取 codec，因此这些字节都可能合法地出现在输入中。因此，符合规范的 decoder 必须识别整个已分配的取值空间，并在遇到尚未实现的字节时拒绝处理，而不是误读主体。它们的主体内容取决于具体编解码器，不属于这个通用帧约定的范围：
+方法字节还会编码 [column-level codecs](/zh/reference/statements/create/table/codec)。这些编解码器是按列应用在 MergeTree 的 磁盘路径上，而不是用于整个流的分帧；但 `decompress=1` 的 HTTP 输入路径会从每个帧的方法字节中读取编解码器，因此这些字节都可能合法地出现在输入中。因此，符合规范的 解码器 必须识别整个已分配的取值空间，并在遇到尚未实现的字节时拒绝处理，而不是误读主体。它们的主体内容取决于具体编解码器，不属于这个通用帧约定的范围：
 
-| 字节     | 方法                               |
-| ------ | -------------------------------- |
-| `0x91` | `Multiple` (包装一系列嵌套编解码器的复合编解码器)  |
-| `0x92` | `Delta`                          |
-| `0x93` | `T64`                            |
-| `0x94` | `DoubleDelta`                    |
-| `0x95` | `Gorilla`                        |
-| `0x96` | `AES_128_GCM_SIV` (加密)           |
-| `0x97` | `AES_256_GCM_SIV` (加密)           |
-| `0x98` | `FPC`                            |
-| `0x9a` | `GCD`                            |
-| `0x9c` | `ALP`                            |
-| `0x9d` | `SZ3`                            |
-| `0x9e` | `Quantized`                      |
-| `0x9f` | `ZXC`                            |
+| 字节     | 方法                              |
+| ------ | ------------------------------- |
+| `0x91` | `Multiple` (包装一系列嵌套编解码器的复合编解码器) |
+| `0x92` | `Delta`                         |
+| `0x93` | `T64`                           |
+| `0x94` | `DoubleDelta`                   |
+| `0x95` | `Gorilla`                       |
+| `0x96` | `AES_128_GCM_SIV` (加密)          |
+| `0x97` | `AES_256_GCM_SIV` (加密)          |
+| `0x98` | `FPC`                           |
+| `0x9a` | `GCD`                           |
+| `0x9c` | `ALP`                           |
+| `0x9d` | `SZ3`                           |
+| `0x9e` | `Quantized`                     |
+| `0x9f` | `ZXC`                           |
 
-`0x9d` (`SZ3`) 是一种 **Experimental** 的、有误差边界的*有损*编解码器，用于 `Float32`、`Float64` 以及这些类型的 `Array`。只有在设置了 `allow_experimental_codecs` 时，才能使用 `CODEC(SZ3)` 创建表；但在解压时始终接受该方法字节，以确保之前写入的数据仍然可读。`0x9f` (`ZXC`) 是一种非对称 LZ 编解码器：压缩较慢，但解压非常快，压缩比介于 `LZ4` 和 `ZSTD` 之间。字节 `0x99` (`DeflateQpl`) 和 `0x9b` (`ZSTD_QPL`) 曾分配给现已移除的编解码器；它们现已保留，不会复用。
+`0x9d` (`SZ3`) 是一种 **Experimental** 的、有误差边界的*有损*编解码器，用于 `Float32`、`Float64` 以及这些类型的 `Array`。只有在设置了 `allow_experimental_codecs` 时，才能使用 `CODEC(SZ3)` 创建表；但在解压时始终接受该方法字节，以确保之前写入的数据仍然可读。`0x9f` (`ZXC`) 是一种 **Experimental** 的非对称 LZ 编解码器：压缩较慢，但解压非常快，压缩比介于 `LZ4` 和 `ZSTD` 之间。只有在设置了 `allow_experimental_codecs` 时，才能使用 `CODEC(ZXC)` 创建表；但在解压时始终接受该方法字节，以确保之前写入的数据仍然可读。字节 `0x99` (`DeflateQpl`) 和 `0x9b` (`ZSTD_QPL`) 曾分配给现已移除的编解码器；它们现已保留，不会复用。
 
 `0x9e` (`Quantized`) 是一种用于稠密向量列 (`Array(Float32)` 及类似类型) 的 **Experimental** 列编解码器。和 `NONE` 一样，它是直通的——全精度主体会原样存储——但它的存在会附加一种 serialization，用于写入一个紧凑的量化伴随 stream，以加速向量搜索。只有在设置了 `allow_experimental_codecs` 时，才能使用 `CODEC(Quantized(...))` 创建表，并且在解压时始终接受该方法字节。
 

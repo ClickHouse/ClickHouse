@@ -585,7 +585,8 @@ SELECT
 
 Introducido en: v1.1.0
 
-Elimina el parámetro `name` de una URL, si está presente.
+Elimina la primera aparición de `name=value` de cada parámetro solicitado de una URL.
+Solo se buscan parámetros escritos como `name=`, por lo que un parámetro de indicador sin valor se deja intacto; por ejemplo, `cutURLParameter('http://bigmir.net/?a&c=d', 'a')` devuelve la URL sin cambios.
 Esta función no codifica ni descodifica los caracteres de los nombres de los parámetros; por ejemplo, `Client ID` y `Client%20ID` se tratan como nombres de parámetro distintos.
 
 **Sintaxis**
@@ -601,7 +602,7 @@ cutURLParameter(url, name)
 
 **Valor devuelto**
 
-URL con el parámetro `name` eliminado. [`String`](/es/reference/data-types/string)
+URL con la primera aparición de `name=value` de cada parámetro solicitado eliminada. [`String`](/es/reference/data-types/string)
 
 **Ejemplos**
 

@@ -57,7 +57,7 @@ VALUES
 上記の`CREATE TABLE` DDLステートメントでは、`Goals`というネストされたデータ構造を宣言しており、コンバージョン、つまり達成された目標に関するデータが含まれています。
 `visits`テーブルの各行は、0 件以上のコンバージョンに対応します。
 
-[`flatten_nested`](/ja/reference/settings/session-settings#flatten_nested)設定を`0`にすると (デフォルトは`flatten_nested=1`) 、任意のレベルのネストをサポートできます。
+[`flatten_nested`](/ja/reference/settings/session-settings/other#flatten_nested)設定を`0`にすると (デフォルトは`flatten_nested=1`) 、任意のレベルのネストをサポートできます。
 
 通常、ネストされたデータ構造を扱う場合、そのカラムはドット区切りのカラム名で指定します。
 これらのカラムは、対応する型の配列を構成します。

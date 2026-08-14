@@ -26,7 +26,7 @@ metric_name2[...] = ...
 <Info>
   Este é um recurso experimental que pode mudar de formas incompatíveis com versões anteriores em lançamentos futuros.
   Habilite o uso do motor de tabela TimeSeries
-  com a configuração [allow&#95;experimental&#95;time&#95;series&#95;table](/pt-BR/reference/settings/session-settings#allow_experimental_time_series_table).
+  com a configuração [allow&#95;experimental&#95;time&#95;series&#95;table](/pt-BR/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table).
   Execute o comando `set allow_experimental_time_series_table = 1`.
 </Info>
 
@@ -105,7 +105,7 @@ INSERT INTO my_table (metric_name, tags, time_series, metric_family, type, unit,
   ### Especificando colunas externas
 </div>
 
-A coluna externa `time_series` pode ser listada explicitamente em uma instrução `CREATE TABLE` para substituir seu tipo padrão `Array(Tuple(DateTime64(3), Float64))`. O ClickHouse extrai, da tupla, os tipos de `timestamp` e do valor escalar e os propaga para a tabela interna de amostras:
+A coluna externa `time_series` pode ser listada explicitamente em uma instrução `CREATE TABLE` para substituir seu tipo padrão `Array(Tuple(DateTime64(3), Float64))`. O ClickHouse extrai, da tupla, os tipos de `timestamp` e do valor escalar e os propaga para a tabela samples:
 
 ```sql
 CREATE TABLE my_table (time_series Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
@@ -115,7 +115,7 @@ Isso equivale a declarar diretamente, na cláusula `INNER COLUMNS` de samples, o
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32, value Float32)
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
 ```
 
 Se ambas as formas forem usadas na mesma instrução `CREATE TABLE`, os tipos declarados deverão coincidir.
@@ -144,11 +144,16 @@ A tabela *samples* contém séries temporais associadas a um identificador.
 
 A tabela *samples* deve ter as seguintes colunas:
 
-| Nome        | Obrigatória? | Tipo padrão     | Tipos possíveis        | Descrição                                             |
-| ----------- | ------------ | --------------- | ---------------------- | ----------------------------------------------------- |
-| `id`        | [x]          | `UUID`          | qualquer               | Identifica uma combinação de nomes de métricas e tags |
-| `timestamp` | [x]          | `DateTime64(3)` | `DateTime64(X)`        | Um ponto no tempo                                     |
-| `value`     | [x]          | `Float64`       | `Float32` ou `Float64` | Um valor associado ao `timestamp`                     |
+| Nome        | Obrigatória? | Tipo padrão           | Tipos possíveis        | Descrição                                             |
+| ----------- | ------------ | --------------------- | ---------------------- | ----------------------------------------------------- |
+| `id`        | [x]          | `Tuple(UInt64, UUID)` | qualquer               | Identifica uma combinação de nomes de métricas e tags |
+| `timestamp` | [x]          | `DateTime64(3)`       | `DateTime64(X)`        | Um ponto no tempo                                     |
+| `value`     | [x]          | `Float64`             | `Float32` ou `Float64` | Um valor associado ao `timestamp`                     |
+
+As colunas que o motor cria por conta própria recebem codecs de compressão de séries temporais:
+`timestamp CODEC(DoubleDelta, ZSTD(1))` e `value CODEC(Gorilla, ZSTD(1))`. Timestamps quase monotônicos mal
+são comprimidos por codecs genéricos e podem, caso contrário, dominar o tamanho em disco da tabela samples.
+Consulte também [Ajustando os tipos das colunas](#adjusting-column-types).
 
 <div id="tags-table">
   ### Tabela de tags
@@ -160,7 +165,7 @@ A tabela *tags* deve ter as colunas:
 
 | Nome                 | Obrigatório? | Tipo padrão                           | Tipos possíveis                                                                                                         | Descrição                                                                                                                                                                                |
 | -------------------- | ------------ | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                 | [x]          | `UUID`                                | qualquer tipo (deve corresponder ao tipo de `id` na tabela [samples](#samples-table))                                   | Um `id` identifica uma combinação de nome de métrica e tags. A expressão DEFAULT especifica como calcular esse identificador                                                             |
+| `id`                 | [x]          | `Tuple(UInt64, UUID)`                 | qualquer tipo (deve corresponder ao tipo de `id` na tabela [samples](#samples-table))                                   | Um `id` identifica uma combinação de nome de métrica e tags. A expressão DEFAULT especifica como calcular esse identificador                                                             |
 | `metric_name`        | [x]          | `LowCardinality(String)`              | `String` ou `LowCardinality(String)`                                                                                    | O nome de uma métrica                                                                                                                                                                    |
 | `<tag_value_column>` | [ ]          | `String`                              | `String` ou `LowCardinality(String)` ou `LowCardinality(Nullable(String))`                                              | O valor de uma tag específica; o nome da tag e o nome da coluna correspondente são especificados na configuração [tags&#95;to&#95;columns](#settings)                                    |
 | `tags`               | [x]          | `Map(LowCardinality(String), String)` | `Map(String, String)` ou `Map(LowCardinality(String), String)` ou `Map(LowCardinality(String), LowCardinality(String))` | map de tags, excluindo a tag `__name__`, que contém o nome de uma métrica, e excluindo as tags com nomes listados na configuração [tags&#95;to&#95;columns](#settings)                   |
@@ -210,21 +215,21 @@ CREATE TABLE my_table
 ENGINE = TimeSeries
 SAMPLES INNER COLUMNS
 (
-    `id` UUID,
-    `timestamp` DateTime64(3),
-    `value` Float64
+    `id` Tuple(UInt64, UUID),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(Gorilla, ZSTD(1))
 )
-SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp)
+SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 TAGS INNER COLUMNS
 (
-    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `all_tags` Map(String, String) EPHEMERAL,
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
-TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1
+TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 METRICS INNER COLUMNS
 (
     `metric_family_name` String,
@@ -245,18 +250,19 @@ e cada tabela de destino tem seu próprio conjunto de colunas:
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` UUID,
-    `timestamp` DateTime64(3),
-    `value` Float64
+    `id` Tuple(UInt64, UUID),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(Gorilla(8), ZSTD(1))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
+SETTINGS index_granularity = 32768
 ```
 
 ```sql
 CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `all_tags` Map(String, String) EPHEMERAL,
@@ -266,7 +272,7 @@ CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 ENGINE = AggregatingMergeTree
 PRIMARY KEY metric_name
 ORDER BY (metric_name, id)
-SETTINGS allow_dimensions_outside_sorting_key = 1
+SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 ```
 
 ```sql
@@ -279,6 +285,7 @@ CREATE TABLE default.`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 )
 ENGINE = ReplacingMergeTree
 ORDER BY metric_family_name
+SETTINGS index_granularity = 8192
 ```
 
 <div id="create-as">
@@ -298,18 +305,18 @@ A lista externa de colunas é regenerada, e não copiada.
   ## Ajustando os tipos das colunas
 </div>
 
-Você pode ajustar os tipos das colunas nas tabelas de destino internas usando a cláusula `INNER COLUMNS`. Por exemplo, para armazenar timestamps em microssegundos e valores como `Float32`:
+Você pode ajustar os tipos das colunas nas tabelas de destino internas usando a cláusula `INNER COLUMNS`. Por exemplo, para armazenar timestamps em microssegundos e valores como `Float32`, use:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+```
+
+Especificar colunas internas sem codecs significa usar o codec padrão para elas:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
-```
-
-A mesma cláusula pode ser usada para especificar codecs e outros atributos da coluna:
-
-```sql
-CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(3) CODEC(DoubleDelta))
 ```
 
 <div id="id-column">
@@ -324,7 +331,9 @@ CREATE TABLE my_table ENGINE=TimeSeries
 TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(metric_name, all_tags))
 ```
 
-O tipo da coluna `id` deve ser um dos seguintes: `UUID`, `UInt64`, `UInt128` ou `FixedString(16)`. Se nenhuma expressão `DEFAULT` for fornecida, ClickHouse a escolherá automaticamente com base no tipo de `id`. Os tipos de `id` declarados nas tabelas internas `samples` e `tags` devem corresponder.
+A coluna `id` pode ser de qualquer tipo comparável que não seja Nullable. Os tipos de `id` declarados nas tabelas internas `samples` e `tags` devem corresponder.
+
+Se nenhuma expressão `DEFAULT` for fornecida para a coluna `id` e a configuração `id_generator` não estiver definida, ClickHouse escolherá a expressão `DEFAULT` automaticamente com base no tipo de `id`, mas apenas se o tipo de `id` for um dos seguintes: `UUID`, `UInt64`, `UInt128`, `FixedString(16)` ou uma tupla de dois desses tipos. Para essa tupla, a expressão escolhida automaticamente calcula um hash do nome de métrica no primeiro componente e um hash de todas as tags no segundo componente.
 
 A configuração `id_generator` oferece a mesma personalização sem usar a cláusula `INNER COLUMNS`:
 
@@ -441,6 +450,8 @@ Aqui está uma lista de configurações que podem ser especificadas ao definir u
 | `store_min_time_and_max_time`        | Bool       | true                    | Se definido como true, a tabela armazenará `min_time` e `max_time` para cada série temporal                                                                                                                                                                                      |
 | `aggregate_min_time_and_max_time`    | Bool       | true                    | Ao criar uma tabela `tags` interna de destino, esta opção permite usar `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` em vez de apenas `Nullable(DateTime64(3))` como tipo da coluna `min_time`, e o mesmo para a coluna `max_time`                                     |
 | `filter_by_min_time_and_max_time`    | Bool       | true                    | Se definido como true, a tabela usará as colunas `min_time` e `max_time` para filtrar séries temporais                                                                                                                                                                           |
+| `samples_index_granularity`          | UInt64     | 32768                   | Define `index_granularity` da tabela [samples](#samples-table) interna. Quando definido explicitamente, substitui `index_granularity` da declaração do motor. Ignorado para uma tabela samples externa e um motor que não seja MergeTree                                         |
+| `tags_index_granularity`             | UInt64     | 8192                    | Define `index_granularity` da tabela [tags](#tags-table) interna. Quando definido explicitamente, substitui `index_granularity` da declaração do motor. Ignorado para uma tabela tags externa e um motor que não seja MergeTree                                                  |
 
 <div id="functions">
   # Funções

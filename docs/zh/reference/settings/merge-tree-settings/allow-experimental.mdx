@@ -10,9 +10,26 @@ doc_type: 'reference'
 
 import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
-import VersionHistory from "/snippets/zh/components/VersionHistory/VersionHistory.jsx";
+import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHistory.jsx";
 
 这些设置可在 [system.merge&#95;tree&#95;settings](/zh/reference/system-tables/merge_tree_settings) 中查看，并由 ClickHouse 源代码自动生成。
+
+<div id="allow_experimental_adaptive_codec_selection">
+  ## allow_experimental_adaptive_codec_selection
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting."}]}]} />
+
+启用后，合并和变更会为使用默认编解码器 (未指定 `CODEC` 子句，或指定了 `CODEC(Default)`) 的列逐块选择编解码器。
+候选编解码器包括表的默认编解码器 (参见 `default_compression_codec` 设置) 、`NONE` 以及适合该列类型的专用编解码器。
+目前仅整数类类型支持自适应选择。
+输出最小的候选项将被选中。因此，压缩效果不会比默认编解码器更差，无法压缩的块会以原始形式存储。
+如果某列的默认编解码器包含加密 (例如 `AES_128_GCM_SIV`) ，则不会对其进行自适应选择，以确保始终应用加密。
+每个块使用的编解码器可通过 [`mergeTreeCodecBlockCounts`](/zh/reference/functions/table-functions/mergeTreeCodecBlockCounts) 表函数查看。
 
 <div id="allow_experimental_replacing_merge_with_cleanup">
   ## allow_experimental_replacing_merge_with_cleanup

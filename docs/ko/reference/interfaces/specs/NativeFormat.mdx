@@ -1148,16 +1148,16 @@ Field 'b' stream (3 strings, 6 bytes):
 
 지리 공간 타입은 중첩된 배열과 튜플의 별칭입니다.
 
-| 타입 문자열                  | Underlying wire type      |
-| ---------------------------- | ------------------------- |
-| `Point`                      | `Tuple(Float64, Float64)` |
-| `Ring`, `LineString`         | `Array(Point)`            |
-| `Polygon`, `MultiLineString` | `Array(Ring)`             |
-| `MultiPolygon`               | `Array(Polygon)`          |
+| 타입 문자열                             | Underlying wire type      |
+| ---------------------------------- | ------------------------- |
+| `Point`                            | `Tuple(Float64, Float64)` |
+| `Ring`, `LineString`, `MultiPoint` | `Array(Point)`            |
+| `Polygon`, `MultiLineString`       | `Array(Ring)`             |
+| `MultiPolygon`                     | `Array(Polygon)`          |
 
 따라서 `Point` 컬럼은 정확히 `Tuple(Float64, Float64)`로 디코딩되며(`(1,2)`로 렌더링됨), `Ring`은 `Array(Tuple(Float64, Float64))`로 디코딩되고(`[(0,0),(1,1)]`), 그 위의 상위 계층 타입도 같은 방식으로 처리됩니다.
 
-`Geometry`도 별칭이지만, 중첩 배열이 아니라 [`Variant`](#variant)의 별칭입니다. 즉, 그 payload는 위 6개의 geo 타입으로 이루어진 variant입니다. 컬럼 헤더에는 타입 문자열 `Geometry`만 들어 있으며, variant가 **명시적으로 풀어서 표기되지는 않습니다**. 따라서 디코더가 이를 직접 확장해야 합니다. 모든 `Variant`와 마찬가지로 discriminator는 geo 별칭의 정식 이름을 기준으로 정렬한 표준 순서를 따릅니다. 즉 `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`입니다. 이후 선택된 각 값은 위의 해당 geo 별칭을 통해 디코딩됩니다(`NULL`은 `Variant`의 `NULL` discriminator `255`를 사용함).
+`Geometry`도 별칭이지만, 중첩 배열이 아니라 [`Variant`](#variant)의 별칭입니다. 즉, 그 payload는 위 7개의 geo 타입으로 이루어진 variant입니다. 컬럼 헤더에는 타입 문자열 `Geometry`만 들어 있으며, variant가 **명시적으로 풀어서 표기되지는 않습니다**. 따라서 디코더가 이를 직접 확장해야 합니다. 사용자가 직접 표기한 `Variant`와 달리 `Geometry`의 discriminator는 이름순 정렬을 따르지 않습니다. 호환성을 위해 고정되어 있으며, 새 geo 타입은 항상 끝에만 추가됩니다. 매핑은 `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`, `6` = `MultiPoint`입니다(`MultiPoint`는 26.7에 추가되었으며, 이전 서버의 스트림에는 discriminator `6`이 포함되지 않음). 이후 선택된 각 값은 위의 해당 geo 별칭을 통해 디코딩됩니다(`NULL`은 `Variant`의 `NULL` discriminator `255`를 사용함).
 
 `SimpleAggregateFunction(func, T)`는 값 타입 `T`의 별칭입니다. 이미 최종화된 집계 값을 저장하므로, wire 형식과 렌더링 결과가 정확히 `T`와 같습니다(`SimpleAggregateFunction(sum, UInt64)`는 `UInt64`로 디코딩됨). 이런 방식으로 별칭이 되는 것은 단일 값 타입 형식뿐이며, 기반 타입 자체는 복합 타입일 수 있습니다.
 
@@ -1573,11 +1573,11 @@ flowchart LR
 
 | Byte   | Method | Body encoding                                              |
 | ------ | ------ | ---------------------------------------------------------- |
-| `0x02` | NONE   | 본문은 원시 바이트입니다(압축 없음). 프레임 자체는 그대로 출력되며, 수신기는 체크섬을 검증합니다.   |
-| `0x82` | LZ4    | 본문은 **LZ4 block 포맷**이며, *LZ4 frame 포맷이 아닙니다*. 매직 넘버는 없습니다. |
-| `0x90` | ZSTD   | 본문은 원시 zstd 단일 프레임 스트림입니다(표준 zstd 매직 넘버는 본문의 일부입니다).       |
+| `0x02` | NONE   | body는 원시 바이트입니다(압축 없음). 프레임 자체는 그대로 출력되며, 수신기는 체크섬을 검증합니다.   |
+| `0x82` | LZ4    | body는 **LZ4 block 포맷**이며, *LZ4 frame 포맷이 아닙니다*. 매직 넘버는 없습니다. |
+| `0x90` | ZSTD   | body는 원시 zstd 단일 프레임 스트림입니다(표준 zstd 매직 넘버는 body의 일부입니다).       |
 
-메서드 바이트는 [컬럼 수준 코덱](/ko/reference/statements/create/table#column_compression_codec)도 인코딩합니다. 이 코덱들은 전체 스트림 프레이밍이 아니라 MergeTree 온디스크 경로에서 컬럼별로 적용되지만, `decompress=1` HTTP 입력 경로는 각 프레임의 메서드 바이트에서 코덱을 읽어 오므로 입력에서는 이 바이트들 중 어떤 값이든 정상적으로 나타날 수 있습니다. 따라서 규격을 준수하는 디코더는 할당된 전체 범위를 인식해야 하며, 구현하지 않은 바이트는 본문을 잘못 해석하지 말고 거부해야 합니다. 이들의 본문은 코덱마다 다르며, 이 일반 프레임 계약의 범위 밖에 있습니다.
+메서드 바이트는 [컬럼 수준 코덱](/ko/reference/statements/create/table/codec)도 인코딩합니다. 이 코덱들은 전체 스트림 프레이밍이 아니라 MergeTree 온디스크 경로에서 컬럼별로 적용되지만, `decompress=1` HTTP 입력 경로는 각 프레임의 메서드 바이트에서 코덱을 읽어 오므로 입력에서는 이 바이트들 중 어떤 값이든 정상적으로 나타날 수 있습니다. 따라서 규격을 준수하는 디코더는 할당된 전체 범위를 인식해야 하며, 구현하지 않은 바이트는 body를 잘못 해석하지 말고 거부해야 합니다. 이들의 body는 코덱마다 다르며, 이 일반 프레임 계약의 범위 밖에 있습니다.
 
 | Byte   | Method                             |
 | ------ | ---------------------------------- |
@@ -1595,9 +1595,9 @@ flowchart LR
 | `0x9e` | `Quantized`                        |
 | `0x9f` | `ZXC`                              |
 
-`0x9d` (`SZ3`)는 `Float32`, `Float64`, 그리고 해당 타입의 `Array`를 위한 **실험적** 오차 한계 기반 *손실* 코덱입니다. `allow_experimental_codecs`가 설정된 경우에만 `CODEC(SZ3)`로 테이블을 생성할 수 있지만, 이전에 기록된 데이터를 계속 읽을 수 있도록 메서드 바이트는 압축 해제 시 항상 허용됩니다. `0x9f` (`ZXC`)는 비대칭 LZ 코덱입니다. 압축은 느리지만 압축 해제는 매우 빠르며, 압축률은 `LZ4`와 `ZSTD` 사이입니다. 바이트 `0x99` (`DeflateQpl`)와 `0x9b` (`ZSTD_QPL`)는 이후 제거된 코덱에 할당되어 있던 값입니다. 이 값들은 예약되어 있으며 재사용되지 않습니다.
+`0x9d` (`SZ3`)는 `Float32`, `Float64`, 그리고 해당 타입의 `Array`를 위한 **실험적** 오차 한계 기반 *손실* 코덱입니다. `allow_experimental_codecs`가 설정된 경우에만 `CODEC(SZ3)`로 테이블을 생성할 수 있지만, 이전에 기록된 데이터를 계속 읽을 수 있도록 메서드 바이트는 압축 해제 시 항상 허용됩니다. `0x9f` (`ZXC`)는 **실험적** 비대칭 LZ 코덱입니다. 압축은 느리지만 압축 해제는 매우 빠르며, 압축률은 `LZ4`와 `ZSTD` 사이입니다. `allow_experimental_codecs`가 설정된 경우에만 `CODEC(ZXC)`로 테이블을 생성할 수 있지만, 이전에 기록된 데이터를 계속 읽을 수 있도록 메서드 바이트는 압축 해제 시 항상 허용됩니다. 바이트 `0x99` (`DeflateQpl`)와 `0x9b` (`ZSTD_QPL`)는 이후 제거된 코덱에 할당되어 있던 값입니다. 이 값들은 예약되어 있으며 재사용되지 않습니다.
 
-`0x9e` (`Quantized`)는 조밀한 벡터 컬럼(`Array(Float32)` 등)을 위한 **실험적** 컬럼 코덱입니다. `NONE`과 마찬가지로 패스스루 방식이므로 전체 정밀도 본문이 그대로 저장됩니다. 다만 이 코덱이 있으면 벡터 검색을 가속하기 위해 사용하는 압축된 양자화 보조 스트림을 기록하는 직렬화가 함께 적용됩니다. `allow_experimental_codecs`가 설정된 경우에만 `CODEC(Quantized(...))`로 테이블을 생성할 수 있으며, 메서드 바이트는 압축 해제 시 항상 허용됩니다.
+`0x9e` (`Quantized`)는 조밀한 벡터 컬럼(`Array(Float32)` 등)을 위한 **실험적** 컬럼 코덱입니다. `NONE`과 마찬가지로 패스스루 방식이므로 전체 정밀도 body가 그대로 저장됩니다. 다만 이 코덱이 있으면 벡터 검색을 가속하기 위해 사용하는 압축된 양자화 보조 스트림을 기록하는 직렬화가 함께 적용됩니다. `allow_experimental_codecs`가 설정된 경우에만 `CODEC(Quantized(...))`로 테이블을 생성할 수 있으며, 메서드 바이트는 압축 해제 시 항상 허용됩니다.
 
 <div id="checksum">
   ### 체크섬
