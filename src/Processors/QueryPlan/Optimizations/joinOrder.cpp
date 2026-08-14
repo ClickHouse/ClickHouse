@@ -342,7 +342,8 @@ private:
     double computeSelectivity(const std::vector<JoinActionRef *> & edges);
     double computeSelectivity(const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right);
     std::optional<UInt64> estimateCardinality(
-        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind) const;
+        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind,
+        JoinStrictness strictness = JoinStrictness::All) const;
     size_t getColumnStats(const BitSet & rels, const String & column_name);
 
     /// Native-mask counterparts of the helpers above, used exclusively by the DPsub acceptor.
@@ -617,17 +618,44 @@ double JoinOrderOptimizer::computeSelectivity(
 /// Single source of truth for join cardinality estimation. For outer joins the result is
 /// floored by the number of rows from the preserved side(s), since those are always emitted
 /// (NULL-padded when there is no match): LEFT keeps all left rows, RIGHT all right rows, FULL both.
+///
+/// Semi/anti joins are filters on their preserved side (LEFT preserves the left input, RIGHT the
+/// right), so they never expand and must NOT be floored at the preserved side's row count. A
+/// semijoin keeps the fraction of preserved rows that have >= 1 match; an antijoin keeps the rest.
+/// Estimating them like outer joins (row count >= preserved side) is what makes the optimizer
+/// refuse to push a selective semi/anti join down; crediting the filter here is what lets DPsub
+/// choose the cheaper reordered plan the EEL detector makes legal.
 static std::optional<UInt64> estimateJoinCardinality(
     std::optional<UInt64> left_rows,
     std::optional<UInt64> right_rows,
     double selectivity,
-    JoinKind join_kind)
+    JoinKind join_kind,
+    JoinStrictness strictness = JoinStrictness::All)
 {
     if (!left_rows || !right_rows)
         return {};
 
     double lhs = static_cast<double>(*left_rows);
     double rhs = static_cast<double>(*right_rows);
+
+    if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
+    {
+        /// Preserved side is the left input for LEFT (and Inner/Cross, defensively), the right
+        /// input for RIGHT; the other side is only probed for existence.
+        const bool preserve_left = !isRight(join_kind);
+        const double preserved = preserve_left ? lhs : rhs;
+        const double other = preserve_left ? rhs : lhs;
+        /// Expected fraction of preserved rows with at least one match. `selectivity` is ~1/ndv,
+        /// so `selectivity * other` approximates matches per preserved row; cap at 1.
+        const double match_fraction = std::min(1.0, selectivity * other);
+        const double kept = (strictness == JoinStrictness::Semi)
+            ? preserved * match_fraction
+            : preserved * (1.0 - match_fraction);
+        const double semi_rows = std::max(kept, 1.0);
+        if (semi_rows >= static_cast<double>(std::numeric_limits<UInt64>::max()))
+            return std::numeric_limits<UInt64>::max();
+        return static_cast<UInt64>(semi_rows);
+    }
 
     double joined_rows = std::max(selectivity * lhs * rhs, 1.0);
 
@@ -658,9 +686,10 @@ static std::optional<UInt64> estimateJoinCardinality(
 }
 
 std::optional<UInt64> JoinOrderOptimizer::estimateCardinality(
-    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind) const
+    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind,
+    JoinStrictness strictness) const
 {
-    return estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind);
+    return estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind, strictness);
 }
 
 static double computeJoinCost(const std::shared_ptr<DPJoinEntry> & left,
@@ -888,12 +917,22 @@ JoinOrderOptimizer::isValidJoinOrderMaskEEL(UInt32 left_mask, UInt32 right_mask)
         const bool within = (op.relations & ~combined) == 0;
         const bool nel_crosses = (op.nel & left_mask) && (op.nel & right_mask);
         const bool rel_straddles = (op.relations & left_mask) && (op.relations & right_mask);
-        if (!nel_crosses && !(rel_straddles && within))
+        /// An operator sits at this boundary only when its ON predicate (NEL) spans the split.
+        /// Using the relation set instead would re-flag an operator that was already applied in a
+        /// sub-plan (e.g. a semi join pushed into the left child, when we later join the remaining
+        /// relation): its relations still straddle, but its predicate no longer crosses. The
+        /// relation-set straddle is a fallback only for degenerate predicate-less operators
+        /// (empty NEL, e.g. an ON-TRUE outer/semi join), which have no crossing predicate.
+        const bool involved = nel_crosses || (op.nel == 0 && rel_straddles && within);
+        if (!involved)
             continue;
 
         /// The operator is applied across this boundary but not all of its relations are present
-        /// yet -> it cannot be applied here, so joining across its predicate is illegal.
-        if (!within)
+        /// yet. In general that is illegal (its subtree is not assembled). The exception is a
+        /// `pushdown_safe` semi/anti join, which is a filter over inner joins and may be applied
+        /// early on just the relations its predicate references (CD-B l-asscom); the einbaubar TES
+        /// check below still requires those referenced relations to be present.
+        if (!within && !op.pushdown_safe)
             return std::nullopt;
 
         /// Two non-reorderable operators cannot both sit at one binary node -> impossible order.

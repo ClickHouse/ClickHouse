@@ -175,6 +175,30 @@ computeEelOperators(const std::vector<EelJoinOpMask> & ops, size_t num_relations
                  static_cast<int>(op.kind), static_cast<int>(op.strictness), desc.freely_reorderable);
     }
 
+    /// Second pass: mark semi/anti operators whose subtree contains no other non-freely-reorderable
+    /// operator. Such a semi/anti join is a pure filter sitting above only inner joins, so it may be
+    /// pushed down through them (CD-B l-asscom). If any outer/full/nested semi-anti operator lives
+    /// in its subtree, pushdown is not generally sound and we keep the strict `within` rule.
+    for (auto & desc : result)
+    {
+        if (desc.strictness != JoinStrictness::Semi && desc.strictness != JoinStrictness::Anti)
+            continue;
+        bool has_non_reorderable_descendant = false;
+        for (const auto & other : result)
+        {
+            if (&other == &desc || other.freely_reorderable)
+                continue;
+            /// `other` is strictly inside `desc`'s subtree: its relations are a proper subset.
+            const bool proper_subset = (other.relations & ~desc.relations) == 0 && other.relations != desc.relations;
+            if (proper_subset)
+            {
+                has_non_reorderable_descendant = true;
+                break;
+            }
+        }
+        desc.pushdown_safe = !has_non_reorderable_descendant;
+    }
+
     return result;
 }
 

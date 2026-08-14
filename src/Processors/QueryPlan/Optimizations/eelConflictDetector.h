@@ -51,6 +51,13 @@ struct EelOperator
     /// True for plain inner/cross/comma joins (All): freely reorderable
     /// False for outer/semi/anti/full joins, which pin orientation via TES.
     bool freely_reorderable = true;
+    /// CD-B `l-asscom` case: a left-semi / left-anti join may be pushed *below* the inner joins
+    /// in its own subtree (its predicate is a filter on the preserved side). True only when this
+    /// is a semi/anti operator whose subtree contains no other non-freely-reorderable operator
+    /// (no outer/full/nested semi-anti below it) -- pushing a filter past a null-extending or
+    /// row-eliminating operator is not generally sound, so those fall back to the strict `within`
+    /// rule. See isValidJoinOrderMaskEEL.
+    bool pushdown_safe = false;
 };
 
 /// Compute the per-operator EEL descriptors 
