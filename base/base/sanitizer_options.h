@@ -64,8 +64,8 @@ const char * __tsan_default_suppressions()
     /// element type's implicitly generated move assignment is a separate, still-instrumented
     /// function, and the attribute additionally prevents it from being inlined.
     ///
-    /// Of the queue entries, only `tryPush` is listed. Both Keeper queues have a single consumer thread, so two `tryPop`
-    /// calls never overlap and every reported pair therefore contains the `tryPush` write.
+    /// Of the queue entries, only `tryPush` is listed. Both Keeper queues have a single consumer
+    /// thread, so two `tryPop` calls never overlap and every reported pair contains the `tryPush` write.
     /// Patterns are matched against each frame's function, file and module name, so an unqualified
     /// name would also match this header's file name and the unrelated asynchronous logging queue.
     /// Keep them narrow: a `race:` entry also hides heap-use-after-free reports through the frame
