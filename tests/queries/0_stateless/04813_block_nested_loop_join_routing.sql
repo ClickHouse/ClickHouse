@@ -7,6 +7,9 @@
 
 SET join_algorithm = 'direct,parallel_hash,hash';
 SET cross_to_inner_join_rewrite = 0;
+-- A swapped join exchanges the sides, so the kind the plan below prints is the mirrored one. The
+-- test harness randomizes the setting.
+SET query_plan_join_swap_table = 'false';
 
 DROP TABLE IF EXISTS bnl_l;
 DROP TABLE IF EXISTS bnl_r;

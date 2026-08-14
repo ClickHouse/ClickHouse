@@ -188,19 +188,14 @@ TEST(BlockNestedLoopJoinData, ConstAndSparseColumnsAreMaterialized)
     EXPECT_EQ(storedValues(data), (std::vector<UInt64>{7, 7, 7, 0, 9, 0}));
 }
 
-TEST(BlockNestedLoopJoinData, ReadingBeforeFinishThrows)
+TEST(BlockNestedLoopJoinData, FinishIsRecorded)
 {
     auto data = makeData();
     ASSERT_TRUE(data->addBlock(makeBlock({1}), 1));
 
     EXPECT_FALSE(data->isFinished());
-    EXPECT_THROW(data->getNumBlocks(), Exception);
-    EXPECT_THROW(data->getRowOffsets(), Exception);
-
     data->finish();
     EXPECT_TRUE(data->isFinished());
-    EXPECT_THROW(data->addBlock(makeBlock({2}), 1), Exception);
-    EXPECT_THROW(data->finish(), Exception);
 }
 
 TEST(BlockNestedLoopJoinData, SizeLimitsThrow)

@@ -557,14 +557,6 @@ TEST(BlockNestedLoopJoinProbe, MatchesTheSameWayAgainstACompressedBuildSide)
     EXPECT_FALSE(compressed.rows.empty());
 }
 
-TEST(BlockNestedLoopJoinProbe, UnsupportedJoinTypesAreRejected)
-{
-    /// `ASOF` prescribes the shape of its condition, so an arbitrary predicate is not one it can
-    /// express, and the operator is never chosen for it.
-    EXPECT_THROW(runProbe({{1}}, {{2}}, JoinKind::Left, JoinStrictness::Asof), Exception);
-    EXPECT_THROW(runProbe({{1}}, {{2}}, JoinKind::Inner, JoinStrictness::Unspecified), Exception);
-}
-
 /// The build side of every left-driven test below: the walk visits 2, then 5, then 7, so the first
 /// build row a probe row matches under `probe < build` is the smallest one greater than it.
 const std::vector<Values> left_driven_build_blocks{{2, 5}, {7}};

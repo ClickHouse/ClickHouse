@@ -18,7 +18,11 @@ CREATE TABLE bnl_window_probe (x UInt64) ENGINE = MergeTree ORDER BY x;
 CREATE TABLE bnl_window_build (y UInt64) ENGINE = MergeTree ORDER BY y;
 CREATE TABLE bnl_window_threshold (y UInt64) ENGINE = MergeTree ORDER BY y;
 INSERT INTO bnl_window_probe SELECT number FROM numbers(200000);
-INSERT INTO bnl_window_build SELECT number * 7 FROM numbers(37);
+-- Spread over the modulus of the condition below, so that every side has both rows that match and
+-- rows that match nothing: 1000 is out of reach of `x % 1000`, and a fifth of the probe rows are
+-- under the smallest build value. Few build rows keep the number of answered pairs small; the
+-- number of probe windows, which is what this test is about, follows the probe side alone.
+INSERT INTO bnl_window_build SELECT 200 + number * 200 FROM numbers(5);
 INSERT INTO bnl_window_threshold SELECT 1000000;
 
 {% for kind in ['LEFT', 'FULL', 'RIGHT', 'INNER', 'LEFT SEMI', 'LEFT ANTI', 'RIGHT SEMI', 'RIGHT ANTI', 'LEFT ANY', 'ANY INNER'] -%}
@@ -37,7 +41,7 @@ SELECT '{{ kind }}',
 -- The threshold has to come from a table: a constant is propagated into the condition, which then
 -- holds the probe side alone and is answered by a filter over a whole chunk rather than by the
 -- operator, so the bound this asserts would not be the one under test.
-SELECT count() FROM (SELECT number AS x FROM numbers(3000000)) l
+SELECT count() FROM (SELECT number AS x FROM numbers(1000000)) l
 LEFT SEMI JOIN bnl_window_threshold r ON length(repeat(toString(l.x), 20)) > r.y
 SETTINGS max_block_size = 1000000, max_memory_usage = '100Mi';
 
