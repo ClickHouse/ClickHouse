@@ -24,11 +24,21 @@ function check_log()
 {
     interval=$1
 
-    # Check that the amount of events collected is correct, leaving a 80% of margin.
+    # Check that the amount of events collected is correct.
+    # The upper bound catches runaway over-collection with a generous 80% margin.
+    # The lower bound is only 1: on a heavily oversubscribed runner the
+    # `BackgroundSchedulePool` task that samples the metrics can be starved, and
+    # `QueryMetricLogStatus::scheduleNext` deliberately skips the lost runs instead
+    # of catching up, so few events are collected. The smaller the interval, the
+    # more likely this is, so any lower bound that scales up as the interval shrinks
+    # is exactly backwards for robustness. Requiring at least one row still verifies
+    # that collection happened for a positive interval (the disabled and short-query
+    # cases below assert 0), and the always-emitted final row guarantees it is
+    # attainable regardless of scheduling.
     $CLICKHOUSE_CLIENT -m -q """
         SELECT '--Interval $interval: check that amount of events is correct';
         SELECT
-            count() BETWEEN ((ceil(2500 / $interval) - 1) * 0.2) AND ((ceil(2500 / $interval) + 1) * 1.8)
+            count() BETWEEN 1 AND ((ceil(2500 / $interval) + 1) * 1.8)
         FROM system.query_metric_log
         WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${query_prefix}_${interval}'
     """

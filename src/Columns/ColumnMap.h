@@ -150,7 +150,7 @@ public:
     const StatisticsPtr & getStatistics() const { return statistics; }
     StatisticsPtr getOrCalculateStatistics() const;
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
-    StatisticsPtr calculateStatisticsForRange(size_t start, size_t end) const;
+    Statistics calculateStatisticsForRange(size_t start, size_t end) const;
     bool hasStatistics() const override { return true; }
     void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
 };

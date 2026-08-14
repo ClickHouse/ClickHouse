@@ -336,7 +336,7 @@ Expression (Project names)
 -- execute
 12
 36
--- GROUP BY WITH ROLLUP before DISTINCT with on the same columns => remove DISTINCT
+-- GROUP BY WITH ROLLUP before DISTINCT on the same columns => do _not_ remove DISTINCT (ROLLUP adds a subtotal row with the key defaulted, which may duplicate a real group)
 -- query
 SELECT DISTINCT a
 FROM
@@ -355,22 +355,24 @@ FROM
     ORDER BY a
 )
 -- explain
-Expression ((Project names + (Projection + (Change column names to column identifiers + Project names))))
-  Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + Projection))
-      Rollup
-        Aggregating
-          Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
-            Expression (Post Join Actions)
-              Join (JOIN FillRightFirst)
-                Expression (Left Pre Join Actions)
-                  Expression (Change column names to column identifiers)
-                    ReadFromSystemNumbers
-                Expression (Right Pre Join Actions)
-                  Expression (Change column names to column identifiers)
-                    ReadFromSystemNumbers
+Expression (Project names)
+  Distinct (DISTINCT)
+    Distinct (Preliminary DISTINCT)
+      Expression ((Projection + (Change column names to column identifiers + Project names)))
+        Sorting (Sorting for ORDER BY)
+          Expression ((Before ORDER BY + Projection))
+            Rollup
+              Aggregating
+                Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+                  Expression (Post Join Actions)
+                    Join (JOIN FillRightFirst)
+                      Expression (Left Pre Join Actions)
+                        Expression (Change column names to column identifiers)
+                          ReadFromSystemNumbers
+                      Expression (Right Pre Join Actions)
+                        Expression (Change column names to column identifiers)
+                          ReadFromSystemNumbers
 -- execute
-0
 0
 1
 2
@@ -413,7 +415,7 @@ Expression (Project names)
 -- execute
 12
 36
--- GROUP BY WITH CUBE before DISTINCT with on the same columns => remove DISTINCT
+-- GROUP BY WITH CUBE before DISTINCT on the same columns => do _not_ remove DISTINCT (CUBE adds subtotal rows with keys defaulted, which may duplicate real groups)
 -- query
 SELECT DISTINCT a
 FROM
@@ -432,22 +434,138 @@ FROM
     ORDER BY a
 )
 -- explain
-Expression ((Project names + (Projection + (Change column names to column identifiers + Project names))))
-  Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + Projection))
-      Cube
-        Aggregating
-          Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
-            Expression (Post Join Actions)
-              Join (JOIN FillRightFirst)
-                Expression (Left Pre Join Actions)
-                  Expression (Change column names to column identifiers)
-                    ReadFromSystemNumbers
-                Expression (Right Pre Join Actions)
-                  Expression (Change column names to column identifiers)
-                    ReadFromSystemNumbers
+Expression (Project names)
+  Distinct (DISTINCT)
+    Distinct (Preliminary DISTINCT)
+      Expression ((Projection + (Change column names to column identifiers + Project names)))
+        Sorting (Sorting for ORDER BY)
+          Expression ((Before ORDER BY + Projection))
+            Cube
+              Aggregating
+                Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+                  Expression (Post Join Actions)
+                    Join (JOIN FillRightFirst)
+                      Expression (Left Pre Join Actions)
+                        Expression (Change column names to column identifiers)
+                          ReadFromSystemNumbers
+                      Expression (Right Pre Join Actions)
+                        Expression (Change column names to column identifiers)
+                          ReadFromSystemNumbers
 -- execute
 0
+1
+2
+-- GROUP BY GROUPING SETS with overlapping sets before DISTINCT on the same columns => do _not_ remove DISTINCT (each set emits its own row, so the same key value appears more than once)
+-- query
+SELECT DISTINCT a
+FROM
+(
+    SELECT
+        a,
+        sum(b) AS c
+    FROM
+    (
+        SELECT
+            x.number AS a,
+            y.number AS b
+        FROM numbers(3) AS x, numbers(3, 3) AS y
+    )
+    GROUP BY GROUPING SETS ((a), (a))
+    ORDER BY a
+)
+-- explain
+Expression (Project names)
+  Distinct (DISTINCT)
+    Distinct (Preliminary DISTINCT)
+      Expression ((Projection + (Change column names to column identifiers + Project names)))
+        Sorting (Sorting for ORDER BY)
+          Expression ((Before ORDER BY + Projection))
+            Aggregating
+              Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+                Expression (Post Join Actions)
+                  Join (JOIN FillRightFirst)
+                    Expression (Left Pre Join Actions)
+                      Expression (Change column names to column identifiers)
+                        ReadFromSystemNumbers
+                    Expression (Right Pre Join Actions)
+                      Expression (Change column names to column identifiers)
+                        ReadFromSystemNumbers
+-- execute
+0
+1
+2
+-- GROUP BY GROUPING SETS with a defaulted-key set before DISTINCT on the same columns => do _not_ remove DISTINCT (the () set emits a row with the key defaulted, which may duplicate a real group)
+-- query
+SELECT DISTINCT a
+FROM
+(
+    SELECT
+        a,
+        sum(b) AS c
+    FROM
+    (
+        SELECT
+            x.number AS a,
+            y.number AS b
+        FROM numbers(3) AS x, numbers(3, 3) AS y
+    )
+    GROUP BY GROUPING SETS ((a), ())
+    ORDER BY a
+)
+-- explain
+Expression (Project names)
+  Distinct (DISTINCT)
+    Distinct (Preliminary DISTINCT)
+      Expression ((Projection + (Change column names to column identifiers + Project names)))
+        Sorting (Sorting for ORDER BY)
+          Expression ((Before ORDER BY + Projection))
+            Aggregating
+              Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+                Expression (Post Join Actions)
+                  Join (JOIN FillRightFirst)
+                    Expression (Left Pre Join Actions)
+                      Expression (Change column names to column identifiers)
+                        ReadFromSystemNumbers
+                    Expression (Right Pre Join Actions)
+                      Expression (Change column names to column identifiers)
+                        ReadFromSystemNumbers
+-- execute
+0
+1
+2
+-- distributed WITH ROLLUP before DISTINCT on the same columns => do _not_ remove DISTINCT (two-stage aggregation builds a MergingAggregated merge step; ROLLUP still adds a defaulted-key subtotal row)
+-- query
+SELECT DISTINCT a
+FROM
+(
+    SELECT
+        number AS a,
+        count() AS c
+    FROM remote('127.0.0.{1,2}', numbers(3))
+    GROUP BY a WITH ROLLUP
+    ORDER BY a
+)
+-- explain: DISTINCT preserved above a MergingAggregated merge step
+1	1
+-- execute
+0
+1
+2
+-- distributed GROUP BY GROUPING SETS with a defaulted-key set before DISTINCT on the same columns => do _not_ remove DISTINCT (MergingAggregatedStep::isGroupingSets() merge path; the () set emits a defaulted-key row)
+-- query
+SELECT DISTINCT a
+FROM
+(
+    SELECT
+        number AS a,
+        count() AS c
+    FROM remote('127.0.0.{1,2}', numbers(3))
+    GROUP BY GROUPING SETS ((a), ())
+    ORDER BY a
+)
+-- explain: DISTINCT preserved above a MergingAggregated merge step
+1	1
+-- execute
 0
 1
 2

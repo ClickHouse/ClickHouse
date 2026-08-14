@@ -97,7 +97,24 @@ postgres=> SHOW rds.logical_replication ;
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-سيحتوي الـ publication ‏`clickpipes` على مجموعة أحداث التغيير الناتجة عن الجداول المحددة، وسيُستخدم لاحقًا لإدخال تدفق النسخ المتماثل.
+يحدّد الـ publication ‏`clickpipes` مجموعة الجداول التي ستُبث أحداث التغيير الخاصة بها إلى ClickPipes. نوصي بعدم استخدام `FOR ALL TABLES` إلا إذا كنت تنوي نسخ كل الجداول، لأن تضمين جداول غير ضرورية يزيد من حركة WAL من Postgres إلى ClickPipes ويقلّل من الكفاءة الإجمالية للنسخ المتماثل.
+
+<div id="iam-authentication">
+  ### استخدام مصادقة IAM (اختياري)
+</div>
+
+بدلًا من كلمة المرور، يمكنك مصادقة مستخدم ClickPipes باستخدام الوصول المستند إلى الدور في AWS IAM. أنشئ المستخدم كما يلي، ثم امنحه امتيازات `مخطط` و`النسخ المتماثل` نفسها الموضحة أعلاه:
+
+```sql
+CREATE USER clickpipes_iam_user;
+GRANT rds_iam TO clickpipes_iam_user;
+```
+
+<Note>
+  تتطلب مصادقة IAM للنسخ المتماثل تعيين المعلَمة `rds.iam_auth_for_replication` إلى `1`. ويتوفر هذا بدءًا من PostgreSQL الإصدار 11 وما بعده؛ أما في الإصدارات الأقدم، فلا يمكنك تشغيل سوى ClickPipes من نوع `Initial Load Only`.
+</Note>
+
+راجع [مصادقة قاعدة بيانات AWS IAM ‏(RDS/Aurora)](/ar/integrations/clickpipes/postgres/auth) للاطلاع على الخطوات الكاملة لإعداد دور IAM والسياسة المطلوبة لكي تتمكن ClickPipes من المصادقة بهذه الطريقة.
 
 <div id="configure-network-access">
   ## إعداد الوصول إلى الشبكة
@@ -107,7 +124,7 @@ postgres=> SHOW rds.logical_replication ;
   ### التحكم في الوصول المستند إلى IP
 </div>
 
-إذا كنت تريد تقييد حركة المرور إلى مثيل RDS الخاص بك، فيُرجى إضافة [عناوين IP الثابتة لـ NAT الموثّقة](/ar/integrations/clickpipes/home#list-of-static-ips) إلى `Inbound rules` الخاصة بـ مجموعة الأمان في RDS.
+إذا كنت تريد تقييد حركة المرور إلى مثيل RDS الخاص بك، فيُرجى إضافة [عناوين IP الثابتة لـ NAT الموثّقة](/ar/integrations/clickpipes/home#list-of-static-ips) إلى `Inbound rules` في مجموعة الأمان الخاصة بـ RDS.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="أين يمكن العثور على مجموعة الأمان في RDS Postgres؟" size="lg" border />
 

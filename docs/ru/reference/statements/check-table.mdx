@@ -163,6 +163,8 @@ SETTINGS check_query_single_value_result = 0
 └──────────┴──────────┴─────────────┴───────────┴─────────┘
 ```
 
+Чтобы проверить состояние всей базы данных, а не целостность отдельных таблиц, используйте запрос [`CHECK DATABASE`](/ru/reference/statements/check-database). Он в первую очередь предназначен для баз данных с движком [`DataLakeCatalog`](/ru/reference/engines/database-engines/datalake), где проверяет, доступен ли внешний каталог.
+
 <div id="if-the-data-is-corrupted">
   ## Если данные повреждены
 </div>

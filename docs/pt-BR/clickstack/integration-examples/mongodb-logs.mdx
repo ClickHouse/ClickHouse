@@ -33,9 +33,7 @@ Se você quiser testar a integração com MongoDB antes de configurar sua própr
 * Acesso aos arquivos de log do MongoDB
 
 <Steps>
-  <Step>
-    #### Verifique a configuração de logging do MongoDB
-
+  <Step title="Verifique a configuração de logging do MongoDB" id="verify-mongodb">
     O MongoDB 4.4+ gera logs estruturados em JSON por padrão. Verifique o local do arquivo de log:
 
     ```bash
@@ -60,17 +58,15 @@ Se você quiser testar a integração com MongoDB antes de configurar sua própr
     Após alterar a configuração, reinicie o MongoDB:
 
     ```bash
-    # Para systemd
+    # For systemd
     sudo systemctl restart mongod
 
-    # Para Docker
+    # For Docker
     docker restart <mongodb-container>
     ```
   </Step>
 
-  <Step>
-    #### Criar uma configuração personalizada do OTel collector para MongoDB
-
+  <Step title="Criar uma configuração personalizada do OTel collector para MongoDB" id="custom-otel">
     O ClickStack permite estender a configuração base do OpenTelemetry Collector montando um arquivo de configuração personalizado e definindo uma variável de ambiente. A configuração personalizada é mesclada à configuração base gerenciada pelo HyperDX via OpAMP.
 
     Crie um arquivo chamado `mongodb-monitoring.yaml` com a seguinte configuração:
@@ -134,9 +130,7 @@ Se você quiser testar a integração com MongoDB antes de configurar sua própr
     </Note>
   </Step>
 
-  <Step>
-    #### Configure o ClickStack para carregar configuração personalizada
-
+  <Step title="Configure o ClickStack para carregar configuração personalizada" id="load-custom">
     Para habilitar a configuração personalizada do collector na implantação existente do ClickStack, você deve:
 
     1. Montar o arquivo de configuração personalizado em `/etc/otelcol-contrib/custom.config.yaml`
@@ -180,9 +174,7 @@ Se você quiser testar a integração com MongoDB antes de configurar sua própr
     </Note>
   </Step>
 
-  <Step>
-    #### Verifique os logs no HyperDX
-
+  <Step title="Verifique os logs no HyperDX" id="verifying-logs">
     Após a configuração, faça login no HyperDX e verifique se os logs estão chegando:
 
     <Image img="/images/clickstack/mongodb/search-view.webp" alt="Visualização de pesquisa dos logs do MongoDB" />
@@ -198,9 +190,7 @@ Se você quiser testar a integração com MongoDB antes de configurar sua própr
 Teste a integração com MongoDB usando um dataset de exemplo pré-gerado antes de configurar seus sistemas de produção.
 
 <Steps>
-  <Step>
-    #### Baixe o dataset de exemplo
-
+  <Step title="Baixe o dataset de exemplo" id="download-sample">
     Baixe o arquivo de log de exemplo:
 
     ```bash
@@ -208,9 +198,7 @@ Teste a integração com MongoDB usando um dataset de exemplo pré-gerado antes 
     ```
   </Step>
 
-  <Step>
-    #### Crie a configuração de teste do collector
-
+  <Step title="Crie a configuração de teste do collector" id="test-config">
     Crie um arquivo chamado `mongodb-demo.yaml` com a configuração a seguir:
 
     ```yaml
@@ -269,9 +257,7 @@ Teste a integração com MongoDB usando um dataset de exemplo pré-gerado antes 
     ```
   </Step>
 
-  <Step>
-    #### Execute o ClickStack com a configuração de demonstração
-
+  <Step title="Execute o ClickStack com a configuração de demonstração" id="run-demo">
     Execute o ClickStack com os logs e a configuração de demonstração:
 
     ```bash
@@ -302,13 +288,11 @@ Teste a integração com MongoDB usando um dataset de exemplo pré-gerado antes 
 </div>
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">Baixar</TrackedLink> a configuração do dashboard
+  <Step title="Baixar a configuração do dashboard" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">Baixar o arquivo de configuração do dashboard</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Importar dashboard pré-configurado
-
+  <Step title="Importar dashboard pré-configurado" id="import-dashboard">
     1. Abra o HyperDX e navegue até a seção Dashboards.
     2. Clique em &quot;Import Dashboard&quot; no canto superior direito, no menu de reticências.
 
@@ -319,9 +303,7 @@ Teste a integração com MongoDB usando um dataset de exemplo pré-gerado antes 
     <Image img="/images/clickstack/mongodb/finish-import.webp" alt="Concluir importação do dashboard de logs do MongoDB" />
   </Step>
 
-  <Step>
-    #### O dashboard será criado com todas as visualizações pré-configuradas
-
+  <Step title="O dashboard será criado com todas as visualizações pré-configuradas" id="created-dashboard">
     Para o dataset de demonstração, defina o intervalo de tempo para abranger **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
     <Image img="/images/clickstack/mongodb/example-dashboard.webp" alt="Dashboard de logs do MongoDB" />
@@ -368,7 +350,7 @@ Se a saída não for um JSON válido, sua versão do MongoDB pode estar usando o
 * Crie [dashboards](/pt-BR/clickstack/features/dashboards/overview) adicionais para casos de uso específicos (monitoramento do conjunto de réplicas, rastreamento de conexões)
 
 <div id="going-to-production">
-  ## Colocando em produção
+  ## Preparando para produção
 </div>
 
-Este guia aproveita o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel Collector e enviar os dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.
+Este guia usa o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel collector e enviar dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.

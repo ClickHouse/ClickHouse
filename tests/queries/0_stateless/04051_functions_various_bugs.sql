@@ -34,8 +34,8 @@ SELECT if(toUInt8(0), 1.5, 2.5);
 -- `trimRight` with a trim character set longer than 16 characters (any length is supported)
 SELECT trimRight('hello', repeat('x', 257));
 
--- `parseDateTime` with insufficient input
-SELECT parseDateTime('42', '%f'); -- { serverError CANNOT_PARSE_DATETIME }
+-- `parseDateTime` with non-numeric input for a numeric specifier
+SELECT parseDateTime('x', '%f'); -- { serverError CANNOT_PARSE_DATETIME }
 
 -- `fromModifiedJulianDayOrNull` with out-of-range inputs returns NULL
 SELECT fromModifiedJulianDayOrNull(toInt32(-1000000));

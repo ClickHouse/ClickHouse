@@ -1,11 +1,21 @@
 #include <Parsers/ASTWindowDefinition.h>
 
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
+#include <array>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 ASTPtr ASTWindowDefinition::clone() const
 {
@@ -170,6 +180,197 @@ void ASTWindowListElement::formatImpl(WriteBuffer & ostr, const FormatSettings &
     ostr << " AS (";
     definition->format(ostr, settings, state, frame);
     ostr << ")";
+}
+
+void ASTWindowDefinition::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "WindowDefinition");
+    if (!parent_window_name.empty())
+        w.writeString("parent_window_name", parent_window_name);
+    w.writeChild("partition_by", partition_by);
+    w.writeChild("order_by", order_by);
+    if (!frame_is_default)
+    {
+        w.writeBool("frame_is_default", false);
+        switch (frame_type)
+        {
+            case WindowFrame::FrameType::ROWS:
+                w.writeString("frame_type", "ROWS");
+                break;
+            case WindowFrame::FrameType::GROUPS:
+                w.writeString("frame_type", "GROUPS");
+                break;
+            case WindowFrame::FrameType::RANGE:
+                w.writeString("frame_type", "RANGE");
+                break;
+        }
+        switch (frame_begin_type)
+        {
+            case WindowFrame::BoundaryType::Unbounded:
+                w.writeString("frame_begin_type", "Unbounded");
+                break;
+            case WindowFrame::BoundaryType::Current:
+                w.writeString("frame_begin_type", "Current");
+                break;
+            case WindowFrame::BoundaryType::Offset:
+                w.writeString("frame_begin_type", "Offset");
+                break;
+        }
+        w.writeChild("frame_begin_offset", frame_begin_offset);
+        w.writeBool("frame_begin_preceding", frame_begin_preceding);
+        switch (frame_end_type)
+        {
+            case WindowFrame::BoundaryType::Unbounded:
+                w.writeString("frame_end_type", "Unbounded");
+                break;
+            case WindowFrame::BoundaryType::Current:
+                w.writeString("frame_end_type", "Current");
+                break;
+            case WindowFrame::BoundaryType::Offset:
+                w.writeString("frame_end_type", "Offset");
+                break;
+        }
+        w.writeChild("frame_end_offset", frame_end_offset);
+        w.writeBool("frame_end_preceding", frame_end_preceding);
+    }
+}
+
+void ASTWindowListElement::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "WindowListElement");
+    w.writeString("name", name);
+    w.writeChild("definition", definition);
+}
+
+static WindowFrame::FrameType parseFrameType(const String & s)
+{
+    if (s == "ROWS") return WindowFrame::FrameType::ROWS;
+    if (s == "GROUPS") return WindowFrame::FrameType::GROUPS;
+    if (s == "RANGE") return WindowFrame::FrameType::RANGE;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown WindowFrame FrameType: '{}'", s);
+}
+
+static WindowFrame::BoundaryType parseBoundaryType(const String & s)
+{
+    if (s == "Unbounded") return WindowFrame::BoundaryType::Unbounded;
+    if (s == "Current") return WindowFrame::BoundaryType::Current;
+    if (s == "Offset") return WindowFrame::BoundaryType::Offset;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown WindowFrame BoundaryType: '{}'", s);
+}
+
+void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    parent_window_name = r.getString("parent_window_name");
+
+    /// `partition_by` and `order_by` are parser-owned `ASTExpressionList`s; the analyzer builds an
+    /// expression list from `partition_by` and a sort list from `order_by` (whose children must be
+    /// `ASTOrderByElement`). Reject other node types from malformed `clickhouse_json` here.
+    auto child = r.readChildOfType<ASTExpressionList>("partition_by");
+    if (child)
+    {
+        partition_by = child;
+        children.push_back(partition_by);
+    }
+
+    child = r.readChildOfType<ASTExpressionList>("order_by");
+    if (child)
+    {
+        for (const auto & order_by_element : child->children)
+            if (!order_by_element || !order_by_element->as<ASTOrderByElement>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window 'order_by' elements must be order-by elements during AST JSON deserialization");
+        order_by = child;
+        children.push_back(order_by);
+    }
+
+    /// `frame_is_default` gates whether `formatImpl` emits the frame clause at all, so
+    /// the presence of frame fields must agree with it. `writeJSON` emits `frame_is_default`
+    /// (always `false`) together with the full set of frame fields only for a non-default
+    /// frame, and emits none of them for a default frame. Reject any inconsistent input so
+    /// frame semantics cannot be silently dropped on the next format.
+    const bool has_frame_is_default = r.has("frame_is_default");
+    /// `frame_is_default` defaults to `true` (see the header), so an absent key is a default frame.
+    frame_is_default = has_frame_is_default ? r.getBool("frame_is_default") : true;
+
+    static constexpr std::array frame_field_keys = {
+        "frame_type",
+        "frame_begin_type",
+        "frame_begin_offset",
+        "frame_begin_preceding",
+        "frame_end_type",
+        "frame_end_offset",
+        "frame_end_preceding",
+    };
+
+    if (frame_is_default)
+    {
+        /// `writeJSON` does not emit `frame_is_default` for a default frame, but accept an
+        /// explicit `frame_is_default: true` as well; in either case no frame field may be present.
+        for (const char * key : frame_field_keys)
+            if (r.has(key))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Field '{}' is present for a default-frame window during AST JSON deserialization", key);
+    }
+    else
+    {
+        if (!r.has("frame_type"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'frame_type' for a non-default-frame window during AST JSON deserialization");
+        if (!r.has("frame_begin_type"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'frame_begin_type' for a non-default-frame window during AST JSON deserialization");
+        if (!r.has("frame_end_type"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'frame_end_type' for a non-default-frame window during AST JSON deserialization");
+
+        frame_type = parseFrameType(r.getString("frame_type"));
+        frame_begin_type = parseBoundaryType(r.getString("frame_begin_type"));
+
+        child = r.readChild("frame_begin_offset");
+        if (child)
+        {
+            frame_begin_offset = child;
+            children.push_back(frame_begin_offset);
+        }
+        if (frame_begin_type == WindowFrame::BoundaryType::Offset && !frame_begin_offset)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'frame_begin_offset' for Offset frame boundary during AST JSON deserialization");
+        /// The parser attaches an offset expression only for an `Offset` boundary, and `formatImpl` hides
+        /// it for `CURRENT ROW`/`UNBOUNDED`; but `QueryTreeBuilder::buildWindow` resolves the child whenever
+        /// the pointer exists, so a hidden offset on a non-`Offset` boundary is parser-impossible. Reject it.
+        if (frame_begin_type != WindowFrame::BoundaryType::Offset && frame_begin_offset)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'frame_begin_offset' is only valid for an Offset frame boundary during AST JSON deserialization");
+
+        frame_begin_preceding = r.getBool("frame_begin_preceding");
+
+        frame_end_type = parseBoundaryType(r.getString("frame_end_type"));
+
+        child = r.readChild("frame_end_offset");
+        if (child)
+        {
+            frame_end_offset = child;
+            children.push_back(frame_end_offset);
+        }
+        if (frame_end_type == WindowFrame::BoundaryType::Offset && !frame_end_offset)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'frame_end_offset' for Offset frame boundary during AST JSON deserialization");
+        if (frame_end_type != WindowFrame::BoundaryType::Offset && frame_end_offset)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'frame_end_offset' is only valid for an Offset frame boundary during AST JSON deserialization");
+
+        frame_end_preceding = r.getBool("frame_end_preceding");
+    }
+}
+
+void ASTWindowListElement::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    name = r.getString("name");
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'name' for WindowListElement during AST JSON deserialization");
+
+    auto child = r.readChild("definition");
+    if (!child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'definition' for WindowListElement during AST JSON deserialization");
+    if (!child->as<ASTWindowDefinition>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ASTWindowDefinition for 'definition' of WindowListElement during AST JSON deserialization");
+    definition = child;
+    children.push_back(definition);
 }
 
 }

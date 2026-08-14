@@ -6,24 +6,32 @@
 #include <utility>
 #include <vector>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/hasNullable.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Interpreters/PreparedSets.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
 namespace ProfileEvents
 {
-extern const Event RuntimeFiltersCreated;
-extern const Event RuntimeFilterBlocksProcessed;
-extern const Event RuntimeFilterBlocksSkipped;
-extern const Event RuntimeFilterRowsChecked;
-extern const Event RuntimeFilterRowsPassed;
-extern const Event RuntimeFilterRowsSkipped;
+    extern const Event RuntimeFiltersCreated;
+    extern const Event RuntimeFilterBlocksProcessed;
+    extern const Event RuntimeFilterBlocksSkipped;
+    extern const Event RuntimeFilterRowsChecked;
+    extern const Event RuntimeFilterRowsPassed;
+    extern const Event RuntimeFilterRowsSkipped;
 }
 
 namespace DB
@@ -31,8 +39,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int INCORRECT_DATA;
-extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace detail
@@ -116,11 +124,9 @@ static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & sou
     const auto & source_words = source.getFilter();
     constexpr size_t word_size = sizeof(source_words.front());
     if (destination_words.size() != source_words.size())
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
+        throw Exception(ErrorCodes::INCORRECT_DATA,
             "Cannot merge Bloom Filters of different sizes: {} and {}",
-            destination_words.size() * word_size,
-            source_words.size() * word_size);
+            destination_words.size() * word_size, source_words.size() * word_size);
 
     for (size_t i = 0; i < destination_words.size(); ++i)
         destination_words[i] |= source_words[i];
@@ -135,6 +141,16 @@ static constexpr Float64 RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE = 0.5;
 
 namespace
 {
+bool typeSupportsMinMaxRange(const DataTypePtr & type)
+{
+    if (!type)
+        return false;
+
+    DataTypePtr inner = removeNullable(recursiveRemoveLowCardinality(type));
+    WhichDataType which(inner);
+    return which.isInt() || which.isUInt() || which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64();
+}
+
 void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_count, UInt64 seed, BloomFilterHashPair * out_hashes)
 {
     const char * position = raw_data;
@@ -209,10 +225,8 @@ Overloaded(Ts...) -> Overloaded<Ts...>;
 UInt64 growBloomFilterBytes(UInt64 distinct_keys, UInt64 hash_functions, UInt64 default_bloom_filter_bytes, Float64 max_ratio_of_set_bits)
 {
     const Float64 target_fill_rate = std::min(RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE, max_ratio_of_set_bits);
-    const double ideal_bloom_filter_bytes
-        = std::ceil(-static_cast<double>(hash_functions) * static_cast<double>(distinct_keys) / std::log1p(-target_fill_rate) / 8.0);
-    const double clamped_bloom_filter_bytes
-        = std::clamp(ideal_bloom_filter_bytes, 0.0, static_cast<double>(MAX_STATS_SIZED_BLOOM_FILTER_BYTES));
+    const double ideal_bloom_filter_bytes = std::ceil(-static_cast<double>(hash_functions) * static_cast<double>(distinct_keys) / std::log1p(-target_fill_rate) / 8.0);
+    const double clamped_bloom_filter_bytes = std::clamp(ideal_bloom_filter_bytes, 0.0, static_cast<double>(MAX_STATS_SIZED_BLOOM_FILTER_BYTES));
     return std::max(static_cast<UInt64>(clamped_bloom_filter_bytes), default_bloom_filter_bytes);
 }
 }
@@ -222,7 +236,8 @@ static size_t countPassedStats(ColumnPtr values);
 template <bool negate>
 ExactSetRuntimeFilter<negate>::ExactSetRuntimeFilter(
     const DataTypePtr & filter_column_target_type_, UInt64 bytes_limit_, UInt64 exact_values_limit_)
-    : argument_can_have_nulls(hasTypeThatCanContainNulls(filter_column_target_type_))
+    : filter_column_target_type(filter_column_target_type_)
+    , argument_can_have_nulls(hasTypeThatCanContainNulls(filter_column_target_type_))
     , bytes_limit(bytes_limit_)
     , exact_values_limit(exact_values_limit_)
     , lookup_state(Many{std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls)})
@@ -366,6 +381,16 @@ void ExactSetRuntimeFilter<negate>::releaseExactValues()
 }
 
 template <bool negate>
+ColumnPtr ExactSetRuntimeFilter<negate>::getRecordedKeyValues() const
+{
+    if constexpr (negate)
+        return nullptr;
+    if (is_full || !is_finished)
+        return nullptr;
+    return getValuesColumn();
+}
+
+template <bool negate>
 void ExactSetRuntimeFilter<negate>::mergeFrom(const ExactSetRuntimeFilter & source)
 {
     insert(source.getValuesColumn());
@@ -444,7 +469,8 @@ AdaptiveSetRuntimeFilter::AdaptiveSetRuntimeFilter(
     UInt64 bloom_filter_hash_functions_,
     Float64 max_ratio_of_set_bits_in_bloom_filter_,
     std::optional<UInt64> distinct_keys_hint_)
-    : bloom_filter_hash_functions(bloom_filter_hash_functions_)
+    : filter_column_target_type(filter_column_target_type_)
+    , bloom_filter_hash_functions(bloom_filter_hash_functions_)
     , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
     , distinct_keys_hint(distinct_keys_hint_)
     , filter(std::in_place_type<ExactFilter>, filter_column_target_type_, bytes_limit_, exact_values_limit_)
@@ -510,6 +536,13 @@ ColumnPtr AdaptiveSetRuntimeFilter::find(const ColumnWithTypeAndName & values) c
         filter);
 }
 
+ColumnPtr AdaptiveSetRuntimeFilter::getRecordedKeyValues() const
+{
+    if (const auto * exact_filter = std::get_if<ExactFilter>(&filter))
+        return exact_filter->getRecordedKeyValues();
+    return nullptr;
+}
+
 void AdaptiveSetRuntimeFilter::mergeFrom(const AdaptiveSetRuntimeFilter & source)
 {
     std::visit(
@@ -551,14 +584,31 @@ void AdaptiveSetRuntimeFilter::checkApproximateFilterWorthiness(
         evaluation_state.setFullyDisabled();
 }
 
-SharedFixedHashTableRuntimeFilter::SharedFixedHashTableRuntimeFilter(ProbeFn probe_fn_)
-    : probe_fn(std::move(probe_fn_))
+SharedFixedHashTableRuntimeFilter::SharedFixedHashTableRuntimeFilter(
+    const DataTypePtr & filter_column_target_type_, ProbeFn probe_fn_, std::optional<Range> key_range_, ColumnPtr recorded_key_values_)
+    : filter_column_target_type(filter_column_target_type_)
+    , probe_fn(std::move(probe_fn_))
+    , key_range(std::move(key_range_))
+    , recorded_key_values(std::move(recorded_key_values_))
 {
 }
 
 ColumnPtr SharedFixedHashTableRuntimeFilter::find(const ColumnWithTypeAndName & values) const
 {
     return probe_fn(values);
+}
+
+RuntimeFilter::RuntimeFilter(RuntimeFilterConfig config_, Data data_)
+    : evaluation_state(std::move(config_))
+    , data(std::move(data_))
+{
+    data.accessWriteEnabled(
+        [](Data * filter_data)
+        {
+            filter_data->range_supported = typeSupportsMinMaxRange(filter_data->filter_column_target_type);
+            if (!filter_data->range_supported)
+                filter_data->has_range = false;
+        });
 }
 
 void RuntimeFilter::insert(ColumnPtr values)
@@ -571,8 +621,33 @@ void RuntimeFilter::insert(ColumnPtr values)
                 {
                     using FilterType = std::decay_t<decltype(filter)>;
                     if constexpr (!FilterType::is_prebuilt)
+                    {
                         filter_data->build_state.assertCanInsert();
-                    filter.insert(std::move(values));
+                        if (filter_data->index_analysis_enabled && filter_data->range_supported && filter_data->range_positive
+                            && !values->empty())
+                        {
+                            Field column_min;
+                            Field column_max;
+                            values->getExtremes(column_min, column_max, 0, values->size());
+                            if (!column_min.isNull() && !column_max.isNull())
+                            {
+                                if (!filter_data->has_range)
+                                {
+                                    filter_data->range_min = column_min;
+                                    filter_data->range_max = column_max;
+                                    filter_data->has_range = true;
+                                }
+                                else
+                                {
+                                    if (accurateLess(column_min, filter_data->range_min))
+                                        filter_data->range_min = column_min;
+                                    if (accurateLess(filter_data->range_max, column_max))
+                                        filter_data->range_max = column_max;
+                                }
+                            }
+                        }
+                        filter.insert(std::move(values));
+                    }
                 },
                 filter_data->filter);
         });
@@ -586,8 +661,8 @@ void RuntimeFilter::finishInsert()
             if (filter_data->build_state.hasPendingMerges())
                 return;
 
-            filter_data->build_state.finishInserts();
             std::visit([&](auto & filter) { filter.finishInsert(evaluation_state); }, filter_data->filter);
+            filter_data->build_state.finishInserts();
         });
 }
 
@@ -632,6 +707,23 @@ void RuntimeFilter::merge(const RuntimeFilter * source)
                                 if constexpr (!DestinationFilter::is_prebuilt)
                                     destination_data->build_state.assertCanMerge();
                                 destination_filter.mergeFrom(source_filter);
+                                if (destination_data->index_analysis_enabled && destination_data->range_supported
+                                    && destination_data->range_positive && source_data->has_range)
+                                {
+                                    if (!destination_data->has_range)
+                                    {
+                                        destination_data->range_min = source_data->range_min;
+                                        destination_data->range_max = source_data->range_max;
+                                        destination_data->has_range = true;
+                                    }
+                                    else
+                                    {
+                                        if (accurateLess(source_data->range_min, destination_data->range_min))
+                                            destination_data->range_min = source_data->range_min;
+                                        if (accurateLess(destination_data->range_max, source_data->range_max))
+                                            destination_data->range_max = source_data->range_max;
+                                    }
+                                }
                                 if constexpr (!DestinationFilter::is_prebuilt)
                                     destination_data->build_state.finishMerge();
                             }
@@ -644,6 +736,44 @@ void RuntimeFilter::merge(const RuntimeFilter * source)
                         source_data->filter);
                 });
         });
+}
+
+void RuntimeFilter::enableIndexAnalysis()
+{
+    data.accessWriteEnabled(
+        [](Data * filter_data)
+        {
+            filter_data->build_state.assertCanInsert();
+            filter_data->index_analysis_enabled = true;
+        });
+}
+
+ColumnPtr RuntimeFilter::getRecordedKeyValues() const
+{
+    return data.accessReadOnly(
+        [](const Data * filter_data) -> ColumnPtr
+        {
+            if (!filter_data->index_analysis_enabled || !filter_data->range_positive || !filter_data->build_state.isFinished())
+                return nullptr;
+            return std::visit([](const auto & filter) { return filter.getRecordedKeyValues(); }, filter_data->filter);
+        });
+}
+
+std::optional<Range> RuntimeFilter::getRecordedKeyRanges() const
+{
+    return data.accessReadOnly(
+        [](const Data * filter_data) -> std::optional<Range>
+        {
+            if (!filter_data->range_supported || !filter_data->range_positive || !filter_data->has_range
+                || !filter_data->build_state.isFinished() || filter_data->range_min.isNull() || filter_data->range_max.isNull())
+                return {};
+            return Range(filter_data->range_min, true, filter_data->range_max, true);
+        });
+}
+
+DataTypePtr RuntimeFilter::getFilterColumnTargetType() const
+{
+    return data.accessReadOnly([](const Data * filter_data) { return filter_data->filter_column_target_type; });
 }
 
 template class ExactSetRuntimeFilter<false>;
@@ -737,6 +867,83 @@ private:
 RuntimeFilterLookupPtr createRuntimeFilterLookup()
 {
     return std::make_shared<RuntimeFilterLookup>();
+}
+
+/// Build a pruning predicate on the column: exact IN values when available, otherwise a range.
+static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
+    const RuntimeFilter & filter, const String & column_name, const DataTypePtr & column_type, ActionsDAG & dag, const ContextPtr & context)
+{
+    auto exact_values = filter.getRecordedKeyValues();
+    auto range = exact_values ? std::optional<Range>{} : filter.getRecordedKeyRanges();
+    if (!exact_values && !range)
+        return nullptr;
+
+    const auto target_type = filter.getFilterColumnTargetType();
+    const auto & key_node = dag.addInput(column_name, column_type);
+    const auto & key_casted = column_type->equals(*target_type)
+        ? key_node
+        : dag.addCast(key_node, target_type, {}, context);
+
+    if (exact_values)
+    {
+        ColumnWithTypeAndName set_values(exact_values, target_type, "__runtime_filter_in_values_" + column_name);
+        auto future_set = std::make_shared<FutureSetFromTuple>(
+            CityHash_v1_0_2::uint128{}, ASTPtr{}, ColumnsWithTypeAndName{set_values}, false, SizeLimits{});
+        auto set_column = ColumnConst::create(ColumnSet::create(1, std::move(future_set)), 0);
+        const auto & set_node
+            = dag.addColumn(std::move(set_column), std::make_shared<DataTypeSet>(), "__runtime_filter_in_set_" + column_name);
+        LOG_DEBUG(
+            getLogger("JoinRuntimeFilterIndexAnalysis"),
+            "Index analysis engaged on join key '{}': pruning by exact IN-set of {} value(s)",
+            column_name,
+            exact_values->size());
+        return &dag.addFunction(FunctionFactory::instance().get("in", context), {&key_casted, &set_node}, {});
+    }
+
+    if (range)
+    {
+        const auto & min_node
+            = dag.addColumn(target_type->createColumnConst(1, range->left), target_type, "__runtime_filter_min_" + column_name);
+        const auto & max_node
+            = dag.addColumn(target_type->createColumnConst(1, range->right), target_type, "__runtime_filter_max_" + column_name);
+        const auto & ge_node = dag.addFunction(FunctionFactory::instance().get("greaterOrEquals", context), {&key_casted, &min_node}, {});
+        const auto & le_node = dag.addFunction(FunctionFactory::instance().get("lessOrEquals", context), {&key_casted, &max_node}, {});
+        LOG_DEBUG(
+            getLogger("JoinRuntimeFilterIndexAnalysis"),
+            "Index analysis engaged on join key '{}': pruning by range {}",
+            column_name,
+            range->toString());
+        FunctionOverloadResolverPtr and_func = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+        return &dag.addFunction(and_func, {&ge_node, &le_node}, {});
+    }
+
+    return nullptr;
+}
+
+const ActionsDAG::Node * buildRuntimeRangePredicate(
+    const IRuntimeFilterLookup & lookup,
+    const std::vector<RuntimeFilterIndexAnalysisDescriptor> & descriptors,
+    ActionsDAG & dag,
+    const ContextPtr & context)
+{
+    ActionsDAG::NodeRawConstPtrs and_args;
+    for (const auto & descriptor : descriptors)
+    {
+        auto filter = lookup.find(descriptor.filter_id);
+        if (!filter)
+            continue;
+        if (const auto * predicate
+            = convertRuntimeFilterToKeyConditionDAG(*filter, descriptor.key_column_name, descriptor.key_column_type, dag, context))
+            and_args.push_back(predicate);
+    }
+
+    if (and_args.empty())
+        return nullptr;
+    if (and_args.size() == 1)
+        return and_args.front();
+
+    FunctionOverloadResolverPtr and_func = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+    return &dag.addFunction(and_func, std::move(and_args), {});
 }
 
 }

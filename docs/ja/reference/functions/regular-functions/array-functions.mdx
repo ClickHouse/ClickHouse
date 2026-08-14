@@ -679,8 +679,8 @@ arrayDotProduct(v1, v2)
 
 **引数**
 
-* `v1` — 第1ベクトル。[`Array((U)Int* | Float* | Decimal)`](/ja/reference/data-types/array) または [`Tuple((U)Int* | Float* | Decimal)`](/ja/reference/data-types/tuple)
-* `v2` — 第2ベクトル。[`Array((U)Int* | Float* | Decimal)`](/ja/reference/data-types/array) または [`Tuple((U)Int* | Float* | Decimal)`](/ja/reference/data-types/tuple)
+* `v1` — 第1ベクトル。[`Array((U)Int* | Float* | BFloat16 | Decimal)`](/ja/reference/data-types/array) または [`Tuple((U)Int* | Float* | Decimal)`](/ja/reference/data-types/tuple)
+* `v2` — 第2ベクトル。[`Array((U)Int* | Float* | BFloat16 | Decimal)`](/ja/reference/data-types/array) または [`Tuple((U)Int* | Float* | Decimal)`](/ja/reference/data-types/tuple)
 
 **戻り値**
 
@@ -688,6 +688,7 @@ arrayDotProduct(v1, v2)
 
 <Note>
   戻り値の型は引数の型によって決まります。Array または Tuple に異なる要素型が混在している場合、結果の型は共通の上位型になります。
+  2 つの `BFloat16` 配列は `Float32` で累積され、`Float32` を返します (2 つの `Float32` 配列と同じ規則です) 。
 </Note>
 
 [`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal`](/ja/reference/data-types/decimal)
@@ -720,15 +721,15 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 
 導入バージョン: v1.1.0
 
-指定された配列のインデックス `n` にある要素を返します。`n` には任意の整数型を指定できます。
-インデックスが配列の範囲外の場合は、デフォルト値 (数値であれば 0、文字列であれば空文字列など) を返します。
-ただし、非定数の配列引数に対して定数インデックス 0 を指定した場合は例外で、この場合は `Array indices are 1-based` というエラーになります。
+指定された配列の索引 `n` にある要素を返します。`n` には任意の整数型を指定できます。
+索引が配列の範囲外の場合は、デフォルト値 (数値であれば 0、文字列であれば空文字列など) を返します。
+ただし、非定数の配列引数に対して定数索引 0 を指定した場合は例外で、この場合は `Array indices are 1-based` というエラーになります。
 
 <Note>
   ClickHouse の配列は 1 始まりです。
 </Note>
 
-負のインデックスもサポートされています。この場合、末尾から数えた対応する要素が選択されます。たとえば、`arr[-1]` は配列の最後の要素です。
+負の索引もサポートされています。この場合、末尾から数えた対応する要素が選択されます。たとえば、`arr[-1]` は配列の最後の要素です。
 
 演算子 `[n]` でも同じ機能を使用できます。
 
@@ -758,7 +759,7 @@ SELECT arrayElement(arr, 2) FROM (SELECT [1, 2, 3] AS arr)
 2
 ```
 
-**負のインデックス**
+**負の索引**
 
 ```sql title=Query
 SELECT arrayElement(arr, -1) FROM (SELECT [1, 2, 3] AS arr)
@@ -778,7 +779,7 @@ SELECT arr[2] FROM (SELECT [1, 2, 3] AS arr)
 2
 ```
 
-**配列の範囲外のインデックス**
+**配列の範囲外の索引**
 
 ```sql title=Query
 SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
@@ -794,14 +795,14 @@ SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 
 導入バージョン: v1.1.0
 
-指定された配列のインデックス `n` にある要素を取得します。`n` には任意の整数型を指定できます。
-インデックスが配列の範囲外の場合は、デフォルト値ではなく `NULL` が返されます。
+指定された配列の索引 `n` にある要素を取得します。`n` には任意の整数型を指定できます。
+索引が配列の範囲外の場合は、デフォルト値ではなく `NULL` が返されます。
 
 <Note>
   ClickHouse の Array は 1 始まりの配列です。
 </Note>
 
-負のインデックスもサポートされています。この場合は、末尾から数えた位置に対応する要素が選択されます。たとえば、`arr[-1]` は配列の最後の要素です。
+負の索引もサポートされています。この場合は、末尾から数えた位置に対応する要素が選択されます。たとえば、`arr[-1]` は配列の最後の要素です。
 
 **構文**
 
@@ -829,7 +830,7 @@ SELECT arrayElementOrNull(arr, 2) FROM (SELECT [1, 2, 3] AS arr)
 2
 ```
 
-**負のインデックス**
+**負の索引**
 
 ```sql title=Query
 SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)
@@ -1722,13 +1723,17 @@ SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res
 
 導入バージョン: v1.1.0
 
-`arrayJoin` 関数は、配列を含む1つの行を受け取り、それを展開して、配列の各要素ごとに1行ずつ、複数の行を生成します。
+`arrayJoin` 関数は、Array を含む1つの行を受け取り、それを展開して、Array の各要素ごとに1行ずつ、複数の行を生成します。
 これは、同じ行の中で入力値を出力値に対応付ける ClickHouse の通常の関数や、
 複数の行のグループを1つの要約行に「圧縮」または「集約」する集約関数
 (`GROUP BY` とともに使用した場合は、要約行内の単一の値) とは対照的です。
 
 この関数が適用されたカラムを除き、他のカラムの値はそのままコピーされます。
-適用されたカラムの値は、対応する配列の要素の値に置き換えられます。
+適用されたカラムの値は、対応する Array の要素の値に置き換えられます。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -1740,7 +1745,7 @@ arrayJoin(arr)
 
 **引数**
 
-* `arr` — 展開する配列。[`Array(T)`](/ja/reference/data-types/array)
+* `arr` — 展開する Array。[`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
@@ -1765,7 +1770,7 @@ SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 **arrayJoin はクエリのすべての句に影響します**
 
 ```sql title=Query
--- arrayJoin関数はWHERE句を含むクエリのすべてのセクションに影響します。サブクエリが返したのは1行ですが、結果が2になっていることに注目してください。
+-- The arrayJoin function affects all sections of the query, including the WHERE section. Notice the result 2, even though the subquery returned 1 row.
 
 SELECT sum(1) AS impressions
 FROM
@@ -1784,7 +1789,7 @@ WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 **複数の arrayJoin 関数を使用する**
 
 ```sql title=Query
-- 1つのクエリで複数のarrayJoin関数を使用できます。この場合、変換が複数回実行され、行数が乗算されます。
+-- A query can use multiple arrayJoin functions. In this case, the transformation is performed multiple times and the rows are multiplied.
 
 SELECT
     sum(1) AS impressions,
@@ -1799,30 +1804,33 @@ FROM
 GROUP BY
     2,
     3
+ORDER BY
+    city,
+    browser
 ```
 
 ```response title=Response
 ┌─impressions─┬─city─────┬─browser─┐
-│           2 │ Istanbul │ Chrome  │
-│           1 │ Istanbul │ Firefox │
 │           2 │ Berlin   │ Chrome  │
 │           1 │ Berlin   │ Firefox │
 │           2 │ Bobruisk │ Chrome  │
 │           1 │ Bobruisk │ Firefox │
+│           2 │ Istanbul │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
 **最適化によって予期しない結果が生じる場合**
 
 ```sql title=Query
--- 同じ式に対して複数の arrayJoin を使用すると、最適化により期待どおりの結果が得られない場合があります。
--- このような場合は、JOIN の結果に影響しない追加の操作を加えて、繰り返し使用する配列式を変更することを検討してください。
-- e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
+-- Using multiple arrayJoin with the same expression may not produce the expected result due to optimizations.
+-- For these cases, consider modifying the repeated array expression with extra operations that do not affect join result.
+-- e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
 
 SELECT
     arrayJoin(dice) as first_throw,
-    /* arrayJoin(dice) as second_throw */ -- 技術的には正しいが、結果セットが消滅してしまう
-    arrayJoin(arrayConcat(dice, [])) as second_throw -- 再評価を強制するために意図的に式を変更している
+    /* arrayJoin(dice) as second_throw */ -- is technically correct, but will annihilate result set
+    arrayJoin(arrayConcat(dice, [])) as second_throw -- intentionally changed expression to force re-evaluation
 FROM (
     SELECT [1, 2, 3, 4, 5, 6] as dice
 );
@@ -1872,8 +1880,8 @@ FROM (
 **ARRAY JOIN構文を使う**
 
 ```sql title=Query
--- 以下の `SELECT` クエリの ARRAY JOIN 構文に注目してください。より幅広い用途に対応できます。
--- ARRAY JOIN を使用すると、要素数が同じ複数の配列を一度に変換できます。
+-- Note the ARRAY JOIN syntax in the `SELECT` query below, which provides broader possibilities.
+-- ARRAY JOIN allows you to convert multiple arrays with the same number of elements at a time.
 
 SELECT
     sum(1) AS impressions,
@@ -1891,20 +1899,23 @@ ARRAY JOIN
 GROUP BY
     2,
     3
+ORDER BY
+    2,
+    3
 ```
 
 ```response title=Response
 ┌─impressions─┬─city─────┬─browser─┐
-│           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
 │           1 │ Bobruisk │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
 **Tupleの使用**
 
 ```sql title=Query
--- Tupleを使用することもできます
+-- You can also use Tuple
 
 SELECT
     sum(1) AS impressions,
@@ -1919,13 +1930,16 @@ FROM
 GROUP BY
     2,
     3
+ORDER BY
+    2,
+    3
 ```
 
 ```response title=Response
 ┌─impressions─┬─city─────┬─browser─┐
-│           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
 │           1 │ Bobruisk │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
@@ -2321,6 +2335,10 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
   ソート済みの要素のみを残すには、`arrayResize` を使用します。
 </Tip>
 
+<Note>
+  この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
@@ -2398,13 +2416,17 @@ SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 導入バージョン: v23.2.0
 
 元の配列と同じサイズの配列を返します。この配列では、`[1..limit]` の範囲の要素が元の配列からランダムに選ばれた
-部分集合となります。残りの `(limit..n]` には、`[1..limit]` に含まれない要素が未定義の順序で格納されます。
+部分集合となります。残りの `(limit..n]` には、`[1..limit]` の範囲に含まれない要素が未定義の順序で格納されます。
 `limit` の値は `[1..n]` の範囲内である必要があります。この範囲外の値を指定した場合は、完全な `arrayShuffle` を実行するのと同等です。
 
 <Note>
   この関数は定数をマテリアライズしません。
 
   `limit` の値は `[1..N]` の範囲内である必要があります。この範囲外の値を指定した場合は、完全な [`arrayShuffle`](#arrayShuffle) を実行するのと同等です。
+</Note>
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
 </Note>
 
 **構文**
@@ -2497,6 +2519,10 @@ SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffl
 <Tip>
   ソート済みの要素だけを残すには、`arrayResize` を使用します。
 </Tip>
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -2836,6 +2862,10 @@ SELECT arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 導入バージョン: v23.10.0
 
 入力配列から、ランダムに選択した `samples` 個の要素からなる部分集合を返します。`samples` が入力配列のサイズを超える場合、サンプル数は配列のサイズに制限されます。つまり、配列のすべての要素が返されますが、その順序は保証されません。この関数は、フラットな配列とネストされた配列の両方を扱えます。
+
+<Note>
+  この関数は非決定論的です。つまり、同じ引数に対しても異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -3509,6 +3539,10 @@ SELECT arrayShingles([1, 2, 3, 4], 3) as res;
   この関数では定数はマテリアライズされません。
 </Note>
 
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
@@ -3775,12 +3809,12 @@ SELECT arraySum(x, y -> x+y, [1, 1, 1, 1], [1, 1, 1, 1]);
 
 導入バージョン: v25.4.0
 
-複数の配列を受け取り、すべてのソース配列に共通して存在するわけではない要素からなる配列を返します。結果には一意の値のみが含まれます。
+複数のArrayを受け取り、すべてのソースArrayに共通して含まれるわけではない要素からなるArrayを返します。結果には一意の値のみが含まれます。
 
 <Note>
   *2 つを超える集合*の対称差は、[数学的には](https://en.wikipedia.org/wiki/Symmetric_difference#n-ary_symmetric_difference)
   奇数個の入力集合に現れるすべての入力要素からなる集合として定義されます。
-  一方、関数 `arraySymmetricDifference` は、すべての入力集合に共通して存在するわけではない入力要素の集合を単純に返します。
+  一方、関数 `arraySymmetricDifference` は、すべての入力集合に共通して含まれるわけではない入力要素の集合を単純に返します。
 </Note>
 
 **構文**
@@ -3791,11 +3825,11 @@ arraySymmetricDifference(arr1, arr2, ... , arrN)
 
 **引数**
 
-* `arrN` — 新しい配列の作成元となる N 個の配列。[`Array(T)`](/ja/reference/data-types/array)。
+* `arrN` — 新しいArrayの作成元となる N 個のArray。[`Array(T)`](/ja/reference/data-types/array)。
 
 **戻り値**
 
-すべてのソース配列に共通して含まれない、重複のない要素からなる配列を返します [`Array(T)`](/ja/reference/data-types/array)
+すべてのソースArrayに共通して含まれない、重複のない要素からなるArrayを返します [`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -4028,12 +4062,12 @@ arrayUniq(arr1[, arr2, ..., arrN])
 **引数**
 
 * `arr1` — 一意な要素数を数える対象の Array。 [`Array(T)`](/ja/reference/data-types/array)
-* `[, arr2, ..., arrN]` — 任意。複数の Array の対応する位置にある要素から構成される、一意な Tuple の数を数えるための追加の Array。 [`Array(T)`](/ja/reference/data-types/array)
+* `[, arr2, ..., arrN]` — 任意。複数の Array の対応する位置にある要素から構成される、一意な タプル の数を数えるための追加の Array。 [`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
 引数が 1 つの場合は、一意な
-要素数を返します。引数が複数ある場合は、各 Array の対応する位置にある要素から構成される一意な Tuple の数を返します。
+要素数を返します。引数が複数ある場合は、各 Array の対応する位置にある要素から構成される一意な タプル の数を返します。
 [`UInt32`](/ja/reference/data-types/int-uint)
 
 **例**
@@ -4267,7 +4301,7 @@ emptyArrayDate()
 **使用例**
 
 ```sql title=Query
-SELECT emptyArrayDate
+SELECT emptyArrayDate()
 ```
 
 ```response title=Response
@@ -4301,7 +4335,7 @@ emptyArrayDateTime()
 **使用例**
 
 ```sql title=Query
-SELECT emptyArrayDateTime
+SELECT emptyArrayDateTime()
 ```
 
 ```response title=Response
@@ -4335,7 +4369,7 @@ emptyArrayFloat32()
 **使用例**
 
 ```sql title=Query
-SELECT emptyArrayFloat32
+SELECT emptyArrayFloat32()
 ```
 
 ```response title=Response
@@ -4369,7 +4403,7 @@ emptyArrayFloat64()
 **使用例**
 
 ```sql title=Query
-SELECT emptyArrayFloat64
+SELECT emptyArrayFloat64()
 ```
 
 ```response title=Response
@@ -4403,7 +4437,7 @@ emptyArrayInt16()
 **使用例**
 
 ```sql title=Query
-SELECT emptyArrayInt16
+SELECT emptyArrayInt16()
 ```
 
 ```response title=Response
@@ -4437,7 +4471,7 @@ emptyArrayInt32()
 **使用例**
 
 ```sql title=Query
-SELECT emptyArrayInt32
+SELECT emptyArrayInt32()
 ```
 
 ```response title=Response
@@ -4471,7 +4505,7 @@ emptyArrayInt64()
 **使用例**
 
 ```sql title=Query
-SELECT emptyArrayInt64
+SELECT emptyArrayInt64()
 ```
 
 ```response title=Response
@@ -4498,14 +4532,14 @@ emptyArrayInt8()
 
 **戻り値**
 
-空のInt8配列。[`Array(T)`](/ja/reference/data-types/array)
+空のInt8Array。[`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
 **使用例**
 
 ```sql title=Query
-SELECT emptyArrayInt8
+SELECT emptyArrayInt8()
 ```
 
 ```response title=Response
@@ -4518,7 +4552,7 @@ SELECT emptyArrayInt8
 
 導入バージョン: v1.1.0
 
-空のString配列を返します
+空のStringArrayを返します
 
 **構文**
 
@@ -4532,14 +4566,14 @@ emptyArrayString()
 
 **戻り値**
 
-空の String 配列。[`Array(T)`](/ja/reference/data-types/array)
+空の String Array。[`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
 **使用例**
 
 ```sql title=Query
-SELECT emptyArrayString
+SELECT emptyArrayString()
 ```
 
 ```response title=Response
@@ -4598,7 +4632,7 @@ SELECT emptyArrayToSingle(a), emptyArrayToSingle(b), emptyArrayToSingle(c) FROM 
 
 導入バージョン: v1.1.0
 
-空の UInt16 の配列を返します
+空の UInt16 のArrayを返します
 
 **構文**
 
@@ -4612,14 +4646,14 @@ emptyArrayUInt16()
 
 **戻り値**
 
-UInt16 の空の配列。 [`Array(T)`](/ja/reference/data-types/array)
+UInt16 の空のArray。 [`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
 **使用例**
 
 ```sql title=Query
-SELECT emptyArrayUInt16
+SELECT emptyArrayUInt16()
 ```
 
 ```response title=Response
@@ -4646,14 +4680,14 @@ emptyArrayUInt32()
 
 **戻り値**
 
-空の UInt32 の配列。[`Array(T)`](/ja/reference/data-types/array)
+空の UInt32 のArray。[`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
 **使用例**
 
 ```sql title=Query
-SELECT emptyArrayUInt32
+SELECT emptyArrayUInt32()
 ```
 
 ```response title=Response
@@ -4666,7 +4700,7 @@ SELECT emptyArrayUInt32
 
 導入バージョン: v1.1.0
 
-空の UInt64 配列を返します
+空の UInt64 Arrayを返します
 
 **構文**
 
@@ -4680,14 +4714,14 @@ emptyArrayUInt64()
 
 **戻り値**
 
-空の UInt64 の配列です。[`Array(T)`](/ja/reference/data-types/array)
+空の UInt64 のArrayです。[`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
 **使用例**
 
 ```sql title=Query
-SELECT emptyArrayUInt64
+SELECT emptyArrayUInt64()
 ```
 
 ```response title=Response
@@ -4721,7 +4755,7 @@ emptyArrayUInt8()
 **使用例**
 
 ```sql title=Query
-SELECT emptyArrayUInt8
+SELECT emptyArrayUInt8()
 ```
 
 ```response title=Response
@@ -5176,89 +5210,18 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 5
 ```
 
-<div id="kql_array_sort_asc">
-  ## kql_array_sort_asc
-</div>
-
-導入バージョン: v23.10.0
-
-1 つ以上の配列を昇順にソートします。最初の配列がソートされ、後続の配列はそのソート順に合わせて並べ替えられます。NULL 値は末尾に配置されます。これは KQL (Kusto Query Language) 互換関数です。
-
-**構文**
-
-```sql
-kql_array_sort_asc(array1[, array2, ..., nulls_last])
-```
-
-**引数**
-
-* `array1` — ソート対象の配列です。[`Array(T)`](/ja/reference/data-types/array)
-* `array2` — 任意。`array1` のソート順に合わせて並べ替える追加の配列です。[`Array(T)`](/ja/reference/data-types/array)
-* `nulls_last` — 任意。NULL を最後に配置するかどうかを示すブール値です。デフォルトは true です。[`UInt8`](/ja/reference/data-types/int-uint)
-
-**戻り値**
-
-昇順にソートされた配列のタプルを返します。[`Tuple(Array, ...)`](/ja/reference/data-types/tuple)
-
-**例**
-
-**基本的な使い方**
-
-```sql title=Query
-SELECT kql_array_sort_asc([3, 1, 2])
-```
-
-```response title=Response
-([1, 2, 3])
-```
-
-<div id="kql_array_sort_desc">
-  ## kql_array_sort_desc
-</div>
-
-導入バージョン: v23.10.0
-
-1 つ以上の配列を降順にソートします。最初の配列がソートされ、以降の配列はその並び順に合わせて並べ替えられます。NULL 値は末尾に配置されます。これは KQL (Kusto Query Language) との互換性のための関数です。
-
-**構文**
-
-```sql
-kql_array_sort_desc(array1[, array2, ..., nulls_last])
-```
-
-**引数**
-
-* `array1` — ソート対象の配列です。[`Array(T)`](/ja/reference/data-types/array)
-* `array2` — `array1` のソート順に合わせて並べ替える、任意の追加配列です。[`Array(T)`](/ja/reference/data-types/array)
-* `nulls_last` — null を末尾に配置するかどうかを示す任意のブール値です。デフォルトは true です。[`UInt8`](/ja/reference/data-types/int-uint)
-
-**戻り値**
-
-降順にソートされた配列のタプルを返します。[`Tuple(Array, ...)`](/ja/reference/data-types/tuple)
-
-**例**
-
-**基本的な使い方**
-
-```sql title=Query
-SELECT kql_array_sort_desc([3, 1, 2])
-```
-
-```response title=Response
-([3, 2, 1])
-```
-
 <div id="length">
   ## length
 </div>
 
 導入バージョン: v1.1.0
 
-文字列または配列の長さを計算します。
+文字列またはArrayの長さを計算します。
 
 * String または FixedString 引数の場合: 文字列のバイト数を計算します。
-* Array 引数の場合: 配列の要素数を計算します。
-* FixedString 引数に適用した場合、この関数は定数式になります。
+* Array 引数の場合: Array の要素数を計算します。
+* QBit 引数の場合: ベクトルの次元を計算します。
+* FixedString または QBit 引数に適用した場合、この関数は定数式になります。
 
 文字列のバイト数は、Unicode の &quot;code points&quot; の数とも、
 Unicode の &quot;grapheme clusters&quot; の数
@@ -5272,15 +5235,15 @@ Unicode の &quot;grapheme clusters&quot; の数
 length(x)
 ```
 
-**別名**: `CARDINALITY`, `OCTET_LENGTH`
+**別名**: `OCTET_LENGTH`, `CARDINALITY`
 
 **引数**
 
-* `x` — バイト数 (String/FixedString の場合) または要素数 (Array の場合) を計算する値。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`Array(T)`](/ja/reference/data-types/array)
+* `x` — バイト数 (String/FixedString の場合)、要素数 (Array の場合)、または次元数 (QBit の場合) を計算する値。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`Array(T)`](/ja/reference/data-types/array) または [`QBit`](/ja/reference/data-types/qbit)
 
 **戻り値**
 
-String/FixedString `x` のバイト数、または配列 `x` の要素数を返します。[`UInt64`](/ja/reference/data-types/int-uint)
+String/FixedString `x` のバイト数、Array `x` の要素数、または QBit `x` の次元数を返します。[`UInt64`](/ja/reference/data-types/int-uint)
 
 **例**
 
@@ -5302,6 +5265,16 @@ SELECT length(['Hello', 'world'])
 
 ```response title=Response
 2
+```
+
+**QBitの例**
+
+```sql title=Query
+SELECT length([0, 0, 0, 0, 0, 0, 0, 0]::QBit(Float32, 8))
+```
+
+```response title=Response
+8
 ```
 
 **constexprの例**
@@ -5386,6 +5359,107 @@ SELECT notEmpty([1,2]);
 
 ```response title=Response
 1
+```
+
+<div id="randomHadamardTransform">
+  ## randomHadamardTransform
+</div>
+
+導入バージョン: v26.7.0
+
+浮動小数点ベクトルにランダム化 Hadamard 変換を適用します: `y = (1/sqrt(k)) * (H * D * x)`。ここで、
+`D` は `seed` によって決まる決定論的な +/-1 符号の対角行列、`H` は Walsh-Hadamard
+変換です。
+
+この変換は、ベクトルのエネルギーを各座標に均等に分散させる直交な**ノルム保存**回転であり、
+各座標の分布をおおむねガウス分布にし、かつ
+データ非依存にします。スカラー量子化の前処理として有用であり、また --
+切り詰めた場合には -- Johnson-Lindenstrauss / subsampled-randomized-Hadamard (SRHT) のランダム射影としても利用できます。
+
+完全変換 (切り詰めなし) では、入力長はそのまま保持されます。次の長さでは厳密です:
+
+* 2 のべき乗 (通常の高速 Walsh-Hadamard 変換) ;
+* `m` が `{12, 20}` に含まれる `2^k * m` (`+/-1` Hadamard 行列を持つ次数。たとえば `768 = 64 * 12`,
+  `1536 = 128 * 12`, `3072 = 256 * 12`, `2560 = 128 * 20`) 。これは厳密な Kronecker 変換
+  `H_(2^k) (x) H_m` として適用されます (浮動小数点乗算なし) ;
+* `64` 以下の、それ以外の任意の奇数 `m` に対する `2^k * m` (`+/-1` Hadamard 行列を持たない次数 --
+  そのような行列が存在するのは次数 `1`、`2`、および `4` の倍数のみです) 。これは厳密な Kronecker 変換
+  `H_(2^k) (x) C_m` として適用され、ここで `C_m` は実直交な Discrete Hartley Transform 行列です。これにより
+  `3584 = 512 * 7`、`1152 = 128 * 9`、`1408 = 128 * 11` のような残りの埋め込みファミリーもカバーされます。
+
+最大の奇数因子が `64` を超える長さに対する完全変換には厳密な形がなく、より長い 2 のべき乗長への
+ゼロ埋めが必要になります。そのため、黙ってより長いベクトルを返すのではなく、**例外として拒否**されます。
+サポートされている長さを使用するか、`output_dims` を渡して任意長の切り詰め射影を計算してください
+(下記参照) 。
+
+結果の要素型は入力と同じです。空の入力配列を渡すと、空の配列が返されます。
+
+* `seed` (省略可、デフォルト `0`) : 符号パターンを選択します。同じ seed では常に同じ
+  変換が得られます。
+* `output_dims` (省略可、デフォルトは変換長) : 先頭の `output_dims`
+  個の座標だけを残し、この変換を **任意の** 長さを受け付けるランダム射影にします。この
+  `1/sqrt(output_dims)` のスケーリングにより、完全変換では結果のノルムが保存され、
+  切り詰め時には期待値の意味でノルムが保存されます。これは変換長を超えてはいけません。なぜなら、
+  Discrete Hartley 因子 `C_m` の切り詰められたプレフィックスは、`+/-1` Hadamard 行列のような
+  一様なレバレッジを持たないため、Hartley ファミリーの長さ (または厳密な因子を持たない任意の長さ) で
+  `output_dims` による切り詰めを行う場合は、ゼロ埋めした 2 のべき乗変換が使われます。こちらはその性質を保ちます。
+
+**構文**
+
+```sql
+randomHadamardTransform(vector[, seed[, output_dims]])
+```
+
+**引数**
+
+* `vector` — 変換するベクトル。[`Array(BFloat16)`](/ja/reference/data-types/array) または [`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Float64)`](/ja/reference/data-types/array)
+* `seed` — 省略可能。決定論的な +/-1 符号のシード (デフォルトは 0) 。[`UInt*`](/ja/reference/data-types/int-uint)
+* `output_dims` — 省略可能。結果を先頭からこの数の座標に切り詰めます (デフォルトは完全変換の長さ全体で、サポートされているすべての次元で入力長と同じです) 。output&#95;dims を指定すると、厳密な完全変換形式がない長さでも変換が有効になります。[`UInt*`](/ja/reference/data-types/int-uint)
+
+**戻り値**
+
+変換後のベクトル (要素型は入力と同じ) 。長さは変換長 (サポートされている次元の完全変換では入力長と同じ) で、必要に応じて output&#95;dims まで切り詰められます。[`Array(BFloat16)`](/ja/reference/data-types/array) または [`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Float64)`](/ja/reference/data-types/array)
+
+**例**
+
+**2 の累乗長に対する完全変換**
+
+```sql title=Query
+SELECT length(randomHadamardTransform([1, 2, 3, 4]::Array(Float32)))
+```
+
+```response title=Response
+4
+```
+
+**ノルムは保たれます**
+
+```sql title=Query
+SELECT round(arraySum(x -> x * x, randomHadamardTransform([1, 2, 3, 4]::Array(Float32))) - 30, 4)
+```
+
+```response title=Response
+0
+```
+
+**3 次元に切り詰めた射影 (任意の長さを受け付けます)**
+
+```sql title=Query
+SELECT length(randomHadamardTransform([1, 2, 3, 4, 5, 6, 7, 8]::Array(Float32), 42, 3))
+```
+
+```response title=Response
+3
+```
+
+**2^k * m 次元の厳密変換では、入力長がそのまま保たれます (パディングなし)&#x20;**
+
+```sql title=Query
+SELECT length(randomHadamardTransform(CAST(range(1152), 'Array(Float32)')))
+```
+
+```response title=Response
+1152
 ```
 
 <div id="range">

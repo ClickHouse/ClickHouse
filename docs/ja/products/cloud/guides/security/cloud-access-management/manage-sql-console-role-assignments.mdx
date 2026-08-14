@@ -13,12 +13,12 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   この設定は非推奨であり、カスタムロールに移行した組織では、ロール作成画面の新しい設定に置き換えられています。詳しくは、[クラウドユーザーの管理](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users) を参照してください。
 </Warning>
 
-> このガイドでは、SQLコンソール のロール割り当てを設定する方法を説明します。これにより、console 全体のアクセス権限と、ユーザーが Cloud console 内で利用できる機能が決まります。
+> このガイドでは、SQLコンソール のロール割り当てを設定する方法を説明します。これにより、
+> console 全体のアクセス権限と、ユーザーが
+> Cloud console 内で利用できる機能が決まります。
 
 <Steps>
-  <Step>
-    ### サービスの設定にアクセスする
-
+  <Step title="サービスの設定にアクセスする" id="access-service-settings">
     services ページで、SQLコンソール のアクセス設定を変更したいサービスの右上にあるメニューをクリックします。
 
     <Image img="/images/cloud/guides/sql_console/service_level_access/1_service_settings.webp" size="lg" />
@@ -28,17 +28,13 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     <Image img="/images/cloud/guides/sql_console/service_level_access/2_service_settings.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### SQLコンソール アクセスを調整する
-
+  <Step title="SQLコンソール アクセスを調整する" id="adjust-sql-console-access">
     &quot;Security&quot; セクションで、&quot;SQL console access&quot; の項目を見つけます。
 
     <Image img="/images/cloud/guides/sql_console/service_level_access/3_service_settings.webp" size="md" />
   </Step>
 
-  <Step>
-    ### Service Admin の設定を更新する
-
+  <Step title="Service Admin の設定を更新する" id="update-settings-for-service-admin">
     Service Admin のドロップダウンメニューを選択し、Service Admin ロールのアクセス制御設定を変更します。
 
     <Image img="/images/cloud/guides/sql_console/service_level_access/4_service_settings.webp" size="md" />
@@ -52,9 +48,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     | `Full access` |
   </Step>
 
-  <Step>
-    ### Service Read Only の設定を更新する
-
+  <Step title="Service Read Only の設定を更新する" id="update-settings-for-service-read-only">
     Service Read Only のドロップダウンメニューを選択し、Service Read Only ロールのアクセス制御設定を変更します。
 
     <Image img="/images/cloud/guides/sql_console/service_level_access/5_service_settings.webp" size="md" />
@@ -68,9 +62,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     | `Full access` |
   </Step>
 
-  <Step>
-    ### アクセス権を持つユーザーを確認する
-
+  <Step title="アクセス権を持つユーザーを確認する" id="review-users-with-access">
     ユーザー数を選択すると、そのサービスのユーザーの概要を確認できます。
 
     <Image img="/images/cloud/guides/sql_console/service_level_access/6_service_settings.webp" size="md" />

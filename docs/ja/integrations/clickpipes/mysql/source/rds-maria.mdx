@@ -24,29 +24,27 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ## バイナリログの保持を有効にする
 </div>
 
-バイナリログは、MySQLサーバーのインスタンスで行われたデータ変更に関する情報を含む一連のログファイルです。バイナリログファイルはレプリケーションに必要です。以下の両方の手順を実行する必要があります。
+バイナリログは、MySQL server インスタンスで行われたデータ変更に関する情報を含むログファイルの集合です。バイナリログファイルはレプリケーションに必要です。以下の両方の手順を実行する必要があります。
 
-<div id="enable-binlog-logging-rds">
-  ### 1. 自動バックアップによるバイナリログの有効化
-</div>
+<Steps>
+  <Step title="自動バックアップでバイナリログを有効にする" id="enable-binlog-logging-rds">
+    自動バックアップ機能によって、MySQL のバイナリログを有効にするかどうかが決まります。これは AWS コンソールで設定できます。
 
-自動バックアップ機能によって、MySQL でバイナリログを有効にするかどうかが決まります。これは AWS コンソールで設定できます。
+    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="RDS で自動バックアップを有効にする" size="lg" border />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="RDS で自動バックアップを有効にする" size="lg" border />
+    レプリケーションのユースケースに応じて、バックアップ保持期間を十分長く設定することをお勧めします。
+  </Step>
 
-レプリケーションの用途に応じて、バックアップ保持期間は十分に長めに設定することを推奨します。
+  <Step title="binlog の保持時間" id="binlog-retention-hours-rds">
+    Amazon RDS for MariaDB では、binlog の保持期間 (変更内容を含む binlog ファイルを保持しておく時間) の設定方法が異なります。binlog ファイルが削除される前に一部の変更が読み取られないと、レプリケーションを継続できなくなります。binlog retention hours のデフォルト値は NULL で、これはバイナリログが保持されないことを意味します。
 
-<div id="binlog-retention-hours-rds">
-  ### 2. binlog の保持時間
-</div>
+    DB インスタンスでバイナリログを保持する時間数を指定するには、レプリケーションに十分な長さの binlog の保持期間を指定して、mysql.rds&#95;set&#95;configuration 関数を使用します。推奨される最小値は `24 hours` です。
 
-Amazon RDS for MariaDB では、binlog の保持期間 (変更内容を含む binlog ファイルを保持しておく時間) の設定方法が異なります。binlog ファイルが削除される前に一部の変更が読み取られないと、レプリケーションを継続できなくなります。binlog retention hours のデフォルト値は NULL で、これはバイナリログが保持されないことを意味します。
-
-DB インスタンスでバイナリログを保持する時間数を指定するには、レプリケーションに十分な長さの binlog の保持期間を指定して、mysql.rds&#95;set&#95;configuration 関数を使用します。推奨される最小値は `24 hours` です。
-
-```text
-mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
-```
+    ```text
+    mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
+    ```
+  </Step>
+</Steps>
 
 <div id="binlog-parameter-group-rds">
   ## パラメータグループで binlog 設定を構成する
@@ -131,4 +129,4 @@ RDS インスタンスへのトラフィックを制限する場合は、RDS の
   ### AWS PrivateLink 経由のプライベートアクセス
 </div>
 
-プライベートネットワーク経由で RDS インスタンスに接続するには、AWS PrivateLink を利用できます。接続を設定するには、[ClickPipes 向け AWS PrivateLink セットアップガイド](/ja/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)を参照してください。
+プライベートネットワーク経由で RDS インスタンスに接続するには、AWS PrivateLink を使用できます。接続を設定するには、[ClickPipes 向け AWS PrivateLink セットアップガイド](/ja/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)に従ってください。

@@ -1,62 +1,62 @@
 ---
 sidebarTitle: 'الاستخدام المتقدم'
-keywords: ['ClickHouse', 'بايثون', 'متقدم', 'خام', 'غير متزامن', 'تعدد الخيوط']
+keywords: ['ClickHouse', 'بايثون', 'متقدم', 'خام', 'غير متزامن', 'خيوط التنفيذ']
 description: 'الاستخدام المتقدم مع ClickHouse Connect'
 slug: /integrations/language-clients/python/advanced-usage
 title: 'الاستخدام المتقدم'
-doc_type: 'مرجع'
+doc_type: 'reference'
 ---
 
 <div id="raw-api">
   ## واجهة برمجة التطبيقات الخام
 </div>
 
-لحالات الاستخدام التي لا تتطلب تحويلًا بين بيانات ClickHouse وأنواع البيانات والبُنى الأصلية أو الخاصة بجهات خارجية، يوفّر عميل ClickHouse Connect طرقًا لاستخدام اتصال ClickHouse مباشرةً.
+في حالات الاستخدام التي لا تتطلب إجراء تحويل بين بيانات ClickHouse وأنواع البيانات وبُناها الأصلية أو التابعة لجهات خارجية، يوفّر عميل ClickHouse Connect طرائق تتيح الاستخدام المباشر لاتصال ClickHouse.
 
 <div id="client-rawquery-method">
-  ### الطريقة `raw_query` في `Client`
+  ### طريقة `raw_query` الخاصة بـ `Client`
 </div>
 
-تتيح الطريقة `Client.raw_query` استخدام واجهة استعلام HTTP الخاصة بـ ClickHouse مباشرةً عبر اتصال العميل. وتكون القيمة المُعادة كائن `bytes` غير مُعالَج. كما توفّر طبقة تغليف ملائمة مع ربط المعلمات، ومعالجة الأخطاء، وإعادات المحاولة، وإدارة الإعدادات من خلال واجهة مبسطة:
+تتيح طريقة `Client.raw_query` استخدام واجهة الاستعلام عبر HTTP في ClickHouse مباشرةً من خلال اتصال العميل. وتكون القيمة المعادة كائن `bytes` غير معالَج. كما توفّر غلافًا عمليًا يتضمن ربط المعلمات، ومعالجة الأخطاء، وإعادة المحاولة، وإدارة الإعدادات عبر واجهة مبسطة:
 
 | Parameter         | Type             | Default    | Description                                                                                                                                                                                             |
 | ----------------- | ---------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | query             | str              | *Required* | أي استعلام ClickHouse صالح                                                                                                                                                                              |
-| parameters        | dict or iterable | *None*     | راجع [وصف المعلمات](/ar/integrations/language-clients/python/driver-api#parameters-argument).                                                                                                              |
-| settings          | dict             | *None*     | راجع [وصف الإعدادات](/ar/integrations/language-clients/python/driver-api#settings-argument).                                                                                                               |
+| parameters        | dict or iterable | *None*     | راجع [وصف parameters](/ar/integrations/language-clients/python/driver-api#parameters-argument).                                                                                                            |
+| settings          | dict             | *None*     | راجع [وصف settings](/ar/integrations/language-clients/python/driver-api#settings-argument).                                                                                                                |
 | fmt               | str              | *None*     | تنسيق الإخراج في ClickHouse للبايتات الناتجة. (يستخدم ClickHouse تنسيق TSV إذا لم يتم تحديده)                                                                                                           |
-| use&#95;database  | bool             | True       | استخدم قاعدة البيانات المعيّنة من عميل ClickHouse Connect لسياق الاستعلام                                                                                                                               |
-| external&#95;data | ExternalData     | *None*     | كائن ExternalData يحتوي على بيانات ملف أو بيانات binary لاستخدامها مع الاستعلام. راجع [الاستعلامات المتقدمة (البيانات الخارجية)](/ar/integrations/language-clients/python/advanced-querying#external-data) |
+| use&#95;database  | bool             | True       | استخدام قاعدة البيانات المعيّنة لعميل ClickHouse Connect ضمن سياق الاستعلام                                                                                                                             |
+| external&#95;data | ExternalData     | *None*     | كائن ExternalData يحتوي على بيانات ملف أو بيانات ثنائية لاستخدامها مع الاستعلام. راجع [الاستعلامات المتقدمة (البيانات الخارجية)](/ar/integrations/language-clients/python/advanced-querying#external-data) |
 
-تقع على عاتق المستدعي مسؤولية التعامل مع كائن `bytes` الناتج. لاحظ أن `Client.query_arrow` ليس سوى طبقة تغليف خفيفة حول هذه الطريقة باستخدام تنسيق الإخراج `Arrow` في ClickHouse.
+تقع على عاتق المستدعي مسؤولية التعامل مع كائن `bytes` الناتج. لاحظ أن `Client.query_arrow` ليس سوى غلاف بسيط لهذه الطريقة يستخدم تنسيق الإخراج `Arrow` الخاص بـ ClickHouse.
 
 <div id="client-rawstream-method">
-  ### طريقة `raw_stream` في `Client`
+  ### طريقة `raw_stream` في Client
 </div>
 
-توفّر الطريقة `Client.raw_stream` واجهة برمجة تطبيقات مماثلة للطريقة `raw_query`، لكنها تُرجع كائن `io.IOBase` يمكن استخدامه كمصدر تدفق/مولّد لكائنات `bytes`. وتُستخدم حاليًا في الطريقة `query_arrow_stream`.
+توفّر الطريقة `Client.raw_stream` واجهة برمجة تطبيقات مماثلة للطريقة `raw_query`، لكنها تُرجع كائن `io.IOBase` يمكن استخدامه كمُولِّد/مصدر تدفق لكائنات `bytes`. ويجري استخدامها حاليًا في الطريقة `query_arrow_stream`.
 
 <div id="client-rawinsert-method">
-  ### طريقة `raw_insert` في `Client`
+  ### الطريقة `raw_insert` في `Client`
 </div>
 
-تتيح الطريقة `Client.raw_insert` إجراء عمليات إدراج مباشرة لكائنات `bytes` أو مولدات كائنات `bytes` باستخدام اتصال العميل. ونظرًا لأنها لا تجري أي معالجة لحمولة الإدراج، فهي عالية الكفاءة جدًا. كما توفّر الطريقة خيارات لتحديد الإعدادات وتنسيق الإدراج:
+تتيح الطريقة `Client.raw_insert` تنفيذ عمليات إدراج مباشرة لكائنات `bytes` أو لمولدات كائنات `bytes` باستخدام اتصال العميل. ونظرًا إلى أنها لا تُجري أي معالجة لحمولة الإدراج، فهي تتمتع بأداء عالٍ جدًا. وتوفّر الطريقة خيارات لتحديد `settings` وتنسيق الإدراج:
 
-| المعلمة          | النوع                                  | الافتراضي  | الوصف                                                                                            |
-| ---------------- | -------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------ |
-| table            | str                                    | *Required* | اسم الجدول البسيط أو اسم الجدول الكامل متضمّنًا اسم قاعدة البيانات                               |
-| column&#95;names | Sequence[str]                          | *None*     | أسماء الأعمدة الخاصة بكتلة الإدراج. وهي مطلوبة إذا كانت المعلمة `fmt` لا تتضمن الأسماء           |
-| insert&#95;block | str, bytes, Generator[bytes], BinaryIO | *Required* | البيانات المطلوب إدراجها. سيتم ترميز السلاسل النصية باستخدام ترميز العميل.                       |
-| settings         | dict                                   | *None*     | راجع [وصف الإعدادات](/ar/integrations/language-clients/python/driver-api#settings-argument).        |
-| fmt              | str                                    | *None*     | تنسيق الإدخال في ClickHouse لبايتات `insert_block`. (يستخدم ClickHouse تنسيق TSV إذا لم يُحدَّد) |
+| Parameter        | Type                                   | Default    | Description                                                                                         |
+| ---------------- | -------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------- |
+| table            | str                                    | *Required* | اسم الجدول البسيط أو اسم الجدول المؤهل باسم قاعدة البيانات                                          |
+| column&#95;names | Sequence[str]                          | *None*     | أسماء الأعمدة الخاصة بـ insert block. وهي مطلوبة إذا كانت المعلمة `fmt` لا تتضمن الأسماء            |
+| insert&#95;block | str, bytes, Generator[bytes], BinaryIO | *Required* | البيانات المراد إدراجها. سيتم ترميز السلاسل النصية باستخدام ترميز العميل.                           |
+| settings         | dict                                   | *None*     | راجع [وصف settings](/ar/integrations/language-clients/python/driver-api#settings-argument).            |
+| fmt              | str                                    | *None*     | تنسيق الإدخال في ClickHouse لبايتات `insert_block`. (يستخدم ClickHouse تنسيق TSV إذا لم يتم تحديده) |
 
-تقع على عاتق المستدعي مسؤولية التأكد من أن `insert_block` بالتنسيق المحدد ويستخدم طريقة الضغط المحددة. ويستخدم ClickHouse Connect عمليات الإدراج الخام هذه لرفع الملفات وجداول PyArrow، مع تفويض التحليل إلى خادم ClickHouse.
+تقع على عاتق المستدعي مسؤولية التأكد من أن `insert_block` بالتنسيق المحدد ويستخدم طريقة الضغط المحددة. ويستخدم ClickHouse Connect عمليات الإدراج الخام هذه لرفع الملفات وPyArrow Tables، مع تفويض عملية التحليل إلى خادم ClickHouse.
 
 <div id="saving-query-results-as-files">
   ## حفظ نتائج الاستعلامات كملفات
 </div>
 
-يمكنك بث الملفات مباشرةً من ClickHouse إلى نظام الملفات المحلي باستخدام الطريقة `raw_stream`. على سبيل المثال، إذا كنت ترغب في حفظ نتائج استعلام في ملف CSV، فيمكنك استخدام مقتطف الشيفرة التالي:
+يمكنك تمرير الملفات مباشرةً من ClickHouse إلى نظام الملفات المحلي باستخدام الطريقة `raw_stream`. على سبيل المثال، إذا كنت ترغب في حفظ نتيجة استعلام في ملف CSV، فيمكنك استخدام مقتطف الشيفرة التالي:
 
 ```python
 import clickhouse_connect
@@ -71,7 +71,7 @@ if __name__ == '__main__':
             f.write(chunk)
 ```
 
-ينتج عن الشيفرة أعلاه ملف `output.csv` بالمحتوى التالي:
+تنتج الشيفرة أعلاه ملف `output.csv` بالمحتوى التالي:
 
 ```csv
 "number","number_as_str"
@@ -82,25 +82,25 @@ if __name__ == '__main__':
 4,"4"
 ```
 
-وبالمثل، يمكنك حفظ البيانات بتنسيق [TabSeparated](/ar/reference/formats/TabSeparated/TabSeparated) وبتنسيقات أخرى. راجع [تنسيقات بيانات الإدخال والإخراج](/ar/reference/formats/index) للاطلاع على نظرة عامة على جميع خيارات التنسيق المتاحة.
+وبالمثل، يمكنك حفظ البيانات بتنسيق [TabSeparated](/ar/reference/formats/TabSeparated/TabSeparated) أو بتنسيقات أخرى. راجع [تنسيقات بيانات الإدخال والإخراج](/ar/reference/formats) للحصول على نظرة عامة على جميع خيارات التنسيق المتاحة.
 
 <div id="multithreaded-multiprocess-and-asyncevent-driven-use-cases">
-  ## حالات الاستخدام متعددة الخيوط، ومتعددة العمليات، وغير المتزامنة/القائمة على حلقة الأحداث
+  ## حالات الاستخدام متعددة الخيوط ومتعددة العمليات وغير المتزامنة/المعتمدة على الأحداث
 </div>
 
-يعمل ClickHouse Connect بكفاءة في التطبيقات متعددة الخيوط، ومتعددة العمليات، والتطبيقات غير المتزامنة/القائمة على حلقة الأحداث. تتم جميع عمليات معالجة الاستعلامات والإدراج ضمن خيط واحد، لذا تكون العمليات آمنة على مستوى الخيوط بشكل عام. (قد تُضاف مستقبلًا إمكانية المعالجة المتوازية لبعض العمليات على مستوى منخفض لتجاوز أثر الأداء المترتب على الاعتماد على خيط واحد، ولكن حتى في هذه الحالة ستظل السلامة على مستوى الخيوط محفوظة.)
+يعمل ClickHouse Connect بكفاءة في التطبيقات متعددة الخيوط ومتعددة العمليات والتطبيقات غير المتزامنة/المعتمدة على حلقات الأحداث. تجري جميع عمليات معالجة الاستعلامات والإدراج داخل خيط واحد، لذا تكون العمليات عمومًا آمنة على مستوى الخيوط. (وقد تُضاف مستقبلًا إمكانية المعالجة المتوازية لبعض العمليات على مستوى منخفض لتجاوز تراجع الأداء الناتج عن الاعتماد على خيط واحد، ولكن حتى في هذه الحالة ستظل السلامة على مستوى الخيوط محفوظة.)
 
-ولأن كل استعلام أو عملية إدراج يتم تنفيذها يحتفظ كلٌّ منها بحالته داخل الكائن `QueryContext` أو `InsertContext` الخاص به، على التوالي، فإن هذه الكائنات المساعدة ليست آمنة على مستوى الخيوط، ولا ينبغي مشاركتها بين عدة تدفقات معالجة. راجع أيضًا المناقشة الإضافية حول كائنات السياق في قسمي [QueryContexts](/ar/integrations/language-clients/python/advanced-querying#querycontexts) و[InsertContexts](/ar/integrations/language-clients/python/advanced-inserting#insertcontexts).
+ولأن كل استعلام أو عملية إدراج تُنفَّذ تحتفظ بالحالة في كائن `QueryContext` أو `InsertContext` الخاص بها، على الترتيب، فإن هذه الكائنات المساعدة ليست آمنة على مستوى الخيوط، ولا ينبغي مشاركتها بين مسارات معالجة متعددة. راجع أيضًا المناقشة الإضافية حول كائنات السياق في قسمي [سياقات الاستعلام](/ar/integrations/language-clients/python/advanced-querying#querycontexts) و[سياقات الإدراج](/ar/integrations/language-clients/python/advanced-inserting#insertcontexts).
 
-إضافةً إلى ذلك، في التطبيق الذي توجد فيه استعلامات و/أو عمليات إدراج، اثنتان أو أكثر، &quot;قيد التنفيذ&quot; في الوقت نفسه، هناك اعتباران إضافيان ينبغي أخذهما في الحسبان. الأول هو &quot;الجلسة&quot; في ClickHouse المرتبطة بالاستعلام/الإدراج، والثاني هو تجمع اتصالات HTTP الذي تستخدمه مثيلات ClickHouse Connect Client.
+بالإضافة إلى ذلك، في التطبيقات التي يكون فيها استعلامان و/أو عمليتا إدراج أو أكثر &quot;قيد التنفيذ&quot; في الوقت نفسه، هناك اعتباران إضافيان ينبغي أخذهما في الحسبان. الأول هو &quot;الجلسة&quot; في ClickHouse المرتبطة بالاستعلام/الإدراج، والثاني هو مجمع اتصالات HTTP الذي تستخدمه نُسخ ClickHouse Connect Client.
 
 <div id="asyncclient-wrapper">
   ## طبقة تغليف AsyncClient
 </div>
 
-يوفّر ClickHouse Connect طبقة تغليف غير متزامنة فوق `Client` العادي، مما يتيح استخدام العميل في بيئة `asyncio`.
+يوفّر ClickHouse Connect طبقة تغليف غير متزامنة للعميل العادي `Client`، ما يتيح استخدام العميل في بيئة `asyncio`.
 
-للحصول على مثيل من `AsyncClient`، يمكنك استخدام دالة المصنع `get_async_client`، التي تقبل المعلمات نفسها التي تقبلها `get_client` القياسية:
+للحصول على مثيل من `AsyncClient`، يمكنك استخدام دالة الإنشاء `get_async_client`، التي تقبل المعلمات نفسها التي تقبلها الدالة القياسية `get_client`:
 
 ```python
 import asyncio
@@ -117,28 +117,28 @@ async def main():
 asyncio.run(main())
 ```
 
-يمتلك `AsyncClient` نفس الطرق وبنفس المعاملات مثل `Client` القياسي، لكنها تكون coroutines حيثما ينطبق ذلك. داخليًا، تُغلَّف الطرق في `Client` التي تُجري عمليات I/O داخل استدعاء [run&#95;in&#95;executor](https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.loop.run_in_executor).
+يحتوي `AsyncClient` على نفس الطرائق وبنفس المَعلمات الموجودة في `Client` القياسي، لكنها تكون coroutines عند الاقتضاء. داخليًا، تُغلَّف طرائق `Client` التي تُجري عمليات I/O داخل استدعاء [run&#95;in&#95;executor](https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.loop.run_in_executor).
 
-سيتحسن الأداء متعدد الخيوط عند استخدام طبقة تغليف `AsyncClient`، إذ سيُحرَّر كلٌّ من خيوط التنفيذ وGIL أثناء انتظار اكتمال عمليات I/O.
+سيتحسن الأداء متعدد الخيوط عند استخدام الغلاف `AsyncClient`، لأن خيوط التنفيذ وGIL يُحرَّران أثناء انتظار اكتمال عمليات I/O.
 
-ملاحظة: بخلاف `Client` العادي، يفرض `AsyncClient` تعيين `autogenerate_session_id` إلى `False` افتراضيًا.
+ملاحظة: بخلاف `Client` العادي، يفرض `AsyncClient` أن تكون القيمة الافتراضية لـ `autogenerate_session_id` هي `False`.
 
 راجع أيضًا: [مثال run&#95;async](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/run_async.py).
 
 <div id="managing-clickhouse-session-ids">
-  ## إدارة معرّفات الجلسات في ClickHouse
+  ## إدارة معرّفات جلسات ClickHouse
 </div>
 
 يُنفَّذ كل استعلام في ClickHouse ضمن سياق &quot;جلسة&quot; في ClickHouse. وتُستخدم الجلسات حاليًا لغرضين:
 
-* ربط إعدادات ClickHouse محددة بعدة استعلامات (راجع [إعدادات المستخدم](/ar/reference/settings/session-settings)). ويُستخدم الأمر `SET` في ClickHouse لتغيير الإعدادات ضمن نطاق جلسة المستخدم.
-* تتبّع [الجداول المؤقتة.](/ar/reference/statements/create/table#temporary-tables)
+* لربط إعدادات ClickHouse محددة بعدة استعلامات (راجع [إعدادات المستخدم](/ar/reference/settings/session-settings)). ويُستخدم أمر ClickHouse `SET` لتغيير الإعدادات ضمن نطاق جلسة المستخدم.
+* لتتبّع [الجداول المؤقتة.](/ar/reference/statements/create/table#temporary-tables)
 
-بشكل افتراضي، يستخدم كل استعلام يُنفَّذ بواسطة مثيل `Client` من ClickHouse Connect معرّف الجلسة الخاص بذلك العميل. تعمل عبارات `SET` والجداول المؤقتة كما هو متوقع عند استخدام عميل واحد. ومع ذلك، لا يسمح خادم ClickHouse بتنفيذ استعلامات متزامنة ضمن الجلسة نفسها (وسيرفع العميل الخطأ `ProgrammingError` إذا جرت محاولة ذلك). بالنسبة إلى التطبيقات التي تنفّذ استعلامات متزامنة، استخدم أحد الأنماط التالية:
+بشكل افتراضي، يستخدم كل استعلام يُنفَّذ عبر مثيل ClickHouse Connect `Client` معرّف الجلسة الخاص بذلك العميل. وتعمل عبارات `SET` والجداول المؤقتة كما هو متوقع عند استخدام عميل واحد. ومع ذلك، لا يسمح خادم ClickHouse بتنفيذ استعلامات متزامنة داخل الجلسة نفسها (وسيرفع العميل `ProgrammingError` إذا تمت محاولة ذلك). بالنسبة إلى التطبيقات التي تنفّذ استعلامات متزامنة، استخدم أحد الأنماط التالية:
 
-1. أنشئ مثيل `Client` منفصلًا لكل thread/process/event handler يحتاج إلى عزل للجلسة. يحافظ ذلك على حالة الجلسة الخاصة بكل عميل (الجداول المؤقتة وقيم `SET`).
-2. استخدم `session_id` فريدًا لكل استعلام عبر الوسيط `settings` عند استدعاء `query` أو `command` أو `insert`، إذا لم تكن بحاجة إلى حالة جلسة مشتركة.
-3. عطّل الجلسات على عميل مشترك عبر تعيين `autogenerate_session_id=False` قبل إنشاء العميل (أو مرّره مباشرةً إلى `get_client`).
+1. أنشئ مثيل `Client` منفصلًا لكل thread/process/event handler يحتاج إلى عزل الجلسة. يحافظ ذلك على حالة الجلسة لكل عميل (الجداول المؤقتة وقيم `SET`).
+2. استخدم `session_id` فريدًا لكل استعلام عبر الوسيطة `settings` عند استدعاء `query` أو `command` أو `insert`، إذا لم تكن بحاجة إلى حالة جلسة مشتركة.
+3. عطّل الجلسات على عميل مشترك من خلال تعيين `autogenerate_session_id=False` قبل إنشاء العميل (أو مرّره مباشرةً إلى `get_client`).
 
 ```python
 from clickhouse_connect import common
@@ -148,17 +148,17 @@ common.set_setting('autogenerate_session_id', False)  # This should always be se
 client = clickhouse_connect.get_client(host='somehost.com', user='dbuser', password=1234)
 ```
 
-بدلًا من ذلك، مرّر `autogenerate_session_id=False` مباشرةً إلى `get_client(...)`.
+بدلاً من ذلك، مرّر `autogenerate_session_id=False` مباشرةً إلى `get_client(...)`.
 
-في هذه الحالة، لا يرسل ClickHouse Connect قيمة `session_id`؛ ولا يعتبر الخادم الطلبات المنفصلة جزءًا من الجلسة نفسها. ولن تستمر الجداول المؤقتة وإعدادات مستوى الجلسة عبر الطلبات.
+في هذه الحالة، لا يرسل ClickHouse Connect قيمة `session_id`؛ ولا يتعامل الخادم مع الطلبات المنفصلة على أنها تنتمي إلى الجلسة نفسها. ولن تستمر الجداول المؤقتة وإعدادات مستوى الجلسة عبر الطلبات.
 
 <div id="customizing-the-http-connection-pool">
   ## تخصيص مجمع اتصالات HTTP
 </div>
 
-يستخدم ClickHouse Connect مجمعات اتصالات `urllib3` لإدارة اتصال HTTP الأساسي مع الخادم. افتراضيًا، تشترك جميع مثيلات العميل في مجمع الاتصالات نفسه، وهو كافٍ لمعظم حالات الاستخدام. ويحافظ هذا المجمع الافتراضي على ما يصل إلى 8 اتصالات HTTP Keep Alive مع كل خادم ClickHouse يستخدمه التطبيق.
+يستخدم ClickHouse Connect مجمعات اتصالات `urllib3` لإدارة اتصال HTTP الأساسي بالخادم. وبشكل افتراضي، تشترك جميع مثيلات العميل في مجمع اتصالات HTTP نفسه، وهو ما يكفي لمعظم حالات الاستخدام. ويحافظ هذا المجمع الافتراضي على ما يصل إلى 8 اتصالات HTTP Keep Alive مع كل ClickHouse server يستخدمه التطبيق.
 
-بالنسبة إلى التطبيقات الكبيرة متعددة الخيوط، قد يكون من الأنسب استخدام مجمعات اتصالات منفصلة. ويمكن توفير مجمعات اتصالات مخصّصة عبر وسيط الكلمة المفتاحية `pool_mgr` للدالة الرئيسية `clickhouse_connect.get_client`:
+بالنسبة إلى التطبيقات الكبيرة متعددة الخيوط، قد يكون من المناسب استخدام مجمعات اتصالات HTTP منفصلة. ويمكن توفير مجمعات اتصالات HTTP مخصّصة كوسيطة keyword ‏`pool_mgr` للدالة الرئيسية `clickhouse_connect.get_client`:
 
 ```python
 import clickhouse_connect
@@ -170,4 +170,4 @@ client1 = clickhouse_connect.get_client(pool_mgr=big_pool_mgr)
 client2 = clickhouse_connect.get_client(pool_mgr=big_pool_mgr)
 ```
 
-كما يوضّح المثال أعلاه، يمكن لعدة عملاء مشاركة مدير مجمّع واحد، أو يمكن إنشاء مدير مجمّع منفصل لكل عميل. لمزيد من التفاصيل حول الخيارات المتاحة عند إنشاء `PoolManager`، راجع [وثائق `urllib3`](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#customizing-pool-behavior).
+كما يوضّح المثال أعلاه، يمكن للبرامج العميلة مشاركة مدير مجمّع واحد، أو يمكن إنشاء مدير مجمّع منفصل لكل برنامج عميل. لمزيد من التفاصيل حول الخيارات المتاحة عند إنشاء `PoolManager`، راجع [وثائق `urllib3`](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#customizing-pool-behavior).

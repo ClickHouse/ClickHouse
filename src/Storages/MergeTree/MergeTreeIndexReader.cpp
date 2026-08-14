@@ -82,7 +82,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     if (!streams.empty())
         return;
 
-    auto index_format = index->getDeserializedFormat(part->checksums, index->getFileName(), &part->getDataPartStorage());
+    auto index_format = index->getDeserializedFormat(*part, index->getFileName());
     auto index_name = index->getFileName();
     auto last_mark = getLastMark(all_mark_ranges);
 

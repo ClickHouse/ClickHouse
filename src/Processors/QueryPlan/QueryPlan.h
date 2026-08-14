@@ -3,20 +3,27 @@
 #include <Core/Block_fwd.h>
 #include <Core/Names.h>
 #include <Core/Field.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <functional>
 #include <list>
 #include <memory>
-#include <unordered_map>
+#include <optional>
 #include <vector>
 #include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
+
+class AnalyzeStepsStats;
+
+struct PrettyNames;
+struct PrettyNamesPerPlan;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
@@ -48,7 +55,7 @@ struct DeserializedSetsRegistry;
 
 class SettingsChanges;
 
-/// Options from EXPLAIN PLAN query.
+/// Options from EXPLAIN queries based on plan.
 struct ExplainPlanOptions
 {
     /// Add output header to step.
@@ -73,7 +80,8 @@ struct ExplainPlanOptions
     bool compact = false;
     /// Print query plan with pretty formatting
     bool pretty = false;
-
+    /// For EXPLAIN ANALYZE: print the per-processor elapsed time distribution (min/median/max/sum).
+    bool processors_profile = false;
 
     SettingsChanges toSettingsChanges() const;
 };
@@ -100,10 +108,12 @@ public:
     const SharedHeader & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
     void serialize(WriteBuffer & out, size_t max_supported_version) const;
-    /// max_type_complexity guards binary type decoding of the plan (0 == unlimited). Client QueryPlan packets
-    /// (TCPHandler::receiveQueryPlan) pass the effective input_format_binary_max_type_complexity; trusted
-    /// server-to-server plans pass 0.
-    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity);
+    /// Serialization for a distributed-plan worker task: every subquery set ships as its built
+    /// values (a `TupleValues` record bounded by `sets_transfer_limits`), and a set without
+    /// complete values is an error, because a `SubqueryPlan` record would make every task re-run
+    /// the subquery.
+    void serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const;
+    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
     /// Serializes the query plan and store the result
@@ -138,13 +148,17 @@ public:
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;
+
     void explainPlan(
         WriteBuffer & buffer,
         const ExplainPlanOptions & options,
         size_t offset = 0,
         size_t max_description_length = 0,
+        const PrettyNamesPerPlan * precomputed_pretty_names = nullptr,
         const std::string & parent_tree_prefix = "",
-        bool is_last_child_plan = true) const;
+        bool is_last_child_plan = true,
+        AnalyzeStepsStats * steps_to_stats = nullptr) const;
+
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
     void explainEstimate(MutableColumns & columns) const;
 
@@ -187,10 +201,23 @@ public:
     void cloneInplace(Node * node_to_replace, Node * subplan_root);
     QueryPlan clone() const;
 
+    /// Clone the subtree rooted at `subplan_root` (which may belong to another plan) into a new,
+    /// standalone plan. Unlike building a plan with `addStep`, this preserves branching subtrees
+    /// (multiple sources / multi-input steps).
+    static QueryPlan cloneSubtree(Node * subplan_root);
+
     static void cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes);
 
 private:
-    struct SerializationFlags;
+    struct SerializationFlags
+    {
+        /// Query-plan serialization version of the stream, set on deserialize from the leading version field.
+        UInt64 version = 0;
+        bool skip_data = false;
+        /// See `serializeForDistributedTask`.
+        bool sets_must_be_ready = false;
+        SizeLimits sets_transfer_limits = {};
+    };
 
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
@@ -240,6 +267,12 @@ struct QueryPlanAndSets
 
 std::string debugExplainStep(IQueryPlanStep & step);
 std::string debugExplainPlan(const QueryPlan & plan);
+
+/// First step of the subtree which cannot be serialized for remote execution, or nullptr if all can.
+/// Steps for which `ignore` returns true are accepted anyway, e.g. planner markers that are replaced
+/// before the plan is shipped.
+const QueryPlan::Node * findNonSerializableStep(
+    const QueryPlan::Node * root, const std::function<bool(const IQueryPlanStep &)> & ignore = {});
 
 
 struct ExchangeDescription

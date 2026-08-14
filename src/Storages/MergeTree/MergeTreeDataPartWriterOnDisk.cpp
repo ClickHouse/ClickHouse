@@ -11,10 +11,13 @@
 #include <Interpreters/ProcessList.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
@@ -249,6 +252,10 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
          *  (observed in long INSERT SELECTs)
          */
         MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+        /// The in-memory primary index lives on the part for its whole lifetime (freed only when the
+        /// part is merged away), so build it in the dedicated MergeTree arena — same rationale as the
+        /// memory-tracker blocker above.
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
         if (settings.save_primary_index_in_memory && index_columns.empty())
         {
@@ -347,6 +354,7 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
         if (write_final_mark && !last_index_block.empty())
         {
             MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             calculateAndSerializePrimaryIndexRow(last_index_block, last_index_block.rows() - 1);
         }
 
@@ -724,6 +732,26 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
         serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
         serialization->serializeBinaryBulkWithMultipleStreams(*column.column, column.column->size(), 0, serialize_settings, state);
         serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
+    }
+}
+
+void MergeTreeDataPartWriterOnDisk::setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column)
+{
+    if (codec->needsVectorDimensionUpfront())
+    {
+        Field sample_field;
+        column->get(0, sample_field);
+        /// Only arrays carry a vector dimension here. A `Tuple` is serialized as one stream per element,
+        /// so each element stream is scalar; using the tuple arity as the dimension would make the codec
+        /// read several values from a single-value stream.
+        if (sample_field.getType() == Field::Types::Array)
+        {
+            for (size_t j = 0; j < column->size(); ++j)
+            {
+                column->get(j, sample_field);
+                codec->setAndCheckVectorDimension(sample_field.safeGet<Array>().size());
+            }
+        }
     }
 }
 

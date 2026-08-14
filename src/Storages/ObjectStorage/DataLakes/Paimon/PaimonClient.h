@@ -9,9 +9,11 @@
 #include <optional>
 #include <unordered_map>
 #include <vector>
+#include <Core/Field.h>
 #include <Core/TypeId.h>
 #include <Disks/IStoragePolicy.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
+#include <IO/ReadSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/Decimal.h>
 #include <base/types.h>
@@ -34,8 +36,6 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 }
-
-using namespace Paimon;
 
 
 struct PaimonSnapshot
@@ -81,13 +81,13 @@ struct SimpleStats
     SimpleStats(const Iceberg::AvroForIcebergDeserializer & avro_deserializer, const String & root_path, const size_t row_num)
     {
         max_values
-            = avro_deserializer.getValueFromRowByName(row_num, concatPath({root_path, COLUMN_SIMPLE_STATS_MAX_VALUES}), TypeIndex::String)
+            = avro_deserializer.getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_SIMPLE_STATS_MAX_VALUES}), TypeIndex::String)
                   .safeGet<std::string>();
         min_values
-            = avro_deserializer.getValueFromRowByName(row_num, concatPath({root_path, COLUMN_SIMPLE_STATS_MIN_VALUES}), TypeIndex::String)
+            = avro_deserializer.getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_SIMPLE_STATS_MIN_VALUES}), TypeIndex::String)
                   .safeGet<std::string>();
         null_counts
-            = avro_deserializer.getValueFromRowByName(row_num, concatPath({root_path, COLUMN_SIMPLE_STATS_NULL_COUNTS}), TypeIndex::Array)
+            = avro_deserializer.getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_SIMPLE_STATS_NULL_COUNTS}), TypeIndex::Array)
                   .safeGet<Array>();
     }
 };
@@ -102,24 +102,25 @@ struct PaimonManifestFileMeta
     Int64 schema_id;
 
     PaimonManifestFileMeta(const Iceberg::AvroForIcebergDeserializer & avro_deserializer, const String & root_path, const size_t row_num)
-        : partition_stats(avro_deserializer, concatPath({root_path, COLUMN_PAIMON_MANIFEST_LIST_PARTITION_STATS}), row_num)
+        : partition_stats(avro_deserializer, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_LIST_PARTITION_STATS}), row_num)
     {
         file_name = avro_deserializer
-                        .getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_LIST_FILE_NAME}), TypeIndex::String)
+                        .getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_LIST_FILE_NAME}), TypeIndex::String)
                         .safeGet<std::string>();
         file_size = avro_deserializer
-                        .getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_LIST_FILE_SIZE}), TypeIndex::Int64)
+                        .getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_LIST_FILE_SIZE}), TypeIndex::Int64)
                         .safeGet<Int64>();
         num_added_files
             = avro_deserializer
-                  .getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_LIST_NUM_ADDED_FILES}), TypeIndex::Int64)
+                  .getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_LIST_NUM_ADDED_FILES}), TypeIndex::Int64)
                   .safeGet<Int64>();
         num_deleted_files
             = avro_deserializer
-                  .getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_LIST_NUM_DELETED_FILES}), TypeIndex::Int64)
+                  .getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_LIST_NUM_DELETED_FILES}), TypeIndex::Int64)
                   .safeGet<Int64>();
-        schema_id = avro_deserializer.getValueFromRowByName(row_num, COLUMN_PAIMON_MANIFEST_SCHEMA_ID, TypeIndex::Int64).safeGet<Int64>();
+        schema_id = avro_deserializer.getValueFromRowByName(row_num, Paimon::COLUMN_PAIMON_MANIFEST_SCHEMA_ID, TypeIndex::Int64).safeGet<Int64>();
     }
+
 };
 
 struct PaimonManifestEntry
@@ -192,67 +193,68 @@ struct PaimonManifestEntry
             Int32 bucket_,
             const PaimonTableSchema & table_schema,
             const String & partition_default_name)
-            : key_stats(avro_deserializer, concatPath({root_path, COLUMN_PAIMON_MANIFEST_FILE_KEY_STATS}), row_num)
-            , value_stats(avro_deserializer, concatPath({root_path, COLUMN_PAIMON_MANIFEST_FILE_VALUE_STATS}), row_num)
+            : key_stats(avro_deserializer, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_FILE_KEY_STATS}), row_num)
+            , value_stats(avro_deserializer, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_FILE_VALUE_STATS}), row_num)
         {
             file_name
                 = avro_deserializer
-                      .getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_FILE_FILE_NAME}), TypeIndex::String)
+                      .getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_FILE_FILE_NAME}), TypeIndex::String)
                       .safeGet<std::string>();
             bucket_path = Paimon::getBucketPath(partition_, bucket_, table_schema, partition_default_name);
             LOG_TEST(&Poco::Logger::get("DataFileMeta"), "bucket_path: {}", bucket_path);
             file_size
                 = avro_deserializer
-                      .getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_FILE_FILE_SIZE}), TypeIndex::Int64)
+                      .getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_FILE_FILE_SIZE}), TypeIndex::Int64)
                       .safeGet<Int64>();
             row_count
                 = avro_deserializer
-                      .getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_FILE_ROW_COUNT}), TypeIndex::Int64)
+                      .getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_FILE_ROW_COUNT}), TypeIndex::Int64)
                       .safeGet<Int64>();
             min_key = avro_deserializer
-                          .getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_FILE_MIN_KEY}), TypeIndex::String)
+                          .getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_FILE_MIN_KEY}), TypeIndex::String)
                           .safeGet<String>();
             max_key = avro_deserializer
-                          .getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_FILE_MAX_KEY}), TypeIndex::String)
+                          .getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_FILE_MAX_KEY}), TypeIndex::String)
                           .safeGet<String>();
             min_sequence_number
                 = avro_deserializer
                       .getValueFromRowByName(
-                          row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_FILE_MIN_SEQUENCE_NUMBER}), TypeIndex::Int64)
+                          row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_FILE_MIN_SEQUENCE_NUMBER}), TypeIndex::Int64)
                       .safeGet<Int64>();
             max_sequence_number
                 = avro_deserializer
                       .getValueFromRowByName(
-                          row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_FILE_MAX_SEQUENCE_NUMBER}), TypeIndex::Int64)
+                          row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_FILE_MAX_SEQUENCE_NUMBER}), TypeIndex::Int64)
                       .safeGet<Int64>();
             schema_id
                 = avro_deserializer
-                      .getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_FILE_SCHEMA_ID}), TypeIndex::Int64)
+                      .getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_FILE_SCHEMA_ID}), TypeIndex::Int64)
                       .safeGet<Int64>();
             level = static_cast<Int32>(
                 avro_deserializer
-                    .getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_FILE_LEVEL}), TypeIndex::Int32)
+                    .getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_FILE_LEVEL}), TypeIndex::Int32)
                     .safeGet<Int32>());
             extra_files = avro_deserializer
-                              .getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_EXTRA_FILES}), TypeIndex::Array)
+                              .getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_EXTRA_FILES}), TypeIndex::Array)
                               .safeGet<Array>();
 
             getNullableValueFromRowByName(
-                creation_time, avro_deserializer, row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_CREATION_TIME}));
+                creation_time, avro_deserializer, row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_CREATION_TIME}));
             getNullableValueFromRowByName(
-                delete_row_count, avro_deserializer, row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_DELETE_ROW_COUNT}));
+                delete_row_count, avro_deserializer, row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_DELETE_ROW_COUNT}));
             getNullableValueFromRowByName(
-                embedded_file_index, avro_deserializer, row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_EMBEDDED_FILE_INDEX}));
+                embedded_file_index, avro_deserializer, row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_EMBEDDED_FILE_INDEX}));
             {
                 std::optional<Int8> file_source_value;
                 getNullableValueFromRowByName(
-                    file_source_value, avro_deserializer, row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_FILE_SOURCE}));
+                    file_source_value, avro_deserializer, row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_FILE_SOURCE}));
                 if (file_source_value.has_value())
                     file_source = toFileSource(file_source_value.value());
             }
             getNullableValueFromRowByName(
-                value_stats_cols, avro_deserializer, row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_VALUE_STATS_COLS}));
+                value_stats_cols, avro_deserializer, row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_VALUE_STATS_COLS}));
         }
+
     };
     Kind kind;
     String partition;
@@ -268,23 +270,23 @@ struct PaimonManifestEntry
         const String & partition_default_name_)
         : kind(toKind(
               static_cast<int8_t>(
-                  avro_deserializer.getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_KIND}), TypeIndex::Int32)
+                  avro_deserializer.getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_KIND}), TypeIndex::Int32)
                       .safeGet<Int8>())))
         , partition(
-              avro_deserializer.getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_PARTITION}), TypeIndex::String)
+              avro_deserializer.getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_PARTITION}), TypeIndex::String)
                   .safeGet<String>())
         , bucket(
               static_cast<Int32>(
-                  avro_deserializer.getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_BUCKET}), TypeIndex::Int32)
+                  avro_deserializer.getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_BUCKET}), TypeIndex::Int32)
                       .safeGet<Int32>()))
         , total_buckets(
               static_cast<Int32>(
                   avro_deserializer
-                      .getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_TOTAL_BUCKETS}), TypeIndex::Int32)
+                      .getValueFromRowByName(row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_TOTAL_BUCKETS}), TypeIndex::Int32)
                       .safeGet<Int32>()))
         , file(
               avro_deserializer,
-              concatPath({root_path, COLUMN_PAIMON_MANIFEST_FILE}),
+              Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_FILE}),
               row_num,
               partition,
               bucket,
@@ -292,12 +294,14 @@ struct PaimonManifestEntry
               partition_default_name_)
     {
     }
+
 };
 
 
 struct PaimonManifest
 {
     std::vector<PaimonManifestEntry> entries;
+    size_t file_bytes_size = 0; /// Original avro file size in bytes, used for heuristic memory estimation.
 };
 
 class PaimonTableClient : private WithContext
@@ -312,9 +316,14 @@ public:
     std::pair<Int32, String> getTableSchemaInfoById(Int32 schema_id) const;
     std::optional<std::pair<Int64, String>> getLatestTableSnapshotInfo();
     PaimonSnapshot getSnapshot(const std::pair<Int64, String> & snapshot_meta_info);
-    PaimonManifest getDataManifest(String manifest_path, const PaimonTableSchema & table_schema, const String & partition_default_name);
-    std::vector<PaimonManifestFileMeta> getManifestMeta(String manifest_list_path);
+    PaimonManifest getDataManifest(String manifest_path, const PaimonTableSchema & table_schema, const String & partition_default_name, bool disable_filesystem_cache = false);
+    std::pair<std::vector<PaimonManifestFileMeta>, size_t> getManifestMeta(String manifest_list_path, bool disable_filesystem_cache = false);
 private:
+    /// Build ReadSettings for metadata reads.  When the caller knows that the
+    /// in-memory Paimon metadata cache is active it passes disable_filesystem_cache=true
+    /// so the same bytes are not stored twice (once raw in fs cache, once parsed in memory).
+    ReadSettings getPaimonMetadataReadSettings(bool disable_filesystem_cache) const;
+
     const ObjectStoragePtr object_storage;
     const String table_location;
     LoggerPtr log;

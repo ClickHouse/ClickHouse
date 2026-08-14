@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 Introduit dans : v20.1.0
 
-Calcule exactement plusieurs [quantiles](https://en.wikipedia.org/wiki/Quantile) d’une séquence de données numériques à différents niveaux, simultanément, à l’aide de la méthode exclusive.
+Calcule exactement plusieurs [quantiles](https://en.wikipedia.org/wiki/Quantile) d’une suite de valeurs numériques à différents niveaux, simultanément, à l’aide de la méthode exclusive.
 
 Cette fonction est équivalente à [`quantileExactExclusive`](/fr/reference/functions/aggregate-functions/quantileExactExclusive), mais elle permet de calculer plusieurs niveaux de quantile en un seul passage, ce qui est plus efficace que d’appeler séparément des fonctions de quantile.
 
@@ -35,7 +35,7 @@ quantilesExactExclusive(level1, level2, ...)(expr)
 
 **Arguments**
 
-* `expr` — Expression sur les valeurs de la colonne produisant des types de données numériques, Date ou DateTime. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime)
+* `expr` — Expression sur les valeurs de la colonne produisant des types de données numériques, `Date` ou `DateTime`. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime)
 
 **Valeur renvoyée**
 

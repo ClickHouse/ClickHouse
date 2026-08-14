@@ -1,7 +1,10 @@
 #pragma once
 
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/Range.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/BloomFilter.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/Set.h>
 #include <Common/MutexProtected.h>
 
@@ -9,9 +12,11 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 #include <base/types.h>
 #include <boost/noncopyable.hpp>
 
@@ -53,6 +58,7 @@ struct RuntimeFilterBuildState
     void assertCanFind() const;
     void assertCanMerge() const;
     bool hasPendingMerges() const { return filters_to_merge != 0; }
+    bool isFinished() const { return inserts_are_finished; }
     void finishMerge();
     void finishInserts() { inserts_are_finished = true; }
 
@@ -106,6 +112,8 @@ public:
     ColumnPtr getValuesColumn() const;
     void mergeFrom(const ExactSetRuntimeFilter & source);
     void releaseExactValues();
+    ColumnPtr getRecordedKeyValues() const;
+    DataTypePtr getTargetType() const { return filter_column_target_type; }
 
 private:
     struct Empty
@@ -128,6 +136,7 @@ private:
     Set & getExactValues();
     Set & getExactValues() const;
 
+    const DataTypePtr filter_column_target_type;
     const bool argument_can_have_nulls;
     const UInt64 bytes_limit;
     const UInt64 exact_values_limit;
@@ -182,6 +191,8 @@ public:
     void finishInsert(RuntimeFilterEvaluationState & evaluation_state);
     ColumnPtr find(const ColumnWithTypeAndName & values) const;
     void mergeFrom(const AdaptiveSetRuntimeFilter & source);
+    ColumnPtr getRecordedKeyValues() const;
+    DataTypePtr getTargetType() const { return filter_column_target_type; }
 
 private:
     using ExactFilter = ExactSetRuntimeFilter<false>;
@@ -194,6 +205,7 @@ private:
     void checkApproximateFilterWorthiness(
         RuntimeFilterEvaluationState & evaluation_state, const ApproximateSetRuntimeFilter & approximate_filter);
 
+    const DataTypePtr filter_column_target_type;
     const UInt64 bloom_filter_hash_functions;
     const Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
     /// Measured distinct build-side keys from prior statistics, used to choose the bloom filter size.
@@ -214,16 +226,26 @@ public:
 
     using ProbeFn = std::function<ColumnPtr(const ColumnWithTypeAndName &)>;
 
-    explicit SharedFixedHashTableRuntimeFilter(ProbeFn probe_fn_);
+    SharedFixedHashTableRuntimeFilter(
+        const DataTypePtr & filter_column_target_type_,
+        ProbeFn probe_fn_,
+        std::optional<Range> key_range_ = {},
+        ColumnPtr recorded_key_values_ = {});
 
     /// All build entry points are no-ops: the data was built inside `HashJoin` already.
     void insert(ColumnPtr) { }
     void finishInsert(RuntimeFilterEvaluationState &) { }
     void mergeFrom(const SharedFixedHashTableRuntimeFilter &) { }
     ColumnPtr find(const ColumnWithTypeAndName & values) const;
+    ColumnPtr getRecordedKeyValues() const { return recorded_key_values; }
+    DataTypePtr getTargetType() const { return filter_column_target_type; }
+    const std::optional<Range> & getInitialKeyRange() const { return key_range; }
 
 private:
+    const DataTypePtr filter_column_target_type;
     ProbeFn probe_fn;
+    std::optional<Range> key_range;
+    ColumnPtr recorded_key_values;
 };
 
 class RuntimeFilter final
@@ -240,24 +262,44 @@ private:
     struct Data
     {
         detail::RuntimeFilterBuildState build_state;
+        const DataTypePtr filter_column_target_type;
         Filter filter;
+        bool index_analysis_enabled = false;
+        bool range_supported = false;
+        bool range_positive = true;
+        bool has_range = false;
+        Field range_min{};
+        Field range_max{};
     };
 
-    RuntimeFilter(RuntimeFilterConfig config_, Data data_)
-        : evaluation_state(std::move(config_))
-        , data(std::move(data_))
+    template <typename FilterImpl>
+    static Data makeData(size_t filters_to_merge, FilterImpl && filter)
     {
+        using FilterType = std::decay_t<FilterImpl>;
+        Data result{
+            detail::RuntimeFilterBuildState(FilterType::is_prebuilt ? 0 : filters_to_merge, FilterType::is_prebuilt),
+            filter.getTargetType(),
+            Filter(std::forward<FilterImpl>(filter))};
+        result.range_positive = !std::is_same_v<FilterType, ExactNotContains>;
+        if constexpr (std::is_same_v<FilterType, SharedFixedHashTable>)
+        {
+            result.index_analysis_enabled = true;
+            if (const auto & range = std::get<SharedFixedHashTable>(result.filter).getInitialKeyRange())
+            {
+                result.range_min = range->left;
+                result.range_max = range->right;
+                result.has_range = true;
+            }
+        }
+        return result;
     }
+
+    RuntimeFilter(RuntimeFilterConfig config_, Data data_);
 
 public:
     template <typename FilterImpl>
     RuntimeFilter(size_t filters_to_merge_, RuntimeFilterConfig config_, FilterImpl && filter_)
-        : RuntimeFilter(
-              std::move(config_),
-              Data{
-                  detail::RuntimeFilterBuildState(
-                      std::decay_t<FilterImpl>::is_prebuilt ? 0 : filters_to_merge_, std::decay_t<FilterImpl>::is_prebuilt),
-                  Filter(std::forward<FilterImpl>(filter_))})
+        : RuntimeFilter(std::move(config_), makeData(filters_to_merge_, std::forward<FilterImpl>(filter_)))
     {
     }
 
@@ -271,6 +313,12 @@ public:
 
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
     void merge(const RuntimeFilter * source);
+
+    /// Opt in to collecting build-side metadata for storage index analysis.
+    void enableIndexAnalysis();
+    ColumnPtr getRecordedKeyValues() const;
+    std::optional<Range> getRecordedKeyRanges() const;
+    DataTypePtr getFilterColumnTargetType() const;
 
     /// Usage statistics
     const RuntimeFilterStats & getStats() const { return evaluation_state.getStats(); }
@@ -307,5 +355,20 @@ struct IRuntimeFilterLookup : boost::noncopyable
 using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
 
 RuntimeFilterLookupPtr createRuntimeFilterLookup();
+
+/// A runtime filter (by rendezvous key) bound to a left-side column to prune.
+struct RuntimeFilterIndexAnalysisDescriptor
+{
+    String filter_id;
+    String key_column_name;
+    DataTypePtr key_column_type;
+};
+
+/// AND the descriptors into one pruning predicate; nullptr if none (fail-open).
+const ActionsDAG::Node * buildRuntimeRangePredicate(
+    const IRuntimeFilterLookup & lookup,
+    const std::vector<RuntimeFilterIndexAnalysisDescriptor> & descriptors,
+    ActionsDAG & dag,
+    const ContextPtr & context);
 
 }

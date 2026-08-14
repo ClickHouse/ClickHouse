@@ -35,9 +35,7 @@ Antes de comenzar la actualización:
 </div>
 
 <Steps>
-  <Step>
-    ### 1. Actualizar el gráfico de Helm del operador
-
+  <Step title="1. Actualizar el gráfico de Helm del operador" id="1-upgrade-the-operator-helm-chart">
     Mantén los `values` de helm existentes sin cambios y actualiza únicamente las versiones del operador a las nuevas versiones de destino.
 
     ```bash
@@ -47,12 +45,10 @@ Antes de comenzar la actualización:
       -n clickhouse-operator-system
     ```
 
-    > **Nota:** Actualizar el operador puede desencadenar un reinicio progresivo de todos los clústeres de ClickHouse que administra. Si tienes varios clústeres y quieres validar la actualización en uno antes de permitir que el operador reconcilie los demás, consulta [Protección de los clústeres durante la actualización](#protecting-clusters-during-upgrade) más abajo.
+    > **Nota:** Actualizar el operador puede desencadenar un reinicio progresivo de todos los clústeres de ClickHouse que administra. Si tienes varios clústeres y quieres validar la actualización en uno antes de permitir que el operador reconcilie los demás, consulta [Proteger los clústeres durante la actualización](#protecting-clusters-during-upgrade) más abajo.
   </Step>
 
-  <Step>
-    ### 2. Validar el operador actualizado
-
+  <Step title="2. Validar el operador actualizado" id="2-validate-the-upgraded-operator">
     Confirma que la implementación del operador esté en ejecución y en buen estado:
 
     ```bash
@@ -68,9 +64,7 @@ Antes de comenzar la actualización:
     ```
   </Step>
 
-  <Step>
-    ### 3. Actualizar el gráfico de Helm de onprem-clickhouse-cluster
-
+  <Step title="3. Actualizar el gráfico de Helm de onprem-clickhouse-cluster" id="3-upgrade-the-onprem-clickhouse-cluster-helm-chart">
     Actualiza el gráfico de Helm `onprem-clickhouse-cluster` para cada clúster. Mantén los `values` de helm existentes sin cambios y actualiza únicamente las versiones de las imágenes de ClickHouse server y Keeper a las nuevas versiones de destino.
 
     ```bash
@@ -85,9 +79,7 @@ Antes de comenzar la actualización:
     Esto desencadena un **reinicio progresivo de los pods de Keeper y server** (un pod a la vez). Repite este proceso para cada clúster.
   </Step>
 
-  <Step>
-    ### 4. Validar el clúster actualizado
-
+  <Step title="4. Validar el clúster actualizado" id="4-validate-the-upgraded-cluster">
     Una vez completado el reinicio progresivo, confirma que el clúster esté en buen estado:
 
     ```bash

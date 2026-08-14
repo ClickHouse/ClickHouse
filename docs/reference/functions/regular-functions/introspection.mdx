@@ -16,7 +16,7 @@ For proper operation of introspection functions:
 
 - Install the `clickhouse-common-static-dbg` package.
 
-- Set the [allow_introspection_functions](/reference/settings/session-settings#allow_introspection_functions) setting to 1.
+- Set the [allow_introspection_functions](/reference/settings/session-settings/allow#allow_introspection_functions) setting to 1.
 
         For security reasons introspection functions are disabled by default.
 
@@ -42,7 +42,7 @@ This function is slow and may impose security considerations.
 To enable this introspection function:
 
 - Install the `clickhouse-common-static-dbg` package.
-- Set setting [`allow_introspection_functions`](/reference/settings/session-settings#allow_introspection_functions) to `1`.
+- Set setting [`allow_introspection_functions`](/reference/settings/session-settings/allow#allow_introspection_functions) to `1`.
     
 
 **Syntax**
@@ -130,7 +130,7 @@ As a result of this, it is slower than `addressToLine`.
 To enable this introspection function:
 
 - Install the `clickhouse-common-static-dbg` package.
-- Set setting [`allow_introspection_functions`](/reference/settings/session-settings#allow_introspection_functions) to `1`.
+- Set setting [`allow_introspection_functions`](/reference/settings/session-settings/allow#allow_introspection_functions) to `1`.
     
 
 **Syntax**
@@ -452,7 +452,12 @@ SELECT isMergeTreePartCoveredBy(rhs, lhs), isMergeTreePartCoveredBy(lhs, rhs);
 
 Introduced in: v20.12.0
 
-Emits a trace log message to the server log for each [Block](/resources/develop-contribute/introduction/architecture#block).
+Emits a trace log message to the server log.
+
+The function accepts a constant argument only, so the call is evaluated during query analysis and replaced
+by its result. The message is therefore emitted once while the query is analyzed, and not once per processed
+[Block](/resources/develop-contribute/introduction/architecture#block): the number of rows and the setting `max_block_size` have no effect
+on how many messages appear in the log.
     
 
 **Syntax**

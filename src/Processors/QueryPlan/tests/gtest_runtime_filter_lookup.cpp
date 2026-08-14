@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <Common/tests/gtest_global_register.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <base/unit.h>
+#include <Common/tests/gtest_global_register.h>
 
 #include <initializer_list>
 #include <memory>
@@ -47,9 +47,8 @@ DataTypePtr makeUInt64Type()
 
 RuntimeFilterConfig makeRuntimeFilterConfig()
 {
-    return RuntimeFilterConfig{
-        /*pass_ratio_threshold_for_disabling=*/1.0,
-        /*blocks_to_skip_before_reenabling=*/30};
+    return RuntimeFilterConfig{/*pass_ratio_threshold_for_disabling=*/1.0,
+                               /*blocks_to_skip_before_reenabling=*/30};
 }
 
 }
@@ -199,6 +198,45 @@ TEST(RuntimeFilterLookup, ExactContainsMergesFinalizedEmptyFilter)
     expectMask(destination.find(makeUInt64ColumnWithType({1, 2}, type)), {1, 0});
 }
 
+TEST(RuntimeFilterLookup, IndexAnalysisRecordsExactValuesAndMergedRange)
+{
+    const auto type = makeUInt64Type();
+    RuntimeFilter destination(
+        /*filters_to_merge_=*/1, makeRuntimeFilterConfig(), RuntimeFilter::Adaptive(type, 1_MiB, 100, 3, 1.0, std::nullopt));
+    destination.enableIndexAnalysis();
+    destination.insert(makeUInt64Column({3, 7}));
+
+    RuntimeFilter source(
+        /*filters_to_merge_=*/0, makeRuntimeFilterConfig(), RuntimeFilter::Adaptive(type, 1_MiB, 100, 3, 1.0, std::nullopt));
+    source.enableIndexAnalysis();
+    source.insert(makeUInt64Column({1, 9}));
+    source.finishInsert();
+
+    destination.merge(&source);
+    destination.finishInsert();
+
+    auto values = destination.getRecordedKeyValues();
+    ASSERT_TRUE(values);
+    EXPECT_EQ(values->size(), 4);
+    auto range = destination.getRecordedKeyRanges();
+    ASSERT_TRUE(range);
+    EXPECT_EQ(range->left.safeGet<UInt64>(), 1);
+    EXPECT_EQ(range->right.safeGet<UInt64>(), 9);
+}
+
+TEST(RuntimeFilterLookup, ExactNotContainsHasNoPositiveIndexMetadata)
+{
+    const auto type = makeUInt64Type();
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0, makeRuntimeFilterConfig(), RuntimeFilter::ExactNotContains(type, 1_MiB, 100));
+    filter.enableIndexAnalysis();
+    filter.insert(makeUInt64Column({1, 3}));
+    filter.finishInsert();
+
+    EXPECT_FALSE(filter.getRecordedKeyValues());
+    EXPECT_FALSE(filter.getRecordedKeyRanges());
+}
+
 TEST(RuntimeFilterLookup, SharedFixedHashTableRuntimeFilterDelegatesProbe)
 {
     const auto type = makeUInt64Type();
@@ -206,6 +244,7 @@ TEST(RuntimeFilterLookup, SharedFixedHashTableRuntimeFilterDelegatesProbe)
         /*filters_to_merge_=*/0,
         makeRuntimeFilterConfig(),
         RuntimeFilter::SharedFixedHashTable(
+            type,
             [](const ColumnWithTypeAndName & values)
             {
                 auto result = ColumnUInt8::create();
@@ -216,8 +255,10 @@ TEST(RuntimeFilterLookup, SharedFixedHashTableRuntimeFilterDelegatesProbe)
                 return result;
             }));
 
-    expectMask(filter.find(makeUInt64ColumnWithType({1, 3, 5, 7}, type)), {0, 1, 0, 1});
-    EXPECT_EQ(filter.getStats().rows_checked.load(), 4);
+    EXPECT_NO_THROW(filter.insert(makeUInt64Column({42})));
+    EXPECT_FALSE(filter.getRecordedKeyRanges());
+    expectMask(filter.find(makeUInt64ColumnWithType({1, 3, 5, 7, 42}, type)), {0, 1, 0, 1, 0});
+    EXPECT_EQ(filter.getStats().rows_checked.load(), 5);
     EXPECT_EQ(filter.getStats().rows_passed.load(), 2);
 }
 
