@@ -100,6 +100,9 @@ void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewh
 {
     info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
+    /// `optimizePrewhere` can attach the filter after this source step was constructed.
+    /// The count-only format path returns metadata rows without applying `PREWHERE`.
+    need_only_count = false;
     output_header = std::make_shared<const Block>(info.source_header);
 }
 

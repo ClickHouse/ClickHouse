@@ -1220,7 +1220,7 @@ private:
     std::vector<String> * uri_options;
 
     ReadFromFormatInfo info;
-    const bool need_only_count;
+    bool need_only_count;
     std::vector<std::pair<std::string, std::string>> read_uri_params;
     std::function<void(std::ostream &)> read_post_data_callback;
 
@@ -1256,6 +1256,9 @@ void ReadFromURL::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value
 {
     info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
+    /// `optimizePrewhere` can attach the filter after this source step was constructed.
+    /// The count-only format path returns metadata rows without applying `PREWHERE`.
+    need_only_count = false;
     output_header = std::make_shared<const Block>(info.source_header);
 }
 

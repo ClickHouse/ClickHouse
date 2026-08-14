@@ -26,6 +26,12 @@ FROM file(
     Parquet,
     'json JSON(max_dynamic_paths = 0, arr Array(JSON(max_dynamic_paths = 0, a UInt64)))');
 
+SELECT json.arr.a
+FROM file(
+    currentDatabase() || '_04696.parquet',
+    Parquet,
+    'json JSON(max_dynamic_paths = 0, arr Array(JSON(max_dynamic_paths = 0, a UInt64)))');
+
 SELECT json
 FROM file(
     currentDatabase() || '_04696.parquet',

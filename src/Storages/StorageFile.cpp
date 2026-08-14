@@ -2105,7 +2105,7 @@ public:
 private:
     std::shared_ptr<StorageFile> storage;
     ReadFromFormatInfo info;
-    const bool need_only_count;
+    bool need_only_count;
 
     size_t max_block_size;
     const size_t max_num_streams;
@@ -2136,6 +2136,9 @@ void ReadFromFile::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_valu
 {
     info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
+    /// `optimizePrewhere` can attach the filter after this source step was constructed.
+    /// The count-only format path returns metadata rows without applying `PREWHERE`.
+    need_only_count = false;
     output_header = std::make_shared<const Block>(info.source_header);
 }
 

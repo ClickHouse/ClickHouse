@@ -1103,8 +1103,9 @@ bool SchemaConverter::processSubtreeVariant(TraversalNode & node, size_t depth)
     if (!node.element->logicalType.__isset.VARIANT)
         return false;
 
-    const std::vector<std::pair<size_t, String>> requested_variant_subcolumns
-        = levels.back().rep == 0 ? collectRequestedSubcolumns(node.name) : std::vector<std::pair<size_t, String>> {};
+    /// Descendant requests remain valid below repeated `VARIANT` nodes. `processSubtree` has
+    /// already normalized `node.name` to the element path while unwrapping the array type hint.
+    const std::vector<std::pair<size_t, String>> requested_variant_subcolumns = collectRequestedSubcolumns(node.name);
 
     if (!node.element->__isset.num_children || node.element->num_children < 2)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT` column {}: expected at least `metadata` and `value` children", node.getNameForLogging());
