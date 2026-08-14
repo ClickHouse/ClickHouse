@@ -52,8 +52,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
-#include <base/scope_guard.h>
-
 
 namespace DB
 {
@@ -140,6 +138,24 @@ std::optional<bool> getEarlyShortCircuitResultForAndOr(
     }
 
     return {};
+}
+
+bool hasScopeDependentNodesForEarlyShortCircuit(const QueryTreeNodePtr & node)
+{
+    const auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        return false;
+
+    if (node_type != QueryTreeNodeType::FUNCTION
+        && node_type != QueryTreeNodeType::CONSTANT
+        && node_type != QueryTreeNodeType::LIST)
+        return true;
+
+    for (const auto & child : node->getChildren())
+        if (child && hasScopeDependentNodesForEarlyShortCircuit(child))
+            return true;
+
+    return false;
 }
 }
 
@@ -654,7 +670,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         && !UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters)) /// NOLINT(readability-static-accessed-through-instance)
     {
         auto short_circuit_result = getEarlyShortCircuitResultForAndOr(node, function_name);
-        if (short_circuit_result)
+        if (short_circuit_result && !hasScopeDependentNodesForEarlyShortCircuit(node))
         {
             /// Resolve a clone in type-only mode. Scalar subqueries are analyzed but not executed,
             /// which gives the logical expression its real Nullable/Bool result type. It also
@@ -662,36 +678,35 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto node_for_type_inference = node->clone();
 
             /// Speculative resolution must not cache placeholders or leave in-progress stack
-            /// entries in the live scope when it falls back. Use an isolated cache-disabled copy;
-            /// dropping the parent link makes unresolved parent-scope dependencies fall back too.
+            /// entries in the live analyzer when it falls back. Use a dedicated QueryAnalyzer and
+            /// an isolated cache-disabled scope; parent-scope dependencies fall back immediately.
             IdentifierResolveScope type_inference_scope = scope;
             type_inference_scope.parent_scope = nullptr;
             type_inference_scope.identifier_in_lookup_process.clear();
             type_inference_scope.clearIdentifierCache();
             type_inference_scope.disableIdentifierCachePermanently();
+            type_inference_scope.table_expression_data_for_alias_resolution = nullptr;
+            type_inference_scope.join_using_columns.clear();
+            type_inference_scope.table_expression_node_to_data.clear();
+            type_inference_scope.registered_table_expression_nodes.clear();
+            type_inference_scope.expression_join_tree_node.reset();
             type_inference_scope.projection_mask_map
                 = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>(*scope.projection_mask_map);
+
+            QueryAnalyzer type_inference_analyzer(/*only_analyze_=*/ false);
+            type_inference_analyzer.early_short_circuit_type_inference_in_process = true;
 
             bool type_inference_succeeded = false;
             try
             {
-                const bool previous_type_inference_state = early_short_circuit_type_inference_in_process;
-                const bool previous_type_inference_failure = early_short_circuit_type_inference_failed;
-                early_short_circuit_type_inference_in_process = true;
-                early_short_circuit_type_inference_failed = false;
-                SCOPE_EXIT({
-                    early_short_circuit_type_inference_in_process = previous_type_inference_state;
-                    early_short_circuit_type_inference_failed = previous_type_inference_failure;
-                });
-
-                resolveExpressionNode(
+                type_inference_analyzer.resolveExpressionNode(
                     node_for_type_inference,
                     type_inference_scope,
                     false /*allow_lambda_expression*/,
                     false /*allow_table_expression*/,
                     false /*ignore_alias*/,
                     allow_niladic_functions);
-                type_inference_succeeded = !early_short_circuit_type_inference_failed;
+                type_inference_succeeded = !type_inference_analyzer.early_short_circuit_type_inference_failed;
             }
             catch (...)
             {
