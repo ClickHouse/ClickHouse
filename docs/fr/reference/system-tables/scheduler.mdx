@@ -29,14 +29,17 @@ Cette table peut être utilisée à des fins de surveillance. Elle contient une 
 * `type` ([String](/fr/reference/data-types/index)) — Type d’un nœud d’ordonnancement.
 * `weight` ([Float64](/fr/reference/data-types/index)) — Poids d’un nœud, utilisé par un nœud parent de type `fair`.
 * `priority` ([Int64](/fr/reference/data-types/index)) — Priorité d’un nœud, utilisée par un nœud parent de type &#39;priority&#39; (une valeur plus faible signifie une priorité plus élevée).
-* `is_active` ([UInt8](/fr/reference/data-types/index)) — Indique si ce nœud est actuellement actif — s’il a des requêtes de ressource à extraire de la file et si les contraintes sont satisfaites.
-* `active_children` ([UInt64](/fr/reference/data-types/index)) — Le nombre d’enfants actifs.
-* `dequeued_requests` ([UInt64](/fr/reference/data-types/index)) — Le nombre total de requêtes de ressource extraites de la file depuis ce nœud.
-* `canceled_requests` ([UInt64](/fr/reference/data-types/index)) — Le nombre total de requêtes de ressource annulées depuis ce nœud.
-* `dequeued_cost` ([Int64](/fr/reference/data-types/index)) — La somme des coûts (par ex. la taille en octets) de toutes les requêtes extraites de la file depuis ce nœud.
-* `throughput` ([Float64](/fr/reference/data-types/index)) — Débit moyen actuel (coût extrait de la file par seconde).
-* `canceled_cost` ([Int64](/fr/reference/data-types/index)) — La somme des coûts (par ex. la taille en octets) de toutes les requêtes annulées depuis ce nœud.
-* `busy_periods` ([UInt64](/fr/reference/data-types/index)) — Le nombre total de désactivations de ce nœud.
+* `precedence` ([Int64](/fr/reference/data-types/index)) — Préséance d’un nœud, utilisée par les nœuds parents à partage d’espace (mémoire) pour ordonner l’admission et l’éviction (une valeur plus faible signifie une préséance plus élevée).
+* `is_active` ([Nullable(UInt8)](/fr/reference/data-types/index)) — Indique si ce nœud est actuellement actif — s’il a des requêtes de ressource à extraire de la file et si les contraintes sont satisfaites.
+* `active_children` ([Nullable(UInt64)](/fr/reference/data-types/index)) — Le nombre d’enfants actifs.
+* `dequeued_requests` ([Nullable(UInt64)](/fr/reference/data-types/index)) — Le nombre total de requêtes de ressource extraites de la file depuis ce nœud.
+* `canceled_requests` ([Nullable(UInt64)](/fr/reference/data-types/index)) — Le nombre total de requêtes de ressource annulées depuis ce nœud.
+* `rejected_requests` ([Nullable(UInt64)](/fr/reference/data-types/index)) — Le nombre total de requêtes de ressource rejetées depuis ce nœud.
+* `dequeued_cost` ([Nullable(Int64)](/fr/reference/data-types/index)) — La somme des coûts (par ex. la taille en octets) de toutes les requêtes extraites de la file depuis ce nœud.
+* `canceled_cost` ([Nullable(Int64)](/fr/reference/data-types/index)) — La somme des coûts (par ex. la taille en octets) de toutes les requêtes annulées depuis ce nœud.
+* `rejected_cost` ([Nullable(Int64)](/fr/reference/data-types/index)) — La somme des coûts (par ex. la taille en octets) de toutes les requêtes rejetées depuis ce nœud.
+* `busy_periods` ([Nullable(UInt64)](/fr/reference/data-types/index)) — Le nombre total de désactivations de ce nœud.
+* `throughput` ([Nullable(Float64)](/fr/reference/data-types/index)) — Débit moyen actuel (coût extrait de la file par seconde).
 * `vruntime` ([Nullable(Float64)](/fr/reference/data-types/index)) — Pour les enfants des nœuds `fair` uniquement. Temps d’exécution virtuel d’un nœud utilisé par l’algorithme SFQ pour sélectionner le prochain enfant à traiter de manière équitable selon le principe max-min.
 * `system_vruntime` ([Nullable(Float64)](/fr/reference/data-types/index)) — Pour les nœuds `fair` uniquement. Temps d’exécution virtuel indiquant le `vruntime` de la dernière requête de ressource traitée. Utilisé lors de l’activation d’un enfant comme nouvelle valeur de `vruntime`.
 * `queue_length` ([Nullable(UInt64)](/fr/reference/data-types/index)) — Pour les nœuds `fifo` uniquement. Nombre actuel de requêtes de ressource présentes dans la file.
@@ -45,12 +48,23 @@ Cette table peut être utilisée à des fins de surveillance. Elle contient une 
 * `is_satisfied` ([Nullable(UInt8)](/fr/reference/data-types/index)) — Pour les nœuds de contrainte uniquement (par ex. `inflight_limit`). Égal à `1` si toutes les contraintes de ce nœud sont satisfaites.
 * `inflight_requests` ([Nullable(Int64)](/fr/reference/data-types/index)) — Pour les nœuds `inflight_limit` uniquement. Le nombre de requêtes de ressource extraites de la file depuis ce nœud qui sont actuellement en cours de consommation.
 * `inflight_cost` ([Nullable(Int64)](/fr/reference/data-types/index)) — Pour les nœuds `inflight_limit` uniquement. La somme des coûts (par ex. en octets) de toutes les requêtes de ressource extraites de la file depuis ce nœud qui sont actuellement en cours de consommation.
-* `max_requests` ([Nullable(Int64)](/fr/reference/data-types/index)) — Pour les nœuds `inflight_limit` uniquement. Limite supérieure de `inflight_requests` entraînant une violation de contrainte.
+* `max_requests` ([Nullable(Int64)](/fr/reference/data-types/index)) — Pour les nœuds `inflight_limit` uniquement. Limite supérieure de inflight&#95;requests entraînant une violation de contrainte.
 * `max_cost` ([Nullable(Int64)](/fr/reference/data-types/index)) — Pour les nœuds `inflight_limit` uniquement. Limite supérieure de `inflight_cost` entraînant une violation de contrainte.
 * `max_speed` ([Nullable(Float64)](/fr/reference/data-types/index)) — Pour les nœuds `bandwidth_limit` uniquement. Limite supérieure de bande passante en jetons par seconde.
 * `max_burst` ([Nullable(Float64)](/fr/reference/data-types/index)) — Pour les nœuds `bandwidth_limit` uniquement. Limite supérieure du nombre de jetons disponibles dans le throttler à seau de jetons.
 * `throttling_us` ([Nullable(Int64)](/fr/reference/data-types/index)) — Pour les nœuds `bandwidth_limit` uniquement. Nombre total de microsecondes pendant lesquelles ce nœud a été en état de limitation de débit.
 * `tokens` ([Nullable(Float64)](/fr/reference/data-types/index)) — Pour les nœuds `bandwidth_limit` uniquement. Nombre de jetons actuellement disponibles dans le throttler à seau de jetons.
+* `allocated` ([Nullable(Int64)](/fr/reference/data-types/index)) — Pour les nœuds space-shared uniquement. Quantité de ressource actuellement allouée sous ce nœud.
+* `allocations` ([Nullable(UInt64)](/fr/reference/data-types/index)) — Pour les nœuds space-shared uniquement. Le nombre actuel d’allocations de ressources en cours sous ce nœud.
+* `updates` ([Nullable(UInt64)](/fr/reference/data-types/index)) — Pour les nœuds space-shared uniquement. Le nombre total de mises à jour propagées via ce nœud.
+* `increases` ([Nullable(UInt64)](/fr/reference/data-types/index)) — Pour les nœuds space-shared uniquement. Le nombre total de demandes d’augmentation approuvées par ce nœud.
+* `decreases` ([Nullable(UInt64)](/fr/reference/data-types/index)) — Pour les nœuds space-shared uniquement. Le nombre total de demandes de réduction approuvées par ce nœud.
+* `admits` ([Nullable(UInt64)](/fr/reference/data-types/index)) — Pour les nœuds space-shared uniquement. Le nombre total d’allocations admises par ce nœud.
+* `removes` ([Nullable(UInt64)](/fr/reference/data-types/index)) — Pour les nœuds space-shared uniquement. Le nombre total d’allocations supprimées de ce nœud.
+* `killers` ([Nullable(UInt64)](/fr/reference/data-types/index)) — Pour les nœuds space-shared uniquement. Le nombre total d’évictions initiées par ce nœud en raison de demandes d’augmentation.
+* `victims` ([Nullable(UInt64)](/fr/reference/data-types/index)) — Pour les nœuds space-shared uniquement. Le nombre total d’allocations évincées de ce nœud.
+* `rejects` ([Nullable(UInt64)](/fr/reference/data-types/index)) — Pour les nœuds `allocation_queue` uniquement. Le nombre total d’allocations de ressources rejetées par ce nœud.
+* `pending` ([Nullable(UInt64)](/fr/reference/data-types/index)) — Pour les nœuds `allocation_queue` uniquement. Le nombre actuel d’allocations de ressources en attente dans ce nœud.
 
 {/*AUTOGENERATED_END*/}
 

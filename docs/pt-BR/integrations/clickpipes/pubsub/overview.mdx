@@ -67,7 +67,7 @@ Você também pode personalizar as configurações avançadas usando os controle
 
 8. Por fim, você pode configurar as permissões do usuário interno do ClickPipes.
 
-**Permissões:** O ClickPipes criará um usuário dedicado para gravar dados em uma tabela de destino. Você pode selecionar uma role para esse usuário interno usando uma role personalizada ou uma das roles predefinidas:
+**Permissões:** O ClickPipes criará um usuário dedicado para gravar dados em uma tabela de destino. Você pode selecionar uma função para esse usuário interno usando uma função personalizada ou uma das funções predefinidas:
 
 * `Full access`: com acesso total ao cluster. Isso pode ser útil se você usar uma visão materializada ou um Dicionário com a tabela de destino.
   * `Only destination table`: com permissões `INSERT` apenas na tabela de destino.
@@ -253,6 +253,6 @@ O ClickPipes para Pub/Sub oferece entrega **at-least-once**. Uma mensagem do Pub
   ## Autenticação
 </div>
 
-O ClickPipes para Pub/Sub se autentica no GCP usando uma chave JSON de conta de serviço. Você faz upload do arquivo de chave ao criar o pipe; o ClickPipes o criptografa em repouso e o usa em tempo de execução para consumir mensagens e gerenciar o ciclo de vida da assinatura gerenciada.
+O ClickPipes para Pub/Sub autentica-se no GCP usando uma chave JSON de conta de serviço. Você faz upload do arquivo de chave ao criar o pipe; o ClickPipes o criptografa em repouso e o usa em tempo de execução para consumir mensagens e gerenciar o ciclo de vida da assinatura gerenciada.
 
-Para consultar a lista exata de permissões do IAM necessárias e uma definição recomendada de role personalizado, veja o [guia de permissões do IAM do Pub/Sub](/pt-BR/integrations/clickpipes/pubsub/auth).
+Para conferir a lista exata das permissões do IAM necessárias e uma definição recomendada de função personalizada, consulte o [guia de permissões do IAM do Pub/Sub](/pt-BR/integrations/clickpipes/pubsub/auth).

@@ -180,18 +180,18 @@ Les ClickPipes GCS utilisent deux chemins réseau distincts pour la découverte 
 
 ClickPipes propose des valeurs par défaut adaptées à la plupart des cas d’utilisation. Si votre cas d’utilisation nécessite un réglage plus fin, vous pouvez ajuster les paramètres suivants :
 
-| Paramètre                            | Valeur par défaut | Description                                                                                                                                                                |
-| ------------------------------------ | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB              | Nombre d’octets à traiter dans un seul lot d’insertion.                                                                                                                    |
-| `Max file count`                     | 100               | Nombre maximal de fichiers à traiter dans un seul lot d’insertion.                                                                                                         |
+| Paramètre                            | Valeur par défaut | Description                                                                                                                                                                   |
+| ------------------------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB              | Nombre d’octets à traiter dans un seul lot d’insertion.                                                                                                                       |
+| `Max file count`                     | 100               | Nombre maximal de fichiers à traiter dans un seul lot d’insertion.                                                                                                            |
 | `Max threads`                        | auto(3)           | [Nombre maximal de threads concurrents](/fr/reference/settings/session-settings#max_threads) pour le traitement des fichiers.                                                 |
 | `Max insert threads`                 | 1                 | [Nombre maximal de threads d’insertion concurrents](/fr/reference/settings/session-settings#max_insert_threads) pour le traitement des fichiers.                              |
 | `Min insert block size bytes`        | 1GB               | [Taille minimale en octets du bloc](/fr/reference/settings/session-settings#min_insert_block_size_bytes) pouvant être inséré dans une table.                                  |
 | `Max download threads`               | 4                 | [Nombre maximal de threads de téléchargement concurrents](/fr/reference/settings/session-settings#max_download_threads).                                                      |
-| `Object storage polling interval`    | 30s               | Configure le délai d’attente maximal avant l’insertion des données dans le cluster ClickHouse.                                                                             |
+| `Object storage polling interval`    | 30s               | Configure le délai d’attente maximal avant l’insertion des données dans le cluster ClickHouse.                                                                                |
 | `Parallel distributed insert select` | 2                 | [Paramètre parallel distributed insert select](/fr/reference/settings/session-settings#parallel_distributed_insert_select).                                                   |
 | `Parallel view processing`           | false             | Indique s’il faut activer l’envoi vers les vues attachées [de manière concurrente plutôt que séquentielle](/fr/reference/settings/session-settings#parallel_view_processing). |
-| `Use cluster function`               | true              | Indique s’il faut traiter les fichiers en parallèle sur plusieurs nœuds.                                                                                                   |
+| `Use cluster function`               | true              | Indique s’il faut traiter les fichiers en parallèle sur plusieurs nœuds.                                                                                                      |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Paramètres avancés de ClickPipes" size="lg" border />
 

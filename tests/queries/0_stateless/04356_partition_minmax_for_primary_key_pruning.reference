@@ -249,7 +249,7 @@ PrimaryKey
 Keys:
 Condition: or(and((event_time in [1001, +Inf)), (id in [3, +Inf))), and((event_time in [10, 10]), (id in [0, 0])))
 Parts: 1/1
-Granules: 8/100
+Granules: 9/100
 Search Algorithm: generic exclusion search
 SELECT count() FROM t_pk_minmax_reverse_loaded WHERE (id = 0 AND event_time = 10) OR (id >= 3 AND event_time > 1000) SETTINGS use_partition_minmax_for_primary_key_pruning = 1;
 1

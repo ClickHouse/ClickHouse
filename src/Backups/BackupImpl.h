@@ -92,6 +92,7 @@ public:
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
     bool tryRemoveAllFiles() noexcept override;
+    void setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept override;
 
 private:
     void open();

@@ -1,23 +1,121 @@
 ---
 date: 2023-06-07
-title: "Automatic schema migration tools for ClickHouse"
-description: "Learn about automatic schema migration tools for ClickHouse and how to manage changing database schemas over time."
+title: "Schema migration tools for ClickHouse"
+description: "Learn about schema migration tools for ClickHouse and how to manage changing database schemas over time."
 tags: ['Tools and Utilities']
 keywords: ['Automatic Schema Migration']
 ---
 
-## Automatic schema migration tools for ClickHouse
+## What is schema management? {#what-is-schema-management}
 
-We often get asked about a good schema migration tool for ClickHouse and what is the best practice to manage database schemas in ClickHouse that might change over time? 
+Schema management is the practice of applying version control principles to database schemas. It often encompasses actions such as tracking and automating changes to tables, columns, and their relationships so that schema updates are repeatable, auditable, and consistent across environments. Schema management comes into play when the shape of the data in the database needs to be modified for a new use case or performance optimization.
 
-There is no standard schema migration tool for ClickHouse, but we have compiled the following list (in no particular order) of automatic schema migration tools with support for ClickHouse that we know:
+### Why is it important? {#why-is-it-important}
 
-- [Goose](https://github.com/pressly/goose)
-- [Sqitch](https://sqitch.org/docs/manual/sqitchtutorial-clickhouse/)
-- [Atlas](https://atlasgo.io/guides/clickhouse?utm_source=clickhouse&utm_term=knowledge)
-- [Bytebase](https://www.bytebase.com/)
-- [Flyway](https://documentation.red-gate.com/fd/supported-databases-and-versions-143754067.html)
-- [Liquibase](https://www.liquibase.com/)
-- A [simple community tool](https://github.com/VVVi/clickhouse-migrations) named `clickhouse-migrations`
-- Another [community tool](https://github.com/golang-migrate/migrate/tree/master/database/clickhouse) written in Go
-- [Houseplant](https://houseplant.readthedocs.io)
+Schema management tools let you automate schema changes alongside application deployments. It is common for schema changes to be a prerequisite to deploying a new application version. These tools are also referred to as "schema migration" or "database migration" tools because users are migrating from one version of the database to another.
+
+Without schema management tooling, database changes are manual, error-prone, and hard to coordinate across teams and environments. While you can always execute DDL directly against the database, these tools enable version control, automated deployments, rollback support, and audit trails. For ClickHouse specifically, where certain DDL changes can be expensive or irreversible, a structured migration process with review steps is especially critical.
+
+### Types of schema management approaches {#types-of-schema-management-approaches}
+
+Schema management tools generally fall into two categories.
+
+#### Imperative {#imperative}
+
+These tools use versioned SQL files that describe how to get from state A to state B. You write explicit DDL statements such as `CREATE TABLE`, `ALTER TABLE`, or `DROP COLUMN` into files. The tool then runs the files in order and tracks which have been applied. In this category, you dictate the exact SQL to run.
+
+Examples: Golang Migrate, Goose, and Flyway.
+
+#### Declarative {#declarative}
+
+These tools start with the user defining a desired-state schema. The tool detects the difference between the current database and the desired state, then generates and applies the necessary migration. This approach reduces manual migration writing and schema drift. In this category, the tool dictates the exact SQL to run.
+
+Examples: Atlas and Liquibase.
+
+There is a third category of tools that focus less on database schema changes and more on transforming the data itself.
+
+Example: dbt.
+
+This article focuses solely on tools for database schema changes.
+
+Choose a tool that aligns with how your team wants to operate. Imperative tools give full visibility into exactly what DDL will run, but require dedicated attention to identifying and managing schema drift. Declarative tools automate much of the maintenance and help prevent schema drift, but you should always review the generated plan before applying it to ClickHouse. Make sure no unexpected mutation or expensive rewrite is hidden in an automatically generated plan.
+
+## What to consider when choosing a tool {#what-to-consider-when-choosing-a-tool}
+
+### What does your team already use? {#what-does-your-team-already-use}
+
+You will likely gravitate toward tools based on ecosystem familiarity. If your team is a Go shop, Golang Migrate or Goose may feel natural. If you are in the Java ecosystem, you may already have Flyway or Liquibase in place. If your infrastructure team uses Terraform and infrastructure-as-code patterns, Atlas's declarative model may be a comfortable fit. There is real value in picking something your team already knows: the best tool is one that gets adopted and used consistently.
+
+### What is your desired process? {#what-is-your-desired-process}
+
+Think about how schema changes flow through your organization. Consider whether you need:
+
+- A simple "write SQL, run it in CI, done" workflow, such as Goose or Golang Migrate.
+- Managed approval workflows, audit trails, and RBAC, such as Bytebase or Liquibase.
+- To define your schema declaratively and have the tool determine the difference, such as Atlas.
+
+Match the tool to your requirements and process.
+
+## Recommended tools {#recommended-tools}
+
+These are the tools we generally recommend for ClickHouse users based on maturity, ClickHouse compatibility, community adoption, and operational fit.
+
+### Atlas {#atlas}
+
+[Atlas](https://atlasgo.io/guides/clickhouse) is a schema-as-code tool that takes a declarative approach. You define your desired schema state in HCL or SQL, and Atlas inspects your current database, computes the difference, generates a migration plan, and applies it, optionally after your review.
+
+**Why it works well for ClickHouse:** Atlas has first-class ClickHouse support, including tables, views, materialized views, projections, partitions, and UDFs. Atlas added cluster support in v0.37 in September 2025. It supports both HCL and plain SQL schema definitions.
+
+**What to watch out for:** Atlas's ClickHouse driver is available only on the Pro plan or during a trial. Atlas generates migration plans, but does not understand the cost of those plans. A difference might look simple, such as changing a column type, but trigger an expensive mutation on a multi-terabyte table. Always review generated plans before applying them.
+
+**Best for:** Teams that want infrastructure-as-code workflows and automatic drift detection.
+
+- **Type:** Declarative
+- **Language:** Go, distributed as a single binary
+- **License and availability:** Open Core; the Atlas CLI has an Apache 2.0 community edition, but ClickHouse support requires the Pro plan or a trial
+- **Cluster support:** Yes
+
+### Golang Migrate {#golang-migrate}
+
+[Golang Migrate](https://github.com/golang-migrate/migrate/tree/master/database/clickhouse) is a simple, widely used migration runner. You write versioned SQL files with up and down steps, and the tool applies them in order, tracking state in a `schema_migrations` table in your ClickHouse database.
+
+**Why it works well for ClickHouse:** It is simple and flexible. You write exactly the ClickHouse DDL you want to run. It is a single Go binary with no runtime dependencies, making it easy to incorporate into a CI/CD pipeline or Docker container.
+
+**What to watch out for:** If a migration file contains multiple statements and one fails partway through, the database can be left in a partially applied state that requires manual intervention. This is manageable by following a one-statement-per-file discipline.
+
+**Best for:** Teams that want simplicity and full control over exactly what SQL runs against their ClickHouse instance.
+
+- **Type:** Imperative
+- **Language:** Go
+- **License:** Open Source, MIT
+- **Cluster support:** Yes
+
+### Goose {#goose}
+
+[Goose](https://github.com/pressly/goose) is another Go-based migration runner with a similar philosophy to Golang Migrate. You write versioned SQL files, or Go functions for complex logic, and Goose applies them sequentially while tracking state in a version table in ClickHouse.
+
+**Why it works well for ClickHouse:** Goose is SQL-first, requires minimal configuration, has a straightforward CLI, and is easy to integrate into CI/CD. Goose also supports writing migrations as Go functions, which gives you more flexibility for complex logic that pure SQL cannot express.
+
+**What to watch out for:** Goose does not provide schema diffing or automatic migration generation.
+
+**Best for:** Teams already using Goose, or those who prefer its migration file conventions over Golang Migrate's.
+
+- **Type:** Imperative
+- **Language:** Go, distributed as a single binary
+- **License:** Open Source, MIT
+- **Cluster support:** No
+
+## Other tools in the ecosystem {#other-tools-in-the-ecosystem}
+
+The following tools also work with ClickHouse. They may be a better fit depending on your stack and workflow. However, we generally recommend the tools above.
+
+| Tool | License | Consider for... |
+| :--- | :--- | :--- |
+| [Bytebase](https://docs.bytebase.com/introduction/supported-databases) | Open Core | Large organizations that need governance, approval workflows, and audit trails across multiple environments |
+| [Flyway](https://documentation.red-gate.com/fd/supported-databases-for-flyway-143754067.html) | Open Source | Teams already standardized on Flyway or JVM-based infrastructure |
+| [Liquibase](https://github.com/MEDIARITHMICS/liquibase-clickhouse) | Open Core | Teams that use Liquibase across multiple databases and want consistency |
+| [`clickhouse-migrations` for Node.js](https://www.npmjs.com/package/clickhouse-migrations) | Open Source | Node.js or TypeScript teams wanting a simple, ClickHouse-focused runner |
+| [Houseplant](https://github.com/juneHQ/houseplant) | Open Source | Python teams wanting environment-aware, ClickHouse-specific tooling |
+| [Sqitch](https://sqitch.org/docs/manual/sqitchtutorial-clickhouse/) | Open Source | Teams preferring native ClickHouse client deployment scripting or explicit dependency management across complex deployments |
+| [Alembic](https://alembic.sqlalchemy.org/) with SQLAlchemy | Open Source | Python teams already using SQLAlchemy for database access |
+| [`clickhouse-migrations` for Python](https://github.com/zifter/clickhouse-migrations) | Open Source | Python teams wanting a simple, file-based migration runner, CLI and library, with ClickHouse cluster support |

@@ -180,18 +180,18 @@ Os ClickPipes do GCS usam dois caminhos de rede distintos para a descoberta de m
 
 O ClickPipes vem com configurações padrão adequadas para a maioria dos casos de uso. Se o seu caso de uso exigir um ajuste mais fino, você poderá ajustar as seguintes configurações:
 
-| Configuração                         | Valor padrão | Descrição                                                                                                                                             |
-| ------------------------------------ | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB         | Número de bytes a processar em um único lote de inserção.                                                                                             |
-| `Max file count`                     | 100          | Número máximo de arquivos a processar em um único lote de inserção.                                                                                   |
+| Configuração                         | Valor padrão | Descrição                                                                                                                                                   |
+| ------------------------------------ | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB         | Número de bytes a processar em um único lote de inserção.                                                                                                   |
+| `Max file count`                     | 100          | Número máximo de arquivos a processar em um único lote de inserção.                                                                                         |
 | `Max threads`                        | auto(3)      | [Número máximo de threads simultâneas](/pt-BR/reference/settings/session-settings#max_threads) para o processamento de arquivos.                            |
 | `Max insert threads`                 | 1            | [Número máximo de threads de inserção simultâneas](/pt-BR/reference/settings/session-settings#max_insert_threads) para o processamento de arquivos.         |
 | `Min insert block size bytes`        | 1GB          | [Tamanho mínimo, em bytes, do bloco](/pt-BR/reference/settings/session-settings#min_insert_block_size_bytes) que pode ser inserido em uma tabela.           |
 | `Max download threads`               | 4            | [Número máximo de threads de download simultâneas](/pt-BR/reference/settings/session-settings#max_download_threads).                                        |
-| `Object storage polling interval`    | 30s          | Configura o tempo máximo de espera antes de inserir dados no cluster do ClickHouse.                                                                   |
+| `Object storage polling interval`    | 30s          | Configura o tempo máximo de espera antes de inserir dados no cluster do ClickHouse.                                                                         |
 | `Parallel distributed insert select` | 2            | [Configuração de insert select distribuído em paralelo](/pt-BR/reference/settings/session-settings#parallel_distributed_insert_select).                     |
-| `Parallel view processing`           | false        | Se deve habilitar o envio para views anexadas [em paralelo em vez de sequencialmente](/pt-BR/reference/settings/session-settings#parallel_view_processing). |
-| `Use cluster function`               | true         | Se os arquivos devem ser processados em paralelo em vários nós.                                                                                       |
+| `Parallel view processing`           | false        | Se deve habilitar o envio para VIEWs anexadas [em paralelo em vez de sequencialmente](/pt-BR/reference/settings/session-settings#parallel_view_processing). |
+| `Use cluster function`               | true         | Se os arquivos devem ser processados em paralelo em vários nós.                                                                                             |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Configurações avançadas do ClickPipes" size="lg" border />
 

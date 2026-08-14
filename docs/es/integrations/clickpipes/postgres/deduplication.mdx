@@ -70,9 +70,9 @@ La siguiente ilustración muestra un ejemplo básico de sincronización de una t
 
 **Paso 2** muestra tres operaciones en la tabla `users`: insertar una nueva fila, actualizar una fila existente y eliminar otra fila.
 
-**Paso 3** muestra cómo ClickPipes replica las operaciones INSERT, UPDATE y DELETE en ClickHouse como inserciones versionadas. UPDATE aparece como una nueva versión de la fila con ID 2, mientras que DELETE aparece como una nueva versión del ID 1 marcada como true mediante `_is_deleted`. Debido a esto, ClickHouse tiene tres filas más que PostgreSQL.
+**Paso 3** muestra cómo ClickPipes replica las operaciones INSERT, UPDATE y DELETE en ClickHouse como inserciones versionadas. UPDATE aparece como una nueva versión de la fila con ID 2, mientras que DELETE aparece como una nueva versión del ID 1, marcada como true mediante `_is_deleted`. Debido a esto, ClickHouse tiene tres filas más que PostgreSQL.
 
-Como resultado, ejecutar una consulta sencilla como `SELECT count(*) FROM users;` puede producir resultados distintos en ClickHouse y PostgreSQL. Según la [documentación de ClickHouse sobre merges](/es/concepts/core-concepts/merges#replacing-merges), las versiones obsoletas de las filas acaban descartándose durante el proceso de merge. Sin embargo, el momento en que se produce este merge es impredecible, lo que significa que las consultas en ClickHouse pueden devolver resultados inconsistentes hasta que eso ocurra.
+Como resultado, ejecutar una consulta sencilla como `SELECT count(*) FROM users;` puede producir resultados distintos en ClickHouse y PostgreSQL. Según la [documentación de ClickHouse sobre merges](/es/concepts/core-concepts/merges#replacing-merges), las versiones obsoletas de las filas acaban descartándose durante el proceso de fusión. Sin embargo, el momento en que se produce esta fusión es impredecible, lo que significa que las consultas en ClickHouse pueden devolver resultados inconsistentes hasta que eso ocurra.
 
 ¿Cómo podemos garantizar resultados idénticos en las consultas tanto en ClickHouse como en PostgreSQL?
 

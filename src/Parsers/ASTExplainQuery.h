@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTQueryWithOutput.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -25,6 +26,7 @@ public:
         QueryEstimates, /// 'EXPLAIN ESTIMATE ...'
         TableOverride, /// 'EXPLAIN TABLE OVERRIDE ...'
         CurrentTransaction, /// 'EXPLAIN CURRENT TRANSACTION'
+        Analyze, /// EXPLAIN ANALYZE ...
         WhatIf, /// 'EXPLAIN WHATIF SELECT ...'
     };
 
@@ -40,6 +42,7 @@ public:
             case QueryEstimates: return "EXPLAIN ESTIMATE";
             case TableOverride: return "EXPLAIN TABLE OVERRIDE";
             case CurrentTransaction: return "EXPLAIN CURRENT TRANSACTION";
+            case Analyze: return "EXPLAIN ANALYZE";
             case WhatIf: return "EXPLAIN WHATIF";
         }
     }
@@ -62,6 +65,8 @@ public:
             return TableOverride;
         if (str == "EXPLAIN CURRENT TRANSACTION")
             return CurrentTransaction;
+        if (str == "EXPLAIN ANALYZE")
+            return Analyze;
         if (str == "EXPLAIN WHATIF")
             return WhatIf;
 
@@ -88,7 +93,7 @@ public:
         res->table_override = nullptr;
 
         if (ast_settings)
-            res->setSettings(ast_settings->clone());
+            res->setSettings(ast_settings->clone(), settings_text);
         if (query)
             res->setExplainedQuery(query->clone());
         if (table_function)
@@ -108,10 +113,16 @@ public:
         query = std::move(query_);
     }
 
-    void setSettings(ASTPtr settings_)
+    /** `settings_text_` is the SETTINGS clause as written in the query, which only the parser knows.
+      * `ParserSubquery` rewrites `(EXPLAIN <kind> <settings> SELECT ...)` into
+      * `viewExplain('<kind>', '<settings>', (SELECT ...))`, which needs the settings as a string,
+      * and a build with no formatter has nowhere else to get one - see `astText`.
+      */
+    void setSettings(ASTPtr settings_, String settings_text_ = {})
     {
         children.emplace_back(settings_);
         ast_settings = std::move(settings_);
+        settings_text = std::move(settings_text_);
     }
 
     void setTableFunction(ASTPtr table_function_)
@@ -128,10 +139,15 @@ public:
 
     const ASTPtr & getExplainedQuery() const { return query; }
     const ASTPtr & getSettings() const { return ast_settings; }
+    /// Empty unless this query came from the parser - see `setSettings`.
+    const String & getSettingsText() const { return settings_text; }
     const ASTPtr & getTableFunction() const { return table_function; }
     const ASTPtr & getTableOverride() const { return table_override; }
 
     QueryKind getQueryKind() const override { return QueryKind::Explain; }
+
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
@@ -183,6 +199,7 @@ private:
 
     ASTPtr query;
     ASTPtr ast_settings;
+    String settings_text;
 
     /// Used by EXPLAIN TABLE OVERRIDE
     ASTPtr table_function;

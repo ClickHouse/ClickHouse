@@ -52,6 +52,7 @@ enum class CompressionMethodByte : uint8_t
     ALP             = 0x9c,
     SZ3             = 0x9d,
     Quantized       = 0x9e,
+    ZXC             = 0x9f,
 };
 
 }

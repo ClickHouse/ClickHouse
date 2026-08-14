@@ -119,12 +119,20 @@ class Targeting:
         Fixtures carry their owning test's five-digit prefix by convention, so
         the prefix narrows the candidates to the `NNNNN_*` tests at the suite
         root (a handful of files, never the whole suite). Among those, prefer the
-        ones whose body actually references the fixture by name; fall back to all
-        prefix siblings when the reference is constructed dynamically and cannot
-        be found textually. Return an empty list when the file has no numeric
-        prefix or no test with that prefix exists — there is then genuinely
-        nothing to rerun, and emitting a pattern that matches no test would make
-        `clickhouse-test` exit 1 (the failure mode `PR #104097` fixed).
+        ones whose body references the fixture's literal filename. When none
+        does, retry with the extensionless stem, since format schemas are
+        conventionally referenced without the extension
+        (`format_schema = 'NNNNN_foo:Message'` for `format_schemas/NNNNN_foo.proto`).
+        The stem is strictly a fallback: a short or cross-extension stem
+        (`03250.proto` → `03250`, or `03036_archive1.tar` next to a test that
+        reads `03036_archive1.zip`) would otherwise pull unrelated prefix
+        siblings into mappings the literal filename already resolves precisely.
+        Fall back to all prefix siblings when neither matches — the reference is
+        then constructed dynamically and cannot be found textually. Return an
+        empty list when the file has no numeric prefix or no test with that
+        prefix exists — there is then genuinely nothing to rerun, and emitting a
+        pattern that matches no test would make `clickhouse-test` exit 1 (the
+        failure mode `PR #104097` fixed).
         """
         match = re.match(r"(\d{5})", os.path.basename(fpath))
         if match is None:
@@ -138,14 +146,20 @@ class Targeting:
         if not candidates:
             return []
         fname = os.path.basename(fpath)
-        referencing = []
+        stem = os.path.splitext(fname)[0]
+        by_fname = []
+        by_stem = []
         for base_name, test_file in candidates.items():
             try:
                 with test_file.open("r", encoding="utf-8", errors="ignore") as f:
-                    if fname in f.read():
-                        referencing.append(base_name)
+                    body = f.read()
             except OSError:
                 continue
+            if fname in body:
+                by_fname.append(base_name)
+            elif stem in body:
+                by_stem.append(base_name)
+        referencing = by_fname or by_stem
         return sorted(referencing) if referencing else sorted(candidates)
 
     @staticmethod
@@ -342,8 +356,39 @@ class Targeting:
                     test_name = parts[0]
                     tests.append(test_name)
         print(f"Parsed {len(tests)} test names: {tests}")
-        tests = list(set(tests))
-        return sorted(tests)
+        tests = sorted(set(tests))
+        # A test that failed within the CIDB window (30 days) may have been
+        # deleted or renamed on master since — e.g. a flaky test that was
+        # removed instead of deflaked. Passing its name to clickhouse-test (or
+        # to the integration runner) selects nothing; with no other targeted
+        # tests the run ends with "No tests were run." and exit code 1 (the
+        # same failure mode `PR #104097` fixed for orphan data files). Rerun
+        # only tests that still exist in this checkout.
+        missing = [t for t in tests if not self._test_exists(t)]
+        if missing:
+            print(
+                f"Skipping {len(missing)} previously failed tests that no longer "
+                f"exist in the checkout: {missing}"
+            )
+            tests = [t for t in tests if t not in set(missing)]
+        return tests
+
+    def _test_exists(self, test_name: str) -> bool:
+        """Whether a test name reported by CIDB still resolves to a test in
+        this checkout."""
+        if self.job_type == self.INTEGRATION_JOB_TYPE:
+            # Integration test names look like
+            # `test_storage_kafka/test.py::test_case[param]`; the first path
+            # component is the test directory under `tests/integration/`.
+            test_dir = test_name.split("/", 1)[0].split("::", 1)[0]
+            return (Path("tests/integration") / test_dir).is_dir()
+        # Stateless test names are the base name of a file under
+        # `tests/queries/0_stateless/` with one of the known extensions.
+        test_dir = Path("tests/queries/0_stateless")
+        return any(
+            (test_dir / f"{test_name}{ext}").is_file()
+            for ext in self._TEST_FILE_EXTENSIONS
+        )
 
     @staticmethod
     def _escape_sql_string(s: str) -> str:
