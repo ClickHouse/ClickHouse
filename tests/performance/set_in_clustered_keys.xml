@@ -1,0 +1,53 @@
+<test>
+    <settings>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <!--
+        Benchmarks the consecutive-row reuse in `Set::executeImplCase`: when all key columns are
+        non-nullable fixed-width (tuples flattened element-wise), each row's raw bytes are compared
+        with the previous row's and the previous result is reused on equality, skipping the
+        hash+probe (SipHash128 of the 24-byte `(UInt64, UUID)` key here).
+
+        `t_in_clustered` stores 2000 distinct `(k, u)` pairs in runs of 20000 equal consecutive
+        rows (the table is sorted by `(k, u)`, and `u` is a function of `k`), so almost every row
+        reuses the previous row's result.
+
+        `t_in_unclustered` is the regression control: same columns, engine and value distribution,
+        but `ORDER BY tuple()` keeps the insertion order in which `k = number % 2000` cycles, so
+        consecutive rows always differ and every row pays the comparison *and* the hash+probe.
+    -->
+    <create_query>
+        CREATE TABLE t_in_clustered (k UInt64, u UUID, v UInt64) ENGINE = MergeTree ORDER BY (k, u)
+    </create_query>
+    <create_query>
+        CREATE TABLE t_in_unclustered (k UInt64, u UUID, v UInt64) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <!-- 40M rows, 2000 distinct (k, u) pairs in runs of 20000. -->
+    <fill_query>
+        INSERT INTO t_in_clustered
+        SELECT
+            intDiv(number, 20000) AS k,
+            reinterpretAsUUID(sipHash128(intDiv(number, 20000))) AS u,
+            number AS v
+        FROM numbers_mt(40000000)
+    </fill_query>
+
+    <!-- Same 40M rows and 2000 distinct (k, u) pairs, but interleaved: consecutive rows always differ. -->
+    <fill_query>
+        INSERT INTO t_in_unclustered
+        SELECT
+            number % 2000 AS k,
+            reinterpretAsUUID(sipHash128(number % 2000)) AS u,
+            number AS v
+        FROM numbers_mt(40000000)
+    </fill_query>
+
+    <!-- Both queries return 40000000: the set contains all pairs, so the per-row `IN` filter passes every row. -->
+    <query>SELECT count() FROM t_in_clustered WHERE (k, u) IN (SELECT DISTINCT k, u FROM t_in_clustered)</query>
+    <query>SELECT count() FROM t_in_unclustered WHERE (k, u) IN (SELECT DISTINCT k, u FROM t_in_unclustered)</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_in_clustered</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_in_unclustered</drop_query>
+</test>
