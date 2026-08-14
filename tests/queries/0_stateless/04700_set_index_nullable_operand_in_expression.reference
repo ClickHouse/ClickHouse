@@ -1,6 +1,7 @@
 index_used	1
 granules_plain	Granules: 5/50
 granules_to_nullable	Granules: 5/50
+granules_null_if	Granules: 5/50
 granules_subquery	Granules: 5/50
 plain	5
 to_nullable	5

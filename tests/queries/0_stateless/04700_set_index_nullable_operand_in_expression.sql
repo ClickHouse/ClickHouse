@@ -34,6 +34,12 @@ SELECT 'granules_to_nullable', trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_113234 WHERE t % toNullable(19) = 16)
 WHERE explain LIKE '%Granules: %/%';
 
+-- `nullIf(19, 0)` folds to a constant before index analysis, so it renders as `modulo(t, 19)` and
+-- matches the key column. Assert that, since the shape reads as if the `nullIf` node survived.
+SELECT 'granules_null_if', trimLeft(explain)
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_113234 WHERE t % nullIf(19, 0) = 16)
+WHERE explain LIKE '%Granules: %/%';
+
 SELECT 'granules_subquery', trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_113234 WHERE t % (SELECT 19) = 16)
 WHERE explain LIKE '%Granules: %/%';
