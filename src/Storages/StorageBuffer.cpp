@@ -1529,7 +1529,7 @@ void registerStorageBuffer(StorageFactory & factory)
 Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
 
 :::note
-A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/guides/best-practices/asyncinserts.md).
+A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/concepts/features/operations/insert/asyncinserts).
 :::
 
 ```sql

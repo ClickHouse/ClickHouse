@@ -1,5 +1,5 @@
 {
-  "settings": 298,
+  "settings": 301,
   "anchorRoutes": {
     "allow_special_bool_values_inside_variant": "/reference/settings/formats/other",
     "bool_false_representation": "/reference/settings/formats/bool",
@@ -209,7 +209,10 @@
     "output_format_decimal_trailing_zeros": "/reference/settings/formats/output-format",
     "output_format_float_precision": "/reference/settings/formats/output-format",
     "output_format_image_height": "/reference/settings/formats/output-format",
+    "output_format_image_streaming_animation": "/reference/settings/formats/output-format",
     "output_format_image_terminal_mode": "/reference/settings/formats/output-format",
+    "output_format_image_time_divisor_seconds": "/reference/settings/formats/output-format",
+    "output_format_image_time_multiplier_seconds": "/reference/settings/formats/output-format",
     "output_format_image_width": "/reference/settings/formats/output-format",
     "output_format_json_array_of_rows": "/reference/settings/formats/output-format",
     "output_format_json_escape_forward_slashes": "/reference/settings/formats/output-format",

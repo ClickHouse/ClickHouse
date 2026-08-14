@@ -7087,6 +7087,18 @@ if __name__ == "__main__":
         if args.secure:
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " --secure "
 
+    if not args.secure:
+        # Tell the client which protocol this run uses instead of letting it choose. A client that is
+        # given neither a port nor a TLS mode probes both the plain and the secure port and uses the one
+        # that answers first, and the test server listens on both, so an unspecified TLS mode would
+        # silently run the suite over an arbitrary protocol - including the tests that assert on the
+        # plain port and on `is_secure`.
+        #
+        # This covers the `.sql` tests; the shell tests get it from `shell_config.sh`. It must not go into
+        # CLICKHOUSE_CLIENT_OPT, which ends up on the command line of a `.sql` test next to this, and
+        # `--no-secure` cannot be specified more than once.
+        args.client += " --no-secure"
+
     if args.cloud:
         enable_analyzer = os.getenv("CLOUD_ENABLE_ANALYZER", "1")
         enable_pr = os.getenv("CLOUD_ENABLE_PARALLEL_REPLICAS", "0")
