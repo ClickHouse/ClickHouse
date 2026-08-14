@@ -255,6 +255,14 @@ const PuffinBlob & bindDeletionVectorBlob(
             matched_index);
     }
 
+    if (!matched->fields.empty())
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin blob {}: deletion-vector-v1 must have an empty 'fields' list",
+            matched_index);
+    }
+
     const auto ref_it = matched->properties.find("referenced-data-file");
     if (ref_it == matched->properties.end() || ref_it->second.empty())
     {

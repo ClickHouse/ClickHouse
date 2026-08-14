@@ -197,6 +197,24 @@ TEST(PuffinDeletionVectorFooterBind, RejectsBindToNonDeletionVectorBlob)
     }
 }
 
+TEST(PuffinDeletionVectorFooterBind, RejectsNonEmptyFields)
+{
+    auto blobs = readFixtureBlobs();
+    ASSERT_FALSE(blobs.empty());
+    blobs[0].fields = {1};
+
+    try
+    {
+        bindDeletionVectorBlob(blobs, /*content_offset=*/4, /*content_size_in_bytes=*/44, "/data/file_a.parquet", 2);
+        FAIL() << "Expected exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+        EXPECT_NE(e.message().find("must have an empty 'fields' list"), std::string::npos);
+    }
+}
+
 TEST(PuffinDeletionVectorFooterBind, RejectsNonMinusOneSnapshotOrSequence)
 {
     auto blobs = readFixtureBlobs();
