@@ -20,6 +20,7 @@ from .prometheus_test_utils import (
     send_protobuf_to_remote_write,
     extract_data_from_http_api_response,
 )
+from .prometheus_test_utils import remote_pb2, types_pb2
 
 
 def query_log_has_finish_for_query_id_sql(query_id):
@@ -238,6 +239,32 @@ def test_remote_write_rejects_time_series_without_metric_name():
     )
     assert response.status_code != requests.codes.no_content
     assert "Metric name is missing" in response.text
+
+
+def test_remote_write_accepts_empty_then_nonempty_metric_name():
+    """
+    An empty __name__ label before a non-empty one must still be accepted: the
+    empty value is left in tags for TimeSeriesSink empty-value handling, and
+    the first non-empty __name__ becomes the metric name.
+    """
+    metric_name = "empty_then_nonempty_name_test"
+    write_request = remote_pb2.WriteRequest()
+    timeseries = types_pb2.TimeSeries()
+    timeseries.labels.append(types_pb2.Label(name="__name__", value=""))
+    timeseries.labels.append(types_pb2.Label(name="__name__", value=metric_name))
+    timeseries.labels.append(types_pb2.Label(name="job", value="test"))
+    timeseries.samples.append(types_pb2.Sample(timestamp=1753176721 * 1000, value=7))
+    write_request.timeseries.append(timeseries)
+
+    response = get_response_to_remote_write(
+        node.ip_address, 9093, "/write", write_request
+    )
+    assert response.status_code == requests.codes.no_content
+    assert_eq_with_retry(
+        node,
+        timeseries_data_has_metric_sql("prometheus", metric_name),
+        "1\n",
+    )
 
 
 def test_query_range_api_appears_in_query_log_with_read_rows():

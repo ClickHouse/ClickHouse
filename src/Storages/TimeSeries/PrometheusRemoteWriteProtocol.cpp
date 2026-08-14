@@ -98,7 +98,7 @@ Block makeTimeSeriesBlock(
         bool has_metric_name = false;
         for (const auto & label : element.labels())
         {
-            if (!has_metric_name && label.name() == TimeSeriesTagNames::MetricName)
+            if (!has_metric_name && label.name() == TimeSeriesTagNames::MetricName && !label.value().empty())
             {
                 metric_name = label.value();
                 has_metric_name = true;
