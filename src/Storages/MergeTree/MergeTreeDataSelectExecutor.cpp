@@ -1521,6 +1521,12 @@ static std::optional<size_t> getTopKReusePredicateOnlyConditionHash(const Action
         if (where_children.empty())
             return std::nullopt;
 
+        /// Nothing was stripped, so this root already is the node a plain
+        /// `SELECT ... WHERE <predicate>` keys on (a TopK read whose `__topKFilter` is installed
+        /// after index analysis reaches this with a plain multi-conjunct `and(a, b, ...)` root).
+        if (where_children.size() == node->children.size())
+            return node->getHash();
+
         /// The common TopK shape is `and(__topKFilter(...), <WHERE-root>)`, where the WHERE root is a
         /// single (possibly nested `and`) node, so stripping the internal `__topKFilter` leaves exactly
         /// one child whose hash reproduces the key a plain `SELECT ... WHERE <predicate>` wrote. But the

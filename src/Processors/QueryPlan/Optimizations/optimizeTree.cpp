@@ -342,6 +342,14 @@ void optimizeTreeSecondPass(
             });
     }
 
+    /// Must run after PREWHERE promotion: the TopK filter is merged into the promoted PREWHERE
+    /// rather than occupying it, so the user's predicate keeps pruning the read.
+    traverseQueryPlan(stack, root,
+        [&](auto & frame_node)
+        {
+            installTopKDynamicFilter(frame_node, nodes);
+        });
+
     /// Some plans are optimized more than once (e.g. StorageMerge child plans, set subplans). The
     /// tryMakeDistributed* transforms are not idempotent - a second pass would wrap the same steps
     /// into exchanges again - so run them only on a plan that has no exchanges yet.
