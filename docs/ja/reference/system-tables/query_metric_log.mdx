@@ -117,7 +117,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/ja/reference/data-types/int-uint)) — Parquet メタデータが cache で見つからず、ディスクから読み取る必要があった回数。
 * `ProfileEvent_ParquetMetadataCacheWeightLost` ([UInt64](/ja/reference/data-types/int-uint)) — Parquet メタデータキャッシュから追い出されたおおよそのバイト数。
 * `ProfileEvent_IcebergIteratorInitializationMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — Iceberg データイテレーターの同期初期化に費やされた合計時間。
-* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — Iceberg データイテレーターの同期初期化に費やされた合計時間。
+* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — state から Iceberg ストレージメタデータを更新するのに費やされた合計時間 (`buildStorageMetadataFromState`) 。
 * `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/ja/reference/data-types/int-uint)) — Iceberg イテレーターから返されたオブジェクト情報の総数。
 * `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/ja/reference/data-types/int-uint)) — パーティション化と sequence number によって適合と判断された組のうち、minmax 解析で受理された data files と position delete file の組の総数。
 * `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/ja/reference/data-types/int-uint)) — パーティション化と sequence number によって適合と判断された組のうち、minmax 解析で受理された data files と position delete file の組の総数。
@@ -538,8 +538,6 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
   9. &#39;enable&#95;mixed&#95;granularity&#95;parts&#39; のようなパーツのフォーマット関連設定が、レプリカごとに異なっている。
      サーバーはこの状況を正常に検出し、バイト単位で同一の結果を得るため、レプリカからマージ済みパーツをダウンロードします。
 * `ProfileEvent_DataAfterMutationDiffersFromReplica` ([UInt64](/ja/reference/data-types/int-uint)) — mutation 後のデータが他のレプリカ上のデータとバイト単位で一致しなかった回数。&#39;DataAfterMergeDiffersFromReplica&#39; で説明されている理由に加え、非決定論的な mutation が原因で発生することもあります。
-* `ProfileEvent_PolygonsAddedToPool` ([UInt64](/ja/reference/data-types/int-uint)) — &#39;pointInPolygon&#39; 関数用の cache (pool) にポリゴンが追加された回数。
-* `ProfileEvent_PolygonsInPoolAllocatedBytes` ([UInt64](/ja/reference/data-types/int-uint)) — &#39;pointInPolygon&#39; 関数用の cache (pool) に追加されたポリゴンに割り当てられたバイト数。
 * `ProfileEvent_NaiveBayesClassifierModelsLoaded` ([UInt64](/ja/reference/data-types/int-uint)) — 読み込まれた Naive Bayes Classifier モデルの数。
 * `ProfileEvent_NaiveBayesClassifierModelsAllocatedBytes` ([UInt64](/ja/reference/data-types/int-uint)) — Naive Bayes Classifier モデルに割り当てられたバイト数。
 * `ProfileEvent_USearchAddCount` ([UInt64](/ja/reference/data-types/int-uint)) — usearch 索引に追加されたベクトルの数。

@@ -1,0 +1,374 @@
+---
+title: 'Лучшие практики для озер данных'
+sidebarTitle: 'Лучшие практики'
+slug: /use-cases/data-lake/best-practices
+description: 'Рекомендации для продакшна по работе с открытыми табличными форматами в ClickHouse: варианты интеграции, настройка производительности, настройка каталога и отладка.'
+keywords: ['озера данных', 'lakehouse', 'Iceberg', 'Delta Lake', 'DataLakeCatalog', 'partition pruning', 'metadata cache', 'Delta Kernel', 'change data feed', 'Parquet']
+doc_type: 'guide'
+---
+
+[Руководство «Начало работы»](/ru/use-cases/data-lake/getting-started) поможет вам выполнить первые запросы к [Apache Iceberg](/ru/engines/table-engines/integrations/iceberg), [Delta Lake](/ru/engines/table-engines/integrations/deltalake), [Apache Hudi](/ru/engines/table-engines/integrations/hudi) и [Apache Paimon](/ru/sql-reference/table-functions/paimon). После завершения начальной настройки используйте эту страницу, чтобы выбрать подходящий паттерн доступа, настроить производительность запросов и отлаживать запросы к данным в озере в продакшне.
+
+<div id="choose-access-method">
+  ## Выберите способ доступа
+</div>
+
+| Способ доступа                       | Когда использовать                                                                 | Примеры                                                                                                                                                                                                          |
+| ------------------------------------ | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Табличная функция                    | Разовые запросы к известному пути                                                  | [icebergS3()](/ru/sql-reference/table-functions/iceberg), [deltaLake()](/ru/sql-reference/table-functions/deltalake), [hudi()](/ru/sql-reference/table-functions/hudi), [paimon()](/ru/sql-reference/table-functions/paimon) |
+| Движок таблицы                       | Регулярные запросы к одному и тому же пути без каталога                            | [IcebergS3](/ru/engines/table-engines/integrations/iceberg), [DeltaLake](/ru/engines/table-engines/integrations/deltalake), [Hudi](/ru/engines/table-engines/integrations/hudi)                                           |
+| `DataLakeCatalog` движок базы данных | Рабочие нагрузки в продакшне с каталогом; федеративные запросы ко множеству таблиц | [AWS Glue](/ru/use-cases/data-lake/glue-catalog), [Unity Catalog](/ru/use-cases/data-lake/unity-catalog), [REST-каталог](/ru/use-cases/data-lake/rest-catalog)                                                            |
+
+<div id="table-functions">
+  ### Табличные функции
+</div>
+
+Укажите путь к хранилищу и учетные данные прямо в запросе, если вам известно расположение и не нужно сохранять определение таблицы.
+
+```sql
+SELECT count()
+FROM icebergS3('https://my-bucket.s3.amazonaws.com/warehouse/my_table/')
+WHERE event_date >= today() - 7
+```
+
+Используйте вариант S3 для AWS S3 и GCS. Для Azure и локальной файловой системы предусмотрены отдельные варианты (`icebergAzure`, `icebergLocal` и эквиваленты для других форматов). Полный список см. в разделе [Прямые запросы](/ru/use-cases/data-lake/getting-started/querying-directly).
+
+Для [Paimon](/ru/sql-reference/table-functions/paimon) доступны только табличные функции.
+
+<div id="table-engines">
+  ### Движки таблиц
+</div>
+
+Создайте таблицу с движком таблицы, если планируете многократно выполнять запросы к одному и тому же path. ClickHouse хранит path и учетные данные в метаданных таблицы, поэтому можно выполнять запросы к обычной таблице по ее имени, не воссоздавая каждый раз вызов функции.
+
+```sql
+CREATE TABLE events
+    ENGINE = IcebergS3('https://my-bucket.s3.amazonaws.com/warehouse/events/')
+
+SELECT count() FROM events WHERE event_date = today()
+```
+
+Движки таблиц поддерживают те же возможности чтения, что и табличные функции, включая [кэширование данных](/ru/engines/table-engines/integrations/iceberg#data-cache) и [кэширование метаданных](/ru/engines/table-engines/integrations/iceberg#metadata-cache). Данные в ClickHouse никогда не дублируются. Движок таблицы удобен, если вы предоставляете доступ команде или выполняете задачи по расписанию для одной и той же таблицы.
+
+<div id="datalakecatalog">
+  ### `DataLakeCatalog` движок базы данных
+</div>
+
+Подключите ClickHouse один раз к внешнему [каталогу данных](/ru/use-cases/data-lake/getting-started/connecting-catalogs), в котором зарегистрированы таблицы. Каждая таблица из каталога автоматически становится таблицей ClickHouse, включая таблицы, добавленные после создания подключения.
+
+```sql
+CREATE DATABASE my_lake
+ENGINE = DataLakeCatalog
+SETTINGS
+    catalog_type = 'glue',
+    region = 'us-east-1',
+    aws_access_key_id = '<key>',
+    aws_secret_access_key = '<secret>'
+
+SELECT count() FROM my_lake.`analytics.events`
+```
+
+Этот вариант масштабируется лучше, чем создание отдельных определений таблиц, если вы управляете большим числом таблиц или несколькими каталогами. См. [Подключение к каталогам](/ru/use-cases/data-lake/getting-started/connecting-catalogs) и [руководства по каталогам](/ru/use-cases/data-lake/reference).
+
+<Note>
+  **Обратные кавычки для составных имён таблиц**
+
+  В каталогах часто используется формат именования `database.table`. Заключайте полное имя с указанием базы данных в обратные кавычки, как в примере выше.
+</Note>
+
+<div id="required-settings">
+  ## Обязательные настройки
+</div>
+
+Для многих интеграций перед первым использованием требуется флаг функции. Если `CREATE DATABASE` завершается ошибкой прав доступа, проверьте версию вашего сервиса.
+
+Для подключений к каталогам у каждого типа каталога есть свой флаг. Общую информацию см. в [Подключение к каталогам](/ru/use-cases/data-lake/getting-started/connecting-catalogs), а сведения о настройках — в [справочнике DataLakeCatalog](/ru/engines/database-engines/datalakecatalog). Инструкции по настройке для конкретных каталогов приведены в [руководствах по каталогам](/ru/use-cases/data-lake/reference).
+
+Для записи в Iceberg требуется [allow&#95;insert&#95;into&#95;iceberg](/ru/operations/settings/settings#allow_insert_into_iceberg) (25.7+, бета с 26.2). См. [Запись в озера данных](/ru/use-cases/data-lake/getting-started/writing-data). Для Delta Lake требуется [allow&#95;delta&#95;lake&#95;writes](/ru/operations/settings/settings#allow_experimental_delta_lake_writes) (25.9+). В [матрице поддержки](/ru/use-cases/data-lake/support-matrix) указано, какие флаги применяются к каждому формату и операции.
+
+<div id="query-performance">
+  ## Повысьте производительность запросов
+</div>
+
+Номера версий на этой странице соответствуют версиям релизов ClickHouse (Cloud и самоуправляемых установок). Перед включением какой-либо настройки или возможности проверьте версию своего сервиса.
+
+Производительность запросов к Lake зависит от объёма метаданных и количества файлов [Parquet](/ru/interfaces/formats/Parquet), которые ClickHouse читает из Объектного хранилища. Как и в случае с любой таблицей ClickHouse, производительность запросов повышается при фильтрации по столбцам партиции и выборе меньшего числа столбцов.
+
+<div id="query-habits">
+  ### Рекомендации по написанию запросов
+</div>
+
+Фильтруйте по столбцам партиций в `WHERE`. Iceberg и Delta Lake хранят метаданные партиций, которые позволяют ClickHouse пропускать ненужные файлы на этапе планирования запроса. Если условие фильтрации относится к столбцу вне спецификации партиционирования, ClickHouse будет сканировать каждый подходящий файл.
+
+Для таблиц Iceberg со [скрытым партиционированием](https://iceberg.apache.org/docs/latest/partitioning/) фильтруйте по **исходному столбцу** в схеме таблицы, а не по отдельному столбцу партиции или имени преобразованного поля. Если таблица партиционирована по `day(event_time)`, добавьте условие для `event_time`. ClickHouse выполнит отсечение партиций на основе этого фильтра, используя спецификацию партиционирования Iceberg. См. [Отсечение партиций](/ru/engines/table-engines/integrations/iceberg#partition-pruning) и [спецификацию Iceberg](https://iceberg.apache.org/spec/#partitioning).
+
+```sql
+SELECT count()
+FROM my_lake.`logs.application`
+WHERE event_time >= '2026-03-01'
+  AND event_time < '2026-03-02'
+```
+
+Указывайте только нужные столбцы вместо `SELECT *`. ClickHouse читает [Parquet](/ru/interfaces/formats/Parquet) из Объектного хранилища постолбцово, поэтому чем меньше столбцов выбирается, тем меньше данных передаётся и распаковывается.
+
+Помещайте избирательные фильтры в `WHERE`. Начиная с ClickHouse 26.2+, [PREWHERE](/ru/optimize/prewhere) также поддерживается при чтении таблиц Iceberg и других lake-таблиц: в этом случае фильтрация выполняется на уровне Parquet до чтения остальных столбцов. Однако отсечение партиций по-прежнему зависит от фильтрации исходных столбцов партиции, а не только от PREWHERE.
+
+Для таблиц Iceberg с большим количеством [position or equality deletes](/ru/engines/table-engines/integrations/iceberg#deleted-rows) при сканировании применяется фильтрация merge-on-read. Ожидайте, что на каждый файл потребуется больше работы, чем можно предположить только по отсечению на уровне манифеста.
+
+В многоузловых развертываниях используйте [cluster table functions](#parallel-cluster-reads), чтобы распределить чтение файлов между репликами.
+
+<div id="parallel-cluster-reads">
+  ### Параллельное чтение в многоузловых кластерах
+</div>
+
+В ClickHouse Cloud и самоуправляемых многоузловых сервисах кластерные варианты lake-табличных функций распределяют чтение файлов [Parquet](/ru/interfaces/formats/Parquet) между репликами. Узел-инициатор параллельно распределяет файлы между воркерами. Используйте кластерные варианты для батч-чтения и загрузок по расписанию при работе с большими таблицами. В одноузловых развертываниях достаточно стандартной табличной функции.
+
+Передайте имя вашего кластера первым аргументом (`'default'` в ClickHouse Cloud). Кластерные варианты доступны для всех поддерживаемых форматов:
+
+| Формат     | Кластерные функции                                                                                                                                |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Iceberg    | [icebergS3Cluster()](/ru/sql-reference/table-functions/icebergCluster), [icebergAzureCluster()](/ru/sql-reference/table-functions/icebergCluster)       |
+| Delta Lake | [deltaLakeCluster()](/ru/sql-reference/table-functions/deltalakeCluster), [deltaLakeAzureCluster()](/ru/sql-reference/table-functions/deltalakeCluster) |
+| Hudi       | [hudiCluster()](/ru/sql-reference/table-functions/hudiCluster)                                                                                       |
+| Paimon     | [paimonS3Cluster()](/ru/sql-reference/table-functions/paimonCluster)                                                                                 |
+
+Кластерное чтение можно сочетать с другими настройками производительности.
+
+<div id="snapshot-bounds">
+  ### Ограничение батч-чтений диапазоном снимков
+</div>
+
+Для повторяющихся батч-загрузок из таблиц в data lake ограничивайте каждый запуск диапазоном снимков, а не перечитывайте всю таблицу целиком. Без таких границ ClickHouse может при каждом запуске сканировать все версии и файлы, что увеличивает число чтений из Объектного хранилища и время выполнения запроса.
+
+Сохраняйте идентификатор снимка из последней успешной загрузки и используйте его как нижнюю границу при следующем запуске.
+
+* Для Iceberg читайте состояние на определённый момент времени с помощью [iceberg&#95;snapshot&#95;id](/ru/operations/settings/settings#iceberg_snapshot_id) или [iceberg&#95;timestamp&#95;ms](/ru/operations/settings/settings#iceberg_timestamp_ms) (25.4+). Для таблиц, в которые данные только добавляются, сочетайте настройки снимков с фильтрами по партициям в `WHERE`. Используйте [system.iceberg&#95;history](/ru/operations/system-tables/iceberg_history) (25.6+), чтобы находить ID снимков между запусками.
+* Для Delta Lake читайте изменения между двумя версиями с помощью [delta&#95;lake&#95;snapshot&#95;start&#95;version](/ru/operations/settings/settings#delta_lake_snapshot_start_version) и [delta&#95;lake&#95;snapshot&#95;end&#95;version](/ru/operations/settings/settings#delta_lake_snapshot_end_version) (25.12+). Чтобы прочитать один снимок, используйте [delta&#95;lake&#95;snapshot&#95;version](/ru/operations/settings/settings#delta_lake_snapshot_version) (25.8+). Пример CDF см. в разделе [change data feed в Delta](#delta-incremental-sync).
+
+<div id="filesystem-cache">
+  ### Локальное кэширование файлов Parquet
+</div>
+
+Оба формата поддерживают [enable&#95;filesystem&#95;cache](/ru/operations/settings/settings#enable_filesystem_cache), чтобы сохранять часто используемые файлы [Parquet](/ru/interfaces/formats/Parquet) на локальном диске между запросами. В самоуправляемых развертываниях настройте [диск файлового кэша](/ru/operations/storing-data#using-local-cache) в конфигурации сервера, чтобы этому параметру было куда записывать данные. В ClickHouse Cloud кэширование настраивается автоматически. При бенчмаркинге установите `enable_filesystem_cache = 0`, чтобы попадания в кэш не скрывали изменения между запусками.
+
+<div id="iceberg-settings">
+  ### Apache Iceberg
+</div>
+
+Большинство оптимизаций чтения в Iceberg включено по умолчанию. Приведённые ниже настройки управляют отсечением партиций, кэшированием метаданных и числом обращений к каталогу.
+
+<div id="iceberg-read-settings">
+  #### Настройки чтения
+</div>
+
+| Настройка                                                                                                          | С версии | По умолчанию | Примечания                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------ | -------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| [use&#95;iceberg&#95;partition&#95;pruning](/ru/operations/settings/settings#use_iceberg_partition_pruning)           | 25.1     | `1` с 25.6   | Пропускает файлы данных на основе метаданных партиций в манифестах                                                                   |
+| [use&#95;iceberg&#95;metadata&#95;files&#95;cache](/ru/operations/settings/settings#use_iceberg_metadata_files_cache) | 25.4     | `1`          | Кэширует в памяти списки манифестов и JSON-файлы метаданных                                                                          |
+| [iceberg&#95;metadata&#95;staleness&#95;ms](/ru/operations/settings/settings#iceberg_metadata_staleness_ms)           | 26.3     | `0`          | Настройка запроса. Использует кэшированные метаданные, если они не старше этого окна, вместо обращения к каталогу при каждом запросе |
+| [iceberg&#95;use&#95;version&#95;hint](/ru/sql-reference/table-functions/iceberg#writes-into-iceberg-table)           | 25.6     | —            | Читает `version-hint.text` для более быстрого определения метаданных при прямом доступе по пути                                      |
+
+<div id="iceberg-catalog-latency">
+  #### Снизить задержку каталога
+</div>
+
+Для таблиц Iceberg, подключённых к каталогу, при каждом запросе приходится получать metadata, если она не кэшируется. Используйте две настройки вместе (26.4+):
+
+1. Установите [iceberg&#95;metadata&#95;async&#95;prefetch&#95;period&#95;ms](/ru/engines/table-engines/integrations/iceberg#async-metadata-prefetch) при создании таблицы, чтобы предварительно подгружать metadata в фоновом режиме.
+2. Установите [iceberg&#95;metadata&#95;staleness&#95;ms](/ru/operations/settings/settings#iceberg_metadata_staleness_ms) (26.3+) в запросах, чтобы допускать слегка устаревшую metadata и тем самым избежать лишнего обращения к каталогу.
+
+```sql
+CREATE TABLE events
+    ENGINE = IcebergS3('https://my-bucket.s3.amazonaws.com/warehouse/events/')
+SETTINGS iceberg_metadata_async_prefetch_period_ms = 60000;
+
+SELECT count()
+FROM events
+SETTINGS iceberg_metadata_staleness_ms = 60000;
+```
+
+Значение `0` для staleness всегда получает самые актуальные метаданные. Увеличьте это окно для рабочих нагрузок с преобладанием чтения, в которых таблицы изменяются редко.
+
+Если ClickHouse выбирает неправильный файл метаданных (когда в пути таблицы несколько файлов `.metadata.json`), явно укажите его через [iceberg&#95;metadata&#95;file&#95;path](/ru/engines/table-engines/integrations/iceberg#metadata-file-resolution) (25.4+) или [iceberg&#95;metadata&#95;table&#95;uuid](/ru/engines/table-engines/integrations/iceberg#metadata-file-resolution) при создании таблицы. См. [Определение файла метаданных](/ru/engines/table-engines/integrations/iceberg#metadata-file-resolution).
+
+<div id="iceberg-time-travel">
+  #### Доступ к прошлым версиям
+</div>
+
+Чтобы прочитать исторический снимок, используйте [iceberg&#95;timestamp&#95;ms](/ru/operations/settings/settings#iceberg_timestamp_ms) или [iceberg&#95;snapshot&#95;id](/ru/operations/settings/settings#iceberg_snapshot_id) (оба параметра доступны в 25.4+). Не задавайте оба параметра в одном запросе. Перед выбором идентификатора просмотрите историю снимков в [system.iceberg&#95;history](/ru/operations/system-tables/iceberg_history) (25.6+). Для повторяющихся батч-загрузок см. [ограничение батч-чтений диапазоном снимков](#snapshot-bounds).
+
+```sql
+SELECT count()
+FROM my_iceberg_table
+SETTINGS iceberg_timestamp_ms = 1714636800000
+```
+
+<div id="iceberg-write-settings">
+  #### Запись в Iceberg
+</div>
+
+Помимо [allow&#95;insert&#95;into&#95;iceberg](/ru/operations/settings/settings#allow_insert_into_iceberg) (25.7+, бета с 26.2), можно управлять размером выходных файлов и количеством партиций при вставке:
+
+| Настройка                                                                                                                            | С версии | Назначение                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------ | -------- | ----------------------------------------------------------- |
+| [iceberg&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/ru/operations/settings/settings#iceberg_insert_max_rows_in_data_file)   | 25.9     | Ограничение числа строк в выходном файле данных             |
+| [iceberg&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/ru/operations/settings/settings#iceberg_insert_max_bytes_in_data_file) | 25.9     | Ограничение размера выходного файла данных в байтах         |
+| [iceberg&#95;insert&#95;max&#95;partitions](/ru/operations/settings/settings#iceberg_insert_max_partitions)                             | 25.12    | Ограничение на число партиций, записываемых за одну вставку |
+
+См. [Запись в озера данных](/ru/use-cases/data-lake/getting-started/writing-data) и [справочник по движку Iceberg](/ru/engines/table-engines/integrations/iceberg).
+
+<div id="delta-lake-settings">
+  ### Delta Lake
+</div>
+
+Начиная с версии 25.6 ClickHouse читает Delta Lake из S3 и GCS с помощью Rust-ядра Delta Lake ([allow&#95;experimental&#95;delta&#95;kernel&#95;rs](/ru/operations/settings/settings#allow_experimental_delta_kernel_rs), 25.5+). Для Azure Blob Storage используйте [deltaLakeAzure()](/ru/sql-reference/table-functions/deltalake) со старым механизмом чтения, поскольку там это ядро отключено. Без ядра недоступны отсечение партиций, change data feed и чтение версий снимков.
+
+<div id="delta-kernel">
+  #### Delta Kernel
+</div>
+
+[allow&#95;experimental&#95;delta&#95;kernel&#95;rs](/ru/operations/settings/settings#allow_experimental_delta_kernel_rs) должен быть включен для pruning партиций, change data feed и чтения версии снимка. Начиная с версии 25.5, он включен по умолчанию для S3 и GCS. Явно включите его в более старых версиях или при устранении неполадок:
+
+```sql
+SET allow_experimental_delta_kernel_rs = 1;
+```
+
+<div id="iceberg-read-settings">
+  #### Настройки чтения
+</div>
+
+| Setting                                                                                                                                                                                                                                 | Since | Default | Notes                                                                                       |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------- | ------------------------------------------------------------------------------------------- |
+| [delta&#95;lake&#95;enable&#95;engine&#95;predicate](/ru/operations/settings/settings#delta_lake_enable_engine_predicate)                                                                                                                  | 25.8  | `1`     | Передает фильтры в kernel для отсечения партиций. Требует [Delta Kernel](#delta-kernel)     |
+| [delta&#95;lake&#95;reload&#95;schema&#95;for&#95;consistency](/ru/operations/settings/settings#delta_lake_reload_schema_for_consistency)                                                                                                  | 26.3  | `0`     | Перезагружает схему перед каждым запросом, если при параллельной записи схема изменяется    |
+| [delta&#95;lake&#95;snapshot&#95;start&#95;version](/ru/operations/settings/settings#delta_lake_snapshot_start_version) / [delta&#95;lake&#95;snapshot&#95;end&#95;version](/ru/operations/settings/settings#delta_lake_snapshot_end_version) | 25.12 | `-1`    | Читает изменения CDF между двумя версиями снимка. Требует, чтобы CDF был включен в upstream |
+| [delta&#95;lake&#95;snapshot&#95;version](/ru/operations/settings/settings#delta_lake_snapshot_version)                                                                                                                                    | 25.8  | `-1`    | Читает один исторический снимок. Укажите `-1` для последнего (`0` также допустимо)          |
+
+Таблицы с [deletion vectors](https://docs.delta.io/latest/delta-deletion-vectors.html) (26.2+) применяют фильтрацию на уровне строки при чтении. ClickHouse обрабатывает это автоматически, но scan по таблицам с большим количеством DV требует больше работы для каждого файла.
+
+<div id="delta-incremental-sync">
+  #### Change data feed в Delta
+</div>
+
+Чтобы читать только строки, изменившиеся между двумя снимками Delta, задайте [delta&#95;lake&#95;snapshot&#95;start&#95;version](/ru/operations/settings/settings#delta_lake_snapshot_start_version) и [delta&#95;lake&#95;snapshot&#95;end&#95;version](/ru/operations/settings/settings#delta_lake_snapshot_end_version) (25.12+). Для таблицы в исходной Delta-системе должен быть включен change data feed (`delta.enableChangeDataFeed`). Укажите и начальную, и конечную версии в параметрах запроса. Если указать только конечную версию, возникнет ошибка.
+
+```sql
+SELECT *
+FROM deltaLake('s3://my-bucket/warehouse/ga4_events/')
+SETTINGS
+    delta_lake_snapshot_start_version = 42,
+    delta_lake_snapshot_end_version = 47
+```
+
+Сохраняйте конечную версию после каждой успешной загрузки и передавайте её как начальную версию при следующем запуске. Результат содержит столбцы CDF (`_change_type`, `_commit_version`, `_commit_timestamp`). Обработайте их перед загрузкой в целевую таблицу. Общий шаблон работы со снимками см. в разделе [Ограничение батч-чтений диапазоном снимков](#snapshot-bounds).
+
+<div id="delta-write-settings">
+  #### Запись в Delta Lake
+</div>
+
+Помимо [allow&#95;delta&#95;lake&#95;writes](/ru/operations/settings/settings#allow_experimental_delta_lake_writes) (25.9+), можно управлять размером выходного файла данных при вставке:
+
+| Настройка                                                                                                                                      | С версии | Назначение                                            |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------------------------------------------------- |
+| [delta&#95;lake&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/ru/operations/settings/settings#delta_lake_insert_max_rows_in_data_file)   | 25.9     | Ограничение на число строк в выходном файле данных    |
+| [delta&#95;lake&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/ru/operations/settings/settings#delta_lake_insert_max_bytes_in_data_file) | 25.9     | Ограничение на размер выходного файла данных в байтах |
+
+```sql
+SET allow_delta_lake_writes = 1;
+
+INSERT INTO my_delta_table
+SETTINGS
+    delta_lake_insert_max_rows_in_data_file = 1000000,
+    delta_lake_insert_max_bytes_in_data_file = 134217728
+SELECT * FROM source_table
+```
+
+Для записи требуется Delta Kernel в S3 или GCS. Примеры см. в [справочнике по движку DeltaLake](/ru/engines/table-engines/integrations/deltalake).
+
+<div id="debug-system-tables">
+  ## Отладка запросов к озеру данных
+</div>
+
+Медленные запросы к озеру данных или запросы, возвращающие неожиданные результаты, обычно связаны с чтением метаданных, отсечением партиций или доступностью каталога. Начните с приведённых ниже проверок, а затем при необходимости используйте журналы метаданных для конкретного формата.
+
+<div id="debug-catalog">
+  ### Проверьте доступность каталога
+</div>
+
+`CREATE DATABASE` с `DataLakeCatalog` не проверяет учетные данные. База данных может существовать, даже если соединение с каталогом не работает. Начиная с ClickHouse 26.4, выполните легковесную проверку работоспособности:
+
+```sql
+CHECK DATABASE my_lake;
+```
+
+В более ранних версиях проверьте подключение с помощью `SHOW TABLES FROM my_lake` и изучите сообщение об ошибке. Используйте `SHOW CREATE TABLE` с именем таблицы в обратных кавычках, чтобы проверить вычисленный путь к хранилищу и тип движка:
+
+```sql
+SHOW CREATE TABLE my_lake.`db.table`;
+```
+
+Если таблицы каталога не отображаются в `system.tables`, включите [show&#95;remote&#95;databases&#95;in&#95;system&#95;tables](/ru/operations/settings/settings#show_remote_databases_in_system_tables) (25.8+). По умолчанию таблицы каталога скрыты при системной интроспекции. В версиях до 26.6 используйте его прежнее название: `show_data_lake_catalogs_in_system_tables`.
+
+<div id="debug-files">
+  ### Посмотреть, какие файлы читаются
+</div>
+
+Iceberg и Delta Lake предоставляют [виртуальные столбцы](/ru/sql-reference/table-functions/iceberg#virtual-columns) (`_path`, `_file`, `_size`, `_time`, `_etag`) при каждом чтении. Сгруппируйте по `_path`, чтобы проверить, работает ли отсечение партиций или запрос сканирует больше файлов, чем ожидалось. Для таблиц Iceberg со скрытым партиционированием фильтруйте по исходному столбцу (например, `event_time`), а не по отдельному столбцу партиции:
+
+```sql
+SELECT _path, count() AS rows
+FROM my_lake.`logs.application`
+WHERE event_time >= '2026-03-01'
+  AND event_time < '2026-03-02'
+GROUP BY _path
+ORDER BY rows DESC;
+```
+
+<div id="debug-query-log">
+  ### Проверьте объём сканирования
+</div>
+
+Сравните `read_rows` и `read_bytes` в [system.query&#95;log](/ru/operations/system-tables/query_log) до и после добавления фильтров или изменения настроек. ProfileEvents, такие как `ReadBufferFromS3Bytes` и `CachedReadBufferReadFromCacheBytes`, показывают, какой объём данных поступил из Объектного хранилища, а какой — из локального кэша. Полное пошаговое руководство по `query_log` и EXPLAIN см. в разделе [Оптимизация запросов](/ru/optimize/query-optimization).
+
+Отключайте [enable&#95;filesystem&#95;cache](/ru/operations/settings/settings#enable_filesystem_cache) при проведении бенчмаркинга, чтобы попадания в кэш не скрывали различия между запусками.
+
+<div id="debug-metadata-logs">
+  ### Журналы метаданных
+</div>
+
+ClickHouse предоставляет три системные таблицы для отладки на уровне метаданных. Включайте логирование только на время выполнения запроса. Они не предназначены для постоянного мониторинга.
+
+| System table                                                                                    | Формат     | С версии | Включается с помощью                                                                                         | Используется для                                                      |
+| ----------------------------------------------------------------------------------------------- | ---------- | -------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| [system.iceberg&#95;metadata&#95;log](/ru/operations/system-tables/iceberg_metadata_log)           | Iceberg    | 25.9     | [iceberg&#95;metadata&#95;log&#95;level](/ru/operations/settings/settings#iceberg_metadata_log_level) в запросе | Отслеживания чтения файлов метаданных и решений по отсечению партиций |
+| [system.iceberg&#95;history](/ru/operations/system-tables/iceberg_history)                         | Iceberg    | 25.6     | Автоматически заполняется для таблиц Iceberg в ClickHouse                                                    | Анализа истории снимков перед запросами доступа к прошлым версиям     |
+| [system.delta&#95;lake&#95;metadata&#95;log](/ru/operations/system-tables/delta_lake_metadata_log) | Delta Lake | 25.10    | [delta&#95;lake&#95;log&#95;metadata](/ru/operations/settings/settings#delta_lake_log_metadata) = `1` в запросе | Отслеживания файлов метаданных Delta и процесса выбора снимка         |
+
+Выполните запрос с включенным логированием, сбросьте журнал, затем просмотрите записи для этого `query_id`:
+
+```sql
+SELECT count() FROM my_iceberg_table
+SETTINGS iceberg_metadata_log_level = 'manifest_file_entry';
+
+SYSTEM FLUSH LOGS iceberg_metadata_log;
+
+SELECT content_type, file_path, pruning_status
+FROM system.iceberg_metadata_log
+WHERE query_id = '<previous_query_id>';
+```
+
+В ClickHouse Cloud данные логов локальны для каждого узла. Используйте `clusterAllReplicas`, чтобы увидеть полную картину по всем репликам.
+
+Подробные уровни логирования Iceberg отключают кэширование метаданных для manifest lists и файлов, что замедляет последующие запросы к той же таблице. Используйте высокий уровень детализации только во время активного расследования. При проблемах с предикатами Delta Lake включите [delta&#95;lake&#95;throw&#95;on&#95;engine&#95;predicate&#95;error](/ru/operations/settings/settings#delta_lake_throw_on_engine_predicate_error) (25.8+), чтобы сразу завершать запрос с ошибкой, если ядро не может передать фильтр на уровень движка.
+
+См. справочные страницы [iceberg&#95;metadata&#95;log](/ru/operations/system-tables/iceberg_metadata_log) и [delta&#95;lake&#95;metadata&#95;log](/ru/operations/system-tables/delta_lake_metadata_log): там описаны столбцы и параметры детализации.
+
+<div id="next-steps">
+  ## Дальнейшие шаги
+</div>
+
+* [Начало работы](/ru/use-cases/data-lake/getting-started) — Сквозное руководство: от прямых запросов до обратной записи данных
+* [Прямые запросы](/ru/use-cases/data-lake/getting-started/querying-directly) — Табличные функции, движки и кластерные варианты для всех четырёх форматов
+* [Подключение к каталогам](/ru/use-cases/data-lake/getting-started/connecting-catalogs) — Настройка `DataLakeCatalog` с Unity Catalog
+* [Запись в озера данных](/ru/use-cases/data-lake/getting-started/writing-data) — Обратная запись данных в Iceberg и Delta Lake
+* [Матрица поддержки](/ru/use-cases/data-lake/support-matrix) — Сравнение возможностей для разных форматов, каталогов и бэкендов хранилища

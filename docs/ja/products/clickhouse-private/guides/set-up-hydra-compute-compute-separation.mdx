@@ -26,9 +26,7 @@ Hydra の動作の概念的な概要については、[Hydra Compute Separation]
 * Helm レジストリおよび `onprem-clickhouse-cluster` チャートへのアクセス
 
 <Steps>
-  <Step>
-    ## 1. 親クラスターを特定する
-
+  <Step title="1. 親クラスターを特定する" id="1-identify-the-parent-cluster">
     子を作成する前に、親クラスターの **名前** と **ネームスペース** を確認してください。親は稼働中の状態である必要があります。親が停止、終了、またはアイドル状態の場合、子はプロビジョニングできません。
 
     `default-xx-01` という名前のクラスターでは、デフォルト値は次のとおりです。
@@ -39,9 +37,7 @@ Hydra の動作の概念的な概要については、[Hydra Compute Separation]
     | ネームスペース | `ns-default-xx-01` |
   </Step>
 
-  <Step>
-    ## 2. 子インスタンスを作成する
-
+  <Step title="2. 子インスタンスを作成する" id="2-create-a-child-instance">
     <Warning>
       各 ClickHouseCluster インスタンスは、それぞれ専用のネームスペースに配置する必要があります。親と同じネームスペースに子インスタンスをデプロイしないでください。Operator は 1 ネームスペースにつき 1 つの ClickHouseCluster が存在することを前提としており、これに違反するとクラスターの健全性が損なわれます。
     </Warning>
@@ -68,9 +64,7 @@ Hydra の動作の概念的な概要については、[Hydra Compute Separation]
     * 独自の Kubernetes Service エンドポイントを公開する
   </Step>
 
-  <Step>
-    ## 3. 読み取り専用の子を作成する (任意)
-
+  <Step title="3. 読み取り専用の子を作成する (任意)" id="3-create-a-read-only-child-optional">
     データをクエリできても書き込めない子を作成するには、`isReadonly` フラグを追加します。
 
     ```bash
@@ -89,9 +83,7 @@ Hydra の動作の概念的な概要については、[Hydra Compute Separation]
     読み取り専用の子は、書き込みアクセスが不要なレポート、ダッシュボード、または分析ワークロードに適しています。
   </Step>
 
-  <Step>
-    ## 4. 子インスタンスを確認する
-
+  <Step title="4. 子インスタンスを確認する" id="4-verify-the-child-instance">
     子をデプロイしたら、稼働していることを確認します。
 
     ```bash

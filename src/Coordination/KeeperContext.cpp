@@ -37,6 +37,7 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 write_snapshot_version;
     extern const CoordinationSettingsMilliseconds ttl_gc_period_ms;
+    extern const CoordinationSettingsMilliseconds container_gc_period_ms;
 }
 
 struct CachedCoordinationSettings
@@ -77,6 +78,7 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
         KeeperFeatureFlag::PERSISTENT_WATCHES,
         KeeperFeatureFlag::TRY_REMOVE,
         KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA,
+        KeeperFeatureFlag::MAX_REQUEST_SIZE,
     };
 
     for (const auto feature_flag : enabled_by_default_feature_flags)
@@ -103,7 +105,6 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
 
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
     digest_enabled_on_commit = config.getBool("keeper_server.digest_enabled_on_commit", false);
-    ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
 
     initializeFeatureFlags(config);
     initializeDisks(config);
@@ -189,11 +190,6 @@ KeeperContext::Phase KeeperContext::getServerState() const
 void KeeperContext::setServerState(KeeperContext::Phase server_state_)
 {
     server_state = server_state_;
-}
-
-bool KeeperContext::ignoreSystemPathOnStartup() const
-{
-    return ignore_system_path_on_startup;
 }
 
 bool KeeperContext::digestEnabled() const
@@ -453,25 +449,51 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
 
     }
 
-    /// TTL metadata (destroy_time/ttl) is only serialized starting with snapshot
-    /// V8. Enabling CREATE_TTL with an older write version would silently turn
-    /// TTL nodes into permanent persistent nodes on the next snapshot.
+    validateWriteSnapshotVersion(getCoordinationSettings());
+
     if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL))
     {
-        const uint64_t write_version = getCoordinationSettings()[CoordinationSetting::write_snapshot_version];
-        if (write_version < SnapshotVersion::V8)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Feature flag CREATE_TTL requires write_snapshot_version >= {}, but it is set to {}. "
-                "Bump write_snapshot_version after every replica has been upgraded.",
-                static_cast<int>(SnapshotVersion::V8), write_version);
-
         const auto ttl_gc_period_ms = getCoordinationSettings()[CoordinationSetting::ttl_gc_period_ms].totalMilliseconds();
         if (ttl_gc_period_ms <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ttl_gc_period_ms must be greater than 0 when TTL nodes are enabled, got {}", ttl_gc_period_ms);
     }
 
+    if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_CONTAINER))
+    {
+        const auto container_gc_period_ms = getCoordinationSettings()[CoordinationSetting::container_gc_period_ms].totalMilliseconds();
+        if (container_gc_period_ms <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "container_gc_period_ms must be greater than 0, got {}", container_gc_period_ms);
+    }
+
     feature_flags.logFlags(getLogger("KeeperContext"));
+}
+
+void KeeperContext::validateWriteSnapshotVersion(const CoordinationSettings & settings) const
+{
+    const uint64_t write_version = settings[CoordinationSetting::write_snapshot_version];
+
+    if (write_version < SnapshotVersion::V6 || write_version > MAX_SUPPORTED_SNAPSHOT_VERSION)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unsupported write snapshot version {} (must be between {} and {})",
+            write_version, SnapshotVersion::V6, MAX_SUPPORTED_SNAPSHOT_VERSION);
+
+    /// TTL metadata (destroy_time/ttl) is only serialized starting with snapshot
+    /// V8. Enabling CREATE_TTL with an older write version would silently turn
+    /// TTL nodes into permanent persistent nodes on the next snapshot.
+    if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL) && write_version < SnapshotVersion::V8)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Feature flag CREATE_TTL requires write_snapshot_version >= {}, but it is set to {}. "
+            "Bump write_snapshot_version after every replica has been upgraded.",
+            static_cast<int>(SnapshotVersion::V8), write_version);
+
+    /// Container node metadata is only serialized starting with snapshot V9.
+    if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_CONTAINER) && write_version < SnapshotVersion::V9)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Feature flag CREATE_CONTAINER requires write_snapshot_version >= {}, but it is set to {}. "
+            "Bump write_snapshot_version after every replica has been upgraded.",
+            static_cast<int>(SnapshotVersion::V9), write_version);
 }
 
 static UInt64 calculateMemorySoftLimit(const Poco::Util::AbstractConfiguration & config)
@@ -503,6 +525,12 @@ void KeeperContext::updateSettings(CoordinationSettingsPtr new_settings)
 {
     auto merged = std::make_shared<CoordinationSettings>(*fixed_settings);
     merged->updateHotReloadableSettings(*new_settings);
+
+    /// Reject reloaded values that violate the invariants enforced on startup, e.g.
+    /// lowering write_snapshot_version below what the enabled feature flags require.
+    /// The exception propagates to the config reloader, which logs it and keeps the
+    /// previously applied settings.
+    validateWriteSnapshotVersion(*merged);
 
     std::lock_guard lock(settings_mutex);
     merged->version = next_coordination_settings_version++;
@@ -621,6 +649,8 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_WITH_STATS);
         case Coordination::OpNum::CreateTTL:
             return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL);
+        case Coordination::OpNum::CreateContainer:
+            return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_CONTAINER);
         case Coordination::OpNum::TryRemove:
             return feature_flags.isEnabled(KeeperFeatureFlag::TRY_REMOVE);
         case Coordination::OpNum::SetWatch:

@@ -679,8 +679,8 @@ arrayDotProduct(v1, v2)
 
 **الوسائط**
 
-* `v1` — المتجه الأول. [`Array((U)Int* | Float* | Decimal)`](/ar/reference/data-types/array) أو [`Tuple((U)Int* | Float* | Decimal)`](/ar/reference/data-types/tuple)
-* `v2` — المتجه الثاني. [`Array((U)Int* | Float* | Decimal)`](/ar/reference/data-types/array) أو [`Tuple((U)Int* | Float* | Decimal)`](/ar/reference/data-types/tuple)
+* `v1` — المتجه الأول. [`Array((U)Int* | Float* | BFloat16 | Decimal)`](/ar/reference/data-types/array) أو [`Tuple((U)Int* | Float* | Decimal)`](/ar/reference/data-types/tuple)
+* `v2` — المتجه الثاني. [`Array((U)Int* | Float* | BFloat16 | Decimal)`](/ar/reference/data-types/array) أو [`Tuple((U)Int* | Float* | Decimal)`](/ar/reference/data-types/tuple)
 
 **القيمة المُعادة**
 
@@ -688,6 +688,7 @@ arrayDotProduct(v1, v2)
 
 <Note>
   يتحدد نوع الإرجاع حسب نوع الوسائط. إذا كانت Arrays أو Tuples تحتوي على أنواع عناصر مختلطة، فسيكون نوع النتيجة هو النوع الفائق.
+  تتراكم مصفوفتا `BFloat16` في `Float32` وتُرجعانه (وهي القاعدة نفسها كما في مصفوفتين من `Float32`).
 </Note>
 
 [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal`](/ar/reference/data-types/decimal)
@@ -1731,6 +1732,10 @@ SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res
 تُنسخ جميع القيم في الأعمدة كما هي، باستثناء القيم الموجودة في العمود الذي تُطبَّق عليه هذه الدالة؛
 إذ تُستبدل هذه القيم بقيمة العنصر المقابل في المصفوفة.
 
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجِع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **الصياغة**
 
 ```sql
@@ -1785,7 +1790,7 @@ WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 **استخدام دوال arrayJoin متعددة**
 
 ```sql title=Query
-- A query can use multiple arrayJoin functions. In this case, the transformation is performed multiple times and the rows are multiplied.
+-- A query can use multiple arrayJoin functions. In this case, the transformation is performed multiple times and the rows are multiplied.
 
 SELECT
     sum(1) AS impressions,
@@ -1800,16 +1805,19 @@ FROM
 GROUP BY
     2,
     3
+ORDER BY
+    city,
+    browser
 ```
 
 ```response title=Response
 ┌─impressions─┬─city─────┬─browser─┐
-│           2 │ Istanbul │ Chrome  │
-│           1 │ Istanbul │ Firefox │
 │           2 │ Berlin   │ Chrome  │
 │           1 │ Berlin   │ Firefox │
 │           2 │ Bobruisk │ Chrome  │
 │           1 │ Bobruisk │ Firefox │
+│           2 │ Istanbul │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
@@ -1818,7 +1826,7 @@ GROUP BY
 ```sql title=Query
 -- Using multiple arrayJoin with the same expression may not produce the expected result due to optimizations.
 -- For these cases, consider modifying the repeated array expression with extra operations that do not affect join result.
-- e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
+-- e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
 
 SELECT
     arrayJoin(dice) as first_throw,
@@ -1892,13 +1900,16 @@ ARRAY JOIN
 GROUP BY
     2,
     3
+ORDER BY
+    2,
+    3
 ```
 
 ```response title=Response
 ┌─impressions─┬─city─────┬─browser─┐
-│           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
 │           1 │ Bobruisk │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
@@ -1920,13 +1931,16 @@ FROM
 GROUP BY
     2,
     3
+ORDER BY
+    2,
+    3
 ```
 
 ```response title=Response
 ┌─impressions─┬─city─────┬─browser─┐
-│           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
 │           1 │ Bobruisk │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
@@ -2322,6 +2336,10 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
   للاحتفاظ بالعناصر المُرتَّبة فقط، استخدم `arrayResize`.
 </Tip>
 
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
+
 **البنية**
 
 ```sql
@@ -2330,7 +2348,7 @@ arrayPartialReverseSort([f,] limit, arr [, arr1, ... ,arrN])
 
 **الوسائط**
 
-* `f(arr[, arr1, ... ,arrN])` — دالة لامدا المطلوب تطبيقها على عناصر المصفوفة `x`. [`Lambda function`](/ar/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
+* `f(arr[, arr1, ... ,arrN])` — دالة لامبدا المطلوب تطبيقها على عناصر المصفوفة `x`. [`Lambda function`](/ar/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
 * `limit` — قيمة الفهرس التي يُجرى الفرز حتى الوصول إليها. [`(U)Int*`](/ar/reference/data-types/int-uint)
 * `arr` — المصفوفة المطلوب فرزها. [`Array(T)`](/ar/reference/data-types/array)
 * `arr1, ... ,arrN` — `N` من المصفوفات الإضافية، في حال كانت `f` تقبل عدة وسائط. [`Array(T)`](/ar/reference/data-types/array)
@@ -2406,6 +2424,10 @@ SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
   لن تُجسِّد هذه الدالة الثوابت.
 
   يجب أن تكون قيمة `limit` ضمن النطاق `[1..N]`. أما القيم الواقعة خارج هذا النطاق فتعادل تنفيذ [`arrayShuffle`](#arrayShuffle) بالكامل.
+</Note>
+
+<Note>
+  هذه الدالة غير حتمية: قد تُعيد نتائج مختلفة للوسائط نفسها.
 </Note>
 
 **الصياغة**
@@ -2498,6 +2520,10 @@ SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffl
 <Tip>
   للاحتفاظ بالعناصر المفروزة فقط، استخدم `arrayResize`.
 </Tip>
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
+</Note>
 
 **الصياغة**
 
@@ -2816,7 +2842,7 @@ arrayROCAUC(scores, labels[, scale[, partial_offsets]])
 
 **القيمة المُعادة**
 
-تُرجِع المساحة تحت منحنى خصائص تشغيل المستقبل (ROC). [`Float64`](/ar/reference/data-types/float)
+تُرجِع المساحة تحت منحنى خصائص تشغيل المستقبِل (ROC). [`Float64`](/ar/reference/data-types/float)
 
 **أمثلة**
 
@@ -2836,7 +2862,11 @@ SELECT arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 
 أُضيفت في: v23.10.0
 
-تعيد مجموعة فرعية تضم `samples` عنصرًا عشوائيًا من مصفوفة الإدخال. وإذا كانت قيمة `samples` أكبر من حجم مصفوفة الإدخال، فسيُقتصر حجم العينة على حجم المصفوفة، أي ستُعاد جميع عناصر المصفوفة، ولكن من دون ضمان ترتيبها. ويمكن للدالة التعامل مع كلٍّ من المصفوفات المسطحة والمصفوفات المتداخلة.
+تعيد مجموعة فرعية تضم `samples` عنصرًا عشوائيًا من مصفوفة الإدخال. وإذا كانت قيمة `samples` أكبر من حجم مصفوفة الإدخال، فسيُقتصر حجم العيّنة على حجم المصفوفة، أي ستُعاد جميع عناصر المصفوفة، ولكن من دون ضمان ترتيبها. ويمكن للدالة التعامل مع كلٍّ من المصفوفات المسطحة والمصفوفات المتداخلة.
+
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **البنية**
 
@@ -3513,13 +3543,17 @@ SELECT arrayShingles([1, 2, 3, 4], 3) as res;
   لن تقوم هذه الدالة بتجسيد الثوابت.
 </Note>
 
-**البنية**
+<Note>
+  هذه الدالة غير حتمية: قد تعيد نتائج مختلفة للوسائط نفسها.
+</Note>
+
+**الصياغة**
 
 ```sql
 arrayShuffle(arr [, seed])
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * `arr` — المصفوفة المراد خلطها. [`Array(T)`](/ar/reference/data-types/array)
 * `seed (optional)` — اختياري. البذرة المستخدمة في توليد الأرقام العشوائية. وإذا لم تُوفَّر، تُستخدم بذرة عشوائية. [`(U)Int*`](/ar/reference/data-types/int-uint)
@@ -4272,7 +4306,7 @@ emptyArrayDate()
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT emptyArrayDate
+SELECT emptyArrayDate()
 ```
 
 ```response title=Response
@@ -4306,7 +4340,7 @@ emptyArrayDateTime()
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT emptyArrayDateTime
+SELECT emptyArrayDateTime()
 ```
 
 ```response title=Response
@@ -4340,7 +4374,7 @@ emptyArrayFloat32()
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT emptyArrayFloat32
+SELECT emptyArrayFloat32()
 ```
 
 ```response title=Response
@@ -4374,7 +4408,7 @@ emptyArrayFloat64()
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT emptyArrayFloat64
+SELECT emptyArrayFloat64()
 ```
 
 ```response title=Response
@@ -4408,7 +4442,7 @@ emptyArrayInt16()
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT emptyArrayInt16
+SELECT emptyArrayInt16()
 ```
 
 ```response title=Response
@@ -4442,7 +4476,7 @@ emptyArrayInt32()
 **مثال للاستخدام**
 
 ```sql title=Query
-SELECT emptyArrayInt32
+SELECT emptyArrayInt32()
 ```
 
 ```response title=Response
@@ -4476,7 +4510,7 @@ emptyArrayInt64()
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT emptyArrayInt64
+SELECT emptyArrayInt64()
 ```
 
 ```response title=Response
@@ -4510,7 +4544,7 @@ emptyArrayInt8()
 **مثال للاستخدام**
 
 ```sql title=Query
-SELECT emptyArrayInt8
+SELECT emptyArrayInt8()
 ```
 
 ```response title=Response
@@ -4544,7 +4578,7 @@ emptyArrayString()
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT emptyArrayString
+SELECT emptyArrayString()
 ```
 
 ```response title=Response
@@ -4624,7 +4658,7 @@ emptyArrayUInt16()
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT emptyArrayUInt16
+SELECT emptyArrayUInt16()
 ```
 
 ```response title=Response
@@ -4658,7 +4692,7 @@ emptyArrayUInt32()
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT emptyArrayUInt32
+SELECT emptyArrayUInt32()
 ```
 
 ```response title=Response
@@ -4692,7 +4726,7 @@ emptyArrayUInt64()
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT emptyArrayUInt64
+SELECT emptyArrayUInt64()
 ```
 
 ```response title=Response
@@ -4726,7 +4760,7 @@ emptyArrayUInt8()
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT emptyArrayUInt8
+SELECT emptyArrayUInt8()
 ```
 
 ```response title=Response
@@ -5160,7 +5194,7 @@ SELECT indexOf([1, 3, NULL, NULL], NULL)
 indexOfAssumeSorted(arr, x)
 ```
 
-**الوسيطات**
+**الوسيط**
 
 * `arr` — مصفوفة مرتبة للبحث فيها. [`Array(T)`](/ar/reference/data-types/array)
 * `x` — قيمة أول عنصر مطابق في `arr` المرتبة يُراد إرجاع فهرسه. [`UInt64`](/ar/reference/data-types/int-uint)
@@ -5181,78 +5215,6 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 5
 ```
 
-<div id="kql_array_sort_asc">
-  ## kql_array_sort_asc
-</div>
-
-أُضيف في: v23.10.0
-
-يرتّب مصفوفة واحدة أو أكثر بترتيب تصاعدي. تُرتَّب المصفوفة الأولى، ثم يُعاد ترتيب المصفوفات اللاحقة لتتوافق مع الترتيب المرتّب للمصفوفة الأولى. توضع القيم NULL في النهاية. هذه دالة توافق مع KQL ‏(Kusto Query Language).
-
-**البنية**
-
-```sql
-kql_array_sort_asc(array1[, array2, ..., nulls_last])
-```
-
-**الوسيطات**
-
-* `array1` — المصفوفة المراد فرزها. [`Array(T)`](/ar/reference/data-types/array)
-* `array2` — اختياري. مصفوفات إضافية لإعادة ترتيبها وفقًا لترتيب فرز `array1`. [`Array(T)`](/ar/reference/data-types/array)
-* `nulls_last` — اختياري. قيمة منطقية تشير إلى ما إذا كان يجب أن تظهر قيم NULL في النهاية. القيمة الافتراضية هي true. [`UInt8`](/ar/reference/data-types/int-uint)
-
-**القيمة المُعادة**
-
-يعيد Tuple من المصفوفات مرتبة ترتيبًا تصاعديًا. [`Tuple(Array, ...)`](/ar/reference/data-types/tuple)
-
-**أمثلة**
-
-**الاستخدام الأساسي**
-
-```sql title=Query
-SELECT kql_array_sort_asc([3, 1, 2])
-```
-
-```response title=Response
-([1, 2, 3])
-```
-
-<div id="kql_array_sort_desc">
-  ## kql_array_sort_desc
-</div>
-
-أُضيفت في: v23.10.0
-
-ترتّب مصفوفة واحدة أو أكثر ترتيبًا تنازليًا. تُرتَّب المصفوفة الأولى، ثم تُعاد ترتيب المصفوفات اللاحقة لتتوافق مع الترتيب الناتج للمصفوفة الأولى. تُوضَع قيم NULL في النهاية. هذه دالة للتوافق مع KQL ‏(Kusto Query Language).
-
-**البنية**
-
-```sql
-kql_array_sort_desc(array1[, array2, ..., nulls_last])
-```
-
-**الوسيطات**
-
-* `array1` — المصفوفة المطلوب فرزها. [`Array(T)`](/ar/reference/data-types/array)
-* `array2` — مصفوفات إضافية اختيارية يُعاد ترتيبها وفقًا لترتيب فرز `array1`. [`Array(T)`](/ar/reference/data-types/array)
-* `nulls_last` — قيمة منطقية اختيارية تشير إلى ما إذا كان ينبغي أن تظهر قيم `NULL` أخيرًا. القيمة الافتراضية هي `true`. [`UInt8`](/ar/reference/data-types/int-uint)
-
-**القيمة المعادة**
-
-يعيد Tuple من المصفوفات مرتبة ترتيبًا تنازليًا. [`Tuple(Array, ...)`](/ar/reference/data-types/tuple)
-
-**أمثلة**
-
-**الاستخدام الأساسي**
-
-```sql title=Query
-SELECT kql_array_sort_desc([3, 1, 2])
-```
-
-```response title=Response
-([3, 2, 1])
-```
-
 <div id="length">
   ## length
 </div>
@@ -5263,7 +5225,8 @@ SELECT kql_array_sort_desc([3, 1, 2])
 
 * بالنسبة إلى وسيطات String أو FixedString: يحسب عدد البايتات في السلسلة النصية.
 * بالنسبة إلى وسيطات Array: يحسب عدد العناصر في المصفوفة.
-* إذا طُبِّق على وسيطة FixedString، فإن الدالة تكون تعبيرًا ثابتًا.
+* بالنسبة إلى وسيطات QBit: يحسب بُعد المتجه.
+* إذا طُبِّق على وسيطة FixedString أو QBit، فإن الدالة تكون تعبيرًا ثابتًا.
 
 يرجى ملاحظة أن عدد البايتات في السلسلة النصية لا يساوي عدد
 Unicode &quot;code points&quot;، ولا يساوي عدد Unicode &quot;grapheme clusters&quot;
@@ -5277,15 +5240,15 @@ Unicode &quot;code points&quot;، ولا يساوي عدد Unicode &quot;graphem
 length(x)
 ```
 
-**الأسماء البديلة**: `CARDINALITY`, `OCTET_LENGTH`
+**الأسماء البديلة**: `OCTET_LENGTH`, `CARDINALITY`
 
 **الوسيطات**
 
-* `x` — القيمة التي يُحسَب لها عدد البايتات (في String/FixedString) أو عدد العناصر (في Array). [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Array(T)`](/ar/reference/data-types/array)
+* `x` — القيمة التي يُحسَب لها عدد البايتات (في String/FixedString)، أو عدد العناصر (في Array)، أو البُعد (في QBit). [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Array(T)`](/ar/reference/data-types/array) أو [`QBit`](/ar/reference/data-types/qbit)
 
 **القيمة المُعادة**
 
-يعيد عدد البايتات في String/FixedString `x` / عدد العناصر في المصفوفة `x` [`UInt64`](/ar/reference/data-types/int-uint)
+يعيد عدد البايتات في String/FixedString `x`، أو عدد العناصر في المصفوفة `x`، أو بُعد `QBit` ‏`x` [`UInt64`](/ar/reference/data-types/int-uint)
 
 **أمثلة**
 
@@ -5307,6 +5270,16 @@ SELECT length(['Hello', 'world'])
 
 ```response title=Response
 2
+```
+
+**مثال على QBit**
+
+```sql title=Query
+SELECT length([0, 0, 0, 0, 0, 0, 0, 0]::QBit(Float32, 8))
+```
+
+```response title=Response
+8
 ```
 
 **مثال constexpr**
@@ -5373,7 +5346,7 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 notEmpty(arr)
 ```
 
-**المعاملات**
+**الوسيط**
 
 * `arr` — مصفوفة الإدخال. [`Array(T)`](/ar/reference/data-types/array)
 
@@ -5391,6 +5364,106 @@ SELECT notEmpty([1,2]);
 
 ```response title=Response
 1
+```
+
+<div id="randomHadamardTransform">
+  ## randomHadamardTransform
+</div>
+
+أُضيف في: v26.7.0
+
+يطبّق تحويل Hadamard عشوائيًا على متجه من نوع Float: `y = (1/sqrt(k)) * (H * D * x)`، حيث إن
+`D` مصفوفة قطرية من إشارات +/-1 حتمية يحدّدها `seed`، و`H` هو تحويل Walsh-Hadamard.
+
+التحويل هو دوران متعامد **يحافظ على المعيار**، ويوزّع طاقة المتجه بالتساوي
+على الإحداثيات، مما يجعل توزيع كل إحداثي قريبًا من التوزيع الغاوسي وغير
+معتمد على البيانات. وهو مفيد كخطوة معالجة مسبقة قبل التكميم القياسي، وكذلك -- عند
+اقتطاعه -- كإسقاط عشوائي من نوع Johnson-Lindenstrauss / subsampled-randomized-Hadamard (SRHT).
+
+التحويل الكامل (من دون اقتطاع) يحافظ على طول الإدخال. وهو دقيق للأطوال التالية:
+
+* قوة للعدد اثنين (تحويل Walsh-Hadamard سريع بسيط)؛
+* `2^k * m` حيث تكون `m` ضمن `{12, 20}` (مراتب لها مصفوفة Hadamard من `+/-1`، مثل `768 = 64 * 12`,
+  `1536 = 128 * 12`, `3072 = 256 * 12`, `2560 = 128 * 20`)، ويُطبَّق بوصفه تحويل Kronecker دقيقًا
+  `H_(2^k) (x) H_m` (من دون عمليات ضرب Float)؛
+* `2^k * m` مع أي `m` فردي آخر حتى `64` (مراتب لا تملك مصفوفة Hadamard من `+/-1` -- وهذه
+  لا توجد إلا للمراتب `1` و`2` ومضاعفات `4`) ويُطبَّق بوصفه تحويل Kronecker دقيقًا
+  `H_(2^k) (x) C_m`، حيث إن `C_m` مصفوفة تحويل Hartley المتقطع الحقيقية المتعامدة. ويغطي هذا
+  عائلات embedding المتبقية مثل `3584 = 512 * 7`, `1152 = 128 * 9`, `1408 = 128 * 11`.
+
+التحويل الكامل لطول يتجاوز فيه أكبر عامل فردي `64` لا يملك صيغة دقيقة، وسيحتاج
+إلى حشو صفري إلى طول أكبر من قوى العدد اثنين؛ لذلك **يُرفَض مع استثناء** بدلًا من أن
+يعيد متجهًا أطول بصمت. استخدم طولًا مدعومًا، أو مرّر `output_dims` لحساب
+إسقاط مقتطع لطول كيفي (انظر أدناه).
+
+تكون النتيجة من نوع العنصر نفسه في الإدخال؛ وتعطي مصفوفة إدخال فارغة مصفوفة فارغة.
+
+* `seed` (اختياري، والقيمة default `0`): يحدّد نمط الإشارات؛ وتعطي القيمة نفسها من `seed` دائمًا
+  التحويل نفسه.
+* `output_dims` (اختياري، والقيمة default هي طول التحويل): يحتفظ فقط بأول `output_dims`
+  إحداثيات، مما يحوّل التحويل إلى إسقاط عشوائي يقبل **أي** طول. ويحافظ
+  التحجيم `1/sqrt(output_dims)` على المعيار في التحويل الكامل،
+  ويحافظ عليه في التوقع عند الاقتطاع. ويجب ألا يتجاوز طول التحويل. ولأن
+  البادئة المقتطعة من عامل تحويل Hartley المتقطع `C_m` لا تملك خاصية الرافعة المنتظمة نفسها التي تملكها
+  مصفوفة Hadamard من `+/-1`، فإن اقتطاع `output_dims` على طول من عائلة Hartley (أو على أي طول
+  بلا عامل دقيق) يستخدم تحويل قوة العدد اثنين مع الحشو الصفري، وهو ما يحافظ على هذه الخاصية.
+
+**الصيغة**
+
+```sql
+randomHadamardTransform(vector[, seed[, output_dims]])
+```
+
+**الوسائط**
+
+* `vector` — المتجه المراد تحويله. [`Array(BFloat16)`](/ar/reference/data-types/array) أو [`Array(Float32)`](/ar/reference/data-types/array) أو [`Array(Float64)`](/ar/reference/data-types/array)
+* `seed` — اختياري. البذرة المستخدمة لإشارات +/-1 الحتمية (القيمة الافتراضية 0). [`UInt*`](/ar/reference/data-types/int-uint)
+* `output_dims` — اختياري. يقتصر الناتج على هذا العدد من الإحداثيات الأولى (الافتراضي: طول التحويل الكامل، وهو يساوي طول الإدخال لكل بُعد مدعوم). كما أن تمرير output&#95;dims يفعّل أيضًا التحويل للأطوال التي لا يتوفر لها شكل دقيق لتحويل كامل. [`UInt*`](/ar/reference/data-types/int-uint)
+
+**القيمة المعادة**
+
+المتجه بعد التحويل (بنفس نوع العنصر في الإدخال). ويكون طوله هو طول التحويل (أي طول الإدخال في حالة التحويل الكامل لبُعد مدعوم)، مع إمكانية تقليصه اختياريًا إلى output&#95;dims. [`Array(BFloat16)`](/ar/reference/data-types/array) أو [`Array(Float32)`](/ar/reference/data-types/array) أو [`Array(Float64)`](/ar/reference/data-types/array)
+
+**أمثلة**
+
+**تحويل كامل لطول هو قوة للعدد 2**
+
+```sql title=Query
+SELECT length(randomHadamardTransform([1, 2, 3, 4]::Array(Float32)))
+```
+
+```response title=Response
+4
+```
+
+**يُحافَظ على المعيار**
+
+```sql title=Query
+SELECT round(arraySum(x -> x * x, randomHadamardTransform([1, 2, 3, 4]::Array(Float32))) - 30, 4)
+```
+
+```response title=Response
+0
+```
+
+**إسقاط مقتطع إلى 3 أبعاد (مهما كان الطول)**
+
+```sql title=Query
+SELECT length(randomHadamardTransform([1, 2, 3, 4, 5, 6, 7, 8]::Array(Float32), 42, 3))
+```
+
+```response title=Response
+3
+```
+
+**التحويل الدقيق لبُعد من الشكل 2^k * m يحتفظ بطول الإدخال (من دون إكمال بأصفار)**
+
+```sql title=Query
+SELECT length(randomHadamardTransform(CAST(range(1152), 'Array(Float32)')))
+```
+
+```response title=Response
+1152
 ```
 
 <div id="range">

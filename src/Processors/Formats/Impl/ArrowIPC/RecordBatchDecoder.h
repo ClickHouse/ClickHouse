@@ -137,13 +137,13 @@ public:
 private:
     Slice nextBuffer();
     const flatbuf::FieldNode & nextNode();
+    /// Length of the next FieldNode without consuming it (for validating a child before decoding it).
+    Int64 peekNextNodeLength() const;
 
-    /// The next FieldNode without advancing the cursor: the child of a List/FixedSizeList/Map/Union field
-    /// is the next node in the pre-order layout, and its row count is needed to size the child's
-    /// invisible-rows mask before `decodeField` consumes the node.
-    const flatbuf::FieldNode & peekNode() const;
     /// The row count the next FieldNode declares, clamped at zero (a negative length is rejected when the
-    /// node is consumed).
+    /// node is consumed). The child of a List/FixedSizeList/Map/Union field is the next node in the
+    /// pre-order layout, and its row count is needed to size the child's invisible-rows mask before
+    /// `decodeField` consumes the node.
     size_t peekNodeRows() const;
 
     /// The invisible-rows mask for the child of a List/LargeList/Map field, sized to the child's declared
@@ -156,8 +156,10 @@ private:
     /// Consumes and decodes the offsets buffer of a List/LargeList/Map field into ClickHouse array
     /// offsets (per-slot cumulative lengths relative to the first offset), validating that the first
     /// offset is non-negative and that the sequence is monotonic non-decreasing (each offset compared
-    /// with its predecessor, not only with the first).
-    ColumnUInt64::MutablePtr decodeListOffsets(size_t rows, bool large, const char * what, Int64 & base, Int64 & prev);
+    /// with its predecessor, not only with the first). `what` names the field in those errors ("list",
+    /// "map") and `offsets_what` names its offsets buffer in the buffer-size error.
+    ColumnUInt64::MutablePtr decodeListOffsets(
+        size_t rows, bool large, const char * what, const char * offsets_what, Int64 & base, Int64 & prev);
 
     /// `allow_low_cardinality` is set only for top-level fields: a dictionary-encoded field decodes into
     /// a LowCardinality column there, but a dictionary nested inside Array/Map/Tuple/Union is materialized

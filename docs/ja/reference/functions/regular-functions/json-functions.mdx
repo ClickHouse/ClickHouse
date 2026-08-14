@@ -721,7 +721,7 @@ SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}') AS res;
 
 導入バージョン: v20.1.0
 
-値が指定した ClickHouse のデータ型である JSON から、キーと値のペアを解析します。
+値が指定した ClickHouse のデータ型である JSON から、キー・バリューのペアを解析します。
 
 **構文**
 
@@ -744,13 +744,13 @@ JSONExtractKeysAndValues(json[, indices_or_keys, ...], value_type)
 **使用例**
 
 ```sql title=Query
-SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'Int8', 'x') AS res;
+SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') AS res
 ```
 
 ```response title=Response
-┌─res────────────────────┐
+┌─res────────────────────────┐
 │ [('a',5),('b',7),('c',11)] │
-└────────────────────────┘
+└────────────────────────────┘
 ```
 
 <div id="JSONExtractKeysAndValuesCaseInsensitive">
@@ -795,7 +795,7 @@ SELECT JSONExtractKeysAndValuesCaseInsensitive('{"Name": "Alice", "AGE": 30}', '
 
 導入バージョン: v20.4.0
 
-JSON オブジェクト のキーと値を含む タプル の Array を返します。すべての値は、解析されていない文字列として表されます。
+JSON オブジェクト のキーと値を含む タプル の Array を返します。すべての値は、未解析の文字列として表されます。
 
 **構文**
 
@@ -810,7 +810,7 @@ JSONExtractKeysAndValuesRaw(json[, indices_or_keys, ...])
 
 **戻り値**
 
-値が未パースの文字列である、パース済みのキー・バリューのペアからなるタプルの配列を返します。[`Array(Tuple(String, String))`](/ja/reference/data-types/array)
+値が未解析の文字列である、パース済みのキー・バリューのペアからなるタプルの配列を返します。[`Array(Tuple(String, String))`](/ja/reference/data-types/array)
 
 **例**
 
@@ -822,7 +822,7 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b": "hello"}') AS res;
 
 ```response title=Response
 ┌─res──────────────────────────────────┐
-│ [('a','[-100,200.0]'),('b','"hello"')] │
+│ [('a','[-100,200]'),('b','"hello"')] │
 └──────────────────────────────────────┘
 ```
 
@@ -1354,10 +1354,10 @@ SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
 
 ```response title=Response
 ┌─json─────────────────────────────────┬─JSONSharedDataPathsWithTypes(json)─┐
-│ {"a":"42"}                           │ {}                                  │
-│ {"b":"Hello"}                        │ {'b':'String'}                      │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                        │
-└──────────────────────────────────────┴─────────────────────────────────────┘
+│ {"a":"42"}                           │ {}                                 │
+│ {"b":"Hello"}                        │ {'b':'String'}                     │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                       │
+└──────────────────────────────────────┴────────────────────────────────────┘
 ```
 
 <div id="JSONType">

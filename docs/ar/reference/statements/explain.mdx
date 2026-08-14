@@ -24,7 +24,7 @@ picture-in-picture"
 الصيغة:
 
 ```sql
-EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABLE OVERRIDE | WHATIF] [setting = value, ...]
     [
       SELECT ... |
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
@@ -39,22 +39,23 @@ EXPLAIN SELECT sum(number) FROM numbers(10) UNION ALL SELECT sum(number) FROM nu
 ```
 
 ```sql
+Output: sum(number)
+
 Union
-  Expression (Projection)
-    Expression (Before ORDER BY and SELECT)
-      Aggregating
-        Expression (Before GROUP BY)
-          SettingQuotaAndLimits (Set limits and quota after reading from storage)
-            ReadFromStorage (SystemNumbers)
-  Expression (Projection)
-    MergingSorted (Merge sorted streams for ORDER BY)
-      MergeSorting (Merge sorted blocks for ORDER BY)
-        PartialSorting (Sort each block for ORDER BY)
-          Expression (Before ORDER BY and SELECT)
-            Aggregating
-              Expression (Before GROUP BY)
-                SettingQuotaAndLimits (Set limits and quota after reading from storage)
-                  ReadFromStorage (SystemNumbers)
+├──Aggregating
+│  │  Keys:
+│  │  Aggregates: sum(number)
+│  │  Skip merging: 0
+│  └──ReadFromSystemNumbers
+│        Output: number
+└──Sorting (Sorting for ORDER BY)
+   │  Sort description: sum(number) ASC
+   └──Aggregating
+      │  Keys:
+      │  Aggregates: sum(number)
+      │  Skip merging: 0
+      └──ReadFromSystemNumbers
+            Output: number
 ```
 
 <div id="explain-types">
@@ -63,9 +64,12 @@ Union
 
 * `AST` — شجرة البنية النحوية المجردة.
 * `SYNTAX` — نص الاستعلام بعد التحسينات على مستوى AST.
-* `QUERY TREE` — شجرة الاستعلام بعد التحسينات على مستوى Query Tree.
+* `QUERY TREE` — شجرة الاستعلام بعد التحسينات على مستوى شجرة الاستعلام.
 * `PLAN` — خطة تنفيذ الاستعلام.
 * `PIPELINE` — مسار تنفيذ الاستعلام.
+* `ANALYZE` — ينفّذ الاستعلام ويُرفق بخطة التنفيذ مقاييس وقت التشغيل المقاسة.
+* `ESTIMATE` — العدد التقديري للصفوف والعلامات والأجزاء التي ستُقرأ من الجداول أثناء معالجة الاستعلام.
+* `TABLE OVERRIDE` — النتيجة التي تم التحقق من صحتها لتجاوز جدول على مخطط دالة الجدول.
 
 <div id="explain-ast">
   ### EXPLAIN AST
@@ -193,39 +197,49 @@ QUERY id: 0
 * `description` — يطبع وصف الخطوة. القيمة الافتراضية: 1.
 * `indexes` — يعرض الفهارس المستخدمة، وعدد الأجزاء التي تمت تصفيتها، وعدد الحبيبات التي تمت تصفيتها لكل فهرس مُطبَّق. القيمة الافتراضية: 0. مدعوم في جداول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree). بدءًا من ClickHouse &gt;= v25.9، لا تعرض هذه العبارة ناتجًا مناسبًا إلا عند استخدامها مع `SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0`.
 * `projections` — يعرض جميع الإسقاطات التي جرى تحليلها وتأثيرها في التصفية على مستوى الأجزاء استنادًا إلى شروط المفتاح الأساسي للإسقاط. ولكل إسقاط، يتضمن هذا القسم إحصاءات مثل عدد الأجزاء والصفوف وعلامات ونطاقات التي جرى تقييمها باستخدام المفتاح الأساسي للإسقاط. كما يوضح عدد data parts التي تم تخطيها بسبب هذه التصفية، من دون القراءة من الإسقاط نفسه. ويمكن تحديد ما إذا كان الإسقاط قد استُخدم فعليًا للقراءة أو جرى تحليله فقط لأغراض التصفية من خلال الحقل `description`. القيمة الافتراضية: 0. مدعوم في جداول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
-* `actions` — يطبع معلومات تفصيلية عن إجراءات الخطوة. القيمة الافتراضية: 0.
+* `actions` — يطبع معلومات تفصيلية عن إجراءات الخطوة. القيمة الافتراضية: 1.
 * `sorting` — يطبع وصف الفرز لكل خطوة في الخطة تنتج مخرجات مرتبة. القيمة الافتراضية: 0.
 * `keep_logical_steps` — يحتفظ بالخطوات المنطقية في الخطة لعمليات joins بدلًا من تحويلها إلى تطبيقات join فعلية. القيمة الافتراضية: 0.
-* `json` — يطبع خطوات خطة تنفيذ الاستعلام كسطر بتنسيق [JSON](/ar/reference/formats/JSON/JSON). القيمة الافتراضية: 0. يُنصح باستخدام تنسيق [TabSeparatedRaw (TSVRaw)](/ar/reference/formats/TabSeparated/TabSeparatedRaw) لتجنب عمليات الهروب غير الضرورية.
+* `json` — يطبع خطوات خطة تنفيذ الاستعلام كسطر بتنسيق [JSON](/ar/reference/formats/JSON/JSON). القيمة الافتراضية: 0. يُنصح باستخدام تنسيق [TabSeparatedRaw (TSVRaw)](/ar/reference/formats/TabSeparated/TabSeparatedRaw) لتجنب عمليات إفلات غير الضرورية.
 * `input_headers` — يطبع ترويسات الإدخال للخطوة. القيمة الافتراضية: 0. يفيد غالبًا المطورين فقط في استكشاف المشكلات المتعلقة بعدم تطابق ترويسات الإدخال والإخراج.
 * `column_structure` — يطبع أيضًا بنية الأعمدة في الترويسات بالإضافة إلى اسمها ونوعها. القيمة الافتراضية: 0. يفيد غالبًا المطورين فقط في استكشاف المشكلات المتعلقة بعدم تطابق ترويسات الإدخال والإخراج.
-* `distributed` — يعرض خطط الاستعلام المنفَّذة على العقد البعيدة للجداول الموزعة أو parallel replicas. القيمة الافتراضية: 0.
-* `compact` — عند التمكين، يُخفي خطوات expression ومعلومات الإجراءات التفصيلية (المدخلات، والدوال، والأسماء المستعارة، ومواضع المخرجات) من الخطة. ولا يكون له تأثير إلا عندما تكون `actions = 1`. القيمة الافتراضية: 0.
-* `pretty` — يطبع شجرة الخطة باستخدام محارف رسم الخطوط (├──, └──, │) بدلًا من المسافات البادئة لتوضيح التدرج الهرمي. كما ينسّق خصائص خطوة join ضمن السطر نفسه. القيمة الافتراضية: 0.
+* `distributed` — يعرض خطط الاستعلام المنفَّذة على العقد البعيدة للجداول الموزعة أو parallel replicas. غير مدعوم مع `json`. القيمة الافتراضية: 0.
+* `compact` — عند التمكين، يُخفي خطوات expression ومعلومات الإجراءات التفصيلية (المدخلات، والدوال، والأسماء المستعارة، ومواضع المخرجات) من الخطة. ولا يكون له تأثير إلا عندما تكون `actions = 1`. القيمة الافتراضية: 1.
+* `pretty` — يطبع شجرة الخطة باستخدام محارف رسم الخطوط (├──, └──, │) بدلًا من المسافات البادئة لتوضيح التدرج الهرمي. كما ينسّق خصائص خطوة join ضمن السطر نفسه. القيمة الافتراضية: 1.
 
-عند استخدام `json=1` ستتضمن أسماء الخطوات لاحقة إضافية تحتوي على معرّف فريد للخطوة.
+<Note>
+  افتراضيًا، تكون قيمة `explain_query_plan_default = 'pretty'`، لذلك تُهيَّأ `actions` و`compact` و`pretty` إلى `1`، وتُعرَض الخطة بصيغة مضغوطة وجميلة ومشروحة بالإجراءات. ويؤدي تحديد أي من هذه الخيارات صراحةً في عبارة `EXPLAIN` (على سبيل المثال، `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) دائمًا إلى تجاوز القيمة الافتراضية.
+
+  قبل ClickHouse 26.7، كانت القيم الافتراضية لكل من `actions` و`compact` و`pretty` هي `0`. ولا يزال بإمكانك الحصول على ذلك الناتج من خلال ضبط `explain_query_plan_default = 'legacy'` (على مستوى عام أو ضمن `SETTINGS` الخاصة بكل استعلام)، أو عن طريق ضبط `compatibility` على أي إصدار أقدم من `26.7`.
+
+  لا يؤدي الخياران `json` و`distributed` إلى تفعيل إعدادات `pretty` الافتراضية (`actions` و`compact` و`pretty`)، حتى عندما تكون قيمة `explain_query_plan_default = 'pretty'`. ولتضمين تفاصيل الإجراءات في مخرجاتهما، اضبط `actions = 1` يدويًا.
+</Note>
 
 مثال:
 
 ```sql
-EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
+EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4  LIMIT 1;
 ```
 
 ```sql
-Union
-  Expression (Projection)
-  Expression (Before ORDER BY and SELECT)
-    Aggregating
-      Expression (Before GROUP BY)
-        SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromStorage (SystemNumbers)
+Output: sum(number)
+
+Limit (preliminary LIMIT)
+│  Limit 1
+│  Offset 0
+└──Aggregating
+   │  Keys: number MOD 4
+   │  Aggregates: sum(number)
+   │  Skip merging: 0
+   └──ReadFromSystemNumbers
+         Output: number
 ```
 
 <Note>
   لا تتوفر إمكانية تقدير تكلفة الخطوة والاستعلام.
 </Note>
 
-عندما تكون قيمة `json = 1`، يُمثَّل مخطط الاستعلام بتنسيق JSON. وكل عقدة هي قاموس يحتوي دائمًا على المفتاحين `Node Type` و`Plans`. ويمثل `Node Type` سلسلة نصية تتضمن اسم الخطوة، بينما تمثل `Plans` مصفوفة تتضمن أوصاف الخطوات الفرعية. وقد تُضاف مفاتيح اختيارية أخرى بحسب نوع العقدة والإعدادات.
+عند ضبط `json` = 1، تُمثَّل خطة تنفيذ الاستعلام بصيغة JSON. كل عقدة هي قاموس يحتوي دائمًا على المفاتيح `Node Type` و`Node Id` و`Plans`. تكون `Node Type` سلسلة نصية تتضمن اسم الخطوة، ويكون `Node Id` معرّفًا فريدًا للخطوة (اسم الخطوة مع لاحقة رقمية، مثل `Union_10`). أما `Plans` فهي مصفوفة من أوصاف الخطوات الفرعية. وقد تُضاف مفاتيح اختيارية أخرى بحسب نوع العقدة والإعدادات.
 
 مثال:
 
@@ -266,7 +280,7 @@ EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
 ]
 ```
 
-عند ضبط `description` على 1، يُضاف المفتاح `Description` إلى الخطوة:
+عند ضبط `description` = 1، يُضاف المفتاح `Description` إلى الخطوة:
 
 ```json
 {
@@ -370,16 +384,16 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 ]
 ```
 
-مع `projections` = 1، يُضاف المفتاح `Projections`. ويحتوي على مصفوفة من الإسقاطات التي جرى تحليلها. ويُوصَف كل إسقاط بصيغة JSON بالمفاتيح التالية:
+عند تعيين `projections` = 1، يُضاف مفتاح `Projections`، ويحتوي على مصفوفة من الإسقاطات المُحللة. يُوصف كل إسقاط بصيغة JSON وفق المفاتيح التالية:
 
 * `Name` — اسم الإسقاط.
-* `Condition` — شرط المفتاح الأساسي المستخدم للإسقاط.
-* `Description` — وصف لكيفية استخدام الإسقاط (على سبيل المثال، التصفية على مستوى الجزء).
+* `Condition` — شرط المفتاح الأساسي المستخدم في الإسقاط.
+* `Description` — وصف كيفية استخدام الإسقاط (على سبيل المثال، التصفية على مستوى الجزء).
 * `Selected Parts` — عدد الأجزاء التي اختارها الإسقاط.
 * `Selected Marks` — عدد العلامات المختارة.
 * `Selected Ranges` — عدد النطاقات المختارة.
 * `Selected Rows` — عدد الصفوف المختارة.
-* `Filtered Parts` — عدد الأجزاء التي تم تخطيها بسبب التصفية على مستوى الجزء.
+* `Filtered Parts` — عدد الأجزاء التي جرى تخطيها بسبب التصفية على مستوى الجزء.
 
 مثال:
 
@@ -411,7 +425,7 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 ]
 ```
 
-مع `actions` = 1، تعتمد المفاتيح المُضافة على نوع الخطوة.
+مع `actions` = 1، تعتمد المفاتيح المضافة على نوع الخطوة.
 
 مثال:
 
@@ -470,24 +484,39 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 ]
 ```
 
-مع `compact = 1`، تُحذف كل خطوة `Expression`. وبالإضافة إلى ذلك، إذا كان `actions = 1` مضبوطًا، فستُخفى أسطر `Actions` و`Positions`، ولن يتبقى سوى أوصاف الخطوات:
+مع `compact = 0` و`actions = 1`، يمكن رؤية خطوات `Expression` مع معلومات مفصلة عن التعبيرات:
 
 ```sql
-EXPLAIN actions = 1, compact = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+EXPLAIN actions = 1, compact = 0 SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
 ```
 
 ```text
-Aggregating
-Keys: modulo(__table1.number, 4_UInt8)
-Aggregates:
-    sum(__table1.number)
-      Function: sum(UInt64) → UInt64
-      Arguments: __table1.number
-Skip merging: 0
-  ReadFromSystemNumbers
+Output: sum(number)
+
+Expression ((Project names + Projection))
+│  Actions: INPUT : 0 -> sum(__table1.number) UInt64 : 0
+│           INPUT :: 1 -> modulo(__table1.number, 4_UInt8) UInt8 : 1
+│           ALIAS sum(__table1.number) :: 0 -> sum(number) UInt64 : 2
+│  Positions: 2
+└──Aggregating
+   │  Keys: number MOD 4
+   │  Aggregates: sum(number)
+   │  Skip merging: 0
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      │  Actions: INPUT : 0 -> number UInt64 : 0
+      │           COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 1
+      │           ALIAS number :: 0 -> __table1.number UInt64 : 2
+      │           FUNCTION modulo(__table1.number : 2, 4_UInt8 :: 1) -> modulo(__table1.number, 4_UInt8) UInt8 : 0
+      │  Positions: 0 2
+      └──ReadFromSystemNumbers
+            Output: number
 ```
 
 عند تعيين `distributed` = 1، يتضمن الناتج ليس فقط خطة الاستعلام المحلية، بل أيضاً خطط الاستعلام التي ستُنفَّذ على العقد البعيدة. يُفيد هذا في تحليل الاستعلامات الموزعة وتصحيح أخطائها.
+
+<Note>
+  لا يُعرَض `distributed` إلا بصيغة `legacy` (غير `pretty`)، لأن مخرجات `pretty` لا تدمج خطط المقاطع البعيدة في شجرة الخطة. ولهذا السبب، يؤدي تمكين `distributed` تلقائيًا إلى تعطيل الإعدادات الافتراضية لـ`pretty` (`actions` و`compact` و`pretty`)، بغضّ النظر عن `explain_query_plan_default`. ولا يزال بإمكانك تعيين `actions=1` يدويًا. كما أن الخيار `distributed` غير مدعوم أيضًا مع `json`.
+</Note>
 
 مثال مع جدول موزّع:
 
@@ -533,15 +562,15 @@ Expression ((Project names + Projection))
 
 عند تعيين `pretty` = 1، تُعرض شجرة الخطة باستخدام أحرف رسم الخطوط بدلاً من المسافات البادئة، وتظهر معلومات إضافية للخطوات الرئيسية:
 
-* تُطبع **أعمدة مخرجات الاستعلام** في أعلى الخطة.
-* تُعرض **التعبيرات** في المرشحات، ومفاتيح التجميع، وأوصاف الفرز، ووظائف النافذة بصياغة شبيهة بـ SQL وسهلة القراءة (مثل `a + 1 > 5` بدلًا من `greater(plus(a, 1), 5)`). كما تُزال بادئات معرّفات الأعمدة الداخلية (مثل `__table1.`) لتوضيح العرض.
-* تعرض **خطوات المصدر** (مثل `ReadFromMergeTree`) أعمدة مخرجاتها.
-* تعرض **خطوات التصفية** شرط التصفية بصياغة SQL. وعند وجود مرشحات JOIN وقت التشغيل، تُعرض بشكل منفصل.
-* تعرض **خطوات التجميع** المفاتيح والدوال التجميعية مع وسيطاتها (مثل `sum(c)`, `count()`).
-* تعرض **مجموعات IN** المشتقة من قيم Tuple الحرفية قيمها (مع اقتطاعها في المجموعات الكبيرة)، وتُسمّى المجموعات المستندة إلى استعلامات فرعية `subquery1` و`subquery2` وما إلى ذلك، بينما تعرض المجموعات من جداول المحرك `Set` اسم الجدول.
-* تعرض **خطوات JOIN** علاقة الـ join باستخدام ترميز رياضي، والعدد التقديري لصفوف النتيجة،
-  وتوضح أي أعمدة المخرجات تأتي من الجانب الأيسر مقابل الأيمن. وتُستخدم الرموز التالية
-  لتمثيل أنواع join المختلفة:
+* تُطبَع **أعمدة ناتج الاستعلام** في أعلى الخطة.
+* تُعرَض **التعبيرات** في عوامل التصفية، ومفاتيح التجميع، وأوصاف الفرز، ودوال النوافذ بصياغة مقروءة للبشر شبيهة بـ SQL (مثلًا، `a + 1 > 5` بدلًا من `greater(plus(a, 1), 5)`). وتُزال بادئات معرّفات الأعمدة الداخلية (مثل `__table1.`) لتوضيح العرض.
+* تعرض **خطوات المصدر** (مثل `ReadFromMergeTree`) أعمدة ناتجها.
+* تعرض **خطوات التصفية** شرط التصفية بصياغة SQL. وعند وجود عوامل تصفية للربط وقت التشغيل، تُعرض بشكل منفصل.
+* تعرض **خطوات التجميع** المفاتيح والدوال التجميعية مع وسيطاتها (مثل `sum(c)` و`count()`).
+* تُظهر **مجموعات IN** من قيم `tuple` الحرفية قيمها (مقتطعةً للمجموعات الكبيرة)، وتُوسَم المجموعات المستندة إلى استعلامات فرعية على أنها `subquery1` و`subquery2` وما إلى ذلك، وتُظهر المجموعات من جداول محرك `Set` اسم الجدول.
+* تعرض **خطوات الربط** علاقة الربط باستخدام ترميز رياضي، والعدد التقديري لصفوف النتيجة،
+  وأي أعمدة ناتج تأتي من الجانب الأيسر مقابل الجانب الأيمن. وتُستخدم الرموز التالية
+  لتمثيل أنواع الربط المختلفة:
 
 | Symbol                 | Join Type       |
 | ---------------------- | --------------- |
@@ -561,18 +590,7 @@ Expression ((Project names + Projection))
 
 يعمل الخيار `pretty` جيدًا مع `compact = 1`، إذ يُخفي خطوات `Expression` ومعلومات الإجراءات التفصيلية، مما يجعل الخطة أسهل في القراءة.
 
-```sql
-EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
-```
-
-```text
-Expression ((Project names + Projection))
-└──Aggregating
-   └──Expression ((Before GROUP BY + Change column names to column identifiers))
-      └──ReadFromSystemNumbers
-```
-
-مثال أكثر تفصيلاً يتضمن عمليات JOIN:
+مثال تفصيلي يتضمن عمليات JOIN:
 
 ```sql
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
@@ -585,24 +603,28 @@ SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id FORMAT Raw;
 ```
 
 ```text
-Output: id, value, t2.id, t2.value
+Output: id, value, id, value
 
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
 │  Result rows: 100
+│  Join conditions: id = id
 │  Output:
 │    Left:  id, value
 │    Right: id, value
-│  Join conditions: id = id
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
 │     Output: id, value
-└──ReadFromMergeTree (default.t2)
-      Read type: Default
-      Parts: 1 | Granules: 1
-      Output: id, value
+│     Runtime filters: RF1(id, id from default.t2)
+└──BuildRuntimeFilter (Build runtime join filter on id)
+   │  Filter id: RF1
+   │  Source table: default.t2
+   └──ReadFromMergeTree (default.t2)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: id, value
 ```
 
 <div id="explain-pipeline">
@@ -647,6 +669,125 @@ ExpressionTransform
             NumbersRange × 2 0 → 1
 ```
 
+<div id="explain-analyze">
+  ### EXPLAIN ANALYZE
+</div>
+
+يقوم `EXPLAIN ANALYZE` فعليًا بتشغيل الاستعلام، ثم يتجاهل صفوف النتائج ويطبع شجرة الخطة نفسها كما في `EXPLAIN PLAN`، مع إرفاق كل خطوة بتفاصيل عمّا حدث فعليًا أثناء التنفيذ.
+
+الإعدادات:
+
+يقبل `EXPLAIN ANALYZE` خيارات العرض نفسها التي يقبلها `EXPLAIN PLAN` (وهي موثقة في قسم [EXPLAIN PLAN](#explain-plan)).
+
+* `header` — راجع قسم [EXPLAIN PLAN](#explain-plan).
+* `description` — راجع قسم [EXPLAIN PLAN](#explain-plan).
+* `projections` — راجع قسم [EXPLAIN PLAN](#explain-plan).
+* `sorting` — راجع قسم [EXPLAIN PLAN](#explain-plan).
+* `input_headers` — راجع قسم [EXPLAIN PLAN](#explain-plan).
+* `column_structure` — راجع قسم [EXPLAIN PLAN](#explain-plan).
+* `actions` — راجع قسم [EXPLAIN PLAN](#explain-plan). القيمة الافتراضية: 1.
+* `indexes` — راجع قسم [EXPLAIN PLAN](#explain-plan). القيمة الافتراضية: 1.
+* `compact` — راجع قسم [EXPLAIN PLAN](#explain-plan). القيمة الافتراضية: 1.
+* `pretty` — راجع قسم [EXPLAIN PLAN](#explain-plan). القيمة الافتراضية: 1.
+* `processors` — في `EXPLAIN ANALYZE`، يطبع سطرًا إضافيًا لكل مرحلة يتضمن توزيع الزمن المنقضي لكل معالج: `min` و`median` و`max` و`sum`. ويفيد ذلك في اكتشاف اختلال توزيع الحمل بين المعالجات المتوازية. القيمة الافتراضية: 0.
+
+<Note>
+  لأن `EXPLAIN ANALYZE` ينفّذ الاستعلام المغلّف فعليًا، فهو يتصرف مثل ذلك
+  الاستعلام — وعلى خلاف صيغ `EXPLAIN` التي لا تنفّذ شيئًا — بعدة طرق:
+
+  * **الحصص والحدود.** يُحتسب ضمن [الحصص](/ar/concepts/features/configuration/server-config/quotas)
+    ويخضع لنفس [الحدود](/ar/concepts/features/configuration/settings/query-complexity)
+    (مثل `query_selects` و`read_rows`) كما لو كنت تشغّل الاستعلام مباشرةً. ولا تُحتسب المصادر المعفاة من الحصص أثناء التخطيط
+    (مثل `system.one`).
+  * **المعاملات الفاشلة.** داخل [معاملة](/ar/concepts/features/operations/insert/transactions)
+    سبق أن فشلت (`ROLLED_BACK`)، يُرفَض مع `INVALID_TRANSACTION`,
+    تمامًا مثل `SELECT` عادي — أصدر `ROLLBACK` أولًا.
+  * **القراءات المتدفقة.** عند إجراء قراءة متدفقة (`FROM ... STREAM`) يُرفَض مع
+    `NOT_IMPLEMENTED`، لأن هذا النوع من القراءة لا يكتمل أبدًا.
+  * **الاستعلامات الموزعة.** هذا غير مدعوم للاستعلامات التي تُنفَّذ
+    في وضع [Distributed](/ar/reference/engines/table-engines/special/distributed).
+</Note>
+
+مثال:
+
+```sql
+EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k;
+```
+
+```text
+Query summary:
+  Time:        10.72 ms (planning 6.45 ms · execution 4.26 ms)
+  Read:        1.00 million rows, 8.00 MB (234.49 million rows/s., 1.88 GB/s.)
+  Peak memory: 28.98 KiB
+
+Output: number MOD 10, count()
+
+Expression ((Project names + Projection))
+│  I/O: rows 10 → 10 · 90 B → 90 B
+│    time 21.82 us (0.5%) · parallelism 0.98/1
+└──Aggregating
+   │  Keys: number MOD 10
+   │  Aggregates: count()
+   │  Skip merging: 0
+   │  I/O: rows 1.00 million → 10 (0.00%) · 1.00 MB → 90 B
+   │    Stage (partial aggregation): time 868.45 us (20.4%) · parallelism 3.80/15
+   │    Stage (final aggregation): time 445.27 us (10.4%) · parallelism 1.11/16
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      │  I/O: rows 1.00 million → 1.00 million · 8.00 MB → 1.00 MB
+      │    time 677.07 us (15.9%) · parallelism 4.31/15
+      └──ReadFromSystemNumbers
+            Output: number
+            I/O: rows 0 → 1.00 million · 0 B → 8.00 MB
+              time 993.94 us (23.3%) · parallelism 7.52/15
+```
+
+لنفحص الناتج. أولاً، لننظر إلى الترويسة.
+
+```txt
+   Query summary:
+     Time:        <total> (planning <planning> · execution <execution>)
+     Read:        <rows> rows, <bytes> (<rows/s>, <bytes/s>)
+     Peak memory: <peak>
+```
+
+* `Time` — الوقت الإجمالي، مقسَّماً إلى مرحلتَي التخطيط (أي إنشاء الخطة + تحسين الخطة + بناء pipeline) والتنفيذ (تشغيل pipeline).
+* `Read` — الصفوف والبايتات غير المضغوطة المقروءة من الجداول، مع معدل النقل — وهي الأرقام نفسها التي يَعرضها تذييل الاستعلام العادي تحت اسم &quot;Processed&quot;.
+* `Peak memory` — ذروة الذاكرة التي استخدمها الاستعلام.
+
+والآن لنلقِ نظرة على الأسطر الجديدة التي تظهر في خطة الاستعلام.
+
+```txt
+I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
+  [Stage (<stage>): ]time <t> (<share>%) · parallelism <avg>/<max>
+```
+
+يُبلَّغ عن الصفوف والبايتات مرة واحدة للخطوة بأكملها (سطر `I/O`). ويُبلَّغ عن الوقت ودرجة التوازي لكل مرحلة من مراحل الخطوة في السطر أو الأسطر التالية ذات المسافة البادئة.
+
+* `rows <in> → <out>` — الصفوف التي دخلت الخطوة وخرجت منها؛ وتُظهر (`<selectivity>`%) مقدار ما قامت الخطوة بتصفيته (`out/in`) أو توسيعه للبيانات. ويُخفى هذا عندما يتساوى عدد صفوف الإدخال مع عدد صفوف الإخراج، وعندما يساوي عدد صفوف الإدخال `0`.
+* `<bytes_in> → <bytes_out>` — بايتات غير مضغوطة داخل الذاكرة تمر عبر الخطوة (يُحذف هذا إذا كانت القيمتان صفراً).
+* `time <t> (<share>%)` — زمن الساعة الفعلي الذي كانت المرحلة نشطة خلاله، ونسبتها من وقت تنفيذ الاستعلام (أي من دون وقت البناء). لاحظ أن مجموع النسب قد يتجاوز 100% لأن المراحل والخطوات تعمل بالتوازي.
+* `parallelism <avg>/<max>` — متوسط عدد خيوط `CPU` العاملة داخل هذه المرحلة في الوقت نفسه، من أصل الحد الأقصى الذي يمكنها استخدامه. وتشير قيمة قريبة من الحد الأقصى إلى أن المرحلة استُخدم فيها التوازي بكفاءة؛ أما القيمة القريبة من 1 فتعني أنها نُفِّذت في الغالب بشكل تسلسلي.
+* `Stage (<stage>)` — اسم المرحلة. في الخطوة التي تحتوي على مرحلة واحدة، يُعرَض سطر الوقت مباشرةً من دون تسمية `Stage (...)`. أما الخطوات التي تضم عدة مراحل، فتطبع سطراً معنَّوناً لكل مرحلة؛ فعلى سبيل المثال، يعرض `Aggregating` السطرين `Stage (partial aggregation)` و`Stage (final aggregation)`، ويعرض hash join السطرين `Stage (build)` و`Stage (probe)`.
+
+<Note>
+  لا يقتصر ClickHouse على موازاة تنفيذ المهام داخل خطوة في الخطة، بل يوازي أيضاً تنفيذ خطوات الخطة نفسها. يعكس مقياس `parallelism` عمل هذه الخطوة فقط. وقد تعمل خطوات أخرى بالتوازي، لذلك لا يوضح هذا الرقم كيف تقارن درجة التوازي في هذه الخطوة بالاستعلام ككل.
+</Note>
+
+<Note>
+  يُحسَب الرقم الأقصى في `parallelism` بوصفه الحد الأدنى بين:
+
+  1. العدد الإجمالي للمهام داخل خطوة الخطة؛
+  2. الحد الأقصى لعدد خيوط معالجة الاستعلام المحدَّد في `max_threads`.
+</Note>
+
+عند استخدام `processors = 1`، يُطبَع سطر إضافي أسفل كل مرحلة يوضح توزيع الزمن المنقضي عبر معالجات المرحلة:
+
+```txt
+Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
+```
+
+يشير `<n>` إلى عدد المعالِجات في هذه المرحلة. ويشير الفارق الكبير بين `median` و`max` إلى اختلال في توازن الحمل بين المعالِجات المتوازية.
+
 <div id="explain-estimate">
   ### EXPLAIN ESTIMATE
 </div>
@@ -672,6 +813,128 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 │ default  │ ttt   │     1 │  128 │     8 │
 └──────────┴───────┴───────┴──────┴───────┘
 ```
+
+<div id="explain-whatif">
+  ### EXPLAIN WHATIF
+</div>
+
+يقدّر الفائدة التي يمكن أن يوفّرها فهرس تخطٍّ افتراضي لاستعلام `SELECT`، *من دون* إجراء materializing للفهرس على القرص. حدِّد مرشحًا واحدًا أو أكثر باستخدام [`CREATE HYPOTHETICAL INDEX`](/ar/reference/statements/hypothetical-index#create-hypothetical-index)، ثم شغّل `EXPLAIN WHATIF SELECT ...` لمعرفة ما يلي لكل مرشح: مدى قابليته للتطبيق، والعدد التقديري للعلامات المقروءة، والبايتات التقديرية، ونسبة التخطي.
+
+**الصياغة**
+
+```sql
+EXPLAIN WHATIF [empirical = 0] SELECT ...
+```
+
+**الإعدادات**
+
+* `empirical` — تؤدي القيمة `1` (الافتراضية) إلى تشغيل الفهرس في الذاكرة على الحبيبات التي جرى تقليصها وفق خط الأساس، وذلك لقياس نسبة التخطي (وهي حدٌّ أعلى). أما `0` فتتخطى هذا المسار. وفي كلتا الحالتين، إذا لم يُنتج `empirical` نتيجة (إما لأنه معطَّل أو لأن الفهرس لا يمكن تقييمه في الذاكرة)، فإن المُقدِّر يعود إلى [إحصاءات الأعمدة](/ar/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)، ثم أخيرًا إلى ملخص يقتصر على قابلية التطبيق فقط إذا لم يتوفر أيٌّ منهما.
+
+**المخرجات**
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       db.t
+  parts:       1
+  marks:       100
+  est_bytes:   1.50 MiB             (only when the query reads rows)
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    15.00 KiB           (only when baseline bytes are known)
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical | statistical | applicability_only
+  empirical_status: ok | unsupported | disabled
+  sampled_parts:    50 / 100        (only when source = empirical)
+  sampled_marks:    50 / 100        (only when source = empirical)
+  elapsed_us:       631             (only when source = empirical)
+```
+
+* `source` — كيفية احتساب التقدير.
+  * `empirical`: جرى بناء الفهرس في الذاكرة على الحبيبات المتبقية بعد استبعاد خط الأساس، ثم عُدَّت الحبيبات التي سيتجاوزها الفهرس. وهذا يمثل حدًا أعلى — راجع القيود في [`CREATE HYPOTHETICAL INDEX`](/ar/reference/statements/hypothetical-index#limitations).
+  * `statistical`: مشتق من إحصاءات الأعمدة. يُستخدم عندما يكون `empirical` معطّلًا (`empirical = 0`) أو عندما يتعذر على `empirical` إنتاج نتيجة، مع توفّر إحصاءات أعمدة للأعمدة ذات الصلة.
+  * `applicability_only`: الفهرس قابل للتطبيق على الشرط، لكن لم يُنتج لا التقدير التجريبي ولا الإحصائي نتيجة (مثلًا، `empirical = 0` مع عدم تعريف إحصاءات أعمدة). ويعرض `skip_ratio: 0.0%` بوصفه حدًا محافظًا.
+* `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. يوضح ذلك أي نسبة من الجدول بقيت بعد استبعاد PK والتقسيم والفهارس الموجودة، أي ما يُستخدم كمدخل إلى الفهرس الافتراضي.
+* `est_bytes` — تقدير لعدد البايتات المقروءة، مشتق من متوسط حجم الصف في الجدول، لذا فهو تقريبي ويتفاوت حسب التخزين والضغط. لا يظهر سطر خط الأساس إلا عندما يقرأ الاستعلام صفوفًا؛ ولا يظهر السطر الخاص بكل مرشح إلا عندما يكون تقدير بايتات خط الأساس معروفًا.
+
+يُكتب الإعداد Inline بين `WHATIF` و`SELECT` — ولا توجد الكلمة المفتاحية `SETTINGS` (وهذا يطابق الطريقة التي تقبل بها متغيرات `EXPLAIN` الأخرى خياراتها).
+
+إذا لم تكن هناك فهارس افتراضية معرّفة للجدول، فسيعرض `EXPLAIN WHATIF` القيمة `status: not_applicable` مع تلميح لإنشاء فهرس.
+
+**الصف المجمّع (مرشحون متعددون)**
+
+عند تقييم مرشحين أو أكثر تجريبيًا، يُضيف `EXPLAIN WHATIF` كتلة إضافية واحدة باسم `(combined: idx_a, idx_b, ...)` بعد الصفوف الخاصة بكل مرشح. وتعرض هذه الكتلة الفائدة المشتركة لوجود *جميع* تلك الفهارس في الوقت نفسه: إذ إن القراءة الفعلية لا تُبقي الحبيبة إلا إذا نجت من *كل* فهرس تخطٍّ، لذلك يكون التقدير المجمّع هو تقاطع الحبيبات الباقية لدى المرشحين. ومن ثم تكون قيمة `skip_ratio` فيها على الأقل بقدر أفضل مرشح منفرد — فالفهارس المتكاملة تقلّص معًا بدرجة أكبر، بينما لا تغيّرها الفهارس المتكررة.
+
+لا تُسهم إلا المرشحات التي تحمل `source: empirical`، لأن الصف الموحَّد يُبنى من تقاطع مجموعات البقاء الخاصة بكل granule لكلٍ منها. أما المرشحات المقدَّرة على أنها `statistical` أو `applicability_only` فلا تملك بيانات على مستوى granule، لذا تُستبعَد؛ وبناءً على ذلك لا تظهر الكتلة الموحَّدة إلا عندما يكون مرشحان على الأقل قد أنتجا تقديرًا تجريبيًا، وتُحذَف بخلاف ذلك (على سبيل المثال عند `empirical = 0`). وتكون حقول التقدير فيها مماثلة لحقول كتلة تجريبية خاصة بكل مرشح، باستثناء أن `elapsed_us` يساوي `0` — إذ إن التقدير الموحَّد مشتق من عمليات المسح الخاصة بكل مرشح، وليس من عملية مسح جديدة. أما الاسم التركيبي `(combined: ...)` فهو مجرد تسمية في التقرير، ولا يمكن استخدامه مع `force_data_skipping_indices`.
+
+**مثال تجريبي**
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 100;
+
+INSERT INTO t SELECT number, number FROM numbers(10000);
+
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+
+EXPLAIN WHATIF SELECT * FROM t WHERE b = 42;
+```
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  est_bytes:   85.52 KiB
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    875.00 B
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+```
+
+سيؤدي `minmax` الافتراضي إلى تقليص عدد العلامات من 100 إلى علامة واحدة — `skip_ratio: 99.0%`. (القيمة `est_bytes` هي تقدير مستند إلى متوسط حجم الصف، لذا قد يختلف الرقم الفعلي.)
+
+**مثال إحصائي**
+
+تكون [الإحصاءات](/ar/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) الخاصة بالأعمدة غير مفعّلة افتراضيًا. لاستخدام المسار `statistical`، عرّفها أولًا على الأعمدة ذات الصلة ثم انتظر حتى تكتمل عملية mutation الخاصة بـ `materialize`:
+
+```sql
+ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
+```
+
+ثم عطِّل المسار التجريبي ليعتمد المُقدِّر على إحصاءات الأعمدة:
+
+```sql
+EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
+```
+
+```text
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    1.66 KiB
+  skip_ratio:   99.9%
+
+Estimation:
+  source:           statistical
+  empirical_status: disabled
+```
+
+يأتي الرقم من انتقائية إحصاءات العمود للتعبير `b < 10` (نحو 10 صفوف من أصل 10000)، ويُورَد باعتباره حدًا أعلى لـ `skip_ratio`. ولا توجد `sampled_parts` / `sampled_marks` — إذ لم تُقرأ أي بيانات.
+
+إذا لم يكن أيٌّ من المسارين متاحًا (مثلًا، `empirical = 0` ولم تُعرَّف أي إحصاءات أعمدة)، فإن المُقدِّر يُرجع `source: applicability_only` و`skip_ratio: 0.0%` بشكل متحفّظ.
 
 <div id="explain-table-override">
   ### EXPLAIN TABLE OVERRIDE

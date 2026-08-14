@@ -25,7 +25,7 @@ doc_type: 'reference'
 
 導入バージョン: v24.1.0
 
-STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) を使用して、時系列データを季節性、トレンド、残差の各成分に分解します。
+STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.math.unm.edu/~lil/Stat581/STL.pdf) を使用して、時系列データを季節性、トレンド、残差の各成分に分解します。
 
 **構文**
 
@@ -51,26 +51,9 @@ SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 
 ```
 
 ```response title=Response
-┌───────────print_0──────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [[
-        -13.529999, -3.1799996, 16.71,      -13.53,     -3.1799996, 16.71,      -13.53,     -3.1799996,
-        16.71,      -13.530001, -3.18,      16.710001,  -13.530001, -3.1800003, 16.710001,  -13.530001,
-        -3.1800003, 16.710001,  -13.530001, -3.1799994, 16.71,      -13.529999, -3.1799994, 16.709997
-    ],
-    [
-        23.63,     23.63,     23.630003, 23.630001, 23.630001, 23.630001, 23.630001, 23.630001,
-        23.630001, 23.630001, 23.630001, 23.63,     23.630001, 23.630001, 23.63,     23.630001,
-        23.630001, 23.63,     23.630001, 23.630001, 23.630001, 23.630001, 23.630001, 23.630003
-    ],
-    [
-        0, 0.0000019073486, -0.0000019073486, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.0000019073486, 0,
-        0
-    ],
-    [
-        10.1, 20.449999, 40.340004, 10.100001, 20.45, 40.34, 10.100001, 20.45, 40.34, 10.1, 20.45, 40.34,
-        10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.100002, 20.45, 40.34
-    ]]                                                                                                                   │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─print_0─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [[-13.529999,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.530001,-3.18,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1799994,16.71,-13.529999,-3.1799994,16.709997],[23.63,23.63,23.630003,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.630001,23.630001,23.630001,23.630003],[0,0.0000019073486,-0.0000019073486,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.0000019073486,0,0],[10.1,20.449999,40.340004,10.100001,20.45,40.34,10.100001,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.100002,20.45,40.34]] │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="seriesOutliersDetectTukey">
@@ -184,6 +167,10 @@ SELECT seriesPeriodDetectFFT(arrayMap(x -> abs((x % 6) - 3), range(1000))) AS pr
 この関数は、Prometheus の
 [group left/group right](https://prometheus.io/docs/prometheus/latest/querying/operators/#group-modifiers) 修飾子のコピーの挙動を模倣します。
 
+<Note>
+  この関数は非決定論的です。同じ引数に対しても異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
@@ -227,7 +214,11 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 この関数は、コピーしたタグについて、`dest_group` 内の既存の値を置き換えます。
 コピー対象のタグの一部が `src_group` に存在しない場合、この関数はそれらのタグを `dest_group` からも削除します。
 この関数は、Prometheus の
-[修飾子](https://prometheus.io/docs/prometheus/latest/querying/operators/#group-modifiers) のコピー動作を模倣しています。
+[group left/group right 修飾子](https://prometheus.io/docs/prometheus/latest/querying/operators/#group-modifiers) のコピー動作を模倣しています。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対しても異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -237,7 +228,7 @@ timeSeriesCopyTags(dest_group, src_group, tags_to_copy)
 
 **引数**
 
-* `dest_group` — 宛先のタググループです。[`UInt64`](/ja/reference/data-types/int-uint)
+* `dest_group` — コピー先のタググループです。[`UInt64`](/ja/reference/data-types/int-uint)
 * `src_group` — コピー元のタググループです。[`UInt64`](/ja/reference/data-types/int-uint)
 * `tags_to_copy` — コピーするタグの名前です。[`Array(String)`](/ja/reference/data-types/array)
 
@@ -269,7 +260,11 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 導入バージョン: v26.1.0
 
 グループから指定したタグの値を抽出します。見つからない場合は NULL を返します。
-関連項目: 関数 [timeSeriesGroupToTags()](/ja/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags)
+関連項目: 関数 [timeSeriesGroupToTags()](/ja/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags)。
+
+<Note>
+  この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -360,6 +355,10 @@ SELECT timeSeriesFromGrid('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:0
 この値は決定論的で、入力タグが同一であれば常に同じキーが生成されます。
 `limitk` や `limit_ratio` などのサンプリング演算子のソートキーとして使用することを想定しています。
 
+<Note>
+  この関数は非決定論的であり、同じ引数に対しても異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
@@ -396,7 +395,11 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 導入バージョン: v26.1.0
 
 指定したグループに関連付けられたタグの名前と値を返します。
-関連項目: 関数 [timeSeriesTagsToGroup()](/ja/reference/functions/regular-functions/time-series-functions#timeSeriesTagsToGroup)
+関連項目: 関数 [timeSeriesTagsToGroup()](/ja/reference/functions/regular-functions/time-series-functions#timeSeriesTagsToGroup)。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対しても異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -440,7 +443,11 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 導入バージョン: v26.1.0
 
 指定した時系列の識別子に関連付けられたタグの名前と値を返します。
-関連項目: 関数 [timeSeriesStoreTags()](/ja/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags)
+関連項目: 関数 [timeSeriesStoreTags()](/ja/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags)。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返す場合があります。
+</Note>
 
 **構文**
 
@@ -483,7 +490,11 @@ SELECT 8374283493092 AS id,
 導入バージョン: v25.8.0
 
 指定した時系列の識別子に関連付けられたタグを返します。
-関連項目: 関数 [timeSeriesStoreTags()](/ja/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags)
+関連項目: 関数 [timeSeriesStoreTags()](/ja/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags)。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -528,6 +539,10 @@ SELECT 8374283493092 AS id,
 この関数は、結合した値の間に区切り文字を挿入し、タグ `dest_tag` に結合後の値を設定した新しいタググループを返します。
 この関数は、Prometheus の関数
 [label&#95;join()](https://prometheus.io/docs/prometheus/latest/querying/functions/#label_join) のロジックを模倣しています。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -614,6 +629,10 @@ SELECT timeSeriesRange('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:01:0
 関連項目: 関数 [timeSeriesRemoveTag()](/ja/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
 [timeSeriesRemoveTags()](/ja/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags)。
 
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
@@ -655,6 +674,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 グループ内に該当するタグがない場合は、グループは変更されずにそのまま返されます。
 関連項目: 関数 [timeSeriesRemoveTags()](/ja/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags)、
 [timeSeriesRemoveAllTagsExcept()](/ja/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept)。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -702,6 +725,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 関連項目: 関数 [timeSeriesRemoveTag()](/ja/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
 [timeSeriesRemoveAllTagsExcept()](/ja/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept)。
 
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返す場合があります。
+</Note>
+
 **構文**
 
 ```sql
@@ -746,6 +773,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 入力に含まれる元のタグもそのまま保持されます。
 この関数は、Prometheus の関数
 [label&#95;replace()](https://prometheus.io/docs/prometheus/latest/querying/functions/#label_replace) のロジックを模倣しています。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -838,6 +869,10 @@ SELECT 8374283493092 AS id,
 タグ集合が空の場合、この関数は常に 0 を返します。
 関連項目: 関数 [timeSeriesGroupToTags()](/ja/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags)。
 
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
@@ -885,6 +920,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 この関数は [throwIf()](/ja/reference/functions/regular-functions/other-functions#throwIf) に似ていますが、
 使用するエラーコードが異なり、エラーメッセージのフォーマットも異なります。
 
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返す可能性があります。
+</Note>
+
 **構文**
 
 ```sql
@@ -919,10 +958,7 @@ INSERT INTO test VALUES ([('__name__', 'up')]);
 SELECT timeSeriesTagsToGroup(tags) AS group
 FROM test
 GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- 例外をスロー "Multiple series have the same tags {'__name__': 'up'}"
-```
-
-```response title=Response
+HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- Throws exception "Multiple series have the same tags {'__name__': 'up'}"
 ```
 
 {/*AUTOGENERATED_END*/}

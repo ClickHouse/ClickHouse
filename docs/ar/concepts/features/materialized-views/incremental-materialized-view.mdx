@@ -1319,6 +1319,6 @@ WITH recent_users AS (
 SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
 ```
 
-في هذه الحالة، يُعاد تقييم تعبير الجدول الشائع الخاص بـ users عند كل عملية insert في posts، ولن يتم تحديث العرض المادي عند insert مستخدمين جدد، بل فقط عند insert في posts.
+في هذه الحالة، يُعاد تقييم تعبير الجدول الشائع users عند كل عملية insert في posts، ولن يتحدّث العرض المادي عند insert مستخدمين جدد، بل فقط عند insert بيانات في posts.
 
-بوجه عام، استخدم تعبيرات الجدول الشائعة للمنطق الذي يعمل على الجدول المصدر نفسه المرتبط به العرض المادي، أو تأكد من أن الجداول المشار إليها صغيرة ومن غير المرجح أن تتسبب في اختناقات بالأداء. بديلًا عن ذلك، يمكنك النظر في [التحسينات نفسها الموصى بها لـ JOINs مع Materialized Views](/ar/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).
+بشكل عام، استخدم تعبيرات الجدول الشائعة للمنطق الذي يعمل على جدول المصدر نفسه الذي يرتبط به العرض المادي، أو تأكّد من أن الجداول المشار إليها صغيرة ومن غير المحتمل أن تتسبّب في اختناقات في الأداء. أو يمكنك النظر في [التحسينات نفسها المستخدَمة مع عمليات JOIN في العروض المادية](/ar/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).

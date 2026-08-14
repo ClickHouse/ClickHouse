@@ -25,6 +25,7 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/IntervalKind.h>
+#include <Functions/DateTimeTransforms.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
@@ -567,17 +568,8 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
-/// Rows whose values are semantically absent: rows under a null slot of an ancestor struct, or rows in
-/// a list range no valid slot references. The Arrow spec leaves the value bytes of a null slot
-/// undefined, so value-level validation (the `Date32` range check, dictionary index bounds, view-struct
-/// checks, JSON parsing, the binary width sniffing for IPv6 and big integers) must not reject such rows
-/// or let them steer a whole-column parse-path decision; their values decode as type defaults instead.
-using InvisibleRowsMask = std::vector<PaddedPODArray<UInt8>>;
-
 template <typename ArrowView>
-static ColumnWithTypeAndName readColumnWithViewData(
-    const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name,
-    const InvisibleRowsMask * invisible_rows)
+static ColumnWithTypeAndName readColumnWithViewData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
     auto internal_type = std::make_shared<DataTypeString>();
     auto internal_column = internal_type->createColumn();
@@ -590,9 +582,9 @@ static ColumnWithTypeAndName readColumnWithViewData(
 
     size_t total_bytes_size = 0;
 
-    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
+    for (const auto & arrow_chunk : arrow_column->chunks())
     {
-        const auto & arrow_view_chunk = checkedCastView<ArrowView>(*arrow_column->chunk(chunk_i), column_name);
+        const auto & arrow_view_chunk = checkedCastView<ArrowView>(*arrow_chunk, column_name);
         const int64_t chunk_length = arrow_view_chunk.length();
         /// An empty chunk in a multi-batch stream can leave buffers[1] null; skip it before
         /// forming a pointer into the view-struct buffer.
@@ -600,9 +592,8 @@ static ColumnWithTypeAndName readColumnWithViewData(
             continue;
         const auto * view_structs = reinterpret_cast<const arrow::BinaryViewType::c_type *>(
             arrow_view_chunk.data()->buffers[1]->data()) + arrow_view_chunk.offset();
-        const UInt8 * invisible = invisible_rows ? (*invisible_rows)[chunk_i].data() : nullptr;
 
-        if (arrow_view_chunk.null_count() == 0 && !invisible)
+        if (arrow_view_chunk.null_count() == 0)
         {
             for (int64_t i = 0; i < chunk_length; ++i)
             {
@@ -614,9 +605,7 @@ static ColumnWithTypeAndName readColumnWithViewData(
         {
             for (int64_t i = 0; i < chunk_length; ++i)
             {
-                /// The 16-byte view struct of a null or invisible slot holds undefined bytes per the
-                /// Arrow spec — it must not be validated or dereferenced.
-                if (arrow_view_chunk.IsValid(i) && !(invisible && invisible[i]))
+                if (arrow_view_chunk.IsValid(i))
                 {
                     checkViewStruct(view_structs[i], *arrow_view_chunk.data(), column_name, i);
                     total_bytes_size += static_cast<size_t>(view_structs[i].size());
@@ -634,13 +623,12 @@ static ColumnWithTypeAndName readColumnWithViewData(
 
     const UInt8 dummy_byte = 0;
 
-    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
+    for (const auto & arrow_chunk : arrow_column->chunks())
     {
-        const auto & arrow_view_chunk = checkedCastView<ArrowView>(*arrow_column->chunk(chunk_i), column_name);
+        const auto & arrow_view_chunk = checkedCastView<ArrowView>(*arrow_chunk, column_name);
         const int64_t chunk_length = arrow_view_chunk.length();
-        const UInt8 * invisible = invisible_rows ? (*invisible_rows)[chunk_i].data() : nullptr;
 
-        if (arrow_view_chunk.null_count() == 0 && !invisible)
+        if (arrow_view_chunk.null_count() == 0)
         {
             for (int64_t i = 0; i < chunk_length; ++i)
             {
@@ -661,8 +649,7 @@ static ColumnWithTypeAndName readColumnWithViewData(
         {
             for (int64_t i = 0; i < chunk_length; ++i)
             {
-                /// A null or invisible slot decodes as an empty string.
-                if (arrow_view_chunk.IsValid(i) && !(invisible && invisible[i]))
+                if (arrow_view_chunk.IsValid(i))
                 {
                     const auto & view = arrow_view_chunk.GetView(i);
                     size_t len = view.length();
@@ -687,8 +674,7 @@ static ColumnWithTypeAndName readColumnWithJSONData(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     const String & column_name,
     DataTypePtr type_hint,
-    const FormatSettings & format_settings,
-    const InvisibleRowsMask * invisible_rows)
+    const FormatSettings & format_settings)
 {
     const auto internal_type = type_hint ? type_hint : std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
     const auto serialization = internal_type->getDefaultSerialization();
@@ -742,9 +728,7 @@ static ColumnWithTypeAndName readColumnWithJSONData(
                     column_name, row_i, chunk.value_offset(row_i), chunk.value_length(row_i), data_buf_size);
         };
 
-        const UInt8 * invisible = invisible_rows ? (*invisible_rows)[chunk_i].data() : nullptr;
-
-        if (chunk.null_count() == 0 && !invisible)
+        if (chunk.null_count() == 0)
         {
             for (size_t row_i = 0, num_rows = chunk.length(); row_i < num_rows; ++row_i)
             {
@@ -756,12 +740,9 @@ static ColumnWithTypeAndName readColumnWithJSONData(
         }
         else
         {
-            const bool has_nulls = chunk.null_count() != 0;
             for (size_t row_i = 0, num_rows = chunk.length(); row_i < num_rows; ++row_i)
             {
-                /// The bytes of a null or invisible slot are undefined per the Arrow spec and must not
-                /// be parsed; such rows decode as the default (empty) object.
-                if ((has_nulls && chunk.IsNull(row_i)) || (invisible && invisible[row_i]))
+                if (chunk.IsNull(row_i))
                 {
                     column_object.insertDefault();
                     continue;
@@ -831,9 +812,7 @@ static ColumnWithTypeAndName readColumnWithBigIntegerFromFixedBinaryData(const s
 }
 
 template <typename ColumnType, typename ValueType = typename ColumnType::ValueType>
-static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(
-    const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, const DataTypePtr & column_type,
-    const InvisibleRowsMask * invisible_rows)
+static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, const DataTypePtr & column_type)
 {
     size_t total_size = 0;
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
@@ -843,13 +822,9 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(
         const size_t chunk_length = chunk.length();
         const size_t data_buf_size = chunk.value_data() ? static_cast<size_t>(chunk.value_data()->size()) : 0;
 
-        const UInt8 * invisible = invisible_rows ? (*invisible_rows)[chunk_i].data() : nullptr;
-
         for (size_t i = 0; i != chunk_length; ++i)
         {
-            /// The bytes of a null or invisible slot are undefined per the Arrow spec: they must not
-            /// force the whole column down the String fallback, nor have their read range validated.
-            if (chunk.IsNull(i) || (invisible && invisible[i]))
+            if (chunk.IsNull(i))
                 continue;
             /// If at least one value size is not equal to the size if big integer, fallback to reading String column and further cast to result type.
             if (chunk.value_length(i) != sizeof(ValueType))
@@ -876,10 +851,9 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(
         const auto & chunk = dynamic_cast<const arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         checkBinaryOffsetsBuffer(chunk, column_name);
         const size_t data_buf_size = chunk.value_data() ? static_cast<size_t>(chunk.value_data()->size()) : 0;
-        const UInt8 * invisible = invisible_rows ? (*invisible_rows)[chunk_i].data() : nullptr;
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
-            if (chunk.IsNull(value_i) || (invisible && invisible[value_i]))
+            if (chunk.IsNull(value_i))
             {
                 integer_column.insertDefault();
             }
@@ -920,81 +894,60 @@ static ColumnWithTypeAndName readColumnWithBooleanData(const std::shared_ptr<arr
     return {std::move(internal_column), internal_type, column_name};
 }
 
-/// The invisible-rows mask for the children of a struct column: struct children are row-aligned with the
-/// parent, so a child row is invisible when the parent row is (mask) or when the struct's own slot is
-/// null — the child's own validity does not have to mark such slots null. Returns null when nothing is
-/// invisible.
-static std::shared_ptr<InvisibleRowsMask> composeStructChildInvisibleMask(
-    const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const InvisibleRowsMask * parent_invisible)
-{
-    if (!parent_invisible && arrow_column->null_count() == 0)
-        return nullptr;
-
-    auto mask = std::make_shared<InvisibleRowsMask>();
-    mask->reserve(arrow_column->num_chunks());
-    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
-    {
-        const auto & chunk = *arrow_column->chunk(chunk_i);
-        const size_t rows = static_cast<size_t>(chunk.length());
-        const UInt8 * parent = parent_invisible ? (*parent_invisible)[chunk_i].data() : nullptr;
-        const bool has_nulls = chunk.null_count() != 0;
-        PaddedPODArray<UInt8> chunk_mask(rows);
-        for (size_t i = 0; i < rows; ++i)
-            chunk_mask[i] = (parent && parent[i]) || (has_nulls && chunk.IsNull(i)) ? 1 : 0;
-        mask->push_back(std::move(chunk_mask));
-    }
-    return mask;
-}
-
-/// The invisible-rows mask for the flattened child of a list column, expanded from the parent's
-/// per-slot mask. The child chunks come from `ArrowListArray::Flatten` (see `getNestedArrowColumn`),
-/// which concatenates the value ranges of slots that are valid or empty and drops the ranges of null
-/// non-empty slots entirely — so the expansion walks the slots the same way. Only propagates the
-/// parent mask: the list's own null slots either contribute no child rows (dropped by `Flatten`) or
-/// are empty. Returns null when the parent mask is null.
-template <typename ArrowListArray>
-static std::shared_ptr<InvisibleRowsMask> expandListInvisibleMaskToFlattenedChild(
-    const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const InvisibleRowsMask * parent_invisible)
-{
-    if (!parent_invisible)
-        return nullptr;
-
-    auto mask = std::make_shared<InvisibleRowsMask>();
-    mask->reserve(arrow_column->num_chunks());
-    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
-    {
-        const auto & list_chunk = dynamic_cast<const ArrowListArray &>(*arrow_column->chunk(chunk_i));
-        const auto & parent = (*parent_invisible)[chunk_i];
-        PaddedPODArray<UInt8> chunk_mask;
-        for (int64_t i = 0, rows = list_chunk.length(); i < rows; ++i)
-        {
-            const size_t slot_length = static_cast<size_t>(list_chunk.value_length(i));
-            if (!list_chunk.IsValid(i) && slot_length != 0)
-                continue;
-            const size_t old_size = chunk_mask.size();
-            chunk_mask.resize_fill(old_size + slot_length, parent[i]);
-        }
-        mask->push_back(std::move(chunk_mask));
-    }
-    return mask;
-}
-
 static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name,
-                                                      const DataTypePtr & type_hint, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
-                                                      const InvisibleRowsMask * invisible_rows)
+                                                      const DataTypePtr & raw_type_hint, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
 {
+    /// The hint is the raw header type, so it may be wrapped in LowCardinality and/or Nullable.
+    /// Strip the wrappers, otherwise e.g. a LowCardinality(DateTime64(9)) target would skip the
+    /// range checks below and the later context-less cast would clamp out-of-range values with
+    /// the default overflow mode instead of honoring `date_time_overflow_behavior`.
+    const DataTypePtr type_hint = raw_type_hint ? removeNullable(recursiveRemoveLowCardinality(raw_type_hint)) : nullptr;
+
     DataTypePtr internal_type;
+    bool check_date32_range = false;
     bool check_date_range = false;
+    bool check_datetime_range = false;
+    bool check_datetime64_range = false;
+    Int32 datetime64_min_day = 0;
+    Int32 datetime64_max_day = 0;
 
     if (type_hint && isNumber(type_hint))
     {
         /// If requested type is a number, read as raw number without checking if it's a valid date.
         internal_type = std::make_shared<DataTypeInt32>();
     }
+    else if (type_hint && isDate(*type_hint))
+    {
+        /// Arrow date32 can represent days outside the Date range [0, 65535]. The later cast of the
+        /// intermediate column to Date narrows the day number to UInt16 without checks, so validate
+        /// the range here, honoring `date_time_overflow_behavior` the same way as the Date32 branch.
+        internal_type = std::make_shared<DataTypeInt32>();
+        check_date_range = true;
+    }
+    else if (type_hint && isDateTime(*type_hint))
+    {
+        /// The later cast of the intermediate Date32 column to DateTime is context-less, so
+        /// `date_time_overflow_behavior` does not reach it and a day number whose midnight does not
+        /// fit into DateTime wraps to an unrelated timestamp. Validate the range here against the
+        /// same [0, MAX_DATETIME_DAY_NUM] window that `ToDateTimeImpl` uses.
+        internal_type = std::make_shared<DataTypeDate32>();
+        check_datetime_range = true;
+    }
+    else if (type_hint && isDateTime64(*type_hint))
+    {
+        /// The later cast of the intermediate Date32 column to DateTime64 is context-less as well, so it silently
+        /// clamps whole seconds that the target scale cannot represent. Validate the day number here against the
+        /// window the scale can represent - at scale 9 that ends at `2262-04-11`, far below the Date32 upper bound.
+        const auto & dt64_type = assert_cast<const DataTypeDateTime64 &>(*type_hint);
+        const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_type.getScale());
+        std::tie(datetime64_min_day, datetime64_max_day) = getDateTime64DayNumRange(scale_multiplier, dt64_type.getTimeZone());
+        internal_type = std::make_shared<DataTypeDate32>();
+        check_datetime64_range = true;
+    }
     else
     {
         internal_type = std::make_shared<DataTypeDate32>();
-        check_date_range = true;
+        check_date32_range = true;
     }
 
     auto internal_column = internal_type->createColumn();
@@ -1006,34 +959,34 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
     {
         const auto & chunk = checkedCast<arrow::Date32Array>(*(arrow_column->chunk(chunk_i)), column_name);
 
-        if (check_date_range)
+        if (check_date32_range || check_date_range || check_datetime_range || check_datetime64_range)
         {
-            const UInt8 * invisible = invisible_rows ? (*invisible_rows)[chunk_i].data() : nullptr;
-            const bool has_nulls = chunk.null_count() != 0;
+            const Int32 min_day = check_datetime64_range ? datetime64_min_day : check_date32_range ? DATE_LUT_MIN_EXTEND_DAY_NUM : 0;
+            const Int32 max_day = check_date_range ? DATE_LUT_MAX_DAY_NUM
+                : check_datetime_range ? static_cast<Int32>(MAX_DATETIME_DAY_NUM)
+                : check_datetime64_range ? datetime64_max_day
+                : DATE_LUT_MAX_EXTEND_DAY_NUM;
+            const String target_type_name = check_date_range ? "Date"
+                : check_datetime_range ? "DateTime"
+                : check_datetime64_range ? type_hint->getName()
+                : "Date32";
             for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
             {
-                /// The bytes of a null or invisible slot are undefined per the Arrow spec, so they must
-                /// not be range-checked; decode them as the type default.
-                if ((has_nulls && chunk.IsNull(value_i)) || (invisible && invisible[value_i]))
-                {
-                    column_data.emplace_back(0);
-                    continue;
-                }
                 Int32 days_num = static_cast<Int32>(chunk.Value(value_i));
-                if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH)
+                if (days_num > max_day || days_num < min_day)
                 {
                     switch (date_time_overflow_behavior)
                     {
                         case FormatSettings::DateTimeOverflowBehavior::Saturate:
-                            days_num = (days_num < -DAYNUM_OFFSET_EPOCH) ? -DAYNUM_OFFSET_EPOCH : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                            days_num = (days_num < min_day) ? min_day : max_day;
                             break;
                         default:
                         /// Prior to introducing `date_time_overflow_behavior`, this function threw an error in case value was out of range.
                         /// In order to leave this behavior as default, we also throw when `date_time_overflow_mode == ignore`, as it is the setting's default value
                         /// (As we want to make this backwards compatible, not break any workflows.)
                             throw Exception{ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                                            "Input value {} of a column \"{}\" is out of allowed Date32 range, which is [{}, {}]",
-                                            days_num,column_name, -DAYNUM_OFFSET_EPOCH, DATE_LUT_MAX_EXTEND_DAY_NUM};
+                                            "Input value {} of a column \"{}\" is out of allowed {} range, which is [{}, {}]",
+                                            days_num, column_name, target_type_name, min_day, max_day};
                     }
                 }
 
@@ -1047,18 +1000,7 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
             if (chunk.length() == 0)
                 continue;
             const auto * raw_data = getValidatedBuffer<Int32>(chunk, column_name);
-            const size_t chunk_base = column_data.size();
             column_data.insert_assume_reserved(raw_data, raw_data + chunk.length());
-            /// The raw read skips the range check, but invisible slots still hold undefined bytes
-            /// that must not surface as values (a dropped struct null map turns such rows into
-            /// visible ones); default them like the range-checked branch above does.
-            const UInt8 * invisible = invisible_rows ? (*invisible_rows)[chunk_i].data() : nullptr;
-            if (invisible)
-            {
-                for (size_t i = 0, length = static_cast<size_t>(chunk.length()); i < length; ++i)
-                    if (invisible[i])
-                        column_data[chunk_base + i] = 0;
-            }
         }
     }
     return {std::move(internal_column), internal_type, column_name};
@@ -1460,6 +1402,11 @@ static ColumnPtr readOffsetsFromArrowListColumn(const std::shared_ptr<arrow::Chu
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         auto & list_chunk = dynamic_cast<ArrowListArray &>(*(arrow_column->chunk(chunk_i)));
+        /// A zero-length list chunk accesses no offsets (the loop below is skipped), so no bytes
+        /// are required.  Skip before checkedCast to accept the 0-byte offsets buffer that Apache
+        /// Arrow Java < 19.0.0 emits for an empty nested List/Map (see checkBinaryOffsetsBuffer).
+        if (list_chunk.length() == 0)
+            continue;
         auto arrow_offsets_array = list_chunk.offsets();
         /// The offsets array is a numeric Int32/Int64 array, validate its buffer before Value() calls.
         using OffsetArray = typename ArrowOffsetArray<ArrowListArray>::type;
@@ -1518,7 +1465,7 @@ static ColumnPtr readOffsetsFromFixedArrowListColumn(const std::shared_ptr<arrow
  * So, we should remap indexes while converting Arrow Dictionary to ClickHouse LowCardinality
  * */
 template <typename NumericType, typename VectorType = ColumnVector<NumericType>>
-static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, Int64 default_value_index, NumericType dict_size, bool is_nullable, const InvisibleRowsMask * invisible_rows)
+static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, Int64 default_value_index, NumericType dict_size, bool is_nullable)
 {
     auto internal_type = std::make_shared<DataTypeNumber<NumericType>>();
     auto internal_column = internal_type->createColumn();
@@ -1536,13 +1483,11 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
         /// buffers[0] is a null bitmap and buffers[1] are actual values
         const auto * data = getValidatedBuffer<NumericType>(*chunk, column_name);
 
-        const UInt8 * invisible = invisible_rows ? (*invisible_rows)[chunk_i].data() : nullptr;
-
         /// Check that indexes are correct (protection against corrupted files)
-        /// Note that on null and invisible values index can be arbitrary value.
+        /// Note that on null values index can be arbitrary value.
         for (int64_t i = 0; i != chunk->length(); ++i)
         {
-            if (!chunk->IsNull(i) && !(invisible && invisible[i]) && (data[i] < 0 || data[i] >= dict_size))
+            if (!chunk->IsNull(i) && (data[i] < 0 || data[i] >= dict_size))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                                 "Index {} in Dictionary column is out of bounds, dictionary size is {}",
                                 Int64(data[i]), UInt64(dict_size));
@@ -1550,19 +1495,10 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
 
         /// If dictionary type is not nullable and arrow dictionary contains default type
         /// at 0 index, we don't need to remap anything (it's the case when this data
-        /// was generated by ClickHouse). Invisible rows carry arbitrary index bytes, so they
-        /// are redirected to the default value's index instead of being copied verbatim.
+        /// was generated by ClickHouse)
         if (!is_nullable && default_value_index == 0)
         {
-            if (invisible)
-            {
-                for (int64_t i = 0; i != chunk->length(); ++i)
-                    column_data.push_back(invisible[i] ? NumericType(0) : data[i]);
-            }
-            else
-            {
-                column_data.insert_assume_reserved(data, data + chunk->length());
-            }
+            column_data.insert_assume_reserved(data, data + chunk->length());
         }
         /// If dictionary don't contain default value, we should move all indexes
         /// to the right one or two (if dictionary is Nullable) positions
@@ -1580,7 +1516,7 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
         {
             for (int64_t i = 0; i != chunk->length(); ++i)
             {
-                if (chunk->IsNull(i) || (invisible && invisible[i]))
+                if (chunk->IsNull(i))
                     column_data.push_back(static_cast<NumericType>(0));
                 else
                     column_data.push_back(static_cast<NumericType>(data[i] + shift));
@@ -1608,7 +1544,7 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
             NumericType default_index = NumericType(default_value_index);
             for (int64_t i = 0; i != chunk->length(); ++i)
             {
-                if (chunk->IsNull(i) || (invisible && invisible[i]))
+                if (chunk->IsNull(i))
                     column_data.push_back(static_cast<NumericType>(0));
                 else
                 {
@@ -1627,7 +1563,7 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
-static ColumnPtr readColumnWithIndexesData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, Int64 default_value_index, UInt64 dict_size, bool is_nullable, const InvisibleRowsMask * invisible_rows)
+static ColumnPtr readColumnWithIndexesData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, Int64 default_value_index, UInt64 dict_size, bool is_nullable)
 {
     switch (arrow_column->type()->id())
     {
@@ -1635,7 +1571,7 @@ static ColumnPtr readColumnWithIndexesData(std::shared_ptr<arrow::ChunkedArray> 
             case ARROW_NUMERIC_TYPE: \
             { \
                     return readColumnWithIndexesDataImpl<CPP_NUMERIC_TYPE>(\
-                        arrow_column, "", default_value_index, static_cast<CPP_NUMERIC_TYPE>(dict_size), is_nullable, invisible_rows).column; \
+                        arrow_column, "", default_value_index, static_cast<CPP_NUMERIC_TYPE>(dict_size), is_nullable).column; \
             }
         FOR_ARROW_INDEXES_TYPES(DISPATCH)
 #    undef DISPATCH
@@ -1656,6 +1592,21 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(const std::shar
         /// Validate the parent list validity bitmap before Flatten(): when null_count > 0,
         /// Flatten calls IsValid on the parent list array which reads buffers[0].
         checkValidityBitmap(list_chunk, column_name);
+
+        /// A zero-length list chunk may carry a 0-byte offsets buffer (Apache Arrow Java < 19.0.0
+        /// emits one for an empty nested List/Map).  Arrow's Flatten() would read offset[0] from
+        /// that missing buffer and return a slice with a garbage offset; instead push an empty
+        /// slice of the values array, which preserves the child type with zero rows.
+        if (list_chunk.length() == 0)
+        {
+            const auto & values = list_chunk.values();
+            if (!values)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow List chunk has no values array for column '{}'", column_name);
+            array_vector.emplace_back(values->Slice(0, 0));
+            continue;
+        }
 
         /// Validate the offsets buffer before Flatten() reads it: Flatten() iterates
         /// over offset[0..length] to slice the values array, so it needs (length+1) entries.
@@ -1752,9 +1703,7 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(const std::shar
     return std::make_shared<arrow::ChunkedArray>(array_vector);
 }
 
-static ColumnWithTypeAndName readIPv6ColumnFromBinaryData(
-    const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name,
-    const InvisibleRowsMask * invisible_rows)
+static ColumnWithTypeAndName readIPv6ColumnFromBinaryData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
     size_t total_size = 0;
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
@@ -1763,13 +1712,10 @@ static ColumnWithTypeAndName readIPv6ColumnFromBinaryData(
         checkBinaryOffsetsBuffer(chunk, column_name);
         const size_t chunk_length = chunk.length();
         const size_t data_buf_size = chunk.value_data() ? static_cast<size_t>(chunk.value_data()->size()) : 0;
-        const UInt8 * invisible = invisible_rows ? (*invisible_rows)[chunk_i].data() : nullptr;
 
         for (size_t i = 0; i != chunk_length; ++i)
         {
-            /// The bytes of a null or invisible slot are undefined per the Arrow spec: they must not
-            /// force the whole column down the String fallback, nor have their read range validated.
-            if (chunk.IsNull(i) || (invisible && invisible[i]))
+            if (chunk.IsNull(i))
                 continue;
             /// If at least one value size is not 16 bytes, fallback to reading String column and further cast to IPv6.
             if (chunk.value_length(i) != sizeof(IPv6))
@@ -1797,10 +1743,9 @@ static ColumnWithTypeAndName readIPv6ColumnFromBinaryData(
         const auto & chunk = dynamic_cast<const arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         checkBinaryOffsetsBuffer(chunk, column_name);
         const size_t data_buf_size = chunk.value_data() ? static_cast<size_t>(chunk.value_data()->size()) : 0;
-        const UInt8 * invisible = invisible_rows ? (*invisible_rows)[chunk_i].data() : nullptr;
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
-            if (chunk.IsNull(value_i) || (invisible && invisible[value_i]))
+            if (chunk.IsNull(value_i))
             {
                 ipv6_column.insertDefault();
             }
@@ -1881,8 +1826,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     const ReadColumnFromArrowColumnSettings & settings,
     const std::shared_ptr<arrow::Field> & arrow_field,
     const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse,
-    const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet,
-    const InvisibleRowsMask * invisible_rows);
+    const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet);
 
 static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
@@ -1896,8 +1840,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
     const ReadColumnFromArrowColumnSettings & settings,
     const std::shared_ptr<arrow::Field> & arrow_field,
     const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse,
-    const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet,
-    const InvisibleRowsMask * invisible_rows)
+    const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet)
 {
     switch (arrow_column->type()->id())
     {
@@ -1909,7 +1852,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 switch (type_hint->getTypeId())
                 {
                     case TypeIndex::IPv6:
-                        return readIPv6ColumnFromBinaryData(arrow_column, column_name, invisible_rows);
+                        return readIPv6ColumnFromBinaryData(arrow_column, column_name);
                     /// ORC format outputs big integers as binary column, because there is no fixed binary in ORC.
                     ///
                     /// When ORC/Parquet file says the type is "byte array" or "fixed len byte array",
@@ -1921,20 +1864,20 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     /// byte array is variable-length, and the length is different from sizeof(type),
                     /// we parse as text, otherwise as binary.
                     case TypeIndex::Int128:
-                        return readColumnWithBigNumberFromBinaryData<ColumnInt128>(arrow_column, column_name, type_hint, invisible_rows);
+                        return readColumnWithBigNumberFromBinaryData<ColumnInt128>(arrow_column, column_name, type_hint);
                     case TypeIndex::UInt128:
-                        return readColumnWithBigNumberFromBinaryData<ColumnUInt128>(arrow_column, column_name, type_hint, invisible_rows);
+                        return readColumnWithBigNumberFromBinaryData<ColumnUInt128>(arrow_column, column_name, type_hint);
                     case TypeIndex::Int256:
-                        return readColumnWithBigNumberFromBinaryData<ColumnInt256>(arrow_column, column_name, type_hint, invisible_rows);
+                        return readColumnWithBigNumberFromBinaryData<ColumnInt256>(arrow_column, column_name, type_hint);
                     case TypeIndex::UInt256:
-                        return readColumnWithBigNumberFromBinaryData<ColumnUInt256>(arrow_column, column_name, type_hint, invisible_rows);
+                        return readColumnWithBigNumberFromBinaryData<ColumnUInt256>(arrow_column, column_name, type_hint);
                     /// ORC doesn't support Decimal256 as separate type. We read and write it as binary data.
                     case TypeIndex::Decimal256:
-                        return readColumnWithBigNumberFromBinaryData<ColumnDecimal<Decimal256>>(arrow_column, column_name, type_hint, invisible_rows);
+                        return readColumnWithBigNumberFromBinaryData<ColumnDecimal<Decimal256>>(arrow_column, column_name, type_hint);
                     case TypeIndex::Object:
                         if (settings.enable_json_parsing)
                             return readColumnWithJSONData<arrow::BinaryArray>(
-                                arrow_column, column_name, type_hint, settings.format_settings, invisible_rows);
+                                arrow_column, column_name, type_hint, settings.format_settings);
                         [[fallthrough]];
                     default:
                         break;
@@ -1943,7 +1886,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
             if (settings.enable_json_parsing && isColumnJSON(arrow_field, type_hint))
             {
-                return readColumnWithJSONData<arrow::BinaryArray>(arrow_column, column_name, type_hint, settings.format_settings, invisible_rows);
+                return readColumnWithJSONData<arrow::BinaryArray>(arrow_column, column_name, type_hint, settings.format_settings);
             }
 
             if (geo_metadata && settings.allow_geoparquet_parser)
@@ -1952,7 +1895,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             }
             if (type_hint && type_hint->getName() == "Geometry" && settings.allow_geoparquet_parser)
             {
-                return readColumnWithGeoData(arrow_column, column_name, GeoColumnMetadata{GeoEncoding::WKB, GeoType::Mixed}, settings.format_settings.precise_float_parsing);
+                return readColumnWithGeoData(arrow_column, column_name, GeoColumnMetadata{GeoEncoding::WKB, GeoType::Mixed, std::nullopt}, settings.format_settings.precise_float_parsing);
             }
             return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
         }
@@ -1990,8 +1933,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 settings,
                 storage_field,
                 parquet_columns_to_clickhouse,
-                clickhouse_columns_to_parquet,
-                invisible_rows);
+                clickhouse_columns_to_parquet);
         }
         case arrow::Type::FIXED_SIZE_BINARY:
         {
@@ -2030,13 +1972,13 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         {
             if (settings.enable_json_parsing
                 && ((type_hint && type_hint->getTypeId() == TypeIndex::Object) || isColumnJSON(arrow_field, type_hint)))
-                return readColumnWithJSONData<arrow::LargeBinaryArray>(arrow_column, column_name, type_hint, settings.format_settings, invisible_rows);
+                return readColumnWithJSONData<arrow::LargeBinaryArray>(arrow_column, column_name, type_hint, settings.format_settings);
             return readColumnWithStringData<arrow::LargeBinaryArray>(arrow_column, column_name);
         }
         case arrow::Type::BOOL:
             return readColumnWithBooleanData(arrow_column, column_name);
         case arrow::Type::DATE32:
-            return readColumnWithDate32Data(arrow_column, column_name, type_hint, settings.date_time_overflow_behavior, invisible_rows);
+            return readColumnWithDate32Data(arrow_column, column_name, type_hint, settings.date_time_overflow_behavior);
         case arrow::Type::DATE64:
             return readColumnWithDate64Data(arrow_column, column_name);
         // ClickHouse writes DateTime as arrow UINT32,
@@ -2085,7 +2027,6 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             }
 
             auto arrow_nested_column = getNestedArrowColumn<arrow::ListArray>(arrow_column, column_name);
-            auto entries_invisible = expandListInvisibleMaskToFlattenedChild<arrow::ListArray>(arrow_column, invisible_rows);
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column,
                 column_name,
                 full_column_name,
@@ -2097,8 +2038,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 settings,
                 arrow_field,
                 parquet_columns_to_clickhouse,
-                clickhouse_columns_to_parquet,
-                entries_invisible.get());
+                clickhouse_columns_to_parquet);
             if (!nested_column.column)
                 return {};
 
@@ -2199,19 +2139,6 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 }
             }();
 
-            auto nested_invisible = [&]
-            {
-                switch (list_type)
-                {
-                    case ListType::LargeList:
-                        return expandListInvisibleMaskToFlattenedChild<arrow::LargeListArray>(arrow_column, invisible_rows);
-                    case ListType::FixedSizeList:
-                        return expandListInvisibleMaskToFlattenedChild<arrow::FixedSizeListArray>(arrow_column, invisible_rows);
-                    case ListType::List:
-                        return expandListInvisibleMaskToFlattenedChild<arrow::ListArray>(arrow_column, invisible_rows);
-                }
-            }();
-
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column,
                 column_name,
                 full_column_name,
@@ -2223,8 +2150,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 settings,
                 arrow_field,
                 parquet_columns_to_clickhouse,
-                clickhouse_columns_to_parquet,
-                nested_invisible.get());
+                clickhouse_columns_to_parquet);
             if (!nested_column.column)
                 return {};
 
@@ -2317,11 +2243,6 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             std::vector<String> tuple_names;
             const auto * tuple_type_hint = type_hint ? typeid_cast<const DataTypeTuple *>(type_hint.get()) : nullptr;
 
-            /// A child slot under a null struct row holds undefined bytes even when the child's own
-            /// validity marks it valid; extend the invisible-rows mask with this struct's nulls for the
-            /// children.
-            auto child_invisible = composeStructChildInvisibleMask(arrow_column, invisible_rows);
-
             for (int i = 0; i != arrow_struct_type->num_fields(); ++i)
             {
                 const auto & field = arrow_struct_type->field(i);
@@ -2378,8 +2299,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     settings,
                     arrow_field,
                     parquet_columns_to_clickhouse,
-                    clickhouse_columns_to_parquet,
-                    child_invisible.get());
+                    clickhouse_columns_to_parquet);
                 if (!column_with_type_and_name.column)
                     return {};
 
@@ -2446,8 +2366,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     settings,
                     arrow_field,
                     parquet_columns_to_clickhouse,
-                    clickhouse_columns_to_parquet,
-                    nullptr /*invisible_rows: dictionary values are not row-aligned with the column; the mask applies to the indices*/);
+                    clickhouse_columns_to_parquet);
 
                 if (!dict_column.column)
                     return {};
@@ -2488,7 +2407,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             }
 
             auto arrow_indexes_column = std::make_shared<arrow::ChunkedArray>(indexes_array);
-            auto indexes_column = readColumnWithIndexesData(arrow_indexes_column, dict_info.default_value_index, dict_info.dictionary_size, is_lc_nullable, invisible_rows);
+            auto indexes_column = readColumnWithIndexesData(arrow_indexes_column, dict_info.default_value_index, dict_info.dictionary_size, is_lc_nullable);
             auto lc_column = ColumnLowCardinality::create(dict_info.values->column, indexes_column, /*is_shared=*/true);
             auto lc_type = std::make_shared<DataTypeLowCardinality>(is_lc_nullable ? makeNullable(dict_info.values->type) : dict_info.values->type);
             return {std::move(lc_column), std::move(lc_type), column_name};
@@ -2517,11 +2436,11 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         }
         case arrow::Type::BINARY_VIEW:
         {
-            return readColumnWithViewData<arrow::BinaryViewArray>(arrow_column, column_name, invisible_rows);
+            return readColumnWithViewData<arrow::BinaryViewArray>(arrow_column, column_name);
         }
         case arrow::Type::STRING_VIEW:
         {
-            return readColumnWithViewData<arrow::StringViewArray>(arrow_column, column_name, invisible_rows);
+            return readColumnWithViewData<arrow::StringViewArray>(arrow_column, column_name);
         }
             // TODO: read JSON as a string?
         case arrow::Type::NA:
@@ -2565,8 +2484,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     const ReadColumnFromArrowColumnSettings & settings,
     const std::shared_ptr<arrow::Field> & arrow_field,
     const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse,
-    const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet,
-    const InvisibleRowsMask * invisible_rows)
+    const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet)
 {
     /// Validate each chunk up front, before anything reads the declared length:
     ///   - checkValidityBitmap rejects a negative length/offset and a validity bitmap (buffers[0])
@@ -2613,8 +2531,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             settings,
             arrow_field,
             parquet_columns_to_clickhouse,
-            clickhouse_columns_to_parquet,
-            invisible_rows);
+            clickhouse_columns_to_parquet);
 
         if (!nested_column.column)
             return {};
@@ -2637,8 +2554,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         settings,
         arrow_field,
         parquet_columns_to_clickhouse,
-        clickhouse_columns_to_parquet,
-        invisible_rows);
+        clickhouse_columns_to_parquet);
 }
 
 // Creating CH header by arrow schema. Will be useful in task about inserting
@@ -2781,8 +2697,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
             settings,
             field,
             parquet_columns_to_clickhouse,
-            clickhouse_columns_to_parquet,
-            nullptr /*invisible_rows: a top-level column has no ancestors*/);
+            clickhouse_columns_to_parquet);
 
         if (sample_column.column)
             sample_columns.emplace_back(std::move(sample_column));
@@ -2942,8 +2857,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
                             settings,
                             arrow_column.field,
                             parquet_columns_to_clickhouse,
-                            clickhouse_columns_to_parquet,
-                            nullptr /*invisible_rows: a top-level column has no ancestors*/)
+                            clickhouse_columns_to_parquet)
                     };
 
                     BlockPtr block_ptr = std::make_shared<Block>(cols);
@@ -2988,8 +2902,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
                 settings,
                 arrow_column.field,
                 parquet_columns_to_clickhouse,
-                clickhouse_columns_to_parquet,
-                nullptr /*invisible_rows: a top-level column has no ancestors*/);
+                clickhouse_columns_to_parquet);
         }
 
         if (null_as_default)

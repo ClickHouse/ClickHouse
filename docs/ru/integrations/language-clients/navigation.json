@@ -1,0 +1,44 @@
+{
+  "groups": [
+    {
+      "group": "Главная",
+      "icon": "house",
+      "pages": [],
+      "root": "ru/integrations/language-clients/index"
+    },
+    {
+      "$ref": "js/navigation.json"
+    },
+    {
+      "$ref": "python/navigation.json"
+    },
+    {
+      "$ref": "go/navigation.json"
+    },
+    {
+      "$ref": "java/navigation.json"
+    },
+    {
+      "$ref": "csharp/navigation.json"
+    },
+    {
+      "$ref": "rust/navigation.json"
+    },
+    {
+      "$ref": "cpp/navigation.json"
+    },
+    {
+      "$ref": "c/navigation.json"
+    },
+    {
+      "group": "Сторонние клиенты",
+      "icon": "users",
+      "pages": [
+        "ru/integrations/language-clients/third-party/moose-olap",
+        "ru/integrations/language-clients/third-party/client-libraries"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-language-clients.svg",
+  "item": "Клиентские библиотеки"
+}

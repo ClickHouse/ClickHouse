@@ -28,9 +28,7 @@ d&#39;interagir avec le [SQL playground de ClickHouse](https://sql.clickhouse.co
 Vous pouvez exécuter les étapes suivantes soit depuis votre REPL Python, soit à l&#39;aide d&#39;un script.
 
 <Steps>
-  <Step>
-    ## Installer les bibliothèques
-
+  <Step title="Installer les bibliothèques" id="install-libraries">
     Installez la bibliothèque requise en exécutant les commandes suivantes :
 
     ```python
@@ -40,9 +38,7 @@ Vous pouvez exécuter les étapes suivantes soit depuis votre REPL Python, soit 
     ```
   </Step>
 
-  <Step>
-    ## Configurer les informations d&#39;authentification
-
+  <Step title="Configurer les informations d'authentification" id="setup-credentials">
     Ensuite, vous devrez fournir votre API key Anthropic :
 
     ```python
@@ -74,10 +70,8 @@ Vous pouvez exécuter les étapes suivantes soit depuis votre REPL Python, soit 
     ```
   </Step>
 
-  <Step>
-    ## Initialiser le serveur MCP et l&#39;agent PydanticAI
-
-    Configurez maintenant le serveur MCP ClickHouse pour qu&#39;il pointe vers le SQL playground de ClickHouse :
+  <Step title="Initialiser le serveur MCP et l'agent PydanticAI" id="initialize-mcp">
+    Configurez maintenant le serveur MCP de ClickHouse pour qu&#39;il pointe vers le SQL playground de ClickHouse :
 
     ```python
     from pydantic_ai import Agent
@@ -98,9 +92,7 @@ Vous pouvez exécuter les étapes suivantes soit depuis votre REPL Python, soit 
     ```
   </Step>
 
-  <Step>
-    ## Poser une question à l&#39;agent
-
+  <Step title="Poser une question à l'agent" id="ask-agent">
     Enfin, vous pouvez poser une question à l&#39;agent :
 
     ```python

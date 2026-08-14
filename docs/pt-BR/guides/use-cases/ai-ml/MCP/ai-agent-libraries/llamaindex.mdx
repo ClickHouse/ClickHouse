@@ -28,9 +28,7 @@ pode interagir com o [playground SQL do ClickHouse](https://sql.clickhouse.com/)
 Você pode executar as etapas a seguir no REPL do Python ou por meio de um script.
 
 <Steps>
-  <Step>
-    ## Instalar bibliotecas
-
+  <Step title="Instalar bibliotecas" id="install-libraries">
     Instale as bibliotecas necessárias executando os comandos a seguir:
 
     ```python
@@ -39,9 +37,7 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
     ```
   </Step>
 
-  <Step>
-    ## Configure as credenciais
-
+  <Step title="Configure as credenciais" id="setup-credentials">
     Em seguida, você precisará fornecer sua chave de API da Anthropic:
 
     ```python
@@ -61,9 +57,7 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
     </Info>
   </Step>
 
-  <Step>
-    ## Inicializar o servidor MCP
-
+  <Step title="Inicializar o servidor MCP" id="initialize-mcp-and-agent">
     Agora, configure o ClickHouse MCP server para apontar para o Playground SQL do ClickHouse.
     Você precisará converter essas funções Python em ferramentas do Llama Index:
 
@@ -95,9 +89,7 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
     ```
   </Step>
 
-  <Step>
-    ## Crie um agente
-
+  <Step title="## Crie um agente" id="create-agent">
     Agora você já pode criar um agente com acesso a essas ferramentas. Defina o número máximo
     de chamadas de ferramenta em uma execução como 10. Você pode modificar esse parâmetro, se quiser:
 
@@ -112,9 +104,7 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
     ```
   </Step>
 
-  <Step>
-    ## Inicialize o LLM
-
+  <Step title="Inicialize o LLM" id="initialize-llm">
     Inicialize o modelo Claude Sonnet 4.0 com o código a seguir:
 
     ```python
@@ -123,9 +113,7 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
     ```
   </Step>
 
-  <Step>
-    ## Inicie o agente
-
+  <Step title="Inicie o agente" id="run-agent">
     Por fim, você pode fazer uma pergunta ao agente:
 
     ```python

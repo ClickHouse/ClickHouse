@@ -84,6 +84,7 @@
 "MEDIUMTEXT"
 "Map"
 "MultiLineString"
+"MultiPoint"
 "MultiPolygon"
 "NATIONAL CHAR"
 "NATIONAL CHAR VARYING"

@@ -35,9 +35,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 * مساحة قرص كافية لملفات السجل
 
 <Steps>
-  <Step>
-    #### تهيئة تسجيل MySQL
-
+  <Step title="تهيئة تسجيل MySQL" id="configure-mysql">
     يدعم MySQL عدة أنواع من السجلات. وللحصول على مراقبة شاملة باستخدام OpenTelemetry، نوصي بتمكين سجل الأخطاء وسجل الاستعلامات البطيئة.
 
     يوجد ملف التهيئة `my.cnf` أو `my.ini` عادةً في:
@@ -89,9 +87,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### أنشئ إعدادًا مخصصًا لـ OTel collector
-
+  <Step title="أنشئ إعدادًا مخصصًا لـ OTel collector" id="custom-otel">
     يتيح لك ClickStack توسيع إعداد OpenTelemetry Collector الأساسي من خلال تركيب ملف إعداد مخصص وتعيين متغير بيئة. ويُدمج الإعداد المخصص مع الإعداد الأساسي الذي يديره HyperDX عبر OpAMP.
 
     أنشئ ملفًا باسم `mysql-logs-monitoring.yaml` يتضمن الإعداد التالي:
@@ -176,9 +172,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### هيّئ ClickStack لتحميل تهيئة مخصصة
-
+  <Step title="هيّئ ClickStack لتحميل تهيئة مخصصة" id="load-custom">
     لتمكين تهيئة collector مخصصة في نشر ClickStack الحالي، اربط ملف التهيئة المخصص عند `/etc/otelcol-contrib/custom.config.yaml` واضبط متغير البيئة `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`.
 
     حدّث تهيئة نشر ClickStack:
@@ -201,9 +195,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### التحقق من السجلات في HyperDX
-
+  <Step title="التحقق من السجلات في HyperDX" id="verifying-logs">
     بمجرد اكتمال الإعداد، سجّل الدخول إلى HyperDX وتحقق من تدفق السجلات:
 
     1. انتقل إلى عرض البحث
@@ -224,9 +216,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 للمستخدمين الذين يريدون اختبار تكامل سجلات MySQL قبل تهيئة أنظمة الإنتاج لديهم، نوفر مجموعة بيانات تجريبية من سجلات MySQL المُنشأة مسبقًا وبأنماط واقعية.
 
 <Steps>
-  <Step>
-    #### نزّل مجموعة البيانات التجريبية
-
+  <Step title="نزّل مجموعة البيانات التجريبية" id="download-sample">
     نزّل ملفات السجل التجريبية:
 
     ```bash
@@ -245,9 +235,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * تسلسلات بدء تشغيل خادم قاعدة البيانات وإيقافه
   </Step>
 
-  <Step>
-    #### أنشئ تهيئة مجمّع الاختبار
-
+  <Step title="أنشئ تهيئة مجمّع الاختبار" id="test-config">
     أنشئ ملفًا باسم `mysql-logs-demo.yaml` يتضمن التهيئة التالية:
 
     ```yaml
@@ -313,9 +301,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### شغّل ClickStack باستخدام التكوين التجريبي
-
+  <Step title="شغّل ClickStack باستخدام التكوين التجريبي" id="run-demo">
     شغّل ClickStack باستخدام السجلات والتكوين التجريبيَّين:
 
     ```bash
@@ -329,9 +315,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### تحقّق من السجلات في HyperDX
-
+  <Step title="تحقّق من السجلات في HyperDX" id="verify-demo-logs">
     بمجرد تشغيل ClickStack:
 
     1. انتظر بضع لحظات حتى يكتمل تهيئة ClickStack بالكامل (عادةً خلال 30 إلى 60 ثانية)
@@ -363,15 +347,13 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 لمساعدتك على بدء مراقبة MySQL باستخدام ClickStack، نوفر تصورات أساسية لسجلات MySQL.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mysql-logs-dashboard.json'} download="mysql-logs-dashboard.json" eventName="docs.mysql_logs_monitoring.dashboard_download">تنزيل</TrackedLink> إعداد لوحة المعلومات
+  <Step title="تنزيل إعداد لوحة المعلومات" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mysql-logs-dashboard.json'} download="mysql-logs-dashboard.json" eventName="docs.mysql_logs_monitoring.dashboard_download">تنزيل ملف إعداد لوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step>
-    #### استيراد لوحة المعلومات المعدّة مسبقًا
-
+  <Step title="استيراد لوحة المعلومات المعدّة مسبقًا" id="import-dashboard">
     1. افتح HyperDX وانتقل إلى قسم Dashboards
-    2. انقر على **Import Dashboard** في الزاوية العلوية اليمنى من قائمة النقاط الثلاث
+    2. انقر على **Import Dashboard** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
 
     <Image img="/images/clickstack/import-dashboard.webp" alt="زر استيراد لوحة المعلومات" />
 
@@ -380,15 +362,13 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/mysql/finish-import.webp" alt="إنهاء الاستيراد" />
   </Step>
 
-  <Step>
-    #### عرض لوحة المعلومات
-
-    سيتم إنشاء لوحة المعلومات مع إعداد جميع التصورات مسبقًا.
+  <Step title="عرض لوحة المعلومات" id="created-dashboard">
+    ستُنشأ لوحة المعلومات مع إعداد جميع التصورات مسبقًا.
 
     <Image img="/images/clickstack/mysql/example-dashboard.webp" alt="لوحة معلومات نموذجية" />
 
     <Note>
-      بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)** (عدّله وفق منطقتك الزمنية المحلية). لن تتضمن لوحة المعلومات المستوردة نطاقًا زمنيًا محددًا افتراضيًا.
+      بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)** (عدّله وفق منطقتك الزمنية المحلية). لن تحتوي لوحة المعلومات المستوردة على نطاق زمني محدد افتراضيًا.
     </Note>
   </Step>
 </Steps>
@@ -491,4 +471,4 @@ head -5 /var/log/mysql/error.log
   ## الانتقال إلى بيئة الإنتاج
 </div>
 
-يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أما في عمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.
+يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أما لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.
