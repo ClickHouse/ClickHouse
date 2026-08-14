@@ -150,3 +150,20 @@ DROP NAMED COLLECTION [IF EXISTS] name [on CLUSTER cluster]
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2';
 DROP NAMED COLLECTION foobar;
 ```
+
+## DROP HANDLER {#drop-handler}
+
+Deletes a SQL-defined HTTP handler created by [CREATE HANDLER](/reference/statements/create/handler).
+
+**Syntax**
+
+```sql
+DROP HANDLER [IF EXISTS] name
+```
+
+**Example**
+
+```sql
+CREATE HANDLER my_handler URL '/my_handler' AS SELECT version();
+DROP HANDLER my_handler;
+```
