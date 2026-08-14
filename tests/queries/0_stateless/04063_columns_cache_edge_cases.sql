@@ -467,7 +467,7 @@ DROP TABLE IF EXISTS t_cache_mixed_parts;
 
 CREATE TABLE t_cache_mixed_parts (id UInt64, value String)
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 10485760, index_granularity = 1000;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 1000, index_granularity = 1000;
 
 -- Insert small data (compact parts)
 INSERT INTO t_cache_mixed_parts SELECT number, toString(number) FROM numbers(100);
@@ -482,6 +482,23 @@ SELECT sum(id), count() FROM t_cache_mixed_parts SETTINGS use_columns_cache = 1;
 
 -- Repeat
 SELECT sum(id), count() FROM t_cache_mixed_parts SETTINGS use_columns_cache = 1;
+
+-- Only the wide part participates in the columns cache.
+SELECT
+    countIf(part IN
+    (
+        SELECT name
+        FROM system.parts
+        WHERE database = currentDatabase() AND table = 't_cache_mixed_parts' AND active AND part_type = 'Compact'
+    )) = 0,
+    countIf(part IN
+    (
+        SELECT name
+        FROM system.parts
+        WHERE database = currentDatabase() AND table = 't_cache_mixed_parts' AND active AND part_type = 'Wide'
+    )) > 0
+FROM system.columns_cache
+WHERE database = currentDatabase() AND table = 't_cache_mixed_parts';
 
 DROP TABLE t_cache_mixed_parts;
 
