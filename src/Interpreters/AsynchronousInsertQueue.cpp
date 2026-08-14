@@ -604,7 +604,17 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         }
 
         if (inserted)
-            it->second = shard.queue.emplace(now + timeout_ms, Container{key, std::make_unique<InsertData>(timeout_ms)});
+        {
+            try
+            {
+                it->second = shard.queue.emplace(now + timeout_ms, Container{key, std::make_unique<InsertData>(timeout_ms)});
+            }
+            catch (...)
+            {
+                shard.iterators.erase(it);
+                throw;
+            }
+        }
 
         auto queue_it = it->second;
         auto & data = queue_it->second.data;
@@ -613,7 +623,22 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         chassert(data);
         auto size_in_bytes = data->size_in_bytes;
         /// We rely on the fact that entries are being added to the list in order of creation time in `scheduleDataProcessingJob()`
-        data->entries.emplace_back(entry);
+        try
+        {
+            data->entries.emplace_back(entry);
+        }
+        catch (...)
+        {
+            if (inserted)
+            {
+                NOEXCEPT_SCOPE({
+                    shard.queue.erase(queue_it);
+                    shard.iterators.erase(it);
+                });
+            }
+
+            throw;
+        }
         data->size_in_bytes += entry_data_size;
         progress_future = entry->getFuture();
 
