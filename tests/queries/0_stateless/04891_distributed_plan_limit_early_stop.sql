@@ -17,9 +17,10 @@ INSERT INTO t_dp_limit_stop_dim SELECT number FROM numbers(1000);
 -- Pinned: `max_block_size` and `index_granularity` keep `sleepEachRow` under its 3s per-block cap,
 -- `max_threads` keeps the full scan slower than the timeout, `join_algorithm` because a sorting
 -- join returns no rows until it reads all input, `min_joined_block_size_*` because squashing
--- before the join would hold the first rows back until enough blocks accumulate, and
+-- before the join would hold the first rows back until enough blocks accumulate,
 -- `max_rows_to_group_by` because the CI profile sets it and `make_distributed_plan` rejects
--- an aggregation with a row limit.
+-- an aggregation with a row limit, and the join order because a swap makes the probe table
+-- the build side, which also reads all input before the first row.
 SELECT count() FROM
 (
     SELECT l.x FROM t_dp_limit_stop AS l
@@ -31,6 +32,7 @@ SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_pl
     distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3,
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_force_exchange_kind = 'Streaming',
     max_block_size = 1000, max_threads = 2, join_algorithm = 'hash',
+    query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
     min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, max_rows_to_group_by = 0, max_execution_time = 25;
 
 -- The same query on remote worker tasks: `StreamingExchangeSink` must stop over the socket too.
@@ -45,6 +47,7 @@ SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_pl
     distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3,
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_force_exchange_kind = 'Streaming',
     max_block_size = 1000, max_threads = 2, join_algorithm = 'hash',
+    query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
     min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, max_rows_to_group_by = 0, max_execution_time = 25;
 
 DROP TABLE t_dp_limit_stop;
