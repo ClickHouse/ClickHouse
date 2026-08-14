@@ -1,6 +1,7 @@
--- Tags: need-query-parameters
+-- Tags: no-old-analyzer
+-- no-old-analyzer: a background mutation selects its analyzer from the background context, so a
+-- session `enable_analyzer` cannot reach the `ALTER ... UPDATE` arms, and `WITH RECURSIVE` needs it.
 
-SET enable_analyzer = 1;
 SET enable_lightweight_update = 1;
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
@@ -192,5 +193,28 @@ CREATE VIEW v9 AS
     UNION ALL SELECT x FROM cte_name;
 USE {CLICKHOUSE_DATABASE:Identifier};
 SELECT 'W9', sum(x) FROM {CLICKHOUSE_DATABASE_1:Identifier}.v9;
+
+-- A plain CTE shadowing a same-named recursive one must not reveal the table to the recursive
+-- element's own self-reference, so storing the query must not change its result.
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.r (n UInt64) ENGINE = MergeTree ORDER BY n;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.r VALUES (100);
+CREATE TABLE r (n UInt64) ENGINE = MergeTree ORDER BY n;
+INSERT INTO r VALUES (900);
+CREATE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.v10 AS
+    WITH RECURSIVE r AS (
+        SELECT 1 AS n
+        UNION ALL SELECT n + 1 FROM (WITH r AS (SELECT n FROM r) SELECT n FROM r) WHERE n < 3)
+    SELECT sum(n) AS s FROM r;
+SELECT 'C17', (WITH RECURSIVE r AS (
+        SELECT 1 AS n
+        UNION ALL SELECT n + 1 FROM (WITH r AS (SELECT n FROM r) SELECT n FROM r) WHERE n < 3)
+    SELECT sum(n) FROM r);
+SELECT 'C18', s FROM {CLICKHOUSE_DATABASE_1:Identifier}.v10;
+
+-- A plain CTE referenced from a nested SELECT: inside the expanded copy the name is the table.
+CREATE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.v11 AS
+    WITH r AS (SELECT max(n) AS s FROM r) SELECT s FROM (SELECT s FROM r);
+SELECT 'C19', s FROM {CLICKHOUSE_DATABASE_1:Identifier}.v11;
+DROP TABLE r;
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

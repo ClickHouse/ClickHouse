@@ -22,6 +22,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
 #include <Poco/String.h>
+#include <deque>
 #include <optional>
 #include <set>
 
@@ -75,13 +76,12 @@ public:
     {
         /// A reference to a non-recursive `WITH` element may already have been replaced by a copy
         /// of its body tagged with the element's name. That name is not in scope inside the copy.
-        std::optional<WithAliasesScope> expanded_scope;
-        if (const auto * subquery = ast->as<ASTSubquery>();
-            subquery && plain_with_aliases.contains(subquery->cte_name))
+        std::optional<MaskedAlias> masked_alias;
+        if (const auto * subquery = ast->as<ASTSubquery>(); subquery && !subquery->cte_name.empty())
         {
-            expanded_scope.emplace(with_aliases, plain_with_aliases);
-            with_aliases.erase(subquery->cte_name);
-            plain_with_aliases.erase(subquery->cte_name);
+            if (Scope * scope = findScopeDeclaring(subquery->cte_name);
+                scope && scope->plain.contains(subquery->cte_name))
+                masked_alias.emplace(*scope, subquery->cte_name);
         }
 
         if (!tryVisit<ASTSelectQuery>(ast) &&
@@ -135,31 +135,45 @@ private:
 
     const String database_name;
     std::set<String> external_tables;
-    mutable std::unordered_set<String> with_aliases;
-    /// The subset of `with_aliases` declared by a non-recursive `WITH`.
-    mutable std::unordered_set<String> plain_with_aliases;
+
+    /// The `WITH` aliases declared by one `SELECT`, split by whether the `WITH` is recursive.
+    struct Scope
+    {
+        std::unordered_set<String> recursive;
+        std::unordered_set<String> plain;
+    };
+
+    /// Innermost last. A `deque` keeps references valid while inner scopes are pushed and popped.
+    mutable std::deque<Scope> scopes;
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
 
     struct WithAliasesScope
     {
-        WithAliasesScope(std::unordered_set<String> & with_aliases_, std::unordered_set<String> & plain_)
-            : with_aliases(with_aliases_), plain(plain_), saved(with_aliases_), saved_plain(plain_)
-        {
-        }
+        explicit WithAliasesScope(std::deque<Scope> & scopes_) : scopes(scopes_) { scopes.emplace_back(); }
+        ~WithAliasesScope() { scopes.pop_back(); }
 
-        ~WithAliasesScope()
-        {
-            with_aliases = std::move(saved);
-            plain = std::move(saved_plain);
-        }
-
-        std::unordered_set<String> & with_aliases;
-        std::unordered_set<String> & plain;
-        std::unordered_set<String> saved;
-        std::unordered_set<String> saved_plain;
+        std::deque<Scope> & scopes;
     };
+
+    struct MaskedAlias
+    {
+        MaskedAlias(Scope & scope_, const String & name_) : scope(scope_), name(name_) { scope.plain.erase(name); }
+        ~MaskedAlias() { scope.plain.insert(name); }
+
+        Scope & scope;
+        String name;
+    };
+
+    /// The scope whose binding of `name` is in effect, or nullptr when it is not an alias.
+    Scope * findScopeDeclaring(const String & name) const
+    {
+        for (auto it = scopes.rbegin(); it != scopes.rend(); ++it)
+            if (it->recursive.contains(name) || it->plain.contains(name))
+                return &*it;
+        return nullptr;
+    }
 
     void visit(ASTSelectWithUnionQuery & select, ASTPtr &) const
     {
@@ -175,7 +189,8 @@ private:
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
         /// An alias is visible only inside the subtree of the `SELECT` that declares it.
-        WithAliasesScope with_aliases_scope(with_aliases, plain_with_aliases);
+        WithAliasesScope with_aliases_scope(scopes);
+        Scope & scope = scopes.back();
 
         const ASTPtr with = select.with();
         if (with)
@@ -189,9 +204,10 @@ private:
                 if (typeid_cast<ASTWithElement *>(child.get()))
                 {
                     const auto & name = child->as<ASTWithElement>()->name;
-                    with_aliases.insert(name);
-                    if (!select.recursive_with)
-                        plain_with_aliases.insert(name);
+                    if (select.recursive_with)
+                        scope.recursive.insert(name);
+                    else
+                        scope.plain.insert(name);
                 }
             }
         }
@@ -323,7 +339,7 @@ private:
         if (external_tables.contains(identifier.shortName()))
             return;
         /// This is WITH RECURSIVE alias.
-        if (with_aliases.contains(identifier.name()))
+        if (findScopeDeclaring(identifier.name()))
             return;
 
         auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, identifier.name());
