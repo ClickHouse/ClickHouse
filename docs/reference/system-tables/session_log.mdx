@@ -27,12 +27,14 @@ Contains information about all successful and failed login and logout events.
 - `event_time_microseconds` ([DateTime64(6)](/reference/data-types/datetime64)) — Login/logout starting time with microseconds precision.
 - `user` ([Nullable(String)](/reference/data-types/nullable)) — User name.
 - `auth_type` ([Nullable(Enum8('NO_PASSWORD' = 0, 'PLAINTEXT_PASSWORD' = 1, 'SHA256_PASSWORD' = 2, 'DOUBLE_SHA1_PASSWORD' = 3, 'LDAP' = 4, 'KERBEROS' = 5, 'SSL_CERTIFICATE' = 6, 'BCRYPT_PASSWORD' = 7, 'SSH_KEY' = 8, 'HTTP' = 9, 'JWT' = 10, 'SCRAM_SHA256_PASSWORD' = 11, 'NO_AUTHENTICATION' = 12))](/reference/data-types/nullable)) — The authentication type.
-- `profiles` ([Array(LowCardinality(String))](/reference/data-types/array)) — The list of profiles set for all roles and/or users.
 - `roles` ([Array(LowCardinality(String))](/reference/data-types/array)) — The list of roles to which the profile is applied.
+- `profiles` ([Array(LowCardinality(String))](/reference/data-types/array)) — The list of profiles set for all roles and/or users.
 - `settings` ([Array(Tuple(LowCardinality(String), String))](/reference/data-types/array)) — Settings that were changed when the client logged in/out.
+- `quotas` ([Array(Tuple(LowCardinality(String), LowCardinality(String)))](/reference/data-types/array)) — Quotas that were bound to this session.
 - `client_address` ([IPv6](/reference/data-types/ipv6)) — The IP address that was used to log in/out.
 - `client_port` ([UInt16](/reference/data-types/int-uint)) — The client port that was used to log in/out.
 - `interface` ([Enum8('TCP' = 1, 'HTTP' = 2, 'gRPC' = 3, 'MySQL' = 4, 'PostgreSQL' = 5, 'Local' = 6, 'TCP_Interserver' = 7, 'Prometheus' = 8, 'Background' = 9, 'ArrowFlight' = 10)](/reference/data-types/enum)) — The interface from which the login was initiated.
+- `http_user_agent` ([String](/reference/data-types/string)) — The HTTP User-Agent header, if the session was established over HTTP.
 - `client_hostname` ([String](/reference/data-types/string)) — The hostname of the client machine where the clickhouse-client or another TCP client is run.
 - `client_name` ([String](/reference/data-types/string)) — The clickhouse-client or another TCP client name.
 - `client_revision` ([UInt32](/reference/data-types/int-uint)) — Revision of the clickhouse-client or another TCP client.
@@ -65,12 +67,14 @@ event_time:              2021-10-14 20:33:52
 event_time_microseconds: 2021-10-14 20:33:52.104247
 user:                    default
 auth_type:               PLAINTEXT_PASSWORD
-profiles:                ['default']
 roles:                   []
+profiles:                ['default']
 settings:                [('load_balancing','random'),('max_memory_usage','10000000000')]
+quotas:                  [('default','')]
 client_address:          ::ffff:127.0.0.1
 client_port:             38490
 interface:               TCP
+http_user_agent:
 client_hostname:
 client_name:             ClickHouse client
 client_revision:         54449

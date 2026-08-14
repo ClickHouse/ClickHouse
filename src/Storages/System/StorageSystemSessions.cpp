@@ -71,7 +71,7 @@ ColumnsDescription StorageSystemSessions::getColumnsDescription()
         {"roles", std::make_shared<DataTypeArray>(lc_string_datatype), "The list of roles to which the profile is applied."},
         {"profiles", std::make_shared<DataTypeArray>(lc_string_datatype), "The list of profiles set for all roles and/or users."},
         {"settings", std::move(settings_type_column), "Settings that are changed when the client logged in."},
-        {"quotas", std::move(quotas_type_column), "Quotas that binds to this session."},
+        {"quotas", std::move(quotas_type_column), "Quotas that are bound to this session."},
 
         {"client_address", DataTypeFactory::instance().get("IPv6"), "The IP address that is used to log in."},
         {"client_port", std::make_shared<DataTypeUInt16>(), "The client port that is used to log in."},
