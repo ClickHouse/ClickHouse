@@ -89,6 +89,7 @@ public:
         return function->tryGetMultiArgConstGeometryBbox(args, xmin, ymin, xmax, ymax);
     }
     bool requiresValidConstGeometry() const override { return function->requiresValidConstGeometry(); }
+    bool rejectsConstGeometryKind(std::string_view kind_name) const override { return function->rejectsConstGeometryKind(kind_name); }
 
 
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
@@ -150,6 +151,7 @@ public:
         return function->tryGetMultiArgConstGeometryBbox(args, xmin, ymin, xmax, ymax);
     }
     bool requiresValidConstGeometry() const override { return function->requiresValidConstGeometry(); }
+    bool rejectsConstGeometryKind(std::string_view kind_name) const override { return function->rejectsConstGeometryKind(kind_name); }
 
     String getName() const override { return function->getName(); }
     bool isStateful() const override { return function->isStateful(); }

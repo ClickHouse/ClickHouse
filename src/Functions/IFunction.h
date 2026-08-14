@@ -14,6 +14,7 @@
 
 #include <functional>
 #include <memory>
+#include <string_view>
 #include <vector>
 
 /// This file contains user interface for functions.
@@ -238,6 +239,18 @@ public:
       */
     virtual bool requiresValidConstGeometry() const { return true; }
 
+    /** For a function where `isSpatialPredicate()` is true: is a constant geometry argument
+      * explicitly typed as `kind_name` (e.g. "Point", "LineString", "MultiPoint",
+      * "MultiLineString" -- one of the `Geometry`/`Variant` alternative names, read from the
+      * argument's actual `DataType`/discriminator, never guessed from its flattened `Field`
+      * shape) guaranteed to make this predicate raise `ILLEGAL_TYPE_OF_ARGUMENT` on evaluation,
+      * regardless of which argument position it appears in? Used to fail bbox-disjoint pruning
+      * closed for such an argument instead of silently treating it as "no info" and letting an
+      * unrelated conjunct's bbox hide the exception. Default: false (unknown -- e.g. a WASM UDF's
+      * `is_spatial_predicate` contract says nothing about which named kinds it accepts).
+      */
+    virtual bool rejectsConstGeometryKind(std::string_view /*kind_name*/) const { return false; }
+
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
       * If we will call it during query analysis, we will sleep extra amount of time.
@@ -455,6 +468,9 @@ public:
 
     /// See IFunctionBase::requiresValidConstGeometry.
     virtual bool requiresValidConstGeometry() const { return true; }
+
+    /// See IFunctionBase::rejectsConstGeometryKind.
+    virtual bool rejectsConstGeometryKind(std::string_view /*kind_name*/) const { return false; }
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
@@ -678,6 +694,9 @@ public:
 
     /// See IFunctionBase::requiresValidConstGeometry.
     virtual bool requiresValidConstGeometry() const { return true; }
+
+    /// See IFunctionBase::rejectsConstGeometryKind.
+    virtual bool rejectsConstGeometryKind(std::string_view /*kind_name*/) const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }

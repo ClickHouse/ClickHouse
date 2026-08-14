@@ -51,6 +51,15 @@ public:
     /// topology at all, so an invalid constant polygon argument can never make it raise.
     bool requiresValidConstGeometry() const override { return false; }
 
+    /// Both arguments must be `Ring`/`Polygon`/`MultiPolygon` (see the documented argument types
+    /// below) -- unlike `pointInPolygon`, there is no argument position where a `Point` is ever
+    /// legitimate. `callOnGeometryDataType`'s dispatch on the argument's actual type rejects any
+    /// other named kind with `ILLEGAL_TYPE_OF_ARGUMENT`, regardless of argument position.
+    bool rejectsConstGeometryKind(std::string_view kind_name) const override
+    {
+        return kind_name == "Point" || kind_name == "LineString" || kind_name == "MultiLineString" || kind_name == "MultiPoint";
+    }
+
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {

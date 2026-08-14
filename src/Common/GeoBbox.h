@@ -353,21 +353,9 @@ enum class NodeBboxStatus
     Ok,
 };
 
-/// `Ring`/`LineString`/`MultiPoint` all flatten to the same `Array(Point)`-shaped `Field`, and
-/// `Polygon`/`MultiLineString` both flatten to the same `Array(Array(Point))`-shaped `Field` --
-/// so a `LineString`/`MultiPoint`/`MultiLineString` constant is indistinguishable, by shape
-/// alone, from a `Ring`/`Polygon` that a predicate DOES accept. None of `pointInPolygon`,
-/// `polygonsIntersectCartesian`, `polygonsWithinCartesian` currently accept a `LineString`,
-/// `MultiPoint`, or `MultiLineString` constant argument: each rejects one with
-/// `ILLEGAL_TYPE_OF_ARGUMENT` via `callOnGeometryDataType`'s type-name dispatch at evaluation
-/// time, using the argument's actual `DataType`, not its flattened value.
-inline bool isAmbiguousUnacceptedGeoKind(std::string_view name)
-{
-    return name == "LineString" || name == "MultiLineString" || name == "MultiPoint";
-}
-
-/// Get the geometry-domain type name of a constant `ActionsDAG` node, needed to tell apart the
-/// shape-ambiguous kinds above from the ones a predicate does accept -- either the node's own
+/// Get the geometry-domain type name of a constant `ActionsDAG` node, needed to tell whether a
+/// constant is explicitly typed as a kind `IFunctionBase::rejectsConstGeometryKind` says this
+/// predicate is guaranteed to reject -- either the node's own
 /// custom name (a constant explicitly typed e.g. `LineString`), or, if the node's type is a
 /// `Variant` (e.g. `Geometry`, which is a `Variant` over `Point`/`Ring`/`Polygon`/`LineString`/
 /// `MultiPoint`/`MultiLineString`/`MultiPolygon` with a custom name of its own), the custom name
@@ -453,6 +441,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     const ActionsDAG::Node * input_child = nullptr;
     bool has_extra_non_constant = false;
     bool any_extraction_failed = false;
+    bool any_kind_rejected = false;
     std::vector<Field> const_fields;
     /// Whether evaluating this predicate actually runs a topology check on its constant geometry
     /// argument(s) at all (e.g. `pointInPolygon`'s `validate_polygons` setting) -- see
@@ -485,28 +474,38 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
             continue;
         }
 
-        /// A known `LineString`/`MultiPoint`/`MultiLineString` constant is dropped here, before
-        /// its `Field` is ever interpreted by shape: none of the current `isSpatialPredicate()`
-        /// builtins accept one, but (unlike a structural extraction failure above) there's no
-        /// certainty a hypothetical predicate that does accept one would raise, so this is
-        /// treated the same as "not geometry-shaped" (see the `extracted == false` handling
-        /// below), not as a guaranteed-to-raise `Failed`.
-        if (isAmbiguousUnacceptedGeoKind(constGeoKindName(*child)))
+        /// A constant explicitly typed as a geometry kind this predicate is guaranteed to reject
+        /// (e.g. a `Point`/`LineString`/`MultiPoint`/`MultiLineString` constant for
+        /// `polygonsIntersectCartesian`, which only accepts `Ring`/`Polygon`/`MultiPolygon`) is
+        /// checked here, before its `Field` is ever interpreted by shape below -- shape alone
+        /// can't tell it apart from an accepted kind (`Ring`/`LineString`/`MultiPoint` all flatten
+        /// to the same `Array(Point)`-shaped `Field`; `Polygon`/`MultiLineString` both flatten to
+        /// `Array(Array(Point))`), so the explicit kind name, read from the `DataType`/discriminator,
+        /// is the only way to know evaluation is guaranteed to raise `ILLEGAL_TYPE_OF_ARGUMENT`.
+        /// This must fail closed like a structural extraction failure below, not be silently
+        /// dropped as "not geometry-shaped": a predicate that genuinely doesn't know whether it
+        /// accepts a given kind (e.g. a WASM UDF) never reaches here, since
+        /// `rejectsConstGeometryKind` defaults to false for it.
+        if (const auto kind_name = constGeoKindName(*child); !kind_name.empty() && node.function_base->rejectsConstGeometryKind(kind_name))
+        {
+            any_kind_rejected = true;
             continue;
+        }
 
         const_fields.push_back(std::move(field));
     }
 
-    /// A constant geometry argument that fails to extract is guaranteed to raise on evaluation,
-    /// regardless of whether an accepted-column input is present. This -- and every validation
-    /// below -- must be checked unconditionally, before `!input_child` or `has_extra_non_constant`
-    /// are allowed to downgrade the result to `NotApplicable`/`NoInfo`: with
+    /// A constant geometry argument that fails to extract, or is explicitly typed as a kind this
+    /// predicate is guaranteed to reject, is guaranteed to raise on evaluation, regardless of
+    /// whether an accepted-column input is present. This -- and every validation below -- must be
+    /// checked unconditionally, before `!input_child` or `has_extra_non_constant` are allowed to
+    /// downgrade the result to `NotApplicable`/`NoInfo`: with
     /// `short_circuit_function_evaluation = 'disable'` this node is still evaluated on every row
     /// even when it doesn't reference the accepted column (e.g. a sibling `and` conjunct on a
     /// *different* geometry column), so an invalid constant geometry here must still veto pruning
     /// for the whole conjunction -- otherwise pruning could proceed using only an unrelated,
     /// valid conjunct's bbox, silently hiding the exception this conjunct is guaranteed to raise.
-    if (any_extraction_failed)
+    if (any_extraction_failed || any_kind_rejected)
         return NodeBboxStatus::Failed;
 
     if (const_fields.empty())

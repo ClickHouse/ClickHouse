@@ -244,6 +244,22 @@ public:
     /// constant polygon, so bbox pruning must not fail closed for one either.
     bool requiresValidConstGeometry() const override { return validate; }
 
+    /// Every constant argument besides the point itself is a polygon component (shell/hole, or
+    /// one `MultiPolygon` component) and only ever accepts `Ring`/`Polygon`/`MultiPolygon` --
+    /// see the documented argument types above. A `Point`/`LineString`/`MultiPoint`/
+    /// `MultiLineString` constant is rejected by `callOnGeometryDataType`'s dispatch on the
+    /// argument's actual type regardless of which argument position it appears in (bbox
+    /// extraction has no notion of argument position), including a constant `Point` in the first
+    /// (point) position: that position is legitimate for `pointInPolygon`, but nothing here can
+    /// derive pruning information from a lone point anyway, so treating it the same as the other
+    /// three -- fail closed rather than silently skip -- is always safe (only ever forgoes an
+    /// optimization, never affects query correctness), and keeps this predicate consistent with
+    /// `polygonsIntersectCartesian`/`polygonsWithinCartesian` below.
+    bool rejectsConstGeometryKind(std::string_view kind_name) const override
+    {
+        return kind_name == "Point" || kind_name == "LineString" || kind_name == "MultiLineString" || kind_name == "MultiPoint";
+    }
+
     /// pointInPolygon(point, arg1, arg2, ...) is the only spatial predicate with a documented
     /// convention for combining more than one constant geometry argument -- see below.
     bool hasMultiArgConstGeometryBboxConvention() const override { return true; }
