@@ -28,8 +28,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event AIInputTokens;
-    extern const Event AIAPICalls;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
 }

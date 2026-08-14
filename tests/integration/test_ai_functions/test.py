@@ -1025,6 +1025,33 @@ def test_embed_error_throw(started_cluster):
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
 
 
+def test_embed_quota_throw_records_input_tokens(started_cluster):
+    """With `ai_function_throw_on_quota_exceeded = 1` the second batch throws from `checkQuotas`, so
+    the tokens the first batch really consumed must still be reported. Pins `AIInputTokens`, which the
+    failed-request tests cannot: there the very first call fails, leaving nothing to count."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query(
+        "INSERT INTO test_input SELECT 'row_' || toString(number) FROM numbers(4)"
+    )
+    qid = unique_query_id("embed_quota_throw")
+    # Batch size 1 and rows of length 5 ("row_0".."row_3"): the first batch consumes the whole
+    # 5-token cap, so the second trips the quota and raises instead of skipping.
+    error = instance.query_and_get_error(
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_embedding_max_batch_size": 1,
+            "ai_function_max_input_tokens_per_query": 5,
+            "ai_function_throw_on_quota_exceeded": 1,
+        },
+        query_id=qid,
+    )
+    assert "LIMIT_EXCEEDED" in error
+    events = get_profile_events(qid, query_type="ExceptionWhileProcessing")
+    assert int(events["api_calls"]) == 1
+    assert int(events["input_tokens"]) == 5  # "row_0"
+
+
 def test_embed_error_throw_records_api_calls(started_cluster):
     """The provider was called and charged for it, so `embedTexts` must report the usage counters even
     though it rethrows. They used to be lost with the `EmbeddingResult` that never reached the caller."""

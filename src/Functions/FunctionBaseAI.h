@@ -147,14 +147,12 @@ public:
     /// entry is empty when that input was not embedded (quota exceeded, or a failed request with
     /// `ai_function_throw_on_error` disabled).
     ///
-    /// `embedTexts` itself reports `api_calls` and `input_tokens` to `ProfileEvents`, including when it
-    /// rethrows, so callers must not increment `AIAPICalls`/`AIInputTokens` again. `texts_embedded` and
-    /// `texts_skipped` are left to the caller, which decides what a row means.
+    /// `AIAPICalls` and `AIInputTokens` are reported by `embedTexts` itself, including when it rethrows,
+    /// so they are not carried here. The row counters are left to the caller, which decides what a row
+    /// means: texts for `aiEmbed`, pairs of texts for `aiSimilarity`.
     struct EmbeddingResult
     {
         VectorWithMemoryTracking<VectorWithMemoryTracking<Float32>> embeddings;
-        UInt64 api_calls = 0;
-        UInt64 input_tokens = 0;
         UInt64 texts_embedded = 0;
         UInt64 texts_skipped = 0;
     };

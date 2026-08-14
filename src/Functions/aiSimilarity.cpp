@@ -29,8 +29,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event AIInputTokens;
-    extern const Event AIAPICalls;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
 }
@@ -210,7 +208,6 @@ public:
 
         auto embedding_result = FunctionBaseAI::embedTexts(
             *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, quota, timeouts);
-
 
         const auto & embeddings = embedding_result.embeddings;
 

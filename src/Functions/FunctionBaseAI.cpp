@@ -393,10 +393,14 @@ FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
     EmbeddingResult result;
     result.embeddings.resize(inputs.size());
 
+    /// Owned here rather than returned in `result`, which a rethrow would discard.
+    UInt64 api_calls = 0;
+    UInt64 input_tokens = 0;
+
     /// Increment ProfileEvents counters upon destruction, to avoid underreporting on error
     SCOPE_EXIT({
-        ProfileEvents::increment(ProfileEvents::AIAPICalls, result.api_calls);
-        ProfileEvents::increment(ProfileEvents::AIInputTokens, result.input_tokens);
+        ProfileEvents::increment(ProfileEvents::AIAPICalls, api_calls);
+        ProfileEvents::increment(ProfileEvents::AIInputTokens, input_tokens);
     });
 
     for (size_t batch_start = 0; batch_start < inputs.size(); batch_start += max_batch_size)
@@ -429,10 +433,10 @@ FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
             try
             {
                 /// Update api_calls/quotas before call so failed calls are still added to total.
-                ++result.api_calls;
+                ++api_calls;
                 quota.recordAttempt();
                 ai_embedding_response = provider.embed(ai_embedding_request, timeouts);
-                result.input_tokens += ai_embedding_response.input_tokens;
+                input_tokens += ai_embedding_response.input_tokens;
                 quota.recordTokens(ai_embedding_response.input_tokens, 0);
                 batch_ok = true;
                 break;
