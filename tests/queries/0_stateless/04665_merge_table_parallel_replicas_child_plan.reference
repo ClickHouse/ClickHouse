@@ -1,0 +1,21 @@
+filters are honored
+1
+3
+90
+100
+IN (subquery)
+100
+GLOBAL IN (subquery over Distributed)
+100
+the child read of a Merge table is not distributed
+0
+a plain table is still distributed
+1
+same answers with parallel_replicas_local_plan = 1
+1
+100
+100
+the child read of a Merge table is not distributed with a local plan
+0
+a plain table is still distributed with a local plan
+1
