@@ -753,7 +753,7 @@ static bool searchFunctionCoercesConstant(const DataTypePtr & value_type, const 
 static Field convertConstantForArrayIndexFunction(
     const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & nested_type, const DataTypePtr & actual_type)
 {
-    if (WhichDataType(nested_type).isString() || !searchFunctionCoercesConstant(value_type, actual_type))
+    if (WhichDataType(removeNullable(nested_type)).isString() || !searchFunctionCoercesConstant(value_type, actual_type))
         return convertFieldToType(value_field, *actual_type, value_type.get());
 
     return coerceStringFieldLikeSearchFunction(value_field, value_type, actual_type, /*cast_to_supertype=*/ !nested_type->lowCardinality());
