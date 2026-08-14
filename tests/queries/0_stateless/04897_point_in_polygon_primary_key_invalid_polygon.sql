@@ -83,6 +83,51 @@ SELECT 'extra rows', count() FROM
     SELECT x, y FROM pip_nopk WHERE pointInPolygon((x, y), [(0., 0.), (4., 4.), (4., 0.), (0., 4.)])
 );
 
+-- Hole rings are not stored, so pruning tests the shell alone. That is only an over-approximation
+-- of the function while the assembled shell-plus-holes shape is valid. Here the shell is valid and
+-- concave and the hole self-intersects: the function reports points inside the shell's notch, which
+-- the shell alone excludes, so the two counts diverged by 110 rows before the assembled shape was
+-- validated. A convex shell cannot expose this, having no notch outside its own outline.
+SELECT 'invalid hole, dense',
+    (SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (8., 0.), (8., 4.), (4., 4.), (4., 8.), (0., 8.)], [(1., 1.), (7., 7.), (7., 1.), (1., 7.)])
+        SETTINGS use_lightweight_primary_key_index_analysis = 0),
+    (SELECT count() FROM pip_nopk WHERE pointInPolygon((x, y), [(0., 0.), (8., 0.), (8., 4.), (4., 4.), (4., 8.), (0., 8.)], [(1., 1.), (7., 7.), (7., 1.), (1., 7.)]));
+
+SELECT 'invalid hole, lightweight',
+    (SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (8., 0.), (8., 4.), (4., 4.), (4., 8.), (0., 8.)], [(1., 1.), (7., 7.), (7., 1.), (1., 7.)])
+        SETTINGS use_lightweight_primary_key_index_analysis = 1),
+    (SELECT count() FROM pip_nopk WHERE pointInPolygon((x, y), [(0., 0.), (8., 0.), (8., 4.), (4., 4.), (4., 8.), (0., 8.)], [(1., 1.), (7., 7.), (7., 1.), (1., 7.)]));
+
+SELECT 'invalid hole, lost rows', count() FROM
+(
+    SELECT x, y FROM pip_nopk WHERE pointInPolygon((x, y), [(0., 0.), (8., 0.), (8., 4.), (4., 4.), (4., 8.), (0., 8.)], [(1., 1.), (7., 7.), (7., 1.), (1., 7.)])
+    EXCEPT
+    SELECT x, y FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (8., 0.), (8., 4.), (4., 4.), (4., 8.), (0., 8.)], [(1., 1.), (7., 7.), (7., 1.), (1., 7.)])
+);
+
+SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (8., 0.), (8., 4.), (4., 4.), (4., 8.), (0., 8.)], [(1., 1.), (7., 7.), (7., 1.), (1., 7.)])
+    SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 0; -- { serverError INDEX_NOT_USED }
+
+SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (8., 0.), (8., 4.), (4., 4.), (4., 8.), (0., 8.)], [(1., 1.), (7., 7.), (7., 1.), (1., 7.)])
+    SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 1; -- { serverError INDEX_NOT_USED }
+
+-- The same shell with a hole that keeps the assembled shape valid must keep both its result and its
+-- pruning, so that the check rejects invalid assemblies rather than every hole argument.
+SELECT 'valid hole, dense',
+    (SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (8., 0.), (8., 4.), (4., 4.), (4., 8.), (0., 8.)], [(1., 1.), (3., 1.), (3., 3.), (1., 3.)])
+        SETTINGS use_lightweight_primary_key_index_analysis = 0),
+    (SELECT count() FROM pip_nopk WHERE pointInPolygon((x, y), [(0., 0.), (8., 0.), (8., 4.), (4., 4.), (4., 8.), (0., 8.)], [(1., 1.), (3., 1.), (3., 3.), (1., 3.)]));
+
+SELECT 'valid hole forces key, dense', count() FROM pip_pk
+    WHERE pointInPolygon((x, y), [(0., 0.), (8., 0.), (8., 4.), (4., 4.), (4., 8.), (0., 8.)], [(1., 1.), (3., 1.), (3., 3.), (1., 3.)])
+    SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 0,
+        use_query_condition_cache = 0;
+
+SELECT 'valid hole forces key, lightweight', count() FROM pip_pk
+    WHERE pointInPolygon((x, y), [(0., 0.), (8., 0.), (8., 4.), (4., 4.), (4., 8.), (0., 8.)], [(1., 1.), (3., 1.), (3., 3.), (1., 3.)])
+    SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 1,
+        use_query_condition_cache = 0;
+
 -- A ring with too few points is also rejected by `is_valid`, so it must stay consistent too.
 SELECT 'degenerate ring, dense',
     (SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (1., 1.)])

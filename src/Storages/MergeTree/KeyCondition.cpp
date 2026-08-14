@@ -3331,6 +3331,43 @@ KeyCondition::RPNElement::RPNElement(Function function_, std::vector<size_t> key
 }
 
 
+/// Whether `shell` plus the hole rings in arguments 2..num_args-1 of `pointInPolygon` assemble into
+/// a valid polygon. A hole argument that is not a constant ring of two-element numeric tuples
+/// yields false, so an unrecognized shape is never taken for a hole-free polygon.
+static bool holesAreValidForShell(
+    const RPNBuilderFunctionTreeNode & func, size_t num_args, const KeyCondition::RPNElement::Polygon::RingT & shell)
+{
+    boost::geometry::model::polygon<KeyCondition::RPNElement::Polygon::PointT> polygon;
+    polygon.outer().assign(shell.begin(), shell.end());
+
+    for (size_t i = 2; i < num_args; ++i)
+    {
+        Field hole_value;
+        DataTypePtr hole_type;
+        if (!func.getArgumentAt(i).tryGetConstant(hole_value, hole_type) || !WhichDataType(hole_type).isArray())
+            return false;
+
+        auto & hole = polygon.inners().emplace_back();
+        for (const auto & elem : hole_value.safeGet<Array>())
+        {
+            if (elem.getType() != Field::Types::Tuple)
+                return false;
+
+            const auto & elem_tuple = elem.safeGet<Tuple>();
+            if (elem_tuple.size() != 2)
+                return false;
+
+            auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[0]);
+            auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[1]);
+            hole.emplace_back(x, y);
+        }
+    }
+
+    boost::geometry::correct(polygon);
+    return boost::geometry::is_valid(polygon);
+}
+
+
 /** This helper rewrites comparisons of the form "integer_key <op> Float64_literal" into semantically equivalent
   * integer-key predicates so that pruning can stay exact.
   *
@@ -3658,6 +3695,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             /// `correct` does not make a ring valid, and `intersects` below only agrees with the
             /// algorithm the function evaluates for a ring that is. Prune only from a valid one.
             if (!boost::geometry::is_valid(out.polygon->ring))
+                return false;
+
+            /// Holes are not stored, so `intersects` below tests the shell alone. That over-
+            /// approximates the function only while the assembled shape is valid: for an invalid
+            /// one the function can report a point the shell excludes.
+            if (num_args > 2 && !holesAreValidForShell(func, num_args, out.polygon->ring))
                 return false;
 
             /// Store bounding box of the polygon so that we can quickly reject blocks/parts and avoid
