@@ -8,8 +8,8 @@ U="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 CLEANUP=""
 
 # Creates an entity, then creates a second one from the statement the server emitted for the first,
-# and compares the two emitted statements. This is the loop serializeAccessEntity /
-# deserializeAccessEntity runs on every access-storage load.
+# and compares the two emitted statements. This is the display route, via SHOW CREATE; arm15 covers
+# the persistence route, where serializeAccessEntity and deserializeAccessEntity run.
 #
 # Each half is one client invocation: statements that produce no output share it with the single
 # SHOW CREATE whose one line is the result, so an arm costs two processes rather than seven.
@@ -118,7 +118,16 @@ else
     echo "arm14 FAILED: ${LIT}"
 fi
 
-${CLICKHOUSE_CLIENT} -q "${CLEANUP} DROP SETTINGS PROFILE IF EXISTS ${P}, ${Q}, ${S}, ${T};"
+# arm16: only a Map is rewritten. A scalar keeps its bare literal, so widening the type check to
+# every builtin setting would emit max_memory_usage = '5000000' and change the stored type.
+V="num_${U}"
+NUM=$(${CLICKHOUSE_CLIENT} -q "
+    DROP SETTINGS PROFILE IF EXISTS ${V};
+    CREATE SETTINGS PROFILE ${V} SETTINGS max_memory_usage = 5000000 MIN 4000000 MAX 6000000 CONST;
+    SHOW CREATE SETTINGS PROFILE ${V} FORMAT TSVRaw")
+echo "arm16 scalar literal stays bare ${NUM#*SETTINGS max_memory_usage}"
+
+${CLICKHOUSE_CLIENT} -q "${CLEANUP} DROP SETTINGS PROFILE IF EXISTS ${P}, ${Q}, ${S}, ${T}, ${V};"
 
 # arm15: the on-disk form. The arms above use SHOW CREATE, which takes the display route; the
 # stored <uuid>.sql file is written by the attach route, and a second process has to parse it back

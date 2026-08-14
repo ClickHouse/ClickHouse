@@ -15,4 +15,5 @@ arm11 custom setting control round trip OK
 arm12 alter add settings round trip OK
 arm13 system table value	{'Content-Type':'application/json'}
 arm14 emitted a string literal not a collection literal
+arm16 scalar literal stays bare  = 5000000 MIN 4000000 MAX 6000000 CONST
 arm15 on disk	{'X-A':'1','X-B':'2'}	{}	{'X-A':'1','X-B':'2'}
