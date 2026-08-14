@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnTuple.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -369,6 +370,18 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     const auto & scalar_column_with_type = scalar_block.safeGetByPosition(0);
     const auto & scalar_type = scalar_column_with_type.type;
+
+    if (early_short_circuit_type_inference_in_process && !execute_for_exists)
+    {
+        /// During early short-circuit type inference the scalar value is intentionally not
+        /// executed, so do not expose the arbitrary default from the sample block as a constant.
+        /// A non-constant placeholder preserves the real type. Functions that require the actual
+        /// constant value will reject it, causing the optimization to fall back to normal analysis.
+        node = std::make_shared<ColumnNode>(
+            NameAndTypePair{"__early_short_circuit_scalar", scalar_type},
+            TableExpressionNodeWeakPtr{});
+        return;
+    }
 
     const auto * scalar_type_name = scalar_block.safeGetByPosition(0).type->getFamilyName();
     static const std::set<std::string_view> useless_literal_types = {"Array", "Tuple", "AggregateFunction", "Function", "Set", "LowCardinality"};

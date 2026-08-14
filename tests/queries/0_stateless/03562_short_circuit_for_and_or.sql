@@ -49,6 +49,9 @@ SELECT 'Test EXISTS type-only analysis returns a literal';
 SELECT 0 AND exists(SELECT [1]);
 SELECT 1 OR exists(SELECT tuple(1));
 
+SELECT 'Test value-dependent scalar arguments fall back to normal analysis';
+SELECT 1 OR tupleElement((10, 20), (SELECT 2)) SETTINGS enable_scalar_subquery_optimization = 0;
+
 SELECT 'Check the read_rows of the above queries to ensure that the short circuit is working';
 SYSTEM FLUSH LOGS query_log;
 

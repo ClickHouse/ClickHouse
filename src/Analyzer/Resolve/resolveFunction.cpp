@@ -660,6 +660,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// which gives the logical expression its real Nullable/Bool result type. It also
             /// discovers aggregates and arrayJoin before they can be erased by the early fold.
             auto node_for_type_inference = node->clone();
+            bool type_inference_succeeded = false;
+            try
             {
                 const bool previous_type_inference_state = early_short_circuit_type_inference_in_process;
                 early_short_circuit_type_inference_in_process = true;
@@ -672,9 +674,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     false /*allow_table_expression*/,
                     false /*ignore_alias*/,
                     allow_niladic_functions);
+                type_inference_succeeded = true;
+            }
+            catch (...)
+            {
+                /// Some functions require the value of a constant argument to infer or validate
+                /// their result (for example, tupleElement's index). A type-only scalar placeholder
+                /// cannot provide it, so fall back to the regular path which evaluates the scalar.
             }
 
-            if (!hasAggregateFunctionNodes(node_for_type_inference) && !hasFunctionNode(node_for_type_inference, "arrayJoin"))
+            if (type_inference_succeeded
+                && !hasAggregateFunctionNodes(node_for_type_inference)
+                && !hasFunctionNode(node_for_type_inference, "arrayJoin"))
             {
                 auto result_type = node_for_type_inference->getResultType();
                 auto result_column = result_type->createColumnConst(1, static_cast<UInt8>(*short_circuit_result));
