@@ -206,6 +206,7 @@ def test_regenerate_runs_all_generator_families(monkeypatch):
     assert "--docs-dir docs" in command
     assert "utils/generate-system-tables-docs" in command
     assert "--docs-dir docs/reference/system-tables" in command
+    assert "--navigation-file docs/reference/navigation.json" in command
     assert "utils/generate-async-metrics-docs" in command
     assert "--only" not in command
     assert kwargs == {"verbose": True}
