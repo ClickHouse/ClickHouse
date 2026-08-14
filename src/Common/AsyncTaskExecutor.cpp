@@ -6,7 +6,10 @@
 namespace DB
 {
 
-AsyncTaskExecutor::AsyncTaskExecutor(std::unique_ptr<AsyncTask> task_) : task(std::move(task_))
+AsyncTaskExecutor::AsyncTaskExecutor(std::unique_ptr<AsyncTask> task_, String operation_name_)
+    : task(std::move(task_))
+    , operation_name(std::move(operation_name_))
+    , parent_trace_context(OpenTelemetry::CurrentContext())
 {
 }
 
@@ -83,6 +86,12 @@ struct AsyncTaskExecutor::Routine
 
     void operator()(SuspendCallback suspend_callback)
     {
+        /// Seed the fiber-local tracing context from the thread that created the executor
+        /// and open one span per task execution. No-op if tracing is not enabled there.
+        /// The holder is destroyed inside the fiber, also when the fiber is destroyed
+        /// mid-suspension: Fiber::unwind keeps fiber-local data resolvable during unwinding.
+        OpenTelemetry::TracingContextHolder trace_context_holder(executor.operation_name, executor.parent_trace_context);
+
         auto async_callback = AsyncCallback{executor, suspend_callback};
         try
         {

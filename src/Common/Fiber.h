@@ -3,6 +3,8 @@
 #include <base/defines.h>
 #include <boost/context/fiber.hpp>
 #include <map>
+#include <string_view>
+#include <typeinfo>
 
 /// Class wrapper for boost::context::fiber.
 /// It tracks current executing fiber for thread and
@@ -23,8 +25,23 @@ public:
 
     Fiber() = default;
 
+    ~Fiber()
+    {
+        unwind();
+    }
+
     Fiber(Fiber && other) = default;
-    Fiber & operator=(Fiber && other) = default;
+
+    Fiber & operator=(Fiber && other) noexcept
+    {
+        if (this != &other)
+        {
+            unwind();
+            impl = std::move(other.impl);
+            local_data = std::move(other.local_data);
+        }
+        return *this;
+    }
 
     Fiber(const Fiber &) = delete;
     Fiber & operator =(const Fiber &) = delete;
@@ -85,9 +102,8 @@ private:
 
     using DataPtr = std::unique_ptr<DataWrapper>;
 
-    /// Get reference to fiber-specific data by key
-    /// (the pointer to the structure that uses this data).
-    DataPtr & getLocalData(void * key)
+    /// Get reference to fiber-specific data by key and it must not depend on the thread
+    DataPtr & getLocalData(std::string_view key)
     {
         return local_data[key];
     }
@@ -97,8 +113,23 @@ private:
         return std::move(impl);
     }
 
+    /// Destroying a fiber that is suspended unwinds its stack: Called from the destructor body, while local_data is still alive.
+    void unwind() noexcept
+    {
+        if (!impl)
+            return;
+
+        FiberPtr & current_fiber = getCurrentFiber();
+        FiberPtr parent_fiber = current_fiber;
+        current_fiber = this;
+        {
+            Impl to_destroy = std::move(impl);
+        }
+        current_fiber = parent_fiber;
+    }
+
     Impl impl;
-    std::map<void *, DataPtr> local_data;
+    std::map<std::string_view, DataPtr> local_data;
 };
 
 /// Implementation for fiber local variable.
@@ -133,7 +164,9 @@ private:
         if (!current_fiber)
             return main_instance;
 
-        Fiber::DataPtr & ptr = current_fiber->getLocalData(this);
+        /// typeid names have static storage duration and identical content in every copy
+        /// of the code, so the same fiber data is found from any thread and shared object.
+        Fiber::DataPtr & ptr = current_fiber->getLocalData(typeid(T).name());
         /// Initialize instance on first request.
         if (!ptr)
             ptr = std::make_unique<DataWrapperImpl>();
