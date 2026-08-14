@@ -71,6 +71,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
 bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
     const Field & value_field,
-    const FormatSettings & format_settings);
+    const FormatSettings & format_settings,
+    bool indexes_missing_values = false);
 
 }

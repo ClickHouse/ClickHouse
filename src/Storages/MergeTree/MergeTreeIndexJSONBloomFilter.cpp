@@ -544,6 +544,7 @@ struct JSONPathMatch
     DataTypePtr type;
     DataTypePtr cast_type;
     JSONBloomRole role = JSONBloomRole::Scalar;
+    bool indexes_missing_values = false;
 };
 
 struct ArrayJSONBridge
@@ -721,7 +722,18 @@ std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & n
         if (isStructuralJSONSubcolumn(object_type, path, array_json_bridges))
             return std::nullopt;
 
-        return JSONPathMatch{std::move(path), subcolumn_type, nullptr, JSONBloomRole::Scalar};
+        bool indexes_missing_values = object_type.getTypedPaths().contains(path);
+        if (!indexes_missing_values && !subcolumn_type->hasDynamicStructure())
+        {
+            indexes_missing_values = std::ranges::any_of(object_type.getTypedPaths(), [&](const auto & typed_path)
+            {
+                return path.starts_with(typed_path.first)
+                    && path.size() > typed_path.first.size()
+                    && path[typed_path.first.size()] == '.';
+            });
+        }
+
+        return JSONPathMatch{std::move(path), subcolumn_type, nullptr, JSONBloomRole::Scalar, indexes_missing_values};
     }
 
     return std::nullopt;
@@ -799,6 +811,7 @@ std::optional<JSONPathMatch> tryMatchJSONPath(const RPNBuilderTreeNode & node, c
     map_match->type = map_type->getValueType();
     map_match->cast_type = nullptr;
     map_match->role = JSONBloomRole::MapValue;
+    map_match->indexes_missing_values = false;
     return map_match;
 }
 
@@ -1221,7 +1234,11 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
         {
             Field value;
             set_column->get(row, value);
-            if (!isJSONPathFilterSafe(key_node.getDAGNode()->result_type, value, comparison_format_settings))
+            if (!isJSONPathFilterSafe(
+                    key_node.getDAGNode()->result_type,
+                    value,
+                    comparison_format_settings,
+                    path->indexes_missing_values))
                 return false;
             auto probes = makeValueProbes(path->path, path->role, path->type, value, set_type, comparison_format_settings);
             out.hashes.insert(out.hashes.end(), probes.begin(), probes.end());
@@ -1250,7 +1267,11 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
 
     if (function_name == "equals")
     {
-        if (!isJSONPathFilterSafe(key_node->getDAGNode()->result_type, constant, comparison_format_settings))
+        if (!isJSONPathFilterSafe(
+                key_node->getDAGNode()->result_type,
+                constant,
+                comparison_format_settings,
+                path->indexes_missing_values))
             return false;
         if (path->cast_type)
         {
