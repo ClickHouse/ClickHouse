@@ -4989,10 +4989,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// produces the same sampled rows regardless of max_threads.
     if (result.sampling.use_bernoulli_sampling)
     {
-        /// seed=0 means random; pick one base seed for the whole query.
-        UInt64 base_seed = result.sampling.bernoulli_seed
-            ? *result.sampling.bernoulli_seed
-            : thread_local_rng();
+        UInt64 base_seed = *result.sampling.bernoulli_seed;
 
         for (auto & part_with_ranges : result.parts_with_ranges)
         {

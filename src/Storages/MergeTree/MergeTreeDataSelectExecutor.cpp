@@ -423,6 +423,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             UInt64 seed_setting = settings[Setting::bernoulli_sample_seed];
             if (seed_setting != 0)
                 sampling.bernoulli_seed = seed_setting;
+            else
+                sampling.bernoulli_seed = context->getQueryContext()->getBernoulliSampleSeed();
             return sampling;
         }
 

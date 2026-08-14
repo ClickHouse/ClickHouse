@@ -74,3 +74,5 @@ bernoulli survives join-by-shards layer reconstruction
 1
 bernoulli samples of two tables are correlated, not independent
 1
+bernoulli random seed is shared by all reads in a query
+1

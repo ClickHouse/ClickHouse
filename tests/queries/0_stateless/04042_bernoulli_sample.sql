@@ -334,6 +334,13 @@ SELECT
         INNER JOIN (SELECT x FROM t_bernoulli_join_r SAMPLE 0.1) AS b USING (x)
         SETTINGS bernoulli_sample_seed = 42)
 SETTINGS bernoulli_sample_seed = 42;
+SELECT 'bernoulli random seed is shared by all reads in a query';
+SELECT
+    (SELECT count() FROM t_bernoulli_join_l SAMPLE 0.1)
+    =
+    (SELECT count() FROM (SELECT x FROM t_bernoulli_join_l SAMPLE 0.1) AS a
+        INNER JOIN (SELECT x FROM t_bernoulli_join_r SAMPLE 0.1) AS b USING (x))
+SETTINGS bernoulli_sample_seed = 0;
 DROP TABLE t_bernoulli_join_l;
 DROP TABLE t_bernoulli_join_r;
 

@@ -3691,6 +3691,14 @@ ContextMutablePtr Context::getQueryContext() const
     return ptr;
 }
 
+UInt64 Context::getBernoulliSampleSeed() const
+{
+    std::lock_guard lock(mutex);
+    if (!bernoulli_sample_seed)
+        bernoulli_sample_seed = thread_local_rng();
+    return *bernoulli_sample_seed;
+}
+
 bool Context::isInternalSubquery() const
 {
     auto ptr = query_context.lock();
