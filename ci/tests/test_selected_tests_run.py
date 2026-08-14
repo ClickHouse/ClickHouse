@@ -28,14 +28,12 @@ from ci.praktika.result import Result
 
 def test_selected_test_name_resolves_to_source_file():
     assert (
-        Targeting.functional_test_source_file("00001_select_1")
-        == "00001_select_1.sql"
+        Targeting.functional_test_source_file("00001_select_1") == "00001_select_1.sql"
     )
     # Changed tests are selected with a trailing dot so that the name matches
     # that one test only.
     assert (
-        Targeting.functional_test_source_file("00001_select_1.")
-        == "00001_select_1.sql"
+        Targeting.functional_test_source_file("00001_select_1.") == "00001_select_1.sql"
     )
 
 
@@ -78,7 +76,9 @@ def test_flavor_filter_keeps_unresolved_tests(monkeypatch):
     assert filter_selected_tests_by_flavor(tests, keep_sequential=True) == tests
 
 
-_NO_TESTS_OUTPUT = "No tests were run.\n"
+_NO_TESTS_OUTPUT = (
+    "No tests were run because every explicitly requested test was filtered out.\n"
+)
 
 
 def _process(tmp_path, output, runner_exit_code, allow_no_tests):
@@ -106,6 +106,14 @@ def test_failures_are_reported_even_when_no_tests_is_allowed(tmp_path):
         "00001_first_failing_test: [ FAIL ] 1.23 sec.\n"
         "some failure details\n"
         "All tests have finished.\n"
+    )
+    result = _process(tmp_path, output, 1, allow_no_tests=True)
+    assert result.status == Result.Status.FAIL
+
+
+def test_generic_no_tests_banner_does_not_hide_runner_failure(tmp_path):
+    output = (
+        "ERROR: Process Worker 1 was killed with exit code -9\nNo tests were run.\n"
     )
     result = _process(tmp_path, output, 1, allow_no_tests=True)
     assert result.status == Result.Status.FAIL

@@ -60,6 +60,9 @@ ABORTED_RUN_EXIT_CODES = frozenset(
 )
 
 NO_TESTS_SIGN = "No tests were run"
+NO_TESTS_FILTERED_OUT_SIGN = (
+    "No tests were run because every explicitly requested test was filtered out"
+)
 SUCCESS_FINISH_SIGNS = ["All tests have finished", NO_TESTS_SIGN]
 
 RETRIES_SIGN = "Some tests were restarted"
@@ -115,7 +118,7 @@ class FTResultsProcessor:
 
                 if any(s in line for s in SUCCESS_FINISH_SIGNS):
                     success_finish = True
-                if NO_TESTS_SIGN in line:
+                if NO_TESTS_FILTERED_OUT_SIGN in line:
                     no_tests_run = True
                 # Ignore hung check report, since it may be quite large.
                 # (and may break python parser which has limit of 128KiB for each row).
@@ -232,11 +235,10 @@ class FTResultsProcessor:
 
         if s.no_tests_run and allow_no_tests and not s.hung:
             # The job was given an explicit list of tests (flaky, targeted or
-            # `selected tests` run) and `clickhouse-test` filtered every one of
-            # them out - e.g. all of them are tagged `no-tsan` and this is a TSan
-            # job. `clickhouse-test` exits with code 1 in that case; for a
-            # full-suite run that is a real failure (a broken filter), here there
-            # is simply nothing to run.
+            # `selected tests` run), and `clickhouse-test` explicitly proved it
+            # filtered every one of them out - e.g. all are tagged `no-tsan` in a
+            # TSan job. A generic "No tests were run" banner is not sufficient:
+            # it is also printed after runner-level failures before the first test.
             return Result.create_from(
                 name=task_name,
                 results=test_results,
@@ -251,7 +253,9 @@ class FTResultsProcessor:
         if s.hung:
             state = Result.Status.FAIL
             test_results.append(
-                Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
+                Result(
+                    "Some queries hung", Result.Status.FAIL, info="Some queries hung"
+                )
             )
         elif runner_exit_code in ABORTED_RUN_EXIT_CODES:
             state = Result.Status.FAIL
@@ -286,7 +290,9 @@ class FTResultsProcessor:
                 # a reproduction too.
                 if not is_bugfix_validation:
                     failed_results[0].status = Result.Status.ERROR
-            test_results.append(Result("Server died", Result.Status.FAIL, info="Server died"))
+            test_results.append(
+                Result("Server died", Result.Status.FAIL, info="Server died")
+            )
         elif runner_exit_code == MAX_FAILURES_EXIT_CODE:
             # The run stopped early because too many tests failed
             # (`--max-failures` / `--max-failures-chain`). Unlike the aborted-run
@@ -322,7 +328,11 @@ class FTResultsProcessor:
             info = "The test runner was terminated unexpectedly"
         elif s.retries:
             test_results.append(
-                Result("Some tests restarted", Result.Status.SKIPPED, info="Some tests restarted")
+                Result(
+                    "Some tests restarted",
+                    Result.Status.SKIPPED,
+                    info="Some tests restarted",
+                )
             )
         else:
             pass

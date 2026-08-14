@@ -680,10 +680,10 @@ class JobConfigs:
     # The selection is a few hundred tests, so the batches of the full-suite jobs
     # are collapsed into a single job per flavor. The runner labels and the
     # timeout are kept as they are for the corresponding full-suite jobs: the
-    # test runner sizes its worker pool from the CPU count, a sanitizer flavor
-    # that needs a large-memory runner for the full suite needs it for a subset
-    # as well, and the job falls back to the full suite when the test selection
-    # cannot be fetched.
+    # test runner sizes its worker pool from the CPU count, and a sanitizer
+    # flavor that needs a large-memory runner for the full suite needs it for a
+    # subset as well. If test selection cannot be fetched, the job fails instead
+    # of silently running a weaker unbatched fallback configuration.
     stateless_tests_selected_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_asan_ubsan, distributed plan, parallel, selected tests",
