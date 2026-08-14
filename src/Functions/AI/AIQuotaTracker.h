@@ -9,10 +9,11 @@ namespace DB
 {
 
 /// Tracks AI-function quota usage for one query. A single instance is shared by every AI function
-/// call in the query (owned by the query `Context`), so the counters are updated concurrently from
-/// the pipeline threads and are `atomic`. `checkQuotas` and `recordAttempt` are separate, so at the
-/// limit a few concurrent calls can each pass the check before recording (overshoot bounded by the
-/// number of in-flight calls).
+/// call in the query (owned by the query `Context`) and updated concurrently from the pipeline
+/// threads, so the counters are `atomic`.
+///
+/// The API-call limit is a hard per-query cap, while token limits are best effort (we only know
+/// the usage after the call returns).
 class AIQuotaTracker
 {
 public:
@@ -25,15 +26,20 @@ public:
         , throw_on_quota_exceeded(throw_on_quota_exceeded_)
     {}
 
-    /// Check all quotas, return true if any quota is met or exceeded, false otherwise. Should be called before issuing API call.
+    /// Check the token quotas (and the sticky exceeded flag). Returns true if a limit is met or
+    /// exceeded, false otherwise. Should be called before issuing an API call. The API-call limit is
+    /// enforced separately by `tryReserveApiCall`.
     bool checkQuotas();
 
-    /// Count one outbound API call against the request quota. Should be called before each provider request
-    /// (including retries), so a misbehaving endpoint can't bypass `ai_function_max_api_calls_per_query`.
-    void recordAttempt();
+    /// Atomically reserve one outbound API call against the request quota. Should be called before
+    /// each provider request (including retries), so a misbehaving endpoint can't bypass
+    /// `ai_function_max_api_calls_per_query`. Returns true if a slot was reserved (the caller may
+    /// dispatch), false when the per-query limit is already reached; throws when
+    /// `throw_on_quota_exceeded`.
+    bool tryReserveApiCall();
 
     /// Record token usage on a successful response. Tokens are only billed by the provider when the call succeeds,
-    /// so this is kept separate from `recordAttempt` and called only after the response is parsed.
+    /// so this is kept separate and called only after the response is parsed.
     void recordTokens(UInt64 in_tokens, UInt64 out_tokens);
 
 

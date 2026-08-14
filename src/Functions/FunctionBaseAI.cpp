@@ -410,16 +410,17 @@ FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
         bool batch_ok = false;
         for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
         {
-            /// Check quotas before every request.
+            /// Check quotas before every request, and reserve the API-call slot atomically.
             /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
             if (quota.checkQuotas())
+                break;
+            /// Reserve before the call so failed calls still count against the request quota.
+            if (!quota.tryReserveApiCall())
                 break;
 
             try
             {
-                /// Update api_calls/quotas before call so failed calls are still added to total.
                 ++result.api_calls;
-                quota.recordAttempt();
                 ai_embedding_response = provider.embed(ai_embedding_request, timeouts);
                 result.input_tokens += ai_embedding_response.input_tokens;
                 quota.recordTokens(ai_embedding_response.input_tokens, 0);
@@ -533,9 +534,12 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
         for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
         {
-            /// Check quotas before every request.
+            /// Check quotas before every request, and reserve the API-call slot atomically.
             /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
             if (quota.checkQuotas())
+                break;
+            /// Reserve before the call so failed calls still count against the request quota.
+            if (!quota.tryReserveApiCall())
                 break;
 
             try
@@ -549,9 +553,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 ai_request.max_tokens = max_tokens;
                 ai_request.function_name = getName();
 
-                /// update api_calls/quotas before call so failed calls are still added to total
                 ++total_api_calls;
-                quota.recordAttempt();
 
                 auto ai_response = provider->call(ai_request, timeouts);
 

@@ -1737,3 +1737,34 @@ def test_input_token_quota_is_per_query(started_cluster):
         f"{input_tokens} input tokens with ai_function_max_input_tokens_per_query = {limit}: "
         "the quota is tracked per executeImpl call, so the query spent a multiple of its cap"
     )
+
+
+def test_api_call_quota_holds_under_concurrency(started_cluster):
+    """The API-call cap must hold with several pipeline threads reaching it together. The slot is
+    reserved with an atomic bounded increment before each request (`tryReserveApiCall`), so two
+    streams cannot both pass a stale check and overshoot. `max_threads = 8` over 8 parts runs the
+    scan on several concurrent streams; the query wants 64 calls but must make at most `limit`."""
+    limit = 10
+    _create_quota_parts("quota_concurrent")
+    try:
+        qid = unique_query_id("quota_concurrent")
+        instance.query(
+            f"SELECT {CHAT_CALL} FROM quota_concurrent FORMAT Null",
+            settings={
+                **AI_SETTINGS,
+                "max_block_size": 8,
+                "max_threads": 8,
+                "preferred_block_size_bytes": 0,
+                "ai_function_max_api_calls_per_query": limit,
+                "ai_function_throw_on_quota_exceeded": 0,
+            },
+            query_id=qid,
+        )
+        calls = int(get_profile_events(qid)["api_calls"])
+    finally:
+        instance.query("DROP TABLE IF EXISTS quota_concurrent SYNC")
+
+    assert calls <= limit, (
+        f"{calls} API calls with ai_function_max_api_calls_per_query = {limit} and max_threads > 1: "
+        "concurrent streams overshot the per-query cap"
+    )

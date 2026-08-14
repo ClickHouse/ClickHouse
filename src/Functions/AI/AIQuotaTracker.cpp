@@ -14,17 +14,6 @@ bool AIQuotaTracker::checkQuotas()
     if (quota_exceeded.load(std::memory_order_relaxed))
         return true;
 
-    if (UInt64 calls = api_calls.load(std::memory_order_relaxed); max_api_calls > 0 && calls >= max_api_calls)
-    {
-        if (throw_on_quota_exceeded)
-            throw Exception(ErrorCodes::LIMIT_EXCEEDED,
-                "AI API call limit reached: {} calls made, maximum: {}. "
-                "This is controlled by the 'ai_function_max_api_calls_per_query' setting",
-                calls, max_api_calls);
-        quota_exceeded.store(true, std::memory_order_relaxed);
-        return true;
-    }
-
     if (UInt64 in_tokens = input_tokens.load(std::memory_order_relaxed); max_input_tokens > 0 && in_tokens >= max_input_tokens)
     {
         if (throw_on_quota_exceeded)
@@ -50,9 +39,27 @@ bool AIQuotaTracker::checkQuotas()
     return false;
 }
 
-void AIQuotaTracker::recordAttempt()
+bool AIQuotaTracker::tryReserveApiCall()
 {
-    api_calls.fetch_add(1, std::memory_order_relaxed);
+    if (max_api_calls == 0) /// 0 disables the limit.
+        return true;
+
+    /// Bounded atomic increment: claim a slot only while under the limit, so `api_calls` never
+    /// exceeds `max_api_calls` no matter how many threads race here.
+    UInt64 cur = api_calls.load(std::memory_order_relaxed);
+    while (cur < max_api_calls)
+    {
+        if (api_calls.compare_exchange_weak(cur, cur + 1, std::memory_order_relaxed))
+            return true;
+    }
+
+    if (throw_on_quota_exceeded)
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED,
+            "AI API call limit reached: {} calls made, maximum: {}. "
+            "This is controlled by the 'ai_function_max_api_calls_per_query' setting",
+            max_api_calls, max_api_calls);
+    quota_exceeded.store(true, std::memory_order_relaxed);
+    return false;
 }
 
 void AIQuotaTracker::recordTokens(UInt64 in_tokens, UInt64 out_tokens)
