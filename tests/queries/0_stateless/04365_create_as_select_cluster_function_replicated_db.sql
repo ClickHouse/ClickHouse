@@ -8,33 +8,31 @@
 -- so IStorageCluster::getQueryProcessingStage wrongly treated it as a follower and stopped
 -- the local plan at FetchColumns, producing an empty header. See issue #107057.
 
--- Use a scratch database instead of re-engining {CLICKHOUSE_DATABASE}: in shared-database mode
--- (stress lane) that database is shared by every test in the client and is never recreated, so
--- leaving it Replicated breaks later tests that edit on-disk metadata. The leading DROP makes this
--- test immune to a predecessor's leftover, the trailing one stops it becoming that predecessor.
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
-CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier}
+-- {CLICKHOUSE_DATABASE} must not be re-engined: with --database it is shared by every test in
+-- the client. {CLICKHOUSE_DATABASE_2} is shared too, so both DROPs are required.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier}
     ENGINE = Replicated('/clickhouse/{database}/04365_repl', 'shard1', 'replica1') FORMAT Null;
 
 -- The data file lives in the shared user_files dir, so its name must be unique per test
 -- run or parallel copies clobber each other's file and fileCluster reads the union.
-INSERT INTO FUNCTION file({CLICKHOUSE_DATABASE_1:String} || '_04365_data.tsv', 'TSV', 'id UInt64, value String')
+INSERT INTO FUNCTION file({CLICKHOUSE_DATABASE_2:String} || '_04365_data.tsv', 'TSV', 'id UInt64, value String')
 SELECT number, toString(number) FROM numbers(5)
 SETTINGS engine_file_truncate_on_insert = 1;
 
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.t
     ENGINE = MergeTree() ORDER BY id
-    AS SELECT id, value FROM fileCluster('test_shard_localhost', {CLICKHOUSE_DATABASE_1:String} || '_04365_data.tsv', 'TSV', 'id UInt64, value String') FORMAT Null;
+    AS SELECT id, value FROM fileCluster('test_shard_localhost', {CLICKHOUSE_DATABASE_2:String} || '_04365_data.tsv', 'TSV', 'id UInt64, value String') FORMAT Null;
 
-SELECT count(), sum(id) FROM {CLICKHOUSE_DATABASE_1:Identifier}.t;
+SELECT count(), sum(id) FROM {CLICKHOUSE_DATABASE_2:Identifier}.t;
 
 -- Positional arguments must also be resolved on the Replicated DDL worker (query_kind =
 -- NO_QUERY): QueryAnalyzer::replaceNodesWithPositionalArguments gated on == INITIAL_QUERY,
 -- so GROUP BY 1 was left unresolved and threw NOT_AN_AGGREGATE.
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_pos
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.t_pos
     ENGINE = MergeTree() ORDER BY id
-    AS SELECT id, count() AS c FROM fileCluster('test_shard_localhost', {CLICKHOUSE_DATABASE_1:String} || '_04365_data.tsv', 'TSV', 'id UInt64, value String') GROUP BY 1 FORMAT Null;
+    AS SELECT id, count() AS c FROM fileCluster('test_shard_localhost', {CLICKHOUSE_DATABASE_2:String} || '_04365_data.tsv', 'TSV', 'id UInt64, value String') GROUP BY 1 FORMAT Null;
 
-SELECT count(), sum(id) FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_pos;
+SELECT count(), sum(id) FROM {CLICKHOUSE_DATABASE_2:Identifier}.t_pos;
 
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
