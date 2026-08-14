@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Interpreters/TableJoin.h>
 #include <Core/Joins.h>
 #include <Core/Names.h>
 #include <Common/typeid_cast.h>
@@ -95,6 +96,16 @@ bool HashJoinImplementation::checkPattern(GroupExpressionPtr expression, const E
 {
     return typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep()) != nullptr &&
         expression->strategy == nullptr;
+}
+
+/// Whether `join_algorithm` allows an algorithm from the hash family, so the local join can
+/// actually run as the hash join the strategies of this rule cost.
+static bool allowsHashFamilyAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms)
+{
+    return TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
+        || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH)
+        || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::GRACE_HASH)
+        || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO);
 }
 
 /// A side is preserved when the join never emits rows with that side null/default-extended:
@@ -436,6 +447,13 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
 
     /// For a single-node cluster all distributed strategies are identical to local join - skip them.
     if (candidate_node_counts.empty())
+        return result;
+
+    /// The distributed strategies shape and cost the plan for a hash join. When `join_algorithm`
+    /// allows no hash-family algorithm, the executed join would not match the costed one, so the
+    /// join stays single-node; the local variant above runs whatever algorithm is allowed.
+    const auto & join_step = *typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep());
+    if (!allowsHashFamilyAlgorithm(join_step.getJoinSettings().join_algorithms))
         return result;
 
     /// Enumerate distributed strategies at each candidate node count.
