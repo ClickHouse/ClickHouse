@@ -1,0 +1,12 @@
+one column renamed
+2000	100	1199
+2000	100	1199
+every column renamed
+2000	0	1999	1	1
+one column renamed, compact part
+2000	100	1199
+Compact
+a freed name handed to another column
+7	100
+7	101
+7	102
