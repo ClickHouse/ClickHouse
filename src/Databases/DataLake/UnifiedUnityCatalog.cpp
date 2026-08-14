@@ -150,6 +150,7 @@ void UnifiedUnityCatalog::ensureBearerToken(bool force_refresh) const
 
         LOG_DEBUG(log, "Refreshing bearer token via OAuth ({})", force_refresh ? "rejected by the catalog" : "expired");
         access_token.reset();
+        /// `iceberg_rest_catalog` keeps the bearer token inside its auth header, so it must be recreated with the new token.
         iceberg_rest_catalog.reset();
     }
 
