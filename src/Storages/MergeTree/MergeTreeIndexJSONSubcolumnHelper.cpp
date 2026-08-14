@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -27,6 +28,13 @@ static String extractPathFromSubcolumn(std::string_view subcolumn_name)
     return String(subcolumn_name.substr(0, pos));
 }
 
+/// Prefixed subcolumns look like "<prefix>`first_path_element`.rest": the back-quote distinguishes
+/// them from an ordinary path starting with the prefix character, e.g. "@`a`" versus "@a".
+static bool isPrefixedSubcolumn(std::string_view subcolumn_name, char prefix)
+{
+    return subcolumn_name.size() >= 2 && subcolumn_name[0] == prefix && subcolumn_name[1] == '`';
+}
+
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
     const Block & header,
@@ -50,8 +58,11 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
         if (it == index_columns.end())
             continue;
 
-        /// Sub-object access (^ prefix) is not supported for index filtering
-        if (subcolumn_part.starts_with("^"))
+        /// Sub-object (^) and combined literal+sub-object (@) access cannot use the index: such
+        /// subcolumn is not NULL when the path has only sub-paths, so the presence of the path
+        /// itself is not an equivalent condition.
+        if (isPrefixedSubcolumn(subcolumn_part, DataTypeObject::SUB_OBJECT_SUBCOLUMN_PREFIX)
+            || isPrefixedSubcolumn(subcolumn_part, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX))
             return std::nullopt;
 
         String path = extractPathFromSubcolumn(subcolumn_part);
