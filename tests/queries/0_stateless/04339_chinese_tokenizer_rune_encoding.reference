@@ -27,6 +27,8 @@
 -- malformed bytes do not throw and token bytes stay accurate (hex-encoded)
 ['E58C97E4BAAC','FF','E5A4A7E5ADA6']
 ['3547','C0','E7BD91E7BB9C']
+['61','C080','62']
+['61','C1B1','62']
 -- hasToken on chinese text index agrees with row-level evaluation
 0
 0

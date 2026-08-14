@@ -45,6 +45,8 @@ SELECT tokens('a😀b', 'chinese');
 SELECT '-- malformed bytes do not throw and token bytes stay accurate (hex-encoded)';
 SELECT arrayMap(t -> hex(t), tokens(concat('北京', unhex('FF'), '大学'), 'chinese'));
 SELECT arrayMap(t -> hex(t), tokens(concat('5G', unhex('C0'), '网络'), 'chinese'));
+SELECT arrayMap(t -> hex(t), tokens(concat('a', unhex('C080'), 'b'), 'chinese'));
+SELECT arrayMap(t -> hex(t), tokens(concat('a', unhex('C1B1'), 'b'), 'chinese'));
 
 -- `hasToken` on a chinese-indexed column uses splitByNonAlpha at the row level, so it
 -- never matches a Jieba sub-token inside a CJK run; it must agree with and without the index.
