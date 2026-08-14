@@ -46,3 +46,7 @@
 1001
 -- 15. A subplan with an ANY join is broadcast, not recomputed per node
 0	1
+-- 16. A join with no hash-family algorithm allowed stays single-node
+0	1
+-- 17. A subplan with a non-deterministic function is broadcast, not recomputed per node
+0	1

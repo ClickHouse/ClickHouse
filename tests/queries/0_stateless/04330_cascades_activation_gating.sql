@@ -173,6 +173,36 @@ FROM (
         distributed_plan_execute_locally = 1, join_algorithm = 'hash', max_rows_to_group_by = 0
 )
 SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
+-- The distributed join strategies shape and cost the plan for a hash join. When
+-- `join_algorithm` allows no hash-family algorithm, the executed join would not match the
+-- costed one, so the join stays single-node (the local variant runs whatever is allowed).
+-- Counts: broadcast or shuffle hash joins (must be 0), joins in the plan (1, the local one).
+SELECT '-- 16. A join with no hash-family algorithm allowed stays single-node';
+SELECT countIf(explain LIKE '%Broadcast HashJoin%' OR explain LIKE '%Shuffle HashJoin%'), countIf(explain LIKE '%HashJoin%')
+FROM (
+    EXPLAIN
+    SELECT sum(f.x)
+    FROM t_gating_fact AS f
+    INNER JOIN t_gating_dim1 AS d ON f.k = d.k
+    SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
+        distributed_plan_execute_locally = 1, join_algorithm = 'full_sorting_merge', max_rows_to_group_by = 0
+)
+SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
+
+-- A non-deterministic function gives different values when it is recomputed per node, so a
+-- subplan that contains one must be computed on a single node and broadcast, never replicated.
+SELECT '-- 17. A subplan with a non-deterministic function is broadcast, not recomputed per node';
+SELECT countIf(explain LIKE '%(Replicated %'), countIf(explain LIKE '%BroadcastExchange%')
+FROM (
+    EXPLAIN
+    SELECT sum(f.x + dims.r)
+    FROM t_gating_fact AS f
+    INNER JOIN (SELECT k, rand() AS r FROM t_gating_dim1) AS dims ON f.k = dims.k
+    SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
+        distributed_plan_execute_locally = 1, join_algorithm = 'hash', max_rows_to_group_by = 0
+)
+SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
+
 SET param__internal_join_table_stat_hints = '';
 DROP TABLE t_gating_fact;
 DROP TABLE t_gating_dim1;
