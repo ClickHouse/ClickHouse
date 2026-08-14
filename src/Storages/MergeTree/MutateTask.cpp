@@ -48,6 +48,7 @@
 #include <Storages/Statistics/Statistics.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/FailPoint.h>
+#include <Common/DateLUT.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/ProfileEventsScope.h>
@@ -3828,8 +3829,8 @@ bool MutateTask::prepare()
         {
             auto rows_ttl = ctx->metadata_snapshot->getRowsTTL();
             new_ttl_expression = getRowsTTLExpressionFingerprint(rows_ttl);
-            new_ttl_timezone = getRowsTTLTimeZoneFingerprint(rows_ttl);
-            delta = tryComputeConstantTTLDelta(source_ttl_infos.table_ttl_expression, rows_ttl);
+            new_ttl_timezone = getRowsTTLTimeZoneFingerprint(rows_ttl, DateLUT::instance());
+            delta = tryComputeConstantTTLDelta(source_ttl_infos.table_ttl_expression, rows_ttl, DateLUT::instance());
 
             /// A successful proof references exactly one source column (checked inside the proof).
             /// The part must physically store that column with exactly its current type. Otherwise
@@ -3848,7 +3849,7 @@ bool MutateTask::prepare()
 
             /// The time zone is not covered by the checks above: `DataTypeDateTime::equals` ignores it,
             /// `DataTypeDateTime64::equals` compares only the scale, and a `Date`/`Date32` TTL depends on
-            /// the SERVER time zone, which is not part of the table metadata at all. So the part must also
+            /// the mutation context's time zone, which is not part of the table metadata at all. So the part must also
             /// have been written under the same zone the delta was proven under; a part written by an older
             /// server has no recorded zone and therefore never takes the fast path.
             if (delta

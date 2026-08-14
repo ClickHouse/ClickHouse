@@ -1333,7 +1333,8 @@ std::optional<TTLShiftedColumn> tryAnalyzeTTLShift(const ASTPtr & node)
 
 /// See the comment on the exported `tryComputeConstantTTLDelta` in the header: this is the same proof,
 /// with the old rows TTL already parsed.
-std::optional<time_t> tryComputeConstantTTLDelta(const ASTPtr & old_expression_ast, const TTLDescription & new_ttl)
+std::optional<time_t> tryComputeConstantTTLDelta(
+    const ASTPtr & old_expression_ast, const TTLDescription & new_ttl, const DateLUTImpl & date_lut)
 {
     if (!new_ttl.expression_ast)
         return {};
@@ -1368,9 +1369,9 @@ std::optional<time_t> tryComputeConstantTTLDelta(const ASTPtr & old_expression_a
         if (old_shift->has_sub_day_interval || new_shift->has_sub_day_interval)
             return {};
 
-        /// A `Date` TTL stores `fromDayNum(date + N)` in the server time zone, so consecutive days are
+        /// A `Date` TTL stores `fromDayNum(date + N)` in the current time zone, so consecutive days are
         /// a fixed 86400 seconds apart only when that time zone has a fixed offset from UTC.
-        if (!DateLUT::serverTimezoneInstance().hasFixedOffset())
+        if (!date_lut.hasFixedOffset())
             return {};
     }
     else if (which.isDateTime() || which.isDateTime64())
@@ -1417,7 +1418,7 @@ String getRowsTTLExpressionFingerprint(const TTLDescription & rows_ttl)
     return rows_ttl.expression_ast->formatWithSecretsOneLine();
 }
 
-String getRowsTTLTimeZoneFingerprint(const TTLDescription & rows_ttl)
+String getRowsTTLTimeZoneFingerprint(const TTLDescription & rows_ttl, const DateLUTImpl & date_lut)
 {
     if (rows_ttl.expression_columns.size() == 1)
     {
@@ -1429,10 +1430,11 @@ String getRowsTTLTimeZoneFingerprint(const TTLDescription & rows_ttl)
             return assert_cast<const DataTypeDateTime64 &>(*type).getTimeZone().getTimeZone();
     }
 
-    return DateLUT::serverTimezoneInstance().getTimeZone();
+    return date_lut.getTimeZone();
 }
 
-std::optional<time_t> tryComputeConstantTTLDelta(const String & old_ttl_expression, const TTLDescription & new_ttl)
+std::optional<time_t> tryComputeConstantTTLDelta(
+    const String & old_ttl_expression, const TTLDescription & new_ttl, const DateLUTImpl & date_lut)
 {
     if (old_ttl_expression.empty())
         return {};
@@ -1449,7 +1451,7 @@ std::optional<time_t> tryComputeConstantTTLDelta(const String & old_ttl_expressi
         parser, old_ttl_expression.data(), old_ttl_expression.data() + old_ttl_expression.size(),
         "rows TTL expression fingerprint", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
-    return tryComputeConstantTTLDelta(old_expression_ast, new_ttl);
+    return tryComputeConstantTTLDelta(old_expression_ast, new_ttl, date_lut);
 }
 
 TTLDescription TTLDescription::getTTLFromAST(

@@ -28,6 +28,7 @@
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Common/ColumnsHashing.h>
+#include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
@@ -975,7 +976,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         if (!new_data_part->ttl_infos.table_ttl.has_epoch_timestamps)
         {
             new_data_part->ttl_infos.table_ttl_expression = getRowsTTLExpressionFingerprint(rows_ttl);
-            new_data_part->ttl_infos.table_ttl_timezone = getRowsTTLTimeZoneFingerprint(rows_ttl);
+            new_data_part->ttl_infos.table_ttl_timezone = getRowsTTLTimeZoneFingerprint(rows_ttl, DateLUT::instance());
         }
     }
 
