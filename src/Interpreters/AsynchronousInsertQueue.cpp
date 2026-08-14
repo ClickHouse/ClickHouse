@@ -321,6 +321,18 @@ void AsynchronousInsertQueue::flushAndShutdown()
         LOG_TRACE(log, "Shutting down the asynchronous insertion queue");
         shutdown = true;
 
+        if (flush_on_shutdown)
+        {
+            try
+            {
+                flushAll();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Cannot flush async inserts on shutdown");
+            }
+        }
+
         for (size_t i = 0; i < pool_size; ++i)
         {
             auto & shard = queue_shards[i];
@@ -330,18 +342,10 @@ void AsynchronousInsertQueue::flushAndShutdown()
             dump_by_first_update_threads[i].join();
 
             std::lock_guard lock(shard.mutex);
-            if (flush_on_shutdown)
-            {
-                for (auto & [_, elem] : shard.queue)
-                    scheduleDataProcessingJob(elem.key, std::move(elem.data), getContext(), i);
-            }
-            else
-            {
-                for (auto & [_, elem] : shard.queue)
-                    for (const auto & entry : elem.data->entries)
-                        entry->finish(
-                            std::make_exception_ptr(Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout exceeded)")));
-            }
+            for (const auto & [_, elem] : shard.queue)
+                for (const auto & entry : elem.data->entries)
+                    entry->finish(
+                        std::make_exception_ptr(Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout exceeded)")));
 
             shard.iterators.clear();
             shard.queue.clear();
