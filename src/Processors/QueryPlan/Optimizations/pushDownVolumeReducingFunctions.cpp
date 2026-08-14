@@ -262,6 +262,39 @@ std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKee
         if (surfaced.contains(argument))
             continue;
 
+        /// Keeping a volume-reducing function below the sort only pays off if no calculation that
+        /// is still lifted also needs its argument. Otherwise the wide argument crosses the sort
+        /// anyway and evaluating the function before a row-reducing sort is a regression.
+        bool argument_is_needed_by_lifted_node = false;
+        for (const auto & reader : actions.getNodes())
+        {
+            if (reader.type == ActionsDAG::ActionType::ALIAS)
+                continue;
+
+            for (const auto * child : reader.children)
+            {
+                if (resolveAliases(child) != argument)
+                    continue;
+
+                const bool is_another_supported_volume_reducing_function = reader.type == ActionsDAG::ActionType::FUNCTION
+                    && reader.function_base && reader.function_base->isVolumeReducing() && reader.function_base->isDeterministic()
+                    && reader.function_base->isDeterministicInScopeOfQuery() && reader.children.size() == 1
+                    && isSupportedArgumentType(reader.function_base->getName(), argument->result_type);
+
+                if (&reader != &node && !is_another_supported_volume_reducing_function)
+                {
+                    argument_is_needed_by_lifted_node = true;
+                    break;
+                }
+            }
+
+            if (argument_is_needed_by_lifted_node)
+                break;
+        }
+
+        if (argument_is_needed_by_lifted_node)
+            continue;
+
         split_nodes.insert(&node);
     }
 
@@ -383,8 +416,10 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
 
     /// A result must not shadow a column that already exists around the child step, otherwise the
     /// parent's new input could bind to that column instead of the computed one.
+    NameSet pushed_result_names;
     for (const auto & pushed_function : pushed_functions)
-        if (child_input_header.has(pushed_function.result_name) || child_output_header.has(pushed_function.result_name))
+        if (child_input_header.has(pushed_function.result_name) || child_output_header.has(pushed_function.result_name)
+            || !pushed_result_names.insert(pushed_function.result_name).second)
             return 0;
 
     /// Stop the child from surfacing the replaced columns. Input declarations are kept on purpose:
