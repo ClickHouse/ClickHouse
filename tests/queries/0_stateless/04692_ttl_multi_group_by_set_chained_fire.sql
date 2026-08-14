@@ -166,4 +166,3 @@ OPTIMIZE TABLE ttl_m2 FINAL;
 SELECT max(payload) AS payload_after_column_ttl FROM ttl_m2;
 
 DROP TABLE ttl_m2;
-
