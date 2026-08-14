@@ -35,6 +35,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 最も単純な場合、カラム定義は `name type` です。例: `RegionID UInt32`。
 
+型に続く修飾子である `COMMENT`、`compression_codec`、`STATISTICS`、`TTL`、`COLLATE`、`PRIMARY KEY`、およびカラムごとの `SETTINGS` は、任意の順序で記述でき、それぞれ最大 1 回だけ指定できます。たとえば、`RegionID UInt32 CODEC(ZSTD) COMMENT 'comment for column'` と `RegionID UInt32 COMMENT 'comment for column' CODEC(ZSTD)` は同じです。`SHOW CREATE TABLE` はカラム宣言を正規化することに注意してください。残る修飾子は常に `COMMENT`、`CODEC`、`STATISTICS`、`TTL`、`COLLATE`、`SETTINGS` の正規順序で出力され、カラムごとの `PRIMARY KEY` はカラム宣言からテーブルレベルの `PRIMARY KEY` 句へ移動されます。
+
 デフォルト値用の式も定義できます (下記を参照) 。
 
 必要に応じて、1 つ以上のキー式を使って主キーを指定できます。

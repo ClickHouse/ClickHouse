@@ -35,6 +35,8 @@ La estructura de la tabla es una lista de descripciones de columnas, índices se
 
 Una descripción de columna es `name type` en el caso más simple. Ejemplo: `RegionID UInt32`.
 
+Los modificadores que siguen al tipo —`COMMENT`, `compression_codec`, `STATISTICS`, `TTL`, `COLLATE`, `PRIMARY KEY` y `SETTINGS` por columna— pueden escribirse en cualquier orden y cada uno de ellos como máximo una vez. Por ejemplo, `RegionID UInt32 CODEC(ZSTD) COMMENT 'comment for column'` y `RegionID UInt32 COMMENT 'comment for column' CODEC(ZSTD)` son equivalentes. Tenga en cuenta que `SHOW CREATE TABLE` normaliza la declaración de columna: los modificadores que permanecen en ella siempre se imprimen en el orden canónico `COMMENT`, `CODEC`, `STATISTICS`, `TTL`, `COLLATE`, `SETTINGS`, mientras que una `PRIMARY KEY` por columna se mueve fuera de la declaración de columna a la cláusula `PRIMARY KEY` de nivel de tabla.
+
 También se pueden definir expresiones para los valores predeterminados (véase más abajo).
 
 Si es necesario, se puede especificar la clave primaria, con una o más expresiones de clave.

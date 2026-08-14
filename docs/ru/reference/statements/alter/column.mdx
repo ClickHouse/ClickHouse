@@ -37,10 +37,10 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 </div>
 
 ```sql
-ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
 ```
 
-Добавляет в таблицу новый столбец с указанными `name`, `type`, [`codec`](/ru/reference/statements/create/table/codec) и `default_expr` (см. раздел [Выражения по умолчанию](/ru/reference/statements/create/table#default_values)).
+Добавляет в таблицу новый столбец с указанными `name`, `type`, [`кодек`](/ru/reference/statements/create/table/codec) и `default_expr` (см. раздел [Выражения по умолчанию](/ru/reference/statements/create/table#default_values)). Модификаторы, следующие после типа, можно записывать в любом порядке, каждый — не более одного раза — см. [описание столбца](/ru/reference/statements/create/table#with-explicit-schema).
 
 Если указано условие `IF NOT EXISTS`, запрос не вернёт ошибку, если столбец уже существует. Если указать `AFTER name_after` (имя другого столбца), столбец будет добавлен после него в списке столбцов таблицы. Если вы хотите добавить столбец в начало таблицы, используйте условие `FIRST`. В противном случае столбец добавляется в конец таблицы. В цепочке действий `name_after` может быть именем столбца, добавленного одним из предыдущих действий.
 
@@ -154,12 +154,14 @@ ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used fo
 
 ```sql
 MODIFY COLUMN [IF EXISTS] name
-    [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ALTER COLUMN [IF EXISTS] name
-    TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    TYPE [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ```
+
+Модификаторы после типа можно указывать в любом порядке, при этом каждый из них — не более одного раза; см. [описание столбца](/ru/reference/statements/create/table#with-explicit-schema).
 
 Этот запрос изменяет свойства столбца `name`:
 

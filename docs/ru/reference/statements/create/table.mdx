@@ -35,6 +35,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 В простейшем случае описание столбца имеет вид `name type`. Пример: `RegionID UInt32`.
 
+Модификаторы, следующие за типом, — `COMMENT`, `compression_codec`, `STATISTICS`, `TTL`, `COLLATE`, `PRIMARY KEY` и `SETTINGS` для каждого столбца — можно записывать в любом порядке, причём каждый из них не более одного раза. Например, `RegionID UInt32 CODEC(ZSTD) COMMENT 'comment for column'` и `RegionID UInt32 COMMENT 'comment for column' CODEC(ZSTD)` равнозначны. Обратите внимание, что `SHOW CREATE TABLE` нормализует объявление столбца: оставшиеся в нём модификаторы всегда выводятся в каноническом порядке `COMMENT`, `CODEC`, `STATISTICS`, `TTL`, `COLLATE`, `SETTINGS`, а `PRIMARY KEY` для отдельного столбца перемещается из объявления столбца в предложение `PRIMARY KEY` на уровне таблицы.
+
 Для значений по умолчанию также можно задавать выражения (см. ниже).
 
 При необходимости можно указать первичный ключ с одним или несколькими ключевыми выражениями.

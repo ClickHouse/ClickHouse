@@ -37,10 +37,10 @@ Les actions suivantes sont prises en charge :
 </div>
 
 ```sql
-ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
 ```
 
-Ajoute une nouvelle colonne à la table avec les `name`, `type`, [`codec`](/fr/reference/statements/create/table/codec) et `default_expr` spécifiés (voir la section [Expressions par défaut](/fr/reference/statements/create/table#default_values)).
+Ajoute une nouvelle colonne à la table avec les `name`, `type`, [`codec`](/fr/reference/statements/create/table/codec) et `default_expr` spécifiés (voir la section [Expressions par défaut](/fr/reference/statements/create/table#default_values)). Les modificateurs qui suivent le type peuvent être écrits dans n&#39;importe quel ordre, chacun au plus une fois ; voir [description de colonne](/fr/reference/statements/create/table#with-explicit-schema).
 
 Si la clause `IF NOT EXISTS` est incluse, la requête ne renvoie pas d&#39;erreur si la colonne existe déjà. Si vous spécifiez `AFTER name_after` (le nom d&#39;une autre colonne), la colonne est ajoutée après celle-ci dans la liste des colonnes de la table. Si vous voulez ajouter une colonne au début de la table, utilisez la clause `FIRST`. Sinon, la colonne est ajoutée à la fin de la table. Dans une chaîne d&#39;actions, `name_after` peut être le nom d&#39;une colonne ajoutée dans l&#39;une des actions précédentes.
 
@@ -154,12 +154,14 @@ ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used fo
 
 ```sql
 MODIFY COLUMN [IF EXISTS] name
-    [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ALTER COLUMN [IF EXISTS] name
-    TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    TYPE [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ```
+
+Les modificateurs qui suivent le type peuvent être écrits dans n’importe quel ordre et chacun ne peut apparaître qu’une seule fois ; voir [description de colonne](/fr/reference/statements/create/table#with-explicit-schema).
 
 Cette requête modifie les propriétés de la colonne `name` :
 

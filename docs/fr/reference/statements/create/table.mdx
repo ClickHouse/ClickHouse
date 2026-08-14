@@ -35,6 +35,8 @@ La structure de la table est une liste de descriptions de colonnes, d’index se
 
 Dans le cas le plus simple, une description de colonne est de la forme `name type`. Exemple : `RegionID UInt32`.
 
+Les modificateurs qui suivent le type — `COMMENT`, `compression_codec`, `STATISTICS`, `TTL`, `COLLATE`, `PRIMARY KEY` et `SETTINGS` par colonne — peuvent être écrits dans n’importe quel ordre, chacun au plus une fois. Par exemple, `RegionID UInt32 CODEC(ZSTD) COMMENT 'comment for column'` et `RegionID UInt32 COMMENT 'comment for column' CODEC(ZSTD)` sont identiques. Notez que `SHOW CREATE TABLE` normalise la déclaration de colonne : les modificateurs qui y restent sont toujours affichés dans l’ordre canonique `COMMENT`, `CODEC`, `STATISTICS`, `TTL`, `COLLATE`, `SETTINGS`, tandis qu’une `PRIMARY KEY` par colonne est déplacée hors de la déclaration de colonne vers la clause `PRIMARY KEY` au niveau de la table.
+
 Des expressions peuvent également être définies pour les valeurs par défaut (voir ci-dessous).
 
 Si nécessaire, la clé primaire peut être spécifiée, avec une ou plusieurs expressions de clé.

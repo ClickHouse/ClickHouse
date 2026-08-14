@@ -37,10 +37,10 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 </div>
 
 ```sql
-ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
 ```
 
-يضيف عمودًا جديدًا إلى الجدول باستخدام `name` و`type` و[`codec`](/ar/reference/statements/create/table/codec) و`default_expr` المحددة (راجع قسم [التعبيرات الافتراضية](/ar/reference/statements/create/table#default_values)).
+يضيف عمودًا جديدًا إلى الجدول باستخدام `name` و`type` و[`codec`](/ar/reference/statements/create/table/codec) و`default_expr` المحددة (راجع قسم [التعبيرات الافتراضية](/ar/reference/statements/create/table#default_values)). ويمكن كتابة المعدلات التي تلي النوع بأي ترتيب، وكل منها مرة واحدة على الأكثر - راجع [وصف العمود](/ar/reference/statements/create/table#with-explicit-schema).
 
 إذا كانت العبارة `IF NOT EXISTS` مضمنة، فلن يُرجع الاستعلام خطأً إذا كان العمود موجودًا بالفعل. وإذا حدّدت `AFTER name_after` (اسم عمود آخر)، فسيُضاف العمود بعد العمود المحدد في قائمة أعمدة الجدول. وإذا أردت إضافة عمود إلى بداية الجدول، فاستخدم العبارة `FIRST`. بخلاف ذلك، يُضاف العمود إلى نهاية الجدول. وفي سلسلة من الإجراءات، يمكن أن يكون `name_after` اسم عمود أُضيف في أحد الإجراءات السابقة.
 
@@ -154,12 +154,14 @@ ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used fo
 
 ```sql
 MODIFY COLUMN [IF EXISTS] name
-    [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ALTER COLUMN [IF EXISTS] name
-    TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    TYPE [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ```
+
+يمكن كتابة المُعدِّلات التي تلي النوع بأي ترتيب، على ألا يتكرر أيٌّ منها أكثر من مرة — راجع [وصف العمود](/ar/reference/statements/create/table#with-explicit-schema).
 
 يُغيّر هذا الاستعلام خصائص العمود `name`:
 

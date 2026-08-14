@@ -35,6 +35,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 가장 단순한 경우 컬럼 설명은 `name type` 형식입니다. 예시: `RegionID UInt32`.
 
+유형 뒤에 오는 수정자 `COMMENT`, `compression_codec`, `STATISTICS`, `TTL`, `COLLATE`, `PRIMARY KEY` 및 컬럼별 `SETTINGS`는 임의의 순서로 작성할 수 있으며, 각각 최대 한 번만 사용할 수 있습니다. 예를 들어 `RegionID UInt32 CODEC(ZSTD) COMMENT 'comment for column'`과 `RegionID UInt32 COMMENT 'comment for column' CODEC(ZSTD)`는 동일합니다. `SHOW CREATE TABLE`은 컬럼 선언을 정규화합니다. 선언에 남아 있는 수정자는 항상 `COMMENT`, `CODEC`, `STATISTICS`, `TTL`, `COLLATE`, `SETTINGS`의 정규 순서로 출력되며, 컬럼별 `PRIMARY KEY`는 컬럼 선언에서 테이블 수준 `PRIMARY KEY` 절로 이동합니다.
+
 기본값에 대한 표현식도 정의할 수 있습니다(아래 참조).
 
 필요한 경우 하나 이상의 키 표현식과 함께 기본 키를 지정할 수 있습니다.

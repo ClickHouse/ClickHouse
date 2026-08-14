@@ -35,6 +35,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 يكون وصف العمود، في أبسط الحالات، على الشكل `name type`. مثال: `RegionID UInt32`.
 
+يمكن كتابة المعدِّلات التي تلي النوع — `COMMENT` و`compression_codec` و`STATISTICS` و`TTL` و`COLLATE` و`PRIMARY KEY` و`SETTINGS` لكل عمود — بأي ترتيب، وبحد أقصى مرة واحدة لكل منها. على سبيل المثال، `RegionID UInt32 CODEC(ZSTD) COMMENT 'comment for column'` و`RegionID UInt32 COMMENT 'comment for column' CODEC(ZSTD)` متماثلان. لاحظ أن `SHOW CREATE TABLE` يطبع تعريف العمود بصيغة موحّدة: إذ تُطبع المعدِّلات المتبقية فيه دائمًا بالترتيب المعياري `COMMENT` و`CODEC` و`STATISTICS` و`TTL` و`COLLATE` و`SETTINGS`، بينما يُنقل `PRIMARY KEY` لكل عمود من تعريف العمود إلى عبارة `PRIMARY KEY` على مستوى الجدول.
+
 يمكن أيضًا تعريف تعبيرات للقيم الافتراضية (انظر أدناه).
 
 عند الحاجة، يمكن تحديد المفتاح الأساسي باستخدام تعبير مفتاح واحد أو أكثر.

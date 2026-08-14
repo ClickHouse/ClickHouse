@@ -35,6 +35,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 最简单情况下，列描述的形式为 `name type`。示例：`RegionID UInt32`。
 
+类型后面的修饰符——`COMMENT`、`compression_codec`、`STATISTICS`、`TTL`、`COLLATE`、`PRIMARY KEY` 和按列 `SETTINGS`——可以按任意顺序编写，并且每个最多只能出现一次。例如，`RegionID UInt32 CODEC(ZSTD) COMMENT 'comment for column'` 和 `RegionID UInt32 COMMENT 'comment for column' CODEC(ZSTD)` 是相同的。请注意，`SHOW CREATE TABLE` 会规范化列声明：其中保留的修饰符始终按规范顺序 `COMMENT`、`CODEC`、`STATISTICS`、`TTL`、`COLLATE`、`SETTINGS` 输出，而按列 `PRIMARY KEY` 会从列声明中移至表级 `PRIMARY KEY` 子句。
+
 也可以为默认值定义表达式 (见下文) 。
 
 如有需要，可以指定主键，其中包含一个或多个键表达式。

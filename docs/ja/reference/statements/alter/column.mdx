@@ -37,10 +37,10 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 </div>
 
 ```sql
-ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
 ```
 
-指定した `name`、`type`、[`codec`](/ja/reference/statements/create/table/codec)、および `default_expr` を持つ新しいカラムをテーブルに追加します ([デフォルト式](/ja/reference/statements/create/table#default_values) のセクションを参照) 。
+指定した `name`、`type`、[`codec`](/ja/reference/statements/create/table/codec)、および `default_expr` を持つ新しいカラムをテーブルに追加します ([デフォルト式](/ja/reference/statements/create/table#default_values) のセクションを参照) 。型に続く修飾子は任意の順序で記述でき、それぞれ最大1回まで指定できます。[カラム定義](/ja/reference/statements/create/table#with-explicit-schema) を参照してください。
 
 `IF NOT EXISTS` 句が含まれている場合、カラムがすでに存在していてもクエリはエラーを返しません。`AFTER name_after` (別のカラム名) を指定すると、そのカラムはテーブルのカラム一覧で指定したカラムの直後に追加されます。カラムをテーブルの先頭に追加する場合は、`FIRST` 句を使用します。それ以外の場合、カラムはテーブルの末尾に追加されます。一連の操作では、`name_after` に前のいずれかの操作で追加されたカラム名を指定することもできます。
 
@@ -154,12 +154,14 @@ ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used fo
 
 ```sql
 MODIFY COLUMN [IF EXISTS] name
-    [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ALTER COLUMN [IF EXISTS] name
-    TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    TYPE [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ```
+
+型の後に続く修飾子は任意の順序で記述でき、それぞれ 1 回まで指定できます。詳しくは [カラム定義](/ja/reference/statements/create/table#with-explicit-schema) を参照してください。
 
 このクエリは、`name` カラムの以下のプロパティを変更します。
 
@@ -193,7 +195,7 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 
 カラム型の変更だけが複雑な操作であり、データを含むファイルの内容も変更されます。大規模なテーブルでは、これに時間がかかる場合があります。
 
-このクエリでは、`FIRST | AFTER` clause を使用してカラムの順序を変更することもできます。詳しくは [ADD COLUMN](#add-column) の説明を参照してください。ただし、この場合はカラム型の指定が必須です。
+このクエリでは、`FIRST | AFTER` 句を使用してカラムの順序を変更することもできます。詳しくは [ADD COLUMN](#add-column) の説明を参照してください。ただし、この場合はカラム型の指定が必須です。
 
 例:
 
