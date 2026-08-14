@@ -3907,7 +3907,8 @@ TEST_F(FileCacheTest, QueryLimitSurplusGoesBackToTheQueryWhichReservedIt)
         auto completing_scope_holder = DB::QueryScope::create(completing_context);
         auto completing_holder = fixture.cache->getQueryContextHolder("surplus_completer", fixture.read_settings);
 
-        reserved.reset();
+        /// Destroying the holder completes the segment.
+        reserved = nullptr;
     });
     completing_query.join();
 
