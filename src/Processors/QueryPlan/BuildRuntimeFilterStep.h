@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 
 #include <optional>
 
@@ -18,12 +19,7 @@ public:
         const DataTypePtr & filter_column_type_,
         String filter_name_,
         String filter_key_,
-        UInt64 exact_values_limit_,
-        UInt64 bloom_filter_bytes_,
-        UInt64 bloom_filter_hash_functions_,
-        Float64 pass_ratio_threshold_for_disabling,
-        UInt64 blocks_to_skip_before_reenabling,
-        Float64 max_ratio_of_set_bits_in_bloom_filter,
+        RuntimeFilterGeometry geometry_,
         bool allow_to_use_not_exact_filter_,
         bool track_key_range_,
         std::optional<UInt64> distinct_keys_hint_ = std::nullopt);
@@ -35,6 +31,10 @@ public:
 
     const String & getFilterColumnName() const { return filter_column_name; }
     const String & getFilterName() const { return filter_name; }
+    const String & getFilterKey() const { return filter_key; }
+    const DataTypePtr & getFilterColumnType() const { return filter_column_type; }
+    bool allowsNotExactFilter() const { return allow_to_use_not_exact_filter; }
+    const RuntimeFilterGeometry & getGeometry() const { return geometry; }
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
 
@@ -61,12 +61,7 @@ private:
     /// serialized) so it never enters a plan-step hash. Empty for a deserialized step (then inert).
     String filter_key;
 
-    UInt64 exact_values_limit;
-    UInt64 bloom_filter_bytes;
-    UInt64 bloom_filter_hash_functions;
-    Float64 pass_ratio_threshold_for_disabling;
-    UInt64 blocks_to_skip_before_reenabling;
-    Float64 max_ratio_of_set_bits_in_bloom_filter;
+    RuntimeFilterGeometry geometry;
 
     bool allow_to_use_not_exact_filter;
     /// Record the key values/range for left-side index analysis; off avoids an extra build-side scan.

@@ -7,13 +7,14 @@
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/Set.h>
+#include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 
-#include <base/types.h>
-#include <boost/noncopyable.hpp>
 #include <cstddef>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <base/types.h>
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
@@ -24,6 +25,9 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 
 }
+
+class ReadBuffer;
+class WriteBuffer;
 
 class IRuntimeFilter;
 using UniqueRuntimeFilterPtr = std::unique_ptr<IRuntimeFilter>;
@@ -152,7 +156,16 @@ public:
             return;
 
         exact_values->insertFromColumns({values});
-        is_full = exact_values->getTotalRowCount() > exact_values_limit || exact_values->getTotalByteCount() > bytes_limit;
+        /// The byte budget caps the actual key bytes of the exact state, which is what lets a
+        /// receiver of a transported state cap the serialized payload before materializing it
+        /// (see `ApproximateRuntimeFilter::deserialize`). The hash table buffer is deliberately
+        /// not compared against the budget: it holds per-key cells at as little as one-eighth
+        /// fill right after a growth step, so for keys smaller than a cell (short strings, small
+        /// integers) it would trip the byte check far below the row bound, defeating a row bound
+        /// derived from a cardinality estimate. The buffer needs no bound of its own -- the two
+        /// checks below already bound it transitively at a small constant times the caps (at most
+        /// eight 24-byte cells per key).
+        is_full = exact_values->getTotalRowCount() > exact_values_limit || exact_values->getSetElementsBytes() > bytes_limit;
     }
 
     void finishInsertImpl() override
@@ -195,9 +208,6 @@ public:
     }
 
 protected:
-
-    UInt64 getBytesLimit() const noexcept { return bytes_limit; }
-
     bool isFull() const noexcept { return is_full; }
 
     ColumnPtr getValuesColumn() const
@@ -281,12 +291,7 @@ public:
     ApproximateRuntimeFilter(
         size_t filters_to_merge_,
         const DataTypePtr & filter_column_target_type_,
-        Float64 pass_ratio_threshold_for_disabling_,
-        UInt64 blocks_to_skip_before_reenabling_,
-        UInt64 bytes_limit_,
-        UInt64 exact_values_limit_,
-        UInt64 bloom_filter_hash_functions_,
-        Float64 max_ratio_of_set_bits_in_bloom_filter_,
+        const RuntimeFilterGeometry & geometry_,
         std::optional<UInt64> distinct_keys_hint_);
 
     void insert(ColumnPtr values) override;
@@ -300,6 +305,15 @@ public:
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
     void merge(const IRuntimeFilter * source) override;
 
+    /// Writes the raw filter state (exact values or bloom filter bits) so that a partial filter can be
+    /// sent to another server and merged there. Captures the state: further inserts and merges throw.
+    void serialize(WriteBuffer & out);
+
+    /// Reads the state written by `serialize`. The geometry must match the serializing side; it is
+    /// taken from the plan, and the bloom filter parameters found in the data are validated against it.
+    static std::unique_ptr<ApproximateRuntimeFilter> deserialize(
+        ReadBuffer & in, size_t filters_to_merge_, const DataTypePtr & filter_column_target_type_, const RuntimeFilterGeometry & geometry_);
+
 private:
     void insertIntoBloomFilter(ColumnPtr values);
     void switchToBloomFilter();
@@ -307,12 +321,20 @@ private:
     /// Disables bloom filter if it is likely to have bad selectivity
     void checkBloomFilterWorthiness();
 
+    /// Allocation size of the bloom filter the exact phase degrades to. Distinct from the base
+    /// class `bytes_limit` (the exact-phase byte bound, `RuntimeFilterGeometry::exact_bytes_limit`):
+    /// a transported filter may keep an estimate-sized exact set while degrading to the
+    /// settings-sized bloom.
+    const UInt64 bloom_filter_bytes;
     const UInt64 bloom_filter_hash_functions;
     const Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
     /// Measured distinct build-side keys from prior statistics, used to choose the bloom filter size.
     const std::optional<UInt64> distinct_keys_hint;
 
     BloomFilterPtr bloom_filter;
+    /// Guards against inserts after `serialize` already captured the state: they would be silently
+    /// missing from the transported partial.
+    bool state_serialized = false;
 };
 
 /// Runtime filter that delegates probe to a function captured at publication time.
