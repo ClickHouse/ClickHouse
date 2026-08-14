@@ -49,3 +49,8 @@ SETTINGS max_threads = 1;
 -- negative indexes go through the same write path
 SELECT numericIndexedVectorAllValueSum(groupNumericIndexedVectorState(CAST(idx, 'Int8'), toInt64(1)))
 FROM (SELECT arrayJoin(arrayConcat(range(1, 33), [-1, -1, -1])) AS idx) SETTINGS max_threads = 1;
+
+-- `numericIndexedVectorBuild` replays every pair of the map through the same write path, and `Map`
+-- does not enforce unique keys, so a repeated key accumulates just like a repeated row does
+SELECT numericIndexedVectorToMap(numericIndexedVectorBuild(CAST(mapFromArrays([5, 5], [10, 10]), 'Map(UInt8, Int64)')));
+SELECT numericIndexedVectorToMap(numericIndexedVectorBuild(CAST(mapFromArrays([5, 5], [7, -7]), 'Map(UInt8, Int64)')));
