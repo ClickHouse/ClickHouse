@@ -4091,9 +4091,6 @@ struct ToDateTimeMonotonicity
     }
 };
 
-/** The monotonicity for the `toString` function is mainly determined for test purposes.
-  * It is doubtful that anyone is looking to optimize queries with conditions `toString(CounterID) = 34`.
-  */
 struct ToStringMonotonicity
 {
     static bool has() { return true; }
@@ -4120,13 +4117,36 @@ struct ToStringMonotonicity
             return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
         }
 
-        /// `toString` function is monotonous if the argument is Date or Date32 or DateTime or String, or non-negative numbers with the same number of symbols.
-        if (checkDataTypes<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime, DataTypeString>(type_ptr))
-            return positive;
+        /// `toString(String)` is the identity.
+        if (checkDataTypes<DataTypeString>(type_ptr))
+            return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+        /// `Date` is formatted as a zero-padded `YYYY-MM-DD` of a fixed width independently of the time zone,
+        /// and the whole type range falls into the years 1970-2149, so the order is preserved exactly.
+        if (checkDataTypes<DataTypeDate>(type_ptr))
+            return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+        /// The same holds for `Date32`, except that day numbers out of the type range are saturated
+        /// to `0000-01-01` and `9999-12-31` when formatted, which makes the transformation non-injective.
+        if (checkDataTypes<DataTypeDate32>(type_ptr))
+            return {.is_monotonic = true, .is_always_monotonic = true};
+
+        /// `DateTime` is formatted in the time zone of the type, and local time decreases when the clocks are
+        /// turned back, so the order is preserved only if the time zone never changes its offset.
+        if (checkAndGetDataType<DataTypeDateTime>(type_ptr))
+        {
+            return not_monotonic;
+        }
+
+        /// `Time` and `Time64` are formatted with a sign and a variable number of digits for hours,
+        /// so, for example, `'99:00:00'` is greater than `'100:00:00'` as a string.
+        if (checkDataTypes<DataTypeTime, DataTypeTime64>(type_ptr))
+            return not_monotonic;
 
         if (left.isNull() || right.isNull())
             return {};
 
+        /// `toString` is monotonous for non-negative numbers with the same number of symbols.
         if (left.getType() == Field::Types::UInt64
             && right.getType() == Field::Types::UInt64)
         {
