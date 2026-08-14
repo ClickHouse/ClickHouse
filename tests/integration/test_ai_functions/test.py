@@ -1061,6 +1061,101 @@ def test_translate_null_input(started_cluster):
 
 
 # ---------------------------------------------------------------------------
+# aiRedact
+# ---------------------------------------------------------------------------
+
+
+def test_redact_basic(started_cluster):
+    """aiRedact returns the model's text directly. The mock echoes the user message back."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query(
+        "INSERT INTO test_input VALUES ('customer John Doe, john@doe.org')"
+    )
+    result = instance.query(
+        "SELECT aiRedact(x, ['email', 'name'], map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    assert result.strip() == "customer John Doe, john@doe.org"
+    # The category list is forwarded to the provider in the system prompt.
+    sent = last_request()["body"]
+    assert "email" in sent and "name" in sent
+
+
+def test_redact_default_categories_empty_array(started_cluster):
+    """An empty categories array is accepted and falls back to the default set of PII categories."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('some text with pii')")
+    result = instance.query(
+        "SELECT aiRedact(x, [], map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    assert result.strip() == "some text with pii"
+    # The mock just echoes the input, so check the documented default category set is what
+    # actually reaches the provider.
+    system_prompt = json.loads(last_request()["body"])["messages"][0]["content"]
+    for category in ("NAME", "EMAIL", "PHONE_NUMBER", "ADDRESS", "CREDIT_CARD", "IP_ADDRESS"):
+        assert category in system_prompt, f"default category {category} missing from prompt"
+
+
+def test_redact_replacement_forwarded(started_cluster):
+    """The `replacement` token is embedded in the system prompt sent to the provider."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('redact me')")
+    instance.query(
+        "SELECT aiRedact(x, ['email'], map('credentials', 'ai_mock', 'replacement', '<<HIDDEN>>')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    body = json.loads(last_request()["body"])
+    assert body["messages"][0]["role"] == "system"
+    assert "<<HIDDEN>>" in body["messages"][0]["content"]
+
+
+def test_redact_multiple_rows(started_cluster):
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('a'), ('b'), ('c')")
+    qid = unique_query_id("redact_events")
+    instance.query(
+        "SELECT aiRedact(x, ['email'], map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 3
+    assert int(events["rows_processed"]) == 3
+
+
+def test_redact_null_input(started_cluster):
+    instance.query("TRUNCATE TABLE test_input_nullable")
+    instance.query("INSERT INTO test_input_nullable VALUES (NULL), ('text')")
+    result = instance.query(
+        "SELECT aiRedact(x, ['email'], map('credentials', 'ai_mock')) FROM test_input_nullable",
+        settings=AI_SETTINGS,
+    )
+    lines = result.strip().split("\n")
+    assert len(lines) == 2
+    assert "\\N" in lines
+    assert "text" in lines
+
+
+def test_redact_error_graceful(started_cluster):
+    """With ai_function_throw_on_error = 0, a provider error yields an empty string."""
+    result = instance.query(
+        "SELECT aiRedact('customer John Doe, john@doe.org', ['email', 'name'], map('credentials', 'ai_error'))",
+        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+    )
+    assert result.strip() == ""
+
+
+def test_redact_error_throw(started_cluster):
+    """By default (`ai_function_throw_on_error = 1`) a provider error propagates."""
+    error = instance.query_and_get_error(
+        "SELECT aiRedact('secret', ['email'], map('credentials', 'ai_error'))",
+        settings=AI_SETTINGS,
+    )
+    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+
+
+# ---------------------------------------------------------------------------
 # aiEmbed
 # ---------------------------------------------------------------------------
 
