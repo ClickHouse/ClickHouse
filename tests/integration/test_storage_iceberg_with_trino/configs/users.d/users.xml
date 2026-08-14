@@ -1,7 +1,6 @@
 <clickhouse>
     <profiles>
         <default>
-            <allow_experimental_geo_types_in_iceberg>1</allow_experimental_geo_types_in_iceberg>
             <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
             <allow_database_iceberg>1</allow_database_iceberg>
             <write_full_path_in_iceberg_metadata>1</write_full_path_in_iceberg_metadata>
