@@ -56,6 +56,8 @@ SELECT isConstant(y) FROM (SELECT materialize(1) = 1 AS y FROM numbers(1)) WHERE
 -- one while the query header is built, before any plan-level fold could run - preserved
 SELECT count() FROM numbers(1) WHERE like('50%off', '50#%off', materialize('#')); -- { serverError ILLEGAL_COLUMN }
 SELECT count() FROM numbers(1) WHERE like('50%off', '50#%off', concat(materialize('#'), '')); -- { serverError ILLEGAL_COLUMN }
+SELECT count() FROM numbers(1) WHERE format(materialize('{}'), 1) = '1'; -- { serverError ILLEGAL_COLUMN }
+SELECT count() FROM numbers(1) WHERE format(concat(materialize('{}'), ''), 1) = '1'; -- { serverError ILLEGAL_COLUMN }
 
 -- mixed String/non-String comparison raises at analysis (header build on non-const String),
 -- before any fold runs - the exception must be preserved

@@ -970,6 +970,9 @@ struct FoldResult
 {
     ColumnConstPtr column;
     bool deterministic;
+    /// A descendant `materialize` was stripped while producing this const. It must not be
+    /// passed to an argument that the function requires to remain a `ColumnConst` at runtime.
+    bool through_materialize;
     /// The fold result must render as `[HIDDEN]` when any folded constant is a masked secret,
     /// so the flag survives into the rebuilt COLUMN node (see `formatConstant`)
     bool masked_secret;
@@ -989,6 +992,7 @@ struct FoldResult
 /// for `and` / `or` arguments
 std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
 {
+    bool through_materialize = false;
     while (node)
     {
         if (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
@@ -1002,6 +1006,7 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
             && node->children.size() == 1)
         {
             node = node->children.front();
+            through_materialize = true;
             continue;
         }
         break;
@@ -1010,7 +1015,7 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
         return std::nullopt;
 
     if (node->type == ActionsDAG::ActionType::COLUMN && node->column && !hasDummyInside(node->column))
-        return FoldResult{node->column, node->is_deterministic_constant, node->is_masked_secret};
+        return FoldResult{node->column, node->is_deterministic_constant, through_materialize, node->is_masked_secret};
 
     if (node->type != ActionsDAG::ActionType::FUNCTION
         || !node->function_base
@@ -1024,13 +1029,19 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
         ColumnsWithTypeAndName args;
         args.reserve(node->children.size());
         bool all_det = true;
+        bool any_through_materialize = through_materialize;
         bool any_masked = false;
-        for (const auto * child : node->children)
+        const auto constant_arguments = node->function->getArgumentsThatAreAlwaysConstant();
+        for (size_t i = 0; i != node->children.size(); ++i)
         {
+            const auto * child = node->children[i];
             auto folded = tryFoldPredicate(child);
             if (!folded)
                 return std::nullopt;
+            if (folded->through_materialize && std::ranges::find(constant_arguments, i) != constant_arguments.end())
+                return std::nullopt;
             all_det = all_det && folded->deterministic;
+            any_through_materialize = any_through_materialize || folded->through_materialize;
             any_masked = any_masked || folded->masked_secret;
 
             ColumnConstPtr col = folded->column;
@@ -1051,7 +1062,7 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
             canonical = column_const->getPtr();
         else
             canonical = ColumnConst::create(column_const->getDataColumnPtr(), 0);
-        return FoldResult{std::move(canonical), all_det, any_masked};
+        return FoldResult{std::move(canonical), all_det, any_through_materialize, any_masked};
     }
     catch (...)
     {
