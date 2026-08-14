@@ -3434,9 +3434,16 @@ void InterpreterCreateQuery::preflightEngineTarget(ASTCreateQuery & create, bool
         if (!create.storage->engine->arguments)
             return;
 
+        /// Parsing folds constant arguments into literals in place, and this query is still to be
+        /// enqueued: each host must evaluate its own, so validate a copy.
+        ASTs args_copy;
+        args_copy.reserve(create.storage->engine->arguments->children.size());
+        for (const auto & arg : create.storage->engine->arguments->children)
+            args_copy.push_back(arg->clone());
+
         /// No named-collection dependency may be registered: the table may never be created.
         parseAndValidateRemoteEngineTarget(
-            create.storage->engine->arguments->children,
+            args_copy,
             getContext(),
             mode,
             create.attach_short_syntax,

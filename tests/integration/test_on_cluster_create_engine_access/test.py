@@ -794,3 +794,49 @@ def test_missing_cluster_grant_is_reported_before_target_work(started_cluster):
     assert create_on_cluster(user, table, definition) is None
     for node in (node1, node2):
         node.query(f"DROP TABLE {DB}.{table} SYNC")
+
+
+# ---------------------------------------------------------------------------
+# the preflight must not rewrite the query it is about to enqueue
+# ---------------------------------------------------------------------------
+
+
+def test_preflight_leaves_host_dependent_arguments_unevaluated(started_cluster):
+    # Parsing the engine's arguments folds constant expressions into literals in place, and the
+    # preflight runs before the query is enqueued, so validating the query's own arguments would
+    # persist the initiator's values on every host. `hostName()` names a different database per
+    # host, so a leak is visible in what each host stored.
+    user = make_user("u_frozen_arg", grant_target_access=True)
+    for node in (node1, node2):
+        for db in (node1.name, node2.name):
+            node.query(f"CREATE DATABASE IF NOT EXISTS {db}")
+            node.query(
+                f"CREATE TABLE IF NOT EXISTS {db}.local_target (x UInt64) ENGINE = MergeTree ORDER BY x"
+            )
+            node.query(f"GRANT SELECT, INSERT ON {db}.local_target TO {user}")
+
+    # The expression must genuinely differ per host, or the case cannot fail.
+    assert node1.query("SELECT hostName()").strip() != node2.query("SELECT hostName()").strip()
+
+    table = unique("t_frozen_arg")
+    assert (
+        create_on_cluster(
+            user,
+            table,
+            f"(x UInt64) ENGINE = Remote('127.0.0.1:9000', hostName(), 'local_target', 'default')",
+        )
+        is None
+    )
+
+    try:
+        for node in (node1, node2):
+            # `TSVRaw`: the default escaping renders each quote of the stored definition as `\'`,
+            # so no quoted name could be found in it.
+            stored = node.query(
+                f"SELECT engine_full FROM system.tables "
+                f"WHERE database = '{DB}' AND name = '{table}' FORMAT TSVRaw"
+            ).strip()
+            assert f"'{node.name}'" in stored, f"{node.name} stored: {stored}"
+    finally:
+        for node in (node1, node2):
+            node.query(f"DROP TABLE IF EXISTS {DB}.{table} SYNC")
