@@ -266,7 +266,7 @@ public:
         Int32 previous_schema_id) const;
 
     /// Drop table from catalog.
-    virtual void dropTable(const String & namespace_name, const String & table_name) const;
+    virtual void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const;
 
     /// Does the catalog support transactions or anything like that?
     /// For example, the Iceberg REST catalog supports atomic operations "compare if snapshot X is equal to" and "add new snapshot Y".

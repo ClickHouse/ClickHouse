@@ -267,13 +267,22 @@ bool NamedCollection::isOverridable(const Key & key, bool default_value) const
 void NamedCollection::markQueryOverridden(const Key & key)
 {
     std::lock_guard lock(mutex);
-    query_overridden_keys.insert(key);
+    if (query_overridden_keys.insert(key).second && pimpl->has(key))
+        values_before_query_override.emplace(key, pimpl->get<String>(key));
 }
 
 bool NamedCollection::isQueryOverridden(const Key & key) const
 {
     std::lock_guard lock(mutex);
     return query_overridden_keys.contains(key);
+}
+
+std::optional<String> NamedCollection::getValueBeforeQueryOverride(const Key & key) const
+{
+    std::lock_guard lock(mutex);
+    if (auto it = values_before_query_override.find(key); it != values_before_query_override.end())
+        return it->second;
+    return std::nullopt;
 }
 
 template <bool Locked> void NamedCollection::remove(const Key & key)
