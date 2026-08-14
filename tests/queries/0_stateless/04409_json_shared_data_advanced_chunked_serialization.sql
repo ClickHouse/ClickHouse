@@ -51,9 +51,9 @@ insert into test_compact_chunked_merge select * from source;
 optimize table test_compact_chunked_merge final;
 
 select 'compact chunked merge: select json';
-select json from test_compact_chunked_merge;
+select json from test_compact_chunked_merge order by json::String;
 select 'compact chunked merge: select json, json.^a, json.a.a1, json.a.arr[].arr1, json.b, json.arr';
-select json, json.^a, json.a.a1, json.a.arr[].arr1, json.b, json.arr from test_compact_chunked_merge;
+select json, json.^a, json.a.a1, json.a.arr[].arr1, json.b, json.arr from test_compact_chunked_merge order by json::String;
 
 drop table test_compact_chunked;
 drop table test_compact_chunked_merge;
@@ -90,9 +90,9 @@ insert into test_wide_chunked_merge select * from source;
 optimize table test_wide_chunked_merge final;
 
 select 'wide chunked merge: select json';
-select json from test_wide_chunked_merge;
+select json from test_wide_chunked_merge order by json::String;
 select 'wide chunked merge: select json, json.^a, json.a.a1, json.a.arr[].arr1, json.b, json.arr';
-select json, json.^a, json.a.a1, json.a.arr[].arr1, json.b, json.arr from test_wide_chunked_merge;
+select json, json.^a, json.a.a1, json.a.arr[].arr1, json.b, json.arr from test_wide_chunked_merge order by json::String;
 
 drop table test_wide_chunked;
 drop table test_wide_chunked_merge;
