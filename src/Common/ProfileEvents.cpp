@@ -261,14 +261,14 @@
     M(QueryRemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryRemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth' throttling.", ValueType::Microseconds) \
     M(ReaderExecutorSourceRequests, "Number of source-side requests opened by ReaderExecutor (excludes live-buffer reuses).", ValueType::Number) \
-    M(ReaderExecutorBytesFromSource, "Physical bytes ReaderExecutor issued to the source after missing all cache tiers (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorRequestedBytes.", ValueType::Bytes) \
-    M(ReaderExecutorRequestedBytes, "Useful bytes ReaderExecutor delivered to read requests (the requested window payload, excluding over-read and cache write-back). Denominator for the modeled cost-per-byte KPI (ReaderExecutorModeledCostMicroseconds / ReaderExecutorRequestedBytes).", ValueType::Bytes) \
+    M(ReaderExecutorBytesFromSource, "Physical bytes ReaderExecutor issued to the source after missing all cache tiers (foreground plus background prefetch, including a prefetch's bytes wasted by a later discard); not consumer-served bytes - see ReaderExecutorDeliveredBytes.", ValueType::Bytes) \
+    M(ReaderExecutorDeliveredBytes, "Useful bytes ReaderExecutor delivered to read requests (the requested window payload, excluding over-read and cache write-back). Denominator for the modeled cost-per-byte KPI (ReaderExecutorModeledCostMicroseconds / ReaderExecutorDeliveredBytes).", ValueType::Bytes) \
     M(ReaderExecutorCacheGetRequests, "Number of ICacheHandle::get invocations in ReaderExecutor. Zero until the ReaderExecutor cache tiers are introduced.", ValueType::Number) \
     M(ReaderExecutorCachePopulateRequests, "Number of ICacheHandle::put invocations in ReaderExecutor. Zero until the ReaderExecutor cache tiers are introduced.", ValueType::Number) \
     M(ReaderExecutorIncompleteConnections, "Number of source connections ReaderExecutor dropped before draining them to their right bound; not pool-reusable, forcing a re-establishment. Zero until ReaderExecutor live source-buffer reuse is introduced.", ValueType::Number) \
     M(ReaderExecutorWorkMicroseconds, "Total wall-clock time spent inside ReaderExecutor::readNextWindow (opening, seeking and reading the served window). Direct contributor to query read latency.", ValueType::Microseconds) \
     M(ReaderExecutorDecryptMicroseconds, "Time ReaderExecutor spent decrypting served payload in place (CTR, position-addressable). Zero for unencrypted reads and in builds without SSL.", ValueType::Microseconds) \
-    M(ReaderExecutorModeledCostMicroseconds, "Modeled I/O cost of ReaderExecutor reads: a synthetic proxy KPI for read-path optimality, NOT measured latency. Weighted sum of the counters above with heuristic S3 weights: 30ms per source request + 5ms per incomplete connection + 20ms per MiB transferred from source (useful payload plus over-read) + 0.1ms per cache put + 0.05ms per cache get. Divide by ReaderExecutorRequestedBytes for a load-independent cost-per-byte. Experimental, tracks the experimental ReaderExecutor.", ValueType::Microseconds) \
+    M(ReaderExecutorModeledCostMicroseconds, "Modeled I/O cost of ReaderExecutor reads: a synthetic proxy KPI for read-path optimality, NOT measured latency. Weighted sum of the counters above with heuristic S3 weights: 30ms per source request + 5ms per incomplete connection + 20ms per MiB transferred from source (useful payload plus over-read) + 0.1ms per cache put + 0.05ms per cache get. Divide by ReaderExecutorDeliveredBytes for a load-independent cost-per-byte. Experimental, tracks the experimental ReaderExecutor.", ValueType::Microseconds) \
     M(ReaderExecutorLongConnectionOpened, "Number of long source connections opened by ReaderExecutor for sequential read optimization.", ValueType::Number) \
     M(ReaderExecutorLongConnectionHits, "Number of windows ReaderExecutor served by reading from an already-open long source connection.", ValueType::Number) \
     M(ReaderExecutorLongConnectionFallbacks, "Number of times ReaderExecutor wanted a long connection but fell back to a one-shot read because no slot was available.", ValueType::Number) \
@@ -927,10 +927,10 @@ The server successfully detected this situation and will download merged part fr
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer", ValueType::Number) \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem", ValueType::Number) \
-    M(RemoteFSCancelledPrefetches, "Number of cancelled prefecthes (because of seek)", ValueType::Number) \
+    M(RemoteFSCancelledPrefetches, "Number of cancelled prefetches (because of seek)", ValueType::Number) \
     M(RemoteFSUnusedPrefetches, "Number of prefetches pending at buffer destruction", ValueType::Number) \
-    M(RemoteFSPrefetchedReads, "Number of reads from prefecthed buffer", ValueType::Number) \
-    M(RemoteFSPrefetchedBytes, "Number of bytes from prefecthed buffer", ValueType::Bytes) \
+    M(RemoteFSPrefetchedReads, "Number of reads from prefetched buffer", ValueType::Number) \
+    M(RemoteFSPrefetchedBytes, "Number of bytes from prefetched buffer", ValueType::Bytes) \
     M(RemoteFSUnprefetchedReads, "Number of reads from unprefetched buffer", ValueType::Number) \
     M(RemoteFSUnprefetchedBytes, "Number of bytes from unprefetched buffer", ValueType::Bytes) \
     M(RemoteFSLazySeeks, "Number of lazy seeks", ValueType::Number) \
@@ -1717,7 +1717,7 @@ Counters::Counters(Counters && src) noexcept
     : counters(std::exchange(src.counters, nullptr))
     , cpus(src.cpus.exchange(0, std::memory_order_relaxed))
     , counters_holder(std::move(src.counters_holder))
-    , parent(src.parent.exchange(nullptr))
+    , parent(src.parent.exchange(nullptr, std::memory_order_acquire))
     , should_trace_array(src.should_trace_array.exchange(nullptr, std::memory_order_relaxed))
     , should_trace_holder(std::move(src.should_trace_holder))
     , trace_all_profile_events(src.trace_all_profile_events.load(std::memory_order_relaxed))
@@ -1747,21 +1747,21 @@ Count Counters::load(Event event) const
 
 void Counters::setParent(Counters * parent_)
 {
-    parent.store(parent_, std::memory_order_relaxed);
+    parent.store(parent_, std::memory_order_release);
 }
 
 void Counters::setUserCounters(Counters * user)
 {
     auto * current_val = this;
-    auto * parent_val = this->parent.load(std::memory_order_relaxed);
+    auto * parent_val = this->parent.load(std::memory_order_acquire);
 
     while (parent_val != nullptr && parent_val->level != VariableContext::Global && parent_val->level != VariableContext::User)
     {
         current_val = parent_val;
-        parent_val = current_val->parent.load(std::memory_order_relaxed);
+        parent_val = current_val->parent.load(std::memory_order_acquire);
     }
 
-    current_val->parent.store(user, std::memory_order_relaxed);
+    current_val->parent.store(user, std::memory_order_release);
 }
 
 void Counters::setTraceAllProfileEvents()
@@ -1985,7 +1985,7 @@ void Counters::increment(Event event, Count amount)
             send_to_trace_log |= trace_arr[event].load(std::memory_order_relaxed);
         send_to_trace_log |= current->trace_all_profile_events.load(std::memory_order_relaxed);
 
-        current = current->parent;
+        current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 
     if (unlikely(send_to_trace_log))
@@ -1999,7 +1999,7 @@ void Counters::incrementNoTrace(Event event, Count amount)
     do
     {
         current->fetchAdd(event, amount, cpu);
-        current = current->parent;
+        current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 }
 
@@ -2013,7 +2013,7 @@ void Counters::incrementSignalSafe(Event event, Count amount)
     do
     {
         current->fetchAdd(event, amount, -1);
-        current = current->parent;
+        current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 }
 

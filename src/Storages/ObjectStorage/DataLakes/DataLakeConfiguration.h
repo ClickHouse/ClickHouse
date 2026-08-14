@@ -216,7 +216,10 @@ public:
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
     {
         if (auto schema = getMetadata()->getTableSchema(local_context); !schema.empty())
+        {
+            validateLakeSchemaColumnNames(schema, DataLakeMetadata::name);
             return ColumnsDescription(std::move(schema));
+        }
         return std::nullopt;
     }
 
@@ -265,8 +268,11 @@ public:
     {
         auto metadata = getMetadata()->buildStorageMetadataFromState(state, context);
         if (metadata)
+        {
+            validateLakeSchemaColumnNames(metadata->getColumns().getAll(), DataLakeMetadata::name);
             LOG_TEST(log, "Built storage metadata from state with columns: {}",
                 metadata->getColumns().toString(/* include_comments */false));
+        }
         return metadata;
     }
 
