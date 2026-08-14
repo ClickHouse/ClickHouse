@@ -4,10 +4,12 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/Transforms/MergeJoinTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
@@ -15,6 +17,7 @@
 #include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <fmt/format.h>
 
 namespace DB
@@ -273,6 +276,41 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     return joined_pipeline;
 }
 
+JoinAnalysisCounters JoinStep::collectMergeJoinCounters(StepProcessors step_processors) const
+{
+    JoinAnalysisCounters counters;
+    MatchedRowsAccumulator matched_left;
+    MatchedRowsAccumulator matched_right;
+    for (const auto * proc : step_processors)
+    {
+        const auto * merge_join = typeid_cast<const MergeJoinTransform *>(proc);
+        if (!merge_join)
+            continue;
+
+        const auto join_counters = merge_join->getJoinAnalysisCounters();
+        counters.left_rows += join_counters.left_rows;
+        counters.right_rows += join_counters.right_rows;
+        matched_left.add(join_counters.matched_left);
+        matched_right.add(join_counters.matched_right);
+    }
+    counters.matched_left = matched_left.get();
+    counters.matched_right = matched_right.get();
+
+    return counters;
+}
+
+StepAnalysisReport JoinStep::getAnalysisReport(StepProcessors step_processors) const
+{
+    /// Only EXPLAIN ANALYZE asks for a report, and it turns the analyze mode on for the whole query,
+    /// so every join it reaches must have been told to collect statistics
+    chassert(join->getTableJoin().collectAnalyzeStats(), "JoinStep analyzed without the analyze mode");
+
+    if (!typeid_cast<const FullSortingMergeJoin *>(join.get()))
+        return join->getAnalysisReport();
+
+    return buildMatchedRowsReport(collectMergeJoinCounters(step_processors));
+}
+
 bool JoinStep::allowPushDownToRight() const
 {
     return join->pipelineType() == JoinPipelineType::YShaped || join->pipelineType() == JoinPipelineType::FillRightFirst;
@@ -293,8 +331,8 @@ std::vector<size_t> JoinStep::getStepGroups() const
 {
     return {
         static_cast<size_t>(JoinStage::Default),
-        static_cast<size_t>(JoinStage::Probe),
-        static_cast<size_t>(JoinStage::Build)
+        static_cast<size_t>(JoinStage::Build),
+        static_cast<size_t>(JoinStage::Probe)
     };
 }
 
@@ -303,10 +341,10 @@ String JoinStep::getStepGroupName(size_t group) const
     switch (static_cast<JoinStage>(group))
     {
         case JoinStage::Default: return {};
-        case JoinStage::Probe: return "probe";
         case JoinStage::Build: return "build";
+        case JoinStage::Probe: return "probe";
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JoinStageA group {}", group);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JoinStage group {}", group);
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const
@@ -483,6 +521,13 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 void FilledJoinStep::updateOutputHeader()
 {
     output_header = std::make_shared<const Block>(JoiningTransform::transformHeader(*input_headers.front(), join));
+}
+
+StepAnalysisReport FilledJoinStep::getAnalysisReport(StepProcessors /*step_processors*/) const
+{
+    chassert(join->getTableJoin().collectAnalyzeStats(), "FilledJoinStep analyzed without the analyze mode");
+
+    return join->getAnalysisReport();
 }
 
 void FilledJoinStep::describeActions(FormatSettings & settings) const
