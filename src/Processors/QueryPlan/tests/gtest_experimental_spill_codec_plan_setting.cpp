@@ -459,7 +459,7 @@ TEST(ExperimentalSpillCodecPlanSetting, IEJoinNeedsOperandTypesItsOperatorCanCom
 
     /// A pair the operator handles: equal types, and types with a common supertype.
     EXPECT_TRUE(ieJoinCanCompareOperandTypes(std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUInt64>()));
-    EXPECT_TRUE(ieJoinCanCompareOperandTypes(std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeInt32>()));
+    EXPECT_TRUE(ieJoinCanCompareOperandTypes(std::make_shared<DataTypeUInt32>(), std::make_shared<DataTypeInt64>()));
 
     ColumnsWithTypeAndName left_header{{tuple_type, "l.t"}};
     ColumnsWithTypeAndName right_header{{tuple_type, "r.t"}};
