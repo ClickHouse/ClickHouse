@@ -260,6 +260,19 @@ public:
         return kind_name == "Point" || kind_name == "LineString" || kind_name == "MultiLineString" || kind_name == "MultiPoint";
     }
 
+    /// Unlike a constant argument (`rejectsConstGeometryKind` above fails closed for a constant
+    /// `Point` in ANY position, since no bbox info could be derived from a lone point anyway), a
+    /// `Point`-typed COLUMN in the first (point) argument position is `pointInPolygon`'s single
+    /// most common, entirely legitimate usage -- failing closed there would only forgo pruning,
+    /// never affect correctness, but would silently disable it for the predicate's primary use
+    /// case. Every other argument position keeps the same rejected kinds as the constant case.
+    bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override
+    {
+        if (arg_index == 0)
+            return false;
+        return rejectsConstGeometryKind(kind_name);
+    }
+
     /// pointInPolygon(point, arg1, arg2, ...) is the only spatial predicate with a documented
     /// convention for combining more than one constant geometry argument -- see below.
     bool hasMultiArgConstGeometryBboxConvention() const override { return true; }

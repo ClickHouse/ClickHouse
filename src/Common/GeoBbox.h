@@ -466,12 +466,31 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     /// extractBboxFromFieldValue's `require_valid` parameter.
     const bool require_valid = node.function_base->requiresValidConstGeometry();
 
+    size_t arg_index = 0;
     for (const auto * child : node.children)
     {
+        const size_t this_arg_index = arg_index++;
         if (child->type == ActionsDAG::ActionType::INPUT)
         {
             if (!input_child && accept_input(*child))
             {
+                /// A column explicitly typed as a geometry kind this predicate is guaranteed to
+                /// reject at THIS argument position (e.g. a `Point`-typed column as the polygon
+                /// argument of `polygonsIntersectCartesian`, which only accepts `Ring`/`Polygon`/
+                /// `MultiPolygon`) is guaranteed to raise `ILLEGAL_TYPE_OF_ARGUMENT` once evaluated
+                /// on any row. Pruning row groups/granules by this column's bbox instead would
+                /// silently hide that exception on any row group whose bbox happens to be disjoint
+                /// from the query bbox. `constGeoKindName` returns empty for a `Variant`/`Dynamic`
+                /// column (its concrete per-row kind isn't visible from just this `ActionsDAG`
+                /// node) -- that's fine, `accept_input` already excludes those columns separately,
+                /// since a single declared kind can't be checked against a column that may store a
+                /// different kind in every row.
+                const auto kind_name = constGeoKindName(*child);
+                if (!kind_name.empty() && node.function_base->rejectsColumnGeometryKind(kind_name, this_arg_index))
+                {
+                    any_kind_rejected = true;
+                    continue;
+                }
                 input_child = child;
                 continue;
             }

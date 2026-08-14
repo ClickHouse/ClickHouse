@@ -93,6 +93,7 @@ public:
     }
     bool requiresValidConstGeometry() const override { return function_overload_resolver->requiresValidConstGeometry(); }
     bool rejectsConstGeometryKind(std::string_view kind_name) const override { return function_overload_resolver->rejectsConstGeometryKind(kind_name); }
+    bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override { return function_overload_resolver->rejectsColumnGeometryKind(kind_name, arg_index); }
 
 private:
     /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Variant column.

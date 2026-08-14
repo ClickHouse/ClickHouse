@@ -251,6 +251,19 @@ public:
       */
     virtual bool rejectsConstGeometryKind(std::string_view /*kind_name*/) const { return false; }
 
+    /** Like `rejectsConstGeometryKind`, but for a non-constant (column) argument at a specific
+      * `arg_index`. Unlike a constant argument -- for which failing closed on a rejected kind in
+      * ANY position is always safe, since a lone constant conveys no useful bbox information
+      * anyway (see `rejectsConstGeometryKind`'s doc) -- a column can legitimately appear at a
+      * position this predicate's signature specifically allows despite superficially matching a
+      * kind name rejected elsewhere in the same call: `pointInPolygon`'s first argument (the
+      * point itself) legitimately accepts `Point`, even though `rejectsConstGeometryKind("Point")`
+      * is true (correctly, for its other, polygon-component arguments). Default: same decision as
+      * `rejectsConstGeometryKind`, correct for every predicate that rejects a kind the same way
+      * regardless of argument position (e.g. `polygonsIntersectCartesian`/`polygonsWithinCartesian`).
+      */
+    virtual bool rejectsColumnGeometryKind(std::string_view kind_name, size_t /*arg_index*/) const { return rejectsConstGeometryKind(kind_name); }
+
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
       * If we will call it during query analysis, we will sleep extra amount of time.
@@ -471,6 +484,9 @@ public:
 
     /// See IFunctionBase::rejectsConstGeometryKind.
     virtual bool rejectsConstGeometryKind(std::string_view /*kind_name*/) const { return false; }
+
+    /// See IFunctionBase::rejectsColumnGeometryKind.
+    virtual bool rejectsColumnGeometryKind(std::string_view kind_name, size_t /*arg_index*/) const { return rejectsConstGeometryKind(kind_name); }
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
@@ -697,6 +713,9 @@ public:
 
     /// See IFunctionBase::rejectsConstGeometryKind.
     virtual bool rejectsConstGeometryKind(std::string_view /*kind_name*/) const { return false; }
+
+    /// See IFunctionBase::rejectsColumnGeometryKind.
+    virtual bool rejectsColumnGeometryKind(std::string_view kind_name, size_t /*arg_index*/) const { return rejectsConstGeometryKind(kind_name); }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
