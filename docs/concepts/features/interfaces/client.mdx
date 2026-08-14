@@ -382,6 +382,8 @@ To answer a question, the assistant uses a set of tools:
 - **Read-only queries without confirmation** — it runs `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `EXISTS` and `CHECK` statements under a sandbox: `readonly = 1`, a 30-second time limit and a 10 GiB memory limit. Table functions that reach outside of the server's tables (`file`, `url`, `s3`, `remote`, `executable`, ...) are not allowed here. These queries are displayed and executed on your connection without asking.
 - **Any query, with confirmation** — for writes, DDL, `SET`, or heavier read queries, it asks you to confirm before running. The query is shown at the prompt before you decide.
 
+The queries the assistant runs on its own — schema exploration, documentation lookups and its read-only queries — are tagged in the query log with `log_comment = 'clickhouse-ai-agent'`, so you can tell them apart from the queries you typed yourself. The assistant also excludes them when it reads the query log back, and a query you confirmed is executed exactly as if you typed it, without the tag.
+
 ### Example {#ai-sql-generation-example}
 
 ```bash

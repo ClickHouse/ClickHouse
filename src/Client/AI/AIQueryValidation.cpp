@@ -48,7 +48,8 @@ bool isAnyOf(const IAST & ast)
     return (... || (ast.as<Ts>() != nullptr));
 }
 
-/// The settings that enforce the sandbox of the read-only tool. They are applied by the
+/// The settings that enforce the sandbox of the read-only tool, plus `log_comment`, which marks
+/// the query in the query log as one the agent ran on its own. They are applied by the
 /// client before sending the query, so a SETTINGS clause of the query itself could
 /// override them and must be rejected. `profile` and `compatibility` are special settings
 /// that expand into changes of many other settings on the server, so they could redefine
@@ -60,6 +61,7 @@ bool isProtectedSetting(const String & name)
         || name == "max_execution_time_leaf"
         || name == "max_memory_usage"
         || name == "max_memory_usage_for_user"
+        || name == "log_comment"
         || name == "profile"
         || name == "compatibility";
 }

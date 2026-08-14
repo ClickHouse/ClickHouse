@@ -297,7 +297,8 @@ private:
     /// Runs a small service query with the given query parameters and returns the concatenated
     /// result (used by `processHelpCommand` and by the tools of the AI agent). The query bypasses
     /// the normal output path, so it neither prints anything nor disturbs the visible query state.
-    Block fetchInternalQueryResult(const String & query, const NameToNameMap & params);
+    /// `from_ai_agent` marks the query in the query log as one the AI agent ran on its own.
+    Block fetchInternalQueryResult(const String & query, const NameToNameMap & params, bool from_ai_agent = false);
 
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);

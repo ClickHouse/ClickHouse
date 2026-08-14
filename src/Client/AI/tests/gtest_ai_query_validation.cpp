@@ -175,6 +175,15 @@ TEST(AIQueryValidation, RejectsAIFunctions)
     EXPECT_FALSE(isAllowed("SELECT * FROM numbers(3) WHERE aiGenerate('x') = ''"));
 }
 
+TEST(AIQueryValidation, RejectsLogCommentOverride)
+{
+    /// `log_comment` marks the queries of the agent in the query log, and the `read_query_log`
+    /// tool filters the marked ones out. A query that redefines it would let the model make its
+    /// own queries look like the user's ones.
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS log_comment = 'typed by the user'"));
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS log_comment = DEFAULT"));
+}
+
 TEST(AIQueryValidation, RejectsFormatSchemaSettings)
 {
     /// With `format_schema_source = 'query'`, `FormatSchemaInfo` executes the query from

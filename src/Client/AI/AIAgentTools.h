@@ -8,6 +8,13 @@
 namespace DB
 {
 
+/// The agent tags the queries it runs on the user's connection with this `log_comment`, so they can
+/// be told apart from the queries the user typed themselves in `system.query_log` (the
+/// `read_query_log` tool filters them out). The `client_agent` field is deliberately not used for
+/// this: it reports the external AI coding tool that invoked the client (`claude-code`, `cursor`,
+/// ...) and must keep reporting the real one.
+inline constexpr std::string_view AI_AGENT_LOG_COMMENT = "clickhouse-ai-agent";
+
 /// Callbacks the client provides to the tools of the AI agent.
 struct AIAgentHooks
 {

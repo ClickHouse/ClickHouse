@@ -3999,14 +3999,6 @@ bool ClientBase::processAIChat(const String & text_)
     if (!checkAIProviderAcknowledgment())
         return true;
 
-    /// Mark the queries the agent generates and runs on the connection (schema exploration,
-    /// documentation lookups and the read-only/confirmed queries) with the client's own name in
-    /// `client_agent`, so they are distinguishable from user-typed queries in the query log.
-    /// Restored after the turn, so ordinary queries keep whatever `client_agent` was detected.
-    const String saved_client_agent = client_context->getClientInfo().client_agent;
-    client_context->getClientInfo().client_agent = "clickhouse-" + getName();
-    SCOPE_EXIT({ client_context->getClientInfo().client_agent = saved_client_agent; });
-
     try
     {
         ai_agent->chat(text);
@@ -4025,7 +4017,7 @@ String ClientBase::executeInternalQueryForAI(const String & query, const NameToN
     if (!connection)
         throw Exception(ErrorCodes::NETWORK_ERROR, "Not connected to a server");
 
-    const Block result = fetchInternalQueryResult(query, params);
+    const Block result = fetchInternalQueryResult(query, params, /*from_ai_agent=*/ true);
     return formatBlockAsTextForAI(result);
 }
 
@@ -4034,7 +4026,7 @@ String ClientBase::executeScalarQueryForAI(const String & query, const NameToNam
     if (!connection)
         throw Exception(ErrorCodes::NETWORK_ERROR, "Not connected to a server");
 
-    const Block result = fetchInternalQueryResult(query, params);
+    const Block result = fetchInternalQueryResult(query, params, /*from_ai_agent=*/ true);
     if (result.rows() == 0 || result.columns() == 0)
         return "";
 
@@ -4138,6 +4130,10 @@ String ClientBase::runQueryForAI(const String & query, bool readonly)
         tighten("max_execution_time_leaf", static_cast<UInt64>(current[Setting::max_execution_time_leaf].totalSeconds()), max_execution_time_limit);
         tighten("max_memory_usage", current[Setting::max_memory_usage], max_memory_usage_limit);
         tighten("max_memory_usage_for_user", current[Setting::max_memory_usage_for_user], max_memory_usage_limit);
+
+        /// Tag the query in the query log as one the agent ran on its own, so it is distinguishable
+        /// from the queries the user typed themselves (the `read_query_log` tool filters those out).
+        client_context->setSetting("log_comment", String(AI_AGENT_LOG_COMMENT));
 
         /// Keep a session that is already read-only as is (`readonly = 2` must not be lowered).
         if (current[Setting::readonly] == 0)
@@ -4251,7 +4247,7 @@ void ClientBase::recordErrorForAIContext(std::string_view query_or_input)
 }
 #endif
 
-Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNameMap & params)
+Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNameMap & params, [[maybe_unused]] bool from_ai_agent)
 {
     /// The internal queries (of the AI agent and of the `help` command) are ClickHouse SQL,
     /// so when the session was switched to another dialect, this query is explicitly pinned
@@ -4263,6 +4259,20 @@ Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNam
         settings_to_send.emplace();
         settings_to_send->set("dialect", "clickhouse");
     }
+
+#if USE_CLIENT_AI
+    /// Tag the queries of the agent (schema exploration, documentation lookups) in the query log,
+    /// so they are distinguishable from the queries the user typed themselves - the `read_query_log`
+    /// tool filters them out, like the in-memory recent-query context does. A session with
+    /// `readonly = 1` allows no setting change at all, and the tag is not worth failing these
+    /// queries for: the agent stays usable there, only without the marker.
+    if (from_ai_agent && client_context->getSettingsRef()[Setting::readonly] != 1)
+    {
+        if (!settings_to_send)
+            settings_to_send.emplace();
+        settings_to_send->set("log_comment", String(AI_AGENT_LOG_COMMENT));
+    }
+#endif
 
     /// This is a complete query exchange on the shared connection, so it follows the same
     /// resynchronization discipline as the regular queries: recover from a previous failed
