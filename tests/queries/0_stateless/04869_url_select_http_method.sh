@@ -100,6 +100,15 @@ $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION nc_disp3_62352"
 # short-syntax ATTACH of stored metadata. (Atomic databases require an explicit UUID for
 # the full-definition form; the guard fires before anything is registered under it.)
 $CLICKHOUSE_CLIENT -q "ATTACH TABLE url_attach_full_62352 UUID 'a8695867-2352-4869-b62a-5f5e0e552352' (x String) ENGINE = URL('file:///nonexistent_62352.csv', CSV, http_method='POST')" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
+# The delegated engine's TABLE_ENGINE privilege is enforced for full-definition ATTACH too:
+# a user granted URL but not File must not reach the File backend through dispatch.
+acc_user="u_04869_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $acc_user"
+$CLICKHOUSE_CLIENT -q "CREATE USER $acc_user IDENTIFIED WITH no_password"
+$CLICKHOUSE_CLIENT -q "GRANT CREATE TABLE, DROP TABLE ON ${CLICKHOUSE_DATABASE}.* TO $acc_user"
+$CLICKHOUSE_CLIENT -q "GRANT TABLE ENGINE ON URL TO $acc_user"
+$CLICKHOUSE_CLIENT --user "$acc_user" -q "ATTACH TABLE url_acc_62352 UUID 'a8695867-2352-4869-b62a-5f5e0e552353' (x String) ENGINE = URL('file:///nonexistent_62352.csv', CSV)" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+$CLICKHOUSE_CLIENT -q "DROP USER $acc_user"
 
 # 8. The schema-inference cache is method-aware: with the cache enabled (the default), a
 #    repeated POST inference stays all-POST. For POST reads no cache-validation probe is sent
