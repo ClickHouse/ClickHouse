@@ -138,6 +138,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool materialize_projections_on_merge;
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
     extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
+    extern const MergeTreeSettingsBool merge_use_batch_sorting_queue;
     extern const MergeTreeSettingsUInt64 min_merge_bytes_to_use_direct_io;
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
@@ -2882,6 +2883,7 @@ public:
         UInt64 merge_block_size_bytes_,
         std::optional<size_t> max_dynamic_subcolumns_,
         bool blocks_are_granules_size_,
+        SortingQueueStrategy sorting_queue_strategy_,
         bool cleanup_,
         time_t time_of_merge_)
         : ITransformingStep(input_header_, input_header_, getTraits())
@@ -2894,6 +2896,7 @@ public:
         , merge_block_size_bytes(merge_block_size_bytes_)
         , max_dynamic_subcolumns(max_dynamic_subcolumns_)
         , blocks_are_granules_size(blocks_are_granules_size_)
+        , sorting_queue_strategy(sorting_queue_strategy_)
         , cleanup(cleanup_)
         , time_of_merge(time_of_merge_)
     {}
@@ -2928,7 +2931,7 @@ public:
                     merge_block_size_rows,
                     merge_block_size_bytes,
                     max_dynamic_subcolumns,
-                    SortingQueueStrategy::Default,
+                    sorting_queue_strategy,
                     /* limit_= */0,
                     /* always_read_till_end_= */false,
                     rows_sources_write_buf,
@@ -3020,6 +3023,7 @@ private:
     const UInt64 merge_block_size_bytes;
     const std::optional<size_t> max_dynamic_subcolumns;
     const bool blocks_are_granules_size;
+    const SortingQueueStrategy sorting_queue_strategy;
     const bool cleanup{false};
     const time_t time_of_merge{0};
 };
@@ -3541,6 +3545,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
+        const auto sorting_queue_strategy
+            = !global_ctx->merge_may_reduce_rows
+                && !global_ctx->projection
+                && (*merge_tree_settings)[MergeTreeSetting::merge_use_batch_sorting_queue]
+            ? SortingQueueStrategy::Batch
+            : SortingQueueStrategy::Default;
+
         auto merge_step = std::make_unique<MergePartsStep>(
             merge_parts_query_plan.getCurrentHeader(),
             sort_description,
@@ -3552,6 +3563,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
             max_dynamic_subcolumns,
             is_vertical_merge,
+            sorting_queue_strategy,
             cleanup,
             global_ctx->time_of_merge);
 
