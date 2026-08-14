@@ -3,16 +3,8 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/RowPolicyDefs.h>
 #include <Access/EnabledRowPolicies.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/replaceAliasColumnsInQuery.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Planner/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/Sources/NullSource.h>
@@ -29,27 +21,6 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
-}
-
-/// A row policy resolved against a projection's columns, ready to be applied as a FilterStep.
-struct MergeTreeProjectionRowPolicyFilter
-{
-    ActionsDAG dag;
-    String filter_column_name;
-    Names required_columns;
-};
-
-/// Rewrite references to the parent `_part_offset` into the projection's stored `_parent_part_offset`.
-static void remapPartOffsetToParent(ASTPtr & ast)
-{
-    if (auto * identifier = ast->as<ASTIdentifier>())
-    {
-        if (identifier->name() == "_part_offset")
-            ast = make_intrusive<ASTIdentifier>("_parent_part_offset");
-        return;
-    }
-    for (auto & child : ast->children)
-        remapPartOffsetToParent(child);
 }
 
 StorageFromMergeTreeProjection::StorageFromMergeTreeProjection(
@@ -75,29 +46,58 @@ void StorageFromMergeTreeProjection::read(
 {
     context->checkAccess(AccessType::SELECT, parent_storage->getStorageID());
 
-    /// row policies live on the parent table, so enforce them here or the projection leaks hidden rows
-    auto row_policy = buildRowPolicyFilter(context);
+    const auto parent_storage_id = parent_storage->getStorageID();
+    auto row_policy_filter = context->getRowPolicyFilter(
+        parent_storage_id.getDatabaseName(), parent_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
 
     Names read_column_names = column_names;
-    if (row_policy)
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
     {
-        /// read the policy columns too, even if the query did not ask for them
-        for (const auto & name : row_policy->required_columns)
+        /// the policy is on the parent table; enforce it here or the projection leaks hidden rows
+        if (!query_info.planner_context || !query_info.table_expression)
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "Cannot enforce the row policy of table {} on projection `{}` without the analyzer",
+                parent_storage_id.getNameForLogs(), projection->name);
+
+        for (const auto & policy : row_policy_filter->policies)
+            if (context->hasQueryContext())
+                context->getQueryContext()->addUsedRowPolicy(policy->getFullName().toString());
+
+        FilterDAGInfo filter_info;
+        try
+        {
+            /// resolve against the projection's own columns; anything it can't provide throws below
+            filter_info = buildFilterInfo(
+                row_policy_filter->expression->clone(), query_info.table_expression, query_info.planner_context);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::UNKNOWN_IDENTIFIER && e.code() != ErrorCodes::NO_SUCH_COLUMN_IN_TABLE)
+                throw;
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "Cannot read from projection `{}` of table {} because its row policy references a column "
+                "the projection does not store, so it cannot be enforced",
+                projection->name, parent_storage_id.getNameForLogs());
+        }
+
+        /// read the policy's columns even if the query didn't ask for them; refuse position-relative
+        /// virtuals - the projection can reorder rows, so its value for them isn't the parent's
+        static const NameSet not_row_preserving{"_part_offset", "_part_index", "_part_granule_offset", "_block_offset"};
+        for (const auto & name : filter_info.actions.getRequiredColumnsNames())
+        {
+            if (not_row_preserving.contains(name))
+                throw Exception(ErrorCodes::ACCESS_DENIED,
+                    "Cannot read from projection `{}` of table {} because its row policy uses virtual column "
+                    "`{}`, whose value the projection does not preserve, so it cannot be enforced",
+                    projection->name, parent_storage_id.getNameForLogs(), name);
             if (std::find(read_column_names.begin(), read_column_names.end(), name) == read_column_names.end())
                 read_column_names.push_back(name);
+        }
 
-        /// Apply as a row-level filter so it runs ahead of any user PREWHERE, exactly like a normal
-        /// MergeTree read. A post-read FilterStep would let a PREWHERE predicate observe hidden rows first.
-        /// Keep the filter column if the query selects it too (a bare-column policy like `USING flag`).
-        const bool remove_filter_column
-            = std::find(column_names.begin(), column_names.end(), row_policy->filter_column_name) == column_names.end();
-        query_info.row_level_filter = std::make_shared<FilterDAGInfo>(
-            FilterDAGInfo{std::move(row_policy->dag), row_policy->filter_column_name, remove_filter_column});
+        /// row-level filter runs before any user PREWHERE (a post-read filter would let PREWHERE see hidden rows)
+        query_info.row_level_filter = std::make_shared<FilterDAGInfo>(std::move(filter_info));
 
-        /// The planner disables the trivial-LIMIT optimization whenever a row policy applies, but it checks
-        /// the policy through this table function's own storage id, which has none - so the optimization is
-        /// left on and `query_info.trivial_limit` may already be set for `... LIMIT n`. Reading only n rows
-        /// and then filtering could return fewer than n visible rows, so restore that invariant here.
+        /// planner left trivial-LIMIT on (it checks this tf's storage id, which has no policy); n rows then filter could yield < n
         query_info.trivial_limit = 0;
     }
 
@@ -141,103 +141,6 @@ void StorageFromMergeTreeProjection::read(
         read_nothing->setStepDescription("Read from NullSource (Projection)");
         query_plan.addStep(std::move(read_nothing));
     }
-
-    /// drop the policy columns we added on top of what the query requested
-    if (row_policy && read_column_names.size() != column_names.size())
-    {
-        auto target = storage_snapshot->getSampleBlockForColumns(column_names);
-        auto convert = ActionsDAG::makeConvertingActions(
-            query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
-            target.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name,
-            context);
-        query_plan.addStep(std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert)));
-    }
-}
-
-std::unique_ptr<MergeTreeProjectionRowPolicyFilter> StorageFromMergeTreeProjection::buildRowPolicyFilter(const ContextPtr & context) const
-{
-    const auto parent_storage_id = parent_storage->getStorageID();
-    auto row_policy_filter = context->getRowPolicyFilter(
-        parent_storage_id.getDatabaseName(), parent_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
-    if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
-        return nullptr;
-
-    ASTPtr expr = row_policy_filter->expression->clone();
-
-    /// Expand SQL UDFs first so any column reference they introduce (e.g. a `_part_offset` argument or a
-    /// column named directly in the UDF body) is visible to the alias expansion and offset remap below,
-    /// rather than being reintroduced later by `TreeRewriter`.
-    UserDefinedSQLFunctionVisitor::visit(expr, context);
-
-    /// Expand parent ALIAS/DEFAULT columns to their physical dependencies, which the projection may
-    /// store even though it does not expose the alias itself (e.g. `c ALIAS b + 1` -> reads `b`).
-    replaceAliasColumnsInQuery(expr, parent_metadata->getColumns(), {}, context);
-
-    /// The parent `_part_offset` is materialized as `_parent_part_offset` in projections that carry it,
-    /// so a policy on `_part_offset` keeps its parent-row semantics when read through such a projection.
-    if (projection->with_parent_part_offset)
-        remapPartOffsetToParent(expr);
-
-    /// Resolve against exactly what the projection read can serve. Anything else fails to resolve, and we
-    /// fail closed with a clear ACCESS_DENIED. What the projection read can serve:
-    ///  - its stored physical columns;
-    ///  - part-identity virtuals (`_part`, `_partition_id`, ...): a projection part maps back to its parent
-    ///    part (`RangesInDataPart::getDescription`), so these keep parent-row semantics;
-    ///  - the parent offsets it preserves: `_part_starting_offset`, and the parent `_part_offset` remapped
-    ///    to `_parent_part_offset` above.
-    /// Position-relative virtuals (`_part_offset`, `_part_index`, ...) are intentionally NOT offered: on a
-    /// reordered projection they point at different rows than the parent, so enforcing a policy on them
-    /// would filter the wrong rows. That is why we use this explicit set instead of the whole snapshot.
-    auto available_columns = projection->metadata->getColumns().getAllPhysical();
-    available_columns.emplace_back("_part_starting_offset", std::make_shared<DataTypeUInt64>());
-    if (projection->with_parent_part_offset)
-        available_columns.emplace_back("_parent_part_offset", std::make_shared<DataTypeUInt64>());
-
-    auto parent_snapshot = merge_tree.getStorageSnapshot(parent_metadata, context);
-    auto virtual_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
-    for (const auto & name : MergeTreeData::virtuals_useful_for_filter)
-        if (auto virtual_column = parent_snapshot->tryGetColumn(virtual_options, name))
-            available_columns.push_back(*virtual_column);
-
-    ActionsDAG dag = [&]
-    {
-        try
-        {
-            auto syntax_result = TreeRewriter(context).analyze(expr, available_columns);
-            ExpressionAnalyzer analyzer(expr, syntax_result, context);
-            return analyzer.getActionsDAG(false /* add_aliases */, false /* remove_unused_result */);
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() != ErrorCodes::UNKNOWN_IDENTIFIER && e.code() != ErrorCodes::NO_SUCH_COLUMN_IN_TABLE)
-                throw;
-            throw Exception(ErrorCodes::ACCESS_DENIED,
-                "Cannot read from projection `{}` of table {} because its row policy references a column "
-                "that the projection does not store, so the row policy cannot be enforced",
-                projection->name, parent_storage_id.getNameForLogs());
-        }
-    }();
-
-    /// The filter column is the policy expression's own output node (which may be a bare input column,
-    /// e.g. `USING c0`), mirroring `generateFilterActions`/`buildFilterInfo` rather than assuming a new node.
-    String filter_column_name = expr->getColumnName();
-    if (!dag.tryFindInOutputs(filter_column_name))
-        throw Exception(ErrorCodes::ACCESS_DENIED,
-            "Cannot determine row policy filter column for projection `{}` of table {}",
-            projection->name, parent_storage_id.getNameForLogs());
-
-    /// record the applied policies so they show up in system.query_log, like a normal table read
-    if (context->hasQueryContext())
-        for (const auto & row_policy : row_policy_filter->policies)
-            context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
-
-    auto result = std::make_unique<MergeTreeProjectionRowPolicyFilter>();
-    result->required_columns = dag.getRequiredColumnsNames();
-    result->filter_column_name = std::move(filter_column_name);
-    result->dag = std::move(dag);
-    return result;
 }
 
 StorageSnapshotPtr

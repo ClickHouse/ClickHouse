@@ -1,19 +1,18 @@
 -- Tags: no-parallel
--- ^ the UDF case below creates a global SQL UDF (CREATE FUNCTION), which cannot run concurrently.
--- Row policies are attached to the parent table, but the `mergeTreeProjection` table function used to
--- read projection parts directly without applying them, leaking every row (clickhouse-private#53773).
--- The read must honour the parent table's row policy: apply it when the projection stores every column
--- the policy references, otherwise refuse the read.
+-- ^ the UDF case creates a global SQL UDF (CREATE FUNCTION), which cannot run concurrently.
+-- Row policies live on the parent table; mergeTreeProjection used to read projection parts without
+-- applying them (clickhouse-private#53773). The read now resolves the policy against the projection's
+-- own columns with the analyzer and refuses when it cannot be enforced there.
+
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS users_rls_proj;
 DROP ROW POLICY IF EXISTS rp_users_rls_proj ON users_rls_proj;
 
-CREATE TABLE users_rls_proj (id UInt64, name String, department String, salary UInt64)
-ENGINE = MergeTree ORDER BY id;
-
+CREATE TABLE users_rls_proj (id UInt64, name String, department String, salary UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO users_rls_proj VALUES (1, 'Alice', 'engineering', 100000), (2, 'Bob', 'finance', 120000), (3, 'Carol', 'engineering', 110000), (4, 'Dave', 'hr', 90000);
 
--- proj_with_dept stores the policy column `department` (its ORDER BY key); proj_no_dept does not.
+-- proj_with_dept stores the policy column `department`; proj_no_dept does not.
 ALTER TABLE users_rls_proj ADD PROJECTION proj_with_dept (SELECT id, name, salary ORDER BY department);
 ALTER TABLE users_rls_proj ADD PROJECTION proj_no_dept (SELECT id, name ORDER BY id);
 ALTER TABLE users_rls_proj MATERIALIZE PROJECTION proj_with_dept SETTINGS mutations_sync = 2;
@@ -39,28 +38,44 @@ SELECT name FROM mergeTreeProjection(currentDatabase(), 'users_rls_proj', 'proj_
 DROP ROW POLICY rp_users_rls_proj ON users_rls_proj;
 DROP TABLE users_rls_proj;
 
--- A policy on an ALIAS column is enforced by expanding it to the physical dependency the projection
--- stores (`c ALIAS b + 1` -> the filter reads `b`). The projection selects `b`, not the alias itself
--- (a projection cannot select an ALIAS column - it is not in the data block to materialize).
-DROP TABLE IF EXISTS alias_rls_proj;
-DROP ROW POLICY IF EXISTS rp_alias_rls_proj ON alias_rls_proj;
+-- A bare-column policy (`USING flag`).
+DROP TABLE IF EXISTS bare_rls_proj;
+DROP ROW POLICY IF EXISTS rp_bare_rls_proj ON bare_rls_proj;
 
-CREATE TABLE alias_rls_proj (a UInt64, b UInt64, c UInt64 ALIAS b + 1) ENGINE = MergeTree ORDER BY a;
-INSERT INTO alias_rls_proj (a, b) VALUES (1, 10), (2, 20), (3, 30);
+CREATE TABLE bare_rls_proj (id UInt64, visible UInt8) ENGINE = MergeTree ORDER BY id;
+INSERT INTO bare_rls_proj VALUES (1, 1), (2, 0), (3, 1);
 
-ALTER TABLE alias_rls_proj ADD PROJECTION p (SELECT a, b ORDER BY a);
-ALTER TABLE alias_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+ALTER TABLE bare_rls_proj ADD PROJECTION p (SELECT id, visible ORDER BY id);
+ALTER TABLE bare_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
 
-CREATE ROW POLICY rp_alias_rls_proj ON alias_rls_proj FOR SELECT USING c > 21 TO ALL;
+CREATE ROW POLICY rp_bare_rls_proj ON bare_rls_proj FOR SELECT USING visible TO ALL;
 
-SELECT '-- policy on an ALIAS column is enforced via its physical dependency (expect a=3)';
-SELECT a FROM mergeTreeProjection(currentDatabase(), 'alias_rls_proj', 'p') ORDER BY a;
+SELECT '-- bare-column policy is enforced (expect 1, 3)';
+SELECT id FROM mergeTreeProjection(currentDatabase(), 'bare_rls_proj', 'p') ORDER BY id;
 
-DROP ROW POLICY rp_alias_rls_proj ON alias_rls_proj;
-DROP TABLE alias_rls_proj;
+DROP ROW POLICY rp_bare_rls_proj ON bare_rls_proj;
+DROP TABLE bare_rls_proj;
 
--- A policy on a DEFAULT column uses the stored value, not the default expression: the projection stores
--- the column, so an explicitly inserted value (c = 999, not b + 1) is filtered on directly.
+-- A part-identity virtual (`_partition_id`) has the same value in the projection as in the parent.
+DROP TABLE IF EXISTS pid_rls_proj;
+DROP ROW POLICY IF EXISTS rp_pid_rls_proj ON pid_rls_proj;
+
+CREATE TABLE pid_rls_proj (id UInt64, val UInt64) ENGINE = MergeTree PARTITION BY (id % 2) ORDER BY id;
+INSERT INTO pid_rls_proj VALUES (1, 10), (2, 20), (3, 30), (4, 40);
+
+ALTER TABLE pid_rls_proj ADD PROJECTION p (SELECT id, val ORDER BY val);
+ALTER TABLE pid_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_pid_rls_proj ON pid_rls_proj FOR SELECT USING _partition_id = '1' TO ALL;
+
+SELECT '-- policy on the _partition_id virtual is enforced (expect 1, 3)';
+SELECT id FROM mergeTreeProjection(currentDatabase(), 'pid_rls_proj', 'p') ORDER BY id;
+
+DROP ROW POLICY rp_pid_rls_proj ON pid_rls_proj;
+DROP TABLE pid_rls_proj;
+
+-- A DEFAULT column stored in the projection is filtered on its stored value, not the default expression
+-- (an explicitly inserted c = 999 stays hidden by `c < 100`).
 DROP TABLE IF EXISTS default_rls_proj;
 DROP ROW POLICY IF EXISTS rp_default_rls_proj ON default_rls_proj;
 
@@ -73,14 +88,13 @@ ALTER TABLE default_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 
 
 CREATE ROW POLICY rp_default_rls_proj ON default_rls_proj FOR SELECT USING c < 100 TO ALL;
 
-SELECT '-- policy on a DEFAULT column filters the stored value, not b + 1 (expect 1, 2)';
+SELECT '-- DEFAULT column stored: filtered on the stored value (expect 1, 2)';
 SELECT a FROM mergeTreeProjection(currentDatabase(), 'default_rls_proj', 'p') ORDER BY a;
 
 DROP ROW POLICY rp_default_rls_proj ON default_rls_proj;
 DROP TABLE default_rls_proj;
 
--- A user PREWHERE must not observe rows the policy hides: the policy filter runs first, so throwIf
--- never sees the hidden 'private' row.
+-- A user PREWHERE must not observe rows the policy hides: the policy filter runs first.
 DROP TABLE IF EXISTS prewhere_rls_proj;
 DROP ROW POLICY IF EXISTS rp_prewhere_rls_proj ON prewhere_rls_proj;
 
@@ -99,129 +113,7 @@ PREWHERE throwIf(secret = 'private', 'row policy leak') = 0 ORDER BY id;
 DROP ROW POLICY rp_prewhere_rls_proj ON prewhere_rls_proj;
 DROP TABLE prewhere_rls_proj;
 
--- A policy on `_part_offset` is enforced when the projection preserves the parent offset (it selects
--- `_part_offset`, stored as `_parent_part_offset`), so parent-row semantics are kept.
-DROP TABLE IF EXISTS virt_ok_rls_proj;
-DROP ROW POLICY IF EXISTS rp_virt_ok_rls_proj ON virt_ok_rls_proj;
-
-CREATE TABLE virt_ok_rls_proj (id UInt64, val UInt64) ENGINE = MergeTree ORDER BY id;
-INSERT INTO virt_ok_rls_proj VALUES (1, 10), (2, 20), (3, 30);
-
-ALTER TABLE virt_ok_rls_proj ADD PROJECTION p (SELECT _part_offset, id, val ORDER BY val);
-ALTER TABLE virt_ok_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
-
-CREATE ROW POLICY rp_virt_ok_rls_proj ON virt_ok_rls_proj FOR SELECT USING _part_offset < 1 TO ALL;
-
-SELECT '-- policy on _part_offset enforced when the projection preserves the parent offset (expect id=1)';
-SELECT id FROM mergeTreeProjection(currentDatabase(), 'virt_ok_rls_proj', 'p') ORDER BY id;
-
-DROP ROW POLICY rp_virt_ok_rls_proj ON virt_ok_rls_proj;
-DROP TABLE virt_ok_rls_proj;
-
--- A policy on `_part_offset` fails closed when the projection does not preserve the parent offset:
--- the projection's own offset means different rows, so it cannot be enforced (clean ACCESS_DENIED).
-DROP TABLE IF EXISTS virt_rls_proj;
-DROP ROW POLICY IF EXISTS rp_virt_rls_proj ON virt_rls_proj;
-
-CREATE TABLE virt_rls_proj (id UInt64, val UInt64) ENGINE = MergeTree ORDER BY id;
-INSERT INTO virt_rls_proj VALUES (1, 10), (2, 20), (3, 30);
-
-ALTER TABLE virt_rls_proj ADD PROJECTION p (SELECT id, val ORDER BY val);
-ALTER TABLE virt_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
-
-CREATE ROW POLICY rp_virt_rls_proj ON virt_rls_proj FOR SELECT USING _part_offset < 1 TO ALL;
-
-SELECT '-- policy on _part_offset without a preserved parent offset: read is refused';
-SELECT id FROM mergeTreeProjection(currentDatabase(), 'virt_rls_proj', 'p') ORDER BY id; -- { serverError ACCESS_DENIED }
-
-DROP ROW POLICY rp_virt_rls_proj ON virt_rls_proj;
-DROP TABLE virt_rls_proj;
-
--- A bare-column policy (`USING flag`, where the predicate result is an existing column, not a new node).
-DROP TABLE IF EXISTS bare_rls_proj;
-DROP ROW POLICY IF EXISTS rp_bare_rls_proj ON bare_rls_proj;
-
-CREATE TABLE bare_rls_proj (id UInt64, visible UInt8) ENGINE = MergeTree ORDER BY id;
-INSERT INTO bare_rls_proj VALUES (1, 1), (2, 0), (3, 1);
-
-ALTER TABLE bare_rls_proj ADD PROJECTION p (SELECT id, visible ORDER BY id);
-ALTER TABLE bare_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
-
-CREATE ROW POLICY rp_bare_rls_proj ON bare_rls_proj FOR SELECT USING visible TO ALL;
-
-SELECT '-- bare-column policy is enforced when the filter column is not selected (expect 1, 3)';
-SELECT id FROM mergeTreeProjection(currentDatabase(), 'bare_rls_proj', 'p') ORDER BY id;
-
-SELECT '-- bare-column policy is enforced when the filter column is also selected (expect 1, 3)';
-SELECT id, visible FROM mergeTreeProjection(currentDatabase(), 'bare_rls_proj', 'p') ORDER BY id;
-
-DROP ROW POLICY rp_bare_rls_proj ON bare_rls_proj;
-DROP TABLE bare_rls_proj;
-
--- A policy on `_part_starting_offset + _part_offset` (the global row index) is enforced: the projection
--- preserves both the parent offset and the part starting offset.
-DROP TABLE IF EXISTS pso_rls_proj;
-DROP ROW POLICY IF EXISTS rp_pso_rls_proj ON pso_rls_proj;
-
-CREATE TABLE pso_rls_proj (id UInt64, val UInt64) ENGINE = MergeTree ORDER BY id;
-INSERT INTO pso_rls_proj VALUES (1, 10), (2, 20);
-INSERT INTO pso_rls_proj VALUES (3, 30), (4, 40);
-
-ALTER TABLE pso_rls_proj ADD PROJECTION p (SELECT _part_offset, id, val ORDER BY val);
-ALTER TABLE pso_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
-
-CREATE ROW POLICY rp_pso_rls_proj ON pso_rls_proj FOR SELECT USING _part_starting_offset + _part_offset < 3 TO ALL;
-
-SELECT '-- policy on global row index (_part_starting_offset + _part_offset < 3) enforced (expect 1, 2, 3)';
-SELECT id FROM mergeTreeProjection(currentDatabase(), 'pso_rls_proj', 'p') ORDER BY id;
-
-DROP ROW POLICY rp_pso_rls_proj ON pso_rls_proj;
-DROP TABLE pso_rls_proj;
-
--- A policy on a part-identity virtual (`_partition_id`) is enforced: a projection part maps back to its
--- parent part, so the virtual keeps parent-row semantics (unlike the projection-local `_part_offset`).
-DROP TABLE IF EXISTS pid_rls_proj;
-DROP ROW POLICY IF EXISTS rp_pid_rls_proj ON pid_rls_proj;
-
-CREATE TABLE pid_rls_proj (id UInt64, val UInt64) ENGINE = MergeTree PARTITION BY (id % 2) ORDER BY id;
-INSERT INTO pid_rls_proj VALUES (1, 10), (2, 20), (3, 30), (4, 40);
-
-ALTER TABLE pid_rls_proj ADD PROJECTION p (SELECT id, val ORDER BY val);
-ALTER TABLE pid_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
-
-CREATE ROW POLICY rp_pid_rls_proj ON pid_rls_proj FOR SELECT USING _partition_id = '1' TO ALL;
-
-SELECT '-- policy on the _partition_id virtual is enforced (expect 1, 3)';
-SELECT id FROM mergeTreeProjection(currentDatabase(), 'pid_rls_proj', 'p') ORDER BY id;
-
-DROP ROW POLICY rp_pid_rls_proj ON pid_rls_proj;
-DROP TABLE pid_rls_proj;
-
--- A policy that hides `_part_offset` inside a SQL UDF is still enforced: UDFs are expanded before the
--- offset remap, so the parent offset semantics are preserved (reordered projection, expect id=1).
-DROP TABLE IF EXISTS udf_rls_proj;
-DROP ROW POLICY IF EXISTS rp_udf_rls_proj ON udf_rls_proj;
-DROP FUNCTION IF EXISTS rp_visible_04368;
-
-CREATE TABLE udf_rls_proj (id UInt64, val UInt64) ENGINE = MergeTree ORDER BY id;
-INSERT INTO udf_rls_proj VALUES (1, 30), (2, 20), (3, 10);
-
-ALTER TABLE udf_rls_proj ADD PROJECTION p (SELECT _part_offset, id, val ORDER BY val);
-ALTER TABLE udf_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
-
-CREATE FUNCTION rp_visible_04368 AS (x) -> x < 1;
-CREATE ROW POLICY rp_udf_rls_proj ON udf_rls_proj FOR SELECT USING rp_visible_04368(_part_offset) TO ALL;
-
-SELECT '-- UDF-wrapped _part_offset policy is enforced with parent semantics (expect id=1)';
-SELECT id FROM mergeTreeProjection(currentDatabase(), 'udf_rls_proj', 'p') ORDER BY id;
-
-DROP ROW POLICY rp_udf_rls_proj ON udf_rls_proj;
-DROP FUNCTION rp_visible_04368;
-DROP TABLE udf_rls_proj;
-
--- A LIMIT must not stop the read before the policy filters. The planner leaves trivial-LIMIT on (it checks
--- this table function's own storage id, which has no policy), so hiding the first 50 rows and asking for 1
--- must still return a visible row, not nothing.
+-- A LIMIT must not stop the read before the policy filters (hiding the first 50 rows, asking for 1).
 DROP TABLE IF EXISTS limit_rls_proj;
 DROP ROW POLICY IF EXISTS rp_limit_rls_proj ON limit_rls_proj;
 
@@ -239,9 +131,29 @@ SELECT count() FROM (SELECT id FROM mergeTreeProjection(currentDatabase(), 'limi
 DROP ROW POLICY rp_limit_rls_proj ON limit_rls_proj;
 DROP TABLE limit_rls_proj;
 
--- A policy on a DEFAULT column fails closed when the projection stores only the dependency, not the column:
--- the stored value can differ from the default expression (explicit c = 5, not b + 1), so resolving `c` from
--- `b` would filter the wrong value and could expose a hidden row. Enforcement needs the stored `c`.
+-- The remaining cases cannot be enforced against the projection, so the read is refused.
+
+-- ALIAS column: the projection stores the dependency `b`, not the alias `c`, and the analyzer resolves
+-- the policy against the projection, where `c` is unknown.
+DROP TABLE IF EXISTS alias_rls_proj;
+DROP ROW POLICY IF EXISTS rp_alias_rls_proj ON alias_rls_proj;
+
+CREATE TABLE alias_rls_proj (a UInt64, b UInt64, c UInt64 ALIAS b + 1) ENGINE = MergeTree ORDER BY a;
+INSERT INTO alias_rls_proj (a, b) VALUES (1, 10), (2, 20), (3, 30);
+
+ALTER TABLE alias_rls_proj ADD PROJECTION p (SELECT a, b ORDER BY a);
+ALTER TABLE alias_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_alias_rls_proj ON alias_rls_proj FOR SELECT USING c > 21 TO ALL;
+
+SELECT '-- policy on an ALIAS column: read is refused';
+SELECT a FROM mergeTreeProjection(currentDatabase(), 'alias_rls_proj', 'p') ORDER BY a; -- { serverError ACCESS_DENIED }
+
+DROP ROW POLICY rp_alias_rls_proj ON alias_rls_proj;
+DROP TABLE alias_rls_proj;
+
+-- DEFAULT column with only its dependency stored: the stored value can differ from `b + 1`
+-- (an explicit c = 5), so it cannot be reconstructed from `b` - refused.
 DROP TABLE IF EXISTS default_dep_rls_proj;
 DROP ROW POLICY IF EXISTS rp_default_dep_rls_proj ON default_dep_rls_proj;
 
@@ -260,9 +172,8 @@ SELECT a FROM mergeTreeProjection(currentDatabase(), 'default_dep_rls_proj', 'p'
 DROP ROW POLICY rp_default_dep_rls_proj ON default_dep_rls_proj;
 DROP TABLE default_dep_rls_proj;
 
--- Same for a MATERIALIZED column: although its value cannot be set explicitly, it is still stored and can
--- diverge from the current expression (e.g. after ALTER MODIFY COLUMN, which does not re-materialize old
--- parts). Reconstructing it from the stored dependency would filter the wrong value, so fail closed.
+-- MATERIALIZED column with only its dependency stored: the stored value can diverge from the current
+-- expression (e.g. after ALTER MODIFY, which does not re-materialize old parts) - refused.
 DROP TABLE IF EXISTS materialized_dep_rls_proj;
 DROP ROW POLICY IF EXISTS rp_materialized_dep_rls_proj ON materialized_dep_rls_proj;
 
@@ -280,9 +191,36 @@ SELECT x FROM mergeTreeProjection(currentDatabase(), 'materialized_dep_rls_proj'
 DROP ROW POLICY rp_materialized_dep_rls_proj ON materialized_dep_rls_proj;
 DROP TABLE materialized_dep_rls_proj;
 
--- A projection that binds a parent column name to a transformed expression does not expose that column
--- under the parent name (only genuine parent columns are readable), so the policy cannot be evaluated on
--- transformed data - it fails closed rather than filtering the wrong rows.
+-- A position-relative virtual (`_part_offset`): the projection can reorder rows, so its value is not the
+-- parent's - refused, both directly and when hidden inside a SQL UDF.
+DROP TABLE IF EXISTS virt_rls_proj;
+DROP ROW POLICY IF EXISTS rp_virt_rls_proj ON virt_rls_proj;
+DROP FUNCTION IF EXISTS rp_visible_04368;
+
+CREATE TABLE virt_rls_proj (id UInt64, val UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO virt_rls_proj VALUES (1, 30), (2, 20), (3, 10);
+
+ALTER TABLE virt_rls_proj ADD PROJECTION p (SELECT _part_offset, id, val ORDER BY val);
+ALTER TABLE virt_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_virt_rls_proj ON virt_rls_proj FOR SELECT USING _part_offset < 1 TO ALL;
+
+SELECT '-- policy on a position-relative virtual (_part_offset): read is refused';
+SELECT id FROM mergeTreeProjection(currentDatabase(), 'virt_rls_proj', 'p') ORDER BY id; -- { serverError ACCESS_DENIED }
+
+CREATE FUNCTION rp_visible_04368 AS (x) -> x < 1;
+DROP ROW POLICY rp_virt_rls_proj ON virt_rls_proj;
+CREATE ROW POLICY rp_virt_rls_proj ON virt_rls_proj FOR SELECT USING rp_visible_04368(_part_offset) TO ALL;
+
+SELECT '-- same position-relative virtual wrapped in a SQL UDF: read is refused';
+SELECT id FROM mergeTreeProjection(currentDatabase(), 'virt_rls_proj', 'p') ORDER BY id; -- { serverError ACCESS_DENIED }
+
+DROP ROW POLICY rp_virt_rls_proj ON virt_rls_proj;
+DROP FUNCTION rp_visible_04368;
+DROP TABLE virt_rls_proj;
+
+-- A projection expression bound to a parent column name is not exposed under that name, so the policy
+-- cannot resolve it - refused (never filters on the transformed value).
 DROP TABLE IF EXISTS shadow_rls_proj;
 DROP ROW POLICY IF EXISTS rp_shadow_rls_proj ON shadow_rls_proj;
 
