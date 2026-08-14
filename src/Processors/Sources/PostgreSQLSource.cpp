@@ -158,11 +158,17 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
     }
 
     auto status = ISource::prepare();
-    if (status == Status::Finished && !stop_requested.load())
+    if (status == Status::Finished)
     {
-        /// Only a finish that was not cancelled commits here and claims the teardown. After a
-        /// cancel it is left to the destructor: the cancelling thread may still be in
-        /// `cancel_query` on this connection, and a `COMMIT` racing it is what libpq forbids.
+        {
+            std::lock_guard lock(tx_mutex);
+            /// This lock is the handoff between a final cancellation and a clean finish. Once the
+            /// latter has claimed it, `onCancel` must not call `cancel_query` while `COMMIT` runs.
+            if (stop_requested.load())
+                return status;
+            clean_finish_started.store(true);
+        }
+
         if (stream)
             stream->close();
 
@@ -253,9 +259,6 @@ void PostgreSQLSource<T>::onCancel() noexcept
     /// the read cleanly (the executor still cancels every processor on teardown, and a cancel
     /// request after a clean finish would pointlessly open an extra connection for `PQcancel` and
     /// mark a healthy pooled connection broken), or an earlier onCancel() has already sent one.
-    if (stop_requested.exchange(true))
-        return;
-
     /// Outer try/catch: this function is noexcept, and locking tx_mutex may throw.
     try
     {
@@ -263,6 +266,9 @@ void PostgreSQLSource<T>::onCancel() noexcept
         std::shared_ptr<T> tx_snapshot;
         {
             std::lock_guard lock(tx_mutex);
+            if (stop_requested.load() || clean_finish_started.load())
+                return;
+            stop_requested.store(true);
             tx_snapshot = tx;
         }
 

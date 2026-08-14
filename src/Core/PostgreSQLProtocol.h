@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Base64.h>
+#include <Common/quoteString.h>
 #include <Common/StringUtils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -783,6 +784,8 @@ public:
     String portal_name;
     String function_name;
     VectorWithMemoryTracking<String> parameters;
+    VectorWithMemoryTracking<UInt8> null_parameters;
+    VectorWithMemoryTracking<Int16> parameter_formats;
     Int16 num_params{};
 
     void deserialize(ReadBuffer & in) override
@@ -794,12 +797,19 @@ public:
 
         Int16 num_format_params = 0;
         readBinaryBigEndian(num_format_params, in);
-        Int16 format_param = 0;
+        VectorWithMemoryTracking<Int16> format_params;
         for (Int16 i = 0; i < num_format_params; ++i)
         {
+            Int16 format_param = 0;
             readBinaryBigEndian(format_param, in);
+            if (format_param != 0 && format_param != 1)
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown parameter format {} in Bind message", format_param);
+            format_params.push_back(format_param);
         }
         readBinaryBigEndian(num_params, in);
+        if (num_format_params != 0 && num_format_params != 1 && num_format_params != num_params)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                "Bind message has {} parameter format codes for {} parameters", num_format_params, num_params);
         for (int i = 0; i < num_params; ++i)
         {
             Int32 sz_param = 0;
@@ -811,12 +821,16 @@ public:
                                 "Wrong parameter length {} in Bind message, it must not be less than -1", sz_param);
             if (sz_param == -1)
             {
-                parameters.emplace_back("NULL");
+                parameters.emplace_back();
+                null_parameters.push_back(1);
+                parameter_formats.push_back(num_format_params == 0 ? 0 : format_params[num_format_params == 1 ? 0 : i]);
                 continue;
             }
             String current_param(sz_param, 0);
             in.readStrict(current_param.data(), sz_param);
             parameters.push_back(current_param);
+            null_parameters.push_back(0);
+            parameter_formats.push_back(num_format_params == 0 ? 0 : format_params[num_format_params == 1 ? 0 : i]);
         }
 
         Int16 num_format_params_result = 0;
@@ -1137,23 +1151,33 @@ public:
 class CopyInResponse : public BackendMessage
 {
 public:
+    explicit CopyInResponse(Int16 num_columns_ = 0)
+        : num_columns(num_columns_)
+    {
+    }
+
     void serialize(WriteBuffer & out) const override
     {
         out.write('G');
         writeBinaryBigEndian(size(), out);
         writeBinaryBigEndian(static_cast<char>(0), out);
-        writeBinaryBigEndian(static_cast<Int16>(0), out);
+        writeBinaryBigEndian(num_columns, out);
+        for (Int16 i = 0; i < num_columns; ++i)
+            writeBinaryBigEndian(static_cast<Int16>(0), out);
     }
 
     Int32 size() const override
     {
-        return 4 + 1 + 2;
+        return 4 + 1 + 2 + 2 * num_columns;
     }
 
     MessageType getMessageType() const override
     {
         return MessageType::COPY_IN_RESPONSE;
     }
+
+private:
+    Int16 num_columns;
 };
 
 class CopyOutResponse : public BackendMessage
@@ -1839,7 +1863,26 @@ public:
         if (!bind_query)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Execute without prior Bind");
 
-        auto result = getStatement(bind_query->function_name, bind_query->parameters);
+        VectorWithMemoryTracking<String> arguments;
+        arguments.reserve(bind_query->parameters.size());
+        for (size_t i = 0; i < bind_query->parameters.size(); ++i)
+        {
+            if (bind_query->null_parameters[i])
+            {
+                arguments.emplace_back("NULL");
+                continue;
+            }
+
+            /// Extended-protocol parameters are values, never query fragments. Text values are made
+            /// into ClickHouse string literals before substitution, while binary values are rejected
+            /// until there is a complete PostgreSQL OID-to-ClickHouse binary decoder.
+            if (bind_query->parameter_formats[i] != 0)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Binary Bind parameters are not supported in the PostgreSQL wire protocol");
+            arguments.emplace_back(quoteStringPostgreSQL(bind_query->parameters[i]));
+        }
+
+        auto result = getStatement(bind_query->function_name, arguments);
 
         return result;
     }

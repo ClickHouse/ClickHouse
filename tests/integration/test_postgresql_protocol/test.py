@@ -355,6 +355,15 @@ def test_prepared_statement(started_cluster):
     cur.execute("SELECT * FROM test WHERE id > %s;", ('2',), prepare=True)
     assert cur.fetchall() == [(3,)]
 
+    cur.execute(
+        "SELECT %s, toDate(%s), toUUID(%s)",
+        ("hello", "2026-08-12", "61f0c404-5cb3-11e7-907b-a6006ad3dba0"),
+        prepare=True,
+    )
+    assert cur.fetchall() == [
+        ("hello", datetime.date(2026, 8, 12), uuid.UUID("61f0c404-5cb3-11e7-907b-a6006ad3dba0"))
+    ]
+
     cur.execute("PREPARE select_test AS SELECT * FROM test WHERE id = $1;")
     cur.execute("EXECUTE select_test(1);")
     assert cur.fetchall() == [(1,)]
@@ -889,7 +898,8 @@ def test_kill_query_cancels_copy_from_stdin_stalled_inside_a_frame(started_clust
         query = b"COPY copy_stall_target FROM STDIN\x00"
         sock.sendall(b"Q" + struct.pack("!i", 4 + len(query)) + query)
         # `CopyInResponse` - the server is ready for the payload.
-        _pg_read_until(sock, b"G")
+        copy_response = _pg_read_until(sock, b"G")
+        assert copy_response[b"G"] == b"\x00\x00\x01\x00\x00"
 
         # One frame announced in full, only the first few bytes of it sent: the rest never arrives
         # until this test decides so.

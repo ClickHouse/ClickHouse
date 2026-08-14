@@ -59,6 +59,10 @@ private:
     std::atomic<bool> started{false};
     /// Asks the read to stop. A signal only: it never takes the teardown from whoever owes it.
     std::atomic<bool> stop_requested{false};
+    /// Set under `tx_mutex` before the successful path closes the stream and commits. A concurrent
+    /// cancellation observes this handoff and does not issue `cancel_query` against a connection that
+    /// is already committing.
+    std::atomic<bool> clean_finish_started{false};
     /// Claimed once by whoever tears the connection down: prepare() on an uncancelled finish, else
     /// the destructor. onCancel()'s interrupt does not claim it - it cannot close the stream.
     std::atomic<bool> finalized{false};

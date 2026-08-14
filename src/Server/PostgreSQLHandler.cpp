@@ -1061,6 +1061,15 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
     if (copy_query_parsed && copy_query_parsed->as<ASTCopyQuery>()->type == ASTCopyQuery::QueryType::COPY_FROM)
     {
         auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
+        String table_name = copy_query->table_name;
+        /// The emulated catalog consists of temporary views, which live in the connection's current
+        /// database rather than a physical `pg_catalog` database. The catalog itself advertises these
+        /// relations under `pg_catalog`, so map that protocol-only qualification back to the temporary
+        /// view used by the data path.
+        if (table_name.starts_with("pg_catalog."))
+            table_name.erase(0, sizeof("pg_catalog.") - 1);
+        else if (table_name.starts_with("`pg_catalog`."))
+            table_name.erase(0, sizeof("`pg_catalog`.") - 1);
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(currentQueryId());
 
@@ -1089,14 +1098,14 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
 
         /// `table_name` is already rendered as valid SQL by the parser (each part of a compound
         /// `database.table` name separately backquoted), so it must not be wrapped in backquotes again.
-        auto [ast, io] = executeQuery(fmt::format("INSERT INTO {} {} FROM INFILE 'psql_copy'", copy_query->table_name, columns_to_insert), query_context, {}, QueryProcessingStage::Enum::Complete);
+        auto [ast, io] = executeQuery(fmt::format("INSERT INTO {} {} FROM INFILE 'psql_copy'", table_name, columns_to_insert), query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pushing());
 
         String format = toString(copy_query->format);
 
         const Settings & settings = query_context->getSettingsRef();
 
-        message_transport->send(PostgreSQLProtocol::Messaging::CopyInResponse(), true);
+        message_transport->send(PostgreSQLProtocol::Messaging::CopyInResponse(static_cast<Int16>(io.pipeline.getHeader().columns())), true);
 
         /// `CopyData` frame boundaries carry no meaning: a single logical row may arrive split across
         /// several frames (a client is free to chunk the payload however it likes), and one frame may
@@ -1383,6 +1392,11 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
     if (copy_query_parsed && copy_query_parsed->as<ASTCopyQuery>()->type == ASTCopyQuery::QueryType::COPY_TO)
     {
         auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
+        String table_name = copy_query->table_name;
+        if (table_name.starts_with("pg_catalog."))
+            table_name.erase(0, sizeof("pg_catalog.") - 1);
+        else if (table_name.starts_with("`pg_catalog`."))
+            table_name.erase(0, sizeof("`pg_catalog`.") - 1);
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(currentQueryId());
 
@@ -1414,7 +1428,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         /// `COPY (query) TO STDOUT` streams the result of an arbitrary query (this is how libpq/pqxx read
         /// result sets); `COPY table TO STDOUT` streams a whole table.
         auto select_query = copy_query->subquery.empty()
-            ? fmt::format("SELECT {} FROM {};", columns_to_select, copy_query->table_name)
+            ? fmt::format("SELECT {} FROM {};", columns_to_select, table_name)
             : copy_query->subquery;
         auto [ast, io] = executeQuery(select_query, query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pulling());
