@@ -927,10 +927,10 @@ The server successfully detected this situation and will download merged part fr
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer", ValueType::Number) \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem", ValueType::Number) \
-    M(RemoteFSCancelledPrefetches, "Number of cancelled prefecthes (because of seek)", ValueType::Number) \
+    M(RemoteFSCancelledPrefetches, "Number of cancelled prefetches (because of seek)", ValueType::Number) \
     M(RemoteFSUnusedPrefetches, "Number of prefetches pending at buffer destruction", ValueType::Number) \
-    M(RemoteFSPrefetchedReads, "Number of reads from prefecthed buffer", ValueType::Number) \
-    M(RemoteFSPrefetchedBytes, "Number of bytes from prefecthed buffer", ValueType::Bytes) \
+    M(RemoteFSPrefetchedReads, "Number of reads from prefetched buffer", ValueType::Number) \
+    M(RemoteFSPrefetchedBytes, "Number of bytes from prefetched buffer", ValueType::Bytes) \
     M(RemoteFSUnprefetchedReads, "Number of reads from unprefetched buffer", ValueType::Number) \
     M(RemoteFSUnprefetchedBytes, "Number of bytes from unprefetched buffer", ValueType::Bytes) \
     M(RemoteFSLazySeeks, "Number of lazy seeks", ValueType::Number) \
