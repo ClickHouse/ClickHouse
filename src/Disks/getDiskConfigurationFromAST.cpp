@@ -39,6 +39,7 @@ namespace Setting
     extern const SettingsBool dynamic_disk_allow_from_env;
     extern const SettingsBool dynamic_disk_allow_include;
     extern const SettingsBool dynamic_disk_allow_from_zk;
+    extern const SettingsBool use_native_gcs;
 }
 
 namespace ServerSetting
@@ -271,6 +272,15 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     const bool type_explicitly_non_gcs
         = has_concrete_non_gcs_type || (type_is_object_storage && has_explicit_non_gcs_object_storage_type);
     const bool maybe_gcs_disk = is_gcs_disk || type_is_indirect || (has_include && !type_explicitly_non_gcs);
+    /// The setting gates the user-SQL entry point only. Server-configured disks already express an
+    /// administrator's opt-in through `object_storage_type = gcs`; persisted table metadata is allowed to
+    /// reload without depending on the profile that happened to create the table.
+    if (maybe_gcs_disk && !is_loading_from_existing_metadata && !settings[Setting::use_native_gcs])
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The native GCS object storage backend is experimental. Set `use_native_gcs = 1` to use "
+            "`object_storage_type = gcs` in a dynamic disk");
+
     if (maybe_gcs_disk && has_service_account_key_file && !for_system_database)
         throw Exception(
             ErrorCodes::ACCESS_DENIED,

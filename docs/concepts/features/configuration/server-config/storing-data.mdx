@@ -576,7 +576,7 @@ If none of the explicit credential parameters is set, the client falls back to [
 
 #### Limitations {#native-gcs-storage-limitations}
 
-- The backend is experimental; the `gcs` table function and `GCS` table engine additionally require the experimental setting [`use_native_gcs`](/reference/settings/session-settings/use#use_native_gcs).
+- The backend is experimental. Dynamic GCS disks and the `gcs` table function require the experimental setting [`use_native_gcs`](/reference/settings/session-settings/use#use_native_gcs); server-configured disks are enabled by `object_storage_type: gcs`. The `GCS` table engine uses the S3-compatible backend.
 - The `plain_rewritable` metadata type is not supported with the native `gcs` object storage type.
 - The server must be built with `google-cloud-cpp` support (`USE_GOOGLE_CLOUD`, enabled in official builds).
 

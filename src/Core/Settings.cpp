@@ -659,7 +659,7 @@ Check each uploaded object to s3 with head request to be sure that upload was su
 When reading an object from S3 (or an S3-compatible store such as GCS), check that every GET request returns the same ETag that was observed when the object was listed. A single file read issues many ranged GET requests; if the object is overwritten in place between them (for example by an external writer rewriting a fixed key), the reads can otherwise be stitched together from two different object generations and surface as a corrupted checksum or parse error. When a mismatch is detected the read fails with `S3_OBJECT_CHANGED_DURING_READ` instead of returning inconsistent data. Disable only for workloads that intentionally read objects that are being overwritten and can tolerate inconsistent reads.
 )", 0) \
     DECLARE(Bool, use_native_gcs, false, R"(
-Experimental. Use the native Google Cloud Storage client (google-cloud-cpp, the GCS JSON API) for the `gcs` table function and the `GCS` table engine, instead of the default S3-compatibility path (the GCS XML API via the AWS SDK).
+Experimental. Use the native Google Cloud Storage client (google-cloud-cpp, the GCS JSON API) for the `gcs` table function and dynamic disks with `object_storage_type = gcs`, instead of the default S3-compatibility path (the GCS XML API via the AWS SDK). The `GCS` table engine always uses the S3-compatibility path.
 
 The native client authenticates with Application Default Credentials, service-account keys, or the `google_adc_*` OAuth refresh-token flow rather than S3 HMAC access-key/secret pairs. Enable it to talk to GCS natively; leave it disabled (the default) to keep the existing S3-compatible behavior, including positional HMAC credentials.
 )", EXPERIMENTAL) \
