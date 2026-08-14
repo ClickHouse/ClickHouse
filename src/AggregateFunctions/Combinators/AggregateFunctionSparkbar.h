@@ -375,6 +375,19 @@ public:
         render(assert_cast<ColumnString &>(to), levels);
     }
 
+    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
+    {
+        auto nested_arguments = nested_function->getArgumentsThatCanBeOnlyNull();
+        UnorderedSetWithMemoryTracking<size_t> result;
+        result.reserve(nested_arguments.size() + 1);
+        result.insert(0);
+
+        for (const size_t argument : nested_arguments)
+            result.insert(argument + 1);
+
+        return result;
+    }
+
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 };
 

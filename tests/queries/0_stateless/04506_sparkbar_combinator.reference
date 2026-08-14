@@ -47,3 +47,5 @@ avgOrNullSparkbar result type (String):
 String
 avgOrNullSparkbar with a NULL-only bucket (blank):
 ▁ █
+countSparkbar with an all-NULL forwarded argument:
+String

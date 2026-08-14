@@ -125,6 +125,13 @@ SELECT toTypeName(avgOrNullSparkbar(3, 0, 2)(number, number)) FROM numbers(3);
 SELECT 'avgOrNullSparkbar with a NULL-only bucket (blank):';
 SELECT avgOrNullSparkbar(3, 0, 2)(intDiv(number, 2), if(intDiv(number, 2) = 1, NULL, toInt64(number) * 10)) FROM numbers(6);
 
+-- The `Null` combinator must preserve the nested aggregate's all-null argument contract after
+-- `Sparkbar` prepends the x-axis argument. `count(NULL)` produces blank buckets but the result
+-- remains a String, rather than being replaced by a `Nothing` aggregate result.
+SELECT 'countSparkbar with an all-NULL forwarded argument:';
+SELECT toTypeName(countSparkbar(3, 0, 2)(number, CAST(NULL, 'Nullable(UInt8)'))) FROM numbers(3);
+SELECT countSparkbar(3, 0, 2)(number, CAST(NULL, 'Nullable(UInt8)')) FROM numbers(3);
+
 -- Error: too few parameters
 SELECT countSparkbar(5, 0)(number) FROM numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
