@@ -8,8 +8,10 @@
 # source-row range to the partitions via the scatter selector. After mv1's row-count-changing
 # GROUP BY re-anchored the info to the view-output chunks, the selector describes the smaller
 # view-output block while the token ranges still describe the source rows, so the walk read out of
-# the selector's bounds. filterToPartition must refuse such an insert with NOT_IMPLEMENTED.
+# the selector's bounds. Because the info passed through a view, filterToPartition keeps every token
+# in every partition (the target may still deduplicate a repeated token) instead of the walk.
 # See https://github.com/ClickHouse/ClickHouse/issues/111100
+# and https://github.com/ClickHouse/clickhouse-core-incidents/issues/2006
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -63,17 +65,18 @@ $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE part_dst"
 # Two deduplication tokens in one sync insert: the source-side squashing
 # (min_insert_block_size_rows, with max_insert_block_size as the parser cap) re-blocks the 800
 # input rows into two 400-row source blocks, each carrying its own token, and the nested INSERT
-# behind the alias hop squashes them into one block. The partitioned sink must then attribute each token's
-# source rows to the partitions - impossible after mv1's GROUP BY collapsed the blocks - so the
-# insert is rejected with NOT_IMPLEMENTED by filterToPartition (pre-fix this walked the
-# source-row ranges over the smaller partition selector: an out-of-bounds read). Nothing reaches
-# dst.
-# grep -m1 -c prints exactly one count: the server also echoes the exception through
-# send_logs_level, so the raw number of matching lines is not stable.
+# behind the alias hop squashes them into one block. The partitioned sink cannot attribute each
+# token's source rows to the partitions - impossible after mv1's GROUP BY collapsed the blocks - so
+# filterToPartition keeps both tokens in both partitions (pre-fix this walked the source-row ranges
+# over the smaller partition selector: an out-of-bounds read). The insert fills dst and the repeated
+# insert is deduplicated as a whole.
 SPLIT_SETTINGS="$SETTINGS --async_insert=0 --max_insert_block_size=400 --min_insert_block_size_rows=400 --min_insert_block_size_bytes=0 --min_insert_block_size_rows_for_materialized_views=1000000"
 
-{ for _ in $(seq 1 4); do seq 1 100; done; for _ in $(seq 1 4); do seq 101 200; done; } | $CLICKHOUSE_CLIENT $SPLIT_SETTINGS -q "INSERT INTO part_src FORMAT TSV" 2>&1 | grep -m1 -c "NOT_IMPLEMENTED"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM part_dst"
+{ for _ in $(seq 1 4); do seq 1 100; done; for _ in $(seq 1 4); do seq 101 200; done; } | $CLICKHOUSE_CLIENT $SPLIT_SETTINGS -q "INSERT INTO part_src FORMAT TSV"
+$CLICKHOUSE_CLIENT -q "SELECT (SELECT count() FROM part_dst), (SELECT count(DISTINCT _partition_id) FROM part_dst)"
+
+{ for _ in $(seq 1 4); do seq 1 100; done; for _ in $(seq 1 4); do seq 101 200; done; } | $CLICKHOUSE_CLIENT $SPLIT_SETTINGS -q "INSERT INTO part_src FORMAT TSV"
+$CLICKHOUSE_CLIENT -q "SELECT (SELECT count() FROM part_dst), (SELECT count(DISTINCT _partition_id) FROM part_dst)"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE part_mv2"
 $CLICKHOUSE_CLIENT -q "DROP TABLE part_mv1"

@@ -20,13 +20,19 @@ The Kafka Connector Sink is distributed under the [Apache 2.0 License](https://w
 
 ### Requirements for the environment {#requirements-for-the-environment}
 
-The [Kafka Connect](https://docs.confluent.io/platform/current/connect/index.html) framework v2.7 or later should be installed in the environment.
+The [Kafka Connect](https://docs.confluent.io/platform/current/connect/index.html) framework v2.7 or later should be installed in the environment, running on Java 11 or later.
 
 ### Version compatibility matrix {#version-compatibility-matrix}
 
-| ClickHouse Kafka Connect version | ClickHouse version | Kafka Connect | Confluent platform |
-|----------------------------------|--------------------|---------------|--------------------|
-| 1.0.0                            | > 23.3             | > 2.7         | > 6.1              |
+| ClickHouse Kafka Connect version | ClickHouse version | Kafka Connect | Confluent Platform | ClickHouse Java Client |
+|----------------------------------|--------------------|---------------|--------------------|------------------------|
+| 1.4.x (latest)                   | 23.3+              | 2.7+          | 6.1+               | 0.9.5                  |
+| 1.3.x                            | 23.3+              | 2.7+          | 6.1+               | 0.8.0 to 0.9.5         |
+| 1.2.x                            | 23.3+              | 2.7+          | 6.1+               | 0.6.3 to 0.8.0         |
+| 1.1.x                            | 23.3+              | 2.7+          | 6.1+               | 0.6.0 to 0.6.1         |
+| 1.0.x                            | 23.3+              | 2.7+          | 6.1+               | 0.4.6 to 0.6.0         |
+
+The connector refuses to start against ClickHouse servers older than 23.3. Always use the [latest release](https://github.com/ClickHouse/clickhouse-kafka-connect/releases/latest) unless you have a reason to pin an older version.
 
 ### Main features {#main-features}
 
@@ -119,6 +125,7 @@ The full table of configuration options:
 | `bufferCount` (since v1.3.6)                    | Number of records to buffer in memory before flushing to ClickHouse. `0` disables internal buffering. Buffering is not supported with `exactlyOnce=true`.                                                                       | `"0"`                                                    |
 | `bufferFlushTime` (since v1.3.6)                | Maximum time in milliseconds to buffer records before flush when `exactlyOnce=false`. `0` disables time-based flushing. Default value is `0`. Only required for time-base threshold. Only effective when `bufferCount > 0`.                                                                                           | `"0"`                                                    |
 | `reportInsertedOffsets` (since v1.3.6)          | Enables returning only successfully inserted offsets from `preCommit` (instead of `currentOffsets`) when `exactlyOnce=false`. This does not apply when `ignorePartitionsWhenBatching=true`, where `currentOffsets` are still returned. | `"false"`                                                |
+| `client_version` (since v1.2.0)                 | Selects the [ClickHouse Java client](/integrations/language-clients/java/client) the connector uses. Valid values are `"V1"` and `"V2"`.                            | `"V1"`                                                   |
 
 ### Target tables {#target-tables}
 
@@ -862,13 +869,29 @@ For connector-level insert settings:
 The connector maintains HTTP connections to ClickHouse. Adjust timeouts for high-latency networks:
 
 ```json
-"clickhouseSettings": "socket_timeout=300000,connection_timeout=30000"
+"jdbcConnectionProperties": "?socket_timeout=300000,connection_timeout=30000"
 ```
 
 - **`socket_timeout`** (default: 30000 ms): Maximum time for read operations
 - **`connection_timeout`** (default: 10000 ms): Maximum time to establish connection
 
 Increase these values if you experience timeout errors with large batches.
+
+#### Client network buffer {#client-network-buffer}
+
+When using client V2 (`"client_version": "V2"`), data is copied between the socket and application memory through a buffer controlled by `client_network_buffer_size` (in bytes). The default size is `300000` bytes. A larger buffer can improve throughput on high-latency or high-bandwidth links, but increases memory usage per connection task.
+
+All client options are configured via `jdbcConnectionProperties` rather than `clickhouseSettings`. For example:
+
+```json
+"jdbcConnectionProperties": "?client_network_buffer_size=1000000"
+```
+
+If you need to configure multiple client properties, join them with `&`:
+
+```json
+"jdbcConnectionProperties": "?ssl=true&client_network_buffer_size=1000000"
+```
 
 #### Monitoring and troubleshooting performance {#monitoring-performance}
 
