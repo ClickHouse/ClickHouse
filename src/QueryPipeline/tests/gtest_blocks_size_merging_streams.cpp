@@ -269,3 +269,20 @@ TEST(MergingSortedTest, SerializedPlanDisablesHierarchicalMerge)
     QueryPlanSerializationSettings plan_settings;
     EXPECT_EQ(SortingStep::Settings(plan_settings).max_streams_per_hierarchical_merge, 0);
 }
+
+TEST(MergingSortedTest, SerializeValidatesHierarchicalMergeOnlyForFullSort)
+{
+    auto pipe = getInputStreams({"K1"}, {{1, 1, 1}});
+    auto sort_description = getSortDescription({"K1"});
+
+    SortingStep::Settings settings(8192);
+    settings.max_streams_per_hierarchical_merge = 1;
+    SortingStep step(pipe.getSharedHeader(), sort_description, 0, settings);
+
+    QueryPlanSerializationSettings full_sort_plan_settings;
+    EXPECT_THROW(step.serializeSettings(full_sort_plan_settings, 0), Exception);
+
+    step.convertToFinishSorting(sort_description, false, false);
+    QueryPlanSerializationSettings finish_sorting_plan_settings;
+    EXPECT_NO_THROW(step.serializeSettings(finish_sorting_plan_settings, 0));
+}
