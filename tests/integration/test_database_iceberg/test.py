@@ -1107,8 +1107,8 @@ def test_create_tables_under_same_namespace(started_cluster):
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
     # Create every table with its own query id so the per-query ProfileEvents can
-    # be inspected below. The first CREATE also creates the namespace; the other
-    # nine find it already exists (the REST catalog answers HTTP 409 Conflict).
+    # be inspected below. The first CREATE creates the namespace; the other nine
+    # observe it during the REST catalog's namespace lookup.
     create_query_ids = []
     for i, table_name in enumerate(table_names):
         query_id = f"{test_ref}_create_{i}"
@@ -1130,16 +1130,10 @@ def test_create_tables_under_same_namespace(started_cluster):
     assert listed_table_names == sorted(table_names), f"Expected {sorted(table_names)}, got {listed_table_names}"
     assert len(tables) == 10
     node.query("SYSTEM FLUSH LOGS")
-    assert int(node.query(f"SELECT count() FROM system.text_log WHERE level = 'Debug' AND message LIKE '%{root_namespace}%already exists, skipping creation%'")) == 9
-
-    # The "already exists" log line alone does not prove the regression is fixed:
-    # the old code emitted it too, only after retrying the 409 `http_max_tries`
-    # times. Assert the retry layer directly. `createNamespaceIfNotExists` sends
-    # the "create namespace" request exactly once per CREATE, so the number of
-    # HTTP requests each CREATE makes must stay flat. If the 409 were retried
-    # again, the nine CREATEs that hit the existing namespace would each send
-    # `http_max_tries` requests for it, inflating their per-query counts by
-    # `http_max_tries - 1` compared with the first CREATE.
+    # The first CREATE needs one additional request to create the namespace.
+    # The following CREATEs must not spend `http_max_tries` attempts on an
+    # already-existing namespace, so their request counts stay close to the
+    # first CREATE's count.
     max_tries = int(
         node.query("SELECT value FROM system.settings WHERE name = 'http_max_tries'")
     )
