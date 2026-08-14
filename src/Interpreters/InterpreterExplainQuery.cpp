@@ -16,6 +16,8 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ApplyWithAliasVisitor.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/TableOverrideUtils.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Formats/FormatFactory.h>
@@ -89,6 +91,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 interactive_delay;
@@ -282,7 +285,13 @@ namespace
     {
         struct Data : public WithContext
         {
-            explicit Data(ContextPtr context_) : WithContext(context_) {}
+            Data(ContextPtr context_, bool analyzer_enabled_for_explained_query_)
+                : WithContext(context_)
+                , analyzer_enabled_for_explained_query(analyzer_enabled_for_explained_query_)
+            {
+            }
+
+            const bool analyzer_enabled_for_explained_query;
         };
 
         static bool needChildVisit(ASTPtr & node, ASTPtr &)
@@ -430,10 +439,28 @@ namespace
         /// A nested `SELECT` the analysis cannot resolve on its own (e.g. one referring to a `WITH` table of
         /// the enclosing query) is left unchecked - as with an unresolvable view body, nothing is revealed,
         /// because the dump only ever prints the user's own subquery text. An `ACCESS_DENIED` is propagated.
-        static void checkNestedSelectsViewBaseTableAccess(const ASTPtr & node, const ContextPtr & context)
+        static void checkNestedSelectsViewBaseTableAccess(const ASTPtr & node, const Data & data)
         {
+            const auto & context = data.getContext();
             ASTs nested_selects;
-            collectNestedSelectQueries(node, nested_selects);
+            ASTPtr node_with_substituted_with = node;
+
+            /// `InterpreterSelectQuery` applies an enclosing `WITH` clause before its top-level
+            /// analysis in legacy mode, and with `enable_global_with_statement` in analyzer mode.
+            /// Preserve that binding before checking nested queries independently: otherwise a
+            /// nested reference shadowed by `WITH v AS (...)` can be resolved as a catalog view.
+            const bool substitute_enclosing_with
+                = context->getSettingsRef()[Setting::enable_global_with_statement]
+                || !data.analyzer_enabled_for_explained_query;
+            if (substitute_enclosing_with)
+            {
+                node_with_substituted_with = node->clone();
+                if (context->getSettingsRef()[Setting::enable_global_with_statement])
+                    ApplyWithAliasVisitor::visit(node_with_substituted_with);
+                ApplyWithSubqueryVisitor::visit(node_with_substituted_with);
+            }
+
+            collectNestedSelectQueries(node_with_substituted_with, nested_selects);
             if (nested_selects.empty())
                 return;
 
@@ -486,7 +513,7 @@ namespace
         {
             /// Check the views read from nested subqueries first, while the query is still exactly as the
             /// user wrote it - before the analysis below rewrites the main table expression in place.
-            checkNestedSelectsViewBaseTableAccess(node, data.getContext());
+            checkNestedSelectsViewBaseTableAccess(node, data);
 
             /// A parameterized view call carrying `FINAL` or `SAMPLE` must stay unexpanded, mirroring the
             /// skip in `ExpandParameterizedViewsMatcher`: those modifiers are valid on the view call at
@@ -1671,7 +1698,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 }
                 else
                 {
-                    ExplainAnalyzedSyntaxVisitor::Data data(query_context);
+                    ExplainAnalyzedSyntaxVisitor::Data data(query_context, analyzer_enabled_for_explained_query);
 
                     /// As on the `EXPLAIN SYNTAX` path: the expanded query may be unresolvable, and dumping it
                     /// then would reveal the parameter-substituted view body without any check having run. Fall
@@ -1775,7 +1802,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 query_context = std::move(query_context_mutable);
             }
 
-            ExplainAnalyzedSyntaxVisitor::Data data(query_context);
+            ExplainAnalyzedSyntaxVisitor::Data data(
+                query_context, query_context->getSettingsRef()[Setting::allow_experimental_analyzer]);
 
             /// If a parameterized view was expanded above, the resulting query may be unresolvable (e.g. an
             /// unknown identifier in the outer projection over the expanded body). The `analyze()`-mode

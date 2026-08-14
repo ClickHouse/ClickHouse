@@ -1,0 +1,12 @@
+-- The legacy interpreter applies enclosing WITH subqueries
+SELECT: OK
+EXPLAIN SYNTAX: OK
+EXPLAIN AST optimize=1: OK
+-- The analyzer applies them when enable_global_with_statement is enabled
+SELECT: OK
+EXPLAIN SYNTAX: OK
+EXPLAIN AST optimize=1: OK
+-- Without that setting the analyzer resolves the catalog view and denies it
+SELECT: ACCESS_DENIED
+EXPLAIN SYNTAX: ACCESS_DENIED
+EXPLAIN AST optimize=1: ACCESS_DENIED
