@@ -17,6 +17,18 @@ FROM (EXPLAIN PLAN actions = 1
     WITH '1234567890123456' AS key, materialize(key) = '1234567890123456' AS cond
     SELECT encrypt('aes-128-ecb', 'v', key) FROM numbers(1) WHERE cond);
 
+-- The DAG the filter is merged into can already hold an ordinary `Const(UInt8) 1` output (here:
+-- `1 AS plain`). Constant deduplication must not collapse the masked folded constant onto that
+-- plain one, otherwise the filter renders the value instead of [HIDDEN].
+SELECT 'masked secret survives constant dedup', countIf(explain LIKE '%Filter column: [HIDDEN]%')
+FROM (EXPLAIN PLAN actions = 1
+    WITH '1234567890123456' AS key, materialize(key) = '1234567890123456' AS cond
+    SELECT 1 AS plain, encrypt('aes-128-ecb', 'v', key) FROM numbers(1) WHERE cond);
+SELECT 'folded value not printed with a plain const around', countIf(explain LIKE '%Filter column: 1%')
+FROM (EXPLAIN PLAN actions = 1
+    WITH '1234567890123456' AS key, materialize(key) = '1234567890123456' AS cond
+    SELECT 1 AS plain, encrypt('aes-128-ecb', 'v', key) FROM numbers(1) WHERE cond);
+
 -- the fold itself still happens and the filter passes
 SELECT count() FROM (
     WITH '1234567890123456' AS key, materialize(key) = '1234567890123456' AS cond
