@@ -1116,7 +1116,6 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
 }
 
 
-
 DataTypePtr standardTimeSeriesIDDataType()
 {
     return std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUUID>()});
