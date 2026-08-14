@@ -217,4 +217,30 @@ CREATE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.v11 AS
 SELECT 'C19', s FROM {CLICKHOUSE_DATABASE_1:Identifier}.v11;
 DROP TABLE r;
 
+-- Without `enable_global_with_statement` a plain name declared in an enclosing SELECT is not
+-- visible in a nested one, so there it denotes the updated table's `src` (2), not the CTE (7).
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
+    UPDATE v = (WITH src AS (SELECT 7 AS id) SELECT (SELECT max(id) FROM src)) WHERE id = 1
+    SETTINGS mutations_sync = 2, enable_global_with_statement = 0;
+SELECT 'C20', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
+
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
+    UPDATE v = (WITH src AS (SELECT 7 AS id) SELECT (SELECT max(id) FROM src)) WHERE id = 1
+    SETTINGS mutations_sync = 2, enable_global_with_statement = 1;
+SELECT 'C21', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
+
+-- In the declaring SELECT the name is the alias whichever way the setting is set.
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
+    UPDATE v = (WITH src AS (SELECT 7 AS id) SELECT max(id) FROM src) WHERE id = 1
+    SETTINGS mutations_sync = 2, enable_global_with_statement = 0;
+SELECT 'C22', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
+
+-- A recursive name is visible inside its own definition, which is a nested SELECT, so the
+-- self-reference keeps building 1..4 rather than reading the table.
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
+    UPDATE v = (WITH RECURSIVE src AS (SELECT 1 AS id UNION ALL SELECT id + 1 FROM src WHERE id < 4)
+                SELECT sum(id) FROM src) WHERE id = 1
+    SETTINGS mutations_sync = 2, enable_global_with_statement = 0;
+SELECT 'C23', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
+
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

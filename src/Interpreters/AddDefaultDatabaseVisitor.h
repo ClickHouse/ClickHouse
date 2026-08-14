@@ -16,6 +16,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Core/Settings.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
@@ -28,6 +29,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool enable_global_with_statement;
+}
 
 /// Visitors consist of functions with unified interface 'void visit(Cast & x, ASTPtr & y)', there x is y, successfully cast to Cast.
 /// Both types and function could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
@@ -43,6 +49,7 @@ public:
         bool only_replace_in_join_ = false)
         : context(context_)
         , database_name(database_name_)
+        , inherit_with_aliases(context_->getSettingsRef()[Setting::enable_global_with_statement])
         , only_replace_current_database_function(only_replace_current_database_function_)
         , only_replace_in_join(only_replace_in_join_)
     {
@@ -74,8 +81,8 @@ public:
 
     void visit(ASTPtr & ast) const
     {
-        /// A reference to a non-recursive `WITH` element may already have been replaced by a copy
-        /// of its body tagged with the element's name. That name is not in scope inside the copy.
+        /// A non-recursive `WITH` reference may already be a copy of its body tagged with the
+        /// element's name, and that name is not in scope inside the copy.
         std::optional<MaskedAlias> masked_alias;
         if (const auto * subquery = ast->as<ASTSubquery>(); subquery && !subquery->cte_name.empty())
         {
@@ -134,6 +141,7 @@ private:
     ContextPtr context;
 
     const String database_name;
+    const bool inherit_with_aliases = true;
     std::set<String> external_tables;
 
     /// The `WITH` aliases declared by one `SELECT`, split by whether the `WITH` is recursive.
@@ -157,21 +165,32 @@ private:
         std::deque<Scope> & scopes;
     };
 
+    /// Detaches the binding for the object's lifetime. The node is moved out and back, so the
+    /// destructor allocates nothing.
     struct MaskedAlias
     {
-        MaskedAlias(Scope & scope_, const String & name_) : scope(scope_), name(name_) { scope.plain.erase(name); }
-        ~MaskedAlias() { scope.plain.insert(name); }
+        MaskedAlias(Scope & scope_, const String & name_) : scope(scope_), node(scope_.plain.extract(name_)) { }
+        ~MaskedAlias() { scope.plain.insert(std::move(node)); }
+
+        MaskedAlias(const MaskedAlias &) = delete;
+        MaskedAlias & operator=(const MaskedAlias &) = delete;
 
         Scope & scope;
-        String name;
+        std::unordered_set<String>::node_type node;
     };
 
     /// The scope whose binding of `name` is in effect, or nullptr when it is not an alias.
     Scope * findScopeDeclaring(const String & name) const
     {
         for (auto it = scopes.rbegin(); it != scopes.rend(); ++it)
-            if (it->recursive.contains(name) || it->plain.contains(name))
+        {
+            /// A recursive name is visible in its own definition, which is a nested `SELECT`.
+            if (it->recursive.contains(name))
                 return &*it;
+            /// Without `enable_global_with_statement` a plain name reaches only its own `SELECT`.
+            if (it->plain.contains(name) && (inherit_with_aliases || it == scopes.rbegin()))
+                return &*it;
+        }
         return nullptr;
     }
 
@@ -195,8 +214,7 @@ private:
         const ASTPtr with = select.with();
         if (with)
         {
-            /// A recursive alias is also visible inside its own definition, a plain one is not:
-            /// there the name still denotes a table.
+            /// A recursive alias is visible inside its own definition, a plain one is not.
             for (auto & child : with->children)
             {
                 if (!select.recursive_with)
