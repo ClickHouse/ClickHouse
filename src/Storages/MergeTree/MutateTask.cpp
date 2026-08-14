@@ -1891,6 +1891,10 @@ struct MutationContext
 
     /// Set once computed in prepare(); read later by PartMergerWriter for projection provenance.
     PatchPartsForReader patch_parts;
+    /// Same: source_part's own rename conversions, so a rebuilt projection can resolve JSON
+    /// SHARED REGEXP provenance through a pending rename the same way the main mutated columns do
+    /// (see computeJSONProvenanceType) instead of missing source_part's pre-rename physical column.
+    AlterConversionsPtr alter_conversions;
 
     FutureMergedMutatedPartPtr future_part;
     MergeTreeData::DataPartPtr source_part;
@@ -2331,7 +2335,8 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         ++projection_block_num,
         ctx->context,
         MergeTreeData::DataPartsVector{ctx->source_part},
-        ctx->patch_parts);
+        ctx->patch_parts,
+        std::vector<AlterConversionsPtr>{ctx->alter_conversions});
 
     tmp_part->finalize();
     tmp_part->part->getDataPartStorage().commitTransaction();
@@ -3945,6 +3950,7 @@ bool MutateTask::prepare()
     );
     const auto patch_parts = alter_conversions->getAllPatches();
     ctx->patch_parts = patch_parts;
+    ctx->alter_conversions = alter_conversions;
     auto context_for_reading = Context::createCopy(ctx->context);
 
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.

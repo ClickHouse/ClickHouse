@@ -1144,11 +1144,17 @@ static std::unordered_map<String, std::vector<String>> getProjectionOutputToSour
 
 /// Mirrors applyJSONSharedDataPathPoliciesForMutation (MutateTask.cpp) for a projection's own declared
 /// columns: prefer each source's own projection part, else fall back to that source's main columns.
+/// `source_part_alter_conversions` is parallel to `source_parts`: a source part written before a
+/// column rename still has the old physical name, so `tryGetColumn` on it (and on its own projection
+/// sub-part, which is renamed in lockstep with the main part) needs the candidate name mapped back
+/// through that part's own pending renames first, the same way computeJSONProvenanceType
+/// (MutateTask.cpp) and MergeTask's own base-part provenance merge already do.
 static void applyJSONSharedDataPathPoliciesForProjection(
     NamesAndTypesList & result_columns,
     const ProjectionDescription & projection,
     const MergeTreeData::DataPartsVector & source_parts,
-    const PatchPartsForReader & patch_parts)
+    const PatchPartsForReader & patch_parts,
+    const std::vector<AlterConversionsPtr> & source_part_alter_conversions)
 {
     auto output_to_sources = getProjectionOutputToSourceIdentifiers(projection);
 
@@ -1160,8 +1166,13 @@ static void applyJSONSharedDataPathPoliciesForProjection(
                 if (name != result_column.name)
                     candidate_names.push_back(name);
 
-        for (const auto & source_part : source_parts)
+        for (size_t source_index = 0; source_index != source_parts.size(); ++source_index)
         {
+            const auto & source_part = source_parts[source_index];
+            const AlterConversionsPtr * alter_conversions = source_index < source_part_alter_conversions.size()
+                ? &source_part_alter_conversions[source_index]
+                : nullptr;
+
             /// A rebuild can add a column to the projection that an existing projection sub-part
             /// doesn't have yet (see MergeTask::prepareProjectionsToMergeAndRebuild); the fallback
             /// to the source's own main column must apply per-column, not only when no sub-part
@@ -1171,11 +1182,15 @@ static void applyJSONSharedDataPathPoliciesForProjection(
 
             for (const auto & candidate_name : candidate_names)
             {
+                String source_name = candidate_name;
+                if (alter_conversions && *alter_conversions && (*alter_conversions)->isColumnRenamed(source_name))
+                    source_name = (*alter_conversions)->getColumnOldName(source_name);
+
                 std::optional<NameAndTypePair> source_column;
                 if (projection_part_it != source_projection_parts.end())
-                    source_column = projection_part_it->second->tryGetColumn(candidate_name);
+                    source_column = projection_part_it->second->tryGetColumn(source_name);
                 if (!source_column)
-                    source_column = source_part->tryGetColumn(candidate_name);
+                    source_column = source_part->tryGetColumn(source_name);
                 if (source_column)
                     result_column.type = mergeJSONSharedDataPathRules(result_column.type, source_column->type);
             }
@@ -1199,7 +1214,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     bool merge_is_needed,
     bool try_adaptive_codec,
     const MergeTreeData::DataPartsVector & source_parts,
-    const PatchPartsForReader & patch_parts)
+    const PatchPartsForReader & patch_parts,
+    const std::vector<AlterConversionsPtr> & source_part_alter_conversions)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     const auto & metadata_snapshot = projection.metadata;
@@ -1225,7 +1241,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     /// A merge/mutation-driven rewrite must not silently re-promote paths a retired SHARED REGEXP
     /// rule once forced into shared data; a fresh insert (merge_is_needed=false) has no such history.
     if (merge_is_needed && !(*data_settings)[MergeTreeSetting::allow_json_shared_data_paths_repromotion])
-        applyJSONSharedDataPathPoliciesForProjection(columns, projection, source_parts, patch_parts);
+        applyJSONSharedDataPathPoliciesForProjection(columns, projection, source_parts, patch_parts, source_part_alter_conversions);
 
     SerializationInfo::Settings settings
     {
@@ -1371,7 +1387,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         /*try_adaptive_codec=*/ false,
         /// A fresh insert's projection block has no prior projection, main part, or patch to read provenance from.
         /*source_parts=*/ {},
-        /*patch_parts=*/ {});
+        /*patch_parts=*/ {},
+        /*source_part_alter_conversions=*/ {});
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -1384,7 +1401,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     size_t block_num,
     ContextPtr context,
     const MergeTreeData::DataPartsVector & source_parts,
-    const PatchPartsForReader & patch_parts)
+    const PatchPartsForReader & patch_parts,
+    const std::vector<AlterConversionsPtr> & source_part_alter_conversions)
 {
     const auto & table_settings = data.getSettings();
     auto indices = collectSkipIndicesToMaterialize(
@@ -1406,7 +1424,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         /*merge_is_needed=*/ true,
         /*try_adaptive_codec=*/ true,
         source_parts,
-        patch_parts);
+        patch_parts,
+        source_part_alter_conversions);
 
     new_part->part->temp_projection_block_number = block_num;
     return new_part;
