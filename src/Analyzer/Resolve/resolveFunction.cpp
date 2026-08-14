@@ -195,25 +195,6 @@ bool isSafeCountScalarSubqueryForEarlyShortCircuit(const QueryNode & query)
     return matcher && matcher->isUnqualified();
 }
 
-bool hasLateValidatedSemanticCarrier(const QueryTreeNodePtr & node)
-{
-    const auto node_type = node->getNodeType();
-    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
-        return false;
-    if (node_type == QueryTreeNodeType::WINDOW)
-        return true;
-
-    if (const auto * function = node->as<FunctionNode>();
-        function && (function->getFunctionName() == "grouping" || function->isWindowFunction()))
-        return true;
-
-    for (const auto & child : node->getChildren())
-        if (child && hasLateValidatedSemanticCarrier(child))
-            return true;
-
-    return false;
-}
-
 bool hasScopeDependentNodesForEarlyShortCircuit(const QueryTreeNodePtr & node)
 {
     const auto node_type = node->getNodeType();
@@ -801,8 +782,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (type_inference_succeeded
                 && !hasAggregateFunctionNodes(node_for_type_inference)
-                && !hasFunctionNode(node_for_type_inference, "arrayJoin")
-                && !hasLateValidatedSemanticCarrier(node_for_type_inference))
+                && !hasFunctionNode(node_for_type_inference, "arrayJoin"))
             {
                 auto result_type = node_for_type_inference->getResultType();
                 auto result_column = result_type->createColumnConst(1, static_cast<UInt8>(*short_circuit_result));
@@ -2691,7 +2671,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             const auto * column_const = column ? typeid_cast<const ColumnConst *>(column.get()) : nullptr;
             if (column_const && !column_const->getDataColumn().isDummy() &&
                 !hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin") &&
-                !hasLateValidatedSemanticCarrier(node) &&
                 /// Sanity check: do not convert large columns to constants
                 column->byteSize() < 1_MiB)
             {

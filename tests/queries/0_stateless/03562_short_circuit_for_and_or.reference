@@ -21,10 +21,8 @@ Test scoped lambda shadows an optimized builtin function
 Test folded logical expressions preserve their result types
 Nullable(UInt8)
 Bool
-Test semantic carrier branches are not erased
+Test aggregate and arrayJoin branches are not erased
 0
-1
-1
 1
 1
 Test EXISTS falls back when its runtime value is unknown

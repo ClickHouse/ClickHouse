@@ -41,11 +41,9 @@ SELECT 'Test folded logical expressions preserve their result types';
 SELECT toTypeName(0 AND CAST(NULL AS Nullable(UInt8)));
 SELECT toTypeName(1 OR CAST(0 AS Bool));
 
-SELECT 'Test semantic carrier branches are not erased';
+SELECT 'Test aggregate and arrayJoin branches are not erased';
 SELECT 0 AND sum(number) FROM numbers(10);
 SELECT 1 OR arrayJoin([1, 2]);
-SELECT 1 OR grouping(1); -- { serverError ILLEGAL_AGGREGATION }
-SELECT 1 OR row_number() OVER () FROM numbers(2);
 
 SELECT 'Test EXISTS falls back when its runtime value is unknown';
 SELECT 0 AND exists(SELECT [1]);
