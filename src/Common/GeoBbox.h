@@ -516,24 +516,42 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
         return input_child ? NodeBboxStatus::NoInfo : NodeBboxStatus::NotApplicable;
 
     /// Two or more constant geometry arguments on a non-`pointInPolygon` predicate aren't
-    /// assembled into one combined shape (see the comment above), so no bbox can be derived --
-    /// but each argument that IS geometry-shaped is still guaranteed to be evaluated as one, and
-    /// an invalid one is still guaranteed to raise; fail closed for those. A constant that
-    /// `extractBboxFromFieldValue` doesn't recognize as geometry at all (e.g. a plain scalar
-    /// argument to a WASM UDF, such as a distance threshold) is simply not evaluated as geometry
-    /// and so can't raise on that account -- `extractBboxFromFieldValue`'s `false` return is
-    /// overloaded between "not geometry-shaped" and "geometry-shaped but invalid", and only
-    /// `acc.valid == false` (poisoned by every genuine parse/validation failure) means the latter.
+    /// assembled into one combined shape (see the comment above). But it's a common signature
+    /// for a `isSpatialPredicate()` UDF to take exactly ONE constant geometry argument alongside
+    /// auxiliary constant scalars, e.g. `within_distance(geom_column, const_poly, 100)` -- that
+    /// isn't really a "combine several geometries" case at all, so reduce it to the same
+    /// single-geometry-constant bbox trusted below whenever exactly one of the constant arguments
+    /// turns out to be geometry-shaped and the rest are not. Each argument that IS geometry-shaped
+    /// is still guaranteed to be evaluated as one, and an invalid one is still guaranteed to
+    /// raise; fail closed for those regardless of how many geometry-shaped arguments there are.
+    /// `extractBboxFromFieldValue`'s `false` return is overloaded between "not geometry-shaped"
+    /// and "geometry-shaped but invalid", and only `acc.valid == false` (poisoned by every
+    /// genuine parse/validation failure) means the latter -- this includes a `String` constant
+    /// that fails to parse as WKB: since a `String` argument's *intent* (WKB payload vs. an
+    /// unrelated flag) can't be told apart from its `Field` alone, an unparseable one is always
+    /// treated as invalid geometry and fails closed, even where it was only ever meant as e.g. a
+    /// mode flag. Avoid raw `String` constants for non-geometry auxiliary arguments of an
+    /// `is_spatial_predicate` function to keep pruning effective (see `wasm_udf.mdx`).
+    std::optional<BboxAccumulator> single_geometry_field;
     if (const_fields.size() > 1 && node.function_base->getName() != "pointInPolygon")
     {
+        bool multiple_geometry_fields = false;
         for (const auto & field : const_fields)
         {
             BboxAccumulator field_acc;
-            extractBboxFromFieldValue(field, field_acc);
+            bool extracted = extractBboxFromFieldValue(field, field_acc);
             if (!field_acc.valid)
                 return NodeBboxStatus::Failed;
+            if (extracted)
+            {
+                if (single_geometry_field)
+                    multiple_geometry_fields = true;
+                else
+                    single_geometry_field = field_acc;
+            }
         }
-        return input_child ? NodeBboxStatus::NoInfo : NodeBboxStatus::NotApplicable;
+        if (!single_geometry_field || multiple_geometry_fields)
+            return input_child ? NodeBboxStatus::NoInfo : NodeBboxStatus::NotApplicable;
     }
 
     /// A single constant geometry argument is self-contained (shell + holes, or a full
@@ -545,7 +563,14 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     double ymin = 0;
     double xmax = 0;
     double ymax = 0;
-    if (const_fields.size() == 1)
+    if (single_geometry_field)
+    {
+        xmin = single_geometry_field->xmin;
+        ymin = single_geometry_field->ymin;
+        xmax = single_geometry_field->xmax;
+        ymax = single_geometry_field->ymax;
+    }
+    else if (const_fields.size() == 1)
     {
         BboxAccumulator acc;
         bool extracted = extractBboxFromFieldValue(const_fields[0], acc);
