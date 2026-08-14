@@ -7,6 +7,8 @@
 1	test2
 --- prewhere applied after final
 1	test2
+1
+0
 --- lazy materialization
 1	test2
 1

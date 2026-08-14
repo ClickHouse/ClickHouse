@@ -53,6 +53,24 @@ SELECT '--- prewhere applied after final';
 SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key
 SETTINGS apply_prewhere_after_final = 1, query_plan_remove_unused_columns = 1;
 
+-- The rows above come from an always-true predicate, so they alone would not notice the setting
+-- being ignored. Deferring the filter puts a `FilterTransform` after the FINAL merge; the second
+-- arm is the control showing this oracle can be false.
+SELECT count() AS deferred_filter_transform
+FROM (
+    EXPLAIN PIPELINE
+    SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key
+    SETTINGS apply_prewhere_after_final = 1, query_plan_remove_unused_columns = 1
+)
+WHERE explain LIKE '%FilterTransform%';
+SELECT count() AS deferred_filter_transform
+FROM (
+    EXPLAIN PIPELINE
+    SELECT key, someCol FROM t_replacing_is_deleted_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key
+    SETTINGS apply_prewhere_after_final = 0, query_plan_remove_unused_columns = 1
+)
+WHERE explain LIKE '%FilterTransform%';
+
 -- Lazy materialization rebuilds the step header once more, so it is pinned rather than left to the
 -- 5% of runs that randomize it off. The assertion below shows the lazy step is present.
 SELECT '--- lazy materialization';
