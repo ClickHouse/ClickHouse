@@ -6,6 +6,8 @@ directory inside the container, exactly like the original stateless tests did
 on the local filesystem.
 """
 
+import shlex
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -32,7 +34,10 @@ def path_exists(path, flag="-e"):
 
 
 def glob_exists(pattern):
-    return container_bash(f"ls {pattern} >/dev/null 2>&1 && echo 1 || echo 0").strip() == "1"
+    return (
+        container_bash(f"ls {pattern} >/dev/null 2>&1 && echo 1 || echo 0").strip()
+        == "1"
+    )
 
 
 def table_data_path(table):
@@ -62,16 +67,18 @@ def test_dynamic_mutation_old_part_no_substreams_file(started_cluster):
     # See https://github.com/ClickHouse/ClickHouse/issues/107561
     node.query("DROP TABLE IF EXISTS t_dyn_old_part")
 
-    node.query(
-        """
+    node.query("""
         CREATE TABLE t_dyn_old_part (id UInt64, s UInt64, y Dynamic(max_types=3))
         ENGINE = MergeTree ORDER BY id
         SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0
-        """
-    )
+        """)
 
-    node.query("INSERT INTO t_dyn_old_part SELECT number, number, number::Int64 FROM numbers(1000)")
-    node.query("INSERT INTO t_dyn_old_part SELECT number, number, 's' || number FROM numbers(1000)")
+    node.query(
+        "INSERT INTO t_dyn_old_part SELECT number, number, number::Int64 FROM numbers(1000)"
+    )
+    node.query(
+        "INSERT INTO t_dyn_old_part SELECT number, number, 's' || number FROM numbers(1000)"
+    )
     node.query("OPTIMIZE TABLE t_dyn_old_part FINAL")
 
     data_path = node.query(
@@ -92,19 +99,30 @@ def test_dynamic_mutation_old_part_no_substreams_file(started_cluster):
 
     # Partial mutation that does NOT touch the Dynamic column. Because the source part has a Dynamic
     # column with no recorded substreams, the whole part must be rewritten.
-    node.query("ALTER TABLE t_dyn_old_part UPDATE s = s + 1 WHERE id % 2 = 0 SETTINGS mutations_sync = 2")
+    node.query(
+        "ALTER TABLE t_dyn_old_part UPDATE s = s + 1 WHERE id % 2 = 0 SETTINGS mutations_sync = 2"
+    )
 
     # Data after mutation
     assert (
-        node.query("SELECT count(), countIf(y IS NOT NULL), countIf(s = id + (id % 2 = 0)) FROM t_dyn_old_part")
+        node.query(
+            "SELECT count(), countIf(y IS NOT NULL), countIf(s = id + (id % 2 = 0)) FROM t_dyn_old_part"
+        )
         == "2000\t2000\t2000\n"
     )
     assert (
-        node.query("SELECT dynamicType(y) AS t, count() FROM t_dyn_old_part GROUP BY t ORDER BY t")
+        node.query(
+            "SELECT dynamicType(y) AS t, count() FROM t_dyn_old_part GROUP BY t ORDER BY t"
+        )
         == "Int64\t1000\nString\t1000\n"
     )
 
-    assert node.query("CHECK TABLE t_dyn_old_part SETTINGS check_query_single_value_result = 1") == "1\n"
+    assert (
+        node.query(
+            "CHECK TABLE t_dyn_old_part SETTINGS check_query_single_value_result = 1"
+        )
+        == "1\n"
+    )
 
     # The rewritten part is in the modern format again: columns_substreams.txt exists and records the
     # Dynamic column's variant_discr substream.
@@ -135,13 +153,11 @@ def test_mutation_old_part_basic_map_partial(started_cluster):
     # See https://github.com/ClickHouse/ClickHouse/issues/107561
     node.query("DROP TABLE IF EXISTS t_map_old_part")
 
-    node.query(
-        """
+    node.query("""
         CREATE TABLE t_map_old_part (id UInt64, s UInt64, m Map(String, String))
         ENGINE = MergeTree ORDER BY id
         SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0
-        """
-    )
+        """)
 
     node.query(
         "INSERT INTO t_map_old_part SELECT number, number, map('id', toString(number), 'k', toString(number * 2)) FROM numbers(1000)"
@@ -167,7 +183,9 @@ def test_mutation_old_part_basic_map_partial(started_cluster):
     # Partial mutation that does NOT touch the Map column. The Map's streams are fully enumerable without a
     # deserialization state, so there is no correctness need to rewrite the whole part: it must stay on the
     # partial path.
-    node.query("ALTER TABLE t_map_old_part UPDATE s = s + 1 WHERE id % 2 = 0 SETTINGS mutations_sync = 2")
+    node.query(
+        "ALTER TABLE t_map_old_part UPDATE s = s + 1 WHERE id % 2 = 0 SETTINGS mutations_sync = 2"
+    )
 
     # Data after mutation
     assert (
@@ -177,7 +195,12 @@ def test_mutation_old_part_basic_map_partial(started_cluster):
         == "1000\t1000\t1000\n"
     )
 
-    assert node.query("CHECK TABLE t_map_old_part SETTINGS check_query_single_value_result = 1") == "1\n"
+    assert (
+        node.query(
+            "CHECK TABLE t_map_old_part SETTINGS check_query_single_value_result = 1"
+        )
+        == "1\n"
+    )
 
     # A partial mutation of a part with no columns_substreams.txt does not write one (it is only filled from
     # a non-empty source). So the absence of the file proves the part stayed on the partial path; if the Map
@@ -214,8 +237,7 @@ def test_mutate_repair_corrupted_missing_idx_checksums(started_cluster):
     # granule. `index_granularity` = 100 over 2000 rows gives 20 granules. m is a
     # MATERIALIZED column so that `DROP COLUMN` m forces a full-part rewrite
     # (`MutateAllPartColumnsTask`).
-    node.query(
-        """
+    node.query("""
         CREATE TABLE t_corrupt_minmax
         (
             k UInt64,
@@ -228,10 +250,11 @@ def test_mutate_repair_corrupted_missing_idx_checksums(started_cluster):
                  index_granularity = 100, replace_long_file_name_to_hash = 0,
                  packed_skip_index_max_bytes = 0,
                  columns_and_secondary_indices_sizes_lazy_calculation = 0
-        """
-    )
+        """)
 
-    node.query("INSERT INTO t_corrupt_minmax (k, v) SELECT number, number FROM numbers(2000)")
+    node.query(
+        "INSERT INTO t_corrupt_minmax (k, v) SELECT number, number FROM numbers(2000)"
+    )
 
     data_path = table_data_path("t_corrupt_minmax")
     active_part = active_part_path("t_corrupt_minmax")
@@ -243,8 +266,12 @@ def test_mutate_repair_corrupted_missing_idx_checksums(started_cluster):
     container_bash(f"cp {active_part}skp_idx_mm_v.idx2 {data_path}/saved_mm_v.idx2")
     container_bash(f"cp {active_part}skp_idx_mm_v.cmrk2 {data_path}/saved_mm_v.cmrk2")
 
-    node.query("ALTER TABLE t_corrupt_minmax DROP INDEX mm_v SETTINGS mutations_sync = 2")
-    node.query("ALTER TABLE t_corrupt_minmax ADD INDEX mm_v v TYPE minmax GRANULARITY 1")
+    node.query(
+        "ALTER TABLE t_corrupt_minmax DROP INDEX mm_v SETTINGS mutations_sync = 2"
+    )
+    node.query(
+        "ALTER TABLE t_corrupt_minmax ADD INDEX mm_v v TYPE minmax GRANULARITY 1"
+    )
 
     corrupt_part = active_part_path("t_corrupt_minmax")
     container_bash(f"cp {data_path}/saved_mm_v.idx2 {corrupt_part}skp_idx_mm_v.idx2")
@@ -276,7 +303,12 @@ def test_mutate_repair_corrupted_missing_idx_checksums(started_cluster):
         )
         == "1\n"
     )
-    assert node.query("CHECK TABLE t_corrupt_minmax SETTINGS check_query_single_value_result = 1") == "1\n"
+    assert (
+        node.query(
+            "CHECK TABLE t_corrupt_minmax SETTINGS check_query_single_value_result = 1"
+        )
+        == "1\n"
+    )
     assert (
         node.query(
             "SELECT secondary_indices_compressed_bytes > 0 FROM system.parts WHERE database = 'default' AND table = 't_corrupt_minmax' AND active LIMIT 1"
@@ -315,8 +347,7 @@ def test_mutate_some_columns_drop_index_corrupted_idx(started_cluster):
     # index so the active part has no skp_idx entries in checksums, then re-inject.
     def make_corrupted_part(tbl):
         node.query(f"DROP TABLE IF EXISTS {tbl} SYNC")
-        node.query(
-            f"""
+        node.query(f"""
             CREATE TABLE {tbl}
             (
                 k UInt64,
@@ -329,10 +360,11 @@ def test_mutate_some_columns_drop_index_corrupted_idx(started_cluster):
                      index_granularity = 100, replace_long_file_name_to_hash = 0,
                      packed_skip_index_max_bytes = 0,
                      columns_and_secondary_indices_sizes_lazy_calculation = 0
-            """
-        )
+            """)
 
-        node.query(f"INSERT INTO {tbl} (k, v, w) SELECT number, number, number FROM numbers(2000)")
+        node.query(
+            f"INSERT INTO {tbl} (k, v, w) SELECT number, number, number FROM numbers(2000)"
+        )
 
         data_path = table_data_path(tbl)
         active = active_part_path(tbl)
@@ -354,9 +386,14 @@ def test_mutate_some_columns_drop_index_corrupted_idx(started_cluster):
     # --- Path A: some-columns mutation (`ALTER UPDATE` of the non-indexed column w) ---
     make_corrupted_part("t_mm_some")
     assert orphan_on_disk("t_mm_some")
-    node.query("ALTER TABLE t_mm_some UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2")
+    node.query(
+        "ALTER TABLE t_mm_some UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2"
+    )
     assert not orphan_on_disk("t_mm_some")
-    assert node.query("CHECK TABLE t_mm_some SETTINGS check_query_single_value_result = 1") == "1\n"
+    assert (
+        node.query("CHECK TABLE t_mm_some SETTINGS check_query_single_value_result = 1")
+        == "1\n"
+    )
     assert node.query("SELECT count() FROM t_mm_some WHERE v = 1042") == "1\n"
     node.query("DROP TABLE t_mm_some SYNC")
 
@@ -365,7 +402,10 @@ def test_mutate_some_columns_drop_index_corrupted_idx(started_cluster):
     assert orphan_on_disk("t_mm_drop")
     node.query("ALTER TABLE t_mm_drop DROP INDEX mm_v SETTINGS mutations_sync = 2")
     assert not orphan_on_disk("t_mm_drop")
-    assert node.query("CHECK TABLE t_mm_drop SETTINGS check_query_single_value_result = 1") == "1\n"
+    assert (
+        node.query("CHECK TABLE t_mm_drop SETTINGS check_query_single_value_result = 1")
+        == "1\n"
+    )
     node.query("DROP TABLE t_mm_drop SYNC")
 
     # --- Path C (no regression): a healthy part keeps its index through a some-columns mutation ---
@@ -373,24 +413,29 @@ def test_mutate_some_columns_drop_index_corrupted_idx(started_cluster):
     # (non-packed) preserve path that paths A and B exercise; without it the control
     # would assert over packed-archive preservation instead (covered by 04403).
     node.query("DROP TABLE IF EXISTS t_mm_ok SYNC")
-    node.query(
-        """
+    node.query("""
         CREATE TABLE t_mm_ok (k UInt64, v UInt64, w UInt64, INDEX mm_v v TYPE minmax GRANULARITY 1)
         ENGINE = MergeTree ORDER BY k
         SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
                  index_granularity = 100, replace_long_file_name_to_hash = 0,
                  packed_skip_index_max_bytes = 0
-        """
+        """)
+    node.query(
+        "INSERT INTO t_mm_ok (k, v, w) SELECT number, number, number FROM numbers(2000)"
     )
-    node.query("INSERT INTO t_mm_ok (k, v, w) SELECT number, number, number FROM numbers(2000)")
-    node.query("ALTER TABLE t_mm_ok UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2")
+    node.query(
+        "ALTER TABLE t_mm_ok UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2"
+    )
     assert (
         node.query(
             "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_mm_ok WHERE v = 1042) WHERE explain ILIKE '%Granules: 1/20%'"
         )
         == "1\n"
     )
-    assert node.query("CHECK TABLE t_mm_ok SETTINGS check_query_single_value_result = 1") == "1\n"
+    assert (
+        node.query("CHECK TABLE t_mm_ok SETTINGS check_query_single_value_result = 1")
+        == "1\n"
+    )
     node.query("DROP TABLE t_mm_ok SYNC")
 
 
@@ -422,8 +467,7 @@ def test_mutate_corrupted_text_index_multistream(started_cluster):
         # a silently declining one. A pure modulo fixture puts the phrase in every granule and makes
         # any pruning assertion vacuous. The modulo tokens stay for the `hasToken` counts.
         node.query(f"DROP TABLE IF EXISTS {tbl} SYNC")
-        node.query(
-            f"""
+        node.query(f"""
             CREATE TABLE {tbl}
             (
                 k UInt64,
@@ -437,8 +481,7 @@ def test_mutate_corrupted_text_index_multistream(started_cluster):
                      index_granularity = 100, replace_long_file_name_to_hash = 0,
                      columns_and_secondary_indices_sizes_lazy_calculation = 0,
                      allow_experimental_text_index_phrase_search = 1
-            """
-        )
+            """)
         node.query(
             f"INSERT INTO {tbl} (k, s, w) SELECT number, if(number < 100, 'needle alpha beta', concat('hello', number % 50, ' world', number % 50)), number FROM numbers(2000)"
         )
@@ -499,11 +542,21 @@ def test_mutate_corrupted_text_index_multistream(started_cluster):
     corrupt_part = make_corrupted_part("t_txt_some")
     assert orphan_on_disk(corrupt_part)
     assert side_streams_on_disk(corrupt_part) == 8
-    node.query("ALTER TABLE t_txt_some UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2")
+    node.query(
+        "ALTER TABLE t_txt_some UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2"
+    )
     new_part = active_part_path("t_txt_some")
     assert not orphan_on_disk(new_part)
-    assert node.query("CHECK TABLE t_txt_some SETTINGS check_query_single_value_result = 1") == "1\n"
-    assert node.query("SELECT count() FROM t_txt_some WHERE hasToken(s, 'hello10')") == "38\n"
+    assert (
+        node.query(
+            "CHECK TABLE t_txt_some SETTINGS check_query_single_value_result = 1"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query("SELECT count() FROM t_txt_some WHERE hasToken(s, 'hello10')")
+        == "38\n"
+    )
     node.query("DROP TABLE t_txt_some SYNC")
 
     # --- Path B: `DROP INDEX` on a corrupted part ---
@@ -513,7 +566,12 @@ def test_mutate_corrupted_text_index_multistream(started_cluster):
     node.query("ALTER TABLE t_txt_drop DROP INDEX txt SETTINGS mutations_sync = 2")
     new_part = active_part_path("t_txt_drop")
     assert not orphan_on_disk(new_part)
-    assert node.query("CHECK TABLE t_txt_drop SETTINGS check_query_single_value_result = 1") == "1\n"
+    assert (
+        node.query(
+            "CHECK TABLE t_txt_drop SETTINGS check_query_single_value_result = 1"
+        )
+        == "1\n"
+    )
     node.query("DROP TABLE t_txt_drop SYNC")
 
     # --- Path C (no regression): a healthy text index survives a some-columns mutation ---
@@ -522,19 +580,19 @@ def test_mutate_corrupted_text_index_multistream(started_cluster):
     # working positional index from a silently declining one. A modulo fixture would
     # put the phrase in every granule and make any pruning assertion vacuous.
     node.query("DROP TABLE IF EXISTS t_txt_ok SYNC")
-    node.query(
-        """
+    node.query("""
         CREATE TABLE t_txt_ok (k UInt64, s String, w UInt64, INDEX txt(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1)
         ENGINE = MergeTree ORDER BY k
         SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
                  index_granularity = 100, replace_long_file_name_to_hash = 0,
                  allow_experimental_text_index_phrase_search = 1
-        """
-    )
+        """)
     node.query(
         "INSERT INTO t_txt_ok (k, s, w) SELECT number, if(number < 100, 'needle alpha beta', concat('hello', number % 50, ' world', number % 50)), number FROM numbers(2000)"
     )
-    node.query("ALTER TABLE t_txt_ok UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2")
+    node.query(
+        "ALTER TABLE t_txt_ok UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2"
+    )
     assert (
         node.query(
             "SELECT count() > 0 FROM system.parts WHERE database = 'default' AND table = 't_txt_ok' AND active AND secondary_indices_marks_bytes > 0"
@@ -547,9 +605,18 @@ def test_mutate_corrupted_text_index_multistream(started_cluster):
     # `hasPhrase` reads the positional substream, so it fails if `.pos` was dropped, and the
     # index must still PRUNE for it, which a count alone cannot show: a declining index
     # would return the same 100 rows via a full scan.
-    assert node.query("CHECK TABLE t_txt_ok SETTINGS check_query_single_value_result = 1") == "1\n"
-    assert node.query("SELECT count() FROM t_txt_ok WHERE hasToken(s, 'hello10')") == "38\n"
-    assert node.query("SELECT count() FROM t_txt_ok WHERE hasPhrase(s, 'needle alpha')") == "100\n"
+    assert (
+        node.query("CHECK TABLE t_txt_ok SETTINGS check_query_single_value_result = 1")
+        == "1\n"
+    )
+    assert (
+        node.query("SELECT count() FROM t_txt_ok WHERE hasToken(s, 'hello10')")
+        == "38\n"
+    )
+    assert (
+        node.query("SELECT count() FROM t_txt_ok WHERE hasPhrase(s, 'needle alpha')")
+        == "100\n"
+    )
     assert (
         node.query(
             "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_txt_ok WHERE hasPhrase(s, 'needle alpha')) WHERE explain ILIKE '%Granules: 1/20%'"
@@ -566,11 +633,21 @@ def test_mutate_corrupted_text_index_multistream(started_cluster):
     # them forward with no checksum entries. Expect 6 files (three substreams, data plus mark).
     corrupt_part = make_corrupted_part("t_txt_side", mode="side_streams_only")
     assert side_streams_on_disk(corrupt_part) == 6
-    node.query("ALTER TABLE t_txt_side UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2")
+    node.query(
+        "ALTER TABLE t_txt_side UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2"
+    )
     new_part = active_part_path("t_txt_side")
     assert not orphan_on_disk(new_part)
-    assert node.query("CHECK TABLE t_txt_side SETTINGS check_query_single_value_result = 1") == "1\n"
-    assert node.query("SELECT count() FROM t_txt_side WHERE hasToken(s, 'hello10')") == "38\n"
+    assert (
+        node.query(
+            "CHECK TABLE t_txt_side SETTINGS check_query_single_value_result = 1"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query("SELECT count() FROM t_txt_side WHERE hasToken(s, 'hello10')")
+        == "38\n"
+    )
     node.query("DROP TABLE t_txt_side SYNC")
 
     # Path E is the full-rewrite arm of the same shape: dropping the MATERIALIZED Map column m
@@ -585,8 +662,16 @@ def test_mutate_corrupted_text_index_multistream(started_cluster):
     # All 8 files, not just the 6 injected ones: a rebuild writes the base pair too.
     assert side_streams_on_disk(new_part) == 8
     # The rebuilt index must actually prune, which the file count alone cannot show.
-    assert node.query("CHECK TABLE t_txt_side_full SETTINGS check_query_single_value_result = 1") == "1\n"
-    assert node.query("SELECT count() FROM t_txt_side_full WHERE hasToken(s, 'hello10')") == "38\n"
+    assert (
+        node.query(
+            "CHECK TABLE t_txt_side_full SETTINGS check_query_single_value_result = 1"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query("SELECT count() FROM t_txt_side_full WHERE hasToken(s, 'hello10')")
+        == "38\n"
+    )
     assert (
         node.query(
             "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_txt_side_full WHERE hasPhrase(s, 'needle alpha')) WHERE explain ILIKE '%Granules: 1/20%'"
@@ -608,8 +693,7 @@ def test_mutate_corrupted_text_index_multistream(started_cluster):
         tbl = f"t_txt_own_{label}"
 
         node.query(f"DROP TABLE IF EXISTS {tbl} SYNC")
-        node.query(
-            f"""
+        node.query(f"""
             CREATE TABLE {tbl}
             (
                 k UInt64,
@@ -623,8 +707,7 @@ def test_mutate_corrupted_text_index_multistream(started_cluster):
                      escape_index_filenames = 0, packed_skip_index_max_bytes = 0,
                      columns_and_secondary_indices_sizes_lazy_calculation = 0,
                      allow_experimental_text_index_phrase_search = 1
-            """
-        )
+            """)
         node.query(
             f"INSERT INTO {tbl} (k, s, w) SELECT number, concat('hello', number % 50, ' world', number % 50), number FROM numbers(500)"
         )
@@ -644,14 +727,19 @@ def test_mutate_corrupted_text_index_multistream(started_cluster):
             f"ALTER TABLE {tbl} ADD INDEX a(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1"
         )
         node.query(f"ALTER TABLE {tbl} ADD INDEX `{sib}` w TYPE minmax GRANULARITY 1")
-        node.query(f"ALTER TABLE {tbl} MATERIALIZE INDEX `{sib}` SETTINGS mutations_sync = 2")
+        node.query(
+            f"ALTER TABLE {tbl} MATERIALIZE INDEX `{sib}` SETTINGS mutations_sync = 2"
+        )
         cor = active_part_path(tbl)
 
         # Measured BEFORE reinjection, so it discriminates: only the colliding name makes the sibling
         # write the contested `skp_idx_a.pst.cmrk2` (0 for the control, 1 for the collision). After
         # reinjection the text fixture supplies that name in either case, so the same check there
         # would read 1 for both arms and prove nothing.
-        assert path_exists(f"{cor}skp_idx_a.pst.cmrk2") == expected_sibling_owns_contested_name, label
+        assert (
+            path_exists(f"{cor}skp_idx_a.pst.cmrk2")
+            == expected_sibling_owns_contested_name
+        ), label
         assert (
             node.query(
                 f"SELECT count() FROM system.data_skipping_indices WHERE database = 'default' AND table = '{tbl}' AND name = '{sib}' AND marks_bytes > 0"
@@ -679,12 +767,24 @@ def test_mutate_corrupted_text_index_multistream(started_cluster):
 
         # The corrupted text index's own orphans must still be cleaned up, so a green `CHECK TABLE`
         # cannot come from the repair silently doing nothing. Its base pair is never contested.
-        assert not (path_exists(f"{new_part}skp_idx_a.idx") or path_exists(f"{new_part}skp_idx_a.dct.idx")), label
-        assert node.query(f"CHECK TABLE {tbl} SETTINGS check_query_single_value_result = 1") == "1\n", label
+        assert not (
+            path_exists(f"{new_part}skp_idx_a.idx")
+            or path_exists(f"{new_part}skp_idx_a.dct.idx")
+        ), label
+        assert (
+            node.query(
+                f"CHECK TABLE {tbl} SETTINGS check_query_single_value_result = 1"
+            )
+            == "1\n"
+        ), label
         node.query(f"DROP TABLE {tbl} SYNC")
 
-    run_sibling_owns_file_case("control", "b", expected_sibling_owns_contested_name=False)
-    run_sibling_owns_file_case("collide", "a.pst", expected_sibling_owns_contested_name=True)
+    run_sibling_owns_file_case(
+        "control", "b", expected_sibling_owns_contested_name=False
+    )
+    run_sibling_owns_file_case(
+        "collide", "a.pst", expected_sibling_owns_contested_name=True
+    )
 
 
 def test_mutate_corrupted_index_sibling_owns_file(started_cluster):
@@ -715,8 +815,7 @@ def test_mutate_corrupted_index_sibling_owns_file(started_cluster):
     # too - without them the text index declares no `.pos` substream and there is no collision at all.
     def make_corrupted_part(tbl):
         node.query(f"DROP TABLE IF EXISTS {tbl} SYNC")
-        node.query(
-            f"""
+        node.query(f"""
             CREATE TABLE {tbl}
             (
                 k UInt64,
@@ -733,8 +832,7 @@ def test_mutate_corrupted_index_sibling_owns_file(started_cluster):
                      escape_index_filenames = 0, packed_skip_index_max_bytes = 0,
                      columns_and_secondary_indices_sizes_lazy_calculation = 0,
                      allow_experimental_text_index_phrase_search = 1
-            """
-        )
+            """)
 
         node.query(
             f"INSERT INTO {tbl} (k, s, w, u) SELECT number, concat('hello', number % 50, ' world', number % 50), number, number FROM numbers(500)"
@@ -807,7 +905,12 @@ def test_mutate_corrupted_index_sibling_owns_file(started_cluster):
     # with the classification counting the sibling's file as evidence of health the index is not
     # rebuilt, the unchecksummed orphan is carried into the new part, and this returns 0.
     assert orphan_on_disk("t_sib_full")
-    assert node.query("CHECK TABLE t_sib_full SETTINGS check_query_single_value_result = 1") == "1\n"
+    assert (
+        node.query(
+            "CHECK TABLE t_sib_full SETTINGS check_query_single_value_result = 1"
+        )
+        == "1\n"
+    )
     # A rebuilt minmax index prunes; a missing or stale one cannot. `w` = `k` is monotone and
     # `index_granularity` = 100 over 500 rows gives 5 granules.
     assert (
@@ -832,9 +935,16 @@ def test_mutate_corrupted_index_sibling_owns_file(started_cluster):
     make_corrupted_part("t_sib_some")
     assert orphan_on_disk("t_sib_some")
     assert text_streams_on_disk("t_sib_some") == 6
-    node.query("ALTER TABLE t_sib_some UPDATE u = u + 1 WHERE 1 SETTINGS mutations_sync = 2")
+    node.query(
+        "ALTER TABLE t_sib_some UPDATE u = u + 1 WHERE 1 SETTINGS mutations_sync = 2"
+    )
     assert not orphan_on_disk("t_sib_some")
-    assert node.query("CHECK TABLE t_sib_some SETTINGS check_query_single_value_result = 1") == "1\n"
+    assert (
+        node.query(
+            "CHECK TABLE t_sib_some SETTINGS check_query_single_value_result = 1"
+        )
+        == "1\n"
+    )
     # The surviving text index must still be REGISTERED with readable substream sizes, which a file
     # count alone cannot show: `system.data_skipping_indices` reports the index only if the part's
     # checksums attribute its data and mark files to it, so a hardlinked-forward orphan reads 0.
@@ -854,3 +964,71 @@ def test_mutate_corrupted_index_sibling_owns_file(started_cluster):
     assert text_streams_on_disk("t_sib_some") == 6
     assert node.query("SELECT count() FROM t_sib_some") == "500\n"
     node.query("DROP TABLE t_sib_some SYNC")
+
+
+@pytest.mark.parametrize(
+    "before_escape,after_escape,value,remove_substreams",
+    [
+        (0, 1, (1, 2), False),
+        (1, 0, (3, 4), False),
+        (0, 1, (5, 6), True),
+        (1, 0, (7, 8), True),
+    ],
+)
+def test_variant_escape_filename_rename_consistency(
+    started_cluster, before_escape, after_escape, value, remove_substreams
+):
+    # Converted from stateless test 04507_variant_escape_filename_rename_consistency.sh.
+    # Keep the part-file surgery in a controlled container: stateless tests must not modify
+    # server data on disk because their server configuration is not controlled.
+    table = f"t_variant_escape_{before_escape}_{after_escape}_{int(remove_substreams)}"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(f"""
+        CREATE TABLE {table} (v Variant(Tuple(a UInt32, b UInt32)))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0,
+            min_bytes_for_full_part_storage = 0, escape_variant_subcolumn_filenames = {before_escape},
+            replace_long_file_name_to_hash = 0
+        """)
+    node.query(
+        f"INSERT INTO {table} SELECT tuple({value[0]}, {value[1]})::Tuple(a UInt32, b UInt32)"
+    )
+
+    data_path = active_part_path(table)
+    assert path_exists(f"{data_path}columns_substreams.txt", flag="-f")
+    if remove_substreams:
+        node.query(f"DETACH TABLE {table}")
+        container_bash(f"rm -f {shlex.quote(data_path + 'columns_substreams.txt')}")
+        node.query(f"ATTACH TABLE {table}")
+    else:
+        before = container_bash(
+            f"cat {shlex.quote(data_path + 'columns_substreams.txt')}"
+        )
+        assert "3 substreams for column `v`:" in before
+
+    node.query(
+        f"ALTER TABLE {table} MODIFY SETTING escape_variant_subcolumn_filenames = {after_escape}"
+    )
+    node.query(f"ALTER TABLE {table} RENAME COLUMN v TO w SETTINGS mutations_sync = 2")
+    assert (
+        node.query(f"CHECK TABLE {table} SETTINGS check_query_single_value_result = 1")
+        == "1\n"
+    )
+    assert (
+        node.query(
+            f"SELECT w, w.`Tuple(a UInt32, b UInt32)`.a, w.`Tuple(a UInt32, b UInt32)`.b FROM {table}"
+        )
+        == f"({value[0]},{value[1]})\t{value[0]}\t{value[1]}\n"
+    )
+
+    renamed_path = active_part_path(table)
+    files = container_bash(
+        f"find {shlex.quote(renamed_path)} -maxdepth 1 -name 'w.*.bin' -printf '%f\\n'"
+    )
+    assert len(files.splitlines()) == 3
+    if not remove_substreams:
+        after = container_bash(
+            f"cat {shlex.quote(renamed_path + 'columns_substreams.txt')}"
+        )
+        assert "3 substreams for column `w`:" in after
+    node.query(f"DROP TABLE {table} SYNC")

@@ -77,7 +77,7 @@ def _embedded_doc_lines(lines):
             idx = line.find('R"DOCS_MD(')
             if idx != -1:
                 exempt.add(i)
-                if ')DOCS_MD"' not in line[idx + len('R"DOCS_MD('):]:
+                if ')DOCS_MD"' not in line[idx + len('R"DOCS_MD(') :]:
                     in_raw = True
         else:
             exempt.add(i)
@@ -206,13 +206,23 @@ def check_functional_test_cases(files):
             if "0_stateless" in test_case:
                 name = os.path.basename(test_case)
                 has_streaming_queries_in_name = "_streaming_queries_" in name
-                has_streaming_in_content = re.search(r"enable_streaming_queries\s*=?\s*(0|1|true|false)\b", file_content) or "streaming.lib" in file_content
+                has_streaming_in_content = (
+                    re.search(
+                        r"enable_streaming_queries\s*=?\s*(0|1|true|false)\b",
+                        file_content,
+                    )
+                    or "streaming.lib" in file_content
+                )
 
                 if has_streaming_in_content and not has_streaming_queries_in_name:
-                    errors.append(f"{test_case} uses enable_streaming_queries or streaming.lib but has no _streaming_queries_ in its name")
+                    errors.append(
+                        f"{test_case} uses enable_streaming_queries or streaming.lib but has no _streaming_queries_ in its name"
+                    )
 
                 if has_streaming_queries_in_name and not has_streaming_in_content:
-                    errors.append(f"{test_case} has _streaming_queries_ in its name but uses neither enable_streaming_queries nor streaming.lib")
+                    errors.append(
+                        f"{test_case} has _streaming_queries_ in its name but uses neither enable_streaming_queries nor streaming.lib"
+                    )
 
         except Exception as e:
             errors.append(f"Error checking {test_case}: {e}")
@@ -229,8 +239,11 @@ def check_functional_test_cases(files):
 # `concat(path, '/data.bin')` is still recognized; double quotes, backticks, pipes, and
 # semicolons still bound the match to one query.
 FETCHES_SERVER_PATH_RE = re.compile(
-    r"(?i)(?:\b(?:path|data_paths|metadata_path)\b|\bselect\s+\*)[^\"`|;]{0,300}?"
+    r"(?i)(?:\b(?:path|data_paths|metadata_path)\b[^\"`|;]{0,300}?"
     r"\bfrom\s+system\.(parts|detached_parts|projection_parts|tables|disks)\b"
+    r"|\bselect\s+\*[^\"`|;]{0,300}?\bfrom\s+system\."
+    r"(?:parts|detached_parts|projection_parts|tables|disks)\b[^\"`|;]{0,300}?"
+    r"\bformat\s+tsvraw\b)"
 )
 # The server data root fetched as SELECT value FROM system.server_settings WHERE name = 'path'.
 # The `value` token is required so that queries that merely inspect the setting without
@@ -249,9 +262,7 @@ FETCHES_SERVER_ROOT_RE = re.compile(
 MUTATION_CMD_WRAPPER = (
     r"(?:sudo|command|builtin|exec|env|time|nice|ionice|nohup|stdbuf|timeout|xargs)"
 )
-MUTATION_CMD_WRAPPER_ARG = (
-    r"(?:-{1,2}[\w-]+(?:=[^\s;|&<>`]+|\s+[^-\s;|&<>`][^\s;|&<>`]*)?|[0-9]+(?:\.[0-9]+)?[smhd]?)"
-)
+MUTATION_CMD_WRAPPER_ARG = r"(?:-{1,2}[\w-]+(?:=[^\s;|&<>`]+|\s+[^-\s;|&<>`][^\s;|&<>`]*)?|[0-9]+(?:\.[0-9]+)?[smhd]?)"
 MUTATION_CMD_ASSIGNMENT_VALUE = r"(?:'[^']*'|\"(?:\\.|[^\"\\])*\"|[^\s;|&<>`]+)"
 MUTATION_CMD_PREFIX = (
     rf"(?:[A-Za-z_]\w*={MUTATION_CMD_ASSIGNMENT_VALUE}\s+"
@@ -572,9 +583,7 @@ def _is_in_destructor(lines, catch_line_idx):
 def _is_in_main_or_fuzzer(lines, catch_line_idx):
     """Check if the catch is inside ``main`` or ``LLVMFuzzerTestOneInput``."""
     sig = _find_enclosing_function_lines(lines, catch_line_idx)
-    return any(
-        re.search(r"\b(main|LLVMFuzzerTestOneInput)\b", l) for l in sig
-    )
+    return any(re.search(r"\b(main|LLVMFuzzerTestOneInput)\b", l) for l in sig)
 
 
 def _get_catch_block_lines(lines, catch_line_idx):
@@ -995,7 +1004,9 @@ if __name__ == "__main__":
     # subset of test files, which legitimately leaves large gaps in the numbering.
     info = Info()
     release_branch_re = re.compile(r"^\d{2}\.\d+$")
-    branch_to_check = (info.base_branch or info.git_branch or "").removeprefix("release/")
+    branch_to_check = (info.base_branch or info.git_branch or "").removeprefix(
+        "release/"
+    )
     is_release_branch = bool(release_branch_re.match(branch_to_check))
     if testpattern.lower() in testname.lower() and not is_release_branch:
         results.append(
