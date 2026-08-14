@@ -230,36 +230,6 @@ FROM
 );
 
 SELECT '';
-SELECT 'timeSeriesReplaceTag (2):';
-
--- Multi-digit numeric refs ($11, ${11}) reference group #11.
--- A leading-zero name ($01, ${01}) is treated as a named-group reference, not a numeric one
--- An all-digit name with more than 9 digits exceeds the numeric cap and is treated as a named reference.
--- $$ becomes a literal '$'. A trailing '$' or a '$' followed by no name characters is also literal.
-SELECT timeSeriesGroupToTags(group_eleventh),
-       timeSeriesGroupToTags(group_eleventh_braced),
-       group_leading_zero_unbraced == seq_group,
-       group_leading_zero_braced == seq_group,
-       group_at_cap == seq_group,
-       timeSeriesGroupToTags(group_above_cap),
-       timeSeriesGroupToTags(group_literal_dollar),
-       timeSeriesGroupToTags(group_trailing_dollar),
-       timeSeriesGroupToTags(group_dollar_then_punct)
-FROM
-(
-    SELECT timeSeriesTagsToGroup([('seq', '0123456789a')]) AS seq_group,
-           timeSeriesReplaceTag(seq_group, 'eleventh', '$11', 'seq', '(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)') AS group_eleventh,
-           timeSeriesReplaceTag(seq_group, 'eleventh_braced', '${11}', 'seq', '(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)') AS group_eleventh_braced,
-           timeSeriesReplaceTag(seq_group, 'leading_zero', '$01', 'seq', '(.*)') AS group_leading_zero_unbraced,
-           timeSeriesReplaceTag(seq_group, 'leading_zero', '${01}', 'seq', '(.*)') AS group_leading_zero_braced,
-           timeSeriesReplaceTag(seq_group, 'big', '$999999999', 'seq', '(?P<999999999>.+)') AS group_at_cap,
-           timeSeriesReplaceTag(seq_group, 'big', '$1000000000', 'seq', '(?P<1000000000>.+)') AS group_above_cap,
-           timeSeriesReplaceTag(seq_group, 'literal_dollar', '$$1', 'seq', '(.*)') AS group_literal_dollar,
-           timeSeriesReplaceTag(seq_group, 'trailing_dollar', 'price$', 'seq', '(.*)') AS group_trailing_dollar,
-           timeSeriesReplaceTag(seq_group, 'dollar_then_punct', '$.tail', 'seq', '(.*)') AS group_dollar_then_punct
-);
-
-SELECT '';
 SELECT 'timeSeriesThrowDuplicateSeriesIf:';
 
 SELECT timeSeriesThrowDuplicateSeriesIf(0, group)

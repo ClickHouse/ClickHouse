@@ -751,8 +751,8 @@ class Backup:
             paths.append(f"/shards/{shard}/")
         if self.dir_exists(f"/replicas/{replica}/metadata/"):
             paths.append(f"/replicas/{replica}/")
-        if self.dir_exists("/metadata/"):
-            paths.append("/")
+        if self.dir_exists(f"/metadata/"):
+            paths.append(f"/")
         return paths
 
     def __split_database_table(table):
@@ -1153,7 +1153,7 @@ class FileWriter:
         return open(self.get_abs_path(path), "wb")
 
     def create_empty_file(self, path):
-        with self.open_file(path):
+        with self.open_file(path) as file:
             pass
 
     def make_dirs(self, path):

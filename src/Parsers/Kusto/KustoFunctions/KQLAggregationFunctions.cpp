@@ -80,12 +80,7 @@ bool DCount::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     String value = getConvertedArgument(fn_name, pos);
 
-    /// Kusto's `dcount` is documented as approximate and ignores NULL values.
-    /// Using `uniq` matches those semantics and is stable with respect to the
-    /// `count_distinct_optimization` setting — `count(DISTINCT ...)` and
-    /// `uniqExact` may count NULL as a distinct value when that optimization
-    /// rewrites the query (see the KQL conformance tests).
-    out = "uniq(" + value + ")";
+    out = "count(DISTINCT " + value + ")";
     return true;
 }
 
@@ -99,7 +94,7 @@ bool DCountIf::convertImpl(String & out, IParser::Pos & pos)
     String value = getConvertedArgument(fn_name, pos);
     ++pos;
     String condition = getConvertedArgument(fn_name, pos);
-    out = "uniqIf(" + value + ", " + condition + ")";
+    out = "countIf (DISTINCT " + value + ", " + condition + ")";
     return true;
 }
 
@@ -465,12 +460,16 @@ bool SumIf::convertImpl(String & out, IParser::Pos & pos)
 
 bool TakeAny::convertImpl(String & out, IParser::Pos & pos)
 {
-    return directMapping(out, pos, "any");
+    String res = String(pos->begin, pos->end);
+    out = res;
+    return false;
 }
 
 bool TakeAnyIf::convertImpl(String & out, IParser::Pos & pos)
 {
-    return directMapping(out, pos, "anyIf");
+    String res = String(pos->begin, pos->end);
+    out = res;
+    return false;
 }
 
 bool Variance::convertImpl(String & out, IParser::Pos & pos)

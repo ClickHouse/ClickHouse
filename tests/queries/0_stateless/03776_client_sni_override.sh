@@ -25,7 +25,8 @@ SERVER_PID=$!
 
 # Function to cleanup on exit
 cleanup() {
-    { kill ${SERVER_PID}; wait ${SERVER_PID}; } 2>/dev/null
+    kill ${SERVER_PID} 2>/dev/null || true
+    wait ${SERVER_PID} 2>/dev/null || true
     rm -rf "${CERT_DIR}"
 }
 trap cleanup EXIT
@@ -65,11 +66,12 @@ CLIENT_PID=$!
 sleep 5
 
 # Kill the client (it will be hung waiting for response from openssl)
-# Use a group redirect to suppress bash's "Killed" job notification on stderr
-{ kill -9 ${CLIENT_PID}; wait ${CLIENT_PID}; } 2>/dev/null
+kill -9 ${CLIENT_PID} 2>/dev/null || true
+wait ${CLIENT_PID} 2>/dev/null || true
 
 # Kill the openssl server to force it to flush its output
-{ kill ${SERVER_PID}; wait ${SERVER_PID}; } 2>/dev/null
+kill ${SERVER_PID} 2>/dev/null || true
+wait ${SERVER_PID} 2>/dev/null || true
 
 # Give time for final output to be written
 sleep 2

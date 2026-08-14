@@ -1,0 +1,11 @@
+<clickhouse>
+  <nb_models>
+    <model>
+      <name>wrong_types_model</name>
+      <path>/etc/clickhouse-server/config.d/wrong_types.bin</path>
+      <mode>byte</mode>
+      <n>1</n>
+      <alpha>1</alpha>
+    </model>
+  </nb_models>
+</clickhouse>

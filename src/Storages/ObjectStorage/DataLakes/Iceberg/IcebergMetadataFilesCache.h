@@ -2,6 +2,7 @@
 #include <chrono>
 #include <IO/CompressionMethod.h>
 #include <base/defines.h>
+#include <Common/Logger.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -35,9 +36,9 @@ namespace Iceberg
 {
 struct MetadataFileWithInfo
 {
-    Int32 version{};
+    Int32 version;
     String path;
-    CompressionMethod compression_method{};
+    CompressionMethod compression_method;
 };
 }
 
@@ -54,13 +55,11 @@ using LatestMetadataVersionPtr = std::shared_ptr<LatestMetadataVersion>;
 /// And we can get `ManifestFileContent` from cache by ManifestFileEntry.
 struct ManifestFileCacheKey
 {
-    Iceberg::IcebergPathFromMetadata manifest_file_path;
+    String manifest_file_path;
     size_t manifest_file_byte_size;
     Int64 added_sequence_number;
     Int64 added_snapshot_id;
     Iceberg::ManifestFileContentType content_type;
-    /// Partition spec the manifest was written with, needed to rewrite each manifest under its own spec during compaction after partition evolution.
-    Int32 partition_spec_id;
 };
 
 using ManifestFileCacheKeys = std::vector<ManifestFileCacheKey>;
@@ -111,7 +110,7 @@ private:
          size_t total_size = 0;
          for (const auto & entry: manifest_file_cache_keys)
          {
-             total_size += sizeof(ManifestFileCacheKey) + entry.manifest_file_path.serialize().capacity();
+             total_size += sizeof(ManifestFileCacheKey) + entry.manifest_file_path.capacity();
          }
          return total_size;
     }

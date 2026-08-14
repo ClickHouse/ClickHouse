@@ -1,7 +1,8 @@
+from typing import List
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.test_tools import TSV
 
 from .concurrency_helper import (
