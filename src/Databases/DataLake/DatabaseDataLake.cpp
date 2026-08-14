@@ -102,6 +102,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_database_iceberg;
     extern const SettingsBool allow_experimental_database_unity_catalog;
+    extern const SettingsBool allow_experimental_database_unified_unity_catalog;
     extern const SettingsBool allow_experimental_database_glue_catalog;
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool allow_experimental_database_paimon_rest_catalog;
@@ -1676,16 +1677,16 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 }
 
                 engine_func->name = "Iceberg";
-		break;
-	    }
-           case DatabaseDataLakeCatalogType::UNITY_CATALOG:
+                break;
+            }
+            case DatabaseDataLakeCatalogType::UNITY_CATALOG:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_unity_catalog])
+                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_unified_unity_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                    "DataLake database with Unified Unity catalog is beta. "
-                                    "To allow its usage, enable setting allow_database_unity_catalog");
+                                    "DataLake database with Unified Unity catalog is experimental. "
+                                    "To allow its usage, enable setting allow_experimental_database_unified_unity_catalog");
                 }
 
                 engine_func->name = "DeltaLake";
