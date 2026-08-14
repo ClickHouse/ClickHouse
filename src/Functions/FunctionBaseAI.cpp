@@ -590,6 +590,10 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 total_input_tokens += ai_response.input_tokens;
                 total_output_tokens += ai_response.output_tokens;
 
+                /// `raw_finish_reason` is provider-controlled text; sanitize control characters before
+                /// interpolating it into an exception message that reaches the logs and `system.query_log`.
+                const String safe_finish_reason = sanitizeForLog(ai_response.raw_finish_reason);
+
                 /// Reject incomplete responses, throw plain DB::Exception so it is classified as non-retriable
                 switch (ai_response.finish_reason)
                 {
@@ -601,7 +605,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                         throw Exception(
                             ErrorCodes::AI_PROVIDER_RESPONSE_TRUNCATED,
                             "AI provider returned a truncated response (finish_reason='{}'): {}",
-                            ai_response.raw_finish_reason,
+                            safe_finish_reason,
                             ai_response.raw_finish_reason == "model_context_window_exceeded"
                                 ? "the model ran out of context window before completing its answer. "
                                   "Reduce the input or use a model with a larger context window."
@@ -612,13 +616,13 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                             ErrorCodes::AI_PROVIDER_RESPONSE_INCOMPLETE,
                             "AI provider withheld or filtered the response (finish_reason='{}'): the returned answer "
                             "is incomplete.",
-                            ai_response.raw_finish_reason);
+                            safe_finish_reason);
                     case FinishReason::RequiresAction:
                         throw Exception(
                             ErrorCodes::AI_PROVIDER_RESPONSE_INCOMPLETE,
                             "AI provider stopped expecting further caller action (finish_reason='{}') instead of "
                             "returning a completed answer.",
-                            ai_response.raw_finish_reason);
+                            safe_finish_reason);
                 }
 
                 result = postProcessResponse(ai_response.result);

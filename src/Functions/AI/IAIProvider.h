@@ -7,6 +7,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <memory>
+#include <string_view>
 
 namespace DB
 {
@@ -155,5 +156,10 @@ AIProviderPtr createAIProvider(const String & provider_name, const String & endp
 
 /// Build an error message from a provider's non-200 HTTP response, for use in an exception that is logged.
 String formatProviderError(int status_code, const String & response_body);
+
+/// Replace control characters (including `\t \n \r`) with spaces so provider-controlled text cannot
+/// forge log lines or corrupt a terminal when embedded in a logged exception. Apply to any externally
+/// derived string before interpolating it into a message that reaches the logs or `system.query_log`.
+String sanitizeForLog(std::string_view input);
 
 }
