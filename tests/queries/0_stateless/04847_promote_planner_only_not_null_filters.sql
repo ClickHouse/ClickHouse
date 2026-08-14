@@ -1,6 +1,8 @@
 -- Tags: no-random-settings
 -- Test the promotion of NOT NULL planner-only filters derived from joins to executable filters.
 
+SET max_threads = 2;
+SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
 SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_limit = 0;

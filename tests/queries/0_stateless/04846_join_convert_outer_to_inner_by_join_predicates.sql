@@ -1,6 +1,7 @@
 -- Test outer to inner join conversion triggered by the predicate
 -- of an another join higher in the plan.
 
+SET max_threads = 2;
 SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_join_order_randomize = 0;

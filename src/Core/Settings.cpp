@@ -8446,6 +8446,7 @@ Allow to convert `OUTER JOIN` to `INNER JOIN` if another `JOIN` after `OUTER JOI
 )", 0) \
     DECLARE(Bool, query_plan_promote_planner_only_not_null_filters, true, R"(
 Allow `col IS NOT NULL` filters derived by the planner to be promoted to executable filters.
+Such filters are derived when `query_plan_convert_outer_join_to_inner_join_by_join_predicates` is enabled.
 )", 0) \
     DECLARE(Double, query_plan_max_selectivity_for_promoting_not_null_filters, 0.5, R"(
 The maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be promoted to an executable filter.
