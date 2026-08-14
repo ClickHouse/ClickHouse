@@ -131,9 +131,13 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     /// CREATE TABLE t ENGINE = MergeTree ORDER BY () AS
     /// WITH (SELECT path FROM table_with_paths) AS path SELECT * FROM s3(path, NOSIGN);
     /// or a default (empty) value substituted for a parameterized view parameter.
-    const bool only_analyze_subquery = (only_analyze || early_short_circuit_type_inference_in_process)
-        && !table_function_arguments_in_resolve_process
-        && !parameterized_view_arguments_in_resolve_process;
+    /// Early short-circuit inference is different: it must never execute speculative work. If a
+    /// table function or view needs the actual scalar value, resolution fails and the optimization
+    /// falls back to the regular analyzer.
+    const bool only_analyze_subquery = early_short_circuit_type_inference_in_process
+        || (only_analyze
+            && !table_function_arguments_in_resolve_process
+            && !parameterized_view_arguments_in_resolve_process);
 
     if (early_short_circuit_type_inference_in_process
         && (execute_for_exists || !query_node || !scalarSubqueryCardinalityIsProven(*query_node)))
