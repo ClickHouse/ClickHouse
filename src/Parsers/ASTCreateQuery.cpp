@@ -544,6 +544,26 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (r.has("attach_as_replicated"))
         attach_as_replicated = r.getBool("attach_as_replicated");
 
+    /// `WINDOW VIEW` was removed, so the fields above no longer include `is_window_view`, the watermark
+    /// strategies, `allowed_lateness`, or the `watermark_function` / `lateness_function` children, and
+    /// `JSONObjectReader` ignores keys it does not read. Dropping them silently would deserialize a legacy
+    /// window-view payload as an ordinary `CREATE TABLE ... AS SELECT`, which `isCreateQueryWithImmediateInsertSelect`
+    /// then executes as an immediate-population table create - a different query than the JSON describes.
+    /// Fail closed instead. The flags are rejected only when set, because `writeJSON` emitted them for
+    /// every `CREATE` form (`writeBool` always writes the key, `false` included), while `writeChild`
+    /// skipped null children, so their mere presence carries no information.
+    if (r.getBool("is_window_view")
+        || r.getBool("is_watermark_strictly_ascending")
+        || r.getBool("is_watermark_ascending")
+        || r.getBool("is_watermark_bounded")
+        || r.getBool("allowed_lateness")
+        || r.has("watermark_function")
+        || r.has("lateness_function"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` JSON carries `WINDOW VIEW` state ('is_window_view', a watermark strategy, "
+            "'allowed_lateness', 'watermark_function' or 'lateness_function') during AST JSON deserialization, "
+            "but `WINDOW VIEW` was removed");
+
     /// `attach_short_syntax`, `has_attach_from_path` / `attach_from_path`, and `attach_as_replicated`
     /// are produced only for `ATTACH TABLE` forms: the parser gates the `FROM '<path>'` and
     /// `AS [NOT] REPLICATED` clauses behind `attach`, and `attach_short_syntax` is set only when the
