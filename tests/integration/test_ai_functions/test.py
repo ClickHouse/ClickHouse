@@ -70,7 +70,8 @@ def get_profile_events(query_id):
             ProfileEvents['AIInputTokens'] AS input_tokens,
             ProfileEvents['AIOutputTokens'] AS output_tokens,
             ProfileEvents['AIRowsProcessed'] AS rows_processed,
-            ProfileEvents['AIRowsSkipped'] AS rows_skipped
+            ProfileEvents['AIRowsSkipped'] AS rows_skipped,
+            peak_threads_usage AS peak_threads
         FROM system.query_log
         WHERE query_id = '{query_id}' AND type = 'QueryFinish'
         LIMIT 1
@@ -1630,15 +1631,20 @@ def test_api_call_count_per_query_shape(call_count_tables, case, sql, expected, 
     )
 
 
-def _create_quota_parts(name, parts=8, rows_per_part=8):
+def _create_quota_parts(name, parts=8, rows_per_part=8, index_granularity=None):
     """Create a MergeTree table of `parts` unmerged parts (merges stopped) so a scan over it
     produces several blocks - the shape needed to tell a per-query quota from a per-block one.
     A single-part table cannot: one block is one allowance. `SYSTEM STOP MERGES` keeps a
-    background merge from collapsing the parts before the scan and masking the difference."""
+    background merge from collapsing the parts before the scan and masking the difference.
+
+    `index_granularity` pins a small, fixed granule size (adaptive granularity disabled) so the
+    number of marks is deterministic - needed when a test relies on the read pool splitting the
+    scan across threads, which is driven by mark count."""
     instance.query(f"DROP TABLE IF EXISTS {name} SYNC")
-    instance.query(
-        f"CREATE TABLE {name} (id UInt32, x String) ENGINE = MergeTree ORDER BY id"
-    )
+    create = f"CREATE TABLE {name} (id UInt32, x String) ENGINE = MergeTree ORDER BY id"
+    if index_granularity is not None:
+        create += f" SETTINGS index_granularity = {index_granularity}, index_granularity_bytes = 0"
+    instance.query(create)
     instance.query(f"SYSTEM STOP MERGES {name}")
     for part in range(parts):
         base = part * rows_per_part
@@ -1740,12 +1746,17 @@ def test_input_token_quota_is_per_query(started_cluster):
 
 
 def test_api_call_quota_holds_under_concurrency(started_cluster):
-    """The API-call cap must hold with several pipeline threads reaching it together. The slot is
-    reserved with an atomic bounded increment before each request (`tryReserveApiCall`), so two
-    streams cannot both pass a stale check and overshoot. `max_threads = 8` over 8 parts runs the
-    scan on several concurrent streams; the query wants 64 calls but must make at most `limit`."""
+    """The API-call cap must hold when several pipeline threads reserve slots against the shared
+    tracker at once. The slot is claimed with an atomic bounded increment (`tryReserveApiCall`), so
+    two threads cannot both pass a stale check and overshoot.
+
+    The table has enough marks (small pinned granularity over 16 parts) that the read pool hands the
+    scan - and thus the AI function - to several threads under `max_threads = 8`. `peak_threads_usage`
+    from `system.query_log` is the count of threads that ran simultaneously; asserting it is > 1
+    means a green result proves the concurrent reservation path was exercised, not that the scan
+    happened to collapse to one stream. The query wants 2048 calls but must make at most `limit`."""
     limit = 10
-    _create_quota_parts("quota_concurrent")
+    _create_quota_parts("quota_concurrent", parts=16, rows_per_part=128, index_granularity=8)
     try:
         qid = unique_query_id("quota_concurrent")
         instance.query(
@@ -1754,17 +1765,22 @@ def test_api_call_quota_holds_under_concurrency(started_cluster):
                 **AI_SETTINGS,
                 "max_block_size": 8,
                 "max_threads": 8,
-                "preferred_block_size_bytes": 0,
                 "ai_function_max_api_calls_per_query": limit,
                 "ai_function_throw_on_quota_exceeded": 0,
             },
             query_id=qid,
         )
-        calls = int(get_profile_events(qid)["api_calls"])
+        events = get_profile_events(qid)
+        calls = int(events["api_calls"])
+        peak_threads = int(events["peak_threads"])
     finally:
         instance.query("DROP TABLE IF EXISTS quota_concurrent SYNC")
 
+    assert peak_threads > 1, (
+        f"query peaked at {peak_threads} simultaneous thread(s); the concurrent reservation path was "
+        "not exercised, so this test would not catch a check-then-act overshoot"
+    )
     assert calls <= limit, (
-        f"{calls} API calls with ai_function_max_api_calls_per_query = {limit} and max_threads > 1: "
-        "concurrent streams overshot the per-query cap"
+        f"{calls} API calls with ai_function_max_api_calls_per_query = {limit} and {peak_threads} peak "
+        "threads: concurrent streams overshot the per-query cap"
     )

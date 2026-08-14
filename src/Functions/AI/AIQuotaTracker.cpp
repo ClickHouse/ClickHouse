@@ -57,7 +57,7 @@ bool AIQuotaTracker::tryReserveApiCall()
         throw Exception(ErrorCodes::LIMIT_EXCEEDED,
             "AI API call limit reached: {} calls made, maximum: {}. "
             "This is controlled by the 'ai_function_max_api_calls_per_query' setting",
-            max_api_calls, max_api_calls);
+            cur, max_api_calls);
     quota_exceeded.store(true, std::memory_order_relaxed);
     return false;
 }
