@@ -61,7 +61,9 @@ def unique_query_id(prefix):
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
 
-def get_profile_events(query_id):
+def get_profile_events(query_id, query_type="QueryFinish"):
+    """AI counters from `system.query_log`. A query that threw logs `ExceptionWhileProcessing`
+    rather than `QueryFinish`, so the throwing paths pass that type explicitly."""
     instance.query("SYSTEM FLUSH LOGS")
     result = instance.query(
         f"""
@@ -72,12 +74,14 @@ def get_profile_events(query_id):
             ProfileEvents['AIRowsProcessed'] AS rows_processed,
             ProfileEvents['AIRowsSkipped'] AS rows_skipped
         FROM system.query_log
-        WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+        WHERE query_id = '{query_id}' AND type = '{query_type}'
         LIMIT 1
         FORMAT JSONEachRow
         """
     ).strip()
-    assert result, f"no system.query_log row found for query_id={query_id}"
+    assert (
+        result
+    ), f"no system.query_log row found for query_id={query_id} type={query_type}"
     return json.loads(result)
 
 
@@ -427,6 +431,24 @@ def test_generate_truncated_response_counts_tokens(started_cluster):
     assert int(events["output_tokens"]) == 5
     assert int(events["rows_processed"]) == 0
     assert int(events["rows_skipped"]) == 3
+
+
+def test_generate_truncated_response_records_tokens_when_throwing(started_cluster):
+    """Rejecting an incomplete response throws out of `executeImpl`, but the provider already
+    charged for the call, so the AI counters must still reach `system.query_log`. Without the RAII
+    flush the throwing path reported zero for every counter."""
+    qid = unique_query_id("gen_truncated_throw_events")
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_truncated'))",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    assert "AI_PROVIDER_RESPONSE_TRUNCATED" in error
+    # The query threw, so its log row is an exception row rather than QueryFinish.
+    events = get_profile_events(qid, query_type="ExceptionWhileProcessing")
+    assert int(events["api_calls"]) == 1
+    assert int(events["input_tokens"]) == 10
+    assert int(events["output_tokens"]) == 5
 
 
 def test_generate_content_filter_response_throw(started_cluster):
