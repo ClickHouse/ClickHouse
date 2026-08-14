@@ -145,6 +145,9 @@ public:
         const auto & end_timestamp_column = *arguments[1].column;
         const auto & step_column = *arguments[2].column;
 
+        /// Only a UInt64 step can exceed the range of Int64 (the timestamp types are narrower).
+        bool step_is_uint64 = isUInt64(step_type);
+
         const IColumn * values_column = nullptr;
         bool values_are_nullable = false;
 
@@ -161,7 +164,7 @@ public:
         {
             return doExecute<DateTime64>(start_timestamp_column, start_timestamp_multiplier,
                                          end_timestamp_column, end_timestamp_multiplier,
-                                         step_column, step_multiplier,
+                                         step_column, step_multiplier, step_is_uint64,
                                          values_column, values_are_nullable,
                                          result_type, input_rows_count);
         }
@@ -169,7 +172,7 @@ public:
         {
             return doExecute<UInt32>(start_timestamp_column, start_timestamp_multiplier,
                                      end_timestamp_column, end_timestamp_multiplier,
-                                     step_column, step_multiplier,
+                                     step_column, step_multiplier, step_is_uint64,
                                      values_column, values_are_nullable,
                                      result_type, input_rows_count);
         }
@@ -184,7 +187,7 @@ public:
     template <typename TimestampType>
     static ColumnPtr doExecute(const IColumn & start_timestamp_column, Int64 start_timestamp_multiplier,
                                const IColumn & end_timestamp_column, Int64 end_timestamp_multiplier,
-                               const IColumn & step_column, Int64 step_multiplier,
+                               const IColumn & step_column, Int64 step_multiplier, bool step_is_uint64,
                                const IColumn * values_column, bool values_are_nullable,
                                const DataTypePtr & result_type,
                                size_t num_rows)
@@ -203,7 +206,7 @@ public:
                 {
                     return doExecute<TimestampType>(start_timestamp_column, start_timestamp_multiplier,
                                                     end_timestamp_column, end_timestamp_multiplier,
-                                                    step_column, step_multiplier,
+                                                    step_column, step_multiplier, step_is_uint64,
                                                     full_column.get(), values_are_nullable,
                                                     result_type, num_rows);
                 }
@@ -248,9 +251,7 @@ public:
 
         for (size_t i = 0; i != num_rows; ++i)
         {
-            /// The calculations are done in Int64: timestamps can be negative (before 1970),
-            /// and the step must not be narrowed to a 32-bit type even when the timestamps are 32-bit
-            /// (DateTime or UInt32), otherwise a big step would be silently truncated.
+            /// Timestamps are calculated in Int64: they can be negative (before 1970).
             Int64 start_timestamp = 0;
             if (common::mulOverflow(start_timestamp_column.getInt(i), start_timestamp_multiplier, start_timestamp))
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
@@ -259,22 +260,43 @@ public:
             if (common::mulOverflow(end_timestamp_column.getInt(i), end_timestamp_multiplier, end_timestamp))
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
 
-            Int64 step = 0;
-            if (common::mulOverflow(step_column.getInt(i), step_multiplier, step))
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
+            /// The step is calculated in UInt64: a UInt64 step can be greater than the maximum of Int64.
+            /// A negative step is replaced with zero here and rejected below like a zero step.
+            UInt64 step = 0;
+            if (step_is_uint64)
+            {
+                step = step_column.getUInt(i);
+            }
+            else
+            {
+                Int64 step_value = step_column.getInt(i);
+                step = (step_value > 0) ? static_cast<UInt64>(step_value) : 0;
+            }
+
+            /// A positive step which overflows UInt64 after rescaling to the result scale is greater
+            /// than any possible duration (the duration always fits in UInt64), so in that case
+            /// the grid consists of the start timestamp only.
+            bool step_is_greater_than_any_duration =
+                common::mulOverflow(step, static_cast<UInt64>(step_multiplier), step);
 
             if (end_timestamp < start_timestamp)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "End timestamp is less than start timestamp");
 
             size_t num_steps = 1;
-            if (start_timestamp != end_timestamp)
+            if (start_timestamp != end_timestamp && !step_is_greater_than_any_duration)
             {
-                if (step <= 0)
+                if (step == 0)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Step should be greater than zero");
-                Int64 duration = 0;
-                if (common::subOverflow(end_timestamp, start_timestamp, duration))
+
+                /// The duration can be greater than the maximum of Int64, but it always fits in UInt64
+                /// because `end_timestamp >= start_timestamp`.
+                UInt64 duration = static_cast<UInt64>(end_timestamp) - static_cast<UInt64>(start_timestamp);
+
+                UInt64 num_points = 0;
+                if (common::addOverflow(duration / step, static_cast<UInt64>(1), num_points))
                     throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
-                num_steps = static_cast<size_t>(duration / step) + 1;
+
+                num_steps = static_cast<size_t>(num_points);
             }
 
             size_t values_base_offset = 0;
@@ -295,7 +317,9 @@ public:
                     if (null_map && (*null_map)[offset])
                         continue;
                 }
-                TimestampType timestamp = static_cast<TimestampType>(start_timestamp + static_cast<Int64>(j) * step);
+                /// `j * step` can be greater than the maximum of Int64 when the duration is,
+                /// but the sum is between `start_timestamp` and `end_timestamp`, so it fits in Int64.
+                TimestampType timestamp = static_cast<TimestampType>(static_cast<Int64>(static_cast<UInt64>(start_timestamp) + j * step));
                 res_timestamps->insert(timestamp);
                 if constexpr (with_values)
                     res_values->insertFrom(*values, offset);
