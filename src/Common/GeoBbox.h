@@ -384,7 +384,7 @@ inline bool tryExtractBboxFromMultiArgConstGeometry(
         acc.addAll(polygon.outer());
     }
 
-    if (!acc.found)
+    if (!acc.found || !acc.valid)
         return false;
 
     xmin = acc.xmin;
