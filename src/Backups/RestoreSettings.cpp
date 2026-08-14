@@ -315,6 +315,13 @@ std::map<String, String> RestoreSettings::getSerializedSettings() const
     LIST_OF_RESTORE_SETTINGS(SERIALIZE_RESTORE_SETTING)
 #undef SERIALIZE_RESTORE_SETTING
 
+    /// The three granular restore settings default to the effective inverse of `structure_only`.
+    /// Log those effective values rather than the unset optional values so `system.backups` and
+    /// `system.backup_log` accurately describe the behavior of a restore operation.
+    res["restore_table_data"] = shouldRestoreTableData() ? "1" : "0";
+    res["restore_access_entities"] = shouldRestoreAccessEntities() ? "1" : "0";
+    res["restore_functions"] = shouldRestoreFunctions() ? "1" : "0";
+
     /// Never expose the password; drop purely internal fields that are not user-facing settings
     /// (`id` has its own column, the rest are internal plumbing for RESTORE ON CLUSTER).
     for (const auto * key : {"password", "id", "internal", "host_id", "restore_uuid"})

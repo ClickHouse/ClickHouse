@@ -2376,7 +2376,27 @@ def test_structure_only_restores_access_entities_and_udfs():
     instance.query("DROP FUNCTION linear_equation")
 
     # Phase 1: structure_only alone does NOT restore access/UDFs (backward compat)
-    instance.query(f"RESTORE ALL FROM {backup_name} SETTINGS structure_only=true")
+    structure_only_restore_id = uuid.uuid4().hex
+    instance.query(
+        f"RESTORE ALL FROM {backup_name}"
+        f" SETTINGS id='{structure_only_restore_id}', structure_only=true"
+    )
+
+    assert (
+        instance.query(
+            "SELECT settings['restore_table_data'], settings['restore_access_entities'], "
+            f"settings['restore_functions'] FROM system.backups WHERE id = '{structure_only_restore_id}'"
+        )
+        == "0\t0\t0\n"
+    )
+    instance.query("SYSTEM FLUSH LOGS backup_log")
+    assert (
+        instance.query(
+            "SELECT settings['restore_table_data'], settings['restore_access_entities'], "
+            f"settings['restore_functions'] FROM system.backup_log WHERE id = '{structure_only_restore_id}' AND status = 'RESTORED'"
+        )
+        == "0\t0\t0\n"
+    )
 
     assert instance.query("EXISTS test.table") == "1\n"
     assert instance.query("SELECT count() FROM test.table") == "0\n"
@@ -2388,6 +2408,32 @@ def test_structure_only_restores_access_entities_and_udfs():
     assert instance.query("SELECT count() FROM system.functions WHERE name = 'linear_equation'") == "0\n"
 
     instance.query("DROP DATABASE test")
+
+    plain_restore_id = uuid.uuid4().hex
+    instance.query(f"RESTORE ALL FROM {backup_name} SETTINGS id='{plain_restore_id}'")
+    assert (
+        instance.query(
+            "SELECT settings['restore_table_data'], settings['restore_access_entities'], "
+            f"settings['restore_functions'] FROM system.backups WHERE id = '{plain_restore_id}'"
+        )
+        == "1\t1\t1\n"
+    )
+    instance.query("SYSTEM FLUSH LOGS backup_log")
+    assert (
+        instance.query(
+            "SELECT settings['restore_table_data'], settings['restore_access_entities'], "
+            f"settings['restore_functions'] FROM system.backup_log WHERE id = '{plain_restore_id}' AND status = 'RESTORED'"
+        )
+        == "1\t1\t1\n"
+    )
+
+    instance.query("DROP FUNCTION linear_equation")
+    instance.query("DROP ROW POLICY rowpol1 ON test.table")
+    instance.query("DROP DATABASE test")
+    instance.query("DROP USER u1")
+    instance.query("DROP ROLE r1")
+    instance.query("DROP SETTINGS PROFILE prof1")
+    instance.query("DROP QUOTA q1")
 
     # Phase 2: structure_only + restore_access_entities + restore_functions.
     # Quoted string values ('true'/'1') also exercise string parsing of the settings.
