@@ -332,6 +332,8 @@ public:
     }
 
     size_t getIndex() const override { return getCommonIndex(key_matcher->getIndex(), value_matcher->getIndex()); }
+
+    bool capturesVariables() const override { return anyCapturesVariables({key_matcher, value_matcher}); }
 };
 
 class TypeMatcherString : public ITypeMatcher
@@ -433,6 +435,8 @@ public:
     }
 
     size_t getIndex() const override { return child_matcher->getIndex(); }
+
+    bool capturesVariables() const override { return child_matcher->capturesVariables(); }
 };
 
 class TypeMatcherJSON : public ITypeMatcher
@@ -476,6 +480,8 @@ public:
             res = getCommonIndex(res, c->getIndex());
         return res;
     }
+
+    bool capturesVariables() const override { return anyCapturesVariables(children); }
 };
 
 
@@ -642,6 +648,11 @@ public:
             res = getCommonIndex(res, m->getIndex());
         return res;
     }
+
+    bool capturesVariables() const override
+    {
+        return return_matcher->capturesVariables() || anyCapturesVariables(arg_matchers);
+    }
 };
 
 
@@ -748,6 +759,8 @@ public:
             res = getCommonIndex(res, m->getIndex());
         return res;
     }
+
+    bool capturesVariables() const override { return anyCapturesVariables(element_matchers); }
 };
 
 /// Matches `Nullable(Nothing)` — i.e. the type of a literal `NULL` or an `onlyNull` column.
@@ -869,6 +882,8 @@ public:
     {
         return child_matcher ? child_matcher->getIndex() : 0;
     }
+
+    bool capturesVariables() const override { return child_matcher && child_matcher->capturesVariables(); }
 };
 
 /// `TupleOfSize(N)` — matches a `Tuple` with exactly `N` elements, regardless of their
@@ -975,6 +990,8 @@ public:
             res = getCommonIndex(res, child->getIndex());
         return res;
     }
+
+    bool capturesVariables() const override { return anyCapturesVariables(child_matchers); }
 };
 
 /// `Not(X)` matches everything that `X` does not match. Useful for functions that accept
@@ -998,14 +1015,19 @@ public:
     bool match(const DataTypePtr & type, Variables & variables, size_t iteration, size_t arg_num, std::string &) const override
     {
         /// The child's mismatch reason describes why the negated matcher *succeeds*, so it is
-        /// dropped. The child is expected to be a plain type predicate that captures no
-        /// variables — a capture made while matching the type we are about to reject would be
-        /// meaningless.
+        /// dropped. Captures the child makes are dropped as well: a variable bound while
+        /// matching the very shape we are about to reject is meaningless, and letting it
+        /// escape would make a rejected inner branch decide the enclosing return type — e.g.
+        /// `Not(Tuple(T, UInt8))` against `Tuple(String, Int16)` must not leave `T = String`
+        /// behind after the second element fails.
         std::string nested_reason;
-        return !child_matcher->match(type, variables, iteration, arg_num, nested_reason);
+        return !matchWithoutCapturing(*child_matcher, type, variables, iteration, arg_num, nested_reason);
     }
 
     size_t getIndex() const override { return 0; }
+
+    /// A capture nested in `Not` never escapes, so it does not constrain the enclosing signature.
+    bool capturesVariables() const override { return false; }
 };
 
 
@@ -1033,6 +1055,8 @@ public:
     {
         return child_matcher->getIndex();
     }
+
+    bool capturesVariables() const override { return child_matcher->capturesVariables(); }
 };
 
 
@@ -1065,6 +1089,8 @@ public:
     {
         return child_matcher->getIndex();
     }
+
+    bool capturesVariables() const override { return child_matcher->capturesVariables(); }
 };
 
 

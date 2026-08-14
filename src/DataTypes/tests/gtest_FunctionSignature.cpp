@@ -191,6 +191,31 @@ GTEST_TEST(FunctionSignature, NotMatcher)
         ::testing::StartsWith("FAIL:"));
 }
 
+/// A capture made by a child of `Not` describes the shape that is being rejected, so it must not
+/// escape: otherwise a partially matched inner branch would silently decide the result type.
+GTEST_TEST(FunctionSignature, NotMatcherDoesNotLeakCaptures)
+{
+    /// `Tuple(T, UInt8)` binds `T = String` from the first element and then fails on the second,
+    /// so `Not` accepts the argument — but `T` must be left unbound, and the signature must then
+    /// report a clean failure for the uncaptured return-side variable instead of answering `String`.
+    const String sig = "f(Not(Tuple(T, UInt8))) -> T";
+    EXPECT_ANY_THROW(checkSignature(sig, {makeColumn("Tuple(String, Int16)")}));
+
+    /// The same, with the capture nested one level deeper.
+    EXPECT_ANY_THROW(checkSignature("f(Not(Array(Tuple(T, UInt8)))) -> T", {makeColumn("Array(Tuple(String, Int16))")}));
+
+    /// A capture in a *sibling* position is unaffected: only what `Not` matched is discarded.
+    EXPECT_EQ(
+        checkSignature("f(T : Any, Not(Tuple(T, UInt8))) -> T", {makeColumn("UInt32"), makeColumn("Tuple(String, Int16)")}),
+        "UInt32");
+
+    /// And a capture that `Not` discards cannot contradict a later one either: if the leak
+    /// happened, `T` would already hold `String` and the second position would be rejected.
+    EXPECT_EQ(
+        checkSignature("f(Not(Tuple(T, UInt8)), T : Any) -> T", {makeColumn("Tuple(String, Int16)"), makeColumn("UInt32")}),
+        "UInt32");
+}
+
 /// The `dateTimeFromScale` / `timeFromScale` type functions used by `toDateTime` / `toTime`: a scale
 /// of 0 collapses to DateTime/Time; a non-zero scale widens to DateTime64/Time64. A timezone (for
 /// DateTime) is carried through.
@@ -310,6 +335,23 @@ GTEST_TEST(FunctionSignature, QuantifiedRepeats)
     /// off by one for a group with no iteration-0 occurrence.
     EXPECT_ANY_THROW(FunctionSignature("f(T : Any...{1..2}) -> T"));
     EXPECT_ANY_THROW(FunctionSignature("f(const n UInt8...{1..2}) -> UInt64"));
+
+    /// A capture wrapped in another matcher is rejected too — the check walks the whole matcher
+    /// tree, not just its root, so it cannot be smuggled in behind `MaybeNullable` / `Array` / ...
+    EXPECT_ANY_THROW(FunctionSignature("f(MaybeNullable(T : Any)...{1..2}) -> T"));
+    EXPECT_ANY_THROW(FunctionSignature("f(Array(T : Any)...{1..2}) -> T"));
+    EXPECT_ANY_THROW(FunctionSignature("f(Array(T)...{1..2}) -> T"));
+    EXPECT_ANY_THROW(FunctionSignature("f(Tuple(T, UInt8)...{1..2}) -> T"));
+    EXPECT_ANY_THROW(FunctionSignature("f(Nullable(T : Any)...{1..2}) -> T"));
+    EXPECT_ANY_THROW(FunctionSignature("f(Map(K, V)...{1..2}) -> K"));
+    EXPECT_ANY_THROW(FunctionSignature("f(LowCardinality(T : Any)...{1..2}) -> T"));
+    /// An alternative that captures in only one branch is still a capture.
+    EXPECT_ANY_THROW(FunctionSignature("f(UInt8 | Array(T : Any)...{1..2}) -> T"));
+
+    /// A capture nested inside `Not` cannot escape it, so it does not make the group unsupported.
+    EXPECT_EQ(
+        checkSignature("f(Not(Tuple(T, UInt8))...{1..2}) -> UInt64", {makeColumn("String"), makeColumn("UInt8")}),
+        "UInt64");
 
     /// Malformed bounds are a parse error.
     EXPECT_ANY_THROW(FunctionSignature("f(UInt8...{3..1}) -> UInt64"));

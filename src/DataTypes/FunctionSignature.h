@@ -215,11 +215,33 @@ namespace FunctionSignatures
 
         /// Extract common index of variables participating in expression.
         virtual size_t getIndex() const = 0;
+
+        /// True if this matcher, or any matcher nested in it, binds a variable when it matches.
+        /// Composite matchers must report the disjunction over their children, so that the parser
+        /// can reject a capture wrapped anywhere inside a construct that does not support it
+        /// (currently a quantified repeat, `T...{a..b}`).
+        virtual bool capturesVariables() const { return false; }
     };
 
     using TypeMatcherPtr = std::shared_ptr<ITypeMatcher>;
     using TypeMatchers = std::vector<TypeMatcherPtr>;
     using TypeMatcherFactory = Factory<TypeMatcherPtr, const TypeMatchers &>;
+
+    /// True if any of `matchers` captures a variable.
+    bool anyCapturesVariables(const TypeMatchers & matchers);
+
+    /// Matches `what` against `matcher` while discarding every variable it binds on the way.
+    /// A negating matcher such as `Not(X)` needs this: a capture made while matching the very
+    /// shape that is about to be rejected is meaningless and must not leak into the enclosing
+    /// inference. Defined in the translation unit where `Variables` is complete, so that
+    /// matchers living in another one can use it.
+    bool matchWithoutCapturing(
+        const ITypeMatcher & matcher,
+        const DataTypePtr & what,
+        Variables & vars,
+        size_t iteration,
+        size_t arg_num,
+        std::string & out_reason);
 
     /// Builds a placeholder matcher that carries a string literal to its parent matcher.
     /// Used so that matchers like AggregateFunction('groupBitmap', T) can require a specific

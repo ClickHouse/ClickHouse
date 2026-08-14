@@ -313,6 +313,8 @@ public:
             res = getCommonIndex(res, child->getIndex());
         return res;
     }
+
+    bool capturesVariables() const override { return anyCapturesVariables(children); }
 };
 
 
@@ -350,7 +352,30 @@ public:
         /// participate in multi-element repeat groups.
         return impl ? getCommonIndex(var_key.index, impl->getIndex()) : var_key.index;
     }
+
+    bool capturesVariables() const override { return true; }
 };
+
+
+bool anyCapturesVariables(const TypeMatchers & matchers)
+{
+    for (const auto & matcher : matchers)
+        if (matcher && matcher->capturesVariables())
+            return true;
+    return false;
+}
+
+bool matchWithoutCapturing(
+    const ITypeMatcher & matcher,
+    const DataTypePtr & what,
+    Variables & vars,
+    size_t iteration,
+    size_t arg_num,
+    std::string & out_reason)
+{
+    Variables scratch = vars;
+    return matcher.match(what, scratch, iteration, arg_num, out_reason);
+}
 
 
 struct ArgumentDescription
@@ -1597,12 +1622,14 @@ static bool parseArgumentsGroup(TokenIterator & pos, ArgumentsGroups & groups)
             /// Iteration numbering inside a repeated group starts at 1, so the return-side
             /// ellipsis expansion assumes an extra iteration-0 occurrence in a preceding
             /// fixed group. An attached group has no such occurrence, and captures inside
-            /// it would be off by one — reject them outright.
+            /// it would be off by one — reject them outright. The capture may sit anywhere
+            /// in the matcher tree (`MaybeNullable(T : Any)...{1..2}`, `Array(T : Any)...{1..2}`),
+            /// not only at its root, hence `capturesVariables` rather than a `dynamic_cast`.
             const ArgumentDescription & unit = repeated.elems.front();
             if (!unit.argument_name.name.empty()
                 || (unit.type_matcher
                     && (unit.type_matcher->getIndex() != 0
-                        || dynamic_cast<const AssignTypeMatcher *>(unit.type_matcher.get()))))
+                        || unit.type_matcher->capturesVariables())))
                 throw Exception(ErrorCodes::BAD_FUNCTION_SIGNATURE,
                     "Variable captures inside a quantified group (`T...{{a..b}}`) are not supported");
 
