@@ -6,6 +6,19 @@ FROM numbers({upper_bound:UInt64});
 CREATE VIEW 03271_parametrized_v_expl (n UInt64) AS
 SELECT number AS n
 FROM numbers({upper_bound:UInt64});
+-- A full ATTACH is a user-supplied definition too, so it must not latch its declared schema
+-- while the setting is off.
+ATTACH VIEW 03271_parametrized_v_attach_off (n UInt64, s String) AS
+SELECT number AS n
+FROM numbers({upper_bound:UInt64});
+-- Should return no columns
+SHOW COLUMNS IN 03271_parametrized_v_attach_off;
+-- Mismatched schema: should return no error
+SELECT *
+FROM 03271_parametrized_v_attach_off(upper_bound = 3);
+0
+1
+2
 -- Should return no columns
 SHOW COLUMNS IN 03271_parametrized_v;
 -- Should return no columns
@@ -92,6 +105,8 @@ SELECT number AS n
 FROM numbers({upper_bound:UInt64});
 SELECT *
 FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3); -- { serverError TYPE_MISMATCH }
+-- DESCRIBE must enforce the same declared schema as SELECT.
+DESCRIBE TABLE 03271_parametrized_v_expl_mismatch(upper_bound = 3); -- { serverError TYPE_MISMATCH }
 EXPLAIN AST SELECT *
 FROM 03271_parametrized_v_expl_mismatch(upper_bound = 3);
 SelectWithUnionQuery (children 1)

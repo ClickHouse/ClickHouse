@@ -22,6 +22,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/validateParameterizedViewSchema.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Parsers/ASTIdentifier.h>
@@ -205,6 +206,7 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
             /// a `SQL SECURITY DEFINER` view.
             auto view_context = view_metadata->getSQLSecurityOverriddenContext(current_context);
             fillColumnsFromSubqueryImpl(query, view_context);
+            validateParameterizedViewSchema(table_name, columns, view_metadata->getColumns());
             return;
         }
     }
