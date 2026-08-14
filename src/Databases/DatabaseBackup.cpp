@@ -525,7 +525,7 @@ void registerDatabaseBackup(DatabaseFactory & factory)
 
     factory.registerDatabase("Backup", create_fn, {.supports_arguments = true, .is_external = true}, Documentation{
         .description = R"DOCS_MD(
-Database backup allows to instantly attach table/database from [backups](/operations/backup/overview) in read-only mode.
+Database backup allows to instantly attach table/database from [backups](/concepts/features/backup-restore/overview) in read-only mode.
 
 Database backup works with both incremental and non-incremental backups.
 
@@ -536,7 +536,7 @@ CREATE DATABASE backup_database
 ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))
 ```
 
-The backup destination can be any valid backup [destination](/operations/backup/disk#configure-backup-destinations-for-disk), such as `Disk`, `S3`, or `File`. It is passed as a function, for example `Disk('disk_name', 'backup_name')`.
+The backup destination can be any valid backup [destination](/concepts/features/backup-restore/local-disk#configure-backup-destinations-for-disk), such as `Disk`, `S3`, or `File`. It is passed as a function, for example `Disk('disk_name', 'backup_name')`.
 
 **Engine Parameters**
 
