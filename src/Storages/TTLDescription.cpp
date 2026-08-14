@@ -1302,7 +1302,8 @@ static void checkTTLGroupBySetForAggregateFunctions(
     for (const auto & argument : aggregate_arguments)
     {
         auto argument_ast = argument->clone();
-        auto argument_expression = buildExpressionAndSets(argument_ast, columns, context).expression;
+        auto argument_expression = buildExpressionAndSets(
+            argument_ast, columns, context, nullptr, /*widen_temporal_columns=*/ false).expression;
         checkTTLExpressionForAggregateFunctions(argument_expression, /*expression_kind=*/ "GROUP BY SET ");
     }
 }
@@ -1385,7 +1386,8 @@ TTLDescription TTLDescription::getTTLFromAST(
 
                 ASTPtr ast = where_expr_ast->clone();
                 where_expression
-                    = buildExpressionAndSets(ast, columns.getAllPhysical(), context, &result.where_expression_source_columns).expression;
+                = buildExpressionAndSets(
+                    ast, columns.getAllPhysical(), context, &result.where_expression_source_columns, /*widen_temporal_columns=*/ false).expression;
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }
