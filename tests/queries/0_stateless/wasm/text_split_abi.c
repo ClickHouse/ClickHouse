@@ -77,3 +77,30 @@ Span * batch_row_count(Span * input, uint32_t num_rows) {
     }
     return out;
 }
+
+/* Same as batch_row_count, but for a RETURNS Array(UInt32) function over JSONEachRow:
+   ignores the input payload and returns {"result":[<batch row count>]} once per row.
+   Array return types can't live inside Nullable, so calling this disables ClickHouse's
+   default null-handling and lets a genuinely-Nullable argument column reach the guest —
+   the path needed to exercise the declared-Nullable-argument size estimator. */
+Span * batch_row_count_json(Span * input, uint32_t num_rows) {
+    (void)input;
+    uint8_t digits[10];
+    uint32_t len = write_u32(num_rows, digits);
+    /* {"result":[]}\n = 14 chars + up to 10 digits */
+    Span * out = clickhouse_create_buffer(num_rows * (14 + len));
+    if (out == NULL) return NULL;
+    static const char prefix[] = "{\"result\":[";
+    uint8_t * pos = out->data;
+    for (uint32_t row = 0; row < num_rows; row++) {
+        for (uint32_t i = 0; prefix[i]; i++)
+            *pos++ = prefix[i];
+        for (uint32_t i = 0; i < len; i++)
+            *pos++ = digits[i];
+        *pos++ = ']';
+        *pos++ = '}';
+        *pos++ = '\n';
+    }
+    out->size = (uint32_t)(pos - out->data);
+    return out;
+}
