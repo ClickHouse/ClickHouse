@@ -720,12 +720,6 @@ def test_long_disconnection_stops_backup():
             "NETWORK_ERROR",
             "TABLE_IS_READ_ONLY",
             "NO_REPLICA_HAS_PART",
-            # A replica can report a transient UNKNOWN_TABLE while the backup is torn down
-            # during a long ZooKeeper disconnection. The exact emitting path is not yet
-            # confirmed, so it is tolerated by name for now; this should be narrowed to a
-            # message-scoped filter (like the KEEPER_EXCEPTION case in NoTrashChecker) once
-            # the benign last_error_message is captured.
-            "UNKNOWN_TABLE",
         ]
         no_trash_checker.check_zookeeper = False
 
