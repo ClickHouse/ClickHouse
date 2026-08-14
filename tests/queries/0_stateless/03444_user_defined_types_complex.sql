@@ -5,9 +5,9 @@ DROP TYPE IF EXISTS Phone;
 DROP TYPE IF EXISTS ComplexArray;
 DROP TYPE IF EXISTS ParameterizedType;
 
-CREATE TYPE UserId AS UInt64 
-    INPUT 'toUInt64(assumeNotNull(value))' 
-    OUTPUT 'toString(value)' 
+CREATE TYPE UserId AS UInt64
+    INPUT 'toUInt64(assumeNotNull(value))'
+    OUTPUT 'toString(value)'
     DEFAULT '0';
 SHOW TYPE UserId;
 

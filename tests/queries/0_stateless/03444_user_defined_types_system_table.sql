@@ -9,14 +9,14 @@ SELECT name FROM system.tables WHERE database = 'udt' AND name = 'user_defined_t
 
 SELECT name, base_type_ast_string FROM udt.user_defined_types ORDER BY name;
 
-SELECT 
-    name, 
+SELECT
+    name,
     base_type_ast_string,
     input_expression,
     output_expression,
     default_expression,
     length(create_query_string) > 0 as has_create_query
-FROM udt.user_defined_types 
+FROM udt.user_defined_types
 WHERE name IN ('SystemTestType1', 'SystemTestType2')
 ORDER BY name;
 
