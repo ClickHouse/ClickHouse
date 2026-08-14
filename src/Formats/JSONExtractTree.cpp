@@ -2361,7 +2361,7 @@ private:
                     }
                 }
 
-                if (format_settings.try_infer_ipv6 && data.find(':') != std::string_view::npos)
+                if (format_settings.try_infer_ipv6 && data.contains(':'))
                 {
                     if (auto it = variant_info.variant_name_to_discriminator.find("IPv6"); it != variant_info.variant_name_to_discriminator.end())
                     {
@@ -2464,7 +2464,7 @@ private:
                     }
                 }
 
-                if (format_settings.try_infer_ipv6 && data.find(':') != std::string_view::npos)
+                if (format_settings.try_infer_ipv6 && data.contains(':'))
                 {
                     IPv6 ipv6_value;
                     if (IPv6Node<JSONParser>::tryParse(ipv6_value, data))

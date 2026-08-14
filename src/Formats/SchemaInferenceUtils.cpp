@@ -1746,7 +1746,7 @@ DataTypePtr tryInferIPv4OrIPv6FromString(std::string_view field, const FormatSet
             return std::make_shared<DataTypeIPv4>();
     }
 
-    if (settings.try_infer_ipv6 && field.find(':') != std::string_view::npos)
+    if (settings.try_infer_ipv6 && field.contains(':'))
     {
         IPv6 value;
         ReadBufferFromString buf(field);
