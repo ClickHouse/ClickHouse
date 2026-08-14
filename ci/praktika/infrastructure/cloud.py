@@ -99,7 +99,14 @@ class CloudInfrastructure:
             # Deploy all Dedicated Hosts
             if _wants("DedicatedHost", "DedicatedHosts"):
                 for host_config in self.dedicated_hosts:
-                    if self._settings and self._settings.AWS_REGION:
+                    # Only fall back to the global region setting when no explicit AZs are
+                    # configured; otherwise _resolved_region() derives the correct region
+                    # from the AZ name and a single AWS_REGION would break multi-region setups.
+                    if (
+                        self._settings
+                        and self._settings.AWS_REGION
+                        and not host_config.availability_zones
+                    ):
                         host_config.region = self._settings.AWS_REGION
 
                     print("\n" + "=" * 60)
@@ -121,7 +128,7 @@ class CloudInfrastructure:
             # Deploy EC2 Instances
             if _wants("EC2Instance", "EC2Instances", "Instance", "Instances"):
                 for instance_config in self.ec2_instances:
-                    if self._settings and self._settings.AWS_REGION:
+                    if self._settings and self._settings.AWS_REGION and not instance_config.region:
                         instance_config.region = self._settings.AWS_REGION
 
                     print("\n" + "=" * 60)

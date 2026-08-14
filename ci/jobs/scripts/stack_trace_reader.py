@@ -1,5 +1,4 @@
 import re
-from pathlib import Path
 
 
 class StackTraceReader(object):
@@ -24,7 +23,6 @@ class StackTraceReader(object):
         errors_before_trace = []
         errors_after_trace = []
         trace = ""
-        changed_settings = []
         unknown_lines = []
 
         i = 0

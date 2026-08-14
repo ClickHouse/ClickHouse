@@ -553,7 +553,7 @@ def test_backup_restore(
             found_encrypted_in_backup = file.read().startswith(b"ENC")
             assert found_encrypted_in_backup == expect_encrypted_in_backup
 
-    node.query(f"DROP TABLE encrypted_test SYNC")
+    node.query("DROP TABLE encrypted_test SYNC")
 
     if storage_policy_changed:
         node.query(

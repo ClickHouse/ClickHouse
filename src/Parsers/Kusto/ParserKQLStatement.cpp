@@ -1,5 +1,7 @@
+#include <Common/Exception.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/IParserBase.h>
@@ -7,7 +9,9 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Poco/String.h>
 
 
 namespace DB
@@ -15,10 +19,81 @@ namespace DB
 
 bool ParserKQLStatement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    /// Handle KQL let statements: let name = value;
+    /// Store the binding and generate a no-op SELECT.
+    /// KQL keywords are case-insensitive, so accept `LET`/`Let`/etc. as well.
+    if (isValidKQLPos(pos) && pos->type == TokenType::BareWord
+        && Poco::toLower(String(pos->begin, pos->end)) == "let")
+    {
+        auto let_pos = pos;
+        ++pos;
+        if (isValidKQLPos(pos) && pos->type == TokenType::BareWord)
+        {
+            String name(pos->begin, pos->end);
+            ++pos;
+            if (isValidKQLPos(pos) && String(pos->begin, pos->end) == "=")
+            {
+                ++pos;
+                /// Collect the raw value tokens and also try to evaluate as KQL expression
+                String raw_value;
+                while (isValidKQLPos(pos) && pos->type != TokenType::Semicolon)
+                {
+                    if (!raw_value.empty()) raw_value += " ";
+                    raw_value += String(pos->begin, pos->end);
+                    ++pos;
+                }
+
+                /// Translate the value as a KQL expression. Any parse/semantic exception
+                /// from `getExprFromToken` is propagated so that an invalid `let` value
+                /// surfaces a clear syntax error instead of silently substituting raw
+                /// tokens — consistent with all other `getExprFromToken` call sites.
+                String value;
+                {
+                    Tokens val_tokens(raw_value.data(), raw_value.data() + raw_value.size(), 0, true);
+                    IParser::Pos val_pos(val_tokens, pos);
+                    value = ParserKQLBase::getExprFromToken(val_pos);
+                }
+                if (value.empty())
+                    value = raw_value;
+
+                kqlLetBindings()[name] = value;
+                /// Generate a no-op SELECT to consume the statement
+                String noop_query = "SELECT 'ok' WHERE 0";
+                Tokens noop_tokens(noop_query.data(), noop_query.data() + noop_query.size(), 0, true);
+                IParser::Pos noop_pos(noop_tokens, pos);
+                ParserSelectWithUnionQuery select_p;
+                return select_p.parse(noop_pos, node, expected);
+            }
+        }
+        pos = let_pos;
+    }
+
     ParserKQLWithOutput query_with_output_p(end, allow_settings_after_format_in_insert);
     ParserSetQuery set_p;
 
-    bool res = query_with_output_p.parse(pos, node, expected) || set_p.parse(pos, node, expected);
+    {
+        if (set_p.parse(pos, node, expected))
+        {
+            /// Clear let bindings when the parsed `SET` actually changes `dialect`.
+            /// Inspecting the AST avoids substring false positives (unrelated settings
+            /// whose text happens to contain "kql"/"clickhouse") and case-sensitivity
+            /// gaps (`SET dialect = 'KQL'`) that the raw text check used to have.
+            if (const auto * set_ast = node ? node->as<ASTSetQuery>() : nullptr)
+            {
+                for (const auto & change : set_ast->changes)
+                {
+                    if (Poco::toLower(change.name) == "dialect")
+                    {
+                        kqlLetBindingsClear();
+                        break;
+                    }
+                }
+            }
+            return true;
+        }
+    }
+
+    bool res = query_with_output_p.parse(pos, node, expected);
 
     return res;
 }
@@ -62,7 +137,7 @@ bool ParserKQLWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     return true;
 }
 
-bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLParenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// TODO: This code is idiotic, see https://github.com/ClickHouse/ClickHouse/issues/61742
 
@@ -86,6 +161,19 @@ bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         auto pos_start = pos;
         while (isValidKQLPos(pos))
         {
+            /// A `Semicolon` token in the outer lexer is always a statement boundary
+            /// from the surrounding SQL parser's point of view. Crossing it here would
+            /// advance the outer `Tokens` high-water mark past the end of the current
+            /// SQL statement, leaving `last_token.begin > this_query_end_pos->end` in
+            /// `tryParseQuery` and tripping a heap-buffer-overflow in
+            /// `writeQueryAroundTheError` (the SSE2 ASCII fast path in
+            /// `UTF8::computeWidthImpl` reads past the buffer when the `size_t`
+            /// underflows). Unquoted `kql(...)` cannot legitimately contain a `;` at
+            /// the SQL-lexer level: callers that need KQL `let` statements must quote
+            /// the argument with `'...'` or `$$...$$` (issue #61742). Fail here so
+            /// the outer parser surfaces a clean syntax error pointing at the `;`.
+            if (pos->type == TokenType::Semicolon)
+                return false;
             if (pos->type == TokenType::ClosingRoundBracket)
                 --paren_count;
             if (pos->type == TokenType::OpeningRoundBracket)
@@ -105,7 +193,7 @@ bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
 
     Tokens tokens_kql(kql_statement.data(), kql_statement.data() + kql_statement.size(), 0, true);
-    IParser::Pos pos_kql(tokens_kql, pos.max_depth, pos.max_backtracks);
+    IParser::Pos pos_kql(tokens_kql, pos);
 
     Expected kql_expected;
     kql_expected.enable_highlighting = false;

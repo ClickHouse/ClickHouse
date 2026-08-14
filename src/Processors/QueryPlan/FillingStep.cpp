@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/FillingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
@@ -42,7 +43,7 @@ FillingStep::FillingStep(
 {
 }
 
-void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     if (pipeline.getNumStreams() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FillingStep expects single input");
@@ -53,7 +54,8 @@ void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
             return std::make_shared<FillingNoopTransform>(header, fill_description);
 
         return std::make_shared<FillingTransform>(
-            header, sort_description, fill_description, std::move(interpolate_description), use_with_fill_by_sorting_prefix);
+            header, sort_description, fill_description, std::move(interpolate_description),
+            use_with_fill_by_sorting_prefix, settings.process_list_element);
     });
 }
 
@@ -61,7 +63,7 @@ void FillingStep::describeActions(FormatSettings & settings) const
 {
     const String & prefix = settings.detail_prefix;
     settings.out << prefix;
-    dumpSortDescription(sort_description, settings.out);
+    dumpSortDescription(sort_description, settings);
     settings.out << '\n';
     if (interpolate_description)
     {

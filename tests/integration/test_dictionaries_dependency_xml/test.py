@@ -96,7 +96,17 @@ def test_get_data(started_cluster):
     )
     assert query("SELECT dictGetString('dep_x', 'a', toUInt64(3))") == "fire\n"
     assert query("SELECT dictGetString('dep_y', 'a', toUInt64(3))") == "fire\n"
-    assert query("SELECT dictGetString('dep_z', 'a', toUInt64(3))") == "fire\n"
+    # dep_z has invalidate_query = `intDiv(count(), 4) from dict.dep_y`. With 4 rows, intDiv(4,4)=1 ≠ 0,
+    # so dep_z must reload. Wait for it to pick up key 3 before proceeding, so its cached invalidation
+    # result is 1. Without this wait, dep_z might not have fired its lifetime check yet (still cached 0
+    # from when dep_y had 3 rows), causing the second INSERT to trigger an unexpected reload.
+    assert_eq_with_retry(
+        instance,
+        "SELECT dictGetString('dep_z', 'a', toUInt64(3))",
+        "fire",
+        sleep_time=2,
+        retry_count=10,
+    )
 
     # dep_z (and hence dep_x) are updated only when there `intDiv(count(), 4)` is changed, now `count()==4`,
     # so dep_x and dep_z are not going to be updated after the following INSERT.

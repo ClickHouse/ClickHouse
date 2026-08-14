@@ -6,6 +6,8 @@
 
 #include <map>
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -18,6 +20,8 @@ public:
     String getID(char) const override { return "TimeInterval"; }
 
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

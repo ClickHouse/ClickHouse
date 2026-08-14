@@ -48,7 +48,7 @@ struct ReverseUTF8Impl
             {
                 size_t remaining = offsets[i] - j;
 
-                unsigned int char_len;
+                unsigned int char_len = 0;
                 if (data[j] < 0xC0)
                     char_len = 1;
                 else if (data[j] < 0xE0)

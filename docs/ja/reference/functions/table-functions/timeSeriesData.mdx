@@ -1,0 +1,29 @@
+---
+description: 'timeSeriesData は、テーブルエンジンが TimeSeries である `db_name.time_series_table` テーブルで使用される
+  [data](/reference/engines/table-engines/integrations/time-series#data-table) テーブルを返します。'
+sidebarTitle: 'timeSeriesData'
+slug: /sql-reference/table-functions/timeSeriesData
+title: 'timeSeriesData'
+doc_type: 'reference'
+---
+
+`timeSeriesData(db_name.time_series_table)` - テーブルエンジンが [TimeSeries](/ja/reference/engines/table-engines/integrations/time-series) である `db_name.time_series_table` テーブルで使用される
+[data](/ja/reference/engines/table-engines/integrations/time-series#samples-table) テーブルを返します。
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries DATA data_table
+```
+
+関数は、*data* テーブルが inner テーブルの場合にも動作します：
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries DATA INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+次のクエリは同等です。
+
+```sql
+SELECT * FROM timeSeriesData(db_name.time_series_table);
+SELECT * FROM timeSeriesData('db_name.time_series_table');
+SELECT * FROM timeSeriesData('db_name', 'time_series_table');
+```

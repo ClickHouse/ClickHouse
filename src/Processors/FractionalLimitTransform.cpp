@@ -77,7 +77,7 @@ FractionalLimitTransform::FractionalLimitTransform(
 
 Chunk FractionalLimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, UInt64 row) const
 {
-    assert(row < chunk.getNumRows());
+    chassert(row < chunk.getNumRows());
     ColumnRawPtrs current_columns = extractSortColumns(chunk.getColumns());
     MutableColumns last_row_sort_columns;
     for (size_t i = 0; i < current_columns.size(); ++i)
@@ -189,7 +189,9 @@ FractionalLimitTransform::Status FractionalLimitTransform::prepare()
 
                 rows_processed += chunk_rows;
                 early_pushed_rows += chunk_rows;
-                if (with_ties && rows_processed == limit_rows_for_current_input + offset_rows)
+                /// Skip an empty chunk: there is no row to remember and the stored ties_last_row
+                /// is still the correct tie key for the boundary (avoids chunk_rows - 1 underflow).
+                if (with_ties && rows_processed == limit_rows_for_current_input + offset_rows && chunk_rows > 0)
                     ties_last_row = makeChunkWithPreviousRow(front_chunk, chunk_rows - 1);
 
                 output->push(std::move(front_chunk));
@@ -280,7 +282,7 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
 
     const UInt64 chunk_rows = data.current_chunk.getNumRows();
 
-    if (rows_before_limit_at_least)
+    if (rows_before_limit_at_least && !data.input_port_has_counter)
         rows_before_limit_at_least->add(chunk_rows);
 
     /// Process block.
@@ -351,7 +353,9 @@ FractionalLimitTransform::Status FractionalLimitTransform::pushData()
         {
             /// Return the whole chunk.
             /// Save the last row of current chunk to check if next block begins with the same row (for WITH TIES).
-            if (with_ties && rows_processed == offset_rows + limit_rows)
+            /// Skip an empty chunk: there is no row to remember and the stored ties_last_row
+            /// is still the correct tie key for the boundary (avoids chunk_rows - 1 underflow).
+            if (with_ties && rows_processed == offset_rows + limit_rows && chunk_rows > 0)
                 ties_last_row = makeChunkWithPreviousRow(chunk, chunk_rows - 1);
         }
         else
@@ -404,7 +408,7 @@ void FractionalLimitTransform::splitChunk(Chunk & current_chunk)
     /// <---------------> offset_rows
     ///             <---> cut_start
 
-    assert(offset_rows < rows_processed);
+    chassert(offset_rows < rows_processed);
 
     if (offset_rows + chunk_rows > rows_processed)
         cut_start = offset_rows + chunk_rows - rows_processed;
@@ -479,12 +483,26 @@ ColumnRawPtrs FractionalLimitTransform::extractSortColumns(const Columns & colum
 
 bool FractionalLimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, UInt64 current_chunk_row_num) const
 {
-    assert(current_chunk_sort_columns.size() == ties_last_row.getNumColumns());
+    chassert(current_chunk_sort_columns.size() == ties_last_row.getNumColumns());
     const size_t num_sort_columns = current_chunk_sort_columns.size();
     const auto & ties_last_row_sort_columns = ties_last_row.getColumns();
     for (size_t i = 0; i < num_sort_columns; ++i)
-        if (0 != current_chunk_sort_columns[i]->compareAt(current_chunk_row_num, 0, *ties_last_row_sort_columns[i], 1))
+    {
+        const auto & column = *current_chunk_sort_columns[i];
+        const auto & ties_last_row_column = *ties_last_row_sort_columns[i];
+
+        /// Compare ties using the same collation as ORDER BY, otherwise rows that are equal
+        /// according to the collation (for example '1' and '01' under numeric collation) would
+        /// be treated as distinct and wrongly dropped from the result.
+        int res = 0;
+        if (limit_with_ties_sort_description[i].collator && column.isCollationSupported())
+            res = column.compareAtWithCollation(current_chunk_row_num, 0, ties_last_row_column, 1, *limit_with_ties_sort_description[i].collator);
+        else
+            res = column.compareAt(current_chunk_row_num, 0, ties_last_row_column, 1);
+
+        if (res != 0)
             return false;
+    }
     return true;
 }
 

@@ -1,0 +1,69 @@
+---
+title: Как рассчитать долю пустых/нулевых значений в каждом столбце таблицы
+description: Узнайте, как рассчитать долю пустых или нулевых значений в каждом столбце таблицы ClickHouse, чтобы оптимизировать сериализацию разреженных столбцов.
+date: 2023-05-18
+tags: ['Производительность и оптимизация']
+keywords: ['Доля пустых/нулевых значений', 'Рассчитать']
+---
+
+<div id="how-to-calculate-the-ratio-of-emptyzero-values-in-every-column-in-a-table">
+  ## Как вычислить долю пустых/нулевых значений в каждом столбце таблицы
+</div>
+
+Если столбец разреженный (пустой или содержит в основном нули), ClickHouse может хранить его в разреженном формате и автоматически оптимизировать вычисления — при выполнении запросов данным не требуется полная распаковка. Более того, если вы знаете, насколько разрежен столбец, вы можете задать этот порог с помощью [настройки `ratio_of_defaults_for_sparse_serialization`](/ru/reference/settings/merge-tree-settings#ratio_of_defaults_for_sparse_serialization), чтобы оптимизировать сериализацию.
+
+Этот полезный запрос может выполняться некоторое время, но он анализирует каждую строку таблицы и определяет долю значений, равных нулю (или значению по умолчанию), в каждом столбце указанной таблицы:
+
+```sql
+SELECT *
+    APPLY x -> (x = defaultValueOfArgumentType(x)) APPLY avg APPLY x -> round(x, 3)
+FROM table_name
+FORMAT Vertical
+```
+
+Например, выше мы выполнили этот запрос для таблицы [набора данных environmental sensors](/ru/get-started/sample-datasets/environmental-sensors) с именем `sensors`, которая содержит более 20B строк и 19 столбцов:
+
+```sql
+SELECT *
+    APPLY x -> (x = defaultValueOfArgumentType(x)) APPLY avg APPLY x -> round(x, 3)
+FROM sensors
+FORMAT Vertical
+```
+
+Вот ответ:
+
+```response
+
+Row 1:
+──────
+round(avg(equals(sensor_id, defaultValueOfArgumentType(sensor_id))), 3):                 0
+round(avg(equals(sensor_type, defaultValueOfArgumentType(sensor_type))), 3):             0.159
+round(avg(equals(location, defaultValueOfArgumentType(location))), 3):                   0
+round(avg(equals(lat, defaultValueOfArgumentType(lat))), 3):                             0.001
+round(avg(equals(lon, defaultValueOfArgumentType(lon))), 3):                             0.001
+round(avg(equals(timestamp, defaultValueOfArgumentType(timestamp))), 3):                 0
+round(avg(equals(P1, defaultValueOfArgumentType(P1))), 3):                               0.474
+round(avg(equals(P2, defaultValueOfArgumentType(P2))), 3):                               0.475
+round(avg(equals(P0, defaultValueOfArgumentType(P0))), 3):                               0.995
+round(avg(equals(durP1, defaultValueOfArgumentType(durP1))), 3):                         0.999
+round(avg(equals(ratioP1, defaultValueOfArgumentType(ratioP1))), 3):                     0.999
+round(avg(equals(durP2, defaultValueOfArgumentType(durP2))), 3):                         1
+round(avg(equals(ratioP2, defaultValueOfArgumentType(ratioP2))), 3):                     1
+round(avg(equals(pressure, defaultValueOfArgumentType(pressure))), 3):                   0.83
+round(avg(equals(altitude, defaultValueOfArgumentType(altitude))), 3):                   1
+round(avg(equals(pressure_sealevel, defaultValueOfArgumentType(pressure_sealevel))), 3): 1
+round(avg(equals(temperature, defaultValueOfArgumentType(temperature))), 3):             0.532
+round(avg(equals(humidity, defaultValueOfArgumentType(humidity))), 3):                   0.544
+
+1 row in set. Elapsed: 992.041 sec. Processed 20.69 billion rows, 1.39 TB (20.86 million rows/s., 1.40 GB/s.)
+```
+
+Судя по приведённым выше результатам:
+
+* столбец `sensor_id` совсем не разреженный. Более того, в каждой строке у него ненулевое значение
+* `sensor_type` разрежен только примерно в 15,9% случаев
+* столбец `P0` очень разреженный: 99,9% значений равны нулю
+* столбец `pressure` довольно разреженный — 83%
+* а в столбце `temperature` 53,2% значений отсутствуют или равны нулю
+
+Как мы уже говорили, это удобный запрос, чтобы оценить, насколько разрежены столбцы в таблице ClickHouse!

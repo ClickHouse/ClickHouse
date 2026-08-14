@@ -1,4 +1,5 @@
 -- add_minmax_index_for_numeric_columns=0: Changes the plan and rows read
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS rmt1;
 
 SET use_skip_indexes=1;

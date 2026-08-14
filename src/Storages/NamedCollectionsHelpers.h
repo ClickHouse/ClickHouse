@@ -4,6 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
 
@@ -28,7 +29,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ASTs asts,
     ContextPtr context,
     bool throw_unknown_collection = true,
-    std::vector<std::pair<std::string, ASTPtr>> * complex_args = nullptr,
+    VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> * complex_args = nullptr,
     const StorageID * dependent_table_id = nullptr);
 
 /// Helper function to get named collection for dictionary source.

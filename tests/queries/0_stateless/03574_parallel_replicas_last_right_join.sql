@@ -1,3 +1,4 @@
+SET automatic_parallel_replicas_mode = 0;
 SET allow_experimental_parallel_reading_from_replicas=1;
 SET max_parallel_replicas=3;
 SET enable_analyzer=1;

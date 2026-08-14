@@ -1,0 +1,261 @@
+---
+description: 'تتيح بروتوكول قابل للتركيب تكوينًا أكثر مرونة للوصول عبر TCP
+  إلى خادم ClickHouse.'
+sidebarTitle: 'بروتوكول قابل للتركيب'
+slug: /operations/settings/composable-protocols
+title: 'بروتوكول قابل للتركيب'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+تتيح البروتوكولات القابلة للتركيب إعدادًا أكثر مرونة للوصول عبر TCP إلى
+خادم ClickHouse. ويمكن أن يتعايش هذا الإعداد مع الإعداد التقليدي، أو يحلّ
+محلّه.
+
+<div id="composable-protocols-section-is-denoted-as-protocols-in-configuration-xml">
+  ## إعداد البروتوكولات القابلة للتركيب
+</div>
+
+يمكن إعداد البروتوكولات القابلة للتركيب في ملف تهيئة بتنسيق XML. ويُحدَّد قسم البروتوكولات
+بوسوم `protocols` في ملف تهيئة XML:
+
+```xml
+<protocols>
+
+</protocols>
+```
+
+<div id="basic-modules-define-protocol-layers">
+  ### إعداد طبقات البروتوكول
+</div>
+
+يمكنك تحديد طبقات البروتوكول باستخدام وحدات أساسية. على سبيل المثال، لتحديد
+طبقة HTTP، يمكنك إضافة وحدة أساسية جديدة إلى قسم `protocols`:
+
+```xml
+<protocols>
+
+  <!-- plain_http module -->
+  <plain_http>
+    <type>http</type>
+  </plain_http>
+
+</protocols>
+```
+
+يمكن تهيئة الوحدات وفقًا لما يلي:
+
+* `plain_http` - اسم يمكن الرجوع إليه من طبقة أخرى
+* `type` - يشير إلى معالج البروتوكول الذي سيُنشأ لمعالجة البيانات.
+  وتتوافر له معالجات البروتوكول المعرّفة مسبقًا التالية:
+  * `tcp` - معالج بروتوكول ClickHouse الأصلي
+  * `http` - معالج بروتوكول HTTP لـ ClickHouse
+  * `tls` - طبقة تشفير TLS
+  * `proxy1` - طبقة PROXYv1
+  * `mysql` - معالج بروتوكول التوافق مع MySQL
+  * `postgres` - معالج بروتوكول التوافق مع PostgreSQL
+  * `prometheus` - معالج بروتوكول Prometheus
+  * `interserver` - معالج الاتصال الداخلي بين خوادم ClickHouse
+
+<Note>
+  لم يُنفَّذ معالج بروتوكول `gRPC` في `Composable protocols`
+</Note>
+
+<div id="endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags">
+  ### تكوين نقاط النهاية
+</div>
+
+يُشار إلى نقاط النهاية (منافذ الاستماع) بالوسمين `<port>` و`<host>` الاختياريين.
+على سبيل المثال، لتكوين نقطة نهاية على طبقة HTTP التي أُضيفت سابقًا،
+يمكننا تعديل التكوين كما يلي:
+
+```xml
+<protocols>
+
+  <plain_http>
+
+    <type>http</type>
+    <!-- endpoint -->
+    <host>127.0.0.1</host>
+    <port>8123</port>
+
+  </plain_http>
+
+</protocols>
+```
+
+إذا أُهمِل الوسم `<host>`، فسيُستخدم `<listen_host>` من إعدادات الجذر.
+
+<div id="layers-sequence-is-defined-by-impl-tag-referencing-another-module">
+  ### تهيئة تسلسلات الطبقات
+</div>
+
+تُعرَّف تسلسلات الطبقات باستخدام الوسم `<impl>`، مع الإشارة إلى
+وحدة أخرى. على سبيل المثال، لتهيئة طبقة TLS فوق وحدة plain&#95;http الخاصة بنا،
+يمكننا تعديل الإعدادات على النحو التالي:
+
+```xml
+<protocols>
+
+  <!-- http module -->
+  <plain_http>
+    <type>http</type>
+  </plain_http>
+
+  <!-- https module configured as a tls layer on top of plain_http module -->
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+  </https>
+
+</protocols>
+```
+
+<div id="endpoint-can-be-attached-to-any-layer">
+  ### إرفاق نقاط النهاية بالطبقات
+</div>
+
+يمكن إرفاق نقاط النهاية بأي طبقة. على سبيل المثال، يمكننا تحديد نقاط نهاية لكلٍّ من
+HTTP (المنفذ 8123) وHTTPS (المنفذ 8443):
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+  </https>
+
+</protocols>
+```
+
+<div id="additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag">
+  ### تعريف نقاط نهاية إضافية
+</div>
+
+يمكن تعريف نقاط نهاية إضافية بالإشارة إلى أي وحدة مع حذف
+الوسم `<type>`. على سبيل المثال، يمكننا تعريف نقطة النهاية `another_http` لوحدة
+`plain_http` كما يلي:
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+  </https>
+
+  <another_http>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8223</port>
+  </another_http>
+
+</protocols>
+```
+
+<div id="custom-http-handlers-per-endpoint">
+  ### معالجات HTTP مخصّصة لكل نقطة نهاية
+</div>
+
+بشكل افتراضي، تشترك جميع إدخالات البروتوكول `type=http` في الإعداد
+`<http_handlers>` نفسه. يمكنك تجاوز ذلك بإضافة وسم `<handlers>` يشير
+إلى قسم إعدادات مختلف. يتيح هذا لكل منفذ HTTP أن يقدّم مجموعة مختلفة من
+قواعد توجيه HTTP.
+
+على سبيل المثال، لتشغيل واجهة برمجة تطبيقات HTTP بديلة على المنفذ 8124 مع معالجاتها الخاصة:
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <alt_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8124</port>
+    <handlers>http_handlers_alt</handlers>
+  </alt_http>
+
+</protocols>
+
+<!-- Default handlers used by plain_http (port 8123) -->
+<http_handlers>
+    <defaults/>
+</http_handlers>
+
+<!-- Alternative handlers used by alt_http (port 8124) -->
+<http_handlers_alt>
+    <rule>
+        <url>/custom</url>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>SELECT 'custom_endpoint'</query>
+        </handler>
+    </rule>
+    <defaults/>
+</http_handlers_alt>
+```
+
+في هذا المثال، تستخدم الطلبات الواردة إلى المنفذ 8123 قواعد `<http_handlers>` القياسية،
+بينما تستخدم الطلبات الواردة إلى المنفذ 8124 قواعد `<http_handlers_alt>`. وإذا حُذف `<handlers>`
+فإن نقطة النهاية تعود إلى `<http_handlers>` الافتراضي.
+
+يتبع قسم المعالِجات المخصّصة التنسيق نفسه المستخدم في
+[`<http_handlers>`](/ar/reference/settings/server-settings/settings#http_handlers).
+ويُكتشف أي تغيير في قسم المعالِجات المخصّصة أثناء إعادة تحميل config، وتُعاد
+تشغيل نقطة النهاية المقابلة تلقائيًا.
+
+<div id="some-modules-can-contain-specific-for-its-layer-parameters">
+  ### تحديد معلمات إضافية للطبقة
+</div>
+
+قد تتضمن بعض الوحدات معلمات إضافية للطبقة. على سبيل المثال، تتيح طبقة TLS
+تحديد مفتاح خاص (`privateKeyFile`) وملفات الشهادة (`certificateFile`)
+كما يلي:
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+    <privateKeyFile>another_server.key</privateKeyFile>
+    <certificateFile>another_server.crt</certificateFile>
+  </https>
+
+</protocols>
+```

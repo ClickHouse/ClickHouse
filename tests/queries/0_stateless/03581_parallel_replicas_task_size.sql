@@ -24,6 +24,7 @@ FORMAT Null;
 -- If ClickHouse will choose too small task size, we don't want to artificially correct it's decision.
 SET max_threads = 3, merge_tree_min_read_task_size = 1;
 
+SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 2, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'parallel_replicas';
 
 SELECT * FROM t FORMAT Null SETTINGS log_comment = 'parallel_replicas_task_size_82982938';

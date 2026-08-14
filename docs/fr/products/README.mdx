@@ -1,0 +1,39 @@
+---
+title: README
+---
+
+<div id="products">
+  # Produits
+</div>
+
+**Ce qui va ici :** Documentation spécifique aux produits pour les offres de
+déploiement de ClickHouse ainsi que ses produits gérés ou complémentaires. Chaque sous-répertoire est autonome
+et dispose de sa propre vue d’ensemble, section de prise en main, guides et documentation de
+référence pour ce produit.
+
+**Public :** Utilisateurs travaillant avec un produit ClickHouse spécifique. Le contenu ici
+suppose que le lecteur a choisi le produit et souhaite obtenir des détails qui s’y appliquent
+(facturation, topologie de déploiement, fonctionnalités propres au produit, comportement de la console/API).
+Le contenu qui s’applique à ClickHouse de manière générale — concepts, modèles de query,
+référence SQL — doit se trouver dans `/core`, pas ici.
+
+**Sous-répertoires :**
+
+* `cloud/` — ClickHouse Cloud (service géré serverless).
+* `clickstack/` — ClickStack, la stack d’observabilité powered by ClickHouse.
+* `bring-your-own-cloud/` — BYOC : ClickHouse Cloud s’exécutant dans le cloud account
+  du client. (Il s’agit en réalité d’un deployment mode de Cloud, mais il est séparé ici par souci de simplicité)
+* `clickhouse-private/` — ClickHouse Private : déploiement self-hosted et isolé
+  sur l’infrastructure du client. (Il s’agit en réalité d’un deployment mode de Cloud, mais il est séparé ici par souci de simplicité)
+* `kubernetes-operator/` — l’operator Kubernetes de ClickHouse pour déployer
+  et gérer des clusters sur Kubernetes.
+* `managed-postgres/` — offre de Postgres géré, intégrée nativement à
+  ClickHouse Cloud.
+* `agentic-data-stack/` — la stack d’agentic analytics (ClickHouse + LibreChat
+  * Langfuse).
+* `chdb/` — chDB, la build in-process de ClickHouse.
+
+Si une page explique un engine, une fonction, un setting ou un concept ClickHouse qui
+s’applique quel que soit le produit, elle doit se trouver dans `/core` (concepts, guides ou
+référence). Ne placez une page ici que si elle est réellement liée au produit —
+sa console, sa facturation, son modèle de déploiement ou ses fonctionnalités propres au produit.

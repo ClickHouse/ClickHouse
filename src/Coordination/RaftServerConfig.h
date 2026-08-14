@@ -15,10 +15,10 @@ namespace DB
 // default- and copy-constructible version of nuraft::srv_config
 struct RaftServerConfig
 {
-    int id;
+    int id{};
     String endpoint;
-    bool learner;
-    int priority;
+    bool learner{};
+    int priority{1};
 
     constexpr RaftServerConfig() = default;
     constexpr RaftServerConfig(int id_, std::string_view endpoint_, bool learner_ = false, int priority_ = 1)

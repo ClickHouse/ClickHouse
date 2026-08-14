@@ -26,7 +26,9 @@ SELECT 1 IN (SELECT joinGetOrNull(02843_join, 'value', materialize(1)));
 
 SELECT 1 IN (SELECT materialize(connectionId()));
 SELECT 1000000 IN (SELECT materialize(getSetting('max_threads')));
-SELECT 1 in (SELECT file(materialize('a'))); -- { serverError FILE_DOESNT_EXIST }
+-- Use a unique path so the FILE_DOESNT_EXIST assertion still fires even if
+-- another test leaks a short filename like `a` into `user_files_path`.
+SELECT 1 in (SELECT file(materialize('02843_nonexistent_'||generateUUIDv4()))); -- { serverError FILE_DOESNT_EXIST }
 
 EXPLAIN ESTIMATE SELECT 1 IN (SELECT dictGet('02843_dict', 'value', materialize('1')));
 EXPLAIN ESTIMATE  SELECT 1 IN (SELECT joinGet(`02843_join`, 'value', materialize(1)));

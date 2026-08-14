@@ -1,0 +1,232 @@
+---
+position: 1
+slug: /clickhouse-operator/guides/introduction
+title: ClickHouse Operator の概要
+keywords: ['kubernetes']
+description: 'このドキュメントでは、ClickHouse Operator の主要な概念と基本的な使用方法の概要を説明します。'
+doc_type: 'guide'
+---
+
+このドキュメントでは、ClickHouse Operator の主要な概念と基本的な使用方法の概要を説明します。
+
+<div id="what-is-the-clickhouse-operator">
+  ## ClickHouse Operator とは
+</div>
+
+ClickHouse Operator は、Kubernetes 上で ClickHouse クラスターのデプロイと管理を自動化する Kubernetes Operator です。Operator パターンに基づいて構築されており、ClickHouse クラスターとその依存関係を表すカスタムリソースによって Kubernetes API を拡張します。
+
+この operator は次を担います:
+
+* クラスターのライフサイクル管理 (作成、更新、スケーリング、削除)
+* ClickHouse Keeper クラスターの協調
+* 構成の自動生成
+* データベーススキーマの同期
+* ローリング更新とアップグレード
+* ストレージのプロビジョニング
+
+<div id="custom-resources">
+  ## カスタムリソース
+</div>
+
+operator は、主要なカスタムリソース定義 (CRD) を 2 つ提供しています。
+
+<div id="clickhousecluster">
+  ### ClickHouseCluster
+</div>
+
+設定可能なレプリカ数と分片数を備えた ClickHouse データベースクラスターを表します。
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample-cluster
+spec:
+  replicas: 3
+  shards: 2
+  keeperClusterRef:
+    name: sample-keeper
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 100Gi
+```
+
+<div id="keepercluster">
+  ### KeeperCluster
+</div>
+
+分散協調を担う ClickHouse Keeper クラスター (ZooKeeper の代替) を表します。
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample-keeper
+spec:
+  replicas: 3
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 10Gi
+```
+
+<div id="coordination">
+  ## 協調
+</div>
+
+<div id="clickhouse-keeper-is-required">
+  ### ClickHouse Keeper は必須です
+</div>
+
+すべての ClickHouseCluster では、分散協調のために ClickHouse Keeper クラスターが必要です。
+Keeper クラスターは、`keeperClusterRef` を使って ClickHouseCluster の spec で参照する必要があります。デフォルトでは、operator は ClickHouseCluster のネームスペース内を参照しますが、`keeperClusterRef.namespace` を設定して、監視対象の別のネームスペース内にある KeeperCluster を指定することもできます。
+
+<div id="one-to-one-keeper-relationship">
+  ### 1 対 1 の Keeper の対応関係
+</div>
+
+各 ClickHouseCluster には、専用の KeeperCluster が必要です。1 つの KeeperCluster を複数の ClickHouseCluster で共有することはできません。
+
+**なぜですか？** operator は、各 ClickHouseCluster が自身の Keeper にアクセスするための一意の認証キーを自動生成します。このキーは Secret に保存されるため、共有できません。
+
+**影響**:
+
+* 複数の ClickHouseCluster から同じ KeeperCluster を参照することはできません
+* ClickHouseCluster を再作成する場合は、対応する KeeperCluster も再作成する必要があります
+
+<Note>
+  ClickHouseCluster または KeeperCluster リソースを削除しても、Persistent Volumes は自動的に削除されません。
+</Note>
+
+クラスターを再作成する場合:
+
+1. ClickHouseCluster リソースを削除します
+2. KeeperCluster リソースを削除します
+3. すべてのポッドが終了するまで待ちます
+4. 必要に応じて、PersistentVolumeClaims を削除してクリーンな状態からやり直します
+5. KeeperCluster と ClickHouseCluster の両方を一緒に再作成します
+
+認証エラーを避けるには、Persistent Volumes を手動で削除するか、新しいストレージで両方のクラスターをまとめて再作成してください。
+
+<div id="schema-replication">
+  ## スキーマのレプリケーション
+</div>
+
+ClickHouse Operator は、データベースの定義をクラスター内のすべてのレプリカに自動的にレプリケートします。
+
+<div id="what-gets-replicated">
+  ### レプリケートされるもの
+</div>
+
+operator は以下を同期します。
+
+* [Replicated](/ja/reference/engines/database-engines/replicated) データベースの定義
+* インテグレーション用データベースエンジン (PostgreSQL、MySQL など)
+
+operator は以下を**同期しません**。
+
+* レプリケーションされていないデータベース (Atomic、Ordinary など)
+* レプリケーションされていないデータベース内のローカルテーブル
+* テーブルデータ (ClickHouse のレプリケーションで処理されます)
+
+<div id="recommended-use-replicated-database-engine">
+  ### 推奨: Replicated データベースエンジンを使用する
+</div>
+
+<Tip>
+  **ベストプラクティス**
+
+  本番環境へのデプロイでは、常に [Replicated](/ja/reference/engines/database-engines/replicated) データベースエンジンを使用してください。
+</Tip>
+
+利点:
+
+* すべてのノードでスキーマが自動的にレプリケーションされる
+* テーブル管理が簡素化される
+* Operator が新しいレプリカとも同期できる
+* クラスター全体でスキーマの一貫性が保たれる
+
+分散 DDL を使用してデータベースを作成します:
+
+```sql
+CREATE DATABASE my_database ON CLUSTER 'default' ENGINE = Replicated;
+```
+
+<div id="avoid-non-replicated-engines">
+  ### Replicated 以外のエンジンを避ける
+</div>
+
+レプリケーションされないデータベースエンジン (Atomic、Lazy、SQLite、Ordinary) では、スキーマを手動で管理する必要があります。
+
+* 各レプリカで個別にテーブルを作成する必要があります
+* ノード間でスキーマの不整合が発生する可能性があります
+* Operator は新しいレプリカを自動的に同期できません
+
+<div id="disable-schema-replication">
+  ### スキーマのレプリケーションを無効にする
+</div>
+
+自動的なスキーマレプリケーションを無効にするには、ClickHouseCluster リソースの `spec.settings.enableDatabaseSync` を `false` に設定します。
+
+<div id="storage-management">
+  ## ストレージ管理
+</div>
+
+operator は、Kubernetes の PersistentVolumeClaim (PVC) を通じてストレージを管理します。
+
+<div id="data-volume-configuration">
+  ### データボリュームの設定
+</div>
+
+`dataVolumeClaimSpec` でストレージ要件を指定します。
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd
+    resources:
+      requests:
+        storage: 500Gi
+```
+
+<div id="storage-lifecycle">
+  ### ストレージのライフサイクル
+</div>
+
+* **作成**: PVC はクラスターの作成時に自動的に作成されます
+* **拡張**: StorageClass でボリュームの拡張が許可されている場合にサポートされます
+* **保持**: クラスターを削除しても PVC は自動的には削除され**ません**
+* **再利用**: 同じ名前でクラスターを再作成すると、既存の PVC を再利用できます
+
+ストレージを完全に削除するには:
+
+```bash
+# Delete cluster
+kubectl delete clickhousecluster my-cluster
+
+# Wait for pods to terminate
+kubectl wait --for=delete pod -l app.kubernetes.io/instance=my-cluster-clickhouse
+
+# Delete PVCs
+kubectl delete pvc -l app.kubernetes.io/instance=my-cluster-clickhouse
+```
+
+<div id="default-configuration-highlights">
+  ## デフォルト構成の主なポイント
+</div>
+
+* **事前設定済みのクラスター:** すべての ClickHouse ノードを含む、`default` という名前のクラスター。
+* **デフォルトのマクロ:** 便利なマクロがいくつか事前定義されています:
+  * `{cluster}`: クラスター名 (`default`)
+  * `{shard}`: 分片番号
+  * `{replica}`: レプリカ番号
+* **ロールベースのアクセス制御 (RBAC) エンティティ向けのレプリケートストレージ**
+* **ユーザー定義関数 (UDF) 向けのレプリケートストレージ**
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+* [設定ガイド](/ja/products/kubernetes-operator/guides/configuration) - 設定オプションの詳細
+* [API リファレンス](/ja/products/kubernetes-operator/reference/api-reference) - API の完全なドキュメント

@@ -155,6 +155,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_ttl{Keyword::TTL};
     ParserKeyword s_remove{Keyword::REMOVE};
     ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
+    ParserKeyword s_add_enum_values(Keyword::ADD_ENUM_VALUES);
     ParserKeyword s_reset_setting(Keyword::RESET_SETTING);
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_type{Keyword::TYPE};
@@ -170,7 +171,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserCollation collation_parser;
     ParserStatisticsType stat_type_parser;
     ParserExpression expression_parser;
-    ParserSetQuery settings_parser(true);
+    /// Column-level settings are consumed as a raw `SettingsChanges` (see
+    /// `MergeTreeColumnSettings::validate`), so nothing there knows the settings schema and could
+    /// reject a valueless setting. There is nothing to allow anyway: every setting permitted at
+    /// column level is a number, and `name` with no value only ever means `name = true`.
+    ParserSetQuery settings_parser(/* parse_only_internals_ = */ true, /* shorthand_syntax_ = */ false);
 
     /// mandatory column name
     ASTPtr name;
@@ -183,11 +188,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     /// This keyword may occur only in MODIFY COLUMN query. We check it here
     /// because ParserDataType parses types as an arbitrary identifiers and
     /// doesn't check that parsed string is existing data type. In this way,
-    /// REMOVE, MODIFY SETTING, or RESET SETTING can be parsed as data type
+    /// REMOVE, MODIFY SETTING, RESET SETTING or ADD ENUM VALUES
+    /// can be parsed as data type
     /// and further parsing will fail. So we just check these keyword and in
     /// case of success return column declaration with name only.
     if (!require_type
-        && (s_remove.checkWithoutMoving(pos, expected) || s_modify_setting.checkWithoutMoving(pos, expected) || s_reset_setting.checkWithoutMoving(pos, expected)))
+        && (s_remove.checkWithoutMoving(pos, expected) || s_modify_setting.checkWithoutMoving(pos, expected) || s_reset_setting.checkWithoutMoving(pos, expected) || s_add_enum_values.checkWithoutMoving(pos, expected)))
     {
         if (!check_keywords_after_name)
             return false;
@@ -211,6 +217,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr collation_expression;
     ASTPtr settings;
     bool primary_key_specifier = false;
+    /// The type as written in the query - what `astText` needs when there is no formatter.
+    std::string_view type_text;
 
     auto null_check_without_moving = [&]() -> bool
     {
@@ -241,8 +249,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     {
         if (check_type_keyword && !s_type.ignore(pos, expected))
             return false;
+        Pos type_begin = pos;
         if (!type_parser.parse(pos, type, expected))
             return false;
+        type_text = textBetween(type_begin, pos);
         if (s_collate.ignore(pos, expected)
             && !collation_parser.parse(pos, collation_expression, expected))
             return false;
@@ -303,8 +313,13 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             default_function->name = "defaultValueOfTypeName";
             default_function->arguments = make_intrusive<ASTExpressionList>();
             default_function->children.push_back(default_function->arguments);
-            /// Ephemeral columns don't really have secrets but we need to format into a String, hence the strange call
-            default_function->arguments->children.emplace_back(make_intrusive<ASTLiteral>(type->formatForLogging()));
+            /// Not formatted at all: the type is taken from the query text as written, so
+            /// `defaultValueOfTypeName` parses back exactly what the user wrote. This also subsumes
+            /// master's move away from `formatForLogging`, which hid secrets a data type does not
+            /// have and ran the server's `query_masking_rules` over the result.
+            /// Reached only when a type was parsed above, which is what fills in `type_text`.
+            chassert(!type_text.empty());
+            default_function->arguments->children.emplace_back(make_intrusive<ASTLiteral>(astText(*type, type_text)));
             default_expression = default_function;
         }
 
@@ -576,6 +591,7 @@ protected:
   *     INDEX name1 expr TYPE type1(args) GRANULARITY value,
   *     ...
   * ) ENGINE = engine
+  *   [DEFINER = {user_name | CURRENT_USER}] [SQL SECURITY {DEFINER | INVOKER | NONE}]
   *
   * Or:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster] AS [db2.]name2 [ENGINE = engine]

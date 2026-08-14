@@ -1,4 +1,6 @@
 #pragma once
+#include <Core/Block_fwd.h>
+#include <Core/Names.h>
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregationMethod.h>
 
@@ -63,6 +65,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64Key>>         key32;
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64Key>>         key64;
     std::unique_ptr<AggregationMethodStringNoCache<AggregatedDataWithShortStringKey>>               key_string;
+    std::unique_ptr<AggregationMethodPackedString<AggregatedDataWithPackedStringKey>>        key_packed_string;
     std::unique_ptr<AggregationMethodFixedStringNoCache<AggregatedDataWithShortStringKey>>          key_fixed_string;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt16Key, false, false, false>>  keys16;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt32Key>>                   keys32;
@@ -77,6 +80,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>> key32_two_level;
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>> key64_two_level;
     std::unique_ptr<AggregationMethodStringNoCache<AggregatedDataWithShortStringKeyTwoLevel>>       key_string_two_level;
+    std::unique_ptr<AggregationMethodPackedString<AggregatedDataWithPackedStringKeyTwoLevel>>       key_packed_string_two_level;
     std::unique_ptr<AggregationMethodFixedStringNoCache<AggregatedDataWithShortStringKeyTwoLevel>>  key_fixed_string_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt32KeyTwoLevel>>           keys32_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt64KeyTwoLevel>>           keys64_two_level;
@@ -140,6 +144,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(key32,                      false) \
         M(key64,                      false) \
         M(key_string,                 false) \
+        M(key_packed_string,          false) \
         M(key_fixed_string,           false) \
         M(keys16,                    false) \
         M(keys32,                    false) \
@@ -153,6 +158,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(key32_two_level,            true) \
         M(key64_two_level,            true) \
         M(key_string_two_level,       true) \
+        M(key_packed_string_two_level, true) \
         M(key_fixed_string_two_level, true) \
         M(keys32_two_level,          true) \
         M(keys64_two_level,          true) \
@@ -204,6 +210,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(key32)            \
         M(key64)            \
         M(key_string)       \
+        M(key_packed_string) \
         M(key_fixed_string) \
         M(keys32)           \
         M(keys64)           \
@@ -255,6 +262,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(key32_two_level)            \
         M(key64_two_level)            \
         M(key_string_two_level)       \
+        M(key_packed_string_two_level) \
         M(key_fixed_string_two_level) \
         M(keys32_two_level)           \
         M(keys64_two_level)           \
@@ -318,6 +326,8 @@ struct AggregatedDataVariants : private boost::noncopyable
     bool isLowCardinality() const;
     static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);
 
+    /** Select the aggregation method based on the number and types of keys. */
+    static Type chooseMethod(const Block & header, const Names & keys, Sizes & out_key_sizes);
 };
 
 using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;

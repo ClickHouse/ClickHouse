@@ -2,7 +2,6 @@
 
 #if USE_H3
 
-#include <vector>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -11,7 +10,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/castColumn.h>
 
 
@@ -28,7 +27,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3KRing : public IFunction
+class FunctionH3KRing final : public IFunction
 {
 public:
     static constexpr auto name = "h3kRing";
@@ -96,10 +95,10 @@ public:
 
         const auto & data_k = col_k->getData();
 
-        auto dst = ColumnArray::create(ColumnUInt64::create());
-        auto & dst_data = dst->getData();
-        auto & dst_offsets = dst->getOffsets();
-        dst_offsets.resize(input_rows_count);
+        auto dst_data_column = ColumnUInt64::create();
+        auto dst_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
+        auto & dst_data = *dst_data_column;
+        auto & dst_offsets = dst_offsets_column->getData();
         auto current_offset = 0;
 
         for (size_t row = 0; row < input_rows_count; ++row)
@@ -123,8 +122,10 @@ public:
                 continue;
             }
 
-            const auto vec_size = maxGridDiskSize(k);
-            std::vector<H3Index, AllocatorWithMemoryTracking<H3Index>> hindex_vec;
+            int64_t disk_size = 0;
+            maxGridDiskSize(k, &disk_size);
+            const auto vec_size = static_cast<size_t>(disk_size);
+            VectorWithMemoryTracking<H3Index> hindex_vec;
             hindex_vec.resize(vec_size);
             gridDisk(origin_hindex, k, hindex_vec.data());
 
@@ -140,7 +141,7 @@ public:
             dst_offsets[row] = current_offset;
         }
 
-        return dst;
+        return ColumnArray::create(std::move(dst_data_column), std::move(dst_offsets_column));
     }
 };
 

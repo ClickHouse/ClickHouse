@@ -5,6 +5,7 @@
 
 #if USE_AVRO
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
@@ -55,7 +56,15 @@ public:
 
         bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
 
-        std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
+        /// Whether LIMIT lazy materialization can re-read every data file of this manifest
+        /// by physical row numbers: all data files are Parquet, none of them needs schema
+        /// evolution, and there are no equality deletes (both schema evolution and equality
+        /// deletes force reading all physical columns, see IcebergMetadata::getInitialSchemaByPath).
+        bool areAllDataFilesEligibleForLazyMaterialization(Int32 table_schema_id) const;
+
+        /// Sum of the file-level `record_count` over the live files of the given content type.
+        /// Returns std::nullopt if any file carries a malformed (negative) record count.
+        std::optional<UInt64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
 
         std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
@@ -76,15 +85,12 @@ public:
 
     static std::shared_ptr<ManifestFileIterator> create(
         std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer,
-        const String & manifest_file_name,
-        Int32 format_version_,
-        const String & common_path,
+        const IcebergPathFromMetadata & path_to_manifest_file,
+        const IcebergPathResolver & path_resolver,
         IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
         Int64 inherited_snapshot_id,
-        const std::string & table_location,
         DB::ContextPtr context,
-        const String & path_to_manifest_file_,
         std::shared_ptr<const ActionsDAG> filter_dag_,
         Int32 table_snapshot_schema_id_);
 
@@ -96,8 +102,6 @@ public:
     /// they can be absent.
     std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
     std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
-
-    const String & getPathToManifestFile() const { return path_to_manifest_file; }
 
     bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
 
@@ -115,11 +119,9 @@ public:
 private:
     ManifestFileIterator(
         std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer,
-        const String & path_to_manifest_file,
-        const String & manifest_file_name,
+        const IcebergPathFromMetadata & path_to_manifest_file,
         Int32 format_version,
-        const String & common_path,
-        const String & table_location,
+        const IcebergPathResolver & path_resolver,
         IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
         Int64 inherited_snapshot_id,
@@ -135,11 +137,9 @@ private:
 
     /// Constant properties of this manifest file
     const std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer;
-    const String path_to_manifest_file;
-    const String manifest_file_name;
+    const IcebergPathFromMetadata path_to_manifest_file;
     const Int32 format_version;
-    const String common_path;
-    const String table_location;
+    const IcebergPathResolver path_resolver;
     // always zero in case of format version 1
     const Int64 inherited_sequence_number;
     const Int64 inherited_snapshot_id;

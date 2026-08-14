@@ -9,25 +9,53 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function check_log
 {
-    # The gateway span (HTTPHandler / TCPHandler TracingContextHolder) is logged
-    # only when handleRequest() / runImpl() fully exits — after the response has
-    # already been sent to the client.  There is therefore a small window where
-    # the client has received the HTTP 200 but the span is not yet in the table.
-    # Retry a few times to let the background I/O thread finish.
-    # This fixes https://github.com/ClickHouse/ClickHouse/issues/67108 and https://github.com/ClickHouse/ClickHouse/issues/93452
+    # A span's TracingContextHolder is logged to opentelemetry_span_log only when
+    # the corresponding handler/query fully exits, which for the gateway happens
+    # after the response was already sent to the client. The query spans and the
+    # gateway spans they descend from are flushed by independent background
+    # threads, so right after the client call returns an arbitrary subset may be
+    # in the table. Poll until the exact quantities the assertions below read are
+    # present: the total number of 'query' spans ($1) and the number of initial
+    # query spans with a proper parent ($2). Waiting on a proxy (e.g. "any span
+    # with parent 0x73 exists") breaks when only one of the two gateway-parented
+    # spans has flushed, leaving 'total spans' < 3 or 'initial ... proper parent'
+    # short. See issues 67108, 93452 and the amd_tsan flakiness this revision fixes.
+    local _expected_query_spans="$1"
+    local _expected_initial_with_parent="$2"
+    local _query_spans=0 _initial_with_parent=0 _flushed=0
+    # 20 tries spaced 1s apart: give the background flush threads ~20s to land
+    # the spans without hammering the server with a tight flush loop.
     for _retry in {1..20}; do
         ${CLICKHOUSE_CLIENT} -q "system flush logs opentelemetry_span_log"
-        _gateway_count=$(${CLICKHOUSE_CLIENT} -q "
-            select count() from system.opentelemetry_span_log
+        _counts=$(${CLICKHOUSE_CLIENT} -q "
+            select
+                countIf(operation_name = 'query'),
+                countIf(operation_name = 'query' and parent_span_id in (
+                    select span_id from system.opentelemetry_span_log
+                    where finish_date >= yesterday()
+                      AND trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
+                      and parent_span_id = reinterpretAsUInt64(unhex('73'))))
+            from system.opentelemetry_span_log
             where finish_date >= yesterday()
               AND trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
-              and parent_span_id = reinterpretAsUInt64(unhex('73'))
         ")
-        if [[ "$_gateway_count" -gt 0 ]]; then
+        _query_spans=$(echo "$_counts" | cut -f1)
+        _initial_with_parent=$(echo "$_counts" | cut -f2)
+        if [[ "$_query_spans" -ge "$_expected_query_spans" && "$_initial_with_parent" -ge "$_expected_initial_with_parent" ]]; then
+            _flushed=1
             break
         fi
-        sleep 0.1
+        sleep 1
     done
+    # Fail loudly if the spans never showed up, instead of falling through to the
+    # assertions and reporting a cryptic "total spans: 2".
+    if [[ "$_flushed" -ne 1 ]]; then
+        echo "check_log: opentelemetry spans not flushed within 20s:" \
+             "query_spans=$_query_spans (expected >= $_expected_query_spans)," \
+             "initial_query_spans_with_parent=$_initial_with_parent" \
+             "(expected >= $_expected_initial_with_parent)" >&2
+        exit 1
+    fi
 
 ${CLICKHOUSE_CLIENT} --format=JSONEachRow -q "
 set enable_analyzer = 1;
@@ -107,7 +135,10 @@ ${CLICKHOUSE_CURL} \
     --get \
     --data-urlencode "query=select 1 from remote('127.0.0.2', system, one) settings enable_analyzer = 1 format Null"
 
-check_log
+# 3 'query' spans (initial + remote DESC TABLE + remote rewritten SELECT), 2 of
+# which descend from the input trace context (0x73): the initial query and the
+# remote SELECT.
+check_log 3 2
 
 # With another trace id, check that clickhouse-client accepts traceparent, and
 # that it is passed through URL table function. We expect two query spans, one
@@ -120,7 +151,9 @@ ${CLICKHOUSE_CLIENT} \
     --opentelemetry-tracestate "another custom state" \
     --query "select * from url('http://127.0.0.2:8123/?query=select%201%20format%20Null', CSV, 'a int')"
 
-check_log
+# 3 'query' spans (initial + two for the HTTP url() call), 1 of which descends
+# from the input trace context (0x73): the initial query.
+check_log 3 1
 
 # Test sampled tracing. The traces should be started with the specified
 # probability, only for initial queries.

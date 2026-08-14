@@ -2,6 +2,8 @@
 
 #if defined(OS_LINUX)
 
+#include <Common/FailPoint.h>
+#include <Common/Exception.h>
 #include <Common/ProcfsMetricsProvider.h>
 #include <Common/hasLinuxCapability.h>
 
@@ -62,6 +64,16 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace FailPoints
+{
+extern const char taskstats_counters_reset_throw[];
+}
+
+namespace ErrorCodes
+{
+extern const int FAULT_INJECTED;
+}
 
 const char * TasksStatsCounters::metricsProviderString(MetricsProvider provider)
 {
@@ -127,6 +139,10 @@ TasksStatsCounters::TasksStatsCounters(const UInt64 tid, const MetricsProvider p
 
 void TasksStatsCounters::reset()
 {
+    fiu_do_on(FailPoints::taskstats_counters_reset_throw,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in TasksStatsCounters::reset");
+    });
     if (stats_getter)
         stats = stats_getter();
 }

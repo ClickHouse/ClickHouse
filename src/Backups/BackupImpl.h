@@ -6,6 +6,7 @@
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
 #include <Common/Logger_fwd.h>
+#include <atomic>
 #include <map>
 #include <mutex>
 
@@ -55,15 +56,16 @@ public:
     BackupImpl(
         const BackupInfo & backup_info_,
         const ArchiveParams & archive_params_,
-        std::shared_ptr<IBackupReader> reader_,
-        std::shared_ptr<IBackupWriter> lightweight_snapshot_writer_);
+        std::shared_ptr<IBackupReader> reader_);
 
     ~BackupImpl() override;
 
     const String & getNameForLogging() const override { return backup_name_for_logging; }
     OpenMode getOpenMode() const override { return open_mode; }
+    std::map<String, String> getEngineSettings() const override;
     time_t getTimestamp() const override { return timestamp; }
     UUID getUUID() const override { return *uuid; }
+    const String & getBackupId() const override { return backup_id; }
     BackupPtr getBaseBackup() const override;
     size_t getNumFiles() const override;
     UInt64 getTotalSize() const override;
@@ -90,7 +92,7 @@ public:
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
     bool tryRemoveAllFiles() noexcept override;
-    void removeAllFilesUnderDirectory(const String & directory) const override;
+    void setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept override;
 
 private:
     void open();
@@ -140,7 +142,6 @@ private:
     std::shared_ptr<IBackupReader> reader;
     /// Only used for lightweight backup, we read data from original object storage so the endpoint may be different from the backup files.
     std::shared_ptr<IBackupReader> lightweight_snapshot_reader;
-    std::shared_ptr<IBackupWriter> lightweight_snapshot_writer;
     SnapshotReaderCreator lightweight_snapshot_reader_creator;
     String original_endpoint; /// endpoint of source disk, we need to write it to metafile to restore a snapshot.
     String original_namespace; /// namespace of source disk, we need to write it to metafile to restore a snapshot.
@@ -159,6 +160,7 @@ private:
     std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);
 
     std::optional<UUID> uuid;
+    String backup_id; /// Set from params on write, from the manifest on read; empty for legacy backups without the field.
     time_t timestamp = 0;
     size_t num_files = 0;
     UInt64 total_size = 0;
@@ -168,10 +170,12 @@ private:
     UInt64 compressed_size = 0;
     mutable size_t num_read_files = 0;
     mutable UInt64 num_read_bytes = 0;
-    int version;
+    int version{};
     mutable std::optional<BackupInfo> base_backup_info;
     mutable std::shared_ptr<const IBackup> base_backup;
     mutable std::optional<UUID> base_backup_uuid;
+    /// Whether metadata has a marker to copy `S3` credentials from this backup locator to the base backup locator.
+    bool base_backup_copy_s3_credentials_from_backup = false;
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;

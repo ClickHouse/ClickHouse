@@ -2,6 +2,7 @@
 
 #include <Interpreters/Aliases.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -25,7 +26,7 @@ public:
     static void visit(ASTPtr & ast, ContextPtr context_);
 
 private:
-    static ASTPtr tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process, ContextPtr context_);
+    static ASTPtr tryToReplaceFunction(const ASTFunction & function, UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process, ContextPtr context_);
 
 };
 

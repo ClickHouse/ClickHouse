@@ -1,0 +1,33 @@
+---
+title: Paramètres du journal système
+---
+
+Les paramètres suivants peuvent être configurés via des sous-balises :
+
+| Paramètre                          | Description                                                                                                                                                                | Valeur par défaut   | Remarque                                                                                                                                     |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `database`                         | Nom de la base de données.                                                                                                                                                 |                     |                                                                                                                                              |
+| `table`                            | Nom de la table système.                                                                                                                                                   |                     |                                                                                                                                              |
+| `engine`                           | [Définition du moteur MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) pour une table système.              |                     | Ne peut pas être utilisé si `partition_by` ou `order_by` est défini. S&#39;il n&#39;est pas spécifié, `MergeTree` est sélectionné par défaut |
+| `partition_by`                     | [Clé de partitionnement personnalisée](/fr/reference/engines/table-engines/mergetree-family/custom-partitioning-key) pour une table système.                                  |                     | Si `engine` est spécifié pour la table système, le paramètre `partition_by` doit être indiqué directement dans &#39;engine&#39;              |
+| `ttl`                              | Spécifie le [TTL](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) de la table.                                                     |                     | Si `engine` est spécifié pour la table système, le paramètre `ttl` doit être indiqué directement dans &#39;engine&#39;                       |
+| `order_by`                         | [Clé de tri personnalisée](/fr/reference/engines/table-engines/mergetree-family/mergetree#order_by) pour une table système. Ne peut pas être utilisée si `engine` est défini. |                     | Si `engine` est spécifié pour la table système, le paramètre `order_by` doit être indiqué directement dans &#39;engine&#39;                  |
+| `storage_policy`                   | Nom de la politique de stockage à utiliser pour la table (facultatif).                                                                                                     |                     | Si `engine` est spécifié pour la table système, le paramètre `storage_policy` doit être indiqué directement dans &#39;engine&#39;            |
+| `settings`                         | [Paramètres supplémentaires](/fr/reference/engines/table-engines/mergetree-family/mergetree#settings) qui contrôlent le comportement de MergeTree (facultatif).               |                     | Si `engine` est spécifié pour la table système, le paramètre `settings` doit être indiqué directement dans &#39;engine&#39;                  |
+| `flush_interval_milliseconds`      | Intervalle de vidage des données du tampon en mémoire vers la table.                                                                                                       | `7500`              |                                                                                                                                              |
+| `max_size_rows`                    | Taille maximale en lignes pour les logs. Lorsque la quantité de logs non vidés atteint `max_size_rows`, les logs sont écrits sur le disque.                                | `1048576`           |                                                                                                                                              |
+| `reserved_size_rows`               | Taille de mémoire préallouée en lignes pour les logs.                                                                                                                      | `8192`              |                                                                                                                                              |
+| `buffer_size_rows_flush_threshold` | Seuil du nombre de lignes. Si ce seuil est atteint, le vidage des logs sur le disque est lancé en arrière-plan.                                                            | `max_size_rows / 2` |                                                                                                                                              |
+| `flush_on_crash`                   | Définit si les logs doivent être écrits sur le disque en cas de crash.                                                                                                     | `false`             |                                                                                                                                              |
+
+De plus, le paramètre suivant au niveau du serveur contrôle la politique de vidage par défaut pour toutes les tables de journal système :
+
+```xml
+<default_system_log_flush_policy>
+    <skip_alias_columns>true</skip_alias_columns>
+</default_system_log_flush_policy>
+```
+
+| Paramètre            | Description                                                                                                                       | Par défaut |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| `skip_alias_columns` | Lorsque `true`, les colonnes ALIAS sont omises des schémas des tables de logs système. Requis pour les logs système basés sur S3. | `false`    |

@@ -1,7 +1,6 @@
 #pragma once
 #include <optional>
 #include <Columns/IColumn.h>
-#include <Common/WeakHash.h>
 
 namespace DB
 {
@@ -168,14 +167,14 @@ public:
         throwNotImplementedForColumnUnique("updatePermutation");
     }
 
-    std::vector<MutableColumnPtr> scatter(size_t, const IColumn::Selector &) const override
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t, const IColumn::Selector &) const override
     {
         throwNotImplementedForColumnUnique("scatter");
     }
 
-    WeakHash32 getWeakHash32() const override
+    void computeHashInto(size_t /*row_begin*/, size_t /*row_end*/, UInt32 * /*hash_out*/, bool /*initial*/) const override
     {
-        throwNotImplementedForColumnUnique("getWeakHash32");
+        throwNotImplementedForColumnUnique("computeHashInto");
     }
 
     void updateHashFast(SipHash &) const override

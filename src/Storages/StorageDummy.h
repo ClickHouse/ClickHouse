@@ -3,12 +3,12 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 namespace DB
 {
 
-class StorageDummy final : public IStorage
+class StorageDummy final : public StorageWithCommonVirtualColumns
 {
 public:
     StorageDummy(
@@ -19,6 +19,8 @@ public:
 
     std::string getName() const override { return "StorageDummy"; }
 
+    static VirtualColumnsDescription createVirtuals(const StorageSnapshotPtr & original_storage_snapshot);
+
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
@@ -28,8 +30,13 @@ public:
         return original_storage_snapshot ? original_storage_snapshot->storage.supportedPrewhereColumns() : std::nullopt;
     }
 
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override
+    {
+        return original_storage_snapshot && original_storage_snapshot->storage.supportedPrewhereColumnsIncludeSubcolumns();
+    }
+
     bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool canMoveConditionsToPrewhere() const override
     {
         return original_storage_snapshot ? original_storage_snapshot->storage.canMoveConditionsToPrewhere() : false;
@@ -40,18 +47,13 @@ public:
         return original_storage_snapshot ? original_storage_snapshot->storage.hasEvenlyDistributedRead() : false;
     }
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
-    {
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
-    }
-
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr local_context,
         QueryProcessingStage::Enum to_stage,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info) const override;
 
-    void read(
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -82,11 +84,6 @@ public:
     const StorageDummy & getStorage() const
     {
         return storage;
-    }
-
-    const StorageSnapshotPtr & getStorageSnapshot() const
-    {
-        return storage_snapshot;
     }
 
     const Names & getColumnNames() const

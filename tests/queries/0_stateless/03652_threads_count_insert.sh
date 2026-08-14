@@ -24,7 +24,7 @@ for max_threads in 1 7; do
     for max_insert_threads in 1 4; do
         echo "max_threads: $max_threads max_insert_threads: $max_insert_threads"
 
-        QUERY_ID="03652_query_id_$RANDOM"
+        QUERY_ID="${CLICKHOUSE_DATABASE}_03652_${max_threads}_${max_insert_threads}_$($CLICKHOUSE_CLIENT -q 'SELECT lower(hex(generateUUIDv4()))')"
         SETTINGS="--query_id=$QUERY_ID "
         SETTINGS="$SETTINGS --max_threads=$max_threads "
         SETTINGS="$SETTINGS --max_insert_threads=$max_insert_threads "
@@ -45,7 +45,9 @@ select
     if(peak_threads_usage >= 6, 7, peak_threads_usage),
 from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND
     current_database = currentDatabase() and
-    type != 'QueryStart' and
+    type = 'QueryFinish' and
+    is_initial_query = 1 and
+    query_kind = 'Insert' and
     query_id = '$QUERY_ID'
 order by ALL;
 EOF

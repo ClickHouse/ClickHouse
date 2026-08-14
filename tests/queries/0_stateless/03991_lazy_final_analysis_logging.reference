@@ -1,0 +1,6 @@
+=== Case 1: set truncated ===
+Lazy FINAL disabled: set was truncated (rows=N, bytes=N, max_rows=N, max_bytes=N)
+=== Case 2: filtered ratio too low ===
+Lazy FINAL disabled: filtered ratio N.NN is below threshold N.NN (total_marks=N, selected_marks=N, set_rows=N)
+=== Case 3: optimization enabled ===
+Lazy FINAL enabled: filtered ratio N.NN (threshold N.NN), total_marks=N, selected_marks=N, set_rows=N

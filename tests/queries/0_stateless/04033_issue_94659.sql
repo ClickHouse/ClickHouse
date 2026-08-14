@@ -2,6 +2,7 @@
 -- ROW POLICY + ALIAS column with dictGet should not cause LOGICAL_ERROR
 
 SET enable_analyzer = 1;
+SET optimize_respect_aliases = 1;
 
 DROP ROW POLICY IF EXISTS pol_94659 ON t1_94659;
 DROP TABLE IF EXISTS t1_94659;

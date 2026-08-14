@@ -26,7 +26,7 @@ enum class ErrorHandlingMode : uint8_t
 };
 
 /// Get the value of a setting.
-class FunctionGetSetting : public IFunction, WithContext
+class FunctionGetSetting final : public IFunction, WithContext
 {
 public:
     static FunctionPtr create(ContextPtr context_, ErrorHandlingMode mode_)

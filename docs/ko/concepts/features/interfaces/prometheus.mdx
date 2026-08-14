@@ -1,0 +1,171 @@
+---
+description: 'ClickHouse의 Prometheus 프로토콜 지원 문서'
+sidebarTitle: 'Prometheus 프로토콜'
+slug: /interfaces/prometheus
+title: 'Prometheus 프로토콜'
+doc_type: 'reference'
+---
+
+<div id="expose">
+  ## 메트릭 노출
+</div>
+
+<Note>
+  ClickHouse Cloud를 사용하는 경우 [Prometheus 통합](/ko/products/cloud/features/monitoring/prometheus)을 통해 Prometheus에 메트릭을 노출할 수 있습니다.
+</Note>
+
+ClickHouse는 Prometheus에서 스크레이핑할 수 있도록 자체 메트릭을 노출할 수 있습니다:
+
+````xml
+<prometheus>
+    <port>9363</port>
+    <endpoint>/metrics</endpoint>
+    <metrics>true</metrics>
+    <asynchronous_metrics>true</asynchronous_metrics>
+    <events>true</events>
+    <errors>true</errors>
+    <histograms>true</histograms>
+    <dimensional_metrics>true</dimensional_metrics>
+</prometheus>
+
+`<prometheus.handlers>` 섹션을 사용하면 더 세부적인 핸들러를 구성할 수 있습니다.
+이 섹션은 [<http_handlers>](/concepts/features/interfaces/http)와 유사하지만 Prometheus 프로토콜에서 동작합니다:
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/metrics</url>
+            <handler>
+                <type>expose_metrics</type>
+                <metrics>true</metrics>
+                <asynchronous_metrics>true</asynchronous_metrics>
+                <events>true</events>
+                <errors>true</errors>
+                <histograms>true</histograms>
+                <dimensional_metrics>true</dimensional_metrics>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+````
+
+설정:
+
+| Name                         | Default    | Description                                                                                                   |
+| ---------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
+| `port`                       | 없음         | 메트릭 노출 프로토콜을 제공할 포트입니다.                                                                                       |
+| `endpoint`                   | `/metrics` | Prometheus 서버가 메트릭을 수집할 HTTP 엔드포인트입니다. `/`로 시작합니다. `<handlers>` 섹션과 함께 사용하면 안 됩니다.                            |
+| `url` / `headers` / `method` | 없음         | 요청에 일치하는 핸들러를 찾는 데 사용하는 필터입니다. [`<http_handlers>`](/ko/concepts/features/interfaces/http) 섹션의 동일한 이름의 필드와 유사합니다. |
+| `metrics`                    | true       | [system.metrics](/ko/reference/system-tables/metrics) 테이블의 메트릭을 노출합니다.                                           |
+| `asynchronous_metrics`       | true       | [system.asynchronous&#95;metrics](/ko/reference/system-tables/asynchronous_metrics) 테이블의 현재 메트릭 값을 노출합니다.        |
+| `events`                     | true       | [system.events](/ko/reference/system-tables/events) 테이블의 메트릭을 노출합니다.                                             |
+| `errors`                     | true       | 마지막 서버 재시작 이후 발생한 오류 수를 오류 코드별로 노출합니다. 이 정보는 [system.errors](/ko/reference/system-tables/errors)에서도 확인할 수 있습니다.  |
+| `histograms`                 | true       | [system.histogram&#95;metrics](/ko/reference/system-tables/histogram_metrics)의 히스토그램 메트릭을 노출합니다.                 |
+| `dimensional_metrics`        | true       | [system.dimensional&#95;metrics](/ko/reference/system-tables/dimensional_metrics)의 차원 메트릭을 노출합니다.                |
+
+다음과 같이 확인하십시오(`127.0.0.1`을 ClickHouse 서버의 IP 주소 또는 호스트명으로 바꾸십시오):
+
+```bash
+curl 127.0.0.1:9363/metrics
+```
+
+## Remote-write 프로토콜
+
+ClickHouse는 [remote-write](https://prometheus.io/docs/specs/remote_write_spec/) 프로토콜을 지원합니다.
+데이터는 이 프로토콜을 통해 수신되며 [TimeSeries](/ko/reference/engines/table-engines/integrations/time-series) 테이블에 기록됩니다
+(이 테이블은 사전에 생성되어 있어야 합니다).
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/write</url>
+            <handler>
+                <type>remote_write</type>
+                <database>db_name</database>
+                <table>time_series_table</table>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+```
+
+설정:
+
+| Name                         | Default | Description                                                                                                                                              |
+| ---------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`                       | 없음      | `remote-write` 프로토콜을 제공할 포트입니다.                                                                                                                          |
+| `url` / `headers` / `method` | 없음      | 요청과 일치하는 핸들러를 찾는 데 사용되는 필터입니다. [`<http_handlers>`](/ko/concepts/features/interfaces/http) 섹션의 같은 이름의 필드와 유사합니다.                                             |
+| `table`                      | 없음      | `remote-write` 프로토콜로 수신한 데이터를 기록할 [TimeSeries](/ko/reference/engines/table-engines/integrations/time-series) 테이블 이름입니다. 이 이름에는 선택적으로 데이터베이스 이름도 포함할 수 있습니다. |
+| `database`                   | 없음      | `table` 설정에 데이터베이스 이름이 지정되지 않은 경우, `table` 설정에 지정된 테이블이 위치한 데이터베이스 이름입니다.                                                                                |
+
+## Remote-read 프로토콜
+
+ClickHouse는 [remote-read](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) 프로토콜을 지원합니다.
+데이터는 [TimeSeries](/ko/reference/engines/table-engines/integrations/time-series) 테이블에서 읽어 이 프로토콜을 통해 전송합니다.
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/read</url>
+            <handler>
+                <type>remote_read</type>
+                <database>db_name</database>
+                <table>time_series_table</table>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+```
+
+설정:
+
+| 이름                           | 기본값  | 설명                                                                                                                                                      |
+| ---------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`                       | none | `remote-read` 프로토콜을 서비스하는 포트입니다.                                                                                                                        |
+| `url` / `headers` / `method` | none | 요청과 일치하는 핸들러를 찾는 데 사용되는 필터입니다. [`<http_handlers>`](/ko/concepts/features/interfaces/http) 섹션에 있는 동일한 이름의 필드와 유사합니다.                                        |
+| `table`                      | none | `remote-read` 프로토콜로 전송할 데이터를 읽어올 [TimeSeries](/ko/reference/engines/table-engines/integrations/time-series) 테이블 이름입니다. 이 이름에는 선택적으로 데이터베이스 이름도 포함할 수 있습니다. |
+| `database`                   | none | `table` 설정에 데이터베이스 이름이 지정되지 않은 경우, `table` 설정에서 지정한 테이블이 위치한 데이터베이스 이름입니다.                                                                              |
+
+## 여러 프로토콜용 구성
+
+여러 프로토콜을 한곳에서 함께 지정할 수 있습니다:
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/metrics</url>
+            <handler>
+                <type>expose_metrics</type>
+                <metrics>true</metrics>
+                <asynchronous_metrics>true</asynchronous_metrics>
+                <events>true</events>
+                <errors>true</errors>
+                <histograms>true</histograms>
+                <dimensional_metrics>true</dimensional_metrics>
+            </handler>
+        </my_rule_1>
+        <my_rule_2>
+            <url>/write</url>
+            <handler>
+                <type>remote_write</type>
+                <table>db_name.time_series_table</table>
+            </handler>
+        </my_rule_2>
+        <my_rule_3>
+            <url>/read</url>
+            <handler>
+                <type>remote_read</type>
+                <table>db_name.time_series_table</table>
+            </handler>
+        </my_rule_3>
+    </handlers>
+</prometheus>
+```

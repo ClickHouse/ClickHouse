@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemCertificates.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include "config.h"
 
@@ -38,7 +39,7 @@ ColumnsDescription StorageSystemCertificates::getColumnsDescription()
         {"version",         std::make_shared<DataTypeNumber<Int32>>(), "Version of the certificate. Values are 0 for v1, 1 for v2, 2 for v3."},
         {"serial_number",   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Serial Number of the certificate assigned by the issuer."},
         {"signature_algo",  std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Signature Algorithm - an algorithm used by the issuer to sign this certificate."},
-        {"issuer",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Issuer - an unique identifier for the Certificate Authority issuing this certificate."},
+        {"issuer",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Issuer - a unique identifier for the Certificate Authority issuing this certificate."},
         {"not_before",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The beginning of the time window when this certificate is valid."},
         {"not_after",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The end of the time window when this certificate is valid."},
         {"subject",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Subject - identifies the owner of the public key."},
@@ -79,7 +80,7 @@ static void populateTable(const X509Certificate & certificate, MutableColumns & 
 static void enumCertificates(const std::string & dir, bool def, MutableColumns & res_columns, const std::string & protocol)
 {
     static const RE2 cert_name("^[a-fA-F0-9]{8}\\.\\d$");
-    assert(cert_name.ok());
+    chassert(cert_name.ok());
 
     const std::filesystem::path p(dir);
 
@@ -170,3 +171,6 @@ void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_c
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemCertificates) }

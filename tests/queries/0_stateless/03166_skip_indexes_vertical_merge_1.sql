@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS t_ind_merge_1;
 
 SET enable_analyzer = 1;

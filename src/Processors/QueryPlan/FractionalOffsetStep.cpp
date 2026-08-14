@@ -5,6 +5,7 @@
 #include <Processors/OffsetTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -60,12 +61,13 @@ void FractionalOffsetStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr FractionalOffsetStep::deserialize(Deserialization & ctx)
 {
-    Float64 offset;
+    Float64 offset = 0;
     readFloatBinary(offset, ctx.in);
 
     return std::make_unique<FractionalOffsetStep>(ctx.input_headers.front(), offset);
 }
 
+void registerFractionalOffsetStep(QueryPlanStepRegistry & registry);
 void registerFractionalOffsetStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("FractionalOffset", FractionalOffsetStep::deserialize);

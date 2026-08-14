@@ -1,0 +1,158 @@
+---
+description: 'KILLのドキュメント'
+sidebarTitle: 'KILL'
+slug: /sql-reference/statements/kill
+title: 'KILL文'
+doc_type: 'reference'
+---
+
+KILLステートメントには 2 種類あります。クエリを停止するものと、ミューテーション を停止するものです
+
+<div id="kill-query">
+  ## KILL QUERY
+</div>
+
+```sql
+KILL QUERY [ON CLUSTER cluster]
+  WHERE <where expression to SELECT FROM system.processes query>
+  [SYNC|ASYNC|TEST]
+  [FORMAT format]
+```
+
+現在実行中のクエリを強制終了しようとします。
+終了対象のクエリは、`KILL` クエリの `WHERE` 句で定義された条件を使用して、system.processes テーブルから選択されます。
+
+例:
+
+まず、未完了のクエリの一覧を取得する必要があります。この SQL クエリでは、実行時間が長い順に表示されます。
+
+単一の ClickHouse ノードでの一覧:
+
+```sql
+SELECT
+  initial_query_id,
+  query_id,
+  formatReadableTimeDelta(elapsed) AS time_delta,
+  query,
+  *
+  FROM system.processes
+  WHERE query ILIKE 'SELECT%'
+  ORDER BY time_delta DESC;
+```
+
+ClickHouseクラスターの一覧:
+
+```sql
+SELECT
+  initial_query_id,
+  query_id,
+  formatReadableTimeDelta(elapsed) AS time_delta,
+  query,
+  *
+  FROM clusterAllReplicas(default, system.processes)
+  WHERE query ILIKE 'SELECT%'
+  ORDER BY time_delta DESC;
+```
+
+クエリを強制終了します。
+
+```sql
+-- 指定されたquery_idを持つすべてのクエリを強制終了します:
+KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
+
+-- 'username'が実行しているすべてのクエリを同期的に終了します:
+KILL QUERY WHERE user='username' SYNC
+```
+
+<Tip>
+  ClickHouse Cloud またはセルフマネージドのクラスターでクエリを停止する場合は、すべてのレプリカでクエリが停止されるよう、必ず `ON CLUSTER [cluster-name]` オプションを使用してください
+</Tip>
+
+読み取り専用ユーザーは、自分自身のクエリしか停止できません。
+
+デフォルトでは、クエリの非同期バージョン (`ASYNC`) が使用され、クエリが停止したことの確認は待機しません。
+
+同期バージョン (`SYNC`) は、すべてのクエリが停止するまで待機し、各プロセスの停止時にその情報を表示します。
+レスポンスには `kill_status` カラムが含まれ、このカラムは次の値を取ります。
+
+1. `finished` – クエリは正常に停止されました。
+2. `waiting` – クエリに停止シグナルを送信した後、その終了を待機しています。
+3. その他の値は、クエリを停止できない理由を示します。
+
+テストクエリ (`TEST`) は、ユーザーの権限を確認し、停止対象のクエリの一覧を表示するだけです。
+
+<div id="kill-mutation">
+  ## KILL MUTATION
+</div>
+
+長時間実行されている、または完了していない ミューテーション がある場合、ClickHouseサービスの動作状態が悪化している可能性があります。ミューテーション は非同期で実行されるため、システム上の利用可能なリソースをすべて消費してしまうことがあります。必要に応じて、次のいずれかを行ってください。
+
+* 新しい ミューテーション、`INSERT`、`SELECT` をすべて一時停止し、ミューテーション の queue が処理を完了するまで待ちます。
+* または、`KILL` コマンドを送信して、これらの ミューテーション の一部を手動で停止します。
+
+```sql
+KILL MUTATION
+  WHERE <where expression to SELECT FROM system.mutations query>
+  [TEST]
+  [FORMAT format]
+```
+
+現在実行中の[ミューテーション](/ja/reference/statements/alter/index#mutations)のキャンセルと削除を試みます。キャンセルするミューテーションは、`KILL` クエリの `WHERE` 句で指定したフィルタを使用して [`system.mutations`](/ja/reference/system-tables/mutations) テーブルから選択されます。
+
+テストクエリ (`TEST`) は、ユーザーの権限を確認し、停止対象のミューテーションの一覧を表示するだけです。
+
+例:
+
+未完了のミューテーション数の `count()` を取得します:
+
+単一の ClickHouse ノードにおけるミューテーション数:
+
+```sql
+SELECT count(*)
+FROM system.mutations
+WHERE is_done = 0;
+```
+
+ClickHouseレプリカクラスターのミューテーション数:
+
+```sql
+SELECT count(*)
+FROM clusterAllReplicas('default', system.mutations)
+WHERE is_done = 0;
+```
+
+未完了のミューテーションの一覧をクエリします:
+
+単一のClickHouseノードのミューテーション一覧:
+
+```sql
+SELECT mutation_id, *
+FROM system.mutations
+WHERE is_done = 0;
+```
+
+ClickHouse クラスター内のミューテーション一覧:
+
+```sql
+SELECT mutation_id, *
+FROM clusterAllReplicas('default', system.mutations)
+WHERE is_done = 0;
+```
+
+必要に応じてミューテーションを終了します:
+
+```sql
+-- Cancel and remove all mutations of the single table:
+KILL MUTATION WHERE database = 'default' AND table = 'table'
+
+-- Cancel the specific mutation:
+KILL MUTATION WHERE database = 'default' AND table = 'table' AND mutation_id = 'mutation_3.txt'
+```
+
+このクエリは、ミューテーションが停止して完了できなくなった場合に有用です (たとえば、ミューテーションのクエリ内の関数が、テーブル内のデータに適用された際に例外をスローする場合) 。
+
+ミューテーションによってすでに行われた変更はロールバックされません。
+
+<Note>
+  [system.mutations](/ja/reference/system-tables/mutations) テーブルの `is_killed=1` カラム (ClickHouse Cloud のみ) は、必ずしもそのミューテーションが完全に終了したことを意味するわけではありません。ミューテーションが `is_killed=1` かつ `is_done=0` の状態のまま、長時間残ることがあります。これは、別の長時間実行中のミューテーションが、kill されたミューテーションをブロックしている場合に発生する可能性があります。これは正常な状態です。
+</Note>

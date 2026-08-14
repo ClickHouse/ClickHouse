@@ -227,11 +227,11 @@ FROM $db.destination1;
 EOF
 
 echo "insert into source"
-(( $(${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO $db.source SELECT * FROM generateRandom() LIMIT 100" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+(( $(${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO $db.source SELECT * FROM generateRandom() LIMIT 100 SETTINGS optimize_trivial_insert_select = 0" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 echo "grant insert on source to user2"
 ${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON $db.source TO $user2"
 echo "insert into source as user2"
-${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO $db.source SELECT * FROM generateRandom() LIMIT 100"
+${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO $db.source SELECT * FROM generateRandom() LIMIT 100 SETTINGS optimize_trivial_insert_select = 0"
 
 echo "select from destination1"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM destination1"
@@ -348,7 +348,7 @@ GRANT INSERT ON $db.session_events TO $user3;
 GRANT SELECT ON $db.session_events TO $user3;
 EOF
 
-${CLICKHOUSE_CLIENT} --user $user3 --query "INSERT INTO $db.session_events SELECT * FROM generateRandom('clientId UUID, sessionId UUID, pageId UUID, timestamp DateTime, type Enum(\'type1\', \'type2\')', 1, 10, 2) LIMIT 1000"
+${CLICKHOUSE_CLIENT} --user $user3 --query "INSERT INTO $db.session_events SELECT * FROM generateRandom('clientId UUID, sessionId UUID, pageId UUID, timestamp DateTime, type Enum(\'type1\', \'type2\')', 1, 10, 2) LIMIT 1000 SETTINGS optimize_trivial_insert_select = 0"
 ${CLICKHOUSE_CLIENT} --user $user3 --query "SELECT count(*) FROM session_events"
 ${CLICKHOUSE_CLIENT} --query "SELECT count(*) FROM materialized_events"
 

@@ -1,0 +1,39 @@
+-- Basic optimization: m[key1] in WHERE only
+1
+1
+-- Optimization when full column is also read in SELECT
+1
+-- Optimization when Map is in ORDER BY (primary key)
+1
+-- No optimization with non-constant key
+1
+-- Optimization with UInt64 key type
+1
+1
+-- No optimization when setting is disabled
+1
+-- Multiple key lookups on same map both optimize
+1
+1
+1
+-- Optimization also works with basic (non-bucketed) serialization
+1
+-- Correctness: results with optimization
+7	7	70
+8	8	80
+9	9	90
+-- Correctness: results without optimization match
+7	7	70
+8	8	80
+9	9	90
+-- Correctness: missing key returns default (0 for UInt64)
+0	0
+1	0
+2	0
+3	0
+4	0
+5	0
+6	0
+7	0
+8	0
+9	0

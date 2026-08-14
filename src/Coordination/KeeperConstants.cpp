@@ -243,9 +243,21 @@
     M(KeeperProcessElapsedMicroseconds) \
     M(KeeperPreprocessElapsedMicroseconds) \
     M(KeeperStorageLockWaitMicroseconds) \
+    M(KeeperStorageSharedLockWaitMicroseconds) \
+    M(KeeperChangelogLockWaitMicroseconds) \
+    M(KeeperServerWriteLockWaitMicroseconds) \
+    M(KeeperSessionCallbackLockWaitMicroseconds) \
+    M(KeeperReadRequestQueueLockWaitMicroseconds) \
+    M(KeeperProcessAndResponsesLockWaitMicroseconds) \
     M(KeeperCommitWaitElapsedMicroseconds) \
     M(KeeperBatchMaxCount) \
     M(KeeperBatchMaxTotalSize) \
+    M(KeeperBatchMaxReadCount) \
+    M(KeeperBatchMaxReadTotalSize) \
+    M(KeeperReadBatchCount) \
+    M(KeeperReadBatchTotalRequests) \
+    M(KeeperWriteBatchCount) \
+    M(KeeperWriteBatchTotalRequests) \
     M(KeeperCommits) \
     M(KeeperCommitsFailed) \
     M(KeeperSnapshotCreations) \
@@ -253,6 +265,11 @@
     M(KeeperSnapshotApplys) \
     M(KeeperSnapshotApplysFailed) \
     M(KeeperReadSnapshot) \
+    M(KeeperReadSnapshotObject) \
+    M(KeeperReadSnapshotFailed) \
+    M(KeeperReadSnapshotDeferred) \
+    M(KeeperSaveSnapshotObject) \
+    M(KeeperSaveSnapshotFailed) \
     M(KeeperSaveSnapshot) \
     M(KeeperCreateRequest) \
     M(KeeperRemoveRequest) \
@@ -268,10 +285,16 @@
     M(KeeperCheckWatchRequest) \
     M(KeeperAddWatchRequest) \
     M(KeeperRemoveWatchRequest) \
+    M(KeeperWatchesTriggered) \
+    M(KeeperWatchTriggeredNodeCreated) \
+    M(KeeperWatchTriggeredNodeDeleted) \
+    M(KeeperWatchTriggeredNodeDataChanged) \
+    M(KeeperWatchTriggeredNodeChildrenChanged) \
     M(KeeperChangelogWrittenBytes) \
     M(KeeperChangelogFileSyncMicroseconds) \
     M(KeeperSnapshotWrittenBytes) \
     M(KeeperSnapshotFileSyncMicroseconds) \
+    M(KeeperSnapshotRemoteLoaderErrors) \
 \
     M(IOUringSQEsSubmitted) \
     M(IOUringSQEsResubmitsAsync) \
@@ -302,16 +325,22 @@
     M(InterfacePostgreSQLReceiveBytes) \
 \
     M(KeeperLogsEntryReadFromLatestCache) \
-    M(KeeperLogsEntryReadFromCommitCache) \
     M(KeeperLogsEntryReadFromFile) \
-    M(KeeperLogsPrefetchedEntries) \
+    M(KeeperLogsReadAheadFillReopens) \
+    M(KeeperLogsReadAheadFillDecodedEntries) \
+    M(KeeperLogsReadAheadCursorsInstalled) \
+    M(KeeperLogsReadAheadPlanEpochMismatches) \
+    M(KeeperLogsReadAheadScheduleRejected) \
+    M(KeeperLogsReadAheadReadersCreated) \
+    M(KeeperLogsReadAheadTimeoutFallbacks) \
+    M(KeeperLogsEntryReadFromCommitReadAhead) \
 \
     M(JemallocFailedAllocationSampleTracking) \
     M(JemallocFailedDeallocationSampleTracking) \
 \
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount) \
     M(KeeperStaleRequestsSkipped) \
-    M(KeeperFinishedSessionsCacheFull) \
+    M(KeeperLiveSessionsLockWaitMicroseconds) \
 
 namespace ProfileEvents
 {
@@ -384,6 +413,13 @@ extern const std::vector<Event> keeper_profile_events
     M(S3Requests) \
     M(KeeperAliveConnections) \
     M(KeeperOutstandingRequests) \
+    M(KeeperTTLNodes) \
+    M(KeeperChangelogReadAheadThreads) \
+    M(KeeperChangelogReadAheadThreadsActive) \
+    M(KeeperChangelogReadAheadThreadsScheduled) \
+    M(KeeperBlockCacheBytes) \
+    M(KeeperBlockCacheBlocks) \
+    M(KeeperContainerNodes) \
     M(ThreadsInOvercommitTracker) \
     M(IOUringPendingEvents) \
     M(IOUringInFlightEvents) \
@@ -403,6 +439,7 @@ extern const std::vector<Metric> keeper_metrics
 }
 
 #define APPLY_FOR_KEEPER_HISTOGRAMS(M) \
+    M(KeeperResponseTime) \
     M(KeeperReceiveRequestTimeMetricFamily) \
     M(KeeperDispatcherRequestsQueueTimeMetricFamily) \
     M(KeeperWritePreCommitTimeMetricFamily) \
@@ -411,6 +448,7 @@ extern const std::vector<Metric> keeper_metrics
     M(KeeperSendResponseTimeMetricFamily) \
     M(KeeperReadWaitForWriteTimeMetricFamily) \
     M(KeeperReadProcessTimeMetricFamily) \
+    M(KeeperBatchSizeElementsMetricFamily) \
     M(KeeperBatchSizeBytesMetricFamily) \
 
 

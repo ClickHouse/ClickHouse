@@ -538,6 +538,7 @@ void BSONEachRowRowOutputFormat::write(const Columns & columns, size_t row_num)
             document_size);
 }
 
+void registerOutputFormatBSONEachRow(FormatFactory & factory);
 void registerOutputFormatBSONEachRow(FormatFactory & factory)
 {
     factory.registerOutputFormat(

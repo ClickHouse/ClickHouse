@@ -68,7 +68,7 @@ void INATSProducer::publish()
 {
     String payload;
 
-    natsStatus status;
+    natsStatus status = {};
     while (!payloads.empty())
     {
         if (!connection->isConnected() || natsConnection_Buffered(connection->getConnection()) > MAX_BUFFERED)

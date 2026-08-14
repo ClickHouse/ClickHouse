@@ -72,8 +72,6 @@ public:
 
     void addStorageLimits(const StorageLimitsList & storage_limits);
 
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context*/) const override;
-
     bool supportsTransactions() const override { return true; }
 
     bool ignoreLimits() const override { return select_query_options.ignore_limits; }
@@ -85,6 +83,11 @@ public:
     Planner & getPlanner() { return planner; }
 
     const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
+
+    const std::function<std::unique_ptr<QueryPlan>()> & getQueryPlanWithParallelReplicasBuilder() const
+    {
+        return query_plan_with_parallel_replicas_builder;
+    }
 
 private:
     ASTPtr query;

@@ -1,0 +1,94 @@
+---
+description: 'توثيق لعبارة ALTER TABLE ... MODIFY COMMENT التي تتيح
+إضافة تعليقات الجداول أو تعديلها أو إزالتها'
+sidebarTitle: 'ALTER TABLE ... MODIFY COMMENT'
+slug: /sql-reference/statements/alter/comment
+title: 'ALTER TABLE ... MODIFY COMMENT'
+keywords: ['ALTER TABLE', 'MODIFY COMMENT']
+doc_type: 'reference'
+---
+
+يضيف تعليقًا إلى جدول أو يعدّله أو يزيله، سواء أكان مُعيَّنًا سابقًا أم لا. ينعكس تغيير التعليق في كلٍّ من [`system.tables`](/ar/reference/system-tables/tables)
+وفي استعلام `SHOW CREATE TABLE`.
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
+```
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+لإنشاء جدول يتضمّن تعليقًا:
+
+```sql title="Query"
+CREATE TABLE table_with_comment
+(
+    `k` UInt64,
+    `s` String
+)
+ENGINE = Memory()
+COMMENT 'The temporary table';
+```
+
+لتعديل تعليق الجدول:
+
+```sql title="Query"
+ALTER TABLE table_with_comment 
+MODIFY COMMENT 'new comment on a table';
+```
+
+لعرض التعليق المعدَّل:
+
+```sql title="Query"
+SELECT comment 
+FROM system.tables 
+WHERE database = currentDatabase() AND name = 'table_with_comment';
+```
+
+```text title="Response"
+┌─comment────────────────┐
+│ new comment on a table │
+└────────────────────────┘
+```
+
+لإزالة تعليق الجدول:
+
+```sql title="Query"
+ALTER TABLE table_with_comment MODIFY COMMENT '';
+```
+
+للتحقق من أن التعليق قد أُزيل:
+
+```sql title="Query"
+SELECT comment 
+FROM system.tables 
+WHERE database = currentDatabase() AND name = 'table_with_comment';
+```
+
+```text title="Response"
+┌─comment─┐
+│         │
+└─────────┘
+```
+
+<div id="caveats">
+  ## ملاحظات مهمة
+</div>
+
+بالنسبة إلى الجداول Replicated، قد يختلف التعليق من نسخة متماثلة إلى أخرى.
+يسري تعديل التعليق على نسخة متماثلة واحدة فقط.
+
+تتوفّر هذه الميزة بدءًا من الإصدار 23.9. وهي لا تعمل في إصدارات
+ClickHouse الأقدم.
+
+<div id="related-content">
+  ## محتوى مرتبط
+</div>
+
+* بند [`COMMENT`](/ar/reference/statements/create/table#comment-clause)
+* [`ALTER DATABASE ... MODIFY COMMENT`](/ar/reference/statements/alter/database-comment)

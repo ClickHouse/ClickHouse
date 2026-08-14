@@ -3,7 +3,6 @@
 -- path encounters pages with reset prefetch handles (filtered out by offset index).
 -- https://github.com/ClickHouse/ClickHouse/issues/99676
 
-set input_format_parquet_use_native_reader_v3 = 1;
 set engine_file_truncate_on_insert = 1;
 
 -- Create a parquet file with offset index and multiple small pages per row group.

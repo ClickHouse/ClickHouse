@@ -1,0 +1,214 @@
+---
+slug: /community-wisdom/debugging-insights
+sidebarTitle: '디버깅 인사이트'
+doc_type: 'guide'
+keywords: [
+  'ClickHouse 문제 해결',
+  'ClickHouse 오류',
+  '느린 쿼리',
+  '메모리 문제', 
+  '연결 문제',
+  '성능 최적화',
+  '데이터베이스 오류',
+  '구성 문제',
+  '디버그',
+  '해결책'
+]
+title: '교훈 - 디버깅 인사이트'
+description: '느린 쿼리, 메모리 오류, 연결 문제, 구성 문제 등 가장 일반적인 ClickHouse 문제의 해결 방법을 알아보십시오.'
+---
+
+*이 가이드는 커뮤니티 밋업에서 얻은 인사이트를 모아 정리한 시리즈의 일부입니다. 더 많은 실전 해결 방법과 인사이트는 [문제별로 찾아보기](/ko/resources/support-center/tips-and-tricks/community-wisdom)에서 확인할 수 있습니다.*
+*운영 비용 부담이 크신가요? [비용 최적화](/ko/resources/support-center/tips-and-tricks/cost-optimization) 커뮤니티 인사이트 가이드를 확인해 보십시오.*
+
+<div id="essential-system-tables">
+  ## 필수 system tables
+</div>
+
+다음 system tables는 프로덕션 환경에서 debugging에 필수적입니다:
+
+<div id="system-errors">
+  ### system.errors
+</div>
+
+ClickHouse 인스턴스의 현재 활성 오류를 모두 표시합니다.
+
+```sql
+SELECT name, value, changed 
+FROM system.errors 
+WHERE value > 0 
+ORDER BY value DESC;
+```
+
+<div id="system-replicas">
+  ### system.replicas
+</div>
+
+클러스터 상태를 모니터링하는 데 필요한 복제 지연 및 상태 정보를 포함합니다.
+
+```sql
+SELECT database, table, replica_name, absolute_delay, queue_size, inserts_in_queue
+FROM system.replicas 
+WHERE absolute_delay > 60
+ORDER BY absolute_delay DESC;
+```
+
+<div id="system-replication-queue">
+  ### system.replication_queue
+</div>
+
+복제 관련 문제를 진단하는 데 유용한 자세한 정보를 제공합니다.
+
+```sql
+SELECT database, table, replica_name, position, type, create_time, last_exception
+FROM system.replication_queue 
+WHERE last_exception != ''
+ORDER BY create_time DESC;
+```
+
+<div id="system-merges">
+  ### system.merges
+</div>
+
+현재 진행 중인 머지 작업을 표시하며, 멈춘 프로세스를 식별하는 데 사용할 수 있습니다.
+
+```sql
+SELECT database, table, elapsed, progress, is_mutation, total_size_bytes_compressed
+FROM system.merges 
+ORDER BY elapsed DESC;
+```
+
+<div id="system-parts">
+  ### system.parts
+</div>
+
+파트 수를 모니터링하고 단편화 문제를 파악하는 데 필수적입니다.
+
+```sql
+SELECT database, table, count() as part_count
+FROM system.parts 
+WHERE active = 1
+GROUP BY database, table
+ORDER BY count() DESC;
+```
+
+<div id="common-production-issues">
+  ## 일반적인 운영 환경 문제
+</div>
+
+<div id="disk-space-problems">
+  ### 디스크 공간 문제
+</div>
+
+복제된 환경에서는 디스크 공간이 부족해지면 연쇄적인 문제가 발생합니다. 한 노드의 디스크 공간이 소진되면 다른 노드들은 계속 해당 노드와 동기화하려고 시도하므로 네트워크 트래픽이 급증하고 원인을 파악하기 어려운 증상이 나타납니다. 한 커뮤니티 구성원은 원인이 단순한 디스크 공간 부족이었는데도 이를 디버깅하는 데 4시간을 소비했습니다. 특정 클러스터의 디스크 스토리지를 모니터링하려면 이 [쿼리](/ko/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting#show-disk-storage-number-of-parts-number-of-rows-in-systemparts-and-marks-across-databases)를 확인하십시오.
+
+AWS를 사용하는 경우 기본 범용 EBS 볼륨의 기본 한도가 16TB라는 점을 알아두어야 합니다.
+
+<div id="too-many-parts-error">
+  ### Too many 파트 오류
+</div>
+
+작은 단위의 삽입이 빈번하면 성능 문제가 발생합니다. 커뮤니티에서는 초당 10회를 넘는 삽입 속도에서 ClickHouse가 파트를 충분히 빠르게 머지하지 못해 &quot;too many 파트&quot; 오류가 자주 발생하는 것으로 확인했습니다.
+
+**해결 방법:**
+
+* 30초 또는 200MB 임계값을 기준으로 데이터를 배치 처리합니다
+* 자동 배칭을 위해 async&#95;insert를 활성화합니다
+* 서버 측 배칭을 위해 Buffer 테이블을 사용합니다
+* 배치 크기를 제어할 수 있도록 Kafka를 구성합니다
+
+[공식 권장 사항](/ko/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous): 삽입 1회당 최소 1,000행, 이상적으로는 10,000~100,000행입니다.
+
+<div id="data-quality-issues">
+  ### 잘못된 타임스탬프로 인한 문제
+</div>
+
+임의의 타임스탬프가 포함된 데이터를 전송하는 애플리케이션은 파티션(partition) 문제를 일으킵니다. 그 결과 비현실적인 날짜(예: 1998년 또는 2050년)의 데이터가 포함된 파티션이 생성되어 스토리지 동작이 예상과 다르게 나타날 수 있습니다.
+
+<div id="alter-operation-risks">
+  ### `ALTER` 작업의 위험성
+</div>
+
+수 테라바이트 규모의 테이블에서 대규모 `ALTER` 작업을 수행하면 상당한 리소스를 소모하고 데이터베이스 전체가 잠길 수 있습니다. 한 커뮤니티 예시에서는 14TB 데이터에서 Integer를 Float로 변경하는 작업 때문에 데이터베이스 전체가 잠겼고, 백업에서 다시 복구해야 했습니다.
+
+**리소스 소모가 큰 뮤테이션을 모니터링하세요:**
+
+```sql
+SELECT database, table, mutation_id, command, parts_to_do, is_done
+FROM system.mutations 
+WHERE is_done = 0;
+```
+
+규모가 작은 데이터셋에서 먼저 스키마 변경을 테스트하세요.
+
+<div id="memory-and-performance">
+  ## 메모리 및 성능
+</div>
+
+<div id="external-aggregation">
+  ### 외부 집계
+</div>
+
+메모리 사용량이 많은 작업에는 외부 집계를 활성화하십시오. 속도는 느려지지만 디스크로 스필하여 메모리 부족으로 인한 충돌을 방지할 수 있습니다. 이를 위해 `max_bytes_before_external_group_by`를 사용하면 대규모 `GROUP BY` 작업에서 메모리 부족으로 인한 충돌을 방지하는 데 도움이 됩니다. 이 설정에 대한 자세한 내용은 [여기](/ko/reference/settings/session-settings#max_bytes_before_external_group_by)에서 확인할 수 있습니다.
+
+```sql
+SELECT 
+    column1,
+    column2,
+    COUNT(*) as count,
+    SUM(value) as total
+FROM large_table
+GROUP BY column1, column2
+SETTINGS max_bytes_before_external_group_by = 1000000000; -- 1GB 임계값
+```
+
+<div id="async-insert-details">
+  ### Async insert 세부 정보
+</div>
+
+Async insert는 성능 향상을 위해 작은 삽입을 서버 측에서 자동으로 배치 처리합니다. 확인 응답을 반환하기 전에 데이터가 디스크에 기록될 때까지 대기할지 설정할 수 있습니다. 즉시 반환하면 더 빠르지만 내구성은 낮아집니다. 최신 버전에서는 배치 내 중복 데이터를 처리하기 위한 중복 제거를 지원합니다.
+
+**관련 문서**
+
+* [삽입 전략 선택](/ko/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts)
+
+<div id="distributed-table-configuration">
+  ### 분산 테이블 구성
+</div>
+
+기본적으로 분산 테이블은 단일 스레드로 삽입합니다. 병렬 처리를 사용하고 데이터를 세그먼트로 즉시 전송하려면 `insert_distributed_sync`를 활성화하세요.
+
+분산 테이블을 사용할 때는 임시 데이터가 누적되지 않는지 모니터링하세요.
+
+<div id="performance-monitoring-thresholds">
+  ### 성능 모니터링 임계값
+</div>
+
+커뮤니티에서 권장하는 모니터링 임계값:
+
+* 파티션당 파트 수: 가능하면 100개 미만
+* 삽입 지연: 0을 유지해야 합니다
+* 삽입 빈도: 최적의 성능을 위해 초당 약 1회로 제한하십시오
+
+**관련 문서**
+
+* [사용자 지정 파티셔닝 키](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key)
+
+<div id="quick-reference">
+  ## 빠른 참고
+</div>
+
+| 문제        | 감지                         | 해결 방법                                |
+| --------- | -------------------------- | ------------------------------------ |
+| 디스크 공간    | `system.parts`의 총 바이트 수 확인 | 사용량을 모니터링하고 스케일링을 계획합니다              |
+| 파트가 너무 많음 | 테이블별 파트 수 확인               | 배치 삽입을 사용하고 async&#95;insert를 활성화합니다 |
+| 복제 지연     | `system.replicas` 지연 확인    | 네트워크를 모니터링하고 레플리카를 재시작합니다            |
+| 잘못된 데이터   | 파티션 날짜 검증                  | timestamp 유효성 검사를 구현합니다              |
+| 정체된 뮤테이션  | `system.mutations` 상태 확인   | 먼저 소규모 데이터에서 테스트합니다                  |
+
+<div id="video-sources">
+  ### 관련 동영상
+</div>
+
+* [ClickHouse 운영에서 얻은 10가지 교훈](https://www.youtube.com/watch?v=liTgGiTuhJE)
+* [ClickHouse의 빠르고 동시적이며 일관된 비동기 삽입](https://www.youtube.com/watch?v=AsMPEfN5QtM)

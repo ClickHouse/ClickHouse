@@ -239,3 +239,25 @@ TEST(ConversionMonotonic, toStringLowCardinalityFixedString)
     ASSERT_EQ(monotonicity.is_always_monotonic, true);
     ASSERT_EQ(monotonicity.is_strict, true);
 }
+
+TEST(ConversionMonotonic, toStringString)
+{
+    const auto monotonicity = ToStringMonotonicity::get(DataTypeString(), {}, {});
+
+    ASSERT_EQ(monotonicity.is_monotonic, true);
+    ASSERT_EQ(monotonicity.is_positive, true);
+    ASSERT_EQ(monotonicity.is_always_monotonic, true);
+    ASSERT_EQ(monotonicity.is_strict, true);
+}
+
+TEST(ConversionMonotonic, toStringLowCardinalityString)
+{
+    DataTypeLowCardinality low_cardinality_string_type(std::make_shared<DataTypeString>());
+
+    const auto monotonicity = ToStringMonotonicity::get(low_cardinality_string_type, {}, {});
+
+    ASSERT_EQ(monotonicity.is_monotonic, true);
+    ASSERT_EQ(monotonicity.is_positive, true);
+    ASSERT_EQ(monotonicity.is_always_monotonic, true);
+    ASSERT_EQ(monotonicity.is_strict, true);
+}

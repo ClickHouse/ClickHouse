@@ -1,7 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from test_modify_engine_on_restart.common import check_flags_deleted, set_convert_flags
+from test_modify_engine_on_restart.common import set_convert_flags
 
 cluster = ClickHouseCluster(__file__)
 ch1 = cluster.add_instance(
@@ -55,7 +55,7 @@ def check_tables():
             ch1,
             f"SELECT name, engine FROM system.tables WHERE database = '{database_name}'",
         ).strip()
-        == f"mt\tMergeTree"
+        == "mt\tMergeTree"
     )
 
 

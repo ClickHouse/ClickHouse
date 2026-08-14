@@ -1,0 +1,34 @@
+---
+title: Opciones de integración para observabilidad
+---
+
+<div id="examples">
+  ## Ejemplos de integración
+</div>
+
+La integración externa permite a las organizaciones mantener flujos de trabajo de monitoreo ya establecidos, aprovechar la experiencia existente de los equipos con herramientas conocidas e integrar el monitoreo de ClickHouse con la observabilidad más amplia de la infraestructura sin interrumpir los procesos actuales ni requerir inversiones significativas en capacitación adicional.
+Los equipos pueden aplicar las reglas de alertas y los procedimientos de escalado existentes a las métricas de ClickHouse, al tiempo que correlacionan el rendimiento de la base de datos con el estado de la aplicación y de la infraestructura dentro de una plataforma de observabilidad unificada. Este enfoque maximiza el ROI de los sistemas actuales de monitoreo y permite resolver problemas con mayor rapidez mediante dashboards consolidados e interfaces de herramientas conocidas.
+
+<div id="grafana">
+  ### Monitorización con Grafana Cloud
+</div>
+
+Grafana ofrece monitorización de ClickHouse tanto mediante la integración directa del plugin como a través de enfoques basados en Prometheus. La integración del endpoint de Prometheus mantiene la separación operativa entre la monitorización y las cargas de trabajo de producción, a la vez que permite la visualización dentro de la infraestructura existente de Grafana Cloud. Consulta la [documentación de ClickHouse de Grafana](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/) para obtener instrucciones de configuración.
+
+<div id="datadog">
+  ### Supervisión de Datadog
+</div>
+
+Datadog está desarrollando una integración específica de API que proporcionará una supervisión adecuada del servicio en la nube, respetando al mismo tiempo el comportamiento de idling del servicio. Mientras tanto, los equipos pueden usar el enfoque de integración con OpenMetrics a través de los endpoints de Prometheus de ClickHouse para mantener la separación operativa y una supervisión rentable. Para obtener orientación sobre la configuración, consulta la [documentación de Datadog sobre la integración de Prometheus y OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/).
+
+<div id="clickstack">
+  ### ClickStack
+</div>
+
+ClickStack es la solución de observabilidad recomendada por ClickHouse para el análisis profundo y la depuración del sistema, y ofrece una plataforma unificada para logs, métricas y trazas que utiliza ClickHouse como motor de almacenamiento. Este enfoque se basa en HyperDX, la UI de ClickStack, que se conecta directamente a las tablas del sistema de su instancia de ClickHouse.
+HyperDX incluye un dashboard centrado en ClickHouse con pestañas para Selects, Inserts e Infrastructure. Los equipos también pueden usar sintaxis Lucene o SQL para buscar en las tablas del sistema y los logs, así como crear visualizaciones personalizadas mediante Chart Explorer para un análisis detallado del sistema.
+Este enfoque es ideal para depurar problemas complejos, analizar el rendimiento y realizar una introspección profunda del sistema, más que para alertas de producción en tiempo real.
+
+<Note>
+  Tenga en cuenta que este enfoque activará servicios inactivos, ya que HyperDX consulta directamente las tablas del sistema.
+</Note>

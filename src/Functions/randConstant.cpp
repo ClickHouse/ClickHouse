@@ -12,7 +12,7 @@ namespace ErrorCodes
 namespace
 {
 
-class ExecutableFunctionRandomConstant : public IExecutableFunction
+class ExecutableFunctionRandomConstant final : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionRandomConstant(UInt32 value_) : value(value_) {}
@@ -30,7 +30,7 @@ private:
     UInt32 value;
 };
 
-class FunctionBaseRandomConstant : public IFunctionBase
+class FunctionBaseRandomConstant final : public IFunctionBase
 {
 public:
     explicit FunctionBaseRandomConstant(UInt32 value_, DataTypes argument_types_, DataTypePtr return_type_)
@@ -68,7 +68,7 @@ private:
     DataTypePtr return_type;
 };
 
-class RandomConstantOverloadResolver : public IFunctionOverloadResolver
+class RandomConstantOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "randConstant";
@@ -104,7 +104,7 @@ public:
 
         ColumnVector<UInt32>::Container vec_to(1);
 
-        TargetSpecific::Default::RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), sizeof(UInt32));
+        RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), sizeof(UInt32));
         UInt32 value = vec_to[0];
 
         return std::make_unique<FunctionBaseRandomConstant>(value, argument_types, return_type);

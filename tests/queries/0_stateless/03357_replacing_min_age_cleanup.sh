@@ -5,6 +5,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --optimize_on_insert=1"
+
 # Wait for number of parts in table $1 to become $2.
 # Print the changed value. If no changes for $3 seconds, prints initial value.
 wait_for_number_of_parts() {

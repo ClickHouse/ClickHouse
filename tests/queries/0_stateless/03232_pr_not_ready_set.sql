@@ -1,4 +1,5 @@
 SYSTEM FLUSH LOGS query_log;
+SET automatic_parallel_replicas_mode = 0;
 SELECT
     is_initial_query,
     count() AS c,

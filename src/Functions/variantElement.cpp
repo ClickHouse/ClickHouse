@@ -30,7 +30,7 @@ namespace
 /** Extract element of Variant by variant type name.
   * Also the function looks through Arrays: you can get Array of Variant elements from Array of Variants.
   */
-class FunctionVariantElement : public IFunction
+class FunctionVariantElement final : public IFunction
 {
 public:
     static constexpr auto name = "variantElement";

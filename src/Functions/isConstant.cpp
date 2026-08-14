@@ -11,7 +11,7 @@ namespace
 
 /// Returns 1 if and only if the argument is constant expression.
 /// This function exists for development, debugging and demonstration purposes.
-class FunctionIsConstant : public IFunction
+class FunctionIsConstant final : public IFunction
 {
 public:
     static constexpr auto name = "isConstant";
@@ -32,6 +32,8 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool isDeterministic() const override { return false; }
 
     size_t getNumberOfArguments() const override
     {

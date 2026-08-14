@@ -1,3 +1,8 @@
+-- Statistics pruning would change the amount of rows read and affect max_rows_to_read validation
+SET use_statistics_for_part_pruning = 0;
+
+DROP TABLE IF EXISTS data_02200;
+
 CREATE TABLE data_02200 (
     key Int,
     value Int,

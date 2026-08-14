@@ -1,0 +1,279 @@
+---
+sidebarTitle: 'Inserción avanzada'
+keywords: ['clickhouse', 'python', 'insert', 'avanzado']
+description: 'Inserción avanzada con ClickHouse Connect'
+slug: /integrations/language-clients/python/advanced-inserting
+title: 'Inserción avanzada'
+doc_type: 'reference'
+---
+
+<div id="inserting-data-with-clickhouse-connect--advanced-usage">
+  ## Inserción de datos con ClickHouse Connect: uso avanzado
+</div>
+
+<div id="insertcontexts">
+  ### InsertContexts
+</div>
+
+ClickHouse Connect ejecuta todas las inserciones dentro de un `InsertContext`. El `InsertContext` incluye todos los valores enviados como argumentos al método `insert` del cliente. Además, cuando se crea un `InsertContext`, ClickHouse Connect recupera los tipos de datos de las columnas de inserción necesarios para realizar inserciones eficientes en Native format. Al reutilizar el `InsertContext` para varias inserciones, se evita esta &quot;consulta previa&quot; y las inserciones se ejecutan de forma más rápida y eficiente.
+
+Se puede obtener un `InsertContext` mediante el método `create_insert_context` del cliente. El método acepta los mismos argumentos que la función `insert`. Tenga en cuenta que, para reutilizarlo, solo debe modificarse la propiedad `data` de los `InsertContext`. Esto concuerda con su propósito: proporcionar un objeto reutilizable para inserciones repetidas de datos nuevos en la misma tabla.
+
+```python
+test_data = [[1, 'v1', 'v2'], [2, 'v3', 'v4']]
+ic = test_client.create_insert_context(table='test_table', data='test_data')
+client.insert(context=ic)
+assert client.command('SELECT count() FROM test_table') == 2
+new_data = [[3, 'v5', 'v6'], [4, 'v7', 'v8']]
+ic.data = new_data
+client.insert(context=ic)
+qr = test_client.query('SELECT * FROM test_table ORDER BY key DESC')
+assert qr.row_count == 4
+assert qr[0][0] == 4
+```
+
+`InsertContext`s incluyen un estado mutable que se actualiza durante el proceso de inserción, así que no es seguro usarlos desde varios hilos.
+
+<div id="write-formats">
+  ### Formatos de escritura
+</div>
+
+Actualmente, los formatos de escritura solo están implementados para un número limitado de tipos. En la mayoría de los casos, ClickHouse Connect intentará determinar automáticamente el formato de escritura correcto para una columna verificando el tipo del primer valor de datos no nulo. Por ejemplo, si se inserta en una columna `DateTime` y el primer valor insertado en la columna es un entero de Python, ClickHouse Connect insertará directamente el valor entero, asumiendo que en realidad representa un segundo desde el epoch.
+
+En la mayoría de los casos, no es necesario modificar el formato de escritura de un tipo de dato, pero los métodos asociados del paquete `clickhouse_connect.datatypes.format` pueden usarse para hacerlo a nivel global.
+
+<div id="write-format-options">
+  #### Opciones de formato de escritura
+</div>
+
+| ClickHouse Type             | Tipo nativo de Python   | Formatos de escritura | Comentarios                                                                                                                                               |
+| --------------------------- | ----------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Int[8-64], UInt[8-32]       | int                     | -                     |                                                                                                                                                           |
+| UInt64                      | int                     |                       |                                                                                                                                                           |
+| [U]Int[128,256]             | int                     |                       |                                                                                                                                                           |
+| BFloat16                    | float                   |                       |                                                                                                                                                           |
+| Float32                     | float                   |                       |                                                                                                                                                           |
+| Float64                     | float                   |                       |                                                                                                                                                           |
+| Decimal                     | decimal.Decimal         |                       |                                                                                                                                                           |
+| String                      | string                  |                       |                                                                                                                                                           |
+| FixedString                 | bytes                   | string                | Si se inserta como cadena, los bytes adicionales se establecerán en cero                                                                                  |
+| Enum[8,16]                  | string                  |                       |                                                                                                                                                           |
+| Date                        | datetime.date           | int                   | ClickHouse almacena las fechas como días desde el 01/01/1970. Se asumirá que los valores de tipo int corresponden a este valor de &quot;fecha epoch&quot; |
+| Date32                      | datetime.date           | int                   | Igual que Date, pero para un rango más amplio de fechas                                                                                                   |
+| DateTime                    | datetime.datetime       | int                   | ClickHouse almacena DateTime en segundos epoch. Se asumirá que los valores de tipo int corresponden a este valor de &quot;segundo epoch&quot;             |
+| DateTime64                  | datetime.datetime       | int                   | Python datetime.datetime está limitado a precisión de microsegundos. El valor int bruto de 64 bits está disponible                                        |
+| Time                        | datetime.timedelta      | int, string, time     | ClickHouse almacena DateTime en segundos epoch. Se asumirá que los valores de tipo int corresponden a este valor de &quot;segundo epoch&quot;             |
+| Time64                      | datetime.timedelta      | int, string, time     | Python datetime.timedelta está limitado a precisión de microsegundos. El valor int bruto de 64 bits está disponible                                       |
+| IPv4                        | `ipaddress.IPv4Address` | string                | Las cadenas con el formato adecuado pueden insertarse como direcciones IPv4                                                                               |
+| IPv6                        | `ipaddress.IPv6Address` | string                | Las cadenas con el formato adecuado pueden insertarse como direcciones IPv6                                                                               |
+| Tuple                       | dict or tuple           |                       |                                                                                                                                                           |
+| Map                         | dict                    |                       |                                                                                                                                                           |
+| Nested                      | Sequence[dict]          |                       |                                                                                                                                                           |
+| UUID                        | uuid.UUID               | string                | Las cadenas con el formato adecuado pueden insertarse como UUIDs de ClickHouse                                                                            |
+| JSON/Object(&#39;json&#39;) | dict                    | string                | Se pueden insertar tanto diccionarios como cadenas JSON en columnas JSON (ten en cuenta que `Object('json')` está obsoleto)                               |
+| Variant                     | object                  |                       | En este momento, todas las variantes se insertan como Strings y el servidor de ClickHouse las analiza                                                     |
+| Dynamic                     | object                  |                       | Advertencia -- en este momento, cualquier inserción en una columna Dynamic se almacena como un String de ClickHouse                                       |
+
+<div id="specialized-insert-methods">
+  ### Métodos especializados de inserción
+</div>
+
+ClickHouse Connect proporciona métodos especializados de inserción para formatos de datos habituales:
+
+* `insert_df` -- Inserta un DataFrame de Pandas. En lugar de un argumento `data` de Python de tipo Sequence of Sequences, el segundo parámetro de este método requiere un argumento `df`, que debe ser una instancia de DataFrame de Pandas. ClickHouse Connect procesa automáticamente el DataFrame como un origen de datos orientado a columnas, por lo que el parámetro `column_oriented` no es necesario ni está disponible.
+* `insert_arrow` -- Inserta una tabla de PyArrow. ClickHouse Connect pasa la tabla Arrow sin modificar al servidor ClickHouse para su procesamiento, por lo que, además de `table` y `arrow_table`, solo están disponibles los argumentos `database` y `settings`.
+* `insert_df_arrow` -- Inserta un DataFrame de Pandas respaldado por Arrow o un DataFrame de Polars. ClickHouse Connect determinará automáticamente si el DataFrame es de tipo Pandas o Polars. Si es Pandas, se realizará una validación para garantizar que el backend `dtype` de cada columna esté basado en Arrow, y se generará un error si alguna no lo está.
+
+<Note>
+  Una matriz de NumPy es una Sequence of Sequences válida y puede usarse como argumento `data` con el método principal `insert`, por lo que no se requiere un método especializado.
+</Note>
+
+<div id="pandas-dataframe-insert">
+  #### Inserción con DataFrame de Pandas
+</div>
+
+```python
+import clickhouse_connect
+import pandas as pd
+
+client = clickhouse_connect.get_client()
+
+df = pd.DataFrame({
+    "id": [1, 2, 3],
+    "name": ["Alice", "Bob", "Joe"],
+    "age": [25, 30, 28],
+})
+
+client.insert_df("users", df)
+```
+
+<div id="pyarrow-table-insert">
+  #### Inserción de tablas de PyArrow
+</div>
+
+```python
+import clickhouse_connect
+import pyarrow as pa
+
+client = clickhouse_connect.get_client()
+
+arrow_table = pa.table({
+    "id": [1, 2, 3],
+    "name": ["Alice", "Bob", "Joe"],
+    "age": [25, 30, 28],
+})
+
+client.insert_arrow("users", arrow_table)
+```
+
+<div id="arrow-backed-dataframe-insert-pandas-2">
+  #### Inserción de DataFrame respaldado por Arrow (pandas 2.x)
+</div>
+
+```python
+import clickhouse_connect
+import pandas as pd
+
+client = clickhouse_connect.get_client()
+
+# Convertir a dtypes respaldados por Arrow para mejor rendimiento
+df = pd.DataFrame({
+    "id": [1, 2, 3],
+    "name": ["Alice", "Bob", "Joe"],
+    "age": [25, 30, 28],
+}).convert_dtypes(dtype_backend="pyarrow")
+
+client.insert_df_arrow("users", df)
+```
+
+<div id="time-zones">
+  ### Zonas horarias
+</div>
+
+Al insertar objetos `datetime.datetime` de Python en columnas `DateTime` o `DateTime64` de ClickHouse, ClickHouse Connect gestiona automáticamente la información de la zona horaria. Dado que ClickHouse almacena internamente todos los valores `DateTime` como marcas de tiempo Unix sin zona horaria (segundos o fracciones de segundo desde la época Unix), la conversión de zona horaria se realiza automáticamente en el cliente durante la inserción.
+
+<div id="timezone-aware-datetime-objects">
+  #### Objetos `datetime` con zona horaria
+</div>
+
+Si insertas un objeto `datetime.datetime` de Python con zona horaria, ClickHouse Connect llamará automáticamente a `.timestamp()` para convertirlo en una marca temporal Unix, lo que tiene en cuenta correctamente el desfase de la zona horaria. Esto significa que puedes insertar objetos `datetime` de cualquier zona horaria y se almacenarán correctamente como su marca temporal equivalente en UTC.
+
+```python
+import clickhouse_connect
+from datetime import datetime
+import pytz
+
+client = clickhouse_connect.get_client()
+client.command("CREATE TABLE events (event_time DateTime) ENGINE Memory")
+
+# Insertar objetos datetime con zona horaria
+denver_tz = pytz.timezone('America/Denver')
+tokyo_tz = pytz.timezone('Asia/Tokyo')
+
+data = [
+    [datetime(2023, 6, 15, 10, 30, 0, tzinfo=pytz.UTC)],
+    [denver_tz.localize(datetime(2023, 6, 15, 10, 30, 0))],
+    [tokyo_tz.localize(datetime(2023, 6, 15, 10, 30, 0))]
+]
+
+client.insert('events', data, column_names=['event_time'])
+results = client.query("SELECT * from events")
+print(*results.result_rows, sep="\n")
+# Salida:
+# (datetime.datetime(2023, 6, 15, 10, 30),)
+# (datetime.datetime(2023, 6, 15, 16, 30),)
+# (datetime.datetime(2023, 6, 15, 1, 30),)
+```
+
+En este ejemplo, los tres objetos datetime representan momentos distintos porque tienen zonas horarias diferentes. Cada uno se convertirá correctamente en su correspondiente Unix timestamp y se almacenará en ClickHouse.
+
+<Note>
+  Al usar pytz, debes utilizar el método `localize()` para añadir la información de zona horaria a un datetime sin zona horaria. Si pasas `tzinfo=` directamente al constructor de datetime, se usarán desplazamientos históricos incorrectos. En el caso de UTC, `tzinfo=pytz.UTC` funciona correctamente. Consulta la [documentación de pytz](https://pythonhosted.org/pytz/#localized-times-and-date-arithmetic) para obtener más información.
+</Note>
+
+<div id="timezone-naive-datetime-objects">
+  #### Objetos datetime sin zona horaria
+</div>
+
+Si insertas un objeto `datetime.datetime` de Python sin zona horaria (es decir, sin `tzinfo`), el método `.timestamp()` lo interpretará como si estuviera en la zona horaria local del sistema. Para evitar ambigüedades, se recomienda:
+
+1. Usar siempre objetos datetime con zona horaria al insertar, o
+2. Asegurarte de que la zona horaria del sistema esté configurada en UTC, o
+3. Convertirlos manualmente a timestamps de epoch antes de insertarlos
+
+```python
+import clickhouse_connect
+from datetime import datetime
+import pytz
+
+client = clickhouse_connect.get_client()
+
+# Recomendado: usar siempre datetimes con zona horaria
+utc_time = datetime(2023, 6, 15, 10, 30, 0, tzinfo=pytz.UTC)
+client.insert('events', [[utc_time]], column_names=['event_time'])
+
+# Alternativa: convertir manualmente a timestamp de epoch
+naive_time = datetime(2023, 6, 15, 10, 30, 0)
+epoch_timestamp = int(naive_time.replace(tzinfo=pytz.UTC).timestamp())
+client.insert('events', [[epoch_timestamp]], column_names=['event_time'])
+```
+
+<div id="datetime-columns-with-timezone-metadata">
+  #### Columnas DateTime con metadatos de zona horaria
+</div>
+
+Las columnas de ClickHouse se pueden definir con metadatos de zona horaria (p. ej., `DateTime('America/Denver')` o `DateTime64(3, 'Asia/Tokyo')`). Estos metadatos no afectan a cómo se almacenan los datos (siguen siendo timestamps UTC), pero determinan la zona horaria que se usa al consultar los datos de nuevo desde ClickHouse.
+
+Al insertar en estas columnas, ClickHouse Connect convierte tu objeto datetime de Python en una marca temporal Unix (teniendo en cuenta su zona horaria, si la tiene). Cuando vuelvas a consultar los datos, ClickHouse Connect devolverá el datetime convertido a la zona horaria de la columna, independientemente de la zona horaria que hayas usado al insertar.
+
+```python
+import clickhouse_connect
+from datetime import datetime
+import pytz
+
+client = clickhouse_connect.get_client()
+
+# Crear tabla con metadatos de zona horaria de Los Ángeles
+client.command("CREATE TABLE events (event_time DateTime('America/Los_Angeles')) ENGINE Memory")
+
+# Insertar una hora de Nueva York (10:30 AM EDT, que equivale a 14:30 UTC)
+ny_tz = pytz.timezone("America/New_York")
+data = ny_tz.localize(datetime(2023, 6, 15, 10, 30, 0))
+client.insert("events", [[data]], column_names=["event_time"])
+
+# Al consultar los datos, la hora se convierte automáticamente a la zona horaria de Los Ángeles
+# 10:30 AM Nueva York (UTC-4) = 14:30 UTC = 7:30 AM Los Ángeles (UTC-7)
+results = client.query("select * from events")
+print(*results.result_rows, sep="\n")
+# Salida:
+# (datetime.datetime(2023, 6, 15, 7, 30, tzinfo=<DstTzInfo 'America/Los_Angeles' PDT-1 day, 17:00:00 DST>),)
+```
+
+<div id="file-inserts">
+  ## Inserciones desde archivos
+</div>
+
+El paquete `clickhouse_connect.driver.tools` incluye el método `insert_file`, que permite insertar datos directamente desde el sistema de archivos en una tabla de ClickHouse existente. El análisis se delega en el servidor de ClickHouse. `insert_file` acepta los siguientes parámetros:
+
+| Parámetro        | Tipo            | Predeterminado    | Descripción                                                                                                                                        |
+| ---------------- | --------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| client           | Client          | *Obligatorio*     | El `driver.Client` que se usa para realizar la inserción                                                                                           |
+| table            | str             | *Obligatorio*     | La tabla de ClickHouse en la que se insertarán los datos. Se permite el nombre completo de la tabla (incluida la base de datos).                   |
+| file&#95;path    | str             | *Obligatorio*     | La ruta nativa en el sistema de archivos del archivo de datos                                                                                      |
+| fmt              | str             | CSV, CSVWithNames | El formato de entrada de ClickHouse del archivo. Se asume CSVWithNames si no se proporciona `column_names`                                         |
+| column&#95;names | Sequence of str | *None*            | Una lista de nombres de columna del archivo de datos. No es necesaria para los formatos que incluyen nombres de columna                            |
+| database         | str             | *None*            | La base de datos de la tabla. Se ignora si la tabla tiene un nombre completo. Si no se especifica, la inserción usará la base de datos del cliente |
+| settings         | dict            | *None*            | Consulte la [descripción de settings](/es/integrations/language-clients/python/driver-api#settings-argument).                                         |
+| compression      | str             | *None*            | Un tipo de compresión de ClickHouse reconocido (zstd, lz4, gzip) que se usa para la cabecera HTTP `Content-Encoding`                               |
+
+Para archivos con datos incoherentes o valores de fecha/hora en un formato inusual, este método reconoce los settings aplicables a las importaciones de datos (como `input_format_allow_errors_num` y `input_format_allow_errors_num`).
+
+```python
+import clickhouse_connect
+from clickhouse_connect.driver.tools import insert_file
+
+client = clickhouse_connect.get_client()
+insert_file(client, 'example_table', 'my_data.csv',
+            settings={'input_format_allow_errors_ratio': .2,
+                      'input_format_allow_errors_num': 5})
+```

@@ -87,9 +87,9 @@ struct ArrayFirstLastImpl
                     if (end_offset > start_offset)
                     {
                         if constexpr (strategy == ArrayFirstLastStrategy::First)
-                            out->insert(data[start_offset]);
+                            out->insertFrom(data, start_offset);
                         else
-                            out->insert(data[end_offset - 1]);
+                            out->insertFrom(data, end_offset - 1);
                     }
                     else
                     {
@@ -148,7 +148,7 @@ struct ArrayFirstLastImpl
                 {
                     if (filter[start_offset])
                     {
-                        out->insert(data[start_offset]);
+                        out->insertFrom(data, start_offset);
                         exists = true;
                         break;
                     }
@@ -160,7 +160,7 @@ struct ArrayFirstLastImpl
                 {
                     if (filter[end_offset - 1])
                     {
-                        out->insert(data[end_offset - 1]);
+                        out->insertFrom(data, end_offset - 1);
                         exists = true;
                         break;
                     }

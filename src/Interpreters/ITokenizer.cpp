@@ -1,8 +1,15 @@
 #include <Interpreters/ITokenizer.h>
 
+#include "config.h"
+
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils.h>
+#include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
+
+#include <limits>
 
 #if defined(__SSE2__)
 #  include <emmintrin.h>
@@ -11,12 +18,28 @@
 #  endif
 #endif
 
+#if USE_ICU
+#  include <unicode/ubrk.h>
+#  include <unicode/utext.h>
+#  include <unicode/utypes.h>
+
+/// ICU renames its entry points via self-referential macros (e.g. `u_errorName` expands to
+/// `U_ICU_ENTRY_POINT_RENAME(u_errorName)`), which trips `-Wdisabled-macro-expansion`.
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+#endif
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+#if USE_ICU
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_STRING_SIZE;
+#endif
 }
 
 bool NgramsTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
@@ -83,6 +106,16 @@ bool NgramsTokenizer::nextInStringLike(const char * data, size_t length, size_t 
     }
 
     return false;
+}
+
+void NgramsTokenizer::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool, bool) const
+{
+    stringToBloomFilter(data, length, bloom_filter);
+}
+
+void NgramsTokenizer::substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool, bool) const
+{
+    stringToTokens(data, length, tokens);
 }
 
 bool SplitByNonAlphaTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
@@ -163,7 +196,7 @@ namespace
 {
 
 /// Shared implementation of `substringToBloomFilter` for word-boundary tokenizers
-/// (`SplitByNonAlphaTokenizer`, `UnicodeWordTokenizer`).
+/// (`SplitByNonAlphaTokenizer`, `AsciiCJKTokenizer`).
 ///
 /// In order to avoid filter updates with incomplete tokens, the first token is
 /// ignored unless the substring is a prefix, and the last token is ignored unless
@@ -189,7 +222,7 @@ void wordBoundarySubstringToBloomFilter(
 /// Same boundary-filtering logic as `wordBoundarySubstringToBloomFilter`.
 template <typename Tokenizer>
 void wordBoundarySubstringToTokens(
-    const Tokenizer & tokenizer, const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix)
+    const Tokenizer & tokenizer, const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix)
 {
     size_t cur = 0;
     size_t token_start = 0;
@@ -223,7 +256,7 @@ void SplitByNonAlphaTokenizer::substringToBloomFilter(
 }
 
 void SplitByNonAlphaTokenizer::substringToTokens(
-    const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const
+    const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const
 {
     wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
 }
@@ -260,6 +293,16 @@ bool SplitByStringTokenizer::nextInStringLike(const char * /*data*/, size_t /*le
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StringTokenExtractor::nextInStringLike is not implemented");
 }
 
+void SplitByStringTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByStringTokenizer::substringToBloomFilter is not implemented");
+}
+
+void SplitByStringTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByStringTokenizer::substringToTokens is not implemented");
+}
+
 String SplitByStringTokenizer::getDescription() const
 {
     String result = fmt::format("{}([", getName());
@@ -291,6 +334,16 @@ bool ArrayTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::nextInStringLike is not implemented");
 }
 
+void ArrayTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::substringToBloomFilter is not implemented");
+}
+
+void ArrayTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::substringToTokens is not implemented");
+}
+
 SparseGramsTokenizer::SparseGramsTokenizer(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)
     : ITokenizerHelper(Type::SparseGrams)
     , min_gram_length(min_length)
@@ -309,8 +362,8 @@ bool SparseGramsTokenizer::nextInString(const char * data, size_t length, size_t
         sparse_grams_iterator.set(data, data + length);
     }
 
-    Pos next_begin;
-    Pos next_end;
+    Pos next_begin = nullptr;
+    Pos next_end = nullptr;
     if (!sparse_grams_iterator.get(next_begin, next_end))
     {
         previous_data = nullptr;
@@ -337,8 +390,8 @@ bool SparseGramsTokenizer::nextInStringLike(const char * data, size_t length, si
 
     while (true)
     {
-        Pos next_begin;
-        Pos next_end;
+        Pos next_begin = nullptr;
+        Pos next_end = nullptr;
         if (!sparse_grams_iterator.get(next_begin, next_end))
         {
             previous_data = nullptr;
@@ -374,7 +427,17 @@ bool SparseGramsTokenizer::nextInStringLike(const char * data, size_t length, si
     }
 }
 
-std::vector<String> SparseGramsTokenizer::compactTokens(const std::vector<String> & tokens) const
+void SparseGramsTokenizer::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool /*is_prefix*/, bool /*is_suffix*/) const
+{
+    stringToBloomFilter(data, length, bloom_filter);
+}
+
+void SparseGramsTokenizer::substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool /*is_prefix*/, bool /*is_suffix*/) const
+{
+    stringToTokens(data, length, tokens);
+}
+
+VectorWithMemoryTracking<String> SparseGramsTokenizer::compactTokens(const VectorWithMemoryTracking<String> & tokens) const
 {
     std::unordered_set<String> result;
     auto sorted_tokens = tokens;
@@ -392,7 +455,7 @@ std::vector<String> SparseGramsTokenizer::compactTokens(const std::vector<String
 
         for (const auto & existing_token : result)
         {
-            if (existing_token.find(token) != std::string::npos)
+            if (existing_token.contains(token))
             {
                 is_covered = true;
                 break;
@@ -403,7 +466,7 @@ std::vector<String> SparseGramsTokenizer::compactTokens(const std::vector<String
             result.insert(token);
     }
 
-    return std::vector<String>(result.begin(), result.end());
+    return VectorWithMemoryTracking<String>(result.begin(), result.end());
 }
 
 String SparseGramsTokenizer::getDescription() const
@@ -427,7 +490,64 @@ void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, 
         });
 }
 
-bool UnicodeWordTokenizer::nextInString(
+ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, size_t from, size_t rows)
+{
+    chassert(from + rows <= input.size());
+
+    auto tokens_data = ColumnString::create();
+    auto tokens_offsets = ColumnArray::ColumnOffsets::create();
+    tokens_offsets->reserve(rows);
+
+    /// Reserve token character storage to avoid repeated reallocations of the chars buffer as tokens are appended.
+    if (const auto * col_string = typeid_cast<const ColumnString *>(&input))
+    {
+        const auto & str_offsets = col_string->getOffsets();
+        tokens_data->getChars().reserve(str_offsets[from + rows - 1] - str_offsets[from - 1]);
+    }
+
+    auto tokenize = [&](std::string_view doc)
+    {
+        forEachToken(tokenizer, doc.data(), doc.size(),
+            [&](const char * token_start, size_t token_length)
+            {
+                tokens_data->insertData(token_start, token_length);
+                return false;
+            });
+    };
+
+    if (const auto * col_array = typeid_cast<const ColumnArray *>(&input))
+    {
+        const IColumn & data = col_array->getData();
+        const IColumn::Offsets & src_offsets = col_array->getOffsets();
+        /// isNullable() is false for LowCardinality(Nullable), so use the helper that also
+        /// covers that case, otherwise getDataAt() throws NOT_IMPLEMENTED on a NULL element.
+        const bool data_is_nullable = isColumnNullableOrLowCardinalityNullable(data);
+
+        for (size_t i = from; i < from + rows; ++i)
+        {
+            for (size_t j = src_offsets[i - 1]; j < src_offsets[i]; ++j)
+            {
+                if (data_is_nullable && data.isNullAt(j))
+                    continue;
+                tokenize(data.getDataAt(j));
+            }
+            tokens_offsets->getData().push_back(tokens_data->size());
+        }
+    }
+    else
+    {
+        for (size_t i = from; i < from + rows; ++i)
+        {
+            if (!input.isNullAt(i))
+                tokenize(input.getDataAt(i));
+            tokens_offsets->getData().push_back(tokens_data->size());
+        }
+    }
+
+    return ColumnArray::create(std::move(tokens_data), std::move(tokens_offsets));
+}
+
+bool AsciiCJKTokenizer::nextInString(
     const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
 {
     token_length = 0;
@@ -496,13 +616,6 @@ bool UnicodeWordTokenizer::nextInString(
             /// Token must contain at least one alphanumeric character
             if (token_alnum_count > 0)
             {
-                /// Check if token is a stop word
-                std::string_view token_view(data + token_start, token_length);
-                if (stop_words.contains(token_view))
-                {
-                    token_length = 0;
-                    continue;
-                }
                 return true;
             }
 
@@ -530,15 +643,6 @@ bool UnicodeWordTokenizer::nextInString(
             return false;
         }
 
-        std::string_view utf8_char(data + pos, char_len);
-
-        /// 3a. Stop words: skip
-        if (stop_words.contains(utf8_char))
-        {
-            pos += char_len;
-            continue;
-        }
-
         token_start = pos;
         token_length = char_len;
         pos += char_len;
@@ -549,10 +653,10 @@ bool UnicodeWordTokenizer::nextInString(
     return false;
 }
 
-bool UnicodeWordTokenizer::nextInStringLike(const char * data, size_t length, size_t & __restrict pos, String & token) const
+bool AsciiCJKTokenizer::nextInStringLike(const char * data, size_t length, size_t & __restrict pos, String & token) const
 {
     token.clear();
-    size_t token_start;
+    size_t token_start = 0;
     std::optional<size_t> last_glob_pos;
     bool escaped = false; /// Whether current char is an escaped char
     while (pos < length)
@@ -658,14 +762,7 @@ bool UnicodeWordTokenizer::nextInStringLike(const char * data, size_t length, si
                 /// If we consumed a backslash but the escaped char didn't continue the token, back up so the next call
                 /// re-parses `\X` with proper escape context.
                 if (escaped)
-                {
                     --pos;
-                    escaped = false;
-                }
-
-                /// Check if token is a stop word
-                if (stop_words.contains(token))
-                    continue;
 
                 return true;
             }
@@ -698,14 +795,6 @@ bool UnicodeWordTokenizer::nextInStringLike(const char * data, size_t length, si
 
         token = {data + pos, char_len};
 
-        /// 3a. Stop words: skip
-        if (stop_words.contains(token))
-        {
-            pos += char_len;
-            escaped = false;
-            continue;
-        }
-
         pos += char_len;
         return true;
     }
@@ -713,16 +802,153 @@ bool UnicodeWordTokenizer::nextInStringLike(const char * data, size_t length, si
     return false;
 }
 
-void UnicodeWordTokenizer::substringToBloomFilter(
+void AsciiCJKTokenizer::substringToBloomFilter(
     const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
 {
     wordBoundarySubstringToBloomFilter(*this, data, length, bloom_filter, is_prefix, is_suffix);
 }
 
-void UnicodeWordTokenizer::substringToTokens(
-    const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const
+void AsciiCJKTokenizer::substringToTokens(
+    const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const
 {
     wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
 }
 
+#if USE_ICU
+namespace
+{
+
+using UBreakIteratorPtr = std::unique_ptr<UBreakIterator, decltype(&ubrk_close)>;
+
+/// A word break iterator is stateful and not thread-safe, while tokenizers are shared as `const`
+/// pointers across threads. Keeping one iterator per (thread, locale) makes the tokenizer itself
+/// stateless (it only stores the locale) and avoids re-creating the iterator for every string.
+UBreakIterator * getThreadLocalIcuWordIterator(const String & locale)
+{
+    static constexpr size_t max_cached_iterators = 32;
+    thread_local std::unordered_map<String, UBreakIteratorPtr> iterators;
+
+    auto it = iterators.find(locale);
+    if (it == iterators.end())
+    {
+        /// Coarse bound: the locale comes from user SQL, so cap per-thread state. Cleared entries are
+        /// lazily re-created on their next use.
+        if (iterators.size() >= max_cached_iterators)
+            iterators.clear();
+
+        UErrorCode status = U_ZERO_ERROR;
+        UBreakIteratorPtr iterator(ubrk_open(UBRK_WORD, locale.c_str(), nullptr, 0, &status), &ubrk_close);
+
+        if (U_FAILURE(status))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot create ICU word break iterator for locale '{}': {}",
+                locale, u_errorName(status));
+
+        it = iterators.emplace(locale, std::move(iterator)).first;
+    }
+
+    return it->second.get();
 }
+
+/// Holds the UTF-8 `UText` currently bound to the thread-local break iterator.
+struct IcuTextBinding
+{
+    UText * utext = nullptr;
+    const char * data = nullptr;
+    const UBreakIterator * iterator = nullptr;
+
+    ~IcuTextBinding()
+    {
+        if (utext)
+            utext_close(utext);
+    }
+};
+
+}
+#endif
+
+#if USE_ICU
+String IcuTokenizer::getDescription() const
+{
+    return fmt::format("icu({})", quoteString(locale));
+}
+
+bool IcuTokenizer::nextInString(
+    const char * data,
+    size_t length,
+    size_t & __restrict pos,
+    size_t & __restrict token_start,
+    size_t & __restrict token_length) const
+{
+    /// ICU break iteration exposes only 32-bit offsets, so a value past INT32_MAX would silently
+    /// stop tokenizing at 2 GiB. Reject it explicitly instead of returning truncated results.
+    if (length > static_cast<size_t>(std::numeric_limits<int32_t>::max()))
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "The 'icu' tokenizer cannot process values larger than {} bytes",
+            std::numeric_limits<int32_t>::max());
+
+    UBreakIterator * iterator = getThreadLocalIcuWordIterator(locale);
+
+    /// The iterator's text is (re)bound at the start of each new string (`pos == 0`); afterwards
+    /// `nextInString` is called repeatedly with an increasing `pos` until the string is exhausted.
+    thread_local IcuTextBinding binding;
+
+    if (pos == 0 || data != binding.data || iterator != binding.iterator)
+    {
+        UErrorCode status = U_ZERO_ERROR;
+        binding.utext = utext_openUTF8(binding.utext, data, static_cast<int64_t>(length), &status);
+        if (U_FAILURE(status))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot open ICU UTF-8 text: {}", u_errorName(status));
+
+        ubrk_setUText(iterator, binding.utext, &status);
+        if (U_FAILURE(status))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set ICU break iterator text: {}", u_errorName(status));
+
+        binding.data = data;
+        binding.iterator = iterator;
+    }
+
+    auto start = static_cast<int32_t>(pos);
+    int32_t end = 0;
+    while ((end = ubrk_following(iterator, start)) != UBRK_DONE)
+    {
+        if (ubrk_getRuleStatus(iterator) >= UBRK_WORD_NONE_LIMIT)
+        {
+            token_start = static_cast<size_t>(start);
+            token_length = static_cast<size_t>(end - start);
+            pos = static_cast<size_t>(end);
+            return true;
+        }
+
+        start = end;
+    }
+
+    pos = length;
+    return false;
+}
+
+bool IcuTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "IcuTokenizer::nextInStringLike is not implemented");
+}
+
+void IcuTokenizer::substringToBloomFilter(
+    const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
+{
+    wordBoundarySubstringToBloomFilter(*this, data, length, bloom_filter, is_prefix, is_suffix);
+}
+
+void IcuTokenizer::substringToTokens(
+    const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const
+{
+    wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
+}
+#endif
+
+}
+
+#if USE_ICU
+#  pragma clang diagnostic pop
+#endif

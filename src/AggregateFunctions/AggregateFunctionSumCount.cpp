@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Columns/ColumnTuple.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
@@ -119,6 +120,7 @@ createAggregateFunctionSumCount(const std::string & name, const DataTypes & argu
 
 }
 
+void registerAggregateFunctionSumCount(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSumCount(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_sumCount = R"(
@@ -126,7 +128,7 @@ Calculates the sum of the numbers and counts the number of rows at the same time
 
 **See also**
 
-- [`optimize_syntax_fuse_functions`](../../../operations/settings/settings.md#optimize_syntax_fuse_functions) setting.
+- [`optimize_syntax_fuse_functions`](/reference/settings/session-settings/optimize#optimize_syntax_fuse_functions) setting.
     )";
     FunctionDocumentation::Syntax syntax_sumCount = R"(
 sumCount(x)

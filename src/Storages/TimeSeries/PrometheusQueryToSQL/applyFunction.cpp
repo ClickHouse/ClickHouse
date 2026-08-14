@@ -2,10 +2,12 @@
 
 #include <Common/Exception.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyDateTimeFunction.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyMathSimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionScalar.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionVector.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyHistogramQuantile.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyLabelManipulationFunction.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentMathFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionPi.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionTime.h>
 
@@ -19,7 +21,8 @@ namespace DB::ErrorCodes
 namespace DB::PrometheusQueryToSQL
 {
 
-SQLQueryPiece applyFunction(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+SQLQueryPiece applyFunction(
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     std::string_view function_name = function_node->function_name;
 
@@ -35,14 +38,20 @@ SQLQueryPiece applyFunction(const PQT::Function * function_node, std::vector<SQL
     if (isDateTimeFunction(function_name))
         return applyDateTimeFunction(function_node, std::move(arguments), context);
 
-    if (isMathSimpleFunction(function_name))
-        return applyMathSimpleFunction(function_node, std::move(arguments), context);
+    if (isOneArgumentMathFunction(function_name))
+        return applyOneArgumentMathFunction(function_node, std::move(arguments), context);
 
     if (isFunctionPi(function_name))
         return fromFunctionPi(function_node, std::move(arguments), context);
 
+    if (isLabelManipulationFunction(function_name))
+        return applyLabelManipulationFunction(function_node, std::move(arguments), context);
+
     if (isFunctionOverRange(function_name))
         return applyFunctionOverRange(function_node, std::move(arguments), context);
+
+    if (isHistogramQuantile(function_name))
+        return applyHistogramQuantile(function_node, std::move(arguments), context);
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is not implemented", function_name);
 }

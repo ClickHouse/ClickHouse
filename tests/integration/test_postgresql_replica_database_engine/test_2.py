@@ -1,39 +1,15 @@
-import os.path as p
 import random
-import threading
-import time
-import uuid
-from random import randrange
 
-import psycopg2
 import pytest
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.cluster import ClickHouseCluster
 from helpers.postgres_utility import (
     PostgresManager,
-    assert_nested_table_is_created,
-    assert_number_of_columns,
     check_several_tables_are_synchronized,
     check_tables_are_synchronized,
     create_postgres_schema,
-    create_postgres_table,
     create_postgres_table_with_schema,
-    create_replication_slot,
-    drop_postgres_schema,
-    drop_postgres_table,
-    drop_postgres_table_with_schema,
-    drop_replication_slot,
-    get_postgres_conn,
-    postgres_table_template,
-    postgres_table_template_2,
-    postgres_table_template_3,
-    postgres_table_template_4,
-    postgres_table_template_5,
-    postgres_table_template_6,
-    queries,
 )
-from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -274,7 +250,7 @@ def test_remove_table_from_replication(started_cluster):
         == ")\\nSETTINGS materialized_postgresql_tables_list = \\'postgresql_replica_0,postgresql_replica_2,postgresql_replica_3,postgresql_replica_4\\'\n"
     )
 
-    pg_manager.execute(f"drop table if exists postgresql_replica_0;")
+    pg_manager.execute("drop table if exists postgresql_replica_0;")
 
     # Removing from replication table which does not exist in PostgreSQL must be ok.
     instance.query("DETACH TABLE test_database.postgresql_replica_0 PERMANENTLY")
@@ -284,11 +260,11 @@ def test_remove_table_from_replication(started_cluster):
 
 
 def test_predefined_connection_configuration(started_cluster):
-    pg_manager.execute(f"DROP TABLE IF EXISTS test_table")
+    pg_manager.execute("DROP TABLE IF EXISTS test_table")
     pg_manager.execute(
-        f"CREATE TABLE test_table (key integer PRIMARY KEY, value integer)"
+        "CREATE TABLE test_table (key integer PRIMARY KEY, value integer)"
     )
-    pg_manager.execute(f"INSERT INTO test_table SELECT 1, 2")
+    pg_manager.execute("INSERT INTO test_table SELECT 1, 2")
     instance.query(
         "CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1) SETTINGS materialized_postgresql_tables_list='test_table'"
     )
@@ -303,7 +279,6 @@ def test_database_with_single_non_default_schema(started_cluster):
     cursor = pg_manager.get_db_cursor()
     NUM_TABLES = 5
     schema_name = "test_schema"
-    materialized_db = "test_database"
     clickhouse_postgres_db = "postgres_database_with_schema"
     global insert_counter
     insert_counter = 0

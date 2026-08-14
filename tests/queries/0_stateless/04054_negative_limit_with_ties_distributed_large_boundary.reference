@@ -1,0 +1,39 @@
+-- { echo }
+
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (id UInt64) ENGINE=MergeTree ORDER BY tuple();
+INSERT INTO test SELECT number FROM numbers(200000);
+SELECT 'Negative LIMIT only';
+Negative LIMIT only
+SELECT count(), min(x), max(x)
+FROM
+(
+    SELECT intDiv(id, 100) AS x
+    FROM remote('127.0.0.1,127.0.0.2', currentDatabase(), test)
+    ORDER BY x
+    LIMIT -250 WITH TIES
+);
+400	1998	1999
+SELECT 'Negative LIMIT and negative OFFSET';
+Negative LIMIT and negative OFFSET
+SELECT count(), min(x), max(x)
+FROM
+(
+    SELECT intDiv(id, 100) AS x
+    FROM remote('127.0.0.1,127.0.0.2', currentDatabase(), test)
+    ORDER BY x
+    LIMIT -50, -250 WITH TIES
+);
+350	1998	1999
+SELECT 'Positive LIMIT and negative OFFSET';
+Positive LIMIT and negative OFFSET
+SELECT count(), min(x), max(x)
+FROM
+(
+    SELECT intDiv(id, 100) AS x
+    FROM remote('127.0.0.1,127.0.0.2', currentDatabase(), test)
+    ORDER BY x
+    LIMIT -50, 250 WITH TIES
+);
+400	0	1
+DROP TABLE IF EXISTS test;

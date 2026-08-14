@@ -14,6 +14,7 @@
 #include <DataTypes/Native.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Context_fwd.h>
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
 
@@ -43,7 +44,7 @@ struct UnaryOperationImpl
     using ArrayA = typename ColVecA::Container;
     using ArrayC = typename ColVecC::Container;
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ArrayA & a, ArrayC & c) /// NOLINT
     {
         size_t size = a.size();
@@ -57,12 +58,6 @@ struct UnaryOperationImpl
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             vectorImpl_x86_64_v4(a, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::x86_64_v3))
-        {
-            vectorImpl_x86_64_v3(a, c);
             return;
         }
 #endif
@@ -80,7 +75,7 @@ struct UnaryOperationImpl
 template <typename Op>
 struct FixedStringUnaryOperationImpl
 {
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ColumnFixedString::Chars & a, /// NOLINT
         ColumnFixedString::Chars & c)
     {
@@ -98,12 +93,6 @@ struct FixedStringUnaryOperationImpl
             vectorImpl_x86_64_v4(a, c);
             return;
         }
-
-        if (isArchSupported(TargetArch::x86_64_v3))
-        {
-            vectorImpl_x86_64_v3(a, c);
-            return;
-        }
 #endif
 
         vectorImpl(a, c);
@@ -113,7 +102,7 @@ struct FixedStringUnaryOperationImpl
 template <typename Op>
 struct StringUnaryOperationReduceImpl
 {
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4(
         MULTITARGET_FUNCTION_HEADER(static UInt64 NO_INLINE),
         vectorImpl,
         MULTITARGET_FUNCTION_BODY((const UInt8 * start, const UInt8 * end) /// NOLINT
@@ -130,11 +119,6 @@ struct StringUnaryOperationReduceImpl
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             return vectorImpl_x86_64_v4(start, end);
-        }
-
-        if (isArchSupported(TargetArch::x86_64_v3))
-        {
-            return vectorImpl_x86_64_v3(start, end);
         }
 #endif
 
@@ -187,8 +171,11 @@ class FunctionUnaryArithmetic : public IFunction
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForTupleArithmetic(const DataTypePtr & type, ContextPtr context)
+    getFunctionForTupleArithmetic(const DataTypePtr & type, ContextPtr context_)
     {
+        if (!context_)
+            return {};
+
         if (!isTuple(type))
             return {};
 
@@ -198,14 +185,12 @@ class FunctionUnaryArithmetic : public IFunction
         if constexpr (!IsUnaryOperation<Op>::negate)
             return {};
 
-        return FunctionFactory::instance().get("tupleNegate", context);
+        return FunctionFactory::instance().get("tupleNegate", context_);
     }
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUnaryArithmetic>(); }
-
-    FunctionUnaryArithmetic() = default;
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionUnaryArithmetic>(context_); }
 
     explicit FunctionUnaryArithmetic(ContextPtr context_) : context(context_) {}
 
@@ -228,10 +213,10 @@ public:
         return getReturnTypeImplStatic(arguments, context);
     }
 
-    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
+    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context_)
     {
         /// Special case when the function is negate, argument is tuple.
-        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], context))
+        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], context_))
         {
             ColumnsWithTypeAndName new_arguments(1);
 
@@ -472,7 +457,7 @@ public:
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
     {
-        assert(1 == arguments.size());
+        chassert(1 == arguments.size());
 
         llvm::Value * result = nullptr;
         castType(arguments[0].type.get(), [&](const auto & type)
@@ -487,9 +472,13 @@ public:
                 if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                    if constexpr (std::is_same_v<Op<T0>, AbsImpl<T0>> || std::is_same_v<Op<T0>, BitCountImpl<T0>> || std::is_same_v<Op<T0>, SignImpl<T0>>)
+                    if constexpr (std::is_same_v<Op<T0>, AbsImpl<T0>>
+                               || std::is_same_v<Op<T0>, BitCountImpl<T0>>
+                               || std::is_same_v<Op<T0>, SignImpl<T0>>
+                               || std::is_same_v<Op<T0>, IntExp2Impl<T0>>)
                     {
-                        /// We don't need to cast the argument to the result type if it's abs/bitcount/sign function.
+                        /// Skip the result-type cast for ops that need to inspect the original
+                        /// argument and its signedness (abs/bitcount/sign/intExp2).
                         result = Op<T0>::compile(b, arguments[0].value, is_signed_v<T0>);
                     }
                     else
@@ -532,8 +521,12 @@ public:
 struct PositiveMonotonicity
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
+        if (!type.isValueRepresentedByNumber())
+            return {};
+        if (isNaNField(left) || isNaNField(right))
+            return {};
         return { .is_monotonic = true };
     }
 

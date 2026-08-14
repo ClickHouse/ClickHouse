@@ -1,0 +1,275 @@
+---
+slug: /optimize/skipping-indexes/examples
+sidebarTitle: 'データスキッピングインデックス - 例'
+description: 'スキップ索引の例のまとめ'
+title: 'データスキッピングインデックスの例'
+doc_type: 'guide'
+keywords: ['スキッピングインデックス', 'データスキッピング', 'パフォーマンス', 'インデックス作成', 'ベストプラクティス']
+---
+
+このページでは、ClickHouse のデータスキッピングインデックスの例をまとめており、各タイプの定義方法、使用する場面、実際に適用されているかを確認する方法を紹介します。これらの機能はすべて、[MergeTree ファミリーのテーブル](/ja/reference/engines/table-engines/mergetree-family/mergetree) で利用できます。
+
+**索引の構文:**
+
+```sql
+INDEX name expr TYPE type(...) [GRANULARITY N]
+```
+
+ClickHouse は 6 種類のスキップ索引をサポートしています。
+
+| Index Type                                          | Description                     |
+| --------------------------------------------------- | ------------------------------- |
+| **minmax**                                          | 各 granule の最小値と最大値を追跡します        |
+| **set(N)**                                          | 各 granule ごとに最大 N 個の異なる値を格納します  |
+| **text**                                            | 全文検索のための、トークン化された文字列データに対する転置索引 |
+| **bloom&#95;filter([false&#95;positive&#95;rate])** | 存在確認のための確率的フィルター                |
+| **ngrambf&#95;v1**                                  | 部分文字列検索のための N-gram Bloom フィルター  |
+| **tokenbf&#95;v1**                                  | 全文検索のためのトークンベースの Bloom フィルター    |
+
+各セクションでは、サンプルデータを使った例を示し、クエリ実行時に索引が使用されていることを確認する方法を説明します。
+
+<div id="minmax-index">
+  ## MinMax索引
+</div>
+
+`minmax`索引は、大まかにソートされたデータや、`ORDER BY`と相関のあるカラムに対する範囲条件に最適です。
+
+```sql
+-- CREATE TABLEで定義する
+CREATE TABLE events
+(
+  ts DateTime,
+  user_id UInt64,
+  value UInt32,
+  INDEX ts_minmax ts TYPE minmax GRANULARITY 1
+)
+ENGINE=MergeTree
+ORDER BY ts;
+
+-- または後から追加してマテリアライズする
+ALTER TABLE events ADD INDEX ts_minmax ts TYPE minmax GRANULARITY 1;
+ALTER TABLE events MATERIALIZE INDEX ts_minmax;
+
+-- 索引を活用するクエリ
+SELECT count() FROM events WHERE ts >= now() - 3600;
+
+-- 使用状況を確認する
+EXPLAIN indexes = 1
+SELECT count() FROM events WHERE ts >= now() - 3600;
+```
+
+`EXPLAIN` とプルーニングを用いた[実例](/ja/concepts/best-practices/using-data-skipping-indices#example)をご覧ください。
+
+<div id="set-index">
+  ## Set 索引
+</div>
+
+ローカル (ブロック単位) のカーディナリティが低い場合は、`set` 索引を使用してください。各ブロックに異なる値が多数含まれる場合は、あまり効果がありません。
+
+```sql
+ALTER TABLE events ADD INDEX user_set user_id TYPE set(100) GRANULARITY 1;
+ALTER TABLE events MATERIALIZE INDEX user_set;
+
+SELECT * FROM events WHERE user_id IN (101, 202);
+
+EXPLAIN indexes = 1
+SELECT * FROM events WHERE user_id IN (101, 202);
+```
+
+作成/マテリアライズのワークフローと、その前後の効果は、[基本操作ガイド](/ja/concepts/features/performance/skip-indexes/skipping-indexes#basic-operation)に示されています。
+
+<div id="textindex-for-full-text-search">
+  ## 全文検索向けのテキスト索引 (text)
+</div>
+
+`text` は、トークン化されたテキストデータに対する転置索引です。
+全文検索ワークロード向けに設計されており、トークンや検索語の効率的かつ決定論的なルックアップを可能にします。
+自然言語検索や大規模なテキスト検索のユースケースに推奨されます。
+
+詳細と使用例については、[テキスト索引を使った全文検索](/ja/reference/engines/table-engines/mergetree-family/textindexes)をご覧ください。
+
+```sql
+ALTER TABLE logs ADD INDEX msg_text msg TYPE text(tokenizer = splitByNonAlpha);
+ALTER TABLE logs MATERIALIZE INDEX msg_text;
+
+SELECT count() FROM logs WHERE hasAllTokens(msg, 'exception');
+```
+
+より詳細なオブザーバビリティの例については、[こちら](/ja/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search)のドキュメントを参照してください。
+
+テキスト索引は完全に決定論的で、トークン化やテキスト処理を全面的に調整できますが、bloom filter ベースの索引と比べると、その分ストレージ消費は増えます。
+
+<div id="generic-bloom-filter-scalar">
+  ## 汎用 Bloom filter (スカラー)
+</div>
+
+`bloom_filter` 索引は、&quot;干し草の山から針を探す&quot;ような等価比較や IN による存在確認に適しています。オプションのパラメータとして、偽陽性率 (デフォルトは 0.025) を指定できます。
+
+```sql
+ALTER TABLE events ADD INDEX value_bf value TYPE bloom_filter(0.01) GRANULARITY 3;
+ALTER TABLE events MATERIALIZE INDEX value_bf;
+
+SELECT * FROM events WHERE value IN (7, 42, 99);
+
+EXPLAIN indexes = 1
+SELECT * FROM events WHERE value IN (7, 42, 99);
+```
+
+<div id="n-gram-bloom-filter-ngrambf-v1-for-substring-search">
+  ## 部分文字列検索向け N-gram Bloom filter (ngrambf_v1) *(非推奨)*
+</div>
+
+<Note>
+  ClickHouse バージョン `>= 26.2` では、全文検索での `ngrambf_v1` 索引の使用は非推奨となっており、代わりに `text` 索引の使用が推奨されています (詳細は[こちら](/ja/reference/engines/table-engines/mergetree-family/textindexes)を参照してください) 。
+</Note>
+
+`ngrambf_v1` 索引は文字列を N-gram に分割します。`LIKE '%...%'` クエリに適しており、String/FixedString/Map (mapKeys/mapValues 経由) をサポートするほか、サイズ、hash の数、seed を調整できます。詳細は [N-gram bloom filter](/ja/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) のドキュメントを参照してください。
+
+```sql
+-- 部分文字列検索用の索引を作成する
+ALTER TABLE logs ADD INDEX msg_ngram msg TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1;
+ALTER TABLE logs MATERIALIZE INDEX msg_ngram;
+
+-- 部分文字列検索
+SELECT count() FROM logs WHERE msg LIKE '%timeout%';
+
+EXPLAIN indexes = 1
+SELECT count() FROM logs WHERE msg LIKE '%timeout%';
+```
+
+[このガイド](/ja/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search)では、token と ngram の実践的な例と、それぞれをどのような場合に使うべきかを紹介します。
+
+**パラメータ最適化用ヘルパー関数:**
+
+ngrambf&#95;v1 の 4 つのパラメータ (n-gram サイズ、bitmap サイズ、ハッシュ関数、seed) は、パフォーマンスとメモリ使用量に大きく影響します。想定される n-gram 数と目標の偽陽性率に基づいて最適な bitmap サイズとハッシュ関数の数を計算するには、以下の関数を使用してください。
+
+```sql
+CREATE FUNCTION bfEstimateFunctions AS
+(total_grams, bits) -> round((bits / total_grams) * log(2));
+
+CREATE FUNCTION bfEstimateBmSize AS
+(total_grams, p_false) -> ceil((total_grams * log(p_false)) / log(1 / pow(2, log(2))));
+
+-- 4300 N-gramのサイズ計算例、p_false = 0.0001
+SELECT bfEstimateBmSize(4300, 0.0001) / 8 AS size_bytes;  -- 約10304
+SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) AS k; -- 約13
+```
+
+チューニングの詳細については、[パラメータのドキュメント](/ja/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter)を参照してください。
+
+<div id="token-bloom-filter-tokenbf-v1-for-word-based-search">
+  ## 単語ベースの検索用 Token Bloom filter (`tokenbf_v1`) *(非推奨)*
+</div>
+
+<Note>
+  全文検索での `tokenbf_v1` 索引の使用は、ClickHouse バージョン `>= 26.2` では `text` 索引の利用が推奨されるため非推奨となっています (詳細は[こちら](/ja/reference/engines/table-engines/mergetree-family/textindexes)を参照してください) 。
+</Note>
+
+`tokenbf_v1` は、英数字以外の文字で区切られたトークンに対して索引を作成します。[`hasToken`](/ja/reference/functions/regular-functions/string-search-functions#hasToken)、`LIKE` の単語パターン、または等価比較/`IN` と組み合わせて使用してください。`String`/`FixedString`/`Map` 型をサポートしています。
+
+詳細は、[Token bloom filter](/ja/reference/engines/table-engines/mergetree-family/mergetree#token-bloom-filter) および [Bloom filter types](/ja/concepts/features/performance/skip-indexes/skipping-indexes#skip-index-types) の各ページを参照してください。
+
+```sql
+ALTER TABLE logs ADD INDEX msg_token lower(msg) TYPE tokenbf_v1(10000, 7, 7) GRANULARITY 1;
+ALTER TABLE logs MATERIALIZE INDEX msg_token;
+
+-- 単語検索（lower による大文字・小文字を区別しない）
+SELECT count() FROM logs WHERE hasToken(lower(msg), 'exception');
+
+EXPLAIN indexes = 1
+SELECT count() FROM logs WHERE hasToken(lower(msg), 'exception');
+```
+
+オブザーバビリティの例と、token と ngram の違いに関するガイダンスについては、[こちら](/ja/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search)を参照してください。
+
+<div id="add-indexes-during-create-table-multiple-examples">
+  ## CREATE TABLE時に索引を追加する (複数の例)
+</div>
+
+スキッピングインデックスは、複合式や `Map`/`Tuple`/`Nested` 型にも対応しています。これについては、以下の例で示します。
+
+```sql
+CREATE TABLE t
+(
+  u64 UInt64,
+  s String,
+  m Map(String, String),
+
+  INDEX idx_bf u64 TYPE bloom_filter(0.01) GRANULARITY 3,
+  INDEX idx_minmax u64 TYPE minmax GRANULARITY 1,
+  INDEX idx_set u64 * length(s) TYPE set(1000) GRANULARITY 4,
+  INDEX idx_ngram s TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1,
+  INDEX idx_token mapKeys(m) TYPE tokenbf_v1(10000, 7, 7) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY u64;
+```
+
+<div id="materializing-on-existing-data-and-verifying">
+  ## 既存データへのマテリアライズと検証
+</div>
+
+既存のデータパーツに対しては `MATERIALIZE` を使って索引を追加でき、以下のように `EXPLAIN` やトレースログでプルーニングの状況を確認できます。
+
+```sql
+ALTER TABLE t MATERIALIZE INDEX idx_bf;
+
+EXPLAIN indexes = 1
+SELECT count() FROM t WHERE u64 IN (123, 456);
+
+-- オプション: 詳細なプルーニング情報
+SET send_logs_level = 'trace';
+```
+
+この[minmax の実例](/ja/concepts/best-practices/using-data-skipping-indices#example)は、EXPLAIN の出力構造とプルーニング件数を示しています。
+
+<div id="when-use-and-when-to-avoid">
+  ## スキップ索引を使うべき場合と避けるべき場合
+</div>
+
+**スキップ索引を使うべき場合:**
+
+* フィルタ対象の値がデータブロック内でスパースである
+* `ORDER BY` カラムと強い相関がある、またはデータの取り込みパターンによって似た値がまとまっている
+* 大規模なログデータセットに対してテキスト検索を行う (`ngrambf_v1`/`tokenbf_v1` 型)
+
+**スキップ索引を避けるべき場合:**
+
+* ほとんどのブロックに少なくとも 1 つは一致する値が含まれている可能性が高い (いずれにしてもブロックが読み込まれる)
+* データの並び順と相関のない、高カーディナリティのカラムでフィルタリングする
+
+<Info>
+  **重要な注意点**
+
+  ある値がデータブロックに 1 回でも現れると、ClickHouse はそのブロック全体を読み込む必要があります。実際のデータに近いデータセットで索引をテストし、実際の性能測定に基づいて粒度や型固有のパラメータを調整してください。
+</Info>
+
+<div id="temporarily-ignore-or-force-indexes">
+  ## 一時的に索引を無視または強制する
+</div>
+
+テストやトラブルシューティングの際には、特定の索引を名前で指定して、クエリごとに無効化できます。必要に応じて索引の使用を強制するための設定も用意されています。詳細は [`ignore_data_skipping_indices`](/ja/reference/settings/session-settings#ignore_data_skipping_indices) を参照してください。
+
+```sql
+-- 名前で索引を無視する
+SELECT * FROM logs
+WHERE hasToken(lower(msg), 'exception')
+SETTINGS ignore_data_skipping_indices = 'msg_token';
+```
+
+<div id="notes-and-caveats">
+  ## 注意事項と留意点
+</div>
+
+* スキッピングインデックスは [MergeTree ファミリーのテーブル](/ja/reference/engines/table-engines/mergetree-family/mergetree) でのみサポートされており、プルーニングは granule/block レベルで行われます。
+* ブルームフィルタベースの索引は確率的です (偽陽性により余分な読み取りが発生することはありますが、有効なデータがスキップされることはありません) 。
+* ブルームフィルタやその他のスキップ索引は `EXPLAIN` とトレーシングで検証し、プルーニング効果と索引サイズのバランスが取れるように granularity を調整してください。
+
+<div id="related-docs">
+  ## 関連ドキュメント
+</div>
+
+* [データスキッピングインデックスのガイド](/ja/concepts/features/performance/skip-indexes/skipping-indexes)
+* [ベストプラクティスガイド](/ja/concepts/best-practices/using-data-skipping-indices)
+* [データスキッピングインデックスの操作](/ja/reference/statements/alter/skipping-index)
+* [システムテーブルの情報](/ja/reference/system-tables/data_skipping_indices)

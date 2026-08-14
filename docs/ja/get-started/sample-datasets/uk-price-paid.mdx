@@ -1,0 +1,203 @@
+---
+description: 'イングランドとウェールズの不動産取引価格データを含む英国の不動産価格データセットを使って、頻繁に実行するクエリのパフォーマンスを向上させるプロジェクションの使い方を学びます'
+sidebarTitle: '英国の不動産価格'
+slug: /getting-started/example-datasets/uk-price-paid
+title: '英国の不動産価格データセット'
+doc_type: 'guide'
+keywords: ['サンプルデータセット', '英国の不動産', 'サンプルデータ', '不動産', 'はじめに']
+---
+
+import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.jsx";
+
+このデータには、イングランドおよびウェールズの不動産取引で支払われた価格が含まれています。データは1995年以降について利用可能で、データセットの非圧縮サイズは約4 GiBです (ClickHouseでは約278 MiBしか使用しません) 。
+
+* ソース: https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads
+* フィールドの説明: https://www.gov.uk/guidance/about-the-price-paid-data
+* HM Land Registry data © Crown copyright and database right 2021 を含みます。このデータは Open Government Licence v3.0 の下で提供されています。
+
+<div id="create-table">
+  ## テーブルを作成
+</div>
+
+```sql
+CREATE DATABASE uk;
+
+CREATE TABLE uk.uk_price_paid
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+    is_new UInt8,
+    duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2);
+```
+
+<div id="preprocess-import-data">
+  ## データを前処理して挿入する
+</div>
+
+データを ClickHouse にストリーミングするために、`url` 関数を使用します。まず、取り込むデータの一部を前処理する必要があります。具体的には、次の処理を行います。
+
+* `postcode` を 2 つの別々のカラム `postcode1` と `postcode2` に分割する。これは保存効率とクエリ性能の両方の面で有利です
+* `time` フィールドは時刻部分が常に 00:00 のため、日付に変換する
+* 分析には不要なため、[UUid](/ja/reference/data-types/uuid) フィールドを無視する
+* [transform](/ja/reference/functions/regular-functions/other-functions#transform) 関数を使用して、`type` と `duration` を、より読みやすい `Enum` フィールドに変換する
+* `is_new` フィールドを、1 文字の文字列 (`Y`/`N`) から 0 または 1 の [UInt8](/ja/reference/data-types/int-uint) フィールドに変換する
+* 最後の 2 つのカラムはどちらも同じ値 (0) なので削除する
+
+`url` 関数は、Web サーバーから ClickHouse テーブルにデータをストリーミングします。次のコマンドは、`uk_price_paid` テーブルに 500 万行を挿入します。
+
+```sql
+INSERT INTO uk.uk_price_paid
+SELECT
+    toUInt32(price_string) AS price,
+    parseDateTimeBestEffortUS(time) AS date,
+    splitByChar(' ', postcode)[1] AS postcode1,
+    splitByChar(' ', postcode)[2] AS postcode2,
+    transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+    b = 'Y' AS is_new,
+    transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+    addr1,
+    addr2,
+    street,
+    locality,
+    town,
+    district,
+    county
+FROM url(
+    'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+    'CSV',
+    'uuid_string String,
+    price_string String,
+    time String,
+    postcode String,
+    a String,
+    b String,
+    c String,
+    addr1 String,
+    addr2 String,
+    street String,
+    locality String,
+    town String,
+    district String,
+    county String,
+    d String,
+    e String'
+) SETTINGS max_http_get_redirects=10;
+```
+
+データが挿入されるまで待機してください。ネットワーク速度によっては1～2分かかります。
+
+<div id="validate-data">
+  ## データを検証する
+</div>
+
+正しく取り込まれたことを、挿入された行数を確認して検証してみましょう。
+
+<RunnableCode>
+  ```sql
+  SELECT count()
+  FROM uk.uk_price_paid
+  ```
+</RunnableCode>
+
+このクエリを実行した時点では、このデータセットには 27,450,499 行ありました。次に、ClickHouse でこのテーブルのストレージサイズを見てみましょう。
+
+<RunnableCode>
+  ```sql
+  SELECT formatReadableSize(total_bytes)
+  FROM system.tables
+  WHERE name = 'uk_price_paid'
+  ```
+</RunnableCode>
+
+このテーブルのサイズは、わずか 221.43 MiB です。
+
+<div id="run-queries">
+  ## クエリをいくつか実行する
+</div>
+
+データを分析するため、クエリをいくつか実行してみましょう。
+
+<div id="average-price">
+  ### クエリ 1. 年別の平均価格
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+     toYear(date) AS year,
+     round(avg(price)) AS price,
+     bar(price, 0, 1000000, 80
+  )
+  FROM uk.uk_price_paid
+  GROUP BY year
+  ORDER BY year
+  ```
+</RunnableCode>
+
+<div id="average-price-london">
+  ### クエリ 2. ロンドンの年別平均価格
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+     toYear(date) AS year,
+     round(avg(price)) AS price,
+     bar(price, 0, 2000000, 100
+  )
+  FROM uk.uk_price_paid
+  WHERE town = 'LONDON'
+  GROUP BY year
+  ORDER BY year
+  ```
+</RunnableCode>
+
+2020年の住宅価格には何かが起きていますね！ とはいえ、おそらく驚くほどのことではないでしょう...
+
+<div id="most-expensive-neighborhoods">
+  ### クエリ 3. 最も価格が高い地区
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      town,
+      district,
+      count() AS c,
+      round(avg(price)) AS price,
+      bar(price, 0, 5000000, 100)
+  FROM uk.uk_price_paid
+  WHERE date >= '2020-01-01'
+  GROUP BY
+      town,
+      district
+  HAVING c >= 100
+  ORDER BY price DESC
+  LIMIT 100
+  ```
+</RunnableCode>
+
+<div id="speeding-up-queries-with-projections">
+  ## プロジェクションによるクエリの高速化
+</div>
+
+これらのクエリはプロジェクションで高速化できます。このデータセットでの例については、[&quot;Projections&quot;](/ja/concepts/features/projections/projections) を参照してください。
+
+<div id="playground">
+  ### Playgroundで試す
+</div>
+
+このデータセットは [Online Playground](https://sql.clickhouse.com?query_id=TRCWH5ZETY4SEEK8ISCCAX) でも利用できます。

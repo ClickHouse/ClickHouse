@@ -20,6 +20,9 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <base/sort.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 
 namespace DB
@@ -48,7 +51,7 @@ extern const int LOGICAL_ERROR;
 
 bool isSupportedAlterTypeForOnClusterDDLQuery(int type)
 {
-    assert(type != ASTAlterCommand::NO_TYPE);
+    chassert(type != ASTAlterCommand::NO_TYPE);
     static const std::unordered_set<int> unsupported_alter_types{
         /// It's dangerous, because it may duplicate data if executed on multiple replicas. We can allow it after #18978
         ASTAlterCommand::ATTACH_PARTITION,
@@ -149,7 +152,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         }
         ::sort(host_default_databases.begin(), host_default_databases.end());
         host_default_databases.erase(std::unique(host_default_databases.begin(), host_default_databases.end()), host_default_databases.end());
-        assert(use_local_default_database || !host_default_databases.empty());
+        chassert(use_local_default_database || !host_default_databases.empty());
 
         if (use_local_default_database && !host_default_databases.empty())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mixed local default DB and shard default DB in DDL query");

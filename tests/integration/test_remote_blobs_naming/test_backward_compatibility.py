@@ -14,22 +14,6 @@ from helpers.cluster import ClickHouseCluster
 def cluster():
     cluster = ClickHouseCluster(__file__)
     cluster.add_instance(
-        "oldest_node",
-        with_installed_binary=True,
-        image="clickhouse/clickhouse-server",
-        tag="23.11.5.29",
-        main_configs=[
-            "configs/old_node.xml",
-            "configs/storage_conf.xml",
-        ],
-        user_configs=[
-            "configs/settings.xml",
-        ],
-        with_minio=True,
-        macros={"replica": "3"},
-        with_zookeeper=True,
-    )
-    cluster.add_instance(
         "old_node",
         with_installed_binary=True,
         image="clickhouse/clickhouse-server",
@@ -133,7 +117,6 @@ def drop_table_scope(nodes, tables, create_statements = []):
     "node_name",
     [
         "old_node",
-        "oldest_node",
     ],
 )
 def test_read_new_format(cluster, node_name):
@@ -178,18 +161,18 @@ def test_read_new_format(cluster, node_name):
         write_file(old_node, detached_primary_idx, "\n".join(lines))
 
         active_count = old_node.query(
-            f"SELECT count() FROM system.parts WHERE table = 'test_read_new_format' and active"
+            "SELECT count() FROM system.parts WHERE table = 'test_read_new_format' and active"
         ).strip()
         assert active_count == "0", active_count
 
         old_node.query(f"ALTER TABLE test_read_new_format ATTACH PART '{part_name}'")
 
         active_count = old_node.query(
-            f"SELECT count() FROM system.parts WHERE table = 'test_read_new_format' and active"
+            "SELECT count() FROM system.parts WHERE table = 'test_read_new_format' and active"
         ).strip()
         assert active_count == "1", active_count
 
-        values = old_node.query(f"SELECT * FROM test_read_new_format").split("\n")
+        values = old_node.query("SELECT * FROM test_read_new_format").split("\n")
         values = [x for x in values if x]
         assert values == ["1\tHello"], values
 

@@ -49,7 +49,7 @@ namespace
 bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     using Kind = ASTSetRoleQuery::Kind;
-    Kind kind;
+    Kind kind = {};
     if (ParserKeyword{Keyword::SET_ROLE_DEFAULT}.ignore(pos, expected))
         kind = Kind::SET_ROLE_DEFAULT;
     else if (ParserKeyword{Keyword::SET_ROLE}.ignore(pos, expected))

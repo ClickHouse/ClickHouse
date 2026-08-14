@@ -34,6 +34,8 @@ Examples:
 """
 
 import argparse
+import gzip
+import io
 import json
 import os
 import re
@@ -41,6 +43,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse, parse_qs
 from urllib.request import urlopen
@@ -51,22 +54,132 @@ from urllib.error import HTTPError
 # HTTP helpers
 # ---------------------------------------------------------------------------
 
+def maybe_decompress(data):
+    """Transparently decompress `data` (bytes) if it is zstd- or gzip-framed.
+
+    CI uploads text artifacts larger than a threshold as zstd (see
+    ci/praktika/s3.py), so the same object can arrive either plain or compressed.
+    Detected by magic bytes, so it works regardless of the URL suffix.
+    """
+    if data[:4] == b"\x28\xb5\x2f\xfd":  # zstd magic
+        try:
+            import zstandard  # optional dependency
+            return zstandard.ZstdDecompressor().stream_reader(io.BytesIO(data)).read()
+        except ImportError:
+            proc = subprocess.run(["zstd", "-dcq"], input=data, capture_output=True, timeout=120)
+            if proc.returncode != 0:
+                raise RuntimeError(f"zstd decompression failed: {proc.stderr.decode('utf-8', 'replace')}")
+            return proc.stdout
+    if data[:2] == b"\x1f\x8b":  # gzip magic
+        return gzip.decompress(data)
+    return data
+
+
+def _read_url_bytes(url):
+    """GET `url`, falling back to `url + '.zst'` on 404/403, and return decompressed bytes."""
+    candidates = [url] if url.endswith(".zst") else [url, url + ".zst"]
+    last_error = None
+    for candidate in candidates:
+        try:
+            with urlopen(candidate, timeout=60) as resp:
+                return maybe_decompress(resp.read())
+        except HTTPError as e:
+            last_error = f"HTTP {e.code}: {e.reason} for {candidate}"
+    raise RuntimeError(last_error)
+
+
 def fetch_url(url):
-    """Fetch a URL and return its body as text."""
-    try:
-        with urlopen(url, timeout=60) as resp:
-            return resp.read().decode("utf-8")
-    except HTTPError as e:
-        raise RuntimeError(f"HTTP {e.code}: {e.reason} for {url}")
+    """Fetch a URL and return its body as text (transparently decompressed)."""
+    return _read_url_bytes(url).decode("utf-8")
+
+
+class _PrefixedReader:
+    """File-like wrapper that yields `prefix` bytes before the rest of `stream`.
+
+    Lets us peek at the magic bytes for format detection and still stream the whole
+    body through a decompressor without ever holding it fully in memory.
+    """
+
+    def __init__(self, prefix, stream):
+        self._prefix = prefix
+        self._stream = stream
+
+    def read(self, size=-1):
+        if not self._prefix:
+            return self._stream.read(size)
+        if size is None or size < 0:
+            data, self._prefix = self._prefix + self._stream.read(), b""
+            return data
+        if size <= len(self._prefix):
+            data, self._prefix = self._prefix[:size], self._prefix[size:]
+            return data
+        data, self._prefix = self._prefix + self._stream.read(size - len(self._prefix)), b""
+        return data
+
+
+_ZSTD_CLI_TIMEOUT_SEC = 120  # watchdog bound for the zstd-CLI decompression fallback
+
+
+def _stream_to_file(resp, dest):
+    """Stream `resp` to `dest`, transparently decompressing zstd/gzip by magic bytes.
+
+    Compressed perf artifacts exist precisely for the large shards, and several shards
+    download in parallel, so the body is streamed in chunks rather than buffered.
+    """
+    header = resp.read(4)
+    source = _PrefixedReader(header, resp)
+    with open(dest, "wb") as f:
+        if header == b"\x28\xb5\x2f\xfd":  # zstd magic
+            try:
+                import zstandard  # optional dependency
+                shutil.copyfileobj(zstandard.ZstdDecompressor().stream_reader(source), f)
+            except ImportError:
+                proc = subprocess.Popen(["zstd", "-dcq"], stdin=subprocess.PIPE, stdout=f,
+                                        stderr=subprocess.PIPE)
+                # A watchdog bounds the whole exchange: both the stdin write and the stderr read
+                # block indefinitely if the child wedges, so wait(timeout=) alone never fires.
+                # Killing the child unblocks both and turns a stuck shard into a normal error.
+                # (communicate() is unusable here: it flushes the already-closed stdin, which
+                # raises ValueError on most Python versions.)
+                watchdog = threading.Timer(_ZSTD_CLI_TIMEOUT_SEC, proc.kill)
+                watchdog.start()
+                try:
+                    try:
+                        shutil.copyfileobj(source, proc.stdin)
+                        proc.stdin.close()
+                    except BrokenPipeError:
+                        pass  # zstd exited early (corrupt input or killed); real error is on stderr
+                    stderr = proc.stderr.read()
+                    proc.stderr.close()
+                    rc = proc.wait()
+                finally:
+                    watchdog.cancel()
+                if rc != 0:
+                    raise RuntimeError(f"zstd decompression failed (exit {rc}): "
+                                       f"{stderr.decode('utf-8', 'replace')}")
+        elif header[:2] == b"\x1f\x8b":  # gzip magic
+            with gzip.GzipFile(fileobj=source) as gz:
+                shutil.copyfileobj(gz, f)
+        else:
+            shutil.copyfileobj(source, f)
 
 
 def download_url(url, dest):
-    """Download a URL to a file using curl. Returns True on success."""
-    result = subprocess.run(
-        ["curl", "-sfL", "-o", dest, url],
-        capture_output=True, timeout=120,
-    )
-    return result.returncode == 0
+    """Download a URL to a file, transparently decompressing. Raises on failure.
+
+    Falls back to `url + '.zst'` on 404/403. Shard-local failures are isolated by the
+    `download_shard` worker, not here.
+    """
+    candidates = [url] if url.endswith(".zst") else [url, url + ".zst"]
+    last_error = None
+    for candidate in candidates:
+        try:
+            with urlopen(candidate, timeout=60) as resp:
+                _stream_to_file(resp, dest)
+                return
+        except HTTPError as e:
+            last_error = f"HTTP {e.code}: {e.reason} for {candidate}"
+    raise RuntimeError(last_error)
 
 
 # ---------------------------------------------------------------------------
@@ -240,8 +353,13 @@ def download_shard(shard, tmpdir):
     shard_num = shard["shard_num"]
     dest = os.path.join(tmpdir, f"{arch}_{shard_num}.tsv")
 
-    if not download_url(shard["tsv_url"], dest):
-        return shard, None, f"Failed to download {shard['tsv_url']}"
+    # Isolate all shard-local download/decompress failures (HTTP, network, timeout, missing zstd,
+    # corrupt archive, ...) as a per-shard error so one bad shard warns and the report continues
+    # with the rest rather than aborting the whole run.
+    try:
+        download_url(shard["tsv_url"], dest)
+    except Exception as e:
+        return shard, None, f"Failed to download {shard['tsv_url']}: {e}"
 
     # Prepend arch and shard_num columns so clickhouse-local can distinguish shards
     enriched = os.path.join(tmpdir, f"{arch}_{shard_num}_enriched.tsv")
@@ -261,13 +379,38 @@ def download_shard(shard, tmpdir):
 # SQL queries
 # ---------------------------------------------------------------------------
 
+# Number of (enriched) columns in all-query-metrics.tsv once it carries the
+# per-query changed_threshold/unstable_threshold columns. The two arch/shard
+# columns are prepended by download_shard, the report itself contributes the
+# rest, ending with changed_threshold (c12) and unstable_threshold (c13).
+COLUMNS_WITH_THRESHOLDS = 13
+
+
+def count_tsv_columns(path):
+    """Return the number of tab-separated columns in the first non-empty line."""
+    with open(path, "r") as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if line:
+                return line.count("\t") + 1
+    return 0
+
+
 def _sql_escape(s):
     """Escape a string for use in SQL single-quoted literals."""
     return s.replace("\\", "\\\\").replace("'", "\\'")
 
 
-def _build_base_cte(args, data_path):
-    """Build the common CTE that reads, filters, and classifies data."""
+def _build_base_cte(args, data_path, has_thresholds):
+    """Build the common CTE that reads, filters, and classifies data.
+
+    When ``has_thresholds`` is true the report carries the per-query
+    changed_threshold/unstable_threshold columns (c12/c13) exported by
+    ci/jobs/scripts/perf/compare.sh, and we classify with them so this helper
+    matches the CI gate exactly. Older reports do not have those columns, so we
+    fall back to the floor constants (0.15/0.25); see count_tsv_columns and the
+    warning emitted in main().
+    """
     where_parts = [f"metric_name = '{_sql_escape(args.metric)}'"]
     if args.arch != "all":
         where_parts.append(f"arch = '{args.arch}'")
@@ -280,6 +423,15 @@ def _build_base_cte(args, data_path):
 
     where_clause = " AND ".join(where_parts)
 
+    if has_thresholds:
+        threshold_cols = """
+            toFloat64(c12) AS changed_threshold,
+            toFloat64(c13) AS unstable_threshold,"""
+    else:
+        threshold_cols = """
+            0.15 AS changed_threshold,
+            0.25 AS unstable_threshold,"""
+
     return f"""
     data AS (
         SELECT
@@ -290,25 +442,33 @@ def _build_base_cte(args, data_path):
             toFloat64(c5) AS `right`,
             toFloat64(c6) AS diff,
             toFloat64(c7) AS times_change,
-            toFloat64(c8) AS stat_threshold,
+            toFloat64(c8) AS stat_threshold,{threshold_cols}
             c9 AS test,
             toUInt32(c10) AS query_index,
             c11 AS query_display_name
         FROM file('{data_path}', 'TSV')
     ),
     filtered AS (
+        -- Classify each query exactly as ci/jobs/scripts/perf/compare.sh does:
+        --   changed_fail  = abs(diff) > changed_threshold  AND abs(diff) >= stat_threshold
+        --   unstable_fail = NOT changed_fail               AND stat_threshold > unstable_threshold
+        -- changed_threshold/unstable_threshold are the per-query thresholds
+        -- (the 0.15/0.25 floors raised by historical and per-test thresholds).
+        -- Using the exported per-query thresholds instead of only the floor
+        -- constants keeps this helper in agreement with the CI gate even when
+        -- the effective threshold for a query is above the floor.
         SELECT *,
-            (abs(diff) >= stat_threshold AND abs(diff) > 0.1) AS is_changed,
-            (NOT (abs(diff) >= stat_threshold AND abs(diff) > 0.1) AND stat_threshold > 0.2) AS is_unstable,
+            (abs(diff) >= stat_threshold AND abs(diff) > changed_threshold) AS is_changed,
+            (NOT (abs(diff) >= stat_threshold AND abs(diff) > changed_threshold) AND stat_threshold > unstable_threshold) AS is_unstable,
             if(diff > 0, 'slower', if(diff < 0, 'faster', 'same')) AS direction
         FROM data
         WHERE {where_clause}
     )"""
 
 
-def build_summary_sql(args, shard_meta, data_path):
+def build_summary_sql(args, shard_meta, data_path, has_thresholds):
     """Build SQL for per-shard summary."""
-    base_cte = _build_base_cte(args, data_path)
+    base_cte = _build_base_cte(args, data_path, has_thresholds)
     shard_values = ", ".join(
         f"('{_sql_escape(s['name'])}', '{s['arch']}', {s['shard_num']})"
         for s in shard_meta
@@ -345,9 +505,9 @@ def build_summary_sql(args, shard_meta, data_path):
     """
 
 
-def build_detail_sql(args, data_path, fmt="JSONEachRow"):
+def build_detail_sql(args, data_path, has_thresholds, fmt="JSONEachRow"):
     """Build SQL for per-query detail rows."""
-    base_cte = _build_base_cte(args, data_path)
+    base_cte = _build_base_cte(args, data_path, has_thresholds)
 
     sort_map = {
         "diff": "abs(diff) DESC",
@@ -460,9 +620,9 @@ def output_json(summary_rows, detail_rows, pr_number, sha, metric):
     print(json.dumps(output, indent=2))
 
 
-def output_tsv(args, data_path):
+def output_tsv(args, data_path, has_thresholds):
     """Run the detail query with TabSeparatedWithNames format and print."""
-    sql = build_detail_sql(args, data_path, fmt="TabSeparatedWithNames")
+    sql = build_detail_sql(args, data_path, has_thresholds, fmt="TabSeparatedWithNames")
     print(run_ch(sql), end="")
 
 
@@ -623,11 +783,6 @@ def parse_args():
 def main():
     args = parse_args()
 
-    # Verify clickhouse is available
-    if shutil.which("clickhouse") is None:
-        print("Error: clickhouse not found in PATH.", file=sys.stderr)
-        sys.exit(1)
-
     # Resolve URL
     url = args.url
     if "github.com" in url and "/pull/" in url:
@@ -657,6 +812,25 @@ def main():
 
     if not shards:
         print("No matching shards found", file=sys.stderr)
+        sys.exit(1)
+
+    # Jobs that didn't run (e.g. the amd perf comparison only runs on 'pr-performance' PRs) have no
+    # artifacts, so report them cleanly instead of attempting a download that 403s.
+    skipped = [s for s in shards if str(s.get("status", "")).upper() == "SKIPPED"]
+    for s in skipped:
+        print(f"  Skipped: {s['name']} ({s.get('info') or 'not run'})", file=sys.stderr)
+    shards = [s for s in shards if str(s.get("status", "")).upper() != "SKIPPED"]
+
+    if not shards:
+        # All matching jobs were intentionally skipped: no perf data to analyze, but not a
+        # tool failure, so exit successfully.
+        print("No shards to fetch (all matching jobs were skipped)", file=sys.stderr)
+        sys.exit(0)
+
+    # clickhouse (used for local classification of the downloaded data) is only needed once we
+    # know there is at least one shard to analyze.
+    if shutil.which("clickhouse") is None:
+        print("Error: clickhouse not found in PATH.", file=sys.stderr)
         sys.exit(1)
 
     print(f"Fetching {len(shards)} performance shard(s)...\n", file=sys.stderr)
@@ -697,20 +871,34 @@ def main():
         ]
         multi_shard = len(downloaded) > 1
 
+        # Detect whether the report carries the per-query threshold columns.
+        # Reports generated before those columns were added to
+        # all-query-metrics.tsv lack them, so we classify with the floor
+        # constants instead and make that visible rather than silently
+        # reporting queries that CI would treat as noise.
+        has_thresholds = count_tsv_columns(merged_path) >= COLUMNS_WITH_THRESHOLDS
+        if not has_thresholds:
+            print(
+                "  Warning: this report predates the per-query threshold columns "
+                "in all-query-metrics.tsv; classifying with the 0.15/0.25 floor "
+                "constants, which may flag queries that CI treats as noise.",
+                file=sys.stderr,
+            )
+
         # Run summary query
-        summary_sql = build_summary_sql(args, shard_meta, merged_path)
+        summary_sql = build_summary_sql(args, shard_meta, merged_path, has_thresholds)
         summary_rows = parse_jsonl(run_ch(summary_sql))
 
         if args.tsv:
-            output_tsv(args, merged_path)
+            output_tsv(args, merged_path, has_thresholds)
         elif args.json:
-            detail_sql = build_detail_sql(args, merged_path)
+            detail_sql = build_detail_sql(args, merged_path, has_thresholds)
             detail_rows = parse_jsonl(run_ch(detail_sql))
             output_json(summary_rows, detail_rows, pr_number, sha, args.metric)
         elif args.summary:
             output_human(summary_rows, [], pr_number, args.metric, multi_shard)
         else:
-            detail_sql = build_detail_sql(args, merged_path)
+            detail_sql = build_detail_sql(args, merged_path, has_thresholds)
             detail_rows = parse_jsonl(run_ch(detail_sql))
             output_human(summary_rows, detail_rows, pr_number, args.metric, multi_shard)
 

@@ -4,12 +4,14 @@ DROP TABLE IF EXISTS order_by_desc;
 
 SET enable_filesystem_cache=0;
 SET read_through_distributed_cache=0;
+SET use_top_k_dynamic_filtering=0;
+SET use_skip_indexes_for_top_k=0;
 
 CREATE TABLE order_by_desc (u UInt32, s String)
 ENGINE MergeTree ORDER BY u PARTITION BY u % 100
 SETTINGS index_granularity = 1024, index_granularity_bytes = '10Mi';
 
-INSERT INTO order_by_desc SELECT number, repeat('a', 1024) FROM numbers(1024 * 300);
+INSERT INTO order_by_desc SELECT number, repeat('a', 128) FROM numbers(1024 * 300);
 OPTIMIZE TABLE order_by_desc FINAL;
 
 SELECT s FROM order_by_desc ORDER BY u DESC LIMIT 10 FORMAT Null

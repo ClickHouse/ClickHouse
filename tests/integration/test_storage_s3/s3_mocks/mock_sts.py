@@ -8,6 +8,11 @@ if len(sys.argv) >= 3:
 else:
     expected_role = 'miniorole'
 
+if len(sys.argv) >= 4:
+    expected_external_id = sys.argv[3]
+else:
+    expected_external_id = 'miniexternalid'
+
 @route("/")
 def ping():
     response.content_type = "text/plain"
@@ -20,7 +25,15 @@ def sts():
     access_key = "minio"
     secret_access_key = "wrong_key"
 
-    if f"RoleSessionName={expected_role}" in str(request.url):
+    url = str(request.url)
+    role_ok = f"RoleSessionName={expected_role}" in url
+    # ExternalId is optional; when the request carries one it must match the
+    # expected value. Requests without an ExternalId keep the previous behaviour.
+    external_id_ok = ("ExternalId=" not in url) or (
+        f"ExternalId={expected_external_id}" in url
+    )
+
+    if role_ok and external_id_ok:
         secret_access_key = "ClickHouse_Minio_P@ssw0rd"
 
     expiration = datetime.now(timezone.utc) + timedelta(hours=1)

@@ -6,6 +6,7 @@
 #include <Storages/ColumnSize.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
+#include <Storages/VirtualColumnsDescription.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
@@ -28,10 +29,15 @@ struct StorageInMemoryMetadata
     /// Columns of table with their names, types,
     /// defaults, comments, etc. All table engines have columns.
     ColumnsDescription columns;
+    /// Virtual columns description (e.g. _part, _table, _row_exists).
+    /// Not serialized to disk — recomputed by each storage engine.
+    VirtualColumnsDescription virtuals;
     /// Table indices. Currently supported for MergeTree only.
     bool add_minmax_index_for_numeric_columns = false;
     bool add_minmax_index_for_string_columns = false;
     bool add_minmax_index_for_temporal_columns = false;
+    bool add_minmax_index_for_block_number_column = false;
+    bool add_minmax_index_for_block_offset_column = false;
     /// Needed for compatibility
     bool escape_index_filenames = true;
     IndicesDescription secondary_indices;
@@ -50,6 +56,8 @@ struct StorageInMemoryMetadata
     KeyDescription sorting_key;
     /// SAMPLE BY expression. Supported for MergeTree only.
     KeyDescription sampling_key;
+    /// UNIQUE KEY expression. Supported for MergeTree only. Experimental.
+    KeyDescription unique_key;
     /// Separate ttl expressions for columns
     TTLColumnsDescription column_ttls_by_name;
     /// TTL expressions for table (Move and Rows)
@@ -78,6 +86,9 @@ struct StorageInMemoryMetadata
     ///  Current state of a datalake table.
     std::optional<DataLakeTableStateSnapshot> datalake_table_state;
 
+    /// If metadata was cloned we need to extend lifetime of previous metadata.
+    std::shared_ptr<const StorageInMemoryMetadata> cloned_from = nullptr;
+
     StorageInMemoryMetadata() = default;
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
@@ -93,8 +104,11 @@ struct StorageInMemoryMetadata
     /// Sets a user-defined comment for a table
     void setComment(const String & comment_);
 
-    /// Sets only real columns, possibly overwrites virtual ones.
+    /// Sets only real columns.
     void setColumns(ColumnsDescription columns_);
+
+    /// Sets virtual columns
+    void setVirtuals(VirtualColumnsDescription virtuals_);
 
     /// Sets secondary indices
     void setSecondaryIndices(IndicesDescription secondary_indices_);
@@ -125,6 +139,8 @@ struct StorageInMemoryMetadata
     void setMetadataVersion(int32_t metadata_version_);
     /// Get copy of current metadata with metadata_version_
     StorageInMemoryMetadata withMetadataVersion(int32_t metadata_version_) const;
+    /// Get copy of current metadata with virtual columns
+    StorageInMemoryMetadata withVirtuals(VirtualColumnsDescription virtual_columns_) const;
 
     /// Sets SQL security for the storage.
     void setSQLSecurity(const ASTSQLSecurity & sql_security);
@@ -209,10 +225,15 @@ struct StorageInMemoryMetadata
     /// Block with ordinary columns.
     Block getSampleBlockNonMaterialized() const;
 
-    /// Block with ordinary + materialized + virtuals. Virtuals have to be
-    /// explicitly specified, because they are part of Storage type, not
-    /// Storage metadata.
-    Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const;
+    /// Block with ordinary + materialized + virtuals.
+    Block getSampleBlockWithVirtuals(VirtualsKind kind, VirtualsMaterializationPlace place) const;
+
+    /// All columns (incl. alias/ephemeral) plus virtual columns, a physical column shadowing a
+    /// virtual of the same name. Used to resolve implicit indices over virtual columns.
+    ColumnsDescription getColumnsWithVirtuals() const;
+
+    /// Returns whether the column is virtual and not shadowed by a real column.
+    bool isVirtualColumn(const String & column_name) const;
 
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;
@@ -271,6 +292,17 @@ struct StorageInMemoryMetadata
     /// * y', 'toStartOfMonth(date)', etc.
     Names getPrimaryKeyColumns() const;
 
+    /// Returns structure with unique key (UNIQUE KEY clause).
+    const KeyDescription & getUniqueKey() const;
+    /// Returns AST of unique key expression for storage or nullptr if there is none.
+    ASTPtr getUniqueKeyAST() const { return unique_key.definition_ast; }
+    /// Storage has user-defined (in CREATE query) unique key.
+    bool isUniqueKeyDefined() const;
+    /// Storage has unique key (at least one column).
+    bool hasUniqueKey() const;
+    /// Returns column names from UNIQUE KEY clause.
+    Names getUniqueKeyColumns() const;
+
     /// Storage settings
     ASTPtr getSettingsChanges() const;
     Field getSettingChange(const String & setting_name) const;
@@ -308,10 +340,39 @@ struct StorageInMemoryMetadata
 
     void addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context);
     void dropImplicitIndicesForColumn(const String & column_name);
+
+    void addImplicitIndicesForVirtualColumns(ContextPtr context);
+    void dropImplicitIndicesForVirtualColumns();
+
+    static std::shared_ptr<StorageInMemoryMetadata> clone(std::shared_ptr<const StorageInMemoryMetadata> from);
 };
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 using MultiVersionStorageMetadataPtr = MultiVersion<StorageInMemoryMetadata>;
+
+/// Lifetime-safe wrapper.
+class [[nodiscard]] StorageMetadataHandle
+{
+public:
+    StorageMetadataHandle() = default;
+    StorageMetadataHandle(std::nullptr_t) {} /// NOLINT(google-explicit-constructor)
+    StorageMetadataHandle(std::shared_ptr<StorageInMemoryMetadata> metadata_); /// NOLINT(google-explicit-constructor)
+    StorageMetadataHandle(std::shared_ptr<const StorageInMemoryMetadata> metadata_); /// NOLINT(google-explicit-constructor)
+
+    const StorageInMemoryMetadata * operator->() const &;
+    const StorageInMemoryMetadata & operator*() const &;
+    const StorageInMemoryMetadata * operator->() const && = delete;
+    const StorageInMemoryMetadata & operator*() const && = delete;
+
+    operator StorageMetadataPtr() const &; /// NOLINT(google-explicit-constructor)
+    operator StorageMetadataPtr() const && = delete; /// NOLINT(google-explicit-constructor)
+
+    explicit operator bool() const;
+    bool operator==(std::nullptr_t) const;
+
+private:
+    StorageMetadataPtr metadata;
+};
 
 String listOfColumns(const NamesAndTypesList & available_columns);
 

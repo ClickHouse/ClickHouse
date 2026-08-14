@@ -215,7 +215,7 @@ namespace Net
         /// Returns true if the next operation corresponding to
         /// mode will not block, false otherwise.
 
-        bool pollImpl(Poco::Timespan & timeout, int mode);
+        virtual bool pollImpl(Poco::Timespan & timeout, int mode);
         /// Modifies `timeout`
 
         virtual void setSendBufferSize(int size);
@@ -386,6 +386,14 @@ namespace Net
         virtual bool secure() const;
         /// Returns true iff the socket's connection is secure
         /// (using SSL or TLS).
+
+        virtual bool supportsExternalPolling() const;
+        /// Returns true iff an external poller can drive this socket's
+        /// readiness (the non-blocking / EAGAIN model).
+
+        virtual bool connectionOpen();
+        /// Returns true iff the peer has not closed the connection,
+        /// checked without consuming pending data or blocking.
 
         int socketError();
         /// Returns the value of the SO_ERROR socket option.

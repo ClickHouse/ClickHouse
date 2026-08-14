@@ -1,0 +1,18 @@
+conversion path, const array
+[NULL,'hi']
+adaptor path, const array
+[NULL,'hi']
+conversion path, table column
+	13
+hi	13
+adaptor path, table column
+\N	13
+hi	13
+dynamic adaptor path, const array
+[NULL,'hi']
+dynamic adaptor path, table column
+\N	29
+hi	29
+dynamic toString, table column
+	29
+hi	29

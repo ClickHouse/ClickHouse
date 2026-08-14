@@ -1,0 +1,496 @@
+#pragma once
+
+#include <Interpreters/FileCache/FileCacheOriginInfo.h>
+#include <Interpreters/FileCache/FileCacheKey.h>
+#include <Core/Types.h>
+#include <Interpreters/FileCache/Guards.h>
+#include <Interpreters/FileCache/FileCache_fwd_internal.h>
+
+#include <atomic>
+#include <chrono>
+#include <functional>
+#include <memory>
+#include <utility>
+
+#include <fmt/ranges.h>
+
+namespace DB
+{
+struct FileCacheReserveStat;
+class EvictionCandidates;
+class FileSegment;
+struct FileSegmentInfo;
+class EvictionInfo;
+using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
+struct CacheUsageStatGuard;
+struct CacheUsage;
+using CacheUsagePtr = std::shared_ptr<CacheUsage>;
+
+
+class IFileCachePriority : private boost::noncopyable
+{
+    /// SplitFileCachePriority reaches its inner priorities through base references.
+    friend class SplitFileCachePriority;
+    /// OvercommitFileCachePriority reaches its per-user priorities through base pointers.
+    template <typename BasePriority>
+    friend class OvercommitFileCachePriority;
+
+public:
+    using Key = FileCacheKey;
+
+    enum class QueueType
+    {
+        Main, /// Global queue
+        Query, /// Per-query queue
+    };
+
+    enum class QueueEntryType : uint8_t
+    {
+        None,
+        LRU,
+        SLRU_Protected,
+        SLRU_Probationary,
+        SplitCache_Data,
+        SplitCache_System,
+    };
+    using OriginInfo = FileCacheOriginInfo;
+    using UserID = OriginInfo::UserID;
+
+    struct Entry
+    {
+        const Key key;
+        const size_t offset;
+        /// Weak so invalidated entries awaiting lazy removal do not pin KeyMetadata.
+        /// While Active it is kept alive by the metadata bucket.
+        const KeyMetadataWeakPtr key_metadata;
+
+        std::atomic<size_t> size;
+
+        std::string toString(const std::string & prefix = "") const;
+
+        /// Locks `key_metadata`, throwing if it expired.
+        KeyMetadataPtr getKeyMetadata() const;
+
+        enum class State
+        {
+            Active,
+            /// Temporary state used only in SLRU during queue transitions (downgrade from
+            /// protected to probationary, or upgrade from probationary to protected).
+            /// The new entry is added to the destination queue with this state and transitions
+            /// to Active atomically together with the SLRUIterator's inner pointer update in
+            /// `SLRUIterator::setIterator`. This ensures that `iterateImpl`, which checks entry
+            /// state before evicting, never sees the entry as evictable until the SLRUIterator
+            /// already points to it: a concurrent iteration that observes Active state will
+            /// always find this entry (not the previous queue entry) when it calls getEntry().
+            PreActive,
+            /// Entry is collected for eviction via IFileCachePriority::collectEvictionCandidates
+            /// and is being or soon will be removed from filesystem.
+            Evicting,
+            /// Can only be set in SLRU eviciton policy during moves
+            /// in between protected/probationary queues.
+            Moving,
+            /// Has size 0, will never get non-zero size and must soon be removed from queue.
+            Invalidated,
+            /// Removed from queue completely.
+            Removed,
+        };
+
+        Entry(const Key & key_, size_t offset_, size_t size_, KeyMetadataPtr key_metadata_, State initial_state = State::Active);
+        Entry(const Entry & other);
+
+        State getState() const { return state.load(); }
+
+        /// Transitions PreActive → Active. Must be called inside `SLRUIterator::entry_mutex`
+        /// together with the pointer update so that `getEntry()` and state visibility are atomic.
+        void setActiveFlag(const CacheStateGuard::Lock &)
+        {
+            [[maybe_unused]] auto prev = state.exchange(State::Active);
+            chassert(
+                prev == State::PreActive,
+                printUnexpectedState(prev, "PreActive", "Active"));
+        }
+
+        void setEvictingFlag(const LockedKey &)
+        {
+            [[maybe_unused]] auto prev = state.exchange(State::Evicting);
+            chassert(
+                prev == State::Active,
+                printUnexpectedState(prev, "Active", "Evicting"));
+        }
+
+        void setMovingFlag(const LockedKey &)
+        {
+            [[maybe_unused]] auto prev = state.exchange(State::Moving);
+            chassert(
+                prev == State::Active,
+                printUnexpectedState(prev, "Active", "Moving"));
+        }
+
+        void setRemoved(const CachePriorityGuard::WriteLock &)
+        {
+            [[maybe_unused]] auto prev = state.exchange(State::Removed);
+            chassert(
+                prev == State::Active || prev == State::Evicting || prev == State::Invalidated,
+                printUnexpectedState(prev, "Active or Evicting or Invalidated", "Removed"));
+        }
+
+        void setInvalidatedFlag()
+        {
+            [[maybe_unused]] auto prev = state.exchange(State::Invalidated);
+            /// Active in case of FileCache::remove
+            /// Evicting in case of FileCache::tryReserve
+            /// Moving in case of SLRU queue moves
+            /// PreActive in case of exception during SLRU queue transition
+            chassert(
+                prev == State::Active || prev == State::Evicting || prev == State::Moving || prev == State::PreActive,
+                printUnexpectedState(prev, "Active or Moving or Evicting or PreActive", "Invalidated"));
+        }
+
+        void resetFlag(State from_state, State to_state = State::Active) noexcept
+        {
+            [[maybe_unused]] auto prev = state.exchange(to_state);
+            chassert(
+                prev == from_state,
+                printUnexpectedState(prev, magic_enum::enum_name(from_state), fmt::format("{}", magic_enum::enum_name(to_state))));
+        }
+
+    private:
+        std::string printUnexpectedState(
+            State prev_state, std::string_view expected_state, std::string type) const
+        {
+            return fmt::format(
+                "Previous state is {}, but expected state to be {} while setting {} flag for {}",
+                magic_enum::enum_name(prev_state), expected_state, type, toString());
+        }
+
+        std::atomic<State> state = State::Active;
+    };
+    using EntryPtr = std::shared_ptr<Entry>;
+
+    class Iterator
+    {
+    public:
+        virtual ~Iterator() = default;
+
+        virtual EntryPtr getEntry() const = 0;
+
+        /// Note: IncrementSize unlike decrementSize requires a cache lock, because
+        /// it requires more consistency guarantees for eviction.
+
+        virtual void incrementSize(size_t size, const CacheStateGuard::Lock &) = 0;
+
+        virtual void decrementSize(size_t size) = 0;
+
+        virtual bool isValid(const CachePriorityGuard::WriteLock &) const = 0;
+
+        virtual void remove(const CachePriorityGuard::WriteLock &) = 0;
+
+        virtual void invalidate() noexcept = 0;
+
+        /// Same as invalidate, but for callers which remove the entry under the same
+        /// write lock right after: the entry is not registered for the background
+        /// cleanup of invalidated entries (such a ref would be stale from birth and
+        /// would only pin the entry allocation until the cleanup discards it).
+        virtual void invalidateBeforeRemove(const CachePriorityGuard::WriteLock &) noexcept { invalidate(); }
+
+        virtual QueueEntryType getType() const = 0;
+
+        virtual const Iterator * getNestedOrThis() const { return this; }
+        virtual Iterator * getNestedOrThis() { return this; }
+
+        virtual void check(const CacheStateGuard::Lock &) const {}
+    };
+    using IteratorPtr = std::shared_ptr<Iterator>;
+
+    struct InvalidatedEntryInfo
+    {
+        /// Iterator becomes invalid when entry is removed
+        /// so we also save the entry here to be able to check validity of the iterator.
+        IFileCachePriority::EntryPtr entry;
+        IFileCachePriority::IteratorPtr iterator;
+    };
+    using InvalidatedEntriesInfos = std::vector<InvalidatedEntryInfo>;
+
+    virtual ~IFileCachePriority() = default;
+
+    enum class Type
+    {
+        LRU,
+        SLRU,
+        LRU_OVERCOMMIT,
+        SLRU_OVERCOMMIT,
+    };
+    virtual Type getType() const = 0;
+
+    QueueType getQueueType() const { return queue_type; }
+
+    size_t getSizeLimit(const CacheStateGuard::Lock &) const { return max_size; }
+    size_t getSizeLimitApprox() const { return max_size.load(std::memory_order_relaxed); }
+
+    size_t getElementsLimit(const CacheStateGuard::Lock &) const { return max_elements; }
+    size_t getElementsLimitApprox() const { return max_elements.load(std::memory_order_relaxed); }
+
+    virtual size_t getSize(const CacheStateGuard::Lock &) const = 0;
+    virtual size_t getSizeApprox() const = 0;
+
+    virtual size_t getElementsCount(const CacheStateGuard::Lock &) const = 0;
+    virtual size_t getElementsCountApprox() const = 0;
+
+    virtual bool isOvercommitEviction() const { return false; }
+    virtual double getSLRUSizeRatio() const { return 0; }
+
+    virtual std::string getStateInfoForLog(const CacheStateGuard::Lock &) const = 0;
+    /// Check correctness of cache state.
+    virtual void check(const CacheStateGuard::Lock &) const;
+
+    virtual EvictionInfoPtr collectEvictionInfo(
+        size_t size,
+        size_t elements,
+        IFileCachePriority::Iterator * reservee,
+        bool is_total_space_cleanup,
+        const IFileCachePriority::OriginInfo & origin,
+        const CacheStateGuard::Lock &) = 0;
+
+    enum class IterationResult : uint8_t
+    {
+        BREAK,
+        CONTINUE,
+    };
+
+    using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
+    virtual void iterate(
+        IterateFunc func,
+        FileCacheReserveStat & stat,
+        const CachePriorityGuard::ReadLock &) = 0;
+
+    /// Throws exception if there is not enough size to fit it.
+    virtual IteratorPtr add( /// NOLINT
+        KeyMetadataPtr key_metadata,
+        size_t offset,
+        size_t size,
+        const CachePriorityGuard::WriteLock &,
+        const CacheStateGuard::Lock *,
+        bool is_initial_load = false) = 0;
+
+    /// Restore a previously removed entry back to the queue it came from.
+    /// `original_queue_type` is the `QueueEntryType` the entry had before removal.
+    /// Default implementation ignores the hint and delegates to `add`.
+    /// SLRU overrides this to route protected entries back to the protected queue.
+    virtual IteratorPtr addForRestore( /// NOLINT
+        KeyMetadataPtr key_metadata,
+        size_t offset,
+        size_t size,
+        QueueEntryType /* original_queue_type */,
+        const CachePriorityGuard::WriteLock & lock,
+        const CacheStateGuard::Lock * state_lock)
+    {
+        return add(key_metadata, offset, size, lock, state_lock, false);
+    }
+
+    /// `reservee` is the entry for which are reserving now.
+    /// It does not exist, if it is the first space reservation attempt
+    /// for the corresponding file segment.
+    virtual bool canFit( /// NOLINT
+        size_t size,
+        size_t elements,
+        const CacheStateGuard::Lock &,
+        IteratorPtr reservee = nullptr,
+        const OriginInfo & origin_info = {},
+        bool is_initial_load = false) const = 0;
+
+    virtual bool tryIncreasePriority(
+        Iterator & iterator,
+        bool is_space_reservation_complete,
+        CachePriorityGuard & queue_guard,
+        CacheStateGuard & state_guard) = 0;
+
+    virtual void shuffle(const CachePriorityGuard::WriteLock &) = 0;
+
+    struct IPriorityDump
+    {
+        std::vector<FileSegmentInfo> infos;
+        IPriorityDump();
+        explicit IPriorityDump(const std::vector<FileSegmentInfo> & infos_);
+        void merge(const IPriorityDump & other);
+        virtual ~IPriorityDump();
+    };
+
+    using PriorityDumpPtr = std::shared_ptr<IPriorityDump>;
+
+    virtual PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) = 0;
+
+    /// Which cursor a candidate-collection pass resumes from.
+    enum class EvictionCursor
+    {
+        FromHead,   /// Start from the queue head; do not persist a position.
+        Reserve,    /// Foreground reserve path (shared by concurrent reservers).
+        Background, /// Background free-space keeping thread.
+    };
+
+    /// Collect eviction candidates sufficient to free `size` bytes
+    /// and `elements` elements from cache.
+    virtual bool collectCandidatesForEviction(
+        EvictionInfo & eviction_info,
+        FileCacheReserveStat & stat,
+        EvictionCandidates & res,
+        InvalidatedEntriesInfos & invalidated_entries,
+        IteratorPtr reservee,
+        EvictionCursor eviction_cursor,
+        size_t max_candidates_size,
+        bool is_total_space_cleanup,
+        const OriginInfo & origin_info,
+        CachePriorityGuard &,
+        CacheStateGuard &) = 0;
+
+    /// Collect eviction candidates sufficient to have `desired_size`
+    /// and `desired_elements_num` as current cache state.
+    /// Collect no more than `max_candidates_to_evict` elements.
+    /// Return SUCCESS status if the first condition is satisfied.
+    enum class CollectStatus
+    {
+        SUCCESS,
+        CANNOT_EVICT,
+        REACHED_MAX_CANDIDATES_LIMIT,
+    };
+
+    virtual bool modifySizeLimits(
+        size_t max_size_,
+        size_t max_elements_,
+        double size_ratio_,
+        const CacheStateGuard::Lock &) = 0;
+
+    /// Compute eviction info needed to resize the cache to the given limits.
+    /// Unlike collectEvictionInfo which takes total amounts to evict,
+    /// this method takes desired limits and computes per-sub-queue eviction
+    /// correctly for priority types with internal structure (e.g., SLRU).
+    virtual EvictionInfoPtr collectEvictionInfoForResize(
+        size_t desired_max_size,
+        size_t desired_max_elements,
+        const OriginInfo & origin_info,
+        const CacheStateGuard::Lock & lock) = 0;
+
+    virtual void resetEvictionPos(EvictionCursor cursor) = 0;
+
+    /// Remove given queue entries for the queue.
+    /// Used to cleanup invalidated queue entries.
+    static void removeEntries(const std::vector<InvalidatedEntryInfo> & entries, const CachePriorityGuard::WriteLock &);
+
+    /// Hook fired from invalidate() once pending invalidated entries reach
+    /// `threshold` (FileCache wakes its cleanup task). Wrappers propagate it down.
+    virtual void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate)
+    {
+        invalidated_threshold.store(threshold, std::memory_order_relaxed);
+        invalidate_notifier = on_invalidate;
+    }
+
+    /// Remove up to `max_batch` pending invalidated entries from the queue under the write
+    /// lock. Returns the number of pending entries removed. Driven by FileCache's cleanup task.
+    virtual size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) = 0;
+
+    struct UsageStat
+    {
+        size_t size = 0;
+        size_t elements = 0;
+        /// Client weight for proportional cache sharing (0 if not set).
+        UInt64 weight = 0;
+    };
+    virtual std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
+
+    class HoldSpace;
+    using HoldSpacePtr = std::unique_ptr<HoldSpace>;
+    /// A space holder implementation, which allows to take hold of
+    /// some space in cache given that this space was freed.
+    /// Takes hold of the space in constructor and releases it in destructor.
+    class HoldSpace : private boost::noncopyable
+    {
+    public:
+        HoldSpace(
+            size_t size_,
+            size_t elements_,
+            IFileCachePriority & priority_,
+            const CacheStateGuard::Lock & lock)
+            : size(size_), elements(elements_), priority(priority_)
+        {
+            priority.holdImpl(size, elements, lock);
+        }
+
+        size_t getSize() const { return size; }
+
+        size_t getElements() const { return elements; }
+
+        void release(const CacheStateGuard::Lock &) { releaseUnlocked(); }
+
+        void merge(HoldSpacePtr other)
+        {
+            size += other->size;
+            elements += other->elements;
+            other->size = other->elements = 0;
+        }
+
+        ~HoldSpace()
+        {
+            if (!released)
+                releaseUnlocked();
+        }
+
+    private:
+        size_t size;
+        size_t elements;
+        IFileCachePriority & priority;
+        bool released = false;
+
+        void releaseUnlocked()
+        {
+            if (released || (!size && !elements))
+                return;
+            released = true;
+            priority.releaseImpl(size, elements);
+            size = elements = 0;
+        }
+    };
+
+    virtual size_t getHoldSize() = 0;
+
+    virtual size_t getHoldElements() = 0;
+
+    virtual void setCacheUsageStatGuard(std::shared_ptr<CacheUsageStatGuard>) {}
+
+    /// Idle-client TTL tracking (distributed-cache server). Only the overcommit
+    /// policy keeps per-user `CacheUsage`; the base is a no-op.
+    virtual void touchClientAccess(const UserID &) {}
+    /// Idle clients (>= ttl) paired with their usage, so the caller can re-check
+    /// before purging without a second lookup.
+    virtual std::vector<std::pair<UserID, CacheUsagePtr>> collectIdleClients(std::chrono::seconds) const { return {}; }
+
+    /// Invoked by `EvictionCandidates::evict` for each successfully-evicted
+    /// segment.
+    using OnEvictCallback = std::function<void(const FileSegment & segment, const UserID & user_id)>;
+    virtual void setOnEvictCallback(OnEvictCallback callback)
+    {
+        chassert(!on_evict_callback, "on_evict_callback cannot be set twice");
+        on_evict_callback = std::move(callback);
+    }
+    const OnEvictCallback & getOnEvictCallback() const { return on_evict_callback; }
+
+protected:
+    IFileCachePriority(QueueType queue_type_, size_t max_size_, size_t max_elements_);
+
+    virtual void holdImpl(size_t /* size */, size_t /* elements */, const CacheStateGuard::Lock &) {}
+    /// No lock is required in releaseImpl unlike holdImpl,
+    /// because for releasing hold space we do not need strong guarantees.
+    virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
+
+    const QueueType queue_type;
+    std::atomic<size_t> max_size = 0;
+    std::atomic<size_t> max_elements = 0;
+
+    OnEvictCallback on_evict_callback;
+
+    /// Fire `invalidate_notifier` once a queue accumulates this many pending invalidated entries.
+    std::atomic<size_t> invalidated_threshold = 0;
+    std::function<void()> invalidate_notifier;
+};
+
+using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;
+
+}

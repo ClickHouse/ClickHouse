@@ -1,32 +1,70 @@
+option(WITH_LIBSTEMMER "Enable libstemmer (Snowball stemming algorithms)" ${ENABLE_LIBRARIES})
+
+if (NOT WITH_LIBSTEMMER)
+    message(STATUS "Not using libstemmer (Snowball)")
+    return()
+endif()
+
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/libstemmer_c")
-set(STEMMER_INCLUDE_DIR "${LIBRARY_DIR}/include")
 
-FILE ( READ "${LIBRARY_DIR}/mkinc.mak" _CONTENT )
-# replace '\ ' into one big line
-STRING ( REGEX REPLACE "\\\\\n  " " ${LIBRARY_DIR}/" _CONTENT "${_CONTENT}" )
-# escape ';' (if any)
-STRING ( REGEX REPLACE ";" "\\\\;" _CONTENT "${_CONTENT}" )
-# now replace lf into ';' (it makes list from the line)
-STRING ( REGEX REPLACE "\n" ";" _CONTENT "${_CONTENT}" )
-FOREACH ( LINE ${_CONTENT} )
-    # skip comments (beginning with #)
-    IF ( NOT "${LINE}" MATCHES "^#.*" )
-        # parse 'name=value1 value2..." - extract the 'name' part
-        STRING ( REGEX REPLACE "=.*$" "" _NAME "${LINE}" )
-        # extract the list of values part
-        STRING ( REGEX REPLACE "^.*=" "" _LIST "${LINE}" )
-        # replace (multi)spaces into ';' (it makes list from the line)
-        STRING ( REGEX REPLACE " +" ";" _LIST "${_LIST}" )
-        # finally get our two variables
-        IF ( "${_NAME}" MATCHES "snowball_sources" )
-            SET ( _SOURCES "${_LIST}" )
-        ELSEIF ( "${_NAME}" MATCHES "snowball_headers" )
-            SET ( _HEADERS "${_LIST}" )
-        ENDIF ()
-    endif ()
-endforeach ()
+add_library(_stemmer
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_arabic.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_armenian.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_1_basque.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_basque.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_1_catalan.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_catalan.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_1_danish.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_danish.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_1_dutch.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_dutch.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_1_dutch_porter.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_dutch_porter.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_1_english.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_english.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_esperanto.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_estonian.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_1_finnish.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_finnish.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_1_french.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_french.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_1_german.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_german.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_greek.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_hindi.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_2_hungarian.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_hungarian.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_1_indonesian.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_indonesian.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_1_irish.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_irish.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_1_italian.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_italian.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_lithuanian.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_nepali.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_1_norwegian.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_norwegian.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_1_porter.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_porter.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_1_portuguese.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_portuguese.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_2_romanian.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_romanian.c
+    ${LIBRARY_DIR}/src_c/stem_KOI8_R_russian.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_russian.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_serbian.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_1_spanish.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_spanish.c
+    ${LIBRARY_DIR}/src_c/stem_ISO_8859_1_swedish.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_swedish.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_tamil.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_turkish.c
+    ${LIBRARY_DIR}/src_c/stem_UTF_8_yiddish.c
+    ${LIBRARY_DIR}/runtime/api.c
+    ${LIBRARY_DIR}/runtime/utilities.c
+    ${LIBRARY_DIR}/libstemmer/libstemmer.c
+    ${LIBRARY_DIR}/libstemmer/libstemmer_utf8.c
+)
 
-# all the sources parsed. Now just add the lib
-add_library(_stemmer ${_SOURCES} ${_HEADERS} )
-target_include_directories(_stemmer SYSTEM PUBLIC "${STEMMER_INCLUDE_DIR}")
+target_include_directories(_stemmer SYSTEM PUBLIC "${LIBRARY_DIR}/include")
 add_library(ch_contrib::stemmer ALIAS _stemmer)

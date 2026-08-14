@@ -1,0 +1,331 @@
+---
+title: 'وضع الأداء (compat_mode)'
+sidebarTitle: 'وضع الأداء'
+slug: /chdb/configuration/performance-mode
+description: 'وضع أداء يركّز على SQL ويعطّل العبء الإضافي لتوافق pandas لتحقيق أقصى إنتاجية'
+keywords: ['chdb', 'datastore', 'performance', 'mode', 'compat', 'sql-first', 'optimization']
+doc_type: 'guide'
+---
+
+يحتوي DataStore على وضعي توافق يحددان ما إذا كانت المخرجات تُهيَّأ لتتوافق مع pandas أو تُحسَّن لأداء Raw SQL.
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+| وضع                  | قيمة `compat_mode` | الوصف                                                                                                                                                                  |
+| -------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Pandas** (افتراضي) | `"pandas"`         | توافق كامل مع سلوك pandas. يتم الحفاظ على ترتيب الصفوف، وMultiIndex، وset&#95;index، وتصحيحات نوع البيانات، وآليات كسر التعادل في الفرز المستقر، وأغلفة `-If`/`isNaN`. |
+| **Performance**      | `"performance"`    | تنفيذ يعتمد على SQL أولًا. أُزيلت كل الأعباء الإضافية المرتبطة بتوافق pandas. أقصى إنتاجية، لكن قد تختلف النتائج بنيويًا عن pandas.                                    |
+
+<div id="what-it-disables">
+  ### ما الذي يعطّله وضع الأداء
+</div>
+
+| العبء الإضافي                             | سلوك وضع Pandas                                                                   | سلوك وضع الأداء                                                 |
+| ----------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| **الحفاظ على ترتيب الصفوف**               | حقن `_row_id`، و`rowNumberInAllBlocks()`، والاستعلامات الفرعية `__orig_row_num__` | معطّل — ترتيب الصفوف غير مضمون                                  |
+| **فاصل كسر التعادل في الفرز المستقر**     | إضافة `rowNumberInAllBlocks() ASC` إلى ORDER BY                                   | معطّل — قد يكون ترتيب القيم المتعادلة عشوائيًا                  |
+| **`preserve_order` في Parquet**           | `input_format_parquet_preserve_order=1`                                           | معطّل — يُسمح بقراءة Parquet على نحو متوازٍ                     |
+| **`ORDER BY` التلقائي في GroupBy**        | تتم إضافة `ORDER BY group_key` (الإعداد الافتراضي في pandas هو `sort=True`)       | معطّل — تُعاد المجموعات بترتيب عشوائي                           |
+| **`WHERE` الخاصة بـ `dropna` في GroupBy** | تتم إضافة `WHERE key IS NOT NULL` (الإعداد الافتراضي في pandas هو `dropna=True`)  | معطّل — تُدرج مجموعات NULL                                      |
+| **`set_index` في GroupBy**                | تُعيَّن مفاتيح التجميع كفهرس                                                      | معطّل — تبقى مفاتيح التجميع كأعمدة                              |
+| **أعمدة MultiIndex**                      | تُرجع `agg({'col': ['sum','mean']})` أعمدة MultiIndex                             | معطّل — أسماء أعمدة مسطّحة (`col_sum`، `col_mean`)              |
+| **أغلفة `-If`/`isNaN`**                   | `sumIf(col, NOT isNaN(col))` لتجاوز `skipna`                                      | معطّل — `sum(col)` مباشرةً (يتجاوز ClickHouse قيم NULL أصلًا)   |
+| **`toInt64` مع count**                    | `toInt64(count())` لمطابقة pandas int64                                           | معطّل — يُرجع نوع بيانات SQL الأصلي                             |
+| **`fillna(0)` لمجموع قيم كلّها NaN**      | مجموع القيم كلّها NaN يُرجع 0 (سلوك pandas)                                       | معطّل — يُرجع NULL                                              |
+| **تصحيحات نوع البيانات**                  | `abs()` من unsigned إلى signed، إلخ.                                              | معطّل — أنواع بيانات SQL الأصلية                                |
+| **الحفاظ على الفهرس**                     | يستعيد الفهرس الأصلي بعد تنفيذ SQL                                                | معطّل                                                           |
+| **`first()`/`last()`**                    | `argMin/argMax(col, rowNumberInAllBlocks())`                                      | `any(col)` / `anyLast(col)` — أسرع لكنه غير حتمي                |
+| **التجميع في SQL واحد**                   | تنفّذ ColumnExpr في groupby مع إنشاء DataFrame وسيط                               | يحقن `LazyGroupByAgg` في سلسلة العمليات lazy — استعلام SQL واحد |
+
+***
+
+<div id="enabling">
+  ## تمكين وضع الأداء
+</div>
+
+<div id="using-config">
+  ### استخدام كائن الإعداد
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# Enable performance mode
+config.use_performance_mode()
+
+# Back to pandas compatibility
+config.use_pandas_compat()
+
+# Check current mode
+print(config.compat_mode)  # 'pandas' or 'performance'
+```
+
+<div id="using-functions">
+  ### استخدام دوال الوحدة
+</div>
+
+```python
+from chdb.datastore.config import set_compat_mode, CompatMode, is_performance_mode
+
+# Enable performance mode
+set_compat_mode(CompatMode.PERFORMANCE)
+
+# Check
+print(is_performance_mode())  # True
+
+# Back to default
+set_compat_mode(CompatMode.PANDAS)
+```
+
+<div id="using-imports">
+  ### استخدام عبارات الاستيراد الجاهزة
+</div>
+
+```python
+from chdb import use_performance_mode, use_pandas_compat
+
+use_performance_mode()
+# ... high-performance operations ...
+use_pandas_compat()
+```
+
+<Note>
+  يؤدي تفعيل وضع الأداء تلقائيًا إلى ضبط محرك التنفيذ على `chdb`. ولا حاجة إلى استدعاء `config.use_chdb()` بشكل منفصل.
+</Note>
+
+***
+
+<div id="when-to-use">
+  ## متى تستخدم وضع الأداء
+</div>
+
+**استخدم وضع الأداء عندما:**
+
+* تعالج مجموعات بيانات كبيرة (من مئات الآلاف إلى ملايين الصفوف)
+* تشغّل أحمال عمل كثيفة التجميع (groupby, sum, mean, count)
+* لا يهم ترتيب الصفوف (مثلًا: النتائج المجمّعة، والتقارير، ولوحات المعلومات)
+* تريد أقصى إنتاجية SQL وأدنى عبء إضافي ممكن
+* يكون استخدام الذاكرة مصدر قلق (قراءة Parquet المتوازية، ومن دون DataFrames وسيطة)
+
+**ابقَ في وضع pandas عندما:**
+
+* تحتاج إلى سلوك pandas الدقيق (ترتيب الصفوف، وMultiIndex، وأنواع البيانات)
+* تعتمد على أن `first()`/`last()` يعيدان بالفعل أول/آخر صف فعلي
+* تستخدم `shift()`, `diff()`, `cumsum()` التي تعتمد على ترتيب الصفوف
+* تكتب اختبارات تقارن مخرجات DataStore مع pandas
+
+***
+
+<div id="behavior-differences">
+  ## اختلافات في السلوك
+</div>
+
+<div id="row-order">
+  ### ترتيب الصفوف
+</div>
+
+في وضع الأداء، **لا يُضمن ترتيب الصفوف** في أي عملية. ويشمل ذلك:
+
+* نتائج التصفية
+* نتائج تجميع GroupBy
+* `head()` / `tail()` بدون استخدام `sort_values()` بشكل صريح
+* عمليات التجميع `first()` / `last()`
+
+إذا كنت بحاجة إلى نتائج مرتبة، فأضف `sort_values()` بشكل صريح:
+
+```python
+config.use_performance_mode()
+
+ds = pd.read_csv("data.csv")
+
+# Unordered (fast)
+result = ds.groupby("region")["revenue"].sum()
+
+# Ordered (still fast, just adds ORDER BY)
+result = ds.groupby("region")["revenue"].sum().sort_values()
+```
+
+<div id="groupby-results">
+  ### نتائج GroupBy
+</div>
+
+| الجانب             | وضع Pandas                                 | وضع الأداء                     |
+| ------------------ | ------------------------------------------ | ------------------------------ |
+| موضع مفتاح التجميع | الفهرس (عبر `set_index`)                   | عمود عادي                      |
+| ترتيب المجموعات    | مرتّبة حسب المفتاح (افتراضيًا)             | ترتيب عشوائي                   |
+| مجموعات NULL       | مستبعَدة (الإعداد الافتراضي `dropna=True`) | مشمولة                         |
+| تنسيق العمود       | MultiIndex لتجميعات متعددة                 | أسماء مسطّحة (`col_func`)      |
+| `first()`/`last()` | حتمي (ترتيب الصفوف)                        | غير حتمي (`any()`/`anyLast()`) |
+
+<div id="aggregation">
+  ### التجميع
+</div>
+
+```python
+config.use_performance_mode()
+
+# Sum of all-NaN group returns NULL (not 0)
+# Count returns native uint64 (not forced int64)
+# No -If wrappers: sum() instead of sumIf()
+result = ds.groupby("cat")["val"].sum()
+```
+
+<div id="single-sql">
+  ### التنفيذ باستعلام SQL واحد
+</div>
+
+في وضع الأداء، يُنفَّذ تجميع `ColumnExpr` باستخدام groupby (مثل `ds[condition].groupby('col')['val'].sum()`) على شكل **استعلام SQL واحد** بدلًا من العملية ذات الخطوتين المستخدمة في وضع pandas:
+
+```python
+config.use_performance_mode()
+
+# Pandas mode: two SQL queries (filter → materialize → groupby)
+# Performance mode: one SQL query (WHERE + GROUP BY in same query)
+result = ds[ds["rating"] > 3.5].groupby("category")["revenue"].sum()
+
+# Generated SQL (single query):
+# SELECT category, sum(revenue) FROM data WHERE rating > 3.5 GROUP BY category
+```
+
+وهذا يلغي التجسيد المادي الوسيط لـ DataFrame، ويمكن أن يقلّل بدرجة كبيرة من استخدام الذاكرة ووقت التنفيذ.
+
+***
+
+<div id="vs-execution-engine">
+  ## مقارنة مع محرك التنفيذ
+</div>
+
+وضع الأداء (`compat_mode`) ومحرك التنفيذ (`execution_engine`) هما **بُعدان مستقلان في الإعداد**:
+
+| الإعداد            | يتحكّم في                                           | القيم                    |
+| ------------------ | --------------------------------------------------- | ------------------------ |
+| `execution_engine` | **أي محرك** ينفّذ العملية الحسابية                  | `auto`, `chdb`, `pandas` |
+| `compat_mode`      | **ما إذا كانت** ستُعاد صياغة المخرجات لتوافق pandas | `pandas`, `performance`  |
+
+يؤدي ضبط `compat_mode='performance'` إلى تعيين `execution_engine='chdb'` تلقائيًا، لأن وضع الأداء مُصمَّم لتنفيذ SQL.
+
+```python
+from chdb.datastore.config import config
+
+# These are independent
+config.use_chdb()              # Force chDB engine, keep pandas compat
+config.use_performance_mode()  # Force chDB + remove pandas overhead
+```
+
+***
+
+<div id="testing">
+  ## الاختبار باستخدام وضع الأداء
+</div>
+
+عند كتابة اختبارات لوضع الأداء، قد تختلف النتائج عن pandas من حيث ترتيب الصفوف وبنية التنسيق. استخدم الاستراتيجيات التالية:
+
+<div id="sort-then-compare">
+  ### الفرز ثم المقارنة (عمليات التجميع، عوامل التصفية)
+</div>
+
+```python
+# Sort both sides by the same columns before comparing
+ds_result = ds.groupby("cat")["val"].sum()
+pd_result = pd_df.groupby("cat")["val"].sum()
+
+ds_sorted = ds_result.sort_index()
+pd_sorted = pd_result.sort_index()
+np.testing.assert_array_equal(ds_sorted.values, pd_sorted.values)
+```
+
+<div id="value-range-check">
+  ### التحقق من مدى القيم (الأولى/الأخيرة)
+</div>
+
+```python
+# first() with any() returns an arbitrary element from the group
+result = ds.groupby("cat")["val"].first()
+for group_key in groups:
+    assert result.loc[group_key] in group_values[group_key]
+```
+
+<div id="schema-and-count">
+  ### البنية والعدد (LIMIT بدون ORDER BY)
+</div>
+
+```python
+# head() without sort_values: row set is non-deterministic
+result = ds.head(5)
+assert len(result) == 5
+assert set(result.columns) == expected_columns
+```
+
+***
+
+<div id="best-practices">
+  ## أفضل الممارسات
+</div>
+
+<div id="enable-early">
+  ### 1. فعِّله مبكرًا في برنامجك النصي
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_performance_mode()
+
+# All subsequent operations benefit
+ds = pd.read_parquet("data.parquet")
+result = ds[ds["amount"] > 100].groupby("region")["amount"].sum()
+```
+
+<div id="explicit-sort">
+  ### 2. أضف فرزًا صريحًا عندما يكون ترتيب النتائج مهمًا
+</div>
+
+```python
+# For display or downstream processing that expects order
+result = (ds
+    .groupby("region")["revenue"].sum()
+    .sort_values(ascending=False)
+)
+```
+
+<div id="batch-etl">
+  ### 3. استخدمه لأحمال العمل الدفعية/ETL
+</div>
+
+```python
+config.use_performance_mode()
+
+# ETL pipeline — order doesn't matter, throughput does
+summary = (ds
+    .filter(ds["date"] >= "2024-01-01")
+    .groupby(["region", "product"])
+    .agg({"revenue": "sum", "quantity": "sum", "rating": "mean"})
+)
+summary.to_df().to_parquet("summary.parquet")
+```
+
+<div id="switch-modes">
+  ### 4. بدّل الأوضاع داخل الجلسة
+</div>
+
+```python
+# Performance mode for heavy computation
+config.use_performance_mode()
+aggregated = ds.groupby("cat")["val"].sum()
+
+# Back to pandas mode for exact-match comparison
+config.use_pandas_compat()
+detailed = ds[ds["val"] > 100].head(10)
+```
+
+***
+
+<div id="related">
+  ## الوثائق ذات الصلة
+</div>
+
+* [محرك التنفيذ](/ar/chdb/configuration/execution-engine) — اختيار محرك التنفيذ (auto/chdb/pandas)
+* [دليل الأداء](/ar/chdb/guides/pandas-performance) — نصائح عامة لتحسين الأداء
+* [أوجه الاختلاف الرئيسية عن pandas](/ar/chdb/guides/pandas-differences) — فروق سلوكية

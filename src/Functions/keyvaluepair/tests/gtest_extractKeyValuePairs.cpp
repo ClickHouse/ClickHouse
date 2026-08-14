@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnMap.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/IDataType.h>
 
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromString.h>

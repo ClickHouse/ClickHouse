@@ -49,3 +49,27 @@ SELECT parseDateTimeBestEffortOrNull('Monkey');
 -- parseDateTimeBestEffortUS also rejects invalid words
 SELECT parseDateTimeBestEffortUS('Married'); -- { serverError CANNOT_PARSE_DATETIME }
 SELECT parseDateTimeBestEffortUS('Monkey'); -- { serverError CANNOT_PARSE_DATETIME }
+
+-- Invalid words starting with month abbreviations in DD-month-YYYY format
+SELECT parseDateTimeBestEffort('1-Married-2025'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTimeBestEffort('1-Marchioness-2025'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTimeBestEffort('1-Juniper-2025'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTimeBestEffort('1-Augusto-2025'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTimeBestEffort('1-Decimal-2025'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTimeBestEffort('1-Octopus-2025'); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT parseDateTimeBestEffort('15-Novel-2025'); -- { serverError CANNOT_PARSE_DATETIME }
+
+-- parseDateTimeBestEffortOrNull returns NULL for invalid words in DD-month-YYYY format
+SELECT parseDateTimeBestEffortOrNull('1-Married-2025');
+SELECT parseDateTimeBestEffortOrNull('1-Juniper-2025');
+
+-- Valid abbreviated month names in DD-month-YYYY format still work
+SELECT parseDateTimeBestEffort('1-Mar-2025');
+SELECT parseDateTimeBestEffort('15-Sep-2025');
+SELECT parseDateTimeBestEffort('30-Jun-2025');
+
+-- Valid full month names in DD-month-YYYY format still work
+SELECT parseDateTimeBestEffort('1-March-2025');
+SELECT parseDateTimeBestEffort('15-September-2025');
+SELECT parseDateTimeBestEffort('1-January-2025');
+SELECT parseDateTimeBestEffort('28-February-2025');

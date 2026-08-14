@@ -10,7 +10,7 @@ namespace
 {
     void formatRenameTo(const String & new_name, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
-        ostr << " RENAME TO " << backQuote(new_name);
+        ostr << " RENAME TO " << backQuoteIfNeed(new_name);
     }
 
     void formatUpdateExpression(const ASTPtr & expr, WriteBuffer & ostr, const IAST::FormatSettings & settings)
@@ -81,12 +81,12 @@ void ASTCreateMaskingPolicyQuery::formatImpl(WriteBuffer & ostr, const FormatSet
 
     ostr << " " << backQuoteIfNeed(name);
 
-    formatOnCluster(ostr, settings);
-
     ostr << " ON ";
     if (!database.empty())
         ostr << backQuoteIfNeed(database) << ".";
     ostr << backQuoteIfNeed(table_name);
+
+    formatOnCluster(ostr, settings);
 
     if (!storage_name.empty())
         ostr << " IN " << backQuoteIfNeed(storage_name);
