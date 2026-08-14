@@ -1220,6 +1220,9 @@ try
     /// After this point the global context must be stayed almost unchanged till shutdown,
     /// and all necessary changes must be made to the client context instead.
     initClientContext(Context::createCopy(global_context));
+    /// Command-line settings are private to the local client. In particular, format options must not
+    /// become defaults for sessions accepted by `SYSTEM START LISTEN`.
+    applyCmdSettings(client_context);
     if (!query_id.empty())
         client_context->setCurrentQueryId(query_id);
     /// Note, QueryScope will be initialized in the LocalConnection
@@ -1653,9 +1656,6 @@ void LocalServer::processConfig()
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(getClientConfiguration());
 
-    /// Command-line parameters can override settings from the default profile.
-    applyCmdSettings(global_context);
-
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
@@ -1884,7 +1884,6 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
     /// terminal default is only for rendering query results and is applied separately via
     /// `ClientBase::default_output_format`.
     context->setSetting("default_format", getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", "TSV")));
-    applyCmdSettings(context);
 }
 
 
