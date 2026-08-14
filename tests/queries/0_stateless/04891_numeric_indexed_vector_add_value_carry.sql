@@ -54,3 +54,17 @@ FROM (SELECT arrayJoin(arrayConcat(range(1, 33), [-1, -1, -1])) AS idx) SETTINGS
 -- does not enforce unique keys, so a repeated key accumulates just like a repeated row does
 SELECT numericIndexedVectorToMap(numericIndexedVectorBuild(CAST(mapFromArrays([5, 5], [10, 10]), 'Map(UInt8, Int64)')));
 SELECT numericIndexedVectorToMap(numericIndexedVectorBuild(CAST(mapFromArrays([5, 5], [7, -7]), 'Map(UInt8, Int64)')));
+
+-- A state written before `addValue` maintained the invariant can carry an index in `zero_indexes`
+-- and in the bit slices at the same time, and the readers that answer zero comparisons trust
+-- `zero_indexes` alone. Deserialization restores the invariant, so such a state stops reporting a
+-- non-zero index as equal to zero. The literal is a state produced by an earlier server for
+-- `groupNumericIndexedVectorState(toUInt8(5), val)` over the values 3 and 0.
+WITH CAST(unhex('40000000000000000000010500000105000001050101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101'), 'AggregateFunction(groupNumericIndexedVector, UInt8, Int64)') AS v
+SELECT numericIndexedVectorToMap(v) AS map,
+       numericIndexedVectorToMap(numericIndexedVectorPointwiseEqual(v, 0)) AS equals_zero,
+       numericIndexedVectorGetValue(v, toUInt8(5)) AS get_value;
+
+-- an index whose value really is zero must still compare equal to zero
+SELECT numericIndexedVectorToMap(numericIndexedVectorPointwiseEqual(v, 0))
+FROM (SELECT groupNumericIndexedVectorState(toUInt8(5), toInt64(0)) AS v FROM numbers(1));

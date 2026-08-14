@@ -2032,6 +2032,13 @@ public:
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown value of is_empty: {}", toString(is_empty));
             getDataArrayAt(i)->read(in);
         }
+
+        /// `zero_indexes` holds the indexes whose value is zero, so it has to be exclusive with the
+        /// bit slices. States written before `addValue` maintained that could hold an index in both,
+        /// and the readers that answer zero comparisons trust `zero_indexes` alone, so restore the
+        /// invariant here rather than let a persisted state keep contradicting itself.
+        if (zero_indexes->size() > 0)
+            zero_indexes->rb_andnot(*getAllNonZeroIndex());
     }
 
     void write(DB::WriteBuffer & out) const
