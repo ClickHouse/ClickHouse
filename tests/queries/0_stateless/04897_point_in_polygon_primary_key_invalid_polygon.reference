@@ -7,6 +7,7 @@ extra rows	0
 invalid hole, dense	3556	3556
 invalid hole, lightweight	3556	3556
 invalid hole, lost rows	0
+hole outside shell, counts	4480	4480
 valid hole, dense	4480	4480
 valid hole forces key, dense	4480
 valid hole forces key, lightweight	4480

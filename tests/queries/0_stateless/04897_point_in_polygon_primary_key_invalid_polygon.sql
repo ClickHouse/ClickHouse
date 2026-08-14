@@ -111,6 +111,21 @@ SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (8., 0.), (8.
 SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (8., 0.), (8., 4.), (4., 4.), (4., 8.), (0., 8.)], [(1., 1.), (7., 7.), (7., 1.), (1., 7.)])
     SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 1; -- { serverError INDEX_NOT_USED }
 
+-- Every hole argument takes part, and validity is a property of the assembly rather than of the
+-- rings: here the shell and both holes are individually valid, yet the second hole lies outside the
+-- shell, so the assembled polygon is not. Validating the rings one by one, or only the first hole,
+-- would build an atom here.
+SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (8., 0.), (8., 4.), (4., 4.), (4., 8.), (0., 8.)], [(1., 1.), (3., 1.), (3., 3.), (1., 3.)], [(20., 20.), (21., 20.), (21., 21.), (20., 21.)])
+    SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 0; -- { serverError INDEX_NOT_USED }
+
+SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (8., 0.), (8., 4.), (4., 4.), (4., 8.), (0., 8.)], [(1., 1.), (3., 1.), (3., 3.), (1., 3.)], [(20., 20.), (21., 20.), (21., 21.), (20., 21.)])
+    SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 1; -- { serverError INDEX_NOT_USED }
+
+SELECT 'hole outside shell, counts',
+    (SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (8., 0.), (8., 4.), (4., 4.), (4., 8.), (0., 8.)], [(1., 1.), (3., 1.), (3., 3.), (1., 3.)], [(20., 20.), (21., 20.), (21., 21.), (20., 21.)])
+        SETTINGS use_lightweight_primary_key_index_analysis = 0),
+    (SELECT count() FROM pip_nopk WHERE pointInPolygon((x, y), [(0., 0.), (8., 0.), (8., 4.), (4., 4.), (4., 8.), (0., 8.)], [(1., 1.), (3., 1.), (3., 3.), (1., 3.)], [(20., 20.), (21., 20.), (21., 21.), (20., 21.)]));
+
 -- The same shell with a hole that keeps the assembled shape valid must keep both its result and its
 -- pruning, so that the check rejects invalid assemblies rather than every hole argument.
 SELECT 'valid hole, dense',
