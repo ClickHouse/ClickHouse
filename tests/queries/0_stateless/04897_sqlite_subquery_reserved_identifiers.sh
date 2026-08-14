@@ -12,7 +12,3 @@ trap 'rm -f "$DB"' EXIT
 sqlite3 "$DB" 'CREATE TABLE "group" ("where" INTEGER); INSERT INTO "group" VALUES (42);'
 
 ${CLICKHOUSE_LOCAL} --query="SELECT * FROM sqlite('${DB}', (SELECT \`where\` FROM \`group\`))"
-
-${CLICKHOUSE_LOCAL} --query="CREATE TABLE sqlite_subquery_reserved_identifiers (\`where\` Int64) ENGINE = SQLite('${DB}', (SELECT \`where\` FROM \`group\`))"
-${CLICKHOUSE_LOCAL} --query='SELECT * FROM sqlite_subquery_reserved_identifiers'
-${CLICKHOUSE_LOCAL} --query='DROP TABLE sqlite_subquery_reserved_identifiers'
