@@ -62,7 +62,7 @@ keywords: ['Ошибка', 'SSL-сертификат', '210']
 open "/Applications/Python 3.11/Install Certificates.command"
 ```
 
-В качестве альтернативы укажите клиенту пакет сертификатов certifi напрямую. [ClickHouse Connect](/ru/integrations/python) сам по себе не использует certifi в качестве резервного варианта, поэтому передайте пакет через параметр `ca_cert`:
+В качестве альтернативы укажите клиенту пакет сертификатов certifi напрямую. [ClickHouse Connect](/ru/integrations/language-clients/python/index) сам по себе не использует certifi в качестве резервного варианта, поэтому передайте пакет через параметр `ca_cert`:
 
 ```python
 import certifi
@@ -81,4 +81,4 @@ client = clickhouse_connect.get_client(
   ## Дополнительные ресурсы
 </div>
 
-См. [документацию по конфигурации клиента ClickHouse](/ru/interfaces/client#configuration_files).
+См. [документацию по конфигурации клиента ClickHouse](/ru/concepts/features/interfaces/client#configuration_files).

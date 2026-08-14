@@ -165,7 +165,7 @@ SETTINGS schema_inference_make_columns_nullable=0
 ```
 
 이제 TSV 파일의 데이터 구조를 바탕으로 스키마를 정의한 `trips` 테이블을 생성하겠습니다.
-`REPLACE` 절을 사용해 금액 관련 컬럼을 `Float64`로 변환하고, [`transform`](/ko/sql-reference/functions/other-functions#transform) 함수를 사용해 숫자형 `pickup_borocode` 컬럼을 사람이 읽을 수 있는 자치구 이름으로 변환하겠습니다:
+`REPLACE` 절을 사용해 금액 관련 컬럼을 `Float64`로 변환하고, [`transform`](/ko/reference/functions/regular-functions/other-functions#transform) 함수를 사용해 숫자형 `pickup_borocode` 컬럼을 사람이 읽을 수 있는 자치구 이름으로 변환하겠습니다:
 
 ```python
 %%sql

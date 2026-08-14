@@ -62,7 +62,7 @@ Exécutez `Install Certificates.command` pour relier certifi au chemin de certif
 open "/Applications/Python 3.11/Install Certificates.command"
 ```
 
-Vous pouvez aussi faire pointer directement votre client vers le bundle certifi. [ClickHouse Connect](/fr/integrations/python) ne bascule pas automatiquement sur certifi, donc transmettez le bundle via le paramètre `ca_cert` :
+Vous pouvez aussi faire pointer directement votre client vers le bundle certifi. [ClickHouse Connect](/fr/integrations/language-clients/python/index) ne bascule pas automatiquement sur certifi, donc transmettez le bundle via le paramètre `ca_cert` :
 
 ```python
 import certifi
@@ -81,4 +81,4 @@ client = clickhouse_connect.get_client(
   ## Ressources complémentaires
 </div>
 
-Consultez la [documentation sur la configuration de `clickhouse-client`](/fr/interfaces/client#configuration_files).
+Consultez la [documentation sur la configuration de `clickhouse-client`](/fr/concepts/features/interfaces/client#configuration_files).

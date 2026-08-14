@@ -35,10 +35,10 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
   ## 迁移前注意事项
 </div>
 
-* **DDL 传播**：持续复制 (CDC (变更数据捕获) ) 会捕获 DML 操作和 `ADD COLUMN`。其他 DDL 变更 (如 `DROP COLUMN` 和 `ALTER COLUMN`) 不会传播，必须在目标端手动应用。
+* **DDL 传播**：持续复制 (CDC) 会捕获 DML 操作和 `ADD COLUMN`。其他 DDL 更改 (如 `DROP COLUMN` 和 `ALTER COLUMN`) 不会自动传播，必须在目标端手动执行。
 
 <Note>
-  如果您在迁移过程中遇到问题，请查看 [Managed Postgres Migrations FAQ](/zh/cloud/managed-postgres/migrations/faq) 以了解常见错误及其解决方案。
+  如果您在迁移过程中遇到问题，请查看 [Managed Postgres Migrations FAQ](/zh/products/managed-postgres/migrations/faq)，了解常见错误及其解决方案。
 </Note>
 
 <div id="step-1-connect">

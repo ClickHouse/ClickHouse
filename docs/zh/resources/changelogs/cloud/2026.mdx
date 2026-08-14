@@ -17,7 +17,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
   ### 通过 HTTPS 实现 sticky 副本路由 (私有预览)
 
-  现在，您只需在常规 service URL 后添加 `?session_id=` 参数，即可通过标准 HTTPS 将查询固定到特定副本，无需使用特殊主机名或更改 DNS。这可让临时表等会话范围对象在多次查询之间保持可用，并有助于重复查询命中已预热的副本本地缓存。该功能正以私有预览形式向所有 Enterprise 客户推出，并可按需向 Scale 客户提供。现有基于子域的路由方式将继续可用，但最终会迁移到这种方法。请参阅 [replica-aware routing](/zh/manage/replica-aware-routing) 文档。
+  现在，您只需在常规 service URL 后添加 `?session_id=` 参数，即可通过标准 HTTPS 将查询固定到特定副本，无需使用特殊主机名或更改 DNS。这可让临时表等会话范围对象在多次查询之间保持可用，并有助于重复查询命中已预热的副本本地缓存。该功能正以私有预览形式向所有 Enterprise 客户推出，并可按需向 Scale 客户提供。现有基于子域的路由方式将继续可用，但最终会迁移到这种方法。请参阅 [replica-aware routing](/zh/products/cloud/features/infrastructure/replica-aware-routing) 文档。
 
   ### 自定义计费周期开始日期
 
@@ -25,7 +25,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
   ### 跳过对象存储 ClickPipes 的初始加载
 
-  对象存储 [ClickPipes](/zh/integrations/clickpipes) (S3、GCS 和 Azure Blob 存储) 现在在您创建管道时提供两种控制初始加载的方式：**Start after**，会跳过直到并包括给定对象键的文件；以及 **Skip initial load**，会完全跳过预先存在的文件，只处理新的对象通知。此前，新管道总是会回填路径中的每个文件。这两个选项对于给定管道是互斥且永久的：已跳过的回填之后无法再触发。可在 UI、Cloud API 以及 Terraform v3.18.0 及更高版本中使用。
+  对象存储 [ClickPipes](/zh/integrations/clickpipes/home) (S3、GCS 和 Azure Blob 存储) 现在在您创建管道时提供两种控制初始加载的方式：**Start after**，会跳过直到并包括给定对象键的文件；以及 **Skip initial load**，会完全跳过预先存在的文件，只处理新的对象通知。此前，新管道总是会回填路径中的每个文件。这两个选项对于给定管道是互斥且永久的：已跳过的回填之后无法再触发。可在 UI、Cloud API 以及 Terraform v3.18.0 及更高版本中使用。
 </Update>
 
 <Update label="2026 年 6 月 30 日">

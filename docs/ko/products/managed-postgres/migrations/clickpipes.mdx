@@ -35,10 +35,10 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ## 마이그레이션 전에 고려할 사항
 </div>
 
-* **DDL 전파**: 지속적 복제(CDC)는 DML 작업과 `ADD COLUMN`을 캡처합니다. `DROP COLUMN` 및 `ALTER COLUMN`과 같은 다른 DDL 변경 사항은 전파되지 않으므로 대상에 수동으로 적용해야 합니다.
+* **DDL 전파**: 지속적 복제(CDC)에서는 DML 작업과 `ADD COLUMN`을 포착합니다. `DROP COLUMN` 및 `ALTER COLUMN` 같은 다른 DDL 변경 사항은 전파되지 않으므로 대상에 수동으로 적용해야 합니다.
 
 <Note>
-  마이그레이션 중 문제가 발생하면 일반적인 오류와 해결 방법은 [Managed Postgres Migrations FAQ](/ko/cloud/managed-postgres/migrations/faq)에서 확인하십시오.
+  마이그레이션 중 문제가 발생하면 일반적인 오류와 해결 방법은 [Managed Postgres Migrations FAQ](/ko/products/managed-postgres/migrations/faq)에서 확인하십시오.
 </Note>
 
 <div id="step-1-connect">

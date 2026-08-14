@@ -25,7 +25,7 @@ En junio de 2026, ClickHouse Cloud adoptó un nuevo sistema de control de acceso
 
 El nuevo sistema RBAC incorpora definiciones de roles personalizados y un control de acceso más granular. En lugar de un conjunto fijo de permisos con ámbito de servicio, puede definir roles que muestren todos los permisos que conceden, de modo que quede claro exactamente qué acceso proporciona cada rol.
 
-Un rol puede combinar permisos de organización, servicio y base de datos. Puede aplicar esos permisos a todos sus servicios y bases de datos, o a un subconjunto de ellos. Para consultar la lista completa de permisos y los roles estándar incluidos con ClickHouse Cloud, vea [Console roles and permissions](/es/cloud/security/console-roles). Para obtener instrucciones sobre cómo crear y editar roles después de la migración, consulte [Administrar roles personalizados](/es/cloud/guides/security/manage-custom-roles).
+Un rol puede combinar permisos de organización, servicio y base de datos. Puede aplicar esos permisos a todos sus servicios y bases de datos, o a un subconjunto de ellos. Para consultar la lista completa de permisos y los roles estándar incluidos con ClickHouse Cloud, vea [Console roles and permissions](/es/products/cloud/reference/security/console-roles). Para obtener instrucciones sobre cómo crear y editar roles después de la migración, consulte [Administrar roles personalizados](/es/products/cloud/guides/security/cloud-access-management/manage-custom-roles).
 
 La mayoría de los permisos se asignan automáticamente al nuevo modelo. El asistente de migración le pedirá que gestione los permisos con ámbito de servicio que no se puedan asignar directamente.
 
@@ -41,7 +41,7 @@ El asistente le pide que cree nuevos roles que reflejen los permisos que tienen 
   </Step>
 
   <Step title="Cree roles para permisos sin asignar" id="create-roles">
-    El asistente muestra los miembros y las claves de API cuyos permisos con ámbito de servicio no se pudieron migrar automáticamente. Cree nuevos roles que se ajusten al acceso que necesitan estos miembros y claves. Consulte [Administrar roles personalizados](/es/cloud/guides/security/manage-custom-roles) para obtener más información sobre el ámbito de los permisos.
+    El asistente muestra los miembros y las claves de API cuyos permisos con ámbito de servicio no se pudieron migrar automáticamente. Cree nuevos roles que se ajusten al acceso que necesitan estos miembros y claves. Consulte [Administrar roles personalizados](/es/products/cloud/guides/security/cloud-access-management/manage-custom-roles) para obtener más información sobre el ámbito de los permisos.
   </Step>
 
   <Step title="Asigne roles a cada miembro y clave de API" id="assign-roles">
@@ -75,4 +75,4 @@ Revise sus configuraciones de OpenAPI y Terraform para que sigan siendo compatib
 
 El rol Query Endpoints pasa a ser el rol de lector de API del servicio Basic. Actualice las integraciones que dependan del nombre anterior del rol.
 
-Para obtener orientación sobre la administración de roles en el futuro, consulte [Administrar roles personalizados](/es/cloud/guides/security/manage-custom-roles) y [Administración del acceso a Cloud](/es/cloud/security/cloud_access_management).
+Para obtener orientación sobre la administración de roles en el futuro, consulte [Administrar roles personalizados](/es/products/cloud/guides/security/cloud-access-management/manage-custom-roles) y [Administración del acceso a Cloud](/es/products/cloud/guides/security/cloud-access-management).

@@ -378,19 +378,19 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 ```
 
 <Note>
-  `MATERIALIZE COLUMN` は常に**カラム値**を書き換えます。[データスキッピングインデックス](/ja/sql-reference/statements/alter/skipping-index) (テキスト索引を含む) も再構築されるかどうかは、パーツのレイアウトと索引の保存方法によって異なります。
+  `MATERIALIZE COLUMN` は常に**カラム値**を書き換えます。[データスキッピングインデックス](/ja/reference/statements/alter/skipping-index) (テキスト索引を含む) も再構築されるかどうかは、パーツのレイアウトと索引の保存方法によって異なります。
 
-  * **wide + full-storage** のパーツでは、カラムのみを書き換えた場合、**スタンドアロン**のスキップ索引ファイル (およびテキスト索引) は自動的に再構築**されません**。索引が依存する基になるカラムデータを変更した後、それらの索引ファイルを更新する必要がある場合は、[`ALTER TABLE ... MATERIALIZE INDEX`](/ja/sql-reference/statements/alter/skipping-index#materialize-index) を実行してください。
+  * **wide + full-storage** のパーツでは、カラムのみを書き換えた場合、**スタンドアロン**のスキップ索引ファイル (およびテキスト索引) は自動的に再構築**されません**。索引が依存する基になるカラムデータを変更した後、それらの索引ファイルを更新する必要がある場合は、[`ALTER TABLE ... MATERIALIZE INDEX`](/ja/reference/statements/alter/skipping-index#materialize-index) を実行してください。
   * **例外:** `skp_idx.packed` にパックされた通常のスキップ索引 (デフォルトの [`packed_skip_index_max_bytes`](/ja/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes) 未満の小さなスキップ索引サブストリーム。全文索引はこの方式ではパックされません) は、wide + full-storage のパーツでも強制的に再計算されます。
   * **wide + full-storage ではないすべてのパーツ** (**compact + full**、**compact + packed**、**wide + packed** を含む) では、ミューテーションはパーツ全体を書き換える経路をたどり、そのパーツ上の既存のセカンダリ索引を強制的に再計算します。小さなパーツは、デフォルトではフルパーツストレージを使用しつつ compact であることが一般的なため、この分岐は最近の挿入でよく見られるケースです。
 
-  これとは別に、`ADD INDEX` はメタデータのみを更新します。履歴パーツ上の新しい索引 (テキスト索引を含む) が直ちにマテリアライズされることは**ありません**。履歴パーツは、明示的な [`MATERIALIZE INDEX`](/ja/sql-reference/statements/alter/skipping-index#materialize-index) によって、または [`materialize_skip_indexes_on_merge`](/ja/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) が有効で、索引が [`exclude_materialize_skip_indexes_on_merge`](/ja/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge) に含まれていない場合に後続のマージによってマテリアライズされます。マージ設定を待たずに索引を構築する必要がある場合は、明示的な `MATERIALIZE INDEX` が確実な方法です。
+  これとは別に、`ADD INDEX` はメタデータのみを更新します。履歴パーツ上の新しい索引 (テキスト索引を含む) が直ちにマテリアライズされることは**ありません**。履歴パーツは、明示的な [`MATERIALIZE INDEX`](/ja/reference/statements/alter/skipping-index#materialize-index) によって、または [`materialize_skip_indexes_on_merge`](/ja/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) が有効で、索引が [`exclude_materialize_skip_indexes_on_merge`](/ja/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge) に含まれていない場合に後続のマージによってマテリアライズされます。マージ設定を待たずに索引を構築する必要がある場合は、明示的な `MATERIALIZE INDEX` が確実な方法です。
 </Note>
 
 **関連項目**
 
 * [MATERIALIZED](/ja/reference/statements/create/view#materialized-view)。
-* [MATERIALIZE INDEX](/ja/sql-reference/statements/alter/skipping-index#materialize-index)。
+* [MATERIALIZE INDEX](/ja/reference/statements/alter/skipping-index#materialize-index)。
 
 <div id="limitations">
   ## 制限事項

@@ -17,7 +17,7 @@ Além deste Cloud changelog do ClickHouse Cloud, consulte também a página [Com
 
   ### Roteamento sticky de réplicas por HTTPS (prévia privada)
 
-  Agora você pode fixar consultas em uma réplica específica por HTTPS padrão adicionando um parâmetro `?session_id=` à URL normal do seu serviço, sem necessidade de nomes de host especiais nem de alterações no DNS. Isso mantém disponíveis entre consultas objetos com escopo de sessão, como tabelas temporárias, e ajuda consultas repetidas a aproveitar caches locais da réplica já aquecidos. O recurso está sendo disponibilizado em prévia privada para todos os clientes Enterprise e, mediante solicitação, para clientes Scale. O roteamento existente baseado em subdomínio continua funcionando, mas acabará migrando para essa abordagem. Consulte a documentação de [replica-aware routing](/pt-BR/manage/replica-aware-routing).
+  Agora você pode fixar consultas em uma réplica específica por HTTPS padrão adicionando um parâmetro `?session_id=` à URL normal do seu serviço, sem necessidade de nomes de host especiais nem de alterações no DNS. Isso mantém disponíveis entre consultas objetos com escopo de sessão, como tabelas temporárias, e ajuda consultas repetidas a aproveitar caches locais da réplica já aquecidos. O recurso está sendo disponibilizado em prévia privada para todos os clientes Enterprise e, mediante solicitação, para clientes Scale. O roteamento existente baseado em subdomínio continua funcionando, mas acabará migrando para essa abordagem. Consulte a documentação de [replica-aware routing](/pt-BR/products/cloud/features/infrastructure/replica-aware-routing).
 
   ### Datas de início personalizadas do período de faturamento
 
@@ -25,7 +25,7 @@ Além deste Cloud changelog do ClickHouse Cloud, consulte também a página [Com
 
   ### Ignorar carga inicial para ClickPipes de armazenamento de objetos
 
-  Os [ClickPipes](/pt-BR/integrations/clickpipes) de armazenamento de objetos (S3, GCS e Azure Blob Storage) agora oferecem duas formas de controlar a carga inicial ao criar um pipe: **Start after**, que ignora arquivos até uma determinada chave de objeto, inclusive, e **Skip initial load**, que ignora completamente os arquivos preexistentes e processa apenas notificações de novos objetos. Antes, um novo pipe sempre fazia backfill de todos os arquivos no caminho. As duas opções são mutuamente exclusivas e permanentes para um determinado pipe: um backfill ignorado não pode ser acionado depois. Disponível na UI, na API da Cloud e no Terraform v3.18.0 ou posterior.
+  Os [ClickPipes](/pt-BR/integrations/clickpipes/home) de armazenamento de objetos (S3, GCS e Azure Blob Storage) agora oferecem duas formas de controlar a carga inicial ao criar um pipe: **Start after**, que ignora arquivos até uma determinada chave de objeto, inclusive, e **Skip initial load**, que ignora completamente os arquivos preexistentes e processa apenas notificações de novos objetos. Antes, um novo pipe sempre fazia backfill de todos os arquivos no caminho. As duas opções são mutuamente exclusivas e permanentes para um determinado pipe: um backfill ignorado não pode ser acionado depois. Disponível na UI, na API da Cloud e no Terraform v3.18.0 ou posterior.
 </Update>
 
 <Update label="30 de junho de 2026">

@@ -378,19 +378,19 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 ```
 
 <Note>
-  يعيد `MATERIALIZE COLUMN` دائمًا كتابة **قيم الأعمدة**. أما إعادة بناء [فهارس تخطي البيانات](/ar/sql-reference/statements/alter/skipping-index) (بما فيها الفهارس النصية) فتتوقف على تخطيط الجزء وطريقة تخزين الفهرس:
+  يعيد `MATERIALIZE COLUMN` دائمًا كتابة **قيم الأعمدة**. أما إعادة بناء [فهارس تخطي البيانات](/ar/reference/statements/alter/skipping-index) (بما فيها الفهارس النصية) فتتوقف على تخطيط الجزء وطريقة تخزين الفهرس:
 
-  * في الأجزاء ذات التخطيط **wide + full-storage**، لا تُعاد تلقائيًا بناء ملفات فهارس التخطي **المستقلة** (والفهارس النصية) عند إعادة كتابة العمود فقط. بعد تغيير بيانات العمود الأساسية التي يعتمد عليها الفهرس، شغّل [`ALTER TABLE ... MATERIALIZE INDEX`](/ar/sql-reference/statements/alter/skipping-index#materialize-index) إذا احتجت إلى تحديث ملفات هذه الفهارس.
+  * في الأجزاء ذات التخطيط **wide + full-storage**، لا تُعاد تلقائيًا بناء ملفات فهارس التخطي **المستقلة** (والفهارس النصية) عند إعادة كتابة العمود فقط. بعد تغيير بيانات العمود الأساسية التي يعتمد عليها الفهرس، شغّل [`ALTER TABLE ... MATERIALIZE INDEX`](/ar/reference/statements/alter/skipping-index#materialize-index) إذا احتجت إلى تحديث ملفات هذه الفهارس.
   * **استثناء:** يُعاد حساب فهارس التخطي العادية المعبأة في `skp_idx.packed` قسرًا (تدفقات فرعية صغيرة لفهارس التخطي تقع ضمن القيمة الافتراضية لـ [`packed_skip_index_max_bytes`](/ar/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes)؛ ولا تُعبّأ فهارس النص الكامل بهذه الطريقة)، حتى في الأجزاء ذات التخطيط wide + full-storage.
-  * في **أي جزء لا يستخدم wide + full-storage** (بما في ذلك **compact + full** و**compact + packed** و**wide + packed**)، تسلك الطفرة مسار إعادة كتابة الجزء بالكامل وتعيد حساب الفهارس الثانوية الموجودة مسبقًا في ذلك الجزء قسرًا. تكون الأجزاء الصغيرة عادةً compact، مع استمرارها افتراضيًا في استخدام تخزين الجزء الكامل؛ لذا فهذه الحالة هي الأكثر شيوعًا لعمليات الإدراج الحديثة.
+  * في **أي جزء لا يستخدم wide + full-storage** (بما في ذلك **compact + full** و**compact + packed** و**wide + packed**)، تسلك mutation مسار إعادة كتابة الجزء بالكامل وتعيد حساب الفهارس الثانوية الموجودة مسبقًا في ذلك الجزء قسرًا. تكون الأجزاء الصغيرة عادةً compact، مع استمرارها افتراضيًا في استخدام تخزين الجزء الكامل؛ لذا فهذه الحالة هي الأكثر شيوعًا لعمليات الإدراج الحديثة.
 
-  وبشكل منفصل، لا يحدّث `ADD INDEX` سوى البيانات الوصفية؛ فهو **لا** ينشئ الفهرس الجديد فعليًا فورًا (بما في ذلك الفهارس النصية) على الأجزاء التاريخية. تُنشأ الفهارس فعليًا على الأجزاء التاريخية إما عبر [`MATERIALIZE INDEX`](/ar/sql-reference/statements/alter/skipping-index#materialize-index) صريح، أو عند دمج لاحق إذا كان [`materialize_skip_indexes_on_merge`](/ar/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) مفعّلًا ولم يكن الفهرس مدرجًا في [`exclude_materialize_skip_indexes_on_merge`](/ar/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge). يمثل `MATERIALIZE INDEX` الصريح المسار الحتمي عندما تحتاج إلى إنشاء الفهرس دون انتظار إعدادات الدمج.
+  وبشكل منفصل، لا يحدّث `ADD INDEX` سوى البيانات الوصفية؛ فهو **لا** ينشئ الفهرس الجديد فعليًا فورًا (بما في ذلك الفهارس النصية) على الأجزاء التاريخية. تُنشأ الفهارس فعليًا على الأجزاء التاريخية إما عبر [`MATERIALIZE INDEX`](/ar/reference/statements/alter/skipping-index#materialize-index) صريح، أو عند دمج لاحق إذا كان [`materialize_skip_indexes_on_merge`](/ar/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) مفعّلًا ولم يكن الفهرس مدرجًا في [`exclude_materialize_skip_indexes_on_merge`](/ar/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge). يمثل `MATERIALIZE INDEX` الصريح المسار الحتمي عندما تحتاج إلى إنشاء الفهرس دون انتظار إعدادات الدمج.
 </Note>
 
 **انظر أيضًا**
 
 * [MATERIALIZED](/ar/reference/statements/create/view#materialized-view).
-* [MATERIALIZE INDEX](/ar/sql-reference/statements/alter/skipping-index#materialize-index).
+* [MATERIALIZE INDEX](/ar/reference/statements/alter/skipping-index#materialize-index).
 
 <div id="limitations">
   ## القيود

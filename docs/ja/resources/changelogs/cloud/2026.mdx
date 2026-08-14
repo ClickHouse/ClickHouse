@@ -13,23 +13,23 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 この ClickHouse Cloud changelog に加えて、[Cloud Compatibility](/ja/products/cloud/guides/cloud-compatibility) ページもご覧ください。
 
 <Update label="2026年7月13日">
-  今週の更新には、通常の HTTPS 経由での sticky レプリカルーティング、billing period の開始日のカスタマイズ、object storage ClickPipes 向けの新しい初期ロード制御が含まれます。
+  今週の更新には、通常の HTTPS 経由での sticky レプリカルーティング、請求期間 の開始日のカスタマイズ、オブジェクトストレージ ClickPipes 向けの新しい初期ロード制御が含まれます。
 
   ### HTTPS 経由の sticky レプリカルーティング (プライベートプレビュー)
 
-  通常の service URL に `?session_id=` パラメータを追加するだけで、特別なホスト名や DNS の変更なしに、標準的な HTTPS 経由で queries を特定の レプリカ に固定できるようになりました。これにより、一時テーブルのような session スコープのオブジェクトを queries 間で利用し続けることができ、繰り返し実行される queries が レプリカ ローカルのウォームキャッシュにヒットしやすくなります。これは、すべての Enterprise 顧客に対してプライベートプレビューで順次提供されており、Scale 顧客についてはリクエストに応じて利用できます。既存のサブドメインベースのルーティングも引き続き動作しますが、最終的にはこの方式へ移行する予定です。[レプリカ対応ルーティング](/ja/manage/replica-aware-routing) のドキュメントをご覧ください。
+  通常の service URL に `?session_id=` パラメータを追加するだけで、特別なホスト名や DNS の変更なしに、標準的な HTTPS 経由で クエリ を特定の レプリカ に固定できるようになりました。これにより、一時テーブルのような session スコープのオブジェクトを クエリ 間で利用し続けることができ、繰り返し実行される クエリ が レプリカ ローカルのウォームキャッシュにヒットしやすくなります。これは、すべての Enterprise 顧客に対してプライベートプレビューで順次提供されており、Scale 顧客についてはリクエストに応じて利用できます。既存のサブドメインベースのルーティングも引き続き動作しますが、最終的にはこの方式へ移行する予定です。[レプリカ対応ルーティング](/ja/products/cloud/features/infrastructure/replica-aware-routing) のドキュメントをご覧ください。
 
-  ### billing period 開始日のカスタマイズ
+  ### 請求期間 開始日のカスタマイズ
 
-  組織 の billing date、つまり各 billing period が始まる月内の日付を、たとえば請求書を暦月に合わせるために変更依頼できるようになりました。希望する日付を記載してサポートチケットを作成してください。Billing date は UTC で適用され、各 invoice には billing date から翌月の同じ日付まで (ただしその日付自体は含まない) の usage が含まれます。
+  組織 の billing date、つまり各 請求期間 が始まる月内の日付を、たとえば請求書を暦月に合わせるために変更依頼できるようになりました。希望する日付を記載してサポートチケットを作成してください。Billing date は UTC で適用され、各 invoice には billing date から翌月の同じ日付まで (ただしその日付自体は含まない) の usage が含まれます。
 
-  ### object storage ClickPipes の初期ロードをスキップ
+  ### オブジェクトストレージ ClickPipes の初期ロードをスキップ
 
-  object storage [ClickPipes](/ja/integrations/clickpipes) (S3、GCS、Azure Blob Storage) では、パイプ 作成時の初期ロードを制御する 2 つの方法が利用できるようになりました。**Start after** は指定した object key までのファイルをその key 自体も含めてスキップし、**Skip initial load** は既存ファイルを完全にスキップして、新しい object notification のみを処理します。これまでは、新しい パイプ は常にそのパス内のすべてのファイルを backfill していました。これら 2 つのオプションは相互排他的であり、指定した パイプ に対して永続的です。スキップした backfill は後から実行できません。UI、Cloud API、Terraform v3.18.0 以降で利用できます。
+  オブジェクトストレージ [ClickPipes](/ja/integrations/clickpipes/home) (S3、GCS、Azure Blob Storage) では、パイプ 作成時の初期ロードを制御する 2 つの方法が利用できるようになりました。**Start after** は指定した object key までのファイルをその key 自体も含めてスキップし、**Skip initial load** は既存ファイルを完全にスキップして、新しい object notification のみを処理します。これまでは、新しい パイプ は常にそのパス内のすべてのファイルを backfill していました。これら 2 つのオプションは相互排他的であり、指定した パイプ に対して永続的です。スキップした backfill は後から実行できません。UI、Cloud API、Terraform v3.18.0 以降で利用できます。
 </Update>
 
 <Update label="2026年6月30日">
-  今週の更新には、Postgres と ClickHouse internals 向けの新しいオブザーバビリティ機能、Kafka exactly-once 配信を含む ClickPipes の制御機能の拡張、さらに Azure Marketplace BYOC、公式 Airflow provider、ClickHouse Agents のアップデートなど、複数のプラットフォーム機能追加が含まれます。
+  今週の更新には、Postgres と ClickHouse internals 向けの新しいオブザーバビリティ機能、Kafka exactly-once 配信を含む ClickPipes の制御機能の拡張、さらに Azure Marketplace BYOC、公式 Airflow プロバイダー、ClickHouse Agents のアップデートなど、複数のプラットフォーム機能追加が含まれます。
 
   ### ClickPipes での Kafka exactly-once 配信
 
@@ -49,15 +49,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
   ### Azure Marketplace 上の ClickHouse BYOC
 
-  ClickHouse の [Bring Your Own Cloud](/ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview) が Azure Marketplace に掲載され、顧客は Private Offer を通じて購入し、Azure account 経由で課金される BYOC をデプロイできるようになりました。プラットフォーム側では、Azure BYOC の marketplace listings と product IDs に対する billing サポートも追加されました。
+  ClickHouse の [Bring Your Own Cloud](/ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview) が Azure Marketplace に掲載され、顧客は Private Offer を通じて購入し、Azure account 経由で課金される BYOC をデプロイできるようになりました。プラットフォーム側では、Azure BYOC の マーケットプレイス listings と product IDs に対する 請求 サポートも追加されました。
 
-  ### 公式 ClickHouse Airflow provider
+  ### 公式 ClickHouse Airflow プロバイダー
 
-  ClickHouse 向けの公式 Apache Airflow provider が PyPI で利用可能になり、Airflow registry にも掲載されました。これにより、ClickHouse へのデータ入出力で従来の legacy community plugin に依存する必要がなくなります。
+  ClickHouse 向けの公式 Apache Airflow プロバイダー が PyPI で利用可能になり、Airflow registry にも掲載されました。これにより、ClickHouse へのデータ入出力で従来の legacy community plugin に依存する必要がなくなります。
 
-  ### Billing の可視性向上と marketplace の改善
+  ### 請求 の可視性向上と マーケットプレイス の改善
 
-  Billing に、セルフサービスで確認できる credit history table、使用済みおよび失効済み金額を表示する prepaid summary、GCP MPPO のメールサポートが追加されました。
+  請求 に、セルフサービスで確認できる credit history table、使用済みおよび失効済み金額を表示する prepaid summary、GCP MPPO のメールサポートが追加されました。
 </Update>
 
 <Update label="2026年6月3日">

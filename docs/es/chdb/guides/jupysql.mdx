@@ -158,14 +158,14 @@ Las corregiremos al importar los datos a una tabla.
 </div>
 
 Ahora vamos a almacenar los datos de estos archivos TSV en una tabla.
-La base de datos predeterminada no conserva los datos en disco, por lo que primero debemos crear otra base de datos:
+La base de datos predeterminada no persiste los datos en disco, por lo que primero debemos crear otra base de datos:
 
 ```python
 %sql CREATE DATABASE taxi
 ```
 
 Ahora vamos a crear una tabla llamada `trips` cuyo esquema se derivará de la estructura de los datos de los archivos TSV.
-Usaremos la cláusula `REPLACE` para convertir a `Float64` las columnas relacionadas con importes monetarios y la función [`transform`](/es/sql-reference/functions/other-functions#transform) para convertir la columna numérica `pickup_borocode` en un nombre de distrito legible para humanos:
+Usaremos la cláusula `REPLACE` para convertir a `Float64` las columnas relacionadas con importes monetarios y la función [`transform`](/es/reference/functions/regular-functions/other-functions#transform) para convertir la columna numérica `pickup_borocode` en un nombre de distrito legible para humanos:
 
 ```python
 %%sql

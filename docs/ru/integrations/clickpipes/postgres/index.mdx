@@ -149,10 +149,10 @@ ClickPipes для Postgres можно развертывать и настраи
 7. Вы можете выбрать таблицы, которые хотите реплицировать из исходной базы данных Postgres. При выборе таблиц можно также переименовать их в целевой базе данных ClickHouse и исключить отдельные столбцы.
 
 <Warning>
-  Если вы задаёте ключ сортировки в ClickHouse иначе, чем на основе первичного ключа в Postgres, не забудьте ознакомиться со всеми [особенностями](/ru/integrations/clickpipes/postgres/ordering-keys), связанными с этим.
+  Если вы задаёте ключ упорядочивания в ClickHouse иначе, чем на основе первичного ключа в Postgres, не забудьте ознакомиться со всеми [особенностями](/ru/integrations/clickpipes/postgres/ordering-keys), связанными с этим.
 </Warning>
 
-8. Кроме того, вы можете указать собственное выражение `PARTITION BY <expr>` для управления [партиционированием таблиц ClickHouse](/ru/partitions).
+8. Кроме того, вы можете указать собственное выражение `PARTITION BY <expr>` для управления [партиционированием таблиц ClickHouse](/ru/concepts/core-concepts/partitions).
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/partition-by.png" alt="Partition by" size="lg" border />
 

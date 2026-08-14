@@ -25,7 +25,7 @@ keywords: ['rbac', 'custom roles', 'migration', 'access control', 'permissions',
 
 新しいRBACシステムでは、カスタムロールの定義と、よりきめ細かなアクセス制御が導入されます。固定されたサービススコープの権限セットの代わりに、付与されるすべての権限が明示されたロールを定義できるため、各ロールでどのようなアクセスが提供されるかを正確に把握できます。
 
-ロールには、組織、サービス、データベースの権限を組み合わせることができます。これらの権限は、すべてのサービスとデータベースに適用することも、一部にのみ適用することもできます。権限の一覧とClickHouse Cloudに標準で用意されているロールについては、[Console roles and permissions](/ja/cloud/security/console-roles)を参照してください。移行後にロールを作成・編集する手順については、[カスタムロールの管理](/ja/cloud/guides/security/manage-custom-roles)を参照してください。
+ロールには、組織、サービス、データベースの権限を組み合わせることができます。これらの権限は、すべてのサービスとデータベースに適用することも、一部にのみ適用することもできます。権限の一覧とClickHouse Cloudに標準で用意されているロールについては、[Console roles and permissions](/ja/products/cloud/reference/security/console-roles)を参照してください。移行後にロールを作成・編集する手順については、[カスタムロールの管理](/ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles)を参照してください。
 
 ほとんどの権限は、新しいモデルに自動的にマッピングされます。直接マッピングできないサービススコープの権限については、移行ウィザードで対応を求められます。
 
@@ -41,7 +41,7 @@ keywords: ['rbac', 'custom roles', 'migration', 'access control', 'permissions',
   </Step>
 
   <Step title="マッピングされていない権限のロールを作成する" id="create-roles">
-    ウィザードには、サービススコープの権限を自動的に移行できなかったメンバーと API キーが一覧表示されます。これらのメンバーとキーに必要なアクセス権に合った新しいロールを作成します。権限のスコープについて詳しくは、[カスタムロールの管理](/ja/cloud/guides/security/manage-custom-roles)を参照してください。
+    ウィザードには、サービススコープの権限を自動的に移行できなかったメンバーと API キーが一覧表示されます。これらのメンバーとキーに必要なアクセス権に合った新しいロールを作成します。権限のスコープについて詳しくは、[カスタムロールの管理](/ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles)を参照してください。
   </Step>
 
   <Step title="すべてのメンバーと API キーにロールを割り当てる" id="assign-roles">
@@ -75,4 +75,4 @@ OpenAPI と Terraform の設定を確認し、新しいロールシステムと�
 
 Query Endpoints ロールは、Basic service API reader ロールに移行します。以前のロール名に依存しているインテグレーションを更新してください。
 
-今後のロール管理については、[カスタムロールの管理](/ja/cloud/guides/security/manage-custom-roles)および[クラウドアクセス管理](/ja/cloud/security/cloud_access_management)を参照してください。
+今後のロール管理については、[カスタムロールの管理](/ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles)および[クラウドアクセス管理](/ja/products/cloud/guides/security/cloud-access-management)を参照してください。

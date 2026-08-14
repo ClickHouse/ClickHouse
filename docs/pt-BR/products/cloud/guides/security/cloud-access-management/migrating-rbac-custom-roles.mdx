@@ -25,7 +25,7 @@ Em junho de 2026, o ClickHouse Cloud adotou um novo sistema de controle de acess
 
 O novo sistema RBAC introduz definições de funções personalizadas e um controle de acesso mais granular. Em vez de um conjunto fixo de permissões com escopo de serviço, você define funções que mostram todas as permissões concedidas, deixando claro exatamente qual nível de acesso cada função oferece.
 
-Uma função pode combinar permissões de organização, serviço e banco de dados. Você pode aplicar essas permissões a todos os seus serviços e bancos de dados ou a um subconjunto deles. Para ver a lista completa de permissões e as funções padrão incluídas no ClickHouse Cloud, consulte [Funções e permissões do Console](/pt-BR/cloud/security/console-roles). Para obter instruções sobre como criar e editar funções após a migração, consulte [Gerenciar funções personalizadas](/pt-BR/cloud/guides/security/manage-custom-roles).
+Uma função pode combinar permissões de organização, serviço e banco de dados. Você pode aplicar essas permissões a todos os seus serviços e bancos de dados ou a um subconjunto deles. Para ver a lista completa de permissões e as funções padrão incluídas no ClickHouse Cloud, consulte [Funções e permissões do Console](/pt-BR/products/cloud/reference/security/console-roles). Para obter instruções sobre como criar e editar funções após a migração, consulte [Gerenciar funções personalizadas](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-custom-roles).
 
 A maioria das permissões é mapeada automaticamente para o novo modelo. As permissões com escopo de serviço que não podem ser mapeadas diretamente são aquelas que o assistente de migração solicita que você resolva.
 
@@ -41,7 +41,7 @@ O assistente solicita que você crie novas funções que reflitam as permissões
   </Step>
 
   <Step title="Crie funções para permissões não mapeadas" id="create-roles">
-    O assistente lista membros e API keys cujas permissões com escopo de serviço não puderam ser migradas automaticamente. Crie novas funções que correspondam ao acesso de que esses membros e chaves precisam. Consulte [Gerenciar funções personalizadas](/pt-BR/cloud/guides/security/manage-custom-roles) para obter detalhes sobre o escopo das permissões.
+    O assistente lista membros e API keys cujas permissões com escopo de serviço não puderam ser migradas automaticamente. Crie novas funções que correspondam ao acesso de que esses membros e chaves precisam. Consulte [Gerenciar funções personalizadas](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-custom-roles) para obter detalhes sobre o escopo das permissões.
   </Step>
 
   <Step title="Atribua funções a cada membro e API key" id="assign-roles">
@@ -49,7 +49,7 @@ O assistente solicita que você crie novas funções que reflitam as permissões
   </Step>
 
   <Step title="Mantenha pelo menos um administrador" id="keep-admin">
-    Atribua uma Admin role a pelo menos um membro existente. O assistente não permitirá o envio sem uma, pois, caso contrário, sua organização perderia o acesso administrativo após a migração.
+    Atribua uma função Admin a pelo menos um membro existente. O assistente não permitirá o envio sem uma, pois, caso contrário, sua organização perderia o acesso administrativo após a migração.
   </Step>
 
   <Step title="Envie a migração" id="submit">
@@ -75,4 +75,4 @@ Revise as configurações do OpenAPI e do Terraform para mantê-las compatíveis
 
 A função Query Endpoints passa a ser a função de leitor da API do serviço Basic. Atualize todas as integrações que dependem do nome anterior da função.
 
-Para orientações sobre como gerenciar funções daqui em diante, consulte [Gerenciar funções personalizadas](/pt-BR/cloud/guides/security/manage-custom-roles) e [Gerenciamento de acesso ao Cloud](/pt-BR/cloud/security/cloud_access_management).
+Para orientações sobre como gerenciar funções daqui em diante, consulte [Gerenciar funções personalizadas](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-custom-roles) e [Gerenciamento de acesso ao Cloud](/pt-BR/products/cloud/guides/security/cloud-access-management).

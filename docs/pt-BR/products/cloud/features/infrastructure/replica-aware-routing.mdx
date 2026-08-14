@@ -2,7 +2,7 @@
 title: 'Roteamento com reconhecimento de réplicas'
 slug: /manage/replica-aware-routing
 description: 'Direcione solicitações relacionadas à mesma réplica do ClickHouse Cloud para tabelas temporárias, sessões, reutilização de cache e consistência de leitura após gravação'
-keywords: ['cloud', 'endpoints sticky', 'sticky', 'endpoints', 'sticky routing', 'roteamento', 'roteamento com reconhecimento de réplicas', 'X-ClickHouse-Replica-Tag', 'session_id', 'afinidade de sessão', 'tabelas temporárias', 'consistência de leitura após gravação']
+keywords: ['cloud', 'endpoints sticky', 'sticky', 'endpoints', 'roteamento sticky', 'roteamento', 'roteamento com reconhecimento de réplicas', 'X-ClickHouse-Replica-Tag', 'session_id', 'afinidade de sessão', 'tabelas temporárias', 'consistência de leitura após gravação']
 doc_type: 'guide'
 noindex: true
 ---
@@ -11,16 +11,16 @@ import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBa
 
 <PrivatePreviewBadge />
 
-O roteamento com reconhecimento de réplicas (também conhecido como sessões persistentes, sticky routing ou afinidade de sessão) direciona solicitações relacionadas para a mesma réplica do ClickHouse. Use-o quando precisar que [tabelas temporárias](/pt-BR/reference/statements/create/table/temporary-table) ou [estado de sessão nomeado](/pt-BR/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) permaneçam acessíveis entre consultas, quando quiser que consultas relacionadas reutilizem os caches locais da mesma réplica ou quando precisar de [consistência de leitura após gravação](#read-after-write-consistency) entre uma gravação e as leituras subsequentes.
+O roteamento com reconhecimento de réplicas (também conhecido como sessões persistentes, roteamento sticky ou afinidade de sessão) direciona solicitações relacionadas para a mesma réplica do ClickHouse. Use-o quando precisar que [tabelas temporárias](/pt-BR/reference/statements/create/table/temporary-table) ou [estado de sessão nomeado](/pt-BR/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) permaneçam acessíveis entre consultas, quando quiser que consultas relacionadas reutilizem os caches locais da mesma réplica ou quando precisar de [consistência de leitura após gravação](#read-after-write-consistency) entre uma gravação e as leituras subsequentes.
 
 É uma abordagem de melhor esforço e não garante isolamento. O proxy mapeia cada valor de roteamento para uma réplica. O mapeamento permanece estável enquanto o número de réplicas não mudar; o escalonamento do serviço pode mapear o valor para outra réplica.
 
 <Warning>
   **Requer a interface HTTP**
 
-  O roteamento com reconhecimento de réplicas é aplicado na camada de proxy por meio da [interface HTTP/HTTPS](/pt-BR/interfaces/http). O ClickHouse Cloud está migrando o roteamento com reconhecimento de réplicas de `session_id` para o header `X-ClickHouse-Replica-Tag`. As abas abaixo descrevem ambos os métodos durante o rollout.
+  O roteamento com reconhecimento de réplicas é aplicado na camada de proxy por meio da [interface HTTP/HTTPS](/pt-BR/concepts/features/interfaces/http). O ClickHouse Cloud está migrando o roteamento com reconhecimento de réplicas de `session_id` para o header `X-ClickHouse-Replica-Tag`. As abas abaixo descrevem ambos os métodos durante o rollout.
 
-  O roteamento com reconhecimento de réplicas está **indisponível atualmente no protocolo nativo** (porta nativa, por exemplo, o driver [clickhouse-go](/pt-BR/integrations/go) em seu modo nativo padrão). Clientes do protocolo nativo devem mudar para HTTP e enviar o valor de roteamento em cada solicitação.
+  O roteamento com reconhecimento de réplicas está **indisponível atualmente no protocolo nativo** (porta nativa, por exemplo, o driver [clickhouse-go](/pt-BR/integrations/language-clients/go/index) em seu modo nativo padrão). Clientes do protocolo nativo devem mudar para HTTP e enviar o valor de roteamento em cada solicitação.
 </Warning>
 
 <div id="prerequisites">
@@ -29,7 +29,7 @@ O roteamento com reconhecimento de réplicas (também conhecido como sessões pe
 
 * Seu serviço precisa de **2 ou mais réplicas**. Em um serviço com apenas uma réplica, não há nada ao que se vincular.
 * Disponível no **Enterprise** por padrão quando o recurso estiver em GA.
-* Compatível com os serviços padrão do ClickHouse Cloud. O [BYOC](/pt-BR/cloud/reference/byoc/overview) ainda não é compatível.
+* Compatível com os serviços padrão do ClickHouse Cloud. O [BYOC](/pt-BR/products/cloud/guides/infrastructure/deployment-options/byoc/overview) ainda não é compatível.
 
 <div id="configuring-replica-aware-routing">
   ## Configurando o roteamento com reconhecimento de réplicas
@@ -43,7 +43,7 @@ Abra um ticket de [suporte](https://clickhouse.com/support/program) e solicite a
 
 <Tabs>
   <Tab title="X-ClickHouse-Replica-Tag (preferido)">
-    Para direcionar uma workload a uma réplica específica, envie o header `X-ClickHouse-Replica-Tag` na [interface HTTPS](/pt-BR/interfaces/http). O proxy usa hash consistente do valor do header; assim, as requests que compartilham esse valor são direcionadas à mesma réplica enquanto o número de réplicas permanecer inalterado. Um valor diferente recebe um hash independente e pode ser direcionado à mesma réplica ou a outra, mas você não escolhe *a qual* réplica um valor é mapeado.
+    Para direcionar uma workload a uma réplica específica, envie o header `X-ClickHouse-Replica-Tag` na [interface HTTPS](/pt-BR/concepts/features/interfaces/http). O proxy usa hash consistente do valor do header; assim, as requests que compartilham esse valor são direcionadas à mesma réplica enquanto o número de réplicas permanecer inalterado. Um valor diferente recebe um hash independente e pode ser direcionado à mesma réplica ou a outra, mas você não escolhe *a qual* réplica um valor é mapeado.
 
     Use o hostname do service existente. Não são necessários hostnames sticky especiais nem alterações de DNS. O valor do header pode ser qualquer string à sua escolha, como o nome de uma aplicação, o ID de um usuário ou o label da workload. Requests sem o header continuam usando o load balancing normal.
 
@@ -67,7 +67,7 @@ Abra um ticket de [suporte](https://clickhouse.com/support/program) e solicite a
 
     Em um serviço com várias réplicas, uma gravação em uma réplica pode não ficar visível nas demais até que a replicação seja concluída. Envie a gravação com um cabeçalho `X-ClickHouse-Replica-Tag` e reutilize o mesmo valor do cabeçalho nas leituras subsequentes. O proxy encaminha ambas para a mesma réplica, para que você leia sua própria gravação mesmo enquanto as outras réplicas ainda estiverem atrasadas. Esse padrão é adequado para workloads que gravam e, em seguida, leem imediatamente os mesmos dados, como aplicações interativas ou jobs de ETL que validam inserts antes de continuar.
 
-    Para obter garantias mais amplas em todas as réplicas, também é possível definir [`select_sequential_consistency`](/pt-BR/operations/settings/settings#select_sequential_consistency) como `1` no ClickHouse Cloud.
+    Para obter garantias mais amplas em todas as réplicas, também é possível definir [`select_sequential_consistency`](/pt-BR/reference/settings/session-settings#select_sequential_consistency) como `1` no ClickHouse Cloud.
 
     ### Verifique qual réplica foi acessada
 
@@ -85,7 +85,7 @@ Abra um ticket de [suporte](https://clickhouse.com/support/program) e solicite a
     * Após a habilitação do roteamento baseado em header para seu serviço, workloads que precisam apenas de afinidade com réplicas podem migrar para `X-ClickHouse-Replica-Tag`. Solicitações simultâneas podem compartilhar a mesma tag de réplica.
     * Se precisar do estado da sessão HTTP do ClickHouse, serialize as solicitações que compartilham um `session_id`.
 
-    Para fixar um workload a uma réplica, envie o parâmetro de consulta `session_id` na [interface HTTPS](/pt-BR/interfaces/http). O proxy usa hash consistente no valor do parâmetro, portanto, as solicitações que o compartilham são encaminhadas à mesma réplica enquanto o número de réplicas permanecer inalterado. Um valor diferente gera um hash independente e pode ser encaminhado à mesma réplica ou a outra, mas você não escolhe *a qual* réplica um valor é mapeado.
+    Para fixar um workload a uma réplica, envie o parâmetro de consulta `session_id` na [interface HTTPS](/pt-BR/concepts/features/interfaces/http). O proxy usa hash consistente no valor do parâmetro, portanto, as solicitações que o compartilham são encaminhadas à mesma réplica enquanto o número de réplicas permanecer inalterado. Um valor diferente gera um hash independente e pode ser encaminhado à mesma réplica ou a outra, mas você não escolhe *a qual* réplica um valor é mapeado.
 
     Use o hostname existente do seu serviço. Não são necessários hostnames sticky especiais nem alterações no DNS. O `session_id` pode ser qualquer string de sua escolha, como o nome de uma aplicação, um ID de usuário ou um rótulo de workload. Solicitações sem `session_id` continuam usando o balanceamento de carga normal.
 
@@ -104,7 +104,7 @@ Abra um ticket de [suporte](https://clickhouse.com/support/program) e solicite a
 
     Em um serviço com várias réplicas, uma gravação em uma réplica pode não ficar visível nas outras até que a replicação seja sincronizada. Envie a gravação com um `session_id` e reutilize o mesmo `session_id` nas leituras subsequentes. O proxy encaminha ambas para a mesma réplica, permitindo que você leia a própria gravação mesmo enquanto as outras réplicas ainda estão atrasadas. Esse padrão funciona para workloads que gravam e logo em seguida leem os mesmos dados, como aplicações interativas ou jobs de ETL que validam inserts antes de prosseguir.
 
-    Para garantias mais abrangentes em todas as réplicas, também é possível definir [`select_sequential_consistency`](/pt-BR/operations/settings/settings#select_sequential_consistency) como `1` no ClickHouse Cloud.
+    Para garantias mais abrangentes em todas as réplicas, também é possível definir [`select_sequential_consistency`](/pt-BR/reference/settings/session-settings#select_sequential_consistency) como `1` no ClickHouse Cloud.
 
     ### Verifique qual réplica foi acessada com `session_id`
 
@@ -136,13 +136,13 @@ O aumento ou a redução de escala altera o hash ring de roteamento. Requisiçõ
   ### O roteamento com reconhecimento de réplicas não é isolamento de workload
 </div>
 
-O sticky routing controla apenas *qual* réplica atende a uma solicitação. Essa réplica ainda pode atender outro tráfego. Para processamento dedicado, use [compute-compute separation](/pt-BR/cloud/reference/warehouses).
+O roteamento sticky controla apenas *qual* réplica atende a uma solicitação. Essa réplica ainda pode atender outro tráfego. Para processamento dedicado, use [compute-compute separation](/pt-BR/products/cloud/features/infrastructure/warehouses).
 
 <div id="replica-aware-routing-does-not-work-out-of-the-box-with-private-link">
   ### Private Link e o método de subdomínio legado
 </div>
 
-O roteamento baseado em HTTP funciona com [rede privada](/pt-BR/cloud/security/connectivity/private-networking) no hostname padrão do seu serviço. Nenhuma entrada DNS adicional é necessária.
+O roteamento baseado em HTTP funciona com [rede privada](/pt-BR/products/cloud/guides/security/connectivity/private-networking) no hostname padrão do seu serviço. Nenhuma entrada DNS adicional é necessária.
 
 O método de subdomínio legado não funciona: você precisa adicionar DNS para o padrão de hostname `*.sticky.*`, e uma configuração incorreta pode desequilibrar a carga entre as réplicas.
 

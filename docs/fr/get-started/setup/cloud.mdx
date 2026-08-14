@@ -99,7 +99,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
     ### ClickPipes
 
-    [ClickPipes](/fr/integrations/clickpipes) est une plateforme d&#39;intégration gérée qui rend l&#39;ingestion de données depuis un ensemble diversifié de sources aussi simple que de cliquer sur quelques boutons. Conçue pour les charges de travail les plus exigeantes, l&#39;architecture robuste et évolutive de ClickPipes assure des performances et une fiabilité constantes. ClickPipes peut être utilisé pour des besoins de streaming à long terme ou pour un chargement de données ponctuel.
+    [ClickPipes](/fr/integrations/clickpipes/home) est une plateforme d&#39;intégration gérée qui rend l&#39;ingestion de données depuis un ensemble diversifié de sources aussi simple que de cliquer sur quelques boutons. Conçue pour les charges de travail les plus exigeantes, l&#39;architecture robuste et évolutive de ClickPipes assure des performances et une fiabilité constantes. ClickPipes peut être utilisé pour des besoins de streaming à long terme ou pour un chargement de données ponctuel.
 
     <Image img="/images/_snippets/select_data_source.webp" size="md" alt="Sélectionner la source de données" border />
 
@@ -127,7 +127,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     PRIMARY KEY (user_id, timestamp)
     ```
 
-    Dans l&#39;exemple ci-dessus, `my_first_table` est une table [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree) comportant quatre colonnes :
+    Dans l&#39;exemple ci-dessus, `my_first_table` est une table [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree) comportant quatre colonnes :
 
     * `user_id` : un entier non signé de 32 bits ([UInt32](/fr/reference/data-types/int-uint))
     * `message` : un type de données [String](/fr/reference/data-types/string), qui remplace des types tels que `VARCHAR`, `BLOB`, `CLOB` et d&#39;autres dans d&#39;autres systèmes de gestion de bases de données
@@ -166,7 +166,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     La clé primaire est également la clé de tri, qui est un tuple `(user_id, timestamp)`. Par conséquent, les données stockées dans chaque
     fichier de colonne seront triées par `user_id`, puis par `timestamp`.
 
-    Pour une présentation approfondie des concepts fondamentaux de ClickHouse, consultez [&quot;Core Concepts&quot;](/fr/concepts/core-concepts/index).
+    Pour une présentation approfondie des concepts fondamentaux de ClickHouse, consultez [&quot;Concepts fondamentaux&quot;](/fr/concepts/core-concepts/index).
 
     #### Insérer des données dans votre table
 
@@ -283,7 +283,9 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
     ### Téléverser un fichier
 
-    Une tâche courante lorsque l&#39;on commence à utiliser une base de données consiste à insérer des données que vous avez déjà dans des fichiers. Nous proposons des données d&#39;exemple en ligne que vous pouvez insérer, représentant des données de clickstream : elles comprennent un identifiant utilisateur, une URL visitée et l&#39;horodatage de l&#39;événement.
+    Une tâche courante lorsque l&#39;on commence à utiliser une base de données consiste à insérer des données que vous avez déjà dans des fichiers. Nous proposons des données
+    d&#39;exemple en ligne que vous pouvez insérer, représentant des données de clickstream : elles comprennent un identifiant utilisateur, une URL visitée et
+    l&#39;horodatage de l&#39;événement.
 
     Supposons que nous ayons le texte suivant dans un fichier CSV nommé `data.csv` :
 

@@ -378,19 +378,19 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 ```
 
 <Note>
-  `MATERIALIZE COLUMN` siempre reescribe los **valores de las columnas**. Que también reconstruya los [índices de omisión de datos](/es/sql-reference/statements/alter/skipping-index) (incluidos los índices de texto) depende del diseño de las partes y de cómo se almacene el índice:
+  `MATERIALIZE COLUMN` siempre reescribe los **valores de las columnas**. Que también reconstruya los [índices de omisión de datos](/es/reference/statements/alter/skipping-index) (incluidos los índices de texto) depende del diseño de las partes y de cómo se almacene el índice:
 
-  * En las partes que son simultáneamente de **formato ancho + almacenamiento completo**, los archivos **independientes** de índices de omisión (y los índices de texto) **no** se reconstruyen automáticamente cuando solo se reescribe la columna. Después de modificar los datos de la columna subyacente de los que depende un índice, ejecute [`ALTER TABLE ... MATERIALIZE INDEX`](/es/sql-reference/statements/alter/skipping-index#materialize-index) si necesita actualizar esos archivos de índice.
+  * En las partes que son simultáneamente de **formato ancho + almacenamiento completo**, los archivos **independientes** de índices de omisión (y los índices de texto) **no** se reconstruyen automáticamente cuando solo se reescribe la columna. Después de modificar los datos de la columna subyacente de los que depende un índice, ejecute [`ALTER TABLE ... MATERIALIZE INDEX`](/es/reference/statements/alter/skipping-index#materialize-index) si necesita actualizar esos archivos de índice.
   * **Excepción:** los índices de omisión ordinarios empaquetados en `skp_idx.packed` (subflujos pequeños de índices de omisión por debajo del valor predeterminado de [`packed_skip_index_max_bytes`](/es/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes); los índices de texto completo no se empaquetan de esta forma) se recalculan forzosamente incluso en partes de formato ancho + almacenamiento completo.
   * En **cualquier parte que no sea de formato ancho + almacenamiento completo** (incluidas las **compactas + completas**, **compactas + empaquetadas** y **anchas + empaquetadas**), la mutación sigue una ruta de reescritura completa de la parte y recalcula forzosamente los índices secundarios preexistentes en ella. Las partes pequeñas suelen ser compactas y, de forma predeterminada, seguir usando almacenamiento completo, por lo que esta rama es el caso habitual para inserciones recientes.
 
-  Por otro lado, `ADD INDEX` solo actualiza los metadatos: **no** materializa inmediatamente el nuevo índice (incluidos los índices de texto) en las partes históricas. Las partes históricas se materializan mediante un [`MATERIALIZE INDEX`](/es/sql-reference/statements/alter/skipping-index#materialize-index) explícito o una combinación posterior, cuando [`materialize_skip_indexes_on_merge`](/es/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) está habilitado y el índice no figura en [`exclude_materialize_skip_indexes_on_merge`](/es/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge). `MATERIALIZE INDEX` explícito es la opción determinista cuando necesita crear el índice sin esperar a la configuración de combinación.
+  Por otro lado, `ADD INDEX` solo actualiza los metadatos: **no** materializa inmediatamente el nuevo índice (incluidos los índices de texto) en las partes históricas. Las partes históricas se materializan mediante un [`MATERIALIZE INDEX`](/es/reference/statements/alter/skipping-index#materialize-index) explícito o una fusión posterior, cuando [`materialize_skip_indexes_on_merge`](/es/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) está habilitado y el índice no figura en [`exclude_materialize_skip_indexes_on_merge`](/es/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge). `MATERIALIZE INDEX` explícito es la opción determinista cuando necesita crear el índice sin esperar a la configuración de fusión.
 </Note>
 
 **Véase también**
 
 * [MATERIALIZED](/es/reference/statements/create/view#materialized-view).
-* [MATERIALIZE INDEX](/es/sql-reference/statements/alter/skipping-index#materialize-index).
+* [MATERIALIZE INDEX](/es/reference/statements/alter/skipping-index#materialize-index).
 
 <div id="limitations">
   ## Limitaciones

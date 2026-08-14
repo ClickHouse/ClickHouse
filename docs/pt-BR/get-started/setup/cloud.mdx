@@ -99,7 +99,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
     ### ClickPipes
 
-    [ClickPipes](/pt-BR/integrations/clickpipes) é uma plataforma de integração gerenciada que torna a ingestão de dados de diversas fontes tão simples quanto clicar em alguns botões. Projetado para os workloads mais exigentes, a arquitetura robusta e escalável do ClickPipes garante desempenho e confiabilidade consistentes. O ClickPipes pode ser usado para necessidades de streaming de longo prazo ou para jobs pontuais de carregamento de dados.
+    [ClickPipes](/pt-BR/integrations/clickpipes/home) é uma plataforma de integração gerenciada que torna a ingestão de dados de diversas fontes tão simples quanto clicar em alguns botões. Projetada para os workloads mais exigentes, a arquitetura robusta e escalável do ClickPipes garante desempenho e confiabilidade consistentes. O ClickPipes pode ser usado para necessidades de streaming de longo prazo ou para jobs pontuais de carregamento de dados.
 
     <Image img="/images/_snippets/select_data_source.webp" size="md" alt="Selecionar fonte de dados" border />
 
@@ -157,7 +157,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
     A chave primária de uma tabela ClickHouse determina como os dados são ordenados quando gravados em disco. A cada 8.192 linhas ou 10 MB de
     dados (referido como a **granularidade do índice**) é criada uma entrada no arquivo de índice da chave primária. Esse conceito de granularidade
-    cria um **índice esparso** que cabe facilmente na memória, e os grânulos representam uma stripe da menor quantidade de
+    cria um **índice esparso** que cabe facilmente na memória, e os grânulos representam uma faixa da menor quantidade de
     dados de coluna processada durante as consultas `SELECT`.
 
     A chave primária pode ser definida usando o parâmetro `PRIMARY KEY`. Se você definir uma tabela sem especificar um `PRIMARY KEY`,

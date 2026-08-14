@@ -25,7 +25,7 @@ keywords: ['rbac', 'custom roles', 'migration', 'access control', 'permissions',
 
 새로운 RBAC 시스템에서는 사용자 지정 역할을 정의하고 더욱 세분화된 접근 제어를 적용할 수 있습니다. 고정된 서비스 범위 권한 집합 대신, 각 역할에 부여된 모든 권한을 확인할 수 있도록 역할을 정의하므로 역할별로 제공되는 액세스 권한을 정확히 파악할 수 있습니다.
 
-역할에는 조직, 서비스, 데이터베이스 권한을 결합할 수 있습니다. 이러한 권한은 모든 서비스와 데이터베이스에 적용하거나 일부에만 적용할 수 있습니다. 전체 권한 목록과 ClickHouse Cloud에 기본 제공되는 표준 역할은 [Console roles and permissions](/ko/cloud/security/console-roles)를 참조하십시오. 마이그레이션 후 역할을 생성하고 편집하는 방법은 [Manage custom roles](/ko/cloud/guides/security/manage-custom-roles)를 참조하십시오.
+역할에는 조직, 서비스, 데이터베이스 권한을 결합할 수 있습니다. 이러한 권한은 모든 서비스와 데이터베이스에 적용하거나 일부에만 적용할 수 있습니다. 전체 권한 목록과 ClickHouse Cloud에 기본 제공되는 표준 역할은 [Console roles and permissions](/ko/products/cloud/reference/security/console-roles)를 참조하십시오. 마이그레이션 후 역할을 생성하고 편집하는 방법은 [사용자 지정 역할 관리](/ko/products/cloud/guides/security/cloud-access-management/manage-custom-roles)를 참조하십시오.
 
 대부분의 권한은 새 모델에 자동으로 매핑됩니다. 직접 매핑할 수 없는 서비스 범위 권한은 마이그레이션 마법사에서 처리를 요청하는 항목입니다.
 
@@ -41,7 +41,7 @@ keywords: ['rbac', 'custom roles', 'migration', 'access control', 'permissions',
   </Step>
 
   <Step title="매핑되지 않은 권한에 대한 역할 생성" id="create-roles">
-    마법사에는 서비스 범위 권한을 자동으로 마이그레이션할 수 없었던 멤버와 API Key가 표시됩니다. 이러한 멤버와 Key에 필요한 액세스 권한에 맞는 새 역할을 생성합니다. 권한 범위에 관한 자세한 내용은 [사용자 지정 역할 관리](/ko/cloud/guides/security/manage-custom-roles)를 참조하십시오.
+    마법사에는 서비스 범위 권한을 자동으로 마이그레이션할 수 없었던 멤버와 API Key가 표시됩니다. 이러한 멤버와 Key에 필요한 액세스 권한에 맞는 새 역할을 생성합니다. 권한 범위에 관한 자세한 내용은 [사용자 지정 역할 관리](/ko/products/cloud/guides/security/cloud-access-management/manage-custom-roles)를 참조하십시오.
   </Step>
 
   <Step title="모든 멤버와 API Key에 역할 할당" id="assign-roles">
@@ -75,4 +75,4 @@ keywords: ['rbac', 'custom roles', 'migration', 'access control', 'permissions',
 
 Query Endpoints 역할은 Basic service API reader 역할로 전환됩니다. 이전 역할 이름을 사용하는 통합을 업데이트하십시오.
 
-향후 역할 관리에 대한 지침은 [사용자 지정 역할 관리](/ko/cloud/guides/security/manage-custom-roles) 및 [Cloud 접근 관리](/ko/cloud/security/cloud_access_management)를 참조하십시오.
+향후 역할 관리에 대한 지침은 [사용자 지정 역할 관리](/ko/products/cloud/guides/security/cloud-access-management/manage-custom-roles) 및 [Cloud 접근 관리](/ko/products/cloud/guides/security/cloud-access-management)를 참조하십시오.

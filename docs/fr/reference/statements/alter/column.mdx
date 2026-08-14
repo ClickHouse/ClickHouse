@@ -378,19 +378,19 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 ```
 
 <Note>
-  `MATERIALIZE COLUMN` réécrit toujours les **valeurs de la colonne**. La reconstruction des [index d’élagage de données](/fr/sql-reference/statements/alter/skipping-index) (y compris les index de texte intégral) dépend également de la disposition de la part et du mode de stockage de l’index :
+  `MATERIALIZE COLUMN` réécrit toujours les **valeurs de la colonne**. La reconstruction des [index d’élagage de données](/fr/reference/statements/alter/skipping-index) (y compris les index de texte intégral) dépend également de la disposition de la part et du mode de stockage de l’index :
 
-  * Sur les parts qui sont à la fois **wide + full-storage**, les fichiers autonomes d’index d’élagage (et les index de texte intégral) ne sont **pas** automatiquement reconstruits lorsque seule la colonne est réécrite. Après avoir modifié les données de la colonne sous-jacente dont dépend un index, exécutez [`ALTER TABLE ... MATERIALIZE INDEX`](/fr/sql-reference/statements/alter/skipping-index#materialize-index) si vous devez actualiser ces fichiers d’index.
+  * Sur les parts qui sont à la fois **wide + full-storage**, les fichiers autonomes d’index d’élagage (et les index de texte intégral) ne sont **pas** automatiquement reconstruits lorsque seule la colonne est réécrite. Après avoir modifié les données de la colonne sous-jacente dont dépend un index, exécutez [`ALTER TABLE ... MATERIALIZE INDEX`](/fr/reference/statements/alter/skipping-index#materialize-index) si vous devez actualiser ces fichiers d’index.
   * **Exception :** les index d’élagage ordinaires regroupés dans `skp_idx.packed` (petits sous-flux d’index d’élagage dont la taille est inférieure à la valeur par défaut de [`packed_skip_index_max_bytes`](/fr/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes) ; les index de texte intégral ne sont pas regroupés de cette façon) sont recalculés de force, même sur les parts wide + full-storage.
   * Sur **toute part qui n’est pas wide + full-storage** (y compris **compact + full**, **compact + packed** et **wide + packed**), la mutation emprunte un chemin de réécriture complète de la part et recalcule de force les index secondaires préexistants de cette part. Les petites parts sont généralement compactes tout en utilisant par défaut un stockage de part complet ; ce cas est donc courant pour les insertions récentes.
 
-  Par ailleurs, `ADD INDEX` ne met à jour que les métadonnées : il ne matérialise **pas** immédiatement le nouvel index (y compris les index de texte intégral) sur les parts historiques. Les parts historiques sont matérialisées soit par un [`MATERIALIZE INDEX`](/fr/sql-reference/statements/alter/skipping-index#materialize-index) explicite, soit lors d’une fusion ultérieure lorsque [`materialize_skip_indexes_on_merge`](/fr/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) est activé et que l’index ne figure pas dans [`exclude_materialize_skip_indexes_on_merge`](/fr/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge). Un `MATERIALIZE INDEX` explicite est la méthode déterministe lorsque vous devez créer l’index sans attendre les paramètres de fusion.
+  Par ailleurs, `ADD INDEX` ne met à jour que les métadonnées : il ne matérialise **pas** immédiatement le nouvel index (y compris les index de texte intégral) sur les parts historiques. Les parts historiques sont matérialisées soit par un [`MATERIALIZE INDEX`](/fr/reference/statements/alter/skipping-index#materialize-index) explicite, soit lors d’une fusion ultérieure lorsque [`materialize_skip_indexes_on_merge`](/fr/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) est activé et que l’index ne figure pas dans [`exclude_materialize_skip_indexes_on_merge`](/fr/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge). Un `MATERIALIZE INDEX` explicite est la méthode déterministe lorsque vous devez créer l’index sans attendre les paramètres de fusion.
 </Note>
 
 **Voir aussi**
 
 * [MATERIALIZED](/fr/reference/statements/create/view#materialized-view).
-* [MATERIALIZE INDEX](/fr/sql-reference/statements/alter/skipping-index#materialize-index).
+* [MATERIALIZE INDEX](/fr/reference/statements/alter/skipping-index#materialize-index).
 
 <div id="limitations">
   ## Limitations

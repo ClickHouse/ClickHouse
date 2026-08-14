@@ -101,7 +101,7 @@ VALUES (...);
   ### 파티셔닝 키 검토
 </div>
 
-카디널리티가 낮은 파티셔닝 키를 사용하고, 사용자 또는 요청 식별자와 같은 값으로 파티셔닝하는 것은 피하십시오. ClickHouse는 같은 파티션 내에서만 파트를 머지하므로, 파티션 수가 많으면 효과적으로 머지할 수 없습니다. 자세한 내용은 [파티셔닝 키 선택](/ko/best-practices/choosing-a-partitioning-key)을 참조하십시오.
+카디널리티가 낮은 파티셔닝 키를 사용하고, 사용자 또는 요청 식별자와 같은 값으로 파티셔닝하는 것은 피하십시오. ClickHouse는 같은 파티션 내에서만 파트를 머지하므로, 파티션 수가 많으면 효과적으로 머지할 수 없습니다. 자세한 내용은 [파티셔닝 키 선택](/ko/concepts/best-practices/partitioning-keys)을 참조하십시오.
 
 <div id="investigate-merge-bottlenecks">
   ### 머지 병목 현상 조사

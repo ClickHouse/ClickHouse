@@ -165,7 +165,7 @@ SETTINGS schema_inference_make_columns_nullable=0
 ```
 
 Теперь создадим таблицу `trips`, схема которой будет определена на основе структуры данных в файлах в формате TSV.
-С помощью условия `REPLACE` приведём столбцы с денежными значениями к типу `Float64`, а с помощью функции [`transform`](/ru/sql-reference/functions/other-functions#transform) преобразуем числовой столбец `pickup_borocode` в понятное человеку название боро:
+С помощью условия `REPLACE` приведём столбцы с денежными значениями к типу `Float64`, а с помощью функции [`transform`](/ru/reference/functions/regular-functions/other-functions#transform) преобразуем числовой столбец `pickup_borocode` в понятное человеку название боро:
 
 ```python
 %%sql

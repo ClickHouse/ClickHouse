@@ -13,19 +13,19 @@ import { Image } from "/snippets/es/components/Image.jsx";
 Además de este registro de cambios de ClickHouse Cloud, consulta la página de [Cloud Compatibility](/es/products/cloud/guides/cloud-compatibility).
 
 <Update label="13 de julio de 2026">
-  Las actualizaciones de esta semana incluyen enrutamiento sticky de réplicas a través de HTTPS estándar, fechas de inicio personalizadas para el período de facturación y nuevos controles de carga inicial para los ClickPipes de object storage.
+  Las actualizaciones de esta semana incluyen enrutamiento sticky de réplicas a través de HTTPS estándar, fechas de inicio personalizadas para el período de facturación y nuevos controles de carga inicial para los ClickPipes de almacenamiento de objetos.
 
   ### Enrutamiento sticky de réplicas a través de HTTPS (vista previa privada)
 
-  Ahora puedes fijar las queries a una réplica específica a través de HTTPS estándar añadiendo un parámetro `?session_id=` a la URL habitual del service, sin necesidad de nombres de host especiales ni cambios de DNS. Esto mantiene disponibles entre queries los objetos con alcance de session, como las tablas temporales, y ayuda a que las queries repetidas aprovechen las cachés locales ya precalentadas de la réplica. Se está implementando en vista previa privada para todos los clientes Enterprise y, bajo solicitud, para los clientes Scale. El enrutamiento existente basado en subdominios sigue funcionando, pero con el tiempo migrará a este enfoque. Consulta la documentación de [replica-aware routing](/es/manage/replica-aware-routing).
+  Ahora puedes fijar las consultas a una réplica específica a través de HTTPS estándar añadiendo un parámetro `?session_id=` a la URL habitual del service, sin necesidad de nombres de host especiales ni cambios de DNS. Esto mantiene disponibles entre consultas los objetos con alcance de session, como las tablas temporales, y ayuda a que las consultas repetidas aprovechen las cachés locales ya precalentadas de la réplica. Se está implementando en vista previa privada para todos los clientes Enterprise y, bajo solicitud, para los clientes Scale. El enrutamiento existente basado en subdominios sigue funcionando, pero con el tiempo migrará a este enfoque. Consulta la documentación de [replica-aware routing](/es/products/cloud/features/infrastructure/replica-aware-routing).
 
   ### Fechas de inicio personalizadas para el período de facturación
 
   Ahora puedes solicitar un cambio en la fecha de facturación de tu organización, es decir, el día del mes en que comienza cada período de facturación, por ejemplo, para alinear las facturas con el mes natural. Abre un ticket de soporte con la fecha solicitada. Las fechas de facturación se aplican en UTC, y cada factura cubre el uso desde la fecha de facturación hasta la misma fecha del mes siguiente (sin incluirla).
 
-  ### Omitir la carga inicial para los ClickPipes de object storage
+  ### Omitir la carga inicial para los ClickPipes de almacenamiento de objetos
 
-  Los [ClickPipes](/es/integrations/clickpipes) de object storage (S3, GCS y Azure Blob Storage) ahora ofrecen dos formas de controlar la carga inicial al crear un pipe: **Start after**, que omite los archivos hasta una clave de object determinada, incluyéndola, y **Skip initial load**, que omite por completo los archivos preexistentes y procesa solo las notificaciones de nuevos object. Anteriormente, un pipe nuevo siempre hacía backfill de todos los archivos de la ruta. Las dos opciones son mutuamente excluyentes y permanentes para un pipe determinado: un backfill omitido no puede activarse más adelante. Disponible en la UI, en la API de Cloud y en Terraform v3.18.0 y posteriores.
+  Los [ClickPipes](/es/integrations/clickpipes/home) de almacenamiento de objetos (S3, GCS y Azure Blob Storage) ahora ofrecen dos formas de controlar la carga inicial al crear un pipe: **Start after**, que omite los archivos hasta una clave de object determinada, incluyéndola, y **Skip initial load**, que omite por completo los archivos preexistentes y procesa solo las notificaciones de nuevos object. Anteriormente, un pipe nuevo siempre hacía backfill de todos los archivos de la ruta. Las dos opciones son mutuamente excluyentes y permanentes para un pipe determinado: un backfill omitido no puede activarse más adelante. Disponible en la UI, en la API de Cloud y en Terraform v3.18.0 y posteriores.
 </Update>
 
 <Update label="30 de junio de 2026">

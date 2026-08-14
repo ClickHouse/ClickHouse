@@ -101,7 +101,7 @@ VALUES (...);
   ### 检查分区键
 </div>
 
-使用低基数的分区键，并避免按用户或请求标识符等值进行分区。ClickHouse 仅会在同一分区内合并 parts，因此分区数量过多会妨碍高效合并。有关建议，请参阅[选择分区键](/zh/best-practices/choosing-a-partitioning-key)。
+使用低基数的分区键，并避免按用户或请求标识符等值进行分区。ClickHouse 仅会在同一分区内合并 parts，因此分区数量过多会妨碍高效合并。有关建议，请参阅[选择分区键](/zh/concepts/best-practices/partitioning-keys)。
 
 <div id="investigate-merge-bottlenecks">
   ### 排查合并瓶颈

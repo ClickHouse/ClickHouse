@@ -165,7 +165,7 @@ SETTINGS schema_inference_make_columns_nullable=0
 ```
 
 现在，我们将创建一个名为 `trips` 的表，其 schema 根据 TSV 文件中的数据结构推导而来。
-我们将使用 `REPLACE` 子句将金额相关列转换为 `Float64`，并使用 [`transform`](/zh/sql-reference/functions/other-functions#transform) 函数将数值型 `pickup_borocode` 列转换为易读的行政区名称：
+我们将使用 `REPLACE` 子句将金额相关列转换为 `Float64`，并使用 [`transform`](/zh/reference/functions/regular-functions/other-functions#transform) 函数将数值型 `pickup_borocode` 列转换为易读的行政区名称：
 
 ```python
 %%sql

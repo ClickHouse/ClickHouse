@@ -165,7 +165,7 @@ default データベースではデータはディスクに永続化されない
 ```
 
 次に、TSV ファイル内のデータ構造からスキーマを導出した `trips` テーブルを作成します。
-`REPLACE` 句を使用して金額関連のカラムを `Float64` にキャストし、[`transform`](/ja/sql-reference/functions/other-functions#transform) 関数を使用して数値の `pickup_borocode` カラムを人間が読める borough 名に変換します。
+`REPLACE` 句を使用して金額関連のカラムを `Float64` にキャストし、[`transform`](/ja/reference/functions/regular-functions/other-functions#transform) 関数を使用して数値の `pickup_borocode` カラムを人間が読める borough 名に変換します。
 
 ```python
 %%sql
@@ -221,7 +221,7 @@ SELECT * FROM file('taxi_zone_lookup.csv')
 SETTINGS schema_inference_make_columns_nullable=0
 ```
 
-実行が完了したら、取り込んだデータを確認してみましょう。
+実行が完了したら、取り込んだデータを確認してみましょう：
 
 ```python
 %sql SELECT * FROM taxi.zones LIMIT 5

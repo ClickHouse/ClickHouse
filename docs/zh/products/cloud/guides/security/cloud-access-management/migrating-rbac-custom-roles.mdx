@@ -25,7 +25,7 @@ keywords: ['rbac', 'custom roles', 'migration', 'access control', 'permissions',
 
 新的 RBAC 系统引入了自定义角色定义和更细粒度的访问控制。不再使用一组固定的服务范围权限，而是由您定义角色，并明确列出每个角色授予的所有权限，以便清楚了解每个角色提供的具体访问权限。
 
-角色可以组合组织、服务和数据库权限。您可以将这些权限应用于所有服务和数据库，也可以仅应用于其中一部分。有关完整的权限列表以及 ClickHouse Cloud 随附的标准角色，请参阅[控制台角色和权限](/zh/cloud/security/console-roles)。有关迁移后创建和编辑角色的说明，请参阅[管理自定义角色](/zh/cloud/guides/security/manage-custom-roles)。
+角色可以组合组织、服务和数据库权限。您可以将这些权限应用于所有服务和数据库，也可以仅应用于其中一部分。有关完整的权限列表以及 ClickHouse Cloud 随附的标准角色，请参阅[控制台角色和权限](/zh/products/cloud/reference/security/console-roles)。有关迁移后创建和编辑角色的说明，请参阅[管理自定义角色](/zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles)。
 
 大多数权限会自动映射到新模型。对于无法直接映射的服务范围权限，迁移向导会提示您进行处理。
 
@@ -41,7 +41,7 @@ keywords: ['rbac', 'custom roles', 'migration', 'access control', 'permissions',
   </Step>
 
   <Step title="为未映射的权限创建角色" id="create-roles">
-    向导会列出服务范围权限无法自动迁移的成员和 API 密钥。请创建符合这些成员和密钥所需访问权限的新角色。有关权限范围的详细信息，请参阅[管理自定义角色](/zh/cloud/guides/security/manage-custom-roles)。
+    向导会列出服务范围权限无法自动迁移的成员和 API 密钥。请创建符合这些成员和密钥所需访问权限的新角色。有关权限范围的详细信息，请参阅[管理自定义角色](/zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles)。
   </Step>
 
   <Step title="为每位成员和每个 API 密钥分配角色" id="assign-roles">
@@ -75,4 +75,4 @@ keywords: ['rbac', 'custom roles', 'migration', 'access control', 'permissions',
 
 查询端点角色将更改为基础版服务 API 读取者角色。请更新所有依赖旧角色名称的集成。
 
-有关今后管理角色的指导，请参阅[管理自定义角色](/zh/cloud/guides/security/manage-custom-roles)和[云访问管理](/zh/cloud/security/cloud_access_management)。
+有关今后管理角色的指导，请参阅[管理自定义角色](/zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles)和[云访问管理](/zh/products/cloud/guides/security/cloud-access-management)。

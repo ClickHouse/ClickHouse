@@ -206,7 +206,7 @@ keywords: ['backups', 'disaster recovery', '데이터 보호', '복원', 'cloud 
     ```
 
     `restore_access_entities_with_current_grants`를 활성화하면 복원된 사용자와 역할의 권한은 복원을 수행하는 사용자가 부여할 수 있는 권한으로 제한됩니다.
-    이는 백업에 복원을 수행하는 사용자가 부여할 수 있는 권한보다 많은 권한이 포함된 경우 `RESTORE`가 `ACCESS_DENIED`로 실패하는 대신, [`GRANT CURRENT GRANTS`](/ko/sql-reference/statements/grant)와 동일한 의미 체계를 적용합니다.
+    이는 백업에 복원을 수행하는 사용자가 부여할 수 있는 권한보다 많은 권한이 포함된 경우 `RESTORE`가 `ACCESS_DENIED`로 실패하는 대신, [`GRANT CURRENT GRANTS`](/ko/reference/statements/grant)와 동일한 의미 체계를 적용합니다.
 
     26.4 이전 버전에서는 이 설정을 생략하십시오.
   </Tab>

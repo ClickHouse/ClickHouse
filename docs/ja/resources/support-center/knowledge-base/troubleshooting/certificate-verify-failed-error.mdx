@@ -62,7 +62,7 @@ macOS では、python.org の Python ビルドは、システムのキーチェ�
 open "/Applications/Python 3.11/Install Certificates.command"
 ```
 
-または、クライアントが certifi バンドルを直接使用するように設定します。[ClickHouse Connect](/ja/integrations/python) は自動的に certifi にフォールバックしないため、`ca_cert` パラメータでバンドルを渡してください。
+または、クライアントが certifi バンドルを直接使用するように設定します。[ClickHouse Connect](/ja/integrations/language-clients/python/index) は自動的に certifi にフォールバックしないため、`ca_cert` パラメータでバンドルを渡してください。
 
 ```python
 import certifi
@@ -81,4 +81,4 @@ client = clickhouse_connect.get_client(
   ## 参考資料
 </div>
 
-[`clickhouse-client` の設定に関するドキュメント](/ja/interfaces/client#configuration_files)を参照してください。
+[`clickhouse-client` の設定に関するドキュメント](/ja/concepts/features/interfaces/client#configuration_files)を参照してください。

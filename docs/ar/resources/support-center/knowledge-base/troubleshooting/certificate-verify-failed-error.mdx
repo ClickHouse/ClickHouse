@@ -54,7 +54,7 @@ keywords: ['خطأ', 'شهادة SSL', '210']
 
 `ssl.SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate`
 
-على macOS، يتحقق إصدار Python من python.org من الشهادات عبر المسارات الافتراضية لـ OpenSSL بدلًا من سلسلة مفاتيح النظام. في التثبيت الجديد، لا تشير هذه المسارات إلى أي حزمة شهادات جذر: يرفق المثبّت [certifi](https://pypi.org/project/certifi/)، لكنه لا يربطه بالموقع الافتراضي لـ OpenSSL إلا بعد تشغيل البرنامج النصي المرفق `Install Certificates.command`. وحتى ذلك الحين، لا يتمكن العميل من التحقق من صحة شهادة الخادم الخاصة بـ ClickHouse Cloud، رغم أن هذه الشهادة صالحة. وينطبق ذلك عمومًا على إصدارات python.org المخصّصة لـ macOS (Python 3.6 والإصدارات الأحدث)، وليس على Python 3.11 فقط.
+على macOS، يتحقق إصدار بايثون من python.org من الشهادات عبر المسارات الافتراضية لـ OpenSSL بدلًا من سلسلة مفاتيح النظام. في التثبيت الجديد، لا تشير هذه المسارات إلى أي حزمة شهادات الجذر: يرفق المثبّت [certifi](https://pypi.org/project/certifi/)، لكنه لا يربطه بالموقع الافتراضي لـ OpenSSL إلا بعد تشغيل البرنامج النصي المرفق `Install Certificates.command`. وحتى ذلك الحين، لا يتمكن العميل من التحقق من صحة شهادة الخادم الخاصة بـ ClickHouse Cloud، رغم أن هذه الشهادة صالحة. وينطبق ذلك عمومًا على إصدارات python.org المخصّصة لـ macOS (بايثون 3.6 والإصدارات الأحدث)، وليس على بايثون 3.11 فقط.
 
 شغّل `Install Certificates.command` لربط certifi بمسار الشهادات الافتراضي في OpenSSL. وعدّل رقم الإصدار في المسار ليتوافق مع التثبيت لديك:
 
@@ -62,7 +62,7 @@ keywords: ['خطأ', 'شهادة SSL', '210']
 open "/Applications/Python 3.11/Install Certificates.command"
 ```
 
-بدلاً من ذلك، وجّه العميل إلى حزمة certifi مباشرةً. لا يلجأ [ClickHouse Connect](/ar/integrations/python) إلى certifi تلقائيًا، لذا مرّر الحزمة عبر المعامل `ca_cert`:
+بدلاً من ذلك، وجّه العميل إلى حزمة certifi مباشرةً. لا يلجأ [ClickHouse Connect](/ar/integrations/language-clients/python/index) إلى certifi تلقائيًا، لذا مرّر الحزمة عبر المعامل `ca_cert`:
 
 ```python
 import certifi
@@ -81,4 +81,4 @@ client = clickhouse_connect.get_client(
   ## موارد إضافية
 </div>
 
-راجع [وثائق إعداد `clickhouse-client`](/ar/interfaces/client#configuration_files).
+راجع [وثائق تهيئة `clickhouse-client`](/ar/concepts/features/interfaces/client#configuration_files).

@@ -205,7 +205,7 @@ GCS および Azure Blob Storage のバックアップを取得する場合も�
     ```
 
     `restore_access_entities_with_current_grants` を有効にすると、復元されたユーザーとロールに付与される権限は、復元を実行するユーザーが付与できる権限に制限されます
-    ([`GRANT CURRENT GRANTS`](/ja/sql-reference/statements/grant) と同じセマンティクス) 。これにより、バックアップに復元を実行するユーザーが付与できる権限を超える権限が含まれていても、`RESTORE` が `ACCESS_DENIED` で失敗することはありません。
+    ([`GRANT CURRENT GRANTS`](/ja/reference/statements/grant) と同じセマンティクス) 。これにより、バックアップに復元を実行するユーザーが付与できる権限を超える権限が含まれていても、`RESTORE` が `ACCESS_DENIED` で失敗することはありません。
 
     26.4 より前のバージョンでは、この設定を省略してください。
   </Tab>

@@ -206,7 +206,7 @@ Você pode usar esses comandos com a sintaxe descrita acima para fazer backups n
     ```
 
     Quando `restore_access_entities_with_current_grants` está habilitada, os usuários e roles restaurados têm seus grants limitados ao que o usuário que está restaurando tem permissão para conceder
-    (a mesma semântica de [`GRANT CURRENT GRANTS`](/pt-BR/sql-reference/statements/grant)), em vez de o `RESTORE`
+    (a mesma semântica de [`GRANT CURRENT GRANTS`](/pt-BR/reference/statements/grant)), em vez de o `RESTORE`
     falhar com `ACCESS_DENIED` quando o backup contém mais permissões do que o usuário que está restaurando pode conceder.
 
     Em versões anteriores à 26.4, omita a configuração.

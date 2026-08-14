@@ -165,7 +165,7 @@ O banco de dados default não persiste dados em disco, portanto, primeiro precis
 ```
 
 Agora, vamos criar uma tabela chamada `trips`, cujo esquema será derivado da estrutura dos dados nos arquivos TSV.
-Usaremos a cláusula `REPLACE` para converter as colunas de valores monetários em `Float64` e a função [`transform`](/pt-BR/sql-reference/functions/other-functions#transform) para converter a coluna numérica `pickup_borocode` em um nome de distrito legível:
+Usaremos a cláusula `REPLACE` para converter as colunas de valores monetários em `Float64` e a função [`transform`](/pt-BR/reference/functions/regular-functions/other-functions#transform) para converter a coluna numérica `pickup_borocode` em um nome de distrito legível:
 
 ```python
 %%sql

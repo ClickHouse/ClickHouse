@@ -99,7 +99,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     ### ClickPipes
 
-    [ClickPipes](/ja/integrations/clickpipes) は、多様なソースからのデータ取り込みを数回のクリックで実現するマネージド統合プラットフォームです。最も負荷の高いワークロード向けに設計されており、ClickPipes の堅牢でスケーラブルなアーキテクチャは一貫したパフォーマンスと信頼性を確保します。ClickPipes は、長期的なストリーミング用途にも一度限りのデータ読み込みジョブにも利用できます。
+    [ClickPipes](/ja/integrations/clickpipes/home) は、多様なソースからのデータ取り込みを数回のクリックで実現するマネージド統合プラットフォームです。最も負荷の高いワークロード向けに設計されており、ClickPipes の堅牢でスケーラブルなアーキテクチャは一貫したパフォーマンスと信頼性を確保します。ClickPipes は、長期的なストリーミング用途にも一度限りのデータ読み込みジョブにも利用できます。
 
     <Image img="/images/_snippets/select_data_source.webp" size="md" alt="データソースを選択" border />
 
@@ -107,7 +107,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     ### SQL コンソールを使用してデータを追加する
 
-    多くのデータベース管理システムと同様に、ClickHouse はテーブルを**データベース**に論理的にグループ化します。ClickHouse で新しいデータベースを作成するには、[`CREATE DATABASE`](/ja/reference/statements/create/database) コマンドを使用します。
+    多くのデータベース管理システムと同様に、ClickHouse はテーブルを**データベース**に論理的にグループ化します。ClickHouse で新しいデータベースを作成するには、[`CREATE DATABASE`](/ja/reference/statements/create/database) コマンドを使用します:
 
     ```sql
     CREATE DATABASE IF NOT EXISTS helloworld
@@ -156,7 +156,8 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     ClickHouseテーブルの主キーは、ディスクへの書き込み時にデータがどのようにソートされるかを決定します。8,192行または10MBのデータごと (**インデックス粒度**と呼ばれます) に、主キーのインデックスファイルへのエントリが作成されます。この粒度の概念により、メモリに容易に収まる**スパースインデックス**が生成されます。granule (粒度単位) は、`SELECT`クエリの処理時に読み取られる最小単位のカラムデータのストライプを表します。
 
-    主キーは `PRIMARY KEY` パラメータを使用して定義できます。`PRIMARY KEY` を指定せずにテーブルを定義した場合、`ORDER BY` 句で指定されたタプルがキーになります。`PRIMARY KEY` と `ORDER BY` の両方を指定する場合、主キーはソート順のサブセットでなければなりません。
+    主キーは `PRIMARY KEY` パラメータを使用して定義できます。`PRIMARY KEY` を指定せずにテーブルを定義した場合、
+    `ORDER BY` 句で指定されたタプルがキーになります。`PRIMARY KEY` と `ORDER BY` の両方を指定する場合、主キーはソート順のサブセットでなければなりません。
 
     主キーはソートキーでもあり、`(user_id, timestamp)` のタプルです。そのため、各カラムファイルに格納されたデータは、`user_id`、次に `timestamp` の順でソートされます。
 
@@ -197,7 +198,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     ### ClickHouse Clientを使用したデータの追加
 
-    [**clickhouse client**](/ja/concepts/features/interfaces/cli) というコマンドラインツールを使用して、ClickHouse Cloud サービスに接続することもできます。左側のメニューの `Connect` をクリックすると、これらの詳細にアクセスできます。ダイアログのドロップダウンから `Native` を選択してください。
+    [**clickhouse client**](/ja/concepts/features/interfaces/cli) というコマンドラインツールを使用して、ClickHouse Cloud サービスに接続することもできます。左側のメニューの `Connect` をクリックすると、これらの詳細にアクセスできます。ダイアログのドロップダウンから `Native` を選択してください:
 
     <Image img="/images/_snippets/client_details.webp" size="md" alt="clickhouse clientの接続情報" border />
 
@@ -277,7 +278,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     ### ファイルのアップロード
 
-    データベースを使い始める際によく行う作業の一つが、既存のファイルからデータをinsertすることです。クリックストリームデータを表すサンプルデータをオンラインで提供しています。このデータには、ユーザーID、訪問したURL、およびイベントのtimestampが含まれています。
+    データベースを使い始める際によく行う作業の一つが、既にファイルとして持っているデータをinsertすることです。クリックストリームデータを表すサンプルデータをオンラインで提供しており、これをinsertできます。このデータには、ユーザーID、訪問したURL、およびイベントのtimestampが含まれています。
 
     `data.csv` という名前のCSVファイルに次のようなテキストがあるとします：
 

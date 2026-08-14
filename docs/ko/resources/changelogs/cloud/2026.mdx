@@ -17,7 +17,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
   ### HTTPS를 통한 sticky 레플리카 라우팅 (비공개 프리뷰)
 
-  이제 일반 서비스 URL에 `?session_id=` 매개변수를 추가하면 별도의 hostname이나 DNS 변경 없이 표준 HTTPS를 통해 쿼리를 특정 레플리카에 고정할 수 있습니다. 이를 통해 임시 테이블과 같은 세션 범위 객체를 여러 쿼리에서 계속 사용할 수 있으며, 반복되는 쿼리가 예열된 레플리카 로컬 캐시를 활용하는 데도 도움이 됩니다. 이 기능은 모든 Enterprise 고객에게 비공개 프리뷰로 순차 배포되고 있으며, Scale 고객은 요청 시 사용할 수 있습니다. 기존의 하위 도메인 기반 라우팅도 계속 작동하지만, 최종적으로는 이 방식으로 이전될 예정입니다. 자세한 내용은 [Replica-aware 라우팅](/ko/manage/replica-aware-routing) 문서를 참조하십시오.
+  이제 일반 서비스 URL에 `?session_id=` 매개변수를 추가하면 별도의 hostname이나 DNS 변경 없이 표준 HTTPS를 통해 쿼리를 특정 레플리카에 고정할 수 있습니다. 이를 통해 임시 테이블과 같은 세션 범위 객체를 여러 쿼리에서 계속 사용할 수 있으며, 반복되는 쿼리가 예열된 레플리카 로컬 캐시를 활용하는 데도 도움이 됩니다. 이 기능은 모든 Enterprise 고객에게 비공개 프리뷰로 순차 배포되고 있으며, Scale 고객은 요청 시 사용할 수 있습니다. 기존의 하위 도메인 기반 라우팅도 계속 작동하지만, 최종적으로는 이 방식으로 이전될 예정입니다. 자세한 내용은 [Replica-aware 라우팅](/ko/products/cloud/features/infrastructure/replica-aware-routing) 문서를 참조하십시오.
 
   ### 사용자 지정 청구 주기 시작일
 
@@ -25,11 +25,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
   ### 객체 스토리지 ClickPipes의 초기 적재 건너뛰기
 
-  이제 객체 스토리지 [ClickPipes](/ko/integrations/clickpipes) (S3, GCS, Azure Blob Storage)에서는 파이프를 생성할 때 초기 적재를 제어하는 두 가지 방법을 제공합니다. **Start after**는 지정된 객체 키까지의 파일(해당 키 포함)을 건너뛰고, **Skip initial load**는 기존 파일을 완전히 건너뛰고 새 객체 알림만 처리합니다. 이전에는 새 파이프가 항상 해당 경로의 모든 파일을 backfill했습니다. 이 두 옵션은 서로 함께 사용할 수 없으며, 특정 파이프에 대해 영구적으로 적용됩니다. 건너뛴 backfill은 나중에 다시 트리거할 수 없습니다. UI, Cloud API, Terraform v3.18.0 이상에서 사용할 수 있습니다.
+  이제 객체 스토리지 [ClickPipes](/ko/integrations/clickpipes/home) (S3, GCS, Azure Blob Storage)에서는 파이프를 생성할 때 초기 적재를 제어하는 두 가지 방법을 제공합니다. **Start after**는 지정된 객체 키까지의 파일(해당 키 포함)을 건너뛰고, **Skip initial load**는 기존 파일을 완전히 건너뛰고 새 객체 알림만 처리합니다. 이전에는 새 파이프가 항상 해당 경로의 모든 파일을 backfill했습니다. 이 두 옵션은 서로 함께 사용할 수 없으며, 특정 파이프에 대해 영구적으로 적용됩니다. 건너뛴 backfill은 나중에 다시 트리거할 수 없습니다. UI, Cloud API, Terraform v3.18.0 이상에서 사용할 수 있습니다.
 </Update>
 
 <Update label="2026년 06월 30일">
-  이번 주 업데이트에는 Postgres 및 ClickHouse internals를 위한 새로운 관측성 기능, Kafka exactly-once 전달을 포함한 ClickPipes 제어 기능 확장, 그리고 Azure Marketplace BYOC, 공식 Airflow provider, ClickHouse Agents 업데이트 등 여러 플랫폼 추가 사항이 포함됩니다.
+  이번 주 업데이트에는 Postgres 및 ClickHouse internals를 위한 새로운 관측성 기능, Kafka exactly-once 전달을 포함한 ClickPipes 제어 기능 확장, 그리고 Azure Marketplace BYOC, 공식 Airflow 프로바이더, ClickHouse Agents 업데이트 등 여러 플랫폼 추가 사항이 포함됩니다.
 
   ### ClickPipes의 Kafka exactly-once 전달
 
@@ -51,9 +51,9 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
   이제 ClickHouse [Bring Your Own Cloud](/ko/products/cloud/guides/infrastructure/deployment-options/byoc/overview)가 Azure Marketplace에 등록되어, 고객은 Private Offer를 통해 구매하고 Azure account를 통해 청구되는 BYOC를 배포할 수 있습니다. 플랫폼 측에는 Azure BYOC marketplace listing 및 product ID에 대한 청구 지원도 추가되었습니다.
 
-  ### 공식 ClickHouse Airflow provider
+  ### 공식 ClickHouse Airflow 프로바이더
 
-  이제 ClickHouse용 공식 Apache Airflow provider를 PyPI에서 사용할 수 있으며 Airflow registry에도 등록되어, ClickHouse로 데이터를 보내고 가져오는 데 기존 community plugin에 의존하던 방식을 대체합니다.
+  이제 ClickHouse용 공식 Apache Airflow 프로바이더를 PyPI에서 사용할 수 있으며 Airflow registry에도 등록되어, ClickHouse로 데이터를 보내고 가져오는 데 기존 community plugin에 의존하던 방식을 대체합니다.
 
   ### 청구 가시성 및 marketplace 개선 사항
 

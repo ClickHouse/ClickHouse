@@ -62,7 +62,7 @@ Python 客户端报告此错误的方式略有不同，通常显示为：
 open "/Applications/Python 3.11/Install Certificates.command"
 ```
 
-或者，直接将客户端配置为使用 certifi 证书包。[ClickHouse Connect](/zh/integrations/python) 不会自行回退到 certifi，因此请通过 `ca_cert` 参数传入该证书包：
+或者，直接将客户端配置为使用 certifi 证书包。[ClickHouse Connect](/zh/integrations/language-clients/python/index) 不会自行回退到 certifi，因此请通过 `ca_cert` 参数传入该证书包：
 
 ```python
 import certifi
@@ -81,4 +81,4 @@ client = clickhouse_connect.get_client(
   ## 其他资源
 </div>
 
-请参阅 [`clickhouse-client` 配置文档](/zh/interfaces/client#configuration_files)。
+请参阅 [`clickhouse-client` 配置文档](/zh/concepts/features/interfaces/client#configuration_files)。

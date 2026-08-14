@@ -317,7 +317,7 @@ export const PageWrapper = ({ children }) => {
         <HeroCard
           title="はじめに"
           galaxyEvent="docs.home.get-started"
-          description="ここは初めてなので、まずは始め方を知って、もっと詳しく学びたいです"
+          description="初めての方はこちらから。始め方を学び、さらに詳しく知る"
           href="/ja/get-started/quickstarts/create-your-first-service-on-cloud"
           icon={
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 256 256" className="ch-goal-icon">
@@ -368,7 +368,7 @@ export const PageWrapper = ({ children }) => {
         { label: "設定", href: "/reference/settings/index" },
         { label: "関数", href: "/reference/functions/regular-functions/overview" },
         { label: "エンジン", href: "/reference/engines/engines" },
-        { label: "システムテーブル", href: "/reference/system-tables" },
+        { label: "システムテーブル", href: "/reference/system-tables/overview" },
         { label: "フォーマット", href: "/reference/formats/index" },
         { label: "データ型", href: "/reference/data-types/index" }
     ]}
@@ -430,18 +430,18 @@ export const PageWrapper = ({ children }) => {
               href="/ja/products/cloud/getting-started/cloud-get-started"
               extraClassName="h-full"
               body={<>
-    <p className="text-[#6b7280] dark:text-[#a1a1aa] mt-2 text-sm leading-[1.6]">
-        このセクションでは、ClickHouse によってデータウェアハウジングを高速かつシンプルで、予測しやすいものにする方法を紹介します。壊れやすいパイプラインや低速なクエリエンジンに悩まされる代わりに、アプリ、サービス、ツールのデータを数週間ではなく数分で一元化できます。その後は、同じプラットフォーム上でリアルタイムのダッシュボードを動かし、アラートをトリガーし、過去の傾向を分析し、イベント駆動型のプロダクトを構築できます。
-    </p>
-    <p className="text-[#111827] dark:text-zinc-200 mt-5 text-sm">学べること:</p>
-</>}
+              <p className="text-[#6b7280] dark:text-[#a1a1aa] mt-2 text-sm leading-[1.6]">
+                  このセクションでは、ClickHouse によってデータウェアハウジングを高速かつシンプルで、予測しやすいものにする方法を紹介します。壊れやすいパイプラインや低速なクエリエンジンに悩まされる代わりに、アプリ、サービス、ツールのデータを数週間ではなく数分で一元化できます。その後は、同じプラットフォーム上でリアルタイムのダッシュボードを動かし、アラートをトリガーし、過去の傾向を分析し、イベント駆動型のプロダクトを構築できます。
+              </p>
+              <p className="text-[#111827] dark:text-zinc-200 mt-5 text-sm">学べること:</p>
+          </>}
               links={[
-    { label: "1. 一般的なデータソースから最小限の作業でデータを取り込む方法", href: "/integrations" },
-    { label: "2. 分析と成長のためにデータを整理するベストプラクティス", href: "/guides/clickhouse/data-modelling/schema-design" },
-    { label: "3. 大規模なデータセットにリアルタイムでクエリする方法", href: "/get-started/use-cases/real-time-analytics" },
-    { label: "4. その上にダッシュボード、アラート、イベント駆動型の機能を構築する方法", href: "/get-started/use-cases/data-warehousing" },
-    { label: "5. パフォーマンスを高く保ちながらコストを低く抑えるためのヒント", href: "/concepts/best-practices/index" },
-]}
+              { label: "1. 一般的なデータソースから最小限の作業でデータを取り込む方法", href: "/integrations/home" },
+              { label: "2. 分析と成長のためにデータを整理するベストプラクティス", href: "/guides/clickhouse/data-modelling/schema-design" },
+              { label: "3. 大規模なデータセットにリアルタイムでクエリする方法", href: "/get-started/use-cases/real-time-analytics" },
+              { label: "4. その上にダッシュボード、アラート、イベント駆動型の機能を構築する方法", href: "/get-started/use-cases/data-warehousing" },
+              { label: "5. パフォーマンスを高く保ちながらコストを低く抑えるためのヒント", href: "/concepts/best-practices/index" },
+          ]}
             />
           </div>
 
@@ -452,7 +452,7 @@ export const PageWrapper = ({ children }) => {
           </div>
         </div>
 
-        {/* 全幅のインテグレーション バナー */}
+        {/* 全幅のインテグレーションバナー */}
 
         <IntegrationsBanner />
 

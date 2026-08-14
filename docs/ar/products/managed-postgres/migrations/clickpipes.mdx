@@ -35,10 +35,10 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## اعتبارات قبل الترحيل
 </div>
 
-* **نشر تغييرات DDL**: يلتقط النسخ المتماثل المستمر (CDC) عمليات DML و`ADD COLUMN`. أما تغييرات DDL الأخرى، مثل `DROP COLUMN` و`ALTER COLUMN`، فلا تُنقل ويجب تطبيقها يدويًا على الهدف.
+* **نشر تغييرات DDL**: يلتقط النسخ المتماثل المستمر (CDC) عمليات DML و`ADD COLUMN`. أما تغييرات DDL الأخرى، مثل `DROP COLUMN` و`ALTER COLUMN`، فلا تُنقل ويجب تطبيقها يدويًا على النظام الهدف.
 
 <Note>
-  إذا واجهت مشكلات أثناء الترحيل، فراجع [الأسئلة الشائعة حول عمليات ترحيل Managed Postgres](/ar/cloud/managed-postgres/migrations/faq) للاطلاع على الأخطاء الشائعة وحلولها.
+  إذا واجهت مشكلات أثناء الترحيل، فراجع [الأسئلة الشائعة حول عمليات ترحيل Managed Postgres](/ar/products/managed-postgres/migrations/faq) للاطلاع على الأخطاء الشائعة وحلولها.
 </Note>
 
 <div id="step-1-connect">

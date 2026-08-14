@@ -165,7 +165,7 @@ La base de données default ne persiste pas les données sur disque ; nous devo
 ```
 
 Nous allons maintenant créer une table appelée `trips`, dont le schéma sera dérivé de la structure des données des fichiers TSV.
-Nous utiliserons la clause `REPLACE` pour convertir les colonnes liées aux montants en `Float64`, ainsi que la fonction [`transform`](/fr/sql-reference/functions/other-functions#transform) pour convertir la colonne numérique `pickup_borocode` en un nom d&#39;arrondissement compréhensible :
+Nous utiliserons la clause `REPLACE` pour convertir les colonnes liées aux montants en `Float64`, ainsi que la fonction [`transform`](/fr/reference/functions/regular-functions/other-functions#transform) pour convertir la colonne numérique `pickup_borocode` en un nom de borough compréhensible :
 
 ```python
 %%sql

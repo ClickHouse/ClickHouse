@@ -368,7 +368,7 @@ export const PageWrapper = ({ children }) => {
         { label: "Настройки", href: "/reference/settings/index" },
         { label: "Функции", href: "/reference/functions/regular-functions/overview" },
         { label: "Движки", href: "/reference/engines/engines" },
-        { label: "Системные таблицы", href: "/reference/system-tables" },
+        { label: "Системные таблицы", href: "/reference/system-tables/overview" },
         { label: "Форматы", href: "/reference/formats/index" },
         { label: "Типы данных", href: "/reference/data-types/index" }
     ]}
@@ -416,7 +416,7 @@ export const PageWrapper = ({ children }) => {
       <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">Изучайте продукты и интеграции ClickHouse — от управляемого облачного сервиса до проектов с открытым исходным кодом.</p>
 
       <div className="space-y-4 mt-6">
-        {/* Строка 1: ClickHouse Cloud (col-span-2) + 2 карточки одна под другой (col-span-1) */}
+        {/* Строка 1: ClickHouse Cloud (col-span-2) + 2 карточки, расположенные одна под другой (col-span-1) */}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
           <div className="col-span-2">
@@ -436,7 +436,7 @@ export const PageWrapper = ({ children }) => {
               <p className="text-[#111827] dark:text-zinc-200 mt-5 text-sm">Что вы узнаете:</p>
           </>}
               links={[
-              { label: "1. Как организовать приём данных из распространённых источников с минимальными усилиями", href: "/integrations" },
+              { label: "1. Как организовать приём данных из распространённых источников с минимальными усилиями", href: "/integrations/home" },
               { label: "2. Лучшие практики организации данных для аналитики и роста", href: "/guides/clickhouse/data-modelling/schema-design" },
               { label: "3. Способы выполнять запросы к большим датасетам в реальном времени", href: "/get-started/use-cases/real-time-analytics" },
               { label: "4. Как создавать панели мониторинга, оповещения и событийно-ориентированные возможности на этой платформе", href: "/get-started/use-cases/data-warehousing" },

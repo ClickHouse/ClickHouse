@@ -165,7 +165,7 @@ SETTINGS schema_inference_make_columns_nullable=0
 ```
 
 والآن سننشئ جدولًا باسم `trips`، يُستمد مخططه من بنية البيانات في ملفات TSV.
-سنستخدم عبارة `REPLACE` لتحويل الأعمدة المتعلقة بالمبالغ المالية إلى `Float64`، ودالة [`transform`](/ar/sql-reference/functions/other-functions#transform) لتحويل العمود الرقمي `pickup_borocode` إلى اسم المنطقة الإدارية المقابل:
+سنستخدم عبارة `REPLACE` لتحويل الأعمدة المتعلقة بالمبالغ المالية إلى `Float64`، ودالة [`transform`](/ar/reference/functions/regular-functions/other-functions#transform) لتحويل العمود الرقمي `pickup_borocode` إلى اسم المنطقة الإدارية المقابل:
 
 ```python
 %%sql
