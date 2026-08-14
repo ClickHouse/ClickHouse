@@ -26,7 +26,7 @@ By default, `PREWHERE` is evaluated before `FINAL`, so `FROM ... FINAL` queries 
 
 ## `PREWHERE` with `JOIN` {#prewhere-with-join}
 
-When `enable_analyzer = 1`, a `PREWHERE` condition in a query with a [`JOIN`](/reference/statements/select/join) can directly reference columns from at most one table. ClickHouse applies the condition to that table's rows before they reach the join.
+A `PREWHERE` condition in a query with a [`JOIN`](/reference/statements/select/join) can directly reference columns from at most one table. ClickHouse applies the condition to that table's rows before they reach the join.
 
 By contrast, a `WHERE` condition logically filters the joined result, although the optimizer may apply it before the join when doing so does not change the result. Using the same condition in `PREWHERE` and `WHERE` can therefore produce different results, particularly with outer joins.
 
