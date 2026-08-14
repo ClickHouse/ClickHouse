@@ -53,7 +53,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool implicit_select;
-    extern const SettingsBool allow_experimental_json_ast_dialect;
+    extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsLogsLevel send_logs_level;
@@ -214,7 +214,7 @@ void LocalConnection::sendQuery(
     /// during execution. The `input()` initializer below reparses `state->query`, and must use the
     /// dialect/gate the query was originally accepted with rather than the (possibly mutated) live ones.
     state->parsed_as_json_dialect = query_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
-    state->allow_experimental_json_ast_dialect = query_context->getSettingsRef()[Setting::allow_experimental_json_ast_dialect];
+    state->enable_json_ast_dialect = query_context->getSettingsRef()[Setting::enable_json_ast_dialect];
     state->json_ast_max_query_size = query_context->getSettingsRef()[Setting::max_query_size];
     state->json_ast_max_depth = query_context->getSettingsRef()[Setting::max_ast_depth];
     state->json_ast_max_elements = query_context->getSettingsRef()[Setting::max_ast_elements];
@@ -263,10 +263,10 @@ void LocalConnection::sendQuery(
         /// without being locked into JSON-only input.
         if (state->parsed_as_json_dialect && !isClickHouseJSONSetEscape(begin, end, state->json_ast_max_query_size))
         {
-            if (!state->allow_experimental_json_ast_dialect)
+            if (!state->enable_json_ast_dialect)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Support for clickhouse_json dialect is disabled "
-                    "(turn on setting 'allow_experimental_json_ast_dialect')");
+                    "(turn on setting 'enable_json_ast_dialect')");
 
             const size_t max_query_size = state->json_ast_max_query_size;
             if (max_query_size != 0 && static_cast<size_t>(end - begin) > max_query_size)
