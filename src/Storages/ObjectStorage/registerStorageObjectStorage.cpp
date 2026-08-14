@@ -36,7 +36,6 @@ namespace Setting
 {
     extern const SettingsBool write_full_path_in_iceberg_metadata;
     extern const SettingsBool allow_experimental_paimon_storage_engine;
-    extern const SettingsBool use_native_gcs;
 }
 
 namespace DataLakeStorageSetting
@@ -756,21 +755,10 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
     factory.registerStorage(name, [=](const StorageFactory::Arguments & args)
     {
         StorageObjectStorageConfigurationPtr configuration;
-        if (name == GCSDefinition::storage_engine_name && args.getLocalContext()->getSettingsRef()[Setting::use_native_gcs])
-        {
-#if USE_GOOGLE_CLOUD
-            configuration = std::make_shared<StorageGCSConfiguration>();
-#else
-            /// The setting must fail closed on builds without the Google Cloud SDK rather than
-            /// silently falling through to the S3-compatibility path.
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "The setting `use_native_gcs` is enabled, but ClickHouse was built without Google Cloud support. "
-                "Unset `use_native_gcs` to use the S3-compatibility path");
-#endif
-        }
-        else
-            configuration = std::make_shared<StorageS3Configuration>();
+        /// `use_native_gcs` is a session setting, whereas table metadata must describe a stable
+        /// backend across `ATTACH` and server restart. Keep the table engine on the established
+        /// S3-compatible implementation until native backend selection is persisted in metadata.
+        configuration = std::make_shared<StorageS3Configuration>();
         return createStorageObjectStorage(args, configuration);
     },
     {
