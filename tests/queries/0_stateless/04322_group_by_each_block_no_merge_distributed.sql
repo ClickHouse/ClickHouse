@@ -20,8 +20,17 @@ SELECT sum(c), sum(s) FROM
 (
     SELECT number DIV 113 AS k, count() AS c, sum(number) AS s
     FROM cluster('test_cluster_two_shards', numbers(10000)) GROUP BY k
-    SETTINGS group_by_each_block_no_merge = 1, max_block_size = 1000
+    SETTINGS group_by_each_block_no_merge = 1, distributed_aggregation_memory_efficient = 0, max_block_size = 1000
 );
+
+-- A bucket-ordered distributed first stage cannot emit multiple per-block chunks from
+-- one source: the memory-efficient merging protocol expects one single-level chunk or
+-- an ordered two-level bucket sequence. Reject this unsupported combination rather
+-- than bypassing that protocol.
+SELECT count()
+FROM cluster('test_cluster_two_shards', numbers(10000))
+GROUP BY number
+SETTINGS group_by_each_block_no_merge = 1, distributed_aggregation_memory_efficient = 1, group_by_two_level_threshold = 1; -- { serverError 48 }
 
 -- External (on-disk) aggregation is disabled while `group_by_each_block_no_merge` is enabled (only one block
 -- is held in memory at a time), so spilling cannot mix data from different blocks. Even with a tiny external

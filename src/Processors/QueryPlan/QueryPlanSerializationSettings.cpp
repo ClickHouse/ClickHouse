@@ -55,6 +55,7 @@ namespace DB
     DECLARE(UInt64, max_size_to_preallocate_for_aggregation, 100'000'000, "For how many elements it is allowed to preallocate space in all hash tables in total before aggregation", 0) \
     DECLARE(Bool, enable_producing_buckets_out_of_order_in_aggregation, true, "Allow aggregation to produce buckets out of order.", 0) \
     DECLARE(Bool, enable_parallel_single_level_merge, false, "Parallelize the final merge of the single-level aggregation hash tables by splitting the key space into disjoint hash partitions that the threads merge independently.", 0) \
+    DECLARE(Bool, enable_packed_string_keys_in_aggregation, true, "Use the PackedStringRef-based hash table for single-String-key aggregation.", 0) \
     DECLARE(Bool, group_by_each_block_no_merge, false, "Process GROUP BY in a streaming fashion: aggregate, finalize and flush the result for every block separately, without merging across blocks.", 0) \
     DECLARE(Bool, distributed_aggregation_memory_efficient, true, "Is the memory-saving mode of distributed aggregation enabled", 0) \
     \

@@ -343,7 +343,8 @@ Aggregator::Params::Params(
     bool enable_producing_buckets_out_of_order_in_aggregation_,
     bool serialize_string_with_zero_byte_,
     bool enable_parallel_single_level_merge_,
-    bool group_by_each_block_no_merge_)
+    bool group_by_each_block_no_merge_,
+    bool enable_packed_string_keys_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -379,6 +380,7 @@ Aggregator::Params::Params(
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
     , enable_parallel_single_level_merge(enable_parallel_single_level_merge_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
+    , enable_packed_string_keys(enable_packed_string_keys_)
 {
 }
 
@@ -424,7 +426,8 @@ Aggregator::Params::Params(
     size_t max_threads_,
     size_t max_block_size_,
     float min_hit_rate_to_use_consecutive_keys_optimization_,
-    bool serialize_string_with_zero_byte_)
+    bool serialize_string_with_zero_byte_,
+    bool enable_packed_string_keys_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -435,6 +438,7 @@ Aggregator::Params::Params(
     , only_merge(true)
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
+    , enable_packed_string_keys(enable_packed_string_keys_)
 {
 }
 
@@ -701,6 +705,10 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     }
 
     method_chosen = AggregatedDataVariants::chooseMethod(header_, params.keys, key_sizes);
+
+    /// See `enable_packed_string_keys_in_aggregation` for why the legacy method may be preferred.
+    if (!params.enable_packed_string_keys && method_chosen == AggregatedDataVariants::Type::key_packed_string)
+        method_chosen = AggregatedDataVariants::Type::key_string;
 
     /// See `Params::aggregation_in_order` and `method_chosen_for_in_order`: the `prealloc_serialized`
     /// method serializes the whole block's keys on state construction, which is pathological for the
@@ -2823,6 +2831,17 @@ void Aggregator::addArenasToAggregateColumns(
     }
 }
 
+void Aggregator::fillKeyColumnsWithSingleKey(
+    Columns & key_columns,
+    size_t key_row,
+    MutableColumns & final_key_columns) const
+{
+    for (size_t i = 0; i < params.keys_size; ++i)
+    {
+        final_key_columns[i]->insertFrom(*key_columns[i].get(), key_row);
+    }
+}
+
 void Aggregator::createStatesAndFillKeyColumnsWithSingleKey(
     AggregatedDataVariants & data_variants,
     Columns & key_columns,
@@ -2833,10 +2852,7 @@ void Aggregator::createStatesAndFillKeyColumnsWithSingleKey(
     createAggregateStates(place);
     data_variants.without_key = place;
 
-    for (size_t i = 0; i < params.keys_size; ++i)
-    {
-        final_key_columns[i]->insertFrom(*key_columns[i].get(), key_row);
-    }
+    fillKeyColumnsWithSingleKey(key_columns, key_row, final_key_columns);
 }
 
 Aggregator::AggregatedChunk Aggregator::prepareChunkAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const
@@ -4057,6 +4073,11 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
 
     APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M)
 #undef M
+
+    /// There is no packed hash64 method; `mergeBlocks` re-reads keys from block columns,
+    /// so the `std::string_view`-keyed hash64 method works for it just as well.
+    if (merge_method == AggregatedDataVariants::Type::key_packed_string)
+        merge_method = AggregatedDataVariants::Type::key_string_hash64;
 
 #undef APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION
 
