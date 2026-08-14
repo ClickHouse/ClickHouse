@@ -1965,7 +1965,7 @@ std::optional<IStorage::ExportPartitionCommitInfo> IcebergMetadata::commitImport
             IStorage::ExportPartitionCommitInfo published_info;
             published_info.iceberg_metadata_file = resolver.resolve(metadata_info.path);
             published_info.iceberg_manifest_list = storage_manifest_list_name;
-            published_info.iceberg_manifest_file = storage_manifest_entry_path;
+            published_info.iceberg_manifest_file = storage_manifest_entry_name;
             return published_info;
         }
 
@@ -1981,7 +1981,7 @@ std::optional<IStorage::ExportPartitionCommitInfo> IcebergMetadata::commitImport
     IStorage::ExportPartitionCommitInfo published_info;
     published_info.iceberg_metadata_file = resolver.resolve(metadata_info.path);
     published_info.iceberg_manifest_list = storage_manifest_list_name;
-    published_info.iceberg_manifest_file = storage_manifest_entry_path;
+    published_info.iceberg_manifest_file = storage_manifest_entry_name;
     return published_info;
 }
 
@@ -2111,19 +2111,12 @@ IStorage::ExportPartitionCommitInfo IcebergMetadata::commitExportPartitionTransa
                 total_chunks_size,
                 catalog,
                 table_id,
-<<<<<<< HEAD
                 configuration->getTypeName(),
                 configuration->getNamespace(),
-                context))
-        {
-            return;
-        }
-=======
                 context);
 
         if (commit_info)
             return *commit_info;
->>>>>>> 0329de17630 (Merge pull request #1832 from Altinity/expand-replicated-partition-exports-columns)
 
         ++attempt;
     }

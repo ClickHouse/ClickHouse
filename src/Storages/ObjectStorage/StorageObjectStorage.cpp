@@ -744,12 +744,8 @@ IStorage::ExportPartitionCommitInfo StorageObjectStorage::commitExportPartitionT
         const auto partition_spec_id   = iceberg_metadata->getValue<Int64>(Iceberg::f_default_spec_id);
 
         configuration->lazyInitializeIfNeeded(object_storage, local_context);
-<<<<<<< HEAD
         auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
-        configuration->getExternalMetadata()->commitExportPartitionTransaction(
-=======
         return configuration->getExternalMetadata()->commitExportPartitionTransaction(
->>>>>>> 0329de17630 (Merge pull request #1832 from Altinity/expand-replicated-partition-exports-columns)
             catalog,
             storage_id,
             transaction_id,
