@@ -34,8 +34,8 @@ SELECT isNull(CAST(NULL AS Nullable(UInt8)));
 SELECT toTypeName(toDateTime64('2020-01-01 00:00:00', 3));
 SELECT defaultValueOfArgumentType(CAST(NULL AS Nullable(UInt8))) IS NULL;
 
-SELECT 'Test scoped lambda shadows a builtin function';
-WITH (x -> 42) AS toTypeName SELECT toTypeName(number) FROM numbers(1);
+SELECT 'Test scoped lambda shadows an optimized builtin function';
+WITH ((x, y) -> 42) AS `or` SELECT `or`(1, number) FROM numbers(1);
 
 SELECT 'Test folded logical expressions preserve their result types';
 SELECT toTypeName(0 AND CAST(NULL AS Nullable(UInt8)));
@@ -52,7 +52,6 @@ SELECT 1 OR exists(SELECT tuple(1));
 SELECT 'Check the read_rows of the above queries to ensure that the short circuit is working';
 SYSTEM FLUSH LOGS query_log;
 
-SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT 1 where 0 OR ((SELECT count(*) FROM test_03562) > 1 AND 1) AS bool%' AND type = 'QueryFinish' AND is_initial_query = 1 ORDER BY event_time DESC LIMIT 1;
 SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT 1 OR (SELECT count(*) FROM test_03562) > 1 AS bool%' AND type = 'QueryFinish' AND is_initial_query = 1 ORDER BY event_time DESC LIMIT 1;
 SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT 1 where 0 AND (SELECT count(*) FROM test_03562) > 1 AS bool%' AND type = 'QueryFinish' AND is_initial_query = 1 ORDER BY event_time DESC LIMIT 1;
 SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT 0 AND (SELECT count(*) FROM test_03562) > 1 AS bool%' AND type = 'QueryFinish' AND is_initial_query = 1 ORDER BY event_time DESC LIMIT 1;

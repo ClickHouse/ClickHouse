@@ -16,7 +16,7 @@ Test type-dependent functions use resolved argument types
 1
 DateTime64(3)
 1
-Test scoped lambda shadows a builtin function
+Test scoped lambda shadows an optimized builtin function
 42
 Test folded logical expressions preserve their result types
 Nullable(UInt8)
