@@ -1,5 +1,5 @@
 {
-  "settings": 1288,
+  "settings": 1291,
   "anchorRoutes": {
     "add_http_cors_header": "/reference/settings/session-settings/other",
     "additional_result_filter": "/reference/settings/session-settings/additional",
@@ -1070,9 +1070,11 @@
     "read_overflow_mode_leaf": "/reference/settings/session-settings/read-overflow-mode",
     "read_priority": "/reference/settings/session-settings/read",
     "read_through_distributed_cache": "/reference/settings/session-settings/read",
+    "reader_executor_block_size": "/reference/settings/session-settings/reader-executor",
     "reader_executor_max_tail_for_drain": "/reference/settings/session-settings/reader-executor",
     "reader_executor_min_bytes_for_seek": "/reference/settings/session-settings/reader-executor",
     "reader_executor_use_long_connections": "/reference/settings/session-settings/reader-executor",
+    "reader_executor_window_size": "/reference/settings/session-settings/reader-executor",
     "readonly": "/reference/settings/session-settings/other",
     "receive_data_timeout_ms": "/reference/settings/session-settings/receive",
     "receive_timeout": "/reference/settings/session-settings/receive",
@@ -1281,6 +1283,7 @@
     "use_variant_as_common_type": "/reference/settings/session-settings/use-variant",
     "use_variant_default_implementation_for_comparisons": "/reference/settings/session-settings/use-variant",
     "use_with_fill_by_sorting_prefix": "/reference/settings/session-settings/use",
+    "uuid_type_version": "/reference/settings/session-settings/other",
     "validate_enum_literals_in_operators": "/reference/settings/session-settings/validate",
     "validate_mutation_query": "/reference/settings/session-settings/validate",
     "validate_polygons": "/reference/settings/session-settings/validate",
