@@ -366,10 +366,6 @@ namespace
         /// hash(metric_name), max). They are a superset of the `id IN <set>` condition above, so
         /// the returned rows do not change; their purpose is to give the primary-key index
         /// analysis a continuous key range instead of the large set (see readImpl).
-        /// NOTE: wrapping them in indexHint() to skip their per-row execution does not work:
-        /// the PREWHERE optimizer then leaves a residual WHERE filter which re-evaluates all
-        /// conditions after the scan and copies the result columns, which costs more than the
-        /// per-row tuple comparisons saved.
         for (auto & condition : whole_metric_id_range_conditions)
             conditions.push_back(std::move(condition));
 
