@@ -11,6 +11,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <filesystem>
 #include <chrono>
+#include <mutex>
 
 namespace DataLake
 {
@@ -66,12 +67,15 @@ private:
     std::string auth_scope;
     std::string oauth_server_uri;
     bool use_oauth = false;
-    mutable std::optional<AccessToken> access_token;
     Poco::Net::HTTPBasicCredentials credentials{};
+
+    /// Guards the token and everything derived from it, because `iceberg_rest_catalog` embeds the token in its auth header.
+    mutable std::mutex token_mutex;
+    mutable std::optional<AccessToken> access_token TSA_GUARDED_BY(token_mutex);
 
     /// Lazy-initialized RestCatalog for Iceberg table metadata,
     /// pointing to {base_url}/iceberg-rest.
-    mutable std::shared_ptr<RestCatalog> iceberg_rest_catalog;
+    mutable std::shared_ptr<RestCatalog> iceberg_rest_catalog TSA_GUARDED_BY(token_mutex);
 
     std::pair<Poco::Dynamic::Var, std::string> getJSONRequest(
         const std::string & route,
@@ -87,7 +91,7 @@ private:
     AccessToken retrieveAccessToken() const;
 
     /// `force_refresh` mints a new token even when the cached one has not expired yet.
-    void ensureBearerToken(bool force_refresh = false) const;
+    void ensureBearerToken(bool force_refresh = false) const TSA_REQUIRES(token_mutex);
 
     ICatalog::Namespaces getSchemas(const std::string & base_prefix, size_t limit = 0) const;
     CatalogTables getTablesForSchema(const std::string & schema, size_t limit = 0) const;

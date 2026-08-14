@@ -162,6 +162,7 @@ void UnifiedUnityCatalog::ensureBearerToken(bool force_refresh) const
 
 DB::HTTPHeaderEntries UnifiedUnityCatalog::getAuthHeaders(bool force_refresh) const
 {
+    std::lock_guard lock(token_mutex);
     ensureBearerToken(force_refresh);
     return {DB::HTTPHeaderEntry("Authorization", "Bearer " + access_token->token)};
 }
@@ -449,6 +450,7 @@ void UnifiedUnityCatalog::getDeltaCredentials(const std::string & table_id, Tabl
 
 std::shared_ptr<RestCatalog> UnifiedUnityCatalog::getIcebergRestCatalog() const
 {
+    std::lock_guard lock(token_mutex);
     if (iceberg_rest_catalog)
         return iceberg_rest_catalog;
 
