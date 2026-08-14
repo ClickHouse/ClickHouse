@@ -43,6 +43,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Not `query_rules_storage`: SQL-defined HTTP handlers already read a section of that name
+/// (`SQLDefinedHandlersMetadataStorage`), and two subsystems must not share one storage section —
+/// they would otherwise be pointed at the same local directory or ZooKeeper path and mix their
+/// metadata.
 static const std::string rewrite_rules_storage_config_path = "rewrite_rules_storage";
 
 namespace
