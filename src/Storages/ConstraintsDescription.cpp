@@ -13,6 +13,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
 
 #include <Core/Defines.h>
@@ -23,12 +24,44 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/misc.h>
+
+#include <Common/checkStackSize.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+}
+
+void checkConstraintExpressionIsValid(const IAST & ast)
+{
+    checkStackSize();
+
+    /// A subquery body is SELECT-scoped, where `x IN table` is legal shorthand for
+    /// `x IN (SELECT * FROM table)`. Only the constraint's own row-scoped expression is checked.
+    if (ast.as<ASTSubquery>())
+        return;
+
+    /// A constraint is evaluated against the row being inserted, so a bare identifier can only mean a
+    /// column of this table, while `AddDefaultDatabaseVisitor` rewrites it into a table reference.
+    if (const auto * func = ast.as<ASTFunction>(); func && functionIsInOrGlobalInOperator(func->name))
+    {
+        const auto * args = func->arguments ? func->arguments->as<ASTExpressionList>() : nullptr;
+        if (args && args->children.size() == 2)
+        {
+            const auto & rhs = args->children[1];
+            /// `typeid_cast` matches the exact type only, so `ASTTableIdentifier` needs its own test.
+            if (rhs->as<ASTIdentifier>() || rhs->as<ASTTableIdentifier>())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Constraint expressions cannot contain a table in the 'IN' operator");
+        }
+    }
+
+    for (const auto & child : ast.children)
+        checkConstraintExpressionIsValid(*child);
 }
 
 String ConstraintsDescription::toString() const

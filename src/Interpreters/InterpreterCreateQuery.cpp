@@ -48,6 +48,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <Storages/ConstraintsDescription.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -90,6 +91,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/TablesLoader.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
@@ -750,13 +752,15 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
 
 ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
-    const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context)
+    const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context, bool is_fresh_definition)
 {
     ASTs constraints_data;
     const auto column_names_and_types = columns.getAllPhysical();
     if (constraints)
         for (const auto & constraint : constraints->children)
         {
+            if (is_fresh_definition)
+                checkConstraintExpressionIsValid(*constraint);
             auto clone = constraint->clone();
             TreeRewriter(local_context).analyze(clone, column_names_and_types);
             constraints_data.push_back(constraint->clone());
@@ -770,6 +774,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 {
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
+
+    /// A replayed or recovered definition also carries `attach`, which `getLoadingStrictnessLevel`
+    /// reports as ATTACH, so `mode` alone cannot tell it apart from user-supplied input.
+    const bool is_secondary_query
+        = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
 
     /// We have to check access rights again (in case engine was changed).
     if (create.storage && create.storage->engine)
@@ -827,7 +836,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 properties.projections.add(std::move(projection));
             }
 
-        properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
+        properties.constraints = getConstraintsDescription(
+            create.columns_list->constraints, properties.columns, getContext(),
+            isFreshDefinition(mode, create.attach_short_syntax, is_secondary_query));
     }
     else if (!create.as_table.empty())
     {
@@ -884,6 +895,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         properties.constraints = as_storage_metadata->getConstraints();
+
+        /// The source table may predate the check and still hold a rejected shape; copying it would
+        /// persist that shape into a table created now.
+        if (isFreshDefinition(mode, create.attach_short_syntax, is_secondary_query))
+            for (const auto & constraint : properties.constraints.getConstraints())
+                checkConstraintExpressionIsValid(*constraint);
 
         if (create.is_clone_as)
         {
