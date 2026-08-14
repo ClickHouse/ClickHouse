@@ -100,6 +100,23 @@ variant needle size 1	0	1
 variant needle size 1	1	0
 variant needle alone	0	1
 variant needle alone	1	0
+plain elements one block   	0	1	1	1
+plain elements one block   	1	0	0	0
+plain elements block size 1	0	1	1	1
+plain elements block size 1	1	0	0	0
+plain elements two blocks  	0	1	1	1
+plain elements two blocks  	1	0	0	0
+plain elements row alone   	0	1	1	1
+plain elements row alone   	1	0	0	0
+plain nullable one block   	0	1
+plain nullable one block   	1	0
+plain nullable one block   	2	1
+plain nullable block size 1	0	1
+plain nullable block size 1	1	0
+plain nullable block size 1	2	1
+plain nullable row alone   	0	1
+plain nullable row alone   	1	0
+plain nullable row alone   	2	1
 tuple needle	0	1
 tuple needle	1	0
 tuple needle size 1	0	1

@@ -450,6 +450,40 @@ SELECT 'variant needle size 1', id, has(v, n) AS got FROM t_block_needle_variant
 SELECT 'variant needle alone', id, has(v, n) AS got FROM t_block_needle_variant WHERE id = 0;
 SELECT 'variant needle alone', id, has(v, n) AS got FROM t_block_needle_variant WHERE id = 1;
 
+-- The elements erase nothing and only the needle does, so the grouping key has to be built from the
+-- needle side alone. The row-alone arm is the oracle, for the NO_COMMON_TYPE reason given above.
+DROP TABLE IF EXISTS t_block_plain_elements;
+CREATE TABLE t_block_plain_elements (id UInt8, v Array(UInt64), n Dynamic) ENGINE = Memory;
+INSERT INTO t_block_plain_elements VALUES (0, [1], 1::UInt8), (1, [2], 'x');
+
+DROP TABLE IF EXISTS t_block_plain_elements_two;
+CREATE TABLE t_block_plain_elements_two (id UInt8, v Array(UInt64), n Dynamic) ENGINE = Memory;
+INSERT INTO t_block_plain_elements_two VALUES (0, [1], 1::UInt8);
+INSERT INTO t_block_plain_elements_two VALUES (1, [2], 'x');
+
+SELECT 'plain elements one block   ', id, has(v, n) AS got, indexOf(v, n) AS index_of_got, countEqual(v, n) AS count_equal_got
+FROM t_block_plain_elements ORDER BY id;
+SELECT 'plain elements block size 1', id, has(v, n) AS got, indexOf(v, n) AS index_of_got, countEqual(v, n) AS count_equal_got
+FROM t_block_plain_elements ORDER BY id SETTINGS max_block_size = 1;
+SELECT 'plain elements two blocks  ', id, has(v, n) AS got, indexOf(v, n) AS index_of_got, countEqual(v, n) AS count_equal_got
+FROM t_block_plain_elements_two ORDER BY id;
+SELECT 'plain elements row alone   ', id, has(v, n) AS got, indexOf(v, n) AS index_of_got, countEqual(v, n) AS count_equal_got
+FROM t_block_plain_elements WHERE id = 0;
+SELECT 'plain elements row alone   ', id, has(v, n) AS got, indexOf(v, n) AS index_of_got, countEqual(v, n) AS count_equal_got
+FROM t_block_plain_elements WHERE id = 1;
+
+-- Nullable plain elements against the same varying erased needle, so the null maps are folded on the
+-- grouped path and not only on the whole-block one.
+DROP TABLE IF EXISTS t_block_plain_nullable;
+CREATE TABLE t_block_plain_nullable (id UInt8, v Array(Nullable(UInt64)), n Dynamic) ENGINE = Memory;
+INSERT INTO t_block_plain_nullable VALUES (0, [1, NULL], 1::UInt8), (1, [2], 'x'), (2, [NULL], NULL);
+
+SELECT 'plain nullable one block   ', id, has(v, n) AS got FROM t_block_plain_nullable ORDER BY id;
+SELECT 'plain nullable block size 1', id, has(v, n) AS got FROM t_block_plain_nullable ORDER BY id SETTINGS max_block_size = 1;
+SELECT 'plain nullable row alone   ', id, has(v, n) AS got FROM t_block_plain_nullable WHERE id = 0;
+SELECT 'plain nullable row alone   ', id, has(v, n) AS got FROM t_block_plain_nullable WHERE id = 1;
+SELECT 'plain nullable row alone   ', id, has(v, n) AS got FROM t_block_plain_nullable WHERE id = 2;
+
 -- The erased needle nested inside a Tuple, so the needle-side path is descended rather than taken at
 -- the top level, with the element side wrapped to match.
 DROP TABLE IF EXISTS t_block_needle_tuple;
@@ -665,6 +699,9 @@ DROP TABLE IF EXISTS t_mixed_var;
 DROP TABLE IF EXISTS t_shared;
 DROP TABLE IF EXISTS t_block_one;
 DROP TABLE IF EXISTS t_block_two;
+DROP TABLE IF EXISTS t_block_plain_elements;
+DROP TABLE IF EXISTS t_block_plain_elements_two;
+DROP TABLE IF EXISTS t_block_plain_nullable;
 DROP TABLE IF EXISTS t_null_tuple;
 DROP TABLE IF EXISTS t_const_batched;
 DROP TABLE IF EXISTS t_rewritten;

@@ -932,23 +932,23 @@ private:
 
     /// One group label per row, keyed by the alternatives it carries on both sides: a group is only
     /// answerable as a whole if every member peels the same way. A row whose own elements disagree is
-    /// labelled no_group, and nothing means no group formed at all.
+    /// labelled no_group, and nothing means no group formed at all. A side that erases nothing gives
+    /// every row the same key half, so grouping keys off whichever side is erased.
     static std::optional<VectorWithMemoryTracking<GroupKey>> groupRowsByAlternative(
         const ColumnArray & array, const DataTypePtr & element_type,
         const IColumn & needle, const DataTypePtr & needle_type)
     {
-        auto path = findErasedPath(*element_type);
-        if (!path)
-            return {};
-
-        ColumnPtr variant_holder;
-        const auto * variant_column = findVariantAtPath(array.getData(), *path, variant_holder);
-        if (!variant_column || variant_column->size() != array.getData().size())
-            return {};
-
         const auto & offsets = array.getOffsets();
 
-        /// The needle need not be erased at all, and when it is not, every row shares one key half.
+        const ColumnVariant * variant_column = nullptr;
+        ColumnPtr variant_holder;
+        if (auto path = findErasedPath(*element_type))
+        {
+            variant_column = findVariantAtPath(array.getData(), *path, variant_holder);
+            if (!variant_column || variant_column->size() != array.getData().size())
+                return {};
+        }
+
         const ColumnVariant * needle_variant = nullptr;
         ColumnPtr needle_holder;
         if (auto needle_path = findErasedPath(*needle_type))
@@ -964,7 +964,9 @@ private:
 
         for (size_t row = 0; row < offsets.size(); ++row)
         {
-            auto elements_alternative = rowAlternative(*variant_column, current_offset, offsets[row]);
+            auto elements_alternative = variant_column
+                ? rowAlternative(*variant_column, current_offset, offsets[row])
+                : std::optional<ColumnVariant::Discriminator>{ColumnVariant::NULL_DISCRIMINATOR};
             current_offset = offsets[row];
 
             if (!elements_alternative)
