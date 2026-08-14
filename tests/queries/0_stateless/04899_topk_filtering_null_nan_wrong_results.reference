@@ -74,6 +74,12 @@ tvar ANL ON 	(nan)	2998
 tvar ANL OFF	(50)	0
 tvar ANL OFF	(nan)	2999
 tvar ANL OFF	(nan)	2998
+tvs ANL ON 	('aaa')	0
+tvs ANL ON 	(NULL)	2999
+tvs ANL ON 	(NULL)	2998
+tvs ANL OFF	('aaa')	0
+tvs ANL OFF	(NULL)	2999
+tvs ANL OFF	(NULL)	2998
 skip1 ON 	nan
 skip1 OFF	nan
 skip0 ON 	nan

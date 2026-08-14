@@ -169,6 +169,14 @@ INSERT INTO s_tvar SELECT number, if(number = 0, tuple(toFloat64(50)::Variant(Fl
 INSERT INTO s_tvar SELECT number, tuple(nan::Variant(Float64, String)) FROM numbers(1000, 1000);
 INSERT INTO s_tvar SELECT number, tuple(nan::Variant(Float64, String)) FROM numbers(2000, 1000);
 
+-- The same shape with no float alternative, so the type tree exposes String and UInt64 only.
+CREATE TABLE s_tvs (id UInt64, v Tuple(Variant(String, UInt64))) ENGINE = MergeTree ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, index_granularity = 64;
+SYSTEM STOP MERGES s_tvs;
+INSERT INTO s_tvs SELECT number, if(number = 0, tuple('aaa'::Variant(String, UInt64)), tuple(CAST(NULL, 'Variant(String, UInt64)'))) FROM numbers(0, 1000);
+INSERT INTO s_tvs SELECT number, tuple(CAST(NULL, 'Variant(String, UInt64)')) FROM numbers(1000, 1000);
+INSERT INTO s_tvs SELECT number, tuple(CAST(NULL, 'Variant(String, UInt64)')) FROM numbers(2000, 1000);
+
 CREATE TABLE s_nf (id UInt64, v Nullable(Float64)) ENGINE = MergeTree ORDER BY id
     SETTINGS min_bytes_for_wide_part = 0, index_granularity = 64;
 SYSTEM STOP MERGES s_nf;
@@ -278,6 +286,8 @@ SELECT 'tdyn ANL ON ', v, id FROM s_tdyn ORDER BY v ASC NULLS LAST, id DESC LIMI
 SELECT 'tdyn ANL OFF', v, id FROM s_tdyn ORDER BY v ASC NULLS LAST, id DESC LIMIT 3 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 SELECT 'tvar ANL ON ', v, id FROM s_tvar ORDER BY v ASC NULLS LAST, id DESC LIMIT 3;
 SELECT 'tvar ANL OFF', v, id FROM s_tvar ORDER BY v ASC NULLS LAST, id DESC LIMIT 3 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
+SELECT 'tvs ANL ON ', v, id FROM s_tvs ORDER BY v ASC NULLS LAST, id DESC LIMIT 3;
+SELECT 'tvs ANL OFF', v, id FROM s_tvs ORDER BY v ASC NULLS LAST, id DESC LIMIT 3 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 
 -- ==================== skip-index granule ranking ====================
 -- MinMaxGranuleItem::operator< ranks granules with a raw Field comparison, so this half is lost
@@ -349,10 +359,16 @@ SELECT 'skipidx u64', count() > 0 FROM (EXPLAIN indexes = 1 SELECT v FROM i_u64 
 -- sort column leaves the main reader no work at all; and half is the threshold rather than a strict
 -- inequality, because a filter accepting everything still skips the final granule.
 
+-- The two rows-read settings are pinned here rather than globally, because a global pin would
+-- also change the plans the arms above assert on.
 SELECT id FROM d_f64 ORDER BY v ASC NULLS FIRST LIMIT 1
-    SETTINGS log_comment = '04899_eff_f64', use_skip_indexes_for_top_k = 0 FORMAT Null;
+    SETTINGS log_comment = '04899_eff_f64', use_skip_indexes_for_top_k = 0,
+             use_query_condition_cache = 0,
+             merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0 FORMAT Null;
 SELECT id FROM d_arr ORDER BY v ASC NULLS FIRST LIMIT 1
-    SETTINGS log_comment = '04899_eff_arr', use_skip_indexes_for_top_k = 0 FORMAT Null;
+    SETTINGS log_comment = '04899_eff_arr', use_skip_indexes_for_top_k = 0,
+             use_query_condition_cache = 0,
+             merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0 FORMAT Null;
 SYSTEM FLUSH LOGS query_log;
 SELECT 'eff f64', ProfileEvents['RowsReadByMainReader'] * 2 <= ProfileEvents['RowsReadByPrewhereReaders']
 FROM system.query_log
