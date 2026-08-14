@@ -91,6 +91,14 @@ constexpr unsigned char resource_docs_html[] =
 {
 #embed "../../programs/server/docs.html"
 };
+constexpr unsigned char resource_docs_logo_light_svg[] =
+{
+#embed "../../docs/_site/logo/light.svg"
+};
+constexpr unsigned char resource_docs_logo_dark_svg[] =
+{
+#embed "../../docs/_site/logo/dark.svg"
+};
 constexpr unsigned char resource_marked_js[] =
 {
 #embed "../../programs/server/js/marked.min.js"
@@ -110,6 +118,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -285,9 +294,35 @@ std::vector<DocumentationEntity> getDocumentationIndex(IServer & server)
     return entities;
 }
 
-String requestOrigin(const HTTPServerRequest & request)
+String documentationPublicOrigin(IServer & server)
 {
-    return String(request.isSecure() ? "https://" : "http://") + request.getHost();
+    String configured_origin = server.context()->getServerSettings()[ServerSetting::documentation_public_url];
+    if (configured_origin.empty())
+        return {};
+
+    Poco::URI uri(configured_origin);
+    if ((uri.getScheme() != "http" && uri.getScheme() != "https")
+        || uri.getHost().empty()
+        || !uri.getUserInfo().empty()
+        || (!uri.getPath().empty() && uri.getPath() != "/")
+        || !uri.getRawQuery().empty()
+        || !uri.getFragment().empty())
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The `documentation_public_url` server setting must be an HTTP or HTTPS origin without a path, query, "
+            "fragment, or credentials");
+    }
+
+    uri.setPath("");
+    return uri.toString();
+}
+
+String documentationURL(std::string_view public_origin, std::string_view path)
+{
+    if (public_origin.empty())
+        return String(path);
+    return String(public_origin) + String(path);
 }
 
 String renderDocumentationHTML(String html, const DocumentationEntity & entity, const String & canonical_url)
@@ -476,6 +511,12 @@ void DocsWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSer
     static re2::RE2 katex_css_url = R"(https://[^\s"'`]+katex[^\s"'`]*\.css)";
     RE2::Replace(&html, katex_css_url, "/js/katex.min.css");
 
+    static re2::RE2 docs_logo_light_url = R"(\.\./\.\./docs/_site/logo/light\.svg)";
+    RE2::GlobalReplace(&html, docs_logo_light_url, "/docs/assets/logo-light.svg");
+
+    static re2::RE2 docs_logo_dark_url = R"(\.\./\.\./docs/_site/logo/dark\.svg)";
+    RE2::GlobalReplace(&html, docs_logo_dark_url, "/docs/assets/logo-dark.svg");
+
     String path = request.getURI();
     String query_suffix;
     if (const size_t query_position = path.find('?'); query_position != String::npos)
@@ -484,11 +525,35 @@ void DocsWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSer
         path.resize(query_position);
     }
 
+    if (path == "/docs/assets/logo-light.svg" || path == "/docs/assets/logo-dark.svg")
+    {
+        const bool use_dark_logo = path == "/docs/assets/logo-dark.svg";
+        const unsigned char * data = use_dark_logo ? resource_docs_logo_dark_svg : resource_docs_logo_light_svg;
+        const size_t size = use_dark_logo ? std::size(resource_docs_logo_dark_svg) : std::size(resource_docs_logo_light_svg);
+        auto headers = http_response_headers_override;
+        headers["Content-Type"] = "image/svg+xml; charset=UTF-8";
+        handle(request, response, {reinterpret_cast<const char *>(data), size}, headers);
+        return;
+    }
+
+    const String public_origin = documentationPublicOrigin(server);
+
     if (path == "/docs/sitemap.xml")
     {
         auto headers = http_response_headers_override;
+        if (public_origin.empty())
+        {
+            headers["Content-Type"] = "text/plain; charset=UTF-8";
+            handle(
+                request,
+                response,
+                "Set the `documentation_public_url` server setting to publish the documentation sitemap.\n",
+                headers,
+                Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
+            return;
+        }
         headers["Content-Type"] = "application/xml; charset=UTF-8";
-        handle(request, response, renderDocumentationSitemap(server, requestOrigin(request)), headers);
+        handle(request, response, renderDocumentationSitemap(server, public_origin), headers);
         return;
     }
 
@@ -503,7 +568,7 @@ void DocsWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSer
     if (path == "/docs/")
     {
         setResponseDefaultHeaders(response);
-        response.redirect(requestOrigin(request) + "/docs" + query_suffix, Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY);
+        response.redirect("/docs" + query_suffix, Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY);
         return;
     }
 
@@ -512,7 +577,7 @@ void DocsWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSer
         handle(
             request,
             response,
-            renderDocumentationIndexHTML(html, requestOrigin(request) + "/docs"),
+            renderDocumentationIndexHTML(html, documentationURL(public_origin, "/docs")),
             http_response_headers_override);
         return;
     }
@@ -524,7 +589,7 @@ void DocsWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSer
         {
             setResponseDefaultHeaders(response);
             response.redirect(
-                requestOrigin(request) + path.substr(0, path.size() - 1) + query_suffix,
+                path.substr(0, path.size() - 1) + query_suffix,
                 Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY);
             return;
         }
@@ -561,12 +626,12 @@ void DocsWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSer
                     {
                         setResponseDefaultHeaders(response);
                         response.redirect(
-                            requestOrigin(request) + canonical_path + query_suffix,
+                            canonical_path + query_suffix,
                             Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY);
                         return;
                     }
 
-                    const String canonical_url = requestOrigin(request) + canonical_path;
+                    const String canonical_url = documentationURL(public_origin, canonical_path);
                     handle(request, response, renderDocumentationHTML(html, *entity, canonical_url), http_response_headers_override);
                     return;
                 }

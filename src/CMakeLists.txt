@@ -413,7 +413,9 @@ ${CMAKE_SOURCE_DIR}/programs/server/merges.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/schema.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/processors_profile.html;\
-${CMAKE_SOURCE_DIR}/programs/server/docs.html")
+${CMAKE_SOURCE_DIR}/programs/server/docs.html;\
+${CMAKE_SOURCE_DIR}/docs/_site/logo/light.svg;\
+${CMAKE_SOURCE_DIR}/docs/_site/logo/dark.svg")
 
 set_source_files_properties(Server/IndexRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/server/index.html")
