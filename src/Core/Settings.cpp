@@ -8314,6 +8314,13 @@ Enable converting the hash table to a flat array for joins when the key is a sin
     DECLARE(UInt64, query_plan_min_columns_for_join_lazy_indexing, 3, R"(
 Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN. 0 means the optimization is disabled.
 )", 0) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_json_lazy_type_hints, false, R"(
+Enables lazy type hints for the [JSON](/reference/data-types/newjson) type.
+
+With this setting enabled, `ALTER TABLE ... MODIFY COLUMN json JSON(path TypeName)` that only adds or changes
+type hints is a metadata-only operation: the type hints are applied at query time for existing parts and
+materialized during inserts and background merges instead of rewriting the historical data.
+)", BETA, enable_json_lazy_type_hints) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -8377,9 +8384,6 @@ The maximum number of rows in the right table to determine whether to rerange th
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_join_right_table_sorting, false, R"(
 If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_json_lazy_type_hints, false, R"(
-Enable experimental lazy type hints for JSON type. This feature allows optimizing JSON type conversions by deferring type hint evaluation.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_streaming_queries, false, R"(
 Allow `SELECT ... FROM t STREAM [CURSOR '{...}']` continuous queries.

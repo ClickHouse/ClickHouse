@@ -1225,7 +1225,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to, cons
         if (is_compatible_enum_types_conversion(from, to))
             return true;
 
-        /// JSON type hint changes are metadata-only when the experimental setting is enabled
+        /// JSON type hint changes are metadata-only when lazy type hints are enabled
         if (context && context->getSettingsRef()[Setting::allow_experimental_json_lazy_type_hints])
         {
             if (isJSONTypeHintOnlyChange(from, to))
