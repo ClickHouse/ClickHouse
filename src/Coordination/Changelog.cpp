@@ -827,11 +827,6 @@ ChangelogFileStartupReadResult readChangelogFile(
     std::unique_ptr<ReadBuffer> read_buf;
     try
     {
-        /// Bound is [max(from, start), to]; reserve up front instead of growing incrementally.
-        const uint64_t first_in_scope_index = std::max(file_description->from_log_index, start_log_index);
-        if (file_description->to_log_index >= first_in_scope_index)
-            result.entries.reserve(file_description->to_log_index - first_in_scope_index + 1);
-
         read_buf = file_description->disk->readFile(filepath, read_settings);
     }
     catch (...)
