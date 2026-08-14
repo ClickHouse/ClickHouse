@@ -186,8 +186,10 @@ static struct InitFiu
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
+    PAUSEABLE_ONCE(keepermap_create_pause_before_drop_lock_version) \
     REGULAR(keeper_fault_on_watch_request) \
     REGULAR(keeper_shutdown_delay_before_queue_check) \
+    REGULAR(keeper_shutdown_throw_after_flag) \
     REGULAR(lazy_pipe_fds_fail_close) \
     REGULAR(claim_inject_stale_part_dir) \
     PAUSEABLE(infinite_sleep) \
@@ -224,6 +226,7 @@ static struct InitFiu
     ONCE(disk_object_storage_fail_precommit_metadata_transaction) \
     ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
+    REGULAR(slowdown_skip_index_read_result_build) \
     ONCE(iceberg_writes_cleanup) \
     REGULAR(iceberg_slow_manifest_read) \
     REGULAR(storage_cluster_read_sleep) \
