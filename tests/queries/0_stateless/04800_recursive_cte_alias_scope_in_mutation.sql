@@ -1,5 +1,6 @@
 -- Tags: need-query-parameters
 
+SET enable_analyzer = 1;
 SET enable_lightweight_update = 1;
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
@@ -161,6 +162,23 @@ SELECT 'C13', a FROM {CLICKHOUSE_DATABASE_1:Identifier}.mv;
 UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
     SET v = (WITH 5 AS k SELECT k + (SELECT max(id) FROM src)) WHERE id = 1;
 SELECT 'C14', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 1;
+
+-- `ALTER ... MODIFY QUERY` and `CREATE MATERIALIZED VIEW` expand a non-recursive CTE reference
+-- into a copy of its body before qualifying, so the name must still reach the table there.
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.dst (v UInt64) ENGINE = MergeTree ORDER BY v;
+CREATE MATERIALIZED VIEW {CLICKHOUSE_DATABASE_1:Identifier}.mv2
+    TO {CLICKHOUSE_DATABASE_1:Identifier}.dst AS
+    SELECT id AS v FROM {CLICKHOUSE_DATABASE_1:Identifier}.src;
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.mv2
+    MODIFY QUERY WITH src AS (SELECT max(id) AS v FROM src) SELECT v FROM src;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.src VALUES (2);
+SELECT 'C15', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.dst;
+
+CREATE MATERIALIZED VIEW {CLICKHOUSE_DATABASE_1:Identifier}.mv3
+    TO {CLICKHOUSE_DATABASE_1:Identifier}.dst AS
+    WITH src AS (SELECT max(id) AS v FROM src) SELECT v FROM src;
+INSERT INTO src VALUES (99);
+SELECT 'C16', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.dst ORDER BY v;
 
 -- A sibling UNION branch of a recursive CTE must be qualified in the stored view definition,
 -- otherwise the view cannot be resolved from another database. Closes #104972.

@@ -22,6 +22,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
 #include <Poco/String.h>
+#include <optional>
 #include <set>
 
 namespace DB
@@ -72,6 +73,17 @@ public:
 
     void visit(ASTPtr & ast) const
     {
+        /// A reference to a non-recursive `WITH` element may already have been replaced by a copy
+        /// of its body tagged with the element's name. That name is not in scope inside the copy.
+        std::optional<WithAliasesScope> expanded_scope;
+        if (const auto * subquery = ast->as<ASTSubquery>();
+            subquery && plain_with_aliases.contains(subquery->cte_name))
+        {
+            expanded_scope.emplace(with_aliases, plain_with_aliases);
+            with_aliases.erase(subquery->cte_name);
+            plain_with_aliases.erase(subquery->cte_name);
+        }
+
         if (!tryVisit<ASTSelectQuery>(ast) &&
             !tryVisit<ASTSelectWithUnionQuery>(ast) &&
             !tryVisit<ASTFunction>(ast) &&
@@ -124,21 +136,29 @@ private:
     const String database_name;
     std::set<String> external_tables;
     mutable std::unordered_set<String> with_aliases;
+    /// The subset of `with_aliases` declared by a non-recursive `WITH`.
+    mutable std::unordered_set<String> plain_with_aliases;
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
 
     struct WithAliasesScope
     {
-        explicit WithAliasesScope(std::unordered_set<String> & with_aliases_)
-            : with_aliases(with_aliases_), saved(with_aliases_)
+        WithAliasesScope(std::unordered_set<String> & with_aliases_, std::unordered_set<String> & plain_)
+            : with_aliases(with_aliases_), plain(plain_), saved(with_aliases_), saved_plain(plain_)
         {
         }
 
-        ~WithAliasesScope() { with_aliases = std::move(saved); }
+        ~WithAliasesScope()
+        {
+            with_aliases = std::move(saved);
+            plain = std::move(saved_plain);
+        }
 
         std::unordered_set<String> & with_aliases;
+        std::unordered_set<String> & plain;
         std::unordered_set<String> saved;
+        std::unordered_set<String> saved_plain;
     };
 
     void visit(ASTSelectWithUnionQuery & select, ASTPtr &) const
@@ -155,7 +175,7 @@ private:
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
         /// An alias is visible only inside the subtree of the `SELECT` that declares it.
-        WithAliasesScope with_aliases_scope(with_aliases);
+        WithAliasesScope with_aliases_scope(with_aliases, plain_with_aliases);
 
         const ASTPtr with = select.with();
         if (with)
@@ -167,7 +187,12 @@ private:
                 if (!select.recursive_with)
                     visit(child);
                 if (typeid_cast<ASTWithElement *>(child.get()))
-                    with_aliases.insert(child->as<ASTWithElement>()->name);
+                {
+                    const auto & name = child->as<ASTWithElement>()->name;
+                    with_aliases.insert(name);
+                    if (!select.recursive_with)
+                        plain_with_aliases.insert(name);
+                }
             }
         }
 
