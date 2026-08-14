@@ -1,0 +1,42 @@
+-- PREWHERE and WHERE on the same text-indexed column, join above, FINAL
+fb
+foo updated
+fb
+foo updated
+-- without FINAL
+fb
+foo
+foo updated
+fb
+foo
+foo updated
+-- join on a key, the retained column also projected
+foo	foo updated
+foo bar	fb
+foo	foo updated
+foo bar	fb
+-- SELECT *
+1	foo	foo updated	1
+3	foo bar	fb	3
+1	foo	foo updated	1
+3	foo bar	fb	3
+-- join order optimizer reachable (no GLOBAL)
+fb
+foo updated
+-- both predicates in WHERE
+fb
+foo updated
+-- no join
+fb
+foo updated
+-- the direct read is still exercised by the queries above
+1
+-- a Merge parent visits the same reading step twice
+fb
+foo
+foo updated
+m7
+fb
+foo
+foo updated
+m7
