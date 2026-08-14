@@ -1664,10 +1664,14 @@ static BlockIO executeQueryImpl(
             if (const auto * inline_data_insert = getInsertAST(out_ast); inline_data_insert && inline_data_insert->data
                 && !inline_data_insert->select && istr && hasTranspiledInlineData(*inline_data_insert, context))
             {
-                /// The body cannot be inspected before the deferred HTTP 100 Continue response is
-                /// sent (that happens later, after the quota checks), so in that case reject
-                /// unconditionally: the client announced that it is about to send a body.
-                if (http_continue_callback || !istr->eof())
+                /// The body cannot be inspected before the deferred HTTP 100 Continue response is sent
+                /// (that happens later, after the quota checks), so in that case rely on what the client
+                /// announced in the request headers instead of touching the buffer: reading it here would
+                /// wait for a body that the client only sends after receiving the 100 Continue response.
+                /// A deferred `100 Continue` without a body (see `03353_http_100_continue.sh`) is fine and
+                /// keeps working. Without the deferral the buffer is authoritative.
+                const bool has_external_data = http_continue_callback ? flags.http_request_has_body : !istr->eof();
+                if (has_external_data)
                     throw Exception(
                         ErrorCodes::NOT_IMPLEMENTED,
                         "Processing an INSERT query in a foreign SQL dialect together with external data "

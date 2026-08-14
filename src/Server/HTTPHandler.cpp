@@ -648,6 +648,11 @@ void HTTPHandler::processQuery(
     };
     query_flags.parse_query_from_initial_buffer
         = settings[Setting::input_format_max_block_wait_ms] != 0 && url_query_starts_with_insert();
+    /// Whether the client announced a request body. The body itself cannot be inspected while the HTTP 100 Continue
+    /// response is deferred (the client waits for it before sending the body), so the headers are the only source
+    /// of truth about external data in that case.
+    query_flags.http_request_has_body
+        = request.getChunkedTransferEncoding() || (request.hasContentLength() && request.getContentLength() > 0);
 
     executeQuery(
         std::move(in),

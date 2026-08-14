@@ -44,3 +44,8 @@ SYNTAX_ERROR
 --- parse limits are pinned for the server-side reparse (expect: 7, 42) ---
 7
 42
+--- deferred HTTP 100 Continue without a body still inserts (expect: 139 9) ---
+139	9
+NOT_IMPLEMENTED
+--- deferred HTTP 100 Continue with a body is still rejected (expect: 139 9) ---
+139	9

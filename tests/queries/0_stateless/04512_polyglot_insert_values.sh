@@ -165,5 +165,20 @@ echo "--- parse limits are pinned for the server-side reparse (expect: 7, 42) --
 $CLICKHOUSE_CLIENT $POLY_CH -q "SELECT 3 + 4 SETTINGS max_parser_depth = 1"
 $CLICKHOUSE_CLIENT $POLY_CH -q "SELECT 41 + 1 SETTINGS max_query_size = 1"
 
+# A client may also ask for the HTTP 100 Continue response to be deferred until after the quota
+# checks. The request body cannot be read before that response is sent, so the presence of external
+# data is decided from the request headers. A deferred `100 Continue` without a body carries no
+# external data and must keep working (see 03353_http_100_continue), while a body must still be
+# rejected the same way as without the deferral.
+defer_headers=(-H "Expect: 100-continue" -H "X-ClickHouse-100-Continue: defer" --expect100-timeout 300 --max-time 60)
+
+${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query=INSERT%20INTO%20t%20VALUES%20(14)" "${defer_headers[@]}" -d ''
+echo "--- deferred HTTP 100 Continue without a body still inserts (expect: 139 9) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
+${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query=INSERT%20INTO%20t%20VALUES%20(15)" "${defer_headers[@]}" -d '(16)' 2>&1 | grep -om1 "NOT_IMPLEMENTED"
+echo "--- deferred HTTP 100 Continue with a body is still rejected (expect: 139 9) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE b"
