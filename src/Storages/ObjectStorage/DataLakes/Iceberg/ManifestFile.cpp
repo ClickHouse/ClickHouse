@@ -34,23 +34,6 @@ String FileContentTypeToString(FileContentType type)
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unsupported content type: {}", static_cast<int>(type));
 }
 
-PositionDeleteKindPresence getPositionDeleteKindPresence(
-    const std::vector<ProcessedManifestFileEntryPtr> & position_delete_files)
-{
-    PositionDeleteKindPresence presence;
-    for (const auto & file : position_delete_files)
-    {
-        if (file->parsed_entry->isDeletionVector())
-            presence.has_deletion_vectors = true;
-        else
-            presence.has_parquet_position_deletes = true;
-
-        if (presence.hasBoth())
-            break;
-    }
-    return presence;
-}
-
 std::optional<Int64> getRecordCountInAllFilesExcludingDeleted(
     const std::vector<ProcessedManifestFileEntryPtr> & files)
 {
