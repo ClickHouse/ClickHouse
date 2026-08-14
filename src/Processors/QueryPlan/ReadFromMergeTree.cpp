@@ -4021,6 +4021,20 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// materialized only by this task map, and losing it makes the clone evaluate the rewritten filter
     /// without the index readers (`optimizeLazyFinal` copies the same map onto its synthetic reads).
     cloned_step->index_read_tasks = index_read_tasks;
+    /// Carry over the join-runtime-filter descriptors registered by `tryAddJoinRuntimeFilter`. That
+    /// optimization runs in the second pass (`optimizeTree.cpp`) before `applyParallelReplicas`, which
+    /// clones the plan fragment (`cloneSubtree`, plus a second `QueryPlan::clone` for the initiator's
+    /// local fragment in `createParallelReplicasPlan`), and the local fragment is deliberately
+    /// re-optimized with `enable_join_runtime_filters = false` because the filters are expected to be
+    /// in the clone already. Losing the descriptors here therefore drops runtime-filter granule pruning
+    /// on the local fragment's non-coordinated (broadcast) reads - `initializePipeline` installs the
+    /// reader only when this vector is non-empty - and also hides that pruning from
+    /// `mayPruneRangesOnDataRead`, so the read-in-order PK-selectivity guard would judge a read whose
+    /// mark count is only a pre-pruning upper bound. The descriptors are a plain value list of
+    /// `(filter_id, column, type)` and the lookup is fail-open (`buildRuntimeRangePredicate` skips a
+    /// filter that was never published), so copying them is safe even when the clone ends up in a
+    /// pipeline where nothing builds the filter.
+    cloned_step->join_runtime_filters_for_index_analysis = join_runtime_filters_for_index_analysis;
     return cloned_step;
 }
 
