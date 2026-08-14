@@ -214,7 +214,8 @@ adds an O(rows) pass per sparse-eligible column.
     DECLARE(UInt64, max_uniq_number_for_low_cardinality, 0, R"(
 Maximal estimated number of unique values in a `String` or `FixedString` column for the column to be
 stored using automatic `LowCardinality` serialization (dictionary encoding). The estimate is taken from
-the column's `uniq` statistic, so a `uniq` statistic must be declared on the column for this to take effect.
+the column's cardinality statistic, so a `uniq` or `uniq_v2` statistic must be declared on the column for
+this to take effect.
 
 When a column qualifies, it is stored in dictionary-encoded form on disk even though its data type is not
 `LowCardinality`, and is materialized to a full column when a query requires it. This is checked after

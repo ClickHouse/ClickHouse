@@ -35,3 +35,8 @@ lc	LowCardinality
 num	Default
 sp	Sparse
 200000	17
+uniq_v2 statistic
+hc	Default
+id	Default
+lc	LowCardinality
+100000	10	100000

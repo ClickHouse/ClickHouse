@@ -61,3 +61,29 @@ ORDER BY column;
 SELECT count(), uniqExact(lc) FROM t_auto_lc;
 
 DROP TABLE t_auto_lc;
+
+-- The estimate can also come from the `uniq_v2` statistic, which is what the default `auto_statistics_types` uses.
+
+DROP TABLE IF EXISTS t_auto_lc_v2;
+
+CREATE TABLE t_auto_lc_v2
+(
+    id UInt64,
+    lc String STATISTICS(uniq_v2),
+    hc String STATISTICS(uniq_v2)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS
+    max_uniq_number_for_low_cardinality = 1000,
+    min_bytes_for_wide_part = 0;
+
+INSERT INTO t_auto_lc_v2 SELECT number, 'val_' || toString(number % 10), 'uniq_' || toString(number) FROM numbers(100000);
+
+SELECT 'uniq_v2 statistic';
+SELECT column, serialization_kind FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_auto_lc_v2' AND active AND NOT startsWith(column, '_')
+ORDER BY column;
+SELECT count(), uniqExact(lc), uniqExact(hc) FROM t_auto_lc_v2;
+
+DROP TABLE t_auto_lc_v2;

@@ -1373,6 +1373,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_merge_coordinator_distribution_algorithm", "water_filling", "sainte_lague", "Enable Sainte-Lague distribution by default."},
             {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
             {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},
+            {"max_uniq_number_for_low_cardinality", 0, 0, "New setting for automatic LowCardinality serialization"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
@@ -1397,7 +1398,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_enable_keeper_parts_extra_data", false, true, "Enable coordinated merges by default"},
             {"shared_merge_tree_enable_coordinated_merges", false, true, "Enable coordinated merges by default"},
             {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup", false, false, "New setting which allows SMT download parts data from replicas instead of S3 on startup"},
-            {"max_uniq_number_for_low_cardinality", 0, 0, "New setting for automatic LowCardinality serialization"},
             {"text_index_dictionary_block_size", 512, 512, "New setting"},
             {"text_index_dictionary_block_frontcoding_compression", true, true, "New setting"},
             {"text_index_posting_list_block_size", 1048576, 1048576, "New setting"},

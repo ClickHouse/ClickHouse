@@ -954,8 +954,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     SerializationInfoByName infos(columns, settings);
 
     /// Automatic LowCardinality serialization: store a String/FixedString column in dictionary-encoded
-    /// form when it has a `uniq` statistic with a low cardinality estimate. This uses only the existing
-    /// `uniq` statistics - it does not change statistics serialization.
+    /// form when it has a cardinality statistic (`uniq` or `uniq_v2`) with a low estimate. This uses only
+    /// the existing statistics - it does not change statistics serialization.
     const UInt64 max_uniq_for_low_cardinality = (*data_settings)[MergeTreeSetting::max_uniq_number_for_low_cardinality];
     NameSet low_cardinality_candidates;
     if (max_uniq_for_low_cardinality != 0)
@@ -966,7 +966,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
                 continue;
 
             auto stats_it = statistics.find(column_name);
-            if (stats_it == statistics.end() || !stats_it->second->getStats().contains(StatisticsType::Uniq))
+            if (stats_it == statistics.end() || !stats_it->second->hasCardinality())
                 continue;
 
             if (stats_it->second->estimateCardinality() > max_uniq_for_low_cardinality)

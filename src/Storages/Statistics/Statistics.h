@@ -135,6 +135,9 @@ public:
     /// True iff loaded statistics include a source of numeric min/max values
     /// (`MinMax`, or `Basic` on a numeric/temporal column).
     bool hasMinMax() const;
+    /// True iff loaded statistics include a cardinality estimator (`Uniq` or `UniqV2`), so
+    /// `estimateCardinality` returns a real estimate instead of the default-ratio guess.
+    bool hasCardinality() const;
     UInt64 estimateCardinality() const;
     UInt64 estimateDefaults() const;
 
