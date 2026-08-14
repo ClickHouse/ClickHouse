@@ -1298,7 +1298,7 @@ const std::map<String, Entry> & aggregateFunctions()
     {
         std::map<String, Entry> result;
 
-        result.emplace("count", rename("count", 0, 1));
+        result.emplace("count", rename("count", 0, 0));
         result.emplace("sum", rename("sum", 1, 1));
         result.emplace("avg", rename("avg", 1, 1));
         result.emplace("min", rename("min", 1, 1));

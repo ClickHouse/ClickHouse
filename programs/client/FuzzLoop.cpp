@@ -5,6 +5,7 @@
 #include <Common/CurrentThread.h>
 
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/copyData.h>
@@ -163,6 +164,12 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
         // Can't continue after a parsing error
         return true;
     }
+
+    /// KQL is translated to a ClickHouse AST, whose formatted text must subsequently be parsed
+    /// as ClickHouse SQL. Replaying it under the current KQL session dialect instead fuzzes the
+    /// wrong parser, so leave this dialect out of the AST fuzzer until replay can pin its dialect.
+    if (client_context->getSettingsRef()[Setting::dialect] == Dialect::kusto)
+        return true;
 
     // `USE db` should not be executed
     // since this will break every query after `DROP db`

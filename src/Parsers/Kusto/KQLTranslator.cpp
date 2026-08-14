@@ -670,6 +670,7 @@ private:
             {
                 std::vector<String> expanded;
                 ASTs columns;
+                ASTs arrays;
                 for (const auto & named : op.expressions)
                 {
                     const auto * identifier = named.expression->as<ASTIdentifier>();
@@ -678,14 +679,30 @@ private:
                     const String name = named.alias.empty() ? identifier->shortName() : named.alias;
                     if (identifier)
                         expanded.push_back(identifier->shortName());
-
-                    ASTPtr expansion = makeASTFunction("arrayJoin", named.expression);
-                    expansion->setAlias(name);
-                    columns.push_back(expansion);
+                    arrays.push_back(named.expression);
+                    columns.push_back(ident(name));
                 }
 
-                ASTs all{asteriskExcept(expanded)};
-                for (auto & column : columns)
+                /// Kusto expands multiple arrays in lockstep and pads the shorter ones with
+                /// NULL. One `arrayJoin` over `arrayZipUnaligned` preserves that row shape;
+                /// independent `arrayJoin` calls would form a Cartesian product.
+                ASTPtr zipped = makeASTFunction("arrayZipUnaligned", std::move(arrays));
+                ASTPtr expansion = makeASTFunction("arrayJoin", std::move(zipped));
+                expansion->setAlias("kql_mv_expand");
+                ASTs expanded_columns;
+                for (size_t i = 0; i < columns.size(); ++i)
+                {
+                    ASTPtr element = makeASTFunction("tupleElement", ident("kql_mv_expand"), literal(i + 1));
+                    element->setAlias(columns[i]->as<ASTIdentifier>()->shortName());
+                    expanded_columns.push_back(std::move(element));
+                }
+
+                ASTs intermediate{asteriskExcept(expanded)};
+                intermediate.push_back(std::move(expansion));
+                builder.setProjection(std::move(intermediate));
+
+                ASTs all{asteriskExcept({"kql_mv_expand"})};
+                for (auto & column : expanded_columns)
                     all.push_back(std::move(column));
                 builder.setProjection(std::move(all));
                 return;
@@ -763,22 +780,9 @@ private:
                 break;
         }
 
-        /// Equi-join keys that share a name on both sides are a USING list; differing names
-        /// need an ON with both sides qualified.
-        bool all_same_name = true;
-        for (const auto & [left, right] : op.join_keys)
-            if (left != right)
-                all_same_name = false;
-
-        if (all_same_name)
+        /// Do not use `USING` even when both key names agree: unlike Kusto it coalesces the
+        /// matching columns, while Kusto joins that return both sides keep both key columns.
         {
-            ASTs keys;
-            for (const auto & [left, right] : op.join_keys)
-                keys.push_back(ident(left));
-            table_join->using_expression_list = expressionList(std::move(keys));
-            table_join->children.push_back(table_join->using_expression_list);
-        }
-        else
         {
             /// Qualify both sides with the subquery aliases: `on $left.a == $right.b` must
             /// stay unambiguous when both inputs expose both names.

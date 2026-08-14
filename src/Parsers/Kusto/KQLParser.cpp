@@ -1428,7 +1428,7 @@ KQLOperatorPtr KQLParser::parseJoin()
             String key = expectIdentifierName();
             op->join_keys.emplace_back(key, key);
         }
-    } while (consume(KQLTokenType::Comma));
+    } while (consume(KQLTokenType::Comma) || consumeKeyword("and"));
 
     return op;
 }
