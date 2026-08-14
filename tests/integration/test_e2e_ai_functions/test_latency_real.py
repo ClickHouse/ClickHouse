@@ -16,9 +16,8 @@ import time
 
 import pytest
 
-from . import baselines
 from . import corpus as ai_corpus
-from .asserts import Report, parse_json_rows
+from .asserts import Report, current_sha, parse_json_rows
 from .conftest import load_table, requires_live_endpoint
 
 pytestmark = [pytest.mark.e2e, requires_live_endpoint]
@@ -98,7 +97,7 @@ def test_b3_real_endpoint_latency(q, cfg, instance, real_tables):
             "chat_model": cfg.chat_model,
             "embed_model": cfg.embed_model,
             "scale": cfg.data_scale,
-            "git_sha": baselines.current_sha()[:12],
+            "git_sha": current_sha()[:12],
             "nproc": instance.exec_in_container(["nproc"]).strip(),
         },
     )
@@ -219,15 +218,18 @@ def test_b3_real_endpoint_latency(q, cfg, instance, real_tables):
     if not cfg.latency_gate_real:
         return
 
-    baseline = baselines.load("arch")
-    expected = (baseline or {}).get("real_effective_concurrency")
-    if expected is None:
-        pytest.skip("no real_effective_concurrency baseline to gate against")
-    measured = min(
-        record["effective_concurrency"]
-        for record in report.records
-        if "effective_concurrency" in record
+    # Gating real-endpoint latency needs a comparison point from the same session on the
+    # same host; there is no committed number to check against, because a threshold on an
+    # endpoint's wall-clock cannot survive model routing, region and load.
+    if not cfg.compare_to:
+        pytest.skip(
+            "AI_E2E_LATENCY_GATE_REAL needs AI_E2E_COMPARE_TO pointing at a previous run"
+        )
+    table, regressions = report.compare(
+        cfg.compare_to, columns=("s_per_row", "duration_ms")
     )
-    assert measured >= expected * 0.7, (
-        f"effective concurrency {measured} is far below the baseline {expected}"
+    print("\n" + table)
+    assert not regressions, (
+        "real-endpoint throughput regressed against the comparison run: "
+        + ", ".join(f"{case} {field} {before} -> {after}" for case, field, before, after, _ in regressions)
     )

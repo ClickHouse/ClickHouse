@@ -16,9 +16,8 @@ import time
 
 import pytest
 
-from . import baselines
 from . import corpus as ai_corpus
-from .asserts import Report
+from .asserts import Report, current_sha
 from .conftest import load_table
 
 pytestmark = pytest.mark.e2e
@@ -33,6 +32,17 @@ EMB = "aiEmbed(x, 'mock-model', map('credentials','ai_e2e_mock_embed'))"
 # minutes while still being long enough for parallelism to show.
 B1_ROWS = 32
 GATE_ROWS = 32
+
+# Measured on master @ 529df9d151c, 32 cores. These are the two numbers that hold across
+# machines: how many requests the pipeline overlaps (a stream-count property, not a timing
+# one) and the resulting concurrency ratio, in which the injected delay cancels. Wall-clock
+# and CPU time are host-dependent and are compared run-local instead, via AI_E2E_COMPARE_TO.
+#
+# `max_threads = 8` on an 8-part table overlapped 3 requests; a single-part table overlaps
+# none, whatever `max_threads` says. Update both together, with the measurement that
+# produced them.
+BASELINE_MAX_IN_FLIGHT_8T = 3
+BASELINE_EFFECTIVE_CONCURRENCY_8T = 1.29
 
 
 def _load(instance, name, rows, parts=1):
@@ -77,7 +87,7 @@ def timings(cfg, instance):
         {
             "rows": B1_ROWS,
             "delay_ms": cfg.mock_delay_ms,
-            "git_sha": baselines.current_sha()[:12],
+            "git_sha": current_sha()[:12],
             "nproc": instance.exec_in_container(["nproc"]).strip(),
         },
     )
@@ -239,41 +249,23 @@ def test_b2_4_parallelism_not_lost(q, mock, cfg, arch_tables):
         settings={"max_threads": 8, "max_block_size": 4},
     )
     stats = mock.stats()
-    measured = {
-        "max_in_flight_8t": stats["max_in_flight"],
-        "effective_concurrency_8t": _effective_concurrency(
-            events["api_calls"], delay, events["query_duration_ms"]
-        ),
-    }
-
-    baseline = baselines.load("arch")
-    if cfg.write_baselines or baseline is None or "max_in_flight_8t" not in baseline:
-        merged = dict(baseline or {})
-        merged.update(measured)
-        merged.setdefault(
-            "_comment",
-            "Integers and dimensionless ratios only; wall-clock is compared run-local.",
-        )
-        path = baselines.save("arch", merged)
-        pytest.skip(f"wrote baseline {path}; rerun to assert against it")
-
-    warning = baselines.staleness_warning(baseline)
-    if warning:
-        print(f"\n[ai-e2e] WARNING: {warning}")
-
+    max_in_flight = stats["max_in_flight"]
+    concurrency = _effective_concurrency(
+        events["api_calls"], delay, events["query_duration_ms"]
+    )
     print(
-        f"\n[ai-e2e] parallelism: max_in_flight={measured['max_in_flight_8t']} "
-        f"(baseline {baseline['max_in_flight_8t']}), effective concurrency="
-        f"{measured['effective_concurrency_8t']} "
-        f"(baseline {baseline['effective_concurrency_8t']})"
+        f"\n[ai-e2e] parallelism: max_in_flight={max_in_flight} "
+        f"(recorded {BASELINE_MAX_IN_FLIGHT_8T}), effective concurrency={concurrency} "
+        f"(recorded {BASELINE_EFFECTIVE_CONCURRENCY_8T})"
     )
-    assert measured["max_in_flight_8t"] >= baseline["max_in_flight_8t"], (
-        "fewer requests overlap than the baseline: parallelism was lost"
+    assert max_in_flight >= BASELINE_MAX_IN_FLIGHT_8T, (
+        f"only {max_in_flight} requests overlapped, recorded {BASELINE_MAX_IN_FLIGHT_8T}: "
+        "parallelism was lost"
     )
-    assert (
-        measured["effective_concurrency_8t"]
-        >= baseline["effective_concurrency_8t"] * 0.8
-    ), "effective concurrency dropped more than 20% below the baseline"
+    assert concurrency >= BASELINE_EFFECTIVE_CONCURRENCY_8T * 0.8, (
+        f"effective concurrency {concurrency} is more than 20% below the recorded "
+        f"{BASELINE_EFFECTIVE_CONCURRENCY_8T}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -426,10 +418,39 @@ def test_b2_9_per_row_cpu_cost(q, mock, cfg, instance, arch_tables, timings):
     instance.query("DROP TABLE IF EXISTS arch_cpu SYNC")
 
     timings.add("cpu per row", cpu_us_per_row=median, rows=rows)
-    print(f"\n[ai-e2e] CPU per row: {median} us (host {instance.exec_in_container(['nproc']).strip()} cores)")
+    print(f"\n[ai-e2e] CPU per row: {median} us")
 
-    # Deliberately no committed baseline and no absolute threshold: this is CPU time on
-    # one host with one build, so a number from another machine would measure the machine.
-    # The regression check is the run-local before/after diff printed by the `timings`
-    # fixture. Only a sanity floor is asserted here.
+    # No committed threshold: this is CPU time on one host with one build, and two runs on
+    # the same machine minutes apart measured 161.2 and 75.4 us. The regression check is the
+    # run-local before/after diff the `timings` fixture prints.
     assert median > 0, "no CPU time attributed to the query"
+
+
+# ---------------------------------------------------------------------------
+# Connection reuse. Structural rather than timing, but it lives here because it
+# needs this suite's mock: the CI mock sets no `protocol_version`, so it speaks
+# HTTP/1.0 and closes every connection - the ratio would measure the mock.
+# ---------------------------------------------------------------------------
+
+
+def test_connection_reuse(q, mock, arch_tables):
+    mock.reset()
+    mock.configure(delay_ms=0)
+    _result, events = q.run(
+        f"SELECT {GEN} FROM arch_gate FORMAT Null",
+        case="connection_reuse",
+        settings={"max_threads": 1, "max_block_size": GATE_ROWS},
+    )
+    assert events["api_calls"] == GATE_ROWS
+
+    stats = mock.stats()
+    assert stats["requests"] == GATE_ROWS, stats
+    assert stats["connections"] >= 1
+    # A ratio, not an absolute: the HTTP session pool is server-wide, so a warm pool can
+    # serve an entire query without opening anything new.
+    ratio = stats["requests"] / stats["connections"]
+    print(f"\n[ai-e2e] requests per connection: {ratio:.1f}")
+    assert ratio >= 8, (
+        f"requests/connections = {ratio:.1f}; a new connection every few requests means "
+        "keep-alive stopped working, which is real latency against a real endpoint"
+    )

@@ -119,7 +119,6 @@ class EndpointConfig:
     mock_delay_ms: int
     kill_budget_sec: int
     latency_gate_real: bool
-    write_baselines: bool
     compare_to: str
 
     @property
@@ -215,7 +214,6 @@ def resolve():
         mock_delay_ms=_env_int("AI_E2E_MOCK_DELAY_MS", 200),
         kill_budget_sec=_env_int("AI_E2E_KILL_BUDGET_SEC", 10),
         latency_gate_real=_env_bool("AI_E2E_LATENCY_GATE_REAL"),
-        write_baselines=_env_bool("AI_E2E_WRITE_BASELINES"),
         compare_to=_env_str("AI_E2E_COMPARE_TO"),
     )
 

@@ -707,22 +707,35 @@ def test_embed_profile_events_token_accounting(started_cluster):
     assert int(events["rows_skipped"]) == 0
 
 
-def test_embed_batching(started_cluster):
-    """`ai_function_embedding_max_batch_size` splits inputs across HTTP calls."""
+@pytest.mark.parametrize(
+    "batch, expected_calls",
+    [(1, 8), (2, 4), (3, 3), (8, 1), (100, 1)],
+    ids=["batch1", "batch2", "batch3", "batch_exact", "batch_larger_than_input"],
+)
+def test_embed_batching(started_cluster, batch, expected_calls):
+    """`ai_function_embedding_max_batch_size` splits inputs across HTTP calls.
+
+    One block of eight rows, so the count is exactly `ceil(rows / batch)`: batching is
+    per block, and a second block would restart it.
+    """
+    rows = 8
     instance.query("TRUNCATE TABLE test_input")
     instance.query(
-        "INSERT INTO test_input SELECT 'row_' || toString(number) FROM numbers(5)"
+        f"INSERT INTO test_input SELECT 'row_' || toString(number) FROM numbers({rows})"
     )
-    qid = unique_query_id("embed_batch")
+    qid = unique_query_id(f"embed_batch_{batch}")
     instance.query(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
-        settings={**AI_SETTINGS, "ai_function_embedding_max_batch_size": 2},
+        settings={
+            **AI_SETTINGS,
+            "ai_function_embedding_max_batch_size": batch,
+            "max_block_size": 4096,
+        },
         query_id=qid,
     )
     events = get_profile_events(qid)
-    # 5 rows / batch of 2 -> ceil(5/2) = 3 HTTP calls.
-    assert int(events["api_calls"]) == 3
-    assert int(events["rows_processed"]) == 5
+    assert int(events["api_calls"]) == expected_calls
+    assert int(events["rows_processed"]) == rows
     assert int(events["rows_skipped"]) == 0
 
 
@@ -1503,3 +1516,62 @@ def test_api_call_quota_is_per_query(started_cluster):
         f"{calls} API calls with ai_function_max_api_calls_per_query = {limit}: the quota "
         "is tracked per executeImpl call, so the query spent a multiple of its own cap"
     )
+
+
+def mock_request_count(reset=False):
+    """Requests the mock has seen, optionally zeroing the counter."""
+    query = "?reset=1" if reset else ""
+    raw = instance.exec_in_container(
+        ["curl", "-sS", f"http://localhost:{MOCK_PORT}/request-count{query}"]
+    )
+    return json.loads(raw)["count"]
+
+
+def set_mock_delay(ms):
+    instance.exec_in_container(
+        ["curl", "-sS", f"http://localhost:{MOCK_PORT}/set-delay?ms={ms}"]
+    )
+
+
+def test_request_timeout_issues_one_attempt(started_cluster):
+    """A request slower than `ai_function_request_timeout_sec` fails, and is not retried
+    when `ai_function_max_retries` is 0.
+
+    The attempt count comes from the mock: the five AI ProfileEvents are incremented after
+    the row loop, so a query that throws records none of them.
+    """
+    set_mock_delay(3000)
+    try:
+        mock_request_count(reset=True)
+        error = instance.query_and_get_error(
+            "SELECT aiGenerate('hello', map('credentials', 'ai_mock'))",
+            settings={
+                **AI_SETTINGS,
+                "ai_function_request_timeout_sec": 1,
+                "ai_function_max_retries": 0,
+            },
+        )
+        assert error
+        assert mock_request_count() == 1
+    finally:
+        set_mock_delay(0)
+
+
+def test_request_timeout_retries_each_attempt(started_cluster):
+    """Each retry is a fresh request, so `max_retries = 2` means three attempts."""
+    set_mock_delay(3000)
+    try:
+        mock_request_count(reset=True)
+        error = instance.query_and_get_error(
+            "SELECT aiGenerate('hello', map('credentials', 'ai_mock'))",
+            settings={
+                **AI_SETTINGS,
+                "ai_function_request_timeout_sec": 1,
+                "ai_function_max_retries": 2,
+                "ai_function_retry_initial_delay_ms": 50,
+            },
+        )
+        assert error
+        assert mock_request_count() == 3
+    finally:
+        set_mock_delay(0)

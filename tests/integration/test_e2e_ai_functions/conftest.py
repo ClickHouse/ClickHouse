@@ -253,11 +253,16 @@ def _start_mock(instance, port):
         raise RuntimeError(f"mock server failed to start. Log:\n{log}") from error
 
 
+# Collections pointing at the in-container mock. The prefix is load-bearing: the spend
+# meter uses it to tell free calls from paid ones.
+MOCK_COLLECTION_PREFIX = "ai_e2e_mock_"
+
+
 def _create_mock_collections(instance, port):
     """Mock collections are plain DDL: their `api_key` is a literal, not a secret."""
     for name, path in (
-        ("ai_e2e_mock_chat", "/v1/chat/completions"),
-        ("ai_e2e_mock_embed", "/v1/embeddings"),
+        (f"{MOCK_COLLECTION_PREFIX}chat", "/v1/chat/completions"),
+        (f"{MOCK_COLLECTION_PREFIX}embed", "/v1/embeddings"),
     ):
         instance.query(f"DROP NAMED COLLECTION IF EXISTS {name}")
         model = ", model = 'mock-model'" if name.endswith("chat") else ""
@@ -306,8 +311,10 @@ class Runner:
             timeout=timeout,
         )
         events = read_ai_events(self.instance, query_id)
-        # Meter every query, so a runaway is stopped inside the run.
-        if self.budget is not None:
+        # Meter only what costs money. The mock-driven suites make thousands of calls to a
+        # server inside the container; counting those against the ceiling would abort a run
+        # that has spent nothing.
+        if self.budget is not None and MOCK_COLLECTION_PREFIX not in sql:
             self.budget.record(events)
         return result, events
 

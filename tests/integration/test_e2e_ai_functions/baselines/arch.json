@@ -1,6 +1,0 @@
-{
-  "_comment": "Committed metrics for Suite B: integers and dimensionless ratios only, which hold on any host given the pinned settings. Host-dependent timings (wall-clock, CPU per row) are deliberately absent - they are compared run-local via AI_E2E_COMPARE_TO, the way ci/jobs/scripts/perf/compare.sh compares two binaries on one runner. Regenerate with AI_E2E_WRITE_BASELINES=1 and review the diff; never hand-edit.",
-  "effective_concurrency_8t": 1.29,
-  "git_sha": "529df9d151c05acc649b66224e13f4b3d02047be",
-  "max_in_flight_8t": 3
-}

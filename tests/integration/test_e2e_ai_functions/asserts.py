@@ -3,6 +3,8 @@
 import json
 import math
 import os
+import pathlib
+import subprocess
 import uuid
 
 # Reports land in the repository's `tmp/` unless redirected.
@@ -11,6 +13,41 @@ REPORT_DIR = os.environ.get("AI_E2E_REPORT_DIR") or os.path.join(
 )
 
 AI_SETTINGS = {"allow_experimental_ai_functions": 1}
+
+
+def current_sha():
+    """HEAD, read from git or - when git is absent, as in the runner image - from `.git`."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=os.path.dirname(os.path.realpath(__file__)),
+        ).stdout.strip()
+        if result:
+            return result
+    except (OSError, subprocess.SubprocessError):
+        pass
+    root = pathlib.Path(__file__).resolve().parents[3] / ".git"
+    try:
+        head = (root / "HEAD").read_text().strip()
+    except OSError:
+        return ""
+    if not head.startswith("ref: "):
+        return head
+    ref = head[5:].strip()
+    try:
+        return (root / ref).read_text().strip()
+    except OSError:
+        pass
+    try:
+        for line in (root / "packed-refs").read_text().splitlines():
+            if line.endswith(f" {ref}"):
+                return line.split()[0]
+    except OSError:
+        pass
+    return ""
 
 
 def unique_query_id(prefix):

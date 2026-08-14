@@ -8,6 +8,13 @@ Endpoints:
       `aiTranslate`'s `instructions` argument is forwarded in the prompt, or that the
       `Authorization` header is omitted when the named collection has no `api_key`).
       Header names are lower-cased for case-insensitive lookup.
+  GET  /set-delay?ms=N               — make every subsequent request sleep N ms before responding.
+      Used to drive `ai_function_request_timeout_sec`. `ms=0` disarms. The server is
+      single-threaded, so a delay blocks it for the duration; tests using it must not run
+      concurrently with others, which `--dist=loadfile` already guarantees.
+  GET  /request-count?reset=1        — number of requests received since the last reset, as
+      `{"count": N}`. A query that throws records no AI ProfileEvents, so this is the only
+      way to count the attempts such a query made.
   GET  /set-flaky?count=N            — arm the flaky endpoints below to fail their next N requests
       with a simulated transient network error (used to exercise retries). `count=0` disarms.
   POST /v1/chat/flaky                — like `/v1/chat/completions`, but drops the connection without
@@ -34,6 +41,7 @@ Endpoints:
 
 import http.server
 import json
+import time
 from urllib.parse import urlparse, parse_qs
 
 MOCK_PORT = 18123
@@ -46,6 +54,12 @@ LAST_REQUEST = {"path": None, "body": None, "headers": {}}
 # that should fail with a simulated transient network error before they start succeeding.
 # Set via `GET /set-flaky?count=N`. Used to exercise the network-error retry path.
 FLAKY = {"fails_remaining": 0}
+
+# Milliseconds to sleep before answering, set via `GET /set-delay?ms=N`.
+DELAY = {"ms": 0}
+
+# Requests received since the last `GET /request-count?reset=1`.
+COUNTER = {"requests": 0}
 
 
 def extract_user_message(body):
@@ -156,6 +170,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json(200, LAST_REQUEST)
             return
 
+        if parsed.path == "/set-delay":
+            params = parse_qs(parsed.query)
+            DELAY["ms"] = int(params.get("ms", ["0"])[0])
+            self._send_json(200, {"delay_ms": DELAY["ms"]})
+            return
+
+        if parsed.path == "/request-count":
+            params = parse_qs(parsed.query)
+            count = COUNTER["requests"]
+            if params.get("reset", ["0"])[0] not in ("0", ""):
+                COUNTER["requests"] = 0
+            self._send_json(200, {"count": count})
+            return
+
         if parsed.path == "/set-flaky":
             qs = parse_qs(parsed.query)
             FLAKY["fails_remaining"] = int(qs.get("count", ["0"])[0])
@@ -170,6 +198,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        COUNTER["requests"] += 1
+        if DELAY["ms"]:
+            time.sleep(DELAY["ms"] / 1000.0)
         content_length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_length).decode("utf-8") if content_length else ""
 
