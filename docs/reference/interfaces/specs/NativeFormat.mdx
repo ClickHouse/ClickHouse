@@ -63,7 +63,7 @@ The Native format builds on four primitive encodings.
 |-----------------|----------|-------------|
 | VarUInt         | 1–10 B   | LEB-128 variable-length unsigned integer |
 | Fixed-width int | 1, 2, 4, 8, 16, 32 B | Little-endian, two's complement for signed |
-| String          | variable | VarUInt length prefix + raw bytes per value; a separate [offsets stream](#string-type) at revision `54491`+ |
+| String          | variable | VarUInt length prefix + raw bytes per value; a separate [offsets stream](#string-type) at revision `54492`+ |
 | Bool            | 1 B      | `0x00` = false, non-zero = true |
 
 ### VarUInt {#varuint}
@@ -340,13 +340,14 @@ Each feature sits behind a `DBMS_MIN_REVISION_WITH_*` threshold. The writer emit
 | `has_custom_serialization` byte | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION` | `54454` | The per-column [`has_custom_serialization`](#column-wire-layout) byte is omitted; every column uses default serialization (no sparse, replicated, or detached forms). |
 | `LowCardinality` on the wire | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE` | `54405` | Special case — does **not** follow the simple below-threshold rule. `LowCardinality(T)` is stripped to base type `T` only when the revision is *non-zero* and below `54405`, or when stripping is forced separately. Revision `0` keeps it. See the note below. |
 | V2 `Dynamic` / `JSON` serialization | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION` | `54473` | `Dynamic` and `JSON`/`Object` use V1 serialization (with the `max_dynamic_*` parameter) instead of V2. |
-| Offsets `String` serialization | `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` | `54491` | Below the threshold `String` column data uses the per-value layout (`VarUInt` length prefix + raw bytes per row) instead of the [offsets layout](#string-type) (cumulative byte offsets as `UInt64`, then all data concatenated). Gated purely on the revision, with no per-column wire marker. At or above the threshold the offsets layout also applies to `String` nested inside composite types (`Array`, `Nullable`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`), but **not** to the dictionary of a `LowCardinality` column: a `LowCardinality` dictionary is always written with the default nested serialization, so its `String` values keep the per-value layout (this includes `LowCardinality(String)` and `LowCardinality(Nullable(String))`). The `Buffers` format is not part of the protocol and always uses the per-value layout. |
+| Offsets `String` serialization | `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` | `54492` | Below the threshold `String` column data uses the per-value layout (`VarUInt` length prefix + raw bytes per row) instead of the [offsets layout](#string-type) (cumulative byte offsets as `UInt64`, then all data concatenated). Gated purely on the revision, with no per-column wire marker. At or above the threshold the offsets layout also applies to `String` nested inside composite types (`Array`, `Nullable`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`), but **not** to the dictionary of a `LowCardinality` column: a `LowCardinality` dictionary is always written with the default nested serialization, so its `String` values keep the per-value layout (this includes `LowCardinality(String)` and `LowCardinality(Nullable(String))`). The `Buffers` format is not part of the protocol and always uses the per-value layout. |
 | Aggregate-function versioning | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING` | `54452` | `AggregateFunction` state is written without an embedded version. |
+| `skip_degree` in `quantileDeterministic` state | `DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE` | `54491` | `AggregateFunction(quantileDeterministic, ...)` states (and the `quantiles`/`median` spellings of the same function) are written at state version `0`, without the trailing `UInt8 skip_degree`. See the note under [type aliases](#type-aliases). |
 | `out_of_order_buckets` in `BlockInfo` | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION` | `54480` | `BlockInfo` field ID `3` is not written (see [BlockInfo](#blockinfo)). |
 | Parallel block marshalling (`DETACHED`) | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` | `54478` | Columns are never wrapped in a `ColumnBLOB`; no `DETACHED` / `DETACHED_OVER_SPARSE` kinds appear (see [kind_stack](#kind-stack-and-sparse-encoding)). |
 | `DateTime(tz)` type parameter | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337` | The timezone parameter is dropped from the `type` string — `DateTime('UTC')` is announced as bare `DateTime`. |
 
-That makes revision `0` the most conservative encoding for almost everything: the stream carries no `BlockInfo`, no `has_custom_serialization` byte, V1 `Dynamic`/`JSON`, no aggregate-function version, and a bare `DateTime` with the timezone parameter dropped.
+That makes revision `0` the most conservative encoding for almost everything: the stream carries no `BlockInfo`, no `has_custom_serialization` byte, V1 `Dynamic`/`JSON`, no aggregate-function version, and a bare `DateTime` with the timezone parameter dropped. Aggregate-function *state* versions are the exception at revision `0`: there is no peer to derive a version for — the stream is written and read back by whoever produced it (a `StripeLog` data file, a `Set`/`Join` backup, a `Native` format file) — so the writer keeps a version pinned on the type (spelling it out in the type string as usual) instead of downgrading the state to version `0`, and only a type that pins no version is written at version `0`.
 
 `LowCardinality` is the one exception, and an important one. The writer's check is `remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)`. The trick is the leading `client_revision &&`: when the revision is exactly `0`, the whole condition short-circuits to false.
 
@@ -368,7 +369,7 @@ When both peers are the same modern build, the two directions land on the same r
 
 #### `FORMAT Native` output — revision 0 by default, raisable over HTTP {#revision-output}
 
-The `Native` *output* format defaults to revision **`0`**. This covers `SELECT ... FORMAT Native` over HTTP, `INTO OUTFILE ... FORMAT Native`, and the `Native` output `clickhouse-client` writes; in each case the output factory hands `FormatSettings::client_protocol_version` straight to the `NativeWriter`, which governs the `BlockInfo` / `has_custom_serialization` framing *and* the offsets `String` layout. So an HTTP `SELECT ... FORMAT Native` with a raised `client_protocol_version` (≥ `54491`) writes the offsets layout, while the default revision `0` keeps the portable per-value layout.
+The `Native` *output* format defaults to revision **`0`**. This covers `SELECT ... FORMAT Native` over HTTP, `INTO OUTFILE ... FORMAT Native`, and the `Native` output `clickhouse-client` writes; in each case the output factory hands `FormatSettings::client_protocol_version` straight to the `NativeWriter`, which governs the `BlockInfo` / `has_custom_serialization` framing *and* the offsets `String` layout. So an HTTP `SELECT ... FORMAT Native` with a raised `client_protocol_version` (≥ `54492`) writes the offsets layout, while the default revision `0` keeps the portable per-value layout.
 
 Over HTTP that default is not the end of the story. A client can raise it with the `?client_protocol_version=<n>` query parameter, which the HTTP handler treats as a reserved parameter rather than a SQL setting: it lands on the query context, and the format layer copies it into `FormatSettings`. Set it high enough and the HTTP `FORMAT Native` output starts including the `BlockInfo` prefix and the `has_custom_serialization` byte, just like the TCP path — so do not assume an HTTP `FORMAT Native` payload is always revision `0`.
 
@@ -719,7 +720,7 @@ Each value carries its own length on the wire.
 
 Type string: `String`. A `String` column has two wire layouts, selected by the protocol revision (see [What the revision gates](#what-the-revision-gates)). The revision is the negotiated revision on the native TCP protocol, and `client_protocol_version` for `FORMAT Native` output (default `0`); `FORMAT Native` input is always revision `0`, and the `Buffers` format always uses the per-value layout.
 
-**Per-value layout** — below `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` (`54491`), which includes the revision-`0` default of `FORMAT Native`: a sequence of `num_rows` length-prefixed byte sequences:
+**Per-value layout** — below `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` (`54492`), which includes the revision-`0` default of `FORMAT Native`: a sequence of `num_rows` length-prefixed byte sequences:
 
 ```text
 [VarUInt: byte_length] [byte_length bytes: raw value]
@@ -737,7 +738,7 @@ A column of 3 strings `["ab", "", "c"]` (6 bytes total):
 01 63                    row 2: length 1, "c"
 ```
 
-**Offsets layout** — at revision `54491` and above: two concatenated streams, the cumulative byte offsets first, then all data:
+**Offsets layout** — at revision `54492` and above: two concatenated streams, the cumulative byte offsets first, then all data:
 
 ```text
 [UInt64 × num_rows: cumulative byte offset (end of each value), little-endian]
@@ -776,7 +777,7 @@ The two string types compared:
 
 | Property               | `String`              | `FixedString(N)`            |
 |------------------------|-----------------------|-----------------------------|
-| Per-row length prefix  | Yes (VarUInt), or a separate offsets stream at revision `54491`+ | No |
+| Per-row length prefix  | Yes (VarUInt), or a separate offsets stream at revision `54492`+ | No |
 | Row size               | Variable              | Exactly `N` bytes           |
 | Total column bytes     | Variable              | `N × num_rows`              |
 | NUL-byte padding       | n/a                   | Right-padded by server      |
@@ -1102,7 +1103,7 @@ So a `Point` column is decoded exactly as `Tuple(Float64, Float64)` (rendering a
 <Note>
 Two related types are **not** aliases. They are valid `Native` column types — a client can receive an `AggregateFunction` column from a `-State` combinator or distributed aggregation, for instance — but each carries its own specialized payload that is outside the scope of this page:
 
-- `AggregateFunction(func, ...)` holds an *intermediate* aggregation state (not a finalized value); its binary layout is specific to the aggregate function and version.
+- `AggregateFunction(func, ...)` holds an *intermediate* aggregation state (not a finalized value); its binary layout is specific to the aggregate function and version. A versioned aggregate function spells a non-zero state version out as the first argument of the type string — `AggregateFunction(1, quantileDeterministic, UInt64, UInt64)` — while version `0` is not printed, so the type string stays `AggregateFunction(quantileDeterministic, UInt64, UInt64)`. On a negotiated connection (revision above `0`) the writer picks the version from the protocol revision **alone** — never from a version that happens to be pinned on its local type, because version `0` is indistinguishable on the wire from "no version announced" — so the same function can announce different versions on different connections, and a reader must take the version from the type string rather than assume the newest one. At revision `0` there is no peer to derive a version for — the stream is self-describing and read back by whoever wrote it — so a version pinned on the type survives into the stream (and into the announced type string) rather than being downgraded to `0`. `quantileDeterministic` (with the `quantilesDeterministic` and `medianDeterministic` spellings) is versioned from revision `54491`: version `1` appends a trailing `UInt8 skip_degree` to the state, and its prefix is byte-identical to version `0`. Below that revision the writer emits version `0` states, so an older peer is unaffected. All of this applies equally to a state nested inside a container type — `Array`, `Tuple`, `Map`, `Nullable`, `Variant` (where the alternative's spelled-out version changes the type string without changing the discriminator order), or a `Nested` / `SimpleAggregateFunction` wrapper. One `Variant` corner case has no wire representation at all: when two alternatives differ only in a spelled-out state version (legal as a column type, since the type strings differ), re-versioning both for the negotiated revision would collapse them into the same alternative, so the sender must fail the transfer rather than announce versions the payload is not written with. `Dynamic` is the deliberate exception to revision-derived versioning: a `Dynamic` column announces its nested types itself — through its own type lists and through the [binary type encoding](/reference/data-types/data-types-binary-encoding), whose explicit version field carries a spelled-out state version (the values of its shared variant embed their type that way even at rest) — and those announcements are part of the column's own data, identical for every peer and every medium, so they are never rewritten for a negotiated revision. A state nested inside a `Dynamic` value is therefore written at the version spelled in its type (which a fresh state carries, since a `-State` query result spells its version out), and at version `0` when the type spells none, on every connection and medium alike.
 - `QBit(T, N[, stride])` stores a vector with its bit planes transposed for vector-search workloads; its on-wire stream layout (group-major `FixedString` bit-plane streams, `element_size * (N / stride)` of them with an explicit `stride`) and its binary type encoding (tag `0x36`, or `0x37` `QBitWithStride` when `stride != N`) are documented on the [`QBit` data type page](/reference/data-types/qbit) and in the [binary type encoding](/reference/data-types/data-types-binary-encoding) reference, so a `Native` reader does not have to recover them from the C++ source.
 </Note>
 
