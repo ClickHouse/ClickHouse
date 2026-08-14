@@ -34,9 +34,9 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 ```
 
-すべての句は省略可能です。ただし、`SELECT` の直後にある必須の式のリストは例外で、これについては[以下](#select-clause)で詳しく説明します。
+`SELECT` の直後にある式のリストは必須です。その他の句はすべて省略可能です。
 
-各オプション句の詳細は個別のセクションで扱っており、実行順に以下に示します (ただし、`SELECT` と `DISTINCT` は便宜上先頭に記載しています。これらの式は、[以下](#select-clause)で説明するように、先行する句の処理が完了した後にのみ評価されます) 。
+`SELECT` とそのオプション句は個別のセクションで扱います。
 
 * [WITH 句](/ja/reference/statements/select/with)
 * [SELECT 句](#select-clause)

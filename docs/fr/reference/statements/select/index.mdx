@@ -34,9 +34,9 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 ```
 
-Toutes les clauses sont facultatives, sauf la liste obligatoire d’expressions immédiatement après `SELECT`, qui est décrite plus en détail [ci-dessous](#select-clause).
+La liste d’expressions qui suit immédiatement `SELECT` est obligatoire ; toutes les autres clauses sont facultatives.
 
-Les spécificités de chaque clause facultative sont décrites dans des sections distinctes, présentées dans le même ordre que celui de leur exécution (à l’exception de `SELECT` et `DISTINCT`, listées en premier par commodité : leurs expressions ne sont évaluées qu’après la fin des clauses précédentes, comme décrit [ci-dessous](#select-clause)) :
+`SELECT` et ses clauses facultatives sont décrits dans des sections distinctes :
 
 * [clause WITH](/fr/reference/statements/select/with)
 * [clause SELECT](#select-clause)

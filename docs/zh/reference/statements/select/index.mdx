@@ -34,9 +34,9 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 ```
 
-除紧跟在 `SELECT` 后面的必需表达式列表外，所有子句都是可选的；关于这部分的更详细说明，请参见[下文](#select-clause)。
+紧跟在 `SELECT` 后面的表达式列表是必需的；其他所有子句均为可选。
 
-各可选子句的具体说明分别见单独章节，下面按其执行顺序列出 (但为了方便起见，`SELECT` 和 `DISTINCT` 先列出：如[下文](#select-clause)所述，它们的表达式只有在前面的子句执行完成后才会被计算) ：
+`SELECT` 及其可选子句分别在单独的章节中说明：
 
 * [WITH 子句](/zh/reference/statements/select/with)
 * [SELECT 子句](#select-clause)

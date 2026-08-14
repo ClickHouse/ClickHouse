@@ -34,9 +34,9 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 ```
 
-Todas as cláusulas são opcionais, exceto a lista obrigatória de expressões imediatamente após `SELECT`, que é abordada com mais detalhes [abaixo](#select-clause).
+A lista de expressões imediatamente após `SELECT` é obrigatória; todas as outras cláusulas são opcionais.
 
-Os detalhes de cada cláusula opcional são abordados em seções separadas, listadas na mesma ordem em que são executadas (exceto `SELECT` e `DISTINCT`, listadas primeiro por conveniência: suas expressões são avaliadas somente após a conclusão das cláusulas anteriores, conforme descrito [abaixo](#select-clause)):
+`SELECT` e suas cláusulas opcionais são abordados em seções separadas:
 
 * [cláusula WITH](/pt-BR/reference/statements/select/with)
 * [cláusula SELECT](#select-clause)

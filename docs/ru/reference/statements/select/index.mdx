@@ -34,9 +34,9 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 ```
 
-Все секции необязательны, за исключением обязательного списка выражений сразу после `SELECT`, о котором подробнее говорится [ниже](#select-clause).
+Список выражений сразу после `SELECT` обязателен; все остальные секции необязательны.
 
-Особенности каждой необязательной секции описаны в отдельных разделах, перечисленных в том же порядке, в котором они выполняются (за исключением `SELECT` и `DISTINCT`, которые для удобства указаны первыми: их выражения вычисляются только после завершения предыдущих секций, как описано [ниже](#select-clause)):
+`SELECT` и его необязательные секции описаны в отдельных разделах:
 
 * [конструкция WITH](/ru/reference/statements/select/with)
 * [секция SELECT](#select-clause)
@@ -53,7 +53,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 * [секция WINDOW](/ru/reference/functions/window-functions/index)
 * [предложение QUALIFY](/ru/reference/statements/select/qualify)
 * [предложение ORDER BY](/ru/reference/statements/select/order-by)
-* [секция LIMIT BY](/ru/reference/statements/select/limit-by)
+* [предложение LIMIT BY](/ru/reference/statements/select/limit-by)
 * [секция LIMIT](/ru/reference/statements/select/limit)
 * [секция OFFSET](/ru/reference/statements/select/offset)
 * [секция UNION](/ru/reference/statements/select/union)
