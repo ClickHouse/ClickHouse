@@ -1127,3 +1127,102 @@ def test_default_codec_provenance_survives_column_only_mutation(start_cluster):
     )
 
     node5.query("DROP TABLE codec_provenance_mutation SYNC")
+
+
+def test_projection_codec_is_not_inherited_from_approximate_guess(start_cluster):
+    # A projection built for a part whose own default codec could only be recovered approximately must
+    # not be compressed with that guess. Projections inherit the codec chosen for their parent part,
+    # which is right while that codec is a fact, but a part that lost `default_compression_codec.txt`
+    # only has a codec recovered from its compressed frames - and those do not store the level. The
+    # projection is written here from scratch, so `finalizePartOnDisk` would record the inherited guess
+    # in the projection's own `default_compression_codec.txt` as authoritative metadata and relabel the
+    # projection permanently. The codec must therefore be chosen independently, exactly as a fresh
+    # write does.
+    #
+    # `node5` pins `ZSTD(3)` for parts of any size, so the honest choice is `ZSTD(3)`, while the
+    # recovery of the parent part can only guess `ZSTD(1)`.
+    node5.query(
+        """
+    CREATE TABLE codec_provenance_projection (
+        key UInt64,
+        data String
+    )
+    ENGINE = MergeTree ORDER BY key
+    SETTINGS min_bytes_for_wide_part = 0
+    """
+    )
+
+    node5.query(
+        "INSERT INTO codec_provenance_projection VALUES (1, 'Hello world'), (2, 'Goodbye world')"
+    )
+
+    part_name = node5.query(
+        "SELECT name FROM system.parts WHERE database='default' AND table='codec_provenance_projection' AND active AND rows > 0"
+    ).strip()
+
+    data_path = node5.query(
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='codec_provenance_projection'"
+    ).strip()
+
+    # Lose the part's codec file, the way a detach / copy / restore of an old part can.
+    node5.query(f"ALTER TABLE codec_provenance_projection DETACH PART '{part_name}'")
+    node5.exec_in_container(
+        ["rm", f"{data_path}detached/{part_name}/default_compression_codec.txt"]
+    )
+    node5.query(f"ALTER TABLE codec_provenance_projection ATTACH PART '{part_name}'")
+
+    # `ATTACH PART` gives the part a new block number, so re-read its name.
+    part_name = node5.query(
+        "SELECT name FROM system.parts WHERE database='default' AND table='codec_provenance_projection' AND active AND rows > 0"
+    ).strip()
+
+    # The level was lost by the recovery: the part's codec is now only a guess.
+    assert (
+        node5.query(
+            "SELECT default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='codec_provenance_projection' AND active AND rows > 0"
+        ).strip()
+        == "ZSTD(1)"
+    )
+
+    # Build a projection for that part: none of its columns declare a `CODEC`, so all of them are
+    # written with the codec the projection part gets.
+    node5.query(
+        "ALTER TABLE codec_provenance_projection ADD PROJECTION by_data (SELECT key, data ORDER BY data)"
+    )
+    node5.query(
+        "ALTER TABLE codec_provenance_projection MATERIALIZE PROJECTION by_data",
+        settings={"mutations_sync": 2},
+    )
+
+    # The projection is compressed with the codec chosen for it here, not with the parent's guess - so
+    # its own codec file stays an exact statement about its data.
+    assert (
+        node5.query(
+            "SELECT default_compression_codec FROM system.projection_parts WHERE database='default' "
+            "AND table='codec_provenance_projection' AND name='by_data' AND active AND rows > 0"
+        ).strip()
+        == "ZSTD(3)"
+    )
+
+    # Reload from disk: what was recorded for the projection must survive the round trip, and the
+    # projection must still be readable with the codec it was written with.
+    node5.query("DETACH TABLE codec_provenance_projection")
+    node5.query("ATTACH TABLE codec_provenance_projection")
+
+    assert (
+        node5.query(
+            "SELECT default_compression_codec FROM system.projection_parts WHERE database='default' "
+            "AND table='codec_provenance_projection' AND name='by_data' AND active AND rows > 0"
+        ).strip()
+        == "ZSTD(3)"
+    )
+    assert (
+        node5.query(
+            "SELECT data FROM codec_provenance_projection ORDER BY data",
+            settings={"optimize_use_projections": 1, "force_optimize_projection": 1},
+        ).strip()
+        == "Goodbye world\nHello world"
+    )
+
+    node5.query("DROP TABLE codec_provenance_projection SYNC")

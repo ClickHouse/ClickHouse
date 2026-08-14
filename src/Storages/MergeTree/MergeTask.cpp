@@ -958,7 +958,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// (which is locked in shared mode when input streams are created) and when inserting new data
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
-    if (global_ctx->projection)
+    /// The parent's default codec is worth inheriting only when it is a fact. When the parent part
+    /// lost its `default_compression_codec.txt` and the codec was merely recovered from
+    /// `checksums.txt` (`IMergeTreeDataPart::default_codec_is_approximate`), inheriting it would
+    /// compress this freshly written projection with a guess and record that guess as authoritative
+    /// in the projection's own codec file. Choose the codec for the projection independently in that
+    /// case - nothing of the parent is reused here, the projection data is written from scratch.
+    const bool inherit_parent_codec = global_ctx->projection && !global_ctx->parent_part->default_codec_is_approximate;
+
+    if (inherit_parent_codec)
     {
         /// When merging existing projection parts, inherit the default codec of the parent part
         /// they belong to. Choosing it from the projection's own (much smaller) combined size would
