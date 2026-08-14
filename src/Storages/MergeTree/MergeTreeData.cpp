@@ -5283,6 +5283,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         /// `IF NOT EXISTS n` would be skipped for a table holding only `n.*`, and the engine would then
         /// be rejected for a column this ALTER does add.
         bool share_nested_offsets = (*getSettings())[MergeTreeSetting::share_nested_offsets];
+        /// Replay needs normalized columns: an implicit statistic collides with an explicit one of the same type.
+        removeImplicitStatistics(metadata_for_check.columns);
         for (const auto & c : commands)
         {
             if (c.type != AlterCommand::MODIFY_ENGINE)

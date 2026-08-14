@@ -681,6 +681,20 @@ SELECT 'nested offsets columns', groupArray(name) FROM system.columns
     WHERE database = currentDatabase() AND table = 't_nested_offsets';
 DROP TABLE t_nested_offsets;
 
+-- The replay normalizes statistics first, as the real ALTER paths do. Otherwise the implicit `basic`
+-- statistic `auto_statistics_types` generates for every column collides with the explicit one added by
+-- this same ALTER, and a valid command is rejected with ILLEGAL_STATISTICS.
+CREATE TABLE t_engine_stats (a UInt32, k UInt32) ENGINE = MergeTree ORDER BY a
+    SETTINGS auto_statistics_types = 'basic';
+ALTER TABLE t_engine_stats MODIFY ENGINE = ReplacingMergeTree, ADD STATISTICS k TYPE basic;
+DETACH TABLE t_engine_stats;
+ATTACH TABLE t_engine_stats;
+SELECT 'implicit statistics engine', engine FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_engine_stats';
+SELECT 'implicit statistics column', statistics FROM system.columns
+    WHERE database = currentDatabase() AND table = 't_engine_stats' AND name = 'k';
+DROP TABLE t_engine_stats;
+
 -- (s) the engine clause survives a round trip through the `clickhouse_json` AST dialect.
 SET enable_json_ast_dialect = 1;
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY ENGINE = ReplacingMergeTree'));
