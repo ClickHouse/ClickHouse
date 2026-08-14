@@ -386,25 +386,22 @@ void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bo
 /// For a column read from a table, it is a direct reference to the subcolumn. For a column exported
 /// by a deeper subquery, it is a `getSubcolumn` function that is pushed down further when that
 /// subquery is processed.
-QueryTreeNodePtr buildSubcolumnProjectionNode(const PushdownGroup & group, const QueryTreeNodePtr & inner_node, const ContextPtr & context)
+/// Unwrap a chain of resolved `getSubcolumn` calls, composing their paths into `subcolumn_path`:
+/// a subcolumn read of a `getSubcolumn` expression is a read of a deeper subcolumn of the same
+/// underlying column, so the paths compose (`a` + `b` -> `a.b`). Returns nullptr when the chain
+/// contains an expression that is not a resolved `getSubcolumn` of a constant path.
+QueryTreeNodePtr unwrapSubcolumnFunctions(QueryTreeNodePtr node, String & subcolumn_path)
 {
-    /// The projection expression can itself be a subcolumn read left as a `getSubcolumn` function,
-    /// e.g. when the subquery exports `json.a AS x` over a deeper subquery. Reading a subcolumn of
-    /// such an export is reading a deeper subcolumn of the underlying column, so the paths compose:
-    /// `a` + `b` -> `a.b`.
-    QueryTreeNodePtr base_node = inner_node;
-    String subcolumn_path = group.subcolumn_path;
-
-    while (const auto * base_function = base_node->as<FunctionNode>())
+    while (const auto * function_node = node->as<FunctionNode>())
     {
-        if (base_function->getFunctionName() != "getSubcolumn" || !base_function->isResolved())
+        if (function_node->getFunctionName() != "getSubcolumn" || !function_node->isResolved())
             return nullptr;
 
-        const auto & base_function_arguments = base_function->getArguments().getNodes();
-        if (base_function_arguments.size() != 2)
+        const auto & function_arguments = function_node->getArguments().getNodes();
+        if (function_arguments.size() != 2)
             return nullptr;
 
-        const auto * path_constant = base_function_arguments[1]->as<ConstantNode>();
+        const auto * path_constant = function_arguments[1]->as<ConstantNode>();
         if (!path_constant)
             return nullptr;
 
@@ -416,9 +413,21 @@ QueryTreeNodePtr buildSubcolumnProjectionNode(const PushdownGroup & group, const
         if (path_prefix.empty())
             return nullptr;
 
-        subcolumn_path = path_prefix + "." + subcolumn_path;
-        base_node = base_function_arguments[0];
+        subcolumn_path = subcolumn_path.empty() ? path_prefix : path_prefix + "." + subcolumn_path;
+        node = function_arguments[0];
     }
+
+    return node;
+}
+
+QueryTreeNodePtr buildSubcolumnProjectionNode(const PushdownGroup & group, const QueryTreeNodePtr & inner_node, const ContextPtr & context)
+{
+    /// The projection expression can itself be a subcolumn read left as a `getSubcolumn` function,
+    /// e.g. when the subquery exports `json.a AS x` over a deeper subquery.
+    String subcolumn_path = group.subcolumn_path;
+    QueryTreeNodePtr base_node = unwrapSubcolumnFunctions(inner_node, subcolumn_path);
+    if (!base_node)
+        return nullptr;
 
     auto * inner_column = base_node->as<ColumnNode>();
     if (!inner_column)
@@ -671,8 +680,44 @@ void commitGroup(PushdownGroup & group)
 }
 
 /// Identity of the underlying column of a trivial projection expression: the source
-/// table expression and the column name in it.
+/// table expression and the column name in it. The name includes the subcolumn path when the
+/// projection expression is a derived subcolumn read (`SELECT tup.a AS x`), so that such an
+/// export is related to the exports of the columns it is a part of.
 using CanonicalColumn = std::pair<const IQueryTreeNode *, String>;
+
+/// Whether the column `ancestor_name` contains the column `name`: the same column, or a column
+/// the other one is a subcolumn of. Reading `tup` reads everything that reading `tup.a` reads.
+bool isSameOrAncestorColumn(const String & ancestor_name, const String & name)
+{
+    return name == ancestor_name
+        || (name.size() > ancestor_name.size() && name.starts_with(ancestor_name) && name[ancestor_name.size()] == '.');
+}
+
+/// The underlying column an exported projection expression trivially reads, or nullopt when the
+/// expression is not a column read (or is a non-trivial ALIAS).
+std::optional<CanonicalColumn> resolveCanonicalColumn(const QueryTreeNodePtr & projection_node)
+{
+    String subcolumn_path;
+    auto base_node = unwrapSubcolumnFunctions(projection_node, subcolumn_path);
+    if (!base_node)
+        return {};
+
+    auto * column = base_node->as<ColumnNode>();
+    if (column && column->hasExpression())
+        column = resolveTrivialAliasChain(column);
+    if (!column)
+        return {};
+
+    auto column_source = column->getColumnSourceOrNull();
+    if (!column_source)
+        return {};
+
+    auto column_name = column->getColumnName();
+    if (!subcolumn_path.empty())
+        column_name += "." + subcolumn_path;
+
+    return CanonicalColumn{column_source.get(), std::move(column_name)};
+}
 
 /// The leaf queries of a query-or-union target, in branch order: the leftmost leaf comes
 /// first, and its projection column names are the exported names of the target
@@ -693,9 +738,10 @@ void collectLeafQueries(const IQueryTreeNode * source, std::vector<const QueryNo
 /// Map each exported column name of the target to the underlying column the corresponding
 /// projection expression of the leaf trivially resolves to. The same physical column can be
 /// exported under several names: `SELECT tup AS x, tup FROM t`, or a trivial ALIAS storage
-/// column next to its base column. Names whose projection expression is not a column (or is
-/// a non-trivial ALIAS) are not mapped. The exported names correspond to the leaf's
-/// projection slots positionally (for a union, every branch exports under the same names).
+/// column next to its base column. A derived subcolumn export (`SELECT tup.a AS x`) is mapped to
+/// the underlying column together with its subcolumn path. Names whose projection expression is
+/// not a column read (or is a non-trivial ALIAS) are not mapped. The exported names correspond to
+/// the leaf's projection slots positionally (for a union, every branch exports under the same names).
 std::unordered_map<String, CanonicalColumn> collectCanonicalExports(const QueryNode & subquery, const Names & exported_names)
 {
     std::unordered_map<String, CanonicalColumn> result;
@@ -704,15 +750,8 @@ std::unordered_map<String, CanonicalColumn> collectCanonicalExports(const QueryN
 
     for (size_t i = 0; i < projection_nodes.size() && i < exported_names.size(); ++i)
     {
-        auto * column = projection_nodes[i]->as<ColumnNode>();
-        if (column && column->hasExpression())
-            column = resolveTrivialAliasChain(column);
-        if (!column)
-            continue;
-
-        auto column_source = column->getColumnSourceOrNull();
-        if (column_source)
-            result.emplace(exported_names[i], CanonicalColumn{column_source.get(), column->getColumnName()});
+        if (auto canonical = resolveCanonicalColumn(projection_nodes[i]))
+            result.emplace(exported_names[i], std::move(*canonical));
     }
 
     return result;
@@ -883,6 +922,11 @@ void processQuery(
         /// physical column can be exported under several names, so the counts of every name
         /// resolving to the same underlying column as the group's column are combined: while any
         /// of them stays alive, the whole column is read from the table anyway.
+        /// An export that is a derived subcolumn read (`SELECT tup.a AS x`) is contained in the
+        /// exports of the columns it is a part of, so a live export of such a parent column
+        /// (`SELECT tup.a AS x, tup FROM t` with `tup` referenced) keeps everything the pushed
+        /// subcolumn reads alive as well and blocks the pushdown too. Exports of deeper
+        /// subcolumns of the group's column do not: they read only a part of it.
         /// For a union target two names are combined when they resolve to the same underlying
         /// column in ANY leaf branch: the pushdown is applied to all branches or to none, so a
         /// single branch keeping the whole column alive through an alias-equivalent name is
@@ -892,7 +936,7 @@ void processQuery(
             exports_it->second = collectCanonicalExportsPerLeaf(group.source.get());
         const auto & canonical_exports_per_leaf = exports_it->second;
 
-        auto is_same_underlying_column = [&](const String & column_name)
+        auto contains_underlying_column = [&](const String & column_name)
         {
             if (column_name == group.column_name)
                 return true;
@@ -902,7 +946,9 @@ void processQuery(
                 if (group_it == canonical_exports.end())
                     continue;
                 auto other_it = canonical_exports.find(column_name);
-                if (other_it != canonical_exports.end() && other_it->second == group_it->second)
+                if (other_it == canonical_exports.end() || other_it->second.first != group_it->second.first)
+                    continue;
+                if (isSameOrAncestorColumn(other_it->second.second, group_it->second.second))
                     return true;
             }
             return false;
@@ -911,7 +957,7 @@ void processQuery(
         size_t references = 0;
         for (const auto & [column_name, count] : state.column_references[group.source.get()])
         {
-            if (is_same_underlying_column(column_name))
+            if (contains_underlying_column(column_name))
                 references += count;
         }
 
@@ -921,7 +967,7 @@ void processQuery(
         size_t replaced_references = 0;
         for (const auto & other_group : state.groups)
         {
-            if (other_group.applicable && other_group.source == group.source && is_same_underlying_column(other_group.column_name))
+            if (other_group.applicable && other_group.source == group.source && contains_underlying_column(other_group.column_name))
                 replaced_references += other_group.occurrences;
         }
 
