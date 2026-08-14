@@ -599,6 +599,10 @@ void MergeTreeReaderWide::prefetchForColumn(
         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
             return;
 
+        /// Skip substreams that don't need to be prefetched.
+        if (!ISerialization::isPrefetchNeededForSubstream(substream_path, substream_path.size(), settings.prefetch_json_shared_data_substreams))
+            return;
+
         if (!canIssuePrefetch())
             return;
 

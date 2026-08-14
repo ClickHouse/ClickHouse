@@ -9,6 +9,7 @@
 #include <Backups/BackupIO_AzureBlobStorage.h>
 #include <Backups/BackupImpl.h>
 #include <Backups/BackupInfo.h>
+#include <Backups/BackupSourceAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
@@ -43,6 +44,8 @@ namespace
         AzureBlobStorage::ConnectionParams connection_params;
         String blob_path;
         String archive_name;
+        /// `blob_path` before a trailing archive filename is stripped off it.
+        String blob_path_with_archive;
     };
 
     String removeFileNameFromURL(String & url)
@@ -175,9 +178,28 @@ namespace
                 "(storage account URL, container, path, account name, account key)");
         }
 
+        location.blob_path_with_archive = location.blob_path;
         if (hasRegisteredArchiveFileExtension(location.blob_path))
             location.archive_name = removeFileNameFromURL(location.blob_path);
         return location;
+    }
+
+    std::optional<BackupFactory::SourceAccessTarget>
+    getAzureSourceAccess(const BackupInfo & backup_info, ContextPtr context, IBackup::OpenMode open_mode)
+    {
+        BackupFactory::SourceAccessTarget target{
+            AccessTypeObjects::Source::AZURE, "", backupSourceAccessFlagsForReaderUnlock(open_mode)};
+
+        /// A collection can be re-pointed after this returns, so an empty URI keeps it whole-source.
+        /// Resolving it is still required: that is where `NAMED_COLLECTION` is enforced.
+        if (!backup_info.id_arg.empty())
+        {
+            backup_info.getNamedCollection(context);
+            return target;
+        }
+
+        target.uri = resolveAzureBackupLocation(backup_info, context).blob_path_with_archive;
+        return target;
     }
 
     Strings getAzureDestinationIdentity(const BackupInfo & backup_info, ContextPtr context)
@@ -320,7 +342,18 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("AzureBlobStorage", creator_fn, destination_identity_fn);
+    auto source_access_fn = []([[maybe_unused]] const BackupInfo & backup_info,
+                               [[maybe_unused]] ContextPtr context,
+                               [[maybe_unused]] IBackup::OpenMode open_mode) -> std::optional<BackupFactory::SourceAccessTarget>
+    {
+#if USE_AZURE_BLOB_STORAGE
+        return getAzureSourceAccess(backup_info, context, open_mode);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "AzureBlobStorage support is disabled");
+#endif
+    };
+
+    factory.registerBackupEngine("AzureBlobStorage", creator_fn, destination_identity_fn, source_access_fn);
 }
 
 }
