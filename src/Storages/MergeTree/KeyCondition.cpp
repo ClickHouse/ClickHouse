@@ -2512,8 +2512,13 @@ KeyCondition::SetIndexAnalysisResult KeyCondition::analyzePredicateExpressionFor
 {
     SetIndexAnalysisResult result;
 
-    auto get_key_tuple_position_mapping = [&](const RPNBuilderTreeNode & node, size_t tuple_index)
+    auto get_key_tuple_position_mapping = [&](const RPNBuilderTreeNode & node, size_t tuple_index, bool whole_tuple = false)
     {
+        auto & indexes_mapping = whole_tuple ? result.whole_tuple_indexes_mapping : result.indexes_mapping;
+        auto & data_types = whole_tuple ? result.whole_tuple_data_types : result.data_types;
+        auto & set_transforming_dags = whole_tuple ? result.whole_tuple_set_transforming_dags : result.set_transforming_dags;
+        auto & is_relaxed = whole_tuple ? result.whole_tuple_is_relaxed : result.is_relaxed;
+
         MergeTreeSetIndex::KeyTuplePositionMapping index_mapping;
         index_mapping.tuple_index = tuple_index;
         DataTypePtr data_type;
@@ -2523,9 +2528,9 @@ KeyCondition::SetIndexAnalysisResult KeyCondition::analyzePredicateExpressionFor
                 node, info, index_mapping.key_index, key_space_filling_curve_argument_pos, data_type, index_mapping.functions)
             && !key_space_filling_curve_argument_pos) /// We don't support the analysis of space-filling curves and IN set.
         {
-            result.indexes_mapping.push_back(index_mapping);
-            result.data_types.push_back(data_type);
-            result.set_transforming_dags.push_back(std::nullopt);
+            indexes_mapping.push_back(index_mapping);
+            data_types.push_back(data_type);
+            set_transforming_dags.push_back(std::nullopt);
         }
         else
         {
@@ -2533,11 +2538,11 @@ KeyCondition::SetIndexAnalysisResult KeyCondition::analyzePredicateExpressionFor
             if (canSetValuesBeWrappedByDeterministicKeyFunctions(
                     node, info, index_mapping.key_index, data_type, set_transforming_dag, is_injective))
             {
-                result.indexes_mapping.push_back(index_mapping);
-                result.data_types.push_back(data_type);
-                result.set_transforming_dags.push_back(std::move(set_transforming_dag));
+                indexes_mapping.push_back(index_mapping);
+                data_types.push_back(data_type);
+                set_transforming_dags.push_back(std::move(set_transforming_dag));
                 if (!is_injective)
-                    result.is_relaxed = true;
+                    is_relaxed = true;
             }
         }
     };
@@ -2550,6 +2555,9 @@ KeyCondition::SetIndexAnalysisResult KeyCondition::analyzePredicateExpressionFor
         if (arg_tuple.getFunctionName() == "tuple" && arg_tuple.getArgumentsSize() > 1)
         {
             result.args_count = arg_tuple.getArgumentsSize();
+            /// Keep the packed tuple mapping in addition to the per-component mappings. The
+            /// former can use a key such as `tuple(a, b)`, while the latter can use `a` and `b`.
+            get_key_tuple_position_mapping(arg, 0, true);
             for (size_t i = 0; i < result.args_count; ++i)
                 get_key_tuple_position_mapping(arg_tuple.getArgumentAt(i), i);
         }
@@ -2850,6 +2858,17 @@ void KeyCondition::extractSetAtomsForKeyArgument(
         out.emplace_back(std::move(*atom));
     }
 
+    if (auto atom = try_build_atom(
+            std::move(analysis.whole_tuple_indexes_mapping),
+            analysis.whole_tuple_set_transforming_dags,
+            analysis.whole_tuple_data_types,
+            1))
+    {
+        if (analysis.whole_tuple_is_relaxed)
+            atom->relaxed = true;
+        out.emplace_back(std::move(*atom));
+    }
+
     /// This records the key columns that are already covered by the direct atom.
     /// The wrapped-set candidates below only fill in the columns that have no atom yet,
     /// because the direct atom is more precise.
@@ -2932,6 +2951,7 @@ void KeyCondition::tryPrepareSetAtomsForIn(
     /// `extractSetAtomsForKeyArgument` cannot produce anything either, return early to
     /// avoid building the set unnecessarily.
     if (analysis.indexes_mapping.empty()
+        && analysis.whole_tuple_indexes_mapping.empty()
         && exprNamesForWrappedSetAtoms(left_arg, info.key_subexpr_names, analysis.args_count, allow_constant_transformation).empty())
         return;
 
@@ -2986,6 +3006,7 @@ void KeyCondition::tryPrepareSetAtomsForHas(
     /// `extractSetAtomsForKeyArgument` cannot produce anything either, return early. This mirrors
     /// the guard of `tryPrepareSetAtomsForIn`.
     if (analysis.indexes_mapping.empty()
+        && analysis.whole_tuple_indexes_mapping.empty()
         && exprNamesForWrappedSetAtoms(key_arg, info.key_subexpr_names, analysis.args_count, allow_constant_transformation).empty())
         return;
 

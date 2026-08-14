@@ -701,12 +701,19 @@ private:
         std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
         std::vector<std::optional<DeterministicKeyTransformDag>> set_transforming_dags;
         DataTypes data_types;
+        /// A direct mapping of a tuple expression onto a Tuple-typed key column. This is kept
+        /// separately from the component mappings because it needs the prepared set packed as
+        /// one Tuple column.
+        std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> whole_tuple_indexes_mapping;
+        std::vector<std::optional<DeterministicKeyTransformDag>> whole_tuple_set_transforming_dags;
+        DataTypes whole_tuple_data_types;
         /// The number of tuple components of the predicate expression (1 for a scalar).
         size_t args_count = 1;
         /// Some component mapping goes through a non-injective deterministic DAG; the set
         /// check as a whole then only describes a superset of the matching values. This is
         /// distinct from the per-element `RPNElement::relaxed`.
         bool is_relaxed = false;
+        bool whole_tuple_is_relaxed = false;
     };
 
     /// This function maps the predicate expression whose values are tested for set
