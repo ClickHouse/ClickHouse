@@ -35,3 +35,5 @@ Carol	engineering
 -- policy on a position-relative virtual (_part_offset): read is refused
 -- same position-relative virtual wrapped in a SQL UDF: read is refused
 -- policy on a column shadowed by a projection expression: read is refused
+-- aggregate projection under a row policy: read is refused
+-- policy on the _block_number virtual: read is refused

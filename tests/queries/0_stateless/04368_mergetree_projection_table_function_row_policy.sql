@@ -257,3 +257,41 @@ SELECT a FROM mergeTreeProjection(currentDatabase(), 'shadow_rls_proj', 'p') ORD
 
 DROP ROW POLICY rp_shadow_rls_proj ON shadow_rls_proj;
 DROP TABLE shadow_rls_proj;
+
+-- An aggregate projection stores states built from many parent rows, so a per-row policy cannot be
+-- enforced after aggregation - refused, even when the policy only touches the GROUP BY key.
+DROP TABLE IF EXISTS agg_rls_proj;
+DROP ROW POLICY IF EXISTS rp_agg_rls_proj ON agg_rls_proj;
+
+CREATE TABLE agg_rls_proj (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key;
+INSERT INTO agg_rls_proj VALUES (1, 10), (1, 20), (2, 30);
+
+ALTER TABLE agg_rls_proj ADD PROJECTION p (SELECT key, sum(value) GROUP BY key);
+ALTER TABLE agg_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_agg_rls_proj ON agg_rls_proj FOR SELECT USING key = 1 TO ALL;
+
+SELECT '-- aggregate projection under a row policy: read is refused';
+SELECT key FROM mergeTreeProjection(currentDatabase(), 'agg_rls_proj', 'p'); -- { serverError ACCESS_DENIED }
+
+DROP ROW POLICY rp_agg_rls_proj ON agg_rls_proj;
+DROP TABLE agg_rls_proj;
+
+-- The _block_number virtual is not preserved by the projection (synthesized from the parent part), so
+-- a policy on it cannot be enforced - refused.
+DROP TABLE IF EXISTS blocknum_rls_proj;
+DROP ROW POLICY IF EXISTS rp_blocknum_rls_proj ON blocknum_rls_proj;
+
+CREATE TABLE blocknum_rls_proj (id UInt64, val UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO blocknum_rls_proj VALUES (1, 10), (2, 20), (3, 30);
+
+ALTER TABLE blocknum_rls_proj ADD PROJECTION p (SELECT id, val ORDER BY val);
+ALTER TABLE blocknum_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_blocknum_rls_proj ON blocknum_rls_proj FOR SELECT USING _block_number = 1 TO ALL;
+
+SELECT '-- policy on the _block_number virtual: read is refused';
+SELECT id FROM mergeTreeProjection(currentDatabase(), 'blocknum_rls_proj', 'p') ORDER BY id; -- { serverError ACCESS_DENIED }
+
+DROP ROW POLICY rp_blocknum_rls_proj ON blocknum_rls_proj;
+DROP TABLE blocknum_rls_proj;

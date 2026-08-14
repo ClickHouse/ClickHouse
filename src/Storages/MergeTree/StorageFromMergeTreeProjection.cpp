@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 
 #include <algorithm>
@@ -53,6 +54,14 @@ void StorageFromMergeTreeProjection::read(
     Names read_column_names = column_names;
     if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
     {
+        /// an aggregate projection stores states built from many parent rows, so a per-row policy
+        /// cannot be enforced after aggregation - refuse rather than expose hidden rows in the state
+        if (projection->type != ProjectionDescription::Type::Normal)
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "Cannot read from projection `{}` of table {} under a row policy: it is not a normal "
+                "projection, so the policy cannot be enforced before aggregation",
+                projection->name, parent_storage_id.getNameForLogs());
+
         /// the policy is on the parent table; enforce it here or the projection leaks hidden rows
         if (!query_info.planner_context || !query_info.table_expression)
             throw Exception(ErrorCodes::ACCESS_DENIED,
@@ -82,7 +91,7 @@ void StorageFromMergeTreeProjection::read(
 
         /// read the policy's columns even if the query didn't ask for them; refuse position-relative
         /// virtuals - the projection can reorder rows, so its value for them isn't the parent's
-        static const NameSet not_row_preserving{"_part_offset", "_part_index", "_part_granule_offset", "_block_offset"};
+        static const NameSet not_row_preserving{"_part_offset", "_part_index", "_part_granule_offset", "_block_offset", "_block_number"};
         for (const auto & name : filter_info.actions.getRequiredColumnsNames())
         {
             if (not_row_preserving.contains(name))
