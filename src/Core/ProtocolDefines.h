@@ -84,7 +84,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// and merge-sorts its input streams instead of an unordered `resize(1)` when set. Both steps check the
 /// version in their serialize and deserialize, since an older peer would misparse the stream, not merely
 /// reject an unknown step name as with version 4.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 6;
+/// Version 7 registers a `Rollup` step, so a plan with `GROUP BY ... WITH ROLLUP` can be shipped
+/// under `make_distributed_plan`.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 7;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -97,6 +99,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP
 /// plan setting name. Gates writing it in `AggregatingStep::serializeSettings` /
 /// `MergingAggregatedStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRING_KEYS_SETTING = 5;
+/// First query-plan serialization version that registers a "Rollup" step. Used to gate serializing a
+/// `RollupStep` for `make_distributed_plan`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROLLUP_STEP = 7;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;

@@ -10,7 +10,6 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
-#include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -88,8 +87,8 @@ String dumpQueryPlanShort(const QueryPlan & query_plan);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
 
 /// Returns true if the plan contains a step the distributed pipeline cannot handle yet: WITH TOTALS
-/// (TotalsHaving) needs a separate totals stream that the exchange protocol does not carry, and
-/// ROLLUP/CUBE feed subtotals from a step the exchanges do not support. Such plans stay single-node.
+/// (TotalsHaving) and extremes need a separate stream that the exchange protocol does not carry, and
+/// CUBE feeds subtotals from a step the exchanges do not support. Such plans stay single-node.
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root)
 {
     std::vector<const QueryPlan::Node *> stack = {&root};
@@ -101,7 +100,6 @@ bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root)
         /// These steps produce non-Main pipe streams (totals/extremes) or rely on a single-node
         /// aggregation shape; exchanges only carry the Main stream, so keep such plans local.
         if (typeid_cast<const TotalsHavingStep *>(step)
-            || typeid_cast<const RollupStep *>(step)
             || typeid_cast<const CubeStep *>(step)
             || typeid_cast<const ExtremesStep *>(step))
             return true;
