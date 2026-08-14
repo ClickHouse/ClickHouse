@@ -128,6 +128,19 @@ private:
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
 
+    struct WithAliasesScope
+    {
+        explicit WithAliasesScope(std::unordered_set<String> & with_aliases_)
+            : with_aliases(with_aliases_), saved(with_aliases_)
+        {
+        }
+
+        ~WithAliasesScope() { with_aliases = std::move(saved); }
+
+        std::unordered_set<String> & with_aliases;
+        std::unordered_set<String> saved;
+    };
+
     void visit(ASTSelectWithUnionQuery & select, ASTPtr &) const
     {
         for (auto & child : select.list_of_selects->children)
@@ -141,17 +154,31 @@ private:
 
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
-        if (select.recursive_with)
-            for (const auto & child : select.with()->children)
+        /// An alias is visible only inside the subtree of the `SELECT` that declares it.
+        WithAliasesScope with_aliases_scope(with_aliases);
+
+        const ASTPtr with = select.with();
+        if (with)
+        {
+            /// A recursive alias is also visible inside its own definition, a plain one is not:
+            /// there the name still denotes a table.
+            for (auto & child : with->children)
             {
+                if (!select.recursive_with)
+                    visit(child);
                 if (typeid_cast<ASTWithElement *>(child.get()))
                     with_aliases.insert(child->as<ASTWithElement>()->name);
             }
+        }
 
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
 
-        visitChildren(select);
+        for (auto & child : select.children)
+        {
+            if (select.recursive_with || child != with)
+                visit(child);
+        }
     }
 
     void visit(ASTSelectIntersectExceptQuery & select, ASTPtr &) const
