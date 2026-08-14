@@ -66,6 +66,13 @@ TYPE_LINKS = {
 # Tables to skip in documentation generation (internal/helper tables).
 SKIP_TABLES = {"transposed_metric_log"}
 
+# Stable descriptions for aliases with server-dependent expressions.
+# The `system.trace_log.build_id` expression intentionally embeds the binary's
+# build ID so `SystemLog` rotates the table when the binary changes.
+ALIAS_DESCRIPTIONS = {
+    ("trace_log", "build_id"): "Alias for the build ID of the running ClickHouse server binary.",
+}
+
 
 def unescape_tsv(value):
     """Unescape TSV escape sequences (\\n, \\t, \\', \\\\).
@@ -216,8 +223,12 @@ def generate_columns_markdown(columns, aliases=None):
         lines.append("")
         for alias in aliases:
             name = alias["name"]
-            target = alias.get("default_expression", "")
-            lines.append(f"- `{name}` — Alias for `{target}`.")
+            description = ALIAS_DESCRIPTIONS.get((alias.get("table", ""), name))
+            if description:
+                lines.append(f"- `{name}` — {description}")
+            else:
+                target = alias.get("default_expression", "")
+                lines.append(f"- `{name}` — Alias for `{target}`.")
 
     return "\n".join(lines) + "\n" if lines else ""
 

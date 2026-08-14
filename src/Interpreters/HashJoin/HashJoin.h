@@ -241,6 +241,8 @@ public:
     /// Used for reading from StorageJoin and applying joinGet function. The single-LowCardinality-key
     /// maps store key values in maps physically identical to their non-LowCardinality counterparts, so
     /// they are read back the same way (the output key column is the parent LowCardinality type).
+    /// The keysN maps hold the key columns packed into one fixed-width blob, so each key column is
+    /// recovered from its own byte range. `hashed` is absent: its map key is a hash of the values.
     #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
         M(key8)                                \
         M(key16)                               \
@@ -248,6 +250,10 @@ public:
         M(key64)                               \
         M(key_string)                          \
         M(key_fixed_string)                    \
+        M(keys32)                              \
+        M(keys64)                              \
+        M(keys128)                             \
+        M(keys256)                             \
         M(low_cardinality_key_string)          \
         M(low_cardinality_key_fixed_string)
 
