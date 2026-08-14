@@ -10,6 +10,11 @@ namespace DB
 
 void QueryExecutionCounters::addExecutedJoin(const IJoin & join)
 {
+    addExecutedJoin(join, join.getAlgorithm());
+}
+
+void QueryExecutionCounters::addExecutedJoin(const IJoin & join, std::string_view algorithm)
+{
     auto counters = getForCurrentQuery();
     if (!counters)
         return;
@@ -32,7 +37,7 @@ void QueryExecutionCounters::addExecutedJoin(const IJoin & join)
         toString(kind),
         toString(strictness));
 
-    counters->used_join_algorithms.emplace(join.getAlgorithm());
+    counters->used_join_algorithms.emplace(algorithm);
 }
 
 UInt64 QueryExecutionCounters::getNumberOfJoins() const

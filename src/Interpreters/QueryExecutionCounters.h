@@ -24,6 +24,11 @@ struct QueryExecutionCounters
     /// Records one physical join, taking its kind, strictness and algorithm from the join itself.
     static void addExecutedJoin(const IJoin & join);
 
+    /// For a join whose algorithm the `IJoin` alone cannot name, because it is decided while
+    /// the pipeline is assembled, e.g. `full_sorting_merge` and `parallel_full_sorting_merge` build the same
+    /// `FullSortingMergeJoin`.
+    static void addExecutedJoin(const IJoin & join, std::string_view algorithm);
+
     /// Records an algorithm a join switched to while the query was already running, so that both the
     /// original one and this one are reported.
     static void addUsedJoinAlgorithm(JoinAlgorithm algorithm);

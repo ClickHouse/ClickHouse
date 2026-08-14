@@ -143,6 +143,26 @@ WHERE current_database = currentDatabase()
   AND log_comment LIKE '04891\_join\_count\_fsm%'
 ORDER BY log_comment;
 
+SELECT 'parallel full sorting merge';
+-- `parallel_full_sorting_merge` builds the same `FullSortingMergeJoin` as `full_sorting_merge`, and the
+-- parallel variant only materializes when the join is really sharded, which needs more than one shard
+-- (`max_threads`). The reported algorithm follows the sharding, not the setting.
+SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_pfsm_sharded', join_algorithm = 'parallel_full_sorting_merge', max_threads = 4;
+-- An ASOF join is never sharded by the hash of the key list: the trailing key is the inequality key, so
+-- rows with equal equality keys could land in different shards and the closest match could be missed. It
+-- runs as a single merge join and reports `full_sorting_merge`, even though the parallel variant was asked
+-- for.
+SELECT count() FROM ta ASOF LEFT JOIN tb USING (a, t) FORMAT Null SETTINGS log_comment = '04891_join_count_pfsm_serial', join_algorithm = 'parallel_full_sorting_merge', max_threads = 4;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND event_date >= yesterday()
+  AND log_comment LIKE '04891\_join\_count\_pfsm%'
+ORDER BY log_comment;
+
 SELECT 'grace hash spilling';
 -- With many buckets it writes the buckets it is not currently joining to disk.
 SELECT count() FROM (SELECT number AS a FROM numbers(10000)) g1 JOIN (SELECT number AS a FROM numbers(10000)) g2 ON g1.a = g2.a

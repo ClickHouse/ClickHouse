@@ -21,6 +21,9 @@ paste join
 1	['PASTE']	['PASTE']	['UNSPECIFIED']	[]
 full sorting merge
 1	['FULL_SORTING_MERGE']	['INNER']	['ALL']	[]
+parallel full sorting merge
+1	['FULL_SORTING_MERGE']	['LEFT']	['ASOF']	[]
+1	['PARALLEL_FULL_SORTING_MERGE']	['INNER']	['ALL']	[]
 grace hash spilling
 1	['GRACE_HASH']	['INNER']	['ALL']	['join']
 partial merge spilling
