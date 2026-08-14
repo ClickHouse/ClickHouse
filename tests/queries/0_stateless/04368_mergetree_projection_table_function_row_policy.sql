@@ -1,8 +1,7 @@
 -- Tags: no-parallel
 -- ^ the UDF case creates a global SQL UDF (CREATE FUNCTION), which cannot run concurrently.
--- Row policies live on the parent table; mergeTreeProjection used to read projection parts without
--- applying them (clickhouse-private#53773). The read now resolves the policy against the projection's
--- own columns with the analyzer and refuses when it cannot be enforced there.
+-- mergeTreeProjection used to ignore the parent table's row policy (clickhouse-private#53773). It now
+-- resolves the policy against the projection with the analyzer and refuses when it can't be enforced.
 
 SET enable_analyzer = 1;
 
@@ -74,8 +73,7 @@ SELECT id FROM mergeTreeProjection(currentDatabase(), 'pid_rls_proj', 'p') ORDER
 DROP ROW POLICY rp_pid_rls_proj ON pid_rls_proj;
 DROP TABLE pid_rls_proj;
 
--- A DEFAULT column stored in the projection is filtered on its stored value, not the default expression
--- (an explicitly inserted c = 999 stays hidden by `c < 100`).
+-- DEFAULT column stored in the projection: filtered on the stored value, not `b + 1` (c = 999 stays hidden).
 DROP TABLE IF EXISTS default_rls_proj;
 DROP ROW POLICY IF EXISTS rp_default_rls_proj ON default_rls_proj;
 
@@ -131,8 +129,7 @@ SELECT count() FROM (SELECT id FROM mergeTreeProjection(currentDatabase(), 'limi
 DROP ROW POLICY rp_limit_rls_proj ON limit_rls_proj;
 DROP TABLE limit_rls_proj;
 
--- ORDER BY the projection sort key + LIMIT (read-in-order): the in-order limit is a soft output limit,
--- so the read must skip the hidden leading rows and return the first visible one (expect 51, not empty).
+-- read-in-order + LIMIT: the in-order limit is soft, so hidden leading rows are skipped (expect 51, not empty).
 DROP TABLE IF EXISTS order_limit_rls_proj;
 DROP ROW POLICY IF EXISTS rp_order_limit_rls_proj ON order_limit_rls_proj;
 
@@ -151,8 +148,7 @@ SETTINGS optimize_read_in_order = 1;
 DROP ROW POLICY rp_order_limit_rls_proj ON order_limit_rls_proj;
 DROP TABLE order_limit_rls_proj;
 
--- The row policy and an additional_table_filters entry must both apply, even when the filtered column is
--- not selected (buildFilterInfo keeps the table-expression columns, so nothing is dropped mid-pipeline).
+-- row policy and additional_table_filters must both apply, even when the filtered column is not selected.
 DROP TABLE IF EXISTS addfilter_rls_proj;
 DROP ROW POLICY IF EXISTS rp_addfilter_rls_proj ON addfilter_rls_proj;
 
@@ -173,8 +169,7 @@ DROP TABLE addfilter_rls_proj;
 
 -- The remaining cases cannot be enforced against the projection, so the read is refused.
 
--- ALIAS column: the projection stores the dependency `b`, not the alias `c`, and the analyzer resolves
--- the policy against the projection, where `c` is unknown.
+-- ALIAS column: the projection stores `b`, not the alias `c`, so `c` is unknown when resolved there.
 DROP TABLE IF EXISTS alias_rls_proj;
 DROP ROW POLICY IF EXISTS rp_alias_rls_proj ON alias_rls_proj;
 
@@ -192,8 +187,7 @@ SELECT a FROM mergeTreeProjection(currentDatabase(), 'alias_rls_proj', 'p') ORDE
 DROP ROW POLICY rp_alias_rls_proj ON alias_rls_proj;
 DROP TABLE alias_rls_proj;
 
--- DEFAULT column with only its dependency stored: the stored value can differ from `b + 1`
--- (an explicit c = 5), so it cannot be reconstructed from `b` - refused.
+-- DEFAULT column, only its dependency stored: the stored value can differ from `b + 1`, so can't rebuild it.
 DROP TABLE IF EXISTS default_dep_rls_proj;
 DROP ROW POLICY IF EXISTS rp_default_dep_rls_proj ON default_dep_rls_proj;
 
@@ -212,8 +206,7 @@ SELECT a FROM mergeTreeProjection(currentDatabase(), 'default_dep_rls_proj', 'p'
 DROP ROW POLICY rp_default_dep_rls_proj ON default_dep_rls_proj;
 DROP TABLE default_dep_rls_proj;
 
--- MATERIALIZED column with only its dependency stored: the stored value can diverge from the current
--- expression (e.g. after ALTER MODIFY, which does not re-materialize old parts) - refused.
+-- MATERIALIZED column, only its dependency stored: stored value can diverge (e.g. after ALTER MODIFY).
 DROP TABLE IF EXISTS materialized_dep_rls_proj;
 DROP ROW POLICY IF EXISTS rp_materialized_dep_rls_proj ON materialized_dep_rls_proj;
 
@@ -231,8 +224,7 @@ SELECT x FROM mergeTreeProjection(currentDatabase(), 'materialized_dep_rls_proj'
 DROP ROW POLICY rp_materialized_dep_rls_proj ON materialized_dep_rls_proj;
 DROP TABLE materialized_dep_rls_proj;
 
--- A position-relative virtual (`_part_offset`): the projection can reorder rows, so its value is not the
--- parent's - refused, both directly and when hidden inside a SQL UDF.
+-- `_part_offset`: the projection reorders rows, so its value isn't the parent's - refused, direct and via UDF.
 DROP TABLE IF EXISTS virt_rls_proj;
 DROP ROW POLICY IF EXISTS rp_virt_rls_proj ON virt_rls_proj;
 DROP FUNCTION IF EXISTS rp_visible_04368;
@@ -259,8 +251,7 @@ DROP ROW POLICY rp_virt_rls_proj ON virt_rls_proj;
 DROP FUNCTION rp_visible_04368;
 DROP TABLE virt_rls_proj;
 
--- A projection expression bound to a parent column name is not exposed under that name, so the policy
--- cannot resolve it - refused (never filters on the transformed value).
+-- a projection expression bound to a parent column name isn't exposed under that name, so it can't resolve.
 DROP TABLE IF EXISTS shadow_rls_proj;
 DROP ROW POLICY IF EXISTS rp_shadow_rls_proj ON shadow_rls_proj;
 
@@ -278,8 +269,7 @@ SELECT a FROM mergeTreeProjection(currentDatabase(), 'shadow_rls_proj', 'p') ORD
 DROP ROW POLICY rp_shadow_rls_proj ON shadow_rls_proj;
 DROP TABLE shadow_rls_proj;
 
--- An aggregate projection stores states built from many parent rows, so a per-row policy cannot be
--- enforced after aggregation - refused, even when the policy only touches the GROUP BY key.
+-- aggregate projection: a per-row policy can't be enforced after aggregation, even on the GROUP BY key.
 DROP TABLE IF EXISTS agg_rls_proj;
 DROP ROW POLICY IF EXISTS rp_agg_rls_proj ON agg_rls_proj;
 
@@ -297,8 +287,7 @@ SELECT key FROM mergeTreeProjection(currentDatabase(), 'agg_rls_proj', 'p'); -- 
 DROP ROW POLICY rp_agg_rls_proj ON agg_rls_proj;
 DROP TABLE agg_rls_proj;
 
--- The _block_number virtual is not preserved by the projection (synthesized from the parent part), so
--- a policy on it cannot be enforced - refused.
+-- `_block_number` isn't preserved by the projection (synthesized from the parent part), so it can't be enforced.
 DROP TABLE IF EXISTS blocknum_rls_proj;
 DROP ROW POLICY IF EXISTS rp_blocknum_rls_proj ON blocknum_rls_proj;
 
@@ -316,8 +305,7 @@ SELECT id FROM mergeTreeProjection(currentDatabase(), 'blocknum_rls_proj', 'p') 
 DROP ROW POLICY rp_blocknum_rls_proj ON blocknum_rls_proj;
 DROP TABLE blocknum_rls_proj;
 
--- _parent_part_offset is a projection-only name absent on the parent, so a parent policy binding to it
--- would diverge from the parent (where the read errors) - refused.
+-- `_parent_part_offset` is a projection-only name absent on the parent, so a policy on it can't be enforced.
 DROP TABLE IF EXISTS pparent_rls_proj;
 DROP ROW POLICY IF EXISTS rp_pparent_rls_proj ON pparent_rls_proj;
 
@@ -335,8 +323,7 @@ SELECT id FROM mergeTreeProjection(currentDatabase(), 'pparent_rls_proj', 'p') O
 DROP ROW POLICY rp_pparent_rls_proj ON pparent_rls_proj;
 DROP TABLE pparent_rls_proj;
 
--- A row policy on the table function itself (_table_function.*) must not be dropped by the parent policy;
--- the two cannot be combined here, so the read is refused rather than losing the table-function restriction.
+-- a policy on the table function itself (_table_function.*) must not be dropped; can't combine, so refuse.
 DROP TABLE IF EXISTS tf_rls_proj;
 DROP ROW POLICY IF EXISTS rp_tf_rls_proj ON _table_function.*;
 DROP ROW POLICY IF EXISTS rp_tf_parent_rls_proj ON tf_rls_proj;

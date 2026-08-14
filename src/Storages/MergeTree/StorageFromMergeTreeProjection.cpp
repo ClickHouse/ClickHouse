@@ -54,8 +54,7 @@ void StorageFromMergeTreeProjection::read(
     Names read_column_names = column_names;
     if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
     {
-        /// an aggregate projection stores states built from many parent rows, so a per-row policy
-        /// cannot be enforced after aggregation - refuse rather than expose hidden rows in the state
+        /// aggregate projections fold many parent rows into one state, so a per-row policy can't be applied
         if (projection->type != ProjectionDescription::Type::Normal)
             throw Exception(ErrorCodes::ACCESS_DENIED,
                 "Cannot read from projection `{}` of table {} under a row policy: it is not a normal "
@@ -89,10 +88,8 @@ void StorageFromMergeTreeProjection::read(
                 projection->name, parent_storage_id.getNameForLogs());
         }
 
-        /// read the policy's columns even if the query didn't ask for them; refuse virtuals the projection
-        /// does not preserve (position-relative ones - it can reorder rows) or exposes under a
-        /// projection-only name absent on the parent (`_parent_part_offset`), since a parent policy binding
-        /// to those does not carry parent-row semantics
+        /// pull in the policy's columns; reject virtuals the projection reorders (position-relative) or
+        /// only exposes under a projection name absent on the parent (`_parent_part_offset`)
         static const NameSet not_row_preserving{
             "_part_offset", "_part_index", "_part_granule_offset", "_block_offset", "_block_number", "_parent_part_offset"};
         for (const auto & name : filter_info.actions.getRequiredColumnsNames())
@@ -106,9 +103,7 @@ void StorageFromMergeTreeProjection::read(
                 read_column_names.push_back(name);
         }
 
-        /// the planner may have already installed a filter for a policy on the table function itself
-        /// (`_table_function.*`); overwriting it would drop that restriction, so refuse rather than
-        /// silently apply only the parent policy
+        /// don't clobber a filter the planner already set for a policy on the table function (`_table_function.*`)
         if (query_info.row_level_filter)
             throw Exception(ErrorCodes::ACCESS_DENIED,
                 "Cannot read from projection `{}` of table {}: a row policy already applies to the table "
