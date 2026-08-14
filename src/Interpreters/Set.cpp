@@ -576,6 +576,30 @@ void NO_INLINE Set::executeImpl(
 }
 
 
+namespace
+{
+    /// Collects {data pointer, value size} of fixed-width contiguous key columns, flattening tuples.
+    /// Returns false if some key column has no such raw representation.
+    bool collectFixedSizeKeySlices(const IColumn & column, std::vector<std::pair<const char *, size_t>> & slices)
+    {
+        if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
+        {
+            for (size_t i = 0; i < tuple->tupleSize(); ++i)
+            {
+                if (!collectFixedSizeKeySlices(tuple->getColumn(i), slices))
+                    return false;
+            }
+            return true;
+        }
+        if (column.valuesHaveFixedSize() && column.isFixedAndContiguous())
+        {
+            slices.emplace_back(column.getRawData().data(), column.sizeOfValueIfFixed());
+            return true;
+        }
+        return false;
+    }
+}
+
 template <typename Method, bool has_null_map>
 void NO_INLINE Set::executeImplCase(
     Method & method,
@@ -588,7 +612,32 @@ void NO_INLINE Set::executeImplCase(
     Arena pool;
     typename Method::State state(key_columns, key_sizes, nullptr);
 
-    /// NOTE Optimization is not used for consecutive identical strings.
+    /// Clustered key columns (e.g. a primary key prefix) arrive in runs of equal consecutive
+    /// rows: reuse the previous row's result then. Comparing raw fixed-width values is much
+    /// cheaper than hashing the key, and for unclustered data it adds only a few loads per row.
+    std::vector<std::pair<const char *, size_t>> key_slices;
+    bool can_compare_with_previous = !has_null_map;
+    if (can_compare_with_previous)
+    {
+        for (const auto * column : key_columns)
+        {
+            if (!collectFixedSizeKeySlices(*column, key_slices))
+            {
+                can_compare_with_previous = false;
+                break;
+            }
+        }
+    }
+
+    auto equals_previous_row = [&](size_t row)
+    {
+        for (const auto & [data_ptr, value_size] : key_slices)
+        {
+            if (memcmp(data_ptr + row * value_size, data_ptr + (row - 1) * value_size, value_size) != 0)
+                return false;
+        }
+        return true;
+    };
 
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
@@ -596,6 +645,10 @@ void NO_INLINE Set::executeImplCase(
         if (has_null_map && (*null_map)[i])
         {
             vec_res[i] = negative;
+        }
+        else if (can_compare_with_previous && i > 0 && equals_previous_row(i))
+        {
+            vec_res[i] = vec_res[i - 1];
         }
         else
         {
