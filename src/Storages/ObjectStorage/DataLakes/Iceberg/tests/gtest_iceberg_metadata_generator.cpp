@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <Common/tests/gtest_global_context.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -176,7 +177,7 @@ TEST(IcebergMetadataGenerator, ModifyColumnNoopSameType)
     auto metadata = makeMinimalMetadata(0, 1);
     MetadataGenerator gen(metadata);
 
-    bool changed = gen.generateModifyColumnMetadata("x", std::make_shared<DataTypeInt32>());
+    bool changed = gen.generateModifyColumnMetadata("x", std::make_shared<DataTypeInt32>(), getContext().context);
     EXPECT_FALSE(changed);
 }
 
@@ -186,7 +187,7 @@ TEST(IcebergMetadataGenerator, ModifyColumnRejectsIndistinguishableType)
     auto metadata = makeMinimalMetadata(0, 1);
     MetadataGenerator gen(metadata);
 
-    EXPECT_THROW(gen.generateModifyColumnMetadata("x", std::make_shared<DataTypeUInt32>()), DB::Exception);
+    EXPECT_THROW(gen.generateModifyColumnMetadata("x", std::make_shared<DataTypeUInt32>(), getContext().context), DB::Exception);
 }
 
 

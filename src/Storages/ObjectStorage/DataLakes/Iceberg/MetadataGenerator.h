@@ -4,6 +4,7 @@
 #include "config.h"
 
 #include <DataTypes/IDataType.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Poco/JSON/Object.h>
@@ -17,7 +18,7 @@ namespace DB
 class MetadataGenerator
 {
 public:
-    explicit MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_, bool allow_geo_parser_ = false);
+    explicit MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_);
 
     struct NextMetadataResult
     {
@@ -45,7 +46,9 @@ public:
     void generateAddColumnMetadata(const String & column_name, DataTypePtr type);
     void generateDropColumnMetadata(const String & column_name);
     /// Returns false when the column already has the requested type (no metadata change).
-    bool generateModifyColumnMetadata(const String & column_name, DataTypePtr type);
+    /// `context` supplies the settings used to map the stored Iceberg type back to a ClickHouse
+    /// type (the timestamptz timezone and whether geo types are allowed).
+    bool generateModifyColumnMetadata(const String & column_name, DataTypePtr type, ContextPtr context);
     void generateRenameColumnMetadata(const String & column_name, const String & new_column_name);
 
     /// A commit attempt can land in the catalog even when the client observes a failure
@@ -58,7 +61,6 @@ public:
 
 private:
     Poco::JSON::Object::Ptr metadata_object;
-    bool allow_geo_parser;
 
     pcg64_fast gen;
     std::uniform_int_distribution<Int64> dis;

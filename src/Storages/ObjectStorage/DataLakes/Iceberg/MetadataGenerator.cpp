@@ -1,6 +1,8 @@
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 
 #include <climits>
@@ -21,6 +23,11 @@
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+namespace DB::Setting
+{
+extern const SettingsBool allow_experimental_geo_types_in_iceberg;
 }
 
 
@@ -187,9 +194,8 @@ Int32 getNextSchemaId(Poco::JSON::Object::Ptr metadata_object)
 
 }
 
-MetadataGenerator::MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_, bool allow_geo_parser_)
+MetadataGenerator::MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_)
     : metadata_object(metadata_object_)
-    , allow_geo_parser(allow_geo_parser_)
     , gen(randomSeed())
     , dis(1, std::numeric_limits<Int64>::max())
 {
@@ -562,7 +568,7 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     metadata_object->getArray(Iceberg::f_schemas)->add(current_schema);
 }
 
-bool MetadataGenerator::generateModifyColumnMetadata(const String & column_name, DataTypePtr type)
+bool MetadataGenerator::generateModifyColumnMetadata(const String & column_name, DataTypePtr type, ContextPtr context)
 {
     auto current_schema = getCurrentSchema();
 
@@ -587,7 +593,9 @@ bool MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
                 if (existing_iceberg_type.isString())
                 {
                     auto reconstructed_ch_type = Iceberg::IcebergSchemaProcessor::getSimpleType(
-                        existing_iceberg_type.extract<String>(), allow_geo_parser);
+                        existing_iceberg_type.extract<String>(),
+                        context,
+                        context->getSettingsRef()[Setting::allow_experimental_geo_types_in_iceberg]);
                     if (!current_field->getValue<bool>(Iceberg::f_required) && reconstructed_ch_type->canBeInsideNullable())
                         reconstructed_ch_type = makeNullable(reconstructed_ch_type);
 
