@@ -9,6 +9,9 @@
 -- while both hold, so an arm that stops covering the null place fails instead of passing.
 -- Each oracle counts NULL as a mismatch, because sum() skips NULL rows and a bare s != k
 -- therefore stays 0 when a surviving row comes back NULL instead of its aggregate.
+-- Merges stay stopped so the three parts below reach the SELECT separately: one projection
+-- part per part is what carries enough keys past the frozen hash table for a null place to
+-- appear, and over a single merged part every count below is 3000 instead.
 
 DROP TABLE IF EXISTS t_orfill;
 
@@ -16,6 +19,8 @@ CREATE TABLE t_orfill (k UInt64, k2 UInt64, v UInt64,
     PROJECTION p (SELECT k, sumOrNull(v), sumOrDefault(v), sumTupleOrNull(tuple(v)), sumOrNullTuple(tuple(v)) GROUP BY k),
     PROJECTION p2 (SELECT k, k2, sumOrNull(v) GROUP BY k, k2))
 ENGINE = MergeTree ORDER BY tuple();
+
+SYSTEM STOP MERGES t_orfill;
 
 INSERT INTO t_orfill SELECT number, number % 97, number FROM numbers(1000);
 INSERT INTO t_orfill SELECT number + 1000, number % 97, number + 1000 FROM numbers(1000);
