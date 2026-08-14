@@ -35,15 +35,15 @@ SELECT dateDiff('week', toDateTime64('1850-03-11 00:00:00', 0, 'UTC'), toDateTim
 SELECT '-- numeric toDateTime64 saturates per-scale instead of throwing DECIMAL_OVERFLOW (ticks are stored in Int64)';
 -- The whole-seconds range shrinks with the scale: scale 8 tops out near year 4892 and scale 9 near 2262-04-11.
 -- A value past the tick range must clamp (under the non-throwing overflow modes) rather than fail in DecimalUtils.
-SELECT toDateTime64(300000000000, 9, 'UTC') = toDateTime64(9223372036, 9, 'UTC'),
-       toDateTime64(300000000000, 8, 'UTC') = toDateTime64(92233720368, 8, 'UTC'),
-       toDateTime64(-300000000000, 9, 'UTC') = toDateTime64(-9223372036, 9, 'UTC')
+SELECT reinterpretAsInt64(toDateTime64(300000000000, 9, 'UTC')) = 9223372036854775807,
+       reinterpretAsInt64(toDateTime64(300000000000, 8, 'UTC')) = 9223372036854775807,
+       reinterpretAsInt64(toDateTime64(-300000000000, 9, 'UTC')) = -9223372036854775808
 SETTINGS date_time_overflow_behavior = 'saturate';
 
 SELECT '-- the float numeric path saturates per-scale too (it previously surfaced DECIMAL_OVERFLOW)';
-SELECT toDateTime64(300000000000.0, 9, 'UTC') = toDateTime64(9223372036, 9, 'UTC'),
-       toDateTime64(300000000000.0, 8, 'UTC') = toDateTime64(92233720368, 8, 'UTC'),
-       toDateTime64(-300000000000.0, 9, 'UTC') = toDateTime64(-9223372036, 9, 'UTC')
+SELECT reinterpretAsInt64(toDateTime64(300000000000.0, 9, 'UTC')) = 9223372036854775807,
+       reinterpretAsInt64(toDateTime64(300000000000.0, 8, 'UTC')) = 9223372036854775807,
+       reinterpretAsInt64(toDateTime64(-300000000000.0, 9, 'UTC')) = -9223372036854775808
 SETTINGS date_time_overflow_behavior = 'saturate';
 
 SELECT '-- scale 0 numeric conversion reaches the full [0000, 9999] range';
