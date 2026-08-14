@@ -25,6 +25,9 @@ Test aggregate and arrayJoin branches are not erased
 0
 1
 1
+Test EXISTS type-only analysis returns a literal
+0
+1
 Check the read_rows of the above queries to ensure that the short circuit is working
 1
 0

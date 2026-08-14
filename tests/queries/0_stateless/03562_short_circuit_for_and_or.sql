@@ -45,6 +45,10 @@ SELECT 'Test aggregate and arrayJoin branches are not erased';
 SELECT 0 AND sum(number) FROM numbers(10);
 SELECT 1 OR arrayJoin([1, 2]);
 
+SELECT 'Test EXISTS type-only analysis returns a literal';
+SELECT 0 AND exists(SELECT [1]);
+SELECT 1 OR exists(SELECT tuple(1));
+
 SELECT 'Check the read_rows of the above queries to ensure that the short circuit is working';
 SYSTEM FLUSH LOGS query_log;
 

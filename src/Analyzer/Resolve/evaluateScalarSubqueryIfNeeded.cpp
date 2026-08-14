@@ -377,8 +377,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     /// Always convert to literals when there is no query context, or when resolving a
     /// parameterized view argument (its value must fold to a literal to be matched against
     /// the view's query parameters, see `parameterized_view_arguments_in_resolve_process`).
-    if (!context->getSettingsRef()[Setting::enable_scalar_subquery_optimization] || !useless_literal_types.contains(scalar_type_name)
-        || !context->hasQueryContext() || !nearest_query_scope || parameterized_view_arguments_in_resolve_process)
+    /// The EXISTS caller also requires a ConstantNode so it can derive the boolean result from
+    /// whether the scalar subquery returned NULL; this must hold in type-only analysis as well.
+    if (execute_for_exists || !context->getSettingsRef()[Setting::enable_scalar_subquery_optimization]
+        || !useless_literal_types.contains(scalar_type_name) || !context->hasQueryContext()
+        || !nearest_query_scope || parameterized_view_arguments_in_resolve_process)
     {
         ConstantValue constant_value{ ConstantValue::wrapToColumnConst(scalar_column_with_type.column), scalar_type };
         auto constant_node = std::make_shared<ConstantNode>(constant_value, node);
