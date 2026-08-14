@@ -375,5 +375,33 @@ TEST(DataTypeObjectSharedRegexp, GetTypeOfNestedObjectsProjectsTypedAndSkipPaths
     EXPECT_TRUE(asJSON(for_prefix_without_rules).getSharedDataPathRules().empty());
 }
 
+TEST(DataTypeObjectSharedRegexp, GetTypeOfNestedObjectsWithNoRulesDoesNotSetAPrefix)
+{
+    /// JSON(`arr.forced` UInt64) with no SHARED REGEXP at all: the constructor rejects a non-empty
+    /// shared_regexp_path_prefix without at least one rule, so projecting a typed/SKIP-only prefix
+    /// must leave the derived type's prefix empty -- matching buildSubObjectTypeAndSerialization's
+    /// own `shared_data_path_rules.empty() ? String{} : ...` guard for the same construction -- not
+    /// unconditionally append path_prefix_from_root, which would make the constructor throw.
+    const auto root = std::make_shared<DataTypeObject>(
+        DataTypeObject::SchemaFormat::JSON,
+        std::unordered_map<String, DataTypePtr>{{"arr.forced", std::make_shared<DataTypeString>()}},
+        std::unordered_set<String>{},
+        std::vector<String>{},
+        DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS,
+        DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES,
+        std::vector<JSONPathRegexpRule>{});
+    const auto & root_object = asJSON(root);
+    ASSERT_TRUE(root_object.getSharedDataPathRules().empty());
+
+    DataTypePtr for_arr;
+    EXPECT_NO_THROW(for_arr = root_object.getTypeOfNestedObjects("arr."));
+    const auto & for_arr_object = asJSON(for_arr);
+    EXPECT_TRUE(for_arr_object.getSharedDataPathPrefix().empty());
+
+    const auto & nested_typed_paths = for_arr_object.getTypedPaths();
+    ASSERT_EQ(nested_typed_paths.size(), 1);
+    EXPECT_TRUE(nested_typed_paths.contains("forced"));
+}
+
 }
 }

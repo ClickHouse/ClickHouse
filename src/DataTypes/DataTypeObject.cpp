@@ -994,7 +994,10 @@ DataTypePtr DataTypeObject::getTypeOfNestedObjects(const String & path_prefix_fr
         max_dynamic_paths / NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR,
         max_dynamic_types / NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR,
         shared_data_path_rules,
-        shared_data_path_prefix + path_prefix_from_root);
+        /// A prefix is only meaningful -- and only accepted by the constructor -- alongside rules;
+        /// typed/SKIP-only projection with no SHARED REGEXP rules must get an empty one, matching
+        /// buildSubObjectTypeAndSerialization's own guard for the explicit ^-subcolumn accessor.
+        shared_data_path_rules.empty() ? String{} : shared_data_path_prefix + path_prefix_from_root);
 }
 
 DataTypePtr DataTypeObject::getDynamicType() const
