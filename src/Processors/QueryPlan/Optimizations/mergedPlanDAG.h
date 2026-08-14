@@ -65,10 +65,12 @@ struct MergedPlanDAG
     /// reproduce that.
     std::optional<size_t> getDenseSource(const ActionsDAG::Node * node) const;
 
-    /// The source on whose own rows this node has to be recomputed, if it cannot be recomputed after the
-    /// join instead. That is the case only where the join can stuff rows, see `Source::may_be_stuffed`;
-    /// with one source and no join above it, nothing is stuffed and anything may be recomputed late.
-    std::optional<size_t> getSourceToRecomputeOn(const ActionsDAG::Node * node) const;
+    /// The source whose match decides whether this node has a value of its own at all. Set for a node the
+    /// plan computed below a join that can leave that source unmatched: there the join replaced this
+    /// node's value by a default or a NULL, so recomputing it is only right where the source matched.
+    /// Unset where nothing can be stuffed, and for a node computed above the join, which ran on the
+    /// stuffed rows as well and is reproduced by recomputing it on all of them.
+    std::optional<size_t> getMaskingSource(const ActionsDAG::Node * node) const;
 };
 
 /// Returns nullopt when the subtree cannot be represented: it computes an `arrayJoin`, which changes the

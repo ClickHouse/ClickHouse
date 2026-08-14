@@ -21,10 +21,17 @@ struct LazyFrontier
     /// Computed above the `LIMIT`, from the frontier below, on all rows the plan produced there - stuffed
     /// ones included, which is what such a node saw before.
     NodeSet recomputed_after_merge;
-    /// Computed on the rows the lazy read of one source returns, because a join above that source can
-    /// stuff rows and the plan computed this node below it. Recomputing it after the merge would run it
-    /// on the stuffed rows, where `x + 1` gives 1 rather than the default 0. Indexed by source.
-    std::vector<NodeSet> recomputed_per_source;
+    /// Computed above the `LIMIT` as well, but only on the rows where one source matched, the value the
+    /// join stuffed standing everywhere else. Needed for a node the plan computed below a join that can
+    /// leave that source unmatched: there the join replaced the node's value by a default or a NULL, so
+    /// running it on those rows would turn `x + 1` over a stuffed 0 into 1 rather than the default 0.
+    /// Indexed by source.
+    ///
+    /// The mask is free: any `Nullable` column from that side of the join - the source's row index, or a
+    /// `toNullable` marker where the source is not read lazily - is NULL at exactly the unmatched rows,
+    /// whatever `join_use_nulls` says. The rows must be masked out rather than computed and discarded,
+    /// because `intDiv(1, x)` over a stuffed `x = 0` throws whether or not its answer is used.
+    std::vector<NodeSet> recomputed_under_mask;
 
     /// Nodes that have to cross the `LIMIT` as columns: they are needed above it but cannot be
     /// recomputed there, because a non-deterministic or stateful function would not give the same answer
