@@ -188,6 +188,7 @@ public:
     }
     bool supportsPartitionBy() const override { return getTargetTable()->supportsPartitionBy(); }
     bool supportsTTL() const override { return getTargetTable()->supportsTTL(); }
+    bool supportsStatistics() const override { return getTargetTable()->supportsStatistics(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr local_context,
