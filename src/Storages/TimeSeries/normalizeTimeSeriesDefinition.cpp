@@ -1,5 +1,8 @@
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
@@ -1111,5 +1114,18 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
     }
 }
 
+
+
+std::optional<StandardTimeSeriesIDColumns> tryGetStandardTimeSeriesIDColumns(const IColumn & column)
+{
+    const auto * tuple = typeid_cast<const ColumnTuple *>(&column);
+    if (!tuple || tuple->tupleSize() != 2)
+        return {};
+    const auto * first_column = typeid_cast<const ColumnUInt64 *>(&tuple->getColumn(0));
+    const auto * second_column = typeid_cast<const ColumnVector<UUID> *>(&tuple->getColumn(1));
+    if (!first_column || !second_column)
+        return {};
+    return StandardTimeSeriesIDColumns{first_column->getData().data(), second_column->getData().data()};
+}
 
 }

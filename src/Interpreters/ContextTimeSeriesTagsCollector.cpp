@@ -17,6 +17,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 
 #include <algorithm>
 #include <optional>
@@ -83,28 +84,6 @@ namespace
             res.data = &nullable_column->getNestedColumn();
         }
         return res;
-    }
-
-    /// Raw data of an identifier column of the standard id type of a TimeSeries samples table:
-    /// Tuple(UInt64, UUID) — the type the default id generator produces and the leading component
-    /// of the samples table sorting key (id, timestamp), see normalizeTimeSeriesDefinition.
-    struct StandardIDColumns
-    {
-        const UInt64 * first = nullptr;
-        const UUID * second = nullptr;
-    };
-
-    /// Returns the raw columns if `column` stores identifiers of the standard id type.
-    std::optional<StandardIDColumns> tryGetStandardIDColumns(const IColumn & column)
-    {
-        const auto * tuple = typeid_cast<const ColumnTuple *>(&column);
-        if (!tuple || tuple->tupleSize() != 2)
-            return {};
-        const auto * first_column = typeid_cast<const ColumnUInt64 *>(&tuple->getColumn(0));
-        const auto * second_column = typeid_cast<const ColumnVector<UUID> *>(&tuple->getColumn(1));
-        if (!first_column || !second_column)
-            return {};
-        return StandardIDColumns{first_column->getData().data(), second_column->getData().data()};
     }
 
     /// Serializes identifiers from a column to be used as keys in the mapping.
@@ -1040,7 +1019,7 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByID(con
 
     /// For the standard id key the consecutive-row comparison below is two integer comparisons
     /// instead of a virtual compareAt chain per row.
-    const std::optional<StandardIDColumns> standard_id = tryGetStandardIDColumns(*unwrapped.data);
+    const std::optional<StandardTimeSeriesIDColumns> standard_id = tryGetStandardTimeSeriesIDColumns(*unwrapped.data);
     const bool is_standard_key = standard_id.has_value();
 
     SharedLockGuard lock{mutex};
