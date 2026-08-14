@@ -129,6 +129,9 @@ struct AlterCommand
     std::vector<String> statistics_columns;
     std::vector<String> statistics_types;
 
+    /// For ADD COLUMN and MODIFY COLUMN: the column-level `STATISTICS(...)` clause of the column declaration
+    ASTPtr column_statistics_decl = nullptr;
+
     /// For MODIFY TTL
     ASTPtr ttl = nullptr;
 

@@ -87,6 +87,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/hasNullable.h>
 
+#include <Databases/DatabaseBackup.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseOnDisk.h>
@@ -3492,6 +3493,13 @@ BlockIO InterpreterCreateQuery::execute()
                     UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
                 materializeUUIDTypeVersion(create, getContext()->getSettingsRef()[Setting::uuid_type_version]);
             }
+
+            /// Authorize here: this is the last point that still runs as the real user, and worker legs
+            /// run with no user by default.
+            if (is_create_database && create.storage && create.storage->engine
+                && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
+                DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
+
             return executeQueryOnCluster(create);
         }
     }
