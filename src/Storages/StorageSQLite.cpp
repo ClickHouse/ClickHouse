@@ -352,7 +352,7 @@ Pipe StorageSQLite::read(
             /// pushed-down query look up a different identifier or match a different literal than the value
             /// actually stored, so a filter such as `WHERE s = 'a\nb'` would silently miss its rows.
             IdentifierQuotingStyle::DoubleQuotesStandard,
-            LiteralEscapingStyle::StandardSQL,
+            LiteralEscapingStyle::SQLite,
             "",
             remote_table_or_query.getTableName(),
             context_,
@@ -600,7 +600,8 @@ void registerStorageSQLite(StorageFactory & factory)
 
         /// The 2nd argument is either a table name, or a query passed to SQLite as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[1], args.getLocalContext(), IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::StandardSQL);
+            engine_args[1], args.getLocalContext(), IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::SQLite,
+            IdentifierQuotingRule::Always);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 1 && maybe_query)

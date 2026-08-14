@@ -10,6 +10,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/IAST.h>
+#include <Storages/transformQueryForExternalDatabase.h>
 
 namespace DB
 {
@@ -53,23 +54,30 @@ std::optional<String> tryGetExternalDatabaseQuery(
     const ASTPtr & argument,
     const ContextPtr & context,
     IdentifierQuotingStyle identifier_quoting_style,
-    LiteralEscapingStyle literal_escaping_style)
+    LiteralEscapingStyle literal_escaping_style,
+    IdentifierQuotingRule identifier_quoting_rule)
 {
     if (const auto * subquery = argument->as<ASTSubquery>())
     {
         /// The subquery is formatted back to SQL text in the dialect of the external database, so that
         /// identifiers that require quoting (e.g. mixed case or containing spaces) and string literals are
         /// emitted using the external database's quoting/escaping style rather than the ClickHouse one (which
-        /// would, for example, produce backtick-quoted identifiers that PostgreSQL rejects). `WhenNecessary`
-        /// keeps simple identifiers unquoted, exactly as a hand-written query would be.
+        /// would, for example, produce backtick-quoted identifiers that PostgreSQL rejects).
         WriteBufferFromOwnString out;
         IAST::FormatSettings settings(
             /*one_line=*/true,
-            /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+            /*identifier_quoting_rule=*/identifier_quoting_rule,
             /*identifier_quoting_style=*/identifier_quoting_style,
             /*show_secrets_=*/true,
             /*literal_escaping_style=*/literal_escaping_style);
-        subquery->children.at(0)->format(out, settings);
+        /// Clone before normalizing so the user's parsed AST is left untouched. A single-row
+        /// multi-column `IN` set (`(a, b) IN ((1, 'x'))`) would otherwise re-serialize as
+        /// `IN (1, 'x')` and change the query's meaning for the external database, and an explicit
+        /// `tuple(a, b)` call would be emitted in ClickHouse-only syntax the external database
+        /// cannot parse.
+        ASTPtr query_ast = subquery->children.at(0)->clone();
+        normalizeSubqueryForExternalDatabase(query_ast, literal_escaping_style);
+        query_ast->format(out, settings);
         return out.str();
     }
 

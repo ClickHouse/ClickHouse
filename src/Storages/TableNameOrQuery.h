@@ -60,7 +60,8 @@ std::optional<String> tryGetExternalDatabaseQuery(
     const ASTPtr & argument,
     const ContextPtr & context,
     IdentifierQuotingStyle identifier_quoting_style,
-    LiteralEscapingStyle literal_escaping_style);
+    LiteralEscapingStyle literal_escaping_style,
+    IdentifierQuotingRule identifier_quoting_rule = IdentifierQuotingRule::WhenNecessary);
 
 /** Build `SELECT <columns> FROM (<query>) AS __subquery`, projecting the requested columns from the result
   * of a user-provided query. Identifiers are quoted according to the given style of the external database.
