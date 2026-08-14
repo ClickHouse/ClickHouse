@@ -15,11 +15,13 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
@@ -358,17 +360,19 @@ enum class NodeBboxStatus
 /// predicate is guaranteed to reject -- either the node's own
 /// custom name (a constant explicitly typed e.g. `LineString`), or, if the node's type is a
 /// `Variant` (e.g. `Geometry`, which is a `Variant` over `Point`/`Ring`/`Polygon`/`LineString`/
-/// `MultiPoint`/`MultiLineString`/`MultiPolygon` with a custom name of its own), the custom name
-/// of the concrete alternative actually stored in the constant's single row: `ColumnVariant::get`
-/// (used by `tryExtractConstGeoField` above) returns only the active alternative's own flattened
-/// value, discarding which alternative it was, so that distinguishing name must be read from the
-/// type/discriminator here, before flattening, rather than guessed from the `Field`'s shape.
-/// Returns an empty name when nothing further can be said (e.g. a raw array literal, which has
-/// no custom name and is interpreted the same, shape-only way by the predicate itself).
+/// `MultiPoint`/`MultiLineString`/`MultiPolygon` with a custom name of its own) or `Dynamic`, the
+/// custom name of the concrete alternative/row type actually stored in the constant's single
+/// row: `ColumnVariant::get`/`ColumnDynamic::get` (used by `tryExtractConstGeoField` above)
+/// return only the active alternative's/row's own flattened value, discarding which
+/// alternative/type it was, so that distinguishing name must be read from the type/discriminator
+/// here, before flattening, rather than guessed from the `Field`'s shape. Returns an empty name
+/// when nothing further can be said (e.g. a raw array literal, which has no custom name and is
+/// interpreted the same, shape-only way by the predicate itself).
 inline std::string constGeoKindName(const ActionsDAG::Node & node)
 {
     const auto * variant_type = typeid_cast<const DataTypeVariant *>(node.result_type.get());
-    if (!variant_type)
+    const auto * dynamic_type = variant_type ? nullptr : typeid_cast<const DataTypeDynamic *>(node.result_type.get());
+    if (!variant_type && !dynamic_type)
     {
         const auto * custom_name = node.result_type->getCustomName();
         return custom_name ? custom_name->getName() : std::string{};
@@ -380,6 +384,20 @@ inline std::string constGeoKindName(const ActionsDAG::Node & node)
     const IColumn * data_col = node.column.get();
     if (const auto * const_col = typeid_cast<const ColumnConst *>(data_col))
         data_col = &const_col->getDataColumn();
+
+    if (dynamic_type)
+    {
+        const auto * dynamic_col = typeid_cast<const ColumnDynamic *>(data_col);
+        if (!dynamic_col || dynamic_col->size() != 1)
+            return {};
+
+        const auto row_type = dynamic_col->getTypeAt(0);
+        if (!row_type)
+            return {};
+
+        const auto * row_custom_name = row_type->getCustomName();
+        return row_custom_name ? row_custom_name->getName() : std::string{};
+    }
 
     const auto * variant_col = typeid_cast<const ColumnVariant *>(data_col);
     if (!variant_col || variant_col->size() != 1)
