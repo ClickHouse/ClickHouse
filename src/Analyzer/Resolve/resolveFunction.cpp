@@ -134,7 +134,12 @@ std::optional<bool> getEarlyShortCircuitResultForAndOr(
             argument_value = getEarlyShortCircuitResultForAndOr(argument, function_name_to_fold);
         }
 
-        if (argument_value && *argument_value == decisive_value)
+        /// Short-circuiting is prefix-based. An unresolved argument before the decisive constant
+        /// is live and must be analyzed/executed, so this optimization cannot cross it.
+        if (!argument_value)
+            return {};
+
+        if (*argument_value == decisive_value)
             return decisive_value;
     }
 
@@ -748,11 +753,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             QueryAnalyzer type_inference_analyzer(/*only_analyze_=*/ false);
             type_inference_analyzer.early_short_circuit_type_inference_in_process = true;
+            type_inference_analyzer.subquery_counter = subquery_counter;
 
             bool type_inference_succeeded = false;
+            ProjectionNames type_inference_projection_names;
             try
             {
-                type_inference_analyzer.resolveExpressionNode(
+                type_inference_projection_names = type_inference_analyzer.resolveExpressionNode(
                     node_for_type_inference,
                     type_inference_scope,
                     false /*allow_lambda_expression*/,
@@ -775,13 +782,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             {
                 auto result_type = node_for_type_inference->getResultType();
                 auto result_column = result_type->createColumnConst(1, static_cast<UInt8>(*short_circuit_result));
-                auto const_res = std::make_shared<ConstantNode>(std::move(result_column), std::move(result_type));
-                if (!function_node_ptr->getAlias().empty())
-                    const_res->setAlias(function_node_ptr->getAlias());
-
-                auto value_string = const_res->getValueStringRepresentation();
-                node = std::move(const_res);
-                return { value_string };
+                ConstantValue constant_value{ std::move(result_column), std::move(result_type) };
+                node = std::make_shared<ConstantNode>(std::move(constant_value), node, true /*is_deterministic*/);
+                subquery_counter = type_inference_analyzer.subquery_counter;
+                return type_inference_projection_names;
             }
         }
     }
