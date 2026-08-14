@@ -108,8 +108,15 @@ NUM_THREADS=4
 ORACLES=( "WHERE" "NoREC" "QUERY_PARTITIONING" "FUZZING" )
 
 TEST_RESULTS=()
+# Per-TEST_RESULTS entry: the files attached to that oracle's row in the report
+# (its own stdout/stderr), so a failing oracle's log sits next to it instead of
+# only in the job-level file list.
+TEST_RESULT_FILES=()
 ATTACHED_FILES_ARRAY=()
-OVERALL_STATUS=success
+# Praktika's Result.Status tokens are uppercase (OK / FAIL / ERROR); anything
+# else - "success"/"failure" as this script used to write - is not `is_ok()` and
+# renders as "completed but unknown" in the report.
+OVERALL_STATUS=OK
 
 for ORACLE in "${ORACLES[@]}"; do
     echo "=== Oracle: $ORACLE ==="
@@ -119,7 +126,8 @@ for ORACLE in "${ORACLES[@]}"; do
 
     if [[ $(wget -q -T 1 -O- 'http://localhost:8123/' 2>/dev/null) != 'Ok.' ]]; then
         TEST_RESULTS+=("${ORACLE},ERROR,Server is not responding")
-        OVERALL_STATUS="failure"
+        TEST_RESULT_FILES+=("")
+        OVERALL_STATUS="FAIL"
         continue
     fi
 
@@ -149,6 +157,7 @@ for ORACLE in "${ORACLES[@]}"; do
 
     if [[ $exit_code -eq 0 && -z "$assertion_error" ]]; then
         TEST_RESULTS+=("${ORACLE},OK,")
+        TEST_RESULT_FILES+=("")
     else
         info="exit=${exit_code}"
         if [[ -n "$assertion_error" ]]; then
@@ -156,7 +165,8 @@ for ORACLE in "${ORACLES[@]}"; do
             info="${info}; ${cleaned}"
         fi
         TEST_RESULTS+=("${ORACLE},FAIL,${info}")
-        OVERALL_STATUS="failure"
+        TEST_RESULT_FILES+=("$stdout_file $error_output_file")
+        OVERALL_STATUS="FAIL"
     fi
 done
 
@@ -169,7 +179,7 @@ ATTACHED_FILES_ARRAY+=("$OUTPUT_PATH/clickhouse-server.log" "$OUTPUT_PATH/clickh
 # "Check the *-cur.log" hint points here). Only on failure, and gzip-compressed,
 # to avoid uploading a large log on clean runs.
 SQLANCER_PP_LOG_DIR="/sqlancer-pp/logs"
-if [[ "$OVERALL_STATUS" != "success" && -d "$SQLANCER_PP_LOG_DIR" ]]; then
+if [[ "$OVERALL_STATUS" != "OK" && -d "$SQLANCER_PP_LOG_DIR" ]]; then
     reproducer_archive="$OUTPUT_PATH/sqlancer_pp_reproducer_logs.tar.gz"
     if tar -C "$(dirname "$SQLANCER_PP_LOG_DIR")" -czf "$reproducer_archive" "$(basename "$SQLANCER_PP_LOG_DIR")"; then
         ATTACHED_FILES_ARRAY+=("$reproducer_archive")
@@ -186,8 +196,14 @@ fi
 
     for i in "${!TEST_RESULTS[@]}"; do
         IFS=',' read -r test_name status info <<< "${TEST_RESULTS[i]}"
-        printf '    {"name": "%s", "status": "%s", "files": [], "info": "%s"}' \
-            "$test_name" "$status" "$info"
+        row_files_json=""
+        for f in ${TEST_RESULT_FILES[i]}; do
+            [ -f "$f" ] || continue
+            [ -n "$row_files_json" ] && row_files_json+=", "
+            row_files_json+="\"$f\""
+        done
+        printf '    {"name": "%s", "status": "%s", "files": [%s], "info": "%s"}' \
+            "$test_name" "$status" "$row_files_json" "$info"
         if [ "$i" -lt $((${#TEST_RESULTS[@]} - 1)) ]; then
             printf ',\n'
         else
@@ -220,3 +236,10 @@ for _ in $(seq 1 60); do
         break
     fi
 done
+
+# Praktika derives the GitHub job conclusion from this script's exit code
+# (`res = run_code == 0` in `ci/praktika/runner.py`); the result file's status
+# only drives the HTML report. Exiting 0 on a finding is what kept this job green
+# while its report said "failure", so fail loud here.
+echo "=== Summary: $OVERALL_STATUS ==="
+[ "$OVERALL_STATUS" = "OK" ]
