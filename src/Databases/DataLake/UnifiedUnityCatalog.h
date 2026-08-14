@@ -56,6 +56,12 @@ public:
         return DB::DatabaseDataLakeCatalogType::UNITY_CATALOG;
     }
 
+    /// Serves both Delta and Iceberg tables, so the format is detected per table.
+    DataLakeTableFormat getTableFormat(const TableMetadata & table_metadata) const override
+    {
+        return table_metadata.getTableFormat();
+    }
+
 private:
     const std::string base_url_str;
     const std::filesystem::path base_url;

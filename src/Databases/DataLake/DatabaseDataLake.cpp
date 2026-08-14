@@ -1389,15 +1389,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
 
     auto * storage = table_storage_define->as<ASTStorage>();
     storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
-    if (!table_metadata.isDefaultReadableTable())
-    {
-        storage->engine->name = DataLake::FAKE_TABLE_ENGINE_NAME_FOR_UNREADABLE_TABLES;
-    }
-    else if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::UNITY_CATALOG)
-    {
-        storage->engine->name = (table_metadata.getTableFormat() == DataLake::DataLakeTableFormat::ICEBERG)
-            ? "Iceberg" : "DeltaLake";
-    }
+    storage->engine->name = String(catalog->getTableEngineName(table_metadata));
 
     storage->settings = {};
 
@@ -1591,7 +1583,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                         throw_invalid_auth();
                 }
 
-                engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::GLUE:
@@ -1604,7 +1595,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_database_glue_catalog");
                 }
 
-                engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::UNITY:
@@ -1617,7 +1607,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_database_unity_catalog");
                 }
 
-                engine_func->name = "DeltaLake";
                 break;
             }
             case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
@@ -1630,7 +1619,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_experimental_database_hms_catalog");
                 }
 
-                engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::PAIMON_REST:
@@ -1643,7 +1631,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_experimental_database_paimon_rest_catalog");
                 }
 
-                engine_func->name = "Paimon";
                 break;
             }
             case DatabaseDataLakeCatalogType::S3_TABLES:
@@ -1656,7 +1643,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_database_iceberg");
                 }
 
-                engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::UNITY_CATALOG:
@@ -1669,7 +1655,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_experimental_database_unified_unity_catalog");
                 }
 
-                engine_func->name = "DeltaLake";
                 break;
             }
             case DatabaseDataLakeCatalogType::NONE:
