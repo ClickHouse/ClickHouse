@@ -75,7 +75,7 @@ function install_binary()
     local name
     for name in clickhouse ch chc chl \
         clickhouse-benchmark clickhouse-client clickhouse-compressor \
-        clickhouse-extract-from-config clickhouse-format clickhouse-keeper \
+        clickhouse-disks clickhouse-extract-from-config clickhouse-format clickhouse-keeper \
         clickhouse-keeper-client clickhouse-keeper-converter clickhouse-local \
         clickhouse-obfuscator clickhouse-server
     do
