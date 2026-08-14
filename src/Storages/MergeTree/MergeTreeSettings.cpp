@@ -2171,7 +2171,7 @@ The candidates are the table's default codec (see the `default_compression_codec
 Only integer-like types are currently adaptive.
 The smallest output wins. Compression is therefore never worse than the default, and incompressible blocks are stored raw.
 A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
-Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions) table function.
+Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/mergeTreeCodecBlockCounts) table function.
 )", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
 Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
