@@ -1063,7 +1063,7 @@ void WindowTransform::advanceFrameEndSession()
         // This can only be true once a frame has been found: prev_frame_end starts at the
         // partition start, which is not greater than any row in it.
         frame_ended = true;
-        assert(prev_frame_end == frame_end);
+        chassert(prev_frame_end == frame_end);
         return;
     }
 
@@ -1101,6 +1101,7 @@ void WindowTransform::advanceFrameEndSession()
     }
 
     frame_ended = partition_ended;
+}
 
 RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, RowNumber & scan_frontier, bool & need_more_data) const
 {
