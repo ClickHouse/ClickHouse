@@ -174,6 +174,14 @@ struct OrderByLimitRewriteVisitor : public InDepthQueryTreeVisitorWithContext<Or
 
         if (!query_node.hasLimit() || !query_node.hasOrderBy())
             return {};
+        /// `LIMIT ... WITH TIES` returns, in addition to the first N rows, every following row whose sort
+        /// key ties with the N-th one, so the number of result rows is not known before the outer `LIMIT`
+        /// step runs. The rewrite moves `LIMIT` into the cloned offset subquery and resets it on the main
+        /// query (`getLimit().reset()`) while `is_limit_with_ties` stays set, which is a query tree the
+        /// parser never produces (`WITH TIES` without `LIMIT`) and the planner does not expect. Reject it,
+        /// just like `optimizeLazyMaterialization` does.
+        if (query_node.isLimitWithTies())
+            return {};
         /// `ORDER BY ... WITH FILL` can synthesize rows that do not exist in the table before `LIMIT` is applied.
         /// The rewritten subquery can only return physical row offsets (`_part_starting_offset + _part_offset`),
         /// and the filled rows have no such offset, so the rewrite would change the result set.

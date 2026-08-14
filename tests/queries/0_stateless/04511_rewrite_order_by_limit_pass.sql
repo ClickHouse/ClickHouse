@@ -60,6 +60,16 @@ INSERT INTO t_rewrite_order_by_limit_agg_proj SELECT number, number * 10 FROM nu
 SELECT countIf(explain LIKE '%_cumulative_part_offset%')
 FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT a, b FROM t_rewrite_order_by_limit_agg_proj ORDER BY b LIMIT 2);
 
+SELECT '-- LIMIT ... WITH TIES must NOT be rewritten (the outer LIMIT is what resolves the ties)';
+SELECT countIf(explain LIKE '%_cumulative_part_offset%')
+FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT a, b FROM t_rewrite_order_by_limit ORDER BY intDiv(a, 10) LIMIT 2 WITH TIES);
+
+SELECT '-- LIMIT ... WITH TIES returns the same rows with the rewrite enabled and disabled';
+SELECT a, b FROM (SELECT a, b FROM t_rewrite_order_by_limit ORDER BY intDiv(a, 10) LIMIT 2 WITH TIES)
+ORDER BY a, b SETTINGS query_plan_rewrite_order_by_limit = 1;
+SELECT a, b FROM (SELECT a, b FROM t_rewrite_order_by_limit ORDER BY intDiv(a, 10) LIMIT 2 WITH TIES)
+ORDER BY a, b SETTINGS query_plan_rewrite_order_by_limit = 0;
+
 DROP TABLE t_rewrite_order_by_limit_proj;
 DROP TABLE t_rewrite_order_by_limit_agg_proj;
 DROP TABLE t_rewrite_order_by_limit;

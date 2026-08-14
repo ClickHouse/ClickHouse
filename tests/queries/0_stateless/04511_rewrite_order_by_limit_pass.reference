@@ -20,3 +20,26 @@
 0
 -- an aggregate projection does not block the rewrite (it cannot serve a non-aggregate read)
 1
+-- LIMIT ... WITH TIES must NOT be rewritten (the outer LIMIT is what resolves the ties)
+0
+-- LIMIT ... WITH TIES returns the same rows with the rewrite enabled and disabled
+0	0
+1	10
+2	20
+3	30
+4	40
+5	50
+6	60
+7	70
+8	80
+9	90
+0	0
+1	10
+2	20
+3	30
+4	40
+5	50
+6	60
+7	70
+8	80
+9	90
