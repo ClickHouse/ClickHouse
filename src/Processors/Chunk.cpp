@@ -178,7 +178,10 @@ void Chunk::append(const Chunk & chunk, size_t from, size_t length)
     MutableColumns mutable_columns = mutateColumns();
     for (size_t position = 0; position < mutable_columns.size(); ++position)
     {
-        auto column = chunk.getColumns()[position];
+        /// Chunks from different parts can use different on-disk serializations.
+        /// Keep the generic concatenation boundary representation-independent.
+        mutable_columns[position] = IColumn::mutate(recursiveRemoveNonNativeLowCardinality(mutable_columns[position]));
+        auto column = recursiveRemoveNonNativeLowCardinality(chunk.getColumns()[position]);
         mutable_columns[position]->insertRangeFrom(*column, from, length);
     }
     size_t rows = mutable_columns[0]->size();

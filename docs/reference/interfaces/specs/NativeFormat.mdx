@@ -221,10 +221,11 @@ The `kind_stack` byte enumerates a non-default per-column serialization:
 | `0x01` | SPARSE |
 | `0x02` | DETACHED |
 | `0x03` | REPLICATED |
+| `0x04` | LOW_CARDINALITY |
 
 The byte values differ from the compact codes: `REPLICATED` is `0x03` in this nested enum but `0x04` as a compact code, and there is no `DETACHED_OVER_SPARSE` entry — that combination appears as the two consecutive entries `SPARSE`, `DETACHED`. A decoder that keeps using the compact table for the nested bytes will mis-map `0x03`/`0x04` and desynchronize.
 
-The `count` is the full stack length **including the leading `DEFAULT` entry** that begins every stack. The compact codes already cover every one- and two-entry stack, so a `COMBINATION` always has a `count` of at least three.
+The `count` is the full stack length **including the leading `DEFAULT` entry** that begins every stack. The compact codes cover the legacy one- and two-entry stacks, but an automatic `LowCardinality` serialization uses the two-entry stack `{DEFAULT, LOW_CARDINALITY}`. It is consequently encoded as `COMBINATION` with `count = 2` and nested bytes `0x00, 0x04`.
 
 **Recursive `kind_stack` for `Tuple` columns.** The `kind_stack` payload above is the byte (or `COMBINATION` sequence) for one column's own serialization info. A `Tuple` carries a `SerializationInfoTuple`, which first writes the tuple's *own* kind-stack payload and then writes one full kind-stack payload for *each* element, in order; a decoder reads back the same recursive structure. So for `Tuple(A, B, C)` the field-4 bytes are `[tuple_kind][A_kind][B_kind][C_kind]`, and each element payload is itself recursive if that element is again a composite. The `has_custom_serialization` byte (field 3) is set whenever the tuple's own info *or any element's* info is non-default, so a `Tuple` whose only special element is sparse, replicated, or detached still triggers the kind-stack payload. A decoder that reads only the single leading enum byte for a `Tuple` will stop too early and misread the remaining element-kind bytes as column data.
 
@@ -240,6 +241,8 @@ A decoder reconstructs a dense column of `num_rows` entries by filling every non
 A sparse `Nullable(T)` column is a special case, because the default value of `Nullable(T)` is **NULL**. The sparse encoding drops the usual `Nullable` null-map stream entirely: the offset stream identifies the non-default — that is, non-NULL — positions, the values stream holds only those non-NULL values densely in `T`, and every non-explicit position reconstructs as NULL. A decoder must therefore *not* look for a null map in the values stream, and must *not* fill the gaps with a present `0`; it fills them with NULL.
 
 **Replicated wire format.** When `kind_stack = 0x04`, the column `data` is a dictionary: a list of distinct element values plus a per-row index into that list (the same lookup shape as `LowCardinality`). When the inner type is itself versioned — for example `LowCardinality(T)` — its state prefix is written **first**, ahead of the index stream: the replicated serialization delegates the prefix phase to the inner type before writing `num_rows`. Inners with an empty prefix (the leaf types and the plain composites) contribute no bytes here.
+
+**Automatic `LowCardinality` wire format.** A `String` or `FixedString` column can be stored dictionary-encoded while its declared type remains unchanged. Its `kind_stack` is the `COMBINATION` sequence described above: `0x05, 0x02, 0x00, 0x04`. Its data uses the usual `LowCardinality` dictionary and index streams; this serialization is transparent to the declared column type.
 
 ```text
 [inner type's state prefix]              empty for leaf inners; e.g. LowCardinality version (Int64 = 1)
