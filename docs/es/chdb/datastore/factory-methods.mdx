@@ -1,0 +1,562 @@
+---
+title: 'Métodos de fábrica de DataStore'
+sidebarTitle: 'Métodos de fábrica'
+slug: /chdb/datastore/factory-methods
+description: 'Crear instancias de DataStore a partir de archivos, bases de datos, almacenamiento en la nube y lagos de datos'
+keywords: ['chdb', 'datastore', 'factory', 'from_file', 'from_s3', 'uri', 'mysql', 'postgresql']
+doc_type: 'reference'
+---
+
+DataStore ofrece más de 20 métodos de fábrica para crear instancias a partir de diversas fuentes de datos, como archivos locales, bases de datos, almacenamiento en la nube y lagos de datos.
+
+<div id="uri">
+  ## Interfaz URI universal
+</div>
+
+El método `uri()` es el punto de acceso universal recomendado, ya que detecta automáticamente el tipo de origen:
+
+```python
+from chdb.datastore import DataStore
+
+# Archivos locales
+ds = DataStore.uri("data.csv")
+ds = DataStore.uri("/path/to/data.parquet")
+
+# Almacenamiento en la nube
+ds = DataStore.uri("s3://bucket/data.parquet?nosign=true")
+ds = DataStore.uri("https://example.com/data.csv")
+
+# Bases de datos
+ds = DataStore.uri("mysql://user:pass@host:3306/db/table")
+ds = DataStore.uri("postgresql://user:pass@host:5432/db/table")
+```
+
+<div id="uri-syntax">
+  ### Referencia de la sintaxis de URI
+</div>
+
+| Tipo de origen | Formato de URI                              | Ejemplo                                                |
+| -------------- | ------------------------------------------- | ------------------------------------------------------ |
+| Archivo local  | `path/to/file`                              | `data.csv`, `/abs/path/data.parquet`                   |
+| S3             | `s3://bucket/path`                          | `s3://mybucket/data.parquet?nosign=true`               |
+| GCS            | `gs://bucket/path`                          | `gs://mybucket/data.csv`                               |
+| Azure          | `az://container/path`                       | `az://mycontainer/data.parquet`                        |
+| HTTP/HTTPS     | `https://url`                               | `https://example.com/data.csv`                         |
+| MySQL          | `mysql://user:pass@host:port/db/table`      | `mysql://root:pass@localhost:3306/mydb/users`          |
+| PostgreSQL     | `postgresql://user:pass@host:port/db/table` | `postgresql://postgres:pass@localhost:5432/mydb/users` |
+| SQLite         | `sqlite:///path?table=name`                 | `sqlite:///data.db?table=users`                        |
+| ClickHouse     | `clickhouse://host:port/db/table`           | `clickhouse://localhost:9000/default/hits`             |
+
+***
+
+<div id="file-sources">
+  ## Fuentes de archivo
+</div>
+
+<div id="from-file">
+  ### `from_file`
+</div>
+
+Crea un DataStore a partir de un archivo local o remoto con detección automática del formato.
+
+```python
+DataStore.from_file(path, format=None, compression=None, **kwargs)
+```
+
+**Parámetros:**
+
+| Parámetro     | Tipo | Predeterminado | Descripción                                                   |
+| ------------- | ---- | -------------- | ------------------------------------------------------------- |
+| `path`        | str  | *obligatorio*  | Ruta del archivo (local o URL)                                |
+| `format`      | str  | `None`         | Formato del archivo (se detecta automáticamente si es `None`) |
+| `compression` | str  | `None`         | Tipo de compresión (se detecta automáticamente si es `None`)  |
+
+**Formatos compatibles:** CSV, TSV, Parquet, JSON, JSONLines, ORC, Avro, Arrow
+
+**Ejemplos:**
+
+```python
+from chdb.datastore import DataStore
+
+# Detectar formato automáticamente a partir de la extensión
+ds = DataStore.from_file("data.csv")
+ds = DataStore.from_file("data.parquet")
+ds = DataStore.from_file("data.json")
+
+# Formato explícito
+ds = DataStore.from_file("data.txt", format="CSV")
+
+# Con compresión
+ds = DataStore.from_file("data.csv.gz", compression="gzip")
+```
+
+<div id="pandas-read">
+  ### Funciones de lectura compatibles con Pandas
+</div>
+
+```python
+from chdb import datastore as pd
+
+# Archivos CSV
+ds = pd.read_csv("data.csv")
+ds = pd.read_csv("data.csv", sep=";", header=0, nrows=1000)
+
+# Archivos Parquet (recomendados para conjuntos de datos grandes)
+ds = pd.read_parquet("data.parquet")
+ds = pd.read_parquet("data.parquet", columns=['col1', 'col2'])
+
+# Archivos JSON
+ds = pd.read_json("data.json")
+ds = pd.read_json("data.jsonl", lines=True)
+
+# Archivos Excel
+ds = pd.read_excel("data.xlsx", sheet_name="Sheet1")
+```
+
+***
+
+<div id="cloud-storage">
+  ## Almacenamiento en la nube
+</div>
+
+<div id="from-s3">
+  ### `from_s3`
+</div>
+
+Crea un DataStore a partir de Amazon S3.
+
+```python
+DataStore.from_s3(url, access_key_id=None, secret_access_key=None, format=None, **kwargs)
+```
+
+**Parámetros:**
+
+| Parámetro           | Tipo | Predeterminado | Descripción                                    |
+| ------------------- | ---- | -------------- | ---------------------------------------------- |
+| `url`               | str  | *obligatorio*  | URL de S3 (s3://bucket/path)                   |
+| `access_key_id`     | str  | `None`         | ID de la clave de acceso de AWS                |
+| `secret_access_key` | str  | `None`         | Clave de acceso secreta de AWS                 |
+| `format`            | str  | `None`         | Formato de archivo (detectado automáticamente) |
+
+**Ejemplos:**
+
+```python
+from chdb.datastore import DataStore
+
+# Acceso anónimo (bucket público)
+ds = DataStore.from_s3("s3://bucket/data.parquet")
+
+# Con credenciales
+ds = DataStore.from_s3(
+    "s3://bucket/data.parquet",
+    access_key_id="AKIAIOSFODNN7EXAMPLE",
+    secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+)
+
+# Usando URI con parámetros de consulta
+ds = DataStore.uri("s3://bucket/data.parquet?nosign=true")
+ds = DataStore.uri("s3://bucket/data.parquet?access_key_id=KEY&secret_access_key=SECRET")
+```
+
+<div id="from-gcs">
+  ### `from_gcs`
+</div>
+
+Crea un DataStore desde Google Cloud Storage.
+
+```python
+DataStore.from_gcs(url, credentials_path=None, **kwargs)
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_gcs("gs://bucket/data.parquet")
+ds = DataStore.from_gcs("gs://bucket/data.parquet", credentials_path="/path/to/creds.json")
+```
+
+<div id="from-azure">
+  ### `from_azure`
+</div>
+
+Crea un DataStore a partir de Azure Blob Storage.
+
+```python
+DataStore.from_azure(url, account_name=None, account_key=None, **kwargs)
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_azure(
+    "az://container/data.parquet",
+    account_name="myaccount",
+    account_key="mykey"
+)
+```
+
+<div id="from-hdfs">
+  ### `from_hdfs`
+</div>
+
+Crea un DataStore a partir de HDFS.
+
+```python
+DataStore.from_hdfs(url, **kwargs)
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_hdfs("hdfs://namenode:8020/path/data.parquet")
+```
+
+<div id="from-url">
+  ### `from_url`
+</div>
+
+Crea un DataStore a partir de una URL HTTP/HTTPS.
+
+```python
+DataStore.from_url(url, format=None, **kwargs)
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_url("https://example.com/data.csv")
+ds = DataStore.from_url("https://raw.githubusercontent.com/user/repo/main/data.parquet")
+```
+
+***
+
+<div id="databases">
+  ## Bases de datos
+</div>
+
+<div id="from-mysql">
+  ### `from_mysql`
+</div>
+
+Crea un DataStore a partir de una base de datos MySQL.
+
+```python
+DataStore.from_mysql(host, database, table, user, password, port=3306, **kwargs)
+```
+
+**Parámetros:**
+
+| Parámetro  | Tipo | Predeterminado | Descripción                |
+| ---------- | ---- | -------------- | -------------------------- |
+| `host`     | str  | *obligatorio*  | Servidor MySQL             |
+| `database` | str  | *obligatorio*  | Nombre de la base de datos |
+| `table`    | str  | *obligatorio*  | Nombre de la tabla         |
+| `user`     | str  | *obligatorio*  | Nombre de usuario          |
+| `password` | str  | *obligatorio*  | Contraseña                 |
+| `port`     | int  | `3306`         | Número de puerto           |
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_mysql(
+    host="localhost",
+    database="mydb",
+    table="users",
+    user="root",
+    password="password"
+)
+
+# Usando URI
+ds = DataStore.uri("mysql://root:password@localhost:3306/mydb/users")
+```
+
+<div id="from-postgresql">
+  ### `from_postgresql`
+</div>
+
+Crear un DataStore a partir de una base de datos PostgreSQL.
+
+```python
+DataStore.from_postgresql(host, database, table, user, password, port=5432, **kwargs)
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_postgresql(
+    host="localhost",
+    database="mydb",
+    table="users",
+    user="postgres",
+    password="password"
+)
+
+# Usando URI
+ds = DataStore.uri("postgresql://postgres:password@localhost:5432/mydb/users")
+```
+
+<div id="from-clickhouse">
+  ### `from_clickhouse`
+</div>
+
+Crear un DataStore a partir del servidor de ClickHouse.
+
+```python
+DataStore.from_clickhouse(host, database, table, user=None, password=None, port=9000, **kwargs)
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_clickhouse(
+    host="localhost",
+    database="default",
+    table="hits",
+    user="default",
+    password=""
+)
+
+# Modo de nivel de conexión (explorar bases de datos)
+ds = DataStore.from_clickhouse(
+    host="analytics.company.com",
+    user="analyst",
+    password="secret"
+)
+ds.databases()                  # Listar bases de datos
+ds.tables("production")         # Listar tablas
+result = ds.sql("SELECT * FROM production.users LIMIT 10")
+```
+
+<div id="from-mongodb">
+  ### `from_mongodb`
+</div>
+
+Crea un DataStore a partir de MongoDB.
+
+```python
+DataStore.from_mongodb(uri, database, collection, **kwargs)
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_mongodb(
+    uri="mongodb://localhost:27017",
+    database="mydb",
+    collection="users"
+)
+```
+
+<div id="from-sqlite">
+  ### `from_sqlite`
+</div>
+
+Crea un DataStore a partir de una base de datos SQLite.
+
+```python
+DataStore.from_sqlite(database_path, table, **kwargs)
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_sqlite("data.db", table="users")
+
+# Usando URI
+ds = DataStore.uri("sqlite:///data.db?table=users")
+```
+
+***
+
+<div id="data-lakes">
+  ## Lagos de datos
+</div>
+
+<div id="from-iceberg">
+  ### `from_iceberg`
+</div>
+
+Crea un DataStore a partir de una tabla Apache Iceberg.
+
+```python
+DataStore.from_iceberg(path, **kwargs)
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_iceberg("/path/to/iceberg_table")
+ds = DataStore.uri("iceberg://catalog/namespace/table")
+```
+
+<div id="from-delta">
+  ### `from_delta`
+</div>
+
+Crea un DataStore a partir de una tabla de Delta Lake.
+
+```python
+DataStore.from_delta(path, **kwargs)
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_delta("/path/to/delta_table")
+ds = DataStore.uri("deltalake:///path/to/delta_table")
+```
+
+<div id="from-hudi">
+  ### `from_hudi`
+</div>
+
+Crea un DataStore a partir de una tabla Hudi.
+
+```python
+DataStore.from_hudi(path, **kwargs)
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_hudi("/path/to/hudi_table")
+ds = DataStore.uri("hudi:///path/to/hudi_table")
+```
+
+***
+
+<div id="in-memory">
+  ## Fuentes en memoria
+</div>
+
+<div id="from-df">
+  ### `from_df` / `from_dataframe`
+</div>
+
+Crea un DataStore a partir de un DataFrame de pandas.
+
+```python
+DataStore.from_df(df, name=None)
+DataStore.from_dataframe(df, name=None)  # alias
+```
+
+**Ejemplos:**
+
+```python
+import pandas
+from chdb.datastore import DataStore
+
+pdf = pandas.DataFrame({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})
+ds = DataStore.from_df(pdf)
+```
+
+<div id="dataframe-constructor">
+  ### Constructor de `DataFrame`
+</div>
+
+Cree un DataStore con un constructor similar al de pandas.
+
+```python
+from chdb import datastore as pd
+
+# Desde un diccionario
+ds = pd.DataFrame({
+    'name': ['Alice', 'Bob'],
+    'age': [25, 30]
+})
+
+# Desde un DataFrame de pandas
+import pandas
+pdf = pandas.DataFrame({'a': [1, 2, 3]})
+ds = pd.DataFrame(pdf)
+```
+
+***
+
+<div id="special-sources">
+  ## Fuentes especiales
+</div>
+
+<div id="from-numbers">
+  ### `from_numbers`
+</div>
+
+Crea un DataStore con números secuenciales (útil para pruebas).
+
+```python
+DataStore.from_numbers(count, **kwargs)
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_numbers(1000000)  # 1M filas con columna 'number'
+result = ds.filter(ds['number'] % 2 == 0).head(10)  # Números pares
+```
+
+<div id="from-random">
+  ### `from_random`
+</div>
+
+Crear un DataStore con datos aleatorios.
+
+```python
+DataStore.from_random(rows, columns, **kwargs)
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.from_random(rows=1000, columns=5)
+```
+
+<div id="run-sql">
+  ### `run_sql`
+</div>
+
+Crear un DataStore a partir de una consulta SQL en bruto.
+
+```python
+DataStore.run_sql(query)
+```
+
+**Ejemplos:**
+
+```python
+ds = DataStore.run_sql("""
+    SELECT number, number * 2 as doubled
+    FROM numbers(100)
+    WHERE number % 10 = 0
+""")
+```
+
+***
+
+<div id="summary">
+  ## Tabla de resumen
+</div>
+
+| Método              | Tipo de origen           | Ejemplo                                                  |
+| ------------------- | ------------------------ | -------------------------------------------------------- |
+| `uri()`             | Universal                | `DataStore.uri("s3://bucket/data.parquet")`              |
+| `from_file()`       | Archivos locales/remotos | `DataStore.from_file("data.csv")`                        |
+| `read_csv()`        | Archivos CSV             | `pd.read_csv("data.csv")`                                |
+| `read_parquet()`    | Archivos Parquet         | `pd.read_parquet("data.parquet")`                        |
+| `from_s3()`         | Amazon S3                | `DataStore.from_s3("s3://bucket/path")`                  |
+| `from_gcs()`        | Google Cloud Storage     | `DataStore.from_gcs("gs://bucket/path")`                 |
+| `from_azure()`      | Azure Blob               | `DataStore.from_azure("az://container/path")`            |
+| `from_hdfs()`       | HDFS                     | `DataStore.from_hdfs("hdfs://host/path")`                |
+| `from_url()`        | HTTP/HTTPS               | `DataStore.from_url("https://example.com/data.csv")`     |
+| `from_mysql()`      | MySQL                    | `DataStore.from_mysql(host, db, table, user, pass)`      |
+| `from_postgresql()` | PostgreSQL               | `DataStore.from_postgresql(host, db, table, user, pass)` |
+| `from_clickhouse()` | ClickHouse               | `DataStore.from_clickhouse(host, db, table)`             |
+| `from_mongodb()`    | MongoDB                  | `DataStore.from_mongodb(uri, db, collection)`            |
+| `from_sqlite()`     | SQLite                   | `DataStore.from_sqlite("data.db", table)`                |
+| `from_iceberg()`    | Apache Iceberg           | `DataStore.from_iceberg("/path/to/table")`               |
+| `from_delta()`      | Delta Lake               | `DataStore.from_delta("/path/to/table")`                 |
+| `from_hudi()`       | Apache Hudi              | `DataStore.from_hudi("/path/to/table")`                  |
+| `from_df()`         | DataFrame de pandas      | `DataStore.from_df(pandas_df)`                           |
+| `DataFrame()`       | Diccionario/DataFrame    | `pd.DataFrame({'a': [1, 2, 3]})`                         |
+| `from_numbers()`    | Números secuenciales     | `DataStore.from_numbers(1000000)`                        |
+| `from_random()`     | Datos aleatorios         | `DataStore.from_random(rows=1000, columns=5)`            |
+| `run_sql()`         | consulta SQL en bruto    | `DataStore.run_sql("SELECT * FROM ...")`                 |

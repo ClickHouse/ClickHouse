@@ -1,0 +1,60 @@
+---
+description: 'Документация по озерам данных'
+sidebarTitle: 'Озера данных'
+slug: /sql-reference/datalakes
+title: 'Озера данных'
+doc_type: 'reference'
+---
+
+В этом разделе мы рассмотрим, как ClickHouse поддерживает озера данных.
+ClickHouse поддерживает многие популярные табличные форматы и каталоги данных, включая Iceberg, Delta Lake, Hudi, AWS Glue, REST Catalog, Unity Catalog и Microsoft OneLake.
+
+<div id="open-table-formats">
+  # Открытые табличные форматы
+</div>
+
+<div id="iceberg">
+  ## Iceberg
+</div>
+
+См. [iceberg](/ru/reference/functions/table-functions/iceberg), которая поддерживает чтение из Amazon S3 и S3-совместимых сервисов, HDFS, Azure и локальных файловых систем. [icebergCluster](/ru/reference/functions/table-functions/icebergCluster) — распределённый вариант функции `iceberg`.
+
+<div id="delta-lake">
+  ## Delta Lake
+</div>
+
+См. [deltaLake](/ru/reference/functions/table-functions/deltalake), которая поддерживает чтение из Amazon S3, S3-совместимых сервисов, Azure и локальных файловых систем. [deltaLakeCluster](/ru/reference/functions/table-functions/deltalakeCluster) — распределённый вариант функции `deltaLake`.
+
+<div id="hudi">
+  ## Hudi
+</div>
+
+См. [hudi](/ru/reference/functions/table-functions/hudi): эта функция поддерживает чтение из Amazon S3 и S3-совместимых сервисов. [hudiCluster](/ru/reference/functions/table-functions/hudiCluster) — распределённый вариант функции `hudi`.
+
+<div id="data-catalogs">
+  # Каталоги данных
+</div>
+
+<div id="aws-glue">
+  ## AWS Glue
+</div>
+
+Каталог данных AWS Glue можно использовать с таблицами Iceberg. Его можно использовать как с движком таблицы `iceberg`, так и с движком базы данных [DataLakeCatalog](/ru/reference/engines/database-engines/datalake).
+
+<div id="iceberg-rest-catalog">
+  ## Iceberg REST Catalog
+</div>
+
+Iceberg REST Catalog можно использовать с таблицами Iceberg. Он поддерживается как в движке таблиц `iceberg`, так и в движке базы данных [DataLakeCatalog](/ru/reference/engines/database-engines/datalake).
+
+<div id="unity-catalog">
+  ## Unity Catalog
+</div>
+
+Unity Catalog можно использовать как с таблицами Delta Lake, так и с таблицами Iceberg. Его можно использовать с движками таблиц `iceberg` и `deltaLake` или с движком базы данных [DataLakeCatalog](/ru/reference/engines/database-engines/datalake).
+
+<div id="microsoft-onelake">
+  ## Microsoft OneLake
+</div>
+
+Microsoft OneLake можно использовать как с таблицами Delta Lake, так и с таблицами Iceberg. Его также можно использовать с движком базы данных [DataLakeCatalog](/ru/reference/engines/database-engines/datalake).

@@ -13,12 +13,28 @@ namespace DB
 Block appendGroupingSetColumn(Block header);
 Block generateOutputHeader(const Block & input_header, const Names & keys, bool use_nulls);
 
+/// Whether an aggregation over `keys` - or, when `grouping_sets_params` is not empty, over any of its grouping sets -
+/// can dispatch to the single-`String` method, i.e. whether `enable_packed_string_keys_in_aggregation` can affect it
+/// at all. See `AggregatedDataVariants::chooseMethod` and `Aggregator::Params::enable_packed_string_keys`.
+/// Returns `true` when a key type cannot be resolved from `header`, so that a caller which uses this to decide whether
+/// the choice has to be communicated to a remote peer errs on the side of communicating it.
+bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params);
+
 class AggregatingProjectionStep;
 
 /// Aggregation. See AggregatingTransform.
 class AggregatingStep : public ITransformingStep
 {
 public:
+
+    enum class AggregatingStage : size_t
+    {
+        PartialAggregation = 0,
+        FinalAggregation = 1,
+        Scatter = 2,
+        AggregatingSharded = 3,
+    };
+
     AggregatingStep(
         const SharedHeader & input_header_,
         Aggregator::Params params_,
@@ -43,6 +59,9 @@ public:
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
+    std::vector<size_t> getStepGroups() const override;
+    String getStepGroupName(size_t group) const override;
+
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
     void describeActions(FormatSettings &) const override;
@@ -59,6 +78,9 @@ public:
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
+    void setLimitHint(size_t limit) { limit_hint = limit; }
+    size_t getLimitHint() const { return limit_hint; }
+    const SortDescription & getGroupBySortDescription() const { return group_by_sort_description; }
 
     const SortDescription & getSortDescription() const override;
 
@@ -79,7 +101,7 @@ public:
         UInt64 group,
         bool group_by_use_nulls);
 
-    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
+    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override
     {
@@ -97,6 +119,9 @@ public:
     bool hasCorrelatedExpressions() const override { return false; }
 
     Aggregator::Params getAggregatorParameters() const { return params; }
+    /// Set during query-plan optimization (see setAggregationHashTableCacheKeys). A non-zero key
+    /// enables hash-table-size preallocation; StatsCollectingParams treats key == 0 as disabled.
+    void setStatsCacheKey(UInt64 stats_cache_key) { params.stats_collecting_params.setKey(stats_cache_key); }
     bool getFinal() const noexcept { return final; }
     void setFinal(bool new_value);
     size_t getMaxBlockSize() const noexcept { return max_block_size; }
@@ -139,10 +164,13 @@ private:
     bool explicit_sorting_required_for_aggregation_in_order;
     bool enable_sharding_aggregator;
 
+    size_t limit_hint = 0;
+
     Processors aggregating_in_order;
     Processors aggregating_sorted;
     Processors finalizing;
 
+    Processors scatter;
     Processors aggregating;
 };
 
@@ -159,6 +187,11 @@ public:
 
     String getName() const override { return "AggregatingProjection"; }
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
+
+    std::vector<size_t> getStepGroups() const override;
+    String getStepGroupName(size_t group) const override;
+
+    const Aggregator::Params & getParams() const { return params; }
 
 private:
     void updateOutputHeader() override;

@@ -1,0 +1,181 @@
+---
+slug: /best-practices/choosing-a-primary-key
+sidebarTitle: 'Choisir une clé primaire'
+title: 'Choisir une clé primaire'
+description: 'Page expliquant comment choisir une clé primaire dans ClickHouse'
+keywords: ['clé primaire']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+> Dans cette page, nous utilisons indifféremment le terme &quot;clé de tri&quot; pour désigner la &quot;clé primaire&quot;. À strictement parler, [ces deux notions diffèrent dans ClickHouse](/fr/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key), mais dans le cadre de ce document, elles peuvent être utilisées de façon interchangeable, la clé de tri désignant les colonnes spécifiées dans le `ORDER BY` de la table.
+
+Notez qu’une clé primaire ClickHouse fonctionne [très différemment](/fr/get-started/migrate/postgres/migration-guide/migration-guide-part3#primary-ordering-keys-in-clickhouse) de ce que recouvre ce terme dans des bases de données OLTP comme Postgres.
+
+Choisir une clé primaire efficace dans ClickHouse est essentiel pour les performances des requêtes et l’efficacité du stockage. ClickHouse organise les données en parties, chacune contenant son propre index primaire clairsemé. Cet index accélère considérablement les requêtes en réduisant le volume de données à analyser. De plus, comme la clé primaire détermine l’ordre physique des données sur le disque, elle influe directement sur l’efficacité de la compression. Des données ordonnées de manière optimale se compressent mieux, ce qui améliore encore les performances en réduisant les E/S.
+
+1. Lors du choix d’une clé de tri, privilégiez les colonnes fréquemment utilisées dans les filtres de requête (c.-à-d. la clause `WHERE`), en particulier celles qui permettent d’exclure un grand nombre de lignes.
+2. Les colonnes fortement corrélées avec d’autres données de la table sont également utiles, car un stockage contigu améliore les taux de compression et l’efficacité mémoire lors des opérations `GROUP BY` et `ORDER BY`.
+
+<br />
+
+Quelques règles simples peuvent aider à choisir une clé de tri. Les critères ci-dessous peuvent parfois entrer en conflit ; examinez-les donc dans cet ordre. **Ce processus peut vous amener à identifier plusieurs clés, mais 4 à 5 suffisent généralement** :
+
+<Info>
+  **Important**
+
+  Les clés de tri doivent être définies lors de la création de la table et ne peuvent pas être ajoutées par la suite. Il est toutefois possible d’ajouter un tri supplémentaire à une table, avant ou après l’insertion des données, à l’aide d’une fonctionnalité appelée projections. Gardez à l’esprit que cela duplique les données. Plus de détails [ici](/fr/reference/statements/alter/projection).
+</Info>
+
+<div id="example">
+  ## Exemple
+</div>
+
+Considérez la table `posts_unordered` suivante. Elle contient une ligne par post Stack Overflow.
+
+Cette table n&#39;a pas de clé primaire, comme l&#39;indique `ORDER BY tuple()`.
+
+```sql
+CREATE TABLE posts_unordered
+(
+  `Id` Int32,
+  `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 
+  'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime,
+  `Score` Int32,
+  `ViewCount` UInt32,
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime,
+  `LastActivityDate` DateTime,
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16,
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense`LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime,
+  `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+Supposons qu’un utilisateur souhaite calculer le nombre de questions soumises après 2024, ce qui représente son schéma d’accès le plus courant.
+
+```sql highlight={8}
+SELECT count()
+FROM stackoverflow.posts_unordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+
+┌─count()─┐
+│  192611 │
+└─────────┘
+1 row in set. Elapsed: 0.055 sec. Processed 59.82 million rows, 361.34 MB (1.09 billion rows/s., 6.61 GB/s.)
+```
+
+Notez le nombre de lignes et d’octets lus par cette requête. Sans clé primaire, les requêtes doivent parcourir l’ensemble des données.
+
+L’utilisation de `EXPLAIN indexes=1` confirme un parcours complet de la table dû à l’absence d’indexation.
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts_unordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+```
+
+```response
+┌─explain───────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                 │
+│   Aggregating                                             │
+│     Expression (Before GROUP BY)                          │
+│       Expression                                          │
+│         ReadFromMergeTree (stackoverflow.posts_unordered) │
+└───────────────────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.003 sec.
+```
+
+Supposons qu’une table `posts_ordered`, contenant les mêmes données, soit définie avec un `ORDER BY` de la forme `(PostTypeId, toDate(CreationDate))`, c’est-à-dire :
+
+```sql
+CREATE TABLE posts_ordered
+(
+  `Id` Int32,
+  `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 
+  'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+...
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+`PostTypeId` a une cardinalité de 8 et constitue donc le choix logique pour la première entrée de notre clé de tri. Comme un filtrage à la granularité de la date sera probablement suffisant (tout en restant bénéfique pour les filtres DateTime), nous utilisons `toDate(CreationDate)` comme 2e composant de notre clé. Cela produira également un index plus petit, car une date peut être représentée sur 16 bits, ce qui accélère le filtrage.
+
+L’animation suivante montre comment un index primaire clairsemé optimisé est créé pour la table Posts de Stack Overflow. Au lieu d’indexer les lignes individuellement, l’index cible des blocs de lignes :
+
+<Image img="/images/bestpractices/create_primary_key.webp" size="lg" alt="Clé primaire" />
+
+Si la même requête est répétée sur une table avec cette clé de tri :
+
+```sql highlight={8}
+SELECT count()
+FROM stackoverflow.posts_ordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+
+┌─count()─┐
+│  192611 │
+└─────────┘
+1 row in set. Elapsed: 0.013 sec. Processed 196.53 thousand rows, 1.77 MB (14.64 million rows/s., 131.78 MB/s.)
+```
+
+Cette requête exploite désormais un index clairsemé, ce qui réduit considérablement la quantité de données lues et accélère le temps d&#39;exécution par 4 — notez la réduction du nombre de lignes et d&#39;octets lus.
+
+L&#39;utilisation de l&#39;index peut être confirmée avec un `EXPLAIN indexes=1`.
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts_ordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+```
+
+```response
+┌─explain─────────────────────────────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                                                   │
+│   Aggregating                                                                               │
+│     Expression (Before GROUP BY)                                                            │
+│       Expression                                                                            │
+│         ReadFromMergeTree (stackoverflow.posts_ordered)                                     │
+│         Indexes:                                                                            │
+│           PrimaryKey                                                                        │
+│             Keys:                                                                           │
+│               PostTypeId                                                                    │
+│               toDate(CreationDate)                                                          │
+│             Condition: and((PostTypeId in [1, 1]), (toDate(CreationDate) in [19723, +Inf))) │
+│             Parts: 14/14                                                                    │
+│             Granules: 39/7578                                                               │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+13 rows in set. Elapsed: 0.004 sec.
+```
+
+De plus, nous visualisons comment l’index clairsemé écarte tous les blocs de lignes qui ne peuvent en aucun cas contenir de correspondances pour notre requête d’exemple :
+
+<Image img="/images/bestpractices/primary_key.webp" size="lg" alt="Clé primaire" />
+
+<Note>
+  Toutes les colonnes d’une table sont triées selon la valeur de la clé de tri spécifiée, qu’elles soient ou non incluses dans la clé elle-même. Par exemple, si `CreationDate` est utilisée comme clé, l’ordre des valeurs dans toutes les autres colonnes correspondra à l’ordre des valeurs de la colonne `CreationDate`. Plusieurs clés de tri peuvent être spécifiées : l’ordre suivra alors la même sémantique qu’une clause `ORDER BY` dans une requête `SELECT`.
+</Note>
+
+Un guide avancé complet sur le choix des clés primaires est disponible [ici](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes).
+
+Pour mieux comprendre comment les clés de tri améliorent la compression et optimisent davantage le stockage, consultez les guides officiels sur la [Compression dans ClickHouse](/fr/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) et les [Codecs de compression des colonnes](/fr/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec).

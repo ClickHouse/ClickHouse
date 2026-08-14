@@ -1,0 +1,58 @@
+---
+slug: /cloud/get-started/cloud/resource-tour
+title: '리소스 안내'
+description: '쿼리 최적화, 스케일링 전략, 모니터링, 모범 사례를 다루는 ClickHouse Cloud 문서 리소스 개요'
+keywords: ['clickhouse cloud']
+hide_title: true
+doc_type: 'guide'
+---
+
+import TableOfContentsBestPractices from '/snippets/ko/_table_of_contents.mdx';
+import TableOfContentsOptimizationAndPerformance from '/snippets/ko/_performance_optimizations_table_of_contents.mdx';
+import TableOfContentsSecurity from '/snippets/ko/_security_table_of_contents.mdx';
+
+이 문서는 ClickHouse Cloud 배포를 최대한 활용하는 방법을 익히는 데 도움이 되는
+문서 리소스를 개괄적으로 소개하기 위한 것입니다.
+다음 주제로 구성된 리소스를 살펴보십시오:
+
+* [쿼리 최적화 기법 및 성능 튜닝](#query-optimization)
+* [모니터링](#monitoring)
+* [보안 모범 사례 및 컴플라이언스 기능](#security)
+* [비용 최적화 및 청구](#cost-optimization)
+
+더 구체적인 주제로 들어가기 전에, ClickHouse를 사용할 때 따라야 할
+일반적인 모범 사례를 다루는 ClickHouse 모범 사례 가이드부터
+시작하는 것을 권장합니다:
+
+<TableOfContentsBestPractices />
+
+<div id="query-optimization">
+  ## 쿼리 최적화 기법과 성능 튜닝
+</div>
+
+<TableOfContentsOptimizationAndPerformance />
+
+<div id="monitoring">
+  ## 모니터링
+</div>
+
+| 페이지                                                                          | 설명                                       |
+| ---------------------------------------------------------------------------- | ---------------------------------------- |
+| [Advanced dashboard](/ko/products/cloud/features/monitoring/advanced-dashboard) | 기본 제공되는 고급 대시보드를 사용해 서비스 상태와 성능을 모니터링합니다 |
+| [Prometheus 통합](/ko/products/cloud/features/monitoring/prometheus)              | Prometheus를 사용해 Cloud 서비스를 모니터링합니다       |
+| [Cloud 모니터링 기능](/ko/guides/use-cases/observability/cloud-monitoring)            | 기본 제공되는 모니터링 기능과 통합 옵션을 한눈에 살펴봅니다        |
+
+<div id="security">
+  ## 보안
+</div>
+
+<TableOfContentsSecurity />
+
+<div id="cost-optimization">
+  ## 비용 최적화 및 청구
+</div>
+
+| 페이지                                                               | 설명                                                            |
+| ----------------------------------------------------------------- | ------------------------------------------------------------- |
+| [데이터 전송](/ko/products/cloud/reference/billing/network-data-transfer) | ClickHouse Cloud가 수신 및 송신 데이터 전송량을 어떻게 산정하는지 알아봅니다            |
+| [알림](/ko/products/cloud/features/monitoring/notifications)           | ClickHouse Cloud 서비스의 알림을 설정합니다. 예를 들어 크레딧 사용량이 임계값을 초과할 때입니다 |

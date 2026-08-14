@@ -1,0 +1,182 @@
+---
+sidebarTitle: 'أفضل الممارسات'
+description: 'يعرض أفضل الممارسات التي ينبغي اتباعها عند العمل مع Kafka ClickPipes.'
+slug: /integrations/clickpipes/kafka/best-practices
+title: 'أفضل الممارسات'
+doc_type: 'guide'
+keywords: ['أفضل ممارسات Kafka', 'ClickPipes', 'الضغط', 'المصادقة', 'التحجيم']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="compression">
+  ## ضغط الرسائل
+</div>
+
+نوصي بشدة باستخدام الضغط في موضوعات Kafka. إذ يمكن أن يوفّر خفضًا كبيرًا في تكاليف نقل البيانات، من دون أي تأثير يُذكر تقريبًا في الأداء.
+لمعرفة المزيد عن ضغط الرسائل في Kafka، ننصح بالبدء بهذا [الدليل](https://www.confluent.io/blog/apache-kafka-message-compression/).
+
+<div id="limitations">
+  ## القيود
+</div>
+
+* [`DEFAULT`](/ar/reference/statements/create/table#default) غير مدعوم.
+* يقتصر حجم الرسائل الفردية افتراضيًا على 16MB (غير مضغوط) عند التشغيل بأصغر حجم نسخة متماثلة ‏(XS)، وعلى 32MB (غير مضغوط) مع أحجام نسخة متماثلة الأكبر. ستُرفض الرسائل التي تتجاوز هذا الحد مع ظهور خطأ. إذا كنت بحاجة إلى رسائل أكبر، يُرجى التواصل مع الدعم.
+
+<div id="delivery-semantics">
+  ## دلالات التسليم
+</div>
+
+يوفّر ClickPipes for Kafka دلالات تسليم `at-least-once` (وهي من أكثر الأساليب شيوعًا). يسعدنا تلقّي ملاحظاتكم حول دلالات التسليم عبر [نموذج التواصل](https://clickhouse.com/company/contact?loc=clickpipes). إذا كنتم بحاجة إلى دلالات exactly-once، فنوصي باستخدام sink الرسمي [`clickhouse-kafka-connect`](https://clickhouse.com/blog/real-time-event-streaming-with-kafka-connect-confluent-cloud-clickhouse) الخاص بنا.
+
+<div id="authentication">
+  ## المصادقة
+</div>
+
+بالنسبة إلى مصادر البيانات التي تستخدم بروتوكول Apache Kafka، تدعم ClickPipes المصادقة عبر [SASL/PLAIN](https://docs.confluent.io/platform/current/kafka/authentication_sasl/authentication_sasl_plain.html) مع تشفير TLS، بالإضافة إلى `SASL/SCRAM-SHA-256` و`SASL/SCRAM-SHA-512`. وبحسب مصدر البث (مثل Redpanda وMSK وغيرها)، سيتم تفعيل جميع آليات المصادقة هذه أو مجموعة فرعية منها وفقًا للتوافق. إذا كانت متطلبات المصادقة لديكم مختلفة، فيُرجى [إرسال ملاحظاتكم إلينا](https://clickhouse.com/company/contact?loc=clickpipes).
+
+<div id="warpstream-settings">
+  ## حجم الجلب في Warpstream
+</div>
+
+تعتمد ClickPipes على إعداد Kafka ‏`max.fetch_bytes` لتقييد حجم البيانات التي تُعالَج في عقدة واحدة من ClickPipes في أي وقت. في بعض الحالات،
+لا يلتزم Warpstream بهذا الإعداد، ما قد يتسبب في تعطل أحد خطوط ClickPipes بشكل غير متوقع. نوصي بشدة بضبط الإعداد الخاص بـ Warpstream ‏`kafkaMaxFetchPartitionBytesUncompressedOverride`
+على 8MB (أو أقل) عند تهيئة وكيل WarpStream لديك، لتجنّب تعطل ClickPipes.
+
+<div id="iam">
+  ### IAM
+</div>
+
+يدعم ClickPipes أساليب مصادقة AWS MSK التالية:
+
+* مصادقة [SASL/SCRAM-SHA-512](https://docs.aws.amazon.com/msk/latest/developerguide/msk-password.html)
+* المصادقة باستخدام [بيانات اعتماد IAM أو الوصول المستند إلى الأدوار](https://docs.aws.amazon.com/msk/latest/developerguide/how-to-use-iam-access-control.html)
+
+عند استخدام مصادقة IAM للاتصال بوسيط MSK، يجب أن يتضمن دور IAM الأذونات اللازمة.
+فيما يلي مثال على سياسة IAM المطلوبة لواجهات برمجة تطبيقات Apache Kafka في MSK:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:Connect"
+            ],
+            "Resource": [
+                "arn:aws:kafka:us-west-2:12345678912:cluster/clickpipes-testing-brokers/b194d5ae-5013-4b5b-ad27-3ca9f56299c9-10"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:DescribeTopic",
+                "kafka-cluster:ReadData"
+            ],
+            "Resource": [
+                "arn:aws:kafka:us-west-2:12345678912:topic/clickpipes-testing-brokers/*"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:AlterGroup",
+                "kafka-cluster:DescribeGroup"
+            ],
+            "Resource": [
+                "arn:aws:kafka:us-east-1:12345678912:group/clickpipes-testing-brokers/*"
+            ]
+        }
+    ]
+}
+```
+
+<div id="configuring-a-trusted-relationship">
+  #### تهيئة علاقة ثقة
+</div>
+
+إذا كنت تُجري المصادقة مع MSK باستخدام دور IAM ARN، فستحتاج إلى إضافة علاقة ثقة إلى مثيل ClickHouse Cloud الخاص بك حتى يمكن تولّي هذا الدور.
+
+<Note>
+  لا يعمل الوصول المستند إلى الأدوار إلا مع مثيلات ClickHouse Cloud المنشورة على AWS.
+</Note>
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        ...
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::12345678912:role/CH-S3-your-clickhouse-cloud-role"
+            },
+            "Action": "sts:AssumeRole"
+        }
+    ]
+}
+```
+
+<div id="custom-certificates">
+  ### شهادات مخصصة
+</div>
+
+يدعم ClickPipes for Kafka تحميل شهادات مخصصة لوسطاء Kafka الذين يستخدمون شهادات خادم غير عامة.
+كما يدعم تحميل شهادات العميل والمفاتيح للمصادقة المستندة إلى TLS المتبادل ‏(mTLS).
+
+<div id="performance">
+  ## الأداء
+</div>
+
+<div id="batching">
+  ### التجميع على دفعات
+</div>
+
+يُدرِج ClickPipes البيانات في ClickHouse على دفعات. ويهدف ذلك إلى تجنّب إنشاء عدد كبير جدًا من الأجزاء في قاعدة البيانات، مما قد يؤدي إلى مشكلات في الأداء داخل العنقود.
+
+تُدرَج الدفعات عند استيفاء أحد المعايير التالية:
+
+* بلوغ حجم الدفعة الحد الأقصى (100,000 صف أو 28MB لكل 1GB من ذاكرة الكبسولة)
+* بقاء الدفعة مفتوحة للحد الأقصى من الوقت (5 ثوانٍ)
+
+<div id="latency">
+  ### الكمون
+</div>
+
+يعتمد الكمون (ويُقصد به الوقت بين إنتاج رسالة Kafka وإتاحتها في ClickHouse) على عدد من العوامل (مثل كمون الوسيط، وكمون الشبكة، وحجم الرسالة/تنسيقها). كما أن [التجميع على دفعات](#batching) الموضّح في القسم أعلاه يؤثر أيضًا في الكمون. نوصي دائمًا باختبار حالة الاستخدام الخاصة بك تحت أحمال اعتيادية لتحديد الكمون المتوقع.
+
+لا يقدّم ClickPipes أي ضمانات تتعلق بالكمون. إذا كانت لديك متطلبات محددة لكمون منخفض، يُرجى [التواصل معنا](https://clickhouse.com/company/contact?loc=clickpipes).
+
+<div id="scaling">
+  ### التحجيم
+</div>
+
+صُمم ClickPipes for Kafka ليدعم التحجيم أفقيًا وعموديًا. افتراضيًا، ننشئ مجموعة مستهلكين تضم مستهلكًا واحدًا. ويمكن تهيئة ذلك أثناء إنشاء ClickPipe، أو في أي وقت لاحق ضمن **الإعدادات** -&gt; **الإعدادات المتقدمة** -&gt; **التحجيم**.
+
+يوفّر ClickPipes إتاحة عالية من خلال معمارية موزّعة على مناطق التوافر.
+ويتطلب ذلك التحجيم إلى مستهلكين اثنين على الأقل.
+
+وبغض النظر عن عدد المستهلكين قيد التشغيل، فإن تحمّل الأعطال متاح بحكم التصميم.
+إذا تعطّل مستهلك أو البنية التحتية الأساسية التابعة له،
+فسيعيد ClickPipe تشغيل المستهلك تلقائيًا ويواصل معالجة الرسائل.
+
+<div id="benchmarks">
+  ### اختبارات الأداء
+</div>
+
+فيما يلي بعض اختبارات الأداء غير الرسمية لـ ClickPipes for Kafka، ويمكن استخدامها لتكوين فكرة عامة عن الأداء المرجعي. من المهم معرفة أن هناك عوامل كثيرة قد تؤثر في الأداء، بما في ذلك حجم الرسائل، وأنواع البيانات، وتنسيق البيانات. وقد تختلف النتائج الفعلية من حالة إلى أخرى، وما نعرضه هنا لا يُعد ضمانًا للأداء الفعلي.
+
+تفاصيل اختبار الأداء:
+
+* استخدمنا خدمات ClickHouse Cloud في بيئة الإنتاج مع موارد كافية لضمان ألا يتأثر معدل النقل بعنق زجاجة في معالجة `insert` من جانب ClickHouse.
+* كانت خدمة ClickHouse Cloud، وعنقود Kafka ‏(Confluent Cloud)، وClickPipe تعمل جميعها في نفس المنطقة (`us-east-2`).
+* جرى تكوين ClickPipe بنسخة متماثلة واحدة بحجم L ‏(4 GiB من RAM و1 vCPU).
+* تضمنت البيانات النموذجية بيانات متداخلة بمزيج من أنواع البيانات `UUID` و`String` و`Int`. وقد تكون أنواع البيانات الأخرى، مثل `Float` و`Decimal` و`DateTime`، أقل كفاءة من حيث الأداء.
+* لم يُلاحظ فرق يُذكر في الأداء عند استخدام البيانات المضغوطة وغير المضغوطة.
+
+| حجم النسخة المتماثلة | حجم الرسالة | تنسيق البيانات | معدل النقل |
+| -------------------- | ----------- | -------------- | ---------- |
+| كبير (L)             | 1.6kb       | JSON           | 63mb/s     |
+| كبير (L)             | 1.6kb       | Avro           | 99mb/s     |

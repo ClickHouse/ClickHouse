@@ -1,0 +1,226 @@
+---
+sidebarTitle: 'Обзор'
+description: 'Легко подключите своё объектное хранилище к ClickHouse Cloud.'
+slug: /integrations/clickpipes/object-storage/abs/overview
+title: 'Интеграция Azure Blob Storage с ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+ABS ClickPipe предоставляет полностью управляемый и отказоустойчивый способ организовать приём данных из Azure Blob Storage в ClickHouse Cloud. Он поддерживает как **одноразовую** загрузку, так и **непрерывную ингестию** с семантикой «ровно один раз».
+
+ABS ClickPipes можно развёртывать и администрировать вручную через интерфейс ClickPipes, а также программно с помощью [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform).
+
+<div id="supported-formats">
+  ## Поддерживаемые форматы
+</div>
+
+* [JSON](/ru/reference/formats/JSON/JSON)
+* [CSV](/ru/reference/formats/CSV/CSV)
+* [TSV](/ru/reference/formats/TabSeparated/TabSeparated)
+* [Parquet](/ru/reference/formats/Parquet/Parquet)
+* [Avro](/ru/reference/formats/Avro/Avro)
+
+<div id="features">
+  ## Возможности
+</div>
+
+<div id="one-time-ingestion">
+  ### Одноразовая ингестия
+</div>
+
+ABS ClickPipe загрузит все файлы, соответствующие шаблону, из указанного контейнера в целевую таблицу ClickHouse в рамках одной батч-операции. После завершения задачи ингестии ClickPipe автоматически остановится. Этот режим одноразовой ингестии обеспечивает семантику «ровно один раз», гарантируя надёжную обработку каждого файла без дубликатов.
+
+<div id="continuous-ingestion">
+  ### Непрерывная ингестия
+</div>
+
+Когда непрерывная ингестия включена, ClickPipes непрерывно выполняет ингестию данных по указанному пути. Чтобы определить порядок ингестии, ABS ClickPipe использует неявный [лексикографический порядок](#continuous-ingestion-lexicographical-order) файлов.
+
+<div id="continuous-ingestion-lexicographical-order">
+  #### Лексикографический порядок
+</div>
+
+ABS ClickPipe предполагает, что файлы добавляются в контейнер в лексикографическом порядке, и использует этот неявный порядок для последовательного приёма файлов. Это означает, что любой новый файл **должен** быть лексикографически больше последнего принятого файла. Например, файлы с именами `file1`, `file2` и `file3` будут приниматься последовательно, но если в контейнер будет добавлен новый `file 0`, он будет **проигнорирован**, потому что имя этого файла лексикографически не больше имени последнего принятого файла.
+
+В этом режиме ABS ClickPipe выполняет начальную загрузку **всех файлов** по указанному пути, а затем с настраиваемым интервалом проверяет наличие новых файлов (по умолчанию — каждые 30 секунд). **Невозможно** начать ингестию с конкретного файла или определённого момента времени — ClickPipes всегда загружает все файлы по указанному пути.
+
+<div id="file-pattern-matching">
+  ### Сопоставление файлов с шаблоном
+</div>
+
+ClickPipes для объектного хранилища используют стандарт POSIX для сопоставления файлов с шаблоном. Все шаблоны **чувствительны к регистру**, а сопоставление выполняется по **полному пути** после имени контейнера. Для повышения производительности используйте максимально конкретный шаблон (например, `data-2024-*.csv` вместо `*.csv`).
+
+<div id="supported-patterns">
+  #### Поддерживаемые шаблоны
+</div>
+
+| Шаблон                 | Описание                                                                                       | Пример              | Совпадения                                                        |
+| ---------------------- | ---------------------------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------- |
+| `?`                    | Соответствует ровно **одному** символу (кроме `/`)                                             | `data-?.csv`        | `data-1.csv`, `data-a.csv`, `data-x.csv`                          |
+| `*`                    | Соответствует **нулю и более** символам (кроме `/`)                                            | `data-*.csv`        | `data-1.csv`, `data-001.csv`, `data-report.csv`, `data-.csv`      |
+| `**` <br /> Рекурсивно | Соответствует **нулю и более** символам (включая `/`). Позволяет рекурсивно обходить каталоги. | `logs/**/error.log` | `logs/error.log`, `logs/2024/error.log`, `logs/2024/01/error.log` |
+
+**Примеры:**
+
+* `https://storageaccount.blob.core.windows.net/container/folder/*.csv`
+* `https://storageaccount.blob.core.windows.net/container/logs/**/data.json`
+* `https://storageaccount.blob.core.windows.net/container/file-?.parquet`
+* `https://storageaccount.blob.core.windows.net/container/data-2024-*.csv.gz`
+
+<div id="unsupported-patterns">
+  #### Неподдерживаемые шаблоны
+</div>
+
+| Шаблон      | Описание                                            | Пример                 | Альтернативы                                    |
+| ----------- | --------------------------------------------------- | ---------------------- | ----------------------------------------------- |
+| `{abc,def}` | Раскрытие фигурных скобок — альтернативные значения | `{logs,data}/file.csv` | Создайте отдельные ClickPipes для каждого пути. |
+| `{N..M}`    | Раскрытие числового диапазона                       | `file-{1..100}.csv`    | Используйте `file-*.csv` или `file-?.csv`.      |
+
+**Примеры:**
+
+* `https://storageaccount.blob.core.windows.net/container/{documents-01,documents-02}.json`
+* `https://storageaccount.blob.core.windows.net/container/file-{1..100}.csv`
+* `https://storageaccount.blob.core.windows.net/container/{logs,metrics}/data.parquet`
+
+<div id="exactly-once-semantics">
+  ### Семантика «ровно один раз»
+</div>
+
+При приёме крупных наборов данных могут возникать различные сбои, что может приводить к частичной вставке или дублированию данных. ClickPipes для объектного хранилища устойчивы к сбоям при вставке и обеспечивают семантику «ровно один раз». Это достигается за счёт использования временных staging-таблиц. Сначала данные вставляются в staging-таблицы. Если во время этой вставки что-то идёт не так, staging-таблицу можно очистить с помощью `TRUNCATE`, а затем повторить вставку из чистого состояния. Только после полного и успешного завершения вставки партиции из staging-таблицы перемещаются в целевую таблицу. Подробнее об этой стратегии читайте [в этой статье блога](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).
+
+<div id="virtual-columns">
+  ### Виртуальные столбцы
+</div>
+
+Чтобы отслеживать, какие файлы были приняты, включите виртуальный столбец `_file` в список сопоставления столбцов. Виртуальный столбец `_file` содержит имя файла исходного объекта, которое можно использовать в запросе, чтобы определить, какие файлы были обработаны.
+
+<div id="access-control">
+  ## Управление доступом
+</div>
+
+<div id="permissions">
+  ### Разрешения
+</div>
+
+ABS ClickPipe поддерживает только закрытые контейнеры. Публичные контейнеры **не** поддерживаются.
+
+Для контейнеров в политике бакета должны быть разрешены действия [`s3:GetObject`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html) и [`s3:ListBucket`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html).
+
+<div id="authentication">
+  ### Аутентификация
+</div>
+
+<Note>
+  Аутентификация через Microsoft Entra ID (включая Managed Identities) в настоящее время не поддерживается.
+</Note>
+
+Для аутентификации в Azure Blob Storage используется [строка подключения](https://docs.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string), которая поддерживает как ключи доступа, так и подписи общего доступа (SAS).
+
+<div id="access-key">
+  #### Ключ доступа
+</div>
+
+Чтобы пройти аутентификацию с помощью [ключа доступа к учетной записи](https://docs.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage), укажите строку подключения в следующем формате:
+
+```bash
+DefaultEndpointsProtocol=https;AccountName=storage-account-name;AccountKey=account-access-key;EndpointSuffix=core.windows.net
+```
+
+Имя вашей учетной записи хранения и ключ доступа к ней можно найти в Azure Portal в разделе **Storage Account &gt; Access keys**.
+
+<div id="sas">
+  #### Shared Access Signature (SAS)
+</div>
+
+Чтобы пройти аутентификацию с помощью [Shared Access Signature (SAS)](https://docs.microsoft.com/en-us/azure/storage/common/storage-sas-overview), укажите строку подключения, содержащую токен SAS:
+
+```bash
+BlobEndpoint=https://storage-account-name.blob.core.windows.net/;SharedAccessSignature=sas-token
+```
+
+Сгенерируйте SAS-токен в Azure Portal в разделе **Storage Account &gt; Shared access signature** с соответствующими разрешениями (`Read`, `List`) для контейнера и BLOB-объектов, данные из которых вы хотите принимать.
+
+<div id="network-access">
+  ### Сетевой доступ
+</div>
+
+ABS ClickPipes используют два отдельных сетевых маршрута: один для обнаружения метаданных через сервис ClickPipes, а другой — для приёма данных через сервис ClickHouse Cloud. Если вы хотите настроить дополнительный уровень сетевой безопасности (например, для соответствия нормативным требованиям), сетевой доступ **необходимо настроить для обоих маршрутов**.
+
+<Warning>
+  Управление доступом на основе IP **не работает**, если ваш контейнер Azure Blob Storage находится в том же регионе Azure, что и ваш сервис ClickHouse Cloud. Если оба сервиса расположены в одном регионе, трафик маршрутизируется через внутреннюю сеть Azure, а не через публичный интернет.
+</Warning>
+
+* Для **управления доступом на основе IP** [правила IP-сетей](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security) в брандмауэре Azure Storage должны разрешать статические IP-адреса региона сервиса ClickPipes, перечисленные [здесь](/ru/integrations/clickpipes/home#list-of-static-ips), а также [статические IP-адреса](/ru/products/cloud/guides/data-sources/cloud-endpoints-api) для сервиса ClickHouse Cloud. Чтобы получить статические IP-адреса для вашего региона ClickHouse Cloud, откройте терминал и выполните:
+
+  ```bash
+  # Замените <your-region> на ваш регион ClickHouse Cloud
+  curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.azure[] | select(.region == "<your-region>") | .egress_ips[]'
+  ```
+
+<div id="advanced-settings">
+  ## Расширенные настройки
+</div>
+
+ClickPipes предлагает разумные настройки по умолчанию, которые подходят для большинства сценариев. Если в вашем случае требуется более тонкая настройка, вы можете изменить следующие параметры:
+
+| Параметр                             | Значение по умолчанию | Описание                                                                                                                                                |
+| ------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB                  | Количество байт, обрабатываемых в одном батче вставки.                                                                                                  |
+| `Max file count`                     | 100                   | Максимальное количество файлов, обрабатываемых в одном батче вставки.                                                                                   |
+| `Max threads`                        | auto(3)               | [Максимальное количество параллельных потоков](/ru/reference/settings/session-settings#max_threads) для обработки файлов.                                  |
+| `Max insert threads`                 | 1                     | [Максимальное количество параллельных потоков вставки](/ru/reference/settings/session-settings#max_insert_threads) для обработки файлов.                   |
+| `Min insert block size bytes`        | 1GB                   | [Минимальный размер блока в байтах](/ru/reference/settings/session-settings#min_insert_block_size_bytes), который может быть вставлен в таблицу.           |
+| `Max download threads`               | 4                     | [Максимальное количество параллельных потоков загрузки](/ru/reference/settings/session-settings#max_download_threads).                                     |
+| `Object storage polling interval`    | 30s                   | Задаёт максимальный период ожидания перед вставкой данных в кластер ClickHouse.                                                                         |
+| `Parallel distributed insert select` | 2                     | [Настройка parallel distributed insert select](/ru/reference/settings/session-settings#parallel_distributed_insert_select).                                |
+| `Parallel view processing`           | false                 | Включать ли отправку в присоединённые представления [параллельно, а не последовательно](/ru/reference/settings/session-settings#parallel_view_processing). |
+| `Use cluster function`               | true                  | Следует ли обрабатывать файлы параллельно на нескольких узлах.                                                                                          |
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Расширенные настройки ClickPipes" size="lg" border />
+
+<div id="scaling">
+  ### Масштабирование
+</div>
+
+ClickPipes для объектного хранилища масштабируются в зависимости от минимального размера сервиса ClickHouse, определяемого [настроенными параметрами вертикального автомасштабирования](/ru/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling). Размер ClickPipe определяется при создании пайпа. Последующие изменения настроек сервиса ClickHouse не повлияют на размер ClickPipe.
+
+Чтобы увеличить пропускную способность при задачах приёма больших объёмов данных, мы рекомендуем масштабировать сервис ClickHouse до создания ClickPipe.
+
+<div id="known-limitations">
+  ## Известные ограничения
+</div>
+
+<div id="file-size">
+  ### Размер файла
+</div>
+
+ClickPipes будет выполнять приём только объектов размером **10 ГБ или меньше**. Если размер файла превышает 10 ГБ, в выделенную таблицу ошибок ClickPipes будет добавлена запись об ошибке.
+
+<div id="latency">
+  ### Задержка
+</div>
+
+Для контейнеров, содержащих более 100 000 файлов, операции `LIST` в Azure Blob Storage добавляют дополнительную задержку при обнаружении новых файлов сверх стандартного интервала опроса:
+
+* **&lt; 100 тыс. файлов**: ~30 секунд (стандартный интервал опроса)
+* **100 тыс. файлов**: ~40–45 секунд
+* **250 тыс. файлов**: ~55–70 секунд
+* **500 тыс.+ файлов**: может превышать 90 секунд
+
+Для [непрерывной ингестии](#continuous-ingestion) ClickPipes должен сканировать контейнер, чтобы находить новые файлы, лексикографически следующие за последним обработанным файлом. Мы рекомендуем распределять файлы по меньшим контейнерам или использовать иерархическую структуру каталогов, чтобы уменьшить число файлов в одной операции перечисления.
+
+<div id="view-support">
+  ### Поддержка представлений
+</div>
+
+Для целевой таблицы также поддерживаются materialized views. ClickPipes создает staging-таблицы не только для целевой таблицы, но и для всех зависимых materialized views.
+
+Мы не создаем staging-таблицы для нематериализованных представлений. Это означает, что если у вас есть целевая таблица и одна или несколько зависящих от нее materialized views, этим materialized views не следует выбирать данные через представление на основе целевой таблицы. В противном случае в materialized view могут отсутствовать данные.
+
+<div id="dependencies">
+  ### Зависимости
+</div>
+
+Любые изменения в целевой таблице, её materialized view (включая каскадные materialized view) или в целевых таблицах этих materialized view во время работы ClickPipe приведут к ошибкам, допускающим повторную попытку. Чтобы изменить схему этих зависимостей, следует приостановить ClickPipe, применить изменения, а затем возобновить его работу.

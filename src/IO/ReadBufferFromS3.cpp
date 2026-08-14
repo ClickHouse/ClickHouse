@@ -10,6 +10,8 @@
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Requests.h>
 
+#include <aws/core/http/HttpResponse.h>
+
 #include <Common/Stopwatch.h>
 #include <Common/HistogramMetrics.h>
 #include <Common/logger_useful.h>
@@ -51,6 +53,7 @@ namespace FailPoints
 {
     extern const char s3_read_buffer_throw_expired_token[];
     extern const char s3_send_request_throw_expired_token[];
+    extern const char s3_read_inject_etag_mismatch[];
 }
 
 namespace ErrorCodes
@@ -61,6 +64,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
 }
 
 namespace
@@ -100,12 +104,14 @@ ReadBufferFromS3::ReadBufferFromS3(
     bool restricted_seek_,
     std::optional<size_t> file_size_,
     const S3CredentialsRefreshCallback & credentials_refresh_callback_,
-    BlobStorageLogWriterPtr blob_storage_log_)
+    BlobStorageLogWriterPtr blob_storage_log_,
+    const String & expected_etag_)
     : ReadBufferFromFileBase()
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
     , version_id(version_id_)
+    , expected_etag(expected_etag_)
     , request_settings(request_settings_)
     , offset(offset_)
     , read_until_position(read_until_position_)
@@ -381,6 +387,11 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
         return false;
     }
 
+    /// The object was overwritten in place; re-fetching the same range would just return the new
+    /// generation again. Fail fast and let the caller retry the whole read with fresh metadata.
+    if (getCurrentExceptionCode() == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ)
+        return false;
+
     return true;
 }
 
@@ -549,6 +560,11 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     req.SetKey(key);
     if (!version_id.empty())
         req.SetVersionId(version_id);
+    /// Pin the GET to the generation seen at read setup via If-Match, so an in-place overwrite is
+    /// rejected with 412 instead of transferring torn cross-generation bytes. Only for non-versioned
+    /// reads with a known expected_etag.
+    else if (!expected_etag.empty())
+        req.SetIfMatch(expected_etag);
 
     S3::setClickhouseAttemptNumber(req, attempt);
 
@@ -598,6 +614,20 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     if (outcome.IsSuccess())
     {
         auto result = outcome.GetResultWithOwnership();
+
+        String response_etag = result.GetETag();
+        fiu_do_on(FailPoints::s3_read_inject_etag_mismatch, { response_etag = "<injected-etag-mismatch>"; });
+
+        /// Defense-in-depth for backends that ignore If-Match and return the new bytes with 200: reject
+        /// on ETag drift. Skip ?versionId= reads (pinned to an immutable version that expected_etag,
+        /// taken from the current version, would falsely mismatch) and empty response ETags.
+        if (version_id.empty() && !expected_etag.empty() && !response_etag.empty() && response_etag != expected_etag)
+            throw Exception(
+                ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                "S3 object {}/{} was replaced during read (etag changed from {} to {}); "
+                "retry the query, or set s3_validate_etag_on_read=0 to disable this check",
+                bucket, key, expected_etag, response_etag);
+
         if (blob_storage_log)
         {
             size_t data_size = static_cast<size_t>(result.GetContentLength());
@@ -622,6 +652,18 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
             blob_log_watch.elapsedMicroseconds(),
             static_cast<Int32>(error.GetErrorType()), error.GetMessage());
     }
+
+    /// Map the If-Match 412 to the same non-retryable S3_OBJECT_CHANGED_DURING_READ as the success-path
+    /// comparison (a generic S3 error would be retried by processException). Must map here from the raw
+    /// error: S3Exception keeps only the Aws S3Errors code, not the HTTP 412 status.
+    if (version_id.empty() && !expected_etag.empty()
+        && error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED)
+        throw Exception(
+            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+            "S3 object {}/{} was replaced during read (If-Match on etag {} failed); "
+            "retry the query, or set s3_validate_etag_on_read=0 to disable this check",
+            bucket, key, expected_etag);
+
     throw S3Exception(error.GetMessage(), error.GetErrorType());
 }
 

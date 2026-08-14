@@ -40,7 +40,7 @@ std::unique_ptr<WriteBufferFromFileBase> serializeStatisticsPacked(
     auto out_packed = data_part_storage.writeFile(statistics_filename, 4096, write_settings);
     HashingWriteBuffer out_hashing_packed(*out_packed);
 
-    packed_writer.finalize(out_hashing_packed);
+    packed_writer.finalize(out_hashing_packed, {}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
     out_hashing_packed.finalize();
 
     out_checksums.files[statistics_filename].file_size = out_hashing_packed.count();

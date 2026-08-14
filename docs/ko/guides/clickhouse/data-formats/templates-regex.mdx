@@ -1,0 +1,270 @@
+---
+sidebarTitle: '정규식과 Template'
+slug: /integrations/data-formats/templates-regexp
+title: 'ClickHouse에서 Template 및 Regex를 사용해 사용자 지정 텍스트 데이터를 가져오고 내보내기'
+description: 'ClickHouse에서 Template 및 Regex를 사용해 사용자 지정 텍스트를 가져오고 내보내는 방법을 설명하는 페이지'
+doc_type: 'guide'
+keywords: ['데이터 포맷', 'Template', '정규식', '사용자 지정 포맷', '파싱']
+---
+
+사용자 지정 텍스트 포맷의 데이터를 처리해야 하는 경우가 자주 있습니다. 비표준 포맷일 수도 있고, 유효하지 않은 JSON이나 손상된 CSV일 수도 있습니다. 이런 경우에는 CSV나 JSON 같은 표준 파서를 사용할 수 없는 경우가 많습니다. 하지만 ClickHouse는 강력한 Template 및 Regex 포맷을 통해 이러한 상황을 지원합니다.
+
+<div id="importing-based-on-a-template">
+  ## 템플릿 기반 가져오기
+</div>
+
+다음 [로그 파일](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/error.log)에서 데이터를 가져오는 경우를 가정해 보겠습니다:
+
+```bash
+head error.log
+```
+
+```response
+2023/01/15 14:51:17 [error]  client: 7.2.8.1, server: example.com "GET /apple-touch-icon-120x120.png HTTP/1.1"
+2023/01/16 06:02:09 [error]  client: 8.4.2.7, server: example.com "GET /apple-touch-icon-120x120.png HTTP/1.1"
+2023/01/15 13:46:13 [error]  client: 6.9.3.7, server: example.com "GET /apple-touch-icon.png HTTP/1.1"
+2023/01/16 05:34:55 [error]  client: 9.9.7.6, server: example.com "GET /h5/static/cert/icon_yanzhengma.png HTTP/1.1"
+```
+
+이 데이터를 가져오려면 [Template](/ko/reference/formats/Template/Template) 포맷을 사용할 수 있습니다. 입력 데이터의 각 행마다 값 자리표시자가 포함된 템플릿 문자열을 정의해야 합니다:
+
+```response
+<time> [error] client: <ip>, server: <host> "<request>"
+```
+
+데이터를 가져올 테이블을 만들어 보겠습니다:
+
+```sql
+CREATE TABLE error_log
+(
+    `time` DateTime,
+    `ip` String,
+    `host` String,
+    `request` String
+)
+ENGINE = MergeTree
+ORDER BY (host, request, time)
+```
+
+지정된 템플릿을 사용해 데이터를 가져오려면 템플릿 문자열을 파일(이 경우 [row.template](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/row.template))에 저장해야 합니다:
+
+```response
+${time:Escaped} [error]  client: ${ip:CSV}, server: ${host:CSV} ${request:JSON}
+```
+
+컬럼 이름과 이스케이프 규칙은 `${name:escaping}` 포맷으로 지정합니다. 여기서 CSV, JSON, Escaped, Quoted 등의 여러 옵션을 사용할 수 있으며, 각 옵션은 [해당 이스케이프 규칙](/ko/reference/formats/Template/Template)을 따릅니다.
+
+이제 데이터를 가져올 때 지정된 파일을 `format_template_row` 설정 옵션의 인수로 사용할 수 있습니다(*참고: 템플릿 파일과 데이터 파일 끝에는 추가 `\n` 기호가 **없어야 합니다***):
+
+```sql
+INSERT INTO error_log FROM INFILE 'error.log'
+SETTINGS format_template_row = 'row.template'
+FORMAT Template
+```
+
+그리고 데이터가 테이블에 적재되었는지 확인할 수 있습니다:
+
+```sql
+SELECT
+    request,
+    count(*)
+FROM error_log
+GROUP BY request
+```
+
+```response
+┌─request──────────────────────────────────────────┬─count()─┐
+│ GET /img/close.png HTTP/1.1                      │     176 │
+│ GET /h5/static/cert/icon_yanzhengma.png HTTP/1.1 │     172 │
+│ GET /phone/images/icon_01.png HTTP/1.1           │     139 │
+│ GET /apple-touch-icon-precomposed.png HTTP/1.1   │     161 │
+│ GET /apple-touch-icon.png HTTP/1.1               │     162 │
+│ GET /apple-touch-icon-120x120.png HTTP/1.1       │     190 │
+└──────────────────────────────────────────────────┴─────────┘
+```
+
+<div id="skipping-whitespaces">
+  ### 공백 건너뛰기
+</div>
+
+Template에서 구분 기호 사이의 공백을 건너뛸 수 있도록 해주는 [TemplateIgnoreSpaces](/ko/reference/formats/Template/TemplateIgnoreSpaces)의 사용을 고려하십시오:
+
+```text
+Template:               -->  "p1: ${p1:CSV}, p2: ${p2:CSV}"
+TemplateIgnoreSpaces    -->  "p1:${p1:CSV}, p2:${p2:CSV}"
+```
+
+<div id="exporting-data-using-templates">
+  ## 템플릿을 사용하여 데이터 내보내기
+</div>
+
+템플릿을 사용하면 데이터를 어떤 텍스트 포맷으로든 내보낼 수 있습니다. 이 경우 두 개의 파일을 만들어야 합니다:
+
+[결과 집합 템플릿](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/output.results)은 전체 결과 집합의 레이아웃을 정의합니다:
+
+```response
+== Top 10 IPs ==
+${data}
+--- ${rows_read:XML} rows read in ${time:XML} ---
+```
+
+여기서 `rows_read`와 `time`은 각 요청마다 제공되는 시스템 메트릭입니다. 반면 `data`는 [**행 템플릿 파일**](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/output.rows)에 정의된 템플릿을 바탕으로 생성된 행을 의미합니다 (`${data}`는 이 파일에서 항상 첫 번째 플레이스홀더여야 합니다):
+
+```response
+${ip:Escaped} generated ${total:Escaped} requests
+```
+
+이제 이 Template들을 사용하여 다음 쿼리를 내보내겠습니다:
+
+```sql
+SELECT
+    ip,
+    count() AS total
+FROM error_log GROUP BY ip ORDER BY total DESC LIMIT 10
+FORMAT Template SETTINGS format_template_resultset = 'output.results',
+                         format_template_row = 'output.rows';
+
+== Top 10 IPs ==
+
+9.8.4.6 generated 3 requests
+9.5.1.1 generated 3 requests
+2.4.8.9 generated 3 requests
+4.8.8.2 generated 3 requests
+4.5.4.4 generated 3 requests
+3.3.6.4 generated 2 requests
+8.9.5.9 generated 2 requests
+2.5.1.8 generated 2 requests
+6.8.3.6 generated 2 requests
+6.6.3.5 generated 2 requests
+
+--- 1000 rows read in 0.001380604 ---
+```
+
+<div id="exporting-to-html-files">
+  ### HTML 파일로 내보내기
+</div>
+
+Template 기반 결과는 [`INTO OUTFILE`](/ko/reference/statements/select/into-outfile) 절을 사용해 파일로도 내보낼 수 있습니다. 제공된 [resultset](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/html.results) 및 [행](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/html.row) 포맷을 바탕으로 HTML 파일을 생성해 보겠습니다:
+
+```sql
+SELECT
+    ip,
+    count() AS total
+FROM error_log GROUP BY ip ORDER BY total DESC LIMIT 10
+INTO OUTFILE 'out.html'
+FORMAT Template
+SETTINGS format_template_resultset = 'html.results',
+         format_template_row = 'html.row'
+```
+
+<div id="exporting-to-xml">
+  ### XML로 내보내기
+</div>
+
+Template 형식은 XML을 포함한 거의 모든 텍스트 포맷 파일을 생성하는 데 사용할 수 있습니다. 적절한 템플릿을 지정한 뒤 내보내면 됩니다.
+
+메타데이터를 포함한 표준 XML 결과를 얻으려면 [XML](/ko/reference/formats/XML) 포맷을 사용하는 것도 고려하십시오:
+
+```sql
+SELECT *
+FROM error_log
+LIMIT 3
+FORMAT XML
+```
+
+```xml
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+        <meta>
+                <columns>
+                        <column>
+                                <name>time</name>
+                                <type>DateTime</type>
+                        </column>
+                        ...
+                </columns>
+        </meta>
+        <data>
+                <row>
+                        <time>2023-01-15 13:00:01</time>
+                        <ip>3.5.9.2</ip>
+                        <host>example.com</host>
+                        <request>GET /apple-touch-icon-120x120.png HTTP/1.1</request>
+                </row>
+                ...
+        </data>
+        <rows>3</rows>
+        <rows_before_limit_at_least>1000</rows_before_limit_at_least>
+        <statistics>
+                <elapsed>0.000745001</elapsed>
+                <rows_read>1000</rows_read>
+                <bytes_read>88184</bytes_read>
+        </statistics>
+</result>
+
+```
+
+<div id="importing-data-based-on-regular-expressions">
+  ## 정규식 기반 데이터 가져오기
+</div>
+
+[Regexp](/ko/reference/formats/Regexp) 포맷은 입력 데이터를 더 복잡한 방식으로 파싱해야 하는 고급 사례에 적합합니다. 이번에는 [error.log](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/error.log) 예시 파일을 파싱하면서 파일 이름과 프로토콜도 추출해 각각 별도의 컬럼에 저장해 보겠습니다. 먼저 이를 위한 새 테이블을 준비하겠습니다:
+
+```sql
+CREATE TABLE error_log
+(
+    `time` DateTime,
+    `ip` String,
+    `host` String,
+    `file` String,
+    `protocol` String
+)
+ENGINE = MergeTree
+ORDER BY (host, file, time)
+```
+
+이제 정규식을 사용해 데이터를 가져올 수 있습니다:
+
+```sql
+INSERT INTO error_log FROM INFILE 'error.log'
+SETTINGS
+  format_regexp = '(.+?) \\[error\\]  client: (.+), server: (.+?) "GET .+?([^/]+\\.[^ ]+) (.+?)"'
+FORMAT Regexp
+```
+
+ClickHouse는 각 capture 그룹의 순서에 따라 데이터를 알맞은 컬럼에 삽입합니다. 데이터를 확인해 보겠습니다:
+
+```sql
+SELECT * FROM error_log LIMIT 5
+```
+
+```response
+┌────────────────time─┬─ip──────┬─host────────┬─file─────────────────────────┬─protocol─┐
+│ 2023-01-15 13:00:01 │ 3.5.9.2 │ example.com │ apple-touch-icon-120x120.png │ HTTP/1.1 │
+│ 2023-01-15 13:01:40 │ 3.7.2.5 │ example.com │ apple-touch-icon-120x120.png │ HTTP/1.1 │
+│ 2023-01-15 13:16:49 │ 9.2.9.2 │ example.com │ apple-touch-icon-120x120.png │ HTTP/1.1 │
+│ 2023-01-15 13:21:38 │ 8.8.5.3 │ example.com │ apple-touch-icon-120x120.png │ HTTP/1.1 │
+│ 2023-01-15 13:31:27 │ 9.5.8.4 │ example.com │ apple-touch-icon-120x120.png │ HTTP/1.1 │
+└─────────────────────┴─────────┴─────────────┴──────────────────────────────┴──────────┘
+```
+
+기본적으로 ClickHouse는 일치하지 않는 행이 있으면 오류를 발생시킵니다. 대신 일치하지 않는 행을 건너뛰려면 [format&#95;regexp&#95;skip&#95;unmatched](/ko/reference/settings/formats#format_regexp_skip_unmatched) 옵션을 활성화하세요:
+
+```sql
+SET format_regexp_skip_unmatched = 1;
+```
+
+<div id="other-formats">
+  ## 기타 포맷
+</div>
+
+ClickHouse는 다양한 시나리오와 플랫폼을 지원하기 위해 텍스트 포맷과 바이너리 포맷을 비롯한 여러 포맷을 지원합니다. 다음 문서에서 더 많은 포맷과 활용 방법을 살펴보십시오.
+
+* [CSV 및 TSV 포맷](/ko/guides/clickhouse/data-formats/csv-tsv)
+* [Parquet](/ko/guides/clickhouse/data-formats/parquet)
+* [JSON 포맷](/ko/guides/clickhouse/data-formats/json/intro)
+* **Regex 및 Template**
+* [네이티브 및 바이너리 포맷](/ko/guides/clickhouse/data-formats/binary)
+* [SQL 포맷](/ko/guides/clickhouse/data-formats/sql)
+
+또한 [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)도 확인해 보십시오. ClickHouse 서버 없이 로컬/원격 파일로 작업할 수 있는 휴대용의 완전한 기능을 갖춘 도구입니다.

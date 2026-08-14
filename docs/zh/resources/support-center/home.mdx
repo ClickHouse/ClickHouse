@@ -1,0 +1,32 @@
+---
+slug: support
+title: 支持中心
+description: '浏览并搜索 ClickHouse 知识库'
+keywords: ['支持', '知识库', 'kb', '文章', '常见问题']
+mode: 'custom'
+hideNext: true
+---
+
+import { KBExplorer } from '/snippets/zh/components/KBExplorer/KBExplorer.jsx'
+import { kbIndex } from '/snippets/zh/components/KBExplorer/kb-data.jsx'
+
+{/* 精选文章——每篇文章都有一个文章 ID（knowledge-base 下的相对路径，无扩展名）
+    以及一张横幅图片（文章标题会显示在图片中） */}
+
+export const featuredArticles = [
+  { id: 'cloud-services/aws-privatelink-setup-for-clickpipes' },
+  { id: 'tables-schema/schema-migration-tools' },
+  { id: 'data-management/read-consistency' }
+];
+
+<div className="relative overflow-hidden">
+  <div className="absolute top-0 left-0 right-0 opacity-80">
+    <img src="/images/background-light.svg" className="block dark:hidden pointer-events-none w-full h-auto" alt="装饰性背景图。" />
+
+    <img src="/images/background-dark.svg" className="hidden dark:block pointer-events-none w-full h-auto" alt="装饰性背景图。" />
+  </div>
+
+  {/* kbIndex is imported from the generated kb-data.jsx; featuredArticles is hand-maintained */}
+
+  <KBExplorer index={kbIndex} featured={featuredArticles} />
+</div>

@@ -1,0 +1,62 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/05/2026-05-08
+title: 'デモデイズ - 2026-05-08'
+sidebarTitle: '2026-05-08'
+description: '2026-05-08 の ClickStack デモデイズ'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+---
+
+<div id="improved-handling-of-secrets-in-webhooks">
+  ## Webhookにおけるシークレットの取り扱いを改善
+</div>
+
+*デモ: [@dhable](https://github.com/dhable)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/aD7sT5dc470" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Webhook の URL やヘッダーには、認証情報がそのまま含まれていることが少なくありません。Slack の webhook URL にはシークレットトークンがパスに含まれており、HTTP webhook では通常、認証のために Authorization ヘッダーが必要です。このリリース以前は、webhook の一覧表示や編集に使われる HyperDX の内部 API が、こうした情報を毎回のリクエストでそのまま返していました。そのため、認証済みのチームメンバーであれば、API を呼び出すだけでシークレットを参照できてしまっていました。
+
+今回の変更では、公開 API ですでに使われていたものと同じマスキング方式を適用しています。Webhook の URL は、パスが `****` に置き換えられた状態で返されるため、Slack トークン (またはパスに埋め込まれたその他のキー) がサーバーの外に出ることはありません。また、どのヘッダーにシークレットが含まれているかを確実に判別する方法がないため、ヘッダーもデフォルトでマスクされます。すべての値は `****` に置き換えられ、表示されるのはヘッダー名だけです。
+
+編集フォームでは、マスクされた値は「変更なし」として扱われます。そのままにしておけば保存済みの値は維持され、変更すれば新しい値が保存され、空にすればそのフィールドは完全に削除されます。これにより、一般的なケース (1 つのフィールドだけを編集する場合) でもわかりやすい操作性を保ちながら、実際のシークレットがブラウザを経由して往復することはありません。
+
+**関連 PR:** [#2239](https://github.com/hyperdxio/hyperdx/pull/2239) [HDX-4173] 内部 webhook API レスポンス内の機微なフィールドをマスク
+
+<div id="extra-metadata-in-alerts">
+  ## アラートの追加メタデータ
+</div>
+
+*[@dhable](https://github.com/dhable) によるデモ*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/evEd7Cc9e1c" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+コミュニティ Slack で、アラートに自由記述のコンテキストを追加したいという要望がありました。しきい値の履歴やランブックへのリンク、オンコール向けのメモなどを置いておける場所です。これは AI 要約の根拠情報としても便利で、発報中のアラートに応答する LLM は、クエリだけから意図を推測するのではなく、オペレーター自身の考えを踏まえて応答できるようになります。
+
+この note フィールドは markdown としてレンダリングできるため、折りたたみ可能なセクション、リスト、リンクもすべて使えます。アラート設定の一部として保持され、アラートが表示される場所であればどこにでも表示されます。UX はまだ固まっておらず、markdown の表示機能は出発点にすぎないため、どのようにレンダリングされるべきかについてのフィードバックを歓迎します。
+
+あわせて、この PR では保存済み検索における発報中アラートの UX も改善しています。Alerts ボタンのベルアイコンには、何かが発報中のときに赤いドットが付き、ダイアログボックスではアラートへのリンクを表示するだけでなく、どのアラートが現在アクティブなのかを強調表示します。また、この状態の視覚表現も、ダッシュボードのタイルですでに使われているものに合わせています。
+
+**関連 PR:** [#2210](https://github.com/hyperdxio/hyperdx/pull/2210) [HDX-3044] アラートに任意の note フィールドを追加
+
+<div id="possible-themes">
+  ## テーマ案
+</div>
+
+*[@elizabetdev](https://github.com/elizabetdev) によるデモ*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/JZYGz6ZOPf4" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+これはハッカソン中の実験で、ClickStack UI に IDE 風の 3 つのテーマを導入したものでした。Nord (寒色系のブルー) 、Catppuccin (パステル調) 、One Dark (Atom 風) で、それぞれにライト版とダーク版があります。元になった各テーマからカラートークンを生成して試したところ、かなりそれらしい仕上がりにはなりましたが、サイドバーの配色や行のコントラストにはまだ粗さがあり、調整の余地が残っていました。
+
+この PR は最終的に merge ではなく close されました。チームは ClickUI への移行を進めており、現時点では単一テーマのみをサポートしています。複数のトークンセットを並行して維持すると継続的な運用コストが発生し、特に各組み合わせでコントラストを適切に検証し始めると負担が大きくなります。そのため、ClickUI 自体がマルチテーマに対応するまでは見送ることになりました。
+
+この実験で得られたデザイン上の考え方のうち、ひとつは今後この話が再び持ち上がったときにも覚えておく価値があると感じました。最初の版ではテーマごとに HyperDX のロゴを色替えしていましたが、それではブランドらしさが失われてしまいます。より適切なアプローチは、ライトテーマではダークロゴを表示し、ダークテーマではライトロゴを表示し、緑色の HyperDX ワードマーク自体には手を加えないことです。
+
+**関連 PR:** [#2191](https://github.com/hyperdxio/hyperdx/pull/2191) feat: IDE 風テーマ (Nord、Catppuccin、One Dark) を追加

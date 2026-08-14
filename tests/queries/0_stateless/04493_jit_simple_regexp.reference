@@ -1,0 +1,66 @@
+-- match: URL pattern from the design example
+1
+1
+0
+0
+0
+-- extract: capture groups
+example.com
+example.com
+clickhouse.com
+c
+
+2024
+foo
+-- extract: whole match when there is no capturing group
+123
+
+-- anchors and quantifiers
+1
+0
+1
+0
+1
+1
+0
+-- dot, dot-star and char classes
+1
+1
+1
+0
+-- case-insensitive (ASCII)
+1
+1
+0
+USER
+-- case-insensitive folding of k/s reaches non-ASCII code points in RE2 (U+212A KELVIN SIGN, U+017F LONG S); JIT must agree (it falls back)
+1
+1
+1
+-- case-insensitive negated classes must fall back too: a byte-wise scan would let `[^a-z]` accept the bytes of KELVIN SIGN / LONG S, while RE2 folds them to k/s and rejects them
+1
+1
+1
+-- oversized patterns fall back to RE2 before JIT code generation (bounded LLVM compilation)
+1
+0
+1
+-- empty string and empty match edge cases
+1
+0
+
+-- patterns outside the subset fall back to RE2 (results must still be correct)
+1
+1
+1
+123
+-- vectorized over many rows, exercising the SIMD scan and the tail
+1000
+0
+590
+1
+0
+1
+-- the JIT result matches the RE2 result for the same patterns
+3
+3

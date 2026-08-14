@@ -64,6 +64,30 @@ private:
     std::chrono::system_clock::time_point expires_on;
 };
 
+/// A credential backed by an external token source (e.g. the OneLake catalog client, which
+/// renews access tokens with an Entra ID refresh token). The SDK invokes GetToken per request
+/// and caches the result until near ExpiresOn, so renewal is transparent to long reads.
+class TokenProviderCredential : public Azure::Core::Credentials::TokenCredential
+{
+public:
+    using TokenProvider = std::function<std::pair<std::string, std::chrono::system_clock::time_point>()>;
+
+    explicit TokenProviderCredential(TokenProvider provider_)
+        : provider(std::move(provider_))
+    {}
+
+    Azure::Core::Credentials::AccessToken GetToken(
+        Azure::Core::Credentials::TokenRequestContext const &,
+        Azure::Core::Context const &) const override
+    {
+        auto [token, expires_on] = provider();
+        return Azure::Core::Credentials::AccessToken { .Token = std::move(token), .ExpiresOn = expires_on };
+    }
+
+private:
+    TokenProvider provider;
+};
+
 using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
 
 using AuthMethod = std::variant<
@@ -72,7 +96,8 @@ using AuthMethod = std::variant<
     std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
     std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
-    std::shared_ptr<AzureBlobStorage::StaticCredential>>;
+    std::shared_ptr<AzureBlobStorage::StaticCredential>,
+    std::shared_ptr<AzureBlobStorage::TokenProviderCredential>>;
 
 
 struct ConnectionParams;
@@ -106,10 +131,32 @@ struct ObjectMetadata
 {
     uint64_t size_bytes = 0;
     bool is_size_known = true;
+    /// True if this metadata was obtained from a real object-storage request (HEAD/listing).
+    /// False only for the skip_object_metadata placeholder.
+    bool is_fetched = true;
     Poco::Timestamp last_modified;
+    /// Whether `last_modified` carries a real modification time. Some object storages (e.g. a web server
+    /// whose HTTP response has no `Last-Modified` header) cannot report it; leaving `last_modified` at the
+    /// default epoch would make the schema/count caches treat the object as older than any cached entry and
+    /// silently reuse a stale value. Cache validators must skip the cache when this is `false`.
+    bool is_last_modified_known = true;
     std::string etag;
+    /// Whether `etag` is a strong content/version identifier, i.e. different content is
+    /// guaranteed to produce a different `etag`. Real S3/Azure ETags and the sub-second
+    /// mtime token used for local files are strong. It is only safe to use `etag` as a
+    /// content-cache key (filesystem cache, page cache, Parquet metadata cache) when this
+    /// is true. HDFS can only derive a second-precision `(mtime, size)` token, which is
+    /// fine to expose via the `_etag` virtual column but is not strong: a same-second,
+    /// same-size rewrite would collide and could serve stale cached data.
+    bool etag_is_strong = true;
     ObjectAttributes tags;
     ObjectAttributes attributes;
+
+    /// `etag` may be used as a content-cache key (filesystem cache, page cache, Parquet
+    /// metadata cache) only when it is present and a strong content identifier. A weak
+    /// etag (e.g. the second-precision HDFS token) must never key a cache, otherwise a
+    /// same-second, same-size rewrite could serve stale data.
+    bool isEtagUsableAsCacheKey() const { return !etag.empty() && etag_is_strong; }
 };
 
 struct DataLakeObjectMetadata;
@@ -117,6 +164,10 @@ struct DataLakeObjectMetadata;
 struct RelativePathWithMetadata
 {
     String relative_path;
+    std::optional<size_t> read_source_index;
+    std::optional<String> path_for_glob_matching;
+    std::optional<String> path_for_deduplication;
+    bool derive_file_name_from_url_path = false;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
 
@@ -127,12 +178,31 @@ struct RelativePathWithMetadata
         , metadata(std::move(metadata_))
     {}
 
+    RelativePathWithMetadata(String relative_path_, std::optional<size_t> read_source_index_, std::optional<ObjectMetadata> metadata_ = std::nullopt)
+        : relative_path(std::move(relative_path_))
+        , read_source_index(read_source_index_)
+        , metadata(std::move(metadata_))
+    {}
+
     RelativePathWithMetadata(const RelativePathWithMetadata & other) = default;
 
     ~RelativePathWithMetadata() = default;
 
-    std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
+    std::string getFileName() const
+    {
+        if (!derive_file_name_from_url_path)
+            return std::filesystem::path(relative_path).filename();
+
+        /// Web index listings can carry a URL query/fragment in `relative_path` (for example,
+        /// "data.tsv.gz?download=1"). They are not part of the file name and would defeat
+        /// extension-based format/compression detection, so strip them only for web paths, consistent
+        /// with how direct `url` reads use the URL path component.
+        const auto pos = relative_path.find_first_of("?#");
+        const std::string path_without_query = pos == std::string::npos ? relative_path : relative_path.substr(0, pos);
+        return std::filesystem::path(path_without_query).filename();
+    }
     std::string getPath() const { return relative_path; }
+    std::string getPathForGlobMatching() const { return path_for_glob_matching.value_or(relative_path); }
 };
 
 struct ObjectKeyWithMetadata
@@ -206,9 +276,17 @@ public:
 
     /// Get object metadata if supported. It should be possible to receive at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
+    virtual ObjectMetadata getObjectMetadata(const RelativePathWithMetadata & object, bool with_tags) const
+    {
+        return getObjectMetadata(object.getPath(), with_tags);
+    }
 
     /// Same as getObjectMetadata(), but ignores if object does not exist.
     virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const = 0;
+    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const RelativePathWithMetadata & object, bool with_tags) const
+    {
+        return tryGetObjectMetadata(object.getPath(), with_tags);
+    }
 
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
@@ -300,6 +378,11 @@ public:
     struct ApplyNewSettingsOptions
     {
         bool allow_client_change = true;
+
+        /// Force the client to be rebuilt even if the stored settings did not change. Used to re-resolve
+        /// credentials under a different accessing context (e.g. re-applying the server-credential opt-in to a
+        /// server-internal table whose client was built restricted at metadata load) without detaching the table.
+        bool force_client_rebuild = false;
     };
     virtual void applyNewSettings(
         const Poco::Util::AbstractConfiguration & /* config */,
@@ -322,6 +405,14 @@ public:
     virtual bool isReadOnly() const { return false; }
 
     virtual bool supportParallelWrite() const { return false; }
+
+    /// Whether a fetched `ObjectMetadata` is guaranteed to carry at least one comparable generation
+    /// token — a non-empty `etag`, a known size, or a known modification time — so that two fetches
+    /// of the same path can prove the object was not overwritten in between. Web origins may
+    /// legitimately omit all of them (no `ETag`, no `Content-Length`, no `Last-Modified`), so callers
+    /// that must reread the same generation of an object (e.g. lazy materialization) have to skip
+    /// such storages instead of failing close at read time.
+    virtual bool supportsObjectGenerationComparison() const { return true; }
 
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
 

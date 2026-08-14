@@ -1,0 +1,174 @@
+---
+sidebarTitle: '为什么 ClickHouse 如此之快？'
+description: '它从设计之初就是为了追求速度。在开发过程中，查询执行性能始终是最高优先级，但同时也兼顾了易用性、可扩展性和安全性等其他重要特性，从而使 ClickHouse 能够成为真正的生产系统。'
+title: '为什么 ClickHouse 如此之快？'
+slug: /concepts/why-clickhouse-is-so-fast
+keywords: ['架构', 'VLDB', '性能']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+除了[数据组织方式](/zh/get-started/about/intro#row-oriented-vs-column-oriented-storage)之外，影响数据库性能的因素还有很多。
+接下来，我们将更详细地说明 ClickHouse 为什么如此之快，尤其是在与其他列式数据库相比时。
+
+从架构角度来看，数据库至少由存储层和查询处理层组成。存储层负责保存、加载和维护表数据，查询处理层则负责执行用户查询。与其他数据库相比，ClickHouse 在这两层都进行了创新，因此能够实现极快的 insert 和 Select 查询。
+
+<div id="storage-layer-concurrent-inserts-are-isolated-from-each-other">
+  ## 存储层：并发插入彼此隔离
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vsykFYns0Ws?si=hE2qnOf6cDKn-otP" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+在 ClickHouse 中，每个表都由多个“table part”组成。每当用户向表中插入数据时 (INSERT 语句) ，都会创建一个 [part](/zh/concepts/core-concepts/parts)。查询总是针对查询开始时已存在的所有 table part 执行。
+
+为避免累积过多的 parts，ClickHouse 会在后台运行 [merge](/zh/concepts/core-concepts/merges) 操作，持续将多个较小的 part 合并成一个更大的 part。
+
+这种方式有几个优点：所有数据处理都可以[下放到后台的 part merge](/zh/get-started/about/why-clickhouse-is-so-fast#storage-layer-merge-time-computation)中完成，从而让数据写入保持轻量且高效。单次插入具有“局部性”，也就是说，它们无需更新全局性的、也就是表级别的数据结构。因此，多个同时进行的插入既不需要彼此同步，也不需要与现有表数据同步，所以插入几乎可以达到磁盘 I/O 的速度。
+
+🤿 如需深入了解，可参阅我们 VLDB 2024 论文网页版中的[磁盘格式](/zh/concepts/core-concepts/academic-overview#3-1-on-disk-format)章节。
+
+<div id="storage-layer-concurrent-inserts-and-selects-are-isolated">
+  ## 存储层：并发插入与 SELECT 查询彼此隔离
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/dvGlPh2bJFo?si=F3MSALPpe0gAoq5k" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+插入操作与 SELECT 查询完全隔离，已插入的数据 parts会在后台合并，不会影响并发查询。
+
+🤿 如需深入了解，请参阅我们 VLDB 2024 论文网页版中的[存储层](/zh/concepts/core-concepts/academic-overview#3-storage-layer)部分。
+
+<div id="storage-layer-merge-time-computation">
+  ## 存储层：合并时计算
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/_w3zQg695c0?si=g0Wa_Petn-LcmC-6" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+与其他数据库不同，ClickHouse 通过在后台 [merge](/zh/concepts/core-concepts/merges) 过程中执行所有额外的数据转换，来保证数据写入既轻量又高效。这类转换包括：
+
+* **Replacing merges**：仅保留输入 parts 中某一行的最新版本，并丢弃该行的其他所有版本。Replacing merges 可以看作一种在合并时进行的清理操作。
+
+* **Aggregating merges**：将输入 part 中间的聚合状态合并为新的聚合状态。虽然这听起来不太直观，但它本质上实现的只是增量聚合。
+
+* **TTL (生存时间 (TTL))  merges**：根据特定的时间规则，对行进行压缩、移动或删除。
+
+这些转换的目的，是把工作 (计算) 从用户查询执行时转移到合并阶段。这很重要，原因有二：
+
+一方面，如果用户查询能够利用“转换后”的数据，例如预聚合数据，查询速度可能会大幅提升，有时甚至可达 1000 倍或更高。
+
+另一方面，merge 的大部分耗时都花在加载输入 parts 和保存输出 part 上。因此，在合并过程中额外进行数据转换，通常不会对 merge 的整体耗时带来太大影响。这一切都对用户完全透明，也不会影响查询结果 (性能除外) 。
+
+🤿 如需深入了解，请参阅我们 VLDB 2024 论文 Web 版本中的 [Merge-time Data Transformation](/zh/concepts/core-concepts/academic-overview#3-3-merge-time-data-transformation) 一节。
+
+<div id="storage-layer-data-pruning">
+  ## 存储层：数据剪枝
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/UJpVAx7o1aY?si=w-AfhBcRIO-e3Ysj" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+在实际场景中，许多查询都是重复执行的，也就是说，它们会定期原样运行，或仅做少量修改 (例如参数值不同) 。反复运行相同或相似的查询后，我们就可以通过添加索引或重新组织数据，让高频查询更快访问数据。这种方法也称为“数据剪枝”，ClickHouse 为此提供了三种技术：
+
+1. [主键索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design)，用于定义表数据的排序顺序。选择得当的主键可以通过快速二分查找来判断过滤条件 (例如上述查询中的 WHERE 子句) ，而不必进行全列扫描。更技术一点地说，扫描的运行时间相对于数据规模是对数级，而不是线性级。
+
+2. [表投影](/zh/reference/statements/alter/projection)，即表的另一种内部版本，存储相同的数据，但按不同的主键排序。当存在多个高频过滤条件时，投影会很有用。
+
+3. [跳过索引](/zh/concepts/features/performance/skip-indexes/skipping-indexes)，它会在列中嵌入额外的数据统计信息，例如列的最小值和最大值、唯一值集合等。跳过索引与主键和表投影相互独立，并且根据列中的数据分布，它们可以显著加快过滤条件的评估。
+
+这三种技术的目标都是在全列读取时尽可能跳过更多行，因为读取数据最快的方式，就是什么都不读。
+
+🤿 如需深入了解，可参阅我们 VLDB 2024 论文网页版中的 [Data Pruning](/zh/concepts/core-concepts/academic-overview#3-2-data-pruning) 章节。
+
+<div id="storage-layer-data-compression">
+  ## 存储层：数据压缩
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/MH10E3rVvnM?si=duWmS_OatCLx-akH" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+此外，ClickHouse 的存储层还支持使用不同的编解码器 (可选) 对原始表数据进行压缩。
+
+列式存储尤其适合这类压缩，因为相同类型、数据分布相近的值会集中存放在一起。
+
+用户可以[指定](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)列使用各种通用压缩算法 (如 ZSTD) 或专用编解码器进行压缩，例如针对浮点值的 Gorilla 和 FPC、针对整数值的 Delta 和 GCD，甚至还可以使用 AES 作为加密编解码器。
+
+数据压缩不仅能减少数据库表的存储占用，而且在很多情况下还能提升查询性能，因为本地磁盘和网络 I/O 往往会受限于较低的吞吐量。
+
+🤿 想深入了解这一主题，请参阅我们的 VLDB 2024 论文网页版中的[磁盘格式](/zh/concepts/core-concepts/academic-overview#3-1-on-disk-format)章节。
+
+<div id="state-of-the-art-query-processing-layer">
+  ## 先进的查询处理层
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/O5qecdQ7Y18?si=XVtOIuVd8NLbqyox" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+最后，ClickHouse 采用了向量化的查询处理层，尽可能并行执行查询，以充分利用所有资源，实现最高的速度与效率。
+
+“向量化”是指查询计划中的算子以批次而不是逐行传递中间结果。这样可以更高效地利用 CPU 缓存，并让算子能够借助 SIMD 指令一次处理多个值。事实上，许多算子都有多个版本 - 每一代 SIMD 指令集都对应一个版本。ClickHouse 会根据底层硬件的能力，自动选择最新、最快的版本。
+
+现代系统通常拥有数十个 CPU 核心。为了充分利用所有核心，ClickHouse 会将查询计划展开为多条执行通道，通常每个核心对应一条。每条通道处理表数据中一段互不重叠的范围。这样一来，数据库的性能便能随着可用核心数量增加而实现“纵向”扩展。
+
+如果单个节点已无法容纳表数据，就可以增加更多节点组成集群。表可以被拆分 (“分片”) 并分布到各个节点上。ClickHouse 会在所有存储表数据的节点上执行查询，从而随着可用节点数量增加实现“横向”扩展。
+
+🤿 如需深入了解，请参阅我们 VLDB 2024 论文网页版中 [查询处理层](/zh/concepts/core-concepts/academic-overview#4-query-processing-layer) 一节。
+
+<div id="meticulous-attention-to-detail">
+  ## 对细节的极致关注
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/dccGLSuYWy0?si=rQ-Jp-z5Ik_-Rb8S" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+> **“ClickHouse 简直是个异类系统——你们竟然做了 20 种版本的哈希表。你们有这么多了不起的设计，而大多数系统通常只有一种哈希表** **...** **ClickHouse 之所以能有如此惊人的性能，正是因为它拥有所有这些专门化的组件”** [Andy Pavlo，CMU 数据库教授](https://www.youtube.com/watch?v=Vy2t_wZx4Is\&t=3579s)
+
+ClickHouse 之所以能 [脱颖而出](https://www.youtube.com/watch?v=CAS2otEoerM)，关键就在于它对底层优化的极致打磨。做出一个“能用”的数据库是一回事，但要把它工程化到能在各种查询类型、数据结构、数据分布和索引配置下都保持高速，才真正体现出这种“[异类系统](https://youtu.be/Vy2t_wZx4Is?si=K7MyzsBBxgmGcuGU\&t=3579)”般的匠心。
+
+**哈希表。** 以哈希表为例。哈希表是 join 和 aggregation 所依赖的核心数据结构。作为程序员，需要考虑以下设计决策：
+
+* 选择哪种哈希函数，
+* 如何解决冲突：[开放寻址](https://en.wikipedia.org/wiki/Open_addressing) 还是 [链地址法](https://en.wikipedia.org/wiki/Hash_table#Separate_chaining)，
+* 内存布局：键和值是放在同一个数组中，还是分别放在不同数组中？
+* 填充因子：何时扩容、如何扩容？扩容时如何迁移值？
+* 删除：哈希表是否应该允许删除条目？
+
+第三方库提供的标准哈希表在功能上当然可用，但性能未必够快。要获得卓越性能，需要进行细致入微的 benchmark 和实验。
+
+[ClickHouse 中的哈希表实现](https://clickhouse.com/blog/hash-tables-in-clickhouse-and-zero-cost-abstractions)会根据查询和数据的具体特征，从**30 多种预编译的哈希表变体中选择一种**。
+
+**算法。** 算法也是如此。例如，在排序时，你可能需要考虑：
+
+* 要排序的是什么：数字、元组、字符串，还是结构体？
+* 数据是否在 RAM 中？
+* 是否要求排序是稳定的？
+* 是必须对全部数据排序，还是部分排序就足够？
+
+依赖数据特征的算法通常比通用算法表现更好。如果事先无法得知数据特征，系统可以尝试多种实现，并在运行时选择效果最好的那一种。相关示例可参见这篇[介绍 ClickHouse 如何实现 LZ4 解压缩的文章](https://habr.com/en/company/yandex/blog/457612/)。
+
+🤿 如需深入了解，可阅读我们 VLDB 2024 论文 Web 版中的 [Holistic Performance Optimization](/zh/concepts/core-concepts/academic-overview#4-4-holistic-performance-optimization) 一节。
+
+<div id="vldb-2024-paper">
+  ## VLDB 2024 论文
+</div>
+
+2024 年 8 月，我们的第一篇研究论文被 VLDB 接收并发表。
+VLDB 是关于超大型数据库的国际会议，被广泛认为是数据管理领域最顶尖的会议之一。
+在数百篇投稿中，VLDB 的录用率通常约为 20%。
+
+你可以阅读这篇论文的 [PDF](https://www.vldb.org/pvldb/vol17/p3731-schulze.pdf)，也可以查看其[网页版](/zh/concepts/core-concepts/academic-overview)。网页版简要介绍了 ClickHouse 最有意思的一些架构和系统设计组件，这些设计正是它如此之快的原因。
+
+ClickHouse 的创始人兼 CTO Alexey Milovidov 对这篇论文进行了演讲 (幻灯片见[此处](https://raw.githubusercontent.com/ClickHouse/clickhouse-presentations/master/2024-vldb/VLDB_2024_presentation.pdf)) ，随后还进行了问答环节 (可惜时间很快就不够了！) 。
+你可以在这里观看演讲录像：
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7QXKBKDOkJE?si=5uFerjqPSXQWqDkF" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

@@ -11,7 +11,8 @@ CROSS JOIN
     FROM system.one
 ) AS x
 WHERE equals(x.x, 1)
-WITH rhs AS
+WITH
+    rhs AS
     (
         SELECT 1
         FROM system.one

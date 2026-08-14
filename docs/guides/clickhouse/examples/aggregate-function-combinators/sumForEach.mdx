@@ -1,0 +1,51 @@
+---
+slug: '/examples/aggregate-function-combinators/sumForEach'
+title: 'sumForEach'
+description: 'Example of using the sumForEach aggregate function'
+keywords: ['sum', 'ForEach', 'combinator', 'examples', 'sumForEach']
+sidebarTitle: 'sumForEach'
+doc_type: 'reference'
+---
+
+import { RunnableCode } from "/snippets/components/RunnableCode/RunnableCode.jsx";
+
+## Description {#description}
+
+The [`ForEach`](/reference/functions/aggregate-functions/combinators#-foreach) combinator
+can be applied to the [`sum`](/reference/functions/aggregate-functions/sum) aggregate function to turn it from an aggregate
+function which operates on row values to an aggregate function which operates on
+array columns, applying the aggregate to each element in the array across rows.
+
+## Example usage {#example-usage}
+
+For this example we'll make use of the `hits` dataset available in our [SQL playground](https://sql.clickhouse.com/).
+
+The `hits` table contains a column called `isMobile` of type UInt8 which can be 
+`0` for Desktop or `1` for mobile:
+
+<RunnableCode>
+```sql
+SELECT EventTime, IsMobile FROM metrica.hits ORDER BY rand() LIMIT 10
+```
+</RunnableCode>
+We'll use the `sumForEach` aggregate combinator function to analyze how 
+desktop versus mobile traffic varies by hour of the day. Click the play button 
+below to run the query interactively:
+
+<RunnableCode>
+```sql
+SELECT
+    toHour(EventTime) AS hour_of_day,
+    -- Use sumForEach to count desktop and mobile visits in one pass
+    sumForEach([
+        IsMobile = 0, -- Desktop visits (IsMobile = 0)
+        IsMobile = 1  -- Mobile visits (IsMobile = 1)
+    ]) AS device_counts
+FROM metrica.hits
+GROUP BY hour_of_day
+ORDER BY hour_of_day;
+```
+</RunnableCode>
+## See also {#see-also}
+- [`sum`](/reference/functions/aggregate-functions/sum)
+- [`ForEach` combinator](/reference/functions/aggregate-functions/combinators#-foreach)

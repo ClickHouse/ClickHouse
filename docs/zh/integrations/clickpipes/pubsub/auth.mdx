@@ -1,0 +1,170 @@
+---
+slug: /integrations/clickpipes/pubsub/auth
+sidebarTitle: 'Pub/Sub IAM 权限'
+title: 'Pub/Sub IAM 权限'
+description: '本文介绍 ClickPipes 为通过 Google Cloud Pub/Sub 进行身份验证并从您的主题中消费数据所需的 GCP IAM 权限。'
+doc_type: 'guide'
+keywords: ['Google Cloud Pub/Sub', 'GCP IAM', '服务账号']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<Note>
+  您可以在[这里](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview)加入私有预览等候名单。
+</Note>
+
+本文介绍 ClickPipes 为通过 Google Cloud Pub/Sub 进行身份验证并从您的主题中消费数据所需的 GCP IAM 权限，以及如何设置一个恰好授予这些权限的服务账号。
+
+<div id="prerequisite">
+  ## 前置条件
+</div>
+
+要按照本指南操作，你需要具备：
+
+* 一个处于活跃状态的 ClickHouse Cloud 服务
+* 一个 GCP 项目，其中包含你要从中摄取数据的 Pub/Sub topic
+* 在该项目中拥有创建服务账号并授予角色所需的 IAM 权限
+
+<div id="authentication-model">
+  ## 身份验证模型
+</div>
+
+用于 Pub/Sub 的 ClickPipes 使用 [服务账号 JSON 密钥](https://cloud.google.com/iam/docs/keys-create-delete)向 GCP 进行身份验证。创建管道时，您需要上传该密钥文件；ClickPipes 会在静态存储时对其加密，并在运行时将其用于：
+
+* 列出并读取您项目中的 topic，
+* 创建和删除 ClickPipes 用于消费消息的[托管订阅](/zh/integrations/clickpipes/pubsub/overview#managed-subscriptions)，
+* 从该订阅消费消息，以及
+* (可选) 从 Schema Registry 读取原生 Pub/Sub schema。
+
+不支持 Workload Identity 或直接粘贴凭据；目前唯一支持的身份验证方法是服务账号 JSON 密钥。
+
+<div id="required-permissions">
+  ## 所需权限
+</div>
+
+ClickPipes 需要在拥有该 topic 的 GCP 项目中具备以下 IAM 权限。这些权限涵盖管道的完整生命周期：发现 (topic 列表、验证、采样) 、订阅管理、稳定运行时的摄取以及清理。
+
+<div id="topic-access">
+  ### topic 访问 (发现与校验)
+</div>
+
+| 权限                                 | 用途                                          |
+| ---------------------------------- | ------------------------------------------- |
+| `pubsub.topics.list`               | 在发现过程中列出项目中可用的 topic                        |
+| `pubsub.topics.get`                | 校验 topic 是否存在并获取 schema 配置                  |
+| `pubsub.topics.attachSubscription` | 创建针对某个 **topic** 的订阅时，需要在该 **topic** 上具备此权限 |
+
+<div id="subscription-lifecycle">
+  ### 订阅生命周期 (发现与摄取)
+</div>
+
+| Permission                     | Purpose                                 |
+| ------------------------------ | --------------------------------------- |
+| `pubsub.subscriptions.create`  | 创建托管订阅 (`clickpipes-{pipeID}`) 和临时发现订阅  |
+| `pubsub.subscriptions.get`     | 健康检查 (每 60 秒一次) 、follower 轮询、订阅验证       |
+| `pubsub.subscriptions.delete`  | 清理临时发现订阅，并在删除管道时删除托管订阅                  |
+| `pubsub.subscriptions.consume` | `Receive()`、`Ack()`、`Nack()` 以及按时间戳寻道操作 |
+
+<div id="schema-access">
+  ### Schema 访问 (可选——仅适用于原生 Avro/Protobuf topic)
+</div>
+
+| 权限                   | 用途                                       |
+| -------------------- | ---------------------------------------- |
+| `pubsub.schemas.get` | 从 Pub/Sub Schema Registry 获取原生 schema 定义 |
+
+<div id="predefined-roles">
+  ## 预定义角色
+</div>
+
+| 角色                                                                                                   | 是否足够？ | 说明                                                                                                          |
+| ---------------------------------------------------------------------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------- |
+| [`roles/pubsub.editor`](https://cloud.google.com/iam/docs/understanding-roles#pubsub.editor)         | 是     | 涵盖所有必需的权限。可用范围最广。                                                                                           |
+| [`roles/pubsub.subscriber`](https://cloud.google.com/iam/docs/understanding-roles#pubsub.subscriber) | **否** | 缺少 `topics.list`、`topics.attachSubscription`、`subscriptions.create`、`subscriptions.delete` 和 `schemas.get`。 |
+| [`roles/pubsub.viewer`](https://cloud.google.com/iam/docs/understanding-roles#pubsub.viewer)         | **否** | 只读——不支持订阅管理或消费。                                                                                             |
+| 自定义角色 *(推荐)*                                                                                         | 是     | 使用上述七项核心权限 (以及可选的 `schemas.get`) 即可实现最小权限访问。                                                                |
+
+<div id="setup">
+  ## 配置
+</div>
+
+<div id="create-custom-role">
+  ### 创建自定义角色 (推荐)
+</div>
+
+为遵循最小权限原则，请创建一个仅包含 ClickPipes 所需权限的自定义角色。
+
+你可以使用 `gcloud` CLI 执行此操作：
+
+```bash
+gcloud iam roles create clickpipes.pubsub.ingestion \
+  --project=YOUR_PROJECT_ID \
+  --title="ClickPipes Pub/Sub Ingestion" \
+  --description="Permissions required by ClickHouse ClickPipes to ingest from Pub/Sub" \
+  --permissions=pubsub.topics.list,pubsub.topics.get,pubsub.topics.attachSubscription,pubsub.subscriptions.create,pubsub.subscriptions.get,pubsub.subscriptions.delete,pubsub.subscriptions.consume \
+  --stage=GA
+```
+
+或者，在 GCP Console 中，前往 **IAM &amp; Admin → Roles → Create role**，并添加[所需权限](#required-permissions)中列出的各项权限。
+
+<Info>
+  **可选权限**
+
+  如果你要从使用原生 Pub/Sub Avro 或 Protobuf schema 的 topic 摄取数据，请将 `pubsub.schemas.get` 追加到 `--permissions` 列表中。否则无需添加，以保持角色权限最小化。
+</Info>
+
+如果你不想创建自定义角色，也可以直接授予 `roles/pubsub.editor`。
+
+<div id="create-service-account">
+  ### 创建服务账号
+</div>
+
+为 ClickPipe 创建专用服务账号：
+
+```bash
+gcloud iam service-accounts create clickpipes-pubsub \
+  --project=YOUR_PROJECT_ID \
+  --display-name="ClickPipes Pub/Sub Ingestion"
+```
+
+<div id="grant-role">
+  ### 向服务账号授予角色
+</div>
+
+在项目级别，将你创建的角色 (或 `roles/pubsub.editor`) 绑定到服务账号：
+
+```bash
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:clickpipes-pubsub@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="projects/YOUR_PROJECT_ID/roles/clickpipes.pubsub.ingestion"
+```
+
+<div id="create-key">
+  ### 创建并下载服务账号密钥
+</div>
+
+为服务账号创建一个 JSON 密钥，并下载到本地：
+
+```bash
+gcloud iam service-accounts keys create clickpipes-pubsub-key.json \
+  --iam-account=clickpipes-pubsub@YOUR_PROJECT_ID.iam.gserviceaccount.com
+```
+
+您将在创建该管道时，在 ClickPipes UI 中上传此 `clickpipes-pubsub-key.json` 文件。
+
+<Info>
+  **请将该密钥作为机密信息处理**
+
+  服务账号密钥可用于访问您的 GCP 项目。请妥善保管该文件，不要将其提交到版本控制系统，并定期轮换。上传后，ClickPipes 会对静态存储中的密钥进行加密。
+</Info>
+
+<div id="notes">
+  ## 注意事项
+</div>
+
+* `pubsub.topics.attachSubscription` 需要在**topic 资源**上授予，而不是在订阅上。只授予订阅级权限时，通常会遗漏这一点。
+* 如果您的 topic 未使用原生 Pub/Sub schema (Avro 或 Protobuf) ，则不需要 `pubsub.schemas.get` 权限。
+* 托管订阅命名为 `clickpipes-{pipeID}`，ack deadline 为 60 秒，消息保留期为 7 天，并启用了消息排序。
+* 临时发现订阅命名为 `clickpipes-discovery-{uuid}`，ack deadline 为 10 秒，保留期为 10 分钟，并设置了 24 小时自动过期的生存时间 (TTL)。
+* ClickPipes 将 `PermissionDenied` 和 `Unauthenticated` 错误视为不可重试——如果缺少权限，管道会立即失败，而不是无限重试。

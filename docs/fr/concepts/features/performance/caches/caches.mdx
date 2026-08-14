@@ -1,0 +1,36 @@
+---
+description: 'Lors de l’exécution de requêtes, ClickHouse utilise différents caches.'
+sidebarTitle: 'Caches'
+slug: /operations/caches
+title: 'Types de cache'
+keywords: ['cache']
+doc_type: 'reference'
+---
+
+Lors de l’exécution de requêtes, ClickHouse utilise différents caches pour accélérer les requêtes
+et réduire le besoin de lire sur le disque ou d’y écrire.
+
+Les principaux types de cache sont :
+
+* `mark_cache` — Cache des [marks](/fr/resources/develop-contribute/introduction/architecture#merge-tree) utilisé par les moteurs de table de la famille [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree).
+* `uncompressed_cache` — Cache de données non compressées utilisé par les moteurs de table de la famille [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree).
+* Cache de pages du système d’exploitation (utilisé indirectement pour les fichiers contenant les données proprement dites).
+
+Il existe également toute une série d’autres types de cache :
+
+* Cache DNS.
+* Cache [Regexp](/fr/reference/formats/Regexp).
+* Cache des expressions compilées.
+* Cache de l’[index de similarité vectorielle](/fr/reference/engines/table-engines/mergetree-family/annindexes).
+* Cache de l’[index de texte](/fr/reference/engines/table-engines/mergetree-family/textindexes#caching).
+* Cache des schémas du [format Avro](/fr/reference/formats/Avro/Avro).
+* Cache de données des [Dictionaries](/fr/reference/statements/create/dictionary).
+* Cache d’inférence de schéma.
+* [Cache du système de fichiers](/fr/concepts/features/configuration/server-config/storing-data) sur S3, Azure, Local et d’autres disques.
+* [Cache de pages en espace utilisateur](/fr/concepts/features/performance/caches/userspace-page-cache)
+* [Cache de requêtes](/fr/concepts/features/performance/caches/query-cache).
+* [Cache des conditions de requête](/fr/concepts/features/performance/caches/query-condition-cache).
+* Cache des schémas de format.
+
+Si vous souhaitez vider l’un des caches, pour optimiser les performances, effectuer du troubleshooting ou pour des raisons de cohérence des données,
+vous pouvez utiliser l’instruction [`SYSTEM CLEAR ... CACHE`](/fr/reference/statements/system).

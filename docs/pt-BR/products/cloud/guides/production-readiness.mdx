@@ -1,0 +1,242 @@
+---
+slug: /cloud/guides/production-readiness
+sidebarTitle: 'Prontidão para produção'
+title: 'Guia de prontidão para produção no ClickHouse Cloud'
+description: 'Guia para organizações em transição do Quick Start para implantações do ClickHouse Cloud prontas para uso empresarial'
+keywords: ['prontidão para produção', 'enterprise', 'saml', 'sso', 'terraform', 'monitoramento', 'backup', 'recuperação de desastres']
+doc_type: 'guide'
+---
+
+Para organizações que concluíram o guia de Quick Start e têm um serviço ativo com dados fluindo
+
+<Info>
+  **TL;DR**
+
+  Este guia ajuda você a passar do Quick Start para implantações do ClickHouse Cloud prontas para uso empresarial. Você aprenderá a:
+
+  * Estabelecer ambientes separados de desenvolvimento/staging/produção para testes seguros
+  * Integrar a autenticação SAML/SSO ao seu provedor de identidade
+  * Automatizar implantações com Terraform ou a Cloud API
+  * Conectar o monitoramento à sua infraestrutura de alertas (Prometheus, PagerDuty)
+  * Validar procedimentos de backup e documentar processos de recuperação de desastres
+</Info>
+
+<div id="introduction">
+  ## Introdução
+</div>
+
+Você já tem o ClickHouse Cloud em funcionamento com sucesso para as workloads da sua empresa. Agora, precisa amadurecer sua implantação para atender aos padrões de produção de nível empresarial — seja por causa de uma auditoria de conformidade, de um incidente em produção causado por uma consulta não testada ou de exigências de TI para integração com sistemas corporativos.
+
+A plataforma gerenciada do ClickHouse Cloud cuida das operações de infraestrutura, do escalonamento automático e da manutenção do sistema. A prontidão para produção em nível empresarial exige conectar o ClickHouse Cloud ao seu ambiente de TI mais amplo por meio de sistemas de autenticação, infraestrutura de monitoramento, ferramentas de automação e processos de continuidade de negócios.
+
+Suas responsabilidades para garantir a prontidão para produção em nível empresarial:
+
+* Estabelecer ambientes separados para testes seguros antes da implantação em produção
+* Integrar-se aos provedores de identidade e sistemas de gerenciamento de acesso existentes
+* Conectar o monitoramento e os alertas à sua infraestrutura operacional
+* Implementar práticas de infraestrutura como código para garantir um gerenciamento consistente
+* Estabelecer procedimentos de validação de backup e recuperação de desastres
+* Configurar o gerenciamento de custos e a integração com faturamento
+
+Este guia conduz você por cada uma dessas áreas, ajudando na transição de uma implantação funcional do ClickHouse Cloud para um sistema pronto para uso empresarial.
+
+<div id="environment-strategy">
+  ## Estratégia de ambientes
+</div>
+
+Estabeleça ambientes separados para testar alterações com segurança antes de impactar as cargas de trabalho de produção. A maioria dos incidentes em produção tem origem em consultas ou alterações de configuração não testadas, implantadas diretamente nos sistemas de produção.
+
+<Note>
+  **No ClickHouse Cloud, cada ambiente é um serviço separado.** Você provisionará serviços distintos de produção, staging e desenvolvimento dentro da sua organização, cada um com seus próprios recursos de computação, armazenamento e endpoint.
+</Note>
+
+**Estrutura de ambientes**: Mantenha ambientes de produção (cargas de trabalho ativas), staging (validação equivalente à produção) e desenvolvimento (experimentação individual ou em equipe).
+
+**Testes**: Teste consultas em staging antes da implantação em produção. Consultas que funcionam em conjuntos de dados pequenos frequentemente causam esgotamento de memória, uso excessivo de CPU ou execução lenta na escala de produção. Valide alterações de configuração, incluindo permissões de usuário, quotas e configurações do serviço, em staging — erros de configuração descobertos em produção geram incidentes operacionais imediatos.
+
+**Dimensionamento**: Dimensione seu serviço de staging para se aproximar das características de carga da produção. Testar em uma infraestrutura significativamente menor pode não revelar contenção de recursos ou problemas de escalonamento. Use conjuntos de dados representativos da produção por meio de atualizações periódicas dos dados ou geração de dados sintéticos. Para orientações sobre como dimensionar seu ambiente de staging e escalar serviços adequadamente, consulte a documentação de [Sizing and hardware recommendations](/pt-BR/guides/oss/best-practices/sizing-and-hardware-recommendations) e [Scaling in ClickHouse Cloud](/pt-BR/products/cloud/features/autoscaling/overview). Esses recursos fornecem orientações práticas sobre dimensionamento de memória, CPU e armazenamento, bem como detalhes sobre opções de escalonamento vertical e horizontal para ajudar você a alinhar seu ambiente de staging às cargas de trabalho de produção.
+
+<div id="private-networking">
+  ## Rede privada
+</div>
+
+A [rede privada](/pt-BR/products/cloud/guides/security/connectivity/private-networking/index) no ClickHouse Cloud permite conectar seus serviços do ClickHouse diretamente à sua rede virtual em nuvem, garantindo que os dados não trafeguem pela internet pública. Isso é essencial para organizações com requisitos rigorosos de segurança ou conformidade, ou para aquelas que executam aplicações em sub-redes privadas.
+
+O ClickHouse Cloud oferece suporte a rede privada por meio dos seguintes mecanismos:
+
+* [AWS PrivateLink](/pt-BR/products/cloud/guides/security/connectivity/private-networking/aws-privatelink): Permite conectividade segura entre sua VPC e o ClickHouse Cloud sem expor o tráfego à internet pública. Oferece suporte à conectividade entre regiões e está disponível nos planos Scale e Enterprise. O Setup envolve criar um endpoint do PrivateLink e adicioná-lo à lista de permissões da sua organização e do seu serviço no ClickHouse Cloud. Mais detalhes e instruções passo a passo estão disponíveis na documentação aqui.
+* [GCP Private Service Connect](/pt-BR/products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect) (PSC): Permite acesso privado ao ClickHouse Cloud a partir da sua VPC no Google Cloud. Assim como na AWS, está disponível nos planos Scale e Enterprise e exige a configuração explícita de endpoints de serviço e listas de permissões aqui.
+* [Azure Private Link](/pt-BR/products/cloud/guides/security/connectivity/private-networking/azure-privatelink): Fornece conectividade privada entre sua VNet no Azure e o ClickHouse Cloud, com suporte a conexões entre regiões. O processo de Setup envolve obter um alias de conexão, criar um endpoint privado e atualizar as listas de permissões aqui.
+
+Se você precisar de mais detalhes técnicos ou de instruções passo a passo para o Setup, a documentação vinculada de cada provedor contém guias abrangentes.
+
+<div id="enterprise-authentication">
+  ## Autenticação Enterprise e gerenciamento de usuários
+</div>
+
+Migrar do gerenciamento de usuários baseado no Console para a integração com autenticação Enterprise é essencial para garantir a prontidão para produção.
+
+<div id="sso-authentication">
+  ### SSO e autenticação social
+</div>
+
+[SAML SSO](/pt-BR/products/cloud/guides/security/cloud-access-management/saml-sso-setup): o nível Enterprise do ClickHouse Cloud oferece suporte à integração SAML com provedores de identidade, incluindo Okta, Azure Active Directory e Google Workspace. A configuração de SAML requer coordenação com o suporte do ClickHouse e envolve fornecer os metadados do seu IdP e configurar mapeamentos de atributos.
+
+[Social SSO](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-my-account): o ClickHouse Cloud também oferece suporte a provedores de autenticação social (Google, Microsoft, GitHub) como uma alternativa ao SAML SSO com o mesmo nível de segurança. O Social SSO permite uma configuração mais rápida para organizações sem infraestrutura SAML existente, mantendo os padrões de segurança corporativos.
+
+<Info>
+  **Limitação importante**
+
+  Usuários autenticados por SAML ou Social SSO são atribuídos à função &quot;Member&quot; por padrão e devem receber manualmente funções adicionais de um admin após o primeiro login. No momento, não há suporte para mapeamento de grupos para funções nem para atribuição automática de funções.
+</Info>
+
+<div id="access-control-design">
+  ### Design de controle de acesso
+</div>
+
+O ClickHouse Cloud usa funções no nível da organização (Admin, Developer, Billing, Member) e funções no nível de serviço/banco de dados (Service Admin, Read Only, funções do SQL Console). Estruture as funções de acordo com as responsabilidades de cada cargo, aplicando o princípio do menor privilégio:
+
+* **Usuários de aplicações**: contas de serviço com acesso específico ao banco de dados e às tabelas
+* **Usuários analistas**: acesso somente leitura a conjuntos de dados selecionados e views de relatórios
+* **Usuários Admin**: recursos administrativos completos
+
+Configure cotas, limites e perfis de configuração para gerenciar o uso de recursos de diferentes usuários e funções. Defina limites de memória e tempo de execução para evitar que consultas individuais afetem o desempenho do sistema. Monitore o uso de recursos por meio de logs de auditoria, de sessão e de consultas para identificar usuários ou aplicações que frequentemente atingem os limites. Realize revisões regulares de acesso usando os recursos de auditoria do ClickHouse Cloud.
+
+<div id="user-lifecycle-management">
+  ### Limitações do gerenciamento do ciclo de vida de usuários
+</div>
+
+O ClickHouse Cloud oferece suporte ao [provisionamento SCIM](/pt-BR/products/cloud/guides/security/cloud-access-management/scim-setup) em prévia privada, com suporte para Okta. O SCIM automatiza o gerenciamento do ciclo de vida de usuários e grupos, de modo que os usuários são criados e removidos automaticamente conforme você os atribui ou remove a atribuição deles no seu provedor de identidade. Se você não estiver usando SCIM, os usuários precisarão ser removidos manualmente do console do ClickHouse Cloud após serem removidos do seu IdP — nesse caso, planeje processos manuais de gerenciamento de usuários.
+
+Saiba mais sobre [Cloud Access Management](/pt-BR/products/cloud/guides/security/cloud-access-management/index) e a [configuração do SAML SSO](/pt-BR/products/cloud/guides/security/cloud-access-management/saml-sso-setup).
+
+<div id="infrastructure-as-code">
+  ## Infraestrutura como código e automação
+</div>
+
+Gerenciar o ClickHouse Cloud por meio de práticas de infraestrutura como código e automação via API proporciona consistência, controle de versão e reprodutibilidade para a configuração da sua implantação.
+
+<div id="terraform-provider">
+  ### Provider do Terraform
+</div>
+
+Configure o provider do Terraform do ClickHouse com chaves de API criadas no console do ClickHouse Cloud:
+
+```terraform
+terraform {
+  required_providers {
+    clickhouse = {
+      source  = "ClickHouse/clickhouse"
+      version = "~> 2.0"
+    }
+  }
+}
+
+provider "clickhouse" {
+  environment     = "production"
+  organization_id = var.organization_id
+  token_key       = var.token_key
+  token_secret    = var.token_secret
+}
+```
+
+O provider do Terraform oferece suporte ao provisionamento de serviços, listas de acesso IP e gerenciamento de usuários. Para recursos não cobertos pelo provider, gerencie-os pelo console ou entre em contato com o suporte do ClickHouse.
+
+Para ver exemplos completos, incluindo configuração de serviços e controles de acesso à rede, consulte [exemplo de Terraform sobre como usar a Cloud API](/pt-BR/resources/support-center/knowledge-base/integrations/terraform-example).
+
+<div id="cloud-api-integration">
+  ### Integração com a Cloud API
+</div>
+
+Organizações com frameworks de automação existentes podem integrar o gerenciamento do ClickHouse Cloud diretamente por meio da Cloud API. A API fornece acesso programático ao gerenciamento do ciclo de vida do serviço, à administração de usuários, às operações de backup e à recuperação de dados de monitoramento.
+
+Padrões comuns de integração com a API:
+
+* Fluxos de trabalho de provisionamento personalizados integrados a sistemas internos de chamados
+* Ajustes automáticos de escalonamento com base nos cronogramas de implantação da aplicação
+* Validação programática de backups e geração de relatórios para fluxos de trabalho de conformidade
+* Integração com plataformas existentes de gerenciamento de infraestrutura
+
+A autenticação da API usa a mesma abordagem baseada em token do Terraform. Para a referência completa da API e exemplos de integração, consulte a documentação da [ClickHouse Cloud API](/pt-BR/products/cloud/features/admin-features/api/api-overview).
+
+<div id="monitoring-integration">
+  ## Monitoramento e integração operacional
+</div>
+
+Conectar o ClickHouse Cloud à sua infraestrutura de monitoramento existente garante visibilidade e permite detectar problemas de forma proativa.
+
+<div id="built-in-monitoring">
+  ### Monitoramento integrado
+</div>
+
+O ClickHouse Cloud oferece um dashboard avançado com métricas em tempo real, incluindo consultas por segundo, uso de memória, uso de CPU e taxas de armazenamento. Acesse pelo Cloud Console em Monitoring → Advanced dashboard. Crie dashboards personalizados adaptados a padrões específicos de workload ou ao consumo de recursos da equipe.
+
+<Info>
+  **Lacunas comuns em produção**
+
+  Falta integração proativa de alertas com sistemas corporativos de gerenciamento de incidentes e monitoramento automatizado de custos. Os dashboards integrados oferecem visibilidade, mas o alertamento automatizado exige integração externa.
+</Info>
+
+<div id="production-alerting">
+  ### Configuração de alertas em produção
+</div>
+
+**Recursos nativos**: o ClickHouse Cloud fornece notificações sobre eventos de faturamento, eventos de escalonamento e Saúde do serviço por email, UI e Slack. Configure os canais de entrega e os níveis de severidade das notificações nas configurações de notificação do Console.
+
+**Integração Enterprise**: para alertas avançados (PagerDuty, webhooks personalizados), use o endpoint do Prometheus para exportar métricas para a sua infraestrutura de monitoramento existente:
+
+```yaml
+scrape_configs:
+  - job_name: "clickhouse"
+    static_configs:
+      - targets: ["https://api.clickhouse.cloud/v1/organizations/<org_id>/prometheus"]
+    basic_auth:
+      username: <KEY_ID>
+      password: <KEY_SECRET>
+```
+
+Para uma configuração completa, incluindo a configuração detalhada do Prometheus/Grafana e alertas avançados, consulte o [Guia de observabilidade do ClickHouse Cloud](/pt-BR/guides/use-cases/observability/cloud-monitoring#prometheus).
+
+<div id="business-continuity">
+  ## Continuidade de negócios e integração com o suporte
+</div>
+
+Definir procedimentos de validação de backup e integração com o suporte garante que sua implantação no ClickHouse Cloud possa se recuperar de incidentes e obter ajuda quando necessário.
+
+<div id="backup-strategy">
+  ### Avaliação da estratégia de backup
+</div>
+
+O ClickHouse Cloud fornece backups automáticos com períodos de retenção configuráveis. Avalie a configuração atual de backup em relação aos requisitos de conformidade e recuperação. Se você tiver requisitos específicos de conformidade relacionados ao local de armazenamento do backup ou à criptografia, poderá configurar o ClickHouse Cloud para armazenar backups em seus próprios buckets de armazenamento em nuvem (BYOB). Entre em contato com o suporte do ClickHouse para configurar o BYOB.
+
+<div id="validate-test-recovery">
+  ### Validar e testar procedimentos de recuperação
+</div>
+
+A maioria das organizações só descobre falhas nos backups em cenários reais de recuperação. Estabeleça ciclos regulares de validação para verificar a integridade dos backups e testar os procedimentos de recuperação antes que ocorram incidentes. Agende restaurações de teste periódicas em ambientes fora de produção, documente os procedimentos de recuperação passo a passo, incluindo estimativas de tempo, verifique a completude dos dados restaurados e a funcionalidade da aplicação, e teste os procedimentos de recuperação em diferentes cenários de falha (exclusão de serviço, corrupção de dados, interrupções regionais). Mantenha runbooks de recuperação atualizados e acessíveis para as equipes de plantão.
+
+Teste a restauração de backups pelo menos trimestralmente para serviços críticos de produção. Organizações com requisitos rigorosos de conformidade podem precisar de ciclos mensais ou até semanais de validação.
+
+<div id="disaster-recovery-planning">
+  ### Planejamento de recuperação de desastres
+</div>
+
+Documente seus objetivos de tempo de recuperação (RTO) e de ponto de recuperação (RPO) para validar que sua configuração atual de backup atende aos requisitos do negócio. Estabeleça cronogramas regulares de testes de restauração de backups e mantenha a documentação de recuperação atualizada.
+
+**Armazenamento de backups entre regiões**: Organizações com requisitos geográficos de recuperação de desastres podem configurar o ClickHouse Cloud para exportar backups para buckets de armazenamento de propriedade do cliente em regiões alternativas. Isso oferece proteção contra indisponibilidades regionais, mas exige procedimentos manuais de restauração. Entre em contato com o suporte do ClickHouse para implementar exportações de backups entre regiões. Futuros lançamentos da plataforma oferecerão recursos automatizados de replicação multirregional.
+
+<div id="production-support">
+  ### Integração com o suporte em produção
+</div>
+
+Entenda as expectativas de SLA do seu nível de suporte atual e os procedimentos de escalonamento. Crie runbooks internos que definam quando acionar o suporte do ClickHouse e integre esses procedimentos aos seus processos de gerenciamento de incidentes existentes.
+
+Saiba mais sobre [backup e recuperação no ClickHouse Cloud](/pt-BR/products/cloud/guides/backups/review-and-restore-backups) e [serviços de suporte](/pt-BR/resources/about/support).
+
+<div id="next-steps">
+  ## Próximos passos
+</div>
+
+Após implementar as integrações e os procedimentos deste guia, visite o [tour de recursos do Cloud](/pt-BR/products/cloud/getting-started/resource-tour) para consultar guias sobre [monitoramento](/pt-BR/products/cloud/getting-started/resource-tour#monitoring), [segurança](/pt-BR/products/cloud/getting-started/resource-tour#security) e [otimização de custos](/pt-BR/products/cloud/getting-started/resource-tour#cost-optimization).
+
+Quando as atuais [limitações do plano de serviço](/pt-BR/products/cloud/features/cloud-tiers) afetarem suas operações de produção, considere opções de upgrade para obter recursos avançados, como [rede privada](/pt-BR/products/cloud/guides/security/connectivity/private-networking/index), [TDE/CMEK](/pt-BR/products/cloud/guides/security/cmek) (Transparent Data Encryption com chaves de criptografia gerenciadas pelo cliente) ou [opções avançadas de backup](/pt-BR/products/cloud/guides/backups/configurable-backups).

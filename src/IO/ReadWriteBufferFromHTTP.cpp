@@ -2,6 +2,7 @@
 
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
+#include <IO/parseHTTPDate.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
@@ -187,6 +188,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     bool use_external_buffer_,
     bool http_skip_not_found_url_,
     HTTPHeaderEntries http_header_entries_,
+    RedirectCallback redirect_callback_,
     bool delay_initialization,
     std::optional<HTTPFileInfo> file_info_)
     : SeekableReadBuffer(nullptr, 0)
@@ -204,6 +206,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , use_external_buffer(use_external_buffer_)
     , http_skip_not_found_url(http_skip_not_found_url_)
     , out_stream_callback(std::move(out_stream_callback_))
+    , redirect_callback(std::move(redirect_callback_))
     , redirects(0)
     , http_header_entries {std::move(http_header_entries_)}
     , file_info(file_info_)
@@ -288,6 +291,9 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
                 " Example: `SET max_http_get_redirects = 10`."
                 " Redirects are restricted to prevent possible attack when a malicious server redirects to an internal resource, bypassing the authentication or firewall.",
                 initial_uri.toString(), max_redirects ? "increase the allowed maximum number of" : "allow");
+
+        if (redirect_callback)
+            redirect_callback(current_uri, uri_redirect);
 
         current_uri = uri_redirect;
         result = callImpl(response, method_, range, true);
@@ -688,6 +694,13 @@ Map ReadWriteBufferFromHTTP::getResponseHeaders() const
     return map;
 }
 
+std::optional<Field> ReadWriteBufferFromHTTP::getMetadata(const String & name) const
+{
+    if (name == "headers")
+        return Field(getResponseHeaders());
+    return std::nullopt;
+}
+
 void ReadWriteBufferFromHTTP::setNextCallback(NextCallback next_callback_)
 {
     next_callback = next_callback_;
@@ -731,6 +744,9 @@ std::optional<time_t> ReadWriteBufferFromHTTP::tryGetLastModificationTime()
 
 ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
 {
+    if (file_info)
+        return *file_info;
+
     /// May be disabled in case the user knows in advance that the server doesn't support HEAD requests.
     /// Allows to avoid making unnecessary requests in such cases.
     if (!read_settings.http_settings.make_head_request)
@@ -760,7 +776,8 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
         throw;
     }
 
-    return parseFileInfo(response, 0);
+    file_info = parseFileInfo(response, 0);
+    return *file_info;
 }
 
 ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(const Poco::Net::HTTPResponse & response, size_t requested_range_begin)
@@ -783,13 +800,7 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
     }
 
     if (response.has("Last-Modified"))
-    {
-        String date_str = response.get("Last-Modified");
-        struct tm info{};
-        char * end = strptime(date_str.data(), "%a, %d %b %Y %H:%M:%S %Z", &info);
-        if (end == date_str.data() + date_str.size())
-            res.last_modified = timegm(&info);
-    }
+        res.last_modified = tryParseHTTPDate(response.get("Last-Modified"));
 
     return res;
 }
@@ -821,9 +832,30 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTP
         use_external_buffer,
         http_skip_not_found_url,
         http_header_entries,
+        redirect_callback,
         delay_initialization,
         /*file_info_=*/ std::nullopt));
     return ptr;
+}
+
+void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri)
+{
+    credentials.clear();
+
+    const auto & user_info = uri.getUserInfo();
+    if (user_info.empty())
+        return;
+
+    const auto n = user_info.find(':');
+    if (n != std::string::npos)
+    {
+        credentials.setUsername(user_info.substr(0, n));
+        credentials.setPassword(user_info.substr(n + 1));
+    }
+    else
+    {
+        credentials.setUsername(user_info);
+    }
 }
 
 }

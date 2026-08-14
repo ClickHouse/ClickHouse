@@ -1,0 +1,70 @@
+---
+slug: /changelogs/24.8
+title: 'Cloud용 v24.8 변경 로그'
+description: 'v24.8 빠른 릴리스 변경 로그'
+keywords: ['변경 로그', 'cloud']
+sidebarTitle: '24.8'
+doc_type: 'changelog'
+---
+
+v24.8 릴리스에 따른 ClickHouse Cloud 서비스 관련 변경 사항입니다.
+
+<div id="backward-incompatible-change">
+  ## 하위 호환되지 않는 변경 사항
+</div>
+
+* Variant 데이터 타입의 바이너리 직렬화가 변경되었습니다. 단일 variant만 있거나 NULL 값만 있는 그래뉼에서 동일한 discriminator를 여러 번 기록하지 않도록 compact 모드를 추가했습니다. 기본적으로 활성화되는 MergeTree setting `use_compact_variant_discriminators_serialization`도 추가했습니다. Variant 타입은 여전히 experimental 상태이므로, 이전에 지원팀과 협력해 이 기능을 미리 활성화한 경우가 아니라면 이번 직렬화의 하위 호환되지 않는 변경 사항은 영향이 없을 것입니다. [#62774](https://github.com/ClickHouse/ClickHouse/pull/62774) (Kruglov Pavel).
+
+* 복제된 데이터베이스에서는 `CREATE MATERIALIZED VIEW ... ENGINE Replicated*MergeTree POPULATE AS SELECT ...`를 사용할 수 없도록 변경했습니다. 이 PR은 현재도 ReplicatedMergeTree를 사용 중인 사용자에게만 해당합니다. [#63963](https://github.com/ClickHouse/ClickHouse/pull/63963) (vdimir).
+
+* 메트릭 KeeperOutstandingRequets의 이름이 KeeperOutstandingRequests로 변경되었습니다. 이는 [#66179](https://github.com/ClickHouse/ClickHouse/issues/66179)에 보고된 오타를 수정한 것입니다. [#66206](https://github.com/ClickHouse/ClickHouse/pull/66206) (Robert Schulze).
+
+* clickhouse-client와 clickhouse-local은 이제 기본적으로 단일 쿼리 모드가 아니라 다중 쿼리 모드로 동작합니다. 예를 들어 이제 clickhouse-client -q &quot;SELECT 1; SELECT 2&quot;가 작동하며, 이전에는 `--multiquery`(또는 `-n`)를 추가해야 했습니다. `--multiquery`/`-n` 스위치는 더 이상 사용되지 않습니다. 다중 쿼리 SQL 문에서 INSERT 쿼리는 FORMAT 절에 따라 특별히 처리됩니다. FORMAT이 VALUES(가장 일반적인 경우)인 경우 INSERT 문의 끝은 쿼리 끝의 세미콜론 `;`으로 표시됩니다. 그 외 모든 FORMAT(예: CSV 또는 JSONEachRow)의 경우 INSERT 문의 끝은 쿼리 끝의 두 개 줄바꿈 문자 `\n\n`로 표시됩니다. [#63898](https://github.com/ClickHouse/ClickHouse/pull/63898) (wxybear).
+
+* 이전 버전에서는 데이터 타입 이름 뒤에 WithDictionary를 붙여 LowCardinality 데이터 타입의 대체 구문을 사용할 수 있었습니다. 이는 초기 구현 단계에서 동작하던 방식이었으며, 문서화되거나 공개된 적은 없었습니다. 이제 이 구문은 더 이상 권장되지 않습니다. 이 구문을 사용했다면 테이블에 ALTER를 수행해 데이터 타입 이름을 LowCardinality로 변경해야 합니다. [#66842](https://github.com/ClickHouse/ClickHouse/pull/66842)(Alexey Milovidov).
+
+* 분산 대상 테이블과 함께 사용할 때 Buffer 스토리지의 논리 오류를 수정했습니다. 이는 하위 호환되지 않는 변경 사항입니다. 분산 대상 테이블과 함께 Buffer를 사용하는 쿼리에서 해당 테이블이 쿼리에 두 번 이상 등장하면(예: self-join) 더 이상 작동하지 않을 수 있습니다. [#67015](https://github.com/vdimir) (vdimir).
+
+* 이전 버전에서는 감마 함수 기반의 난수 분포 함수(예: Chi-Squared, Student, Fisher)를 0에 가까운 음수 인수로 호출하면 계산이 오래 걸리거나 무한 루프에 빠질 수 있었습니다. 새 버전에서는 이러한 함수를 0 또는 음수 인수로 호출하면 예외가 발생합니다. 이로써 [#67297](https://github.com/ClickHouse/ClickHouse/issues/67297)이 해결됩니다. [#67326](https://github.com/ClickHouse/ClickHouse/pull/67326) (Alexey Milovidov).
+
+* 이전 버전에서는 arrayWithConstant로 매우 큰 배열을 생성하려고 하면 성능이 저하될 수 있었습니다. 새 버전에서는 배열 하나당 1 GB로 제한됩니다. 이로써 [#32754](https://github.com/ClickHouse/ClickHouse/issues/32754)가 해결됩니다. [#67741](https://github.com/ClickHouse/ClickHouse/pull/67741) (Alexey Milovidov).
+
+* REPLACE 수정자의 포맷팅을 수정했습니다(괄호 생략 금지). [#67774](https://github.com/ClickHouse/ClickHouse/pull/67774) (Azat Khuzhin).
+
+<div id="new-feature">
+  ## 새 기능
+</div>
+
+* 쿼리에서 이름이 지정된 Tuple을 생성할 수 있도록 tuple 함수를 확장했습니다. Tuple에서 이름을 추출하는 tupleNames 함수도 도입했습니다. [#54881](https://github.com/ClickHouse/ClickHouse/pull/54881) (Amos Bird).
+
+* full&#95;sorting&#95;join 알고리즘에서 ASOF JOIN을 지원합니다. [#54493](https://github.com/ClickHouse/ClickHouse/issues/54493)를 해결했습니다. [#55051](https://github.com/ClickHouse/ClickHouse/pull/55051) (vdimir).
+
+* 새로운 테이블 함수 fuzzQuery를 추가했습니다. 이 함수는 지정한 쿼리 문자열에 무작위 변형을 적용할 수 있습니다. 예시: SELECT query FROM fuzzQuery(&#39;SELECT 1&#39;);. [#62103](https://github.com/ClickHouse/ClickHouse/pull/62103) (pufit).
+
+* 새로운 윈도 함수 percent&#95;rank를 추가했습니다. [#62747](https://github.com/ClickHouse/ClickHouse/pull/62747) (lgbo).
+
+* clickhouse-client에서 JWT 인증을 지원합니다. [#62829](https://github.com/ClickHouse/ClickHouse/pull/62829) (Konstantin Bogdanov).
+
+* SQL 함수 changeYear, changeMonth, changeDay, changeHour, changeMinute, changeSecond를 추가했습니다. 예를 들어 SELECT changeMonth(toDate(&#39;2024-06-14&#39;), 7)은 날짜 2024-07-14를 반환합니다. [#63186](https://github.com/ClickHouse/ClickHouse/pull/63186) (cucumber95).
+
+* system.errors 테이블의 오류 값 이력을 포함하며 주기적으로 디스크에 플러시되는 system.error&#95;log를 추가했습니다. [#65381](https://github.com/ClickHouse/ClickHouse/pull/65381) (Pablo Marcos).
+
+* 집계 함수 groupConcat를 추가했습니다. arrayStringConcat(groupArray(column), &#39;,&#39;)와 거의 동일합니다. 문자열 구분자와 처리할 요소 수, 이렇게 2개의 매개변수를 받을 수 있습니다. [#65451](https://github.com/ClickHouse/ClickHouse/pull/65451) (Yarik Briukhovetskyi).
+
+* AzureQueue 스토리지를 추가했습니다. [#65458](https://github.com/ClickHouse/ClickHouse/pull/65458) (Kseniia Sumarokova).
+
+* Parquet 파일에 page index를 기록할지 활성화/비활성화하는 새로운 설정을 추가했습니다. [#65475](https://github.com/ClickHouse/ClickHouse/pull/65475) (lgbo).
+
+* 테이블 함수 file에서 디렉터리 경로 끝에 와일드카드 *를 자동으로 추가합니다. [#66019](https://github.com/ClickHouse/ClickHouse/pull/66019) (Zhidong (David) Guo).
+
+* 비대화형 모드의 client에 --memory-usage 옵션을 추가했습니다. [#66393](https://github.com/ClickHouse/ClickHouse/pull/66393) (vdimir).
+
+* S3 테이블 엔진에 &#95;etag 가상 컬럼을 추가했습니다. [#65312](https://github.com/ClickHouse/ClickHouse/issues/65312)를 수정했습니다. [#65386](https://github.com/ClickHouse/ClickHouse/pull/65386) (skyoct)
+
+* 여러 엔진(File, URL, S3, AzureBlobStorage, HDFS)에 Hive-style partitioning을 도입했습니다. Hive-style partitioning은 데이터를 파티션된 하위 디렉터리로 구성하므로 대규모 데이터셋을 더 효율적으로 쿼리하고 관리할 수 있습니다. 현재는 적절한 이름과 데이터를 가진 가상 컬럼만 생성합니다. 후속 PR에서는 적절한 데이터 필터링(성능 향상)을 도입할 예정입니다. [#65997](https://github.com/ClickHouse/ClickHouse/pull/65997) (Yarik Briukhovetskyi).
+
+* spark 호환성을 위해 printf 함수를 추가했습니다. [#66257](https://github.com/ClickHouse/ClickHouse/pull/66257) (李扬).
+
+* readWKTLineString 함수를 사용해 WKT 포맷의 MULTILINESTRING geometry를 읽을 수 있도록 지원을 추가했습니다. [#67647](https://github.com/ClickHouse/ClickHouse/pull/67647) (Jacob Reckhard).
+
+* 쿼리 캐시를 위한 태깅(네임스페이스) 메커니즘을 추가했습니다. 동일한 쿼리라도 태그가 다르면 쿼리 캐시에서는 서로 다른 것으로 간주됩니다. 예시: SELECT 1 SETTINGS use&#95;query&#95;cache = 1, query&#95;cache&#95;tag = &#39;abc&#39; and SELECT 1 SETTINGS use&#95;query&#95;cache = 1, query&#95;cache&#95;tag = &#39;def&#39;는 이제 서로 다른 쿼리 캐시 엔트리를 생성합니다. [#68235](https://github.com/ClickHouse/ClickHouse/pull/68235)(sakulali).

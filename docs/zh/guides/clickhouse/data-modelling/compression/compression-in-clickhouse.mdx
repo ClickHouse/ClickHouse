@@ -1,0 +1,309 @@
+---
+slug: /data-compression/compression-in-clickhouse
+title: 'ClickHouse 中的压缩'
+description: '选择 ClickHouse 压缩算法'
+keywords: ['压缩', 'codec', '编码']
+doc_type: 'reference'
+---
+
+ClickHouse 查询高性能的秘诀之一就是压缩。
+
+磁盘上的数据越少，I/O 就越少，查询和插入也就越快。对于 CPU 而言，在大多数情况下，压缩算法带来的开销都会被 I/O 减少所带来的收益抵消。因此，要确保 ClickHouse 查询足够快，首先应关注提升数据压缩效果。
+
+> 想了解 ClickHouse 为何能如此高效地压缩数据，我们建议阅读[这篇文章](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)。简而言之，我们的列式数据库按列顺序写入值。对这些值进行排序后，相同的值会彼此相邻，而压缩算法能够利用数据中连续出现的模式。除此之外，ClickHouse 还提供 编解码器 和更细粒度的数据类型，让你能够进一步轻松优化压缩效果。
+
+ClickHouse 中的压缩会受到 3 个主要因素的影响：
+
+* 排序键
+* 数据类型
+* 使用了哪些 编解码器
+
+所有这些都通过 schema 进行配置。
+
+<div id="choose-the-right-data-type-to-optimize-compression">
+  ## 选择合适的数据类型来优化压缩
+</div>
+
+我们以 Stack Overflow 数据集为例。下面比较 `posts` 表在以下 schema 下的压缩统计信息：
+
+* `posts` - 未做类型优化，且没有排序键的 schema。
+* `posts_v3` - 经过类型优化的 schema，为每一列都选择了合适的类型和位宽，并使用排序键 `(PostTypeId, toDate(CreationDate), CommentCount)`。
+
+使用以下查询，我们可以度量每一列当前的压缩后大小和未压缩大小。下面先来看没有排序键的初始 schema `posts` 的大小。
+
+```sql
+SELECT name,
+   formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+   formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+   round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE table = 'posts'
+GROUP BY name
+```
+
+```response
+┌─name──────────────────┬─compressed_size─┬─uncompressed_size─┬───ratio────┐
+│ Body                  │ 46.14 GiB       │ 127.31 GiB        │ 2.76       │
+│ Title                 │ 1.20 GiB        │ 2.63 GiB          │ 2.19       │
+│ Score                 │ 84.77 MiB       │ 736.45 MiB        │ 8.69       │
+│ Tags                  │ 475.56 MiB      │ 1.40 GiB          │ 3.02       │
+│ ParentId              │ 210.91 MiB      │ 696.20 MiB        │ 3.3        │
+│ Id                    │ 111.17 MiB      │ 736.45 MiB        │ 6.62       │
+│ AcceptedAnswerId      │ 81.55 MiB       │ 736.45 MiB        │ 9.03       │
+│ ClosedDate            │ 13.99 MiB       │ 517.82 MiB        │ 37.02      │
+│ LastActivityDate      │ 489.84 MiB      │ 964.64 MiB        │ 1.97       │
+│ CommentCount          │ 37.62 MiB       │ 565.30 MiB        │ 15.03      │
+│ OwnerUserId           │ 368.98 MiB      │ 736.45 MiB        │ 2          │
+│ AnswerCount           │ 21.82 MiB       │ 622.35 MiB        │ 28.53      │
+│ FavoriteCount         │ 280.95 KiB      │ 508.40 MiB        │ 1853.02    │
+│ ViewCount             │ 95.77 MiB       │ 736.45 MiB        │ 7.69       │
+│ LastEditorUserId      │ 179.47 MiB      │ 736.45 MiB        │ 4.1        │
+│ ContentLicense        │ 5.45 MiB        │ 847.92 MiB        │ 155.5      │
+│ OwnerDisplayName      │ 14.30 MiB       │ 142.58 MiB        │ 9.97       │
+│ PostTypeId            │ 20.93 MiB       │ 565.30 MiB        │ 27         │
+│ CreationDate          │ 314.17 MiB      │ 964.64 MiB        │ 3.07       │
+│ LastEditDate          │ 346.32 MiB      │ 964.64 MiB        │ 2.79       │
+│ LastEditorDisplayName │ 5.46 MiB        │ 124.25 MiB        │ 22.75      │
+│ CommunityOwnedDate    │ 2.21 MiB        │ 509.60 MiB        │ 230.94     │
+└───────────────────────┴─────────────────┴───────────────────┴────────────┘
+```
+
+<Accordion title="关于 compact 和 wide parts 的说明">
+  如果你看到 `compressed_size` 或 `uncompressed_size` 的值为 `0`，这可能是因为
+  parts 的类型是 `compact` 而不是 `wide` (请参阅 [`system.parts`](/zh/reference/system-tables/parts) 中 `part_type` 的说明) 。
+  part 格式由设置 [`min_bytes_for_wide_part`](/zh/reference/settings/merge-tree-settings#min_bytes_for_wide_part)
+  和 [`min_rows_for_wide_part`](/zh/reference/settings/merge-tree-settings#min_rows_for_wide_part) 控制。这意味着，如果插入的
+  数据生成的 part 没有超过上述设置的阈值，那么该 part 就会是 compact，
+  而不是 wide，因此你将看不到 `compressed_size` 或 `uncompressed_size` 的值。
+
+  下面演示这一点：
+
+  ```sql title="查询"
+  -- 创建一个使用 compact parts 的表
+  CREATE TABLE compact (
+    number UInt32
+  )
+  ENGINE = MergeTree()
+  ORDER BY number 
+  AS SELECT * FROM numbers(100000); -- 数据量不足，未超过 min_bytes_for_wide_part = 10485760 的默认值
+
+  -- 检查 parts 的类型
+  SELECT table, name, part_type from system.parts where table = 'compact';
+
+  -- 获取 compact 表的压缩列大小和未压缩列大小
+  SELECT name,
+     formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+     formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+     round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+  FROM system.columns
+  WHERE table = 'compact'
+  GROUP BY name;
+
+  -- 创建一个使用 wide parts 的表
+  CREATE TABLE wide (
+    number UInt32
+  )
+  ENGINE = MergeTree()
+  ORDER BY number
+  SETTINGS min_bytes_for_wide_part=0
+  AS SELECT * FROM numbers(100000);
+
+  -- 检查 parts 的类型
+  SELECT table, name, part_type from system.parts where table = 'wide';
+
+  -- 获取 wide 表的压缩大小和未压缩大小
+  SELECT name,
+     formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+     formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+     round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+  FROM system.columns
+  WHERE table = 'wide'
+  GROUP BY name;
+  ```
+
+  ```response title="响应"
+     ┌─table───┬─name──────┬─part_type─┐
+  1. │ compact │ all_1_1_0 │ Compact   │
+     └─────────┴───────────┴───────────┘
+     ┌─name───┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+  1. │ number │ 0.00 B          │ 0.00 B            │   nan │
+     └────────┴─────────────────┴───────────────────┴───────┘
+     ┌─table─┬─name──────┬─part_type─┐
+  1. │ wide  │ all_1_1_0 │ Wide      │
+     └───────┴───────────┴───────────┘
+     ┌─name───┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+  1. │ number │ 392.31 KiB      │ 390.63 KiB        │     1 │
+     └────────┴─────────────────┴───────────────────┴───────┘
+  ```
+</Accordion>
+
+这里同时展示了压缩大小和未压缩大小，这两者都很重要。压缩大小对应于我们需要从磁盘读取的数据量——为了提升查询性能 (以及降低存储成本) ，我们希望尽可能减小它。数据在读取前还需要先解压。而未压缩大小在这里则取决于所使用的数据类型。尽量减小这一大小，可以降低查询的内存开销和需要处理的数据量，从而提高缓存利用率，并最终缩短查询时间。
+
+> 上述查询依赖系统数据库中的 `columns` 表。该数据库由 ClickHouse 管理，堪称一个信息宝库，其中包含从查询性能指标到后台 cluster 日志等大量实用信息。对于想进一步了解的读者，我们推荐阅读 [&quot;System Tables and a Window into the Internals of ClickHouse&quot;](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables) 及其配套文章[[1]](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)[[2]](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)。
+
+如果要汇总表的总大小，我们可以将上面的查询简化为：
+
+```sql
+SELECT formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE table = 'posts'
+```
+
+```response
+┌─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ 50.16 GiB       │ 143.47 GiB        │  2.86 │
+└─────────────────┴───────────────────┴───────┘
+```
+
+对 `posts_v3` (采用了优化后数据类型和排序键的表) 重复执行此查询后，可以看到未压缩大小和压缩后大小都明显减小。
+
+```sql
+SELECT
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE `table` = 'posts_v3'
+```
+
+```response
+┌─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ 25.15 GiB       │ 68.87 GiB         │  2.74 │
+└─────────────────┴───────────────────┴───────┘
+```
+
+完整的列明细表显示，通过在压缩前先对数据排序并使用合适的类型，`Body`、`Title`、`Tags` 和 `CreationDate` 这些列的存储空间可显著减少。
+
+```sql
+SELECT
+    name,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE `table` = 'posts_v3'
+GROUP BY name
+```
+
+```response
+┌─name──────────────────┬─compressed_size─┬─uncompressed_size─┬───ratio─┐
+│ Body                  │ 23.10 GiB       │ 63.63 GiB         │    2.75 │
+│ Title                 │ 614.65 MiB      │ 1.28 GiB          │    2.14 │
+│ Score                 │ 40.28 MiB       │ 227.38 MiB        │    5.65 │
+│ Tags                  │ 234.05 MiB      │ 688.49 MiB        │    2.94 │
+│ ParentId              │ 107.78 MiB      │ 321.33 MiB        │    2.98 │
+│ Id                    │ 159.70 MiB      │ 227.38 MiB        │    1.42 │
+│ AcceptedAnswerId      │ 40.34 MiB       │ 227.38 MiB        │    5.64 │
+│ ClosedDate            │ 5.93 MiB        │ 9.49 MiB          │     1.6 │
+│ LastActivityDate      │ 246.55 MiB      │ 454.76 MiB        │    1.84 │
+│ CommentCount          │ 635.78 KiB      │ 56.84 MiB         │   91.55 │
+│ OwnerUserId           │ 183.86 MiB      │ 227.38 MiB        │    1.24 │
+│ AnswerCount           │ 9.67 MiB        │ 113.69 MiB        │   11.76 │
+│ FavoriteCount         │ 19.77 KiB       │ 147.32 KiB        │    7.45 │
+│ ViewCount             │ 45.04 MiB       │ 227.38 MiB        │    5.05 │
+│ LastEditorUserId      │ 86.25 MiB       │ 227.38 MiB        │    2.64 │
+│ ContentLicense        │ 2.17 MiB        │ 57.10 MiB         │   26.37 │
+│ OwnerDisplayName      │ 5.95 MiB        │ 16.19 MiB         │    2.72 │
+│ PostTypeId            │ 39.49 KiB       │ 56.84 MiB         │ 1474.01 │
+│ CreationDate          │ 181.23 MiB      │ 454.76 MiB        │    2.51 │
+│ LastEditDate          │ 134.07 MiB      │ 454.76 MiB        │    3.39 │
+│ LastEditorDisplayName │ 2.15 MiB        │ 6.25 MiB          │    2.91 │
+│ CommunityOwnedDate    │ 824.60 KiB      │ 1.34 MiB          │    1.66 │
+└───────────────────────┴─────────────────┴───────────────────┴─────────┘
+```
+
+<div id="choosing-the-right-column-compression-codec">
+  ## 选择合适的列压缩编解码器
+</div>
+
+借助列压缩编解码器，我们可以更改用于对每一列进行编码和压缩的算法 (及其设置) 。
+
+编码和压缩的实现方式略有不同，但目标一致：减小数据体积。编码会利用数据类型的特性，基于某种函数对数据进行映射，从而转换其值。相较之下，压缩则是在字节层面使用通用算法来压缩数据。
+
+通常会先进行编码，再进行压缩。由于不同的编码和压缩算法对不同的值分布效果各异，因此我们必须了解自己的数据。
+
+ClickHouse 支持大量编解码器和压缩算法。以下是一些按重要性排序的建议：
+
+| Recommendation                                | Reasoning                                                                                                                                                                      |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`ZSTD` all the way**                        | `ZSTD` 压缩通常能提供最佳压缩率。对于大多数常见类型，`ZSTD(1)` 应作为默认选择。可以通过调整数值来尝试更高的压缩率。考虑到压缩成本会增加 (插入更慢) ，我们很少看到大于 3 的取值能带来足够明显的收益。                                                                 |
+| **`Delta` for date and integer sequences**    | 只要数据是单调序列，或相邻值之间的差值较小，基于 `Delta` 的编解码器通常就有不错的效果。更具体地说，只要差分后得到的数值较小，Delta 编解码器就会表现良好。否则，可以尝试 `DoubleDelta` (如果 `Delta` 的一级差分已经很小，通常额外收益不大) 。对于单调增量固定的序列，压缩效果会更好，例如 DateTime 字段。 |
+| **`Delta` improves `ZSTD`**                   | `ZSTD` 对 delta 数据是一种高效的编解码器；反过来，delta 编码也能提升 `ZSTD` 的压缩效果。在使用 `ZSTD` 时，其他编解码器很少能带来进一步改进。                                                                                       |
+| **`LZ4` over `ZSTD` if possible**             | 如果 `LZ4` 和 `ZSTD` 的压缩效果相近，优先选择前者，因为它解压更快且占用更少 CPU。不过，在大多数情况下，`ZSTD` 的表现会明显优于 `LZ4`。其中一些编解码器与 `LZ4` 搭配使用时，速度可能更快，同时能提供与未搭配编解码器的 `ZSTD` 接近的压缩效果。不过，这取决于具体数据，因此需要测试。              |
+| **`T64` for sparse or small ranges**          | `T64` 对稀疏数据，或块内取值范围较小的场景，可能非常有效。对于随机数，应避免使用 `T64`。                                                                                                                             |
+| **`Gorilla` and `T64` for unknown patterns?** | 如果数据模式未知，可能值得尝试 `Gorilla` 和 `T64`。                                                                                                                                             |
+| **`Gorilla` for gauge data**                  | `Gorilla` 对浮点数据可能很有效，尤其适合表示 Gauge 读数的数据，也就是存在随机尖峰的场景。                                                                                                                          |
+
+更多选项请参见[这里](/zh/reference/statements/create/table#column_compression_codec)。
+
+下面我们为 `Id`、`ViewCount` 和 `AnswerCount` 指定 `Delta` 编解码器，假设它们与排序键线性相关，因此应能从 Delta 编码中受益。
+
+```sql
+CREATE TABLE posts_v4
+(
+        `Id` Int32 CODEC(Delta, ZSTD),
+        `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+        `Score` Int32,
+        `ViewCount` UInt32 CODEC(Delta, ZSTD),
+        `Body` String,
+        `OwnerUserId` Int32,
+        `OwnerDisplayName` String,
+        `LastEditorUserId` Int32,
+        `LastEditorDisplayName` String,
+        `LastEditDate` DateTime64(3, 'UTC'),
+        `LastActivityDate` DateTime64(3, 'UTC'),
+        `Title` String,
+        `Tags` String,
+        `AnswerCount` UInt16 CODEC(Delta, ZSTD),
+        `CommentCount` UInt8,
+        `FavoriteCount` UInt8,
+        `ContentLicense` LowCardinality(String),
+        `ParentId` String,
+        `CommunityOwnedDate` DateTime64(3, 'UTC'),
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+```
+
+这些列的压缩改进如下：
+
+```sql
+SELECT
+    `table`,
+    name,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE (name IN ('Id', 'ViewCount', 'AnswerCount')) AND (`table` IN ('posts_v3', 'posts_v4'))
+GROUP BY
+    `table`,
+    name
+ORDER BY
+    name ASC,
+    `table` ASC
+```
+
+```response
+┌─table────┬─name────────┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ posts_v3 │ AnswerCount │ 9.67 MiB        │ 113.69 MiB        │ 11.76 │
+│ posts_v4 │ AnswerCount │ 10.39 MiB       │ 111.31 MiB        │ 10.71 │
+│ posts_v3 │ Id          │ 159.70 MiB      │ 227.38 MiB        │  1.42 │
+│ posts_v4 │ Id          │ 64.91 MiB       │ 222.63 MiB        │  3.43 │
+│ posts_v3 │ ViewCount   │ 45.04 MiB       │ 227.38 MiB        │  5.05 │
+│ posts_v4 │ ViewCount   │ 52.72 MiB       │ 222.63 MiB        │  4.22 │
+└──────────┴─────────────┴─────────────────┴───────────────────┴───────┘
+
+6 行。Elapsed: 0.008 sec
+```
+
+<div id="compression-in-clickhouse-cloud">
+  ### ClickHouse Cloud 中的压缩
+</div>
+
+在 ClickHouse Cloud 中，我们默认使用 `ZSTD` 压缩算法 (默认值为 1) 。这种算法的压缩速度会随压缩级别而变化 (级别越高，速度越慢) ，但它的优势在于解压速度始终很快 (波动约 20%) ，并且还支持并行处理。我们过往的测试还表明，这种算法通常已经足够高效，甚至可能优于结合 codec 使用的 `LZ4`。它对大多数数据类型和数据分布都很有效，因此是一个合理的通用默认选择，这也是为什么即使不做优化，我们的初始压缩效果也已经非常出色。

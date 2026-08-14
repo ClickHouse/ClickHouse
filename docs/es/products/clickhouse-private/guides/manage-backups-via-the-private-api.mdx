@@ -1,0 +1,200 @@
+---
+noindex: true
+title: "Gestionar copias de seguridad con la API privada"
+sidebarTitle: "Gestionar copias de seguridad con la API"
+description: "Crear, supervisar, programar y restaurar copias de seguridad de ClickHouse con la API privada."
+---
+
+Crear, supervisar, programar y restaurar copias de seguridad de ClickHouse con la API privada.
+
+Para las operaciones manuales de copia de seguridad sin la API, consulte [Backup and Restore](/es/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual).
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+* ClickHouse Private API instalada y accesible (p. ej., mediante un reenvío de puertos a `http://localhost:8080/`)
+* Al menos un clúster de ClickHouse desplegado (esta guía usa `default-xx-01`)
+
+<div id="create-a-full-backup">
+  ## Crear una copia de seguridad completa
+</div>
+
+```json
+{
+    "incremental": false
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    -d '{"incremental": false}'
+```
+
+La respuesta incluye un UUID que identifica la copia de seguridad.
+
+<div id="check-backup-status">
+  ## Consultar el estado de una copia de seguridad
+</div>
+
+Consulta una copia de seguridad específica por UUID:
+
+```bash
+curl "http://localhost:8080/api/v1/backups/{uuid}?instance_id=default-xx-01"
+```
+
+Cuando la copia de seguridad finaliza correctamente, el campo `status.state` devuelve `Ready`.
+
+<div id="list-all-backups">
+  ## Listar todas las copias de seguridad
+</div>
+
+```bash
+curl "http://localhost:8080/api/v1/backups?instance_id=default-xx-01"
+```
+
+El endpoint admite parámetros de consulta para filtrar y ordenar. Por ejemplo, para encontrar la última copia de seguridad completada correctamente:
+
+```bash
+curl "http://localhost:8080/api/v1/backups?instance_id=default-xx-01&status__state__eq=Ready&sort=status__finishTime&limit=1"
+```
+
+<div id="create-incremental-backups">
+  ## Crear copias de seguridad incrementales
+</div>
+
+Las copias de seguridad incrementales solo incluyen los datos que han cambiado desde una copia de seguridad anterior y forman una cadena que parte de una copia de seguridad completa.
+
+```json
+{
+    "incremental": true,
+    "baseBackupUuid": "<uuid of previous backup>"
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    --data-binary "@backup.json"
+```
+
+<div id="back-up-specific-tables-or-databases">
+  ## Hacer una copia de seguridad de tablas o bases de datos específicas
+</div>
+
+Controla qué se incluye en la copia de seguridad mediante los campos `databases` y `tables`. Los nombres de las tablas deben estar completamente calificados (es decir, `db.table`).
+
+```json
+{
+    "incremental": false,
+    "databases": ["mydb"],
+    "tables": ["mydb2.table"]
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    --data-binary "@backup.json"
+```
+
+<div id="schedule-backups-with-a-cronjob">
+  ## Programa copias de seguridad con un CronJob
+</div>
+
+Utiliza un CronJob de Kubernetes para automatizar la creación de copias de seguridad:
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: clickhouse-daily-backup
+  namespace: clickhouse-private-api
+spec:
+  schedule: "0 2 * * *"  # Run daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: backup
+            image: curlimages/curl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              curl -X POST "http://clickhouse-private-api-airgap-management:8080/api/v1/backups?instance_id=default-xx-01" \
+                -H "Content-Type: application/json" \
+                -d '{
+                  "incremental": false
+                }'
+          restartPolicy: OnFailure
+```
+
+Esto programa una copia de seguridad completa todos los días a las 2 a. m. Se asume que se puede acceder a la API privada a través de `http://clickhouse-private-api-airgap-management:8080`.
+
+<div id="restore-from-a-backup">
+  ## Restaurar a partir de una copia de seguridad
+</div>
+
+<div id="via-the-api">
+  ### Mediante la API
+</div>
+
+La API expone un endpoint de restauración que restaura una copia de seguridad en una instancia de destino distinta:
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups/{uuid}/restore?instance_id=default-xx-01&target_instance_id=default-xx-02"
+```
+
+Por seguridad, la API no permite restaurar en la misma instancia. Se recomienda crear un nuevo clúster para la restauración a fin de evitar sobrecargar el original.
+
+<div id="manual-sql-alternative">
+  ### Alternativa manual con SQL
+</div>
+
+Para un control más preciso, restaure directamente con SQL. Por ejemplo, para restaurar una sola base de datos con un nombre nuevo:
+
+```sql
+RESTORE DATABASE example
+AS example_restored
+FROM S3('https://<bucket_name>.s3.amazonaws.com/backups/<uuid>')
+```
+
+<div id="manage-backup-lifecycle">
+  ## Gestionar el ciclo de vida de las copias de seguridad
+</div>
+
+<div id="s3-lifecycle-policy">
+  ### Política de ciclo de vida de S3
+</div>
+
+Use las políticas de ciclo de vida de S3 para mover y eliminar automáticamente las copias de seguridad antiguas:
+
+```json
+{
+  "Rules": [
+    {
+      "ID": "ClickHouseBackupLifecycle",
+      "Prefix": "backups/",
+      "Status": "Enabled",
+      "Transitions": [
+        { "Days": 7, "StorageClass": "STANDARD_IA" },
+        { "Days": 30, "StorageClass": "GLACIER_IR" }
+      ],
+      "Expiration": { "Days": 90 }
+    }
+  ]
+}
+```
+
+Este ejemplo mueve las copias de seguridad a Standard-IA al cabo de 7 días, a Glacier al cabo de 30 días y las elimina al cabo de 90 días.
+
+<div id="backup-chain-integrity-warning">
+  ### Advertencia sobre la integridad de la cadena de copias de seguridad
+</div>
+
+Las políticas de ciclo de vida de S3 no tienen en cuenta las cadenas de copias de seguridad incrementales. Si se elimina una copia de seguridad completa en la base de una cadena mientras las copias de seguridad incrementales siguen haciendo referencia a ella, esas copias de seguridad incrementales ya no podrán restaurarse.
+
+Asegúrese de que el período de retención de sus copias de seguridad completas sea mayor que el tiempo entre ciclos de copias de seguridad completas. Verifique periódicamente que sus copias de seguridad puedan restaurarse.

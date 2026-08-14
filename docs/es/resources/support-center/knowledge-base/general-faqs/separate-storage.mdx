@@ -1,0 +1,14 @@
+---
+slug: /faq/operations/deploy-separate-storage-and-compute
+title: '¿Es posible desplegar ClickHouse con almacenamiento y cómputo separados?'
+sidebarTitle: '¿Es posible desplegar ClickHouse con almacenamiento y cómputo separados?'
+toc_hidden: true
+toc_priority: 20
+description: 'Esta página responde a si es posible desplegar ClickHouse con almacenamiento y cómputo separados'
+doc_type: 'guide'
+keywords: ['almacenamiento', 'configuración de disco', 'organización de datos', 'gestión de volúmenes', 'niveles de almacenamiento']
+---
+
+La respuesta corta es &quot;sí&quot;.
+
+El almacenamiento de objetos (S3, GCS) puede usarse como backend elástico de almacenamiento primario para los datos de las tablas de ClickHouse. Están publicadas las guías de [MergeTree con respaldo en S3](/es/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse) y [MergeTree con respaldo en GCS](/es/reference/functions/table-functions/gcs). En esta configuración, solo los metadatos se almacenan localmente en los nodos de cómputo. Puede ampliar o reducir fácilmente los recursos de cómputo en esta configuración, ya que los nodos adicionales solo necesitan replicar los metadatos.

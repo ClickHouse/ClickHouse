@@ -1,0 +1,153 @@
+---
+slug: /community-wisdom/performance-optimization
+sidebarTitle: 'Optimisation des performances'
+doc_type: 'guide'
+keywords: [
+  'optimisation des performances',
+  'performance des requêtes',
+  'optimisation de la base de données',
+  'requêtes lentes',
+  'optimisation de la mémoire',
+  'analyse de cardinalité',
+  'stratégies d’indexation',
+  'optimisation de l’agrégation',
+  'techniques d’échantillonnage',
+  'performances de la base de données',
+  'analyse des requêtes',
+  'résolution des problèmes de performances'
+]
+title: 'Enseignements - optimisation des performances'
+description: 'Exemples concrets de stratégies d’optimisation des performances'
+---
+
+*Ce guide fait partie d’une collection d’enseignements issus des rencontres de la communauté. Pour découvrir d’autres solutions et retours d’expérience concrets, vous pouvez [parcourir les contenus par problème spécifique](/fr/resources/support-center/tips-and-tricks/community-wisdom).*
+*Vous rencontrez des difficultés avec les vues matérialisées ? Consultez le guide des retours de la communauté sur les [vues matérialisées](/fr/resources/support-center/tips-and-tricks/materialized-views).*
+*Si vous constatez des requêtes lentes et souhaitez voir davantage d’exemples, nous proposons également un guide sur l’[optimisation des requêtes](/fr/guides/clickhouse/performance-and-monitoring/query-optimization).*
+
+<div id="cardinality-ordering">
+  ## Trier par cardinalité (de la plus faible à la plus élevée)
+</div>
+
+L’index primaire de ClickHouse est plus efficace lorsque les colonnes à faible cardinalité viennent en premier, ce qui lui permet d’ignorer efficacement de grands blocs de données. Les colonnes à forte cardinalité, placées plus loin dans la clé, permettent un tri plus fin à l’intérieur de ces blocs. Commencez par les colonnes qui ont peu de valeurs uniques (comme status, category, country) et terminez par les colonnes qui ont beaucoup de valeurs uniques (comme user&#95;id, timestamp, session&#95;id).
+
+Pour en savoir plus sur la cardinalité et les index primaires :
+
+* [Choisir une clé primaire](/fr/concepts/best-practices/choosing-a-primary-key)
+* [Index primaires](/fr/concepts/core-concepts/primary-indexes)
+
+<div id="time-granularity">
+  ## La granularité temporelle est importante
+</div>
+
+Lorsque vous utilisez des horodatages dans votre clause ORDER BY, tenez compte du compromis entre cardinalité et précision. Les horodatages avec une précision à la microseconde créent une cardinalité très élevée (presque une valeur unique par ligne), ce qui réduit l’efficacité de l’index primaire clairsemé de ClickHouse. Les horodatages arrondis créent une cardinalité plus faible, ce qui permet à l’index d’ignorer plus efficacement les blocs de données, mais vous perdez en précision pour les requêtes temporelles.
+
+```sql runnable editable
+-- Challenge: Try different time functions like toStartOfMinute or toStartOfWeek
+-- Experiment: Compare the cardinality differences with your own timestamp data
+SELECT 
+    'Microsecond precision' as granularity,
+    uniq(created_at) as unique_values,
+    'Creates massive cardinality - bad for sort key' as impact
+FROM github.github_events
+WHERE created_at >= '2024-01-01'
+UNION ALL
+SELECT 
+    'Hour precision',
+    uniq(toStartOfHour(created_at)),
+    'Much better for sort key - enables skip indexing'
+FROM github.github_events
+WHERE created_at >= '2024-01-01'
+UNION ALL  
+SELECT 
+    'Day precision',
+    uniq(toStartOfDay(created_at)),
+    'Best for reporting queries'
+FROM github.github_events
+WHERE created_at >= '2024-01-01';
+```
+
+<div id="focus-on-individual-queries-not-averages">
+  ## Concentrez-vous sur les requêtes individuelles, pas sur les moyennes
+</div>
+
+Lors du débogage des performances de ClickHouse, ne vous fiez pas aux temps d’exécution moyens des requêtes ni aux métriques globales du système. Cherchez plutôt à comprendre pourquoi certaines requêtes précises sont lentes. Un système peut afficher de bonnes performances moyennes alors que certaines requêtes souffrent d’un épuisement de la mémoire, d’un filtrage inefficace ou d’opérations à forte cardinalité.
+
+Selon Alexey, CTO de ClickHouse : *&quot;La bonne approche consiste à se demander pourquoi cette requête précise a été traitée en cinq secondes... Peu m’importe que la médiane soit bonne et que les autres requêtes soient traitées rapidement. La seule qui m’importe, c’est ma requête&quot;*
+
+Lorsqu’une requête est lente, ne regardez pas seulement les moyennes. Demandez-vous « Pourquoi CETTE requête précise était-elle lente ? » et examinez les profils réels d’utilisation des ressources.
+
+<div id="memory-and-row-scanning">
+  ## Mémoire et parcours des lignes
+</div>
+
+Sentry est une plateforme de suivi des erreurs pensée avant tout pour les développeurs, qui traite chaque jour des milliards d’événements provenant de plus de 4 millions de développeurs. Leur constat clé : *&quot;C’est la cardinalité de la clé de regroupement qui détermine la mémoire dans ce cas précis&quot;* — les agrégations à forte cardinalité dégradent les performances par épuisement de la mémoire, et non à cause du parcours des lignes.
+
+Lorsque les requêtes échouent, déterminez s’il s’agit d’un problème de mémoire (trop de groupes) ou d’un problème de parcours (trop de lignes).
+
+Une requête comme `GROUP BY user_id, error_message, url_path` crée un état d’agrégation distinct en mémoire pour chaque combinaison unique des trois valeurs prises ensemble. Avec davantage d’utilisateurs, de types d’erreurs et de chemins d’URL, vous pouvez facilement générer des millions d’états d’agrégation qui doivent être conservés simultanément en mémoire.
+
+Pour les cas extrêmes, Sentry utilise l’échantillonnage déterministe. Un échantillon de 10 % réduit l’utilisation mémoire de 90 % tout en conservant une précision d’environ 5 % pour la plupart des agrégations :
+
+```sql
+WHERE cityHash64(user_id) % 10 = 0  -- Always same 10% of users
+```
+
+Cela garantit que les mêmes utilisateurs apparaissent dans chaque requête, avec des résultats cohérents d’une période à l’autre. L’idée clé : `cityHash64()` produit des valeurs de hachage identiques pour une même entrée, donc `user_id = 12345` sera toujours haché vers la même valeur, ce qui garantit que cet utilisateur figurera soit toujours dans votre échantillon de 10 %, soit jamais — sans variation d’une requête à l’autre.
+
+<div id="bit-mask-optimization">
+  ## Optimisation des masques de bits de Sentry
+</div>
+
+Lors d’une agrégation sur des colonnes à forte cardinalité (comme les URL), chaque valeur unique crée un état d’agrégation distinct en mémoire, ce qui peut entraîner un épuisement de la mémoire. La solution de Sentry : au lieu de regrouper par les chaînes d’URL elles-mêmes, regroupez par des expressions booléennes qui se transforment en masques de bits.
+
+Voici une requête que vous pouvez essayer sur vos propres tables si vous êtes dans ce cas :
+
+```sql
+-- Memory-Efficient Aggregation Pattern: Each condition = one integer per group
+-- Key insight: sumIf() creates bounded memory regardless of data volume
+-- Memory per group: N integers (N * 8 bytes) where N = number of conditions
+
+SELECT 
+    your_grouping_column,
+    
+    -- Each sumIf creates exactly one integer counter per group
+    -- Memory stays constant regardless of how many rows match each condition
+    sumIf(1, your_condition_1) as condition_1_count,
+    sumIf(1, your_condition_2) as condition_2_count,
+    sumIf(1, your_text_column LIKE '%pattern%') as pattern_matches,
+    sumIf(1, your_numeric_column > threshold_value) as above_threshold,
+    
+    -- Complex multi-condition aggregations still use constant memory
+    sumIf(1, your_condition_1 AND your_text_column LIKE '%pattern%') as complex_condition_count,
+    
+    -- Standard aggregations for context
+    count() as total_rows,
+    avg(your_numeric_column) as average_value,
+    max(your_timestamp_column) as latest_timestamp
+    
+FROM your_schema.your_table
+WHERE your_timestamp_column >= 'start_date' 
+  AND your_timestamp_column < 'end_date'
+GROUP BY your_grouping_column
+HAVING condition_1_count > minimum_threshold 
+   OR condition_2_count > another_threshold
+ORDER BY (condition_1_count + condition_2_count + pattern_matches) DESC
+LIMIT 20
+```
+
+Au lieu de stocker chaque chaîne de caractères distincte en mémoire, vous stockez sous forme d’entiers les réponses à des questions sur ces chaînes. L’état d’agrégation devient alors borné et minuscule, quelle que soit la diversité des données.
+
+De l’équipe d’ingénierie de Sentry : &quot;Ces requêtes lourdes sont plus de 10x plus rapides et notre consommation mémoire est 100x plus faible (et, surtout, bornée). Nos plus gros clients ne rencontrent plus d’erreurs lorsqu’ils recherchent des replays, et nous pouvons désormais prendre en charge des clients quelle que soit leur taille, sans manquer de mémoire.&quot;
+
+<div id="video-sources">
+  ## Vidéos
+</div>
+
+* [Lost in the Haystack - Optimizing High Cardinality Aggregations](https://www.youtube.com/watch?v=paK84-EUJCA) - Retours d’expérience de Sentry en production sur l’optimisation de la mémoire
+* [ClickHouse Performance Analysis](https://www.youtube.com/watch?v=lxKbvmcLngo) - Alexey Milovidov sur la méthodologie de débogage
+* [ClickHouse Meetup: Query Optimization Techniques](https://www.youtube.com/watch?v=JBomQk4Icjo) - Stratégies d’optimisation de la communauté
+
+**À lire ensuite**:
+
+* [Guide d’optimisation des requêtes](/fr/guides/clickhouse/performance-and-monitoring/query-optimization)
+* [Retours de la communauté sur les vues matérialisées](/fr/resources/support-center/tips-and-tricks/materialized-views)

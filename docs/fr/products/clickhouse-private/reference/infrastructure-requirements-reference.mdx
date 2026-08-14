@@ -1,0 +1,420 @@
+---
+noindex: true
+title: "Référence des exigences d’infrastructure"
+sidebarTitle: "Exigences d’infrastructure"
+description: "Ce document regroupe les prérequis d’infrastructure, les spécifications des nœuds, les exigences réseau, de stockage et IAM pour toutes les plateformes ClickHouse prises en charge"
+---
+
+Ce document regroupe les prérequis d’infrastructure, les spécifications des nœuds, les exigences réseau, de stockage et IAM pour toutes les plateformes de déploiement ClickHouse Private prises en charge.
+
+***
+
+<div id="prerequisites-by-platform">
+  ## Prérequis par plateforme
+</div>
+
+<div id="aws-eks">
+  ### AWS (EKS)
+</div>
+
+| Prérequis               | Détails                                                                                 |
+| ----------------------- | --------------------------------------------------------------------------------------- |
+| AWS CLI                 | Installé et configuré                                                                   |
+| `kubectl`               | Installé                                                                                |
+| `helm`                  | v3.x installé                                                                           |
+| `skopeo`                | Recommandé pour copier des images de conteneur (conserve toutes les architectures)      |
+| Rôle IAM du cluster EKS | Créé via la Console AWS avec « Create recommended role » et les permissions par défaut  |
+| Rôles IAM des nœuds     | Créés via la Console AWS avec « Create recommended role » et les permissions par défaut |
+| Fournisseur OIDC        | Créé pour le cluster EKS                                                                |
+
+<div id="gcp-gke">
+  ### GCP (GKE)
+</div>
+
+| Exigence                                 | Détails                                                                                                        |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Projet GCP                               | Facturation activée                                                                                            |
+| `gcloud` CLI                             | Installé et authentifié                                                                                        |
+| `kubectl`                                | Installé                                                                                                       |
+| `helm`                                   | v3.x installé                                                                                                  |
+| `skopeo`                                 | Installé (pour copier des images de conteneurs)                                                                |
+| Identifiants AWS                         | Accès en lecture à ClickHouse ECR (pour la copie d’images)                                                     |
+| Hôte bastion                             | Dans le VPC pour accéder au cluster privé                                                                      |
+| Compte de service du déployeur           | Avec les permissions appropriées (voir [Exigences IAM / compte de service](#iam-service-account-requirements)) |
+| **(FIPS uniquement)** Image Red Hat UBI8 | Récupérée via GKE pour la génération de certificats                                                            |
+
+<div id="bare-metal-rke2">
+  ### Bare Metal (RKE2)
+</div>
+
+| Exigence             | Détails                                                        |
+| -------------------- | -------------------------------------------------------------- |
+| Terraform            | v1.13.2+                                                       |
+| Ansible              | Avec le rôle `lablabs.rke2` et la collection `kubernetes.core` |
+| `kubectl`            | Installé                                                       |
+| `helm`               | v3.x installé                                                  |
+| Identifiants AWS IAM | Clé d’accès et clé secrète pour ECR et S3/MinIO                |
+| RKE2                 | v1.33.5+rke2r1 (déployé via Ansible)                           |
+| OS                   | Rocky Linux 9.6 (ou compatible)                                |
+| MinIO                | Operator et tenant pour le stockage d’objets compatible S3     |
+
+***
+
+<div id="node-group-specifications">
+  ## Spécifications des groupes de nœuds
+</div>
+
+<div id="aws-eks">
+  ### AWS (EKS)
+</div>
+
+<div id="keeper-node-group">
+  #### Groupe de nœuds Keeper
+</div>
+
+| Propriété                                  | Valeur                                             |
+| ------------------------------------------ | -------------------------------------------------- |
+| AMI (x86)                                  | `AL2023_x86_64`                                    |
+| AMI (arm64)                                | `AL2023_ARM_64`                                    |
+| Taille du disque                           | 20 GB                                              |
+| Type d’instance recommandé                 | `m7g.2xlarge`                                      |
+| Nombre minimal de nœuds (sans autoscaling) | 3 par cluster ClickHouse                           |
+| Label Kubernetes (x86)                     | `clickhouseGroup: keeper`                          |
+| Label Kubernetes (arm64)                   | `clickhouseGroup: keeper-arm64`                    |
+| Taint                                      | `clickhouse.com/do-not-schedule: true, NoSchedule` |
+| Taint (arm64 uniquement)                   | `clickhouse.com/arch: arm64, NoSchedule`           |
+| Ressources recommandées                    | CPU : 4, mémoire : 16Gi                            |
+
+<div id="server-node-group">
+  #### Groupe de nœuds du serveur
+</div>
+
+| Propriété                     | Valeur                                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| AMI (x86)                     | `AL2023_x86_64`                                                                                  |
+| AMI (arm64)                   | `AL2023_ARM_64`                                                                                  |
+| Taille du disque              | 20 GB                                                                                            |
+| Type d’instance recommandé    | `m7gd.16xlarge` (série « d » avec SSD NVMe fortement recommandée)                                |
+| Nœuds min. (sans autoscaling) | Égal au nombre souhaité de réplicas ClickHouse                                                   |
+| Label Kubernetes (x86)        | `clickhouseGroup: server`                                                                        |
+| Label Kubernetes (arm64)      | `clickhouseGroup: server-arm64`                                                                  |
+| Taint                         | `clickhouse.com/do-not-schedule: true, NoSchedule`                                               |
+| Taint (arm64 uniquement)      | `clickhouse.com/arch: arm64, NoSchedule`                                                         |
+| Ressources recommandées       | CPU : 64, mémoire : 256Gi                                                                        |
+| Modèle de lancement           | Modèle personnalisé requis pour la configuration RAID de SSD NVMe (voir la documentation source) |
+
+<div id="operator-node-group-x86">
+  #### Groupe de nœuds Operator (x86)
+</div>
+
+| Propriété                  | Valeur                                                                                              |
+| -------------------------- | --------------------------------------------------------------------------------------------------- |
+| AMI                        | `AL2023_x86_64`                                                                                     |
+| Taille du disque           | 20 GB                                                                                               |
+| Taille minimale d’instance | xlarge                                                                                              |
+| Type d’instance            | Tout type compatible x86                                                                            |
+| Remarques                  | Peut être un groupe de nœuds existant s’il est déjà compatible x86, avec une taille minimale xlarge |
+
+**Tous les nœuds AWS nécessitent [IMDS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html) pour l’authentification.**
+
+Pour les groupes de nœuds Keeper et server, **créez un groupe de nœuds par AZ** si vous souhaitez utiliser le cluster autoscaler sur plusieurs AZ.
+
+Balises de l’autoscaler (si vous utilisez cluster-autoscaler) : - `k8s.io/cluster-autoscaler/enabled: true` - `k8s.io/cluster-autoscaler/$CLUSTER_NAME: owned`
+
+<div id="gcp-gke">
+  ### GCP (GKE)
+</div>
+
+<div id="keeper-node-pool">
+  #### Pool de nœuds Keeper
+</div>
+
+| Propriété               | Valeur                                           |
+| ----------------------- | ------------------------------------------------ |
+| Type de machine (dev)   | `n2-standard-4`                                  |
+| Type de machine (prod)  | `n2-standard-8`                                  |
+| Type de disque          | `pd-ssd`                                         |
+| Taille du disque        | 20 GB                                            |
+| Label du nœud           | `clickhouseGroup=keeper`                         |
+| Taint                   | `clickhouse.com/do-not-schedule=true:NoSchedule` |
+| Autoscaling             | min 1, max 3                                     |
+| Métadonnées du workload | `GKE_METADATA` (pour Workload Identity)          |
+| Ressources recommandées | CPU : 2, mémoire : 8Gi                           |
+
+<div id="server-node-pool">
+  #### Groupe de pool de nœud du serveur
+</div>
+
+| Propriété                        | Valeur                                                                       |
+| -------------------------------- | ---------------------------------------------------------------------------- |
+| Type de machine (dev)            | `n2-standard-8`                                                              |
+| Type de machine (prod)           | `n2-standard-64`                                                             |
+| Type de disque                   | `pd-standard` + SSD local                                                    |
+| Taille du disque                 | 20 GB                                                                        |
+| Nombre de SSD locaux             | 1                                                                            |
+| label du nœud                  | `clickhouseGroup=server`                                                     |
+| Taint                            | `clickhouse.com/do-not-schedule=true:NoSchedule`                             |
+| Mise à l’échelle automatique     | min. 1, max. 10                                                              |
+| Métadonnées de charge de travail | `GKE_METADATA` (pour Workload Identity)                                      |
+| Ressources recommandées          | CPU : 4, mémoire : 16Gi (dev) ; CPU : 64, mémoire : 256Gi (prod)             |
+| Point de montage du SSD          | `/mnt/disks/ssd0` (via un DaemonSet ; GKE COS a une racine en lecture seule) |
+
+<div id="default-node-pool">
+  #### Pool de nœuds par défaut
+</div>
+
+| Propriété        | Valeur          |
+| ---------------- | --------------- |
+| Type de machine  | `n2-standard-4` |
+| Type de disque   | `pd-standard`   |
+| Taille du disque | 50 GB           |
+| Nœuds            | 1               |
+
+<div id="bare-metal-rke2">
+  ### Bare Metal (RKE2)
+</div>
+
+<div id="node-layout">
+  #### Répartition des nœuds
+</div>
+
+| Rôle                               | Noms d’hôte (exemple)                          | Labels                         | Remarques                                             |
+| ---------------------------------- | ---------------------------------------------- | ------------------------------ | ----------------------------------------------------- |
+| Plan de contrôle + etcd (serveurs) | `chb-rke2s101`, `chb-rke2s201`, `chb-rke2s301` | `clickhouseGroup=keeper-amd64` | 3 nœuds répartis sur plusieurs zones de disponibilité |
+| Agent (workers)                    | `chb-rke2s102`, `chb-rke2s202`, `chb-rke2s302` | `clickhouseGroup=server-amd64` | 3 nœuds répartis sur plusieurs zones de disponibilité |
+
+<div id="resource-configuration">
+  #### Configuration des ressources
+</div>
+
+| Composant | CPU | Mémoire | Stockage                               |
+| --------- | --- | ------- | -------------------------------------- |
+| Server    | 64  | 128Gi   | 300Gi (NVMe local via `local-nvme-sc`) |
+| Keeper    | 4   | 16Gi    | 30Gi (NVMe local via `local-nvme-sc`)  |
+
+Chaque nœud dispose de 2 disques NVMe de stockage d’instance de 838 GiB.
+
+***
+
+<div id="networking-requirements">
+  ## Prérequis réseau
+</div>
+
+<div id="aws">
+  ### AWS
+</div>
+
+| Composant               | Spécification                                  |
+| ----------------------- | ---------------------------------------------- |
+| CIDR du VPC             | `10.20.0.0/16` (exemple)                       |
+| IPv6                    | Non utilisé                                    |
+| Tenancy                 | Par défaut                                     |
+| Nombre minimal d&#39;AZ | 3 (pour la haute disponibilité)                |
+| Sous-réseaux publics    | 3 (un par AZ, `/20` chacun)                    |
+| Sous-réseaux privés     | 3 (un par AZ, `/18` chacun)                    |
+| Passerelles NAT         | 1 par AZ                                       |
+| VPC endpoints           | passerelle S3                                  |
+| Noms d&#39;hôte DNS     | Activé                                         |
+| DNS resolution          | Activé                                         |
+| CNI                     | IPv4 requis (p. ex., Amazon VPC CNI avec IRSA) |
+
+Exemple de répartition des sous-réseaux (us-west-2) :
+
+| Type    | AZ         | CIDR             |
+| ------- | ---------- | ---------------- |
+| Public  | us-west-2a | `10.20.192.0/20` |
+| Public  | us-west-2b | `10.20.208.0/20` |
+| Public  | us-west-2c | `10.20.224.0/20` |
+| Private | us-west-2a | `10.20.0.0/18`   |
+| Private | us-west-2b | `10.20.64.0/18`  |
+| Private | us-west-2c | `10.20.128.0/18` |
+
+<div id="gcp">
+  ### GCP
+</div>
+
+| Composant                     | Spécification                                                                          |
+| ----------------------------- | -------------------------------------------------------------------------------------- |
+| Mode VPC                      | Sous-réseau personnalisé                                                               |
+| Plage du sous-réseau GKE      | `10.1.0.0/24` (exemple)                                                                |
+| Plage secondaire des pods     | `10.244.0.0/14` (doit être alignée sur une frontière `/14` ; 3e octet divisible par 4) |
+| Plage secondaire des services | `10.252.0.0/20` (doit être alignée sur une frontière `/20`)                            |
+| CIDR IPv4 du master           | `172.16.0.0/28`                                                                        |
+| Nœuds privés                  | Activés (adresses IP internes uniquement)                                              |
+| Endpoint privé                | Activé (pas d’API publique ; FedRAMP)                                                  |
+| Réseaux autorisés du master   | Sous-réseau GKE + sous-réseau bastion                                                  |
+| Cloud NAT                     | Requis pour l’accès Internet sortant depuis les nœuds privés                           |
+| Private Google Access         | Activé sur le sous-réseau                                                              |
+
+<div id="bare-metal">
+  ### Bare Metal
+</div>
+
+| Composant         | Spécification                                   |
+| ----------------- | ----------------------------------------------- |
+| CIDR du VPC       | Selon la configuration Terraform                |
+| Réseau Kubernetes | CNI intégré à RKE2                              |
+| Simulation des AZ | Labels de topologie par nœud                    |
+| Ingress           | Via une redirection de port ou un load balancer |
+
+***
+
+<div id="storage-requirements">
+  ## Exigences de stockage
+</div>
+
+<div id="aws">
+  ### AWS
+</div>
+
+| Ressource                | Détails                                                                                                             |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| S3 bucket                | Classe Standard, chiffrement activé, même région que le cluster EKS                                                 |
+| Portée du S3 bucket      | Un par cluster ClickHouse, ou partagé avec un `keyPrefix` unique par cluster                                        |
+| Driver CSI EBS           | Requis ; à installer via Helm avec IRSA                                                                             |
+| StorageClass             | `gp3-encrypted` (fourni par le chart Helm) ou personnalisé                                                          |
+| Cache NVMe               | Instances de série « d » (par ex. `m7gd.*`) ; monté via le script RAID du modèle de lancement EC2 dans `/nvme/disk` |
+| Dimensionnement du cache | `bytesPerGiRAM * pod_memory_limit` (par ex. 11.3Gi * 250Gi = 2825Gi)                                                |
+| VolumeSnapshot CRDs      | Requis par l’opérateur                                                                                              |
+
+<div id="gcp">
+  ### GCP
+</div>
+
+| Ressource                              | Détails                                                                                                       |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Bucket GCS                             | Classe standard, accès uniforme au niveau du bucket, même région que le cluster GKE                           |
+| Point de terminaison GCS compatible S3 | `https://storage.googleapis.com`                                                                              |
+| Paramètre de région GCS                | `auto`                                                                                                        |
+| StorageClass                           | `premium-rwo` (intégré à GKE) ou personnalisé via le chart Helm avec le provisionneur `pd.csi.storage.gke.io` |
+| Clé de topologie                       | `topology.gke.io/zone` (et non `topology.kubernetes.io/zone`)                                                 |
+| Cache SSD local                        | Monté sur `/mnt/disks/ssd0` via un DaemonSet (GKE COS a un système de fichiers racine en lecture seule)       |
+| VolumeSnapshot CRDs                    | Requis par l&#39;opérateur                                                                                    |
+
+<div id="bare-metal">
+  ### Bare Metal
+</div>
+
+| Ressource                | Détails                                                            |
+| ------------------------ | ------------------------------------------------------------------ |
+| Stockage objet           | MinIO (compatible S3) avec DirectPV pour les disques NVMe          |
+| StorageClass             | `local-nvme-sc` utilisant le provisionneur `rancher.io/local-path` |
+| Disques NVMe             | Découverts et initialisés via DirectPV ; montés sur `/nvme/disk`   |
+| Pilote de stockage local | Rancher local-path-provisioner v0.0.32                             |
+
+***
+
+<div id="iam-service-account-requirements">
+  ## Exigences IAM / compte de service
+</div>
+
+<div id="aws">
+  ### AWS
+</div>
+
+<div id="ecr-pull-role">
+  #### Rôle ECR pour la récupération
+</div>
+
+* **Nom du rôle :** `ClickHouseAirgapECRPullRole`
+* **Objectif :** Récupérer des images depuis l&#39;ECR privé de ClickHouse
+* **Autorisations :** `ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `ecr:BatchCheckLayerAvailability`, `ecr:DescribeImages`, `ecr:ListImages`, `ecr:GetAuthorizationToken`
+* **Action :** Fournir l&#39;ARN du rôle à l&#39;équipe ClickHouse
+
+<div id="clickhouse-serverkeeper-s3-role">
+  #### Rôle S3 de ClickHouse Server/Keeper
+</div>
+
+* **Un rôle par cluster ClickHouse provisionné**
+* **Convention de nommage :** `CH-S3-$NAME-$REGION-$ORDINAL-Role`
+* `$NAME` : nom du cluster (p. ex., `default-xx-01`)
+* `$REGION` : région abrégée (p. ex., `uw2` pour `us-west-2`)
+* `$ORDINAL` : réservé, défini à `00`
+* Exemple : `CH-S3-default-xx-01-uw2-00-Role`
+* **Autorisations :** `s3:*`, `s3:ListBucket` sur la ressource du bucket
+* **Politique de confiance :** IRSA via `sts:AssumeRoleWithWebIdentity` avec le fournisseur OIDC du cluster EKS
+
+<div id="ebs-csi-driver-role">
+  #### Rôle du driver EBS CSI
+</div>
+
+* **Nom de l’exemple :** `ClickHouse_EksEbsCsiDriverRole`
+* **Stratégie gérée :** `arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy`
+* **Stratégie d’approbation :** IRSA avec le fournisseur OIDC du cluster EKS
+
+<div id="gcp">
+  ### GCP
+</div>
+
+<div id="deployer-service-account">
+  #### Compte de service de déploiement
+</div>
+
+| Rôle                                    | Utilité                                                |
+| --------------------------------------- | ------------------------------------------------------ |
+| `roles/compute.networkAdmin`            | Créer/gérer les VPC, sous-réseaux, NAT et routeurs     |
+| `roles/container.admin`                 | Créer/gérer les clusters GKE et les pools de nœuds     |
+| `roles/storage.admin`                   | Créer/gérer les buckets GCS                            |
+| `roles/iam.serviceAccountAdmin`         | Créer/gérer les comptes de service                     |
+| `roles/iam.serviceAccountUser`          | Utiliser des comptes de service pour Workload Identity |
+| `roles/iam.workloadIdentityUser`        | Configurer les liaisons Workload Identity              |
+| `roles/artifactregistry.admin`          | Créer/gérer les dépôts Artifact Registry               |
+| `roles/resourcemanager.projectIamAdmin` | Gérer les stratégies IAM du projet                     |
+
+<div id="clickhouse-workload-identity-service-account">
+  #### Compte de service Workload Identity pour ClickHouse
+</div>
+
+* **GCP SA :** `clickhouse@$PROJECT.iam.gserviceaccount.com`
+* **K8s SA (manuel) :** `clickhouse` dans l’espace de noms `ns-$CLUSTER_NAME`
+* **K8s SA (créé par Helm) :** `ch-$CLUSTER_NAME-sa` dans l’espace de noms `ns-$CLUSTER_NAME`
+* **Annotation du K8s SA :** `iam.gke.io/gcp-service-account=<GSA_EMAIL>`
+* **Membre de la liaison IAM :** `serviceAccount:$PROJECT.svc.id.goog[<namespace>/<ksa>]`
+* **Autorisations du bucket :** `roles/storage.objectAdmin`, `roles/storage.legacyBucketReader`
+* **Autorisations d’Artifact Registry :** `roles/artifactregistry.reader`
+
+<div id="bare-metal">
+  ### Bare Metal
+</div>
+
+* **Identifiants AWS :** clé d&#39;accès et clé secrète pour récupérer des images ECR
+* **Identifiants MinIO :** clé d&#39;accès et clé secrète distinctes pour le stockage compatible S3
+* **Image pull secrets :** secret `docker-registry` `all-icr-io` dans `clickhouse-operator-system` et dans les espaces de noms du cluster
+* **Compte de service :** `default` (sans IRSA ; identifiants transmis via des variables d&#39;environnement)
+
+***
+
+<div id="cluster-naming-conventions">
+  ## Conventions de nommage des clusters
+</div>
+
+La convention de nommage des clusters ClickHouse est la même sur toutes les plateformes :
+
+```text
+$DESCRIPTOR-$LETTERS-$ORDINAL
+```
+
+| Composant     | Description                                   | Exemple   |
+| ------------- | --------------------------------------------- | --------- |
+| `$DESCRIPTOR` | Nom descriptif (lettres uniquement)           | `default` |
+| `$LETTERS`    | Réservé ; deux lettres quelconques            | `xx`      |
+| `$ORDINAL`    | Numéro d’ordre incrémentiel commençant à `01` | `01`      |
+
+**Nom d’exemple :** `default-xx-01`
+
+Le nom du cluster doit être **unique au sein du cluster Kubernetes cible** et est utilisé dans : - l’espace de noms Kubernetes : `ns-$CLUSTER_NAME` - les ressources Kubernetes : préfixées par `c-$CLUSTER_NAME` - les noms de rôles IAM (AWS) : `CH-S3-$CLUSTER_NAME-$REGION-$ORDINAL-Role` - les préfixes de clés S3/GCS : `ch-s3-<uuid>` (unique par cluster)
+
+***
+
+<div id="required-kubernetes-components">
+  ## Composants Kubernetes requis
+</div>
+
+| Composant           | AWS                             | GCP                                   | Bare Metal                                 |
+| ------------------- | ------------------------------- | ------------------------------------- | ------------------------------------------ |
+| CNI (IPv4)          | Amazon VPC CNI (recommandé)     | Intégré à GKE                         | Intégré à RKE2                             |
+| Pilote CSI          | aws-ebs-csi-driver              | Intégré à GKE (pd.csi.storage.gke.io) | Rancher local-path-provisioner             |
+| DNS                 | CoreDNS                         | Intégré à GKE                         | Intégré à RKE2                             |
+| VolumeSnapshot CRDs | Obligatoire                     | Obligatoire                           | Non précisé                                |
+| Autoscaler          | Cluster Autoscaler (recommandé) | autoscaling du pool de nœuds GKE      | N/A                                        |
+| Cert manager        | Non requis (sauf FIPS)          | Obligatoire pour FIPS                 | Obligatoire (cert-manager + trust-manager) |

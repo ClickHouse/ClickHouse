@@ -1,0 +1,653 @@
+---
+description: 'Documentação da cláusula ORDER BY'
+sidebarTitle: 'ORDER BY'
+slug: /sql-reference/statements/select/order-by
+title: 'Cláusula ORDER BY'
+doc_type: 'reference'
+---
+
+A cláusula `ORDER BY` contém
+
+* uma lista de expressões, por exemplo, `ORDER BY visits, search_phrase`,
+* uma lista de números que se referem às colunas da cláusula `SELECT`, por exemplo, `ORDER BY 2, 1`, ou
+* `ALL`, que significa todas as colunas da cláusula `SELECT`, por exemplo, `ORDER BY ALL`.
+
+Para desativar a ordenação por números de colunas, defina a configuração [enable&#95;positional&#95;arguments](/pt-BR/reference/settings/session-settings#enable_positional_arguments) = 0.
+Para desativar a ordenação por `ALL`, defina a configuração [enable&#95;order&#95;by&#95;all](/pt-BR/reference/settings/session-settings#enable_order_by_all) = 0.
+
+A cláusula `ORDER BY` pode receber um modificador `DESC` (decrescente) ou `ASC` (crescente), que determina a direção da ordenação.
+A menos que uma ordem de classificação explícita seja especificada, `ASC` é usado por padrão.
+A direção da ordenação se aplica a uma única expressão, não à lista inteira, por exemplo, `ORDER BY Visits DESC, SearchPhrase`.
+Além disso, a ordenação diferencia maiúsculas de minúsculas.
+
+Linhas com valores idênticos nas expressões de ordenação são retornadas em uma ordem arbitrária e não determinística.
+Se a cláusula `ORDER BY` for omitida em uma instrução `SELECT`, a ordem das linhas também será arbitrária e não determinística.
+
+<div id="sorting-of-special-values">
+  ## Ordenação de Valores Especiais
+</div>
+
+Há duas formas de definir a ordem de classificação de `NaN` e `NULL`:
+
+* Por padrão ou com o modificador `NULLS LAST`: primeiro os valores, depois `NaN` e, por fim, `NULL`.
+* Com o modificador `NULLS FIRST`: primeiro `NULL`, depois `NaN` e, em seguida, os outros valores.
+
+<div id="example">
+  ### Exemplo
+</div>
+
+Para a tabela
+
+```text
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 2 │    2 │
+│ 1 │  nan │
+│ 2 │    2 │
+│ 3 │    4 │
+│ 5 │    6 │
+│ 6 │  nan │
+│ 7 │ ᴺᵁᴸᴸ │
+│ 6 │    7 │
+│ 8 │    9 │
+└───┴──────┘
+```
+
+Execute a consulta `SELECT * FROM t_null_nan ORDER BY y NULLS FIRST` para obter:
+
+```text
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 7 │ ᴺᵁᴸᴸ │
+│ 1 │  nan │
+│ 6 │  nan │
+│ 2 │    2 │
+│ 2 │    2 │
+│ 3 │    4 │
+│ 5 │    6 │
+│ 6 │    7 │
+│ 8 │    9 │
+└───┴──────┘
+```
+
+Quando números de ponto flutuante são ordenados, os NaNs ficam separados dos demais valores. Independentemente da ordem de classificação, os NaNs ficam no final. Em outras palavras, na ordenação ascendente, eles são posicionados como se fossem maiores do que todos os outros números, enquanto, na ordenação descendente, são posicionados como se fossem menores do que os demais.
+
+<div id="collation-support">
+  ## Suporte a Collation
+</div>
+
+Para ordenar por valores [String](/pt-BR/reference/data-types/string), você pode especificar uma collation (comparação). Exemplo: `ORDER BY SearchPhrase COLLATE 'tr'` — para ordenar por palavra-chave em ordem crescente, usando o alfabeto turco, sem diferenciar maiúsculas de minúsculas, assumindo que as strings estejam codificadas em UTF-8. `COLLATE` pode ou não ser especificado de forma independente para cada expression em ORDER BY. Se `ASC` ou `DESC` for especificado, `COLLATE` será especificado após ele. Ao usar `COLLATE`, a ordenação sempre desconsidera maiúsculas e minúsculas.
+
+Collate é compatível com [LowCardinality](/pt-BR/reference/data-types/lowcardinality), [Nullable](/pt-BR/reference/data-types/nullable), [Array](/pt-BR/reference/data-types/array) e [Tuple](/pt-BR/reference/data-types/tuple).
+
+Recomendamos usar `COLLATE` apenas na ordenação final de um pequeno número de linhas, já que a ordenação com `COLLATE` é menos eficiente do que a ordenação normal por bytes.
+
+<div id="collation-examples">
+  ## Exemplos de Collation
+</div>
+
+Exemplo usando apenas valores [String](/pt-BR/reference/data-types/string):
+
+Tabela de entrada:
+
+```text
+┌─x─┬─s────┐
+│ 1 │ bca  │
+│ 2 │ ABC  │
+│ 3 │ 123a │
+│ 4 │ abc  │
+│ 5 │ BCA  │
+└───┴──────┘
+```
+
+```sql title="Query"
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+```text title="Response"
+┌─x─┬─s────┐
+│ 3 │ 123a │
+│ 4 │ abc  │
+│ 2 │ ABC  │
+│ 1 │ bca  │
+│ 5 │ BCA  │
+└───┴──────┘
+```
+
+Exemplo com [Nullable](/pt-BR/reference/data-types/nullable):
+
+Tabela de entrada:
+
+```text
+┌─x─┬─s────┐
+│ 1 │ bca  │
+│ 2 │ ᴺᵁᴸᴸ │
+│ 3 │ ABC  │
+│ 4 │ 123a │
+│ 5 │ abc  │
+│ 6 │ ᴺᵁᴸᴸ │
+│ 7 │ BCA  │
+└───┴──────┘
+```
+
+```sql title="Query"
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+```text title="Response"
+┌─x─┬─s────┐
+│ 4 │ 123a │
+│ 5 │ abc  │
+│ 3 │ ABC  │
+│ 1 │ bca  │
+│ 7 │ BCA  │
+│ 6 │ ᴺᵁᴸᴸ │
+│ 2 │ ᴺᵁᴸᴸ │
+└───┴──────┘
+```
+
+Exemplo com [Array](/pt-BR/reference/data-types/array):
+
+Tabela de entrada:
+
+```text
+┌─x─┬─s─────────────┐
+│ 1 │ ['Z']         │
+│ 2 │ ['z']         │
+│ 3 │ ['a']         │
+│ 4 │ ['A']         │
+│ 5 │ ['z','a']     │
+│ 6 │ ['z','a','a'] │
+│ 7 │ ['']          │
+└───┴───────────────┘
+```
+
+```sql title="Query"
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+```text title="Response"
+┌─x─┬─s─────────────┐
+│ 7 │ ['']          │
+│ 3 │ ['a']         │
+│ 4 │ ['A']         │
+│ 2 │ ['z']         │
+│ 5 │ ['z','a']     │
+│ 6 │ ['z','a','a'] │
+│ 1 │ ['Z']         │
+└───┴───────────────┘
+```
+
+Exemplo com string [LowCardinality](/pt-BR/reference/data-types/lowcardinality):
+
+Tabela de entrada:
+
+```response
+┌─x─┬─s───┐
+│ 1 │ Z   │
+│ 2 │ z   │
+│ 3 │ a   │
+│ 4 │ A   │
+│ 5 │ za  │
+│ 6 │ zaa │
+│ 7 │     │
+└───┴─────┘
+```
+
+```sql title="Query"
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+```response title="Response"
+┌─x─┬─s───┐
+│ 7 │     │
+│ 3 │ a   │
+│ 4 │ A   │
+│ 2 │ z   │
+│ 1 │ Z   │
+│ 5 │ za  │
+│ 6 │ zaa │
+└───┴─────┘
+```
+
+Exemplo com [Tuple](/pt-BR/reference/data-types/tuple):
+
+```response title="Response"
+┌─x─┬─s───────┐
+│ 1 │ (1,'Z') │
+│ 2 │ (1,'z') │
+│ 3 │ (1,'a') │
+│ 4 │ (2,'z') │
+│ 5 │ (1,'A') │
+│ 6 │ (2,'Z') │
+│ 7 │ (2,'A') │
+└───┴─────────┘
+```
+
+```sql title="Query"
+SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
+```
+
+```response title="Response"
+┌─x─┬─s───────┐
+│ 3 │ (1,'a') │
+│ 5 │ (1,'A') │
+│ 2 │ (1,'z') │
+│ 1 │ (1,'Z') │
+│ 7 │ (2,'A') │
+│ 4 │ (2,'z') │
+│ 6 │ (2,'Z') │
+└───┴─────────┘
+```
+
+<div id="implementation-details">
+  ## Detalhes de implementação
+</div>
+
+Usa-se menos RAM se um [LIMIT](/pt-BR/reference/statements/select/limit) suficientemente pequeno for especificado junto com `ORDER BY`. Caso contrário, a quantidade de memória consumida é proporcional ao volume de dados a ser ordenado. No processamento de consultas distribuídas, se [GROUP BY](/pt-BR/reference/statements/select/group-by) for omitido, a ordenação é feita parcialmente nos servidores remotos, e os resultados são mesclados no servidor solicitante. Isso significa que, na ordenação distribuída, o volume de dados a ser ordenado pode ser maior do que a quantidade de memória disponível em um único servidor.
+
+Se não houver RAM suficiente, é possível realizar a ordenação em memória externa (criando arquivos temporários em disco). Use a configuração `max_bytes_before_external_sort` para isso. Se ela estiver definida como 0 (o padrão), a ordenação externa ficará desabilitada. Se estiver habilitada, quando o volume de dados a ser ordenado atingir o número de bytes especificado, os dados coletados serão ordenados e gravados em um arquivo temporário. Depois que todos os dados forem lidos, todos os arquivos ordenados serão mesclados, e os resultados serão gerados. Os arquivos são gravados no diretório `/var/lib/clickhouse/tmp/` configurado (por padrão, mas você pode usar o parâmetro `tmp_path` para alterar essa configuração). Você também pode usar spilling para disco apenas se a consulta exceder os limites de memória; ou seja, `max_bytes_ratio_before_external_sort=0.6` habilita spilling para disco somente quando a consulta atingir `60%` do limite de memória (usuário/servidor).
+
+A execução de uma consulta pode usar mais memória do que `max_bytes_before_external_sort`. Por isso, essa configuração deve ter um valor significativamente menor que `max_memory_usage`. Por exemplo, se o seu servidor tiver 128 GB de RAM e você precisar executar uma única consulta, defina `max_memory_usage` como 100 GB e `max_bytes_before_external_sort` como 80 GB.
+
+A ordenação externa é bem menos eficiente do que a ordenação em RAM.
+
+<div id="optimization-of-data-reading">
+  ## Otimização da leitura de dados
+</div>
+
+Se a expressão `ORDER BY` tiver um prefixo que coincida com a chave de ordenação da tabela, você poderá otimizar a consulta usando a configuração [optimize&#95;read&#95;in&#95;order](/pt-BR/reference/settings/session-settings#optimize_read_in_order).
+
+Quando a configuração `optimize_read_in_order` está habilitada, o servidor do ClickHouse usa o índice da tabela e lê os dados na ordem da chave `ORDER BY`. Isso evita a leitura de todos os dados quando há um [LIMIT](/pt-BR/reference/statements/select/limit) especificado. Assim, consultas sobre grandes volumes de dados com `LIMIT` pequeno são processadas mais rapidamente.
+
+A otimização funciona com `ASC` e `DESC` e não funciona em conjunto com a cláusula [GROUP BY](/pt-BR/reference/statements/select/group-by) nem com o modificador [FINAL](/pt-BR/reference/statements/select/from#final-modifier).
+
+Quando a configuração `optimize_read_in_order` está desabilitada, o servidor do ClickHouse não usa o índice da tabela ao processar consultas `SELECT`.
+
+Considere desabilitar manualmente `optimize_read_in_order` ao executar consultas com cláusula `ORDER BY`, `LIMIT` grande e uma condição [WHERE](/pt-BR/reference/statements/select/where) que exija a leitura de um grande volume de registros antes de encontrar os dados consultados.
+
+A otimização é compatível com os seguintes motores de tabela:
+
+* [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) (incluindo [visões materializadas](/pt-BR/reference/statements/create/view#materialized-view)),
+* [Merge](/pt-BR/reference/engines/table-engines/special/merge),
+* [Buffer](/pt-BR/reference/engines/table-engines/special/buffer)
+
+Em tabelas com mecanismo `MaterializedView`, a otimização funciona com visões como `SELECT ... FROM merge_tree_table ORDER BY pk`. Porém, não é compatível com consultas como `SELECT ... FROM view ORDER BY pk` se a consulta da visão não tiver a cláusula `ORDER BY`.
+
+<div id="order-by-expr-with-fill-modifier">
+  ## Modificador ORDER BY Expr WITH FILL
+</div>
+
+Este modificador também pode ser combinado com o [modificador LIMIT ... WITH TIES](/pt-BR/reference/statements/select/limit#limit--with-ties-modifier).
+
+O modificador `WITH FILL` pode ser usado após `ORDER BY expr`, com os parâmetros opcionais `FROM expr`, `TO expr` e `STEP expr`.
+Todos os valores ausentes da coluna `expr` serão preenchidos sequencialmente, e as demais colunas receberão os valores padrão.
+
+Para preencher várias colunas, adicione o modificador `WITH FILL` com parâmetros opcionais após o nome de cada campo na seção `ORDER BY`.
+
+```sql title="Query"
+ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_expr] [STALENESS const_numeric_expr], ... exprN [WITH FILL] [FROM expr] [TO expr] [STEP numeric_expr] [STALENESS numeric_expr]
+[INTERPOLATE [(col [AS expr], ... colN [AS exprN])]]
+```
+
+`WITH FILL` pode ser aplicado a campos com tipos Numeric (todos os tipos de float, decimal e int) ou tipos Date/DateTime. Quando aplicado a campos `String`, os valores ausentes são preenchidos com strings vazias.
+Quando `FROM const_expr` não é definido, a sequência de preenchimento usa o valor mínimo do campo `expr` de `ORDER BY`.
+Quando `TO const_expr` não é definido, a sequência de preenchimento usa o valor máximo do campo `expr` de `ORDER BY`.
+Quando `STEP const_numeric_expr` é definido, `const_numeric_expr` é interpretado `as is` para tipos numéricos, como `days` para o tipo Date e como `seconds` para o tipo DateTime. Ele também oferece suporte ao tipo de dado [INTERVAL](/pt-BR/reference/data-types/special-data-types/interval), que representa intervalos de data e hora.
+Quando `STEP const_numeric_expr` é omitido, a sequência de preenchimento usa `1.0` para tipo numérico, `1 day` para o tipo Date e `1 second` para o tipo DateTime.
+Quando `STALENESS const_numeric_expr` é definido, a consulta gera linhas até que a diferença em relação à linha anterior nos dados originais exceda `const_numeric_expr`.
+`INTERPOLATE` pode ser aplicado a colunas que não participam de `ORDER BY WITH FILL`. Essas colunas são preenchidas com base nos valores dos campos anteriores, aplicando `expr`. Se `expr` não estiver presente, o valor anterior será repetido. Se a lista for omitida, todas as colunas permitidas serão incluídas.
+
+Exemplo de uma consulta sem `WITH FILL`:
+
+```sql title="Query"
+SELECT n, source FROM (
+   SELECT toFloat32(number % 10) AS n, 'original' AS source
+   FROM numbers(10) WHERE number % 3 = 1
+) ORDER BY n;
+```
+
+```text title="Response"
+┌─n─┬─source───┐
+│ 1 │ original │
+│ 4 │ original │
+│ 7 │ original │
+└───┴──────────┘
+```
+
+A mesma consulta após aplicar o modificador `WITH FILL`:
+
+```sql title="Query"
+SELECT n, source FROM (
+   SELECT toFloat32(number % 10) AS n, 'original' AS source
+   FROM numbers(10) WHERE number % 3 = 1
+) ORDER BY n WITH FILL FROM 0 TO 5.51 STEP 0.5;
+```
+
+```text title="Response"
+┌───n─┬─source───┐
+│   0 │          │
+│ 0.5 │          │
+│   1 │ original │
+│ 1.5 │          │
+│   2 │          │
+│ 2.5 │          │
+│   3 │          │
+│ 3.5 │          │
+│   4 │ original │
+│ 4.5 │          │
+│   5 │          │
+│ 5.5 │          │
+│   7 │ original │
+└─────┴──────────┘
+```
+
+No caso de vários campos em `ORDER BY field2 WITH FILL, field1 WITH FILL`, a ordem do preenchimento seguirá a ordem dos campos na cláusula `ORDER BY`.
+
+Exemplo:
+
+```sql title="Query"
+SELECT
+    toDate((number * 10) * 86400) AS d1,
+    toDate(number * 86400) AS d2,
+    'original' AS source
+FROM numbers(10)
+WHERE (number % 3) = 1
+ORDER BY
+    d2 WITH FILL,
+    d1 WITH FILL STEP 5;
+```
+
+```text title="Response"
+┌───d1───────┬───d2───────┬─source───┐
+│ 1970-01-11 │ 1970-01-02 │ original │
+│ 1970-01-01 │ 1970-01-03 │          │
+│ 1970-01-01 │ 1970-01-04 │          │
+│ 1970-02-10 │ 1970-01-05 │ original │
+│ 1970-01-01 │ 1970-01-06 │          │
+│ 1970-01-01 │ 1970-01-07 │          │
+│ 1970-03-12 │ 1970-01-08 │ original │
+└────────────┴────────────┴──────────┘
+```
+
+O campo `d1` não é preenchido nem usa o valor padrão porque não temos valores repetidos para `d2`, e a sequência de `d1` não pode ser calculada corretamente.
+
+A consulta a seguir com o campo alterado em `ORDER BY`:
+
+```sql title="Query"
+SELECT
+    toDate((number * 10) * 86400) AS d1,
+    toDate(number * 86400) AS d2,
+    'original' AS source
+FROM numbers(10)
+WHERE (number % 3) = 1
+ORDER BY
+    d1 WITH FILL STEP 5,
+    d2 WITH FILL;
+```
+
+```text title="Response"
+┌───d1───────┬───d2───────┬─source───┐
+│ 1970-01-11 │ 1970-01-02 │ original │
+│ 1970-01-16 │ 1970-01-01 │          │
+│ 1970-01-21 │ 1970-01-01 │          │
+│ 1970-01-26 │ 1970-01-01 │          │
+│ 1970-01-31 │ 1970-01-01 │          │
+│ 1970-02-05 │ 1970-01-01 │          │
+│ 1970-02-10 │ 1970-01-05 │ original │
+│ 1970-02-15 │ 1970-01-01 │          │
+│ 1970-02-20 │ 1970-01-01 │          │
+│ 1970-02-25 │ 1970-01-01 │          │
+│ 1970-03-02 │ 1970-01-01 │          │
+│ 1970-03-07 │ 1970-01-01 │          │
+│ 1970-03-12 │ 1970-01-08 │ original │
+└────────────┴────────────┴──────────┘
+```
+
+A consulta a seguir usa o tipo de dado `INTERVAL` de 1 dia para cada valor preenchido na coluna `d1`:
+
+```sql title="Query"
+SELECT
+    toDate((number * 10) * 86400) AS d1,
+    toDate(number * 86400) AS d2,
+    'original' AS source
+FROM numbers(10)
+WHERE (number % 3) = 1
+ORDER BY
+    d1 WITH FILL STEP INTERVAL 1 DAY,
+    d2 WITH FILL;
+```
+
+```response title="Response"
+┌─────────d1─┬─────────d2─┬─source───┐
+│ 1970-01-11 │ 1970-01-02 │ original │
+│ 1970-01-12 │ 1970-01-01 │          │
+│ 1970-01-13 │ 1970-01-01 │          │
+│ 1970-01-14 │ 1970-01-01 │          │
+│ 1970-01-15 │ 1970-01-01 │          │
+│ 1970-01-16 │ 1970-01-01 │          │
+│ 1970-01-17 │ 1970-01-01 │          │
+│ 1970-01-18 │ 1970-01-01 │          │
+│ 1970-01-19 │ 1970-01-01 │          │
+│ 1970-01-20 │ 1970-01-01 │          │
+│ 1970-01-21 │ 1970-01-01 │          │
+│ 1970-01-22 │ 1970-01-01 │          │
+│ 1970-01-23 │ 1970-01-01 │          │
+│ 1970-01-24 │ 1970-01-01 │          │
+│ 1970-01-25 │ 1970-01-01 │          │
+│ 1970-01-26 │ 1970-01-01 │          │
+│ 1970-01-27 │ 1970-01-01 │          │
+│ 1970-01-28 │ 1970-01-01 │          │
+│ 1970-01-29 │ 1970-01-01 │          │
+│ 1970-01-30 │ 1970-01-01 │          │
+│ 1970-01-31 │ 1970-01-01 │          │
+│ 1970-02-01 │ 1970-01-01 │          │
+│ 1970-02-02 │ 1970-01-01 │          │
+│ 1970-02-03 │ 1970-01-01 │          │
+│ 1970-02-04 │ 1970-01-01 │          │
+│ 1970-02-05 │ 1970-01-01 │          │
+│ 1970-02-06 │ 1970-01-01 │          │
+│ 1970-02-07 │ 1970-01-01 │          │
+│ 1970-02-08 │ 1970-01-01 │          │
+│ 1970-02-09 │ 1970-01-01 │          │
+│ 1970-02-10 │ 1970-01-05 │ original │
+│ 1970-02-11 │ 1970-01-01 │          │
+│ 1970-02-12 │ 1970-01-01 │          │
+│ 1970-02-13 │ 1970-01-01 │          │
+│ 1970-02-14 │ 1970-01-01 │          │
+│ 1970-02-15 │ 1970-01-01 │          │
+│ 1970-02-16 │ 1970-01-01 │          │
+│ 1970-02-17 │ 1970-01-01 │          │
+│ 1970-02-18 │ 1970-01-01 │          │
+│ 1970-02-19 │ 1970-01-01 │          │
+│ 1970-02-20 │ 1970-01-01 │          │
+│ 1970-02-21 │ 1970-01-01 │          │
+│ 1970-02-22 │ 1970-01-01 │          │
+│ 1970-02-23 │ 1970-01-01 │          │
+│ 1970-02-24 │ 1970-01-01 │          │
+│ 1970-02-25 │ 1970-01-01 │          │
+│ 1970-02-26 │ 1970-01-01 │          │
+│ 1970-02-27 │ 1970-01-01 │          │
+│ 1970-02-28 │ 1970-01-01 │          │
+│ 1970-03-01 │ 1970-01-01 │          │
+│ 1970-03-02 │ 1970-01-01 │          │
+│ 1970-03-03 │ 1970-01-01 │          │
+│ 1970-03-04 │ 1970-01-01 │          │
+│ 1970-03-05 │ 1970-01-01 │          │
+│ 1970-03-06 │ 1970-01-01 │          │
+│ 1970-03-07 │ 1970-01-01 │          │
+│ 1970-03-08 │ 1970-01-01 │          │
+│ 1970-03-09 │ 1970-01-01 │          │
+│ 1970-03-10 │ 1970-01-01 │          │
+│ 1970-03-11 │ 1970-01-01 │          │
+│ 1970-03-12 │ 1970-01-08 │ original │
+└────────────┴────────────┴──────────┘
+```
+
+Exemplo de consulta sem `STALENESS`:
+
+```sql title="Query"
+SELECT number AS key, 5 * number value, 'original' AS source
+FROM numbers(16) WHERE key % 5 == 0
+ORDER BY key WITH FILL;
+```
+
+```text title="Response"
+    ┌─key─┬─value─┬─source───┐
+ 1. │   0 │     0 │ original │
+ 2. │   1 │     0 │          │
+ 3. │   2 │     0 │          │
+ 4. │   3 │     0 │          │
+ 5. │   4 │     0 │          │
+ 6. │   5 │    25 │ original │
+ 7. │   6 │     0 │          │
+ 8. │   7 │     0 │          │
+ 9. │   8 │     0 │          │
+10. │   9 │     0 │          │
+11. │  10 │    50 │ original │
+12. │  11 │     0 │          │
+13. │  12 │     0 │          │
+14. │  13 │     0 │          │
+15. │  14 │     0 │          │
+16. │  15 │    75 │ original │
+    └─────┴───────┴──────────┘
+```
+
+A mesma consulta após aplicar `STALENESS 3`:
+
+```sql title="Query"
+SELECT number AS key, 5 * number value, 'original' AS source
+FROM numbers(16) WHERE key % 5 == 0
+ORDER BY key WITH FILL STALENESS 3;
+```
+
+```text title="Response"
+    ┌─key─┬─value─┬─source───┐
+ 1. │   0 │     0 │ original │
+ 2. │   1 │     0 │          │
+ 3. │   2 │     0 │          │
+ 4. │   5 │    25 │ original │
+ 5. │   6 │     0 │          │
+ 6. │   7 │     0 │          │
+ 7. │  10 │    50 │ original │
+ 8. │  11 │     0 │          │
+ 9. │  12 │     0 │          │
+10. │  15 │    75 │ original │
+11. │  16 │     0 │          │
+12. │  17 │     0 │          │
+    └─────┴───────┴──────────┘
+```
+
+Exemplo de consulta sem `INTERPOLATE`:
+
+```sql title="Query"
+SELECT n, source, inter FROM (
+   SELECT toFloat32(number % 10) AS n, 'original' AS source, number AS inter
+   FROM numbers(10) WHERE number % 3 = 1
+) ORDER BY n WITH FILL FROM 0 TO 5.51 STEP 0.5;
+```
+
+```text title="Response"
+┌───n─┬─source───┬─inter─┐
+│   0 │          │     0 │
+│ 0.5 │          │     0 │
+│   1 │ original │     1 │
+│ 1.5 │          │     0 │
+│   2 │          │     0 │
+│ 2.5 │          │     0 │
+│   3 │          │     0 │
+│ 3.5 │          │     0 │
+│   4 │ original │     4 │
+│ 4.5 │          │     0 │
+│   5 │          │     0 │
+│ 5.5 │          │     0 │
+│   7 │ original │     7 │
+└─────┴──────────┴───────┘
+```
+
+A mesma consulta após aplicar `INTERPOLATE`:
+
+```sql title="Query"
+SELECT n, source, inter FROM (
+   SELECT toFloat32(number % 10) AS n, 'original' AS source, number AS inter
+   FROM numbers(10) WHERE number % 3 = 1
+) ORDER BY n WITH FILL FROM 0 TO 5.51 STEP 0.5 INTERPOLATE (inter AS inter + 1);
+```
+
+```text title="Response"
+┌───n─┬─source───┬─inter─┐
+│   0 │          │     0 │
+│ 0.5 │          │     0 │
+│   1 │ original │     1 │
+│ 1.5 │          │     2 │
+│   2 │          │     3 │
+│ 2.5 │          │     4 │
+│   3 │          │     5 │
+│ 3.5 │          │     6 │
+│   4 │ original │     4 │
+│ 4.5 │          │     5 │
+│   5 │          │     6 │
+│ 5.5 │          │     7 │
+│   7 │ original │     7 │
+└─────┴──────────┴───────┘
+```
+
+<div id="filling-grouped-by-sorting-prefix">
+  ## Preenchimento agrupado pelo prefixo de ordenação
+</div>
+
+Pode ser útil preencher, de forma independente, as linhas que tenham os mesmos valores em determinadas colunas — um bom exemplo é o preenchimento de valores ausentes em séries temporais.
+Suponha que exista a seguinte tabela de séries temporais:
+
+```sql
+CREATE TABLE timeseries
+(
+    `sensor_id` UInt64,
+    `timestamp` DateTime64(3, 'UTC'),
+    `value` Float64
+)
+ENGINE = Memory;
+
+SELECT * FROM timeseries;
+
+┌─sensor_id─┬───────────────timestamp─┬─value─┐
+│       234 │ 2021-12-01 00:00:03.000 │     3 │
+│       432 │ 2021-12-01 00:00:01.000 │     1 │
+│       234 │ 2021-12-01 00:00:07.000 │     7 │
+│       432 │ 2021-12-01 00:00:05.000 │     5 │
+└───────────┴─────────────────────────┴───────┘
+```
+
+E gostaríamos de preencher os valores ausentes de cada sensor independentemente, em intervalos de 1 segundo.
+Para isso, use a coluna `sensor_id` como prefixo de ordenação para preencher a coluna `timestamp`:
+
+```sql
+SELECT *
+FROM timeseries
+ORDER BY
+    sensor_id,
+    timestamp WITH FILL
+INTERPOLATE ( value AS 9999 )
+
+┌─sensor_id─┬───────────────timestamp─┬─value─┐
+│       234 │ 2021-12-01 00:00:03.000 │     3 │
+│       234 │ 2021-12-01 00:00:04.000 │  9999 │
+│       234 │ 2021-12-01 00:00:05.000 │  9999 │
+│       234 │ 2021-12-01 00:00:06.000 │  9999 │
+│       234 │ 2021-12-01 00:00:07.000 │     7 │
+│       432 │ 2021-12-01 00:00:01.000 │     1 │
+│       432 │ 2021-12-01 00:00:02.000 │  9999 │
+│       432 │ 2021-12-01 00:00:03.000 │  9999 │
+│       432 │ 2021-12-01 00:00:04.000 │  9999 │
+│       432 │ 2021-12-01 00:00:05.000 │     5 │
+└───────────┴─────────────────────────┴───────┘
+```
+
+Aqui, a coluna `value` foi interpolada com `9999` apenas para deixar as linhas preenchidas mais visíveis.
+Esse comportamento é controlado pela configuração `use_with_fill_by_sorting_prefix` (ativada por padrão)
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* Blog: [Trabalhando com dados de séries temporais no ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

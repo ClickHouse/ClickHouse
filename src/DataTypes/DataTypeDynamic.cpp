@@ -1011,14 +1011,17 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
                     variant_column.getLocalDiscriminatorsPtr(),
                     "",
                     *discriminator,
-                    variant_column.localDiscriminatorByGlobal(*discriminator));
+                    variant_column.localDiscriminatorByGlobal(*discriminator),
+                    variant_column.getNumVariants());
             else
                 creator = std::make_unique<SerializationVariantElement::VariantSubcolumnCreator>(
                     variant_column.getLocalDiscriminatorsPtr(),
                     "",
                     *discriminator,
                     variant_column.localDiscriminatorByGlobal(*discriminator),
-                    make_subcolumn_nullable);
+                    make_subcolumn_nullable,
+                    nullptr,
+                    variant_column.getNumVariants());
             res->column = creator->create(res->column);
         }
         /// Check if requested type was extracted from shared variant. In this case we should use

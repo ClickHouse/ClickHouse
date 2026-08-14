@@ -1,0 +1,190 @@
+---
+noindex: true
+title: "PKI y mTLS en ClickHouse Private"
+sidebarTitle: "PKI y mTLS"
+description: "Este documento explica cómo funcionan la infraestructura de clave pública (PKI) y el TLS mutuo (mTLS) en ClickHouse Private: qué certificados existen y por qué, qué estándares"
+---
+
+Este documento explica cómo funcionan la infraestructura de clave pública (PKI) y el TLS mutuo (mTLS) en ClickHouse Private: qué certificados existen y por qué, qué estándares impone la configuración, cómo se verifican los certificados y cómo se gestiona su rotación. Es el complemento conceptual de las guías prácticas para [configurar Cert Manager](/es/products/clickhouse-private/guides/configure-cert-manager-for-clickhouse-certificates) y [generar certificados conformes con FIPS](/es/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse).
+
+<div id="why-pki-matters-here">
+  ## Por qué importa la PKI aquí
+</div>
+
+Un clúster Private de ClickHouse es un sistema distribuido: las réplicas de ClickHouse Server se comunican entre sí y con ClickHouse Keeper, los nodos de Keeper forman un quórum de Raft entre ellos, y el servidor realiza conexiones salientes (por ejemplo, a Keeper o a recursos respaldados por HTTPS). En un entorno regulado o aislado, se espera que cada una de estas conexiones esté cifrada y, de ser posible, autenticada mutuamente para que solo los componentes de confianza puedan unirse al clúster.
+
+TLS proporciona dos garantías distintas, y conviene mantenerlas separadas:
+
+* **Cifrado en tránsito** — un observador en la ruta no puede leer el tráfico. Esto solo requiere que el *server* presente un certificado.
+* **Autenticación** — cada extremo demuestra su identidad con un certificado firmado por una CA de confianza. Cuando *ambos* lados presentan y verifican certificados, se usa **mutual TLS (mTLS)**.
+
+ClickHouse Private admite ambas opciones: puede ejecutar TLS solo con cifrado, o mTLS completo, según el `verificationMode` y si hay certificados de cliente configurados. Las secciones siguientes explican cómo se expresan estas opciones.
+
+<div id="the-certificates-and-their-purpose">
+  ## Los certificados y su propósito
+</div>
+
+ClickHouse Private utiliza una única autoridad de certificación (CA) común y un certificado final por componente:
+
+| Certificado | Usado por             | Propósito                                                                                                                                                                                                                                                                                                                                   |
+| ----------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CA**      | Todos los componentes | La raíz de confianza. Todos los componentes confían en los certificados firmados por esta CA. Se distribuye como `ca.crt`.                                                                                                                                                                                                                  |
+| **Server**  | `clickhouse-server`   | Identifica una réplica del servidor ante los clientes entrantes (otros servidores, aplicaciones, la API de administración) en sus puertos seguros. El mismo certificado también lo presenta el servidor en sus conexiones *salientes* (por ejemplo, con Keeper), por lo que también sirve como identidad de cliente del servidor para mTLS. |
+| **Keeper**  | `clickhouse-keeper`   | Identifica un nodo de Keeper ante los clientes que se conectan a su puerto seguro de cliente y protege el canal Raft entre nodos de Keeper.                                                                                                                                                                                                 |
+
+Conviene destacar el rol saliente (de cliente) del servidor, porque TLS trata &quot;server&quot; y &quot;client&quot; como contextos separados. El gráfico de Helm configura el contexto `<client>` de OpenSSL —usado cuando `clickhouse-server` se conecta *hacia* otro componente— para presentar el **mismo** certificado y clave que el contexto `<server>` entrante (`server.openSSL.secret.certKey` / `keyKey`, con valores predeterminados `server.crt` / `server.key`). En otras palabras, no hay un certificado &quot;client&quot; independiente en la implementación estándar de Kubernetes; el certificado del servidor cumple ambas funciones.
+
+> El flujo de trabajo de generación de certificados conformes con FIPS también genera un `client.crt` / `client.key` dedicado y los agrupa en el secreto del servidor. Esto es específico de ese flujo de trabajo (y de la ruta de implementación bare-metal); de forma predeterminada, la configuración de OpenSSL del gráfico de Helm apunta el contexto client al certificado del servidor. Consulte [Configure FIPS certificates](/es/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse).
+
+Algunas propiedades importantes:
+
+* **Una CA, dos certificados finales.** Una única CA firma los certificados del servidor y de Keeper. Por lo tanto, cualquier componente puede validar el certificado de cualquier otro componente confiando solo en la CA.
+* **Un certificado final único por clúster.** La CA puede compartirse entre clústeres, pero los certificados del servidor y de Keeper deben generarse para cada clúster de ClickHouse, porque sus Subject Alternative Names (SAN) codifican los nombres de servicio de Kubernetes del clúster.
+
+<div id="subject-alternative-names-sans">
+  ### Nombres alternativos del sujeto (SAN)
+</div>
+
+Los certificados finales deben incluir los nombres DNS internos del clúster de los servicios que exponen; de lo contrario, la validación del nombre de host de TLS fallará para el tráfico dentro del clúster. Los patrones de SAN son:
+
+* **Server:** `*.c-<cluster-name>-server-headless.ns-<cluster-name>.svc.cluster.local` y `c-<cluster-name>-server-any.ns-<cluster-name>.svc.cluster.local`
+* **Keeper:** `*.c-<cluster-name>-keeper-headless.ns-<cluster-name>.svc.cluster.local`
+
+Si su clúster de Kubernetes usa un dominio distinto de `.cluster.local`, sustitúyalo en los SAN.
+
+<div id="how-certificates-are-delivered-to-clickhouse">
+  ## Cómo se suministran los certificados a ClickHouse
+</div>
+
+Los certificados se suministran como secretos de Kubernetes, que el ClickHouse Operator monta en los pods como un volumen proyectado:
+
+* `/etc/clickhouse-server/certs/` para ClickHouse Server
+* `/etc/clickhouse-keeper/certs/` para ClickHouse Keeper
+
+Cada archivo se monta con el mismo nombre que su clave en el secreto (de modo que la clave `server.crt` del secreto pasa a ser el archivo `/etc/clickhouse-server/certs/server.crt`). De forma predeterminada, el gráfico de Helm `onprem-clickhouse-cluster` espera estos secretos:
+
+| Secret (nombre predeterminado)      | Claves                               |
+| ----------------------------------- | ------------------------------------ |
+| `<cluster-name>-server-cert-secret` | `ca.crt`, `server.crt`, `server.key` |
+| `<cluster-name>-keeper-cert-secret` | `ca.crt`, `keeper.crt`, `keeper.key` |
+
+Tanto el nombre del secreto como los nombres de las claves individuales se pueden configurar mediante los valores de Helm (`server.openSSL.secret.*` y `keeper.openSSL.secret.*`), lo que hace que el gráfico sea compatible con herramientas de gestión de certificados que usan nombres de clave diferentes, especialmente Cert Manager, que genera `tls.crt` / `tls.key` en lugar de `server.crt` / `server.key`.
+
+<div id="what-the-configuration-enforces">
+  ## Lo que impone la configuración
+</div>
+
+Cuando TLS está habilitado, el gráfico de Helm genera un bloque `openSSL` para cada componente con una base deliberadamente reforzada. Los ajustes relevantes y lo que impone cada uno son:
+
+| Ajuste                      | Valor                                            | Lo que impone                                                                                                                                               |
+| --------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `disableProtocols`          | `sslv2,sslv3,tlsv1,tlsv1.1`                      | Deshabilita todos los protocolos heredados, de modo que **TLS 1.2 y versiones posteriores** sean las únicas versiones permitidas.                           |
+| `preferServerCiphers`       | `true`                                           | Prevalece el orden de cifrados del servidor, por lo que un client no puede negociar un cifrado más débil que el servidor aceptaría en otras circunstancias. |
+| `cacheSessions`             | `true`                                           | Habilita el almacenamiento en caché de sesiones TLS para reducir la sobrecarga de un handshake completo.                                                    |
+| `caConfig`                  | ruta a `ca.crt`                                  | El ancla de confianza que se usa para validar la cadena de certificados del par.                                                                            |
+| `loadDefaultCAFile`         | `true` (contexto del servidor)                   | También confía en el conjunto predeterminado de CA del sistema, además de `caConfig`.                                                                       |
+| `invalidCertificateHandler` | `RejectCertificateHandler` (contexto del client) | Cuando el servidor actúa como client, rechaza un certificado no válido del par en lugar de tolerarlo.                                                       |
+
+Estos ajustes se aplican tanto a la parte `<server>` como a la `<client>` de la configuración de OpenSSL, porque `clickhouse-server` actúa simultáneamente como servidor TLS (para sus clients) y como client TLS (frente a Keeper y otros servidores). Además, en entornos FIPS, los propios certificados deben generarse con algoritmos validados por FIPS (por ejemplo, RSA ≥ 3072 bits) en un módulo con FIPS habilitado; consulte [FIPS 140-2 Compliance](/es/products/clickhouse-private/explanation/fips-140-2-compliance-for-clickhouse-private).
+
+<div id="enabled-vs-required">
+  ### `enabled` vs. `required`
+</div>
+
+Cada componente expone dos indicadores que parecen similares, pero significan cosas distintas:
+
+* **`openSSL.enabled`** activa la configuración de TLS y habilita los puertos seguros, pero mantiene los puertos inseguros. Esta es la configuración adecuada durante la migración: los clientes pueden pasar a TLS a su propio ritmo.
+* **`openSSL.required`** va un paso más allá. Además de habilitar TLS, **elimina los puertos inseguros** (`http_port` y `tcp_port` se establecen en `0`), de modo que *solo* sean posibles las conexiones cifradas. Este es el estado final reforzado para un despliegue en producción.
+
+Habilitar cualquiera de los dos indicadores también hace que el operador habilite los puertos seguros de readiness, de modo que las comprobaciones de estado del clúster se ejecuten sobre TLS. Establecer `required` además elimina el listener inseguro de readiness, dejando solo el de TLS.
+
+<div id="how-certificates-are-verified-verificationmode">
+  ## Cómo se verifican los certificados: `verificationMode`
+</div>
+
+`verificationMode` es el ajuste más importante para la parte de *autenticación* de TLS. Controla si se comprueba el certificado de un par —y con qué rigor—. Se aplica tanto a los contextos OpenSSL del servidor como del client, y el valor predeterminado es `none`.
+
+| Modo      | Comportamiento                                                                                                                        | Nivel de seguridad resultante                |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `none`    | Sin verificación de certificados. El tráfico está cifrado, pero el par no está autenticado.                                           | Solo cifrado (predeterminado).               |
+| `relaxed` | Un client *puede* presentar un certificado; si lo hace, se valida frente a la CA. Las conexiones sin certificado se siguen aceptando. | mTLS oportunista: adecuado para migraciones. |
+| `once`    | El certificado del client se verifica solo durante el handshake inicial y no se vuelve a solicitar durante la renegociación.          | mTLS mayormente estricto.                    |
+| `strict`  | Se rechaza a un client que no presente un certificado válido firmado por una CA.                                                      | mTLS forzado.                                |
+
+Algunas consecuencias que conviene tener claras:
+
+* **`none` es cifrado, no autenticación.** Con `none`, un atacante que pueda acceder al puerto no podrá leer el tráfico, pero ClickHouse no comprobará *quién* se está conectando. Para obtener la garantía de que «solo los componentes de confianza pueden conectarse», necesitas `relaxed` (oportunista) o `strict` (forzado).
+* **mTLS también requiere un certificado en el lado que se conecta.** La verificación solo tiene efecto si el lado que se conecta realmente presenta un certificado. El servidor presenta su propio certificado en las conexiones salientes (su contexto OpenSSL `<client>`), lo que permite que el tráfico de servidor a Keeper y de servidor a servidor cumpla los requisitos de un par que verifica certificados.
+* **`relaxed` es el modo de aplicación recomendado actualmente.** Actualmente no se recomienda el modo `strict`, ya que puede interactuar mal con el operador; las implementaciones en producción deben usar `relaxed`, que aun así valida todos los certificados que se presentan.
+
+Estos valores se transfieren sin cambios a la configuración de TLS de ClickHouse, por lo que se comportan exactamente como se documenta para la configuración `openSSL` de ClickHouse.
+
+<div id="certificate-rotation">
+  ## Rotación de certificados
+</div>
+
+Los certificados caducan, por lo que su rotación es una realidad operativa más que un caso aislado. ClickHouse Private gestiona la mayor parte del proceso de forma transparente, con una excepción importante.
+
+En ambos casos, el ClickHouse Operator supervisa el secreto del certificado y reacciona a los cambios; no es necesario rotar los certificados manualmente. La diferencia está en *cómo* cada componente adopta un certificado nuevo: el server lo hace sin necesidad de reiniciarse, mientras que Keeper sí requiere un reinicio.
+
+<div id="clickhouse-server-rotation-without-a-restart">
+  ### ClickHouse Server: rotación sin reinicio
+</div>
+
+ClickHouse Server lee su certificado y su clave desde el disco y **los recarga en caliente** cuando cambian los archivos, sin necesidad de reiniciar el pod de Kubernetes. El flujo completo es el siguiente:
+
+1. La autoridad de certificación (su PKI o Cert Manager) emite un certificado nuevo y actualiza el secreto de Kubernetes.
+2. Kubernetes propaga el nuevo contenido del secreto al volumen montado dentro del pod de Kubernetes.
+3. El operador detecta el nuevo certificado en el secreto y lo registra en el estado del clúster; ClickHouse Server toma por sí solo el nuevo certificado desde el disco.
+
+Por ello, cuando usa Cert Manager con renovación automática, la rotación del certificado del servidor se realiza sin intervención humana y sin tiempo de inactividad.
+
+<div id="clickhouse-keeper-operator-triggered-rolling-restart">
+  ### ClickHouse Keeper: reinicio móvil activado por el operador
+</div>
+
+Keeper no recarga en caliente su certificado como sí lo hace el servidor: su configuración de TLS, incluido el canal Raft seguro (entre servidores) que usan los nodos de Keeper para mantener el quorum, se establece al iniciar el proceso. Para adoptar un certificado nuevo, los pods de Keeper deben reiniciarse.
+
+Este reinicio sigue siendo automático: cuando cambia el certificado en el secreto de Keeper, el operador registra la nueva fecha de vencimiento en la plantilla de pods del StatefulSet de Keeper (la anotación `clickhouse.com/certificate-expire-date`), lo que desencadena un **reinicio móvil de los pods de Keeper**. Así, la rotación de Keeper, al igual que la del servidor, no requiere ningún paso manual; pero, a diferencia del servidor, reinicia los pods de Keeper, lo que provoca una breve interrupción y debe preverse durante la rotación.
+
+Implicaciones prácticas:
+
+* Espere un reinicio móvil del StatefulSet de Keeper cada vez que se renueve el certificado de Keeper. Es automático, pero no es inocuo como sí lo es la rotación del servidor; planifique las renovaciones teniendo esto en cuenta.
+* Mantenga una validez larga para la CA y rótela rara vez. Como *todos* los componentes confían en la CA, rotar la propia CA es la operación más disruptiva y debe planificarse con bastante antelación antes de su vencimiento. Las herramientas de ejemplo establecen por defecto una validez de 10 años (3650 días) para la CA exactamente por esta razón, frente a 365 días para los certificados finales.
+* Supervise el vencimiento de los certificados finales y de la CA, y genere alertas con suficiente antelación para que las renovaciones (y el reinicio de Keeper que desencadenan) se produzcan antes de que el certificado expire realmente.
+
+<div id="integrating-with-cert-manager">
+  ## Integración con Cert Manager
+</div>
+
+[Cert Manager](https://cert-manager.io/) es la forma recomendada de ejecutar esta PKI en producción, ya que automatiza la emisión y la renovación, y encaja perfectamente en el modelo de rotación descrito anteriormente. En términos conceptuales:
+
+* Un `Issuer` o `ClusterIssuer` de Cert Manager desempeña el papel de tu CA. Puede ser un emisor autofirmado (para pruebas), un emisor intermedio respaldado por tu raíz corporativa o una CA externa mediante ACME o Vault.
+* Un recurso `Certificate` por componente declara los SAN y el nombre del secreto de destino. Cert Manager genera el par de claves y escribe `ca.crt`, `tls.crt` y `tls.key` en ese secreto.
+* El gráfico de Helm apunta a esos nombres de clave (`caKey: ca.crt`, `certKey: tls.crt`, `keyKey: tls.key`), y el operador los monta y recarga como se describió anteriormente.
+* Cert Manager renueva automáticamente los certificados antes de que caduquen. Luego, los certificados de servidor se rotan sin tiempo de inactividad; **la renovación del certificado de Keeper desencadena automáticamente un reinicio móvil de los pods de Keeper**, como se describe en la sección de rotación anterior.
+
+Una salvedad: `ca.crt` solo se completa en el secreto cuando el emisor puede proporcionarlo. Los emisores ACME, por ejemplo, no incluyen un `ca.crt`. En ese caso, agrega tú mismo la raíz pública a la clave `ca.crt`, o usa [trust-manager](https://cert-manager.io/docs/trust/trust-manager/) para crear un CA bundle y dirigirlo al secreto.
+
+Para obtener instrucciones paso a paso, consulta [Configure Cert Manager for ClickHouse Certificates](/es/products/clickhouse-private/guides/configure-cert-manager-for-clickhouse-certificates).
+
+<div id="choosing-a-posture">
+  ## Elegir una postura
+</div>
+
+Al reunir todas las piezas, una progresión típica tiene este aspecto:
+
+1. **Primero, el cifrado.** Establece `openSSL.enabled: true` con `verificationMode: none`. El tráfico se cifra; los puertos no seguros se mantienen para facilitar una migración fluida.
+2. **mTLS oportunista.** Pasa a `verificationMode: relaxed` una vez que todos los componentes presenten certificados de client. La autenticación pasa a validarse cuando está presente, sin interrumpir nada de lo que aún no se haya migrado.
+3. **TLS obligatorio.** Establece `openSSL.required: true` para eliminar por completo los puertos no seguros, de modo que solo se acepten conexiones cifradas. Mantén `verificationMode: relaxed`, que sigue siendo el modo recomendado (consulta la nota anterior sobre `strict`).
+
+En cada paso, los certificados, los SAN, la estructura del Secret y el comportamiento de rotación son los mismos; solo cambian los indicadores de aplicación.
+
+<div id="further-reading">
+  ## Lecturas adicionales
+</div>
+
+* [Configurar Cert Manager para los certificados de ClickHouse](/es/products/clickhouse-private/guides/configure-cert-manager-for-clickhouse-certificates) — guía práctica
+* [Generar certificados compatibles con FIPS](/es/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse) — guía práctica
+* [Cumplimiento de FIPS 140-2](/es/products/clickhouse-private/explanation/fips-140-2-compliance-for-clickhouse-private) — explicación
+* [Arquitectura](/es/products/clickhouse-private/explanation/clickhouse-operator-architecture) — cómo el operador gestiona los servidores y Keeper

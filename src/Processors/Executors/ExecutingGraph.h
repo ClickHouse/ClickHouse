@@ -69,6 +69,11 @@ public:
     /// Graph node. Represents single Processor.
     struct Node
     {
+        struct StepWallClockCache
+        {
+            uint64_t group = 0;
+            StepWallClock * wall_clock_ptr = nullptr;
+        };
         /// Iterator into the graph's processors list.
         Processors::iterator processor_iter{};
 
@@ -111,6 +116,8 @@ public:
         uint64_t num_executed_jobs = 0;
         uint64_t execution_time_ns = 0;
         uint64_t preparation_time_ns = 0;
+        /// Cached clock for EXPLAIN ANALYZE
+        StepWallClockCache cached_clock{};
 
         Node(Processors::iterator processor_iter_, uint64_t processors_id_)
             : processor_iter(processor_iter_), processors_id(processors_id_)
@@ -157,7 +164,7 @@ private:
     /// register it in the processors map. Does not create edges — that is done separately by addEdges.
     Node & addNode(ProcessorPtr processor);
     Node & addNode(Processors::iterator processor_iter);
-    Node * removeNode(ProcessorPtr processor);
+    std::pair<const Node *, std::unordered_set<const void *>> removeNode(ProcessorPtr processor);
 
     /// Add single edge to edges list. Check processor is known.
     Edge & addEdge(Edges & edges, Edge edge, const IProcessor * from, const IProcessor * to);
@@ -170,11 +177,17 @@ private:
         bool empty() const { return back.empty() && direct.empty(); }
     };
     NewEdges addEdges(Node & node);
-    bool removeAffectedEdges(Node & node, const std::unordered_set<Node *> & removed_nodes);
+    std::unordered_set<const void *> removeAffectedEdges(Node & node, const std::unordered_set<const Node *> & removed_nodes);
 
     /// Update graph after processor `node` returned UpdatePipeline status.
     /// All new nodes and nodes with updated ports are pushed into stack.
-    UpdateNodeStatus updatePipeline(boost::container::devector<Node *> & stack, Node & node, Processors & delayed_destruction);
+    struct UpdatePipelineResult
+    {
+        UpdateNodeStatus status;
+        std::unordered_set<const Node *> removed_nodes;
+        std::unordered_set<const void *> removed_edges;
+    };
+    UpdatePipelineResult updatePipeline(boost::container::devector<Node *> & stack, Node & node, Processors & delayed_destruction);
 
     /// Shared with QueryPipeline.
     std::shared_ptr<Processors> processors;
