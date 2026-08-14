@@ -3,7 +3,7 @@
 Separate from `test_ai_functions/mock_ai_server.py`, which is a single-threaded
 `HTTPServer`: that one serializes every request and would report `max_in_flight = 1` no
 matter what ClickHouse does. This one exists to measure the shape of
-`T ~ rows x D` with `D` known and injected. See 02-latency.md section 3.
+`T ~ rows x D` with `D` known and injected.
 
 Endpoints:
   GET  /health                  - readiness probe, returns "OK"

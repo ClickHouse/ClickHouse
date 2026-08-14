@@ -1,6 +1,6 @@
 """Deterministic corpora for the AI-function end-to-end suite.
 
-Two flavors, per README.md:
+Two flavors:
 
 * **Pinned rows** back semantic assertions. Fixed text, verbatim, and they do NOT scale:
   duplicating the same twelve sentences buys no coverage and only costs money.

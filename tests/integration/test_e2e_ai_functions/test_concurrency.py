@@ -9,7 +9,6 @@ asserted unconditionally.
 """
 
 import concurrent.futures
-import math
 import statistics
 
 import pytest
@@ -95,7 +94,13 @@ def _run_concurrently(instance, q, jobs):
     Returns {case: (result, error, query_id)}. `node.query` spawns a client subprocess per
     call and defaults to no timeout, so an explicit one is passed: otherwise a hung
     endpoint blocks until the harness kills pytest.
+
+    These queries bypass `Runner.run` to control per-thread settings, so the budget is
+    checked before the fan-out and every query is metered after it - otherwise this module,
+    which issues the most calls in the suite, would spend outside the ceiling.
     """
+    for _case, sql, _settings in jobs:
+        q.check_budget(sql)
     outcomes = {}
 
     def run(case, sql, settings):
@@ -116,6 +121,17 @@ def _run_concurrently(instance, q, jobs):
         for future in concurrent.futures.as_completed(futures):
             case, result, error, query_id = future.result()
             outcomes[case] = (result, error, query_id)
+
+    sql_by_case = {case: sql for case, sql, _settings in jobs}
+    for case, (_result, error, query_id) in outcomes.items():
+        if error:
+            continue  # a failed query records no AI ProfileEvents
+        try:
+            q.meter(sql_by_case[case], read_ai_events(instance, query_id))
+        except AssertionError:
+            raise
+        except Exception:
+            pass  # metering must not mask the assertion the test is making
     return outcomes
 
 

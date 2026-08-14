@@ -6,7 +6,8 @@ spends money, and the latency half asserts wall-clock and wants an unshared host
 
 Anything checkable for free and deterministically lives in `tests/integration/test_ai_functions/`
 instead, where CI runs it on every pull request — the per-query-shape API call counts, embedding batch
-counts, timeout and retry attempt counts, and the quota-scope check.
+counts, timeout and retry attempt counts, and an `xfail` recording that the `..._per_query` quotas are
+enforced per block rather than per query.
 
 ## Layout
 
@@ -47,10 +48,14 @@ running anything else — otherwise a normal run collects zero tests and reports
 | `AI_E2E_CHAT_ENDPOINT`, `AI_E2E_EMBED_ENDPOINT` | per target | Full URLs |
 | `AI_E2E_CHAT_MODEL`, `AI_E2E_EMBED_MODEL`, `AI_E2E_EMBED_DIM_MODEL` | per target | Models. `AI_E2E_CHAT_MODEL_ALT` enables the model-override case |
 | `AI_E2E_DATA_SCALE` | `1` | Multiplier on the scaling corpora |
-| `AI_E2E_MAX_API_CALLS` | `2000` | Hard ceiling, counted from `system.query_log` after every query; the session stops when passed |
+| `AI_E2E_MAX_API_CALLS` | `2000` | Hard ceiling, counted from `system.query_log`; the first breach fails and later paid queries skip |
 | `AI_E2E_MAX_TOKENS` | `2000000` | Same, for input + output tokens. `0` disables either ceiling |
 | `AI_E2E_PRICE_IN_PER_1M`, `AI_E2E_PRICE_OUT_PER_1M` | `0` | Optional; decorates the end-of-run spend line, gates nothing |
 | `AI_E2E_PER_CALL_BUDGET_MS` | `15000` | Per-call time budget; also sets `ai_function_request_timeout_sec` |
+| `AI_E2E_EMBED_BATCH_BUDGET_MS` | `10000` | Per-embedding-request time budget |
+| `AI_E2E_EMBED_BATCH_SIZE` | `100` | Mirrors `ai_function_embedding_max_batch_size`, for expected call counts |
+| `AI_E2E_KILL_BUDGET_SEC` | `10` | Time `KILL QUERY` is allowed to take |
+| `AI_E2E_REPORT_DIR` | `<repo>/tmp` | Where run reports and the shared spend counter are written |
 | `AI_E2E_MOCK_DELAY_MS` | `200` | Delay the latency mock injects |
 | `AI_E2E_COMPARE_TO` | unset | A previous `tmp/ai_e2e_latency_arch.json`, for a before/after timing table |
 | `AI_E2E_LATENCY_GATE_REAL` | `0` | Makes the real-endpoint suite assert against `AI_E2E_COMPARE_TO` instead of only reporting |
@@ -81,8 +86,10 @@ means anything.
 ## Guards
 
 **Spend** is metered, not estimated: every query's `AIAPICalls` and token counts are read back from
-`system.query_log` and accumulated, and the session stops the moment a ceiling is passed. That bounds
-a retry storm, which a pre-run estimate cannot.
+`system.query_log` and accumulated in a counter shared by all pytest workers (xdist gives each worker
+its own session, so a per-session counter would bound spend per worker rather than per run). The
+ceiling is checked *before* each paid query: the first breach fails loudly and every later paid query
+skips without spending. That bounds a retry storm, which a pre-run estimate cannot.
 
 **Secrets.** The named collections are defined in `configs/ai_e2e_collections.xml` using `from_env`
 with `hide_in_preprocessed`, so the key is absent from the config on disk, from the preprocessed copy,
@@ -96,10 +103,11 @@ and `ai_function_request_timeout_sec` bounds a stalled socket read.
 
 ## Notes for whoever picks this up
 
-- `test_latency_arch.py` carries two recorded constants, `BASELINE_MAX_IN_FLIGHT_8T` and
-  `BASELINE_EFFECTIVE_CONCURRENCY_8T`, measured on master @ `529df9d151c`. They are a stream-count and
-  a dimensionless ratio, which is why they can be constants at all; update them together with the
-  measurement that produced them.
+- `test_latency_arch.py` asserts a *property* — `MIN_OVERLAPPING_REQUESTS = 2`, i.e. more than one
+  request in flight on a multi-part table — and merely prints the values measured on master @
+  `529df9d151c` (`RECORDED_MAX_IN_FLIGHT_8T = 3`, `RECORDED_EFFECTIVE_CONCURRENCY_8T = 1.29`).
+  Asserting the measured numbers would turn it into a host test: 3 is a scheduling outcome of 8 blocks
+  across 8 streams, and the ratio is derived from wall-clock.
 - `test_b2_6_kill_query_latency` is an expected failure: the AI row loop has no cancellation
   checkpoint, so `KILL QUERY` cannot interrupt it. It flips to a pass by itself when that is fixed.
 - The `local` target is a smoke path, not equivalent coverage — cases needing a capable model skip on

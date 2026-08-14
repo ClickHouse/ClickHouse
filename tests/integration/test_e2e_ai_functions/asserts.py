@@ -251,7 +251,10 @@ class Report:
                     f"| {record['case']} | {field} | {before_value} | {after_value} | "
                     f"{(ratio - 1) * 100:+.1f}% |"
                 )
-                if columns and field in columns and ratio > 1.0:
+                # A tolerance is essential for anything derived from wall-clock: two runs
+                # on one idle host differed by 2x on CPU per row. 25% catches a real
+                # regression without firing on jitter.
+                if columns and field in columns and ratio > 1.25:
                     regressions.append(
                         (record["case"], field, before_value, after_value, ratio)
                     )

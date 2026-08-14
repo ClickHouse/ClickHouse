@@ -2,17 +2,17 @@
 
 Not a latency test of an endpoint. The mock's delay is known, so what is measured is how
 total query time relates to it: serial execution, parallelism, batching. Every case here
-is timing-sensitive and wants an unshared host; the exact-integer cases live in
-`test_structural.py`.
+is timing-sensitive and wants an unshared host. The exact-integer call-count cases live in
+`tests/integration/test_ai_functions/`, where CI runs them.
 
-B1 is a report, B2 is a gate. Where a gate compares against `baselines/arch.json`, the
-baseline holds integers and dimensionless ratios only - never wall-clock milliseconds,
-which are host-dependent.
+B1 is a report, B2 is a gate. Only host-independent properties are asserted; wall-clock and
+CPU numbers are reported and compared run-local through `AI_E2E_COMPARE_TO`.
 """
 
 import math
 import threading
 import time
+import uuid
 
 import pytest
 
@@ -33,16 +33,17 @@ EMB = "aiEmbed(x, 'mock-model', map('credentials','ai_e2e_mock_embed'))"
 B1_ROWS = 32
 GATE_ROWS = 32
 
-# Measured on master @ 529df9d151c, 32 cores. These are the two numbers that hold across
-# machines: how many requests the pipeline overlaps (a stream-count property, not a timing
-# one) and the resulting concurrency ratio, in which the injected delay cancels. Wall-clock
-# and CPU time are host-dependent and are compared run-local instead, via AI_E2E_COMPARE_TO.
+# What is asserted is the *property*, not the measurement: more than one request must be in
+# flight at once on a multi-part table. Measured on master @ 529df9d151c (32 cores) it was 3,
+# but 3 is a scheduling outcome of 8 blocks across 8 streams, so a slower or busier host can
+# legitimately overlap 2 and still have parallelism. Asserting the measured value would make
+# this a host test.
 #
-# `max_threads = 8` on an 8-part table overlapped 3 requests; a single-part table overlaps
-# none, whatever `max_threads` says. Update both together, with the measurement that
-# produced them.
-BASELINE_MAX_IN_FLIGHT_8T = 3
-BASELINE_EFFECTIVE_CONCURRENCY_8T = 1.29
+# A single-part table overlaps nothing at all, whatever `max_threads` says - that asymmetry
+# is the finding, and it is what would break if the parallelism were lost.
+MIN_OVERLAPPING_REQUESTS = 2
+RECORDED_MAX_IN_FLIGHT_8T = 3
+RECORDED_EFFECTIVE_CONCURRENCY_8T = 1.29
 
 
 def _load(instance, name, rows, parts=1):
@@ -255,16 +256,15 @@ def test_b2_4_parallelism_not_lost(q, mock, cfg, arch_tables):
     )
     print(
         f"\n[ai-e2e] parallelism: max_in_flight={max_in_flight} "
-        f"(recorded {BASELINE_MAX_IN_FLIGHT_8T}), effective concurrency={concurrency} "
-        f"(recorded {BASELINE_EFFECTIVE_CONCURRENCY_8T})"
+        f"(recorded {RECORDED_MAX_IN_FLIGHT_8T}), effective concurrency={concurrency} "
+        f"(recorded {RECORDED_EFFECTIVE_CONCURRENCY_8T})"
     )
-    assert max_in_flight >= BASELINE_MAX_IN_FLIGHT_8T, (
-        f"only {max_in_flight} requests overlapped, recorded {BASELINE_MAX_IN_FLIGHT_8T}: "
-        "parallelism was lost"
-    )
-    assert concurrency >= BASELINE_EFFECTIVE_CONCURRENCY_8T * 0.8, (
-        f"effective concurrency {concurrency} is more than 20% below the recorded "
-        f"{BASELINE_EFFECTIVE_CONCURRENCY_8T}"
+    # The gate is the property. The recorded numbers are printed for comparison and are
+    # tracked run-local through AI_E2E_COMPARE_TO, not asserted: the ratio is derived from
+    # wall-clock, and 1.29 x 0.8 sits only 3% above the fully-serial 1.0.
+    assert max_in_flight >= MIN_OVERLAPPING_REQUESTS, (
+        f"only {max_in_flight} request(s) in flight on an 8-part table: cross-stream "
+        "parallelism was lost entirely"
     )
 
 
@@ -277,12 +277,12 @@ def test_b2_4_parallelism_not_lost(q, mock, cfg, arch_tables):
 
 @pytest.mark.xfail(
     strict=False,
-    reason="no cancellation checkpoint in the AI row loop; see 02-latency.md section 9",
+    reason="the AI row loop has no cancellation checkpoint, so KILL QUERY cannot interrupt it",
 )
 def test_b2_6_kill_query_latency(q, mock, cfg, instance, arch_tables):
     mock.reset()
     mock.configure(delay_ms=15000)
-    query_id = "b2_6_kill"
+    query_id = f"b2_6_kill_{uuid.uuid4().hex[:8]}"
     failures = []
 
     def run_query():
@@ -304,7 +304,19 @@ def test_b2_6_kill_query_latency(q, mock, cfg, instance, arch_tables):
 
     worker = threading.Thread(target=run_query, daemon=True)
     worker.start()
-    time.sleep(2)
+
+    # Wait for the query to actually be running: killing before it starts matches nothing,
+    # the poll below sees zero immediately, and the case would pass without testing anything.
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        running = instance.query(
+            f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'"
+        ).strip()
+        if running != "0":
+            break
+        time.sleep(0.2)
+    else:
+        pytest.fail("the query never appeared in system.processes")
 
     instance.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
     started = time.monotonic()

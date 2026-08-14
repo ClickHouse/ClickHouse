@@ -1,6 +1,6 @@
 """Suite A1: every function end to end against a real model, within a bounded time.
 
-Two kinds of assertion, marked per case (01-correctness.md):
+Two kinds of assertion, marked per case:
 
 * **Implementation-decided** - `ProfileEvents` counts, vector dimensions, cardinality, row
   alignment, JSON validity, ranges. Always asserted.
@@ -8,8 +8,8 @@ Two kinds of assertion, marked per case (01-correctness.md):
   obeys an instruction. The corpus is built so non-compliance is implausible, but these
   still depend on the model, so they skip on a `toy_model` target.
 
-`NULL`/empty handling, quota behavior and `throw_on_error` are deliberately absent: the
-free mock suite (`test_ai_functions/`) already pins them and no endpoint can influence
+`NULL`/empty handling, quota behaviour and `throw_on_error` are deliberately absent: the
+free mock suite (`tests/integration/test_ai_functions/`) already pins them and no endpoint can influence
 them, so paying a provider to re-confirm them is waste.
 """
 

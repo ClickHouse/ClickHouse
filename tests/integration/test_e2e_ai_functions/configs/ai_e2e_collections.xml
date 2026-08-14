@@ -7,8 +7,9 @@
          environment keeps this file free of secrets, and `hide_in_preprocessed` removes the
          `api_key` element from the preprocessed copy that ClickHouse writes to disk.
 
-         Every referenced variable must exist: `from_env` throws when a variable is unset, so
-         `conftest.py` always passes all four, empty when the suite is unconfigured. -->
+         An unset variable is not an error - `from_env` logs a warning and leaves the element
+         as written - so `conftest.py` always passes all four, empty when the suite is
+         unconfigured, and the live modules skip on missing credentials instead. -->
     <named_collections>
         <ai_e2e_chat>
             <provider>openai</provider>

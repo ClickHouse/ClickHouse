@@ -5,10 +5,12 @@ Every knob is an environment variable; nothing is stored in the repo. The resolv
 
 Configuration is also the gate: the live modules skip when the resolved target has no
 usable credentials, so an unconfigured run reports SKIPPED with a readable reason instead
-of an empty collection. See README.md sections 2 and 5.
+of an empty collection. See README.md.
 """
 
 import dataclasses
+import fcntl
+import json
 import math
 import os
 
@@ -26,7 +28,7 @@ class Target:
     """A place to send AI requests, plus what it is capable of.
 
     `toy_model` marks a stand-in model that cannot be held to a non-trivial instruction
-    and whose embedder ignores `dimensions`; the cases listed in README.md section 5 skip
+    and whose embedder ignores `dimensions`; the model-dependent cases skip
     on such a target. It defaults to False so a target added without considering the flag
     gets full strictness.
 
@@ -227,56 +229,109 @@ class BudgetExceeded(RuntimeError):
 
 
 class Budget:
-    """Cumulative meter over a session, checked after every query.
+    """Cumulative spend meter, shared by every pytest worker in the run.
 
-    A pre-run estimate cannot bound a run: it has to guess the number of calls, it prices
-    each corpus string once even when several suites send it, and it is blind to retries.
-    Counting what `system.query_log` reports after each query needs no pricing table, and
-    stops a runaway inside the run rather than after it.
+    Two things make this awkward and both are handled here:
+
+    * xdist gives each worker its own session, so a session-scoped counter would bound
+      spend per worker rather than per run - with `-n 5`, five times the ceiling. The
+      counter therefore lives in a file under the state directory and is updated under an
+      exclusive lock.
+    * A ceiling only helps if it is consulted *before* a query runs. `record` alone would
+      let every remaining test spend and then fail.
+
+    An estimate cannot do this job: it has to guess the call count, and it is blind to
+    retries, which is the one thing that actually runs away.
     """
 
-    def __init__(self, max_api_calls, max_tokens):
+    def __init__(self, max_api_calls, max_tokens, state_path=None):
         self.max_api_calls = max_api_calls
         self.max_tokens = max_tokens
-        self.api_calls = 0
-        self.input_tokens = 0
-        self.output_tokens = 0
-        self.queries = 0
+        self.state_path = state_path
+        self.local = {"api_calls": 0, "input_tokens": 0, "output_tokens": 0, "queries": 0}
 
-    @property
-    def tokens(self):
-        return self.input_tokens + self.output_tokens
+    # -- shared state ----------------------------------------------------------------
+    def _read_locked(self, handle):
+        handle.seek(0)
+        raw = handle.read().strip()
+        if not raw:
+            return {"api_calls": 0, "input_tokens": 0, "output_tokens": 0, "queries": 0}
+        try:
+            return json.loads(raw)
+        except ValueError:
+            return {"api_calls": 0, "input_tokens": 0, "output_tokens": 0, "queries": 0}
+
+    def _update(self, delta):
+        """Add `delta` to the shared totals and return them. Falls back to in-process
+        counting when no state path is available, which under-counts across workers but
+        never silently disables the ceiling for this one."""
+        for key, value in delta.items():
+            self.local[key] = self.local.get(key, 0) + value
+        if not self.state_path:
+            return dict(self.local)
+        try:
+            with open(self.state_path, "a+") as handle:
+                fcntl.flock(handle, fcntl.LOCK_EX)
+                try:
+                    totals = self._read_locked(handle)
+                    for key, value in delta.items():
+                        totals[key] = totals.get(key, 0) + value
+                    handle.seek(0)
+                    handle.truncate()
+                    json.dump(totals, handle)
+                    handle.flush()
+                    return totals
+                finally:
+                    fcntl.flock(handle, fcntl.LOCK_UN)
+        except OSError:
+            # Never fail open: if the shared file is unusable, keep enforcing locally.
+            return dict(self.local)
+
+    def totals(self):
+        return self._update({})
+
+    # -- the interface tests use -----------------------------------------------------
+    def exceeded(self, totals=None):
+        """Whether the run has already passed a ceiling. Reason string, or empty."""
+        totals = totals if totals is not None else self.totals()
+        calls = totals.get("api_calls", 0)
+        tokens = totals.get("input_tokens", 0) + totals.get("output_tokens", 0)
+        if self.max_api_calls and calls >= self.max_api_calls:
+            return (
+                f"{calls} API calls reached AI_E2E_MAX_API_CALLS={self.max_api_calls}"
+            )
+        if self.max_tokens and tokens >= self.max_tokens:
+            return f"{tokens} tokens reached AI_E2E_MAX_TOKENS={self.max_tokens}"
+        return ""
 
     def record(self, events):
-        """Add one query's usage, and stop the session if it went over."""
-        self.queries += 1
-        self.api_calls += int(events.get("api_calls") or 0)
-        self.input_tokens += int(events.get("input_tokens") or 0)
-        self.output_tokens += int(events.get("output_tokens") or 0)
-        if self.max_api_calls and self.api_calls > self.max_api_calls:
-            raise BudgetExceeded(
-                f"{self.api_calls} API calls over {self.queries} queries exceeds "
-                f"AI_E2E_MAX_API_CALLS={self.max_api_calls}. Raise the ceiling or lower "
-                "AI_E2E_DATA_SCALE."
-            )
-        if self.max_tokens and self.tokens > self.max_tokens:
-            raise BudgetExceeded(
-                f"{self.tokens} tokens over {self.queries} queries exceeds "
-                f"AI_E2E_MAX_TOKENS={self.max_tokens}."
-            )
+        """Add one query's measured usage."""
+        return self._update(
+            {
+                "queries": 1,
+                "api_calls": int(events.get("api_calls") or 0),
+                "input_tokens": int(events.get("input_tokens") or 0),
+                "output_tokens": int(events.get("output_tokens") or 0),
+            }
+        )
 
-    def usd(self, price_in_per_1m, price_out_per_1m):
-        """Cost, when rates are configured. `None` means unpriced, never zero."""
+    def usd(self, price_in_per_1m, price_out_per_1m, totals=None):
+        """Cost when rates are configured. `None` means unpriced, never zero."""
         if not price_in_per_1m and not price_out_per_1m:
             return None
+        totals = totals if totals is not None else self.totals()
         return (
-            self.input_tokens * price_in_per_1m + self.output_tokens * price_out_per_1m
+            totals.get("input_tokens", 0) * price_in_per_1m
+            + totals.get("output_tokens", 0) * price_out_per_1m
         ) / 1_000_000
 
     def summary(self, price_in_per_1m=0.0, price_out_per_1m=0.0):
-        cost = self.usd(price_in_per_1m, price_out_per_1m)
+        totals = self.totals()
+        tokens = totals.get("input_tokens", 0) + totals.get("output_tokens", 0)
+        cost = self.usd(price_in_per_1m, price_out_per_1m, totals)
         priced = f"${cost:.4f}" if cost is not None else "unpriced (AI_E2E_PRICE_* unset)"
         return (
-            f"{self.queries} queries, {self.api_calls}/{self.max_api_calls} API calls, "
-            f"{self.tokens}/{self.max_tokens} tokens -> {priced}"
+            f"{totals.get('queries', 0)} queries, {totals.get('api_calls', 0)}/"
+            f"{self.max_api_calls} API calls, {tokens}/{self.max_tokens} tokens "
+            f"-> {priced}"
         )

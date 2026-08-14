@@ -1370,31 +1370,36 @@ def run_and_count_calls(sql, prefix, extra_settings=None):
 # `expected` is what the implementation does today; `ideal` is what a maximally lazy
 # implementation would do. They differ only for dedup, which does not exist: identical
 # inputs are embedded once per row (`aiEmbed.cpp`, the live-row collection loop).
+def _shape(case, sql, expected, ideal, settings):
+    """One call-count scenario, named so the node id stays readable in CI reports."""
+    return pytest.param(sql, expected, ideal, settings, id=case)
+
+
 @pytest.mark.parametrize(
-    "case, sql, expected, ideal, settings",
+    "sql, expected, ideal, settings",
     [
-        (
+        _shape(
             "filter",
             f"SELECT {CHAT_CALL} FROM lazy_rows WHERE id % 8 = 0 FORMAT Null",
             LAZY_ROWS // 8,
             LAZY_ROWS // 8,
             {},
         ),
-        (
+        _shape(
             "limit",
             f"SELECT {CHAT_CALL} FROM lazy_rows LIMIT 5 FORMAT Null",
             5,
             5,
             {},
         ),
-        (
+        _shape(
             "order_by_limit",
             f"SELECT {CHAT_CALL} FROM lazy_rows ORDER BY id LIMIT 5 FORMAT Null",
             5,
             5,
             {},
         ),
-        (
+        _shape(
             "ai_predicate_last",
             f"SELECT count() FROM lazy_rows WHERE id % 8 = 0 AND {CHAT_CALL} = 'positive' "
             f"FORMAT Null",
@@ -1402,21 +1407,21 @@ def run_and_count_calls(sql, prefix, extra_settings=None):
             LAZY_ROWS // 8,
             {},
         ),
-        (
+        _shape(
             "short_circuit_if",
             f"SELECT if(id % 8 = 0, {CHAT_CALL}, '') FROM lazy_rows FORMAT Null",
             LAZY_ROWS // 8,
             LAZY_ROWS // 8,
             {"short_circuit_function_evaluation": "force_enable"},
         ),
-        (
+        _shape(
             "prewhere",
             f"SELECT {CHAT_CALL} FROM lazy_rows PREWHERE id % 8 = 0 FORMAT Null",
             LAZY_ROWS // 8,
             LAZY_ROWS // 8,
             {},
         ),
-        (
+        _shape(
             # Batch size 1 makes one request per input, so the count can show dedup.
             # It does not: every row is embedded even though there are four distinct values.
             "no_dedup_of_identical_inputs",
@@ -1425,7 +1430,7 @@ def run_and_count_calls(sql, prefix, extra_settings=None):
             LAZY_DISTINCT,
             {"ai_function_embedding_max_batch_size": 1},
         ),
-        (
+        _shape(
             # The control for the case above: deduplicating in SQL costs four requests.
             "distinct_subquery_control",
             f"SELECT {EMBED_CALL} FROM (SELECT DISTINCT x FROM lazy_dup) FORMAT Null",
@@ -1433,7 +1438,7 @@ def run_and_count_calls(sql, prefix, extra_settings=None):
             LAZY_DISTINCT,
             {"ai_function_embedding_max_batch_size": 1},
         ),
-        (
+        _shape(
             # Common subexpression elimination: `aiEmbed` is deterministic, so evaluating
             # it in both the filter and the projection must not double the requests.
             "cse_filter_and_projection",
@@ -1444,11 +1449,11 @@ def run_and_count_calls(sql, prefix, extra_settings=None):
         ),
     ],
 )
-def test_api_call_count_per_query_shape(call_count_tables, case, sql, expected, ideal, settings):
-    calls = run_and_count_calls(sql, f"calls_{case}", settings)
+def test_api_call_count_per_query_shape(call_count_tables, sql, expected, ideal, settings):
+    calls = run_and_count_calls(sql, "calls", settings)
     assert calls == expected, (
-        f"{case}: {calls} API calls, expected {expected} (a maximally lazy implementation "
-        f"would issue {ideal})"
+        f"{calls} API calls, expected {expected} (a maximally lazy implementation would "
+        f"issue {ideal})"
     )
 
 
@@ -1527,9 +1532,11 @@ def mock_request_count(reset=False):
     return json.loads(raw)["count"]
 
 
-def set_mock_delay(ms):
+def set_mock_delay(ms, count=1):
+    """Delay the next `count` requests by `ms`. Self-disarming, so a test that dies
+    between arming and disarming cannot leave later requests sleeping."""
     instance.exec_in_container(
-        ["curl", "-sS", f"http://localhost:{MOCK_PORT}/set-delay?ms={ms}"]
+        ["curl", "-sS", f"http://localhost:{MOCK_PORT}/set-delay?ms={ms}&count={count}"]
     )
 
 
@@ -1540,7 +1547,10 @@ def test_request_timeout_issues_one_attempt(started_cluster):
     The attempt count comes from the mock: the five AI ProfileEvents are incremented after
     the row loop, so a query that throws records none of them.
     """
-    set_mock_delay(3000)
+    # `ai_function_request_timeout_sec` is whole seconds, so 1 s is the floor; 1.2 s is
+    # the smallest delay that reliably exceeds it, and the mock sleeps the full amount
+    # even after the client gives up, so every extra 100 ms is CI time on every PR.
+    set_mock_delay(1200)
     try:
         mock_request_count(reset=True)
         error = instance.query_and_get_error(
@@ -1554,12 +1564,12 @@ def test_request_timeout_issues_one_attempt(started_cluster):
         assert error
         assert mock_request_count() == 1
     finally:
-        set_mock_delay(0)
+        set_mock_delay(0, count=0)
 
 
 def test_request_timeout_retries_each_attempt(started_cluster):
     """Each retry is a fresh request, so `max_retries = 2` means three attempts."""
-    set_mock_delay(3000)
+    set_mock_delay(1200, count=3)
     try:
         mock_request_count(reset=True)
         error = instance.query_and_get_error(
@@ -1574,4 +1584,4 @@ def test_request_timeout_retries_each_attempt(started_cluster):
         assert error
         assert mock_request_count() == 3
     finally:
-        set_mock_delay(0)
+        set_mock_delay(0, count=0)

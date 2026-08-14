@@ -2,13 +2,12 @@
 
 These are the cases that justify hitting a real endpoint at all - a mock honors everything
 by construction. Findings #1 (the gateway silently drops `response_format: json_schema`)
-and #3 (`max_tokens <= 0` accepted) in the prior gateway audit are exactly this class of
-bug.
+and #3 (`max_tokens <= 0` accepted) from an earlier gateway audit are exactly this class of
+bug. Note that #1 no longer reproduces - see A2-11 below.
 
 Everything endpoint-independent - quota skip and throw, `ai_function_throw_on_error`,
-embedding batch counts as such - is left to the free mock suite. Timeout and retry
-behavior lives in `test_structural.py` against the controlled mock, where it is exact
-rather than flaky.
+embedding batch counts, timeout and retry behaviour - is left to the free mock suite in
+`tests/integration/test_ai_functions/`, where it is exact rather than flaky.
 
 Cases whose outcome the endpoint or model decides, not ClickHouse, are report-only: they
 record what happened so a capability change shows up as a diff between runs.

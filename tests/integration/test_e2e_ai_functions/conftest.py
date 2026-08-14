@@ -1,6 +1,6 @@
 """Fixtures for the AI-function end-to-end suite.
 
-Gating is two independent things (README.md section 2):
+Gating is two independent things (see README.md):
 
 * `pytest.mark.e2e` in every test module keeps the suite out of CI, since `pytest.ini`
   deselects that marker by default.
@@ -15,7 +15,6 @@ import json
 import os
 import shutil
 import subprocess
-import time
 
 import logging
 
@@ -41,7 +40,7 @@ requires_live_endpoint = pytest.mark.skipif(
 )
 
 # Model-decided assertions - "obeys this instruction", "honors `dimensions`" - cannot hold
-# on a stand-in model, so they skip rather than fail. README.md section 5.
+# on a stand-in model, so they skip rather than fail.
 requires_capable_model = pytest.mark.skipif(
     CFG.toy_model,
     reason=f"target '{CFG.target.name}' is marked toy_model",
@@ -51,7 +50,7 @@ requires_capable_model = pytest.mark.skipif(
 def _host_gateway():
     """An address of the docker host, reachable from inside a container.
 
-    The design doc suggests reading the default route from inside the container, but the
+    Reading the default route from inside the container would be the obvious approach, but the
     endpoint has to be known *before* the container starts, since it is passed as an
     environment variable. The host's `docker0` address is reachable from any bridge
     network and is resolvable up front, so use that.
@@ -257,6 +256,9 @@ def _start_mock(instance, port):
 # meter uses it to tell free calls from paid ones.
 MOCK_COLLECTION_PREFIX = "ai_e2e_mock_"
 
+# Non-empty once the spend ceiling has been hit, so only the first breach fails loudly.
+BREACHED = []
+
 
 def _create_mock_collections(instance, port):
     """Mock collections are plain DDL: their `api_key` is a literal, not a secret."""
@@ -282,6 +284,50 @@ class Runner:
         self.cfg = cfg
         self.budget = budget
 
+    def paid(self, sql):
+        """Whether a query costs money.
+
+        The mock-driven suites issue thousands of free requests to a server inside the
+        container; counting those would abort a run that has spent nothing. A query naming
+        both a mock and a live collection would be misjudged, so that is rejected outright
+        rather than guessed at.
+        """
+        mentions_mock = MOCK_COLLECTION_PREFIX in sql
+        mentions_live = any(
+            name in sql for name in ("ai_e2e_chat", "ai_e2e_embed")
+        ) and not sql.count(MOCK_COLLECTION_PREFIX) == sql.count("ai_e2e_")
+        assert not (mentions_mock and mentions_live), (
+            "query names both a mock and a live collection, so its cost cannot be "
+            "attributed; split it"
+        )
+        return not mentions_mock
+
+    def check_budget(self, sql):
+        """Refuse to issue a paid query once the run has hit its ceiling.
+
+        The first breach fails loudly, so a capped run cannot be mistaken for a passing
+        one; everything after it skips without spending. `pytest.exit` would be the
+        obvious tool, but calling it inside an xdist worker makes the controller report
+        `INTERNALERROR` instead of a clean stop, so this stops the spending rather than
+        the process.
+        """
+        if self.budget is None or not self.paid(sql):
+            return
+        reason = self.budget.exceeded()
+        if not reason:
+            return
+        if not BREACHED:
+            BREACHED.append(reason)
+            raise ai_config.BudgetExceeded(
+                f"spend ceiling reached: {reason}. Every later paid query is skipped. "
+                "Raise AI_E2E_MAX_API_CALLS / AI_E2E_MAX_TOKENS or lower AI_E2E_DATA_SCALE."
+            )
+        pytest.skip(f"spend ceiling reached earlier in this run: {reason}")
+
+    def meter(self, sql, events):
+        if self.budget is not None and self.paid(sql):
+            self.budget.record(events)
+
     def settings(self, extra=None, counting=False, rows=0):
         settings = dict(AI_SETTINGS)
         settings["ai_function_request_timeout_sec"] = ai_config.request_timeout_sec(
@@ -302,7 +348,8 @@ class Runner:
             settings.update(extra)
         return settings
 
-    def run(self, sql, case="query", settings=None, counting=False, rows=0, timeout=None):
+    def run(self, sql, case="query", settings=None, counting=False, rows=0, timeout=600):
+        self.check_budget(sql)
         query_id = unique_query_id(case)
         result = self.instance.query(
             sql,
@@ -311,20 +358,17 @@ class Runner:
             timeout=timeout,
         )
         events = read_ai_events(self.instance, query_id)
-        # Meter only what costs money. The mock-driven suites make thousands of calls to a
-        # server inside the container; counting those against the ceiling would abort a run
-        # that has spent nothing.
-        if self.budget is not None and MOCK_COLLECTION_PREFIX not in sql:
-            self.budget.record(events)
+        self.meter(sql, events)
         return result, events
 
-    def error(self, sql, case="query", settings=None, timeout=None):
+    def error(self, sql, case="query", settings=None, timeout=600):
         """Run a query that is expected to throw and return the error text.
 
         Deliberately returns no counters: the five AI ProfileEvents are incremented after
         the row loop, so a query that throws records none of them. Cases that need call
         counts for a failing query read the mock's /stats instead.
         """
+        self.check_budget(sql)
         return self.instance.query_and_get_error(
             sql,
             settings=self.settings(settings),
@@ -357,18 +401,23 @@ def mock(started_cluster):
     return control
 
 
-@pytest.fixture()
-def clean_mock(mock):
-    """A mock with default behavior and zeroed counters, per test."""
-    mock.reset()
-    yield mock
-    mock.reset()
-
-
 @pytest.fixture(scope="session")
 def budget():
-    """Session-wide meter. Shared by every query the `q` fixture runs."""
-    meter = ai_config.Budget(CFG.max_api_calls, CFG.max_tokens)
+    """The run's spend meter, shared across xdist workers through a file.
+
+    `PYTEST_XDIST_TESTRUNUID` is the same for every worker in a run, so the counter is
+    per run rather than per worker; without xdist it falls back to a fixed name.
+    """
+    run_id = os.environ.get("PYTEST_XDIST_TESTRUNUID", "local")
+    state_dir = os.environ.get("AI_E2E_REPORT_DIR") or os.path.join(
+        SCRIPT_DIR, "..", "..", "..", "tmp"
+    )
+    try:
+        os.makedirs(state_dir, exist_ok=True)
+        state_path = os.path.join(state_dir, f"ai_e2e_budget_{run_id}.json")
+    except OSError:
+        state_path = None
+    meter = ai_config.Budget(CFG.max_api_calls, CFG.max_tokens, state_path)
     yield meter
     print(f"\n[ai-e2e] spend: {meter.summary(CFG.price_in_per_1m, CFG.price_out_per_1m)}")
 
@@ -406,25 +455,24 @@ def preflight(started_cluster, request):
     # A0-3: the binary under test must match the tree. A failed build leaves the previous
     # binary in place, so comparing the server version to the source tree is the only
     # check that catches it.
-    _assert_binary_matches_tree()
+    _warn_if_binary_is_stale()
 
     if not CFG.live_configured or not _session_has_live_items(request.session):
         return
 
     # A0-1: reachability, diagnosed from inside the container.
-    status = node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"curl -sS -o /dev/null -w '%{{http_code}}' --max-time 20 "
-            f"-X POST {CFG.chat_endpoint} "
-            f"-H 'Content-Type: application/json' "
-            f"-H 'Authorization: Bearer {CFG.api_key}' "
-            f"-d '{{\"model\":\"{CFG.chat_model}\",\"messages\":"
-            f'[{{"role":"user","content":"ping"}}],"max_tokens":1}}\' || true',
-        ],
-        nothrow=True,
-    ).strip()
+    # The key is expanded by the container's own shell from its environment: putting it in
+    # the command would place it in the container's process argv, in the docker daemon's
+    # exec record, and in the DEBUG line `exec_in_container` logs.
+    probe = (
+        "curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "
+        "-X POST \"$AI_E2E_CHAT_ENDPOINT\" "
+        "-H 'Content-Type: application/json' "
+        '-H "Authorization: Bearer $AI_E2E_API_KEY" '
+        "-d '{\"model\":\"" + CFG.chat_model + "\",\"messages\":"
+        '[{"role":"user","content":"ping"}],"max_tokens":1}\' || true'
+    )
+    status = node.exec_in_container(["bash", "-c", probe], nothrow=True).strip()
     if status in ("", "000"):
         raise RuntimeError(
             f"cannot reach {CFG.chat_endpoint} from the container (curl wrote '{status}'): "
@@ -447,12 +495,16 @@ def preflight(started_cluster, request):
     )
 
 
-def _assert_binary_matches_tree():
-    """A0-3: the binary under test must be built from this tree.
+def _warn_if_binary_is_stale():
+    """A0-3: warn when the binary was not built from this tree.
 
     Compares git hashes, not `version()`: the version string only changes on a release
     bump, so it matches for every commit in a cycle - including a stale binary left behind
     by a failed build, which is the trap this exists to catch.
+
+    Deliberately a warning rather than a failure: running an older binary on purpose is
+    legitimate, and `git` may be absent in the runner image, in which case nothing can be
+    concluded either way.
     """
     built_from = node.query(
         "SELECT value FROM system.build_options WHERE name = 'GIT_HASH'"

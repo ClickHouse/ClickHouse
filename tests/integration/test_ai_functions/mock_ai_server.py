@@ -8,7 +8,9 @@ Endpoints:
       `aiTranslate`'s `instructions` argument is forwarded in the prompt, or that the
       `Authorization` header is omitted when the named collection has no `api_key`).
       Header names are lower-cased for case-insensitive lookup.
-  GET  /set-delay?ms=N               — make every subsequent request sleep N ms before responding.
+  GET  /set-delay?ms=N&count=K       — make the next K requests (default 1) sleep N ms before
+      responding. Self-disarming on purpose: a test that dies between arming and disarming
+      would otherwise leave every later request in the module sleeping.
       Used to drive `ai_function_request_timeout_sec`. `ms=0` disarms. The server is
       single-threaded, so a delay blocks it for the duration; tests using it must not run
       concurrently with others, which `--dist=loadfile` already guarantees.
@@ -55,8 +57,9 @@ LAST_REQUEST = {"path": None, "body": None, "headers": {}}
 # Set via `GET /set-flaky?count=N`. Used to exercise the network-error retry path.
 FLAKY = {"fails_remaining": 0}
 
-# Milliseconds to sleep before answering, set via `GET /set-delay?ms=N`.
-DELAY = {"ms": 0}
+# Milliseconds to sleep before answering, and how many requests are still affected.
+# Set via `GET /set-delay?ms=N&count=K`; decremented per request so a leaked arm expires.
+DELAY = {"ms": 0, "remaining": 0}
 
 # Requests received since the last `GET /request-count?reset=1`.
 COUNTER = {"requests": 0}
@@ -173,7 +176,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if parsed.path == "/set-delay":
             params = parse_qs(parsed.query)
             DELAY["ms"] = int(params.get("ms", ["0"])[0])
-            self._send_json(200, {"delay_ms": DELAY["ms"]})
+            DELAY["remaining"] = int(params.get("count", ["1"])[0]) if DELAY["ms"] else 0
+            self._send_json(200, {"delay_ms": DELAY["ms"], "count": DELAY["remaining"]})
             return
 
         if parsed.path == "/request-count":
@@ -199,7 +203,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         COUNTER["requests"] += 1
-        if DELAY["ms"]:
+        if DELAY["ms"] and DELAY["remaining"] > 0:
+            DELAY["remaining"] -= 1
             time.sleep(DELAY["ms"] / 1000.0)
         content_length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_length).decode("utf-8") if content_length else ""
@@ -282,6 +287,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
 
     def _send_json(self, status, obj):
+        try:
+            self._send_json_impl(status, obj)
+        except (BrokenPipeError, ConnectionResetError):
+            # Expected when a client abandons a slow request: it gave up on the socket
+            # before the delayed response arrived. Without this the traceback lands in
+            # the server log, which the job packages on failure.
+            self.close_connection = True
+
+    def _send_json_impl(self, status, obj):
         body = json.dumps(obj).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -290,6 +304,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _send_raw(self, status, body_bytes, content_type="text/plain"):
+        try:
+            self._send_raw_impl(status, body_bytes, content_type)
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+
+    def _send_raw_impl(self, status, body_bytes, content_type="text/plain"):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body_bytes)))
