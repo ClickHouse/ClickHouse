@@ -131,6 +131,26 @@ SELECT count() FROM (SELECT id FROM mergeTreeProjection(currentDatabase(), 'limi
 DROP ROW POLICY rp_limit_rls_proj ON limit_rls_proj;
 DROP TABLE limit_rls_proj;
 
+-- ORDER BY the projection sort key + LIMIT (read-in-order): the in-order limit is a soft output limit,
+-- so the read must skip the hidden leading rows and return the first visible one (expect 51, not empty).
+DROP TABLE IF EXISTS order_limit_rls_proj;
+DROP ROW POLICY IF EXISTS rp_order_limit_rls_proj ON order_limit_rls_proj;
+
+CREATE TABLE order_limit_rls_proj (id UInt64, visible UInt8) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 2;
+INSERT INTO order_limit_rls_proj SELECT number + 1, number >= 50 FROM numbers(200);
+
+ALTER TABLE order_limit_rls_proj ADD PROJECTION p (SELECT id, visible ORDER BY id);
+ALTER TABLE order_limit_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_order_limit_rls_proj ON order_limit_rls_proj FOR SELECT USING visible TO ALL;
+
+SELECT '-- read-in-order + LIMIT skips the policy-hidden leading rows (expect 51)';
+SELECT id FROM mergeTreeProjection(currentDatabase(), 'order_limit_rls_proj', 'p') ORDER BY id LIMIT 1
+SETTINGS optimize_read_in_order = 1;
+
+DROP ROW POLICY rp_order_limit_rls_proj ON order_limit_rls_proj;
+DROP TABLE order_limit_rls_proj;
+
 -- The remaining cases cannot be enforced against the projection, so the read is refused.
 
 -- ALIAS column: the projection stores the dependency `b`, not the alias `c`, and the analyzer resolves
