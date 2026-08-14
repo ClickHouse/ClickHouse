@@ -689,7 +689,7 @@ Otherwise, the first row will be skipped.
 
 ## Description {#description}
 
-Differs from `JSONCompactEachRow` format in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparatedRawWithNamesAndTypes).
+Differs from `JSONCompactEachRow` format in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](/reference/formats/TabSeparated/TabSeparatedRawWithNamesAndTypes).
 
 ## Example usage {#example-usage}
 
