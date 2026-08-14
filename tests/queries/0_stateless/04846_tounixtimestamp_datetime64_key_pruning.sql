@@ -23,7 +23,7 @@ SELECT count() FROM test_wrapped_key WHERE ts = '2026-04-15 12:00:00.500' SETTIN
 -- The relaxed atom truncates sub-second bounds; it may over-read but must not lose rows.
 SELECT count() FROM test_wrapped_key WHERE ts > '2026-04-15 12:00:00.400' AND ts < '2026-04-15 12:00:00.600' SETTINGS force_primary_key = 1;
 
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_wrapped_key WHERE ts >= '2026-04-01 00:00:00') WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM test_wrapped_key WHERE ts >= '2026-04-01 00:00:00') WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
 
 -- Constants outside the UInt32 range cannot be pushed through toUnixTimestamp.
 -- The queries must return correct results without an exception.
@@ -67,7 +67,7 @@ SELECT count() FROM test_wrapped_key_signed WHERE ts < '1969-12-31 23:59:00' SET
 -- The relaxed atom truncates negative sub-second bounds toward zero; it may over-read but must not lose rows.
 SELECT count() FROM test_wrapped_key_signed WHERE ts > '1969-12-31 23:59:59.400' AND ts < '1970-01-01 00:00:00.100' SETTINGS force_primary_key = 1;
 
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_wrapped_key_signed WHERE ts >= '1969-12-31 23:59:00') WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM test_wrapped_key_signed WHERE ts >= '1969-12-31 23:59:00') WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
 
 DROP TABLE test_wrapped_key_signed;
 
@@ -87,7 +87,28 @@ SELECT count() FROM test_wrapped_key_uint8 WHERE ts >= '1969-01-01 00:00:00';
 -- A constant within the target range still prunes.
 SELECT count() FROM test_wrapped_key_uint8 WHERE ts >= '1970-01-01 00:00:30' SETTINGS force_primary_key = 1;
 
+-- An unsigned target is rejected by the whole number of seconds, not by the raw tick value,
+-- so a pre-epoch sub-second constant is inside the domain (it converts to 0) and still prunes.
+SELECT count() FROM test_wrapped_key_uint8 WHERE ts >= '1969-12-31 23:59:59.500' SETTINGS force_primary_key = 1;
+SELECT count() FROM test_wrapped_key_uint8 WHERE ts < '1969-12-31 23:59:59.500' SETTINGS force_primary_key = 1;
+
 DROP TABLE test_wrapped_key_uint8;
+
+-- The same for the `toUnixTimestamp` key, with rows on both sides of the epoch boundary slice.
+
+DROP TABLE IF EXISTS test_wrapped_key_epoch;
+CREATE TABLE test_wrapped_key_epoch (ts DateTime64(3))
+ENGINE = MergeTree ORDER BY toUnixTimestamp(ts) SETTINGS index_granularity = 1;
+
+INSERT INTO test_wrapped_key_epoch VALUES ('1969-12-31 23:59:59.500'), ('1970-01-01 00:00:00.500'), ('1970-01-01 00:01:00.000');
+
+OPTIMIZE TABLE test_wrapped_key_epoch FINAL;
+
+SELECT count() FROM test_wrapped_key_epoch WHERE ts >= '1969-12-31 23:59:59.500' SETTINGS force_primary_key = 1;
+SELECT count() FROM test_wrapped_key_epoch WHERE ts >= '1970-01-01 00:00:30' SETTINGS force_primary_key = 1;
+SELECT count() FROM test_wrapped_key_epoch WHERE ts < '1970-01-01 00:00:30' SETTINGS force_primary_key = 1;
+
+DROP TABLE test_wrapped_key_epoch;
 
 -- When the key is the raw DateTime64 column and the filter wraps it in toUnixTimestamp,
 -- a part may contain values outside the UInt32 range next to values inside it.
@@ -103,13 +124,13 @@ INSERT INTO test_raw_key SELECT toDateTime64('2150-01-01 00:00:00', 3) + toInter
 
 OPTIMIZE TABLE test_raw_key FINAL;
 
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_raw_key WHERE toUnixTimestamp(ts) >= 1768867200 SETTINGS optimize_use_implicit_projections = 1) WHERE explain LIKE '%Condition:%';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM test_raw_key WHERE toUnixTimestamp(ts) >= 1768867200 SETTINGS optimize_use_implicit_projections = 1) WHERE explain LIKE '%Condition:%';
 
 -- toInt64 of DateTime64 is total (the whole number of seconds always fits), so index
 -- analysis may apply it to concrete ranges of index values and prune, even when the part
 -- also contains values outside the UInt32 range.
 
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_raw_key WHERE toInt64(ts) >= toInt64(toDateTime64('2150-01-01 00:00:00', 3)) SETTINGS optimize_use_implicit_projections = 0) WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM test_raw_key WHERE toInt64(ts) >= toInt64(toDateTime64('2150-01-01 00:00:00', 3)) SETTINGS optimize_use_implicit_projections = 0) WHERE explain LIKE '%Condition:%' OR explain LIKE '%Granules:%';
 
 -- The total conversion also allows the exact-ranges optimization of count(); the exact range
 -- must agree with the per-granule analysis (checked by an assertion in debug builds).
