@@ -106,6 +106,31 @@ static bool hasAlignedStringVsNonStringElement(const DataTypePtr & left_type, co
     return left_is_string != right_is_string;
 }
 
+/// For the array element-comparison path: a bare `Nothing` position carries no value, so the element
+/// comparator declares `Nothing` and the comparison cannot be executed.
+static bool containsUndecidableNothing(const DataTypePtr & type)
+{
+    const auto inner_type = removeLowCardinality(type);
+
+    if (isNothing(inner_type))
+        return true;
+
+    if (inner_type->isNullable())
+    {
+        const auto nested = removeNullable(inner_type);
+        return isNothing(nested) ? false : containsUndecidableNothing(nested);
+    }
+
+    if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(inner_type.get()))
+    {
+        for (const auto & element : tuple_type->getElements())
+            if (containsUndecidableNothing(element))
+                return true;
+    }
+
+    return false;
+}
+
 template <bool _int, bool _float, bool _decimal, bool _datetime, typename F>
 static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex type_num2, F && f)
 {
@@ -1465,6 +1490,26 @@ private:
     {
         /// Recurse over indexes to compare flat columns at element-level
         auto impl = resolver->build(gathered.element_args);
+
+        /// A `Nothing` element type has no values, so it cannot be executed and yields a `ColumnNothing`
+        /// the callers cannot consume.
+        if (isNothing(impl->getResultType()))
+        {
+            auto masked = [&](size_t arg, const NullMap * null_map)
+            {
+                return isNothing(removeLowCardinality(gathered.element_args[arg].type)) && null_map
+                    && std::all_of(null_map->begin(), null_map->begin() + gathered.num_elements,
+                                   [](UInt8 byte) { return byte != 0; });
+            };
+
+            if (masked(0, gathered.null_map0) || masked(1, gathered.null_map1))
+                return ColumnUInt8::create(gathered.num_elements, UInt8(0));
+
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
+                " of function {}", backQuote(gathered.element_args[0].type->getName()),
+                backQuote(gathered.element_args[1].type->getName()), backQuote(name));
+        }
+
         return impl->execute(gathered.element_args, impl->getResultType(), gathered.num_elements, /*dry_run=*/false)->convertToFullColumnIfConst();
     }
 
@@ -1739,7 +1784,10 @@ public:
                         = WhichDataType(element_result_type.get()).isUInt8()
                         || (is_equality && element_result_type->isNullable()
                             && WhichDataType(removeNullable(element_result_type).get()).isUInt8());
-                    if (element_result_ok && !has_string_vs_non_string)
+                    /// Tested on the unstripped nested types, so the `Nullable` arms stay visible.
+                    if (element_result_ok && !has_string_vs_non_string
+                        && !containsUndecidableNothing(left_array->getNestedType())
+                        && !containsUndecidableNothing(right_array->getNestedType()))
                         return std::make_shared<DataTypeUInt8>();
                 }
 
