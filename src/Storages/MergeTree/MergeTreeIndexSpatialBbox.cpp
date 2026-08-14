@@ -285,7 +285,13 @@ void spatialBboxIndexValidator(const IndexDescription & index, bool /*attach*/, 
             "spatial_bbox index must be defined on a plain column, not a computed expression");
 
     /// Accept Point (Tuple(Float64,Float64)), Ring/Polygon/MultiPolygon (nested Arrays),
-    /// or any column whose ultimate element type is Tuple(Float64,Float64).
+    /// or any column whose ultimate element type is Tuple(Float64,Float64). The tuple must
+    /// have EXACTLY two elements, matching `extractBboxFromFieldValue`'s contract for constant
+    /// query geometries: `addFromGeoColumn` (MergeTreeIndexSpatialBbox.cpp) only ever reads the
+    /// first two elements of the tuple column, so a wider tuple (e.g. a `Tuple(Float64, Float64,
+    /// Float64, Float64)` rect column consumed by an `is_spatial_predicate` UDF as
+    /// (xmin, ymin, xmax, ymax)) would silently be indexed as a `Point` from just its first two
+    /// coordinates, dropping the extra ones this index would need to prune correctly.
     const DataTypePtr & type = index.data_types[0];
     const IDataType * inner = type.get();
 
@@ -293,7 +299,7 @@ void spatialBboxIndexValidator(const IndexDescription & index, bool /*attach*/, 
         inner = arr->getNestedType().get();
 
     const auto * tpl = typeid_cast<const DataTypeTuple *>(inner);
-    bool is_point_tuple = tpl && tpl->getElements().size() >= 2
+    bool is_point_tuple = tpl && tpl->getElements().size() == 2
         && typeid_cast<const DataTypeFloat64 *>(tpl->getElements()[0].get())
         && typeid_cast<const DataTypeFloat64 *>(tpl->getElements()[1].get());
 
