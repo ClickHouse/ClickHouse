@@ -229,7 +229,7 @@ def check_functional_test_cases(files):
 # `concat(path, '/data.bin')` is still recognized; double quotes, backticks, pipes, and
 # semicolons still bound the match to one query.
 FETCHES_SERVER_PATH_RE = re.compile(
-    r"(?i)\b(path|data_paths|metadata_path)\b[^\"`|;]{0,300}?"
+    r"(?i)(?:\b(?:path|data_paths|metadata_path)\b|\bselect\s+\*)[^\"`|;]{0,300}?"
     r"\bfrom\s+system\.(parts|detached_parts|projection_parts|tables|disks)\b"
 )
 # The server data root fetched as SELECT value FROM system.server_settings WHERE name = 'path'.
@@ -250,10 +250,11 @@ MUTATION_CMD_WRAPPER = (
     r"(?:sudo|command|builtin|exec|env|time|nice|ionice|nohup|stdbuf|timeout|xargs)"
 )
 MUTATION_CMD_WRAPPER_ARG = (
-    r"(?:-{1,2}[\w-]+(?:\s+[^-\s;|&<>`][^\s;|&<>`]*)?|[0-9]+(?:\.[0-9]+)?[smhd]?)"
+    r"(?:-{1,2}[\w-]+(?:=[^\s;|&<>`]+|\s+[^-\s;|&<>`][^\s;|&<>`]*)?|[0-9]+(?:\.[0-9]+)?[smhd]?)"
 )
+MUTATION_CMD_ASSIGNMENT_VALUE = r"(?:'[^']*'|\"(?:\\.|[^\"\\])*\"|[^\s;|&<>`]+)"
 MUTATION_CMD_PREFIX = (
-    r"(?:[A-Za-z_]\w*=[^\s;|&]*\s+"
+    rf"(?:[A-Za-z_]\w*={MUTATION_CMD_ASSIGNMENT_VALUE}\s+"
     rf"|{MUTATION_CMD_WRAPPER}\s+(?:{MUTATION_CMD_WRAPPER_ARG}\s+)*)*"
 )
 # Shell commands that create, modify, or delete files, at the start of a line or after

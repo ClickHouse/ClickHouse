@@ -74,11 +74,16 @@ def test_mutation_behind_time_wrapper_is_flagged(tmp_path):
 
 def test_mutation_behind_leading_assignment_is_flagged(tmp_path):
     assert _run(tmp_path, FETCH_PART_PATH + 'FOO=1 rm -f "$path/data.bin"\n')
+    assert _run(tmp_path, FETCH_PART_PATH + 'FOO="a b" rm -f "$path/data.bin"\n')
 
 
 def test_mutation_behind_wrapper_with_arguments_is_flagged(tmp_path):
     assert _run(tmp_path, FETCH_PART_PATH + 'timeout 60 rm -f "$path/data.bin"\n')
     assert _run(tmp_path, FETCH_PART_PATH + 'sudo -n rm -f "$path/data.bin"\n')
+    assert _run(
+        tmp_path,
+        FETCH_PART_PATH + 'timeout --signal=KILL 60 rm -f "$path/data.bin"\n',
+    )
 
 
 def test_mutation_behind_wrapper_option_with_value_is_flagged(tmp_path):
@@ -125,6 +130,18 @@ def test_derived_path_expression_is_flagged(tmp_path):
         "p=$(${CLICKHOUSE_CLIENT} -q \"SELECT concat(path, '/data.bin')"
         " FROM system.parts WHERE table = 't' LIMIT 1\")\n"
         'rm -f "$p"\n',
+    )
+
+
+def test_select_star_from_system_parts_is_flagged(tmp_path):
+    # `SELECT *` includes the `path` column and must not bypass the check when a shell
+    # command extracts that field before modifying the part directory.
+    assert _run(
+        tmp_path,
+        'row=$(${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.parts'
+        " WHERE table = 't' AND active FORMAT TSVRaw\")\n"
+        'path=$(printf "%s" "$row" | cut -f22)\n'
+        'rm -f "$path/data.bin"\n',
     )
 
 
