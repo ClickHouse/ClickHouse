@@ -106,8 +106,11 @@ bool ExecutionThreadContext::executeTask()
         {
             auto & cached_clock = node->cached_clock;
             /// We will search in the registry only initially or when the group of the processor changed
-            if (!cached_clock.wall_clock_ptr || node->cached_clock.group != group)
+            if (!cached_clock.wall_clock_ptr || cached_clock.group != group)
+            {
                 cached_clock.wall_clock_ptr = step_to_wall_clock_registry->find(step, group);
+                cached_clock.group = group;
+            }
 
             clock = cached_clock.wall_clock_ptr;
             chassert(clock);
