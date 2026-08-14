@@ -2297,7 +2297,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     const bool has_infile = parsed_insert_query && parsed_insert_query->infile;
     bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
 
-    if ((!inline_data_begin && !has_infile) && have_data_in_stdin)
+    if ((!inline_data_begin && !has_infile) && !have_data_in_stdin)
     {
         const auto & settings = client_context->getSettingsRef();
         if (settings[Setting::throw_if_no_data_to_insert])

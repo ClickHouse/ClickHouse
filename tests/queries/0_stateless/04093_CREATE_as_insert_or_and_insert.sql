@@ -1,3 +1,4 @@
+-- Tags: no-parallel-replicas
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 (a UInt32, b String) ENGINE = MergeTree ORDER BY a
     AS INSERT SELECT number AS a, toString(number) AS b FROM numbers(3);
