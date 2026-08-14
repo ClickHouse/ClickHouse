@@ -326,13 +326,6 @@ void selectWithinPartsRange(
 
         max_parts_to_merge_at_once = std::min(max_parts_to_merge_at_once, settings.max_parts_to_merge_at_once);
 
-        /// The small-parts batching gate rejects every all-small, all-fresh candidate narrower
-        /// than small_parts_min_count. If this heuristic lowered the cap below that minimum,
-        /// no eligible batch could be formed at all, and the gate would silently degrade into
-        /// "block all small fresh merges until small_parts_max_age". Keep the effective cap at
-        /// least small_parts_min_count, still bounded by the explicit max_parts_to_merge_at_once.
-        if (settings.small_parts_min_count && max_parts_to_merge_at_once < settings.small_parts_min_count)
-            max_parts_to_merge_at_once = std::min(settings.small_parts_min_count, settings.max_parts_to_merge_at_once);
     }
 
     for (; begin < parts_count; ++begin)
@@ -342,12 +335,13 @@ void selectWithinPartsRange(
         size_t max_size = parts[begin].size;
         size_t min_age = parts[begin].age;
         size_t max_age = parts[begin].age;
+        bool all_small_and_fresh = settings.small_parts_min_count
+            && parts[begin].size < settings.small_parts_threshold
+            && static_cast<size_t>(parts[begin].age) < settings.small_parts_max_age;
 
         for (size_t end = begin + 2; end <= parts_count; ++end)
         {
             chassert(end > begin);
-            if (max_parts_to_merge_at_once && end - begin > max_parts_to_merge_at_once)
-                break;
 
             size_t cur_size = parts[end - 1].size;
             size_t cur_age = parts[end - 1].age;
@@ -358,6 +352,20 @@ void selectWithinPartsRange(
             max_size = std::max(max_size, cur_size);
             min_age = std::min(min_age, cur_age);
             max_age = std::max(max_age, cur_age);
+            all_small_and_fresh = all_small_and_fresh
+                && cur_size < settings.small_parts_threshold
+                && static_cast<size_t>(cur_age) < settings.small_parts_max_age;
+
+            if (max_parts_to_merge_at_once && end - begin > max_parts_to_merge_at_once)
+            {
+                /// The fullness heuristic may lower the cap below small_parts_min_count.
+                /// Extend enumeration only through the first eligible all-small, all-fresh
+                /// batch, so stale or large ranges retain the heuristic's original cap.
+                if (end - begin > settings.small_parts_min_count
+                    || !all_small_and_fresh
+                    || settings.max_parts_to_merge_at_once < settings.small_parts_min_count)
+                    break;
+            }
 
             if (sum_size > constraint.max_size_bytes)
                 break;

@@ -880,8 +880,9 @@ to allow the merge. Reduces the number of merge operations under rapid small-par
 The selector never considers merge candidates wider than `max_parts_to_merge_at_once`, so an
 explicitly configured `max_parts_to_merge_at_once` below this minimum is a contradictory
 configuration: small fresh parts then merge only after `merge_selector_small_parts_max_age`.
-(The built-in heuristic that lowers the effective cap as a partition fills up never lowers it
-below this minimum, so the default configuration is unaffected.)
+(If the built-in fullness heuristic temporarily lowers its effective cap below this minimum,
+the selector still considers the first all-small, all-fresh candidate of this width. Stale or
+large candidates retain the lowered cap.)
 )", 0) \
     DECLARE(UInt64, merge_selector_small_parts_max_age, 600, R"(
 Age limit in seconds for the small-parts restriction: as soon as any part in a range

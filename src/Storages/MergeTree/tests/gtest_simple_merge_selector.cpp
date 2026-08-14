@@ -616,8 +616,9 @@ TEST(SimpleMergeSelector, SmallPartsMinCountUntrimmedMaxAgeLiftsGate)
 /// fullness heuristic lowers that cap (with the defaults it drops below 8 at ~2981 parts).
 /// If the cap falls below `small_parts_min_count`, no all-small all-fresh candidate can ever
 /// reach the required width, so the gate would silently turn into "block all fresh small
-/// merges until `small_parts_max_age`" instead of "batch at least N parts". The fix keeps
-/// the effective cap at least `small_parts_min_count` while the gate is active.
+/// merges until `small_parts_max_age`" instead of "batch at least N parts". The selector
+/// therefore extends enumeration only to the first all-small, all-fresh batch of the minimum
+/// width; stale and large ranges retain the heuristic-lowered cap.
 TEST(SimpleMergeSelector, SmallPartsMinCountSurvivesLoweredMaxPartsCap)
 {
     SimpleMergeSelector::Settings settings;
@@ -663,11 +664,51 @@ TEST(SimpleMergeSelector, SmallPartsMinCountSurvivesLoweredMaxPartsCap)
     std::vector<MergeConstraint> constraints{{100ULL * 1024 * 1024 * 1024, std::numeric_limits<size_t>::max()}};
     PartsRanges selected = selector.select({parts}, constraints, nullptr);
 
-    /// With the lowered cap raised back to `small_parts_min_count`, the 8-part batch is an
-    /// eligible candidate and must be selected. Without the fix, enumeration stops at 6
+    /// Despite the lowered cap, the first all-small, all-fresh 8-part batch is an eligible
+    /// candidate and must be selected. Without the fix, enumeration stops at 6
     /// parts, every candidate fails the `size < small_parts_min_count` gate, and nothing
     /// is selected until the age valve fires.
     ASSERT_EQ(selected.size(), 1)
         << "the lowered max-parts cap must not make small_parts_min_count unattainable";
     ASSERT_EQ(selected[0].size(), 8);
+}
+
+
+TEST(SimpleMergeSelector, SmallPartsMinCountDoesNotLiftCapForStaleParts)
+{
+    SimpleMergeSelector::Settings settings;
+    settings.base = 2;
+    settings.small_parts_threshold = 10 * 1024 * 1024;
+    settings.small_parts_min_count = 8;
+    settings.small_parts_max_age = 600;
+
+    PartsRange parts;
+    for (int64_t i = 0; i < 8; ++i)
+    {
+        auto name = fmt::format("all_{0}_{0}_0", i);
+        parts.push_back(PartProperties{
+            .name = name,
+            .info = MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING),
+            .size = 1024 * 1024,
+            .age = 700,
+            .rows = 1000,
+        });
+    }
+
+    PartitionsStatistics statistics;
+    statistics["all"] = PartitionStatistics{
+        .min_age = 700,
+        .part_count = 2990,
+        .total_size = 2990ULL * 1024 * 1024,
+    };
+    settings.partitions_stats = &statistics;
+
+    SimpleMergeSelector selector(settings);
+    std::vector<MergeConstraint> constraints{{100ULL * 1024 * 1024 * 1024, std::numeric_limits<size_t>::max()}};
+    PartsRanges selected = selector.select({parts}, constraints, nullptr);
+
+    /// The freshness valve makes these candidates ineligible for the cap extension. The
+    /// fullness heuristic's cap is 6, so the selector must not invent an 8-part stale merge.
+    ASSERT_EQ(selected.size(), 1);
+    ASSERT_EQ(selected[0].size(), 6);
 }
