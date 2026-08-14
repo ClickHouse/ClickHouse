@@ -12,6 +12,8 @@
 #include <base/sort.h>
 #include <base/scope_guard.h>
 
+#include <new>
+
 
 namespace DB
 {
@@ -49,25 +51,33 @@ namespace
     template <typename T>
     MutableColumnPtr mapUniqueIndexImplRef(PaddedPODArray<T> & index)
     {
+#if defined(DEBUG_OR_SANITIZER_BUILD)
         PaddedPODArray<T> copy(index.cbegin(), index.cend());
+#endif
 
         HashMap<T, T> hash_map;
-        for (auto val : index)
-            hash_map.insert({val, static_cast<T>(hash_map.size())});
-
         auto res_col = ColumnVector<T>::create();
         auto & data = res_col->getData();
 
-        data.resize(hash_map.size());
-        for (const auto & val : hash_map)
-            data[val.getMapped()] = val.getKey();
-
         for (auto & ind : index)
-            ind = hash_map[ind];
+        {
+            typename HashMap<T, T>::LookupResult it;
+            bool inserted = false;
+            hash_map.emplace(ind, it, inserted);
+            if (inserted)
+            {
+                const auto compact_index = static_cast<T>(data.size());
+                new (&it->getMapped()) T(compact_index);
+                data.push_back(ind);
+            }
+            ind = it->getMapped();
+        }
 
+#if defined(DEBUG_OR_SANITIZER_BUILD)
         for (size_t i = 0; i < index.size(); ++i)
             if (data[index[i]] != copy[i])
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {}, but got {}", toString(data[index[i]]), toString(copy[i]));
+#endif
 
         return res_col;
     }
