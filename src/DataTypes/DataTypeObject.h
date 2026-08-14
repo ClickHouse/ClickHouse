@@ -93,7 +93,9 @@ public:
     /// Same, but propagates this object's own SHARED REGEXP rules and prefix, extended by
     /// `path_prefix_from_root`, to the nested type -- so a value dynamically inferred as a nested
     /// object at that path can still correctly evaluate the rules against its own root-relative
-    /// paths instead of losing the policy or evaluating it unprefixed.
+    /// paths instead of losing the policy or evaluating it unprefixed. Also projects typed paths
+    /// and literal SKIP paths declared under that prefix, stripped to be relative to the nested
+    /// type's own root, so they keep taking precedence over SHARED REGEXP as documented.
     DataTypePtr getTypeOfNestedObjects(const String & path_prefix_from_root) const;
     DataTypePtr getDynamicType() const;
 
