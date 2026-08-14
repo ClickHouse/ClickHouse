@@ -640,6 +640,10 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::ADD_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_COLUMN, database, table, column_name_from_col_decl());
+            /// A column-declaration STATISTICS adds statistics like the dedicated ADD STATISTICS command does,
+            /// so it must not bypass the corresponding access right.
+            if (command.col_decl->as<ASTColumnDeclaration &>().getStatisticsDesc())
+                required_access.emplace_back(AccessType::ALTER_ADD_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::DROP_COLUMN:
@@ -653,6 +657,10 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::MODIFY_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_MODIFY_COLUMN, database, table, column_name_from_col_decl());
+            /// A column-declaration STATISTICS replaces the explicit statistics of the column like the dedicated
+            /// MODIFY STATISTICS command does, so it must not bypass the corresponding access right.
+            if (command.col_decl->as<ASTColumnDeclaration &>().getStatisticsDesc())
+                required_access.emplace_back(AccessType::ALTER_MODIFY_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::COMMENT_COLUMN:

@@ -195,7 +195,13 @@ void registerStorageKafka(StorageFactory & factory)
         auto num_consumers = (*kafka_settings)[KafkaSetting::kafka_num_consumers].value;
         auto max_consumers = std::max<uint32_t>(getNumberOfCPUCoresToUse(), 16);
 
-        if (!args.getLocalContext()->getSettingsRef()[Setting::kafka_disable_num_consumers_limit] && num_consumers > max_consumers)
+        /// The limit depends on the local CPU count, so a definition read back from metadata may have been
+        /// accepted on a bigger server. Validate only a freshly introduced one, so existing tables stay loadable.
+        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+
+        if (is_fresh_definition
+            && !args.getLocalContext()->getSettingsRef()[Setting::kafka_disable_num_consumers_limit] && num_consumers > max_consumers)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -207,7 +213,7 @@ void registerStorageKafka(StorageFactory & factory)
                 "of getting data from Kafka, consider using a setting kafka_thread_per_consumer=1, "
                 "and ensure you have enough threads "
                 "in MessageBrokerSchedulePool (background_message_broker_schedule_pool_size). "
-                "See also https://clickhouse.com/docs/integrations/kafka/kafka-table-engine#tuning-performance",
+                "See also https://clickhouse.com/docs/integrations/connectors/data-ingestion/kafka/kafka-table-engine#tuning-performance",
                 max_consumers);
         }
         if (num_consumers < 1)
@@ -246,7 +252,7 @@ void registerStorageKafka(StorageFactory & factory)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "KafkaEngine doesn't support DEFAULT/MATERIALIZED/EPHEMERAL expressions for columns. "
-                "See https://clickhouse.com/docs/engines/table-engines/integrations/kafka/#configuration");
+                "See https://clickhouse.com/docs/reference/engines/table-engines/integrations/kafka#configuration");
         }
 
         const auto has_keeper_path = (*kafka_settings)[KafkaSetting::kafka_keeper_path].changed && !(*kafka_settings)[KafkaSetting::kafka_keeper_path].value.empty();
@@ -266,7 +272,8 @@ void registerStorageKafka(StorageFactory & factory)
                 args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
         }
 
-        if (!args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_kafka_offsets_storage_in_keeper] && !args.query.attach)
+        if (args.mode <= LoadingStrictnessLevel::CREATE
+            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_kafka_offsets_storage_in_keeper])
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Storing the Kafka offsets in Keeper is experimental. Set `allow_experimental_kafka_offsets_storage_in_keeper` setting "
@@ -347,7 +354,7 @@ import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 # Kafka table engine
 
 :::tip
-If you're on ClickHouse Cloud, we recommend using [ClickPipes](/integrations/clickpipes) instead. ClickPipes natively supports private network connections, scaling ingestion and cluster resources independently, and comprehensive monitoring for streaming Kafka data into ClickHouse.
+If you're on ClickHouse Cloud, we recommend using [ClickPipes](/integrations/clickpipes/home) instead. ClickPipes natively supports private network connections, scaling ingestion and cluster resources independently, and comprehensive monitoring for streaming Kafka data into ClickHouse.
 :::
 
 - Publish or subscribe to data flows.
@@ -486,7 +493,7 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 </details>
 
 :::info
-The Kafka table engine doesn't support columns with [default value](/sql-reference/statements/create/table#default_values). If you need columns with default value, you can add them at materialized view level (see below).
+The Kafka table engine doesn't support columns with [default value](/reference/statements/create/table#default_values). If you need columns with default value, you can add them at materialized view level (see below).
 :::
 
 ## Description {#description}
