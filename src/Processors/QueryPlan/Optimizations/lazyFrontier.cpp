@@ -10,7 +10,7 @@ bool LazyFrontier::defersAnything() const
     if (!recomputed_after_merge.empty())
         return true;
 
-    return std::ranges::any_of(recomputed_per_source, [](const auto & nodes) { return !nodes.empty(); });
+    return std::ranges::any_of(recomputed_under_mask, [](const auto & nodes) { return !nodes.empty(); });
 }
 
 namespace
@@ -52,7 +52,7 @@ public:
     FrontierChooser(const MergedPlanDAG & merged_, const std::vector<bool> & lazy_sources_)
         : merged(merged_), lazy_sources(lazy_sources_)
     {
-        frontier.recomputed_per_source.resize(merged.sources.size());
+        frontier.recomputed_under_mask.resize(merged.sources.size());
         frontier.lazily_read_inputs.resize(merged.sources.size());
     }
 
@@ -102,6 +102,15 @@ private:
                 return true;
             }
 
+            /// This value was already used below the `LIMIT` and the result has to agree with it, so one
+            /// that does not answer the same twice crosses as a column instead. What is computed from it
+            /// may still be recomputed above, since that gives the same answer.
+            if (!canBeRecomputed(node))
+            {
+                candidate.carried.insert(node);
+                return true;
+            }
+
             /// Recomputing costs nothing below the `LIMIT` and at most `limit` rows above it, while a
             /// carried column is read for every scanned row and replicated by every join on the way up.
             /// So recompute, unless doing so drags in more than one column nothing else reads - then one
@@ -135,42 +144,27 @@ private:
         if (node->type == ActionsDAG::ActionType::INPUT)
             return false;
 
-        if (!canBeRecomputed(node))
+        /// Nothing below the `LIMIT` used this value, so computing it above is its first and only
+        /// evaluation, and a non-deterministic function is free to answer whatever it answers. An
+        /// `arrayJoin` is still out: it changes the number of rows the `LIMIT` already counted.
+        if (node->type == ActionsDAG::ActionType::ARRAY_JOIN)
             return false;
-
-        const auto dense_source = merged.getSourceToRecomputeOn(node);
-        if (dense_source && candidate.recomputed_per_source[*dense_source].contains(node))
-            return true;
 
         for (const auto * child : node->children)
             if (!deferNode(child, candidate))
                 return false;
 
-        if (dense_source)
+        /// Where a join can leave this node's source unmatched, the node has a value of its own only on
+        /// the rows that matched. Everything it reads is available above the `LIMIT` all the same, carried
+        /// columns included, so the placement is the same one, restricted by that source's mask.
+        if (const auto masking_source = merged.getMaskingSource(node))
         {
-            /// The node ran on that source's own rows, so it has to run there again, which is only
-            /// possible while everything it reads is available there.
-            for (const auto * child : node->children)
-                if (!isAvailableInSource(child, *dense_source, candidate))
-                    return false;
-
-            candidate.recomputed_per_source[*dense_source].insert(node);
+            candidate.recomputed_under_mask[*masking_source].insert(node);
             return true;
         }
 
         candidate.recomputed_after_merge.insert(node);
         return true;
-    }
-
-    /// The lazy branch of a source sees the columns its own read returns and what was recomputed from
-    /// them, and nothing else: a carried column only exists after the merge.
-    bool isAvailableInSource(const ActionsDAG::Node * node, size_t source, const LazyFrontier & candidate) const
-    {
-        if (candidate.recomputed_per_source[source].contains(node))
-            return true;
-
-        const auto node_source = findSourceOfInput(merged, node);
-        return node_source == source && candidate.lazily_read_inputs[source].contains(node);
     }
 
     static bool isPlaced(const ActionsDAG::Node * node, const LazyFrontier & candidate)
@@ -179,7 +173,7 @@ private:
             return true;
 
         return std::ranges::any_of(
-            candidate.recomputed_per_source, [&](const auto & nodes) { return nodes.contains(node); });
+            candidate.recomputed_under_mask, [&](const auto & nodes) { return nodes.contains(node); });
     }
 
     static size_t countLazyReads(const LazyFrontier & candidate)
