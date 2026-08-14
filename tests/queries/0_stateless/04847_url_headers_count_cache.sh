@@ -19,7 +19,8 @@ s.close()
 # A tiny HTTP server that serves a static payload with a `Last-Modified` header
 # and a recognizable custom header.
 #
-# Note that the queries below must also set `schema_inference_cache_require_modification_time_for_url = 0`:
+# Note that the queries below must also set `optimize_count_from_files = 1` (randomized to 0 in CI, which
+# disables the whole cached-count path) and `schema_inference_cache_require_modification_time_for_url = 0`:
 # for a single URL option the read buffer is initialized lazily, so at the moment the row-count cache is
 # probed no response has been received yet and the last modification time is unknown, which would make the
 # cache never engage and the assertion below vacuous.
@@ -55,14 +56,14 @@ URL="http://127.0.0.1:${HTTP_PORT}/data.tsv"
 # Populate the row-count cache with a plain count.
 ${CLICKHOUSE_CLIENT} -q "
 SELECT count() FROM url('${URL}', TSV, 's String')
-SETTINGS use_cache_for_count_from_files = 1, schema_inference_cache_require_modification_time_for_url = 0;
+SETTINGS optimize_count_from_files = 1, use_cache_for_count_from_files = 1, schema_inference_cache_require_modification_time_for_url = 0;
 "
 
 # Sanity check that the cache actually engages for this URL: a repeated count
 # must hit the num-rows cache (otherwise the assertion below would be vacuous).
 ${CLICKHOUSE_CLIENT} -q "
 SELECT count() FROM url('${URL}', TSV, 's String')
-SETTINGS use_cache_for_count_from_files = 1, schema_inference_cache_require_modification_time_for_url = 0, log_comment = '04847_repeat_count';
+SETTINGS optimize_count_from_files = 1, use_cache_for_count_from_files = 1, schema_inference_cache_require_modification_time_for_url = 0, log_comment = '04847_repeat_count';
 "
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} -q "
@@ -76,5 +77,5 @@ ORDER BY event_time_microseconds DESC LIMIT 1;
 # for this URL is cached and no data columns are requested.
 ${CLICKHOUSE_CLIENT} -q "
 SELECT DISTINCT _headers['X-Test-Header'] FROM url('${URL}', TSV, 's String')
-SETTINGS use_cache_for_count_from_files = 1, schema_inference_cache_require_modification_time_for_url = 0;
+SETTINGS optimize_count_from_files = 1, use_cache_for_count_from_files = 1, schema_inference_cache_require_modification_time_for_url = 0;
 "
