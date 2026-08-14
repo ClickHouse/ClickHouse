@@ -30,28 +30,8 @@ wire를 통해 행을 전달하는 모든 것은 **블록**입니다. **블록**
 
 컬럼의 `data`는 해당 타입이 속한 *family*에 따라 배치됩니다. 디코더 복잡도가 낮은 것부터 높은 것 순서로, *family*는 다음과 같습니다.
 
-```mermaid
-flowchart TD
-    B[Block]
-    B --> BI[BlockInfo]
-    B --> NC[num_columns]
-    B --> NR[num_rows]
-    B --> Cs["columns[ ]"]
-
-    Cs --> Col[Column]
-    Col --> Cname[name]
-    Col --> Ctype[type]
-    Col --> Chcs[has_custom_serialization]
-    Col --> Cdata["data — layout depends on type family"]
-
-    Cdata --> Fixed["Fixed-width<br/>bytes_per_value × num_rows"]
-    Cdata --> Comp["Composite<br/>recursive, shape from type string"]
-    Cdata --> Ver["Versioned / stateful<br/>per-block version prefix"]
-
-    Fixed --> FixedEx["Int*, UInt*, Float*, Decimal*<br/>Date, DateTime, DateTime64<br/>UUID, IPv4, IPv6, FixedString(N)"]
-    Comp --> CompEx["Nullable(T), Array(T)<br/>Tuple(...), Map(K, V), Nested(...)"]
-    Ver --> VerEx["LowCardinality(T), JSON<br/>Variant(...), Dynamic"]
-```
+<img className="block dark:hidden w-full h-auto" src="/images/interfaces/native-format/block-structure-light.svg" alt="Structure of a columnar wire block and its data layout families" width="1219" height="758" loading="lazy" decoding="async" />
+<img className="hidden dark:block w-full h-auto" src="/images/interfaces/native-format/block-structure-dark.svg" alt="Structure of a columnar wire block and its data layout families" width="1219" height="758" loading="lazy" decoding="async" />
 
 * **고정 폭(Fixed-width)** 타입은 `data`를 행별 프레이밍 없이 `bytes_per_value × num_rows` 크기의 raw bytes로 배치합니다.
 * **복합(Composite)** 타입(`Nullable`, `Array`, `Tuple`, `Map`, `Nested`)은 타입 문자열만으로 완전히 도출할 수 있는 재귀적 구조를 가지며, 버전 접두사도 없고 블록 간 상태도 없습니다.
@@ -209,16 +189,8 @@ BlockInfo는 여러 필드로 이루어진 시퀀스이며, 각 필드 앞에는
   `type` 필드는 기본 모드에서만 텍스트 `String`입니다. 쿼리 설정 `output_format_native_encode_types_in_binary_format = 1`이 설정되면 이 필드는 대신 **binary type encoding**이 됩니다. 이는 [데이터 타입 binary encoding](/ko/reference/data-types/data-types-binary-encoding)에 문서화된 것과 동일한 태그 기반 인코딩이며, 평탄화된 `Dynamic` 타입 목록도 타입별 이름에 동일한 binary encoding을 사용합니다. 필드 2를 항상 길이 접두사가 있는 문자열로 읽는 디코더는 첫 번째 바이너리 타입 태그를 문자열 길이로 잘못 해석해 동기화가 어긋나므로, 스트림이 어떤 모드를 사용하는지 반드시 알고 있어야 합니다.
 </Info>
 
-```mermaid
-flowchart TD
-    T["type string<br/>(e.g. Array(String))"]
-    T --> P["strip outer (...)<br/>to find the base type"]
-    P --> F{"base type family?"}
-    F -->|fixed-width| FW["read bytes_per_value × num_rows<br/>(no per-row framing)"]
-    F -->|variable-length| VL["read per-value length prefixes"]
-    F -->|composite| CO["read each sub-stream;<br/>recurse on the inner types"]
-    F -->|versioned| VE["read state prefix (version)<br/>at the start of each non-empty block,<br/>then that block's payload"]
-```
+<img className="block dark:hidden w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch-light.svg" alt="Decoder routing from a type description to its encoding family" width="1195" height="651" loading="lazy" decoding="async" />
+<img className="hidden dark:block w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch-dark.svg" alt="Decoder routing from a type description to its encoding family" width="1195" height="651" loading="lazy" decoding="async" />
 
 <div id="kind-stack-and-sparse-encoding">
   #### kind_stack 및 희소 인코딩
@@ -946,16 +918,8 @@ Values (5 × UInt32 LE = 20 bytes):
 
 각 오프셋은 공유 값 스트림에서 해당 행의 슬라이스가 *끝나는* 누적 지점이며, 시작점은 이전 오프셋입니다(0번째 행은 `0`). 연속된 오프셋 값이 같으면 빈 행입니다:
 
-```mermaid
-flowchart LR
-    subgraph V["values stream: [10, 20, 30, 40, 50]"]
-        direction LR
-        v0["10"] --- v1["20"] --- v2["30"] --- v3["40"] --- v4["50"]
-    end
-    r0["row 0"] -->|"[0 .. offsets[0]=3)"| v0
-    r1["row 1"] -.->|"[3 .. offsets[1]=3) empty"| V
-    r2["row 2"] -->|"[offsets[1]=3 .. offsets[2]=5)"| v3
-```
+<img className="block dark:hidden w-full h-auto" src="/images/interfaces/native-format/array-offsets-light.svg" alt="Offsets mapping rows into a shared values stream" width="1125" height="278" loading="lazy" decoding="async" />
+<img className="hidden dark:block w-full h-auto" src="/images/interfaces/native-format/array-offsets-dark.svg" alt="Offsets mapping rows into a shared values stream" width="1125" height="278" loading="lazy" decoding="async" />
 
 `Array(String)`에서 행이 `[["a", "bb"], []]`인 경우(총 20바이트):
 
@@ -1079,13 +1043,8 @@ Values (2 × UInt32 LE = 8 bytes):
 
 `Nested`의 wire 표현은 서버 측 `flatten_nested` 설정에 따라 달라지며, 크게 두 가지 경우로 나뉩니다.
 
-```mermaid
-flowchart TD
-    N["column declared Nested(a T1, b T2, ...)"]
-    N --> Q{"flatten_nested?"}
-    Q -->|"= 1 (server default)"| A["N parallel Array(T_i) columns<br/>with dotted names (n.a, n.b)<br/>— no Nested wire type"]
-    Q -->|"= 0"| B["one column, type string Nested(...)<br/>laid out byte-identically to<br/>Array(Tuple(T1, ..., Tn))"]
-```
+<img className="block dark:hidden w-full h-auto" src="/images/interfaces/native-format/nested-layout-light.svg" alt="Composite column layout with and without flattening" width="586" height="534" loading="lazy" decoding="async" />
+<img className="hidden dark:block w-full h-auto" src="/images/interfaces/native-format/nested-layout-dark.svg" alt="Composite column layout with and without flattening" width="586" height="534" loading="lazy" decoding="async" />
 
 **사례 A: `flatten_nested = 1` (서버 기본값).** 테이블이 기본 설정으로 생성된 경우 `Nested`는 **wire 타입이 아닙니다**. 서버는 해당 컬럼을 **점으로 구분된 이름**(`outer.field1`, `outer.field2` 등)을 사용하는 N개의 병렬 `Array(T_i)` 컬럼으로 저장하고 표시합니다. 포맷 계층에서는 새로운 것이 없으며, 점으로 구분된 각 컬럼은 일반적인 [배열](#array)입니다:
 
@@ -1199,19 +1158,8 @@ Native writer와 reader는 block 간에 직렬화 상태를 유지하지 **않�
 
 따라서 헤더 block(rows = 0)과 빈 block은 아무것도 출력하지 않으며, 디코더는 비어 있지 않은 각 block의 시작에서 상태 접두사를 다시 읽어야 합니다. 접두부를 한 번만 읽고 이후 block을 payload만 있는 것으로 처리하는 디코더는 다음 block의 접두부를 데이터로 읽게 되어 동기화가 어긋납니다:
 
-```mermaid
-sequenceDiagram
-    participant S as Server (writer)
-    participant C as Client (decoder)
-    S->>C: Header block (num_rows = 0)
-    Note right of C: no state prefix
-    S->>C: First block with rows > 0
-    Note right of C: read state prefix,<br/>then block payload
-    S->>C: Next block with rows > 0
-    Note right of C: read state prefix again,<br/>then block payload
-    S->>C: Empty block (end marker)
-    Note right of C: no state prefix
-```
+<img className="block dark:hidden w-full h-auto" src="/images/interfaces/native-format/state-prefix-per-block-light.svg" alt="State prefix repeated for every non-empty block" width="629" height="581" loading="lazy" decoding="async" />
+<img className="hidden dark:block w-full h-auto" src="/images/interfaces/native-format/state-prefix-per-block-dark.svg" alt="State prefix repeated for every non-empty block" width="629" height="581" loading="lazy" decoding="async" />
 
 <div id="serialization-version-reference">
   #### 직렬화 버전 참고
@@ -1387,24 +1335,8 @@ ClickHouse의 `JSON` 유형에는 여러 wire 인코딩이 있습니다([seriali
 
 판별자 스트림은 인덱스입니다. 각 non-NULL 판별자는 해당 유형의 조밀하게 저장된 run에서 다음 값을 가져오며, `255` (NULL)는 아무것도 소비하지 않습니다. 이와 동일한 방식으로 [Dynamic](#dynamic)도 복원되며, 차이점은 NULL이 인코딩되는 방식뿐입니다:
 
-```mermaid
-flowchart LR
-    subgraph D["discriminators (one per row)"]
-        direction TB
-        d0["row 0 → 1"]
-        d1["row 1 → 0"]
-        d2["row 2 → 255"]
-    end
-    subgraph SR["String run (discriminator 0)"]
-        s0["[0] = hi"]
-    end
-    subgraph UR["UInt64 run (discriminator 1)"]
-        u0["[0] = 42"]
-    end
-    d0 -->|"counter[1] = 0"| u0
-    d1 -->|"counter[0] = 0"| s0
-    d2 -.->|"255 = NULL,<br/>no value consumed"| X["(skip)"]
-```
+<img className="block dark:hidden w-full h-auto" src="/images/interfaces/native-format/variant-discriminators-light.svg" alt="Discriminators selecting values from dense type-specific runs" width="978" height="388" loading="lazy" decoding="async" />
+<img className="hidden dark:block w-full h-auto" src="/images/interfaces/native-format/variant-discriminators-dark.svg" alt="Discriminators selecting values from dense type-specific runs" width="978" height="388" loading="lazy" decoding="async" />
 
 <div id="dynamic">
   #### Dynamic
@@ -1551,19 +1483,8 @@ ClickHouse는 내부 프레임 포맷을 사용해 `Native` 스트림의 컬럼 
 
 전체 프레임 크기는 `16 + compressed_size` = `16 + 9 + body_size` = `25 + body_size`입니다. 여기서 두 구간에 유의하십시오. `checksum`은 9바이트 `header`와 `body`를 포함하는 반면, `compressed_size`는 `header`와 `body`는 계산하지만 `checksum` 자체는 **포함하지 않습니다**:
 
-```mermaid
-flowchart LR
-    CK["checksum<br/>16 B<br/>CityHash128"]
-    subgraph SPAN["counted by compressed_size (9 + N)"]
-        direction LR
-        M["method<br/>1 B"]
-        CS["compressed_size<br/>4 B LE"]
-        US["uncompressed_size<br/>4 B LE"]
-        BODY["compressed body<br/>N = compressed_size − 9 B"]
-        M --> CS --> US --> BODY
-    end
-    CK --> M
-```
+<img className="block dark:hidden w-full h-auto" src="/images/interfaces/native-format/compression-frame-light.svg" alt="Compression frame fields and compressed-size boundary" width="1255" height="164" loading="lazy" decoding="async" />
+<img className="hidden dark:block w-full h-auto" src="/images/interfaces/native-format/compression-frame-dark.svg" alt="Compression frame fields and compressed-size boundary" width="1255" height="164" loading="lazy" decoding="async" />
 
 <div id="method-byte-values">
   ### 메서드 바이트 값

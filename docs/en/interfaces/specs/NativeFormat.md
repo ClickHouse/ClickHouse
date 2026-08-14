@@ -29,28 +29,8 @@ Everything that carries rows on the wire is a **Block**: a self-describing chunk
 
 A column's `data` is laid out according to the *family* its type belongs to. The families, in increasing decoder complexity, are:
 
-```mermaid
-flowchart TD
-    B[Block]
-    B --> BI[BlockInfo]
-    B --> NC[num_columns]
-    B --> NR[num_rows]
-    B --> Cs["columns[ ]"]
-
-    Cs --> Col[Column]
-    Col --> Cname[name]
-    Col --> Ctype[type]
-    Col --> Chcs[has_custom_serialization]
-    Col --> Cdata["data — layout depends on type family"]
-
-    Cdata --> Fixed["Fixed-width<br/>bytes_per_value × num_rows"]
-    Cdata --> Comp["Composite<br/>recursive, shape from type string"]
-    Cdata --> Ver["Versioned / stateful<br/>per-block version prefix"]
-
-    Fixed --> FixedEx["Int*, UInt*, Float*, Decimal*<br/>Date, DateTime, DateTime64<br/>UUID, IPv4, IPv6, FixedString(N)"]
-    Comp --> CompEx["Nullable(T), Array(T)<br/>Tuple(...), Map(K, V), Nested(...)"]
-    Ver --> VerEx["LowCardinality(T), JSON<br/>Variant(...), Dynamic"]
-```
+<img className="block dark:hidden w-full h-auto" src="/images/interfaces/native-format/block-structure-light.svg" alt="Structure of a columnar wire block and its data layout families" width="1219" height="758" loading="lazy" decoding="async" />
+<img className="hidden dark:block w-full h-auto" src="/images/interfaces/native-format/block-structure-dark.svg" alt="Structure of a columnar wire block and its data layout families" width="1219" height="758" loading="lazy" decoding="async" />
 
 - **Fixed-width** types lay `data` out as `bytes_per_value × num_rows` raw bytes, with no per-row framing.
 - **Composite** types (`Nullable`, `Array`, `Tuple`, `Map`, `Nested`) have a recursive shape fully derivable from the type string, with no version prefix and no cross-block state.
@@ -188,16 +168,8 @@ A decoder dispatches on the `type` string. Type strings often carry parameters i
 The `type` field is a textual `String` only in the default mode. When the query setting `output_format_native_encode_types_in_binary_format = 1` is set, this field is instead a **binary type encoding** — the same tag-based encoding documented in [data type binary encoding](/sql-reference/data-types/data-types-binary-encoding) — and flattened `Dynamic` type lists use the same binary encoding for their per-type names. A decoder that always reads field 2 as a length-prefixed string would treat the first binary type tag as a string length and desynchronize, so it must know which mode the stream uses.
 :::
 
-```mermaid
-flowchart TD
-    T["type string<br/>(e.g. Array(String))"]
-    T --> P["strip outer (...)<br/>to find the base type"]
-    P --> F{"base type family?"}
-    F -->|fixed-width| FW["read bytes_per_value × num_rows<br/>(no per-row framing)"]
-    F -->|variable-length| VL["read per-value length prefixes"]
-    F -->|composite| CO["read each sub-stream;<br/>recurse on the inner types"]
-    F -->|versioned| VE["read state prefix (version)<br/>at the start of each non-empty block,<br/>then that block's payload"]
-```
+<img className="block dark:hidden w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch-light.svg" alt="Decoder routing from a type description to its encoding family" width="1195" height="651" loading="lazy" decoding="async" />
+<img className="hidden dark:block w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch-dark.svg" alt="Decoder routing from a type description to its encoding family" width="1195" height="651" loading="lazy" decoding="async" />
 
 #### kind_stack and sparse encoding {#kind-stack-and-sparse-encoding}
 
@@ -859,16 +831,8 @@ Values (5 × UInt32 LE = 20 bytes):
 
 Each offset is the cumulative *end* of a row's slice of the shared values stream; the start is the previous offset (or `0` for row 0). Equal consecutive offsets are an empty row:
 
-```mermaid
-flowchart LR
-    subgraph V["values stream: [10, 20, 30, 40, 50]"]
-        direction LR
-        v0["10"] --- v1["20"] --- v2["30"] --- v3["40"] --- v4["50"]
-    end
-    r0["row 0"] -->|"[0 .. offsets[0]=3)"| v0
-    r1["row 1"] -.->|"[3 .. offsets[1]=3) empty"| V
-    r2["row 2"] -->|"[offsets[1]=3 .. offsets[2]=5)"| v3
-```
+<img className="block dark:hidden w-full h-auto" src="/images/interfaces/native-format/array-offsets-light.svg" alt="Offsets mapping rows into a shared values stream" width="1125" height="278" loading="lazy" decoding="async" />
+<img className="hidden dark:block w-full h-auto" src="/images/interfaces/native-format/array-offsets-dark.svg" alt="Offsets mapping rows into a shared values stream" width="1125" height="278" loading="lazy" decoding="async" />
 
 `Array(String)` with rows `[["a", "bb"], []]` (20 bytes total):
 
@@ -986,13 +950,8 @@ Values (2 × UInt32 LE = 8 bytes):
 
 The on-wire representation of `Nested` depends on the server-side `flatten_nested` setting, which gives two distinct cases.
 
-```mermaid
-flowchart TD
-    N["column declared Nested(a T1, b T2, ...)"]
-    N --> Q{"flatten_nested?"}
-    Q -->|"= 1 (server default)"| A["N parallel Array(T_i) columns<br/>with dotted names (n.a, n.b)<br/>— no Nested wire type"]
-    Q -->|"= 0"| B["one column, type string Nested(...)<br/>laid out byte-identically to<br/>Array(Tuple(T1, ..., Tn))"]
-```
+<img className="block dark:hidden w-full h-auto" src="/images/interfaces/native-format/nested-layout-light.svg" alt="Composite column layout with and without flattening" width="586" height="534" loading="lazy" decoding="async" />
+<img className="hidden dark:block w-full h-auto" src="/images/interfaces/native-format/nested-layout-dark.svg" alt="Composite column layout with and without flattening" width="586" height="534" loading="lazy" decoding="async" />
 
 **Case A: `flatten_nested = 1` (server default).** When the table was created under default settings, `Nested` is **not a wire type**. The server stores and presents the column as N parallel `Array(T_i)` columns with **dotted names** (`outer.field1`, `outer.field2`, and so on). For the format layer there is nothing new — every dotted column is a regular [Array](#array):
 
@@ -1100,19 +1059,8 @@ The Native writer and reader do **not** keep serialization state across blocks: 
 
 Header blocks (rows = 0) and empty blocks therefore emit nothing, and a decoder must read the state prefix again at the start of each non-empty block. A decoder that reads the prefix only once and treats later blocks as payload-only will read the next block's prefix as data and desynchronize:
 
-```mermaid
-sequenceDiagram
-    participant S as Server (writer)
-    participant C as Client (decoder)
-    S->>C: Header block (num_rows = 0)
-    Note right of C: no state prefix
-    S->>C: First block with rows > 0
-    Note right of C: read state prefix,<br/>then block payload
-    S->>C: Next block with rows > 0
-    Note right of C: read state prefix again,<br/>then block payload
-    S->>C: Empty block (end marker)
-    Note right of C: no state prefix
-```
+<img className="block dark:hidden w-full h-auto" src="/images/interfaces/native-format/state-prefix-per-block-light.svg" alt="State prefix repeated for every non-empty block" width="629" height="581" loading="lazy" decoding="async" />
+<img className="hidden dark:block w-full h-auto" src="/images/interfaces/native-format/state-prefix-per-block-dark.svg" alt="State prefix repeated for every non-empty block" width="629" height="581" loading="lazy" decoding="async" />
 
 #### Serialization version reference {#serialization-version-reference}
 
@@ -1280,24 +1228,8 @@ Reconstructed: row 0 = UInt64 run[0] = `42`; row 1 = String run[0] = `"hi"`; row
 
 The discriminator stream is the index; each non-NULL discriminator pulls the next value from its type's dense run, while `255` (NULL) consumes nothing. This same walk reconstructs [Dynamic](#dynamic), which differs only in how NULL is encoded:
 
-```mermaid
-flowchart LR
-    subgraph D["discriminators (one per row)"]
-        direction TB
-        d0["row 0 → 1"]
-        d1["row 1 → 0"]
-        d2["row 2 → 255"]
-    end
-    subgraph SR["String run (discriminator 0)"]
-        s0["[0] = hi"]
-    end
-    subgraph UR["UInt64 run (discriminator 1)"]
-        u0["[0] = 42"]
-    end
-    d0 -->|"counter[1] = 0"| u0
-    d1 -->|"counter[0] = 0"| s0
-    d2 -.->|"255 = NULL,<br/>no value consumed"| X["(skip)"]
-```
+<img className="block dark:hidden w-full h-auto" src="/images/interfaces/native-format/variant-discriminators-light.svg" alt="Discriminators selecting values from dense type-specific runs" width="978" height="388" loading="lazy" decoding="async" />
+<img className="hidden dark:block w-full h-auto" src="/images/interfaces/native-format/variant-discriminators-dark.svg" alt="Discriminators selecting values from dense type-specific runs" width="978" height="388" loading="lazy" decoding="async" />
 
 #### Dynamic {#dynamic}
 
@@ -1428,19 +1360,8 @@ So a client that implemented only the uncompressed `FORMAT Native` layout must s
 
 The total framed size is `16 + compressed_size` = `16 + 9 + body_size` = `25 + body_size`. Note the two spans: the checksum covers the 9-byte header plus the body, while `compressed_size` counts the header plus body but **not** the checksum itself:
 
-```mermaid
-flowchart LR
-    CK["checksum<br/>16 B<br/>CityHash128"]
-    subgraph SPAN["counted by compressed_size (9 + N)"]
-        direction LR
-        M["method<br/>1 B"]
-        CS["compressed_size<br/>4 B LE"]
-        US["uncompressed_size<br/>4 B LE"]
-        BODY["compressed body<br/>N = compressed_size − 9 B"]
-        M --> CS --> US --> BODY
-    end
-    CK --> M
-```
+<img className="block dark:hidden w-full h-auto" src="/images/interfaces/native-format/compression-frame-light.svg" alt="Compression frame fields and compressed-size boundary" width="1255" height="164" loading="lazy" decoding="async" />
+<img className="hidden dark:block w-full h-auto" src="/images/interfaces/native-format/compression-frame-dark.svg" alt="Compression frame fields and compressed-size boundary" width="1255" height="164" loading="lazy" decoding="async" />
 
 ### Method byte values {#method-byte-values}
 
