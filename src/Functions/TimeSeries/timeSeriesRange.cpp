@@ -159,19 +159,19 @@ public:
 
         if (isDateTime64(result_timestamp_type))
         {
-            return doExecute<DateTime64, Decimal64>(start_timestamp_column, start_timestamp_multiplier,
-                                                    end_timestamp_column, end_timestamp_multiplier,
-                                                    step_column, step_multiplier,
-                                                    values_column, values_are_nullable,
-                                                    result_type, input_rows_count);
+            return doExecute<DateTime64>(start_timestamp_column, start_timestamp_multiplier,
+                                         end_timestamp_column, end_timestamp_multiplier,
+                                         step_column, step_multiplier,
+                                         values_column, values_are_nullable,
+                                         result_type, input_rows_count);
         }
         else if (isDateTime(result_timestamp_type) || isUInt32(result_timestamp_type))
         {
-            return doExecute<UInt32, Int32>(start_timestamp_column, start_timestamp_multiplier,
-                                            end_timestamp_column, end_timestamp_multiplier,
-                                            step_column, step_multiplier,
-                                            values_column, values_are_nullable,
-                                            result_type, input_rows_count);
+            return doExecute<UInt32>(start_timestamp_column, start_timestamp_multiplier,
+                                     end_timestamp_column, end_timestamp_multiplier,
+                                     step_column, step_multiplier,
+                                     values_column, values_are_nullable,
+                                     result_type, input_rows_count);
         }
         else
         {
@@ -181,7 +181,7 @@ public:
         }
     }
 
-    template <typename TimestampType, typename IntervalType>
+    template <typename TimestampType>
     static ColumnPtr doExecute(const IColumn & start_timestamp_column, Int64 start_timestamp_multiplier,
                                const IColumn & end_timestamp_column, Int64 end_timestamp_multiplier,
                                const IColumn & step_column, Int64 step_multiplier,
@@ -201,11 +201,11 @@ public:
                 auto full_column = values_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
                 if (full_column.get() != values_column)
                 {
-                    return doExecute<TimestampType, IntervalType>(start_timestamp_column, start_timestamp_multiplier,
-                                                                end_timestamp_column, end_timestamp_multiplier,
-                                                                step_column, step_multiplier,
-                                                                full_column.get(), values_are_nullable,
-                                                                result_type, num_rows);
+                    return doExecute<TimestampType>(start_timestamp_column, start_timestamp_multiplier,
+                                                    end_timestamp_column, end_timestamp_multiplier,
+                                                    step_column, step_multiplier,
+                                                    full_column.get(), values_are_nullable,
+                                                    result_type, num_rows);
                 }
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                                 "Illegal column {} of argument #{} of function {}, it must be {}",
@@ -248,20 +248,20 @@ public:
 
         for (size_t i = 0; i != num_rows; ++i)
         {
-            Int64 start_timestamp_raw = 0;
-            if (common::mulOverflow(start_timestamp_column.get64(i), start_timestamp_multiplier, start_timestamp_raw))
+            /// The calculations are done in Int64: timestamps can be negative (before 1970),
+            /// and the step must not be narrowed to a 32-bit type even when the timestamps are 32-bit
+            /// (DateTime or UInt32), otherwise a big step would be silently truncated.
+            Int64 start_timestamp = 0;
+            if (common::mulOverflow(start_timestamp_column.getInt(i), start_timestamp_multiplier, start_timestamp))
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
-            auto start_timestamp = static_cast<TimestampType>(start_timestamp_raw);
 
-            Int64 end_timestamp_raw = 0;
-            if (common::mulOverflow(end_timestamp_column.get64(i), end_timestamp_multiplier, end_timestamp_raw))
+            Int64 end_timestamp = 0;
+            if (common::mulOverflow(end_timestamp_column.getInt(i), end_timestamp_multiplier, end_timestamp))
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
-            auto end_timestamp = static_cast<TimestampType>(end_timestamp_raw);
 
-            Int64 step_raw = 0;
-            if (common::mulOverflow(step_column.getInt(i), step_multiplier, step_raw))
+            Int64 step = 0;
+            if (common::mulOverflow(step_column.getInt(i), step_multiplier, step))
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
-            auto step = static_cast<IntervalType>(step_raw);
 
             if (end_timestamp < start_timestamp)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "End timestamp is less than start timestamp");
@@ -269,9 +269,12 @@ public:
             size_t num_steps = 1;
             if (start_timestamp != end_timestamp)
             {
-                if (step <= static_cast<IntervalType>(0))
+                if (step <= 0)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Step should be greater than zero");
-                num_steps = (end_timestamp - start_timestamp) / step + 1;
+                Int64 duration = 0;
+                if (common::subOverflow(end_timestamp, start_timestamp, duration))
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
+                num_steps = static_cast<size_t>(duration / step) + 1;
             }
 
             size_t values_base_offset = 0;
@@ -292,7 +295,7 @@ public:
                     if (null_map && (*null_map)[offset])
                         continue;
                 }
-                TimestampType timestamp = static_cast<TimestampType>(start_timestamp + j * step);
+                TimestampType timestamp = static_cast<TimestampType>(start_timestamp + static_cast<Int64>(j) * step);
                 res_timestamps->insert(timestamp);
                 if constexpr (with_values)
                     res_values->insertFrom(*values, offset);
