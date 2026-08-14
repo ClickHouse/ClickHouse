@@ -65,7 +65,7 @@ Returns:
         FunctionDocumentation::Description description = R"(
 Calculates the logical disjunction of two or more values.
 
-Setting [`short_circuit_function_evaluation`](https://clickhouse.com/docs/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
+Setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
 If enabled, `val_i` is evaluated only if `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))` is `true`.
 
 For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)`.

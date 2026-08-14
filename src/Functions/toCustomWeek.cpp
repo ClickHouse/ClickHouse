@@ -75,7 +75,7 @@ SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS we
     FunctionDocumentation::Description description_toYearWeek = R"(
 Returns the year and week for a date. The year in the result may be different from the year in the date argument for the first and the last week of the year.
 
-The mode argument works like the mode argument of [`toWeek()`](/sql-reference/functions/date-time-functions#toWeek).
+The mode argument works like the mode argument of [`toWeek()`](/reference/functions/regular-functions/date-time-functions#toWeek).
 
 Warning: The week number returned by `toYearWeek()` can be different from what the `toWeek()` returns. `toWeek()` always returns week number in the context of the given year, and in case `toWeek()` returns `0`, `toYearWeek()` returns the value corresponding to the last week of previous year. See `prev_yearWeek` in example below.
 

@@ -339,10 +339,10 @@ REGISTER_FUNCTION(NaiveBayesClassifier)
 {
     factory.registerFunction<FunctionNaiveBayesClassifier>(FunctionDocumentation{
         .description = "Classifies input text using a "
-                       "[`NAIVE_BAYES`](/sql-reference/statements/create/dictionary/layouts/naive-bayes) dictionary. "
+                       "[`NAIVE_BAYES`](/reference/statements/create/dictionary/layouts/naive-bayes) dictionary. "
                        "Returns the same predicted class value as `dictGet(dictionary_name, class_attribute, input_text)`, "
                        "where class_attribute is the name of the class label attribute configured in the dictionary's "
-                       "[layout](/sql-reference/statements/create/dictionary/layouts/naive-bayes#layout-parameters). "
+                       "[layout](/reference/statements/create/dictionary/layouts/naive-bayes#layout-parameters). "
                        "Unlike `dictGet`, the result type is always `UInt32` rather than the declared type of the class "
                        "attribute, and `input_text` must be a `String` (no key type conversion is applied).",
         .syntax = "naiveBayesClassifier(dictionary_name, input_text)",
@@ -373,7 +373,7 @@ SELECT naiveBayesClassifier('sentiment', 'a good and great film') AS class_id;
 
     factory.registerFunction<FunctionNaiveBayesClassifierWithProb>(FunctionDocumentation{
         .description = "Classifies input text using a "
-                       "[`NAIVE_BAYES`](/sql-reference/statements/create/dictionary/layouts/naive-bayes) dictionary and "
+                       "[`NAIVE_BAYES`](/reference/statements/create/dictionary/layouts/naive-bayes) dictionary and "
                        "returns the predicted class with its probability.",
         .syntax = "naiveBayesClassifierWithProb(dictionary_name, input_text)",
         .arguments
@@ -404,7 +404,7 @@ SELECT (p.1, round(p.2, 4)) AS prediction;
 
     factory.registerFunction<FunctionNaiveBayesClassifierWithAllProbs>(FunctionDocumentation{
         .description = "Classifies input text using a "
-                       "[`NAIVE_BAYES`](/sql-reference/statements/create/dictionary/layouts/naive-bayes) dictionary and "
+                       "[`NAIVE_BAYES`](/reference/statements/create/dictionary/layouts/naive-bayes) dictionary and "
                        "returns all classes with their probabilities, ordered from most to least probable.",
         .syntax = "naiveBayesClassifierWithAllProbs(dictionary_name, input_text)",
         .arguments
