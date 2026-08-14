@@ -17,6 +17,8 @@ WriteBufferInlineOrBlob::WriteBufferInlineOrBlob(
     , create_underlying(std::move(create_underlying_))
     , finalize_callback(std::move(finalize_callback_))
 {
+    if (max_inline_bytes == 0)
+        spill();
 }
 
 void WriteBufferInlineOrBlob::spill()
@@ -42,7 +44,7 @@ void WriteBufferInlineOrBlob::nextImpl()
 void WriteBufferInlineOrBlob::preFinalize()
 {
     next();
-    if (underlying)
+    if (underlying && (create_blob_if_empty || count() > 0))
         underlying->preFinalize();
 }
 
@@ -50,20 +52,19 @@ void WriteBufferInlineOrBlob::finalizeImpl()
 {
     next();
 
-    if (!underlying && max_inline_bytes > 0)
+    if (!underlying)
     {
         finalize_callback(InlineData{std::move(accumulated)});
         return;
     }
 
-    /// Inlining is disabled and nothing was written: upload the empty blob only when the
-    /// metadata cannot represent an empty file without one.
-    if (!underlying && create_blob_if_empty)
-        spill();
-
     const size_t bytes_written = count();
-    if (underlying)
+
+    if (bytes_written == 0 && !create_blob_if_empty)
+        underlying->cancel();
+    else
         underlying->finalize();
+
     finalize_callback(WrittenBlob{bytes_written});
 }
 

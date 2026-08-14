@@ -155,6 +155,14 @@ TEST(WriteBufferInlineOrBlob, CancelCommitsNothing)
     EXPECT_EQ(harness.underlying_created, 0u);
 }
 
+TEST(WriteBufferInlineOrBlob, ZeroThresholdBuildsStackAtConstruction)
+{
+    InlineBufferHarness harness;
+    auto buf = harness.makeBuffer(/*max_inline_bytes=*/0);
+    EXPECT_EQ(harness.underlying_created, 1u);
+    buf->cancel();
+}
+
 TEST(WriteBufferInlineOrBlob, ZeroThresholdWritesBlob)
 {
     InlineBufferHarness harness;
@@ -181,14 +189,15 @@ TEST(WriteBufferInlineOrBlob, ZeroThresholdEmptyCreatesBlobWhenRequired)
     EXPECT_EQ(harness.blob_bytes, 0u);
 }
 
-TEST(WriteBufferInlineOrBlob, ZeroThresholdEmptySkipsBlobWhenNotRequired)
+TEST(WriteBufferInlineOrBlob, ZeroThresholdEmptyCancelsBlobWhenNotRequired)
 {
     InlineBufferHarness harness;
     auto buf = harness.makeBuffer(/*max_inline_bytes=*/0, /*buf_size=*/16, /*create_blob_if_empty=*/false);
     buf->finalize();
 
     EXPECT_FALSE(harness.inline_content.has_value());
-    EXPECT_EQ(harness.underlying_created, 0u);
+    EXPECT_EQ(harness.underlying_created, 1u);
+    EXPECT_FALSE(harness.blob_finalized);
     EXPECT_EQ(harness.blob_bytes, 0u);
 }
 
