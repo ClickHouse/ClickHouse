@@ -330,4 +330,3 @@ SELECT d.* FROM dist_over_tf AS d ORDER BY number SETTINGS enable_analyzer = 0;
 SELECT {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf.* FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf ORDER BY number SETTINGS enable_analyzer = 0;
 SELECT {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf.* FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf ORDER BY number SETTINGS enable_analyzer = 1;
 DROP TABLE dist_over_tf;
-
