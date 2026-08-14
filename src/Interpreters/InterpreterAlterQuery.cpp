@@ -22,6 +22,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/pullUpTupleElementDefaults.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier.h>
@@ -87,6 +88,18 @@ namespace
 
 using CommandSegment = std::variant<AlterCommands, MutationCommands, PartitionCommands, ExecuteCommands>;
 using CommandSegments = std::vector<CommandSegment>;
+
+/// Normalize the query itself before it can be sent to an ON CLUSTER or replicated-DDL worker.
+/// AlterCommand::parse normalizes only its private clone, which is too late for a dispatched AST.
+void pullUpTupleElementDefaultsInAlterQuery(ASTAlterQuery & alter)
+{
+    for (const auto & child : alter.command_list->children)
+    {
+        auto & command = child->as<ASTAlterCommand &>();
+        if (command.type == ASTAlterCommand::ADD_COLUMN || command.type == ASTAlterCommand::MODIFY_COLUMN)
+            pullUpTupleElementDefaults(command.col_decl->as<ASTColumnDeclaration &>());
+    }
+}
 
 struct SegmentsHolder
 {
@@ -426,6 +439,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
         table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     }
+
+    /// `ON CLUSTER` and replicated DDL serialize `query_ptr` before `AlterCommand::parse` runs.
+    /// Normalize this AST on the initiator so all workers receive ordinary column defaults.
+    pullUpTupleElementDefaultsInAlterQuery(query_ptr->as<ASTAlterQuery &>());
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
