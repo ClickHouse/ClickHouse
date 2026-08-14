@@ -329,6 +329,35 @@ namespace
         }
     }
 
+    /// The same as `addTime`, but it requires the time to actually move in the requested direction.
+    /// The arithmetic of `addTime` wraps around, so an interval whose span is a multiple of the range
+    /// of the type - such as `INTERVAL 2147483648 DAY`, which is `43200 * 2^32` seconds - does not
+    /// change the time at all, and an interval slightly smaller than the range wraps to the other
+    /// side. Every loop advancing a window bound by a fixed interval relies on the time moving:
+    /// without this check such a loop never reaches its bound and spins forever.
+    UInt32 addTimeStrictly(UInt32 time_sec, IntervalKind::Kind kind, Int64 num_units, const DateLUTImpl & time_zone)
+    {
+        UInt32 res = addTime(time_sec, kind, num_units, time_zone);
+
+        if ((num_units > 0 && res <= time_sec) || (num_units < 0 && res >= time_sec))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Time overflow in the window view: adding {} {} to {} gives {}, which does not move the time",
+                num_units,
+                IntervalKind(kind).toString(),
+                time_sec,
+                res);
+
+        return res;
+    }
+
+    /// Rejects a window definition whose interval cannot move the time at all, so that such a window
+    /// view fails at creation instead of breaking later, when its bounds are advanced.
+    void checkIntervalAdvancesTime(IntervalKind::Kind kind, Int64 num_units, const DateLUTImpl & time_zone)
+    {
+        addTimeStrictly(0, kind, num_units, time_zone);
+    }
+
     class AddingAggregatedChunkInfoTransform final : public ISimpleTransform
     {
     public:
@@ -583,7 +612,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
             /// windows will split into [1], [2], [3]... We compute each split window into
             /// mergeable state and merge them when the window is triggering.
             func_array ->arguments->children.push_back(make_intrusive<ASTLiteral>(w_end));
-            w_end = addTime(w_end, window_kind, -slice_num_units, *time_zone);
+            w_end = addTimeStrictly(w_end, window_kind, -slice_num_units, *time_zone);
         }
         filter_function = makeASTFunction("has", func_array, make_intrusive<ASTIdentifier>(window_id_name));
     }
@@ -1026,7 +1055,7 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
         while (max_watermark < watermark)
         {
             fire_signal.push_back(max_watermark);
-            max_watermark = addTime(max_watermark, slide_kind, slide_num_units, *time_zone);
+            max_watermark = addTimeStrictly(max_watermark, slide_kind, slide_num_units, *time_zone);
         }
     }
     else // strictly || bounded
@@ -1036,8 +1065,8 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
         while (max_watermark_bias <= max_timestamp)
         {
             fire_signal.push_back(max_watermark);
-            max_watermark = addTime(max_watermark, slide_kind, slide_num_units, *time_zone);
-            max_watermark_bias = addTime(max_watermark, slide_kind, slide_num_units, *time_zone);
+            max_watermark = addTimeStrictly(max_watermark, slide_kind, slide_num_units, *time_zone);
+            max_watermark_bias = addTimeStrictly(max_watermark, slide_kind, slide_num_units, *time_zone);
         }
     }
 
@@ -1115,7 +1144,7 @@ void StorageWindowView::threadFuncFireProc()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
         max_fired_watermark = next_fire_signal;
-        auto slide_interval = addTime(0, slide_kind, slide_num_units, *time_zone);
+        auto slide_interval = addTimeStrictly(0, slide_kind, slide_num_units, *time_zone);
         /// Convert DayNum into seconds when the slide interval is larger than Day
         if (slide_kind > IntervalKind::Kind::Day)
             slide_interval *= 86400;
@@ -1448,6 +1477,11 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
     }
     else
         time_zone = &DateLUT::serverTimezoneInstance();
+
+    checkIntervalAdvancesTime(window_kind, window_num_units, *time_zone);
+    checkIntervalAdvancesTime(slide_kind, slide_num_units, *time_zone);
+    if (!is_tumble)
+        checkIntervalAdvancesTime(window_kind, slice_num_units, *time_zone);
 
     return result;
 }
