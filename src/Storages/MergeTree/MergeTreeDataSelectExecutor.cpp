@@ -1050,7 +1050,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         // These limits are checked per part so that we can fail very quickly
         // if we hit row limits on large datasets. Row counts use an atomic
         // counter as part processing typically uses multiple threads (max_threads)
-        auto [limits, leaf_limits] = getRowLimits(settings, query_info);
+        auto [limits, leaf_limits] = filter_context.check_row_limits ? getRowLimits(settings, query_info) : RowLimits{};
         std::atomic<size_t> total_rows{0};
 
         /// Precompute the part-independent PK-position -> partition-minmax-slot mapping once for all parts.
@@ -1562,7 +1562,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         return;
 
     /// The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads is gated behind the
-    /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, skip the
+    /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, skip the
     /// consult entirely for any read stamped as TopK — including shapes where no `__topKFilter` node
     /// is folded into the filter DAG (skip-index-only TopK, or a query with a PREWHERE), whose plain
     /// condition hash would otherwise still hit entries primed by an ordinary `SELECT ... WHERE`.
@@ -1822,7 +1822,8 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         /*find_exact_ranges*/false,
         /*is_parallel_reading_from_replicas*/false,
         use_query_condition_cache,
-        /*supports_skip_indexes_on_data_read*/false);
+        /*supports_skip_indexes_on_data_read*/false,
+        /*check_row_limits=*/true);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
