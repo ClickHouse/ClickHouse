@@ -63,7 +63,7 @@ namespace
             /// There is no `reinterpretAsUUID2`, and the generated identifier is an opaque deterministic hash,
             /// so reinterpret the hash as a `UUID` and cast it to `UUID2` to match the column type.
             return makeASTFunction("_CAST",
-                makeASTFunction("reinterpretAsUUID", make_hash_function("sipHash128", std::move(arguments))),
+                makeASTFunction("reinterpretAsUUID", makeHashFunctionCall("sipHash128", std::move(arguments))),
                 make_intrusive<ASTLiteral>(String{"UUID2"}));
         }
 

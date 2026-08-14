@@ -29,7 +29,7 @@ WHERE database = currentDatabase() AND name = 'id'
 DROP TABLE ts_v2_tags_uuid;
 
 -- 3. version = 2: a non-UUID id (UInt64) is left untouched.
-CREATE TABLE ts_v2_uint64 ENGINE = TimeSeries TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(metric_name, all_tags));
+CREATE TABLE ts_v2_uint64 ENGINE = TimeSeries TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(metric_name, tags));
 SELECT 'v2_uint64', arraySort(groupUniqArray(type)) FROM system.columns
 WHERE database = currentDatabase() AND name = 'id'
   AND table LIKE '.inner_id.%.' || (SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase() AND name = 'ts_v2_uint64');

@@ -42,11 +42,10 @@ SELECT countIf(_shard_num != (sipHash64(id) % 2) + 1) AS misrouted, count() AS m
 FROM remote('127.{1,2}', currentDatabase(), data_uuid1_04815, sipHash64(id))
 WHERE id = toUUID2('4556d7a4-d7ef-4b2a-9cb2-8759a9ea5e29');
 
--- With the old analyzer, the right-hand side of `IN` becomes a prepared set: its constants are never
--- folded into literals, `evaluateExpressionOverConstantCondition` cannot analyze the bare `toUUID(...)`
--- calls, and no shard is pruned. That is safe (no row can be lost), and both mirrors of the "cluster"
--- are queried, so every value matches twice. If pruning is ever taught to handle typed `IN` constants,
--- this changes to `1  2` - and the layout handling above must be revisited for that path.
+-- An `IN` over a short list of constants is rewritten into a chain of equalities, so its right-hand side goes
+-- through the same constant folding and is pruned as well. Both constants of each query below live on the same
+-- shard, so `shards_queried = 1, matched = 2` proves that pruning kept exactly that shard: hashing the wrong
+-- 16 bytes would keep the other one and lose both rows.
 
 SELECT 'UUID2 key, UUID constants, IN';
 SELECT uniqExact(_shard_num) AS shards_queried, count() AS matched
