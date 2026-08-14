@@ -823,7 +823,7 @@ def test_preflight_leaves_host_dependent_arguments_unevaluated(started_cluster):
         create_on_cluster(
             user,
             table,
-            f"(x UInt64) ENGINE = Remote('127.0.0.1:9000', hostName(), 'local_target', 'default')",
+            "(x UInt64) ENGINE = Remote('127.0.0.1:9000', hostName(), 'local_target', 'default')",
         )
         is None
     )
