@@ -247,7 +247,7 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
     readVarUInt(num_rows, *indexes_stream);
     /// In Native format we always read the whole serialized column.
     if (num_rows != limit)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of rows in indexes column in ColumnReplicated in Native format: {}. Expected {}", num_rows, limit);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected number of rows in indexes column in ColumnReplicated in Native format: {}. Expected {}", num_rows, limit);
 
     UInt8 size_of_indexes_type = 0;
     readBinary(size_of_indexes_type, *indexes_stream);
@@ -273,7 +273,7 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
             SerializationNumber<UInt64>::create()->deserializeBinaryBulk(*indexes, *indexes_stream, limit, 0);
             break;
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for ColumnReplicated: {}", UInt32(size_of_indexes_type));
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of index type for ColumnReplicated: {}", UInt32(size_of_indexes_type));
     }
 
     settings.path.push_back(Substream::ReplicatedElements);
