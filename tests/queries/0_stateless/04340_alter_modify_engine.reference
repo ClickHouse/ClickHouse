@@ -31,9 +31,9 @@ graphite rollup	max_a	2020-01-01 00:00:00	5	2
 graphite config name evaluated	1	1
 graphite config name expression	GraphiteMergeTree
 graphite time Date	GraphiteMergeTree
-graphite time Date rollup	max_a	2019-04-14	5	2
+graphite time Date rollup	max_a	1	5	2
 graphite time UInt32	GraphiteMergeTree
-graphite time UInt32 rollup	max_a	0	5	2
+graphite time UInt32 rollup	max_a	1	5	2
 graphite nullable time rejected	MergeTree	1
 graphite nullable path rejected	MergeTree	1
 graphite array path rejected	MergeTree	1
@@ -48,10 +48,10 @@ graphite lc array path rejected	MergeTree	1
 graphite fixed array path rollup	[1,2]	2020-01-01 00:00:00	6	2
 graphite fixedstring path rollup	max_a	2020-01-01 00:00:00	6	2
 graphite lowcardinality path rollup	max_a	2020-01-01 00:00:00	6	2
-graphite lowcardinality time rollup	max_a	2020-01-01 00:00:00	6	2
-graphite time Time rollup	max_a	00:00:00	6	2
+graphite lowcardinality time rollup	max_a	1	6	2
+graphite time Time rollup	max_a	1	6	2
 graphite time Time64 rejected	MergeTree
-graphite enum time rollup	max_a	rounded	6	2
+graphite enum time rollup	max_a	1	6	2
 source versioned dimension rejected	VersionedCollapsingMergeTree
 source versioned to summing	SummingMergeTree	k, sign
 source versioned to replacing	ReplacingMergeTree	k, sign
