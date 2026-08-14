@@ -212,6 +212,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.write_map_as_array_of_tuples = settings[Setting::output_format_json_map_as_array_of_tuples];
     format_settings.json.read_map_as_array_of_tuples = settings[Setting::input_format_json_map_as_array_of_tuples];
     format_settings.json.json_type_escape_dots_in_keys = settings[Setting::json_type_escape_dots_in_keys];
+    format_settings.json.max_row_size_for_json_each_row = settings[Setting::input_format_json_max_object_size];
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
@@ -1122,6 +1123,22 @@ void FormatFactory::markOutputFormatNotTTYFriendly(const String & name)
     target = false;
 }
 
+void FormatFactory::markOutputFormatMayProduceRawBytes(const String & name)
+{
+    auto & target = getOrCreateCreators(name).may_produce_raw_bytes;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as producing raw bytes", name);
+    target = true;
+}
+
+void FormatFactory::registerOutputFormatMayProduceRawBytesChecker(const String & name, MayProduceRawBytesChecker checker)
+{
+    auto & target = getOrCreateCreators(name).may_produce_raw_bytes_checker;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Raw bytes checker for format {} is already registered", name);
+    target = std::move(checker);
+}
+
 void FormatFactory::setContentType(const String & name, const String & content_type)
 {
     getOrCreateCreators(name).content_type = [=](const std::optional<FormatSettings> &){ return content_type; };
@@ -1212,6 +1229,14 @@ bool FormatFactory::checkIfOutputFormatIsTTYFriendly(const String & name) const
 {
     const auto & target = getCreators(name);
     return target.is_tty_friendly;
+}
+
+bool FormatFactory::checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings, const Block & header) const
+{
+    const auto & target = getCreators(name);
+    if (target.may_produce_raw_bytes)
+        return true;
+    return target.may_produce_raw_bytes_checker && target.may_produce_raw_bytes_checker(settings, header);
 }
 
 bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const
