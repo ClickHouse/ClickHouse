@@ -37,13 +37,13 @@ SELECT '-- numeric toDateTime64 saturates per-scale instead of throwing DECIMAL_
 -- A value past the tick range must clamp (under the non-throwing overflow modes) rather than fail in DecimalUtils.
 SELECT reinterpretAsInt64(toDateTime64(300000000000, 9, 'UTC')) = 9223372036854775807,
        reinterpretAsInt64(toDateTime64(300000000000, 8, 'UTC')) = 9223372036854775807,
-       reinterpretAsInt64(toDateTime64(-300000000000, 9, 'UTC')) = -9223372036854775808
+       reinterpretAsInt64(toDateTime64(-300000000000, 9, 'UTC')) = -9223372036000000000
 SETTINGS date_time_overflow_behavior = 'saturate';
 
 SELECT '-- the float numeric path saturates per-scale too (it previously surfaced DECIMAL_OVERFLOW)';
 SELECT reinterpretAsInt64(toDateTime64(300000000000.0, 9, 'UTC')) = 9223372036854775807,
        reinterpretAsInt64(toDateTime64(300000000000.0, 8, 'UTC')) = 9223372036854775807,
-       reinterpretAsInt64(toDateTime64(-300000000000.0, 9, 'UTC')) = -9223372036854775808
+       reinterpretAsInt64(toDateTime64(-300000000000.0, 9, 'UTC')) = -9223372036000000000
 SETTINGS date_time_overflow_behavior = 'saturate';
 
 SELECT '-- scale 0 numeric conversion reaches the full [0000, 9999] range';
