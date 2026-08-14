@@ -47,10 +47,10 @@ greatest(toUInt64OrZero(toString(expr)), 1)
   ## サンプルレート式の設定
 </div>
 
-トレースソースの **ソース設定** を開き、各スパンごとのサンプルレートを返す ClickHouse 式を **サンプルレート式** フィールドに入力します。
+トレースソースの **ソース設定** を開き、各スパンのサンプルレートとして評価される ClickHouse 式を **サンプルレート式** フィールドに入力します。
 
 たとえば、OpenTelemetry tail-sampling processor がそのレートを `SpanAttributes['SampleRate']` に書き込む場合:
 
 <Image img="/images/clickstack/trace-sampling-source-settings.webp" alt="ClickStack のソース設定にあるサンプルレート式フィールド" size="lg" />
 
-設定すると、すべてのチャート、ダッシュボード、アラート、サービスダッシュボードのパネルで、サンプルレートで重み付けされた集計が自動的に適用されます。個々のクエリを変更する必要はありません。
+設定すると、すべてのチャート、ダッシュボード、アラート、サービスダッシュボードのパネルで、サンプルレートに基づく重み付き集計が自動的に適用されます。個々のクエリを変更する必要はありません。

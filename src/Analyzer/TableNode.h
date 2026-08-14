@@ -30,7 +30,7 @@ using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
 struct MaterializedCTE;
 using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;
 
-class TableNode : public IQueryTreeNode
+class TableNode : public ITableExpressionNode
 {
 public:
     /// Construct table node with storage, storage id, storage lock, storage snapshot
@@ -124,11 +124,8 @@ public:
         return table_expression_modifiers;
     }
 
-    /// Set table expression modifiers
-    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
-    {
-        table_expression_modifiers = std::move(table_expression_modifiers_value);
-    }
+    /// Set table expression modifiers and update the storage snapshot metadata accordingly
+    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value);
 
     const MaterializedCTEPtr & getMaterializedCTE() const
     {

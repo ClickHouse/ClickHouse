@@ -14,7 +14,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 <br />
 
-Данные каждой таблицы ClickHouse из [семейства движков MergeTree](/ru/reference/engines/table-engines/mergetree-family/index) хранятся на диске в виде набора неизменяемых `data parts`.
+Данные каждой таблицы ClickHouse из [семейства движков MergeTree](/ru/reference/engines/table-engines/mergetree-family/index) хранятся на диске в виде набора неизменяемых `частей данных`.
 
 Чтобы проиллюстрировать это, используем [эту](https://sql.clickhouse.com/?query=U0hPVyBDUkVBVEUgVEFCTEUgdWsudWtfcHJpY2VfcGFpZF9zaW1wbGU\&run_query=true\&tab=results) таблицу (адаптированную из [датасета с ценами на недвижимость в Великобритании](/ru/get-started/sample-datasets/uk-price-paid)), в которой содержатся данные о дате продажи, городе, улице и цене проданной недвижимости в Соединённом Королевстве:
 

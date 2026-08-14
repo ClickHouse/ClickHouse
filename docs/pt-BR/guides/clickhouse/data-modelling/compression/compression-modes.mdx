@@ -38,17 +38,17 @@ Segundo [benchmarks do Facebook](https://facebook.github.io/zstd/#benchmarks):
   ## Bloco
 </div>
 
-| campo               | tipo    | descrição                                                                                     |
-| ------------------- | ------- | --------------------------------------------------------------------------------------------- |
-| checksum            | uint128 | [Hash](/pt-BR/resources/develop-contribute/native-protocol/hash) de (cabeçalho + dados compactados) |
-| raw&#95;size        | uint32  | Tamanho bruto sem o cabeçalho                                                                 |
-| data&#95;size       | uint32  | Tamanho dos dados descompactados                                                              |
-| mode                | byte    | Modo de compressão                                                                            |
-| compressed&#95;data | binary  | Bloco de dados compactados                                                                    |
+| campo               | tipo    | descrição                                                                                           |
+| ------------------- | ------- | --------------------------------------------------------------------------------------------------- |
+| checksum            | uint128 | [Hash](/pt-BR/resources/develop-contribute/native-protocol/hash) de (cabeçalho + dados comprimidos) |
+| raw&#95;size        | uint32  | Tamanho bruto sem o cabeçalho                                                                       |
+| data&#95;size       | uint32  | Tamanho dos dados descompactados                                                                    |
+| mode                | byte    | Modo de compressão                                                                                  |
+| compressed&#95;data | binary  | Bloco de dados comprimidos                                                                          |
 
 <Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="Diagrama que ilustra a estrutura do bloco de compressão do ClickHouse" />
 
-O cabeçalho é (raw&#95;size + data&#95;size + mode), e o tamanho bruto corresponde a len(header + compressed&#95;data).
+O cabeçalho é (raw&#95;size + data&#95;size + mode), e o tamanho bruto consiste em len(header + compressed&#95;data).
 
 O checksum é `hash(header + compressed_data)`, usando [ClickHouse CityHash](/pt-BR/resources/develop-contribute/native-protocol/hash).
 

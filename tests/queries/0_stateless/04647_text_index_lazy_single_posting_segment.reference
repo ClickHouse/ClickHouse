@@ -1,0 +1,10 @@
+fixture	129	1	1025
+parts	1
+rowscan	129	66177
+lazy leapfrog, on_data_read=1	129	66177
+lazy leapfrog, on_data_read=0	129	66177
+lazy brute force (control)	129	66177
+materialize (control)	129	66177
+bruteforce	0	1	1
+leapfrog_0	1	0	1
+leapfrog_1	1	0	1
