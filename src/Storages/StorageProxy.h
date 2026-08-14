@@ -184,7 +184,7 @@ public:
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
     /// Must be forwarded explicitly: the default `IStorage` implementation derives the disks from
     /// `getStoragePolicy`, which some proxies (e.g. `StorageTableProxy`) deliberately do not report.
-    /// Without forwarding, callers that check disk properties (see `IDisk::isPathOnLocalFilesystem`
+    /// Without forwarding, callers that check disk properties (see `IDisk::hasLocalFilesystemDirectoryNamespace`
     /// and `DatabaseAtomic::tryCreateSymlink`) would see an empty disk list for a proxied table while
     /// `getDataPaths` still returns the nested storage's paths.
     Disks getDataDisks() const override { return getNested()->getDataDisks(); }

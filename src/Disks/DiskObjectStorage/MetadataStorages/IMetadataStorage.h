@@ -299,6 +299,12 @@ public:
     /// See `IDisk::isPathOnLocalFilesystem`.
     virtual bool isPathOnLocalFilesystem() const { return true; }
 
+    /// See `IDisk::hasLocalFilesystemDirectoryNamespace`. A metadata storage describes the
+    /// directory structure itself, so the default is `false`: only a backend that keeps its
+    /// directory tree as real directories on a local disk (`MetadataStorageFromDisk`) can
+    /// answer `true`.
+    virtual bool hasLocalFilesystemDirectoryNamespace() const { return false; }
+
     /// True if transactions apply operations immediately instead of accumulating them until commit.
     virtual bool appliesOperationsEagerly() const
     {

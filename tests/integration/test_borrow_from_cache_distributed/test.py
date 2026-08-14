@@ -34,7 +34,7 @@ def test_distributed_on_borrow_from_cache_disk_is_rejected(started_cluster):
         """
     )
     assert "NOT_IMPLEMENTED" in error
-    assert "does not have a real filesystem path" in error
+    assert "does not keep its directory structure on the host filesystem" in error
 
     # No table should have been left behind, and no directories were created under `/`.
     assert node.query("EXISTS TABLE dist").strip() == "0"
@@ -43,7 +43,8 @@ def test_distributed_on_borrow_from_cache_disk_is_rejected(started_cluster):
 def test_distributed_on_read_only_wrapped_borrow_from_cache_disk_is_rejected(started_cluster):
     # The same disk wrapped in a `ReadOnlyDiskWrapper` (via `read_only = 1`) must also be rejected.
     # The wrapper forwards `getPath()` to the delegate (still the placeholder root "/"), so it must
-    # forward `isPathOnLocalFilesystem()` as well; otherwise it would inherit the default `true` and
+    # forward `hasLocalFilesystemDirectoryNamespace()` as well; otherwise it would inherit the
+    # default `true` and
     # let the `Distributed` table slip past the guard and touch the container's real filesystem root.
     error = node.query_and_get_error(
         """
@@ -51,7 +52,7 @@ def test_distributed_on_read_only_wrapped_borrow_from_cache_disk_is_rejected(sta
         """
     )
     assert "NOT_IMPLEMENTED" in error
-    assert "does not have a real filesystem path" in error
+    assert "does not keep its directory structure on the host filesystem" in error
 
     assert node.query("EXISTS TABLE dist_ro").strip() == "0"
 
@@ -59,7 +60,7 @@ def test_distributed_on_read_only_wrapped_borrow_from_cache_disk_is_rejected(sta
 def test_distributed_on_web_disk_is_rejected(started_cluster):
     # The same guard must cover the sibling `web` metadata backend: its `getPath()` is an empty
     # placeholder root with no real directory behind it, so `MetadataStorageFromStaticFilesWebServer`
-    # reports `isPathOnLocalFilesystem() == false` too. Without that, a `Distributed` table on a web
+    # reports `hasLocalFilesystemDirectoryNamespace() == false` too. Without that, a `Distributed` table on a web
     # object-storage disk would `fs::create_directories` under a relative path from the working
     # directory instead of failing closed. The web endpoint is never contacted -- the guard throws
     # before any web access.
@@ -69,14 +70,14 @@ def test_distributed_on_web_disk_is_rejected(started_cluster):
         """
     )
     assert "NOT_IMPLEMENTED" in error
-    assert "does not have a real filesystem path" in error
+    assert "does not keep its directory structure on the host filesystem" in error
 
     assert node.query("EXISTS TABLE dist_web").strip() == "0"
 
 
 def test_distributed_on_cached_web_disk_is_rejected(started_cluster):
     # A cache layer over the web disk forwards `getPath()` to the underlying metadata storage, so
-    # it must forward `isPathOnLocalFilesystem()` as well; otherwise the cache wrapper would
+    # it must forward `hasLocalFilesystemDirectoryNamespace()` as well; otherwise the wrapper would
     # inherit the default `true` and let the `Distributed` table slip past the guard even though
     # the path is still the web backend's empty placeholder.
     error = node.query_and_get_error(
@@ -85,7 +86,7 @@ def test_distributed_on_cached_web_disk_is_rejected(started_cluster):
         """
     )
     assert "NOT_IMPLEMENTED" in error
-    assert "does not have a real filesystem path" in error
+    assert "does not keep its directory structure on the host filesystem" in error
 
     assert node.query("EXISTS TABLE dist_cached_web").strip() == "0"
 
@@ -101,9 +102,40 @@ def test_distributed_on_plain_s3_disk_is_rejected(started_cluster):
         """
     )
     assert "NOT_IMPLEMENTED" in error
-    assert "does not have a real filesystem path" in error
+    assert "does not keep its directory structure on the host filesystem" in error
 
     assert node.query("EXISTS TABLE dist_plain_s3").strip() == "0"
+
+
+def test_distributed_on_plain_rewritable_local_disk_is_rejected(started_cluster):
+    # A `plain_rewritable` disk over a *local* object storage is the case a `getPath()`-only check
+    # misses: its `getPath()` really is a host directory, so "the path is on the local filesystem"
+    # is true, yet the directory tree is described by object keys in the metadata snapshot rather
+    # than by the host filesystem. The async-insert queue directory is created with raw
+    # `std::filesystem` calls and would therefore never enter that snapshot, so the later lifecycle
+    # paths that go through `IDisk` -- `renameOnDisk` (`moveDirectory`), `DROP` and `TRUNCATE` --
+    # would resolve a different, empty namespace: a rename would fail and pending blocks could be
+    # left behind. The guard must be the stronger `hasLocalFilesystemDirectoryNamespace()`, so the
+    # table is rejected outright.
+    error = node.query_and_get_error(
+        """
+        CREATE TABLE dist_plain_rewritable_local (key UInt64) ENGINE = Distributed(test_cluster, currentDatabase(), 'underlying', rand(), 'plain_rewritable_local_policy')
+        """
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "does not keep its directory structure on the host filesystem" in error
+
+    assert node.query("EXISTS TABLE dist_plain_rewritable_local").strip() == "0"
+
+    # A plain local disk (the default `DiskLocal`) is of course still accepted: the guard must not
+    # over-reject and break ordinary `Distributed` tables.
+    node.query(
+        """
+        CREATE TABLE dist_default_disk (key UInt64) ENGINE = Distributed(test_cluster, currentDatabase(), 'underlying', rand())
+        """
+    )
+    assert node.query("EXISTS TABLE dist_default_disk").strip() == "1"
+    node.query("DROP TABLE dist_default_disk SYNC")
 
 
 def test_distributed_on_borrow_from_cache_disk_still_attaches(started_cluster):

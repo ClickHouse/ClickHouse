@@ -31,6 +31,12 @@ bool MetadataStorageFromCacheObjectStorage::isPathOnLocalFilesystem() const
     return underlying->isPathOnLocalFilesystem();
 }
 
+bool MetadataStorageFromCacheObjectStorage::hasLocalFilesystemDirectoryNamespace() const
+{
+    /// The directory structure is the underlying metadata storage's; caching does not change it.
+    return underlying->hasLocalFilesystemDirectoryNamespace();
+}
+
 MetadataStorageType MetadataStorageFromCacheObjectStorage::getType() const
 {
     return underlying->getType();

@@ -736,7 +736,8 @@ public:
     /// Returns the disks that hold this storage's data, if the storage exposes them.
     /// The default derives them from the storage policy; engines that take a disk directly
     /// (e.g. `Log`, `StripeLog`, `TinyLog`) override this to report their own disk. Used to
-    /// decide whether the data lives on the local filesystem (see `IDisk::isPathOnLocalFilesystem`).
+    /// decide whether the data lives on the local filesystem (see `IDisk::isPathOnLocalFilesystem`
+    /// and `IDisk::hasLocalFilesystemDirectoryNamespace`).
     virtual Disks getDataDisks() const;
 
     /// Returns true if all disks of storage are read-only or write-once.

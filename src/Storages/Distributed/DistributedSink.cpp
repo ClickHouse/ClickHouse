@@ -903,12 +903,13 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     const auto disk = reservation->getDisk();
 
     /// Pending blocks are written with raw `std::filesystem` calls on `disk->getPath()`, which is
-    /// only valid for disks backed by a real host filesystem path. A table on such a disk can only
+    /// only valid for a disk whose directory namespace is the host filesystem's (see
+    /// `IDisk::hasLocalFilesystemDirectoryNamespace`). A table on such a disk can only
     /// be attached (a `CREATE` is rejected), and it has no directory queue to send the block anyway.
-    if (!disk->isPathOnLocalFilesystem())
+    if (!disk->hasLocalFilesystemDirectoryNamespace())
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Disk '{}' does not have a real filesystem path and cannot store pending blocks of an async INSERT "
+            "Disk '{}' does not keep its directory structure on the host filesystem and cannot store pending blocks of an async INSERT "
             "into a `Distributed` table. Use distributed_foreground_insert = 1",
             disk->getName());
 

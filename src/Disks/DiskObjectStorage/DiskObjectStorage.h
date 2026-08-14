@@ -215,6 +215,8 @@ public:
 
     bool isPathOnLocalFilesystem() const override { return metadata_storage->isPathOnLocalFilesystem(); }
 
+    bool hasLocalFilesystemDirectoryNamespace() const override { return metadata_storage->hasLocalFilesystemDirectoryNamespace(); }
+
     /// Is object write-once?
     /// For example: S3PlainObjectStorage is write once, this means that it
     /// does support BACKUP to this disk, but does not support INSERT into

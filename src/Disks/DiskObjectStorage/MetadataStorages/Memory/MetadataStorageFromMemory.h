@@ -40,6 +40,10 @@ public:
 
     const std::string & getPath() const override;
 
+    /// `getPath` is empty: this backend keeps the whole directory tree in memory and has
+    /// nothing behind it on the host filesystem.
+    bool isPathOnLocalFilesystem() const override { return false; }
+
     MetadataStorageType getType() const override { return MetadataStorageType::Memory; }
 
     bool existsFile(const std::string & path) const override;

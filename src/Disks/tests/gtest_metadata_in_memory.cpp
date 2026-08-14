@@ -199,6 +199,20 @@ TEST_F(MetadataInMemoryTest, TestCacheWrapperForwardsPathLocality)
     EXPECT_FALSE(wrapped->isPathOnLocalFilesystem());
 }
 
+/// `hasLocalFilesystemDirectoryNamespace` is the stronger property a caller needs when it mixes
+/// raw `std::filesystem` calls on `getPath() + relative_path` with `IDisk` directory operations
+/// on the same directory. A metadata storage describes the directory structure itself, so the
+/// interface default is `false` -- an in-memory backend must never claim otherwise, and the cache
+/// wrapper must forward it rather than inherit a permissive default.
+TEST_F(MetadataInMemoryTest, TestNoLocalFilesystemDirectoryNamespace)
+{
+    auto metadata = getMetadataStorage();
+    EXPECT_FALSE(metadata->hasLocalFilesystemDirectoryNamespace());
+
+    auto wrapped = std::make_shared<DB::MetadataStorageFromCacheObjectStorage>(metadata);
+    EXPECT_FALSE(wrapped->hasLocalFilesystemDirectoryNamespace());
+}
+
 /// `MergeTree` reads a part directory's mtime as the part `modification_time`
 /// (`DataPartStorageOnDiskBase::getLastModified`), and sets it on the temp part directory just
 /// before renaming it into place. Verify directories carry timestamps: `getLastModified` does

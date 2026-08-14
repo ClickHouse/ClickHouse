@@ -505,18 +505,20 @@ StorageDistributed::StorageDistributed(
     if (mode <= LoadingStrictnessLevel::CREATE)
     {
         /// `Distributed` manages the local queue of pending async INSERTs with raw `std::filesystem`
-        /// calls on `disk->getPath() + relative_data_path`, bypassing the `IDisk` API, so a disk
-        /// whose path is not a real host filesystem path (e.g. `web`, a remote `plain` disk, or
-        /// `borrow_from_cache`) cannot back it. Reject such a storage policy on `CREATE`; a table
+        /// calls on `disk->getPath() + relative_data_path`, while the rest of the queue lifecycle
+        /// (rename, drop, truncate) goes through the `IDisk` API, so only a disk whose directory
+        /// namespace is the host filesystem's can back it (see
+        /// `IDisk::hasLocalFilesystemDirectoryNamespace`); `web`, `plain`/`plain_rewritable` and
+        /// `borrow_from_cache` disks cannot. Reject such a storage policy on `CREATE`; a table
         /// already recorded in metadata is still attached (without the queue) so that an upgrade
         /// does not invalidate pre-existing tables.
         if (storage_policy)
         {
             for (const DiskPtr & disk : data_volume->getDisks())
-                if (!disk->isPathOnLocalFilesystem())
+                if (!disk->hasLocalFilesystemDirectoryNamespace())
                     throw Exception(
                         ErrorCodes::NOT_IMPLEMENTED,
-                        "Disk '{}' does not have a real filesystem path and cannot back a `Distributed` table's local insert queue",
+                        "Disk '{}' does not keep its directory structure on the host filesystem and cannot back a `Distributed` table's local insert queue",
                         disk->getName());
         }
 
@@ -1545,13 +1547,14 @@ void StorageDistributed::initializeFromDisk()
 
     const auto & disks = data_volume->getDisks();
 
-    /// Skip disks without a real filesystem path: the queue directories and the increment scan
-    /// below operate on the raw host filesystem. Such tables are attached without a local insert
+    /// Skip disks that do not keep their directory structure on the host filesystem: the queue
+    /// directories and the increment scan below use raw `std::filesystem` calls on
+    /// `disk->getPath()`. Such tables are attached without a local insert
     /// queue (`initializeDirectoryQueuesForDisk` logs a warning); async INSERTs into them are
     /// rejected by `DistributedSink` when they try to enqueue.
     Strings paths;
     for (const DiskPtr & disk : disks)
-        if (disk->isPathOnLocalFilesystem())
+        if (disk->hasLocalFilesystemDirectoryNamespace())
             paths.push_back(disk->getPath() + relative_data_path);
     std::vector<UInt64> last_increment(paths.size());
 
@@ -1678,11 +1681,11 @@ void StorageDistributed::initializeDirectoryQueuesForDisk(const DiskPtr & disk)
     /// without the local insert queue so that an upgrade does not invalidate its metadata.
     /// SELECTs and foreground INSERTs do not need the queue; async INSERTs are rejected by
     /// `DistributedSink` when they try to enqueue.
-    if (!disk->isPathOnLocalFilesystem())
+    if (!disk->hasLocalFilesystemDirectoryNamespace())
     {
         LOG_WARNING(
             log,
-            "Disk '{}' does not have a real filesystem path and cannot back a `Distributed` table's local insert queue. "
+            "Disk '{}' does not keep its directory structure on the host filesystem and cannot back a `Distributed` table's local insert queue. "
             "The table works without it, but INSERTs with distributed_foreground_insert = 0 will be rejected",
             disk->getName());
         return;
@@ -2109,9 +2112,12 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 {
     for (const DiskPtr & disk : data_volume->getDisks())
     {
-        /// A table on a disk without a real filesystem path is attached without the local insert
-        /// queue (see `initializeDirectoryQueuesForDisk`), so there is no queue directory to move.
-        if (!disk->isPathOnLocalFilesystem())
+        /// A table on a disk that does not keep its directory structure on the host filesystem is
+        /// attached without the local insert queue (see `initializeDirectoryQueuesForDisk`), so
+        /// there is no queue directory to move.  Moving it here would also mix the raw
+        /// `std::filesystem` queue directory with `IDisk::moveDirectory`, which such a disk
+        /// resolves in a different namespace.
+        if (!disk->hasLocalFilesystemDirectoryNamespace())
             continue;
 
         disk->createDirectories(new_path_to_table_data);
@@ -2799,15 +2805,16 @@ bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & n
         LOG_WARNING(log, "Storage policy for Distributed table has multiple volumes. "
                             "Only {} volume will be used to store data. Other will be ignored.", data_volume->getName());
 
-    /// A reloaded configuration may have added a disk without a real host filesystem path (e.g. `web`,
-    /// a remote `plain` disk, or `borrow_from_cache`) to this policy. Such a disk cannot back the local
+    /// A reloaded configuration may have added a disk that does not keep its directory structure on
+    /// the host filesystem (e.g. `web`, a `plain`/`plain_rewritable` disk, or `borrow_from_cache`) to
+    /// this policy. Such a disk cannot back the local
     /// insert queue (see the same check in the constructor), so reject the new policy before publishing
     /// it; the caller logs the error and the table keeps the previous policy.
     for (const DiskPtr & disk : new_data_volume->getDisks())
-        if (!disk->isPathOnLocalFilesystem())
+        if (!disk->hasLocalFilesystemDirectoryNamespace())
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
-                "Disk '{}' does not have a real filesystem path and cannot back a `Distributed` table's local insert queue; "
+                "Disk '{}' does not keep its directory structure on the host filesystem and cannot back a `Distributed` table's local insert queue; "
                 "keeping the previous storage policy for table {}",
                 disk->getName(), getStorageID().getNameForLogs());
 

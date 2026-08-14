@@ -320,6 +320,7 @@ public:
 
     bool isRemote() const override { return delegate->isRemote(); }
     bool isPathOnLocalFilesystem() const override { return delegate->isPathOnLocalFilesystem(); }
+    bool hasLocalFilesystemDirectoryNamespace() const override { return delegate->hasLocalFilesystemDirectoryNamespace(); }
     bool isBroken() const override { return delegate->isBroken(); }
     bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
     bool supportsHardLinks() const override { return delegate->supportsHardLinks(); }

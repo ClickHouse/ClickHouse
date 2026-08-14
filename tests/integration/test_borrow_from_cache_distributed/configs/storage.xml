@@ -49,6 +49,16 @@
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <skip_access_check>1</skip_access_check>
             </plain_s3_disk>
+            <!-- `plain_rewritable` metadata over a *local* object storage: `getPath()` is a real
+                 host directory, but the directory structure is described by object keys, so raw
+                 `std::filesystem` and `IDisk` directory operations resolve in different
+                 namespaces. `Distributed` must reject it too. -->
+            <plain_rewritable_local_disk>
+                <type>object_storage</type>
+                <object_storage_type>local</object_storage_type>
+                <metadata_type>plain_rewritable</metadata_type>
+                <path>plain_rewritable_local/</path>
+            </plain_rewritable_local_disk>
         </disks>
         <policies>
             <borrowed_policy>
@@ -86,6 +96,13 @@
                     </main>
                 </volumes>
             </plain_s3_policy>
+            <plain_rewritable_local_policy>
+                <volumes>
+                    <main>
+                        <disk>plain_rewritable_local_disk</disk>
+                    </main>
+                </volumes>
+            </plain_rewritable_local_policy>
         </policies>
     </storage_configuration>
 

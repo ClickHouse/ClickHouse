@@ -22,6 +22,7 @@ public:
 
     const std::string & getPath() const override;
     bool isPathOnLocalFilesystem() const override;
+    bool hasLocalFilesystemDirectoryNamespace() const override;
     MetadataStorageType getType() const override;
     std::string getZooKeeperName() const override;
     std::string getZooKeeperPath() const override;
