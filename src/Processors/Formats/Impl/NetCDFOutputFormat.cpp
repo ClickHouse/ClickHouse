@@ -547,15 +547,21 @@ void NetCDFOutputFormat::finalizeImpl()
             if (variable.null_map)
             {
                 const auto & null_map = assert_cast<const ColumnUInt8 &>(*variable.null_map).getData();
-                variable.fill_value = chooseFillValue(*variable.data, null_map.data(), variable.name);
+                const bool has_nulls = std::find(null_map.begin(), null_map.end(), 1) != null_map.end();
 
-                /// The data can only take every value of the type when the type is small, and then
-                /// there is nothing to write a NULL as. A column that has no NULLs is written
-                /// without the attribute instead, and is read back as not Nullable.
-                if (variable.fill_value.empty() && std::find(null_map.begin(), null_map.end(), 1) != null_map.end())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "The column {} is Nullable and its values take every value of its type, so the NetCDF "
-                        "format has no value left to write the NULLs as", variable.name);
+                /// A column that has no NULLs at all needs no value to write them as: the attribute
+                /// is not written, and the column is read back as not Nullable.
+                if (has_nulls)
+                {
+                    variable.fill_value = chooseFillValue(*variable.data, null_map.data(), variable.name);
+
+                    /// The data can only take every value of the type when the type is small, and
+                    /// then there is nothing to write a NULL as.
+                    if (variable.fill_value.empty())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "The column {} is Nullable and its values take every value of its type, so the NetCDF "
+                            "format has no value left to write the NULLs as", variable.name);
+                }
             }
         }
 

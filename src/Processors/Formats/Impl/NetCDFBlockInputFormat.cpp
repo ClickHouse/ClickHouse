@@ -872,10 +872,13 @@ different format built on top of HDF5, is not supported; convert such a file fir
 A NetCDF file is a set of named multidimensional arrays, called variables, over a set of named
 dimensions. Every variable becomes a column, and the rows enumerate the Cartesian product of all the
 dimensions that the variables use. A variable that does not use some of these dimensions has the
-same value repeated for every index along them. The `to_dataframe` method of the `xarray` library
-produces a table with the same columns and the same set of rows, but the rows can come in a
-different order: `to_dataframe` puts the dimensions in alphabetical order by default, while
-ClickHouse keeps the order of the dimensions of the variables, as described below.
+same value repeated for every index along them. For a file in which no variable uses the same
+dimension more than once, the `to_dataframe` method of the `xarray` library produces a table with
+the same columns and the same set of rows, but the rows can come in a different order:
+`to_dataframe` puts the dimensions in alphabetical order by default, while ClickHouse keeps the
+order of the dimensions of the variables, as described below. Variables that use the same dimension
+more than once are read as described below as well, which is beyond what `to_dataframe` currently
+does: it does not support duplicate dimension names and raises an error on such a variable.
 
 For example, a file with the dimensions `time`, `lat`, `lon` and the variables `time(time)`,
 `lat(lat)`, `lon(lon)` and `temperature(time, lat, lon)` is read as a table with the columns `time`,
@@ -995,8 +998,8 @@ The version of the format is chosen automatically: CDF-5 when a column needs one
 only CDF-5 has, or when a number that the header of a CDF-2 file writes as a 32-bit value - the
 length of a dimension or the size of a variable - does not fit into it, and CDF-2 otherwise.
 
-A [Nullable](/sql-reference/data-types/nullable.md) column is written with the `_FillValue`
-attribute, which is the way the format marks missing data. The value of the attribute is the
+A [Nullable](/sql-reference/data-types/nullable.md) column that contains a `NULL` is written with the
+`_FillValue` attribute, which is the way the format marks missing data. The value of the attribute is the
 default fill value of the type of the netCDF library, or, when the data of the column contains that
 value, another value that the data does not contain, so that a value of the column is never read
 back as a `NULL`. Read the file back with `input_format_netcdf_fill_value_as_null` to get the
