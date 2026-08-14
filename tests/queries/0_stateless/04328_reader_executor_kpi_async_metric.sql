@@ -8,7 +8,7 @@
 -- End-to-end check that the modeled-cost KPI asynchronous metric
 -- `ReaderExecutorModeledCostMsPerRequestedMiB` moves when the executor does work.
 -- The metric is a ratio of the deltas of `ReaderExecutorModeledCostMicroseconds`
--- and `ReaderExecutorRequestedBytes` over an async-metrics update interval, so we
+-- and `ReaderExecutorDeliveredBytes` over an async-metrics update interval, so we
 -- bracket a `use_reader_executor` read with two forced updates
 -- (`SYSTEM RELOAD ASYNCHRONOUS METRICS`) and then assert, in the same time slot,
 -- that (1) the query recorded a modeled cost in its `query_log` ProfileEvents and
