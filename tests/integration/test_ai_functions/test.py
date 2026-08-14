@@ -1155,6 +1155,27 @@ def test_redact_error_throw(started_cluster):
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
 
 
+def test_redact_truncated_response_throw(started_cluster):
+    """A truncated redaction reply (`finish_reason="length"`) must be rejected, not returned as
+    partially redacted text: for a PII-redaction function, silently returning a truncated answer
+    would leak unredacted content."""
+    error = instance.query_and_get_error(
+        "SELECT aiRedact('customer John Doe, john@doe.org', ['email', 'name'], map('credentials', 'ai_truncated'))",
+        settings=AI_SETTINGS,
+    )
+    assert "AI_PROVIDER_RESPONSE_TRUNCATED" in error
+
+
+def test_redact_truncated_response_graceful(started_cluster):
+    """With `ai_function_throw_on_error = 0`, a truncated redaction reply yields the column default
+    ("") instead of partially redacted text."""
+    result = instance.query(
+        "SELECT aiRedact('customer John Doe, john@doe.org', ['email', 'name'], map('credentials', 'ai_truncated'))",
+        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+    )
+    assert result.strip() == ""
+
+
 # ---------------------------------------------------------------------------
 # aiEmbed
 # ---------------------------------------------------------------------------
