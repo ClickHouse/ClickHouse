@@ -1899,14 +1899,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// It is just a safety check needed until we have a proper sending plan to replicas.
                     /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
                     /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
+                    /// The chosen table and union children are TableNodes, so a table function matches
+                    /// neither and equality against them is meaningless when table_node is null.
                     const bool no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode
                         = query_context->canUseParallelReplicasOnFollower()
-                        && table_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table;
+                        && (!table_node || table_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table);
                     if (no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode)
                     {
                         bool disable_parallel_replicas_for_storage = true;
                         ContextPtr updated_context = query_context;
-                        if (const UnionNode * table_union = planner_context->getGlobalPlannerContext()->parallel_replicas_table_union)
+                        if (const UnionNode * table_union
+                            = table_node ? planner_context->getGlobalPlannerContext()->parallel_replicas_table_union : nullptr)
                         {
                             SelectQueryOptions options;
                             for (const auto & child : table_union->getQueries().getNodes())
