@@ -2012,7 +2012,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// previous create-then-populate order did. This narrow, intentional visibility change (the table becomes
     /// visible only once fully populated) is covered by
     /// `04547_create_as_select_destination_not_visible_during_populate`.
+    ///
+    /// `AS INSERT`/`AND INSERT` populate from `VALUES`/`FORMAT` data instead of a `SELECT`; that data is
+    /// only available here when it was embedded in the query text (`create.insert_data`). Clients such as
+    /// `clickhouse-client` strip it from the query text and stream it afterwards over the native protocol,
+    /// exactly like a plain `INSERT`, so the interpreter never sees it. 
+    bool insert_fill_available_synchronously = create.select != nullptr
+        || (create.insert_data && create.insert_data_end && create.insert_data <= create.insert_data_end);
     if (create.isCreateQueryWithImmediateInsertSelect()
+        && insert_fill_available_synchronously
         && !create.is_materialized_view && !create.is_window_view
         && database && database->getUUID() != UUIDHelpers::Nil)
     {
@@ -2797,6 +2805,13 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// atomic path is only wired into the plain CREATE flow, not the create-or-replace flow (which
         /// populates a temporary table and then atomically swaps it in via EXCHANGE/RENAME).
         BlockIO fill_io = fillTableIfNeeded(create, /*skip_target_insert_access_check=*/is_plain_create);
+        /// The publish-by-rename below cannot be deferred until a client streams `AS/AND INSERT` data
+        /// afterwards, so reject that combination here with a normal exception rather than letting
+        /// executeTrivialBlockIO hit an unfinished pipeline (see the routing comment in createTable()).
+        if (fill_io.pipeline.initialized() && !fill_io.pipeline.completed())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "CREATE OR REPLACE ... AS/AND INSERT with data streamed by the client is not supported, "
+                "use CREATE ... AS/AND INSERT with inline data or a separate INSERT query");
         /// For queries like 'CREATE OR REPLACE TABLE ... AS SELECT * INSERT' might take a long time,
         /// passing this callback allows tcp sessions to send progress, stats and logs.
         /// It prevents getting socket timeout as well.

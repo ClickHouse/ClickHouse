@@ -1467,7 +1467,6 @@ static BlockIO executeQueryImpl(
         }
 
         const char * query_end = end;
-
         if (out_ast)
         {
             if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
@@ -1477,17 +1476,6 @@ static BlockIO executeQueryImpl(
             else if (const auto * create_query = out_ast->as<ASTCreateQuery>(); create_query && create_query->insert_data)
             {
                 query_end = create_query->insert_data;
-            }
-
-            if (const auto * create_query = out_ast->as<ASTCreateQuery>())
-            {
-                is_create_parameterized_view = create_query->isParameterizedView();
-            }
-            else if (const auto * explain_query = out_ast->as<ASTExplainQuery>())
-            {
-                if (!explain_query->children.empty())
-                    if (const auto * create_of_explain_query = explain_query->children[0]->as<ASTCreateQuery>())
-                        is_create_parameterized_view = create_of_explain_query->isParameterizedView();
             }
         }
 

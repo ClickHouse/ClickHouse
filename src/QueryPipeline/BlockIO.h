@@ -40,6 +40,7 @@ struct BlockIO
 
     QueryPipeline pipeline;
 
+    ASTPtr insert_query;
     /// The finalize_query_pipeline function is called once to flush the pipeline progress and reset it.
     /// Then all finish callbacks are called with the resulting QueryPipelineFinalizedInfo.
     std::function<QueryPipelineFinalizedInfo(QueryPipeline &&)> finalize_query_pipeline;
