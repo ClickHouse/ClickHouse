@@ -72,12 +72,12 @@ LIFETIME(MIN 0 MAX 300)
 DEFINER = dict_owner;
 ```
 
-Naming a user other than yourself requires the `SET DEFINER` privilege. A user that is the definer of an existing dictionary cannot be dropped, in a database whose objects have UUIDs. This includes the default `Atomic` engine, but not `Memory` or `Ordinary`, where the dictionary stops loading if its definer is dropped. The same holds for views.
+Naming a user other than yourself requires the `SET DEFINER` privilege. A user that is the definer of an existing dictionary cannot be dropped.
 
 The clause is supported only for a `CLICKHOUSE` source pointing at the same server. Any other source
 authenticates against a foreign system with its own credentials.
 
-`DEFINER` is the only accepted security type. The settings the load runs under are bounded by the definer's own settings constraints. Settings the dictionary loader reads from the definition rather than from the load context, such as `dictionary_lazy_load`, are not.
+`DEFINER` is the only accepted security type. The settings the load runs under are bounded by the definer's own settings constraints.
 
 ## Creating a dictionary with a configuration file {#creating-a-dictionary-with-a-configuration-file}
 
