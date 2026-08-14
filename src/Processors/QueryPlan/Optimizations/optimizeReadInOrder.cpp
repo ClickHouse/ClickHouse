@@ -2109,24 +2109,12 @@ static void tryStreamWindowFunctions(QueryPlan::Node & node)
         if (win_col.collator)
             return;
 
-        /// Strip a plan-time table qualifier of the form `__tableN.` (first component only).
-        /// Using rfind would incorrectly truncate real dotted names such as subcolumns
-        /// (e.g. `__table1.obj.ts` → `obj.ts`, not `ts`).
-        std::string_view col_name = win_col.column_name;
-        {
-            const auto first_dot = col_name.find('.');
-            if (first_dot != std::string_view::npos)
-            {
-                const auto prefix = col_name.substr(0, first_dot);
-                if (prefix.starts_with("__table"))
-                {
-                    const auto digits = prefix.substr(7);
-                    if (!digits.empty() && std::all_of(digits.begin(), digits.end(), ::isdigit))
-                        col_name = col_name.substr(first_dot + 1);
-                }
-            }
-        }
-        if (col_name != sorting_key.column_names[j])
+        /// The sort description contains resolved column names, but does not retain whether a
+        /// leading component was a table qualifier.  In particular, `__table1.ts` can be a
+        /// user-visible subcolumn rather than an internal planner qualifier.  Do not rewrite
+        /// names here: missing an optimization is safe, whereas accepting an ambiguous name can
+        /// make `StreamingLagTransform` process rows in a different order from `WindowTransform`.
+        if (win_col.column_name != sorting_key.column_names[j])
             return;
 
         /// The storage delivers column j in direction: input_order->direction * storage_raw_direction.
