@@ -718,7 +718,8 @@ private:
 
     /// Whether all the arithmetic in `bucketIndexForTimestampFast` fits in Int64 for every sample
     /// that passes its range checks. Bounding all grid parameters by 2^61 leaves headroom for the
-    /// sums and products of two such values.
+    /// sums and products of two such values. A single-point grid (`start == end`, `step == 0`,
+    /// see `checkStep`) has nothing to divide and uses the generic path.
     static bool canUseFastBucketMath(TimestampType start, TimestampType end, IntervalType step_, IntervalType window_)
     {
         constexpr Int128 bound = Int128(1) << 61;
@@ -727,7 +728,7 @@ private:
         const Int128 step_128 = static_cast<Int128>(static_cast<Int64>(step_));
         const Int128 window_128 = static_cast<Int128>(static_cast<Int64>(window_));
         return (-bound < start_128 && start_128 < bound) && (-bound < end_128 && end_128 < bound)
-            && (0 <= step_128 && step_128 < bound) && (0 <= window_128 && window_128 < bound);
+            && (0 < step_128 && step_128 < bound) && (0 <= window_128 && window_128 < bound);
     }
 
     /// Same as `bucketIndexForTimestamp` with all arithmetic in Int64. Requires `fast_bucket_math`.
@@ -741,14 +742,9 @@ private:
         const Int64 offset = ts - static_cast<Int64>(start_timestamp);
         const Int64 step_64 = static_cast<Int64>(step);
 
-        /// `step == 0` is possible only when `start == end` (a single grid point, see checkStep).
-        Int64 unclamped_grid_index = 0;
-        if (step_64 > 0)
-        {
-            unclamped_grid_index = offset / step_divider;
-            if (offset - unclamped_grid_index * step_64 > 0)
-                ++unclamped_grid_index;
-        }
+        Int64 unclamped_grid_index = offset / step_divider;
+        if (offset - unclamped_grid_index * step_64 > 0)
+            ++unclamped_grid_index;
 
         const Int64 grid_index = std::max<Int64>(unclamped_grid_index, 0);
         if (ts + static_cast<Int64>(window) <= static_cast<Int64>(start_timestamp) + grid_index * step_64)
