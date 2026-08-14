@@ -1443,7 +1443,7 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 
     /// toUUID2 documentation
     FunctionDocumentation::Description description_toUUID2 = R"(
-Converts a String value to a [UUID2](/sql-reference/data-types/uuid2) value (the correctly-sorting variant of UUID).
+Converts a String value to a [UUID2](/reference/data-types/uuid2) value (the correctly-sorting variant of UUID).
     )";
     FunctionDocumentation::Syntax syntax_toUUID2 = "toUUID2(string)";
     FunctionDocumentation::Arguments arguments_toUUID2 = {

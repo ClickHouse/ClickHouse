@@ -31,9 +31,9 @@ void registerDataTypeUUID2(DataTypeFactory & factory)
     factory.registerSimpleDataType("UUID2", [] { return DataTypePtr(std::make_shared<DataTypeUUID2>()); }, DataTypeFactory::Case::Sensitive,
         Documentation{
             .description = R"DOCS_MD(
-`UUID2` is a variant of the [UUID](/sql-reference/data-types/uuid) data type with correct sorting.
+`UUID2` is a variant of the [UUID](/reference/data-types/uuid) data type with correct sorting.
 
-For historical reasons, the `UUID` data type is sorted by the second half of the value. This is unexpected and, in particular, hurts the performance of primary indexes built on `UUIDv7` columns, whose most significant bits are a timestamp (see the note in the [UUID](/sql-reference/data-types/uuid) documentation for details).
+For historical reasons, the `UUID` data type is sorted by the second half of the value. This is unexpected and, in particular, hurts the performance of primary indexes built on `UUIDv7` columns, whose most significant bits are a timestamp (see the note in the [UUID](/reference/data-types/uuid) documentation for details).
 
 `UUID2` stores the value so that it is sorted by its textual (lexicographic) representation, which matches the canonical byte order used by most other systems. In every other respect it is compatible with `UUID`: it accepts the same textual representation, occupies the same 16 bytes, and supports the same set of functions.
 
@@ -89,8 +89,8 @@ In the [Arrow](/interfaces/formats/Arrow) and [Parquet](/interfaces/formats/Parq
 
 ## Related content {#related-content}
 
-- [UUID](/sql-reference/data-types/uuid)
-- [Functions for working with UUID](/sql-reference/functions/uuid-functions)
+- [UUID](/reference/data-types/uuid)
+- [Functions for working with UUID](/reference/functions/regular-functions/uuid-functions)
 )DOCS_MD",
             .syntax = "UUID2",
             .related = {"UUID"},
