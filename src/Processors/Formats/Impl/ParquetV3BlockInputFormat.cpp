@@ -123,28 +123,25 @@ parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet
 
 void ParquetV3BlockInputFormat::prepareNeedOnlyCountRowGroups(const parquet::format::FileMetaData & file_metadata)
 {
-    const std::vector<size_t> global_offsets = Parquet::buildRowGroupGlobalOffsets(file_metadata);
-    const size_t num_row_groups = file_metadata.row_groups.size();
-
     need_only_count_row_groups.clear();
     need_only_count_next = 0;
 
     if (!buckets_to_read)
     {
-        /// Emit one span per row group (not a single whole-file span). Bounds peak memory when a
-        /// downstream transform (e.g. DeletionVectorTransform) still walks chunk rows, and matches
-        /// the bucketed need-only-count shape.
-        for (size_t row_group_id = 0; row_group_id < num_row_groups; ++row_group_id)
-        {
-            const size_t num_rows = static_cast<size_t>(file_metadata.row_groups[row_group_id].num_rows);
-            if (num_rows == 0)
-                continue;
+        /// Unbucketed need_only_count historically returns one chunk from `FileMetaData.num_rows`.
+        /// Keep that for plain Parquet COUNT (and Iceberg without row-group buckets). Per-row-group
+        /// spans below are only for bucketed reads, where each task must count its assigned groups
+        /// instead of the whole file.
+        if (file_metadata.num_rows < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet file has negative row count: {}", file_metadata.num_rows);
 
-            need_only_count_row_groups.push_back(
-                {.row_num_offset = global_offsets[row_group_id], .num_rows = num_rows});
-        }
+        need_only_count_row_groups.push_back(
+            {.row_num_offset = 0, .num_rows = static_cast<size_t>(file_metadata.num_rows)});
         return;
     }
+
+    const std::vector<size_t> global_offsets = Parquet::buildRowGroupGlobalOffsets(file_metadata);
+    const size_t num_row_groups = file_metadata.row_groups.size();
 
     for (size_t row_group_id : buckets_to_read->row_group_ids)
     {
