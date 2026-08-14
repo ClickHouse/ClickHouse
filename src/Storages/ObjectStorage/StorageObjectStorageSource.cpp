@@ -906,6 +906,23 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     if (format_filter_info && format_filter_info->condition_hash)
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 
+    /// Re-reads the object's metadata and tells whether it still carries the etag the listing
+    /// reported, i.e. whether the generation the query-condition-cache key names is still the
+    /// object's current content. Used only to linearize a decision that is taken without opening
+    /// the object; a decision that opens it is pinned by the read itself. Anything unexpected -
+    /// the object is gone, or either etag is unknown - fails close, i.e. reports "changed".
+    auto listed_object_generation_still_holds = [&](const ObjectInfo & object_to_check)
+    {
+        const auto listed_metadata = object_to_check.getObjectMetadata();
+        if (!listed_metadata || listed_metadata->etag.empty())
+            return false;
+
+        auto metadata_object = object_to_check.relative_path_with_metadata;
+        metadata_object.relative_path = object_to_check.isArchive() ? object_to_check.getPathToArchive() : object_to_check.getPath();
+        const auto current_metadata = object_storage->tryGetObjectMetadata(metadata_object, /*with_tags=*/false);
+        return current_metadata && !current_metadata->etag.empty() && current_metadata->etag == listed_metadata->etag;
+    };
+
     while (true)
     {
         object_info = file_iterator->next(processor);
@@ -975,11 +992,24 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     object_info->getFileName());
 
                 if (matching_row_groups.empty())
-                    continue;
-
-                auto file_bucket_info = FormatFactory::instance().getFileBucketInfo(
-                    object_info->getFileFormat().value_or(configuration->format));
-                if (file_bucket_info)
+                {
+                    /// The whole object is known not to match the condition — skip it entirely.
+                    /// Unlike a pruning hit, this decision never opens the object, so the
+                    /// etag-validated read that normally pins the generation named by the cache key
+                    /// does not run: an object overwritten between the listing and this point would
+                    /// be silently reported as empty, where a plain read fails close on the stale
+                    /// etag. Data-lake data files are immutable, so the path already pins the
+                    /// generation; in every other case re-check the listed etag at the moment of the
+                    /// decision. If it still holds, that generation is the object's current content
+                    /// and skipping it returns exactly its (empty) result — a rewrite an instant
+                    /// later is a concurrent modification that even a full read may linearize
+                    /// before. Otherwise fall through to the normal open/read path, which handles
+                    /// the changed object exactly as it would without the cache.
+                    if (configuration->isDataLakeConfiguration() || listed_object_generation_still_holds(*object_info))
+                        continue;
+                }
+                else if (auto file_bucket_info = FormatFactory::instance().getFileBucketInfo(
+                             object_info->getFileFormat().value_or(configuration->format)))
                 {
                     /// Pass the total row-group count (equal to the number of cached marks) and the
                     /// digest of the footer the marks were computed from (stored with the cache
