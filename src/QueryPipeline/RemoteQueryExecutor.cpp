@@ -452,11 +452,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     ClientInfo modified_client_info = context->getClientInfo();
 
     /// Doesn't support now "remote('1.1.1.{1,2}')""
-    /// Only when the remote node processes the query to completion (single node acting as a proxy target).
-    /// For intermediate stages the remote node returns a header made of internal column identifiers that the
-    /// initiator expects to match exactly; pretending the query is initial there enables query tree optimizations
-    /// on the remote side (they are skipped for SECONDARY_QUERY), which changes that header and breaks the read.
-    if (is_remote_function && (shard_count == 1) && (stage == QueryProcessingStage::Complete))
+    if (is_remote_function && (shard_count == 1))
     {
         modified_client_info.setInitialQuery();
         modified_client_info.client_name = "ClickHouse server";
