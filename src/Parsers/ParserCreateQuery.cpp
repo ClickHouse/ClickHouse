@@ -1973,6 +1973,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ParserToken s_comma(TokenType::Comma);
     ParserDictionaryAttributeDeclarationList attributes_p;
     ParserDictionary dictionary_p;
+    ParserSQLSecurity sql_security_p;
 
     bool if_not_exists = false;
     bool replace = false;
@@ -1981,6 +1982,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ASTPtr name;
     ASTPtr attributes;
     ASTPtr dictionary;
+    ASTPtr sql_security;
     String cluster_str;
 
     bool attach = false;
@@ -2034,6 +2036,11 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
             return false;
     }
 
+    /// `ASTCreateQuery::formatQueryImpl` emits the clause between the dictionary definition and
+    /// `COMMENT`, so it must be accepted in exactly that position: otherwise metadata written by the
+    /// server does not re-parse on restart.
+    sql_security_p.parse(pos, sql_security, expected);
+
     auto comment = parseComment(pos, expected);
 
     auto query = make_intrusive<ASTCreateQuery>();
@@ -2059,6 +2066,9 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->set(query->dictionary_attributes_list, attributes);
     query->set(query->dictionary, dictionary);
     query->cluster = cluster_str;
+
+    if (sql_security)
+        query->set(query->sql_security, sql_security);
 
     if (comment)
         query->set(query->comment, comment);

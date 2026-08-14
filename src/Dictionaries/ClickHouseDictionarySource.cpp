@@ -1,10 +1,12 @@
 #include <Dictionaries/ClickHouseDictionarySource.h>
+#include <Poco/Net/SocketAddress.h>
 #include <memory>
 #include <Client/ConnectionPool.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/SettingSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Interpreters/ActionsDAG.h>
@@ -16,11 +18,14 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Access/AccessControl.h>
+#include <Access/Common/SQLSecurityDefs.h>
+#include <Access/User.h>
+#include <base/EnumReflection.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ExternalQueryBuilder.h>
@@ -35,15 +40,23 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_QUERY;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
     constexpr size_t MAX_CONNECTIONS = 16;
 
-    inline UInt16 getPortFromContext(ContextPtr context, bool secure)
+    /// A dictionary source's config prefix is always the dictionary root's `.source` node
+    /// (`DictionaryFactory::create` builds it that way), so the root is everything before the last
+    /// component; `sql_security` / `definer` are recorded on the root next to `comment`.
+    std::string getDictionaryRootPrefix(const std::string & source_config_prefix)
     {
-        return secure ? context->getTCPPortSecure().value_or(0) : context->getTCPPort();
+        auto dot = source_config_prefix.rfind('.');
+        if (dot == std::string::npos)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Expected a dictionary source config prefix to have dotted components, got: {}", source_config_prefix);
+        return source_config_prefix.substr(0, dot);
     }
 
     ConnectionPoolWithFailoverPtr createPool(const ClickHouseDictionarySource::Configuration & configuration)
@@ -244,76 +257,48 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  const std::string & default_database,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
-        using Configuration = ClickHouseDictionarySource::Configuration;
-        std::optional<Configuration> configuration;
+        auto configuration = ClickHouseDictionarySource::resolveConfiguration(
+            config,
+            config_prefix,
+            global_context,
+            default_database,
+            created_from_ddl,
+            NamedCollectionUsage::CheckAccessAndRegisterDependency);
 
-        std::string settings_config_prefix = config_prefix + ".clickhouse";
-        auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, global_context) : nullptr;
-
-        if (named_collection)
-        {
-            validateNamedCollection(
-                *named_collection, {}, ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>{
-                    "secure", "host", "hostname", "port", "user", "username", "password", "proto_send_chunked", "proto_recv_chunked", "quota_key", "name",
-                    "db", "database", "table","query", "where", "invalidate_query", "update_field", "update_lag"});
-
-            const auto secure = named_collection->getOrDefault("secure", false);
-            const auto default_port = getPortFromContext(global_context, secure);
-            const auto host = named_collection->getAnyOrDefault<String>({"host", "hostname"}, "localhost");
-            const auto port = static_cast<UInt16>(named_collection->getOrDefault<UInt64>("port", default_port));
-
-            configuration.emplace(Configuration{
-                .host = host,
-                .user = named_collection->getAnyOrDefault<String>({"user", "username"}, "default"),
-                .password = named_collection->getOrDefault<String>("password", ""),
-                .proto_send_chunked = named_collection->getOrDefault<String>("proto_send_chunked", "notchunked"),
-                .proto_recv_chunked = named_collection->getOrDefault<String>("proto_recv_chunked", "notchunked"),
-                .quota_key = named_collection->getOrDefault<String>("quota_key", ""),
-                .db = named_collection->getAnyOrDefault<String>({"db", "database"}, default_database),
-                .table = named_collection->getOrDefault<String>("table", ""),
-                .query = named_collection->getOrDefault<String>("query", ""),
-                .where = named_collection->getOrDefault<String>("where", ""),
-                .invalidate_query = named_collection->getOrDefault<String>("invalidate_query", ""),
-                .update_field = named_collection->getOrDefault<String>("update_field", ""),
-                .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
-                .port = port,
-                .is_local = isLocalAddress({host, port}, default_port),
-                .secure = secure,
-            });
-        }
-        else
-        {
-            const auto secure = config.getBool(settings_config_prefix + ".secure", false);
-            const auto default_port = getPortFromContext(global_context, secure);
-            const auto host = config.getString(settings_config_prefix + ".host", "localhost");
-            const auto port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", default_port));
-
-            configuration.emplace(Configuration{
-                .host = host,
-                .user = config.getString(settings_config_prefix + ".user", "default"),
-                .password = config.getString(settings_config_prefix + ".password", ""),
-                .proto_send_chunked = config.getString(settings_config_prefix + ".proto_caps.send", "notchunked"),
-                .proto_recv_chunked = config.getString(settings_config_prefix + ".proto_caps.recv", "notchunked"),
-                .quota_key = config.getString(settings_config_prefix + ".quota_key", ""),
-                .db = config.getString(settings_config_prefix + ".db", default_database),
-                .table = config.getString(settings_config_prefix + ".table", ""),
-                .query = config.getString(settings_config_prefix + ".query", ""),
-                .where = config.getString(settings_config_prefix + ".where", ""),
-                .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
-                .update_field = config.getString(settings_config_prefix + ".update_field", ""),
-                .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-                .port = port,
-                .is_local = isLocalAddress({host, port}, default_port),
-                .secure = secure,
-            });
-        }
+        /// A definer is only honoured for the DDL shape that validated it: the CREATE path always
+        /// records `sql_security` next to `definer`, so a lone `<definer>` element hand-written in a
+        /// config file stays inert rather than silently authenticating the load as that user.
+        const auto root_prefix = getDictionaryRootPrefix(config_prefix);
+        const auto definer = created_from_ddl
+                && config.getString(root_prefix + ".sql_security", "") == magic_enum::enum_name(SQLSecurityType::DEFINER)
+            ? config.getString(root_prefix + ".definer", "")
+            : "";
 
         ContextMutablePtr context;
-        if (configuration->is_local)
+        if (!definer.empty())
+        {
+            /// Only a local source can honour a definer: a remote one authenticates over the wire
+            /// against another server, which cannot be asked to trust an identity resolved here.
+            if (!configuration.is_local)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "A definer is only supported for a dictionary whose CLICKHOUSE source is local, "
+                    "but the source of this dictionary points at {}:{}", configuration.host, configuration.port);
+
+            context = Context::createCopy(global_context);
+            context->makeQueryContext();
+            context->setUser(global_context->getAccessControl().getID<User>(definer));
+            context->setCurrentUserName(definer);
+            context->setInitialUserName(definer);
+            /// The load runs in-process, so the peer is this server, not the wildcard address a
+            /// global-context copy carries.
+            context->setCurrentAddress(Poco::Net::SocketAddress{"127.0.0.1", 0});
+            context->setInitialAddress(Poco::Net::SocketAddress{"127.0.0.1", 0});
+        }
+        else if (configuration.is_local)
         {
             /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
             Session session(global_context, ClientInfo::Interface::LOCAL);
-            session.authenticate(configuration->user, configuration->password, Poco::Net::SocketAddress{});
+            session.authenticate(configuration.user, configuration.password, Poco::Net::SocketAddress{});
             context = session.makeQueryContext();
         }
         else
@@ -321,18 +306,23 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             context = Context::createCopy(global_context);
 
             if (created_from_ddl)
-                context->getRemoteHostFilter().checkHostAndPort(configuration->host, toString(configuration->port));
+                context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
         }
 
-        context->applySettingsChanges(readSettingsFromDictionaryConfig(config, config_prefix));
+        auto settings_changes = readSettingsFromDictionaryConfig(config, config_prefix);
+        /// The definer's own constraints bound what the dictionary definition can set, the same way
+        /// `StorageInMemoryMetadata::getSQLSecurityOverriddenContext` bounds a view's triggering query.
+        if (!definer.empty())
+            context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
+        context->applySettingsChanges(settings_changes);
 
         String dictionary_name = config.getString(".dictionary.name", "");
         String dictionary_database = config.getString(".dictionary.database", "");
 
-        if (dictionary_name == configuration->table && dictionary_database == configuration->db)
+        if (dictionary_name == configuration.table && dictionary_database == configuration.db)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouseDictionarySource table cannot be dictionary table");
 
-        return std::make_unique<ClickHouseDictionarySource>(dict_struct, *configuration, sample_block, context);
+        return std::make_unique<ClickHouseDictionarySource>(dict_struct, configuration, sample_block, context);
     };
 
     factory.registerSource("clickhouse", create_table_source, Documentation{

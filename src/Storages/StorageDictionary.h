@@ -92,6 +92,9 @@ public:
     void shutdown(bool is_drop) override;
     void startup() override;
 
+    /// Releases the definer dependency, so the definer becomes droppable again.
+    void drop() override;
+
     void renameInMemory(const StorageID & new_table_id) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const override;
