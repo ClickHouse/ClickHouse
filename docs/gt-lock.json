@@ -7,35 +7,35 @@
       "versionId": "138b2ddf9c6f3544641c95967a19e82eb07861ef53f1f01da0818d45f243060e",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T17:36:35.239Z",
+          "updatedAt": "2026-08-14T18:36:44.704Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-14T17:36:35.405Z",
+          "updatedAt": "2026-08-14T18:36:44.936Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-14T17:36:35.540Z",
+          "updatedAt": "2026-08-14T18:36:45.145Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T17:36:35.668Z",
+          "updatedAt": "2026-08-14T18:36:45.332Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-14T17:36:35.789Z",
+          "updatedAt": "2026-08-14T18:36:45.519Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-14T17:36:35.906Z",
+          "updatedAt": "2026-08-14T18:36:45.704Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-14T17:36:36.034Z",
+          "updatedAt": "2026-08-14T18:36:45.902Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-14T17:36:36.156Z",
+          "updatedAt": "2026-08-14T18:36:46.075Z",
           "fileName": "docs.json",
           "postProcessHash": "08f86263d38049f519fb9dde8d6c017533d62c26bf8c2092b595e0ba09e2a66e"
         }
@@ -6573,47 +6573,47 @@
     },
     {
       "fileId": "5dd2b6d05e337ad0897908392a8ff94f24b918a326e19edd51a85b26cc0c2357",
-      "versionId": "aeaa65a5f556eef41dc6d19d4db9268b55fa9871b2c72ef1309c0132ebe92a34",
+      "versionId": "def9e2e61738dc7af8525ea5381653d179c298e5755b4b509d6eb579e2a66cce",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:05.764Z",
-          "fileName": "es/clickstack/example-datasets/sample-data.mdx",
-          "postProcessHash": "d17de4bfc8a4a417d4da65b1983f6d63040e748b4b53f5c90da92f5d319df851"
+        "fr": {
+          "updatedAt": "2026-08-14T18:36:50.753Z",
+          "fileName": "fr/clickstack/example-datasets/sample-data.mdx",
+          "postProcessHash": "04e529aafc5f2288e85e87210d62b99dacc60e7778f81c882e39bf314d584c95"
         },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.764Z",
-          "fileName": "ja/clickstack/example-datasets/sample-data.mdx",
-          "postProcessHash": "20faa1371642748f624320a395c9db9e88d4f0fc78da6d1bf19c4454a8ed2c57"
+        "es": {
+          "updatedAt": "2026-08-14T18:36:50.756Z",
+          "fileName": "es/clickstack/example-datasets/sample-data.mdx",
+          "postProcessHash": "825ad045397fdcbccc4b00e47ed16df6e14be8c07bfeca394aa208050d847538"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:05.764Z",
+          "updatedAt": "2026-08-14T18:36:50.757Z",
           "fileName": "ko/clickstack/example-datasets/sample-data.mdx",
-          "postProcessHash": "e9e7b78cc2d121773e3976d3112f8505ec048d9030315b73b6876c2f0938c060"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.765Z",
-          "fileName": "pt-BR/clickstack/example-datasets/sample-data.mdx",
-          "postProcessHash": "13ff3579ee99044af61473611d063e4accd0d0acbb4bc53f468ef1753056d490"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:05.765Z",
-          "fileName": "ru/clickstack/example-datasets/sample-data.mdx",
-          "postProcessHash": "73425bdb2705353058f4bad62056644a58bed818b27ee75f786680a004b64b8c"
+          "postProcessHash": "340710aa452f52af85c4df63bf52e831e98ee8f57730fd15b796534cd7eb20f5"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:05.765Z",
+          "updatedAt": "2026-08-14T18:36:50.758Z",
           "fileName": "zh/clickstack/example-datasets/sample-data.mdx",
-          "postProcessHash": "5c184521a1913d6bd91eb80710c4b205d7570d0244bc2f5c137d68e7de4085b5"
+          "postProcessHash": "0e5d1278941b463e8d2afda80bc753c7d6023a514eb0efd1f84bd8a21f4eebf4"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:05.765Z",
+          "updatedAt": "2026-08-14T18:36:50.759Z",
           "fileName": "ar/clickstack/example-datasets/sample-data.mdx",
-          "postProcessHash": "a7b71d9449cbca2608feb678edcd3ca0f19212925c91eb5ee0664944131b1173"
+          "postProcessHash": "7eaf6095a4d772b00cd3fcfa99969b308f43a6d9b3b6ba300e60b4bad9381b83"
         },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:05.765Z",
-          "fileName": "fr/clickstack/example-datasets/sample-data.mdx",
-          "postProcessHash": "fc766f8ee34226bd3f41b4d892b102edb516557d17bbce15338b522c0b72d252"
+        "ja": {
+          "updatedAt": "2026-08-14T18:36:50.759Z",
+          "fileName": "ja/clickstack/example-datasets/sample-data.mdx",
+          "postProcessHash": "98d0bb04ec1e172320f601c86fd1f862e189407fb2e80e75aef9bf8b84192c00"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-14T18:36:50.760Z",
+          "fileName": "pt-BR/clickstack/example-datasets/sample-data.mdx",
+          "postProcessHash": "3a5d88002c08a1cf0471ddc271a41defd18d838531ec547ad21dcb4e951f878d"
+        },
+        "ru": {
+          "updatedAt": "2026-08-14T18:36:50.760Z",
+          "fileName": "ru/clickstack/example-datasets/sample-data.mdx",
+          "postProcessHash": "ef96def5db3c0be52c9aeb74fae955d17dfc3b758493af6c16470163185d46cb"
         }
       },
       "fileName": "clickstack/example-datasets/sample-data.mdx",
@@ -7005,47 +7005,47 @@
     },
     {
       "fileId": "901bc4eb70537de3c110935615a55491749a6637fef358bcc18aa9faed4510a4",
-      "versionId": "f23c2128cd41453265e968dd898d56e4e4ad5e6a06282cfafa4f97d13730dd3c",
+      "versionId": "15165221b2ef9ec78161d7f10d8a85c2987c102eb1f86871581fc6cd1d62a2fe",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:05.777Z",
-          "fileName": "es/clickstack/getting-started/managed.mdx",
-          "postProcessHash": "5608799bae6c647520c0e0fdc32c0efa9624c9b439c3dd7539c6cf19c07253ec"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.777Z",
-          "fileName": "ja/clickstack/getting-started/managed.mdx",
-          "postProcessHash": "efc2d3d46906b675baae38cfaaf7b355335ff8c5d9db74dc2c4e1885251effb7"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:05.777Z",
-          "fileName": "ko/clickstack/getting-started/managed.mdx",
-          "postProcessHash": "47bddbd141509550e60f3454441a1eeea2dbfeb09a29f4e8f7468381c7a5e713"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.777Z",
-          "fileName": "pt-BR/clickstack/getting-started/managed.mdx",
-          "postProcessHash": "339ef7cc94aab5de3b7099e3d1898956cb5b54f2de8573998220fcfc3e83cefb"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:05.778Z",
-          "fileName": "ru/clickstack/getting-started/managed.mdx",
-          "postProcessHash": "51848ada9cdfc5785978bed2dc130f7590450903c6dfe0f89ccd838d4ac66e35"
+        "fr": {
+          "updatedAt": "2026-08-14T18:36:50.762Z",
+          "fileName": "fr/clickstack/getting-started/managed.mdx",
+          "postProcessHash": "7e1e6478e6ba8f12f89dc25507f657f85ab41ef4bbc32bcdf86224d7f56dd24e"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:05.778Z",
+          "updatedAt": "2026-08-14T18:36:50.763Z",
           "fileName": "zh/clickstack/getting-started/managed.mdx",
-          "postProcessHash": "a2c9dbb3e05b2ad28d5fa57157cbaa612eaafe4e83e84e352d65d90232288d2d"
+          "postProcessHash": "352b892ee4703704bca611694449acbee0dfae9a2f19d5696d341e2cd39a0327"
+        },
+        "ko": {
+          "updatedAt": "2026-08-14T18:36:50.765Z",
+          "fileName": "ko/clickstack/getting-started/managed.mdx",
+          "postProcessHash": "79ecef5f135df2d028fc6f127b08307d98d90868d1c2de82d16db870d81ef24e"
+        },
+        "es": {
+          "updatedAt": "2026-08-14T18:36:50.768Z",
+          "fileName": "es/clickstack/getting-started/managed.mdx",
+          "postProcessHash": "3539ac00a3b955a65a529d27dd503d88f047deb2e43cd5e8011e6e3f33d6fc77"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-14T18:36:50.768Z",
+          "fileName": "pt-BR/clickstack/getting-started/managed.mdx",
+          "postProcessHash": "106c197acb200a41a31c00448bb4b8af0228d0b4348751d0feadbc6c646e9e74"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:05.778Z",
+          "updatedAt": "2026-08-14T18:36:50.772Z",
           "fileName": "ar/clickstack/getting-started/managed.mdx",
-          "postProcessHash": "e4a0f4021c8bc6e2e1520fa3133b8248189cbc79673bde423c4fc0d3b744878e"
+          "postProcessHash": "f6cfc8af9c1a2d6f2c5c5f8e6724c68e7a9eada532fc316f044443bec73dbc28"
         },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:05.778Z",
-          "fileName": "fr/clickstack/getting-started/managed.mdx",
-          "postProcessHash": "ecd523d2b522a77c688dbc6b2abc59353d8f14e27904aa4ab46db38a253e3308"
+        "ja": {
+          "updatedAt": "2026-08-14T18:36:50.773Z",
+          "fileName": "ja/clickstack/getting-started/managed.mdx",
+          "postProcessHash": "20f2217a0b8541c2dba316811bc347d76be862f33cc4371e679e77466e3bd300"
+        },
+        "ru": {
+          "updatedAt": "2026-08-14T18:36:50.774Z",
+          "fileName": "ru/clickstack/getting-started/managed.mdx",
+          "postProcessHash": "73c5fa08bbe3224f8fd27e7ab1b65b62ba5e78e282db3dc74752146e6d2c591c"
         }
       },
       "fileName": "clickstack/getting-started/managed.mdx",
@@ -7053,47 +7053,47 @@
     },
     {
       "fileId": "d7aefbb39fa01d4ee2183e5a5775da62ead674c0d49ce89f9d4efac55a11ef93",
-      "versionId": "d075d7ab023e75c1663f635713c151dd2922ed5aac7d89faff1625b0d3205e0a",
+      "versionId": "92651eb678263eba22b115f81ddf7a8e0385433a0c6bea0c6d83c2da9da43110",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:05.778Z",
-          "fileName": "es/clickstack/getting-started/oss.mdx",
-          "postProcessHash": "0aefbd4c3ca6d214e64e29d3faf670c5c4ac8d5f36cbf778d3ac7ecdff4c1f86"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.778Z",
-          "fileName": "ja/clickstack/getting-started/oss.mdx",
-          "postProcessHash": "e3d8e043c8426c3d833bac589c6c8b208d529c63415449b39fbd43d0a069cdb2"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:05.779Z",
-          "fileName": "ko/clickstack/getting-started/oss.mdx",
-          "postProcessHash": "66e8e67c7fe246590e2915247782c43f3c0f89bd303608ee12263fb8117e9e91"
+        "fr": {
+          "updatedAt": "2026-08-14T18:36:50.762Z",
+          "fileName": "fr/clickstack/getting-started/oss.mdx",
+          "postProcessHash": "a05f65348060a6841025f8b032b65fb3310d5f9b7b63077599cc6d723f77d53d"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.779Z",
+          "updatedAt": "2026-08-14T18:36:50.763Z",
           "fileName": "pt-BR/clickstack/getting-started/oss.mdx",
-          "postProcessHash": "5b6e3bdadc1536542f09d406a8a67be8cef6cbbffc36639fa81dd4978042f27c"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:05.779Z",
-          "fileName": "ru/clickstack/getting-started/oss.mdx",
-          "postProcessHash": "61184347e30a31e2c71e394ff84f24bd5eef48610eb9a766b0123b4998f4d1c5"
+          "postProcessHash": "1908db97d1e962bf447213ff73d9a873a12e84e936edcd6101bb2102e1476f65"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:05.779Z",
+          "updatedAt": "2026-08-14T18:36:50.764Z",
           "fileName": "zh/clickstack/getting-started/oss.mdx",
-          "postProcessHash": "75b28b06aa700f25cbb86011d3d278d80e04de3775e67d82dde3d51647600e9e"
+          "postProcessHash": "5a6aa03a90876a67a9098524f5754b46d87b6065d7724ff8a9068a4a03ac936d"
+        },
+        "es": {
+          "updatedAt": "2026-08-14T18:36:50.769Z",
+          "fileName": "es/clickstack/getting-started/oss.mdx",
+          "postProcessHash": "aab62a2884fe40567fcd34e60b5091d9ee6d8af2da8dde749ee46ba09744a2ad"
+        },
+        "ko": {
+          "updatedAt": "2026-08-14T18:36:50.770Z",
+          "fileName": "ko/clickstack/getting-started/oss.mdx",
+          "postProcessHash": "d0ca0e30196202d66bb989f156a8fff7a304814e8eb86211d27ed7a5e7054716"
+        },
+        "ja": {
+          "updatedAt": "2026-08-14T18:36:50.771Z",
+          "fileName": "ja/clickstack/getting-started/oss.mdx",
+          "postProcessHash": "63d1afee598160e0e6065a18e4891e90b3cac417ac631925a3be169e957e4a61"
+        },
+        "ru": {
+          "updatedAt": "2026-08-14T18:36:50.772Z",
+          "fileName": "ru/clickstack/getting-started/oss.mdx",
+          "postProcessHash": "9055d3c2a95aafbe44e9bc0a0fadcb108a3f11e4a465df5fe4b42859bb1dbe45"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:05.779Z",
+          "updatedAt": "2026-08-14T18:36:50.775Z",
           "fileName": "ar/clickstack/getting-started/oss.mdx",
-          "postProcessHash": "df9bc89b7129104de6b2d6a40344683c99637816087d09ee931e0fd8dbde5324"
-        },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:05.780Z",
-          "fileName": "fr/clickstack/getting-started/oss.mdx",
-          "postProcessHash": "4be3dc0c2874f514bbd6bf004d3174d023b848c6f29abf3c9234c2d0116da681"
+          "postProcessHash": "83d58abc87ac2c49c222a9092ec9f002016b6c96bb86d3a0f6ac982e80cc2ab3"
         }
       },
       "fileName": "clickstack/getting-started/oss.mdx",
@@ -8493,47 +8493,47 @@
     },
     {
       "fileId": "4c3db176191e76706370ed3066169f62ab47e87f5fe57f487ebd593f13369476",
-      "versionId": "db9bc186ef09e64faab866d8ff18bb7a597d131926c14caabb660b7c8794adba",
+      "versionId": "68e7fd56dc0da32175b7b29a1bcd34dc7c1f146e22be4d4b23daba930981bfc6",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:05.814Z",
-          "fileName": "es/clickstack/integration-partners/odigos.mdx",
-          "postProcessHash": "7d770dfdd88683228f3ccaa564b7f19fa7fb1695413866525d58c33560c06fcf"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.814Z",
-          "fileName": "ja/clickstack/integration-partners/odigos.mdx",
-          "postProcessHash": "837179cd3aca48ad300bb1239ab1d78f0a57a988aa9d99cbaac0e143efa0fb01"
-        },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:05.814Z",
+          "updatedAt": "2026-08-14T18:36:50.761Z",
           "fileName": "ko/clickstack/integration-partners/odigos.mdx",
-          "postProcessHash": "4a8ba8fe3f56c50e57671e20d8d5fd1404f0c24deddacd833b30f0360a7b6b1c"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.815Z",
-          "fileName": "pt-BR/clickstack/integration-partners/odigos.mdx",
-          "postProcessHash": "b298a1599c5fdc5cf7da5482441d6610a33e9eaafbb604f4bb4f2e83b0c76ff7"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:05.815Z",
-          "fileName": "ru/clickstack/integration-partners/odigos.mdx",
-          "postProcessHash": "f05f9d529db82260f7a392124a92054ed0f62e45f1e50b9b398e7aa1656239be"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:05.815Z",
-          "fileName": "zh/clickstack/integration-partners/odigos.mdx",
-          "postProcessHash": "7b54e2962d03ca3351e7a722496f337de3a68efb5b9cbc3117be3578a3530c1b"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:05.815Z",
-          "fileName": "ar/clickstack/integration-partners/odigos.mdx",
-          "postProcessHash": "0d442ce81dc887e0fa15b51e2d417540cfc44ec6c9aef843ae9b10df2656a57f"
+          "postProcessHash": "b91683b41597751e99dd2a8c719997bac70ccf3bf58897c35f4817d773f7e77a"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:05.815Z",
+          "updatedAt": "2026-08-14T18:36:50.766Z",
           "fileName": "fr/clickstack/integration-partners/odigos.mdx",
-          "postProcessHash": "7b39d95c569ed0e0f2f0ab89cb271a0e6a2759e3e1011b5dbe0be92e5ac8d47b"
+          "postProcessHash": "a82495e935aa1f1ecf2fbbd817a5710630533e137fdd46586e86574ad15f42a0"
+        },
+        "es": {
+          "updatedAt": "2026-08-14T18:36:50.767Z",
+          "fileName": "es/clickstack/integration-partners/odigos.mdx",
+          "postProcessHash": "4ce77f1de92c1505dd29a2eec12387c84224441803b7b1e83e3c395982a380bc"
+        },
+        "ru": {
+          "updatedAt": "2026-08-14T18:36:50.769Z",
+          "fileName": "ru/clickstack/integration-partners/odigos.mdx",
+          "postProcessHash": "03edf57ad71413f915887567170e395d95dbd7664d8c18750715d463e1235fcb"
+        },
+        "ja": {
+          "updatedAt": "2026-08-14T18:36:50.770Z",
+          "fileName": "ja/clickstack/integration-partners/odigos.mdx",
+          "postProcessHash": "10015b0cd554f608ec39a9f62f1cd0bf083aece5e375d6659fa28dbfc354fd0e"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-14T18:36:50.771Z",
+          "fileName": "pt-BR/clickstack/integration-partners/odigos.mdx",
+          "postProcessHash": "8f4c10f55456913fa3cd007c7fbe3085d434be17bcb5b46ac86c0171610302a4"
+        },
+        "zh": {
+          "updatedAt": "2026-08-14T18:36:50.774Z",
+          "fileName": "zh/clickstack/integration-partners/odigos.mdx",
+          "postProcessHash": "cd7f411cc2ecda6afa1627eefcaeb15579c77b1c2a7140260ad2db4ae677d5b9"
+        },
+        "ar": {
+          "updatedAt": "2026-08-14T18:36:50.775Z",
+          "fileName": "ar/clickstack/integration-partners/odigos.mdx",
+          "postProcessHash": "eec6ddbbd4e8e2d6dfdd18a4dbc5e7db974d77e1563afcc8d4d26c55581afcca"
         }
       },
       "fileName": "clickstack/integration-partners/odigos.mdx",
@@ -28077,47 +28077,47 @@
     },
     {
       "fileId": "473dddabbf42e2d36d1e3d2eb38f12614c112b26872113e5068e482fc3810444",
-      "versionId": "ea5fbd0f080ae122938f512403acc8586a057e07068dd64ff2eb3eea03563975",
+      "versionId": "642079409b275bbd671e1dbd7f3753d48b492582c873ae8ca163d86785ed6ee4",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.273Z",
-          "fileName": "snippets/es/clickstack/_config_example_otel.mdx",
-          "postProcessHash": "f8eb0e015b1fa7676511c1f6b956359fe6586e0076be007a20dcdc0d43a7869d"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.273Z",
-          "fileName": "snippets/ja/clickstack/_config_example_otel.mdx",
-          "postProcessHash": "b8a3ba9c53ae8df50b914197ac92dcb55842cc466b0226e7e54e253eb64e89c7"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.273Z",
-          "fileName": "snippets/ko/clickstack/_config_example_otel.mdx",
-          "postProcessHash": "48c0595f1ec67a4f749cf7488a17e78ae68e54addcffb2a965623b1bb4b6ff58"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.273Z",
-          "fileName": "snippets/pt-BR/clickstack/_config_example_otel.mdx",
-          "postProcessHash": "3d1fa40925312e3c6fa4a21cf9b58d7d0e8ed616dad47b7749fa4e259c2aac87"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.273Z",
-          "fileName": "snippets/ru/clickstack/_config_example_otel.mdx",
-          "postProcessHash": "08f8b1c0012da1949a3307287468d807e81c805dcad1ce07880ec17a6617c256"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.274Z",
-          "fileName": "snippets/zh/clickstack/_config_example_otel.mdx",
-          "postProcessHash": "94894514ffd6613750c1c7cfe45af6a38b0aefb762b8a9f1f0faef3c7e083bdd"
+        "fr": {
+          "updatedAt": "2026-08-14T18:36:50.751Z",
+          "fileName": "snippets/fr/clickstack/_config_example_otel.mdx",
+          "postProcessHash": "ede73cb3843c18c099158d13052d148f2e89c8075621f45c5715db872d9b9516"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:06.274Z",
+          "updatedAt": "2026-08-14T18:36:50.752Z",
           "fileName": "snippets/ar/clickstack/_config_example_otel.mdx",
-          "postProcessHash": "963b5434ca4a3a23d58c0c111dd0b5bd7074f0195b65e1ca68f6cad48f404b9f"
+          "postProcessHash": "cb20f565a33e7579e334785aa46a8e121cde3242866a77f07d4b4cfd2d3c6301"
         },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:06.274Z",
-          "fileName": "snippets/fr/clickstack/_config_example_otel.mdx",
-          "postProcessHash": "da9aa8df8d0f321e93dbe5ab3e0445417f712b5f488d2a07918c53c08706e33a"
+        "es": {
+          "updatedAt": "2026-08-14T18:36:50.753Z",
+          "fileName": "snippets/es/clickstack/_config_example_otel.mdx",
+          "postProcessHash": "ae54e8b544bbabaf16d88125945bc38ef6017bcd1a291fe2ebde1e8fc45c75ce"
+        },
+        "ru": {
+          "updatedAt": "2026-08-14T18:36:50.753Z",
+          "fileName": "snippets/ru/clickstack/_config_example_otel.mdx",
+          "postProcessHash": "9697ba4d3e3503af8feb2ad963b91e5f6ab8d30d9ee056166fcde7c83aacc23d"
+        },
+        "ja": {
+          "updatedAt": "2026-08-14T18:36:50.754Z",
+          "fileName": "snippets/ja/clickstack/_config_example_otel.mdx",
+          "postProcessHash": "452b43c0ff3fab0e6c88281b96a28b2bb7b1420d3b7ac631efc0fb6185622272"
+        },
+        "zh": {
+          "updatedAt": "2026-08-14T18:36:50.754Z",
+          "fileName": "snippets/zh/clickstack/_config_example_otel.mdx",
+          "postProcessHash": "ec2d96d1b21536dbd350feb486675850aa15360b60afec4ab388e5db1319b0e4"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-14T18:36:50.755Z",
+          "fileName": "snippets/pt-BR/clickstack/_config_example_otel.mdx",
+          "postProcessHash": "ef375904a87024baadb8a3181ca3fede66fa7c16c4335be2f335c231b4f4eb9f"
+        },
+        "ko": {
+          "updatedAt": "2026-08-14T18:36:50.756Z",
+          "fileName": "snippets/ko/clickstack/_config_example_otel.mdx",
+          "postProcessHash": "16ffd8d7c008663f8897847cac8a07a00db7d294c0f0a82609db5330051a55b7"
         }
       },
       "fileName": "snippets/clickstack/_config_example_otel.mdx",
