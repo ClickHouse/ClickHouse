@@ -813,6 +813,10 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
     /// for them; a viewless table still claims, draining a pending permit so it cannot fire later.
     const bool deps_ready = num_views == 0 || dependencies_count > 0;
 
+    /// Whether this cycle actually consumed from the file iterator; only then may the reschedule
+    /// interval be capped by a pending foreign-processing recheck (see below).
+    bool consumed_this_cycle = false;
+
     if (deps_ready && !stream_control.claimCycle(streaming_task_refresh_epochs.at(streaming_tasks_index)))
     {
         /// SYSTEM STOP/PAUSE blocks polling: skip processing. SYSTEM START wakes the task promptly
@@ -851,6 +855,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
                 files_metadata->registerActive(storage_id);
+                consumed_this_cycle = true;
 
                 if (streamToViews(streaming_tasks_index, cycle_epoch))
                 {
@@ -891,7 +896,10 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
         /// `foreign_processing_node_cache_ttl_seconds` bounds the retry latency of a file
         /// skipped because of a foreign `processing` node: on an otherwise idle queue the
         /// polling backoff may exceed the TTL, so wake up no later than the earliest recheck.
+        /// Only cycles that consume may be capped: a paused or streaming-disabled cycle never
+        /// touches the iterator, so an overdue recheck would make it reschedule immediately forever.
         std::optional<time_t> recheck_time;
+        if (consumed_this_cycle)
         {
             std::lock_guard streaming_lock(streaming_mutex);
             if (streaming_file_iterator)

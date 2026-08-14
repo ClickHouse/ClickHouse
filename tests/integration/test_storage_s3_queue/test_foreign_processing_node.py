@@ -912,3 +912,86 @@ def test_later_files_wait_for_unresolved_set_processing_with_multiple_threads(st
         DROP TABLE IF EXISTS {table_name};
         """
         )
+
+
+def test_paused_streaming_does_not_busy_loop_on_overdue_recheck(started_cluster):
+    """A paused table must not hot-loop because of an overdue foreign-processing recheck.
+
+    The wake-up cap by `earliestForeignProcessingRecheckTime` bounds the retry latency of a
+    foreign-held file, but a `SYSTEM PAUSE`d (or streaming-disabled) cycle never consumes the
+    iterator, so a pending recheck stays overdue forever. Capping the reschedule interval on
+    such a cycle would make the background task reschedule with a zero delay in a tight loop.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_foreign_paused_no_busy_loop_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    # The only file of the queue is held by the foreign processor, so the recheck stays pending.
+    generate_random_files(started_cluster, files_path, 1, start_ind=0, row_num=1)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_loading_retries": 100,
+            "s3queue_foreign_processing_node_cache_ttl_seconds": 3,
+            "s3queue_polling_min_timeout_ms": 1000,
+            "s3queue_polling_backoff_ms": 1000,
+            "s3queue_polling_max_timeout_ms": 5000,
+        },
+    )
+
+    conflict_file = f"{files_path}/test_0.csv"
+    conflict_node = node.query(f"SELECT sipHash64('{conflict_file}')").strip()
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.ensure_path(f"{keeper_path}/processing")
+    zk.create(f"{keeper_path}/processing/{conflict_node}", b"another processor")
+
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        # Wait until the foreign `processing` node is observed, i.e. a recheck is pending.
+        def get_cached_status():
+            return node.query(
+                f"SELECT status FROM system.s3queue_metadata_cache "
+                f"WHERE file_path LIKE '%{conflict_file}'"
+            ).strip()
+
+        run_with_retry(lambda x: x == "Processing", get_cached_status)
+
+        node.query(f"SYSTEM PAUSE {table_name}")
+
+        def count_reschedules():
+            node.query("SYSTEM FLUSH LOGS")
+            return int(
+                node.query(
+                    f"SELECT count() FROM system.text_log "
+                    f"WHERE message ILIKE '%Reschedule processing thread%' "
+                    f"AND logger_name ILIKE '%{table_name}%'"
+                ).strip()
+            )
+
+        before = count_reschedules()
+
+        # The pending recheck is overdue long before this sleep is over.
+        time.sleep(15)
+
+        # A paused table reschedules every 5 seconds, so a handful of cycles at most;
+        # a zero-delay loop produces thousands of them.
+        assert count_reschedules() - before < 50
+    finally:
+        node.query(f"SYSTEM START {table_name}")
+        node.query(
+            f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {table_name};
+        """
+        )
