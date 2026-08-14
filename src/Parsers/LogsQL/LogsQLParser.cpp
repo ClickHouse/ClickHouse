@@ -210,7 +210,7 @@ ASTPtr LogsQLParser::stringValueExpr(const String & field_name) const
 {
     /// LogsQL fields are strings. Convert typed ClickHouse columns before applying text
     /// operations, and map a missing Nullable value to the empty LogsQL field value.
-    return makeASTFunction("ifNull", makeASTFunction("toString", columnExpr(field_name)), makeString(""));
+    return makeASTFunction("ifNull", makeASTFunction("toString", columnExpr(field_name)), make_intrusive<ASTLiteral>(Field(String(""))));
 }
 
 String LogsQLParser::columnName(const String & field_name) const
