@@ -157,7 +157,7 @@ ConstantNodePtr getConstantResultFromFunctionArgs(const QueryTreeNodePtr & node,
         "timezoneOf"
     };
 
-    if (supported_functions.find(function_name) == supported_functions.end())
+    if (!supported_functions.contains(function_name))
     {
         return nullptr;
     }
@@ -181,9 +181,10 @@ ConstantNodePtr getConstantResultFromFunctionArgs(const QueryTreeNodePtr & node,
 
         // Try to get constant result for non-const arguments
         ColumnPtr result = base->getConstantResultForNonConstArguments(arg_columns, base->getResultType());
-        if (result)
+        if (const auto * column_const = result ? typeid_cast<const ColumnConst *>(result.get()) : nullptr)
         {
-            auto const_node = std::make_shared<ConstantNode>(std::move(result), base->getResultType());
+            auto const_node = std::make_shared<ConstantNode>(
+                ConstantValue{column_const->getPtr(), base->getResultType()});
             if (!function_node->getAlias().empty())
                 const_node->setAlias(function_node->getAlias());
             return const_node;
