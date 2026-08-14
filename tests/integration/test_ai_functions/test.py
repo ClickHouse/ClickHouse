@@ -787,6 +787,31 @@ def test_filter_where(started_cluster):
     assert lines == ["also good", "great product"]
 
 
+def test_filter_truncated_response_throw(started_cluster):
+    """aiFilter shares the FunctionBaseAI rejection path. A provider-signalled incomplete reply
+    (here `finish_reason="length"`) is an error under the default `ai_function_throw_on_error=1`,
+    aborting the query rather than silently dropping the row on a non-answer."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('some text')")
+    error = instance.query_and_get_error(
+        "SELECT aiFilter(x, 'is positive', map('credentials', 'ai_truncated')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    assert "AI_PROVIDER_RESPONSE_TRUNCATED" in error
+
+
+def test_filter_truncated_response_graceful(started_cluster):
+    """With `ai_function_throw_on_error=0`, a truncated reply maps to `0` and the row is filtered
+    out, preserving aiFilter's fail-closed contract."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('some text')")
+    result = instance.query(
+        "SELECT x FROM test_input WHERE aiFilter(x, 'is positive', map('credentials', 'ai_truncated'))",
+        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+    )
+    assert result.strip() == ""
+
+
 def test_filter_no_response_format(started_cluster):
     """aiFilter does not send a JSON-schema response_format; it asks for bare true/false."""
     instance.query("TRUNCATE TABLE test_input")
