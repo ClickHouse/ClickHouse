@@ -145,7 +145,7 @@ void LocalConnection::sendQuery(
     const NameToNameMap & query_parameters,
     const String & query_id,
     UInt64 stage,
-    const Settings *,
+    const Settings * query_settings,
     const ClientInfo * client_info,
     bool,
     const std::vector<String> & /*external_roles*/,
@@ -160,6 +160,9 @@ void LocalConnection::sendQuery(
         query_context = session->makeQueryContext(*client_info);
     else
         query_context = session->makeQueryContext();
+
+    if (query_settings)
+        query_context->setSettings(*query_settings);
 
     query_context->setCurrentQueryId(query_id);
     query_context->setClientInterface(ClientInfo::Interface::LOCAL);

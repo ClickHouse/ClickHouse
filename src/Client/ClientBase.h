@@ -593,6 +593,10 @@ protected:
     /// transport dialect consistent with the outbound text even if a JSON `SET dialect=...` changed it.
     bool current_query_parsed_as_json_dialect = false;
 
+    /// True when the current query is a SQL `SET` escape parsed with `ParserQuery` while a
+    /// non-ClickHouse dialect was active. Its outbound transport dialect must be `clickhouse`.
+    bool current_query_is_set_escape = false;
+
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_printed = false;
 

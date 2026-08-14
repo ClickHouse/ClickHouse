@@ -484,12 +484,12 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         max_length = settings[Setting::max_query_size];
 
     const Dialect dialect = settings[Setting::dialect];
+    const bool is_set_escape = dialect != Dialect::clickhouse
+        && isClickHouseJSONSetEscape(pos, end, settings[Setting::max_query_size]);
 
-    /// In `clickhouse_json` dialect, route the query through `IAST::createFromJSON`,
-    /// except for plain `SET` queries which are still parsed with `ParserQuery` so
-    /// users can switch back to another dialect (e.g. `SET dialect = 'clickhouse'`)
-    /// without being locked into JSON-only input.
-    if (dialect == Dialect::clickhouse_json && !isClickHouseJSONSetEscape(pos, end, settings[Setting::max_query_size]))
+    /// A plain `SET` query is an escape hatch from every non-ClickHouse dialect. Parse it
+    /// with `ParserQuery` so users can switch back to another dialect.
+    if (dialect == Dialect::clickhouse_json && !is_set_escape)
     {
         if (!settings[Setting::enable_json_ast_dialect])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -648,7 +648,9 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     }
     else
     {
-        if (dialect == Dialect::kusto)
+        if (is_set_escape)
+            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+        else if (dialect == Dialect::kusto)
             parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
         else if (dialect == Dialect::prql)
             parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
@@ -1507,6 +1509,14 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
 
 void ClientBase::pinOutboundDialectForJSONDialect(const String & outbound_query)
 {
+    if (current_query_is_set_escape)
+    {
+        /// The client parsed this SQL `SET` escape with `ParserQuery` while the session used
+        /// another dialect. Make the server parse the same SQL before the setting takes effect.
+        client_context->setSetting("dialect", String("clickhouse"));
+        return;
+    }
+
     if (!current_query_parsed_as_json_dialect)
         return;
 
@@ -2826,10 +2836,12 @@ void ClientBase::processParsedSingleQuery(
             client_context->setSettings(old_settings);
             connection->setFormatSettings(getFormatSettings(client_context));
         });
-        /// Capture whether this query was parsed via the `clickhouse_json` dialect *before* applying any
+        /// Capture whether this query was parsed via the `clickhouse_json` dialect or a SQL `SET` escape *before* applying any
         /// in-query `SET` (which may change `dialect`/`enable_json_ast_dialect`). The outbound
         /// transport dialect is pinned to match the outbound text in `pinOutboundDialectForJSONDialect`.
         current_query_parsed_as_json_dialect = client_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
+        current_query_is_set_escape = client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse
+            && parsed_query->as<ASTSetQuery>();
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
         connection->setFormatSettings(getFormatSettings(client_context));
 
@@ -3786,7 +3798,7 @@ String ClientBase::getPrompt() const
             dialect_indicator = "(" + client_context->getSettingsRef()[Setting::dialect].toString() + ")";
     }
 
-    const bool has_display_name = pattern.find("{display_name}") != String::npos;
+    const bool has_display_name = pattern.contains("{display_name}");
 
     String display_name = server_display_name;
     if (has_display_name && !dialect_indicator.empty())

@@ -66,6 +66,19 @@ send -- "/dialect\r"
 expect -- "Current dialect: clickhouse"
 expect -- ":) "
 
+# A successful plain SET is also retained in the client context, so the
+# prompt, /dialect, and parsing of the next query use the server's dialect.
+send -- "SET dialect = 'prql'\r"
+expect -- "(prql) :) "
+send -- "/dialect\r"
+expect -- "Current dialect: prql"
+expect -- "(prql) :) "
+send -- "SET dialect = 'clickhouse'\r"
+expect -- ":) "
+send -- "/dialect\r"
+expect -- "Current dialect: clickhouse"
+expect -- ":) "
+
 send -- "exit\r"
 expect eof
 
