@@ -118,15 +118,6 @@ public:
         }
         else if (const DataTypeObject * object = checkAndGetDataType<DataTypeObject>(input_type))
         {
-            if (is_input_type_nullable)
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} cannot be Nullable(JSON). Actual {}",
-                    getName(),
-                    arguments[0].type->getName());
-            }
-
             if (number_of_arguments != 2)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} with {} first argument doesn't match: passed {}, should be 2",
@@ -139,12 +130,19 @@ public:
             auto subcolumn_name = subcolumn_name_col->getValue<String>();
             /// Use combined `@` subcolumn that merges literal value and sub-object.
             auto combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + subcolumn_name + "`";
-            return wrapInArrays(object->getSubcolumnType(combined_name), count_arrays);
+
+            /// Same promotion as the Nullable(Tuple(...)) case above, so the extracted path can carry the
+            /// outer NULLs. A `Dynamic` path stays `Dynamic` and represents them itself.
+            const auto element_type = is_input_type_nullable
+                ? makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(object->getSubcolumnType(combined_name))
+                : object->getSubcolumnType(combined_name);
+
+            return wrapInArrays(element_type, count_arrays);
         }
 
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "First argument for function {} must be Tuple, Nullable(Tuple), QBit, JSON or array of these. Actual {}",
+            "First argument for function {} must be Tuple, Nullable(Tuple), QBit, JSON, Nullable(JSON) or array of these. Actual {}",
             getName(),
             arguments[0].type->getName());
     }
@@ -255,15 +253,6 @@ public:
         }
         else if (const DataTypeObject * input_type_as_object = checkAndGetDataType<DataTypeObject>(input_type))
         {
-            if (null_map_column)
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} cannot be Nullable(JSON). Actual {}",
-                    getName(),
-                    input_arg.type->getName());
-            }
-
             const auto * subcolumn_name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
             if (!subcolumn_name_col)
                 throw Exception(
@@ -274,12 +263,16 @@ public:
 
             auto subcolumn_name = subcolumn_name_col->getValue<String>();
             res = getObjectElement(*input_type_as_object, input_col->getPtr(), subcolumn_name);
+
+            /// Fold the outer Nullable(JSON) null map into the extracted path, matching getReturnTypeImpl.
+            if (null_map_column)
+                res = NullableSubcolumnCreator(null_map_column).create(res);
         }
         else
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be Tuple, Nullable(Tuple), QBit, JSON or array of these. Actual {}",
+                "First argument for function {} must be Tuple, Nullable(Tuple), QBit, JSON, Nullable(JSON) or array of these. Actual {}",
                 getName(),
                 input_arg.type->getName());
         }
