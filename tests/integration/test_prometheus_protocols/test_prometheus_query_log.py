@@ -39,6 +39,21 @@ def query_log_has_single_finish_with_written_rows_sql(query_id):
     )
 
 
+def timeseries_metrics_has_metric_family_sql(table, metric_family_name):
+    return (
+        f"SELECT count() > 0 FROM timeSeriesMetrics({table}) "
+        f"WHERE metric_family_name = '{metric_family_name}'"
+    )
+
+
+def timeseries_data_has_metric_sql(table, metric_name):
+    return (
+        f"SELECT count() > 0 FROM timeSeriesData({table}) AS data "
+        f"JOIN timeSeriesTags({table}) AS tags ON data.id = tags.id "
+        f"WHERE tags.metric_name = '{metric_name}'"
+    )
+
+
 def assert_query_log_has_finish_for_query_id(query_id, retry_count=30, sleep_time=1):
     """Assert the Prometheus request produced at least one correlated QueryFinish row."""
     node.query("SYSTEM FLUSH LOGS query_log")
@@ -166,6 +181,46 @@ def test_remote_write_metadata_appears_in_query_log_with_written_rows():
     )
 
     assert_query_log_has_single_finish_with_written_rows(query_id)
+
+
+def test_remote_write_time_series_and_metadata_together_are_stored():
+    """
+    A single remote write carrying both timeseries and metadata should produce one
+    parent TimeSeries QueryFinish row, store the sample in the data inner table, and
+    store the metadata in the metrics inner table. This exercises the mixed block
+    where metadata rows are padded alongside the time series.
+    """
+    query_id = f"prometheus-query-log-test-{uuid.uuid4()}"
+    metric_name = "remote_write_combined_test"
+
+    write_request = convert_time_series_to_protobuf(
+        [({"__name__": metric_name, "job": "test"}, {1753176710.0: 7})]
+    )
+    metadata = convert_metrics_metadata_to_protobuf(
+        [(metric_name, "GAUGE", "Combined test metric.", "")]
+    )
+    write_request.metadata.extend(metadata.metadata)
+
+    send_protobuf_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write",
+        write_request,
+        headers={"X-ClickHouse-Query-Id": query_id},
+    )
+
+    assert_query_log_has_single_finish_with_written_rows(query_id)
+
+    assert_eq_with_retry(
+        node,
+        timeseries_data_has_metric_sql("prometheus", metric_name),
+        "1\n",
+    )
+    assert_eq_with_retry(
+        node,
+        timeseries_metrics_has_metric_family_sql("prometheus", metric_name),
+        "1\n",
+    )
 
 
 def test_query_range_api_appears_in_query_log_with_read_rows():
