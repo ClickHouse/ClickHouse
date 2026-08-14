@@ -274,7 +274,7 @@ void LogsQLParser::parsePipeExtract(Layer & layer, bool is_regexp)
     for (const auto & [field, group_index] : group_of_field)
     {
         ASTPtr value = makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>("__logsql_extract"), makeNumber(group_index));
-        ASTPtr original = columnExpr(field);
+        ASTPtr original = makeASTFunction("ifNull", makeASTFunction("toString", columnExpr(field)), makeString(""));
         if (skip_empty_results)
             value = makeASTFunction("if", makeASTFunction("notEquals", value, makeString("")), value->clone(), original->clone());
         else if (keep_original_fields)
@@ -484,7 +484,7 @@ void LogsQLParser::parsePipeFormat(Layer & layer)
     bool result_exists_for_sure = result_column == context.msg_column || result_column == context.time_column;
     bool use_replace = keep_original_fields || skip_empty_results || condition != nullptr || result_exists_for_sure;
 
-    ASTPtr original = make_intrusive<ASTIdentifier>(result_column);
+    ASTPtr original = makeASTFunction("ifNull", makeASTFunction("toString", make_intrusive<ASTIdentifier>(result_column)), makeString(""));
     ASTPtr value = formatted;
     if (skip_empty_results)
         value = makeASTFunction("if", makeASTFunction("notEquals", value, makeString("")), value->clone(), original->clone());
@@ -638,7 +638,7 @@ void LogsQLParser::parsePipeUnpack(Layer & layer, bool is_logfmt)
         }
 
         String output_name = result_prefix + field;
-        ASTPtr original = make_intrusive<ASTIdentifier>(columnName(output_name));
+        ASTPtr original = makeASTFunction("ifNull", makeASTFunction("toString", make_intrusive<ASTIdentifier>(columnName(output_name))), makeString(""));
         if (skip_empty_results)
             value = makeASTFunction("if", makeASTFunction("notEquals", value, makeString("")), value->clone(), original->clone());
         else if (keep_original_fields)

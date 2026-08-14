@@ -206,6 +206,13 @@ ASTPtr LogsQLParser::numericValueExpr(const String & field_name) const
     return makeASTFunction("accurateCastOrNull", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String("Float64"))));
 }
 
+ASTPtr LogsQLParser::stringValueExpr(const String & field_name) const
+{
+    /// LogsQL fields are strings. Convert typed ClickHouse columns before applying text
+    /// operations, and map a missing Nullable value to the empty LogsQL field value.
+    return makeASTFunction("ifNull", makeASTFunction("toString", columnExpr(field_name)), makeString(""));
+}
+
 String LogsQLParser::columnName(const String & field_name) const
 {
     if (field_name.empty() || field_name == "_msg")
@@ -532,7 +539,7 @@ ASTPtr LogsQLParser::parseFilterPhrase(const String & field_name)
     if (was_quoted && phrase.empty())
     {
         /// The empty phrase filter: matches logs where the field is empty or missing.
-        return makeASTFunction("equals", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String())));
+        return makeASTFunction("equals", stringValueExpr(field_name), make_intrusive<ASTLiteral>(Field(String())));
     }
 
     return makePhraseFilter(field_name, phrase);
@@ -573,7 +580,7 @@ ASTPtr LogsQLParser::parseFilterStar(const String & field_name)
             return nullptr;  /// `*` matches all logs.
 
         /// `field:*` matches logs with a non-empty field.
-        return makeASTFunction("notEquals", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String())));
+        return makeASTFunction("notEquals", stringValueExpr(field_name), make_intrusive<ASTLiteral>(Field(String())));
     }
 
     /// The `*substr*` filter.
@@ -585,7 +592,7 @@ ASTPtr LogsQLParser::parseFilterStar(const String & field_name)
         throwSyntaxError(fmt::format("missing whitespace after the *{}* filter", substring));
 
     return makeASTFunction("greater",
-        makeASTFunction("position", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(substring))),
+        makeASTFunction("position", stringValueExpr(field_name), make_intrusive<ASTLiteral>(Field(substring))),
         make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(0))));
 }
 
@@ -983,7 +990,7 @@ ASTPtr LogsQLParser::parseFilterExact(const String & field_name)
         if (!lex.isKeyword(")"))
             throwSyntaxError(fmt::format("missing ')' after exact(*); got {}", lex.getToken()));
         lex.nextToken();
-        return makeASTFunction("notEquals", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String())));
+        return makeASTFunction("notEquals", stringValueExpr(field_name), make_intrusive<ASTLiteral>(Field(String())));
     }
 
     bool quoted = lex.isQuoted();
@@ -1056,11 +1063,10 @@ ASTPtr LogsQLParser::parseFilterAnyCase(const String & field_name)
         throwSyntaxError(fmt::format("missing ')' for i(); got {}", lex.getToken()));
     lex.nextToken();
 
-    if (phrase.empty())
-        return makeASTFunction("equals", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String())));
-
     if (is_prefix)
         return makePrefixFilter(field_name, phrase, /*case_insensitive=*/ true);
+    if (phrase.empty())
+        return makeASTFunction("equals", stringValueExpr(field_name), make_intrusive<ASTLiteral>(Field(String())));
     return makePhraseFilter(field_name, phrase, /*case_insensitive=*/ true);
 }
 
@@ -1479,12 +1485,12 @@ ASTPtr LogsQLParser::makePhraseFilter(const String & field_name, const String & 
     {
         /// A single word: match it with token boundaries. hasToken can use tokenbf skip indexes.
         return makeASTFunction(case_insensitive ? "hasTokenCaseInsensitive" : "hasToken",
-            columnExpr(field_name), make_intrusive<ASTLiteral>(Field(phrase)));
+            stringValueExpr(field_name), make_intrusive<ASTLiteral>(Field(phrase)));
     }
 
     /// A phrase: match it with word boundaries on both sides.
     String pattern = fmt::format("{}{}{}{}", case_insensitive ? "(?i)" : "", boundary_before, escapeRegexp(phrase), boundary_after);
-    return makeASTFunction("match", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(pattern)));
+    return makeASTFunction("match", stringValueExpr(field_name), make_intrusive<ASTLiteral>(Field(pattern)));
 }
 
 ASTPtr LogsQLParser::makePrefixFilter(const String & field_name, const String & prefix, bool case_insensitive)
@@ -1494,12 +1500,12 @@ ASTPtr LogsQLParser::makePrefixFilter(const String & field_name, const String & 
         /// `field:*` matches logs with a non-empty field.
         if (field_name.empty())
             return nullptr;
-        return makeASTFunction("notEquals", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String())));
+        return makeASTFunction("notEquals", stringValueExpr(field_name), make_intrusive<ASTLiteral>(Field(String())));
     }
 
     /// A word prefix: a word boundary before the prefix, anything after it.
     String pattern = fmt::format("{}{}{}", case_insensitive ? "(?i)" : "", boundary_before, escapeRegexp(prefix));
-    return makeASTFunction("match", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(pattern)));
+    return makeASTFunction("match", stringValueExpr(field_name), make_intrusive<ASTLiteral>(Field(pattern)));
 }
 
 ASTPtr LogsQLParser::makeRegexpFilter(const String & field_name, const String & regexp)
@@ -1508,14 +1514,14 @@ ASTPtr LogsQLParser::makeRegexpFilter(const String & field_name, const String & 
     if (regexp.empty() || regexp == ".*")
         return nullptr;
     if (regexp == ".+")
-        return makeASTFunction("notEquals", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String())));
+        return makeASTFunction("notEquals", stringValueExpr(field_name), make_intrusive<ASTLiteral>(Field(String())));
 
     /// Validate the regexp here, so that invalid regexps are reported as parse errors.
     re2::RE2 checked_regexp(regexp, re2::RE2::Quiet);
     if (!checked_regexp.ok())
         throwSyntaxError(fmt::format("invalid regexp {}: {}", regexp, checked_regexp.error()));
 
-    return makeASTFunction("match", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(regexp)));
+    return makeASTFunction("match", stringValueExpr(field_name), make_intrusive<ASTLiteral>(Field(regexp)));
 }
 
 ASTPtr LogsQLParser::makeNumericComparison(const String & field_name, const String & function_name, ASTPtr literal, const String & original_text) const

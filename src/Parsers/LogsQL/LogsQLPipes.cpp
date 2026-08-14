@@ -1973,7 +1973,10 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
                         {
                             return makeASTFunction("toInt128", make_intrusive<ASTLiteral>(field));
                         };
-                        ASTPtr value = columnExpr(name);
+                        /// Buckets use the same per-row Float64 parsing as numeric stats
+                        /// functions. A non-numeric LogsQL field becomes NULL, which is an
+                        /// explicit separate group instead of attempting arithmetic on text.
+                        ASTPtr value = numericValueExpr(name);
                         if (offset_value)
                             value = makeASTFunction("minus", value, make_int128(*offset_value));
                         key = makeASTFunction("minus", value,
@@ -1987,7 +1990,7 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
                         ASTPtr offset_literal;
                         if (offset_value)
                             offset_literal = make_intrusive<ASTLiteral>(Field(to_float(*offset_value)));
-                        ASTPtr value = columnExpr(name);
+                        ASTPtr value = numericValueExpr(name);
                         if (offset_literal)
                             value = makeASTFunction("minus", value, offset_literal);
                         key = makeASTFunction("multiply",
