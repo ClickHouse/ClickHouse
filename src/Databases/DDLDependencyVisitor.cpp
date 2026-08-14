@@ -170,7 +170,7 @@ namespace
                     if (create.is_materialized_view)
                     {
                         auto select_copy = create.select->clone();
-                        ApplyWithSubqueryVisitor(global_context).visit(select_copy);
+                        ApplyWithSubqueryVisitor::visit(select_copy);
 
                         /// Use the database where the materialized view is created to resolve nested views.
                         /// The database name can be empty when the AST has been mutated by SharedDatabaseCatalog::serializeCreateQuery
