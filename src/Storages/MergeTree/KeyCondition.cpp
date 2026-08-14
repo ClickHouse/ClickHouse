@@ -1712,8 +1712,11 @@ static bool applyFunctionChainToColumn(
             }
             else if (which_result.isNativeUInt())
             {
-                /// negative timestamps -> DECIMAL_OVERFLOW for an unsigned target
-                if (value < 0)
+                /// negative timestamps -> DECIMAL_OVERFLOW for an unsigned target.
+                /// The conversion rejects a value by its whole part, not by the raw tick value
+                /// (see `DecimalUtils::convertToImpl`), so a pre-epoch sub-second value such as
+                /// `1969-12-31 23:59:59.500` is defined and converts to `0`.
+                if (seconds < 0)
                     return false;
                 if (which_result.isUInt8() && seconds > std::numeric_limits<UInt8>::max())
                     return false;
