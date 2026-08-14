@@ -3,19 +3,25 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <Core/Block.h>
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/NativeWriter.h>
+#include <IO/NullWriteBuffer.h>
 #include <Processors/Chunk.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Common/Arena.h>
@@ -25,6 +31,19 @@ using namespace DB;
 
 namespace
 {
+
+/// The compressed size of a whole column as `NativeWriter` puts it on the wire - the ground truth the
+/// estimate approximates for a materialized column.
+size_t compressedColumnSize(const ColumnWithTypeAndName & column)
+{
+    NullWriteBuffer null_buf;
+    CompressedWriteBuffer compressed_buf(null_buf);
+    auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, column);
+    NativeWriter::writeData(
+        *serialization, column_to_write, compressed_buf, std::nullopt, 0, column_to_write->size(), DBMS_TCP_PROTOCOL_VERSION);
+    compressed_buf.finalize();
+    return null_buf.count();
+}
 
 /// A `groupArray(UInt64)` column of the shape `AggregatingInOrderTransform` produces for a skewed ordered
 /// aggregation: every group's state is empty (one varint on the wire) except one, which holds
@@ -473,4 +492,77 @@ TEST(RuntimeDataflowStatisticsStateSampling, ConstantStateCompressesAcrossRepeti
     ASSERT_TRUE(stats.has_value());
     EXPECT_GE(stats->output_bytes, exact.compressed_bytes / 2);
     EXPECT_LE(stats->output_bytes, exact.compressed_bytes * 2);
+}
+
+/// The same holds for the non-state payload *below* the stored row of a constant state-bearing carrier - a
+/// constant `Array(Tuple(groupArrayState(x), String))`, say, whose nested strings have more than one row and
+/// therefore cannot be put back into a constant of the block's row count. `NativeWriter::writeData`
+/// materializes the constant all the same, so the wire carries the whole nested payload once per row of the
+/// block: its copies compress against each other even when one copy is incompressible on its own, and
+/// scaling one copy's `sample_bytes` and `compressed_bytes` by the row count keeps the one-copy ratio,
+/// overstating `output_bytes` by the repeated payload's real compression ratio.
+TEST(RuntimeDataflowStatisticsStateSampling, ConstantNestedPayloadCompressesAcrossRepetitions)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 32;
+    /// The stored row is an array of this many `(state, string)` tuples. The states stay empty - one varint
+    /// each on the wire - so the strings dominate the carrier.
+    constexpr size_t elements_in_array = 4;
+    /// Distinct bytes, so one copy of the strings is incompressible; all four together are ~16 KiB, well
+    /// inside LZ4's 64 KiB match window when the copies follow each other.
+    constexpr size_t string_size = 4096;
+
+    AggregateFunctionPtr function;
+    auto state_column = createSkewedGroupArrayColumn(
+        /*rows=*/elements_in_array,
+        /*giant_state_row=*/elements_in_array,
+        /*elements_in_giant_state=*/0,
+        function);
+
+    auto string_column = ColumnString::create();
+    for (size_t element = 0; element < elements_in_array; ++element)
+    {
+        std::string value(string_size, ' ');
+        for (size_t i = 0; i < string_size; ++i)
+            value[i] = static_cast<char>((i * 0x9E3779B9ULL + element * 0x85EBCA6BULL) >> 13);
+        string_column->insertData(value.data(), value.size());
+    }
+
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+    const auto element_type = std::make_shared<DataTypeTuple>(DataTypes{state_type, std::make_shared<DataTypeString>()});
+    const auto array_type = std::make_shared<DataTypeArray>(element_type);
+
+    Columns tuple_elements;
+    tuple_elements.emplace_back(std::move(state_column));
+    tuple_elements.emplace_back(std::move(string_column));
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    offsets->insertValue(elements_in_array);
+    const ColumnPtr array_column = ColumnArray::create(ColumnTuple::create(std::move(tuple_elements)), std::move(offsets));
+
+    /// The ground truth: the materialized column the wire carries, i.e. the same array `rows` times.
+    auto materialized = array_column->cloneEmpty();
+    for (size_t row = 0; row < rows; ++row)
+        materialized->insertFrom(*array_column, 0);
+    const size_t exact_compressed_bytes = compressedColumnSize({std::move(materialized), array_type, "materialized"});
+    /// The identical copies compress: an estimate that keeps the one-copy ratio of ~1 lands at the whole
+    /// uncompressed payload, far above the 2x margin asserted below.
+    ASSERT_LT(exact_compressed_bytes * 8, rows * elements_in_array * string_size);
+
+    const size_t cache_key = 0x111985 + 7;
+
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
+
+        Block header;
+        header.insert(ColumnWithTypeAndName{nullptr, array_type, "constant_array_of_states"});
+
+        Chunk chunk(Columns{ColumnConst::create(array_column, rows)}, rows);
+        updater.recordOutputChunk(chunk, header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
 }

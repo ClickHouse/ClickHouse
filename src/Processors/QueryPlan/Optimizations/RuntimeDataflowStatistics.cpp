@@ -127,6 +127,59 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
     return std::make_pair(compressed_buf.count(), null_buf.count());
 }
 
+/// Same as `estimateCompressedColumnSize`, for a payload the wire carries `repetitions` times in a row:
+/// everything below the stored row of a `ColumnConst` that cannot be put back into a constant itself - e.g.
+/// the elements of a constant array, whose logical size stays above one after the walk recurses below the
+/// constant row. `NativeWriter::writeData` materializes the constant, so those copies land in one compressed
+/// stream back to back; identical copies compress to almost nothing while a copy fits the codec's match
+/// window, and not at all once it outgrows it, so the repetitions have to be measured rather than scaled -
+/// scaling the one-copy figures would pin the repeated payload's compression ratio to one copy's, which is
+/// exactly wrong for a payload that is incompressible on its own. Serialize the sample enough times to
+/// observe the marginal cost of one more copy and extrapolate the remaining copies from it, the same way
+/// `ColumnAggregateFunction::sampledStateSizes` measures the repetitions of a constant state.
+static std::pair<size_t, size_t> estimateRepeatedCompressedColumnSize(const ColumnWithTypeAndName & column, size_t repetitions)
+{
+    auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, column);
+    // To avoid spending too much time on serialization, we limit the number of rows to serialize.
+    const auto limit = std::max<size_t>(std::min(8192ul, column_to_write->size()), column_to_write->size() / 10);
+
+    auto serialize_copies = [&](size_t copies)
+    {
+        NullWriteBuffer null_buf;
+        CompressedWriteBuffer compressed_buf(null_buf);
+        for (size_t copy = 0; copy < copies; ++copy)
+            NativeWriter::writeData(*serialization, column_to_write, compressed_buf, std::nullopt, 0, limit, DBMS_TCP_PROTOCOL_VERSION);
+        compressed_buf.finalize();
+        /// Pair of (sample size, compressed size), like `estimateCompressedColumnSize` returns.
+        return std::make_pair(compressed_buf.count(), null_buf.count());
+    };
+
+    const auto [one_copy_sample_bytes, one_copy_compressed_bytes] = serialize_copies(1);
+
+    static constexpr size_t max_repeated_sample_bytes = 1024 * 1024;
+    const size_t measured_repetitions
+        = std::min(repetitions, std::max<size_t>(2, max_repeated_sample_bytes / std::max<size_t>(one_copy_sample_bytes, 1)));
+    const size_t measured_compressed_bytes = serialize_copies(measured_repetitions).second;
+
+    size_t compressed_bytes = measured_compressed_bytes;
+    if (measured_repetitions != repetitions)
+    {
+        /// The per-block framing of both measurements cancels out in the difference, so the marginal figure
+        /// is the copies' own compressed size.
+        const double marginal_compressed_bytes_per_copy = measured_compressed_bytes > one_copy_compressed_bytes
+            ? static_cast<double>(measured_compressed_bytes - one_copy_compressed_bytes) / static_cast<double>(measured_repetitions - 1)
+            : 0.0;
+        compressed_bytes
+            = one_copy_compressed_bytes + static_cast<size_t>(marginal_compressed_bytes_per_copy * static_cast<double>(repetitions - 1));
+    }
+
+    /// The uncompressed side is exact: the same payload, `repetitions` times. A sample too small to outweigh
+    /// the compressed format's per-block framing must read as incompressible rather than as expanding - when
+    /// the data is actually sent, that framing is amortized over `min_compress_block_size`.
+    const size_t sample_bytes = one_copy_sample_bytes * repetitions;
+    return std::make_pair(sample_bytes, std::min(sample_bytes, compressed_bytes));
+}
+
 /// Final `-State` results can reach the output wrapped in carrier columns - `prepareOutputBlockColumns`
 /// recurses through the subcolumns of `isState()` results to attach the shared arenas to nested
 /// `ColumnAggregateFunction` leaves, so e.g. `SELECT tuple(uniqExactState(x))` emits a `ColumnTuple` around
@@ -176,17 +229,14 @@ static void sampleNonStatePartsCompression(
     {
         /// A one-row subtree of a `ColumnConst` is put back into a constant of the original row count, so
         /// that the sample measures the repeated payload the wire carries, compressibility included.
-        const ColumnWithTypeAndName to_sample{
-            repetitions > 1 && column->size() == 1 ? ColumnConst::create(column, repetitions) : column, type, {}};
-        auto [sample, compressed] = estimateCompressedColumnSize(to_sample);
         /// Deeper than the constant's own row - e.g. the elements of a constant array of states - the
-        /// payload cannot be wrapped in a constant, so scale the sample instead. That keeps the
-        /// uncompressed bytes exact and reports the repetitions as no more compressible than one copy.
-        if (to_sample.column == column && repetitions > 1)
-        {
-            sample *= repetitions;
-            compressed *= repetitions;
-        }
+        /// payload cannot be wrapped in a constant, so its copies are serialized and measured explicitly
+        /// instead; either way the repetitions are measured rather than scaled from one copy, which would
+        /// pin their compression ratio to one copy's.
+        const auto [sample, compressed] = repetitions > 1 && column->size() != 1
+            ? estimateRepeatedCompressedColumnSize({column, type, {}}, repetitions)
+            : estimateCompressedColumnSize(
+                  {repetitions > 1 ? ColumnPtr(ColumnConst::create(column, repetitions)) : column, type, {}});
         sample_bytes += sample;
         compressed_bytes += compressed;
         return;
