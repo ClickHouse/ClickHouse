@@ -48,6 +48,10 @@ protected:
     void onCancel() noexcept override;
 
 private:
+    /// Publishes the `PartialResult` reason and drains the remaining packets via
+    /// `RemoteQueryExecutor::finish`. Used on the paths where the consumer closed the output port.
+    void startSoftDrain();
+
     std::atomic<CancelReason> cancel_reason{CancelReason::NotCancelled};
     std::atomic_bool was_query_sent = false;
     bool need_drain = false;

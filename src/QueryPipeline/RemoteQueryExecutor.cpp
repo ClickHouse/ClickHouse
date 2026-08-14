@@ -79,6 +79,7 @@ namespace FailPoints
     extern const char remote_query_executor_cancel_before_send[];
     extern const char remote_query_executor_receive_packet_pause[];
     extern const char remote_query_executor_finish_drain_pause[];
+    extern const char remote_query_executor_drain_packet_pause[];
 }
 
 ThrottlerPtr getThrottler(const ContextPtr & context)
@@ -1178,8 +1179,21 @@ void RemoteQueryExecutor::drainConnections(std::optional<Packet> first_packet)
         /// this loop, the hard-cancel caller can also acquire the mutex (and trigger
         /// `connections->sendCancel`, prompting replicas to respond with `EndOfStream`)
         /// without waiting for the drain to complete.
+        /// Test-only, a no-op unless the failpoint is armed. Parks the drain loop right before
+        /// the abort check, so a test can deliver a hard cancellation while the drain is
+        /// in flight and then observe that the loop leaves through `drain_should_stop`.
+        fiu_do_on(FailPoints::remote_query_executor_drain_packet_pause, {
+            FailPointInjection::notifyPauseAndWaitForResume(FailPoints::remote_query_executor_drain_packet_pause);
+        });
+
         if (drain_should_stop.load(std::memory_order_acquire))
+        {
+            /// Logged so that a test can prove the hard-cancellation upgrade actually preempted
+            /// the drain instead of the drain completing on its own.
+            if (log)
+                LOG_TRACE(log, "Drain of the remote connections was aborted by a hard cancellation");
             break;
+        }
 
         Packet packet = connections->receivePacket();
         handleDrainPacket(std::move(packet));

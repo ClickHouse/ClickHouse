@@ -128,7 +128,7 @@ void RemoteSource::work()
     /// See issue: https://github.com/ClickHouse/ClickHouse/issues/60844
     if (need_drain)
     {
-        query_executor->finish();
+        startSoftDrain();
         return;
     }
 
@@ -262,13 +262,29 @@ void RemoteSource::cancel(CancelReason reason) noexcept
     /// is not made to wait for the drain to complete. Upgrade the reason and force a hard
     /// `query_executor->cancel`.
     if (reason == CancelReason::PartialResult)
+    {
+        /// The soft reason could have been published by `onUpdatePorts`, which starts the same
+        /// drain but deliberately leaves `is_cancelled` alone. A `PartialResult` cancellation
+        /// arriving afterwards (e.g. the late-progress collection in
+        /// `PipelineExecutor::finalizeExecution`) must still behave exactly as if it were the
+        /// first one: `finish` is idempotent, so re-entering it is safe.
+        if (expected == CancelReason::PartialResult)
+        {
+            is_cancelled.store(true, std::memory_order_release);
+            onCancel();
+        }
         return;
+    }
 
     if (expected != CancelReason::PartialResult)
         return;
 
     if (!cancel_reason.compare_exchange_strong(expected, reason, std::memory_order_acq_rel))
         return;
+
+    /// The `PartialResult` reason we are upgrading could have been published by `onUpdatePorts`,
+    /// which does not touch `is_cancelled`, so this hard cancellation has to publish it itself.
+    is_cancelled.store(true, std::memory_order_release);
 
     try
     {
@@ -300,9 +316,20 @@ void RemoteSource::onCancel() noexcept
         /// delays when replicas are still processing and would otherwise take significant
         /// time to reach end-of-stream (e.g. many streams in cluster functions).
         if (cancel_reason.load(std::memory_order_acquire) == CancelReason::PartialResult)
+        {
             query_executor->finish();
+        }
         else
+        {
+            /// A soft drain may already be in flight on another thread - it is started by
+            /// `finish` both from the `PartialResult` branch above and directly from
+            /// `onUpdatePorts` / `generate`. Signal it to stop between packets, otherwise the
+            /// hard cancellation would still have to wait for the drain to reach the next
+            /// packet or end-of-stream. `abortDrain` is lock-free and is a no-op when no drain
+            /// is running: after a hard cancellation `finish` never starts a new one.
+            query_executor->abortDrain();
             query_executor->cancel();
+        }
     }
     catch (...)
     {
@@ -310,12 +337,27 @@ void RemoteSource::onCancel() noexcept
     }
 }
 
+void RemoteSource::startSoftDrain()
+{
+    /// A closed output port (the common `LIMIT` carrier) makes `finish` drain the remaining
+    /// packets exactly as a `PartialResult` cancellation does. Publish that soft reason before
+    /// the drain starts, so a hard cancellation (`CancelledByUser`, `CancelledByTimeout`)
+    /// arriving afterwards takes the upgrade branch in `cancel` - which aborts the drain -
+    /// instead of becoming the first recorded reason and silently skipping `abortDrain`.
+    /// `is_cancelled` is deliberately left alone: the source is not cancelled, it merely has
+    /// no consumer anymore.
+    CancelReason expected = CancelReason::NotCancelled;
+    cancel_reason.compare_exchange_strong(expected, CancelReason::PartialResult, std::memory_order_acq_rel);
+
+    query_executor->finish();
+}
+
 void RemoteSource::onUpdatePorts()
 {
     if (isCancelled())
         return;
     if (getPort().isFinished())
-        query_executor->finish();
+        startSoftDrain();
 }
 
 
