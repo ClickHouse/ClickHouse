@@ -575,7 +575,7 @@ LowCardinalityFieldIds getLowCardinalityFieldIds(Poco::JSON::Object::Ptr metadat
     ReadBufferFromString buf(serialized_field_ids);
     while (!buf.eof())
     {
-        Int32 field_id;
+        Int32 field_id = 0;
         readIntText(field_id, buf);
         result.insert(field_id);
         if (!buf.eof())
