@@ -12,7 +12,7 @@ namespace DB
 /// call in the query (owned by the query `Context`), so the counters are updated concurrently from
 /// the pipeline threads and are `atomic`. `checkQuotas` and `recordAttempt` are separate, so at the
 /// limit a few concurrent calls can each pass the check before recording (overshoot bounded by the
-/// number of in-flight calls) - the same relaxation the setting docs already allow.
+/// number of in-flight calls).
 class AIQuotaTracker
 {
 public:

@@ -642,8 +642,7 @@ protected:
     /// This is a per query cache and not shared across queries.
     mutable ReverseLookupCachePtr reverse_lookup_cache;
 
-    /// AI-function quota usage for the current query, shared by every AI function call in it so the
-    /// `ai_function_max_*_per_query` limits bound the whole query rather than a single block. Per query.
+    /// AI-function quota usage for the current query, shared by every AI function call in it.
     mutable AIQuotaTrackerPtr ai_quota_tracker;
 
     /// this is a mode of parallel replicas where we set parallel_replicas_count and parallel_replicas_offset
@@ -1957,8 +1956,6 @@ public:
 
     ReverseLookupCache & getReverseLookupCache() const;
 
-    /// The query-scoped AI-function quota tracker, lazily created from the query's `ai_function_*` settings
-    /// on first use and shared by every AI function call in the query.
     AIQuotaTrackerPtr getAIQuotaTracker() const;
 
     /// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles by (random) names,

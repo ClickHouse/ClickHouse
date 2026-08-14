@@ -155,8 +155,7 @@ public:
         bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
         size_t max_batch_size = static_cast<size_t>(settings[Setting::ai_function_embedding_max_batch_size].value);
 
-        /// Shared across every AI function call in the query so the `ai_function_max_*_per_query` limits
-        /// bound the whole query, not a single block.
+        /// Shared across every AI function call in the query
         auto quota_tracker = getContext()->getAIQuotaTracker();
         AIQuotaTracker & quota = *quota_tracker;
 

@@ -495,8 +495,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
 
-    /// Shared across every AI function call in the query so the `ai_function_max_*_per_query` limits
-    /// bound the whole query, not a single block.
+    /// Shared across every AI function call in the query
     auto quota_tracker = getContext()->getAIQuotaTracker();
     AIQuotaTracker & quota = *quota_tracker;
 
