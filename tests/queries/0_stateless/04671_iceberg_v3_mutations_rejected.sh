@@ -6,9 +6,10 @@
 # table (even without existing deletion vectors) must fail closed before any
 # object writes.
 
-# Keep client channel quiet so IcebergMetadata warnings from v3 INSERT do not
-# pollute the reference output.
-CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL:-error}
+# Force quieter logs: CI often pre-sets CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=warning,
+# and ${VAR:-error} would keep that. IcebergMetadata logs a Warning when reading
+# CH-written v3 metadata (v1 `schema` missing → v2 `schemas` fallback).
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
