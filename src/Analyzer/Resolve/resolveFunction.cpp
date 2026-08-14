@@ -141,9 +141,28 @@ std::optional<bool> getEarlyShortCircuitResultForAndOr(
     return {};
 }
 
+bool hasNestedQueryOrUnion(const IQueryTreeNode & node)
+{
+    for (const auto & child : node.getChildren())
+    {
+        if (!child)
+            continue;
+
+        const auto child_type = child->getNodeType();
+        if (child_type == QueryTreeNodeType::QUERY || child_type == QueryTreeNodeType::UNION)
+            return true;
+
+        if (hasNestedQueryOrUnion(*child))
+            return true;
+    }
+
+    return false;
+}
+
 bool isSafeCountScalarSubqueryForEarlyShortCircuit(const QueryNode & query)
 {
-    if (query.hasGroupBy()
+    if (hasNestedQueryOrUnion(query)
+        || query.hasGroupBy()
         || query.hasHaving()
         || query.hasWindow()
         || query.hasQualify()
