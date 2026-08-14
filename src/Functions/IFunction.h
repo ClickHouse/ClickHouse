@@ -638,6 +638,30 @@ public:
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
+    /** True if the function might throw an exception while it is executed, for these argument types.
+      * Examples: `intDiv` throws on division by zero, `repeat` throws when the result is too large,
+      * `equals` throws when a string that is compared to a date cannot be parsed as a date.
+      * Errors that depend only on the argument types are irrelevant here: they are reported for
+      * every input, so they are not affected by the decisions this property is used for.
+      * Logical errors are irrelevant as well, they are bugs and not a part of the contract.
+      *
+      * It is used to decide whether the rows that are not referenced have to be removed from
+      * `ColumnReplicated` arguments before the function is executed: telling that a function
+      * cannot throw while it can, surfaces as an exception thrown for rows that the query does
+      * not use at all.
+      *
+      * By default it falls back to `isSuitableForShortCircuitArgumentsExecution`, which answers a
+      * different question ("is it worth to evaluate this function lazily"), and is only a rough
+      * approximation of this one: a function that is expensive but cannot throw is reported as
+      * throwing (which is safe, it just loses an optimization), while a function that is cheap
+      * and can throw is reported as not throwing (which is not safe). Override this method
+      * whenever the two properties differ.
+      */
+    virtual bool canThrow(const DataTypesWithConstInfo & arguments) const
+    {
+        return isSuitableForShortCircuitArgumentsExecution(arguments);
+    }
+
     /// Higher-order functions accept at least one lambda expression as an argument.
     virtual bool isHigherOrderFunction() const { return false; }
 
