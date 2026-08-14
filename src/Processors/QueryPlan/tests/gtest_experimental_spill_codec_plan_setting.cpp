@@ -4,7 +4,10 @@
 #include <Common/tests/gtest_global_register.h>
 #include <Core/Defines.h>
 #include <Core/Joins.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -436,4 +439,101 @@ TEST(ExperimentalSpillCodecPlanSetting, IEJoinNeedsTwoCrossSideInequalities)
     ie_join.expression.push_back(make_condition(JoinConditionOperator::Less, "l.k", "r.k"));
     ie_join.expression.push_back(make_condition(JoinConditionOperator::GreaterOrEquals, "r.v", "l.v"));
     EXPECT_TRUE(ie_join.hasCrossSideInequalityPair());
+}
+
+TEST(ExperimentalSpillCodecPlanSetting, IEJoinNeedsOperandTypesItsOperatorCanCompare)
+{
+    tryRegisterFunctions();
+
+    /// `tryGetIEJoinKeyCondition` declines an operand the IEJoin operator cannot order the way the
+    /// comparison functions do, so the join keeps the IEJoin shape but is planned as an ordinary join over a
+    /// filter: no sorts are added around it and the sort carrier must stay silent.
+    auto tuple_type = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt64>()});
+    EXPECT_FALSE(ieJoinCanCompareOperandTypes(tuple_type, tuple_type));
+    EXPECT_FALSE(ieJoinCanCompareOperandTypes(std::make_shared<DataTypeDynamic>(), std::make_shared<DataTypeDynamic>()));
+    EXPECT_FALSE(ieJoinCanCompareOperandTypes(
+        std::make_shared<DataTypeArray>(tuple_type), std::make_shared<DataTypeArray>(tuple_type)));
+
+    /// Operands without a common type cannot be casted for the comparison either.
+    EXPECT_FALSE(ieJoinCanCompareOperandTypes(std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeString>()));
+
+    /// A pair the operator handles: equal types, and types with a common supertype.
+    EXPECT_TRUE(ieJoinCanCompareOperandTypes(std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUInt64>()));
+    EXPECT_TRUE(ieJoinCanCompareOperandTypes(std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeInt32>()));
+
+    ColumnsWithTypeAndName left_header{{tuple_type, "l.t"}};
+    ColumnsWithTypeAndName right_header{{tuple_type, "r.t"}};
+    JoinExpressionActions expression_actions(left_header, right_header);
+    auto actions_dag = expression_actions.getActionsDAG();
+    actions_dag->getOutputs() = actions_dag->getInputs();
+
+    auto make_condition = [&](JoinConditionOperator op)
+    {
+        return JoinActionRef::transform({
+            JoinActionRef(actions_dag->tryFindInOutputs("l.t"), expression_actions),
+            JoinActionRef(actions_dag->tryFindInOutputs("r.t"), expression_actions),
+        }, JoinActionRef::AddFunction(op));
+    };
+
+    /// The IEJoin condition shape over `Tuple` operands: two cross-side inequalities that
+    /// `tryGetIEJoinKeyCondition` nevertheless declines.
+    JoinOperator tuple_inequalities(JoinKind::Inner);
+    tuple_inequalities.expression.push_back(make_condition(JoinConditionOperator::Less));
+    tuple_inequalities.expression.push_back(make_condition(JoinConditionOperator::GreaterOrEquals));
+    EXPECT_FALSE(tuple_inequalities.hasCrossSideInequalityPair());
+}
+
+TEST(ExperimentalSpillCodecPlanSetting, FullSortingMergeJoinNeedsAClauseWithoutAPreFilterCondition)
+{
+    tryRegisterFunctions();
+
+    auto type = std::make_shared<DataTypeUInt64>();
+    ColumnsWithTypeAndName left_header{{type, "l.k"}, {type, "l.v"}};
+    ColumnsWithTypeAndName right_header{{type, "r.k"}, {type, "r.v"}};
+    JoinExpressionActions expression_actions(left_header, right_header);
+    auto actions_dag = expression_actions.getActionsDAG();
+    actions_dag->getOutputs() = actions_dag->getInputs();
+
+    auto make_condition = [&](JoinConditionOperator op, const String & lhs, const String & rhs)
+    {
+        return JoinActionRef::transform({
+            JoinActionRef(actions_dag->tryFindInOutputs(lhs), expression_actions),
+            JoinActionRef(actions_dag->tryFindInOutputs(rhs), expression_actions),
+        }, JoinActionRef::AddFunction(op));
+    };
+
+    /// A condition over a single input that the optimizer cannot push out of the ON expression becomes the
+    /// pre-filter condition of the join clause, which `FullSortingMergeJoin::isSupported` rejects: the join
+    /// falls back to an in-memory algorithm, no sorts are added, and the sort carrier of
+    /// `JoinStepLogical::serializeSettings` must stay silent. For a `LEFT` join only a right-side condition
+    /// can be pushed down.
+    JoinOperator left_join_with_left_condition(JoinKind::Left);
+    left_join_with_left_condition.expression.push_back(make_condition(JoinConditionOperator::Equals, "l.k", "r.k"));
+    left_join_with_left_condition.expression.push_back(make_condition(JoinConditionOperator::Less, "l.k", "l.v"));
+    EXPECT_TRUE(left_join_with_left_condition.hasSingleSidePreFilterCondition());
+
+    JoinOperator left_join_with_right_condition(JoinKind::Left);
+    left_join_with_right_condition.expression.push_back(make_condition(JoinConditionOperator::Equals, "l.k", "r.k"));
+    left_join_with_right_condition.expression.push_back(make_condition(JoinConditionOperator::Less, "r.k", "r.v"));
+    EXPECT_FALSE(left_join_with_right_condition.hasSingleSidePreFilterCondition());
+
+    /// An `INNER` join pushes a condition of either side down.
+    JoinOperator inner_join_with_conditions(JoinKind::Inner);
+    inner_join_with_conditions.expression.push_back(make_condition(JoinConditionOperator::Equals, "l.k", "r.k"));
+    inner_join_with_conditions.expression.push_back(make_condition(JoinConditionOperator::Less, "l.k", "l.v"));
+    inner_join_with_conditions.expression.push_back(make_condition(JoinConditionOperator::Less, "r.k", "r.v"));
+    EXPECT_FALSE(inner_join_with_conditions.hasSingleSidePreFilterCondition());
+
+    /// `ANY` never pushes a condition down, whatever the kind.
+    JoinOperator any_inner_join_with_condition(JoinKind::Inner, JoinStrictness::Any);
+    any_inner_join_with_condition.expression.push_back(make_condition(JoinConditionOperator::Equals, "l.k", "r.k"));
+    any_inner_join_with_condition.expression.push_back(make_condition(JoinConditionOperator::Less, "r.k", "r.v"));
+    EXPECT_TRUE(any_inner_join_with_condition.hasSingleSidePreFilterCondition());
+
+    /// The cross-side conditions of a keyed join are the keys and the mixed conditions of the ON clause,
+    /// never a pre-filter condition of the clause.
+    JoinOperator cross_side_conditions_only(JoinKind::Left);
+    cross_side_conditions_only.expression.push_back(make_condition(JoinConditionOperator::Equals, "l.k", "r.k"));
+    cross_side_conditions_only.expression.push_back(make_condition(JoinConditionOperator::Less, "l.v", "r.v"));
+    EXPECT_FALSE(cross_side_conditions_only.hasSingleSidePreFilterCondition());
 }

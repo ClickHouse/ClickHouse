@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -506,11 +507,31 @@ bool JoinOperator::hasCrossSideEqualityCondition() const
     return hasCrossSideEquality(expression);
 }
 
+bool ieJoinCanCompareOperandTypes(const DataTypePtr & lhs_type, const DataTypePtr & rhs_type)
+{
+    auto comparison_is_incompatible = [](const DataTypePtr & type)
+    {
+        bool result = false;
+        auto check = [&](const IDataType & t) { result |= isTuple(t) || isDynamic(t) || isVariant(t); };
+        check(*type);
+        if (!result)
+            type->forEachChild(check);
+        return result;
+    };
+
+    if (comparison_is_incompatible(lhs_type) || comparison_is_incompatible(rhs_type))
+        return false;
+
+    /// `tryExtractIEJoinDescription` casts both sides of the condition to a common type; a combination
+    /// `predicateOperandsToCommonType` cannot handle is declined, so that the planning falls back to the
+    /// generic handling (which compares such operands in a filter) instead of throwing.
+    return lhs_type->equals(*rhs_type) || tryGetLeastSupertype(DataTypes{lhs_type, rhs_type}) != nullptr;
+}
+
 bool JoinOperator::hasCrossSideInequalityPair() const
 {
-    /// The condition-shape half of `tryGetIEJoinKeyCondition` (`JoinStepLogical.cpp`): an inequality whose
-    /// operands come from the two different inputs. The type-compatibility half needs no repetition for a
-    /// conservative answer.
+    /// `tryGetIEJoinKeyCondition` (`JoinStepLogical.cpp`): an inequality whose operands come from the two
+    /// different inputs and whose operand types the operator can compare.
     size_t count = 0;
     for (const auto & condition : expression)
     {
@@ -518,7 +539,70 @@ bool JoinOperator::hasCrossSideInequalityPair() const
         if (op != JoinConditionOperator::Less && op != JoinConditionOperator::LessOrEquals
             && op != JoinConditionOperator::Greater && op != JoinConditionOperator::GreaterOrEquals)
             continue;
-        if (((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft())) && ++count >= 2)
+        if (!(lhs.fromLeft() && rhs.fromRight()) && !(lhs.fromRight() && rhs.fromLeft()))
+            continue;
+        if (!ieJoinCanCompareOperandTypes(lhs.getType(), rhs.getType()))
+            continue;
+        if (++count >= 2)
+            return true;
+    }
+
+    return false;
+}
+
+bool JoinOperator::canPushDownFromOn(std::optional<JoinTableSide> side) const
+{
+    switch (strictness)
+    {
+        case JoinStrictness::Any:
+            /// We cannot push down to either side for ANY JOIN.
+            /// Let's say we have LEFT ANY JOIN:
+            /// 1. If we push down filter to the right side,
+            /// we may filter out rows that would otherwise match the left side rows,
+            /// resulting in different join results.
+            /// 2. If we push down filter to the left side,
+            /// we may filter out rows that should be included in the join result
+            /// with defaults or NULLs.
+            return false;
+        case JoinStrictness::All:
+        {
+            /// Filter pushdown for PASTE JOIN is *disabled* to preserve positional alignment
+            bool is_suitable_kind = kind == JoinKind::Inner
+                || kind == JoinKind::Cross
+                || kind == JoinKind::Comma
+                || (side == JoinTableSide::Left && kind == JoinKind::Right)
+                || (side == JoinTableSide::Right && kind == JoinKind::Left);
+
+            return is_suitable_kind;
+        }
+        case JoinStrictness::Semi:
+            /// We can push down to both sides for LEFT SEMI and RIGHT SEMI joins
+            return side.has_value();
+        case JoinStrictness::Anti:
+            /// We can push down to only to opposite sides for LEFT ANTI and RIGHT ANTI joins
+            /// See https://github.com/ClickHouse/ClickHouse/issues/93483
+            return (side == JoinTableSide::Left && kind == JoinKind::Right)
+                || (side == JoinTableSide::Right && kind == JoinKind::Left);
+        default:
+            /// TODO: Support RightAny strictness?
+            return false;
+    }
+}
+
+bool JoinOperator::hasSingleSidePreFilterCondition() const
+{
+    for (const auto & condition : expression)
+    {
+        /// `concatConditions(join_expression, side)` (`JoinStepLogical.cpp`), which builds the pre-filter
+        /// condition of the clause, groups a condition over the left input or over no input at all with the
+        /// left side; a condition over both inputs belongs to no side and stays in the ON clause.
+        std::optional<JoinTableSide> side;
+        if (condition.fromLeft() || condition.fromNone())
+            side = JoinTableSide::Left;
+        else if (condition.fromRight())
+            side = JoinTableSide::Right;
+
+        if (side && !canPushDownFromOn(side))
             return true;
     }
 

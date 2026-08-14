@@ -5,6 +5,8 @@
 
 #include <QueryPipeline/SizeLimits.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -53,9 +55,12 @@ struct JoinOperator
     /// to CROSS, so for it this returns false. Conservative: true whenever `ConstantJoin` cannot be ruled out.
     bool canBecomeConstantJoin() const;
 
-    /// Whether the ON expression contains at least two inequalities between the two inputs - the shape
-    /// `tryExtractIEJoinDescription` needs to plan an IEJoin. Conservative: the type-compatibility part of
-    /// that test is not repeated here, so true does not guarantee an IEJoin, but false rules it out.
+    /// Whether the ON expression contains at least two inequalities between the two inputs whose operand
+    /// types the IEJoin operator can compare - the two key conditions `tryExtractIEJoinDescription` needs
+    /// to plan an IEJoin (`tryGetIEJoinKeyCondition` in `JoinStepLogical.cpp` accepts exactly such a
+    /// condition). Conservative: the equalities of the ON expression are claimed as hash-join keys before
+    /// the inequalities are looked at unless `ie_join` heads the algorithm list, so true does not
+    /// guarantee an IEJoin, but false rules it out.
     bool hasCrossSideInequalityPair() const;
 
     /// Whether the ON expression is a single top-level disjunction (`... OR ...`). The planning never
@@ -71,8 +76,30 @@ struct JoinOperator
     /// disjunctive split, or the conversion to CROSS).
     bool hasCrossSideEqualityCondition() const;
 
+    /// Whether a condition of the ON expression can be evaluated outside the join: pushed down into one of
+    /// the inputs (`side` set) or applied above the join (`side` not set). Depends only on the kind and the
+    /// strictness of the join. The filter push-down of the optimizer removes the conditions of a side this
+    /// returns true for from the ON expression (`JoinStepLogical::getFilterActions`).
+    bool canPushDownFromOn(std::optional<JoinTableSide> side = {}) const;
+
+    /// Whether a top-level conjunct of the ON expression stays in the ON clause as the pre-filter condition
+    /// of a join clause: a condition over a single input that the join planning attaches to the clause
+    /// (`analyzer_left_filter_condition_column_name` / `analyzer_right_filter_condition_column_name` in
+    /// `JoinStepLogical.cpp`). `FullSortingMergeJoin::isSupported` rejects a clause carrying one. Only a
+    /// condition that cannot be pushed out of the ON expression counts: a pushable one may be gone from the
+    /// expression by the time the join is built.
+    bool hasSingleSidePreFilterCondition() const;
+
     String dump() const;
 };
+
+/// Whether the IEJoin operator can compare the operand types of one of its two key conditions, i.e. the
+/// type-compatibility test of `tryGetIEJoinKeyCondition` (`JoinStepLogical.cpp`). The operator matches by
+/// `compareAt`: comparison of `Tuple` decomposes elementwise (IEEE NaN, NULL propagation), and comparison
+/// of `Dynamic` and `Variant` unwraps the underlying values (NULL values and mismatched alternatives yield
+/// NULL or throw), so such operands are declined; the other types additionally have to share a common type
+/// to be casted to.
+bool ieJoinCanCompareOperandTypes(const DataTypePtr & lhs_type, const DataTypePtr & rhs_type);
 
 
 String toString(const JoinActionRef & node);
