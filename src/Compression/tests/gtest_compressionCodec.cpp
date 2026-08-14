@@ -3555,4 +3555,20 @@ TEST_F(WallabyTest, CapsTheFrameOfReferenceLanesToDissolveTheAdjustmentLanes)
     EXPECT_LT(wallabyCompressedSize(values), 1250u);
 }
 
+TEST_F(WallabyTest, ChoosesScaleAfterCappingWideAdjustmentOutlier)
+{
+    /// The scale chooser must compare the complete capped adjustment plan for every candidate.
+    /// Here alpha 2 quantizes the column into three cent buckets. Most values need a 9-bit ULP
+    /// adjustment, while one value needs 26 bits. The uncapped price incorrectly favors alpha 8,
+    /// but capping the adjustment lanes at 9 bits and exiling that one outlier makes alpha 2
+    /// substantially smaller.
+    std::vector<Float64> values(1024);
+    constexpr std::array<Float64, 3> offsets{0.00000003, 0.01000003, 0.02000003};
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = 1000000.0 + offsets[i % offsets.size()];
+    values[512] = 1000000.01490003;
+
+    EXPECT_LT(wallabyCompressedSize(values), 1600u);
+}
+
 }

@@ -1075,11 +1075,6 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     UInt32 best_exception_count = 0;
     UInt32 best_soft_exception_count = 0;
     T best_max_adjustment_zigzag = 0;
-    /// The comparison price of the best packing: its recorded (realizable) size minus the
-    /// discount for near-misses that adjustment lanes would absorb more cheaply than the
-    /// exception list the uncapped measure prices them as.
-    UInt32 best_price = 0;
-
     /// The scale domain is signed; the tracking arrays are indexed by alpha - min_alpha.
     constexpr UInt32 alpha_span = Traits::max_alpha - Traits::min_alpha + 1;
     const auto alpha_index = [](Int32 a) { return static_cast<UInt32>(a - Traits::min_alpha); };
@@ -1327,26 +1322,21 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             }
         }
 
-        const auto packing = measure_packing(false);
+        /// Candidate scales must compete on their final payloads. In particular, one wide
+        /// adjustment can make the uncapped adjustment lanes look expensive even though the
+        /// capped plan exiles that one value and keeps the remaining narrow adjustment lanes.
+        /// Comparing an uncapped candidate with a capped winner can therefore discard the
+        /// cheapest encoding. `measure_packing` evaluates the complete Frame-of-Reference and
+        /// delta cap search, including the adjustment plan, so its result is the exact payload
+        /// for this scale.
+        const auto packing = measure_packing(true);
         if (!packing)
             return;
-        /// The uncapped measure prices every near-miss as an exception, which is realizable but
-        /// overprices a soft-heavy scale against one that is exact everywhere: full-width
-        /// adjustment lanes are also inside the capped optimizer's search space, and their cost
-        /// bounds the winner's final size just as well. Candidates compete on the cheaper of the
-        /// two plans; the recorded packing keeps the realizable exception-list size.
-        const UInt32 adjustment_lanes_bytes = max_adjustment_zigzag == 0 ? 0
-            : Compression::FFOR::calculateBitpackedBytes(
-                static_cast<UInt8>(Traits::width_bits - std::countl_zero(max_adjustment_zigzag)));
-        const UInt32 soft_bytes = soft_exception_count * exceptionCost<T>();
-        const UInt32 soft_discount = soft_bytes - std::min(soft_bytes, adjustment_lanes_bytes);
-        const UInt32 price = packing->payload_size - std::min(packing->payload_size, soft_discount);
-        if (!best || price < best_price)
+        if (!best || packing->payload_size < best->payload_size)
         {
             best = *packing;
-            best_price = price;
             alpha = candidate;
-            best_total_size = std::min(best_total_size, price);
+            best_total_size = std::min(best_total_size, packing->payload_size);
             std::swap(quantized, best_quantized);
             std::swap(adjustments, best_adjustments);
             std::swap(exception_positions, best_exception_positions);
@@ -1398,20 +1388,6 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     exception_count = best_exception_count;
     soft_exception_count = best_soft_exception_count;
     max_adjustment_zigzag = best_max_adjustment_zigzag;
-
-    /// The capping analysis (PFOR-style patching of lane-width outliers into exceptions, and
-    /// the reverse conversion of near-miss exceptions into adjustment lanes) runs once per
-    /// vector, on the winning scale only. It is skipped when even a large gain could not bring
-    /// the decimal encoding under the best other encoding of this vector: the near-misses may
-    /// become almost free, the rest recovers more than a quarter only in contrived cases.
-    const UInt32 soft_exception_bytes = soft_exception_count * exceptionCost<T>();
-    const UInt32 payload_beyond_soft = best->payload_size - std::min(best->payload_size, soft_exception_bytes);
-    /// A winner whose comparison price was discounted must take the capped pass: the recorded
-    /// packing still stores its near-misses as exceptions, and only this pass makes the cheaper
-    /// adjustment-lane plan real (it always finds one at least as cheap as the price).
-    if (payload_beyond_soft * 4 < best_total_size * 5 || best_price < best->payload_size)
-        if (const auto capped = measure_packing(true); capped && capped->payload_size < best->payload_size)
-            best = *capped;
 
     const UInt8 bits = best->bits;
     const bool use_delta = best->use_delta;
