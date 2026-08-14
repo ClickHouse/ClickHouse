@@ -833,6 +833,25 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_rep
 
 DROP VIEW edges_view;
 
+-- The view preflight evaluates every inner query context. A subquery gets a fresh context
+-- during query-tree construction, but `StorageView::readImpl` still interprets it and can
+-- engage parallel replicas, so the forced mode must fail closed rather than silently disable
+-- them for the recursive step.
+CREATE VIEW edges_view_subquery AS SELECT * FROM (SELECT * FROM edges);
+
+WITH RECURSIVE view_subquery_pr_throw AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM view_subquery_pr_throw AS t INNER JOIN edges_view_subquery AS e ON e.from_id = t.n WHERE n < 10
+)
+SELECT sum(n) FROM view_subquery_pr_throw
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_allow_view_over_mergetree = 0,
+    automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
+
+DROP VIEW edges_view_subquery;
+
 -- A remote read is not eligible either unless the cluster it goes to has a shard with more
 -- than one node: `ClusterProxy::updateSettingsAndClientInfoForCluster` turns task-based
 -- parallel replicas off for a single-node cluster and for a `remote()` table function without

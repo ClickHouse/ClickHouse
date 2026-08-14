@@ -350,7 +350,32 @@ ParallelReplicasEngagement mayEngageParallelReplicasForView(const StorageView & 
         return {};
     }
 
-    return mayEngageParallelReplicas(inner_query_tree.get(), view_context);
+    /// `QueryTreeBuilder` gives nested queries and UNION branches their own context copies.
+    /// `mayEngageParallelReplicas` intentionally does not cross such a context boundary: a
+    /// branch-local `SETTINGS` clause must not be judged using its parent's settings. Evaluate
+    /// every context in the view tree separately, just as the recursive-query constructor does.
+    /// Otherwise a view such as `SELECT * FROM (SELECT * FROM dist)` would stop at the nested
+    /// query and incorrectly look unable to engage parallel replicas, even though
+    /// `StorageView::readImpl` interprets that query with its own context.
+    ParallelReplicasEngagement engagement;
+    std::vector<IQueryTreeNode *> nodes_to_scan;
+    nodes_to_scan.push_back(inner_query_tree.get());
+    while (!nodes_to_scan.empty())
+    {
+        auto * node = nodes_to_scan.back();
+        nodes_to_scan.pop_back();
+
+        if (const auto * query_node = node->as<QueryNode>())
+            engagement.merge(mayEngageParallelReplicas(node, query_node->getContext()));
+        else if (const auto * union_node = node->as<UnionNode>())
+            engagement.merge(mayEngageParallelReplicas(node, union_node->getContext()));
+
+        for (auto & child : node->getChildren())
+            if (child)
+                nodes_to_scan.push_back(child.get());
+    }
+
+    return engagement;
 }
 
 /// Storage-level eligibility of a storage reached by unwrapping a delegating wrapper
