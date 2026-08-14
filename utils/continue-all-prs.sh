@@ -583,16 +583,89 @@ LOGDIR="${MAIN_REPO}/tmp/continue-all-prs"
 STATSFILE="$LOGDIR/stats"
 STATSLOCK="$LOGDIR/stats.lock"
 NAFILE="$LOGDIR/needs-attention"
+declare -a WORKER_PIDS=()
+
+stop_workers()
+{
+    local roots own_pgid entry pid pgid
+    local -a targets
+    local -A target_groups=()
+
+    (( ${#WORKER_PIDS[@]} )) || return 0
+    roots="${WORKER_PIDS[*]}"
+    own_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ' || true)
+
+    # Snapshot the complete descendant tree before sending any signal. Commands
+    # started by an agent can create nested process groups, so killing only the
+    # worker's original group is insufficient.
+    mapfile -t targets < <(
+        ps -eo pid=,ppid=,pgid= | awk -v roots="$roots" '
+            BEGIN {
+                count = split(roots, root, " ");
+                for (i = 1; i <= count; ++i) selected[root[i]] = 1;
+            }
+            {
+                pid[NR] = $1;
+                parent[$1] = $2;
+                group[$1] = $3;
+            }
+            END {
+                changed = 1;
+                while (changed) {
+                    changed = 0;
+                    for (i = 1; i <= NR; ++i) {
+                        p = pid[i];
+                        if (!selected[p] && selected[parent[p]]) {
+                            selected[p] = 1;
+                            changed = 1;
+                        }
+                    }
+                }
+                for (i = 1; i <= NR; ++i) {
+                    p = pid[i];
+                    if (selected[p]) print p, group[p];
+                }
+            }'
+    )
+
+    for entry in "${targets[@]}"; do
+        read -r pid pgid <<< "$entry"
+        [[ -n "$pgid" && "$pgid" != "$own_pgid" ]] && target_groups["$pgid"]=1
+    done
+
+    # Freeze every captured group first so no descendant can spawn more work
+    # while shutdown is in progress, then terminate all groups and individual
+    # processes. Never signal the orchestrator's own process group.
+    for pgid in "${!target_groups[@]}"; do
+        kill -STOP -- "-$pgid" 2>/dev/null || true
+    done
+    for pgid in "${!target_groups[@]}"; do
+        kill -KILL -- "-$pgid" 2>/dev/null || true
+    done
+    for entry in "${targets[@]}"; do
+        read -r pid pgid <<< "$entry"
+        kill -KILL "$pid" 2>/dev/null || true
+    done
+    for pid in "${WORKER_PIDS[@]}"; do
+        kill -KILL "$pid" 2>/dev/null || true
+    done
+
+    if (( ${#WORKER_PIDS[@]} )); then
+        wait "${WORKER_PIDS[@]}" 2>/dev/null || true
+    fi
+    WORKER_PIDS=()
+}
 
 cleanup()
 {
+    stop_workers
     status_stop   # reset the scroll region and kill the updater first
     [[ -n "${QUEUEFILE:-}" ]] && rm -f "$QUEUEFILE" "$QUEUEFILE.tmp" 2>/dev/null || true
     [[ -n "${LOCKFILE:-}" ]] && rm -f "$LOCKFILE" 2>/dev/null || true
     rm -f "$STATSLOCK" "$STATSFILE.tmp" 2>/dev/null || true
 }
 trap cleanup EXIT
-trap 'echo; banner "Interrupted, stopping..."; exit 130' INT TERM
+trap 'trap - INT TERM; echo; banner "Interrupted, stopping..."; stop_workers; exit 130' INT TERM
 
 # Marker the worker prints (on its own line) when it considers the PR finished.
 DONE_MARKER='<<<CONTINUE-PR-DONE>>>'
@@ -805,6 +878,12 @@ worker()
     local i="$1" wt="$2"
     local line number title
 
+    # The parent enables job control only to place this worker in its own
+    # process group. Disable it inside the worker so `timeout`, the agent, and
+    # agent-started commands stay in that same group rather than creating a
+    # nested foreground process group that the interrupt trap cannot reach.
+    set +m
+
     # Per-worker file descriptor for the queue lock (its own open-file
     # description, so flock mutually excludes between workers).
     exec 9>"$LOCKFILE"
@@ -1012,12 +1091,18 @@ while true; do
 
     printf '%s\n' "$PRS" > "$QUEUEFILE"
 
-    pids=()
+    # Job control gives every asynchronous worker its own process group. This
+    # lets the interrupt trap terminate the worker and all of its descendants
+    # immediately instead of waiting for a running agent command to return.
+    set -m
+    WORKER_PIDS=()
     for (( i = 0; i < WORKERS; i++ )); do
         worker "$i" "${WT[i]}" &
-        pids+=($!)
+        WORKER_PIDS+=($!)
     done
-    wait "${pids[@]}" || true
+    set +m
+    wait "${WORKER_PIDS[@]}" || true
+    WORKER_PIDS=()
 
     echo ""
     banner "===== Round ${ROUND} complete ====="
