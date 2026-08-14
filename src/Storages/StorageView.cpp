@@ -28,8 +28,6 @@
 
 #include <Common/CurrentThread.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTWindowDefinition.h>
@@ -917,10 +915,14 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
     if (!select)
         return true;
 
+    /// `GROUP BY ALL` uses a flag instead of a non-empty `groupBy` expression list, and query
+    /// settings may introduce a limit or otherwise change which rows the view exposes. Both must
+    /// fail closed just like their explicit counterparts.
     if (select->distinct
         || select->where() || select->prewhere() || select->having() || select->qualify()
-        || select->groupBy()
-        || select->limitLength() || select->limitOffset() || select->limitByLength() || select->limitByOffset())
+        || select->groupBy() || select->group_by_all
+        || select->limitLength() || select->limitOffset() || select->limitByLength() || select->limitByOffset()
+        || select->settings())
         return true;
 
     /// `ARRAY JOIN` drops rows with an empty array (and `LEFT ARRAY JOIN` is not worth
