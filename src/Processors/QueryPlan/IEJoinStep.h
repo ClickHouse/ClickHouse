@@ -56,6 +56,11 @@ private:
     IEJoinKind kind = IEJoinKind::Inner;
     bool swap_inputs = false;
 
+    /// The join type as written in the query, reported to `system.query_log`. `kind` above cannot be used
+    /// for that: it is the executed type, so a right-side SEMI/ANTI join looks like its left-side mirror.
+    JoinKind query_kind;
+    JoinStrictness query_strictness;
+
     /// The planner pre-sorted each input by its first-condition key with a `SortingStep`
     /// (always ascending, NULLS LAST); selects the merge-based L1 build in the operator.
     bool inputs_sorted_by_first_key;

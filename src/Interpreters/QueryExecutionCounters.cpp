@@ -15,15 +15,17 @@ void QueryExecutionCounters::addExecutedJoin(const IJoin & join)
 
 void QueryExecutionCounters::addExecutedJoin(const IJoin & join, std::string_view algorithm)
 {
+    const auto & table_join = join.getTableJoin();
+    addExecutedJoin(table_join.kind(), table_join.strictness(), algorithm);
+}
+
+void QueryExecutionCounters::addExecutedJoin(JoinKind kind, JoinStrictness strictness, std::string_view algorithm)
+{
     auto counters = getForCurrentQuery();
     if (!counters)
         return;
 
     counters->number_of_joins.fetch_add(1, std::memory_order_relaxed);
-
-    const auto & table_join = join.getTableJoin();
-    auto kind = table_join.kind();
-    auto strictness = table_join.strictness();
 
     /// Strictness does not matter for these kinds, see `JoinKind` in Core/Joins.h, and the two
     /// analyzers fill it in differently: for a CROSS join the old one leaves it unspecified while

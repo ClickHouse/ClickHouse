@@ -163,6 +163,27 @@ WHERE current_database = currentDatabase()
   AND log_comment LIKE '04891\_join\_count\_pfsm%'
 ORDER BY log_comment;
 
+SELECT 'ie join';
+-- `ie_join` has no `IJoin`: the whole algorithm is `IEJoinStep`, which reports itself. It needs the
+-- analyzer, and it is only picked for two inequality conditions.
+SELECT count() FROM (SELECT number AS t FROM numbers(10)) i1 JOIN (SELECT number AS t_lo, number + 5 AS t_hi FROM numbers(10)) i2 ON i1.t >= i2.t_lo AND i1.t <= i2.t_hi
+FORMAT Null
+SETTINGS log_comment = '04891_join_count_ie_inner', enable_analyzer = 1, join_algorithm = 'ie_join,hash';
+-- A right-side ANTI join is executed as its left-side mirror, with the input pipelines swapped. The
+-- reported kind must still be the one the query asked for.
+SELECT count() FROM (SELECT number AS t FROM numbers(10)) i1 RIGHT ANTI JOIN (SELECT number AS t_lo, number + 5 AS t_hi FROM numbers(10)) i2 ON i1.t >= i2.t_lo AND i1.t <= i2.t_hi
+FORMAT Null
+SETTINGS log_comment = '04891_join_count_ie_right_anti', enable_analyzer = 1, join_algorithm = 'ie_join,hash';
+
+SYSTEM FLUSH LOGS query_log;
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND event_date >= yesterday()
+  AND log_comment LIKE '04891\_join\_count\_ie%'
+ORDER BY log_comment;
+
 SELECT 'grace hash spilling';
 -- With many buckets it writes the buckets it is not currently joining to disk.
 SELECT count() FROM (SELECT number AS a FROM numbers(10000)) g1 JOIN (SELECT number AS a FROM numbers(10000)) g2 ON g1.a = g2.a

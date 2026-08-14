@@ -29,6 +29,10 @@ struct QueryExecutionCounters
     /// `FullSortingMergeJoin`.
     static void addExecutedJoin(const IJoin & join, std::string_view algorithm);
 
+    /// For a join that has no `IJoin` at all because the whole algorithm lives in a query plan step,
+    /// like `ie_join`. `kind` and `strictness` must be the ones the query asked for.
+    static void addExecutedJoin(JoinKind kind, JoinStrictness strictness, std::string_view algorithm);
+
     /// Records an algorithm a join switched to while the query was already running, so that both the
     /// original one and this one are reported.
     static void addUsedJoinAlgorithm(JoinAlgorithm algorithm);

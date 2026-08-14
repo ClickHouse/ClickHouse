@@ -24,6 +24,9 @@ full sorting merge
 parallel full sorting merge
 1	['FULL_SORTING_MERGE']	['LEFT']	['ASOF']	[]
 1	['PARALLEL_FULL_SORTING_MERGE']	['INNER']	['ALL']	[]
+ie join
+1	['IE_JOIN']	['INNER']	['ALL']	[]
+1	['IE_JOIN']	['RIGHT']	['ANTI']	[]
 grace hash spilling
 1	['GRACE_HASH']	['INNER']	['ALL']	['join']
 partial merge spilling
