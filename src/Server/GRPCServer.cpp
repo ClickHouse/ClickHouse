@@ -97,6 +97,7 @@ namespace ErrorCodes
     extern const int NO_DATA_TO_INSERT;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_REQUEST_PARAMETER;
+    extern const int CANNOT_SCHEDULE_TASK;
 }
 
 namespace
@@ -1926,14 +1927,16 @@ private:
             {
                 new_call_ptr->start([this, new_call_ptr]() { onFinishCall(new_call_ptr); });
             }
-            catch (...)
+            catch (const Exception & e)
             {
-                /// `Call::start` throws `CANNOT_SCHEDULE_TASK` when the global thread pool
-                /// is saturated. Letting the exception escape would kill the completion-queue
+                if (e.code() != ErrorCodes::CANNOT_SCHEDULE_TASK)
+                    throw;
+
+                /// Letting the saturation exception escape would kill the completion-queue
                 /// thread and leave the half-published `Call` in `current_calls`, blocking the
-                /// empty-call fast path of the shutdown. Treat the call as a rejected
-                /// connection instead: destroying it drops the responder (the same way a
-                /// connection established after `should_stop` is dropped above).
+                /// empty-call fast path of the shutdown. Treat the call as a rejected connection
+                /// instead: destroying it drops the responder (the same way a connection
+                /// established after `should_stop` is dropped above).
                 current_calls.erase(new_call_ptr);
                 tryLogCurrentException(log, "Cannot start a worker thread for a new call");
             }
