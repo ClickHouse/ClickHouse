@@ -33,6 +33,8 @@ Function/aiFilter#1                       error  # the example calls an external
 Function/aiGenerate#0                     error  # the example calls an external model provider, which needs credentials
 Function/aiGenerate#1                     error  # the example calls an external model provider, which needs credentials
 Function/aiGenerate#2                     error  # the example calls an external model provider, which needs credentials
+Function/aiRedact#0                       error  # the example calls an external model provider, and needs the `allow_experimental_ai_functions` setting
+Function/aiRedact#1                       error  # the example calls an external model provider, and reads a table the documentation does not create
 Function/aiSimilarity#0                   error  # the example calls an external model provider, which needs credentials
 Function/aiSimilarity#1                   error  # the example calls an external model provider, and reads a table the documentation does not create
 Function/aiSimilarity#2                   error  # the example calls an external model provider, and reads a table the documentation does not create

@@ -9,7 +9,9 @@ user, access management, query logging), and the fragments in `tests/docs_exampl
 `tests/docs_examples/users.d`, so that the features the examples demonstrate are actually
 configured, and so that they are configured the way the shipped server configures them."""
 
+import glob
 import os
+import shutil
 import subprocess
 
 from praktika.result import Result
@@ -32,27 +34,42 @@ class Server:
         self.process = None
 
     def install(self):
-        commands = [
-            f"rm -rf {SERVER_DIR} && mkdir -p {SERVER_DIR}",
-            f"cp ./programs/server/config.xml ./programs/server/users.xml {SERVER_DIR}/",
-            f"cp -r --dereference ./programs/server/config.d ./programs/server/users.d {SERVER_DIR}/",
-            f"cp ./tests/docs_examples/config.d/*.xml {SERVER_DIR}/config.d/",
-            f"cp ./tests/docs_examples/users.d/*.xml {SERVER_DIR}/users.d/",
-            f"cp -r ./tests/config/top_level_domains {SERVER_DIR}/",
-            f"chmod +x {TEMP_DIR}/clickhouse",
-            f"ln -sf {TEMP_DIR}/clickhouse {TEMP_DIR}/clickhouse-server",
-            f"ln -sf {TEMP_DIR}/clickhouse {TEMP_DIR}/clickhouse-client",
-        ]
+        """Assemble the server directory with Python filesystem calls.
+
+        Nothing here goes through a shell: the paths are interpolated from the checkout location,
+        and a destructive command such as the removal of the previous server directory must not
+        depend on how a shell splits or globs them."""
+        shutil.rmtree(SERVER_DIR, ignore_errors=True)
+        os.makedirs(f"{SERVER_DIR}/config.d")
+        os.makedirs(f"{SERVER_DIR}/users.d")
+
+        shutil.copy("./programs/server/config.xml", SERVER_DIR)
+        shutil.copy("./programs/server/users.xml", SERVER_DIR)
+        # Most of the fragments are symlinks into `tests/config`, and the server directory is
+        # assembled outside the checkout, so they are copied by content, not as symlinks.
+        for directory in ("config.d", "users.d"):
+            shutil.copytree(f"./programs/server/{directory}", f"{SERVER_DIR}/{directory}", symlinks=False, dirs_exist_ok=True)
+            for fragment in sorted(glob.glob(f"./tests/docs_examples/{directory}/*.xml")):
+                shutil.copy(fragment, f"{SERVER_DIR}/{directory}/")
+        shutil.copytree("./tests/config/top_level_domains", f"{SERVER_DIR}/top_level_domains", symlinks=False)
+
+        binary = f"{TEMP_DIR}/clickhouse"
+        os.chmod(binary, os.stat(binary).st_mode | 0o111)
+        for name in ("clickhouse-server", "clickhouse-client"):
+            link = f"{TEMP_DIR}/{name}"
+            if os.path.islink(link) or os.path.exists(link):
+                os.remove(link)
+            os.symlink(binary, link)
+
         Utils.add_to_PATH(TEMP_DIR)
-        return all(Shell.check(command, verbose=True) for command in commands)
+        return True
 
     def start(self):
         kill_leftover_server_processes()
         print("Starting ClickHouse server")
         self.process = subprocess.Popen(
-            f"{TEMP_DIR}/clickhouse-server --config-file=./config.xml",
+            [f"{TEMP_DIR}/clickhouse-server", "--config-file=./config.xml"],
             cwd=SERVER_DIR,
-            shell=True,
             stdout=open(self.log_file, "w"),
             stderr=subprocess.STDOUT,
         )
@@ -68,7 +85,8 @@ class Server:
         return False
 
     def tail_log(self, lines=50):
-        return Shell.get_output(f"tail -n {lines} {self.log_file}")
+        with open(self.log_file, encoding="utf-8", errors="replace") as f:
+            return "".join(f.readlines()[-lines:])
 
 
 def write_html_report(outcomes, stale, info):
@@ -139,19 +157,23 @@ def main():
 
     if results[-1].is_ok():
         def run():
-            # Not piped into `tee`: the shell praktika runs commands with has neither `PIPESTATUS`
-            # nor `pipefail`, so the exit code of the runner would be lost.
+            # Run without a shell, so that the exit code of the runner is the exit code observed
+            # here and the interpolated paths cannot be reinterpreted.
             # `--global-objects`: the server above is started for this job alone, so the examples
             # that create users, roles or databases can run without disturbing anything.
             # `--external-calls`: the server has no model-provider credentials configured, so the
             # `ai*` examples cannot reach any external service; running them keeps their
             # known-failures entries validated.
-            ok = Shell.check(
-                f"python3 ./tests/docs_examples/runner.py --global-objects --external-calls --report {REPORT} > {RUNNER_LOG} 2>&1",
-                verbose=True,
-            )
-            print(Shell.get_output(f"cat {RUNNER_LOG}"))
-            return ok
+            with open(RUNNER_LOG, "w", encoding="utf-8") as log:
+                code = subprocess.run(
+                    ["python3", "./tests/docs_examples/runner.py", "--global-objects", "--external-calls", "--report", REPORT],
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                ).returncode
+            with open(RUNNER_LOG, encoding="utf-8", errors="replace") as log:
+                print(log.read())
+            return code == 0
 
         results.append(Result.from_commands_run(name="Documentation examples", command=run))
 
