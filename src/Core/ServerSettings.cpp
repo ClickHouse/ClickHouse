@@ -2117,6 +2117,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "named_collections",
         "named_collections_storage",
 
+        /// SQL-defined HTTP handlers
+        "query_rules_storage",
+
         /// Networking and protocols
         "protocols",
         "grpc",
