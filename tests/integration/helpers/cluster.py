@@ -5374,9 +5374,9 @@ class ClickHouseInstance:
             )
 
         return error
-    
+
     def get_cache_size(self, cache_path) -> int:
-        exec_str = f"find {cache_path}  -mindepth 3 -maxdepth 3 -type f -print0 " + "| xargs --null du -B 1 | cut -f 1 | awk '{s+=$1} END {print s}'"
+        exec_str = f"find {cache_path}  -mindepth 3 -maxdepth 3 -type f -print0 " + "| xargs --no-run-if-empty --null du -B 1 | cut -f 1 | awk '{s+=$1} END {print s}'"
         return int(self.exec_in_container(
             (["bash", "-c", exec_str]),
             privileged=True,
