@@ -736,6 +736,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     cache_settings.serialize_string_with_zero_byte = params.serialize_string_with_zero_byte;
     cache_settings.enable_prefetch = params.enable_prefetch;
     cache_settings.min_bytes_for_prefetch = min_bytes_for_prefetch;
+    cache_settings.enable_fixed_key_prefetch = params.enable_prefetch;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
 #if USE_EMBEDDED_COMPILER

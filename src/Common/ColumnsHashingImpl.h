@@ -32,6 +32,11 @@ struct HashMethodContextSettings
     /// Threshold on the hash table's buffer size below which prefetching is skipped
     /// because the table fits into caches. Zero disables the threshold.
     size_t min_bytes_for_prefetch = 0;
+    /// Whether fixed-size aggregation keys may precompute their hashes for prefetching.
+    /// This is separate from `enable_prefetch`: preallocated serialized keys have
+    /// historically used the latter in other callers, while fixed keys opt in only
+    /// for aggregation.
+    bool enable_fixed_key_prefetch = false;
 };
 
 /// Generic context for HashMethod. Context is shared between multiple threads, all methods must be thread-safe.

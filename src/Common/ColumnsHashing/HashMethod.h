@@ -580,17 +580,17 @@ struct HashMethodKeysFixed
 #endif
 
         /// Precomputing canonical hashes requires the batch-packed keys, the caller's
-        /// opt-in (mirrors `enable_software_prefetch_in_aggregation`) and a context to read
-        /// the settings from. Callers that don't pass a settings context (Set, JOIN,
-        /// `arrayUniq`-style functions) keep the old behavior. The hash-table size threshold
-        /// (`min_bytes_for_prefetch`) is enforced lazily on the first emplace/find call.
+        /// aggregation-specific opt-in and a context to read the settings from. Callers outside
+        /// aggregation (including `LIMIT BY`, Set, JOIN, and `arrayUniq`-style functions) keep
+        /// the old behavior. The hash-table size threshold (`min_bytes_for_prefetch`) is
+        /// enforced lazily on the first emplace/find call.
         /// This block must not sit between the `usePreparedKeys` branch and the SSSE3 branch
         /// above: those two form an `if`/`else if`, and the shuffle masks must still be
         /// initialized whenever the keys cannot be batch-packed (e.g. a `FixedString(3)` key).
         if constexpr (has_pre_computed_hashes)
         {
             const auto * settings_context = context ? typeid_cast<const HashMethodSettingsContext *>(context.get()) : nullptr;
-            if (settings_context && !prepared_keys.empty() && settings_context->settings.enable_prefetch)
+            if (settings_context && !prepared_keys.empty() && settings_context->settings.enable_fixed_key_prefetch)
             {
                 can_precompute_hashes = true;
                 precomputed_hashes_initialized = false;
