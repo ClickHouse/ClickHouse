@@ -129,6 +129,9 @@ struct AlterCommand
     std::vector<String> statistics_columns;
     std::vector<String> statistics_types;
 
+    /// For ADD COLUMN and MODIFY COLUMN: the column-level `STATISTICS(...)` clause of the column declaration
+    ASTPtr column_statistics_decl = nullptr;
+
     /// For MODIFY TTL
     ASTPtr ttl = nullptr;
 
@@ -203,6 +206,12 @@ struct AlterCommand
 };
 
 class Context;
+
+/// True if the ALTER MODIFY COLUMN from `from` to `to` is a "lazy" metadata-only conversion: the
+/// on-disk serialization changes but is applied lazily (old parts read with the old type and CAST,
+/// merges rewrite over time) rather than by a mutation. Unlike a byte-identical conversion it is
+/// unsafe for positionally-persisted values (keys, indexes), so `checkAlterIsPossible` re-checks those.
+bool isLazyMetadataConversion(const IDataType * from, const IDataType * to, const ContextPtr & context);
 
 /// Vector of AlterCommand with several additional functions
 class AlterCommands : public std::vector<AlterCommand>
