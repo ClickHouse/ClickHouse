@@ -81,6 +81,14 @@ public:
     bool isStateful() const override { return function->isStateful(); }
     bool isSpatialPredicate() const override { return function->isSpatialPredicate(); }
 
+    bool hasMultiArgConstGeometryBboxConvention() const override { return function->hasMultiArgConstGeometryBboxConvention(); }
+    bool tryGetMultiArgConstGeometryBbox(
+        const std::vector<const Field *> & args,
+        double & xmin, double & ymin, double & xmax, double & ymax) const override
+    {
+        return function->tryGetMultiArgConstGeometryBbox(args, xmin, ymin, xmax, ymax);
+    }
+
 
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
 

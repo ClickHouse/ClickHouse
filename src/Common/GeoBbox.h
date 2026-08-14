@@ -300,100 +300,6 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
     return false;
 }
 
-/// Multi-argument `pointInPolygon(point, arg1, arg2, ...)` combines its constant geometry
-/// arguments differently depending on the shape of the first one, exactly mirroring
-/// `FunctionPointInPolygon::executeImpl`'s `is_const_multi_polygon` decision:
-///  - first argument a Polygon (an array of rings, per `isPolygonArray`): every argument is
-///    a separate component of one `MultiPolygon` (`parseConstMultiPolygonFromMultipleColumns`).
-///  - otherwise (first argument a flat Ring, per `isRingArray`): the first argument is the
-///    shell and the rest are holes of one `Polygon` (`parseConstPolygonWithHolesFromMultipleColumns`).
-/// Validates the ASSEMBLED geometry with `bg::is_valid`, not each argument in isolation --
-/// a hole entirely outside its shell, or overlapping components in a multipolygon, are only
-/// visible once the pieces are combined, and must fail closed the same way a single-argument
-/// invalid polygon does.
-inline bool tryExtractBboxFromMultiArgConstGeometry(
-    const std::vector<const Field *> & args,
-    double & xmin, double & ymin, double & xmax, double & ymax)
-{
-    using namespace GeoBboxDetail;
-
-    if (args.size() < 2)
-        return false;
-
-    for (const auto * f : args)
-        if (f->getType() != Field::Types::Array)
-            return false;
-
-    BboxAccumulator acc;
-    std::string failure_message;
-
-    if (isPolygonArray(args[0]->safeGet<Array>()))
-    {
-        MultiPolygon<CartesianPoint> multi_polygon;
-        for (const auto * f : args)
-        {
-            const auto & array = f->safeGet<Array>();
-            multi_polygon.emplace_back();
-            if (isPolygonArray(array))
-            {
-                if (!buildPolygon(array, multi_polygon.back()))
-                    return false;
-            }
-            else if (isRingArray(array))
-            {
-                if (!appendRing(array, multi_polygon.back().outer()))
-                    return false;
-            }
-            else
-                return false;
-        }
-
-        boost::geometry::correct(multi_polygon);
-        if (!boost::geometry::is_valid(multi_polygon, failure_message))
-            return false;
-
-        for (const auto & poly : multi_polygon)
-            acc.addAll(poly.outer());
-    }
-    else
-    {
-        Polygon<CartesianPoint> polygon;
-        for (size_t i = 0; i < args.size(); ++i)
-        {
-            const auto & array = args[i]->safeGet<Array>();
-            if (!isRingArray(array))
-                return false;
-
-            if (i == 0)
-            {
-                if (!appendRing(array, polygon.outer()))
-                    return false;
-            }
-            else
-            {
-                polygon.inners().emplace_back();
-                if (!appendRing(array, polygon.inners().back()))
-                    return false;
-            }
-        }
-
-        boost::geometry::correct(polygon);
-        if (!boost::geometry::is_valid(polygon, failure_message))
-            return false;
-
-        acc.addAll(polygon.outer());
-    }
-
-    if (!acc.found || !acc.valid)
-        return false;
-
-    xmin = acc.xmin;
-    ymin = acc.ymin;
-    xmax = acc.xmax;
-    ymax = acc.ymax;
-    return true;
-}
-
 /// Bounding box of a constant query geometry, shared by every pruning surface
 /// (the `MergeTree` `spatial_bbox` skip index, `Parquet` row-group pruning, ...).
 struct QueryBbox
@@ -446,13 +352,14 @@ inline bool tryExtractConstGeoField(const ActionsDAG::Node & node, Field & out_f
 /// `INPUT`-typed child counts as the one accepted geometry column input; on `Ok`,
 /// `out_col_node` is set to that node so the caller can read its `result_name`.
 ///
-/// Mirrors `FunctionPointInPolygon::executeImpl`'s handling of its constant geometry
-/// argument(s): a single constant argument is validated as a self-contained shell+holes/
-/// `MultiPolygon` by `extractBboxFromFieldValue`; two or more constant arguments are only
-/// assembled together (via `tryExtractBboxFromMultiArgConstGeometry`) for `pointInPolygon`
-/// itself -- any other `isSpatialPredicate()` function (e.g. a WASM UDF) with more than one
-/// constant geometry argument could combine them under entirely different semantics, so
-/// assuming `pointInPolygon`'s shell/hole assembly for it would produce a bogus bbox.
+/// A single constant argument is validated as a self-contained shell+holes/`MultiPolygon` by
+/// `extractBboxFromFieldValue`. Two or more constant arguments are only assembled together via
+/// `IFunctionBase::tryGetMultiArgConstGeometryBbox`, and only when
+/// `hasMultiArgConstGeometryBboxConvention()` says this specific predicate has a defined
+/// convention for it (currently only `pointInPolygon`, see its override) -- any other
+/// `isSpatialPredicate()` function (e.g. a WASM UDF) with more than one constant geometry
+/// argument could combine them under entirely different semantics, so assuming
+/// `pointInPolygon`'s shell/hole assembly for it would produce a bogus bbox.
 template <typename AcceptInput>
 NodeBboxStatus extractSpatialPredicateNodeBbox(
     const ActionsDAG::Node & node,
@@ -515,8 +422,9 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     if (const_fields.empty())
         return input_child ? NodeBboxStatus::NoInfo : NodeBboxStatus::NotApplicable;
 
-    /// Two or more constant geometry arguments on a non-`pointInPolygon` predicate aren't
-    /// assembled into one combined shape (see the comment above). But it's a common signature
+    /// Two or more constant geometry arguments on a predicate with no
+    /// `hasMultiArgConstGeometryBboxConvention()` aren't assembled into one combined shape (see
+    /// the comment above). But it's a common signature
     /// for a `isSpatialPredicate()` UDF to take exactly ONE constant geometry argument alongside
     /// auxiliary constant scalars, e.g. `within_distance(geom_column, const_poly, 100)` -- that
     /// isn't really a "combine several geometries" case at all, so reduce it to the same
@@ -533,7 +441,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     /// mode flag. Avoid raw `String` constants for non-geometry auxiliary arguments of an
     /// `is_spatial_predicate` function to keep pruning effective (see `wasm_udf.mdx`).
     std::optional<BboxAccumulator> single_geometry_field;
-    if (const_fields.size() > 1 && node.function_base->getName() != "pointInPolygon")
+    if (const_fields.size() > 1 && !node.function_base->hasMultiArgConstGeometryBboxConvention())
     {
         bool multiple_geometry_fields = false;
         for (const auto & field : const_fields)
@@ -556,9 +464,10 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
 
     /// A single constant geometry argument is self-contained (shell + holes, or a full
     /// MultiPolygon, all in one literal) and is already validated as such by
-    /// extractBboxFromFieldValue. Two or more constant arguments (only reachable for
-    /// `pointInPolygon` past the check above) must be assembled and validated together --
-    /// validating each argument in isolation would miss e.g. a hole entirely outside its shell.
+    /// extractBboxFromFieldValue. Two or more constant arguments (only reachable when
+    /// `hasMultiArgConstGeometryBboxConvention()` past the check above) must be assembled and
+    /// validated together by the predicate's own `tryGetMultiArgConstGeometryBbox` -- validating
+    /// each argument in isolation would miss e.g. a hole entirely outside its shell.
     double xmin = 0;
     double ymin = 0;
     double xmax = 0;
@@ -595,7 +504,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
         field_ptrs.reserve(const_fields.size());
         for (const auto & f : const_fields)
             field_ptrs.push_back(&f);
-        if (!tryExtractBboxFromMultiArgConstGeometry(field_ptrs, xmin, ymin, xmax, ymax))
+        if (!node.function_base->tryGetMultiArgConstGeometryBbox(field_ptrs, xmin, ymin, xmax, ymax))
             return NodeBboxStatus::Failed;
     }
 

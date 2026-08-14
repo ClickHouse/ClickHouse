@@ -14,6 +14,7 @@
 
 #include <functional>
 #include <memory>
+#include <vector>
 
 /// This file contains user interface for functions.
 
@@ -210,6 +211,23 @@ public:
       * UDFs with spatial semantics can also override this to enable Parquet row group / page pruning.
       */
     virtual bool isSpatialPredicate() const { return false; }
+
+    /** For a function where `isSpatialPredicate()` is true: does this predicate have a defined
+      * convention for combining TWO OR MORE constant geometry arguments into one shape (e.g.
+      * `pointInPolygon`'s shell+holes / MultiPolygon assembly)? Most spatial predicates don't --
+      * a UDF's `is_spatial_predicate` contract only ever promises a single constant geometry
+      * argument -- so the default is false. Call `tryGetMultiArgConstGeometryBbox` only if true.
+      */
+    virtual bool hasMultiArgConstGeometryBboxConvention() const { return false; }
+
+    /** Combine two or more constant geometry arguments into one bbox, per this predicate's own
+      * convention. Call only if `hasMultiArgConstGeometryBboxConvention()`. Returns false if the
+      * combined geometry fails to validate -- since this predicate is known to actually attempt
+      * the same combining at evaluation time, that means evaluating it is guaranteed to raise.
+      */
+    virtual bool tryGetMultiArgConstGeometryBbox(
+        const std::vector<const Field *> & /*args*/,
+        double & /*xmin*/, double & /*ymin*/, double & /*xmax*/, double & /*ymax*/) const { return false; }
 
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
@@ -633,6 +651,12 @@ public:
     virtual bool isServerConstant() const { return false; }
     virtual bool isStateful() const { return false; }
     virtual bool isSpatialPredicate() const { return false; }
+
+    /// See IFunctionBase::hasMultiArgConstGeometryBboxConvention / tryGetMultiArgConstGeometryBbox.
+    virtual bool hasMultiArgConstGeometryBboxConvention() const { return false; }
+    virtual bool tryGetMultiArgConstGeometryBbox(
+        const std::vector<const Field *> & /*args*/,
+        double & /*xmin*/, double & /*ymin*/, double & /*xmax*/, double & /*ymax*/) const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }

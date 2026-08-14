@@ -78,6 +78,12 @@ public:
 
     bool isSpatialPredicate() const override { return function_overload_resolver->isSpatialPredicate(); }
 
+    /// Unlike isSpatialPredicate(), these need a concrete resolved IFunction to answer (they combine
+    /// concrete Field arguments). We only hold an IFunctionOverloadResolver here -- the concrete
+    /// function per alternative isn't picked until per-row dispatch in ExecutableFunctionVariantAdaptor
+    /// -- so there is nothing to delegate to; keep the IFunctionBase default (false) explicitly.
+    bool hasMultiArgConstGeometryBboxConvention() const override { return false; }
+
 private:
     /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Variant column.
     std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver;
