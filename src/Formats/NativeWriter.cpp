@@ -95,8 +95,7 @@ void NativeWriter::flush()
     serialization.serializeBinaryBulkStateSuffix(settings, state);
 }
 
-std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getSerializationAndColumn(
-    UInt64 client_revision, const ColumnWithTypeAndName & column)
+std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getSerializationAndColumn(UInt64 client_revision, const ColumnWithTypeAndName & column)
 {
     if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
     {

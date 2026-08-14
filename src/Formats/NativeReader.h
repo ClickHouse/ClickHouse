@@ -25,8 +25,7 @@ class NativeReader
 {
 public:
     /// If a non-zero server_revision is specified, additional block information may be expected and read.
-    NativeReader(
-        ReadBuffer & istr_, UInt64 server_revision_, std::optional<FormatSettings> format_settings_ = std::nullopt);
+    NativeReader(ReadBuffer & istr_, UInt64 server_revision_, std::optional<FormatSettings> format_settings_ = std::nullopt);
 
     /// For cases when data structure (header) is known in advance.
     /// NOTE We may use header for data validation and/or type conversions. It is not implemented.

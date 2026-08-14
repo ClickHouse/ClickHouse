@@ -36,8 +36,7 @@ namespace ErrorCodes
 }
 
 
-NativeReader::NativeReader(
-    ReadBuffer & istr_, UInt64 server_revision_, std::optional<FormatSettings> format_settings_)
+NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_, std::optional<FormatSettings> format_settings_)
     : istr(istr_), server_revision(server_revision_), format_settings(format_settings_)
 {
 }
