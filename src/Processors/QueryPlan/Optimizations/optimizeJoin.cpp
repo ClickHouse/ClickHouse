@@ -486,11 +486,13 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
         /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
-        return RelationStats{
+        RelationStats stats{
             .estimated_rows = join_step->getResultRowsEstimation(),
             .column_stats = join_step->getResultColumnStats(),
             .table_name = join_step->getReadableRelationName(),
             .imprecise_estimate = join_step->hasImpreciseEstimate()};
+        remapColumnStats(stats.column_stats, join_step->getActionsDAG());
+        return stats;
     }
 
     if (node.children.size() != 1)
