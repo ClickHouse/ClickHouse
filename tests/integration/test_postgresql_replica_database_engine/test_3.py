@@ -352,6 +352,9 @@ def test_toast_in_replica_identity(started_cluster):
         retry_count=60,
         sleep_time=1,
     )
+    # Keep the assertion past a consumer retry: a partially buffered row must
+    # not be flushed after the failed replication attempt.
+    time.sleep(1)
     assert (
         instance.query(f"SELECT length(id), other FROM test_database.{table}")
         == "2500\tinitial\n"

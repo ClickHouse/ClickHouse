@@ -370,6 +370,7 @@ size_t MaterializedPostgreSQLConsumer::readTupleData(
     Int16 num_columns = readInt16(message, pos, size);
     auto & buffer = storage_data.getLastBuffer();
     const size_t row_idx = buffer.columns.front()->size();
+    bool discard_row = false;
 
     auto process_column_value = [&](Int8 identifier, Int16 column_idx)
     {
@@ -400,6 +401,7 @@ size_t MaterializedPostgreSQLConsumer::readTupleData(
                 if (std::find(buffer.key_column_indices.begin(), buffer.key_column_indices.end(), static_cast<size_t>(column_idx))
                     != buffer.key_column_indices.end())
                 {
+                    discard_row = true;
                     throw Exception(
                         ErrorCodes::INCORRECT_DATA,
                         "Column {} of table {} belongs to the replica identity and arrived as an unchanged TOAST value, "
@@ -493,6 +495,14 @@ size_t MaterializedPostgreSQLConsumer::readTupleData(
 
             break;
         }
+    }
+
+    if (discard_row)
+    {
+        for (auto & column : columns)
+            column->popBack(1);
+
+        std::erase_if(buffer.unchanged_toast_values, [row_idx](const auto & value) { return value.row_idx == row_idx; });
     }
 
     if (error)
