@@ -2725,6 +2725,11 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     if (!maybe_path_in_detached)
         return nullptr;
 
+    return makeCloneAt(*maybe_path_in_detached, disk_transaction);
+}
+
+DataPartStoragePtr IMergeTreeDataPart::makeCloneAt(const String & relative_dir_name, const DiskTransactionPtr & disk_transaction) const
+{
     /// In case of zero-copy replication we copy directory instead of hardlinks
     /// because hardlinks tracking doesn't work for detached parts.
     auto storage_settings = storage.getSettings();
@@ -2739,7 +2744,7 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     };
     return getDataPartStorage().freeze(
         storage.relative_data_path,
-        *maybe_path_in_detached,
+        relative_dir_name,
         Context::getGlobalContextInstance()->getReadSettings(),
         Context::getGlobalContextInstance()->getWriteSettings(),
         /* save_metadata_callback= */ {},

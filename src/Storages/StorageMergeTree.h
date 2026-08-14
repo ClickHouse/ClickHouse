@@ -277,15 +277,39 @@ private:
     /// effective, so on a stale lease the cleanup is simply left to the current leader.
     void clearDataAfterPartitionDDL(std::string_view ddl_kind, bool with_mutations);
 
-    /// A detached copy created by `DETACH PART` / `DETACH PARTITION` before the admission-epoch
-    /// fence rejected the publish: disk and directory name under `detached/`.
-    using DetachedCloneToRollback = std::pair<DiskPtr, String>;
+    /// A copy of a part written by `DETACH PART` / `DETACH PARTITION` under `leader_election`,
+    /// while the covering empty part that makes the `DETACH` effective is not committed yet.
+    struct StagedDetachedClone
+    {
+        DiskPtr disk;
+        /// Directory of the copy, relative to the table's data path, while the `DETACH` is not
+        /// committed. It is deliberately OUTSIDE `detached/`, see `cloneToDetachedForDrop`.
+        String staged_dir;
+        /// Directory name inside `detached/` the copy is moved to once the `DETACH` commits.
+        String detached_dir;
+    };
 
-    /// Best-effort removal of the detached copies created by a `DETACH` whose empty-part publish
-    /// was rejected by `assertWritableLeaderAtEpoch`. Without this, a stale leader's rejected
-    /// `DETACH` would leave persistent detached copies behind on shared storage, and a later
-    /// `ATTACH PARTITION` could re-import data from a DDL that supposedly failed.
-    void removeDetachedClonesOfRejectedDetach(const std::vector<DetachedCloneToRollback> & clones);
+    /// Writes the detached copy of a part being dropped by `DETACH PART` / `DETACH PARTITION`.
+    ///
+    /// Without `leader_election` it goes straight to `detached/<part>`, as it always did. Under
+    /// `leader_election` the copy is staged in a process-scoped `tmp_detach_*` directory outside
+    /// `detached/` and published by `publishDetachedClones` only after the covering empty part is
+    /// committed: `detached/` is shared with the other servers, and their `ATTACH PARTITION` only
+    /// consults their OWN `temporary_parts` set, so a copy visible there before the commit could
+    /// be attached by a new leader after a failover — duplicating the data of a `DETACH` that was
+    /// then rejected by its own epoch fence. Returns an empty optional when nothing has to be
+    /// published or rolled back afterwards.
+    std::optional<StagedDetachedClone> cloneToDetachedForDrop(
+        const DataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, std::vector<scope_guard> & dir_holders);
+
+    /// Moves the staged copies into `detached/`, making them visible to the other servers. Called
+    /// right after the covering empty parts are committed, i.e. once the `DETACH` is a fact.
+    void publishDetachedClones(const std::vector<StagedDetachedClone> & clones);
+
+    /// Removal of the staged copies of a `DETACH` whose empty-part publish was rejected — by
+    /// `assertWritableLeaderAtEpoch` or by any other failure before the commit. Without this, a
+    /// rejected `DETACH` would leave its copies behind on shared storage forever.
+    void removeDetachedClonesOfRejectedDetach(const std::vector<StagedDetachedClone> & clones);
 
     /// Under `leader_election`, only the lease-holding leader may mutate shared object storage
     /// (delete stale mutation/dedup files, rotate the deduplication log, repair/detach/remove

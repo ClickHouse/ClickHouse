@@ -3613,3 +3613,132 @@ def test_restore_fenced_to_admission_epoch(started_cluster):
                 node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
             except Exception:
                 pass
+
+
+SHARED_UUID_DETACH_STAGED = "12345678-abcd-abcd-abcd-12345678ab42"
+
+
+def test_uncommitted_detach_clone_not_attachable_after_failover(started_cluster):
+    """
+    Regression for the visibility of the copy a `DETACH PART` / `DETACH PARTITION` writes before
+    it commits. The copy used to be written straight to `detached/<part>`, which is SHARED with
+    the other servers, while the only guard against attaching it was the writing node's own
+    process-local `temporary_parts` set. A failover in the window between the copy and the commit
+    of the covering empty part therefore left the new leader with an attachable copy of a `DETACH`
+    that never happened: its `ATTACH PARTITION` consults its own `temporary_parts` set, sees
+    nothing, and `fillNewPartNameAndResetLevel` republishes the copy under a fresh block number —
+    duplicating rows that are still live, because the rejected `DETACH` rolled back.
+
+    The copy is now staged in a process-scoped `tmp_detach_*` directory outside `detached/` and
+    moved there only after the commit. The `merge_tree_leader_election_pause_after_detach_clone`
+    failpoint holds the `DETACH` exactly in that window, and the leader is killed inside it, so
+    the copy is durable on the shared storage while the `DETACH` is provably not committed.
+    """
+    ensure_node_up(node1)
+    ensure_node_up(node2)
+    failpoint = "merge_tree_leader_election_pause_after_detach_clone"
+    table = "test_detach_clone_staged"
+
+    def active_parts(node):
+        # Only the detached partition is counted: it holds a single part, so a background merge
+        # cannot change this number behind the assertions below.
+        return int(
+            node.query(
+                f"SELECT count() FROM system.parts WHERE database = currentDatabase()"
+                f" AND table = '{table}' AND active AND partition = '1'"
+            ).strip()
+        )
+
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_DETACH_STAGED}' (x UInt64)
+            ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x
+            SETTINGS {TABLE_SETTINGS}
+            """
+        )
+        node2.query(
+            f"""
+            ATTACH TABLE {table} UUID '{SHARED_UUID_DETACH_STAGED}' (x UInt64)
+            ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x
+            SETTINGS {TABLE_SETTINGS}
+            """
+        )
+        leader, followers = wait_for_leader([node1, node2], table_name=table)
+        follower = followers[0]
+
+        leader.query(f"INSERT INTO {table} VALUES (1), (2), (3), (4)")
+        assert leader.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split() == [
+            "1", "2", "3", "4",
+        ]
+
+        leader.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        detach_error = []
+
+        def run_detach():
+            try:
+                leader.query(f"ALTER TABLE {table} DETACH PARTITION 1")
+            except Exception as e:
+                detach_error.append(e)
+
+        detach_thread = threading.Thread(target=run_detach)
+        detach_thread.start()
+        try:
+            leader.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+        finally:
+            # Kill the leader inside the window: the copy of the part is durable on the shared
+            # storage, the covering empty part was never committed, and no rollback can run.
+            leader.stop_clickhouse(kill=True)
+            detach_thread.join()
+
+        # The follower takes over (session timeout 5 s) and reads the shared storage anew.
+        wait_for_leader([follower], table_name=table)
+        follower.query(f"DETACH TABLE {table}")
+        follower.query(f"ATTACH TABLE {table}")
+        wait_for_leader([follower], table_name=table)
+
+        assert follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split() == [
+            "1", "2", "3", "4",
+        ], "The killed leader's uncommitted DETACH changed the data of the new leader"
+        assert int(
+            follower.query(
+                f"SELECT count() FROM system.detached_parts WHERE database = currentDatabase()"
+                f" AND table = '{table}'"
+            ).strip()
+        ) == 0, "The copy of an uncommitted DETACH is visible in the shared detached/ namespace"
+
+        # The decisive check: the new leader must not be able to attach the copy.
+        parts_before = active_parts(follower)
+        follower.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
+        rows = follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split()
+        assert rows == ["1", "2", "3", "4"], (
+            f"ATTACH PARTITION on the new leader duplicated the rows of a DETACH that never "
+            f"committed, got: {rows}"
+        )
+        assert active_parts(follower) == parts_before, (
+            "ATTACH PARTITION on the new leader attached a part of a DETACH that never committed"
+        )
+
+        # And the same `DETACH PARTITION`, run to completion by the new leader, does publish its
+        # copy: staging must not lose the detached data of a committed DETACH.
+        follower.query(f"ALTER TABLE {table} DETACH PARTITION 1")
+        assert follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split() == ["2", "4"]
+        follower.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
+        assert follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split() == [
+            "1", "2", "3", "4",
+        ], "The detached copy of a committed DETACH could not be attached back"
+    finally:
+        for node in (node1, node2):
+            try:
+                ensure_node_up(node)
+            except Exception:
+                pass
+        for node in (node1, node2):
+            try:
+                node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            except Exception:
+                pass
+            try:
+                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass
