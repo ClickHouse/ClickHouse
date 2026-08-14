@@ -44,7 +44,7 @@ SELECT dictGet('${db}.dict_definer', 'v', toUInt64(2));
 "
 
 echo '--- 1b. control: with the credentials stored in the source, the same rotation breaks the reload'
-${CLICKHOUSE_CLIENT} -m -q "
+${CLICKHOUSE_CLIENT} -m --ignore-error -q "
 CREATE DICTIONARY ${db}.dict_password (k UInt64, v String)
 PRIMARY KEY k
 SOURCE(CLICKHOUSE(USER '${owner}' PASSWORD 'rotated_password' DB '${db}' TABLE 'src'))
@@ -53,14 +53,12 @@ LIFETIME(0);
 SELECT dictGet('${db}.dict_password', 'v', toUInt64(1));
 ALTER USER ${owner} IDENTIFIED BY 'rotated_again';
 SYSTEM RELOAD DICTIONARY ${db}.dict_password;
-" 2>&1 | grep -o -m1 'AUTHENTICATION_FAILED'
-${CLICKHOUSE_CLIENT} -m -q "
 SYSTEM RELOAD DICTIONARY ${db}.dict_definer;
 SELECT 'definer dictionary still loads', dictGet('${db}.dict_definer', 'v', toUInt64(1));
-"
+" 2>&1 | grep -o -E "AUTHENTICATION_FAILED|^definer dictionary still loads.*"
 
 echo '--- 2. the load runs with the definer privileges, not as a privileged default user'
-${CLICKHOUSE_CLIENT} -m -q "
+${CLICKHOUSE_CLIENT} -m --ignore-error -q "
 CREATE DICTIONARY ${db}.dict_polp (k UInt64, v String)
 PRIMARY KEY k
 SOURCE(CLICKHOUSE(DB '${db}' TABLE 'other'))
@@ -68,12 +66,10 @@ LAYOUT(HASHED())
 LIFETIME(0)
 DEFINER = ${owner} SQL SECURITY DEFINER;
 SELECT dictGet('${db}.dict_polp', 'v', toUInt64(9));
-" 2>&1 | grep -o -m1 'ACCESS_DENIED'
-${CLICKHOUSE_CLIENT} -m -q "
 GRANT SELECT ON ${db}.other TO ${owner};
 SYSTEM RELOAD DICTIONARY ${db}.dict_polp;
 SELECT dictGet('${db}.dict_polp', 'v', toUInt64(9));
-"
+" 2>&1 | grep -o -E "ACCESS_DENIED|^nine$"
 
 echo '--- 2b. the definer settings constraints bound what the dictionary definition can set'
 # A READONLY constraint on the definer must survive the dictionary's own SETTINGS, the same way it
@@ -155,35 +151,34 @@ echo '--- 5b. a short ATTACH cannot carry the clause, because it has no definiti
 # dictionary definition attached; it is refused with the message that covers every dropped clause.
 for clause in "SQL SECURITY DEFINER" "DEFINER = ${owner} SQL SECURITY DEFINER" "SQL SECURITY NONE"
 do
-    ${CLICKHOUSE_CLIENT} -q "ATTACH DICTIONARY ${db}.dict_attach_clause ${clause}" 2>&1 |
-        grep -o -m1 'ATTACH applies the table definition from stored metadata'
-    ${CLICKHOUSE_CLIENT} -q "SELECT 'persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_attach_clause'"
+    ${CLICKHOUSE_CLIENT} -m --ignore-error -q "
+    ATTACH DICTIONARY ${db}.dict_attach_clause ${clause};
+    SELECT 'persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_attach_clause';
+    " 2>&1 | grep -o -E "ATTACH applies the table definition from stored metadata|^persisted:.*"
 done
 # The server has to survive all of it: the reference above is also produced by a dead server, whose
 # client errors would not match any of the greps.
 ${CLICKHOUSE_CLIENT} -q "SELECT 'server is alive', 1"
 
 echo '--- 6. only DEFINER is accepted: INVOKER and NONE are both rejected'
-${CLICKHOUSE_CLIENT} -q "
+# NONE would load with no user at all, so it is refused instead of being recorded and ignored. The
+# load identity is what makes ignoring it observable: a `NONE` dictionary that was accepted would
+# read its source as `default`, which is exactly what a dictionary carrying no clause already does.
+${CLICKHOUSE_CLIENT} -m --ignore-error -q "
 CREATE DICTIONARY ${db}.dict_invoker (k UInt64, v String)
 PRIMARY KEY k
 SOURCE(CLICKHOUSE(DB '${db}' TABLE 'src'))
 LAYOUT(HASHED())
 LIFETIME(0)
 SQL SECURITY INVOKER;
-" 2>&1 | grep -o -m1 "SQL SECURITY INVOKER can't be specified for DICTIONARY"
-# NONE would load with no user at all, so it is refused instead of being recorded and ignored. The
-# load identity is what makes ignoring it observable: a `NONE` dictionary that was accepted would
-# read its source as `default`, which is exactly what a dictionary carrying no clause already does.
-${CLICKHOUSE_CLIENT} -q "
 CREATE DICTIONARY ${db}.dict_none (k UInt64, v String)
 PRIMARY KEY k
 SOURCE(CLICKHOUSE(DB '${db}' QUERY 'SELECT 1 AS k, currentUser() AS v'))
 LAYOUT(HASHED())
 LIFETIME(0)
 SQL SECURITY NONE;
-" 2>&1 | grep -o -m1 "SQL SECURITY NONE can't be specified for DICTIONARY"
-${CLICKHOUSE_CLIENT} -q "SELECT 'persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_none'"
+SELECT 'persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_none';
+" 2>&1 | grep -o -E "SQL SECURITY (INVOKER|NONE) can't be specified for DICTIONARY|^persisted:.*"
 # Mirror arm: the same source under a DEFINER does load as the definer, so the arm above rejects the
 # type rather than the source, and 'v' below would read 'default' if the definer were not honoured.
 ${CLICKHOUSE_CLIENT} -m -q "
@@ -213,30 +208,29 @@ for source in \
     "CLICKHOUSE(HOST 'remote.invalid.example' PORT 9000 DB '${db}' TABLE 'src')" \
     "NULL()"
 do
-    ${CLICKHOUSE_CLIENT} -q "
+    ${CLICKHOUSE_CLIENT} -m --ignore-error -q "
     CREATE DICTIONARY ${db}.dict_rejected (k UInt64, v String)
     PRIMARY KEY k
     SOURCE(${source})
     LAYOUT(HASHED())
     LIFETIME(0)
     DEFINER = ${owner} SQL SECURITY DEFINER;
-    " 2>&1 | grep -o -m1 'DEFINER is only supported for a dictionary with a local CLICKHOUSE source'
-    ${CLICKHOUSE_CLIENT} -q "SELECT 'persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_rejected'"
-    ${CLICKHOUSE_CLIENT} -q "
+    SELECT 'persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_rejected';
     CREATE DICTIONARY ${db}.dict_rejected_none (k UInt64, v String)
     PRIMARY KEY k
     SOURCE(${source})
     LAYOUT(HASHED())
     LIFETIME(0)
     SQL SECURITY NONE;
-    " 2>&1 | grep -o -m1 "SQL SECURITY NONE can't be specified for DICTIONARY"
-    ${CLICKHOUSE_CLIENT} -q "SELECT 'none persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_rejected_none'"
+    SELECT 'none persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_rejected_none';
+    " 2>&1 | grep -o -E "DEFINER is only supported for a dictionary with a local CLICKHOUSE source|SQL SECURITY NONE can't be specified for DICTIONARY|^(none )?persisted:.*"
 done
 
 echo '--- 7a. a function-valued source parameter is evaluated before locality is decided'
 # `PORT tcpPort()` is the documented way to name this server, and a source parameter is only turned
 # into a constant during normalization, so deciding locality on the raw definition rejects it.
-${CLICKHOUSE_CLIENT} -m -q "
+# Mirror arm: evaluating the parameters must not make every source look local.
+${CLICKHOUSE_CLIENT} -m --ignore-error -q "
 CREATE DICTIONARY ${db}.dict_tcpport (k UInt64, v String)
 PRIMARY KEY k
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DB '${db}' TABLE 'src'))
@@ -244,8 +238,6 @@ LAYOUT(HASHED())
 LIFETIME(0)
 DEFINER = ${owner} SQL SECURITY DEFINER;
 SELECT 'function-valued local port accepted', dictGet('${db}.dict_tcpport', 'v', toUInt64(1));
-"
-${CLICKHOUSE_CLIENT} -m -q "
 CREATE DICTIONARY ${db}.dict_hostname (k UInt64, v String)
 PRIMARY KEY k
 SOURCE(CLICKHOUSE(HOST hostName() PORT tcpPort() DB '${db}' TABLE 'src'))
@@ -253,21 +245,18 @@ LAYOUT(HASHED())
 LIFETIME(0)
 DEFINER = ${owner} SQL SECURITY DEFINER;
 SELECT 'function-valued local host accepted', dictGet('${db}.dict_hostname', 'v', toUInt64(2));
-"
-# Mirror arm: evaluating the parameters must not make every source look local.
-${CLICKHOUSE_CLIENT} -q "
 CREATE DICTIONARY ${db}.dict_tcpport_remote (k UInt64, v String)
 PRIMARY KEY k
 SOURCE(CLICKHOUSE(HOST 'remote.invalid.example' PORT tcpPort() DB '${db}' TABLE 'src'))
 LAYOUT(HASHED())
 LIFETIME(0)
 DEFINER = ${owner} SQL SECURITY DEFINER;
-" 2>&1 | grep -o -m1 'DEFINER is only supported for a dictionary with a local CLICKHOUSE source'
-${CLICKHOUSE_CLIENT} -q "SELECT 'persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_tcpport_remote'"
+SELECT 'persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_tcpport_remote';
+" 2>&1 | grep -o -E "^function-valued local (port|host) accepted.*|DEFINER is only supported for a dictionary with a local CLICKHOUSE source|^persisted:.*"
 
 echo '--- 7f. an unqualified name is judged the same way, before the current database is filled in'
 # The gate runs before `create.setDatabase(current_database)`, so it sees an empty database name.
-${CLICKHOUSE_CLIENT} -m -q "
+${CLICKHOUSE_CLIENT} -m --ignore-error -q "
 USE ${db};
 CREATE DICTIONARY dict_unqualified (k UInt64, v String)
 PRIMARY KEY k
@@ -276,32 +265,25 @@ LAYOUT(HASHED())
 LIFETIME(0)
 DEFINER = ${owner} SQL SECURITY DEFINER;
 SELECT 'unqualified local accepted:', dictGet('${db}.dict_unqualified', 'v', toUInt64(1));
-"
-${CLICKHOUSE_CLIENT} -m -q "
-USE ${db};
 CREATE DICTIONARY dict_unqualified_remote (k UInt64, v String)
 PRIMARY KEY k
 SOURCE(CLICKHOUSE(HOST 'remote.invalid.example' PORT 9000 DB '${db}' TABLE 'src'))
 LAYOUT(HASHED())
 LIFETIME(0)
 DEFINER = ${owner} SQL SECURITY DEFINER;
-" 2>&1 | grep -o -m1 'DEFINER is only supported for a dictionary with a local CLICKHOUSE source'
-${CLICKHOUSE_CLIENT} -q "SELECT 'persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_unqualified_remote'"
+SELECT 'persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_unqualified_remote';
+" 2>&1 | grep -o -E "^unqualified local accepted:.*|DEFINER is only supported for a dictionary with a local CLICKHOUSE source|^persisted:.*"
 
 echo '--- 7b. locality is decided on the effective configuration, so a named collection is resolved first'
-${CLICKHOUSE_CLIENT} -m -q "
+${CLICKHOUSE_CLIENT} -m --ignore-error -q "
 CREATE NAMED COLLECTION ${coll_remote} AS host = 'remote.invalid.example', port = 9000;
 CREATE NAMED COLLECTION ${coll_local} AS host = 'localhost';
-"
-${CLICKHOUSE_CLIENT} -q "
 CREATE DICTIONARY ${db}.dict_coll_remote (k UInt64, v String)
 PRIMARY KEY k
 SOURCE(CLICKHOUSE(NAME ${coll_remote} DB '${db}' TABLE 'src'))
 LAYOUT(HASHED())
 LIFETIME(0)
 DEFINER = ${owner} SQL SECURITY DEFINER;
-" 2>&1 | grep -o -m1 'DEFINER is only supported for a dictionary with a local CLICKHOUSE source'
-${CLICKHOUSE_CLIENT} -m -q "
 CREATE DICTIONARY ${db}.dict_coll_local (k UInt64, v String)
 PRIMARY KEY k
 SOURCE(CLICKHOUSE(NAME ${coll_local} DB '${db}' TABLE 'src'))
@@ -309,46 +291,44 @@ LAYOUT(HASHED())
 LIFETIME(0)
 DEFINER = ${owner} SQL SECURITY DEFINER;
 SELECT 'local collection accepted', dictGet('${db}.dict_coll_local', 'v', toUInt64(1));
-"
+" 2>&1 | grep -o -E "DEFINER is only supported for a dictionary with a local CLICKHOUSE source|^local collection accepted.*"
 
 echo '--- 7c. a rejected CREATE leaves no ephemeral definer account behind'
 # An ephemeral definer is the only shape that makes this observable: resolving it inserts a real
 # no-authentication `<user>:definer` account that nothing would collect after a rejection.
-${CLICKHOUSE_CLIENT} -m -q "
+# Control: an accepted CREATE with the same ephemeral definer does resolve it, so the rejection
+# count is zero because the rejection happened first, not because the account is never created.
+${CLICKHOUSE_CLIENT} -m --ignore-error -q "
 CREATE USER OR REPLACE ${ephemeral} IN memory IDENTIFIED BY 'ephemeral_password';
 GRANT SELECT ON ${db}.src TO ${ephemeral};
-"
-${CLICKHOUSE_CLIENT} -q "SELECT 'definer is ephemeral:', storage FROM system.users WHERE name = '${ephemeral}'"
-${CLICKHOUSE_CLIENT} -q "
+SELECT 'definer is ephemeral:', storage FROM system.users WHERE name = '${ephemeral}';
 CREATE DICTIONARY ${db}.dict_ephemeral (k UInt64, v String)
 PRIMARY KEY k
 SOURCE(MYSQL(HOST 'mysql_host' PORT 3306 USER 'u' PASSWORD 'p' DB 'd' TABLE 't'))
 LAYOUT(HASHED())
 LIFETIME(0)
 DEFINER = ${ephemeral} SQL SECURITY DEFINER;
-" >/dev/null 2>&1
-${CLICKHOUSE_CLIENT} -q "SELECT 'definer accounts after the rejection:', count() FROM system.users WHERE name = '${ephemeral}:definer'"
-# Control: an accepted CREATE with the same ephemeral definer does resolve it, so the count above
-# is zero because the rejection happened first, not because the account is never created.
-${CLICKHOUSE_CLIENT} -m -q "
+SELECT 'definer accounts after the rejection:', count() FROM system.users WHERE name = '${ephemeral}:definer';
 CREATE DICTIONARY ${db}.dict_ephemeral_ok (k UInt64, v String)
 PRIMARY KEY k
 SOURCE(CLICKHOUSE(DB '${db}' TABLE 'src'))
 LAYOUT(HASHED())
 LIFETIME(0)
 DEFINER = ${ephemeral} SQL SECURITY DEFINER;
-"
-${CLICKHOUSE_CLIENT} -q "SELECT 'definer accounts after an accepted create:', count() FROM system.users WHERE name = '${ephemeral}:definer'"
-${CLICKHOUSE_CLIENT} -q "SELECT 'loads as the ephemeral definer:', dictGet('${db}.dict_ephemeral_ok', 'v', toUInt64(1))"
+SELECT 'definer accounts after an accepted create:', count() FROM system.users WHERE name = '${ephemeral}:definer';
+SELECT 'loads as the ephemeral definer:', dictGet('${db}.dict_ephemeral_ok', 'v', toUInt64(1));
+" 2>&1 | grep -o -E "^definer is ephemeral:.*|^definer accounts after (the rejection|an accepted create):.*|^loads as the ephemeral definer:.*"
 
 echo '--- 7d. a rejected CREATE does not keep its named collection alive'
 # Positive control: a collection a live dictionary uses is refused, so the silence below is a
 # measured absence rather than a grep that can never match. A dependency registered for a
 # dictionary that was rejected is collected here by the pre-existing stale-entry filter in
 # InterpreterDropNamedCollectionQuery, so the collection is droppable either way.
-${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION ${coll_local}" 2>&1 | grep -o -m1 'NAMED_COLLECTION_IS_USED'
-${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION ${coll_remote}" 2>&1 | grep -o -m1 'NAMED_COLLECTION_IS_USED'
-${CLICKHOUSE_CLIENT} -q "SELECT 'collection dropped:', count() = 0 FROM system.named_collections WHERE name = '${coll_remote}'"
+${CLICKHOUSE_CLIENT} -m --ignore-error -q "
+DROP NAMED COLLECTION ${coll_local};
+DROP NAMED COLLECTION ${coll_remote};
+SELECT 'collection dropped:', count() = 0 FROM system.named_collections WHERE name = '${coll_remote}';
+" 2>&1 | grep -o -E "NAMED_COLLECTION_IS_USED|^collection dropped:.*"
 
 echo '--- 7e. the collection is still authorized, so an unprivileged creator cannot resolve it'
 ${CLICKHOUSE_CLIENT} --user "${creator}" --password creator_password -q "
@@ -360,17 +340,19 @@ LIFETIME(0)
 DEFINER = ${owner} SQL SECURITY DEFINER;
 " 2>&1 | grep -o -m1 'ACCESS_DENIED'
 ${CLICKHOUSE_CLIENT} -q "GRANT NAMED COLLECTION ON ${coll_local} TO ${creator}"
-${CLICKHOUSE_CLIENT} --user "${creator}" --password creator_password -q "
+${CLICKHOUSE_CLIENT} --user "${creator}" --password creator_password -m -q "
 CREATE DICTIONARY ${db}.dict_coll_denied (k UInt64, v String)
 PRIMARY KEY k
 SOURCE(CLICKHOUSE(NAME ${coll_local} DB '${db}' TABLE 'src'))
 LAYOUT(HASHED())
 LIFETIME(0)
 DEFINER = ${owner} SQL SECURITY DEFINER;
+SELECT 'created with the collection grant:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_coll_denied';
 "
-${CLICKHOUSE_CLIENT} -q "SELECT 'created with the collection grant:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_coll_denied'"
 
 echo '--- 8. a dictionary with no clause keeps its current definition and behaviour'
+# The `SET` below applies only to the statements that follow it, so `dict_plain` above is created
+# under the default `INVOKER` and `dict_plain_default` under `DEFINER`.
 ${CLICKHOUSE_CLIENT} -m -q "
 CREATE DICTIONARY ${db}.dict_plain (k UInt64, v String)
 PRIMARY KEY k
@@ -379,8 +361,6 @@ LAYOUT(HASHED())
 LIFETIME(0);
 SELECT position(create_table_query, 'SQL SECURITY') = 0, definer = '' FROM system.tables WHERE database = '${db}' AND name = 'dict_plain';
 SELECT dictGet('${db}.dict_plain', 'v', toUInt64(1));
-"
-${CLICKHOUSE_CLIENT} -m -q "
 SET default_normal_view_sql_security = 'DEFINER';
 CREATE DICTIONARY ${db}.dict_plain_default (k UInt64, v String)
 PRIMARY KEY k
@@ -433,10 +413,12 @@ json_empty_definer=${json_definer/"${definer_object}"/}
 [ "$json_empty_definer" != "$json_definer" ] && echo 'definer identity removed from the payload' || echo 'FAILED to remove the definer identity'
 ${CLICKHOUSE_CLIENT} --dialect=clickhouse_json --enable_json_ast_dialect=1 -q "${json_empty_definer}" 2>&1 |
     grep -o -m1 'SQL SECURITY DEFINER for DICTIONARY requires a definer'
-${CLICKHOUSE_CLIENT} -q "SELECT 'persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_no_definer'"
 # The server has to survive it: dereferencing the absent identity aborts the process, and a dead
 # server's client errors match none of the greps above.
-${CLICKHOUSE_CLIENT} -q "SELECT 'server alive:', 1"
+${CLICKHOUSE_CLIENT} -m -q "
+SELECT 'persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_no_definer';
+SELECT 'server alive:', 1;
+"
 # Mirror arm: the same payload with the identity still in it is accepted, so the arm rejects the
 # missing definer and not the JSON route.
 ${CLICKHOUSE_CLIENT} --dialect=clickhouse_json --enable_json_ast_dialect=1 -q "${json_definer}"
@@ -446,10 +428,10 @@ echo '--- 8d. a create whose eager load fails leaves no ephemeral definer accoun
 # The eager load throws after the storage was constructed, so the dependency it registered is only
 # released by the rollback guard. Releasing the last dependency of a `<user>:definer` clone is also
 # what deletes that no-authentication account, which is the observable side of the guard.
-${CLICKHOUSE_CLIENT} -m -q "
+# The rollback runs while the load's exception is in flight, so an exception escaping it would
+# terminate the server; a dead server's client errors match none of the greps below.
+${CLICKHOUSE_CLIENT} -m --ignore-error -q "
 CREATE USER OR REPLACE ${loader} IN memory IDENTIFIED BY 'loader_password';
-"
-${CLICKHOUSE_CLIENT} -q "
 CREATE DICTIONARY ${db}.dict_eager (k UInt64, v String)
 PRIMARY KEY k
 SOURCE(CLICKHOUSE(DB '${db}' TABLE 'src'))
@@ -457,35 +439,34 @@ LAYOUT(HASHED())
 LIFETIME(0)
 SETTINGS(dictionary_lazy_load = 0)
 DEFINER = ${loader} SQL SECURITY DEFINER;
-" 2>&1 | grep -o -m1 'ACCESS_DENIED'
-${CLICKHOUSE_CLIENT} -q "SELECT 'persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_eager'"
-${CLICKHOUSE_CLIENT} -q "SELECT 'definer accounts after the failed load:', count() FROM system.users WHERE name = '${loader}:definer'"
-# The rollback runs while the load's exception is in flight, so an exception escaping it would
-# terminate the server; a dead server's client errors match none of the greps above.
-${CLICKHOUSE_CLIENT} -q "SELECT 'server alive after the rollback:', 1"
+SELECT 'persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_eager';
+SELECT 'definer accounts after the failed load:', count() FROM system.users WHERE name = '${loader}:definer';
+SELECT 'server alive after the rollback:', 1;
+" 2>&1 | grep -o -E "ACCESS_DENIED|^persisted:.*|^definer accounts after the failed load:.*|^server alive after the rollback:.*"
 
 echo '--- 9. the definer cannot be dropped while a dictionary uses it'
-${CLICKHOUSE_CLIENT} -q "DROP USER ${owner}" 2>&1 | grep -o -m1 'HAVE_DEPENDENT_OBJECTS'
-${CLICKHOUSE_CLIENT} -m -q "
-DROP DICTIONARY ${db}.dict_definer;
-DROP DICTIONARY ${db}.dict_polp;
-DROP DICTIONARY ${db}.dict_grant;
-DROP DICTIONARY ${db}.dict_coll_local;
-DROP DICTIONARY ${db}.dict_coll_denied;
-DROP DICTIONARY ${db}.dict_json_definer;
-DROP DICTIONARY ${db}.dict_who;
-DROP DICTIONARY ${db}.dict_tcpport;
-DROP DICTIONARY ${db}.dict_hostname;
-DROP DICTIONARY ${db}.dict_no_definer;
-DROP DICTIONARY ${db}.dict_unconstrained;
-DROP DICTIONARY ${db}.dict_unqualified;
-"
-${CLICKHOUSE_CLIENT} -q "DROP USER ${owner}"
-${CLICKHOUSE_CLIENT} -q "SELECT 'definer dropped:', count() = 0 FROM system.users WHERE name = '${owner}'"
 # Dropping the last dictionary of an ephemeral definer must also collect its `<user>:definer` clone,
-# which only happens if the storage released the dependency on drop.
-${CLICKHOUSE_CLIENT} -q "DROP DICTIONARY ${db}.dict_ephemeral_ok"
-${CLICKHOUSE_CLIENT} -q "SELECT 'ephemeral definer clone collected:', count() = 0 FROM system.users WHERE name = '${ephemeral}:definer'"
+# which only happens if the storage released the dependency on drop. The definer dependency is
+# released by the background removal, so a drop a later `DROP USER` depends on must be `SYNC`.
+${CLICKHOUSE_CLIENT} -m --ignore-error -q "
+DROP USER ${owner};
+DROP DICTIONARY ${db}.dict_definer SYNC;
+DROP DICTIONARY ${db}.dict_polp SYNC;
+DROP DICTIONARY ${db}.dict_grant SYNC;
+DROP DICTIONARY ${db}.dict_coll_local SYNC;
+DROP DICTIONARY ${db}.dict_coll_denied SYNC;
+DROP DICTIONARY ${db}.dict_json_definer SYNC;
+DROP DICTIONARY ${db}.dict_who SYNC;
+DROP DICTIONARY ${db}.dict_tcpport SYNC;
+DROP DICTIONARY ${db}.dict_hostname SYNC;
+DROP DICTIONARY ${db}.dict_no_definer SYNC;
+DROP DICTIONARY ${db}.dict_unconstrained SYNC;
+DROP DICTIONARY ${db}.dict_unqualified SYNC;
+DROP USER ${owner};
+SELECT 'definer dropped:', count() = 0 FROM system.users WHERE name = '${owner}';
+DROP DICTIONARY ${db}.dict_ephemeral_ok SYNC;
+SELECT 'ephemeral definer clone collected:', count() = 0 FROM system.users WHERE name = '${ephemeral}:definer';
+" 2>&1 | grep -o -E "HAVE_DEPENDENT_OBJECTS|^definer dropped:.*|^ephemeral definer clone collected:.*"
 
 echo '--- 9b. a dictionary that gains a UUID by being renamed still protects its definer'
 # A dependency is keyed on the UUID, and an Ordinary database has none, so moving into an Atomic one
@@ -514,44 +495,37 @@ DEFINER = ${renamer} SQL SECURITY DEFINER;
 "
 # Control: while the dictionary is still in the Ordinary database there is no UUID to key a dependency
 # on, so the definer is droppable. Recreating it under the same name keeps the stored definer valid.
-${CLICKHOUSE_CLIENT} -q "DROP USER ${renamer}"
 ${CLICKHOUSE_CLIENT} -m -q "
+DROP USER ${renamer};
 CREATE USER ${renamer} IDENTIFIED BY 'renamer_password';
 GRANT SELECT ON ${ord_db}.src TO ${renamer};
 SELECT 'untracked definer was droppable:', 1;
-"
-${CLICKHOUSE_CLIENT} -q "RENAME DICTIONARY ${ord_db}.dict_renamed TO ${atom_db}.dict_renamed"
-${CLICKHOUSE_CLIENT} -m -q "
+RENAME DICTIONARY ${ord_db}.dict_renamed TO ${atom_db}.dict_renamed;
 SELECT 'renamed into a UUID database:', uuid != toUUID('00000000-0000-0000-0000-000000000000') FROM system.tables WHERE database = '${atom_db}' AND name = 'dict_renamed';
 SELECT 'loads after the rename:', dictGet('${atom_db}.dict_renamed', 'v', toUInt64(1));
 "
-${CLICKHOUSE_CLIENT} -q "DROP USER ${renamer}" 2>&1 | grep -o -m1 'HAVE_DEPENDENT_OBJECTS'
-# Without the dependency the drop above succeeds and every later reload fails UNKNOWN_USER, so assert
+# Without the dependency the drop below succeeds and every later reload fails UNKNOWN_USER, so assert
 # the definer is still there and the dictionary still reloads.
-${CLICKHOUSE_CLIENT} -m -q "
+${CLICKHOUSE_CLIENT} -m --ignore-error -q "
+DROP USER ${renamer};
 SELECT 'definer survived the drop attempt:', count() FROM system.users WHERE name = '${renamer}';
 SYSTEM RELOAD DICTIONARY ${atom_db}.dict_renamed;
 SELECT 'reloads with the definer:', dictGet('${atom_db}.dict_renamed', 'v', toUInt64(1));
-"
-${CLICKHOUSE_CLIENT} -m -q "
-DROP DICTIONARY ${atom_db}.dict_renamed;
+DROP DICTIONARY ${atom_db}.dict_renamed SYNC;
 DROP USER ${renamer};
-DROP DATABASE ${ord_db};
-DROP DATABASE ${atom_db};
-"
+DROP DATABASE ${ord_db} SYNC;
+DROP DATABASE ${atom_db} SYNC;
+" 2>&1 | grep -o -E "HAVE_DEPENDENT_OBJECTS|^definer survived the drop attempt:.*|^reloads with the definer:.*"
 
 echo '--- 10. a table over a dictionary still rejects the clause, because that engine cannot enforce it'
 # The definer must be a user that still exists here: an unknown one fails earlier with UNKNOWN_USER
 # and never reaches the engine feature check this arm exists to pin.
-${CLICKHOUSE_CLIENT} -q "
+${CLICKHOUSE_CLIENT} -m --ignore-error -q "
 CREATE TABLE ${db}.dict_as_table (k UInt64, v String) ENGINE = Dictionary('${db}.dict_plain')
 DEFINER = ${creator} SQL SECURITY DEFINER;
-" 2>&1 | grep -o -m1 "Engine Dictionary doesn't support SQL SECURITY clause"
-${CLICKHOUSE_CLIENT} -q "SELECT 'table over a dictionary persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_as_table'"
-
-${CLICKHOUSE_CLIENT} -m -q "
-DROP DICTIONARY IF EXISTS ${db}.dict_current;
-DROP DICTIONARY IF EXISTS ${db}.dict_constrained;
+SELECT 'table over a dictionary persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_as_table';
+DROP DICTIONARY IF EXISTS ${db}.dict_current SYNC;
+DROP DICTIONARY IF EXISTS ${db}.dict_constrained SYNC;
 DROP NAMED COLLECTION IF EXISTS ${coll_local};
 DROP USER IF EXISTS ${owner}, ${creator}, ${ephemeral}, ${loader}, ${constrained}, ${renamer};
-"
+" 2>&1 | grep -o -E "Engine Dictionary doesn't support SQL SECURITY clause|^table over a dictionary persisted:.*"
