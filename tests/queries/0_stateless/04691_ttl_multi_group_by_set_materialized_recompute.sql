@@ -5,7 +5,7 @@
 DROP TABLE IF EXISTS ttl_multi_group_by;
 
 -- F2: a MATERIALIZED column that reads both an EPHEMERAL column and a SET target cannot be recomputed
--- (ephemeral columns are not on disk). This must not crash or reject the merge; the merge completes and
+-- (ephemeral columns are not on disk). This must not throw or reject the merge; the merge completes and
 -- the aggregated columns are still correct (the stale materialized value is a documented limitation, a
 -- warning is logged). x = max(x) = 9, payload = sum = 30.
 CREATE TABLE ttl_multi_group_by (k UInt32, ts DateTime, x UInt32, eph String EPHEMERAL 'E', m String MATERIALIZED concat(toString(x), eph), payload UInt64)
