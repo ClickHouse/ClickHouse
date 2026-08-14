@@ -161,7 +161,7 @@ ORDER BY c DESC
 ```
 
 <Note>
-This feature is exploited by TTL when the setting [`ttl_only_drop_parts=1`](/reference/settings/merge-tree-settings#ttl_only_drop_parts) is used. See [Data management with TTL](#data-management-with-ttl-time-to-live) for further details.
+This feature is exploited by TTL when the setting [`ttl_only_drop_parts=1`](/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) is used. See [Data management with TTL](#data-management-with-ttl-time-to-live) for further details.
 </Note>
 
 ### Applications {#applications}
@@ -211,7 +211,7 @@ By default, data with an expired TTL is removed when ClickHouse [merges data par
 TTLs aren't applied immediately but rather on a schedule, as noted above. The MergeTree table setting `merge_with_ttl_timeout` sets the minimum delay in seconds before repeating a merge with delete TTL. The default value is 14400 seconds (4 hours). But that is just the minimum delay, it can take longer until a TTL merge is triggered. If the value is too low, it will perform many off-schedule merges that may consume a lot of resources. A TTL expiration can be forced using the command `ALTER TABLE my_table MATERIALIZE TTL`.
 </Info>
 
-**Important: We recommend using the setting [`ttl_only_drop_parts=1`](/reference/settings/merge-tree-settings#ttl_only_drop_parts) ** (applied by the default schema). When this setting is enabled, ClickHouse drops a whole part when all rows in it are expired. Dropping whole parts instead of partial cleaning TTL-d rows (achieved through resource-intensive mutations when `ttl_only_drop_parts=0`) allows having shorter `merge_with_ttl_timeout` times and lower impact on system performance. If data is partitioned by the same unit at which you perform TTL expiration e.g. day, parts will naturally only contain data from the defined interval. This will ensure `ttl_only_drop_parts=1` can be efficiently applied.
+**Important: We recommend using the setting [`ttl_only_drop_parts=1`](/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) ** (applied by the default schema). When this setting is enabled, ClickHouse drops a whole part when all rows in it are expired. Dropping whole parts instead of partial cleaning TTL-d rows (achieved through resource-intensive mutations when `ttl_only_drop_parts=0`) allows having shorter `merge_with_ttl_timeout` times and lower impact on system performance. If data is partitioned by the same unit at which you perform TTL expiration e.g. day, parts will naturally only contain data from the defined interval. This will ensure `ttl_only_drop_parts=1` can be efficiently applied.
 
 ### Column level TTL {#column-level-ttl}
 

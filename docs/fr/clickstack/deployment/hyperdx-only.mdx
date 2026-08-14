@@ -32,9 +32,7 @@ Dans ce mode, l&#39;ingestion des données est entièrement à la charge de l&#3
 <br />
 
 <Steps>
-  <Step>
-    ### Déployer avec Docker
-
+  <Step title="Déployer avec Docker" id="deploy-hyperdx-with-docker">
     Exécutez la commande suivante en remplaçant `YOUR_MONGODB_URI` selon vos besoins.
 
     ```shell
@@ -42,21 +40,17 @@ Dans ce mode, l&#39;ingestion des données est entièrement à la charge de l&#3
     ```
   </Step>
 
-  <Step>
-    ### Accéder à l&#39;interface HyperDX
-
+  <Step title="Accéder à l'interface HyperDX" id="navigate-to-hyperdx-ui">
     Accédez à [http://localhost:8080](http://localhost:8080) pour ouvrir l&#39;interface HyperDX.
 
     Créez un utilisateur en renseignant un nom d&#39;utilisateur et un mot de passe conformes aux exigences.
 
     Après avoir cliqué sur `Create`, vous serez invité à renseigner les informations de connexion.
 
-    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="interface HyperDX" size="lg" />
   </Step>
 
-  <Step>
-    ### Renseigner les informations de connexion
-
+  <Step title="Renseigner les informations de connexion" id="complete-connection-details">
     Connectez-vous à votre propre cluster ClickHouse externe, par exemple ClickHouse Cloud.
 
     <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="Connexion HyperDX" size="md" />
@@ -66,7 +60,7 @@ Dans ce mode, l&#39;ingestion des données est entièrement à la charge de l&#3
     <Info>
       **Création d&#39;une source**
 
-      La création d&#39;une source nécessite l&#39;existence de tables dans ClickHouse. Si vous n&#39;avez pas de données, nous vous recommandons de déployer le ClickStack OpenTelemetry collector pour créer les tables.
+      La création d&#39;une source nécessite l&#39;existence de tables dans ClickHouse. Si vous n&#39;avez pas de données, nous vous recommandons de déployer le ClickStack collecteur OpenTelemetry pour créer les tables.
     </Info>
   </Step>
 </Steps>

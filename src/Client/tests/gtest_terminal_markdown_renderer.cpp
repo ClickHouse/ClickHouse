@@ -162,3 +162,93 @@ TEST(TerminalMarkdownRenderer, BadgeComponentRendered)
     EXPECT_EQ(plainRenderer().render("<ExperimentalBadge/>"), "[Experimental]\n");
     EXPECT_EQ(plainRenderer().render("<CloudNotSupportedBadge/>"), "[Not supported in ClickHouse Cloud]\n");
 }
+
+TEST(TerminalMarkdownRenderer, PlanFeatureBadgeRendersItsMessage)
+{
+    /// A plan-gating badge builds a substantive message from its attributes on the website (which plan
+    /// a feature requires and how to get it, see `badgePayload`); both the label and that message must
+    /// survive on this help surface instead of the tag collapsing to the badge name.
+    EXPECT_EQ(
+        plainRenderer(200).render("<ScalePlanFeatureBadge feature=\"S3 Role-Based Access\" />"),
+        "[Scale plan feature] S3 Role-Based Access is available in the Scale and Enterprise plans. "
+        "To upgrade, visit the plans page in the cloud console.\n");
+    /// `support` routes the reader to support instead of the plans page, and `linking_verb_are` picks
+    /// the plural verb, as in the website components.
+    EXPECT_EQ(
+        plainRenderer(200).render("<EnterprisePlanFeatureBadge feature=\"HIPAA\" support=\"true\" />"),
+        "[Enterprise plan feature] HIPAA is available in the Enterprise plan. Contact support to enable this feature.\n");
+    EXPECT_EQ(
+        plainRenderer(200).render("<ScalePlanFeatureBadge feature=\"Configurable Backups\" linking_verb_are=\"True\" />"),
+        "[Scale plan feature] Configurable Backups are available in the Scale and Enterprise plans. "
+        "To upgrade, visit the plans page in the cloud console.\n");
+    /// Without attributes the message falls back to the components' defaults.
+    EXPECT_EQ(
+        plainRenderer(200).render("<EnterprisePlanFeatureBadge/>"),
+        "[Enterprise plan feature] This feature is available in the Enterprise plan. "
+        "To upgrade, visit the plans page in the cloud console.\n");
+}
+
+TEST(TerminalMarkdownRenderer, MintlifyAdmonitionComponent)
+{
+    /// Embedded pages converted from the website's Mintlify sources carry `<Note>` / `<Warning>` / ...
+    /// admonition components; they render like their `:::note` / `:::warning` equivalents.
+    EXPECT_EQ(plainRenderer().render("<Note>\nBe careful.\n</Note>"), "NOTE:\nBe careful.\n");
+    EXPECT_EQ(plainRenderer().render("<Warning>\nDo not do this.\n</Warning>"), "WARNING:\nDo not do this.\n");
+    /// An open tag with no matching close is dropped alone; the content still renders.
+    EXPECT_EQ(plainRenderer().render("<Tip>\nUnclosed."), "Unclosed.\n");
+}
+
+TEST(TerminalMarkdownRenderer, MintlifyTabsKeepTitlesAndContent)
+{
+    /// `<Tabs>`/`<Tab title="...">` wrappers are dropped, but each tab's title is kept as its own line:
+    /// the tabs present alternatives (e.g. the syntax variants of `azureBlobStorage`), and without the
+    /// titles the variants would run together indistinguishably.
+    EXPECT_EQ(
+        plainRenderer().render("<Tabs>\n<Tab title=\"Connection string\">\n\nUse a connection string.\n\n</Tab>\n"
+                               "<Tab title=\"Account key\">\n\nUse an account key.\n\n</Tab>\n</Tabs>"),
+        "Connection string\n\nUse a connection string.\n\nAccount key\n\nUse an account key.\n");
+}
+
+TEST(TerminalMarkdownRenderer, MintlifyCardKeepsTitleAndContent)
+{
+    EXPECT_EQ(
+        plainRenderer().render("<Card title=\"Looking for a guide?\" href=\"/concepts/json\" icon=\"book\">\n"
+                               "  Check out the JSON guide.\n</Card>"),
+        "Looking for a guide?\nCheck out the JSON guide.\n");
+}
+
+TEST(TerminalMarkdownRenderer, SelfClosingComponentIsDropped)
+{
+    /// A self-closing component with no matching `import` is unknown, so it is simply dropped (see
+    /// `KnownSnippetImportIsResolvedToContent` for a resolved documentation snippet import).
+    EXPECT_EQ(plainRenderer().render("Before.\n\n<WhenToUseJson />\n\nAfter."), "Before.\n\nAfter.\n");
+}
+
+TEST(TerminalMarkdownRenderer, KnownSnippetImportIsResolvedToContent)
+{
+    /// A self-closing tag whose `import` resolves to a known documentation snippet (see `DOC_SNIPPETS`
+    /// in TerminalMarkdownRenderer.cpp) is replaced by the snippet's actual content instead of being
+    /// dropped, so a converted page does not lose a whole settings table on this help surface.
+    const String out = plainRenderer(120).render(
+        "import PrettyFormatSettings from '/snippets/common-pretty-format-settings.mdx';\n\n"
+        "Before.\n\n<PrettyFormatSettings/>\n\nAfter.");
+    EXPECT_EQ(out.find("PrettyFormatSettings"), String::npos);
+    EXPECT_NE(out.find("output_format_pretty_max_rows"), String::npos);
+    EXPECT_TRUE(out.starts_with("Before.\n\n"));
+    EXPECT_TRUE(out.ends_with("After.\n"));
+}
+
+TEST(TerminalMarkdownRenderer, KnownSnippetImportResolvesRegardlessOfLocalAlias)
+{
+    /// The snippet is matched by its imported path, not by the local binding name: `Avro` and
+    /// `AvroConfluent` import the same `data-types-matching.mdx` snippet under different local names.
+    const String out = plainRenderer(200).render(
+        "import DataTypesMatching from '/snippets/data-types-matching.mdx';\n\n<DataTypesMatching/>");
+    EXPECT_NE(out.find("Apache Avro format"), String::npos);
+}
+
+TEST(TerminalMarkdownRenderer, UnknownOpenTagRendersLiterally)
+{
+    /// A non-self-closing tag outside the known component set is prose (e.g. a placeholder), not MDX.
+    EXPECT_EQ(plainRenderer().render("<SearchPhrase>"), "<SearchPhrase>\n");
+}

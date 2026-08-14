@@ -36,9 +36,7 @@ Pour créer ou supprimer un VPC peering pour ClickHouse BYOC, suivez les étapes
 </Note>
 
 <Steps>
-  <Step>
-    ### Créer une connexion de peering
-
+  <Step title="Créer une connexion de peering" id="step-1-create-a-peering-connection">
     Dans cet exemple, nous mettons en place un peering entre le réseau VPC BYOC et un autre réseau VPC existant.
 
     1. Accédez à « VPC Network » dans le projet Google Cloud ClickHouse BYOC.
@@ -59,9 +57,7 @@ Pour créer ou supprimer un VPC peering pour ClickHouse BYOC, suivez les étapes
     Le service ClickHouse devrait maintenant être accessible depuis le VPC en peering.
   </Step>
 
-  <Step>
-    ### Accéder au service ClickHouse via une connexion de peering
-
+  <Step title="Accéder au service ClickHouse via une connexion de peering" id="step-2-access-ch-service-via-peering">
     Pour accéder à ClickHouse de manière privée, un load balancer privé et un endpoint sont provisionnés afin de fournir une connectivité sécurisée depuis le VPC en peering de l’utilisateur. Le private endpoint suit le format du public endpoint avec un suffixe `-private`. Par exemple :
 
     * **Public endpoint** : `h5ju65kv87.mhp0y4dmph.us-east1.gcp.byoc.clickhouse.cloud`
@@ -76,17 +72,13 @@ Pour créer ou supprimer un VPC peering pour ClickHouse BYOC, suivez les étapes
 GCP PSC (Private Service Connect) fournit une connectivité privée et sécurisée à vos services ClickHouse BYOC, sans nécessiter de VPC peering ni de passerelles Internet.
 
 <Steps>
-  <Step>
-    ### Demander la mise en place du service PSC
-
+  <Step title="Demander la mise en place du service PSC" id="step-1-request-psc-setup">
     Contactez [ClickHouse Support](https://clickhouse.com/cloud/bring-your-own-cloud) pour demander la mise en place du service PSC pour votre déploiement BYOC. Aucune information spécifique n’est requise à ce stade — indiquez simplement que vous souhaitez mettre en place la connectivité PSC.
 
     ClickHouse Support activera les composants d’infrastructure nécessaires, notamment **l’équilibreur de charge privé** et **le service PSC**.
   </Step>
 
-  <Step>
-    ### Obtenir le nom du service PSC GCP et le nom DNS
-
+  <Step title="Obtenir le nom du service PSC GCP et le nom DNS" id="step-2-obtain-gcp-service-attachment-and-dns-name-for-private-service-connect">
     ClickHouse Support vous fournira le nom du service PSC. Vous pouvez également l’obtenir dans la console ClickHouse Cloud, sous &quot;Organization&quot; -&gt; &quot;Infrastructure&quot; ; cliquez sur le nom de l’infrastructure pour afficher les détails.
 
     <Image img="/images/cloud/reference/byoc-privatelink-gcp-1.webp" size="lg" alt="Point de terminaison PSC BYOC" border />
@@ -100,9 +92,7 @@ GCP PSC (Private Service Connect) fournit une connectivité privée et sécuris�
     <Image img="/images/cloud/reference/byoc-privatelink-gcp-4.webp" size="lg" alt="Point de terminaison PSC BYOC" border />
   </Step>
 
-  <Step>
-    ### Créer un point de terminaison PSC dans votre réseau
-
+  <Step title="Créer un point de terminaison PSC dans votre réseau" id="step-3-create-endpoint">
     Une fois que ClickHouse Support a activé le service PSC de son côté, vous devez créer un point de terminaison PSC dans le réseau de votre application cliente afin de vous connecter au service PSC de ClickHouse.
 
     1. **Créer le point de terminaison PSC** :
@@ -124,9 +114,7 @@ GCP PSC (Private Service Connect) fournit une connectivité privée et sécuris�
     <Image img="/images/cloud/reference/byoc-privatelink-gcp-6.webp" size="lg" alt="Détail du point de terminaison PSC BYOC" border />
   </Step>
 
-  <Step>
-    ### Définir le nom DNS privé de l’endpoint
-
+  <Step title="Définir le nom DNS privé de l’endpoint" id="step-4-set-private-dns-name-for-endpoint">
     <Note>
       Il existe plusieurs façons de configurer le DNS. Configurez-le en fonction de votre cas d’usage.
     </Note>
@@ -134,9 +122,7 @@ GCP PSC (Private Service Connect) fournit une connectivité privée et sécuris�
     Vous devez faire pointer tous les sous-domaines (wildcard) du &quot;nom DNS&quot;, récupéré à l’étape [Obtain GCP PSC service name and DNS name](#step-2-obtain-gcp-service-attachment-and-dns-name-for-private-service-connect), vers l’adresse IP de l’endpoint GCP PSC. Cela garantit que les services/composants de votre VPC/réseau peuvent le résoudre correctement.
   </Step>
 
-  <Step>
-    ### Ajouter l&#39;ID de connexion PSC de l&#39;endpoint à la liste d’autorisation du service
-
+  <Step title="Ajouter l'ID de connexion PSC de l'endpoint à la liste d’autorisation du service" id="step-5-add-endpoint-id-allowlist">
     Une fois votre endpoint PSC créé et son statut défini sur &quot;Accepted&quot;, vous devez ajouter l&#39;ID de connexion PSC de l&#39;endpoint à la liste d’autorisation de **chaque service ClickHouse** auquel vous souhaitez accéder via PSC.
 
     **Contactez ClickHouse Support**:
@@ -146,9 +132,7 @@ GCP PSC (Private Service Connect) fournit une connectivité privée et sécuris�
     * ClickHouse Support ajoutera les ID de connexion PSC de l&#39;endpoint aux listes d’autorisation des services
   </Step>
 
-  <Step>
-    ### Se connecter à ClickHouse via PSC
-
+  <Step title="Se connecter à ClickHouse via PSC" id="step-6-connect-via-psc-endpoint">
     Une fois les ID de connexion de l’endpoint ajoutés à la liste d’autorisation, vous pouvez vous connecter à votre service ClickHouse à l’aide de l’endpoint PSC.
 
     Le format de l’endpoint PSC est similaire à celui de l’endpoint public, mais il inclut un sous-domaine `p`. Par exemple :

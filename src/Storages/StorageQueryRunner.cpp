@@ -557,7 +557,7 @@ private:
     void executeOnShard(UInt64 shard_num, const QueryRunnerJob & job, ContextMutablePtr job_context)
     {
         const auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(job_context->getSettingsRef());
-        auto connection = getPool(shard_num, job.database)->get(timeouts, getContext()->getSettingsRef(), /*force_connected=*/ true);
+        auto connection = getPool(shard_num, job.database)->get(timeouts, getContext()->getSettingsRef());
 
         auto registered = RegisteredRemoteQueryExecutor::tryCreate(cluster_executors, *connection, job.query, std::make_shared<const Block>(), job_context);
         if (!registered)
@@ -609,29 +609,29 @@ private:
 
         const auto event_time = std::chrono::system_clock::now();
 
-        QueryLogElement elem;
-        elem.type = type;
-        elem.event_time = timeInSeconds(event_time);
-        elem.event_time_microseconds = timeInMicroseconds(event_time);
-        elem.query_start_time = timeInSeconds(query_start_time);
-        elem.query_start_time_microseconds = timeInMicroseconds(query_start_time);
-        elem.query_duration_ms = duration_ms;
-        elem.query = job.query;
-        elem.current_database = job.database;
-        elem.log_comment = settings[Setting::log_comment];
-        elem.client_info = job_context->getClientInfo();
-        elem.is_internal = true;
-
-        if (settings[Setting::log_query_settings])
-            elem.query_settings = std::make_shared<Settings>(settings);
-
-        if (type == QueryLogElementType::EXCEPTION_WHILE_PROCESSING)
+        query_log->add([&](QueryLogElement & element)
         {
-            elem.exception_code = getCurrentExceptionCode();
-            elem.exception = getCurrentExceptionMessage(false);
-        }
+            element.type = type;
+            element.event_time = timeInSeconds(event_time);
+            element.event_time_microseconds = timeInMicroseconds(event_time);
+            element.query_start_time = timeInSeconds(query_start_time);
+            element.query_start_time_microseconds = timeInMicroseconds(query_start_time);
+            element.query_duration_ms = duration_ms;
+            element.query = job.query;
+            element.current_database = job.database;
+            element.log_comment = settings[Setting::log_comment];
+            element.client_info = job_context->getClientInfo();
+            element.is_internal = true;
 
-        query_log->add(std::move(elem));
+            if (settings[Setting::log_query_settings])
+                element.query_settings = settings.changedToMap();
+
+            if (type == QueryLogElementType::EXCEPTION_WHILE_PROCESSING)
+            {
+                element.exception_code = getCurrentExceptionCode();
+                element.exception = getCurrentExceptionMessage(false);
+            }
+        });
     }
 
     static constexpr std::string_view client_name = "QueryRunner";
@@ -957,7 +957,8 @@ void registerStorageQueryRunner(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_sql_security = true,
         .has_builtin_setting_fn = QueryRunnerSettings::hasBuiltin,
-    });
+    },
+    Documentation{.description = R"DOC(A table engine whose write path runs queries instead of storing data. Rows inserted into a `QueryRunner` table are dispatched as queries to be executed (synchronously or asynchronously); it is used to orchestrate and run queries through an `INSERT` interface.)DOC"});
 }
 
 }

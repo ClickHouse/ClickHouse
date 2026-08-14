@@ -10,10 +10,10 @@ keywords: ['تنسيق SQL', 'تصدير البيانات', 'استيراد ال
 يمكن دمج ClickHouse بسهولة في البنى التحتية لقواعد بيانات OLTP بطرق عديدة. ومن بين هذه الطرق نقل البيانات بين قواعد البيانات الأخرى وClickHouse باستخدام تفريغات SQL.
 
 <div id="creating-sql-dumps">
-  ## إنشاء تفريغ SQL
+  ## إنشاء تفريغات SQL
 </div>
 
-يمكن إنشاء تفريغ SQL للبيانات بتنسيق SQL باستخدام [SQLInsert](/ar/reference/formats/SQLInsert). سيكتب ClickHouse البيانات بصيغة `INSERT INTO <table name> VALUES(...` وسيستخدم خيار الإعداد [`output_format_sql_insert_table_name`](/ar/reference/settings/formats#output_format_sql_insert_table_name) كاسمٍ للجدول:
+يمكن إنشاء تفريغات SQL للبيانات بتنسيق SQL باستخدام [SQLInsert](/ar/reference/formats/SQLInsert). سيكتب ClickHouse البيانات بصيغة `INSERT INTO <table name> VALUES(...` وسيستخدم خيار الإعداد [`output_format_sql_insert_table_name`](/ar/reference/settings/formats#output_format_sql_insert_table_name) كاسمٍ للجدول:
 
 ```sql
 SET output_format_sql_insert_table_name = 'some_table';
@@ -57,10 +57,10 @@ SELECT * FROM some_data LIMIT 3 FORMAT Values
 ```
 
 <div id="inserting-data-from-sql-dumps">
-  ## إدراج البيانات من تفريغ SQL
+  ## إدراج البيانات من تفريغات SQL
 </div>
 
-لقراءة تفريغ SQL، يُستخدم [MySQLDump](/ar/reference/formats/MySQLDump):
+لقراءة تفريغات SQL، يُستخدم [MySQLDump](/ar/reference/formats/MySQLDump):
 
 ```sql
 SELECT *

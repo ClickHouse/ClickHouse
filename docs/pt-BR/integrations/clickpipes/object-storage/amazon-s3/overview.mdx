@@ -21,7 +21,7 @@ Os ClickPipes para S3 podem ser implantados e gerenciados manualmente pela UI do
 | **Amazon S3**                                      | <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="logo do Amazon S3" width="32" />  | A ingestão contínua exige [ordem lexicográfica](#continuous-ingestion-lexicographical-order) por padrão, mas pode ser configurada para [ingerir arquivos em qualquer ordem](#continuous-ingestion-any-order). |
 | **Cloudflare R2** <br /> *compatível com S3*       | <img src="/images/integrations/logos/cloudflare.svg" alt="logo do Cloudflare R2" width="32" />  | A ingestão contínua exige [ordem lexicográfica](#continuous-ingestion-lexicographical-order). O modo não ordenado não é compatível.                                                                           |
 | **DigitalOcean Spaces** <br /> *compatível com S3* | <img src="/images/integrations/logos/digitalocean.svg" alt="logo do DigitalOcean" width="32" /> | A ingestão contínua exige [ordem lexicográfica](#continuous-ingestion-lexicographical-order). O modo não ordenado não é compatível.                                                                           |
-| **OVH Object Storage** <br /> *compatível com S3*  | <img src="/images/integrations/logos/ovh.webp" alt="logo do Cloud Storage" width="32" />         | A ingestão contínua exige [ordem lexicográfica](#continuous-ingestion-lexicographical-order). O modo não ordenado não é compatível.                                                                           |
+| **OVH Object Storage** <br /> *compatível com S3*  | <img src="/images/integrations/logos/ovh.webp" alt="logo do Cloud Storage" width="32" />        | A ingestão contínua exige [ordem lexicográfica](#continuous-ingestion-lexicographical-order). O modo não ordenado não é compatível.                                                                           |
 
 <Tip>
   Devido às diferenças nos formatos de URL e nas implementações de API entre provedores de armazenamento de objetos, nem todos os serviços compatíveis com S3 são suportados nativamente. Se você estiver enfrentando problemas com um serviço que não está listado acima, [entre em contato com nossa equipe](https://clickhouse.com/company/contact?loc=clickpipes).
@@ -227,18 +227,18 @@ Os ClickPipes do S3 usam dois caminhos de rede distintos para descoberta de meta
 
 O ClickPipes fornece padrões sensatos que atendem aos requisitos da maioria dos casos de uso. Se o seu caso de uso exigir ajustes adicionais, você poderá ajustar as seguintes configurações:
 
-| Configuração                         | Valor padrão | Descrição                                                                                                                                                 |
-| ------------------------------------ | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB         | Número de bytes a processar em um único lote de inserção.                                                                                                 |
-| `Max file count`                     | 100          | Número máximo de arquivos a processar em um único lote de inserção.                                                                                       |
+| Configuração                         | Valor padrão | Descrição                                                                                                                                                       |
+| ------------------------------------ | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB         | Número de bytes a processar em um único lote de inserção.                                                                                                       |
+| `Max file count`                     | 100          | Número máximo de arquivos a processar em um único lote de inserção.                                                                                             |
 | `Max threads`                        | auto(3)      | [Número máximo de threads concorrentes](/pt-BR/reference/settings/session-settings#max_threads) para processamento de arquivos.                                 |
 | `Max insert threads`                 | 1            | [Número máximo de threads de inserção concorrentes](/pt-BR/reference/settings/session-settings#max_insert_threads) para processamento de arquivos.              |
 | `Min insert block size bytes`        | 1GB          | [Tamanho mínimo, em bytes, do bloco](/pt-BR/reference/settings/session-settings#min_insert_block_size_bytes) que pode ser inserido em uma tabela.               |
 | `Max download threads`               | 4            | [Número máximo de threads de download concorrentes](/pt-BR/reference/settings/session-settings#max_download_threads).                                           |
-| `Object storage polling interval`    | 30s          | Configura o tempo máximo de espera antes de inserir dados no cluster ClickHouse.                                                                          |
+| `Object storage polling interval`    | 30s          | Configura o tempo máximo de espera antes de inserir dados no cluster ClickHouse.                                                                                |
 | `Parallel distributed insert select` | 2            | [Configuração de insert select distribuído em paralelo](/pt-BR/reference/settings/session-settings#parallel_distributed_insert_select).                         |
 | `Parallel view processing`           | false        | Se deve habilitar o envio para VIEWs anexadas [de forma concorrente em vez de sequencial](/pt-BR/reference/settings/session-settings#parallel_view_processing). |
-| `Use cluster function`               | true         | Se deve processar arquivos em paralelo em vários nós.                                                                                                     |
+| `Use cluster function`               | true         | Se deve processar arquivos em paralelo em vários nós.                                                                                                           |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Configurações avançadas do ClickPipes" size="lg" border />
 

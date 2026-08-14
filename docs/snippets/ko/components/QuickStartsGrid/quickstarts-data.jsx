@@ -112,23 +112,9 @@ export const quickStartsData = [
     ]
   },
   {
-    "id": "tutorial",
-    "title": "고급 튜토리얼",
-    "description": "뉴욕시 택시 예제 데이터셋을 사용해 ClickHouse에서 데이터를 수집하고 쿼리하는 방법을 알아봅니다.",
-    "href": "/ko/get-started/quickstarts/tutorial",
-    "useCases": [
-      "real-time-analytics",
-      "data-warehousing"
-    ],
-    "products": [
-      "cloud",
-      "self-managed"
-    ]
-  },
-  {
     "id": "working-with-the-map-type",
-    "title": "ClickHouse에서 맵(Map) 타입 사용하기",
-    "description": "OTel 리소스 속성을 예시로, ClickHouse에서 동적 키-값 데이터를 저장, 쿼리, 집계하는 데 맵(Map) 타입을 사용하는 방법을 알아봅니다.",
+    "title": "ClickHouse에서 맵 타입 사용하기",
+    "description": "OTel 리소스 속성을 예시로, ClickHouse에서 동적 키-값 데이터를 저장, 쿼리, 집계하는 데 맵 타입을 사용하는 방법을 알아봅니다.",
     "href": "/ko/get-started/quickstarts/working-with-the-map-type",
     "useCases": [
       "observability"

@@ -39,18 +39,18 @@ ClickStack 包含一个预置的仪表盘模板库，可让您立即了解常见
   ### OTel 运行时指标
 </div>
 
-内置的 OTel Runtime Metrics 模板专为已使用 [OpenTelemetry runtime metrics](https://opentelemetry.io/docs/specs/semconv/runtime/) 进行插桩的应用程序设计。
+内置的 OTel Runtime Metrics 模板专为已接入 [OpenTelemetry 运行时指标](https://opentelemetry.io/docs/specs/semconv/runtime/) 的应用设计。
 
-| 模板                | 描述                                          |
-| ----------------- | ------------------------------------------- |
-| **.NET 运行时指标**    | .NET 应用程序的 GC 次数、堆大小、线程池使用情况以及程序集数量         |
-| **Go 运行时指标**      | Go 应用程序的 Goroutine 数量、GC 暂停时间、堆使用情况以及内存统计信息 |
-| **JVM 运行时指标**     | 基于 JVM 的应用程序的堆内存和非堆内存、GC 耗时、线程数以及类加载情况      |
-| **Node.js 运行时指标** | Node.js 应用程序的事件循环延迟、堆使用情况、CPU 利用率以及 V8 内存   |
+| 模板                          | 说明                                     |
+| --------------------------- | -------------------------------------- |
+| **.NET Runtime Metrics**    | .NET 应用的 GC 回收、堆大小、线程池使用情况和程序集数量       |
+| **Go Runtime Metrics**      | Go 应用的 Goroutine 数量、GC 暂停时间、堆使用情况和内存统计 |
+| **JVM Runtime Metrics**     | 基于 JVM 的应用的堆内存与非堆内存、GC 耗时、线程数量和类加载情况   |
+| **Node.js Runtime Metrics** | Node.js 应用的事件循环延迟、堆使用情况、CPU 利用率和 V8 内存 |
 
-注意：
+说明：
 
-* 每个模板都配置了一个[自定义过滤器](/zh/clickstack/features/dashboards/overview#custom-filters)，用于筛选其 [`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) resource 属性与仪表盘对应运行时相匹配的服务。
+* 每个模板都配置了一个[自定义过滤器](/zh/clickstack/features/dashboards/overview#custom-filters)，用于筛选 [`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) 资源属性与仪表盘运行时相匹配的服务。
   * 如果环境使用了自定义的 ClickHouse 指标表 schema，可能需要调整此过滤器，以查询正确的 Service Name 和 Resource Attributes 列。
-  * 对于高数据量环境，可通过对 `ResourceAttributes['telemetry.sdk.language']` 列进行[物化](/zh/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes)来缩短过滤器加载时间。
-* 模板在发布时会引用最新的 OTel Semantic Conventions，并会随着 OTel Spec 的更新定期同步更新。对于使用较旧 OTel SDK 进行插桩的服务，可能需要[编辑](/zh/clickstack/features/dashboards/overview#dashboards-editing-visualizations)可视化内容，以引用较旧的指标名称。
+  * 对于高吞吐环境，可通过对 `ResourceAttributes['telemetry.sdk.language']` 列进行[物化](/zh/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes)来缩短过滤器加载时间。
+* 模板在发布时会引用最新的 OTel Semantic Conventions，并会随着 OTel Spec 的更新定期同步更新。对于使用较旧的 OTel SDKs 进行埋点的服务，可能需要[编辑](/zh/clickstack/features/dashboards/overview#dashboards-editing-visualizations) 可视化内容，以引用旧版指标名称。

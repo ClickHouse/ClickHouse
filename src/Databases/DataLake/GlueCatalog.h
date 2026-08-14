@@ -40,7 +40,7 @@ public:
 
     bool empty() const override;
 
-    DB::Names getTables() const override;
+    CatalogTables getTables() const override;
 
     Namespaces getNamespaces() const override;
 
@@ -78,7 +78,7 @@ public:
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const override;
 
-    void dropTable(const String & namespace_name, const String & table_name) const override;
+    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
 
     /// Returns a callback that re-vends fresh AWS credentials from the configured
     /// credentials provider chain. Invoked by `ReadBufferFromS3` when an S3 call
@@ -105,8 +105,8 @@ private:
     DB::ASTPtr table_engine_definition;
 
     DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;
-    DB::Names getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
-    DB::Names listTablesInNamespaceDirect(const std::string & namespace_name) const override;
+    CatalogTables getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
+    CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     void setCredentials(TableMetadata & metadata) const;
 
     /// The Glue catalog does not store detailed information about the types of timestamp columns, such as whether the column is timestamp or timestamptz.

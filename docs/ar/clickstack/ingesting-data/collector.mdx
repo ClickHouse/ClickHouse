@@ -581,11 +581,11 @@ service:
   ## التوسّع
 </div>
 
-يعمل ClickStack OTel collector كمثيل gateway — راجع [أدوار المجمّع](#collector-roles). وتوفّر هذه المثيلات خدمة مستقلة، عادةً لكل مركز بيانات أو لكل منطقة. وهي تستقبل الأحداث من التطبيقات (أو من collectors أخرى بدور agent) عبر OTLP endpoint واحد. وعادةً ما يُنشر عدد من مثيلات collector، مع استخدام موازن تحميل جاهز لتوزيع الحمل بينها.
+يعمل ClickStack OTel مجمّع كمثيل بوابة — راجع [أدوار المجمّع](#collector-roles). وتوفّر هذه المثيلات خدمة مستقلة، عادةً لكل مركز بيانات أو لكل منطقة. وهي تستقبل الأحداث من التطبيقات (أو من مجمّعات أخرى بدور وكيل) عبر OTLP endpoint واحد. وعادةً ما يُنشر عدد من مثيلات مجمّع، مع استخدام موازن تحميل جاهز لتوزيع الحمل بينها.
 
 <Image img="/images/use-cases/observability/clickstack-with-gateways.webp" alt="التوسّع باستخدام البوابات" size="lg" />
 
-الهدف من هذه المعمارية هو تخفيف عبء المعالجة كثيفة الاستهلاك عن agents، مما يقلّل استخدامهم للموارد. ويمكن لبوابات ClickStack هذه تنفيذ مهام التحويل التي كان سيتعيّن على agents تنفيذها لولا ذلك. إضافةً إلى ذلك، من خلال تجميع الأحداث من عدد كبير من agents، يمكن للبوابات ضمان إرسال دفعات كبيرة إلى ClickHouse، مما يتيح إدراجًا بكفاءة. ويمكن توسيع gateway collectors هذه بسهولة مع إضافة المزيد من agents ومصادر SDK وزيادة throughput للأحداث.
+الهدف من هذه المعمارية هو تخفيف عبء المعالجة كثيفة الاستهلاك عن الوكلاء، مما يقلّل استخدامهم للموارد. ويمكن لبوابات ClickStack هذه تنفيذ مهام التحويل التي كان سيتعيّن على الوكلاء تنفيذها لولا ذلك. إضافةً إلى ذلك، من خلال تجميع الأحداث من عدد كبير من الوكلاء، يمكن للبوابات ضمان إرسال دفعات كبيرة إلى ClickHouse، مما يتيح إدراجًا بكفاءة. ويمكن توسيع مجمّعات البوابة هذه بسهولة مع إضافة المزيد من الوكلاء ومصادر SDK وزيادة throughput للأحداث.
 
 <div id="adding-kafka">
   ### إضافة Kafka
@@ -601,12 +601,12 @@ service:
 
 <Image img="/images/use-cases/observability/observability-8.webp" alt="إضافة Kafka" size="lg" />
 
-في هذه الحالة، يمكن تهيئة وكلاء OTel لإرسال البيانات إلى Kafka عبر [Kafka exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md). وتستهلك مثيلات gateway الرسائل بدورها باستخدام [Kafka receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md). نوصي بالرجوع إلى وثائق Confluent وOTel لمزيد من التفاصيل.
+في هذه الحالة, يمكن تهيئة وكلاء OTel لإرسال البيانات إلى Kafka عبر [Kafka exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md). وتستهلك مثيلات بوابة الرسائل بدورها باستخدام [Kafka receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md). نوصي بالرجوع إلى وثائق Confluent وOTel لمزيد من التفاصيل.
 
 <Info>
-  **تهيئة OTel collector**
+  **تهيئة OTel مجمّع**
 
-  يمكن تهيئة توزيعة ClickStack OpenTelemetry collector مع Kafka باستخدام [تهيئة collector مخصّصة](#extending-collector-config).
+  يمكن تهيئة توزيعة ClickStack OpenTelemetry مجمّع مع Kafka باستخدام [تهيئة مجمّع مخصّصة](#extending-collector-config).
 </Info>
 
 <div id="estimating-resources">
@@ -626,9 +626,9 @@ service:
 | 10k/second   | 1 CPU, 1GiB                        |
 
 <div id="schema-choice">
-  ## اختيار المخطط: Map مقابل JSON
+  ## اختيار المخطط: Map أم JSON
 </div>
 
-ينشئ مُجمِّع ClickStack جداول تخزّن السمات في أعمدة من النوع `Map(LowCardinality(String), String)` افتراضيًا. وهذا هو المخطط الموصى به لأعباء عمل observability. كما يتوفر مخطط من النوع `JSON` بحالة Beta للتقييم في أعباء العمل التي تحتوي على مجموعة صغيرة ومستقرة من مفاتيح السمات.
+ينشئ ClickStack مجمّع جداول تخزّن السمات في أعمدة `Map(LowCardinality(String), String)` بشكل افتراضي. وهذا هو المخطط المُوصى به لأحمال عمل observability. كما يتوفر مخطط من النوع `JSON` في إصدار بيتا للتقييم على أحمال العمل التي تتضمن مجموعة صغيرة ومستقرة من مفاتيح السمات.
 
-للاطّلاع على المقارنة الكاملة، ومعرفة متى يكون كلٌّ منهما مناسبًا، ومتغيرات البيئة المطلوبة لتمكين المخطط من النوع JSON، ودليل الترحيل، راجع [Map vs JSON type](/ar/clickstack/ingesting-data/schema/map-vs-json).
+للاطلاع على المقارنة الكاملة، ومعرفة الحالات المناسبة لكل خيار، ومتغيرات البيئة المطلوبة لتمكين مخطط النوع `JSON`، وخطوات الترحيل التفصيلية، راجع [Map vs JSON type](/ar/clickstack/ingesting-data/schema/map-vs-json).

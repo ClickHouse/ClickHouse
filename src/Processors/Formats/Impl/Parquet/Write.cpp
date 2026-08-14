@@ -699,6 +699,9 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
                 method,
                 level,
                 /*zstd_window_log*/ 0,
+                /// Parquet's `SNAPPY` codec is raw block compression and is special-cased above —
+                /// this dispatch never sees it, so the snappy mode here is irrelevant.
+                SnappyMode::Basic,
                 source.size(),
                 /*existing_memory*/ source.data());
             chassert(compressed_buf->position() == source.data());
@@ -1113,21 +1116,26 @@ void writeColumnImpl(
 
             if (hashes_for_bloom_filter.has_value())
             {
+/// With XXH_INLINE_ALL (from contrib/xxHash) every XXH function is marked as unused,
+/// so any actual use triggers this warning.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
                 for (size_t i = 0; i < data_count; ++i)
                 {
                     UInt64 h = 0;
                     constexpr UInt64 seed = 0;
                     if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
-                        h = XXH64(converted[i].ptr, converter.fixedStringSize(), seed);
+                        h = XXH_INLINE_XXH64(converted[i].ptr, converter.fixedStringSize(), seed);
                     else if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
-                        h = XXH64(converted[i].ptr, converted[i].len, seed);
+                        h = XXH_INLINE_XXH64(converted[i].ptr, converted[i].len, seed);
                     else
                     {
                         static_assert(sizeof(converted[i]) <= 12, "unexpected non-primitive type");
-                        h = XXH64(reinterpret_cast<const void*>(&converted[i]), sizeof(converted[i]), seed);
+                        h = XXH_INLINE_XXH64(reinterpret_cast<const void*>(&converted[i]), sizeof(converted[i]), seed);
                     }
                     hashes_for_bloom_filter->insert(h);
                 }
+#pragma clang diagnostic pop
             }
 
             if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
@@ -1533,6 +1541,7 @@ void writeFileFooter(FileWriteState & file,
         {
             if (type->getCustomName() &&
                 (type->getCustomName()->getName() == WKBPointTransform::name ||
+                type->getCustomName()->getName() == WKBMultiPointTransform::name ||
                 type->getCustomName()->getName() == WKBLineStringTransform::name ||
                 type->getCustomName()->getName() == WKBPolygonTransform::name ||
                 type->getCustomName()->getName() == WKBMultiLineStringTransform::name ||

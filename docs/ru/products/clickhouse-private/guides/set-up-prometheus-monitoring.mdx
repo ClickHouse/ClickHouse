@@ -21,9 +21,7 @@ description: "Настройте Prometheus для сбора метрик Click
 </div>
 
 <Steps>
-  <Step>
-    ### 1. Установите kube-prometheus-stack
-
+  <Step title="1. Установите kube-prometheus-stack" id="1-install-kube-prometheus-stack">
     Добавьте репозиторий сообщества Prometheus для Helm в локальный клиент Helm и скачайте чарт:
 
     ```bash
@@ -46,9 +44,7 @@ description: "Настройте Prometheus для сбора метрик Click
     > **Примечание:** kube-prometheus-stack включает Prometheus, Alertmanager, Grafana и Prometheus Operator. Полный список образов, которые необходимо скопировать в ваш приватный реестр, см. в [документации чарта](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack).
   </Step>
 
-  <Step>
-    ### 2. Включите PodMonitor в ClickHouse Operator
-
+  <Step title="2. Включите PodMonitor в ClickHouse Operator" id="2-enable-podmonitors-in-the-clickhouse-operator">
     Helm-чарт ClickHouse Operator содержит определения PodMonitor для ClickHouse server и Keeper. Включите их в Helm values вашего оператора:
 
     ```yaml
@@ -83,9 +79,7 @@ description: "Настройте Prometheus для сбора метрик Click
     > **Note:** Если ваш экземпляр Prometheus использует другое имя release, соответствующим образом обновите селектор меток PodMonitor: переопределите шаблоны чарта оператора или задайте `prometheus.prometheusSpec.podMonitorSelector` в values kube-prometheus-stack.
   </Step>
 
-  <Step>
-    ### 3. Включите обработчик пользовательских метрик (необязательно)
-
+  <Step title="3. Включите обработчик пользовательских метрик (необязательно)" id="3-enable-the-custom-metrics-handler-optional">
     ClickHouse Server предоставляет дополнительные метрики `ClickHouse_CustomMetric_*` через отдельный HTTP-обработчик на порту 3123. Для этой конечной точки требуется аутентификация. Чтобы включить scraping:
 
     ```yaml
@@ -107,9 +101,7 @@ description: "Настройте Prometheus для сбора метрик Click
     Полный список пользовательских метрик и рекомендуемые для них пороговые значения оповещений см. в [справочнике по метрикам и оповещениям](/ru/products/clickhouse-private/reference/metrics-and-alerts-reference).
   </Step>
 
-  <Step>
-    ### 4. Проверьте таргеты Prometheus
-
+  <Step title="4. Проверьте таргеты Prometheus" id="4-verify-prometheus-targets">
     После развертывания убедитесь, что Prometheus обнаруживает таргеты ClickHouse и опрашивает их:
 
     ```bash
@@ -125,9 +117,7 @@ description: "Настройте Prometheus для сбора метрик Click
     ```
   </Step>
 
-  <Step>
-    ### 5. Импортируйте панели мониторинга ClickHouse Grafana Mixin
-
+  <Step title="5. Импортируйте панели мониторинга ClickHouse Grafana Mixin" id="5-import-the-clickhouse-grafana-mixin-dashboards">
     [ClickHouse Grafana mixin](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/) предоставляет готовые панели мониторинга для метрик ClickHouse server и Keeper. В изолированной среде без доступа к внешней сети импортируйте JSON‑файлы панелей мониторинга вручную.
 
     #### Загрузка панелей мониторинга
@@ -170,9 +160,7 @@ description: "Настройте Prometheus для сбора метрик Click
     Сайдкар Grafana автоматически подхватывает ConfigMaps с меткой `grafana_dashboard: "1"` и загружает дашборды.
   </Step>
 
-  <Step>
-    ### 6. Настройте правила алертов (необязательно)
-
+  <Step title="6. Настройте правила алертов (необязательно)" id="6-configure-alert-rules-optional">
     Импортируйте рекомендуемые правила алертов ClickHouse в Prometheus, создав ресурс `PrometheusRule`. Полный набор определений алертов см. в разделах [Настройка оповещений](/ru/products/clickhouse-private/guides/configure-alerting-for-clickhouse) и [Справочник по метрикам и алертам](/ru/products/clickhouse-private/reference/metrics-and-alerts-reference).
 
     Пример:

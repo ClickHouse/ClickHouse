@@ -28,9 +28,7 @@ El tiempo necesario para exportar datos de BigQuery a ClickHouse depende del tam
 | Total                                                                                             | 8.26 mil millones | 23,577              | 3.982TB             | 8 min 3 s                  | &gt; 6 días 5 h | 53 min 45 s              |
 
 <Steps>
-  <Step>
-    ## Exportar datos de una tabla a GCS
-
+  <Step title="Exportar datos de una tabla a GCS" id="1-export-table-data-to-gcs">
     En este paso, utilizamos el [workspace de SQL de BigQuery](https://cloud.google.com/bigquery/docs/bigquery-web-ui) para ejecutar nuestros comandos SQL. A continuación, exportamos una tabla de BigQuery llamada `mytable` a un bucket de GCS mediante la sentencia [`EXPORT DATA`](https://cloud.google.com/bigquery/docs/reference/standard-sql/other-statements).
 
     ```sql
@@ -66,9 +64,7 @@ El tiempo necesario para exportar datos de BigQuery a ClickHouse depende del tam
     * Parquet, como formato orientado a columnas, es un mejor formato de intercambio, ya que está comprimido de forma inherente y BigQuery lo exporta más rápido, además de que ClickHouse lo consulta con mayor rapidez
   </Step>
 
-  <Step>
-    ## Importación de datos en ClickHouse desde GCS
-
+  <Step title="Importación de datos en ClickHouse desde GCS" id="2-importing-data-into-clickhouse-from-gcs">
     Una vez completada la exportación, podemos importar estos datos a una tabla de ClickHouse. Puede usar la [consola SQL de ClickHouse](/es/integrations/connectors/sql-clients/sql-console) o [`clickhouse-client`](/es/concepts/features/interfaces/cli) para ejecutar los siguientes comandos.
 
     Primero debe [crear la tabla](/es/reference/statements/create/table) en ClickHouse:
@@ -121,9 +117,7 @@ El tiempo necesario para exportar datos de BigQuery a ClickHouse depende del tam
     </Info>
   </Step>
 
-  <Step>
-    ## Comprobar que la exportación de datos se realizó correctamente
-
+  <Step title="Comprobar que la exportación de datos se realizó correctamente" id="3-testing-successful-data-export">
     Para comprobar si tus datos se insertaron correctamente, simplemente ejecuta una consulta `SELECT` en tu nueva tabla:
 
     ```sql

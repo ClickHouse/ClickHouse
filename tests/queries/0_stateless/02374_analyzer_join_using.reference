@@ -120,7 +120,10 @@ SELECT '--';
 SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 1
 1
-SELECT id FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
+-- The first join equates t1.id and t2.id, so `id` is an unambiguous INNER-JOIN key that USING can pick up.
+SELECT id FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 USING (id) ORDER BY ALL;
+0
+1
 SELECT 'First JOIN INNER second JOIN LEFT';
 First JOIN INNER second JOIN LEFT
 SELECT id AS using_id, toTypeName(using_id), t1.id + 1 AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -141,7 +144,10 @@ SELECT '--';
 SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 1
 1
-SELECT id FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id LEFT JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
+-- The first join equates t1.id and t2.id, so `id` is an unambiguous INNER-JOIN key that USING can pick up.
+SELECT id FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id LEFT JOIN test_table_join_3 AS t3 USING (id) ORDER BY ALL;
+0
+1
 SELECT 'First JOIN INNER second JOIN RIGHT';
 First JOIN INNER second JOIN RIGHT
 SELECT id AS using_id, toTypeName(using_id), t1.id + 1 AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -165,7 +171,11 @@ SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (
 1
 1
 1
-SELECT id FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id RIGHT JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
+-- The first join equates t1.id and t2.id, so `id` is an unambiguous INNER-JOIN key that USING can pick up.
+SELECT id FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id RIGHT JOIN test_table_join_3 AS t3 USING (id) ORDER BY ALL;
+0
+1
+4
 SELECT 'First JOIN INNER second JOIN FULL';
 First JOIN INNER second JOIN FULL
 SELECT id AS using_id, toTypeName(using_id), t1.id + 1 AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -189,7 +199,11 @@ SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (
 1
 1
 1
-SELECT id FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id FULL JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
+-- The first join equates t1.id and t2.id, so `id` is an unambiguous INNER-JOIN key that USING can pick up.
+SELECT id FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id FULL JOIN test_table_join_3 AS t3 USING (id) ORDER BY ALL;
+0
+1
+4
 SELECT 'First JOIN LEFT second JOIN INNER';
 First JOIN LEFT second JOIN INNER
 SELECT id AS using_id, toTypeName(using_id), t1.id + 1 AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),

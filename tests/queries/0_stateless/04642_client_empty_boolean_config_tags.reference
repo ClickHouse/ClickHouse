@@ -1,0 +1,16 @@
+-- <echo/> empty tag enables echoing in batch mode
+SELECT 1
+1
+-- <echo_formatted/> empty tag enables formatted echo (blank lines surround the query)
+
+SELECT 1
+
+1
+-- <echo_query_id/> empty tag prints the query ID line
+Query id: test-query-123
+
+1
+-- <highlight/> and <hints/> empty tags do not break the client (read in setupEchoAndHighlightSettings)
+1
+-- <enable_progress_table_toggle/> empty tag is accepted by the underscore remap
+1

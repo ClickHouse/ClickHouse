@@ -15,38 +15,36 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 このガイドでは、[MySQL ClickPipe](/ja/integrations/clickpipes/mysql/index) を使用して、Amazon RDS MySQL から ClickHouse Cloud にデータをレプリケートできるように設定する方法を説明します。MySQL CDC に関するよくある質問については、[MySQL のよくある質問ページ](/ja/integrations/clickpipes/mysql/faq) を参照してください。
 
 <div id="enable-binlog-retention-rds">
-  ## バイナリログの保持期間を有効にする
+  ## バイナリログの保持を有効にする
 </div>
 
-バイナリログは、MySQL サーバーインスタンスで行われたデータ変更に関する情報を含む一連のログファイルであり、レプリケーションにはバイナリログファイルが必要です。RDS MySQL でバイナリログの保持期間を設定するには、[バイナリログを有効にし](#enable-binlog-logging)、[binlog の保持期間を延長する](#binlog-retention-interval)必要があります。
+バイナリログは、MySQL サーバーインスタンスに対して行われたデータ変更に関する情報を含むログファイルの集合であり、レプリケーションにはバイナリログファイルが必要です。RDS MySQL でバイナリログの保持を設定するには、[バイナリログを有効にし](#enable-binlog-logging)、[binlog の保持期間を延長する](#binlog-retention-interval) 必要があります。
 
-<div id="enable-binlog-logging">
-  ### 1. 自動バックアップでバイナリログを有効にする
-</div>
+<Steps>
+  <Step title="自動バックアップでバイナリログを有効にする" id="enable-binlog-logging">
+    MySQL でバイナリログを有効にするかどうかは、自動バックアップ機能によって決まります。自動バックアップは、RDS Console で **Modify** &gt; **Additional configuration** &gt; **Backup** の順に移動し、**Enable automated backups** チェックボックスをオンにすることで (まだ選択されていない場合) 、インスタンスに対して設定できます。
 
-自動バックアップ機能の設定によって、MySQL のバイナリログの有効／無効が決まります。自動バックアップは、RDS Console で **Modify** &gt; **Additional configuration** &gt; **Backup** の順に進み、**Enable automated backups** チェックボックスを選択すると、対象のインスタンスで設定できます (まだ選択していない場合) 。
+    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="RDS で自動バックアップを有効にする" size="lg" border />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="RDS で自動バックアップを有効にする" size="lg" border />
+    レプリケーションのユースケースに応じて、**Backup retention period** を十分に長い値に設定することを推奨します。
+  </Step>
 
-レプリケーションの用途に応じて、**Backup retention period** は十分に長い値に設定することを推奨します。
+  <Step title="binlog の保持期間を延長する" id="binlog-retention-interval">
+    <Warning>
+      ClickPipes がレプリケーションの再開を試みた際、設定された binlog の保持期間により必要な バイナリログ ファイルがすでに削除されていると、ClickPipe はエラー状態となり、再同期が必要になります。
+    </Warning>
 
-<div id="binlog-retention-interval">
-  ### 2. binlog の保持期間を延長する
-</div>
+    デフォルトでは、Amazon RDS は バイナリログ をできるだけ早く削除します (つまり、*遅延パージ*) 。障害発生時でもレプリケーションに必要な バイナリログ ファイルを利用できるよう、binlog の保持期間を少なくとも **72 時間** に延長することを推奨します。バイナリログ の保持期間 ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours)) を設定するには、[`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration) プロシージャを使用します。
 
-<Warning>
-  ClickPipes がレプリケーションの再開を試みた際、設定された binlog の保持期間により必要な バイナリログ ファイルがすでに削除されていると、ClickPipe はエラー状態となり、再同期が必要になります。
-</Warning>
+    [//]: # "注: ほとんどの CDC（変更データキャプチャ）プロバイダーは、RDS の最大保持期間（7 日間/168 時間）を推奨しています。これはディスク使用量に影響するため、ここでは控えめに最小 3 日間/72 時間を推奨しています。"
 
-デフォルトでは、Amazon RDS は バイナリログ をできるだけ早く削除します (つまり、*遅延パージ*) 。障害発生時でもレプリケーションに必要な バイナリログ ファイルを利用できるよう、binlog の保持期間を少なくとも **72 時間** に延長することを推奨します。バイナリログ の保持期間 ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours)) を設定するには、[`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration) プロシージャを使用します。
+    ```text
+    mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
+    ```
 
-[//]: # "注: ほとんどの CDC（変更データキャプチャ）プロバイダーは、RDS の最大保持期間（7 日間/168 時間）を推奨しています。これはディスク使用量に影響するため、ここでは控えめに最小 3 日間/72 時間を推奨しています。"
-
-```text
-mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
-```
-
-この設定がされていない場合や、間隔が短すぎる場合、バイナリログに欠落が生じ、ClickPipes でレプリケーションを再開できなくなるおそれがあります。
+    この設定がされていない場合や、間隔が短すぎる場合、バイナリログに欠落が生じ、ClickPipes でレプリケーションを再開できなくなるおそれがあります。
+  </Step>
+</Steps>
 
 <div id="binlog-settings">
   ## binlog 設定を構成する
@@ -138,6 +136,18 @@ GTID ベースのレプリケーションは、Amazon RDS for MySQL バージョ
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
+<div id="iam-authentication">
+  ### IAM 認証を使用する (任意)
+</div>
+
+パスワードの代わりに、AWS IAM のロールベースのアクセス制御を使用して ClickPipes ユーザーを認証できます。次のようにユーザーを作成し、その後、上記と同じスキーマおよびレプリケーションの権限を付与します。
+
+```sql
+CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
+```
+
+ClickPipes がこの方法で認証を行えるようにするために必要な IAM ロールとポリシーの設定手順については、[AWS IAM DB認証 (RDS/Aurora)](/ja/integrations/clickpipes/postgres/auth) を参照してください。
+
 <div id="configure-network-access">
   ## ネットワークアクセスを設定する
 </div>
@@ -162,4 +172,4 @@ Aurora MySQL インスタンスへのトラフィックを制限するには、[
   ## 次のステップ
 </div>
 
-Amazon RDS MySQL インスタンスでの binlog レプリケーションと、ClickHouse Cloud への安全な接続の設定が完了したら、[最初の MySQL ClickPipe を作成](/ja/integrations/clickpipes/mysql/index#create-your-clickpipe)できます。MySQL CDC に関するよくある質問は、[MySQL のよくある質問ページ](/ja/integrations/clickpipes/mysql/faq)を参照してください。
+Amazon RDS MySQLインスタンスでbinlogレプリケーションの設定が完了し、ClickHouse Cloud への安全な接続も確立できたら、[最初の MySQL ClickPipe を作成](/ja/integrations/clickpipes/mysql/index#create-your-clickpipe)できます。MySQL CDC (変更データキャプチャ) に関するよくある質問については、[MySQL のよくある質問ページ](/ja/integrations/clickpipes/mysql/faq)を参照してください。

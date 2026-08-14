@@ -1,3 +1,4 @@
+#include <ranges>
 #include <algorithm>
 #include <exception>
 #include <optional>
@@ -196,15 +197,17 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
     else
         options.PageSizeHint = settings.get()->list_object_keys_size;
 
-    for (auto blob_list_response = client_ptr->ListBlobs(options); blob_list_response.HasPage(); blob_list_response.MoveToNextPage())
+    /// Re-issue ListBlobs per page through the client wrapper (which strips the endpoint prefix); the SDK's
+    /// MoveToNextPage refetches pages 2..N directly and would leave the raw Azure prefix on their blob names.
+    while (true)
     {
+        auto blob_list_response = client_ptr->ListBlobs(options);
+
         ProfileEvents::increment(ProfileEvents::AzureListObjects);
         if (client_ptr->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
 
-        const auto & blobs_list = blob_list_response.Blobs;
-
-        for (const auto & blob : blobs_list)
+        for (const auto & blob : blob_list_response.Blobs)
         {
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
@@ -221,6 +224,11 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
         if (max_keys && children.size() >= max_keys)
             break;
+
+        if (!blob_list_response.NextPageToken.HasValue() || blob_list_response.NextPageToken.Value().empty())
+            break;
+
+        options.ContinuationToken = blob_list_response.NextPageToken;
     }
 }
 

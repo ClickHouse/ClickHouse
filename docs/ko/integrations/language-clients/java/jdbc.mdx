@@ -137,7 +137,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   다음 JDBC URL과 동일합니다:
 
   ```sql
-  jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01 
+  jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01
   // credentials shoud be passed in `Properties`. Here it is just for example.
   ```
 
@@ -297,15 +297,15 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   배열에 대한 일반적인 매핑 규칙은 다음과 같습니다:
 
-  | ClickHouse 유형                              | `getBaseTypeName()`                  | `getBaseType()`         |
-  | ------------------------------------------ | ------------------------------------ | ----------------------- |
-  | `Array(<기본 유형>)`                           | `<원시 유형>`                            | `<JDBC Primitive Type>` |
-  | `Array(<Parameterized Type>(<N>))`         | `<매개변수화된 유형>(<N>)`                   | `<기본 타입의 JDBC 유형>`      |
-  | `Array(Nullable(<Type>))`                  | `널 허용(<유형>)`                         | `<내부 유형의 JDBC 유형>`      |
-  | `Array(LowCardinality(<Type>))`            | `LowCardinality(<Type>)`             | `<내부 Type의 JDBC 유형>`    |
-  | `Array(Array(...(<Type>)))`                | `<Type>` (가장 안쪽의 요소)                 | `<가장 안쪽 요소의 JDBC 유형>`   |
-  | `Array(Tuple(...))`                        | `Tuple(...)` (전체 정의)                 | `OTHER`                 |
-  | `Array(Enum8(...))` / `Array(Enum16(...))` | `Enum8(...)` / `Enum16(...)` (전체 정의) | `VARCHAR`               |
+  | ClickHouse 유형                              | `getBaseTypeName()`                  | `getBaseType()`       |
+  | ------------------------------------------ | ------------------------------------ | --------------------- |
+  | `Array(<기본 유형>)`                           | `<기본 타입>`                            | `<JDBC 원시 유형>`        |
+  | `Array(<Parameterized Type>(<N>))`         | `<매개변수화된 유형>(<N>)`                   | `<기본 타입의 JDBC 유형>`    |
+  | `Array(Nullable(<Type>))`                  | `널 허용(<유형>)`                         | `<내부 유형의 JDBC 유형>`    |
+  | `Array(LowCardinality(<Type>))`            | `LowCardinality(<Type>)`             | `<내부 유형의 JDBC 유형>`    |
+  | `Array(Array(...(<Type>)))`                | `<Type>` (가장 안쪽의 요소)                 | `<가장 안쪽 요소의 JDBC 유형>` |
+  | `Array(Tuple(...))`                        | `Tuple(...)` (전체 정의)                 | `OTHER`               |
+  | `Array(Enum8(...))` / `Array(Enum16(...))` | `Enum8(...)` / `Enum16(...)` (전체 정의) | `VARCHAR`             |
 
   위 규칙에 대한 참고 사항:
 
@@ -317,9 +317,9 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   | ClickHouse 유형 (예시)                                                         | `getBaseTypeName()`                                                 | `getBaseType()` |
   | -------------------------------------------------------------------------- | ------------------------------------------------------------------- | --------------- |
-  | 배열(Int8)                                                                   | Int8                                                                | TINYINT         |
-  | 배열(Int16)                                                                  | Int16                                                               | SMALLINT        |
-  | 배열(Int32)                                                                  | Int32                                                               | INTEGER         |
+  | Array(Int8)                                                                | Int8                                                                | TINYINT         |
+  | Array(Int16)                                                               | Int16                                                               | SMALLINT        |
+  | Array(Int32)                                                               | Int32                                                               | INTEGER         |
   | Array(Int64)                                                               | Int64                                                               | BIGINT          |
   | Array(UInt8)                                                               | UInt8                                                               | SMALLINT        |
   | Array(UInt16)                                                              | UInt16                                                              | INTEGER         |
@@ -396,7 +396,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
                   }
               }
           }
-      } 
+      }
   }
   ```
 
@@ -749,7 +749,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   * `net.inet.tcp.always_keepalive`: 1
   * `net.ipv4.tcp_keepalive_intvl`: 75
   * `net.ipv4.tcp_keepalive_probes`: 9
-  * `net.ipv4.tcp_keepalive_time`: 60 (기본값인 300초에서 이 값을 더 낮추는 것을 고려할 수 있습니다)
+  * `net.ipv4.tcp_keepalive_time`: 60 (기본값 300초보다 더 낮게 설정하는 것도 고려할 수 있습니다)
 
   2. 커널 매개변수를 수정한 후 다음 명령을 실행하여 변경 사항을 적용하십시오:
 
@@ -788,7 +788,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   * `com.clickhouse.client.api.ClientConfigProperties` - 클라이언트 구성 속성입니다. 클라이언트 구성
     변경 사항은 [Java 클라이언트 문서](/ko/integrations/language-clients/java/client#migration_from_v1_config)에 설명되어 있습니다.
 
-  연결(Connection) 속성은 다음과 같이 파싱(parse)됩니다:
+  연결(Connection) 속성은 다음과 같이 파싱됩니다:
 
   * 먼저 URL에서 속성을 파싱합니다. 이렇게 파싱된 속성은 다른 모든 속성을 재정의합니다.
   * 드라이버 속성은 클라이언트로 전달되지 않습니다.
@@ -873,12 +873,12 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   **중첩 타입**
 
-  | ClickHouse 유형 | V1 호환 여부 | JDBC 유형 (V2)    | Java 클래스 (V2)    | JDBC 유형 (V1) | Java 클래스 (V1)                 |
-  | ------------- | -------- | --------------- | ---------------- | ------------ | ----------------------------- |
-  | 배열            | ❌        | ARRAY           | java.sql.Array   | ARRAY        | Object[] 또는 기본 타입의 배열 |
-  | Tuple         | ❌        | OTHER           | Object[] | STRUCT       | java.sql.Struct               |
-  | 맵             | ❌        | JAVA&#95;OBJECT | java.util.Map    | STRUCT       | java.util.Map                 |
-  | Nested        | ❌        | ARRAY           | java.sql.Array   | STRUCT       | java.sql.Struct               |
+  | ClickHouse 유형 | V1 호환 여부 | JDBC 유형 (V2)    | Java 클래스 (V2)    | JDBC 유형 (V1) | Java 클래스 (V1)                |
+  | ------------- | -------- | --------------- | ---------------- | ------------ | ---------------------------- |
+  | 배열            | ❌        | ARRAY           | java.sql.Array   | ARRAY        | Object[] 또는 기본 타입 배열 |
+  | Tuple         | ❌        | OTHER           | Object[] | STRUCT       | java.sql.Struct              |
+  | 맵             | ❌        | JAVA&#95;OBJECT | java.util.Map    | STRUCT       | java.util.Map                |
+  | Nested        | ❌        | ARRAY           | java.sql.Array   | STRUCT       | java.sql.Struct              |
 
   * V2에서는 JDBC와의 호환성을 위해 기본적으로 `Array`를 `java.sql.Array`에 매핑합니다. 이렇게 하면 반환되는 배열 값에 대한 정보를 더 많이 제공할 수 있습니다. 유형 추론에 유용합니다.
   * V2에서는 `Array`가 `getResultSet()` 메서드를 구현하여 원본 배열과 동일한 내용을 담은 `java.sql.ResultSet`을 반환합니다.

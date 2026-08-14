@@ -135,34 +135,47 @@ Data Factory インスタンスを使い始めることができます。
 2. Data Factory の概要ページで、**Launch Studio** をクリックします。
    <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="Azure Portal の Data Factory ページ" border />
 
-3. 左側のメニューで **Manage** を選択し、**Linked services** に移動して、**+ New** をクリックし、新しいリンク サービスを作成します。
+3. 左側のメニューで **Manage** を選択し、**Linked services** に移動して、
+   **+ New** をクリックし、新しいリンク サービスを作成します。
    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="Azure Data Factory の新しいリンク サービス ボタン" border />
 
-4. **New linked service** の検索バーに **REST** と入力し、**REST** を選択して **Continue** をクリックし、[REST コネクタ](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest)のインスタンスを作成します。
+4. **New linked service search bar** に **REST** と入力し、**REST** を選択して **Continue** をクリックすると、
+   [REST コネクタ](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest)
+   のインスタンスを作成できます。
    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="Azure Data Factory の新しいリンク サービス検索" border />
 
-5. リンク サービスの構成ペインで新しいサービスの名前を入力し、**Base URL** フィールドをクリックしてから **Add dynamic content** をクリックします (このリンクはフィールドを選択したときにのみ表示されます) 。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="新しいリンク サービスのペイン" border />
+5. リンク サービスの構成ペインで新しいサービスの名前を入力し、
+   **Base URL** フィールドをクリックしてから **Add dynamic content** をクリックします (このリンクは
+   フィールドを選択したときにのみ表示されます) 。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="新しいリンク サービス ペイン" border />
 
-6. 動的コンテンツ ペインでは、パラメーター化された URL を作成できます。これにより、異なるテーブル用のデータセットを作成する際に後からクエリを定義できるため、リンク サービスを再利用できるようになります。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="Base URL が空の新しいリンク サービス" border />
+6. 動的コンテンツのペインでは、パラメーター化された URL を作成できます。これにより、
+   後で異なるテーブル用のデータセットを作成するときにクエリを定義できるため、
+   リンク サービスを再利用できるようになります。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="新しいリンク サービスの Base URL が空" border />
 
-7. フィルター入力の横にある **&quot;+&quot;** をクリックして新しいパラメーターを追加し、名前を `pQuery`、型を String、デフォルト値を `SELECT 1` に設定します。**Save** をクリックします。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="新しいリンク サービスのパラメーター" border />
+7. フィルター入力の横にある **&quot;+&quot;** をクリックして新しいパラメーターを追加し、
+   名前を `pQuery`、型を String、デフォルト値を `SELECT 1` に設定します。
+   **Save** をクリックします。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="新しいリンク サービスの Parameters" border />
 
-8. 式フィールドに次を入力し、**OK** をクリックします。`your-clickhouse-url.com` は実際の ClickHouse インスタンスのアドレスに置き換えてください。
+8. expression フィールドに次を入力して **OK** をクリックします。`your-clickhouse-url.com` は、
+   ご利用の ClickHouse インスタンスの実際のアドレスに置き換えてください。
    ```text
    @{concat('https://your-clickhouse-url.com:8443/?query=', encodeUriComponent(linkedService().pQuery))}
    ```
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="入力済みの新しいリンク サービスの式フィールド" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="値が入力された新しいリンク サービスの Expression Field" border />
 
-9. メイン フォームに戻り、基本認証を選択して、ClickHouse HTTP インターフェイスへの接続に使用するユーザー名とパスワードを入力し、**Test connection** をクリックします。すべてが正しく構成されていれば、成功メッセージが表示されます。
+9. メイン フォームに戻り、basic authentication を選択して、ClickHouse HTTP インターフェイスへの接続に使用する username と
+   password を入力し、**Test
+   connection** をクリックします。すべてが正しく設定されていれば、成功
+   メッセージが表示されます。
    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp" size="lg" alt="新しいリンク サービスの接続確認" border />
 
-10. **Create** をクリックしてセットアップを完了します。
+10. **Create** をクリックして設定を完了します。
     <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp" size="lg" alt="リンク サービスの一覧" border />
 
-これで、一覧に新しく登録された REST ベースのリンク サービスが表示されるはずです。
+これで、一覧に新しく登録された REST ベースのリンク サービスが表示されます。
 
 <div id="creating-a-new-dataset-for-the-clickhouse-http-interface">
   ## ClickHouse HTTP インターフェイス用の新しいデータセットを作成する
