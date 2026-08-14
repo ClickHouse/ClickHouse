@@ -7,11 +7,7 @@ title: 'lance'
 doc_type: 'reference'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-
 # lance Table Function {#lance-table-function}
-
-<ExperimentalBadge />
 
 The `lanceS3` table function provides a read-only table-like interface to existing [Lance](https://lancedb.github.io/lance/) datasets stored in Amazon S3 or S3-compatible object storage.
 

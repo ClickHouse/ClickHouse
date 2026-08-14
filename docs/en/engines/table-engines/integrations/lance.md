@@ -7,11 +7,7 @@ title: 'Lance table engine'
 doc_type: 'reference'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-
 # Lance Table Engine {#lance-table-engine}
-
-<ExperimentalBadge />
 
 The `LanceS3` table engine provides a read-only integration with existing [Lance](https://lancedb.github.io/lance/) datasets stored in Amazon S3 or S3-compatible object storage.
 
