@@ -8,9 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -q "SYSTEM CLEAR FILESYSTEM CACHE 'cache_for_readbigat'"
 
 # Reproduces issue from https://github.com/ClickHouse/ClickHouse/issues/97325
-# --send_logs_level=fatal: the long read against the public AWS bucket can hit
-# transient retryable 5xx that the S3 retry strategy recovers from.
-$CLICKHOUSE_CLIENT --send_logs_level=fatal -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT
         (min(Title) <= max(Title)) AND
         (min(URL) <= max(URL)) AND

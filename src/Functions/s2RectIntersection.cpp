@@ -28,7 +28,7 @@ namespace
 {
 
 
-class FunctionS2RectIntersection final : public IFunction
+class FunctionS2RectIntersection : public IFunction
 {
 public:
     static constexpr auto name = "s2RectIntersection";

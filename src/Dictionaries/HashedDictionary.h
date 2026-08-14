@@ -205,9 +205,7 @@ private:
             CollectionsHolder<IPv4>,
             CollectionsHolder<IPv6>,
             CollectionsHolder<std::string_view>,
-            CollectionsHolder<Array>,
-            CollectionsHolder<Map>,
-            CollectionsHolder<Object>>
+            CollectionsHolder<Array>>
             containers;
     };
 
@@ -388,7 +386,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
     DefaultOrFilter default_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
@@ -437,45 +435,6 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                     [&](const size_t, const Array & value) { out->insert(value); },
                     [&](size_t) { out->insertDefault(); },
                     default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsShortCircuitImpl<ValueType, false>(
-                    attribute,
-                    extractor,
-                    [&](const size_t, const Map & value) { out->insert(value); },
-                    [&](size_t) { out->insertDefault(); },
-                    default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                auto * out = column.get();
-                if (is_attribute_nullable)
-                {
-                    getItemsShortCircuitImpl<ValueType, true>(
-                        attribute,
-                        extractor,
-                        [&](size_t row, const Object & value)
-                        {
-                            (*vec_null_map_to)[row] = false;
-                            out->insert(value);
-                        },
-                        [&](size_t row)
-                        {
-                            (*vec_null_map_to)[row] = true;
-                            out->insertDefault();
-                        },
-                        default_mask);
-                }
-                else
-                    getItemsShortCircuitImpl<ValueType, false>(
-                        attribute,
-                        extractor,
-                        [&](const size_t, const Object & value) { out->insert(value); },
-                        [&](size_t) { out->insertDefault(); },
-                        default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
@@ -542,36 +501,6 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                     extractor,
                     [&](const size_t, const Array & value, bool) { out->insert(value); },
                     default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    extractor,
-                    [&](const size_t, const Map & value, bool) { out->insert(value); },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                auto * out = column.get();
-                if (is_attribute_nullable)
-                    getItemsImpl<ValueType, true>(
-                        attribute,
-                        extractor,
-                        [&](size_t row, const Object & value, bool is_null)
-                        {
-                            (*vec_null_map_to)[row] = is_null;
-                            out->insert(value);
-                        },
-                        default_value_extractor);
-                else
-                    getItemsImpl<ValueType, false>(
-                        attribute,
-                        extractor,
-                        [&](const size_t, const Object & value, bool) { out->insert(value); },
-                        default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
@@ -871,7 +800,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getDescendants
         PaddedPODArray<UInt64> keys_backup;
         const auto & keys = getColumnVectorData(this, key_column, keys_backup);
 
-        size_t keys_found = 0;
+        size_t keys_found;
         auto result = getKeysDescendantsArray(keys, *parent_to_child_index, level, keys_found);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
@@ -1402,7 +1331,7 @@ template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 template <typename GetContainersFunc>
 void HashedDictionary<dictionary_key_type, sparse, sharded>::getAttributeContainers(size_t attribute_index, GetContainersFunc && get_containers_func)
 {
-    chassert(attribute_index < attributes.size());
+    assert(attribute_index < attributes.size());
 
     auto & attribute = attributes[attribute_index];
 

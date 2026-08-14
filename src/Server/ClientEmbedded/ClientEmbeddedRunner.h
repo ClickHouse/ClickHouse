@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(OS_LINUX)
+
 #include <atomic>
 #include <memory>
 
@@ -51,3 +53,5 @@ private:
 };
 
 }
+
+#endif

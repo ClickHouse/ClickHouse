@@ -100,8 +100,8 @@ public:
     struct LoadedConfig
     {
         ConfigurationPtr configuration;
-        bool has_zk_includes{};
-        bool loaded_from_preprocessed{};
+        bool has_zk_includes;
+        bool loaded_from_preprocessed;
         XMLDocumentPtr preprocessed_xml;
         std::string config_path;
     };

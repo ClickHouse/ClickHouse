@@ -1,4 +1,3 @@
-#include <Core/ProtocolDefines.h>
 #include <Client/Suggest.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>

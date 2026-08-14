@@ -32,7 +32,7 @@ public:
 private:
     bool nextImpl() override;
 
-    z_stream zstr{};
+    z_stream zstr;
     bool eof_flag;
 
     /// Limit size of buffer because zlib uses

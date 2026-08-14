@@ -61,7 +61,7 @@ python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
 - [docker compose](https://docs.docker.com/compose/) and additional Python libraries:
   ```bash
   sudo -H pip install \
-      PyMySQL avro cassandra-driver confluent-kafka dicttoxml docker grpcio grpcio-tools kafka-python kazoo minio lz4 protobuf psycopg2-binary pymongo pytz pytest pytest-timeout redis tzlocal==2.1 urllib3 requests-kerberos dict2xml hypothesis pika nats-py pandas numpy jinja2 pytest-xdist==2.4.0 pyspark azure-storage-blob delta paramiko psycopg pyarrow boto3 deltalake snappy pyiceberg python-snappy thrift pyhdfs
+      PyMySQL avro cassandra-driver confluent-kafka dicttoxml docker grpcio grpcio-tools kafka-python kazoo minio lz4 protobuf psycopg2-binary pymongo pytz pytest pytest-timeout redis tzlocal==2.1 urllib3 requests-kerberos dict2xml hypothesis pika nats-py pandas numpy jinja2 pytest-xdist==2.4.0 pyspark azure-storage-blob delta paramiko psycopg pyarrow boto3 deltalake snappy pyiceberg python-snappy thrift
   ```
 - For Spark tests, install Spark and add its `bin` directory to your `PATH`. See `ci/docker/integration/runner/Dockerfile` for details. Set `JAVA_PATH` to the Java binary path.
 - To run tests as a non-privileged user, add the user to the `docker` group:
@@ -187,10 +187,9 @@ export ZOO_SECURE_CLIENT_PORT=2281
 export RABBITMQ_COOKIE_FILE=/tmp/stub
 export MONGO_SECURE_CONFIG_DIR=/tmp/stub
 export PROMETHEUS_WRITER_PORT=8080
-export PROMETHEUS_REMOTE_WRITE_HANDLERS=/stub
-export PROMETHEUS_REMOTE_READ_HANDLERS=/stub
+export PROMETHEUS_REMOTE_WRITE_HANDLER=/stub
+export PROMETHEUS_REMOTE_READ_HANDLER=/stub
 export PROMETHEUS_READER_PORT=8080
-export PROMETHEUS_RECEIVER_PORT=8080
 docker compose $(find ${HOME}/ClickHouse/tests/integration -name '*compose*yml' -exec echo --file {} ' ' \; ) pull
 ```
 

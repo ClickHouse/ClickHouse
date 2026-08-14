@@ -67,7 +67,6 @@ AggregateFunctionPtr createAggregateFunctionStudentTTestOneSample(
 
 }
 
-void registerAggregateFunctionStudentTTestOneSample(AggregateFunctionFactory & factory);
 void registerAggregateFunctionStudentTTestOneSample(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_studentTTestOneSample = R"(
