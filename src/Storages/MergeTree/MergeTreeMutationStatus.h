@@ -52,6 +52,12 @@ struct MergeTreeMutationStatus
 
     /// FIXME: currently unused, but would be much better to report killed mutations with this flag.
     bool is_killed = false;
+
+    /// The on-disk bytes of `parts_to_do_names`. Derived on read, like `parts_to_do`.
+    UInt64 bytes_to_do = 0;
+    /// Estimated finished fraction of the mutation, from 0 to 1: byte-weighted against the
+    /// active table size, including the live fraction of parts currently being rewritten.
+    Float64 progress = 0;
 /// NOLINTEND(readability-redundant-string-init)
 };
 

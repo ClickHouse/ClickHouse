@@ -49,6 +49,7 @@
 #include <Storages/MergeTree/LeaderElection.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
+#include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
@@ -8606,7 +8607,47 @@ void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t 
 
 std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
 {
-    return queue.getMutationsStatus();
+    auto statuses = queue.getMutationsStatus();
+
+    /// Byte-weighted progress is resolved here, outside of the queue's state lock: part
+    /// sizes need the parts set, and parts locks must not be taken under the queue mutex.
+    /// A part that is gone by now was retired, i.e. contributes no remaining bytes.
+    std::unordered_map<String, UInt64> part_bytes_on_disk;
+    UInt64 total_bytes_on_disk = 0;
+    for (const auto & part : getDataPartsVectorForInternalUsage())
+    {
+        part_bytes_on_disk[part->name] = part->getBytesOnDisk();
+        total_bytes_on_disk += part->getBytesOnDisk();
+    }
+
+    std::unordered_map<String, Float64> mutating_part_progress;
+    for (const auto & merge : getContext()->getMergeList().get())
+    {
+        if (!merge.is_mutation || merge.database != getStorageID().getDatabaseName() || merge.table != getStorageID().getTableName())
+            continue;
+        for (const auto & source_part_name : merge.source_part_names)
+            mutating_part_progress[source_part_name.safeGet<String>()] = merge.progress;
+    }
+
+    for (auto & status : statuses)
+    {
+        UInt64 bytes_to_do = 0;
+        Float64 bytes_in_flight_done = 0;
+        for (const auto & part_name : status.parts_to_do_names)
+        {
+            auto it = part_bytes_on_disk.find(part_name);
+            if (it == part_bytes_on_disk.end())
+                continue;
+            bytes_to_do += it->second;
+            if (auto progress_it = mutating_part_progress.find(part_name); progress_it != mutating_part_progress.end())
+                bytes_in_flight_done += it->second * progress_it->second;
+        }
+        status.bytes_to_do = bytes_to_do;
+        status.progress = std::clamp(
+            1.0 - (bytes_to_do - bytes_in_flight_done) / std::max<Float64>(total_bytes_on_disk, 1.0), 0.0, 1.0);
+    }
+
+    return statuses;
 }
 
 CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutation_id)

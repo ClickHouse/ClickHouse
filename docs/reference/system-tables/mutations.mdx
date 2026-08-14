@@ -84,7 +84,7 @@ In ClickHouse Cloud the `system.mutations` table on each node has all the mutati
 
 `parts_to_do` counts data parts, and parts can be wildly unequal in size; a regular merge can also retire many pending parts in one step without doing any mutation work. A percentage computed from part counts (for example `1 - parts_to_do / <part count at submission>`) is therefore not a reliable progress number: it can sit almost frozen while most of the bytes are still unprocessed, and jump forward when parts are merged. An honest estimate weights the remaining parts by their size on disk and adds the live fraction of the part that is being rewritten right now, which [`system.merges`](/reference/system-tables/merges) exposes for rows with `is_mutation = 1`.
 
-The following [parameterized view](/reference/statements/create/view#parameterized-view) packages that calculation:
+`system.mutations` exposes this calculation directly through the `bytes_to_do` and `progress` columns. The following [parameterized view](/reference/statements/create/view#parameterized-view) packages the equivalent calculation for releases that predate those columns, and as a template for custom weighting:
 
 ```sql
 CREATE VIEW mutation_progress AS

@@ -38,6 +38,11 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
         { "parts_in_progress_names",        std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that are currently being mutated."},
         { "parts_to_do_names",             std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that need to be mutated for the mutation to complete."},
         { "parts_to_do",                   std::make_shared<DataTypeInt64>(), "The number of data parts that need to be mutated for the mutation to complete. Note: even if `parts_to_do` = 0, a mutation of a replicated table may not be completed yet due to a long-running INSERT that is creating a new data part that will need to be mutated."},
+        { "bytes_to_do",                   std::make_shared<DataTypeUInt64>(), "The total size on disk of the data parts that need to be mutated for the mutation to complete. Byte-weighted counterpart of `parts_to_do`."},
+        { "progress",                      std::make_shared<DataTypeFloat64>(),
+            "The estimated fraction of the mutation's work that is finished, from 0 to 1: the on-disk size of the remaining parts relative to the size of the table's active parts, "
+            "including the live fraction of the parts currently being rewritten (rows of `system.merges` with `is_mutation` = 1). "
+            "The value is an estimate: a regular merge can retire pending parts at any moment, which makes `progress` jump forward."},
         { "parts_postpone_reasons",        std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "A map of part names to reasons why they are postponed."},
         { "is_done",                       std::make_shared<DataTypeUInt8>(),
             "The flag whether the mutation is done or not. Possible values: "
@@ -183,6 +188,8 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[col_num++]->insert(parts_in_progress_names);
             res_columns[col_num++]->insert(parts_to_do_names);
             res_columns[col_num++]->insert(parts_to_do_names.size());
+            res_columns[col_num++]->insert(status.bytes_to_do);
+            res_columns[col_num++]->insert(status.progress);
             res_columns[col_num++]->insert(parts_postpone_reasons_map);
             res_columns[col_num++]->insert(status.is_done);
             res_columns[col_num++]->insert(status.is_killed);

@@ -1208,6 +1208,7 @@ struct PartVersionWithName
 {
     Int64 version;
     String name;
+    UInt64 bytes_on_disk = 0;
 };
 
 bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
@@ -1352,9 +1353,24 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
     std::vector<PartVersionWithName> part_versions_with_names;
     auto data_parts = getDataPartsVectorForInternalUsage();
     part_versions_with_names.reserve(data_parts.size());
+    UInt64 total_bytes_on_disk = 0;
     for (const auto & part : data_parts)
-        part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name});
+    {
+        part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name, part->getBytesOnDisk()});
+        total_bytes_on_disk += part->getBytesOnDisk();
+    }
     std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
+
+    /// The live fraction of the parts currently being rewritten, for byte-weighted progress.
+    /// The merge list has its own mutex, no lock ordering issue with the mutex held above.
+    std::unordered_map<String, Float64> mutating_part_progress;
+    for (const auto & merge : getContext()->getMergeList().get())
+    {
+        if (!merge.is_mutation || merge.database != getStorageID().getDatabaseName() || merge.table != getStorageID().getTableName())
+            continue;
+        for (const auto & source_part_name : merge.source_part_names)
+            mutating_part_progress[source_part_name.safeGet<String>()] = merge.progress;
+    }
 
     std::vector<MergeTreeMutationStatus> result;
     for (const auto & kv : current_mutations_by_version)
@@ -1368,8 +1384,18 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         size_t parts_to_do = versions_it - part_versions_with_names.begin();
         Names parts_to_do_names;
         parts_to_do_names.reserve(parts_to_do);
+        UInt64 bytes_to_do = 0;
+        Float64 bytes_in_flight_done = 0;
         for (size_t i = 0; i < parts_to_do; ++i)
-            parts_to_do_names.push_back(part_versions_with_names[i].name);
+        {
+            const auto & part_version = part_versions_with_names[i];
+            parts_to_do_names.push_back(part_version.name);
+            bytes_to_do += part_version.bytes_on_disk;
+            if (auto it = mutating_part_progress.find(part_version.name); it != mutating_part_progress.end())
+                bytes_in_flight_done += part_version.bytes_on_disk * it->second;
+        }
+        Float64 progress = std::clamp(
+            1.0 - (bytes_to_do - bytes_in_flight_done) / std::max<Float64>(total_bytes_on_disk, 1.0), 0.0, 1.0);
 
         std::map<String, Int64> block_numbers_map({{"", entry.block_number}});
 
@@ -1416,6 +1442,8 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 entry.latest_fail_reason,
                 entry.latest_fail_error_code_name,
             });
+            result.back().bytes_to_do = bytes_to_do;
+            result.back().progress = progress;
         }
     }
 
