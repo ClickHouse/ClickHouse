@@ -190,7 +190,7 @@ All schema changes must be run against the **read-write** service, including:
 - Creating [materialized views](/clickstack/managing/materialized-views) for query acceleration
 - Adding [skip indexes, projections and other performance optimizations](/clickstack/managing/performance-tuning)
 
-Users, roles and grants aren't schema changes - they're shared by every service in the warehouse, so each only needs to be created once, from any service. The [setup steps](#prepare-read-write-service) above create the ingestion user; a self-hosted ClickStack UI additionally needs its own query user, created the same way.
+Users, roles and grants aren't schema changes - they're shared by every service in the warehouse, so each only needs to be created once, from any service. The [setup steps](#prepare-read-write-service) above create the ingestion user. A self-hosted ClickStack UI additionally needs its own query user, which should be a read-only account with the [permissions required by the ClickStack UI](/clickstack/managing/production#user-permissions) - not the ingestion grants shown above.
 
 Connect to the read-write service using the [SQL console or ClickHouse client](/clickstack/managing/admin). Because the warehouse shares storage and access controls, the changes are immediately visible to the read-only service. If you've [separated merges from ingestion](#separating-merges), statements can be submitted against either read-write service - but note that mutations are executed and tracked on the merge service.
 
