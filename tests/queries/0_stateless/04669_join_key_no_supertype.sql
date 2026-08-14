@@ -134,6 +134,18 @@ SELECT 'The stored key is not the common subtype: the prebuilt hash table cannot
 SELECT * FROM (SELECT CAST(1, 'UInt64') AS x) AS t SEMI LEFT JOIN t_join_signed USING (x); -- { serverError NO_COMMON_TYPE }
 SELECT * FROM (SELECT CAST(1, 'UInt64') AS x) AS t SEMI LEFT JOIN t_join_signed AS j ON t.x = j.x; -- { serverError NO_COMMON_TYPE }
 
+SELECT 'A key-value storage falls back to a fresh hash table when hash is selected, so both keys can be converted';
+DROP TABLE IF EXISTS t_dictionary_signed_source;
+DROP DICTIONARY IF EXISTS t_dictionary_signed;
+CREATE TABLE t_dictionary_signed_source (x Int64, v String) ENGINE = Memory;
+INSERT INTO t_dictionary_signed_source VALUES (1, 'a'), (-1, 'b');
+CREATE DICTIONARY t_dictionary_signed (x Int64, v String) PRIMARY KEY x
+SOURCE(CLICKHOUSE(TABLE 't_dictionary_signed_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(0);
+SELECT * FROM (SELECT CAST(1, 'UInt64') AS x) AS t INNER JOIN t_dictionary_signed AS d ON t.x = d.x SETTINGS join_algorithm = 'hash';
+SELECT * FROM (SELECT CAST(18446744073709551615, 'UInt64') AS x) AS t INNER JOIN t_dictionary_signed AS d ON t.x = d.x SETTINGS join_algorithm = 'hash';
+DROP DICTIONARY t_dictionary_signed;
+DROP TABLE t_dictionary_signed_source;
+
 SELECT 'A stored key wrapped in LowCardinality or Nullable is served by the prebuilt hash table as is, so only the probe side is converted';
 SET allow_suspicious_low_cardinality_types = 1;
 DROP TABLE IF EXISTS t_join_unsigned_lc;

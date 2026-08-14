@@ -712,6 +712,7 @@ struct JoinPlanningContext
 {
     NameViewToNodeMapping actions_after_join_map;
     bool is_storage_join{};
+    bool is_prebuilt_hash_join{};
 };
 
 /** Convert the operands of an equality (or ASOF inequality) predicate in the JOIN ON section to a common type.
@@ -765,7 +766,7 @@ static void predicateOperandsToCommonType(
                 /// applies only when the storage key itself is the subtype, so that only the probe side is converted.
                 /// The comparison ignores the `LowCardinality` and `Nullable` wrappers, same as `JoinCommon::checkTypesOfKeys`:
                 /// the hash table serves a probe key that differs from the build key only in these wrappers as is.
-                if (!planning_context.is_storage_join || removeNullable(recursiveRemoveLowCardinality(right_type))->equals(*subtype))
+                if (!planning_context.is_prebuilt_hash_join || removeNullable(recursiveRemoveLowCardinality(right_type))->equals(*subtype))
                     common_type = makeNullable(subtype);
             }
         }
@@ -810,7 +811,7 @@ static void predicateOperandsToCommonType(
         }
     };
 
-    if (planning_context.is_storage_join)
+    if (planning_context.is_prebuilt_hash_join)
     {
         /// Under the subtype fallback the check above guarantees that the storage key is the subtype
         /// modulo the `LowCardinality` and `Nullable` wrappers, which the prebuilt hash table serves
@@ -1428,6 +1429,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
     JoinPlanningContext planning_context;
     planning_context.is_storage_join = bool(prepared_join_storage);
+    planning_context.is_prebuilt_hash_join = bool(prepared_join_storage.storage_join);
     for (const auto * node : actions_after_join)
     {
         if (node->type == ActionsDAG::ActionType::ALIAS)
