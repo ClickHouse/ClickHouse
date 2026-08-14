@@ -65,9 +65,8 @@ bool isExpressionNonDeterministic(const QueryTreeNodePtr & node)
     if (!node)
         return false;
 
-    /// Only ordinary functions carry an `IFunctionBase` reachable via `getFunctionOrThrow()`;
-    /// aggregate/window functions are resolved but `getFunctionOrThrow()` would throw. They are
-    /// never non-deterministic-in-scope-of-query here, so recursing into children is enough.
+    /// Only check ORDINARY functions for determinism, WINDOW/AGGREGATE functions need
+    /// to have their children checked instead, so we fall through to the recursive check.
     if (auto * function = node->as<FunctionNode>())
         if (function->isOrdinaryFunction())
             if (auto func = function->getFunctionOrThrow(); !func->isDeterministicInScopeOfQuery())
