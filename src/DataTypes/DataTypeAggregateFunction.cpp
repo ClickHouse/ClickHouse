@@ -359,17 +359,17 @@ void registerDataTypeAggregateFunction(DataTypeFactory & factory)
             .description = R"DOCS_MD(
 ## Description {#description}
 
-All [Aggregate functions](/sql-reference/aggregate-functions) in ClickHouse have
+All [Aggregate functions](/reference/functions/aggregate-functions) in ClickHouse have
 an implementation-specific intermediate state that can be serialized to an
 `AggregateFunction` data type and stored in a table. This is usually done by
 means of a [materialized view](/reference/statements/create/view).
 
-There are two aggregate function [combinators](/sql-reference/aggregate-functions/combinators)
+There are two aggregate function [combinators](/reference/functions/aggregate-functions/combinators)
 commonly used with the `AggregateFunction` type:
 
-- The [`-State`](/sql-reference/aggregate-functions/combinators#-state) aggregate function combinator, which when appended to an aggregate
+- The [`-State`](/reference/functions/aggregate-functions/combinators#-state) aggregate function combinator, which when appended to an aggregate
 function name, produces `AggregateFunction` intermediate states.
-- The [`-Merge`](/sql-reference/aggregate-functions/combinators#-merge) aggregate
+- The [`-Merge`](/reference/functions/aggregate-functions/combinators#-merge) aggregate
 function combinator, which is used to get the final result of an aggregation
 from the intermediate states.
 
@@ -402,7 +402,7 @@ CREATE TABLE t
 
 To insert data into a table with columns of type `AggregateFunction`, you can
 use `INSERT SELECT` with aggregate functions and the
-[`-State`](/sql-reference/aggregate-functions/combinators#-state) aggregate
+[`-State`](/reference/functions/aggregate-functions/combinators#-state) aggregate
 function combinator.
 
 For example, to insert into columns of type `AggregateFunction(uniq, UInt64)` and
@@ -435,7 +435,7 @@ query, then this dump can be loaded back using the `INSERT` query.
 
 When selecting data from `AggregatingMergeTree` table, use the `GROUP BY` clause
 and the same aggregate functions as for when you inserted the data, but use the
-[`-Merge`](/sql-reference/aggregate-functions/combinators#-merge) combinator.
+[`-Merge`](/reference/functions/aggregate-functions/combinators#-merge) combinator.
 
 An aggregate function with the `-Merge` combinator appended to it takes a set of
 states, combines them, and returns the result of the complete data aggregation.
@@ -455,9 +455,9 @@ See [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/agg
 ## Related Content {#related-content}
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
-- [MergeState](/sql-reference/aggregate-functions/combinators#-mergestate)
+- [MergeState](/reference/functions/aggregate-functions/combinators#-mergestate)
 combinator.
-- [State](/sql-reference/aggregate-functions/combinators#-state) combinator.
+- [State](/reference/functions/aggregate-functions/combinators#-state) combinator.
 )DOCS_MD",
             .syntax = "AggregateFunction(name, types...)",
             .examples = {},
