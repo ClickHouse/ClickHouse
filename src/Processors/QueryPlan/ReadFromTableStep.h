@@ -9,7 +9,11 @@ class ReadFromTableStep : public ISourceStep
 {
 public:
     ReadFromTableStep(
-        SharedHeader header, String table_name_, TableExpressionModifiers table_expression_modifiers_, bool use_parallel_replicas_ = false);
+        SharedHeader header,
+        String table_name_,
+        TableExpressionModifiers table_expression_modifiers_,
+        String merge_child_table_set_key_ = {},
+        bool use_parallel_replicas_ = false);
 
     String getName() const override { return "ReadFromTable"; }
 
@@ -21,6 +25,7 @@ public:
 
     const String & getTable() const { return table_name; }
     TableExpressionModifiers getTableExpressionModifiers() const { return table_expression_modifiers; }
+    const String & getMergeChildTableSetKey() const { return merge_child_table_set_key; }
     bool useParallelReplicas() const { return use_parallel_replicas; }
     bool & useParallelReplicas() { return use_parallel_replicas; }
 
@@ -28,6 +33,7 @@ public:
 private:
     String table_name;
     TableExpressionModifiers table_expression_modifiers;
+    String merge_child_table_set_key;
     bool use_parallel_replicas = false;
 };
 

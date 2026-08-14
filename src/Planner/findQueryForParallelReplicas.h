@@ -104,12 +104,12 @@ struct ParsedMergeChildTableSets
 String serializeMergeChildTableSets(const std::vector<MergeChildTableSet> & table_sets, bool pinned_snapshot_replica);
 ParsedMergeChildTableSets parseMergeChildTableSets(const String & serialized);
 
-/// Rewrites a serialized child-set list so that every key keeps only its base-name component.
-/// A `Merge` read of a serialized plan is re-planned from a single-table query of its own
-/// (`resolveStorages`), whose alias numbering restarts from `__table1` and is unrelated to that of
-/// the original query - a renumbered alias must not exact-match the key of an unrelated sibling
-/// table expression, so on that path the keys are matched by name only.
-String stripAliasesFromMergeChildTableSetKeys(const String & serialized);
+/// Returns the child set belonging to `key` while preserving its pinned-snapshot marker. A `Merge`
+/// read of a serialized plan is re-planned from a single-table query of its own (`resolveStorages`),
+/// whose alias numbering is unrelated to the original query. The serialized read step therefore
+/// carries its original key and filters the setting before re-planning, so it cannot accept a child
+/// set belonging to a sibling table expression.
+String filterMergeChildTableSetsByKey(const String & serialized, const String & key);
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;

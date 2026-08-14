@@ -29,7 +29,11 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     QueryPlanStepPtr read_from_merge_tree,
     size_t replica_number);
 
-std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool allow_view_over_mergetree, bool allow_merge_tables);
+std::vector<QueryPlan::Node *> findReadingSteps(
+    QueryPlan::Node * root,
+    bool allow_view_over_mergetree,
+    bool allow_merge_tables,
+    bool * right_branch_selected = nullptr);
 
 QueryPlanPtr createLocalPlanFragmentForParallelReplicas(
     ContextPtr context,

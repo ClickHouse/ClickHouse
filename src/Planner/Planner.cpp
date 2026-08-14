@@ -2300,8 +2300,9 @@ void Planner::buildPlanForQueryNode()
         {
             /// FINAL can be specified both on a plain table (`... FROM t FINAL`) and on a table
             /// function (`... FROM merge(...) FINAL`); both must disable task-based parallel replicas.
+            const auto * table_node = it->as<TableNode>();
             const std::optional<TableExpressionModifiers> * modifiers_ptr = nullptr;
-            if (const auto * table_node = it->as<TableNode>())
+            if (table_node)
                 modifiers_ptr = &table_node->getTableExpressionModifiers();
             else if (const auto * table_function_node = it->as<TableFunctionNode>())
                 modifiers_ptr = &table_function_node->getTableExpressionModifiers();
@@ -2310,12 +2311,16 @@ void Planner::buildPlanForQueryNode()
                 continue;
 
             const auto & modifiers = *modifiers_ptr;
-            if (modifiers.has_value() && modifiers->hasFinal())
+            /// A follower must keep the setting on for its own read-side `STREAM` refusal to fire.
+            if (modifiers.has_value()
+                && (modifiers->hasFinal()
+                    || (table_node && modifiers->hasStream() && query_context->canUseParallelReplicasOnInitiator())))
             {
+                const auto * modifier = modifiers->hasFinal() ? "FINAL" : "STREAM";
                 if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "{} modifier is not supported with parallel replicas", modifier);
 
-                LOG_DEBUG(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
+                LOG_DEBUG(log, "{} modifier is not supported with parallel replicas. Query will be executed without using them.", modifier);
                 auto & mutable_context = planner_context->getMutableQueryContext();
                 mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                 break;

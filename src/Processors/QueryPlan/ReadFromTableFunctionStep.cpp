@@ -18,10 +18,12 @@ ReadFromTableFunctionStep::ReadFromTableFunctionStep(
     SharedHeader header,
     std::string serialized_ast_,
     TableExpressionModifiers table_expression_modifiers_,
+    String merge_child_table_set_key_,
     bool use_parallel_replicas_)
     : ISourceStep(std::move(header))
     , serialized_ast(std::move(serialized_ast_))
     , table_expression_modifiers(std::move(table_expression_modifiers_))
+    , merge_child_table_set_key(std::move(merge_child_table_set_key_))
     , use_parallel_replicas(use_parallel_replicas_)
 {
 }
@@ -41,11 +43,12 @@ void ReadFromTableFunctionStep::serialize(Serialization & ctx) const
     /// A peer below this version does not know the parallel-replicas flag bit: it would ignore the
     /// bit, leave the trailing byte unread and misparse the rest of the plan stream. Fail closed
     /// rather than write bytes an older peer cannot understand.
-    if (use_parallel_replicas && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_TABLE_FUNCTION_PARALLEL_REPLICAS)
+    if ((use_parallel_replicas || !merge_child_table_set_key.empty())
+        && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGE_CHILD_TABLE_SET_KEY)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Serializing a parallel-replicas read from a table function requires query plan serialization "
             "version >= {}; all nodes must run the same version",
-            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_TABLE_FUNCTION_PARALLEL_REPLICAS);
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGE_CHILD_TABLE_SET_KEY);
 
     writeIntBinary(TableFunctionSerializationKind::AST, ctx.out);
 
@@ -70,6 +73,9 @@ void ReadFromTableFunctionStep::serialize(Serialization & ctx) const
 
     if (use_parallel_replicas)
         writeIntBinary(use_parallel_replicas, ctx.out);
+
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGE_CHILD_TABLE_SET_KEY)
+        writeStringBinary(merge_child_table_set_key, ctx.out);
 }
 
 QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
@@ -104,18 +110,22 @@ QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
     {
         /// Mirrors the guard in `serialize`: a peer below this version never legitimately writes the
         /// parallel-replicas flag bit, so a set bit in an older stream is a sign of stream corruption.
-        if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_TABLE_FUNCTION_PARALLEL_REPLICAS)
+        if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGE_CHILD_TABLE_SET_KEY)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Deserializing a parallel-replicas read from a table function requires query plan serialization "
                 "version >= {}; all nodes must run the same version",
-                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_TABLE_FUNCTION_PARALLEL_REPLICAS);
+                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGE_CHILD_TABLE_SET_KEY);
 
         readIntBinary(use_parallel_replicas, ctx.in);
     }
 
+    String merge_child_table_set_key;
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGE_CHILD_TABLE_SET_KEY)
+        readStringBinary(merge_child_table_set_key, ctx.in);
+
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
     return std::make_unique<ReadFromTableFunctionStep>(
-        ctx.output_header, std::move(serialized_ast), table_expression_modifiers, use_parallel_replicas);
+        ctx.output_header, std::move(serialized_ast), table_expression_modifiers, std::move(merge_child_table_set_key), use_parallel_replicas);
 }
 
 void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry);

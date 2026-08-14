@@ -736,7 +736,7 @@ ParsedMergeChildTableSets parseMergeChildTableSets(const String & serialized)
     return result;
 }
 
-String stripAliasesFromMergeChildTableSetKeys(const String & serialized)
+String filterMergeChildTableSetsByKey(const String & serialized, const String & key)
 {
     const auto parsed = parseMergeChildTableSets(serialized);
 
@@ -745,7 +745,10 @@ String stripAliasesFromMergeChildTableSetKeys(const String & serialized)
         result += pinned_snapshot_replica_marker;
     for (const auto & table_set : parsed.sets)
     {
-        result += mergeChildTableSetKeyBaseName(table_set.key);
+        if (table_set.key != key)
+            continue;
+
+        result += table_set.key;
         result += '=';
         /// The parsed names are already in their serialized (escaped) form, and `std::set`
         /// keeps them sorted the way the original serialization did.

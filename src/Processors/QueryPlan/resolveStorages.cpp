@@ -253,10 +253,17 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     }
 
     bool use_parallel_replicas = false;
+    String merge_child_table_set_key;
     if (reading_from_table)
+    {
         use_parallel_replicas = reading_from_table->useParallelReplicas();
+        merge_child_table_set_key = reading_from_table->getMergeChildTableSetKey();
+    }
     else if (reading_from_table_function)
+    {
         use_parallel_replicas = reading_from_table_function->useParallelReplicas();
+        merge_child_table_set_key = reading_from_table_function->getMergeChildTableSetKey();
+    }
 
     QueryPlan reading_plan;
     if (storage->isRemote() || is_storage_merge)
@@ -267,21 +274,28 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         ContextPtr interpreter_context = context;
         if (is_storage_merge)
         {
+            if (!context->getSettingsRef()[Setting::parallel_replicas_merge_child_tables].value.empty()
+                && merge_child_table_set_key.empty())
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Serialized `Merge` table read is missing its original table-expression key");
+
             /// Whether this `Merge` read participates in coordinated parallel reading was decided by
             /// the initiator and shipped in the plan - honor it instead of letting the query settings
             /// re-enable coordination for a read the initiator did not designate. The designated-table
             /// hint carries the `__tableN` alias numbering of the whole original query, which cannot
             /// match the aliases of this single-table query, so drop it - the leaf to read is already
-            /// pinned by the plan here. The keys of the shipped child sets carry those aliases too,
-            /// and this single-table query renumbers its one leaf to `__table1`, which must not
-            /// exact-match the key of an unrelated sibling table expression - strip the aliases so
-            /// the sets are matched by table name only.
+            /// pinned by the plan here. The serialized read step preserves the key of its original
+            /// table expression, so filter the shipped child sets to that one before the single-table
+            /// query renumbers its alias. This cannot accept a sibling `merge()` expression whose
+            /// function name is identical.
             auto mutable_context = Context::createCopy(context);
             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", use_parallel_replicas);
             mutable_context->setSetting("parallel_replicas_designated_table", String{});
             mutable_context->setSetting(
                 "parallel_replicas_merge_child_tables",
-                stripAliasesFromMergeChildTableSetKeys(context->getSettingsRef()[Setting::parallel_replicas_merge_child_tables]));
+                filterMergeChildTableSetsByKey(
+                    context->getSettingsRef()[Setting::parallel_replicas_merge_child_tables], merge_child_table_set_key));
             interpreter_context = std::move(mutable_context);
         }
 

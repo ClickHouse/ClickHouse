@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromTableStep.h>
+#include <Core/ProtocolDefines.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <IO/ReadHelpers.h>
@@ -10,16 +11,19 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 ReadFromTableStep::ReadFromTableStep(
     SharedHeader header,
     String table_name_,
     TableExpressionModifiers table_expression_modifiers_,
+    String merge_child_table_set_key_,
     bool use_parallel_replicas_)
     : ISourceStep(std::move(header))
     , table_name(std::move(table_name_))
     , table_expression_modifiers(std::move(table_expression_modifiers_))
+    , merge_child_table_set_key(std::move(merge_child_table_set_key_))
     , use_parallel_replicas(use_parallel_replicas_)
 {
 }
@@ -31,6 +35,12 @@ void ReadFromTableStep::initializePipeline(QueryPipelineBuilder &, const BuildQu
 
 void ReadFromTableStep::serialize(Serialization & ctx) const
 {
+    if (!merge_child_table_set_key.empty()
+        && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGE_CHILD_TABLE_SET_KEY)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Serializing a `Merge` table read requires query plan serialization version >= {}; all nodes must run the same version",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGE_CHILD_TABLE_SET_KEY);
+
     writeStringBinary(table_name, ctx.out);
 
     UInt8 flags = 0;
@@ -52,6 +62,9 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
 
     if (use_parallel_replicas)
         writeIntBinary(use_parallel_replicas, ctx.out);
+
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGE_CHILD_TABLE_SET_KEY)
+        writeStringBinary(merge_child_table_set_key, ctx.out);
 }
 
 QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
@@ -79,13 +92,19 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
     if (flags & 8)
         readIntBinary(use_parallel_replicas, ctx.in);
 
+    String merge_child_table_set_key;
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGE_CHILD_TABLE_SET_KEY)
+        readStringBinary(merge_child_table_set_key, ctx.in);
+
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
-    return std::make_unique<ReadFromTableStep>(ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas);
+    return std::make_unique<ReadFromTableStep>(
+        ctx.output_header, table_name, table_expression_modifiers, std::move(merge_child_table_set_key), use_parallel_replicas);
 }
 
 QueryPlanStepPtr ReadFromTableStep::clone() const
 {
-    return std::make_unique<ReadFromTableStep>(getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas);
+    return std::make_unique<ReadFromTableStep>(
+        getOutputHeader(), table_name, table_expression_modifiers, merge_child_table_set_key, use_parallel_replicas);
 }
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);
