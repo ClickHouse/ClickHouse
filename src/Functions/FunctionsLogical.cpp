@@ -891,7 +891,14 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
                 ? executeForTernaryLogicImpl<Impl>(std::move(not_short_circuit_args), result_type, input_rows_count)
                 : basicExecuteImpl<Impl>(std::move(not_short_circuit_args), input_rows_count);
             if (short_circuit_args_index.empty())
+            {
+                if (profile)
+                {
+                    profile->executed_rows = input_rows_count;
+                    profile->execution_elapsed = watch.elapsed();
+                }
                 return partial_result;
+            }
             new_args.emplace_back(partial_result, result_type, "__partial_result");
             for (const auto & index : short_circuit_args_index)
                 new_args.emplace_back(std::move(arguments[index]));

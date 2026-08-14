@@ -1246,7 +1246,7 @@ void AdaptiveExpressionActions::accumulateProfile(size_t action_index, const Fun
 
     auto accumulate = [](FunctionExecutionProfile & dst, const FunctionExecutionProfile & src)
     {
-        dst.executed_rows = src.executed_rows;
+        dst.executed_rows += src.executed_rows;
         dst.execution_elapsed += src.execution_elapsed;
         dst.lazy_executed_additional_elapsed += src.lazy_executed_additional_elapsed;
     };

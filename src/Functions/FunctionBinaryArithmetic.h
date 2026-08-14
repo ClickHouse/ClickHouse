@@ -2168,7 +2168,7 @@ public:
         const bool has_except =  IsOperation<Op>::int_div ||
             IsOperation<Op>::modulo ||
             IsOperation<Op>::positive_modulo ||
-            (IsOperation<Op>::div_floating);
+            IsOperation<Op>::div_floating;
         return !has_except;
     }
 
