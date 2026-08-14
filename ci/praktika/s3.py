@@ -4,7 +4,7 @@ import mimetypes
 import os
 import time
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 from urllib.parse import quote, urlencode
 
 from ._environment import _Environment
@@ -25,6 +25,17 @@ except ImportError:
 
 class S3:
     _boto3_client = None
+
+    # Size in bytes of every object this process has uploaded, keyed by the
+    # public URL returned by `copy_file_to_s3`. `Result.set_link` consults it so
+    # that reports can render the size next to a link without a HEAD request
+    # (the report page and the artifact bucket are different origins and neither
+    # bucket allows cross-origin requests).
+    _uploaded_object_sizes: Dict[str, int] = {}
+
+    @classmethod
+    def get_uploaded_size(cls, url) -> Optional[int]:
+        return cls._uploaded_object_sizes.get(url)
 
     @classmethod
     def _get_boto3_client(cls):
@@ -119,6 +130,7 @@ class S3:
             BOTO3_AVAILABLE and cls._get_boto3_client()
         ), "boto3 is required for S3 uploads (the AWS CLI fallback is deprecated)"
 
+        uploaded = False
         try:
             s3_full_path_clean = str(s3_full_path).removeprefix("s3://")
             bucket, key = s3_full_path_clean.split("/", maxsplit=1)
@@ -156,6 +168,7 @@ class S3:
 
             # Retry on transient credential failures
             cls._retry_on_no_credentials(_upload)
+            uploaded = True
 
         except NoCredentialsError as e:
             print(
@@ -182,7 +195,11 @@ class S3:
         bucket = s3_path.split("/")[0]
         endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
         assert endpoint
-        return quote(f"https://{s3_full_path}".replace(bucket, endpoint), safe=":/?&=")
+        url = quote(f"https://{s3_full_path}".replace(bucket, endpoint), safe=":/?&=")
+        if uploaded:
+            # The object is uploaded as is, so its size is the local file size.
+            cls._uploaded_object_sizes[url] = os.path.getsize(local_path)
+        return url
 
     @classmethod
     def put(
