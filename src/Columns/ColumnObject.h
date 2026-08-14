@@ -348,6 +348,9 @@ public:
     private:
         void setCurrentPath();
         std::pair<ColumnPtr, size_t> getCurrentPathColumnAndRow() const;
+        /// Raw serialized value of the current path when it is stored in shared data.
+        /// Only valid when current_path_type == PathType::SHARED_DATA.
+        std::string_view getCurrentSharedDataValue() const;
 
         const ColumnObject & column_object;
         VectorWithMemoryTracking<std::string_view>::const_iterator typed_paths_it;
