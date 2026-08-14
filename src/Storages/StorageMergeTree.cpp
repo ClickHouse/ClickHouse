@@ -2389,7 +2389,7 @@ bool StorageMergeTree::optimize(
         /// the two never race, and the metric never exceeds the configured maximum. It is held for
         /// the whole query and released here.
         ///
-        /// `tryReserveTaskSlots` grants at most the number of currently free worker threads
+        /// `reserveTaskSlots` waits for and grants at most the number of currently free worker threads
         /// (`background_pool_size`), never the larger task-slot count: these merges run
         /// synchronously on real threads and cannot be postponed like scheduled executor tasks, so
         /// OPTIMIZE FINAL must not spawn more merge threads than the pool has workers, even when the
@@ -2397,7 +2397,7 @@ bool StorageMergeTree::optimize(
         auto merge_mutate_executor = getContext()->getMergeMutateExecutor();
         size_t reserved_merge_slots = 0;
         if (txn == nullptr && partition_ids.size() > 1 && merge_mutate_executor)
-            reserved_merge_slots = merge_mutate_executor->tryReserveTaskSlots(partition_ids.size());
+            reserved_merge_slots = merge_mutate_executor->reserveTaskSlots(partition_ids.size());
 
         const size_t max_concurrent_merges = std::max<size_t>(1, reserved_merge_slots);
 

@@ -7,7 +7,9 @@
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 
 #include <barrier>
+#include <chrono>
 #include <functional>
+#include <future>
 #include <latch>
 #include <memory>
 #include <random>
@@ -155,6 +157,35 @@ TEST(Executor, Simple)
     barrier.arrive_and_wait(); // Do not finish until tasks are done
     executor->wait();
     ASSERT_EQ(schedule, expected_schedule);
+}
+
+TEST(Executor, ReserveTaskSlotsWaitsForAvailableSlot)
+{
+    auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
+    (
+        ThreadName::TEST_SCHEDULER,
+        1, // threads
+        1, // max_tasks
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
+    );
+
+    ASSERT_EQ(executor->tryReserveTaskSlots(1), 1);
+
+    auto reserved_slot = std::async(std::launch::async, [&]
+    {
+        return executor->reserveTaskSlots(1);
+    });
+
+    ASSERT_EQ(reserved_slot.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+    executor->releaseTaskSlots(1);
+    ASSERT_EQ(reserved_slot.get(), 1);
+    executor->releaseTaskSlots(1);
+    executor->wait();
 }
 
 

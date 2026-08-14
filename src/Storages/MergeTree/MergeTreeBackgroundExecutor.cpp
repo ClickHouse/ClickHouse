@@ -104,6 +104,7 @@ void MergeTreeBackgroundExecutor<Queue>::wait()
         LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
         shutdown = true;
         has_tasks.notify_all();
+        task_slots_available.notify_all();
     }
 
     pool->wait();
@@ -142,6 +143,7 @@ void MergeTreeBackgroundExecutor<Queue>::increaseThreadsAndMaxTasksCount(size_t 
     max_tasks_metric.changeTo(new_max_tasks_count);
     max_tasks_count.store(new_max_tasks_count, std::memory_order_relaxed);
     threads_count = new_threads_count;
+    task_slots_available.notify_all();
 }
 
 template <class Queue>
@@ -207,11 +209,40 @@ size_t MergeTreeBackgroundExecutor<Queue>::tryReserveTaskSlots(size_t desired)
 }
 
 template <class Queue>
+size_t MergeTreeBackgroundExecutor<Queue>::reserveTaskSlots(size_t desired)
+{
+    if (desired == 0)
+        return 0;
+
+    std::unique_lock lock(mutex);
+    auto & value = CurrentMetrics::values[metric];
+    const auto get_limit = [this] TSA_REQUIRES(mutex)
+    {
+        return std::min(static_cast<Int64>(max_tasks_count.load()), static_cast<Int64>(threads_count));
+    };
+
+    task_slots_available.wait(lock, [this, &value, &get_limit] TSA_REQUIRES(mutex)
+    {
+        return shutdown || value.load() < get_limit();
+    });
+
+    if (shutdown)
+        return 0;
+
+    const size_t granted = std::min(desired, static_cast<size_t>(get_limit() - value.load()));
+    value.fetch_add(static_cast<Int64>(granted));
+    return granted;
+}
+
+template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::releaseTaskSlots(size_t count) noexcept
 {
     /// Decrement without the lock, mirroring how TaskRuntimeData releases its slot on destruction.
     if (count)
+    {
         CurrentMetrics::values[metric].fetch_sub(static_cast<Int64>(count));
+        task_slots_available.notify_all();
+    }
 }
 
 static void printExceptionWithRespectToAbort(LoggerPtr log, const String & query_id)
@@ -286,6 +317,8 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         item->cancel();
         item.reset();
     }
+    if (!tasks_to_cancel.empty())
+        task_slots_available.notify_all();
 
     /// Wait for each task to be executed
     for (auto & item : tasks_to_wait)
@@ -354,6 +387,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         has_tasks.notify_one();
         item_->is_done.set();
         item_.reset();
+        task_slots_available.notify_all();
     };
 
     /// No TSA because LockGuardWithStopWatch wraps mutex locking and is not understood by TSA
