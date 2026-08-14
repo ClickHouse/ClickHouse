@@ -88,6 +88,7 @@ public:
     {
         return function->tryGetMultiArgConstGeometryBbox(args, xmin, ymin, xmax, ymax);
     }
+    bool requiresValidConstGeometry() const override { return function->requiresValidConstGeometry(); }
 
 
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }

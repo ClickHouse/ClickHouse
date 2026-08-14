@@ -239,6 +239,11 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool isSpatialPredicate() const override { return true; }
 
+    /// Mirrors the `validate` member below: with `validate_polygons = 0`, `parseConstPolygon` /
+    /// `parseConstMultiPolygon` skip their `bg::is_valid` check and never raise for an invalid
+    /// constant polygon, so bbox pruning must not fail closed for one either.
+    bool requiresValidConstGeometry() const override { return validate; }
+
     /// pointInPolygon(point, arg1, arg2, ...) is the only spatial predicate with a documented
     /// convention for combining more than one constant geometry argument -- see below.
     bool hasMultiArgConstGeometryBboxConvention() const override { return true; }
@@ -252,7 +257,8 @@ public:
     /// Validates the ASSEMBLED geometry with `bg::is_valid`, not each argument in isolation --
     /// a hole entirely outside its shell, or overlapping components in a multipolygon, are only
     /// visible once the pieces are combined, and must fail closed the same way a single-argument
-    /// invalid polygon does.
+    /// invalid polygon does -- unless `validate` is false (`validate_polygons = 0`), in which case
+    /// `executeImpl` skips this same check and never raises, so pruning must not fail closed either.
     bool tryGetMultiArgConstGeometryBbox(
         const std::vector<const Field *> & args,
         double & xmin, double & ymin, double & xmax, double & ymax) const override
@@ -291,7 +297,7 @@ public:
             }
 
             boost::geometry::correct(multi_polygon);
-            if (!boost::geometry::is_valid(multi_polygon, failure_message))
+            if (validate && !boost::geometry::is_valid(multi_polygon, failure_message))
                 return false;
 
             for (const auto & poly : multi_polygon)
@@ -320,7 +326,7 @@ public:
             }
 
             boost::geometry::correct(polygon);
-            if (!boost::geometry::is_valid(polygon, failure_message))
+            if (validate && !boost::geometry::is_valid(polygon, failure_message))
                 return false;
 
             acc.addAll(polygon.outer());

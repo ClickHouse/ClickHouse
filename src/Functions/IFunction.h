@@ -229,6 +229,15 @@ public:
         const std::vector<const Field *> & /*args*/,
         double & /*xmin*/, double & /*ymin*/, double & /*xmax*/, double & /*ymax*/) const { return false; }
 
+    /** For a function where `isSpatialPredicate()` is true: does evaluating it actually validate
+      * its constant geometry argument(s) with a topology check (e.g. `pointInPolygon`'s
+      * `validate_polygons` setting, on by default)? If false, an invalid constant geometry is
+      * guaranteed NOT to raise on evaluation, so bbox pruning must not fail closed for it either --
+      * it should derive a bbox from the geometry's coordinates regardless of topological validity.
+      * Default: true, since most spatial predicates always validate and have no such setting.
+      */
+    virtual bool requiresValidConstGeometry() const { return true; }
+
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
       * If we will call it during query analysis, we will sleep extra amount of time.
@@ -657,6 +666,9 @@ public:
     virtual bool tryGetMultiArgConstGeometryBbox(
         const std::vector<const Field *> & /*args*/,
         double & /*xmin*/, double & /*ymin*/, double & /*xmax*/, double & /*ymax*/) const { return false; }
+
+    /// See IFunctionBase::requiresValidConstGeometry.
+    virtual bool requiresValidConstGeometry() const { return true; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }

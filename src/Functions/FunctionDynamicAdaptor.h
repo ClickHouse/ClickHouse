@@ -73,10 +73,12 @@ public:
     bool isSpatialPredicate() const override { return function_overload_resolver->isSpatialPredicate(); }
 
     /// Unlike isSpatialPredicate(), these need a concrete resolved IFunction to answer (they combine
-    /// concrete Field arguments). We only hold an IFunctionOverloadResolver here -- the concrete
-    /// function per alternative isn't picked until per-row dispatch in ExecutableFunctionDynamicAdaptor
-    /// -- so there is nothing to delegate to; keep the IFunctionBase default (false) explicitly.
+    /// concrete Field arguments, or read a per-call setting like `validate_polygons`). We only hold
+    /// an IFunctionOverloadResolver here -- the concrete function per alternative isn't picked until
+    /// per-row dispatch in ExecutableFunctionDynamicAdaptor -- so there is nothing to delegate to;
+    /// keep the IFunctionBase defaults (false / true, the safe choices) explicitly.
     bool hasMultiArgConstGeometryBboxConvention() const override { return false; }
+    bool requiresValidConstGeometry() const override { return true; }
 
 private:
     /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Dynamic column.

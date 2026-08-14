@@ -127,7 +127,14 @@ inline bool buildPolygon(const Array & array, Polygon<CartesianPoint> & out_poly
 /// Extract bbox from a single Field value (not a column).
 /// Handles Tuple (native geometry points), Array (nested geometry collections),
 /// and String (WKB-encoded geometry).
-static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc)
+/// `require_valid` mirrors the predicate's own `IFunctionBase::requiresValidConstGeometry()`:
+/// when false, the predicate's own evaluation never runs a topology check on this argument either
+/// (e.g. `pointInPolygon` with `validate_polygons = 0`), so an invalid ring/polygon/multipolygon
+/// must still contribute a bbox from its raw coordinates rather than failing closed -- only
+/// structural parse failures (a ring that can't even be assembled, a WKB payload that doesn't
+/// parse) remain unconditional, since those aren't validity checks and would fail at evaluation
+/// time regardless of `require_valid`.
+static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc, bool require_valid = true)
 {
     using namespace GeoBboxDetail;
     const auto type = field.getType();
@@ -172,11 +179,14 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
                 return false;
             }
             boost::geometry::correct(polygon);
-            std::string failure_message;
-            if (!boost::geometry::is_valid(polygon, failure_message))
+            if (require_valid)
             {
-                acc.valid = false;
-                return false;
+                std::string failure_message;
+                if (!boost::geometry::is_valid(polygon, failure_message))
+                {
+                    acc.valid = false;
+                    return false;
+                }
             }
             acc.addAll(polygon.outer());
             return acc.found;
@@ -191,11 +201,14 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
                 return false;
             }
             boost::geometry::correct(polygon);
-            std::string failure_message;
-            if (!boost::geometry::is_valid(polygon, failure_message))
+            if (require_valid)
             {
-                acc.valid = false;
-                return false;
+                std::string failure_message;
+                if (!boost::geometry::is_valid(polygon, failure_message))
+                {
+                    acc.valid = false;
+                    return false;
+                }
             }
             acc.addAll(polygon.outer());
             return acc.found;
@@ -214,11 +227,14 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
                 }
             }
             boost::geometry::correct(multi_polygon);
-            std::string failure_message;
-            if (!boost::geometry::is_valid(multi_polygon, failure_message))
+            if (require_valid)
             {
-                acc.valid = false;
-                return false;
+                std::string failure_message;
+                if (!boost::geometry::is_valid(multi_polygon, failure_message))
+                {
+                    acc.valid = false;
+                    return false;
+                }
             }
             for (const auto & poly : multi_polygon)
                 acc.addAll(poly.outer());
@@ -226,7 +242,7 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
         }
 
         for (const auto & elem : array)
-            extractBboxFromFieldValue(elem, acc);
+            extractBboxFromFieldValue(elem, acc, require_valid);
         return acc.found;
     }
 
@@ -249,14 +265,18 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
                 {
                     /// Validate the same way the Array-literal ring/polygon branches above do --
                     /// a self-intersecting or otherwise invalid WKB polygon is guaranteed to raise
-                    /// on evaluation, so it must fail closed rather than silently contribute no bbox.
+                    /// on evaluation, so it must fail closed rather than silently contribute no bbox
+                    /// -- unless require_valid is false, mirroring those branches too.
                     Polygon<CartesianPoint> polygon = g;
                     boost::geometry::correct(polygon);
-                    std::string failure_message;
-                    if (!boost::geometry::is_valid(polygon, failure_message))
+                    if (require_valid)
                     {
-                        geometry_valid = false;
-                        return;
+                        std::string failure_message;
+                        if (!boost::geometry::is_valid(polygon, failure_message))
+                        {
+                            geometry_valid = false;
+                            return;
+                        }
                     }
                     acc.addAll(polygon.outer());
                 }
@@ -269,11 +289,14 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
                 {
                     MultiPolygon<CartesianPoint> multi_polygon = g;
                     boost::geometry::correct(multi_polygon);
-                    std::string failure_message;
-                    if (!boost::geometry::is_valid(multi_polygon, failure_message))
+                    if (require_valid)
                     {
-                        geometry_valid = false;
-                        return;
+                        std::string failure_message;
+                        if (!boost::geometry::is_valid(multi_polygon, failure_message))
+                        {
+                            geometry_valid = false;
+                            return;
+                        }
                     }
                     for (const auto & poly : multi_polygon)
                         acc.addAll(poly.outer());
@@ -378,6 +401,10 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     bool has_extra_non_constant = false;
     bool any_extraction_failed = false;
     std::vector<Field> const_fields;
+    /// Whether evaluating this predicate actually runs a topology check on its constant geometry
+    /// argument(s) at all (e.g. `pointInPolygon`'s `validate_polygons` setting) -- see
+    /// extractBboxFromFieldValue's `require_valid` parameter.
+    const bool require_valid = node.function_base->requiresValidConstGeometry();
 
     for (const auto * child : node.children)
     {
@@ -447,7 +474,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
         for (const auto & field : const_fields)
         {
             BboxAccumulator field_acc;
-            bool extracted = extractBboxFromFieldValue(field, field_acc);
+            bool extracted = extractBboxFromFieldValue(field, field_acc, require_valid);
             if (!field_acc.valid)
                 return NodeBboxStatus::Failed;
             if (extracted)
@@ -482,7 +509,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     else if (const_fields.size() == 1)
     {
         BboxAccumulator acc;
-        bool extracted = extractBboxFromFieldValue(const_fields[0], acc);
+        bool extracted = extractBboxFromFieldValue(const_fields[0], acc, require_valid);
         if (!acc.valid)
             return NodeBboxStatus::Failed;
         if (!extracted)
