@@ -517,15 +517,20 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
 
     /// Two or more constant geometry arguments on a non-`pointInPolygon` predicate aren't
     /// assembled into one combined shape (see the comment above), so no bbox can be derived --
-    /// but each argument on its own is still guaranteed to be evaluated, and an invalid one is
-    /// still guaranteed to raise. Validate each in isolation and fail closed if any is bad,
-    /// exactly like the single-constant-argument case does below.
+    /// but each argument that IS geometry-shaped is still guaranteed to be evaluated as one, and
+    /// an invalid one is still guaranteed to raise; fail closed for those. A constant that
+    /// `extractBboxFromFieldValue` doesn't recognize as geometry at all (e.g. a plain scalar
+    /// argument to a WASM UDF, such as a distance threshold) is simply not evaluated as geometry
+    /// and so can't raise on that account -- `extractBboxFromFieldValue`'s `false` return is
+    /// overloaded between "not geometry-shaped" and "geometry-shaped but invalid", and only
+    /// `acc.valid == false` (poisoned by every genuine parse/validation failure) means the latter.
     if (const_fields.size() > 1 && node.function_base->getName() != "pointInPolygon")
     {
         for (const auto & field : const_fields)
         {
             BboxAccumulator field_acc;
-            if (!extractBboxFromFieldValue(field, field_acc) || !field_acc.valid)
+            extractBboxFromFieldValue(field, field_acc);
+            if (!field_acc.valid)
                 return NodeBboxStatus::Failed;
         }
         return input_child ? NodeBboxStatus::NoInfo : NodeBboxStatus::NotApplicable;
@@ -540,18 +545,24 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     double ymin = 0;
     double xmax = 0;
     double ymax = 0;
-    bool ok = false;
     if (const_fields.size() == 1)
     {
         BboxAccumulator acc;
-        ok = extractBboxFromFieldValue(const_fields[0], acc) && acc.valid;
-        if (ok)
+        bool extracted = extractBboxFromFieldValue(const_fields[0], acc);
+        if (!acc.valid)
+            return NodeBboxStatus::Failed;
+        if (!extracted)
         {
-            xmin = acc.xmin;
-            ymin = acc.ymin;
-            xmax = acc.xmax;
-            ymax = acc.ymax;
+            /// Not recognized as a geometry shape at all (e.g. a plain scalar argument to a
+            /// WASM UDF) -- no bbox can be derived from it, but it isn't guaranteed to raise
+            /// either, so it must not force the whole conjunction closed. See the comment above
+            /// the multi-constant-argument loop for why `extracted == false` alone isn't enough.
+            return input_child ? NodeBboxStatus::NoInfo : NodeBboxStatus::NotApplicable;
         }
+        xmin = acc.xmin;
+        ymin = acc.ymin;
+        xmax = acc.xmax;
+        ymax = acc.ymax;
     }
     else
     {
@@ -559,11 +570,9 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
         field_ptrs.reserve(const_fields.size());
         for (const auto & f : const_fields)
             field_ptrs.push_back(&f);
-        ok = tryExtractBboxFromMultiArgConstGeometry(field_ptrs, xmin, ymin, xmax, ymax);
+        if (!tryExtractBboxFromMultiArgConstGeometry(field_ptrs, xmin, ymin, xmax, ymax))
+            return NodeBboxStatus::Failed;
     }
-
-    if (!ok)
-        return NodeBboxStatus::Failed;
 
     /// Only now -- after every constant geometry argument is confirmed extractable and valid --
     /// can the absence of an accepted-column input, or the presence of an extra non-constant
