@@ -321,7 +321,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
                 should_continue_sampling);
 
         readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
-
         executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, read_result.num_rows);
 
         executePrewhereActions(first_reader, read_result, {}, range_readers.size() == 1);
@@ -574,18 +573,18 @@ void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) con
             to.insert(from.getByName(column.name));
     }
 
-    /// MergeOnKey patches merge-join on the sort-key result columns at apply time.
-    /// They are materialized once per main block in `readPatches` and cached in `columns_for_patches`;
+    /// Save sorting key columns required for applying MergeOnKey patches.
     for (const auto & patch_reader : patch_readers)
     {
         const auto & patch = patch_reader->getPatchPart();
-        if (patch.mode != PatchMode::MergeOnKey || !patch.sorting_key)
-            continue;
 
-        for (const auto & name : patch.sorting_key->column_names)
+        if (patch.mode == PatchMode::MergeOnKey && patch.sorting_key)
         {
-            if (!to.has(name) && from.has(name))
-                to.insert(from.getByName(name));
+            for (const auto & name : patch.sorting_key->column_names)
+            {
+                if (!to.has(name) && from.has(name))
+                    to.insert(from.getByName(name));
+            }
         }
     }
 }
@@ -596,7 +595,6 @@ Block MergeTreeReadersChain::executeSortingKeyExpressions(const Block & result_h
     bool should_evaluate_missing_defaults = false;
     range_readers.front().getReader()->fillMissingColumns(read_result.columns, should_evaluate_missing_defaults, read_result.num_rows);
 
-    /// Columns with an explicit default expression are left as null placeholders by `fillMissingColumns`.
     if (should_evaluate_missing_defaults)
     {
         NameSet required_key_columns;
@@ -659,8 +657,6 @@ Block MergeTreeReadersChain::executeSortingKeyExpressions(const Block & result_h
 
         if (patch.sorting_key->expression && std::ranges::any_of(patch.sorting_key->column_names, is_missing))
         {
-            /// Execute on a scratch copy: `ExpressionActions::execute` drops the consumed input
-            /// columns from the block, and another patch's sorting key may still need them.
             auto block_for_key = result_header.cloneWithColumns(read_result.columns);
             patch.sorting_key->expression->execute(block_for_key);
 
@@ -675,6 +671,7 @@ Block MergeTreeReadersChain::executeSortingKeyExpressions(const Block & result_h
         {
             /// Key comparisons require the same column class on all sides.
             auto & key_column = main_block.getByName(name);
+
             chassert(key_column.column);
             key_column.column = recursiveRemoveLowCardinality(removeSpecialRepresentations(key_column.column->convertToFullColumnIfConst()));
             key_column.type = recursiveRemoveLowCardinality(key_column.type);
@@ -722,8 +719,6 @@ ColumnsForPatches MergeTreeReadersChain::getColumnsForPatches(const Block & head
         const auto & patch_columns = patch.part->getColumnsDescription();
         const auto & alter_conversions = patch.part->getAlterConversions();
 
-        /// Columns of the key the patch was written with are stored in MergeOnKey patches
-        /// only to identify updated rows and are never updated themselves.
         const auto & sorting_key_columns = patch.stored_sorting_key_columns;
         auto & columns_for_patch = res.emplace_back();
 
@@ -736,7 +731,7 @@ ColumnsForPatches MergeTreeReadersChain::getColumnsForPatches(const Block & head
             if (alter_conversions && alter_conversions->isColumnRenamed(column.name))
                 column_name_in_patch = alter_conversions->getColumnOldName(column.name);
 
-            /// The persisted key columns are named as they were at the time the patch was written.
+            /// Sorting key columns are never updated.
             if (sorting_key_columns.contains(column_name_in_patch))
                 continue;
 

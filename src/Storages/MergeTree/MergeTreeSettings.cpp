@@ -874,16 +874,11 @@ On-disk serialization version for patch parts produced by lightweight UPDATE que
 
 Possible values:
 - `v1` - legacy format: patch parts contain `_part, _part_offset` system columns and are sorted by
-  `(_part, _part_offset)`; applied via `PatchMode::Merge` / `PatchMode::Join`.
-- `v2` - patch parts carry the main table's sort-key columns instead of `_part, _part_offset`, are
-  sorted by `(sorting_key_columns..., _block_number, _block_offset)` and applied with a single
-  streaming `MergeOnKey` pass. Memory usage during apply is bounded by the largest equal-sort-key
-  run instead of the whole patch size.
+`(_part, _part_offset)`. In the worst case, memory usage during apply is bounded by the size of the whole patch part.
+- `v2` - patch parts carry the main table's sort-key columns and are sorted by
+`(sorting_key_columns..., _block_number, _block_offset)`. Memory usage during apply is bounded by the largest equal-sort-key run.
 
-Old-format patches on disk remain readable regardless of this setting. During a rolling upgrade
-from a version that does not recognise the v2 format, keep `v1` (either via this setting or via
-the `compatibility` setting) until every replica has been upgraded; otherwise upgraded replicas
-may write v2 patch parts that not yet upgraded replicas cannot read.
+Old-format patches on disk remain readable regardless of this setting.
 )", 0) \
     \
     DECLARE(UInt64, max_uncompressed_bytes_in_patches, 30ULL * 1024 * 1024 * 1024, R"(

@@ -11,7 +11,7 @@ class WriteBuffer;
 struct KeyDescription;
 
 /** A helper index of source parts for which updated data is stored in the patch part.
-  * It is used to get patches for the regular parts.
+  * It is used to get patches required for applying to the regular parts.
   */
 class PatchPartIndex
 {
@@ -32,14 +32,11 @@ public:
 
     /// The table's sorting key the v2 patch was written with, as a one-line formatted text.
     const String & getSortingKeyDesc() const { return sorting_key_desc; }
-
     /// Returns an index with the same format version and sorting key but without source parts.
     PatchPartIndex cloneEmpty() const { return PatchPartIndex(format_version, sorting_key_desc); }
 
     void addSourcePart(const String & name, UInt64 data_version);
 
-    /// `effective_sorting_key` is the effective sort-key prefix for `MergeOnKey` patches.
-    /// `stored_sorting_key_columns` are the columns of the key the patch was written with.
     PatchParts getPatchParts(
         const MergeTreePartInfo & original_part,
         const DataPartPtr & patch_part,
@@ -53,7 +50,6 @@ public:
         String sorting_key_desc);
 
     static PatchPartIndex merge(const DataPartsVector & source_parts);
-
     void writeBinary(WriteBuffer & out) const;
     static PatchPartIndex readBinary(ReadBuffer & in);
 
@@ -61,7 +57,7 @@ private:
     void buildSourcePartsByVersion();
 
     /// Max data version -> part set that contains all parts from min_max_versions_by_part with this max data version.
-    /// Can be reconstructed from source_parts_by_version.
+    /// Can be reconstructed from min_max_versions_by_part.
     std::map<UInt64, ActiveDataPartSet> source_parts_by_version;
 
     /// Part name -> min and max version of updated data stored in patch part for the source part.
@@ -76,7 +72,7 @@ private:
 };
 
 /// Returns set with source parts with _part column from block and data_version.
-/// Updates _data_version in block with const value (data_version).
+/// Updates _data_version column in block with const value (data_version).
 PatchPartIndex buildPatchPartIndex(
     Block & block,
     UInt64 data_version,

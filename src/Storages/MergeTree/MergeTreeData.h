@@ -1343,6 +1343,7 @@ public:
     size_t getTotalMergesWithTTLInMergeList() const;
 
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
+
     /// `metadata_snapshot` must come from the source part being covered
     /// (via `IMergeTreeDataPart::getMetadataSnapshot`) so patch parts get patch-part metadata.
     /// For a part in a patch partition, `patch_part_index` must be seeded from a covered or
@@ -1711,13 +1712,12 @@ protected:
     SerializationInfoByName serialization_hints{{}};
 
     /// Cached metadata used to read patch parts, by the structure hash from their partition id.
-    /// Bounded by the number of distinct structures of patch parts, not by the number of patch partitions.
+    /// Bounded by the number of distinct structures of patch parts.
     mutable std::mutex patch_parts_metadata_mutex;
     mutable std::unordered_map<String, PatchPartMetadata> patch_parts_metadata_cache;
 
-    /// Cached effective sorting keys for applying v2 patch parts. An effective key is a prefix
-    /// of the table's current sorting key, so it is identified by its size. Equal effective keys
-    /// are one object: patches are grouped by pointer identity of the key when they are applied.
+    /// Cached effective sorting keys for applying v2 patch parts.
+    /// An effective key is a prefix of the table's current sorting key, so it is identified by its size.
     /// Invalidated on ALTER: the effective key depends on the table's current sorting key.
     mutable std::mutex patch_parts_sorting_keys_mutex;
     mutable std::map<size_t, std::shared_ptr<const KeyDescription>> patch_parts_sorting_keys_cache;

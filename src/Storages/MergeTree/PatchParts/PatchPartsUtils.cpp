@@ -38,8 +38,6 @@ PatchParts getPatchesForPart(const MergeTreePartInfo & source_part, const DataPa
 
     if (patch_part_index.getFormatVersion() == MergeTreePatchPartsVersion::V2)
     {
-        /// The effective key for `MergeOnKey` may be shorter than the key the patch was written
-        /// with if the table's sorting key was changed by ALTER after the patch had been written.
         sorting_key = patch_part->storage.getPatchPartSortingKey(*patch_part);
         stored_sorting_key_columns = getSortingKeyColumnsInPatch(patch_part->getMetadataSnapshot());
     }
@@ -81,7 +79,6 @@ String getColumnsHashWithTypes(const ColumnsDescription & columns_desc)
 static void addCodecsForPatchSystemColumns(ColumnsDescription & columns_desc)
 {
     /// Apply for these columns the same codecs as for the virtual columns in the original parts.
-    /// `_part_offset` only exists in v1 patches; v2 patches drop it, so the modify is guarded.
     columns_desc.modify(BlockNumberColumn::name, [&](auto & column_desc)
     {
         column_desc.codec = BlockNumberColumn::codec;
@@ -149,7 +146,7 @@ StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, co
 {
     StorageInMemoryMetadata part_metadata;
 
-    /// Keep `_part` on disk — it's an argument of the partition expression and the sink's header must
+    /// Keep `_part` column — it's an argument of the partition expression and the sink's header must
     /// match the mutation pipeline, which always emits it. Ensure identity + version columns are present.
     patch_part_desc.addIfNotExists(ColumnDescription("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())));
     patch_part_desc.addIfNotExists(ColumnDescription(BlockNumberColumn::name, BlockNumberColumn::type));
@@ -210,20 +207,6 @@ StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, co
     return getPatchPartMetadataV2(std::move(patch_part_desc), sorting_key, local_context);
 }
 
-ASTPtr getTableSortingKeyExpressionFromPatch(const KeyDescription & patch_sorting_key)
-{
-    const auto patch_expr_list = patch_sorting_key.getOriginalExpressionList();
-    chassert(patch_expr_list && patch_expr_list->children.size() >= 2);
-
-    auto table_expr_list = make_intrusive<ASTExpressionList>();
-    table_expr_list->children.reserve(patch_expr_list->children.size() - 2);
-
-    for (size_t i = 0; i < patch_expr_list->children.size() - 2; ++i)
-        table_expr_list->children.push_back(patch_expr_list->children[i]->clone());
-
-    return table_expr_list;
-}
-
 size_t getEffectivePatchSortingKeySize(const KeyDescription & patch_sorting_key, const StorageMetadataPtr & storage_metadata)
 {
     auto ast_equals = [](const ASTPtr & lhs, const ASTPtr & rhs)
@@ -233,7 +216,13 @@ size_t getEffectivePatchSortingKeySize(const KeyDescription & patch_sorting_key,
 
     const auto storage_expr_list = storage_metadata->getSortingKey().getOriginalExpressionList();
     const auto patch_expr_list = patch_sorting_key.getOriginalExpressionList();
-    chassert(patch_expr_list && patch_expr_list->children.size() >= 2);
+
+    if (!patch_expr_list || patch_expr_list->children.size() < 2)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Invalid patch sorting key expression list: {}",
+            patch_expr_list ? patch_expr_list->formatForErrorMessage() : "null");
+    }
 
     /// Without the trailing `_block_number`, `_block_offset` columns of the patch's key.
     const size_t patch_key_size = patch_expr_list->children.size() - 2;
@@ -388,8 +377,9 @@ Names getKeyColumnsRequiredForPatch(const PatchPartInfoForReader & patch)
             columns = {BlockNumberColumn::name, BlockOffsetColumn::name};
             break;
         case PatchMode::MergeOnKey:
-            chassert(patch.sorting_key && patch.sorting_key->expression);
-            columns = patch.sorting_key->expression->getRequiredColumns();
+            if (patch.sorting_key && patch.sorting_key->expression)
+                columns = patch.sorting_key->expression->getRequiredColumns();
+
             columns.emplace_back(BlockNumberColumn::name);
             columns.emplace_back(BlockOffsetColumn::name);
             break;
@@ -405,8 +395,6 @@ NameSet getSortingKeyColumnsInPatch(const StorageMetadataPtr & patch_metadata)
     if (!sorting_key.expression)
         return {};
 
-    /// Patch parts store only the input columns of the sorting key expression.
-    /// Result names of key elements (e.g. `intHash32(id)`) are not stored and may collide with a regular updated column.
     auto required_columns = sorting_key.expression->getRequiredColumns();
     return NameSet(required_columns.begin(), required_columns.end());
 }

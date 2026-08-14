@@ -60,7 +60,6 @@ struct PatchJoinReadResult : public PatchReadResult
 };
 
 /// v2 patch-read result. Sort-key result columns are materialized on `block` by the reader.
-/// The last row's sort-key tuple is the upper bound that `needNewPatch`/`needOldPatch` compare against.
 struct PatchMergeOnKeyReadResult : public PatchReadResult
 {
     Block block;

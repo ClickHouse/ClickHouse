@@ -1975,8 +1975,6 @@ void IMergeTreeDataPart::setPatchPartIndex(PatchPartIndex patch_part_index_)
 
 const PatchPartIndex & IMergeTreeDataPart::getPatchPartIndex() const
 {
-    /// Reading the index of a patch part before it is loaded or set explicitly
-    /// would silently misinterpret the patch as v1 (the default format version).
     if (!patch_part_index)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part index is not initialized for part {}", name);
 

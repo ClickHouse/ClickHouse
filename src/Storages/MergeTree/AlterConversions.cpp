@@ -225,8 +225,7 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
 
 void AlterConversions::addPatchPart(PatchPartInfoForReader patch_part)
 {
-    /// Columns of the key the patch was written with identify updated rows and must not be
-    /// reported as updated columns, even if ALTER has narrowed the table's key since then.
+    /// Columns of the key the patch was written with must not be reported as updated columns.
     const auto & sorting_key_columns = patch_part.stored_sorting_key_columns;
 
     for (const auto & column : patch_part.part->getColumns())
@@ -431,8 +430,7 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
         }
         else
         {
-            /// Columns of the key the patch was written with identify updated rows.
-            /// They are never updated themselves, so reading them must not trigger applying the patch.
+            /// Columns of the key the patch was written with must not be reported as updated columns.
             const auto & sorting_key_columns = patch.stored_sorting_key_columns;
 
             has_column_in_patch = std::ranges::any_of(read_columns, [&](const auto & column)

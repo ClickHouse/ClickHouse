@@ -31,9 +31,6 @@ StorageMetadataPtr getPatchPartMetadataV2(Block sample_block, const KeyDescripti
 StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, const KeyDescription & sorting_key, ContextPtr local_context);
 StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, const String & sorting_key_str, ContextPtr local_context);
 
-/// Returns the sorting key expression list of the patch part, excluding the trailing identity columns.
-ASTPtr getTableSortingKeyExpressionFromPatch(const KeyDescription & patch_sorting_key);
-
 /// The effective sorting key for applying a v2 patch part is the longest common prefix
 /// of the patch part's sorting key and the table's current sorting key, so it is fully
 /// identified by its size. The first function returns that size, the second builds the key.
@@ -54,12 +51,10 @@ std::pair<UInt64, UInt64> getPartNameOffsetRange(
     const String & part_name,
     UInt64 part_offset_begin, UInt64 part_offset_end);
 
-/// Returns virtual columns that should be read from the regular part to apply the patch.
+/// Returns virtual and sorting key columns that should be read from the regular part to apply the patch.
 Names getKeyColumnsRequiredForPatch(const PatchPartInfoForReader & patch);
 
-/// Returns the sort-key columns physically stored in the patch part (only v2 patches store them).
-/// These columns identify updated rows and are never updated themselves,
-/// so they must not be treated as updated columns.
+/// Returns the sorting key columns physically stored in the patch part (only v2 patches store them).
 NameSet getSortingKeyColumnsInPatch(const StorageMetadataPtr & patch_metadata);
 
 /// Partition id of patch part is 'patch-<hash of column names in patch part>-<original_partition_id>.
@@ -70,11 +65,9 @@ String getOriginalPartitionIdOfPatch(const String & partition_id);
 String getPartitionIdForPatch(const MergeTreePartition & partition);
 
 /// Returns the hash of the patch structure from the partition id of a patch part.
-/// Patch parts with the same hash have the same structure, regardless of the partition of their source parts.
 String getStructureHashOfPatch(const String & partition_id);
 
 /// Returns the hash of column names and types of a patch part.
-/// Unlike the hash in the partition id of a v1 patch part, it covers column types as well.
 String getColumnsHashWithTypes(const ColumnsDescription & columns_desc);
 
 /// Returns true if patch max data version of the patch if higher than max_data_version.

@@ -253,12 +253,10 @@ PatchPartIndex PatchPartIndex::readBinary(ReadBuffer & in)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version of PatchPartIndex: {}", std::to_string(read_version));
 
     auto format_version = static_cast<MergeTreePatchPartsVersion>(read_version);
-
     if (format_version == MergeTreePatchPartsVersion::V2)
         readStringBinary(read_sorting_key_desc, in);
 
     PatchPartIndex res(format_version, std::move(read_sorting_key_desc));
-
     UInt64 num_parts = 0;
     readBinaryLittleEndian(num_parts, in);
 
@@ -274,6 +272,26 @@ PatchPartIndex PatchPartIndex::readBinary(ReadBuffer & in)
 
     res.buildSourcePartsByVersion();
     return res;
+}
+
+static ASTPtr getTableSortingKeyExpressionFromPatch(const KeyDescription & patch_sorting_key)
+{
+    const auto patch_expr_list = patch_sorting_key.getOriginalExpressionList();
+
+    if (!patch_expr_list || patch_expr_list->children.size() < 2)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Invalid patch sorting key expression list: {}",
+            patch_expr_list ? patch_expr_list->formatForErrorMessage() : "null");
+    }
+
+    auto table_expr_list = make_intrusive<ASTExpressionList>();
+    table_expr_list->children.reserve(patch_expr_list->children.size() - 2);
+
+    for (size_t i = 0; i < patch_expr_list->children.size() - 2; ++i)
+        table_expr_list->children.push_back(patch_expr_list->children[i]->clone());
+
+    return table_expr_list;
 }
 
 PatchPartIndex buildPatchPartIndex(

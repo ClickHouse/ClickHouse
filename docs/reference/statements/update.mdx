@@ -106,11 +106,7 @@ Therefore patch parts always store the latest version for each updated row in th
 
 A patch part is applied by merging it with the data part by the sorting key of the table: a row is updated if the values of the sorting key columns and of the `_block_number` and `_block_offset` columns are equal in the data part and in the patch part.
 Applying patch parts requires reading the sorting key columns of the data part even if the query does not select them.
-The memory usage of applying a patch part is bounded by the largest range of rows with equal sorting key values, not by the size of the patch part.
-
-Lightweight updates don't wait for currently running merges and mutations to finish and always use a current snapshot of data parts to execute an update and produce a patch part.
-Because of that a patch part may need to be applied to a part created by a merge that finished after the `UPDATE` was executed.
-Rows are matched by their values rather than by their positions in the original parts, therefore the same merge algorithm handles both parts that participated in merges and parts that did not.
+The memory usage of applying a patch part is bounded by the largest range of rows with equal sorting key values.
 
 ### Patch parts format in mixed-version clusters {#patch-parts-format-in-mixed-version-clusters}
 

@@ -157,11 +157,6 @@ MarkRanges getRangesInPatchPartJoin(const PatchPartInfoForReader & patch)
     return optimizeRanges(patch_part_ranges);
 }
 
-/// Returns the ranges of a `MergeOnKey` (v2) patch part required to apply the patch to
-/// `original_ranges` of the main part. For each main range binary-searches the patch's primary
-/// index over the common prefix of the main and patch sorting keys. Falls back to the whole
-/// patch part when bounds cannot be obtained (empty index, no common key prefix) —
-/// only the pruning benefit is lost.
 MarkRanges getRangesInPatchPartMergeOnKey(
     const DataPartPtr & original_part,
     const PatchPartInfoForReader & patch,
@@ -250,9 +245,8 @@ MarkRanges getRangesInPatchPartMergeOnKey(
         }
         else
         {
-            /// Find the first patch granule whose first-row key is strictly greater than the key at
-            /// main row `main_end`. Keys equal to it may still belong to the main range, so patch
-            /// granules starting with that key are required.
+            /// Find the first patch granule whose first-row key is strictly greater than the key at main row `main_end`.
+            /// Keys equal to it may still belong to the main range, so patch granules starting with that key are required.
             auto upper_it = std::upper_bound(
                 patch_marks.begin() + patch_lo, patch_marks.end(), main_end,
                 [&](size_t main_row, size_t patch_row) { return compare_patch(patch_row, main_row) > 0; });
@@ -340,9 +334,8 @@ std::vector<MarkRanges> RangesInPatchParts::getRanges(const DataPartPtr & origin
 
     for (size_t i = 0; i < raw_ranges.size(); ++i)
     {
-        /// `Join` patches must use whole chunks of `ranges_by_name` because `PatchJoinCache` is
-        /// keyed by them. Other modes have no caches shared between tasks and use the tight
-        /// per-task ranges directly, because intersecting with the chunks would only widen them.
+        /// `Join` patches must use whole chunks of `ranges_by_name` because `PatchJoinCache` is keyed by them.
+        /// Other modes have no caches shared between tasks and use the tight per-task ranges directly.
         if (patch_parts[i].mode == PatchMode::Join)
             optimized_ranges[i] = getIntersectingRanges(patch_parts[i].part->getPartName(), raw_ranges[i]);
         else

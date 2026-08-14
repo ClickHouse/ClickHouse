@@ -20,7 +20,6 @@
 #include <absl/container/flat_hash_map.h>
 #include <base/types.h>
 #include <algorithm>
-#include <optional>
 
 namespace ProfileEvents
 {
@@ -341,7 +340,7 @@ struct MergeOnKeyGroup
 };
 
 /// Combined patches, one per distinct set of updated columns.
-using PatchIndicesGroup = std::vector<std::shared_ptr<PatchIndices>>;
+using PatchIndicesGroups = std::vector<std::shared_ptr<PatchIndices>>;
 
 /// Cursor over one block (a patch block or the result block) in the merge of applyPatchesMergeOnKey.
 /// `row` and `run_end` delimit the current run of equal sort keys.
@@ -371,12 +370,12 @@ struct BlockCursor
     {
     }
 
-    size_t blockNumber() const { return (*block_number)[row]; }
-    size_t blockOffset() const { return (*block_offset)[row]; }
-    size_t runLength() const { return run_end - row; }
-    bool isFinished() const { return row >= num_rows; }
+    ALWAYS_INLINE size_t blockNumber() const { return (*block_number)[row]; }
+    ALWAYS_INLINE size_t blockOffset() const { return (*block_offset)[row]; }
+    ALWAYS_INLINE size_t runLength() const { return run_end - row; }
+    ALWAYS_INLINE bool isFinished() const { return row >= num_rows; }
 
-    int compare(const BlockCursor & other, const std::vector<bool> & reverse_flags) const
+    ALWAYS_INLINE int compare(const BlockCursor & other, const std::vector<bool> & reverse_flags) const
     {
         return compareSortKeyRows(sorting_key_columns, row, other.sorting_key_columns, other.row, reverse_flags);
     }
@@ -417,6 +416,17 @@ struct EqualRunScratch
     PaddedPODArray<RunEntry> run_entries;
 };
 
+/// Emits a matched pair of a result row and a patch row into `patch`.
+ALWAYS_INLINE void addMatchedRow(PatchIndices & patch, UInt64 result_row, UInt32 block_idx, UInt64 patch_row)
+{
+    patch.result_row_indices.push_back(result_row);
+    patch.patch_row_indices.push_back(patch_row);
+
+    /// The number of sources is final before the merge, and one source needs no block indices.
+    if (patch.getNumSources() > 1)
+        patch.patch_block_indices.push_back(block_idx);
+}
+
 /// Processes one run of equal sort keys: matches result rows [result_cursor.row, result_cursor.run_end)
 /// with rows [cursor.row, cursor.run_end) of cursors in `equal_cursors` by the
 /// (block_number, block_offset) identity and emits matches into the groups' patches.
@@ -425,21 +435,17 @@ void processEqualKeyCursors(
     size_t num_patch_rows_in_run,
     const std::vector<size_t> & equal_cursors,
     const std::vector<BlockCursor> & cursors,
-    PatchIndicesGroup & groups,
+    PatchIndicesGroups & groups,
     EqualRunScratch & scratch)
 {
     if (num_patch_rows_in_run == 1 && result_cursor.runLength() == 1)
     {
         /// Common case for unique sort keys: no hash map, just compare identity directly.
+        chassert(equal_cursors.size() == 1);
         const auto & cursor = cursors[equal_cursors.front()];
 
         if (cursor.blockNumber() == result_cursor.blockNumber() && cursor.blockOffset() == result_cursor.blockOffset())
-        {
-            auto & patch = *groups[cursor.group_idx];
-            patch.result_row_indices.push_back(result_cursor.row);
-            patch.patch_block_indices.push_back(cursor.block_idx_in_group);
-            patch.patch_row_indices.push_back(cursor.row);
-        }
+            addMatchedRow(*groups[cursor.group_idx], result_cursor.row, cursor.block_idx_in_group, cursor.row);
 
         return;
     }
@@ -490,21 +496,16 @@ void processEqualKeyCursors(
             if (entry.block_idx == RunEntry::EMPTY_BLOCK)
                 continue;
 
-            auto & patch = *groups[group_idx];
-            patch.result_row_indices.push_back(i);
-            patch.patch_block_indices.push_back(entry.block_idx);
-            patch.patch_row_indices.push_back(entry.row_idx);
+            addMatchedRow(*groups[group_idx], i, entry.block_idx, entry.row_idx);
         }
     }
 }
 
-/// Drives the merge with a linear scan for the cursor with the minimal key. With few cursors
-/// it needs no more key comparisons than heap maintenance and the code is branch-predictable;
-/// with one cursor it degenerates into a plain two-pointer merge.
+/// Drives the merge with a linear scan for the cursor with the minimal key.
 void applyCursorsLinear(
     BlockCursor & result_cursor,
     std::vector<BlockCursor> & cursors,
-    PatchIndicesGroup & groups,
+    PatchIndicesGroups & groups,
     const std::vector<bool> & reverse_flags)
 {
     EqualRunScratch run_scratch;
@@ -520,7 +521,7 @@ void applyCursorsLinear(
             live_cursors.push_back(i);
     }
 
-    while (result_cursor.row < result_cursor.num_rows && !live_cursors.empty())
+    while (!result_cursor.isFinished() && !live_cursors.empty())
     {
         /// Find the cursor with the minimal current key.
         size_t min_pos = 0;
@@ -537,7 +538,7 @@ void applyCursorsLinear(
         auto & top_cursor = cursors[live_cursors[min_pos]];
         result_cursor.advanceRowToCursor(top_cursor, reverse_flags);
 
-        if (result_cursor.row == result_cursor.num_rows)
+        if (result_cursor.isFinished())
             break;
 
         /// main[row] > patch[row]: the current patch key has no match in main.
@@ -546,7 +547,7 @@ void applyCursorsLinear(
         {
             top_cursor.advanceRowToCursor(result_cursor, reverse_flags);
 
-            if (top_cursor.row == top_cursor.num_rows)
+            if (top_cursor.isFinished())
             {
                 live_cursors[min_pos] = live_cursors.back();
                 live_cursors.pop_back();
@@ -600,7 +601,7 @@ void applyCursorsLinear(
 void applyCursorsHeap(
     BlockCursor & result_cursor,
     std::vector<BlockCursor> & cursors,
-    PatchIndicesGroup & groups,
+    PatchIndicesGroups & groups,
     const std::vector<bool> & reverse_flags)
 {
     EqualRunScratch run_scratch;
@@ -623,12 +624,12 @@ void applyCursorsHeap(
 
     std::make_heap(heap.begin(), heap.end(), greater);
 
-    while (result_cursor.row < result_cursor.num_rows && !heap.empty())
+    while (!result_cursor.isFinished() && !heap.empty())
     {
         auto & top_cursor = cursors[heap.front()];
         result_cursor.advanceRowToCursor(top_cursor, reverse_flags);
 
-        if (result_cursor.row == result_cursor.num_rows)
+        if (result_cursor.isFinished())
             break;
 
         /// main[row] > patch[row]: the current patch key has no match in main.
@@ -638,7 +639,7 @@ void applyCursorsHeap(
             std::pop_heap(heap.begin(), heap.end(), greater);
             top_cursor.advanceRowToCursor(result_cursor, reverse_flags);
 
-            if (top_cursor.row == top_cursor.num_rows)
+            if (top_cursor.isFinished())
                 heap.pop_back();
             else
                 std::push_heap(heap.begin(), heap.end(), greater);
@@ -684,6 +685,16 @@ void applyCursorsHeap(
     }
 }
 
+void updateHashWithColumn(SipHash & hash, const ColumnWithTypeAndName & column)
+{
+    auto type_name = column.type->getName();
+
+    hash.update(column.name.size());
+    hash.update(column.name.data(), column.name.size());
+    hash.update(type_name.size());
+    hash.update(type_name.data(), type_name.size());
+}
+
 std::vector<PatchIndicesPtr> applyPatchesMergeOnKey(const Block & result_block, const MergeOnKeyGroup & group)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ApplyPatchMergeOnKeyMicroseconds);
@@ -697,8 +708,8 @@ std::vector<PatchIndicesPtr> applyPatchesMergeOnKey(const Block & result_block, 
     auto sorting_key_block = getBlockWithSortingKey(result_block, sorting_key);
     BlockCursor result_cursor(sorting_key_block, sorting_key);
 
-    PatchIndicesGroup groups;
-    absl::flat_hash_map<UInt128, size_t, UInt128TrivialHash> groups_by_columns;
+    PatchIndicesGroups indices_groups;
+    absl::flat_hash_map<UInt128, size_t, UInt128TrivialHash> group_index_by_columns;
     std::vector<Block> patch_blocks; // Keeps columns referenced by cursors alive.
     std::vector<BlockCursor> cursors;
 
@@ -708,8 +719,7 @@ std::vector<PatchIndicesPtr> applyPatchesMergeOnKey(const Block & result_block, 
 
     for (size_t block_idx = 0; block_idx < group.blocks.size(); ++block_idx)
     {
-        size_t patch_rows = group.blocks[block_idx]->rows();
-        if (patch_rows == 0)
+        if (group.blocks[block_idx]->rows() == 0)
             continue;
 
         Block patch_block = *group.blocks[block_idx];
@@ -718,7 +728,7 @@ std::vector<PatchIndicesPtr> applyPatchesMergeOnKey(const Block & result_block, 
 
         /// Group patch blocks by the hash of names and types of updated columns present in the block.
         SipHash hash;
-        Names block_updated_columns;
+        Block updated_block;
 
         for (const auto & name : *group.updated_columns[block_idx])
         {
@@ -726,64 +736,43 @@ std::vector<PatchIndicesPtr> applyPatchesMergeOnKey(const Block & result_block, 
 
             if (column && column->column)
             {
-                auto type_name = column->type->getName();
-
-                hash.update(name.size());
-                hash.update(name.data(), name.size());
-                hash.update(type_name.size());
-                hash.update(type_name.data(), type_name.size());
-
-                block_updated_columns.push_back(name);
+                updateHashWithColumn(hash, *column);
+                updated_block.insert(*column);
             }
         }
 
-        if (block_updated_columns.empty())
+        if (updated_block.empty())
             continue;
 
-        auto [group_it, group_inserted] = groups_by_columns.try_emplace(hash.get128(), groups.size());
+        updated_block.insert(patch_block.getByName(PartDataVersionColumn::name));
 
+        auto [group_it, group_inserted] = group_index_by_columns.try_emplace(hash.get128(), indices_groups.size());
         if (group_inserted)
-            groups.push_back(std::make_shared<PatchIndices>());
+            indices_groups.push_back(std::make_shared<PatchIndices>());
 
-        /// Keep only the updated columns and the data version column in the emitted block.
-        Block emitted_block;
-        emitted_block.insert(patch_block.getByName(PartDataVersionColumn::name));
-
-        for (const auto & name : block_updated_columns)
-            emitted_block.insert(patch_block.getByName(name));
-
-        auto & columns_group = groups[group_it->second];
+        auto & columns_group = indices_groups[group_it->second];
         auto & cursor = cursors.emplace_back(patch_block, sorting_key);
+
         cursor.group_idx = group_it->second;
         cursor.block_idx_in_group = static_cast<UInt32>(columns_group->patch_blocks.size());
         cursor.advanceRowToCursor(result_cursor, reverse_flags);
 
-        columns_group->patch_blocks.push_back(std::move(emitted_block));
+        columns_group->patch_blocks.push_back(std::move(updated_block));
         patch_blocks.push_back(std::move(patch_block));
     }
 
-    /// Patch blocks are typically much smaller than the main stream, so we drive the merge
-    /// from the patch side using galloping search into main. This skips over long runs of main
-    /// rows below the current patch key in `O(log gap)` comparisons per patch row.
-    /// With few cursors the minimal key is found by a linear scan, a heap pays off only with many cursors.
-    static constexpr size_t max_cursors_for_linear_scan = 8;
+    static constexpr size_t max_cursors_for_linear_apply = 8;
 
-    if (cursors.size() <= max_cursors_for_linear_scan)
-        applyCursorsLinear(result_cursor, cursors, groups, reverse_flags);
+    if (cursors.size() <= max_cursors_for_linear_apply)
+        applyCursorsLinear(result_cursor, cursors, indices_groups, reverse_flags);
     else
-        applyCursorsHeap(result_cursor, cursors, groups, reverse_flags);
+        applyCursorsHeap(result_cursor, cursors, indices_groups, reverse_flags);
 
     std::vector<PatchIndicesPtr> result;
-    result.reserve(groups.size());
+    result.reserve(indices_groups.size());
 
-    for (auto & columns_group : groups)
-    {
-        /// Block indices can be omitted in case of one source.
-        if (columns_group->getNumSources() == 1)
-            columns_group->patch_block_indices.clear();
-
+    for (auto & columns_group : indices_groups)
         result.emplace_back(std::move(columns_group));
-    }
 
     return result;
 }
