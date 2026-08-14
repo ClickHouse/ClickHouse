@@ -33,7 +33,7 @@ The `system.query_log` table registers two kinds of queries:
 
 Generally, add `is_initial_query = 1` whenever you query `system.query_log`. This excludes child queries so individual processing steps are not counted separately from the initial query. This filter does not imply that a query was submitted by a client, because server-internal work can also be an initial query.
 
-Use `initial_query_id` instead when you specifically need to trace the complete execution cascade of an initial query, including its child queries. The initial query has the same value for `initial_query_id` and `query_id`, while its child queries keep the initial query's `initial_query_id` and have their own `query_id`:
+Use `initial_query_id` instead when you need to trace an initial query together with child queries that preserve its ID. The initial query has the same value for `initial_query_id` and `query_id`, while child queries in the same chain keep the initial query's `initial_query_id` and have their own `query_id`. Not all work spawned by an initial query is correlated this way: server-dispatched work can start a new initial-query chain with a new `initial_query_id`, as with remote [`QueryRunner`](/reference/engines/table-engines/special/query-runner#cluster-mode) dispatches.
 
 ```sql
 SELECT
@@ -48,7 +48,7 @@ WHERE initial_query_id = '<query_id_of_initial_query>'
 ORDER BY event_time_microseconds;
 ```
 
-If child queries can run on other nodes, query `system.query_log` on every node, for example with [`clusterAllReplicas`](/reference/functions/table-functions/cluster).
+If correlated child queries can run on other nodes, query `system.query_log` on every node, for example with [`clusterAllReplicas`](/reference/functions/table-functions/cluster).
 </Tip>
 
 Each query creates one or two rows in the `query_log` table, depending on the status (see the `type` column) of the query:
