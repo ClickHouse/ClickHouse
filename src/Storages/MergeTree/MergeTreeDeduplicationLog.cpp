@@ -574,7 +574,12 @@ void MergeTreeDeduplicationLog::compactIfNeeded()
     /// such garbage has piled up, rewrite the live state into a single fresh file;
     /// tolerating some of it first keeps a sporadic failure from triggering a full
     /// rewrite.
-    if (total_raw <= total_effective + 2 * rotate_interval)
+    /// A failed rollback can fence the history off with the persistent marker when
+    /// neither its compensating records nor an immediate compaction can be written.
+    /// Once the disk recovers, retry compaction even when the raw/effective gap is
+    /// small: otherwise the marker stays armed forever and a later restart discards
+    /// both the previously committed history and records written after recovery.
+    if (!history_diverged && total_raw <= total_effective + 2 * rotate_interval)
         return;
 
     compact();
