@@ -136,7 +136,7 @@ private:
             KQLPlanBuilder plan(getContext());
             const size_t value_slot = plan.argument(arguments[0].type);
             const size_t bin_slot = plan.argument(arguments[1].type);
-            const size_t epoch = plan.constant(arguments[0].type, Field(UInt64(0)));
+            const size_t epoch = plan.constant(arguments[0].type, Field(DateTime64(0)));
             plan.step("kqlDateTimeBinAt", {value_slot, bin_slot, epoch});
             return std::move(plan).finish(name, arguments);
         }
