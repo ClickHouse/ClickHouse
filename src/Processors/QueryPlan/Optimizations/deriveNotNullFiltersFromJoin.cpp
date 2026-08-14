@@ -15,15 +15,19 @@ namespace
 /// Which inputs of the join have their non-matching rows dropped. Only those sides may receive a derived filter.
 std::pair<bool, bool> droppedSides(const JoinOperator & join_operator)
 {
-    if (join_operator.strictness != JoinStrictness::All && join_operator.strictness != JoinStrictness::Any)
-        return {false, false};
+    const auto kind = join_operator.kind;
 
-    switch (join_operator.kind)
+    switch (join_operator.strictness)
     {
-        case JoinKind::Inner: return {true, true};
-        case JoinKind::Left:  return {false, true};
-        case JoinKind::Right: return {true, false};
-        default:              return {false, false};
+        case JoinStrictness::All:
+        case JoinStrictness::Any:
+        case JoinStrictness::Anti:
+            /// An ANTI join can not use null-extended join keys on the non-preserved side to filter any rows.
+            return {isInnerOrRight(kind), isInnerOrLeft(kind)};
+        case JoinStrictness::Semi:
+            return {isLeftOrRight(kind), isLeftOrRight(kind)};
+        default:
+            return {false, false};
     }
 }
 

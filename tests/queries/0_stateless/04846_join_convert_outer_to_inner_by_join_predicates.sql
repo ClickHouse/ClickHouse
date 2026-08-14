@@ -128,6 +128,47 @@ SELECT trim(explain) FROM (
     SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER ANY JOIN small AS s ON m.val = s.val
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
+SELECT '-- A LEFT SEMI join also rejects null-extended rows.';
+SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id LEFT SEMI JOIN small AS s ON m.val = s.val
+SETTINGS query_plan_convert_outer_join_to_inner_join_by_join_predicates = 0;
+
+SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id LEFT SEMI JOIN small AS s ON m.val = s.val;
+
+SELECT trim(explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id LEFT SEMI JOIN small AS s ON m.val = s.val
+) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Strictness: SEMI', 'Strictness: ANTI');
+
+SELECT '-- A RIGHT SEMI join also rejects null-extended rows.';
+SELECT count(), sum(s.val) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id RIGHT SEMI JOIN small AS s ON m.val = s.val
+SETTINGS query_plan_convert_outer_join_to_inner_join_by_join_predicates = 0;
+
+SELECT count(), sum(s.val) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id RIGHT SEMI JOIN small AS s ON m.val = s.val;
+
+SELECT trim(explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count(), sum(s.val) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id RIGHT SEMI JOIN small AS s ON m.val = s.val
+) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Strictness: SEMI', 'Strictness: ANTI');
+
+SELECT '-- A RIGHT ANTI join can not use null keys to exclude an rows, null-extended rows can be dropped.';
+SELECT count() FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id RIGHT ANTI JOIN small AS s ON m.val = s.val
+SETTINGS query_plan_convert_outer_join_to_inner_join_by_join_predicates = 0;
+
+SELECT count() FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id RIGHT ANTI JOIN small AS s ON m.val = s.val;
+
+SELECT trim(explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count() FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id RIGHT ANTI JOIN small AS s ON m.val = s.val
+) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Strictness: SEMI', 'Strictness: ANTI');
+
+SELECT '-- A LEFT ANTI join needs the rows from the preserved side, the below join does not convert.';
+SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id LEFT ANTI JOIN small AS s ON m.val = s.val;
+
+SELECT trim(explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count(), sum(f.v) FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id LEFT ANTI JOIN small AS s ON m.val = s.val
+) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Strictness: SEMI', 'Strictness: ANTI');
+
 DROP TABLE fact;
 DROP TABLE mid;
 DROP TABLE mid_nullable;
