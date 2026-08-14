@@ -227,3 +227,22 @@ SET allow_experimental_json_lazy_type_hints = 0;
 SELECT m FROM t_mat_source_json_lazy;
 
 DROP TABLE t_mat_source_json_lazy;
+
+-- Case 15: the key of an aggregate projection is built over the projection's own columns, so resolving it
+-- against the table columns fails to find them and breaks the mutation.
+DROP TABLE IF EXISTS t_aggregate_projection_key;
+
+CREATE TABLE t_aggregate_projection_key (id UInt64, ts DateTime,
+    PROJECTION p (SELECT toStartOfMinute(ts), count() GROUP BY toStartOfMinute(ts)))
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_aggregate_projection_key SELECT number, toDateTime('2026-01-01 00:00:00') + number FROM numbers(100);
+
+ALTER TABLE t_aggregate_projection_key MODIFY COLUMN ts DateTime64(3) SETTINGS mutations_sync = 2;
+
+SELECT count() FROM (SELECT toStartOfMinute(ts) AS k, count() FROM t_aggregate_projection_key GROUP BY k)
+SETTINGS optimize_use_projections = 1;
+SELECT count() FROM (SELECT toStartOfMinute(ts) AS k, count() FROM t_aggregate_projection_key GROUP BY k)
+SETTINGS optimize_use_projections = 0;
+
+DROP TABLE t_aggregate_projection_key;

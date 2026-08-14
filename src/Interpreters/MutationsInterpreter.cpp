@@ -1380,10 +1380,20 @@ void MutationsInterpreter::prepare(bool dry_run)
                         /// (which decide the stored rows/groups); a type change can then invalidate the
                         /// stored data and the raw-byte primary index, left stale (hardlinked) on wide
                         /// parts. SELECT outputs are excluded: they are read back with an on-the-fly cast.
-                        const auto & primary_key = projection.metadata->getPrimaryKey();
-                        auto affecting_columns = primary_key.expression_list_ast
-                            ? expressionSourceColumnsInStorage(primary_key.expression_list_ast, columns_for_analysis, context)
-                            : projection.metadata->getPrimaryKeyColumns();
+                        Names affecting_columns;
+                        if (projection.type == ProjectionDescription::Type::Aggregate)
+                        {
+                            /// The key of an aggregate projection is built over its own columns (`GROUP BY
+                            /// f(x)` becomes the key `f(x)`), so take the group expressions instead.
+                            if (const auto * select = projection.query_ast->as<ASTSelectQuery>())
+                                affecting_columns = expressionSourceColumnsInStorage(select->groupBy(), columns_for_analysis, context);
+                        }
+                        else if (const auto & primary_key = projection.metadata->getPrimaryKey(); primary_key.expression_list_ast)
+                        {
+                            affecting_columns
+                                = expressionSourceColumnsInStorage(primary_key.expression_list_ast, columns_for_analysis, context);
+                        }
+
                         if (projection.where_clause_ast)
                         {
                             auto where_columns = expressionSourceColumnsInStorage(projection.where_clause_ast, columns_for_analysis, context);
