@@ -210,6 +210,10 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES =
 
 static constexpr auto DBMS_MIN_REVISION_WITH_HTTP_HANDLER_IN_CLIENT_INFO = 54490;
 
+/// Serialize the skip degree of a `quantileDeterministic` state, so that merging states thinned out
+/// to different degrees does not depend on how the rows were distributed between them.
+static constexpr auto DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE = 54491;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -218,5 +222,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_HTTP_HANDLER_IN_CLIENT_INFO = 54490
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54490;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54491;
 }

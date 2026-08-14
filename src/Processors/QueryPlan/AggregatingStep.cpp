@@ -1115,6 +1115,10 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
         settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold] = params.adaptive_aggregator_freeze_threshold;
     }
 
+    /// Both values, every version: a peer predating the name serializes String keys the way `false` does, so
+    /// omitting either one would silently leave it on the other layout.
+    settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte] = params.serialize_string_with_zero_byte;
+
     /// A peer whose query-plan serialization version knows the name (this `version` is already the minimum of ours
     /// and the peer's) receives the value whenever the legacy method is requested, so the setting always takes
     /// effect on remote aggregation under `serialize_query_plan = 1`.
