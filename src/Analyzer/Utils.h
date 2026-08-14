@@ -1,10 +1,9 @@
 #pragma once
 
+#include <Analyzer/IQueryTreeNode.h>
 #include <Storages/IStorage_fwd.h>
 
 #include <Interpreters/Context_fwd.h>
-
-#include <Analyzer/IQueryTreeNode.h>
 
 #include <Core/Field.h>
 #include <Core/Names.h>
@@ -19,6 +18,9 @@ namespace DB
 class FunctionNode;
 class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
+
+class TableNode;
+using TableNodePtr = std::shared_ptr<TableNode>;
 
 struct IdentifierResolveScope;
 
@@ -105,10 +107,10 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
 QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);
 
 /// Extract table, table function, query, union from join tree.
-QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join = false, bool recursive = false);
+TableExpressionNodes extractTableExpressions(const TableExpressionNodePtr & join_tree_node, bool add_array_join = false, bool recursive = false);
 
 /// Extract left table expression from join tree.
-QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_node);
+TableExpressionNodePtr extractLeftTableExpression(const TableExpressionNodePtr & join_tree_node);
 
 /** Build table expressions stack that consists from table, table function, query, union, join, array join from join tree.
   *
@@ -120,7 +122,7 @@ QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_n
   * 4. t2
   * 5. t1
   */
-QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node);
+TableExpressionNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node);
 
 /** Assert that there are no function nodes with specified function name in node children.
   * Do not visit subqueries.
@@ -177,7 +179,7 @@ void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const Stri
 /// Returns single source of expression node.
 /// First element of pair is source node, can be nullptr if there are no sources or multiple sources.
 /// Second element of pair is true if there is at most one source, false if there are multiple sources.
-std::pair<QueryTreeNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node);
+std::pair<TableExpressionNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node);
 
 /// Update mutable context for subquery execution
 void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);
@@ -185,35 +187,35 @@ void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);
 /** Build query to read specified columns from table expression.
   * Specified mutable context will be used as query context.
   */
-QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
+TableExpressionNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const TableExpressionNodePtr & table_expression,
     ContextMutablePtr & context);
 
 /** Build subquery to read specified columns from table expression.
   * Specified mutable context will be used as query context.
   */
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
+TableExpressionNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const TableExpressionNodePtr & table_expression,
     ContextMutablePtr & context);
 
 /** Build query to read specified columns from table expression.
   * Specified context will be copied and used as query context.
   */
-QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
+TableExpressionNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const TableExpressionNodePtr & table_expression,
     const ContextPtr & context);
 
 /** Build subquery to read specified columns from table expression.
   * Specified context will be copied and used as query context.
   */
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
+TableExpressionNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const TableExpressionNodePtr & table_expression,
     const ContextPtr & context);
 
 /** Build subquery to read all columns from table expression.
   * Specified context will be copied and used as query context.
   */
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNodePtr & table_node, const ContextPtr & context);
+TableExpressionNodePtr buildSubqueryToReadColumnsFromTableExpression(const TableNodePtr & table_node, const ContextPtr & context);
 
 std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(const String & table_function_name, const ContextPtr & context);
 

@@ -1,10 +1,18 @@
 #include <Parsers/ASTDataType.h>
+#include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 String ASTDataType::getID(char delim) const
 {
@@ -28,6 +36,30 @@ ASTPtr ASTDataType::getArguments() const
     if (!children.empty())
         return children[0];
     return nullptr;
+}
+
+void ASTDataType::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "DataType");
+    w.writeString("name", name);
+    if (auto args = getArguments())
+        w.writeChild("arguments", args);
+}
+
+void ASTDataType::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    name = r.getString("name");
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'name' for ASTDataType");
+
+    /// `arguments` is the `ASTExpressionList` produced by `ParserDataType`. `formatImpl` only prints
+    /// the `(...)` when this child has its own `children`, so a non-list node here would be silently
+    /// dropped (e.g. `Nullable(UInt8)` formatting as bare `Nullable`). Reject it at the JSON boundary.
+    auto args = r.readChildOfType<ASTExpressionList>("arguments");
+    if (args)
+        children.push_back(args);
 }
 
 void ASTDataType::resetArguments()

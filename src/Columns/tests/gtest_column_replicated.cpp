@@ -1,9 +1,15 @@
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/Exception.h>
 #include <gtest/gtest.h>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+}
 
 static MutableColumnPtr createNestedColumn(const VectorWithMemoryTracking<String> & values)
 {
@@ -89,6 +95,26 @@ TEST(ColumnReplicated, Permute)
     IColumnPermutation permutation = {3, 4, 0, 1, 2, 5, 6, 7, 8};
     auto filtered_column = column->permute(permutation, 2);
     checkColumn(*filtered_column, {"s1", "s2", "s3"}, {2, 0});
+}
+
+TEST(ColumnReplicated, PermuteShorterThanColumnWithLimit)
+{
+    /// Relaxed contract: a permutation shorter than the column is legal when limit == perm.size()
+    /// (see IColumn::permute / getLimitForPermutation). This is the case ORDER BY ... LIMIT
+    /// produces for a replicated payload column. permute must succeed and take the first
+    /// `limit` rows.
+    auto column = createColumn({"s1", "s2", "s3"}, {2, 1, 1, 2, 0, 0, 1, 2, 0});
+    IColumnPermutation permutation = {3, 4};
+    auto permuted_column = column->permute(permutation, 2);
+    checkColumn(*permuted_column, {"s1", "s2", "s3"}, {2, 0});
+}
+
+TEST(ColumnReplicated, PermuteTooShortForLimitThrows)
+{
+    /// Kept negative contract: perm.size() < min(size(), limit) is invalid and must throw.
+    auto column = createColumn({"s1", "s2", "s3"}, {2, 1, 1, 2, 0, 0, 1, 2, 0});
+    IColumnPermutation permutation = {3, 4};
+    EXPECT_THROW(column->permute(permutation, 5), DB::Exception);
 }
 
 TEST(ColumnReplicated, InsertRangeFrom)

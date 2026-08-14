@@ -9,6 +9,12 @@
 namespace DB
 {
 
+std::shared_ptr<ExchangeConnections> ExchangeConnections::instance()
+{
+    static std::shared_ptr<ExchangeConnections> self = std::make_shared<ExchangeConnections>();
+    return self;
+}
+
 namespace ErrorCodes
 {
     extern const int QUERY_WAS_CANCELLED;

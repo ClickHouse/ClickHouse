@@ -2,7 +2,7 @@ import argparse
 import os
 import shutil
 
-from ci.defs.defs import BuildTypes, ToolSet, chcache_secret
+from ci.defs.defs import BuildTypes, ToolSet
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -44,6 +44,10 @@ BUILD_TYPE_TO_CMAKE = {
     BuildTypes.RISCV64: f"      cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-riscv64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.S390X: f"        cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-s390x.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.LOONGARCH64: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-loongarch64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_BUZZHOUSE=1",
+    # WebAssembly, through the Emscripten toolchain: `emcmake` points CMAKE_TOOLCHAIN_FILE at
+    # Emscripten's own toolchain file, which supplies `emcc`/`em++`, so no compiler is passed
+    # here. `emcc` is a Python driver that sccache cannot cache, hence the cache is disabled.
+    BuildTypes.WASM64: f"       emcmake cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DCOMPILER_CACHE=disabled -DENABLE_BUILD_PROFILING=0 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.ARM_FUZZERS: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=address   -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-aarch64.cmake -DENABLE_BUILD_PROFILING=0 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DENABLE_FUZZING=1 -DENABLE_PROTOBUF=1 -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DENABLE_BUZZHOUSE=0 -DPARALLEL_LINK_JOBS=1",  # TODO: fix build with -DSANITIZE_COVERAGE=1
 }
 
@@ -149,13 +153,6 @@ def setup_build_caches_env(info):
         # master/release builds (pr_number == 0) are allowed to write entries.
         if info.pr_number > 0:
             os.environ["CTCACHE_S3_READ_ONLY"] = "true"
-
-        os.environ["CH_HOSTNAME"] = (
-            "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
-        )
-        os.environ["CH_USER"] = "ci_builder"
-        os.environ["CH_PASSWORD"] = chcache_secret.get_value()
-        os.environ["CH_USE_LOCAL_CACHE"] = "false"
 
 
 def main():
@@ -381,6 +378,15 @@ def main():
     if res and JobStages.BUILD in stages:
         if build_type == BuildTypes.ARM_FUZZERS:
             targets = "fuzzers"
+        elif build_type == BuildTypes.WASM64:
+            # The multicall `clickhouse` binary builds and links for WebAssembly, and
+            # `clickhouse local` executes queries under Node.js >= 24 - the smoke test
+            # below pins exactly that surface. The same module also runs in browsers
+            # (with the cross-origin isolation that pthreads-on-Workers require), but
+            # nothing in this job verifies the browser path yet. Pinning the binary
+            # target keeps the whole tree - dbms, functions, programs and the `OS_WASM`
+            # platform arms - building for this target.
+            targets = "clickhouse"
         elif args.build_examples:
             targets = "clickhouse-bundle clickhouse-examples"
         elif build_type == BuildTypes.ARM_BINARY:
@@ -508,6 +514,52 @@ def main():
                     status=Result.Status.OK,
                     info="BOLT post-processing failed (best-effort), using PGO-only binary",
                 )
+
+        # The point of `Build (wasm64)` is a `clickhouse local` that runs, not one that
+        # merely links: execute queries under Node.js, covering the advertised surface -
+        # a `MergeTree` table is created, filled and aggregated, which exercises the
+        # in-memory filesystem and the `CREATE`/`INSERT`/`SELECT` path, not just constant
+        # expression evaluation. The module runs from a directory holding only the two
+        # files the CH_WASM64 artifact uploads, which also proves the artifact is complete
+        # (since Emscripten 3.1.58 the pthread worker code is embedded in the main JS
+        # file, so there is no `.worker.js` sidecar). Known upstream wart: after `exit(0)`
+        # one Web Worker survives the runtime teardown and keeps the Node.js process
+        # alive, so Node.js runs in the background and is killed as soon as the expected
+        # output appears, instead of paying a fixed `timeout` on every green run. The
+        # 300-second polling loop is only the worst-case deadline for module startup.
+        # Accepted exit statuses: 0 (clean self-exit; the output is still checked by the
+        # final grep), or 137 (128+SIGKILL) - and 137 only when this script is the one that
+        # delivered the `SIGKILL`, i.e. the expected output was seen and the `kill` succeeded.
+        # A `SIGKILL` from anyone else - the out-of-memory killer, the job timeout, the CI
+        # infrastructure - is not our kill and fails the job, as does anything else: a trap,
+        # an uncaught exception, an engine crash, even one after the output was produced.
+        if res and build_type == BuildTypes.WASM64:
+            smoke_dir = f"{temp_dir}/wasm_smoke"
+            smoke_query = (
+                "CREATE TABLE t (id UInt64, s String) ENGINE = MergeTree ORDER BY id; "
+                "INSERT INTO t SELECT number, toString(number) FROM numbers(1000); "
+                "SELECT concat(toString(count()), '-', toString(sum(id)), '-', max(s)) FROM t"
+            )
+            results.append(
+                Result.from_commands_run(
+                    name="Run clickhouse local under Node.js",
+                    command=[
+                        f"rm -rf {smoke_dir} && mkdir -p {smoke_dir}",
+                        f"cp {build_dir}/programs/clickhouse.js {build_dir}/programs/clickhouse.wasm {smoke_dir}/",
+                        "node --version",
+                        f'cd {smoke_dir} || exit 1; node clickhouse.js local --multiquery "{smoke_query}" > smoke.out 2> smoke.err & pid=$!; '
+                        "found=0; for i in $(seq 1 300); do "
+                        "grep -qx 1000-499500-999 smoke.out 2>/dev/null && { found=1; break; }; "
+                        'kill -0 "$pid" 2>/dev/null || break; sleep 1; done; '
+                        'if kill -9 "$pid" 2>/dev/null && [ "$found" -eq 1 ]; then killed=1; else killed=0; fi; '
+                        'wait "$pid"; status=$?; '
+                        'echo "output found: $found, killed by us: $killed, exit status: $status"; cat smoke.err; '
+                        '[ "$status" -eq 0 ] || { [ "$killed" -eq 1 ] && [ "$status" -eq 137 ]; }',
+                        f"grep -x 1000-499500-999 {smoke_dir}/smoke.out",
+                    ],
+                )
+            )
+            res = results[-1].is_ok()
 
     if (
         res

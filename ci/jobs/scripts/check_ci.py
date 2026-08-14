@@ -419,7 +419,7 @@ class CommitStatusCheck:
         if commit_status_data.state in (Result.GHStatus.SUCCESS,):
             pass
         elif commit_status_data.state in (Result.GHStatus.FAILURE,):
-            if commit_status_data.description == "tests failed":
+            if commit_status_data.description.startswith("tests failed"):
                 print(
                     f"\nCH Sync failed for commit, description: {commit_status_data.description}"
                 )

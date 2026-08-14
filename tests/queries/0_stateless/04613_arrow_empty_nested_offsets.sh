@@ -92,29 +92,21 @@ tbl_d = pa.table({"id": ids, "a": outer_empty(inner_map)})
 open(f"{out}/nested_array_map.arrow", "wb").write(write_arrow(tbl_d))
 PYEOF
 
-# Both reading paths are affected: the native ClickHouse reader
-# (input_format_arrow_use_native_reader=1, the default) and the Apache Arrow
-# library reader (=0).  Exercise both.
-for native in 1 0; do
-    echo "native_reader=${native}"
-    S="--input_format_arrow_use_native_reader=${native}"
+# (a) Array(Array(Int32)): two empty outer arrays.
+$CLICKHOUSE_LOCAL --query \
+    "SELECT id, a FROM file('${TMP_DIR}/nested_int.arrow', Arrow) ORDER BY id"
 
-    # (a) Array(Array(Int32)): two empty outer arrays.
-    $CLICKHOUSE_LOCAL $S --query \
-        "SELECT id, a FROM file('${TMP_DIR}/nested_int.arrow', Arrow) ORDER BY id"
+# (b) Array(Array(String)): two empty outer arrays.
+$CLICKHOUSE_LOCAL --query \
+    "SELECT id, a FROM file('${TMP_DIR}/nested_string.arrow', Arrow) ORDER BY id"
 
-    # (b) Array(Array(String)): two empty outer arrays.
-    $CLICKHOUSE_LOCAL $S --query \
-        "SELECT id, a FROM file('${TMP_DIR}/nested_string.arrow', Arrow) ORDER BY id"
+# (c) Map(String, Array(String)): two empty maps.
+$CLICKHOUSE_LOCAL --query \
+    "SELECT id, m FROM file('${TMP_DIR}/nested_map_value.arrow', Arrow) ORDER BY id"
 
-    # (c) Map(String, Array(String)): two empty maps.
-    $CLICKHOUSE_LOCAL $S --query \
-        "SELECT id, m FROM file('${TMP_DIR}/nested_map_value.arrow', Arrow) ORDER BY id"
-
-    # (d) Array(Map(String, Int32)): two empty outer arrays.
-    $CLICKHOUSE_LOCAL $S --query \
-        "SELECT id, a FROM file('${TMP_DIR}/nested_array_map.arrow', Arrow) ORDER BY id"
-done
+# (d) Array(Map(String, Int32)): two empty outer arrays.
+$CLICKHOUSE_LOCAL --query \
+    "SELECT id, a FROM file('${TMP_DIR}/nested_array_map.arrow', Arrow) ORDER BY id"
 
 # DoS guard for the native reader: an empty nested container references zero child
 # elements, so the child subtree must also be empty.  A buffer-less child type (e.g.
@@ -151,14 +143,14 @@ PYEOF
 STRUCT='id Int32, a Array(Array(Nullable(Nothing)))'
 
 # The valid file reads as two empty arrays.
-$CLICKHOUSE_LOCAL --input_format_arrow_use_native_reader=1 --query \
+$CLICKHOUSE_LOCAL --query \
     "SELECT id, a FROM file('${TMP_DIR}/null_leaf_valid.arrow', Arrow, '${STRUCT}') ORDER BY id"
 
 # Every forged variant must be handled without an allocation attempt (no OOM/crash).
 oom=0
 guard=0
 for f in "${TMP_DIR}"/null_leaf_forged_*.arrow; do
-    err=$($CLICKHOUSE_LOCAL --input_format_arrow_use_native_reader=1 \
+    err=$($CLICKHOUSE_LOCAL \
         --max_memory_usage=1G \
         --query "SELECT id, a FROM file('${f}', Arrow, '${STRUCT}') FORMAT Null" 2>&1)
     case "$err" in

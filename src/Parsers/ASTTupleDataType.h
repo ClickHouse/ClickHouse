@@ -25,6 +25,11 @@ public:
     ASTPtr clone() const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
+    /// Named-tuple field names live in `element_names` (not as AST children), so the generic
+    /// `ASTDataType` JSON serialization would drop them. Serialize/restore them under a distinct tag.
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
 protected:
     /// Outputs: Tuple(name1 Type1, name2 Type2, ...) for named
     ///          Tuple(Type1, Type2, ...) for unnamed

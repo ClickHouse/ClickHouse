@@ -601,6 +601,20 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             {
                 auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
                 result_node = &result_dag.addFunction(bit_wrapper_function, {atom_node_ptr}, {});
+
+                /// A NULL atom value yields a NULL from `__bitWrapperFunc` rather than a BoolMask.
+                /// That NULL propagates through `__bitBoolMaskAnd`/`Or` and wrongly prunes a granule
+                /// the atom does not exclude. Map a NULL mask to `UNKNOWN_FIELD` (can be true or false).
+                if (isNullableOrLowCardinalityNullable(result_node->result_type))
+                {
+                    auto unknown_name = calculateConstantActionNodeName(UNKNOWN_FIELD);
+                    auto unknown_type = std::make_shared<DataTypeUInt8>();
+                    ColumnConstPtr unknown_column = unknown_type->createColumnConst(1, UNKNOWN_FIELD);
+                    const auto & unknown_node = result_dag.addColumn(std::move(unknown_column), std::move(unknown_type), std::move(unknown_name));
+
+                    auto if_null_function = FunctionFactory::instance().get("ifNull", context);
+                    result_node = &result_dag.addFunction(if_null_function, {result_node, &unknown_node}, {});
+                }
             }
             else
             {

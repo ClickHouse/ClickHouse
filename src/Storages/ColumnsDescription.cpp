@@ -149,10 +149,14 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
 
+/// This is how a column is serialized into ZooKeeper, and `ColumnsDescription::operator==` compares
+/// two sets of columns through it, so the text must not depend on the redundant parentheses the user
+/// has written around a `DEFAULT`, `CODEC` or `TTL` expression.
 static String formatASTStateAware(IAST & ast, IAST::FormatState & state)
 {
     WriteBufferFromOwnString buf;
     IAST::FormatSettings settings(true);
+    settings.ignore_redundant_parentheses = true;
     ast.format(buf, settings, state, IAST::FormatStateStacked());
     return buf.str();
 }
@@ -553,6 +557,14 @@ void ColumnsDescription::flattenNested()
             /// TODO: what to do with default expressions?
             nested_column.name = Nested::concatenateName(column.name, names[i]);
             nested_column.type = std::make_shared<DataTypeArray>(elements[i]);
+            /// The declared statistics were built from the unflattened `Nested(...)` type, while the
+            /// physical subcolumn is an `Array(...)` of one element. Retarget them at the type they
+            /// will actually be built for, otherwise `checkColumnTypeMatchesStatistics` reports a
+            /// type mismatch as a logical error the first time the statistics are materialized.
+            /// Statistics types unsupported for the flattened type are rejected afterwards, by the
+            /// storage validation in `MergeTreeStatisticsFactory::validate`.
+            if (!nested_column.statistics.empty())
+                nested_column.statistics.data_type = nested_column.type;
 
             addSubcolumns(nested_column.name, nested_column.type);
             columns.get<0>().insert(it, std::move(nested_column));
@@ -1392,8 +1404,7 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
 
     ColumnsDescription fake_column_descriptions(all_columns);
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
-
-    QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
+    auto fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
     GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
@@ -1407,7 +1418,7 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
     assertNoMatcherNodes(expression_list, "in column DEFAULT expression");
 
     query_node->getProjectionNode() = expression_list;
-    query_node->getJoinTree() = fake_table_expression;
+    query_node->getJoinTreeNode() = fake_table_expression;
 
     QueryTreeNodePtr query_tree = query_node;
     analyzer.resolve(query_tree, nullptr, execution_context);
@@ -1512,6 +1523,19 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
     auto result = validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, all_columns, context, /*get_sample_block=*/true, insert_time_default_columns);
     chassert(result.has_value());
     return std::move(*result);
+}
+
+bool prewhereSupportedColumnsContain(
+    const NameSet & supported_columns, bool include_subcolumns, const ColumnsDescription & columns, const String & column_name)
+{
+    if (supported_columns.contains(column_name))
+        return true;
+
+    if (!include_subcolumns)
+        return false;
+
+    auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+    return column && column->isSubcolumn() && supported_columns.contains(column->getNameInStorage());
 }
 
 }
