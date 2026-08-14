@@ -16,6 +16,7 @@
 #include <Dictionaries/readInvalidateQuery.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Storages/StoragePostgreSQL.h>
 #include <Common/logger_useful.h>
 #endif
 
@@ -39,7 +40,31 @@ namespace ErrorCodes
 
 static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys = {
     "host", "port", "user", "password", "db", "database", "table", "schema", "background_reconnect",
-    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority", "sslmode"};
+    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority",
+    "sslmode", "sslrootcert", "sslcert", "sslkey", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"};
+
+#if USE_LIBPQXX
+/// The source configuration of a dictionary created with a DDL query comes from the query itself, so
+/// it may not name files for the server to open: the server reads them with its own privileges, and a
+/// user who cannot read a certificate and key must not be able to authenticate with them. The
+/// contents can be passed in `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` instead.
+/// Dictionaries defined in server configuration files are written by an operator and keep using paths.
+static void checkNoSSLPaths(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
+{
+    static const std::initializer_list<std::pair<std::string_view, std::string_view>> keys
+        = {{"sslrootcert", "sslrootcert_pem"}, {"sslcert", "sslcert_pem"}, {"sslkey", "sslkey_pem"}};
+
+    for (const auto & [key, contents_key] : keys)
+    {
+        if (config.has(prefix + "." + std::string(key)))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` cannot be specified in a dictionary created with a DDL query. "
+                "Pass the contents of the file in `{}` instead",
+                key, contents_key);
+    }
+}
+#endif
 
 #if USE_LIBPQXX
 
@@ -230,6 +255,11 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 
         bool bg_reconnect = false;
 
+        /// Every key here comes from the `CREATE DICTIONARY` query, including the keys that override a
+        /// named collection, so this covers both of the branches below.
+        if (created_from_ddl)
+            checkNoSSLPaths(config, settings_config_prefix);
+
         auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, context) : nullptr;
         if (named_collection)
         {
@@ -243,6 +273,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             common_configuration.database = named_collection->getAnyOrDefault<String>({"database", "db"}, "");
             common_configuration.schema = named_collection->getOrDefault<String>("schema", "");
             common_configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, named_collection->getOrDefault<String>("table", ""));
+            common_configuration.ssl = StoragePostgreSQL::getSSLParams(*named_collection);
 
             dictionary_configuration.emplace(PostgreSQLDictionarySource::Configuration{
                 .db = common_configuration.database,
@@ -271,6 +302,13 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             common_configuration.database = config.getString(fmt::format("{}.database", settings_config_prefix), config.getString(fmt::format("{}.db", settings_config_prefix), ""));
             common_configuration.schema = config.getString(fmt::format("{}.schema", settings_config_prefix), "");
             common_configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, config.getString(fmt::format("{}.table", settings_config_prefix), ""));
+            common_configuration.ssl.ssl_mode = config.getString(fmt::format("{}.sslmode", settings_config_prefix), "");
+            common_configuration.ssl.ssl_root_cert = config.getString(fmt::format("{}.sslrootcert", settings_config_prefix), "");
+            common_configuration.ssl.ssl_cert = config.getString(fmt::format("{}.sslcert", settings_config_prefix), "");
+            common_configuration.ssl.ssl_key = config.getString(fmt::format("{}.sslkey", settings_config_prefix), "");
+            common_configuration.ssl.ssl_root_cert_pem = config.getString(fmt::format("{}.sslrootcert_pem", settings_config_prefix), "");
+            common_configuration.ssl.ssl_cert_pem = config.getString(fmt::format("{}.sslcert_pem", settings_config_prefix), "");
+            common_configuration.ssl.ssl_key_pem = config.getString(fmt::format("{}.sslkey_pem", settings_config_prefix), "");
 
             dictionary_configuration.emplace(PostgreSQLDictionarySource::Configuration
             {

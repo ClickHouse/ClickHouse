@@ -106,6 +106,7 @@
 #include <Storages/System/StorageSystemQueryResultCache.h>
 #include <Storages/System/StorageSystemUserQueryLog.h>
 #include <Storages/System/StorageSystemNamedCollections.h>
+#include <Storages/System/StorageSystemHandlers.h>
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Storages/System/StorageSystemCertificates.h>
 #include <Storages/System/StorageSystemTokenizers.h>
@@ -127,6 +128,7 @@
 #include <Storages/System/StorageSystemKeeperCluster.h>
 #endif
 #include <Storages/System/StorageSystemScheduler.h>
+#include <Storages/System/StorageSystemObjectStorageQueueMetadata.h>
 #include <Storages/System/StorageSystemObjectStorageQueueMetadataCache.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Storages/System/StorageSystemDashboards.h>
@@ -295,6 +297,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 #endif
     attach<StorageSystemCertificates>(context, system_database, "certificates", "Contains information about available certificates and their sources.");
     attachNoDescription<StorageSystemNamedCollections>(context, system_database, "named_collections", "Contains a list of all named collections which were created via SQL query or parsed from configuration file.");
+    attachNoDescription<StorageSystemHandlers>(context, system_database, "handlers", "Contains a list of all SQL-defined HTTP handlers created via CREATE HANDLER.");
     attach<StorageSystemAsyncLoader>(context, system_database, "asynchronous_loader", "Contains information and status for recent asynchronous jobs (e.g. for tables loading). The table contains a row for every job.");
     attach<StorageSystemBackgroundSchedulePool>(context, system_database, "background_schedule_pool", "Contains information about tasks in all BackgroundSchedulePool instances. Each row represents a task.");
     attach<StorageSystemUserProcesses>(context, system_database, "user_processes", "This system table can be used to get overview of memory usage and ProfileEvents of users.");
@@ -303,6 +306,8 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemJemallocStats>(context, system_database, "jemalloc_stats", "Returns jemalloc statistics in a single row with a single column. Equivalent to SYSTEM JEMALLOC STATS command.");
     attachNoDescription<StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::S3>>(context, system_database, "s3queue_metadata_cache", "Contains in-memory state of S3Queue metadata and currently processed rows per file.");
     attachNoDescription<StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::Azure>>(context, system_database, "azure_queue_metadata_cache", "Contains in-memory state of AzureQueue metadata and currently processed rows per file.");
+    attachNoDescription<StorageSystemObjectStorageQueueMetadata<ObjectStorageType::S3>>(context, system_database, "s3_queue_metadata", "Contains the current number of processed, processing and failed nodes in keeper for each S3Queue metadata object and, on demand, their contents. Unlike system.s3queue_metadata_cache, which shows the in-memory cache, this table reads the state directly from keeper.");
+    attachNoDescription<StorageSystemObjectStorageQueueMetadata<ObjectStorageType::Azure>>(context, system_database, "azure_queue_metadata", "Contains the current number of processed, processing and failed nodes in keeper for each AzureQueue metadata object and, on demand, their contents. Unlike system.azure_queue_metadata_cache, which shows the in-memory cache, this table reads the state directly from keeper.");
     attach<StorageSystemObjectStorageQueueSettings<ObjectStorageType::S3>>(context, system_database, "s3_queue_settings", "Contains a list of settings of S3Queue tables.");
     attach<StorageSystemObjectStorageQueueSettings<ObjectStorageType::Azure>>(context, system_database, "azure_queue_settings", "Contains a list of settings of AzureQueue tables.");
     attach<StorageSystemDashboards>(context, system_database, "dashboards", "Contains queries used by /dashboard page accessible though HTTP interface. This table can be useful for monitoring and troubleshooting. The table contains a row for every chart in a dashboard.");

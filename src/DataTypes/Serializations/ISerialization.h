@@ -743,6 +743,9 @@ public:
     /// Returns true if stream with specified path corresponds to dynamic subcolumn.
     static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
 
+    /// Returns whether a substream should be prefetched.
+    static bool isPrefetchNeededForSubstream(const SubstreamPath & path, size_t prefix_len, bool prefetch_json_shared_data_substreams);
+
     static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
     static bool isMetadataStream(const SubstreamPath & path);
 

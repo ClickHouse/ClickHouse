@@ -126,7 +126,7 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void(size_t)> 
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            if (i == num_tries - 1 || !isRetryableAzureException(e, /* may_be_provisioning_access */ write_settings.is_initial_access_check))
+            if (i == num_tries - 1 || !isRetryableAzureException(e))
                 throw;
 
             LOG_DEBUG(log, "Write at attempt {} for blob `{}` failed: {} {}", i + 1, blob_path, e.what(), e.Message);

@@ -149,10 +149,14 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
 
+/// This is how a column is serialized into ZooKeeper, and `ColumnsDescription::operator==` compares
+/// two sets of columns through it, so the text must not depend on the redundant parentheses the user
+/// has written around a `DEFAULT`, `CODEC` or `TTL` expression.
 static String formatASTStateAware(IAST & ast, IAST::FormatState & state)
 {
     WriteBufferFromOwnString buf;
     IAST::FormatSettings settings(true);
+    settings.ignore_redundant_parentheses = true;
     ast.format(buf, settings, state, IAST::FormatStateStacked());
     return buf.str();
 }
@@ -553,6 +557,14 @@ void ColumnsDescription::flattenNested()
             /// TODO: what to do with default expressions?
             nested_column.name = Nested::concatenateName(column.name, names[i]);
             nested_column.type = std::make_shared<DataTypeArray>(elements[i]);
+            /// The declared statistics were built from the unflattened `Nested(...)` type, while the
+            /// physical subcolumn is an `Array(...)` of one element. Retarget them at the type they
+            /// will actually be built for, otherwise `checkColumnTypeMatchesStatistics` reports a
+            /// type mismatch as a logical error the first time the statistics are materialized.
+            /// Statistics types unsupported for the flattened type are rejected afterwards, by the
+            /// storage validation in `MergeTreeStatisticsFactory::validate`.
+            if (!nested_column.statistics.empty())
+                nested_column.statistics.data_type = nested_column.type;
 
             addSubcolumns(nested_column.name, nested_column.type);
             columns.get<0>().insert(it, std::move(nested_column));

@@ -865,7 +865,7 @@ The `Values` format prints every row in brackets.
 - Escaping rules and parsing are similar to the [TabSeparated](/reference/formats/TabSeparated/TabSeparated) format.
 
 During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). 
-[`NULL`](/sql-reference/syntax.md) is represented as `NULL`.
+[`NULL`](/reference/syntax) is represented as `NULL`.
 
 The minimum set of characters that you need to escape when passing data in the `Values` format: 
 - single quotes
@@ -925,7 +925,7 @@ SELECT * FROM prices ORDER BY total;
 The `Values` format can also be used to format query results. Numbers are
 written without quotes, arrays in `[]`, and strings and dates in single quotes;
 single quotes and backslashes inside strings are escaped with a backslash, and
-[`NULL`](/sql-reference/syntax) is written as `NULL`:
+[`NULL`](/reference/syntax) is written as `NULL`:
 
 ```sql title="Query"
 SELECT 1 AS a, 'O''Reilly' AS b, NULL::Nullable(String) AS c FORMAT Values;

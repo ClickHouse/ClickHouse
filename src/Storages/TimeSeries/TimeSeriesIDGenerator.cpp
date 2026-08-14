@@ -8,17 +8,10 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/TimeSeriesSettings.h>
 
 
 namespace DB
 {
-
-namespace TimeSeriesSetting
-{
-    extern const TimeSeriesSettingsMap tags_to_columns;
-    extern const TimeSeriesSettingsBool use_all_tags_column_to_generate_id;
-}
 
 namespace ErrorCodes
 {
@@ -37,34 +30,9 @@ namespace
                 return true;
         return false;
     }
-}
 
-
-ASTPtr TimeSeriesIDGenerator::getDefault(
-    const DataTypePtr & id_type, const TimeSeriesSettings & settings, const StorageID & table_id)
-{
-    /// Build a list of arguments for a hash function.
-    /// All hash functions below allow multiple arguments, so we use two arguments: metric_name, all_tags.
-    ASTs arguments_for_hash_function;
-    arguments_for_hash_function.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
-
-    if (settings[TimeSeriesSetting::use_all_tags_column_to_generate_id])
-    {
-        arguments_for_hash_function.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::AllTags));
-    }
-    else
-    {
-        const Map & tags_to_columns = settings[TimeSeriesSetting::tags_to_columns];
-        for (const auto & tag_name_and_column_name : tags_to_columns)
-        {
-            const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
-            const auto & column_name = tuple.at(1).safeGet<String>();
-            arguments_for_hash_function.push_back(make_intrusive<ASTIdentifier>(column_name));
-        }
-        arguments_for_hash_function.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags));
-    }
-
-    auto make_hash_function = [](const String & function_name, ASTs arguments) -> boost::intrusive_ptr<ASTFunction>
+    /// Makes an AST for calling a hash function with the specified arguments.
+    boost::intrusive_ptr<ASTFunction> makeHashFunctionCall(const String & function_name, ASTs arguments)
     {
         auto function = make_intrusive<ASTFunction>();
         function->name = function_name;
@@ -72,42 +40,52 @@ ASTPtr TimeSeriesIDGenerator::getDefault(
         function->children.push_back(function->arguments);
         function->arguments->children = std::move(arguments);
         return function;
-    };
+    }
 
     /// Makes an expression calculating a hash of `arguments` represented as a value of type `type`,
     /// returns null if `type` is not one of the plain identifier types supported by the generator.
-    auto make_hash_expression = [&](const IDataType & type, ASTs arguments) -> ASTPtr
+    ASTPtr makeHashExpressionForType(const IDataType & type, ASTs arguments)
     {
         WhichDataType which(type);
 
         if (which.isUInt64())
-            return make_hash_function("sipHash64", std::move(arguments));
+            return makeHashFunctionCall("sipHash64", std::move(arguments));
 
         if (which.isFixedString() && typeid_cast<const DataTypeFixedString &>(type).getN() == 16)
-            return make_hash_function("sipHash128", std::move(arguments));
+            return makeHashFunctionCall("sipHash128", std::move(arguments));
 
         if (which.isUUID())
-            return makeASTFunction("reinterpretAsUUID", make_hash_function("sipHash128", std::move(arguments)));
+            return makeASTFunction("reinterpretAsUUID", makeHashFunctionCall("sipHash128", std::move(arguments)));
 
         if (which.isUInt128())
-            return makeASTFunction("reinterpretAsUInt128", make_hash_function("sipHash128", std::move(arguments)));
+            return makeASTFunction("reinterpretAsUInt128", makeHashFunctionCall("sipHash128", std::move(arguments)));
 
         return nullptr;
-    };
+    }
 
-    /// An identifier of a plain type is a hash of the metric name and the tags.
-    if (auto expression = make_hash_expression(*id_type, arguments_for_hash_function))
+}
+
+
+ASTPtr TimeSeriesIDGenerator::getDefault(const DataTypePtr & id_type, const StorageID & table_id)
+{
+    /// The `tags` column contains all the tags, including the `__name__` tag with the metric name
+    /// and the tags stored in the columns specified in the `tags_to_columns` setting,
+    /// so hashing just `tags` is enough to identify a time series.
+    ASTs arguments_for_hash_function{make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags)};
+
+    /// An identifier of a plain type is a hash of the tags.
+    if (auto expression = makeHashExpressionForType(*id_type, arguments_for_hash_function))
         return expression;
 
     /// For a two-component identifier Tuple(F, S) the first component is a hash of the metric name only,
-    /// and the second component is a hash of the metric name and the tags.
+    /// and the second component is a hash of the tags.
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(id_type.get()))
     {
         const auto & element_types = tuple_type->getElements();
         if (element_types.size() == 2)
         {
-            ASTPtr first = make_hash_expression(*element_types[0], ASTs{make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName)});
-            ASTPtr second = first ? make_hash_expression(*element_types[1], arguments_for_hash_function) : nullptr;
+            ASTPtr first = makeHashExpressionForType(*element_types[0], ASTs{make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName)});
+            ASTPtr second = first ? makeHashExpressionForType(*element_types[1], arguments_for_hash_function) : nullptr;
             if (first && second)
                 return makeASTFunction("tuple", std::move(first), std::move(second));
         }

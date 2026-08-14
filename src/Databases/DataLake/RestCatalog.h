@@ -86,7 +86,7 @@ public:
 
     bool isTransactional() const override { return true; }
 
-    void dropTable(const String & namespace_name, const String & table_name) const override;
+    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
 
     ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
 
@@ -142,7 +142,7 @@ protected:
         bool oauth_server_use_request_body_,
         DB::ContextPtr context_);
 
-    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
+    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
 
     const std::filesystem::path base_url;
     const LoggerPtr log;
@@ -160,12 +160,14 @@ protected:
 
     /// `catalog_state` is the snapshot the caller derived the endpoint from, so that one
     /// request never mixes the endpoint of one state version with the auth of another.
-    DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
+    /// Virtual so `S3TablesCatalog` can override the network primitive for SigV4 signing;
+    /// default arguments are therefore omitted (clang-tidy `google-default-arguments`).
+    virtual DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         const CatalogState & catalog_state,
         const std::string & endpoint,
-        const Poco::URI::QueryParameters & params = {},
-        const DB::HTTPHeaderEntries & headers = {},
-        const std::optional<DB::HTTPHeaderEntries> & auth_headers = std::nullopt) const;
+        const Poco::URI::QueryParameters & params,
+        const DB::HTTPHeaderEntries & headers,
+        const std::optional<DB::HTTPHeaderEntries> & auth_headers) const;
 
     Poco::URI::QueryParameters createParentNamespaceParams(const std::string & base_namespace) const;
 
@@ -210,12 +212,12 @@ protected:
     void validateAuthHeaders(const DB::HTTPHeaderEntry & header) const;
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 
-    void sendRequest(
+    virtual void sendRequest(
         const CatalogState & catalog_state,
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,
-        const String & method = Poco::Net::HTTPRequest::HTTP_POST,
-        bool ignore_result = false) const;
+        const String & method,
+        bool ignore_result) const;
 
     std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
 

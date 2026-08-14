@@ -610,7 +610,7 @@ If input data contains only ENUM ids, it's recommended to enable the setting [in
 
 ## Description {#description}
 
-Also prints the header row with column names, similar to [TabSeparatedWithNames](/interfaces/formats/TabSeparatedWithNames).
+Also prints the header row with column names, similar to [TabSeparatedWithNames](/reference/formats/TabSeparated/TabSeparatedWithNames).
 
 ## Example usage {#example-usage}
 

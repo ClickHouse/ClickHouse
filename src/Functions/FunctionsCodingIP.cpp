@@ -1234,7 +1234,7 @@ SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr;
     factory.registerFunction<FunctionIPv4ToIPv6>(documentation_ipv4toipv6);
 
     FunctionDocumentation::Description description_macnumtostring = R"(
-Interprets a [`UInt64`](/sql-reference/data-types/int-uint) number as a MAC address in big endian format.
+Interprets a [`UInt64`](/reference/data-types/int-uint) number as a MAC address in big endian format.
 Returns the corresponding MAC address in format `AA:BB:CC:DD:EE:FF` (colon-separated numbers in hexadecimal form) as string.
     )";
     FunctionDocumentation::Syntax syntax_macnumtostring = "MACNumToString(num)";

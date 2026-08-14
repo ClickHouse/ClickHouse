@@ -885,6 +885,16 @@ void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
     }
 }
 
+void FileSegment::notifyDownloadProgress()
+{
+    /// Keep the downloader role and the DOWNLOADING state; only wake waiters so a reader
+    /// streaming the committed prefix re-checks `offset < getCurrentWriteOffset()` and proceeds.
+    auto lk = lock();
+    assertNotDetachedUnlocked(lk);
+    assertIsDownloaderUnlocked("notifyDownloadProgress", lk);
+    cv.notify_all();
+}
+
 void FileSegment::completePartAndResetDownloader()
 {
     auto lk = lock();
@@ -1542,6 +1552,18 @@ void FileSegmentsHolder::reset()
         }
     }
     file_segments.clear();
+}
+
+FileSegmentsHolderSharedPtr FileSegmentsHolder::popHolder()
+{
+    chassert(!file_segments.empty());
+    /// Move the first segment into its own holder WITHOUT touching the hold gauge: this holder
+    /// already counts it, so the splice just transfers ownership. The new holder completes the
+    /// segment (and decrements the gauge) on destruction.
+    auto result = std::make_shared<FileSegmentsHolder>();
+    result->file_segments.splice(result->file_segments.begin(), file_segments, file_segments.begin());
+    chassert(result->file_segments.size() == 1);
+    return result;
 }
 
 FileSegmentsHolder::~FileSegmentsHolder()

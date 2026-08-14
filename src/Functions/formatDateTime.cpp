@@ -2024,7 +2024,7 @@ Formats a date or date with time according to the given format string. `format` 
 
 `formatDateTime` uses MySQL datetime format style, refer to the [mysql docs](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
 
-The opposite operation of this function is [`parseDateTime`](/sql-reference/functions/type-conversion-functions#parseDateTime).
+The opposite operation of this function is [`parseDateTime`](/reference/functions/regular-functions/type-conversion-functions#parseDateTime).
 
 Using replacement fields, you can define a pattern for the resulting string.
 The example column in the table below shows formatting result for `2018-01-02 22:33:44`.
@@ -2184,7 +2184,7 @@ SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime
     FunctionDocumentation::Description description_formatDateTimeInJodaSyntax = R"(
 Similar to `formatDateTime`, except that it formats datetime in Joda style instead of MySQL style. Refer to [Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html).
 
-The opposite operation of this function is [`parseDateTimeInJodaSyntax`](/sql-reference/functions/type-conversion-functions#parseDateTimeInJodaSyntax).
+The opposite operation of this function is [`parseDateTimeInJodaSyntax`](/reference/functions/regular-functions/type-conversion-functions#parseDateTimeInJodaSyntax).
 
 Using replacement fields, you can define a pattern for the resulting string.
 

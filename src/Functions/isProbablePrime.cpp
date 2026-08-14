@@ -109,7 +109,7 @@ REGISTER_FUNCTION(IsProbablePrime)
 Returns `1` if the argument is probably prime, `0` if it is definitely composite.
 
 For `UInt8`, `UInt16`, `UInt32`, and `UInt64`, the result is exact and matches
-[`isPrime`](/sql-reference/functions/math-functions#isPrime). The `rounds` argument is ignored.
+[`isPrime`](/reference/functions/regular-functions/math-functions#isPrime). The `rounds` argument is ignored.
 
 For `UInt128` and `UInt256`, a return value of `1` is probabilistic. The optional `rounds` argument controls
 how many [Miller-Rabin](https://en.wikipedia.org/wiki/Miller-Rabin_primality_test) rounds are used:

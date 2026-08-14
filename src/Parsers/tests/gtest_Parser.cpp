@@ -264,8 +264,7 @@ TEST(ParserCreateQuery, MaskNATSTableEngineCredentials)
     /// hidden in `SHOW CREATE TABLE` and in the query log, otherwise secrets leak.
     const String query =
         "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, nats_password = 'plain_password', "
-        "nats_token = 'plain_token', nats_credential_file = '/plain/credential/file', "
-        "nats_credentials = 'plain_user_jwt_and_seed')";
+        "nats_token = 'plain_token', nats_credential_file = '/plain/credential/file')";
 
     DB::ParserCreateQuery parser;
     DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
@@ -276,10 +275,9 @@ TEST(ParserCreateQuery, MaskNATSTableEngineCredentials)
     EXPECT_EQ(masked.find("plain_password"), String::npos);
     EXPECT_EQ(masked.find("plain_token"), String::npos);
     EXPECT_EQ(masked.find("/plain/credential/file"), String::npos);
-    EXPECT_EQ(masked.find("plain_user_jwt_and_seed"), String::npos);
     /// The keys of the named overrides are not secrets and stay visible, as does the collection name.
     EXPECT_NE(masked.find("nats1"), String::npos);
-    EXPECT_NE(masked.find("nats_credentials = '[HIDDEN]'"), String::npos);
+    EXPECT_NE(masked.find("nats_credential_file = '[HIDDEN]'"), String::npos);
 }
 
 TEST(ParserCreateQuery, MaskNATSTableEngineURLPassword)
@@ -305,7 +303,7 @@ TEST(ParserCreateQuery, MaskNATSTableEngineNonLiteralArguments)
     /// the key can name a secret setting, and the url pieces can embed the credentials.
     const String query =
         "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, "
-        "concat('nats_', 'credentials') = 'plain_user_jwt_and_seed', "
+        "concat('nats_', 'token') = 'plain_token', "
         "nats_url = concat('nats://plain_user:plain_password@', 'example.com:4222'))";
 
     DB::ParserCreateQuery parser;
@@ -314,7 +312,7 @@ TEST(ParserCreateQuery, MaskNATSTableEngineNonLiteralArguments)
     const String masked = ast->formatForLogging();
 
     EXPECT_EQ(masked.find("plain_password"), String::npos);
-    EXPECT_EQ(masked.find("plain_user_jwt_and_seed"), String::npos);
+    EXPECT_EQ(masked.find("plain_token"), String::npos);
     EXPECT_NE(masked.find("nats1"), String::npos);
 }
 
@@ -337,6 +335,37 @@ TEST(ParserCreateQuery, MaskNATSTableEnginePositionalArguments)
     /// The collection name is the one legitimate positional argument and stays visible.
     EXPECT_NE(masked.find("nats1"), String::npos);
     EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskNATSTableEngineRemovedCredentialsSetting)
+{
+    /// `nats_credentials` is not a supported setting anymore, but the query is formatted for logging
+    /// before the settings are validated, so both spellings of the old setting have to stay masked
+    /// to keep the raw JWT/seed out of the query log even though the server then rejects the query.
+    {
+        const String query =
+            "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, nats_credentials = 'plain_user_jwt_and_seed')";
+
+        DB::ParserCreateQuery parser;
+        DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+        const String masked = ast->formatForLogging();
+
+        EXPECT_EQ(masked.find("plain_user_jwt_and_seed"), String::npos);
+        EXPECT_NE(masked.find("nats_credentials = '[HIDDEN]'"), String::npos);
+    }
+    {
+        const String query =
+            "CREATE TABLE test_nats (key UInt64) ENGINE = NATS SETTINGS nats_credentials = 'plain_user_jwt_and_seed'";
+
+        DB::ParserCreateQuery parser;
+        DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+        const String masked = ast->formatForLogging();
+
+        EXPECT_EQ(masked.find("plain_user_jwt_and_seed"), String::npos);
+        EXPECT_NE(masked.find("nats_credentials = '[HIDDEN]'"), String::npos);
+    }
 }
 
 TEST_P(ParserTest, parseQuery)

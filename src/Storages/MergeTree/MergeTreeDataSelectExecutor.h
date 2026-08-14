@@ -240,6 +240,7 @@ public:
         bool find_exact_ranges;
         bool is_parallel_reading_from_replicas;
         bool has_projections;
+        bool check_row_limits;
         ReadFromMergeTree::AnalysisResult & result;
     };
 

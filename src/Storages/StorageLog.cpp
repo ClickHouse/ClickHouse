@@ -1425,7 +1425,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Log
 ```
 
-See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See the detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
 
 ## Writing the data {#table_engines-log-writing-the-data}
 
@@ -1535,7 +1535,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = TinyLog
 ```
 
-See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See the detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
 
 ## Writing the data {#table_engines-tinylog-writing-the-data}
 

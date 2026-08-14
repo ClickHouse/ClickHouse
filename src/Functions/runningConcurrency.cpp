@@ -220,7 +220,7 @@ If events from different data blocks overlap then they can not be processed corr
 :::
 
 :::warning Deprecated
-It is advised to use [window functions](/sql-reference/window-functions) instead.
+It is advised to use [window functions](/reference/functions/window-functions) instead.
 :::
 )";
         FunctionDocumentation::Syntax syntax = "runningConcurrency(start, end)";

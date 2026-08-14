@@ -23,6 +23,10 @@ using WatermarkSettingsPtr = std::shared_ptr<WatermarkSettings>;
 
 struct StreamSettings
 {
+    /// If true, read only the first snapshot and then finish (do not subscribe for updates).
+    bool subscribe_for_updates = true;
+    /// If true, do not sort each snapshot by cursor; ordering holds only between snapshots.
+    bool unordered = false;
     CursorTreeNodePtr cursor;
     WatermarkSettingsPtr watermark;
 

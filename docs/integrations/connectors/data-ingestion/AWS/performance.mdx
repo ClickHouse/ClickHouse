@@ -67,15 +67,17 @@ ClickHouse will continuously [merge parts](https://clickhouse.com/blog/asynchron
 
 A single ClickHouse server utilizes several [background merge threads](/reference/settings/server-settings/settings/background#background_pool_size) to execute concurrent [part merges](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes). Each thread executes a loop:
 
-```bash
-① Decide which parts to merge next, and load these parts as blocks into memory.
-
-② Merge the loaded blocks in memory into a larger block.
-
-③ Write the merged block into a new part on disk.
-
-Go to ①
-```
+<Steps>
+<Step title="Load parts into memory">
+Decide which parts to merge next, and load these parts as blocks into memory.
+</Step>
+<Step title="Merge blocks">
+Merge the loaded blocks in memory into a larger block.
+</Step>
+<Step title="Write to disk">
+Write the merged block into a new part on disk, then return to step 1.
+</Step>
+</Steps>
 
 Note that [increasing](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#hardware-size) the number of CPU cores and the size of RAM increases the background merge throughput.
 

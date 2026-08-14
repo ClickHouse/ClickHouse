@@ -307,17 +307,17 @@ If the array to sort contains `-Inf`, `NULL`, `NaN`, or `Inf` they will be sorte
 3. `NaN`
 4. `NULL`
 
-`arraySort` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
+`arraySort` is a [higher-order function](/reference/functions/regular-functions/overview#higher-order-functions).
 )";
     FunctionDocumentation::Syntax syntax = "arraySort([f,] arr [, arr1, ... ,arrN])";
     FunctionDocumentation::Arguments arguments = {
         {"f(y1[, y2 ... yN])", "The lambda function to apply to elements of array `x`."},
-        {"arr", "An array to be sorted. [`Array(T)`](/sql-reference/data-types/array)"},
+        {"arr", "An array to be sorted. [`Array(T)`](/reference/data-types/array)"},
         {"arr1, ..., arrN", "Optional. N additional arrays, in the case when `f` accepts multiple arguments."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns the array `arr` sorted in ascending order if no lambda function is provided, otherwise
-it returns an array sorted according to the logic of the provided lambda function. [`Array(T)`](/sql-reference/data-types/array).
+it returns an array sorted according to the logic of the provided lambda function. [`Array(T)`](/reference/data-types/array).
     )"};
     FunctionDocumentation::Examples examples = {
         {"Example 1", "SELECT arraySort([1, 3, 3, 0]);", "[0,1,3,3]"},
@@ -344,12 +344,12 @@ If the array to sort contains `-Inf`, `NULL`, `NaN`, or `Inf` they will be sorte
 3. `NaN`
 4. `NULL`
 
-`arrayReverseSort` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
+`arrayReverseSort` is a [higher-order function](/reference/functions/regular-functions/overview#higher-order-functions).
     )";
     syntax = "arrayReverseSort([f,] arr [, arr1, ... ,arrN])";
     returned_value = {R"(
 Returns the array `x` sorted in descending order if no lambda function is provided, otherwise
-it returns an array sorted according to the logic of the provided lambda function, and then reversed. [`Array(T)`](/sql-reference/data-types/array).
+it returns an array sorted according to the logic of the provided lambda function, and then reversed. [`Array(T)`](/reference/data-types/array).
     )"};
     examples = {
         {"Example 1", "SELECT arrayReverseSort((x, y) -> y, [4, 3, 5], ['a', 'b', 'c']) AS res;", "[5,3,4]"},

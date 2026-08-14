@@ -193,6 +193,11 @@ protected:
 
     virtual String postProcessResponse(const String & raw_response) const { return raw_response; }
 
+    /// Insert a post-processed provider response into the result column.
+    /// Default appends the string as-is (`ColumnString`); subclasses may parse into other types
+    /// (e.g. `aiFilter` → `UInt8`). The result column itself is created from `result_type`.
+    virtual void insertProcessedResult(IColumn & column, const String & processed) const;
+
 private:
     /// Full parameter spec for this function: `commonParams` followed by `functionParams`.
     AIParamSpecs allParams() const;

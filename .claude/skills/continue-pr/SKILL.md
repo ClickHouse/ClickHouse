@@ -22,6 +22,14 @@ Extract the PR number from `$0`. If not provided, use `AskUserQuestion` to ask f
 
 Validate that the PR number contains only digits. Reject any non-numeric input immediately — do not pass unvalidated input to shell commands or GraphQL queries.
 
+Determine which repository you are operating in — the public `ClickHouse/ClickHouse` or the private `ClickHouse/clickhouse-private`:
+
+```bash
+gh repo view --json nameWithOwner --jq .nameWithOwner   # or: git remote get-url origin
+```
+
+Remember it as `$REPO` and use it everywhere below instead of the literal `ClickHouse/ClickHouse` in `gh` commands, API URLs, and GraphQL `repository(owner:, name:)` arguments. The repository also decides whom to ask about unrelated CI failures (step 4, item 5): `@groeneai` in `ClickHouse/ClickHouse`, `@oranjeai` in `ClickHouse/clickhouse-private`.
+
 Fetch PR metadata using `gh` if available, otherwise use `WebFetch` on the GitHub API:
 
 ```bash
@@ -113,8 +121,8 @@ For each CI failure:
 
 4. If the only failure is "CH Inc sync", fix it using the /fix-sync skill.
 
-5. If you are confident that the failure is unrelated to the changes, post a comment, asking @groeneai to investigate the failure:
-   @groeneai, investigate the failure: <link> and provide a fix in a separate PR. If the fix is already in progress, link it here. 
+5. If you are confident that the failure is unrelated to the changes, post a comment, asking the reviewer for `$REPO` (step 1) — `@groeneai` in `ClickHouse/ClickHouse`, `@oranjeai` in `ClickHouse/clickhouse-private` — to investigate the failure:
+   🕵 @<reviewer>, investigate the failure: <link> and provide a fix in a separate PR. If the fix is already in progress, link it here. 
 
 6. **Repeat** until all failures are addressed or confirmed as known issues with links to open issues/PRs.
 
@@ -251,6 +259,7 @@ Report the result and provide the PR URL.
 
 ## Notes
 
+- **Every GitHub comment you post — PR comments, issue comments, and review-thread replies — MUST begin with the 🕵 symbol** (followed by a space), so automated comments are identifiable.
 - Do not use rebase or amend - always add new commits (per project conventions)
 - Do not push to the master branch
 - Each fix should be a separate, well-described commit

@@ -1291,7 +1291,7 @@ ORDER BY key ASC
 
 ### More information on Joins {#more-information-on-joins}
 - [`join_algorithm` setting](/reference/settings/session-settings/join#join_algorithm)
-- [JOIN clause](/sql-reference/statements/select/join.md)
+- [JOIN clause](/reference/statements/select/join)
 )DOCS_MD",
         .syntax = "ENGINE = EmbeddedRocksDB([ttl, rocksdb_dir, read_only]) PRIMARY KEY(key)",
         .related = {"Redis"}});

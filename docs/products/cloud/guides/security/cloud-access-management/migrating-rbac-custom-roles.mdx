@@ -23,7 +23,7 @@ Organizations that haven't finished the migration by the deadline shown in the w
 
 The new RBAC system introduces custom role definitions and more granular access control. Instead of a fixed set of service-scoped permissions, you define roles that reveal every permission they grant, so it's clear exactly what access each role provides.
 
-A role can combine organization, service, and database permissions. You can apply those permissions to all of your services and databases, or to a subset. For the full list of permissions and the standard roles that ship with ClickHouse Cloud, see [Console roles and permissions](/cloud/security/console-roles). For instructions on creating and editing roles after you migrate, see [Manage custom roles](/cloud/guides/security/manage-custom-roles).
+A role can combine organization, service, and database permissions. You can apply those permissions to all of your services and databases, or to a subset. For the full list of permissions and the standard roles that ship with ClickHouse Cloud, see [Console roles and permissions](/products/cloud/reference/security/console-roles). For instructions on creating and editing roles after you migrate, see [Manage custom roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles).
 
 Most permissions map to the new model automatically. Service-scoped permissions that can't be mapped directly are what the migration wizard asks you to handle.
 
@@ -38,7 +38,7 @@ From the **Users and roles** page, follow the migration prompt to open the wizar
 </Step>
 <Step title="Create roles for unmapped permissions" id="create-roles">
 
-The wizard lists members and API keys whose service-scoped permissions couldn't be migrated automatically. Create new roles that match the access these members and keys need. See [Manage custom roles](/cloud/guides/security/manage-custom-roles) for details on how permissions are scoped.
+The wizard lists members and API keys whose service-scoped permissions couldn't be migrated automatically. Create new roles that match the access these members and keys need. See [Manage custom roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles) for details on how permissions are scoped.
 </Step>
 <Step title="Assign roles to every member and API key" id="assign-roles">
 
@@ -68,4 +68,4 @@ Review your OpenAPI and Terraform configurations to keep them compatible with th
 
 The Query Endpoints role transitions to the Basic service API reader role. Update any integrations that depend on the previous role name.
 
-For guidance on managing roles going forward, see [Manage custom roles](/cloud/guides/security/manage-custom-roles) and [Cloud access management](/cloud/security/cloud_access_management).
+For guidance on managing roles going forward, see [Manage custom roles](/products/cloud/guides/security/cloud-access-management/manage-custom-roles) and [Cloud access management](/products/cloud/guides/security/cloud-access-management).

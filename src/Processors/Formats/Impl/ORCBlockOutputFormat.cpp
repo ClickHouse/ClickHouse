@@ -2,6 +2,8 @@
 
 #include <unordered_map>
 
+#include <fmt/ranges.h>
+
 #if USE_ORC
 
 #include <Common/assert_cast.h>
@@ -62,6 +64,33 @@ orc::CompressionKind getORCCompression(FormatSettings::ORCCompression method)
         return orc::CompressionKind::CompressionKind_ZLIB;
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
+}
+
+/// Two ORC types get the same key exactly when `parseORCType` (NativeORCBlockInputFormat.cpp) reads
+/// them back as the same ClickHouse type: `BINARY` and `STRING` both read as `String`, and a nested
+/// `UNION` reads as a `Variant`, which sorts its branches, while ORC keeps them positional.
+/// A field name is length-prefixed so a name containing `:` or `,` cannot forge another key.
+String orcTypeDedupKey(const orc::Type & type)
+{
+    const auto kind = type.getKind();
+    if (kind == orc::TypeKind::BINARY || kind == orc::TypeKind::STRING)
+        return "string";
+    if (kind == orc::TypeKind::DECIMAL)
+        return fmt::format("decimal({},{})", type.getPrecision(), type.getScale());
+
+    std::vector<String> children;
+    for (size_t i = 0; i < type.getSubtypeCount(); ++i)
+    {
+        auto child = orcTypeDedupKey(*type.getSubtype(i));
+        if (kind == orc::TypeKind::STRUCT)
+            child = fmt::format("{}:{}:{}", type.getFieldName(i).size(), type.getFieldName(i), child);
+        children.push_back(std::move(child));
+    }
+    if (kind == orc::TypeKind::UNION)
+        std::sort(children.begin(), children.end());
+    /// Every remaining kind the writer emits is a parameterless primitive mapping to a distinct
+    /// ClickHouse type, so for those the kind alone is the key and there are no children.
+    return fmt::format("{}<{}>", static_cast<int>(kind), fmt::join(children, ","));
 }
 
 }
@@ -247,20 +276,22 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
             /// ORC keeps one physical stream per union branch and identifies a branch only by its
             /// ORC type, so two variants that map to the same ORC type (e.g. `Int32` and `UInt32`,
             /// both ORC `int`) would produce a union with duplicate branches, which the reader
-            /// rejects. Reject such a `Variant` up front instead of writing an unreadable file.
-            std::unordered_map<String, String> variant_by_orc_type;
+            /// rejects. Branches whose ORC types merely read back as one ClickHouse type collide the
+            /// same way, so they are keyed by `orcTypeDedupKey` rather than by the ORC type itself.
+            std::unordered_map<String, std::pair<String, String>> variant_by_orc_type;
             /// A union child is addressed by its type name, the way a `Variant` subcolumn is
             /// (`v.Int32`). Iceberg has no union type, so no field id is expected to be found there.
             for (const auto & nested_type : variant_type.getVariants())
             {
                 auto child_type = getORCType(nested_type, Nested::concatenateName(column_path, nested_type->getName()));
-                auto [it, inserted] = variant_by_orc_type.emplace(child_type->toString(), nested_type->getName());
+                auto [it, inserted] = variant_by_orc_type.emplace(
+                    orcTypeDedupKey(*child_type), std::pair{nested_type->getName(), child_type->toString()});
                 if (!inserted)
                     throw Exception(
                         ErrorCodes::ILLEGAL_COLUMN,
-                        "Type {} is not supported for ORC output format: variants {} and {} are both written as ORC type '{}', "
-                        "and ORC unions with duplicate branch types cannot be read back",
-                        unwrapped->getName(), it->second, nested_type->getName(), it->first);
+                        "Type {} is not supported for ORC output format: variant {} is written as ORC type '{}' and variant {} as "
+                        "'{}', which are read back as the same type, and ORC unions with duplicate branch types cannot be read back",
+                        unwrapped->getName(), it->second.first, it->second.second, nested_type->getName(), child_type->toString());
                 union_type->addUnionChild(std::move(child_type));
             }
             result = std::move(union_type);

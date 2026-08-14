@@ -15,10 +15,8 @@
 #include <Poco/URI.h>
 #include <Poco/Net/IPAddress.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
@@ -365,6 +363,11 @@ bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr exception)
     }
 }
 
+void FunctionBaseAI::insertProcessedResult(IColumn & column, const String & processed) const
+{
+    column.insertData(processed.data(), processed.size());
+}
+
 AIParamSpecs FunctionBaseAI::embeddingParams()
 {
     return {
@@ -505,7 +508,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
 
-    auto result_col = ColumnString::create();
+    auto result_col = removeNullable(result_type)->createColumn();
     auto null_map_col = prompt_nullable ? ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0)) : nullptr;
 
     UInt64 total_api_calls = 0;
@@ -581,11 +584,16 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             }
         }
 
-        result_col->insertData(result.data(), result.size());
         if (success)
+        {
+            insertProcessedResult(*result_col, result);
             ++rows_processed;
+        }
         else
+        {
+            result_col->insertDefault();
             ++rows_skipped;
+        }
     }
 
     ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls);

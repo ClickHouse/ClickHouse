@@ -834,6 +834,20 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     if (result.added_columns.empty())
         return result.filter_node;
 
+    /// Keep columns the PREWHERE or row-level filter still read, so this filter DAG's removal does not drop them from the shared read set.
+    {
+        NameSet required_columns_by_readers;
+        if (auto prewhere = read_from_merge_tree_step.getPrewhereInfo())
+            for (const auto & name : prewhere->prewhere_actions.getRequiredColumnsNames())
+                required_columns_by_readers.insert(name);
+
+        if (auto row_level_filter = read_from_merge_tree_step.getRowLevelFilter())
+            for (const auto & name : row_level_filter->actions.getRequiredColumnsNames())
+                required_columns_by_readers.insert(name);
+
+        std::erase_if(result.removed_columns, [&](const String & column) { return required_columns_by_readers.contains(column); });
+    }
+
     auto logger = getLogger("processAndOptimizeTextIndexFunctions");
     LOG_DEBUG(logger, "{}", optimizationInfoToString(result.added_columns, result.removed_columns));
 

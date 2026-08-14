@@ -15,7 +15,7 @@ namespace DB
 using LocalPartsByPartition = std::map<String, std::vector<MergeTreePartInfo>>;
 
 /// Advance the subscription's `safe_block_number` to the highest block reachable without crossing a
-/// not-fetched/committing block.
+/// not-fetched/committing block. Returns whether any partition was advanced.
 bool enrichSubscription(
     MergeTreeBoundsSubscription & subscription,
     const LocalPartsByPartition & local_parts,

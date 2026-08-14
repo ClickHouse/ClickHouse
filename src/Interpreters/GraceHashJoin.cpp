@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/FnTraits.h>
@@ -176,6 +177,11 @@ public:
         ensureState(State::JOINING_BLOCKS);
         return AccumulatedBlockReader(left_file.getReadStream(), left_file_mutex);
     }
+
+    /// Spilled bytes for this bucket. Only called after the join
+    /// has finished, when no thread is writing to the files.
+    TemporaryDataBuffer::Stat leftSpillStat() const { return left_file.getHolder()->getStat(); }
+    TemporaryDataBuffer::Stat rightSpillStat() const { return right_file.getHolder()->getStat(); }
 
     const size_t idx;
 
@@ -394,6 +400,7 @@ GraceHashJoin::Buckets GraceHashJoin::rehashBuckets()
     LOG_TRACE(log, "Rehashing from {} to {}", current_size, to_size);
 
     addBuckets(to_size - current_size);
+    ++stats.num_rehashes;
 
     return buckets;
 }
@@ -499,6 +506,64 @@ size_t GraceHashJoin::getTotalByteCount() const
     std::lock_guard lock(hash_join_mutex);
     chassert(hash_join);
     return hash_join->getTotalByteCount();
+}
+
+void GraceHashJoin::GraceHashJoinStats::foldIn(const HashJoin & in_memory_join)
+{
+    UInt64 right_table_rows = in_memory_join.getRightTableRowCount();
+    right_rows += right_table_rows;
+    unique_keys += in_memory_join.getTotalRowCount();
+    peak_in_memory_bytes = std::max(peak_in_memory_bytes, in_memory_join.getPeakBuildBytes());
+
+    if (const auto * match_stats = in_memory_join.getMatchStats())
+    {
+        left_rows_total += match_stats->getInputLeft();
+
+        matched_left.add(match_stats->getMatchedLeft());
+        matched_right.add(match_stats->getMatchedRight(right_table_rows));
+    }
+}
+
+GraceHashJoin::GraceHashJoinStats GraceHashJoin::collectStats() const
+{
+    GraceHashJoinStats result = stats;
+
+    if (current_bucket && hash_join)
+        result.foldIn(*hash_join);
+
+    Buckets buckets_snapshot = getCurrentBuckets();
+    result.num_buckets = buckets_snapshot.size();
+    for (const auto & bucket : buckets_snapshot)
+    {
+        result.left_spilled_compressed_bytes += bucket->leftSpillStat().compressed_size;
+        result.right_spilled_compressed_bytes += bucket->rightSpillStat().compressed_size;
+    }
+    return result;
+}
+
+StepAnalysisReport GraceHashJoin::getAnalysisReport() const
+{
+    const GraceHashJoinStats stats_snapshot = collectStats();
+
+    StepAnalysisReport report = buildMatchedRowsReport({
+        .left_rows = stats_snapshot.left_rows_total,
+        .matched_left = stats_snapshot.matched_left.get(),
+        .right_rows = stats_snapshot.right_rows,
+        .matched_right = stats_snapshot.matched_right.get()});
+
+    MetricList hash_table_metrics;
+    hash_table_metrics.emplace_back(MetricKey::UniqueKeys, stats_snapshot.unique_keys);
+    hash_table_metrics.emplace_back(MetricKey::Memory, stats_snapshot.peak_in_memory_bytes);
+    hash_table_metrics.emplace_back(MetricKey::Buckets, stats_snapshot.num_buckets);
+    hash_table_metrics.emplace_back(MetricKey::Rehashes, stats_snapshot.num_rehashes);
+    report.push_back({MetricGroupKey::HashTable, std::move(hash_table_metrics)});
+
+    MetricList spill_metrics;
+    spill_metrics.emplace_back(MetricKey::LeftSpilled, stats_snapshot.left_spilled_compressed_bytes);
+    spill_metrics.emplace_back(MetricKey::RightSpilled, stats_snapshot.right_spilled_compressed_bytes);
+    report.push_back({MetricGroupKey::Spill, std::move(spill_metrics)});
+
+    return report;
 }
 
 bool GraceHashJoin::alwaysReturnsEmptySet() const
@@ -693,6 +758,9 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
     size_t bucket_idx = current_bucket->idx;
 
+    if (hash_join)
+        stats.foldIn(*hash_join);
+
     size_t prev_keys_num = 0;
     if (hash_join && buckets.size() > 1)
     {
@@ -810,6 +878,8 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
         // Must use the latest buckets snapshot in case that it has been rehashed by other threads.
         buckets_snapshot = rehashBuckets();
         force_spill = false;
+        /// The replacement table reserves only ~half, so capture the peak before the rehash splits it away.
+        stats.peak_in_memory_bytes = std::max(stats.peak_in_memory_bytes, hash_join->getPeakBuildBytes());
         auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
         hash_join = nullptr;
 
