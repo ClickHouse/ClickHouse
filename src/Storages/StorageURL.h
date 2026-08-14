@@ -393,6 +393,11 @@ public:
     {
         std::string url;
         std::string http_method;
+        /// True when `http_method` came from a value STORED in a named collection (not from
+        /// a query-time override and not from the inline key-value argument). Stored values
+        /// are legacy configuration: collections accepted the key for any URL scheme before
+        /// it applied to reads, so scheme dispatch ignores them instead of rejecting.
+        bool http_method_stored_in_collection = false;
         HTTPHeaderEntries headers;
         std::string addresses_expr;
     };

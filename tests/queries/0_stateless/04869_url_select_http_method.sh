@@ -90,6 +90,12 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM url('file:///nonexistent_62352.csv', 'CSV',
 # (only the value STORED in the collection gets the compatibility exemption above).
 $CLICKHOUSE_CLIENT -q "SELECT * FROM url(nc_disp_62352, http_method='POST')" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
 $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION nc_disp_62352"
+# The engine mirrors the exemption: a fresh CREATE over a collection with a STORED
+# http_method delegates to the scheme backend with the key ignored.
+$CLICKHOUSE_CLIENT -q "CREATE NAMED COLLECTION nc_disp3_62352 AS url = 'file:///nonexistent_62352.csv', format = 'CSV', http_method = 'PUT'"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE url_nc_file_62352 (x String) ENGINE = URL(nc_disp3_62352)" 2>&1 | grep -c 'does not support http_method'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS url_nc_file_62352"
+$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION nc_disp3_62352"
 # A full-definition ATTACH is fresh user input: the engine guards apply to it, unlike the
 # short-syntax ATTACH of stored metadata. (Atomic databases require an explicit UUID for
 # the full-definition form; the guard fires before anything is registered under it.)

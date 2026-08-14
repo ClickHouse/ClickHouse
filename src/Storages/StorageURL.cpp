@@ -1853,6 +1853,8 @@ void StorageURL::processNamedCollectionResult(Configuration & configuration, con
 
     configuration.http_method = collection.getOrDefault<String>("http_method", collection.getOrDefault<String>("method", ""));
     validateHTTPMethod(configuration.http_method);
+    configuration.http_method_stored_in_collection = !configuration.http_method.empty()
+        && !collection.isQueryOverridden("http_method") && !collection.isQueryOverridden("method");
 
     configuration.format = collection.getOrDefault<String>("format", "auto");
     configuration.compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
@@ -2562,13 +2564,14 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
 
     /// Rejected for fresh definitions only: CREATE, and full-definition ATTACH (new user
     /// input, unlike short-syntax `ATTACH TABLE t` loading stored metadata) — the pattern
-    /// used by other engines. Named collections have been accepting `http_method` regardless
-    /// of the URL scheme, so pre-existing tables whose collection resolves to a non-HTTP
-    /// scheme must keep loading after upgrade — the delegated backend ignores the key, as
-    /// it always did.
+    /// used by other engines. Values STORED in named collections are exempt even then:
+    /// collections have been accepting `http_method` regardless of the URL scheme, so both
+    /// pre-existing tables and fresh `CREATE ... ENGINE = URL(nc)` over such collections
+    /// keep working — the delegated backend ignores the key, as it always did. Only the
+    /// inline key-value argument and query-time collection overrides are new syntax.
     const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
         || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
-    if (!configuration.http_method.empty() && is_fresh_definition)
+    if (!configuration.http_method.empty() && is_fresh_definition && !configuration.http_method_stored_in_collection)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The URL engine does not support http_method when dispatching to the {} engine (URL '{}')",

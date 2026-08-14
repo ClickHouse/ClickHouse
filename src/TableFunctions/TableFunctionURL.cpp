@@ -153,13 +153,8 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast, ContextPtr context)
 
 void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & context)
 {
-    bool http_method_from_stored_collection = false;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
     {
-        /// A value stored in the collection is legacy configuration; a query-time override
-        /// (`url(nc, http_method='POST')`) is new syntax and gets no compatibility exemption.
-        http_method_from_stored_collection = !named_collection->isQueryOverridden("http_method")
-            && !named_collection->isQueryOverridden("method");
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
 
         filename = configuration.url;
@@ -216,10 +211,10 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         {
             /// Named collections accepted `http_method` for any URL scheme before it applied
             /// to reads, so a value STORED in a collection keeps delegating with the key
-            /// ignored, mirroring the URL engine's loads of pre-existing metadata. The inline
-            /// key-value argument and query-time collection overrides are new syntax with no
-            /// legacy usage, so they are rejected.
-            if (http_method_from_stored_collection)
+            /// ignored, mirroring the URL engine's behavior. The inline key-value argument
+            /// and query-time collection overrides are new syntax with no legacy usage, so
+            /// they are rejected. (The flag is set by processNamedCollectionResult.)
+            if (configuration.http_method_stored_in_collection)
                 configuration.http_method.clear();
             else
                 throw Exception(
