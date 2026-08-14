@@ -5,30 +5,47 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 U="${CLICKHOUSE_TEST_UNIQUE_NAME}"
+CLEANUP=""
 
 # Creates an entity, then creates a second one from the statement the server emitted for the first,
 # and compares the two emitted statements. This is the loop serializeAccessEntity /
 # deserializeAccessEntity runs on every access-storage load.
+#
+# Each half is one client invocation: statements that produce no output share it with the single
+# SHOW CREATE whose one line is the result, so an arm costs two processes rather than seven.
 round_trip() {
-    local kind="$1" label="$2" clause="$3" pin_setting="$4"
-    local a="a_${U}" b="b_${U}"
-    local create_kw show_kw owner_col
+    local n="$1" kind="$2" label="$3" clause="$4" pin_setting="$5"
+    local a="a${n}_${U}" b="b${n}_${U}"
+    local create_kw owner_col
 
     case "$kind" in
-        profile) create_kw="SETTINGS PROFILE"; show_kw="SETTINGS PROFILE"; owner_col="profile_name" ;;
-        user)    create_kw="USER";            show_kw="USER";             owner_col="user_name" ;;
-        role)    create_kw="ROLE";            show_kw="ROLE";             owner_col="role_name" ;;
+        profile) create_kw="SETTINGS PROFILE"; owner_col="profile_name" ;;
+        user)    create_kw="USER";             owner_col="user_name" ;;
+        role)    create_kw="ROLE";             owner_col="role_name" ;;
     esac
+    CLEANUP="${CLEANUP} DROP ${create_kw} IF EXISTS ${a}, ${b};"
 
-    ${CLICKHOUSE_CLIENT} -q "DROP ${create_kw} IF EXISTS ${a}, ${b}"
-    ${CLICKHOUSE_CLIENT} -q "CREATE ${create_kw} ${a} SETTINGS ${clause}"
+    local emitted_a emitted_b reparsed pin_query=""
+    emitted_a=$(${CLICKHOUSE_CLIENT} -q "
+        DROP ${create_kw} IF EXISTS ${a};
+        CREATE ${create_kw} ${a} SETTINGS ${clause};
+        SHOW CREATE ${create_kw} ${a} FORMAT TSVRaw")
 
-    local emitted_a emitted_b
-    emitted_a=$(${CLICKHOUSE_CLIENT} -q "SHOW CREATE ${show_kw} ${a} FORMAT TSVRaw")
+    # Comparing the two emitted statements only proves the serializer agrees with itself, so for the
+    # arms whose value carries structure the surviving value is pinned in .reference as well. It is
+    # the second line of the same reply.
+    if [[ -n "$pin_setting" ]]; then
+        pin_query="SELECT '${label} reparsed', value FROM system.settings_profile_elements WHERE ${owner_col} = '${b}' AND setting_name = '${pin_setting}' FORMAT TSVRaw;"
+    fi
 
-    # Feed the server's own output back, under the second name.
-    ${CLICKHOUSE_CLIENT} -q "${emitted_a//$a/$b}" 2>/dev/null
-    emitted_b=$(${CLICKHOUSE_CLIENT} -q "SHOW CREATE ${show_kw} ${b} FORMAT TSVRaw" 2>/dev/null)
+    # Feed the server's own output back, under the second name. A server that cannot reparse what it
+    # emitted fails here, which is what the arm is for, so these errors are expected.
+    reparsed=$(${CLICKHOUSE_CLIENT} --ignore-error -q "
+        DROP ${create_kw} IF EXISTS ${b};
+        ${emitted_a//$a/$b};
+        SHOW CREATE ${create_kw} ${b} FORMAT TSVRaw;
+        ${pin_query}" 2>/dev/null)
+    emitted_b=$(sed -n 1p <<< "$reparsed")
 
     if [[ -n "$emitted_a" && "$emitted_a" == "${emitted_b//$b/$a}" ]]; then
         echo "${label} round trip OK"
@@ -38,20 +55,16 @@ round_trip() {
         echo "  reparsed: ${emitted_b}"
     fi
 
-    # Comparing the two emitted statements only proves the serializer agrees with itself, so for the
-    # arms whose value carries structure the surviving value is pinned in .reference as well.
-    if [[ -n "$pin_setting" ]]; then
-        ${CLICKHOUSE_CLIENT} -q "SELECT '${label} reparsed', value FROM system.settings_profile_elements WHERE ${owner_col} = '${b}' AND setting_name = '${pin_setting}' FORMAT TSVRaw" 2>/dev/null
-    fi
-
-    ${CLICKHOUSE_CLIENT} -q "DROP ${create_kw} IF EXISTS ${a}, ${b}"
+    [[ -n "$pin_setting" ]] && sed -n 2p <<< "$reparsed"
 }
 
 # kind|label|settings clause|setting whose reparsed value is pinned (empty = shape check only).
 # Quoted heredoc: no shell expansion, SQL escapes pass through verbatim.
+N=0
 while IFS='|' read -r kind label clause pin; do
     [[ -z "$kind" ]] && continue
-    round_trip "$kind" "$label" "$clause" "$pin"
+    N=$((N + 1))
+    round_trip "$(printf '%02d' "$N")" "$kind" "$label" "$clause" "$pin"
 done <<'ARMS'
 profile|arm01 profile map|http_response_headers = '{\'Content-Type\':\'application/json\'}' CONST|http_response_headers
 profile|arm02 profile empty map|http_response_headers = '{}' CONST|
@@ -69,12 +82,15 @@ ARMS
 # arm12: ALTER then round trip.
 P="alter_${U}"
 Q="alter2_${U}"
-${CLICKHOUSE_CLIENT} -q "DROP SETTINGS PROFILE IF EXISTS ${P}, ${Q}"
-${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${P} SETTINGS max_memory_usage = 5000000"
-${CLICKHOUSE_CLIENT} -q "ALTER SETTINGS PROFILE ${P} ADD SETTINGS http_response_headers = '{\'a\':\'b\'}' CONST"
-EMITTED=$(${CLICKHOUSE_CLIENT} -q "SHOW CREATE SETTINGS PROFILE ${P} FORMAT TSVRaw")
-${CLICKHOUSE_CLIENT} -q "${EMITTED//$P/$Q}" 2>/dev/null
-REPARSED=$(${CLICKHOUSE_CLIENT} -q "SHOW CREATE SETTINGS PROFILE ${Q} FORMAT TSVRaw" 2>/dev/null)
+EMITTED=$(${CLICKHOUSE_CLIENT} -q "
+    DROP SETTINGS PROFILE IF EXISTS ${P};
+    CREATE SETTINGS PROFILE ${P} SETTINGS max_memory_usage = 5000000;
+    ALTER SETTINGS PROFILE ${P} ADD SETTINGS http_response_headers = '{\'a\':\'b\'}' CONST;
+    SHOW CREATE SETTINGS PROFILE ${P} FORMAT TSVRaw")
+REPARSED=$(${CLICKHOUSE_CLIENT} --ignore-error -q "
+    DROP SETTINGS PROFILE IF EXISTS ${Q};
+    ${EMITTED//$P/$Q};
+    SHOW CREATE SETTINGS PROFILE ${Q} FORMAT TSVRaw" 2>/dev/null)
 if [[ -n "$EMITTED" && "$EMITTED" == "${REPARSED//$Q/$P}" ]]; then
     echo "arm12 alter add settings round trip OK"
 else
@@ -82,28 +98,29 @@ else
     echo "  emitted: ${EMITTED}"
     echo "  reparsed: ${REPARSED}"
 fi
-${CLICKHOUSE_CLIENT} -q "DROP SETTINGS PROFILE IF EXISTS ${P}, ${Q}"
 
 # arm13: the system table shows the canonical text, and SHOW CREATE now emits that same text.
 S="sys_${U}"
-${CLICKHOUSE_CLIENT} -q "DROP SETTINGS PROFILE IF EXISTS ${S}"
-${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${S} SETTINGS http_response_headers = '{\'Content-Type\':\'application/json\'}' CONST"
-${CLICKHOUSE_CLIENT} -q "SELECT 'arm13 system table value', value FROM system.settings_profile_elements WHERE profile_name = '${S}' FORMAT TSVRaw"
-${CLICKHOUSE_CLIENT} -q "DROP SETTINGS PROFILE IF EXISTS ${S}"
+${CLICKHOUSE_CLIENT} -q "
+    DROP SETTINGS PROFILE IF EXISTS ${S};
+    CREATE SETTINGS PROFILE ${S} SETTINGS http_response_headers = '{\'Content-Type\':\'application/json\'}' CONST;
+    SELECT 'arm13 system table value', value FROM system.settings_profile_elements WHERE profile_name = '${S}' FORMAT TSVRaw"
 
 # arm14: the emitted statement of a map setting is a string literal, not a collection literal.
 T="lit_${U}"
-${CLICKHOUSE_CLIENT} -q "DROP SETTINGS PROFILE IF EXISTS ${T}"
-${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${T} SETTINGS http_response_headers = '{\'a\':\'b\'}' CONST"
-LIT=$(${CLICKHOUSE_CLIENT} -q "SHOW CREATE SETTINGS PROFILE ${T} FORMAT TSVRaw")
+LIT=$(${CLICKHOUSE_CLIENT} -q "
+    DROP SETTINGS PROFILE IF EXISTS ${T};
+    CREATE SETTINGS PROFILE ${T} SETTINGS http_response_headers = '{\'a\':\'b\'}' CONST;
+    SHOW CREATE SETTINGS PROFILE ${T} FORMAT TSVRaw")
 if [[ "$LIT" == *"= '"* && "$LIT" != *"= ["* ]]; then
     echo "arm14 emitted a string literal not a collection literal"
 else
     echo "arm14 FAILED: ${LIT}"
 fi
-${CLICKHOUSE_CLIENT} -q "DROP SETTINGS PROFILE IF EXISTS ${T}"
 
-# arm15: the on-disk form. The two arms above use SHOW CREATE, which takes the display route; the
+${CLICKHOUSE_CLIENT} -q "${CLEANUP} DROP SETTINGS PROFILE IF EXISTS ${P}, ${Q}, ${S}, ${T};"
+
+# arm15: the on-disk form. The arms above use SHOW CREATE, which takes the display route; the
 # stored <uuid>.sql file is written by the attach route, and a second process has to parse it back
 # through deserializeAccessEntity before any query can see the entity.
 D="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.ondisk"
