@@ -1,0 +1,5 @@
+udf	toTimeWithFixedDate(c0)
+qualified	toTimeWithFixedDate(c0)
+attach	toTimeWithFixedDate(c0)
+replayed	toTime(c0)
+replayed_rows	1

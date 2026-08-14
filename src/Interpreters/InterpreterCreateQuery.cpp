@@ -1909,6 +1909,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
+    /// The definition persisted below must not depend on the session setting, because reloads and
+    /// replicas re-derive the key type from the stored text. `attach_short_syntax` definitions come
+    /// back from that metadata and are already explicit.
+    if (!create.attach_short_syntax && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
+        replaceLegacyToTimeInCreateQuery(query_ptr);
+
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
@@ -3436,11 +3442,6 @@ BlockIO InterpreterCreateQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
-
-    /// A CREATE query persists its expressions. Make the setting-dependent legacy spelling explicit
-    /// before persisting it, so future evaluation does not depend on the session setting.
-    if (!create.attach && !create.database && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
-        replaceLegacyToTimeInCreateQuery(query_ptr);
 
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
 
