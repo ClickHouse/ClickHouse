@@ -1,5 +1,6 @@
 #include <Core/Names.h>
 #include <Core/Settings.h>
+#include <Common/isValidUTF8.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
@@ -182,6 +183,34 @@ void registerOutputFormatSQLInsert(FormatFactory & factory)
     });
 
     factory.setContentType("SQLInsert", "text/plain; charset=UTF-8");
+
+    /// `output_format_sql_insert_table_name` and the column names (when
+    /// `output_format_sql_insert_include_column_names` is enabled) are written verbatim, so a table or
+    /// column name that is not valid UTF-8 makes the output non-textual. Quoted identifiers can contain
+    /// arbitrary bytes, so a column name is not guaranteed to be valid UTF-8 either. Both are knowable
+    /// before any row is written (from the settings and the header), so they are detected here and the
+    /// text framings reject or base64-encode the output accordingly.
+    factory.registerOutputFormatMayProduceRawBytesChecker("SQLInsert", [](const FormatSettings & settings, const Block & header)
+    {
+        auto is_not_valid_utf8 = [](const std::string & s)
+        {
+            return !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(s.data()), s.size());
+        };
+
+        if (is_not_valid_utf8(settings.sql_insert.table_name))
+            return true;
+
+        /// `output_format_sql_insert_include_table_schema` writes the column names in the
+        /// `CREATE TABLE` statement even when `output_format_sql_insert_include_column_names` is disabled.
+        if (settings.sql_insert.include_column_names || settings.sql_insert.include_table_schema)
+        {
+            for (const auto & column_name : header.getNames())
+                if (is_not_valid_utf8(column_name))
+                    return true;
+        }
+
+        return false;
+    });
 
     factory.setDocumentation("SQLInsert", Documentation{
         .description = R"DOCS_MD(
