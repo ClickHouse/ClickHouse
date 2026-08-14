@@ -1583,33 +1583,33 @@ The connector implements the Spark DataSource V2 push-down interfaces, meaning t
 
 To enable runtime filtering:
 
-<Tabs groupId="spark_apis">
-<TabItem value="Python" label="Python" default>
+<Tabs>
+<Tab title="Python">
 
 ```python
 spark.conf.set("spark.clickhouse.read.runtimeFilter.enabled", "true")
 ```
 
-</TabItem>
-<TabItem value="Scala" label="Scala">
+</Tab>
+<Tab title="Scala">
 
 ```java
 spark.conf.set("spark.clickhouse.read.runtimeFilter.enabled", "true")
 ```
 
-</TabItem>
-<TabItem value="Java" label="Java">
+</Tab>
+<Tab title="Java">
 
 ```java
 spark.conf().set("spark.clickhouse.read.runtimeFilter.enabled", "true");
 ```
 
-</TabItem>
+</Tab>
 </Tabs>
 
-:::note
+<Note>
 Complex filter expressions that Spark cannot compile to SQL (e.g., user-defined functions, unsupported predicates) are **not** pushed down. They are returned to Spark and evaluated in memory after the data is fetched. Use `EXPLAIN` in Spark to see which filters were actually pushed down.
-:::
+</Note>
 
 ## Connector parallelism {#connector-parallelism}
 
@@ -1639,34 +1639,34 @@ For **Distributed tables**, when `spark.clickhouse.write.distributed.useClusterN
 
 To control the number of write tasks, set `spark.clickhouse.write.repartitionNum` to the desired partition count:
 
-<Tabs groupId="spark_apis">
-<TabItem value="Python" label="Python" default>
+<Tabs>
+<Tab title="Python">
 
 ```python
 spark.conf.set("spark.clickhouse.write.repartitionNum", "16")
 ```
 
-</TabItem>
-<TabItem value="Scala" label="Scala">
+</Tab>
+<Tab title="Scala">
 
 ```java
 spark.conf.set("spark.clickhouse.write.repartitionNum", "16")
 ```
 
-</TabItem>
-<TabItem value="Java" label="Java">
+</Tab>
+<Tab title="Java">
 
 ```java
 spark.conf().set("spark.clickhouse.write.repartitionNum", "16");
 ```
 
-</TabItem>
+</Tab>
 </Tabs>
 
 Alternatively, repartition the DataFrame explicitly before writing. Note that a bare `df.repartition(16)` performs a round-robin shuffle and is not equivalent to `spark.clickhouse.write.repartitionNum` — it does not group rows by shard or partition key. To co-locate rows for the same shard and partition in the same task, repartition by the sharding column and sort within each partition:
 
-<Tabs groupId="spark_apis">
-<TabItem value="Python" label="Python" default>
+<Tabs>
+<Tab title="Python">
 
 ```python
 from pyspark.sql.functions import col
@@ -1682,8 +1682,8 @@ df.repartition(16, col("SHARD_COLUMN")) \
     .save()
 ```
 
-</TabItem>
-<TabItem value="Scala" label="Scala">
+</Tab>
+<Tab title="Scala">
 
 ```java
 import org.apache.spark.sql.functions.col
@@ -1699,8 +1699,8 @@ df.repartition(16, col("SHARD_COLUMN"))
   .save()
 ```
 
-</TabItem>
-<TabItem value="Java" label="Java">
+</Tab>
+<Tab title="Java">
 
 ```java
 import static org.apache.spark.sql.functions.col;
@@ -1716,7 +1716,7 @@ df.repartition(16, col("SHARD_COLUMN"))
     .save();
 ```
 
-</TabItem>
+</Tab>
 </Tabs>
 
 ## Working with Distributed tables {#working-with-distributed-tables}
@@ -1787,8 +1787,8 @@ Use `spark.clickhouse.read.settings` to apply ClickHouse settings to reads. The 
 
 To scope the settings to a single read, set the config, force the action, then unset:
 
-<Tabs groupId="spark_apis">
-<TabItem value="Python" label="Python" default>
+<Tabs>
+<Tab title="Python">
 
 ```python
 spark.conf.set("spark.clickhouse.read.settings", "max_execution_time=300,max_memory_usage=10000000000")
@@ -1805,8 +1805,8 @@ result = spark.read \
 spark.conf.unset("spark.clickhouse.read.settings")
 ```
 
-</TabItem>
-<TabItem value="Scala" label="Scala">
+</Tab>
+<Tab title="Scala">
 
 ```java
 spark.conf.set("spark.clickhouse.read.settings", "max_execution_time=300,max_memory_usage=10000000000")
@@ -1823,8 +1823,8 @@ val result = spark.read
 spark.conf.unset("spark.clickhouse.read.settings")
 ```
 
-</TabItem>
-<TabItem value="Java" label="Java">
+</Tab>
+<Tab title="Java">
 
 ```java
 spark.conf().set("spark.clickhouse.read.settings", "max_execution_time=300,max_memory_usage=10000000000");
@@ -1841,13 +1841,13 @@ Row[] result = spark.read()
 spark.conf().unset("spark.clickhouse.read.settings");
 ```
 
-</TabItem>
+</Tab>
 </Tabs>
 
 For write-side settings (e.g. per-write batch size), pass `spark.clickhouse.write.*` options directly on the writer:
 
-<Tabs groupId="spark_apis">
-<TabItem value="Python" label="Python" default>
+<Tabs>
+<Tab title="Python">
 
 ```python
 df.write \
@@ -1861,8 +1861,8 @@ df.write \
     .save()
 ```
 
-</TabItem>
-<TabItem value="Scala" label="Scala">
+</Tab>
+<Tab title="Scala">
 
 ```java
 df.write
@@ -1876,8 +1876,8 @@ df.write
   .save()
 ```
 
-</TabItem>
-<TabItem value="Java" label="Java">
+</Tab>
+<Tab title="Java">
 
 ```java
 df.write()
@@ -1891,7 +1891,7 @@ df.write()
     .save();
 ```
 
-</TabItem>
+</Tab>
 </Tabs>
 
 ### Common settings {#query-settings-common}
@@ -1905,9 +1905,9 @@ df.write()
 | `option.clickhouse_setting_max_execution_time` | `300` | Extend server-side query timeout (seconds) for large reads. To actually allow reads longer than the connector default, also raise `spark.clickhouse.client.queryTimeout` (default `60s`). |
 | `option.clickhouse_setting_session_timeout` | `60` | Extend HTTP session timeout (seconds) |
 
-:::note
+<Note>
 To apply ClickHouse server settings only to read requests (not writes), use `spark.clickhouse.read.settings` set via `spark.conf.set(...)` instead of catalog-level `option.clickhouse_setting_*` entries. Catalog properties apply to all operations for the lifetime of the catalog and cannot be scoped to reads only.
-:::
+</Note>
 
 ## Timeout configuration {#timeout-configuration}
 
@@ -2005,9 +2005,9 @@ spark.conf.set("spark.clickhouse.write.repartitionByPartition", "true")
 
 **Fix**: Set `spark.clickhouse.ignoreUnsupportedTransform=true` (the default). The connector will log a warning and skip the partition-level clustering requirement. ClickHouse will still handle routing correctly when writing to the `Distributed` table.
 
-:::warning
+<Warning>
 If you also have `spark.clickhouse.write.distributed.convertLocal=true`, ignoring unsupported sharding keys can cause incorrect data distribution. In that case, either use a supported sharding key or set `spark.clickhouse.write.distributed.convertLocal.allowUnsupportedSharding=true` only if you have verified your data distribution — rows may be written to the wrong shard, causing data skew or incorrect query results when querying shards directly.
-:::
+</Warning>
 
 ---
 
