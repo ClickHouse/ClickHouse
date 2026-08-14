@@ -64,16 +64,26 @@ TEST(ColumnArray, InconsistentOffsetsAreRejected)
     EXPECT_THROW(createArray({10}, {}), Exception);
 }
 
-/// A decreasing offset makes `sizeAt` underflow to a huge value even when the last offset
-/// matches the size of the nested column, so the offsets are checked for monotonicity as well.
-TEST(ColumnArray, NonMonotonicOffsetsAreRejected)
+#endif
+
+/// A decreasing offset makes `sizeAt` underflow to a huge value even when the last offset matches
+/// the size of the nested column, so the offsets are checked for monotonicity as well. The check is
+/// a linear scan - a heavy assertion, so it only runs in debug and sanitizer builds, where a
+/// LOGICAL_ERROR aborts the process: hence a death test.
+#ifdef DEBUG_OR_SANITIZER_BUILD
+
+TEST(ColumnArrayDeathTest, NonMonotonicOffsetsAreRejected)
 {
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    /// The extra parentheses keep the preprocessor from splitting the braced lists into macro arguments.
+
     /// The nested column is empty and the last offset is 0, but the first row claims one element.
-    EXPECT_THROW(createArray({}, {1, 0}), Exception);
+    EXPECT_DEATH((createArray({}, {1, 0})), "not monotonically increasing");
 
     /// The last offset matches the nested column, but the offsets dip in the middle.
-    EXPECT_THROW(createArray({10, 20, 30}, {2, 1, 3}), Exception);
-    EXPECT_THROW(createArray({10, 20, 30}, {3, 0, 3}), Exception);
+    EXPECT_DEATH((createArray({10, 20, 30}, {2, 1, 3})), "not monotonically increasing");
+    EXPECT_DEATH((createArray({10, 20, 30}, {3, 0, 3})), "not monotonically increasing");
 }
 
 #endif
