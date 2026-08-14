@@ -1,0 +1,10 @@
+=== created ===
+created
+=== the request parse limits are in effect for an ordinary query ===
+TOO_DEEP_RECURSION
+TOO_SLOW_PARSING
+Max query size exceeded
+=== invoked over HTTP with the same request settings ===
+1	5
+1	6
+1	7
