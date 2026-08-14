@@ -263,21 +263,12 @@ CatalogTables UnifiedUnityCatalog::listTablesInNamespaceDirect(const std::string
 
 bool UnifiedUnityCatalog::existsTable(const std::string & schema_name, const std::string & table_name) const
 {
-    String json_str;
-    Poco::Dynamic::Var json;
-    try
-    {
-        std::tie(json, json_str) = getJSONRequest(
-            std::filesystem::path{TABLES_ENDPOINT} / (warehouse + "." + schema_name + "." + table_name));
-        const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
-        return hasValueAndItsNotNone("name", object)
-            && object->get("name").extract<String>() == table_name;
-    }
-    catch (DB::Exception & e)
-    {
-        e.addMessage("while parsing JSON: " + json_str);
-        throw;
-    }
+    auto full_table_name = warehouse + "." + schema_name + "." + table_name;
+    auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name).first;
+
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+    return hasValueAndItsNotNone("name", object)
+        && object->get("name").extract<String>() == table_name;
 }
 
 void UnifiedUnityCatalog::getTableMetadata(
@@ -296,37 +287,25 @@ bool UnifiedUnityCatalog::tryGetTableMetadata(
 {
     auto full_table_name = warehouse + "." + schema_name + "." + table_name;
 
-    Poco::JSON::Object::Ptr object;
-    std::string json_str;
+    auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name).first;
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
-    try
+    if (!hasValueAndItsNotNone("name", object) || object->get("name").extract<String>() != table_name)
+        return false;
+
+    auto table_format = detectTableFormat(object);
+    result.setTableFormat(table_format);
+
+    if (table_format == DataLakeTableFormat::ICEBERG)
     {
-        Poco::Dynamic::Var json;
-        std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name);
-        object = json.extract<Poco::JSON::Object::Ptr>();
-
-        if (!hasValueAndItsNotNone("name", object) || object->get("name").extract<String>() != table_name)
-            return false;
-
-        auto table_format = detectTableFormat(object);
-        result.setTableFormat(table_format);
-
-        if (table_format == DataLakeTableFormat::ICEBERG)
-        {
-            /// The Unity tables API describes the table but does not serve its Iceberg metadata;
-            /// Databricks exposes that only through the Iceberg REST catalog endpoint.
-            /// See https://docs.databricks.com/aws/en/external-access/iceberg
-            auto rest_catalog = getIcebergRestCatalog();
-            return rest_catalog->tryGetTableMetadata(schema_name, table_name, result);
-        }
-
-        return tryGetDeltaTableMetadata(full_table_name, object, result);
+        /// The Unity tables API describes the table but does not serve its Iceberg metadata;
+        /// Databricks exposes that only through the Iceberg REST catalog endpoint.
+        /// See https://docs.databricks.com/aws/en/external-access/iceberg
+        auto rest_catalog = getIcebergRestCatalog();
+        return rest_catalog->tryGetTableMetadata(schema_name, table_name, result);
     }
-    catch (DB::Exception & e)
-    {
-        e.addMessage("while parsing JSON: " + json_str);
-        throw;
-    }
+
+    return tryGetDeltaTableMetadata(full_table_name, object, result);
 }
 
 bool UnifiedUnityCatalog::tryGetDeltaTableMetadata(
@@ -386,22 +365,30 @@ bool UnifiedUnityCatalog::tryGetDeltaTableMetadata(
             const auto column_json = columns_json->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
             std::string name = column_json->getValue<String>("name");
             auto is_nullable = column_json->getValue<bool>("nullable");
-            auto type_json_str = column_json->get("type_json").extract<String>();
+            const auto type_json_str = column_json->get("type_json").extract<String>();
             DB::DataTypePtr data_type;
 
-            if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
+            try
             {
-                type_json_str.pop_back();
-                String type_name = type_json_str.substr(1);
-                auto data_type_from_str = DB::DeltaLakeMetadata::getSimpleTypeByName(type_name);
-                data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
+                if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
+                {
+                    String type_name = type_json_str.substr(1, type_json_str.size() - 2);
+                    auto data_type_from_str = DB::DeltaLakeMetadata::getSimpleTypeByName(type_name);
+                    data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
+                }
+                else
+                {
+                    Poco::JSON::Parser parser;
+                    auto parsed_json_type = parser.parse(type_json_str);
+                    data_type = DB::DeltaLakeMetadata::getFieldType(
+                        parsed_json_type.extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
+                }
             }
-            else
+            catch (DB::Exception & e)
             {
-                Poco::JSON::Parser parser;
-                auto parsed_json_type = parser.parse(type_json_str);
-                data_type = DB::DeltaLakeMetadata::getFieldType(
-                    parsed_json_type.extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
+                e.addMessage("while parsing the type of column `{}` of Delta table `{}`: {}",
+                    name, full_table_name, type_json_str);
+                throw;
             }
             schema.push_back({name, data_type});
         }
