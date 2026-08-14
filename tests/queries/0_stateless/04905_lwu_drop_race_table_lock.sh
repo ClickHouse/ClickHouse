@@ -102,6 +102,7 @@ function race_with_drop()
                 SYSTEM FLUSH LOGS query_log;
                 SELECT ProfileEvents['RWLockWritersWaitMilliseconds'] FROM system.query_log
                 WHERE query_id = '$drop_qid' AND type = 'QueryFinish' AND event_date >= yesterday()
+                  AND current_database = currentDatabase()
                 ORDER BY event_time_microseconds DESC LIMIT 1
                 SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0" < /dev/null 2>/dev/null) || waited=""
             case "$waited" in
