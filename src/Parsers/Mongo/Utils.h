@@ -91,7 +91,7 @@ class MongoQueryKeyNameExtractor
 public:
     explicit MongoQueryKeyNameExtractor(const std::string & pattern_) : pattern(pattern_) { }
 
-    std::optional<int> extractInt(const char * begin, const char * end);
+    std::optional<Int64> extractInt(const char * begin, const char * end);
 
     std::optional<std::string> extractString(const char * begin, const char * end);
 

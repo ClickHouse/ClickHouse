@@ -8,7 +8,6 @@
 #include <Parsers/Mongo/DocumentCollection.h>
 #include <Parsers/Mongo/MongoConstants.h>
 #include <Parsers/Mongo/Utils.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
@@ -260,6 +259,17 @@ rapidjson::Value documentToStore(const rapidjson::Value & document, rapidjson::D
     return stored;
 }
 
+bool isOrderedInsert(const Document & command)
+{
+    auto json = command.getRapidJSONRepresentation();
+    auto ordered = json.FindMember("ordered");
+    if (ordered == json.MemberEnd())
+        return true;
+    if (!ordered->value.IsBool())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'ordered' option of an 'insert' command must be a boolean");
+    return ordered->value.GetBool();
+}
+
 }
 
 void InsertHandler::createDatabase(const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor)
@@ -286,6 +296,7 @@ void InsertHandler::createCollection(const CollectionRef & collection, std::shar
 std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
     auto collection = getCollectionRef(documents[0].documents[0], "insert");
+    const bool ordered = isOrderedInsert(documents[0].documents[0]);
 
     /// The documents to insert are sent in the sections that follow the command itself.
     std::vector<const Document *> to_insert;
@@ -304,7 +315,7 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
       * document this endpoint cannot write leaves nothing behind: a collection that only the failed
       * command created would be an empty collection MongoDB never has.
       */
-    const bool exists = objectExists(executor, "TABLE", collection.getQualifiedName());
+    bool exists = objectExists(executor, "TABLE", collection.getQualifiedName());
     CollectionShape shape;
     if (exists)
         shape = getCollectionShape(collection, executor);
@@ -319,62 +330,91 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
     rapidjson::Document allocator_owner;
     auto & allocator = allocator_owner.GetAllocator();
 
-    WriteBufferFromOwnString data;
-
     /// The object ids of this command, which addresses one document by each of them.
     std::unordered_set<String> object_ids;
-
-    for (const auto * doc : to_insert)
-    {
-        const auto & document = doc->getRapidJSONRepresentation();
-
-        rapidjson::Value row(rapidjson::kObjectType);
-        if (shape.stores_documents)
-        {
-            /// The document as it arrived, next to the object id that addresses it.
-            auto object_id = extractObjectId(document);
-            if (!object_ids.insert(object_id).second)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The 'insert' command holds more than one document with the object id '{}', and an object id addresses one "
-                    "document",
-                    object_id);
-            rapidjson::Value id;
-            id.SetString(object_id.c_str(), static_cast<rapidjson::SizeType>(object_id.size()), allocator);
-            row.AddMember(rapidjson::Value(rapidjson::StringRef(Mongo::OBJECT_ID_COLUMN.data(), Mongo::OBJECT_ID_COLUMN.size())), id, allocator);
-            row.AddMember(
-                rapidjson::Value(rapidjson::StringRef(Mongo::DOCUMENT_COLUMN.data(), Mongo::DOCUMENT_COLUMN.size())),
-                documentToStore(document, allocator),
-                allocator);
-        }
-        else
-        {
-            /// The columns of the table the document names. Unknown fields are rejected instead of
-            /// being silently dropped, and a column a document has no field for keeps its default.
-            std::map<String, String> wrapper_types;
-            flattenDocument(document, "", row, allocator, wrapper_types);
-        }
-
-        rapidjson::StringBuffer buffer;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-        row.Accept(writer);
-        data << buffer.GetString() << "\n";
-    }
-
-    if (!exists)
-    {
-        createDatabase(collection, executor);
-        createCollection(collection, executor);
-    }
-
-    executor->execute(fmt::format(
-        "INSERT INTO {} SETTINGS input_format_skip_unknown_fields = 0 FORMAT JSONEachRow\n{}",
-        collection.getQualifiedName(),
-        data.str()));
-
+    size_t inserted = 0;
     bson_t * bson_doc = bson_new();
+    bson_t write_errors;
+    bool has_write_errors = false;
+    size_t error_count = 0;
 
-    BSON_APPEND_INT32(bson_doc, "n", static_cast<int32_t>(to_insert.size()));
+    for (size_t document_index = 0; document_index < to_insert.size(); ++document_index)
+    {
+        try
+        {
+            const auto & document = to_insert[document_index]->getRapidJSONRepresentation();
+
+            rapidjson::Value row(rapidjson::kObjectType);
+            if (shape.stores_documents)
+            {
+                /// The document as it arrived, next to the object id that addresses it.
+                auto object_id = extractObjectId(document);
+                if (!object_ids.insert(object_id).second)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The 'insert' command holds more than one document with the object id '{}', and an object id addresses one "
+                        "document",
+                        object_id);
+                rapidjson::Value id;
+                id.SetString(object_id.c_str(), static_cast<rapidjson::SizeType>(object_id.size()), allocator);
+                row.AddMember(rapidjson::Value(rapidjson::StringRef(Mongo::OBJECT_ID_COLUMN.data(), Mongo::OBJECT_ID_COLUMN.size())), id, allocator);
+                row.AddMember(
+                    rapidjson::Value(rapidjson::StringRef(Mongo::DOCUMENT_COLUMN.data(), Mongo::DOCUMENT_COLUMN.size())),
+                    documentToStore(document, allocator),
+                    allocator);
+            }
+            else
+            {
+                /// The columns of the table the document names. Unknown fields are rejected instead of
+                /// being silently dropped, and a column a document has no field for keeps its default.
+                std::map<String, String> wrapper_types;
+                flattenDocument(document, "", row, allocator, wrapper_types);
+            }
+
+            rapidjson::StringBuffer buffer;
+            rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+            row.Accept(writer);
+
+            if (!exists)
+            {
+                createDatabase(collection, executor);
+                createCollection(collection, executor);
+                exists = true;
+            }
+
+            /// An ordered Mongo batch makes every successfully inserted prefix visible before a
+            /// later document fails. Execute one row at a time so a ClickHouse `INSERT` rollback
+            /// cannot erase that prefix.
+            executor->execute(fmt::format(
+                "INSERT INTO {} SETTINGS input_format_skip_unknown_fields = 0 FORMAT JSONEachRow\n{}\n",
+                collection.getQualifiedName(),
+                buffer.GetString()));
+            ++inserted;
+        }
+        catch (const Exception & e)
+        {
+            if (!has_write_errors)
+            {
+                bson_append_array_begin(bson_doc, "writeErrors", -1, &write_errors);
+                has_write_errors = true;
+            }
+            bson_t write_error;
+            const auto error_key = std::to_string(error_count++);
+            bson_append_document_begin(&write_errors, error_key.data(), static_cast<int>(error_key.size()), &write_error);
+            BSON_APPEND_INT32(&write_error, "index", static_cast<Int32>(document_index));
+            BSON_APPEND_INT32(&write_error, "code", e.code());
+            BSON_APPEND_UTF8(&write_error, "errmsg", e.message().c_str());
+            bson_append_document_end(&write_errors, &write_error);
+
+            if (ordered)
+                break;
+        }
+    }
+
+    if (has_write_errors)
+        bson_append_array_end(bson_doc, &write_errors);
+
+    BSON_APPEND_INT32(bson_doc, "n", static_cast<int32_t>(inserted));
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
     std::vector<Document> result;

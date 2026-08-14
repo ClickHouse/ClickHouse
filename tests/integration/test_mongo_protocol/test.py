@@ -348,6 +348,33 @@ def test_create_collection(started_cluster):
     assert "explicit" not in db.list_collection_names()
 
 
+def test_create_collection_rejects_unsupported_options(started_cluster):
+    """A plain `MergeTree` collection must not acknowledge Mongo collection semantics it cannot provide."""
+    client = make_client()
+    db = client["db_create"]
+    db.drop_collection("capped")
+
+    with pytest.raises(pymongo.errors.OperationFailure, match="not supported"):
+        db.command("create", "capped", capped=True)
+    assert "capped" not in db.list_collection_names()
+
+
+def test_ordered_insert_keeps_the_successful_prefix(started_cluster):
+    """A later bad document in an ordered insert reports a write error without rolling back the prefix."""
+    node = cluster.instances["node"]
+    client = make_client()
+    collection = client["db"]["ordered_insert_prefix"]
+
+    collection.drop()
+    node.query("CREATE TABLE db.ordered_insert_prefix (id Int64) ENGINE = MergeTree ORDER BY id", password="123")
+
+    with pytest.raises(pymongo.errors.BulkWriteError):
+        collection.insert_many([{"id": 1}, {"id": "not an integer"}])
+    assert list(collection.find({}, {"_id": 0})) == [{"id": 1}]
+
+    collection.drop()
+
+
 def test_increment_update(started_cluster):
     """An update of a collection of documents rewrites the document rather than the columns of a
     row, which is not supported yet: it is refused with an error, and the documents are left as

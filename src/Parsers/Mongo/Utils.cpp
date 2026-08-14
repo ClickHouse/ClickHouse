@@ -1,5 +1,6 @@
 #include <Parsers/Mongo/Utils.h>
 
+#include <charconv>
 #include <optional>
 #include <string>
 
@@ -329,7 +330,7 @@ std::optional<size_t> MongoQueryKeyNameExtractor::findPosition(const char * begi
     return std::nullopt;
 }
 
-std::optional<int> MongoQueryKeyNameExtractor::extractInt(const char * begin, const char * end)
+std::optional<Int64> MongoQueryKeyNameExtractor::extractInt(const char * begin, const char * end)
 {
     auto maybe_start_position = findPosition(begin, end);
     if (!maybe_start_position)
@@ -339,20 +340,34 @@ std::optional<int> MongoQueryKeyNameExtractor::extractInt(const char * begin, co
     auto start_position = *maybe_start_position;
     std::string str_representation;
     /// The end of the text bounds the walk: an unclosed `(` would otherwise read past it.
+    /// Mongo whole-number options are signed 64-bit values. The caller decides whether a
+    /// negative value has a meaning for the option it is parsing.
+    if (begin + start_position != end && (begin[start_position] == '-' || begin[start_position] == '+'))
+        str_representation.push_back(begin[start_position++]);
     while (begin + start_position != end && begin[start_position] != ')')
     {
         if (begin[start_position] < '0' || begin[start_position] > '9')
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect query : pattern {} should contain only numbers", pattern);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect query : pattern {} should contain a signed whole number", pattern);
         }
         str_representation.push_back(begin[start_position]);
         ++start_position;
     }
     if (begin + start_position == end)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect query : the '{}' is not closed", pattern);
-    if (str_representation.empty())
+    if (str_representation.empty() || str_representation == "-" || str_representation == "+")
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect query : the '{}' has no argument", pattern);
-    return std::stoi(str_representation);
+
+    const char * number_begin = str_representation.data();
+    if (*number_begin == '+')
+        ++number_begin;
+
+    Int64 result;
+    const auto [position, error] = std::from_chars(
+        number_begin, str_representation.data() + str_representation.size(), result);
+    if (error != std::errc{} || position != str_representation.data() + str_representation.size())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect query : the '{}' argument is outside the Int64 range", pattern);
+    return result;
 }
 
 std::optional<std::string> MongoQueryKeyNameExtractor::extractString(const char * begin, const char * end)

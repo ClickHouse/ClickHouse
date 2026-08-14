@@ -4,8 +4,28 @@
 
 #include <fmt/format.h>
 
+#include <Common/Exception.h>
+
+namespace DB::ErrorCodes
+{
+extern const int UNKNOWN_TABLE;
+}
+
 namespace DB::MongoProtocol
 {
+
+namespace
+{
+
+void appendNamespaceNotFound(bson_t * bson_doc)
+{
+    BSON_APPEND_UTF8(bson_doc, "errmsg", "ns not found");
+    BSON_APPEND_INT32(bson_doc, "code", 26);
+    BSON_APPEND_UTF8(bson_doc, "codeName", "NamespaceNotFound");
+    BSON_APPEND_DOUBLE(bson_doc, "ok", 0.0);
+}
+
+}
 
 std::vector<Document> DropHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
@@ -16,7 +36,19 @@ std::vector<Document> DropHandler::handle(const std::vector<OpMessageSection> & 
 
     if (objectExists(executor, "TABLE", collection.getQualifiedName()))
     {
-        executor->execute(fmt::format("DROP TABLE {}", collection.getQualifiedName()));
+        try
+        {
+            executor->execute(fmt::format("DROP TABLE {}", collection.getQualifiedName()));
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::UNKNOWN_TABLE)
+                throw;
+            appendNamespaceNotFound(bson_doc);
+            std::vector<Document> result;
+            result.emplace_back(bson_doc);
+            return result;
+        }
 
         BSON_APPEND_INT32(bson_doc, "nIndexesWas", 1);
         BSON_APPEND_UTF8(bson_doc, "ns", namespace_name.c_str());
@@ -26,10 +58,7 @@ std::vector<Document> DropHandler::handle(const std::vector<OpMessageSection> & 
     {
         /// This is what a Mongo server answers when the namespace does not exist. Clients
         /// treat it as success, so reporting it faithfully keeps `drop` idempotent for them.
-        BSON_APPEND_UTF8(bson_doc, "errmsg", "ns not found");
-        BSON_APPEND_INT32(bson_doc, "code", 26);
-        BSON_APPEND_UTF8(bson_doc, "codeName", "NamespaceNotFound");
-        BSON_APPEND_DOUBLE(bson_doc, "ok", 0.0);
+        appendNamespaceNotFound(bson_doc);
     }
 
     std::vector<Document> result;

@@ -6,12 +6,15 @@
 #include <fmt/format.h>
 #include <Common/quoteString.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int TABLE_ALREADY_EXISTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 }
@@ -21,6 +24,20 @@ namespace DB::MongoProtocol
 
 namespace
 {
+
+void validateCreateOptions(const Document & command)
+{
+    static const std::unordered_set<String> supported_fields{
+        "create", "$db", "lsid", "$clusterTime", "writeConcern", "maxTimeMS", "comment", "apiVersion", "apiStrict", "apiDeprecationErrors"};
+
+    auto json = command.getRapidJSONRepresentation();
+    for (auto field = json.MemberBegin(); field != json.MemberEnd(); ++field)
+    {
+        String name(field->name.GetString(), field->name.GetStringLength());
+        if (!supported_fields.contains(name))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The collection option '{}' of the 'create' command is not supported", name);
+    }
+}
 
 /// The reply Mongo sends for a namespace that already exists. A client tells this case apart from
 /// any other failure by the code rather than by the message, and it is how it learns that somebody
@@ -44,6 +61,7 @@ std::vector<Document> namespaceExistsReply(const CollectionRef & collection)
 
 std::vector<Document> CreateHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
+    validateCreateOptions(documents[0].documents[0]);
     /// The collection to create is the value of the `create` field of the command itself.
     auto collection = getCollectionRef(documents[0].documents[0], "create");
 

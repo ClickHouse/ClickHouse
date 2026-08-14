@@ -36,6 +36,7 @@ db.docs.find({"name" : ".limit(1)"});
 db.docs.find({"name" : ".sort({\"id\": -1})"});
 db.docs.find({"name" : {"$ne" : "nothing"}});
 db.docs.find({"name" : {"$ne" : "nothing"}}).limit(1);
+db.docs.find({"name" : {"$ne" : "nothing"}}).limit(-2);
 db.docs.find({"name" : {"$ne" : "nothing"}}).sort({"id" : -1}).limit(2);
 db.docs.updateMany({}, {"$set" : {"name" : "same"}});
 db.docs.find({"name" : "same"});

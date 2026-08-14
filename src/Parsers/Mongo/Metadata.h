@@ -46,8 +46,8 @@ public:
         std::string database_name_,
         std::string collection_name_,
         QueryType query_type_,
-        std::optional<int> limit_,
-        std::optional<int> offset_,
+        std::optional<Int64> limit_,
+        std::optional<Int64> offset_,
         std::optional<std::string> order_by_);
 
     /// Empty when the query does not name a database, which means the current one.

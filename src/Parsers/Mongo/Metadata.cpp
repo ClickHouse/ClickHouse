@@ -62,16 +62,19 @@ QueryMetadata::QueryMetadata(
     std::string database_name_,
     std::string collection_name_,
     QueryType query_type_,
-    std::optional<int> limit_,
-    std::optional<int> offset_,
+    std::optional<Int64> limit_,
+    std::optional<Int64> offset_,
     std::optional<std::string> order_by_)
     : database_name(std::move(database_name_))
     , collection_name(std::move(collection_name_))
     , query_type(query_type_)
-    , limit(limit_)
-    , offset(offset_)
+    , limit(limit_ ? std::optional<size_t>(
+          *limit_ < 0 ? -static_cast<UInt64>(*limit_) : static_cast<UInt64>(*limit_)) : std::nullopt)
+    , offset(offset_ ? std::optional<size_t>(static_cast<size_t>(*offset_)) : std::nullopt)
     , order_by(order_by_)
 {
+    if (offset_ && *offset_ < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '.skip' argument must not be negative");
 }
 
 std::shared_ptr<QueryMetadata> extractMetadataFromRequest(const char * begin, const char * end, const std::string & database)
@@ -125,8 +128,8 @@ std::shared_ptr<QueryMetadata> extractMetadataFromRequest(const char * begin, co
       * user's data into a `LIMIT`. Looking in any other kind of query would go wrong the same way -
       * an aggregation pipeline may hold a field path such as `$a.limit`.
       */
-    std::optional<int> limit;
-    std::optional<int> offset;
+    std::optional<Int64> limit;
+    std::optional<Int64> offset;
     std::optional<std::string> order_by;
     if (*query_type == QueryMetadata::QueryType::select)
     {
