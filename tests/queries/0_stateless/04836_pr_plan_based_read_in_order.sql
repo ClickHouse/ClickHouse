@@ -49,6 +49,17 @@ SELECT 'asc  offset', a FROM t_pr_read_in_order ORDER BY a      LIMIT 5 OFFSET 4
 SELECT 'desc offset', a FROM t_pr_read_in_order ORDER BY a DESC LIMIT 5 OFFSET 49997 SETTINGS parallel_replicas_plan_based = 0;
 SELECT 'desc offset', a FROM t_pr_read_in_order ORDER BY a DESC LIMIT 5 OFFSET 49997 SETTINGS parallel_replicas_plan_based = 1;
 
+-- `WITH TIES` extends the LIMIT to every row tying with the last one, so it depends on the full ordered
+-- stream rather than on the first N rows. Shipping a per-replica `LimitStep` under a merge could cut the tie
+-- group short. b = a % 10, so the first tie group is all 10000 rows with b = 0.
+SELECT 'with ties', count(), sum(a) FROM (SELECT a FROM t_pr_read_in_order ORDER BY b LIMIT 3 WITH TIES) SETTINGS parallel_replicas_plan_based = 0;
+SELECT 'with ties', count(), sum(a) FROM (SELECT a FROM t_pr_read_in_order ORDER BY b LIMIT 3 WITH TIES) SETTINGS parallel_replicas_plan_based = 1;
+
+-- `LIMIT BY` picks N rows per key from the ordered stream, so it is order-sensitive in a different way: the
+-- per-key selection happens on the initiator, above the merge of the per-replica streams.
+SELECT 'limit by', a FROM t_pr_read_in_order ORDER BY a LIMIT 2 BY b LIMIT 6 SETTINGS parallel_replicas_plan_based = 0;
+SELECT 'limit by', a FROM t_pr_read_in_order ORDER BY a LIMIT 2 BY b LIMIT 6 SETTINGS parallel_replicas_plan_based = 1;
+
 -- Ordering must survive a filter too (the filter is pushed into the shipped fragment).
 SELECT 'asc  where', a FROM t_pr_read_in_order WHERE b = 3 ORDER BY a      LIMIT 5 OFFSET 10 SETTINGS parallel_replicas_plan_based = 0;
 SELECT 'asc  where', a FROM t_pr_read_in_order WHERE b = 3 ORDER BY a      LIMIT 5 OFFSET 10 SETTINGS parallel_replicas_plan_based = 1;

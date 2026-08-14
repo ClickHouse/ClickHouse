@@ -39,6 +39,20 @@ desc offset	50001
 desc offset	50000
 desc offset	49999
 desc offset	49998
+with ties	10000	499950000
+with ties	10000	499950000
+limit by	0
+limit by	1
+limit by	2
+limit by	3
+limit by	4
+limit by	5
+limit by	0
+limit by	1
+limit by	2
+limit by	3
+limit by	4
+limit by	5
 asc  where	103
 asc  where	113
 asc  where	123
