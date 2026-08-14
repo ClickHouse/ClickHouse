@@ -191,9 +191,29 @@ ASTPtr rewriteElementWiseCondition(const ASTFunction & function)
 
     if (function.name == "hasAny")
     {
-        if (const auto * field = elementWiseField(right))
-            return makeASTFunction("in", field_or_path(*field), left->clone());
-        return nullptr;
+        const auto * field = elementWiseField(right);
+        if (!field)
+            return nullptr;
+
+        /** The candidates are compared one by one rather than by `IN`: the value of a path is a
+          * `Dynamic`, which `IN` does not accept, while equality does - the same equality the
+          * bare-constant filter is answered by, so `$in` and `=` agree on what they match.
+          */
+        const auto * candidates = left->as<ASTFunction>();
+        if (!candidates || candidates->name != "array" || !candidates->arguments)
+            return nullptr;
+
+        auto path = field_or_path(*field);
+        if (candidates->arguments->children.empty())
+            return make_intrusive<ASTLiteral>(Field(UInt64(0)));
+
+        ASTPtr matches;
+        for (const auto & candidate : candidates->arguments->children)
+        {
+            auto match = makeASTFunction("equals", path->clone(), candidate->clone());
+            matches = matches ? makeASTFunction("or", std::move(matches), std::move(match)) : std::move(match);
+        }
+        return matches;
     }
 
     return nullptr;

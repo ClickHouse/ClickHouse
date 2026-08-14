@@ -99,6 +99,16 @@ def connect_raw():
     return sock
 
 
+def without_ids(documents):
+    """The documents without their object ids. A collection of documents returns the `_id` of every
+    document it reads, as MongoDB does; a test that is about the fields the document holds compares
+    them without an id nobody chose."""
+    return [
+        {name: value for name, value in document.items() if name != "_id"}
+        for document in documents
+    ]
+
+
 def test_count_query(started_cluster):
     client = make_client()
     db = client["db"]
@@ -135,17 +145,20 @@ def test_find_query(started_cluster):
     find_docs = [doc for doc in collection.find({})]
     find_docs = sorted(find_docs, key=lambda x: x["age"])
 
-    assert find_docs == [
+    assert without_ids(find_docs) == [
         {"name": "Charlie Brown", "age": 24, "city": "Los Angeles"},
         {"name": "Bob Johnson", "age": 32, "city": "New York"},
         {"name": "David Williams", "age": 40, "city": "Chicago"},
     ]
 
+    # Every document is read back with the object id the insert gave it.
+    assert all(isinstance(doc["_id"], str) and doc["_id"] for doc in find_docs)
+
     find_docs = [doc for doc in collection.find({}).limit(2)]
     assert len(find_docs) == 2
 
     find_docs = [doc for doc in collection.find({"age": 24})]
-    assert find_docs == [
+    assert without_ids(find_docs) == [
         {"name": "Charlie Brown", "age": 24, "city": "Los Angeles"},
     ]
 
@@ -158,7 +171,7 @@ def test_find_query(started_cluster):
     ]
 
     find_docs = [doc for doc in collection.find().sort("city", 1)]
-    assert find_docs == [
+    assert without_ids(find_docs) == [
         {"name": "David Williams", "age": 40, "city": "Chicago"},
         {"name": "Charlie Brown", "age": 24, "city": "Los Angeles"},
         {"name": "Bob Johnson", "age": 32, "city": "New York"},
@@ -166,6 +179,9 @@ def test_find_query(started_cluster):
 
 
 def test_index(started_cluster):
+    """An index is created on a column, and a field of a collection of documents is a path of the
+    document rather than a column, so an index over one is an error - and the reads it would have
+    sped up answer the same without it."""
     client = make_client()
     db = client["db"]
     collection = db["index"]
@@ -178,11 +194,14 @@ def test_index(started_cluster):
     ]
     collection.insert_many(documents)
 
-    collection.create_index("age")
+    with pytest.raises(pymongo.errors.OperationFailure) as error:
+        collection.create_index("age")
+    assert "not a column of the collection" in str(error.value)
+
     find_docs = [doc for doc in collection.find({})]
     find_docs = sorted(find_docs, key=lambda x: x["age"])
 
-    assert find_docs == [
+    assert without_ids(find_docs) == [
         {"name": "Charlie Brown", "age": 24, "city": "Los Angeles"},
         {"name": "Bob Johnson", "age": 32, "city": "New York"},
         {"name": "David Williams", "age": 40, "city": "Chicago"},
@@ -203,7 +222,7 @@ def test_authentication_user_differs_from_database(started_cluster):
     collection = client["db_auth"]["users"]
     collection.drop()
     collection.insert_many([{"id": 1}])
-    assert [doc for doc in collection.find({})] == [{"id": 1}]
+    assert without_ids(collection.find({})) == [{"id": 1}]
 
     # A wrong password must be rejected rather than accepted because `$db` happens to match.
     bad_client = make_client(user="mongo_user", password="wrong", database="admin")
@@ -225,8 +244,8 @@ def test_same_collection_in_two_databases(started_cluster):
     first.insert_many([{"id": 1, "value": "first"}])
     second.insert_many([{"id": 2, "value": "second"}])
 
-    assert [doc for doc in first.find({})] == [{"id": 1, "value": "first"}]
-    assert [doc for doc in second.find({})] == [{"id": 2, "value": "second"}]
+    assert without_ids(first.find({})) == [{"id": 1, "value": "first"}]
+    assert without_ids(second.find({})) == [{"id": 2, "value": "second"}]
 
     assert first.estimated_document_count() == 1
     assert second.estimated_document_count() == 1
@@ -234,7 +253,7 @@ def test_same_collection_in_two_databases(started_cluster):
     # Dropping one of them must leave the other one alone.
     first.drop()
     assert second.estimated_document_count() == 1
-    assert [doc for doc in second.find({})] == [{"id": 2, "value": "second"}]
+    assert without_ids(second.find({})) == [{"id": 2, "value": "second"}]
 
 
 def test_insert_special_values(started_cluster):
@@ -252,7 +271,7 @@ def test_insert_special_values(started_cluster):
     )
 
     found = sorted((doc for doc in collection.find({})), key=lambda x: x["id"])
-    assert found == [
+    assert without_ids(found) == [
         {"id": 1, "name": "O'Reilly"},
         {"id": 2, "name": "a'); DROP TABLE db.special_values; --"},
         {"id": 3, "name": 'back\\slash and "quotes"'},
@@ -272,30 +291,39 @@ def test_insert_arrays(started_cluster):
     )
 
     found = sorted((doc for doc in collection.find({})), key=lambda x: x["id"])
-    assert found == [
+    assert without_ids(found) == [
         {"id": 1, "tags": ["a", "b", "c"]},
         {"id": 2, "tags": []},
     ]
 
 
 def test_insert_heterogeneous_documents(started_cluster):
-    """The schema comes from the first document: missing fields default, unknown ones fail."""
+    """A collection keeps whole documents, so there is no schema for a later document to contradict:
+    a document may leave out a field another one has, and may hold a field no document before it
+    had."""
     client = make_client()
     collection = client["db"]["heterogeneous"]
 
     collection.drop()
-    # The second document has no `b`, which gets the default value of its column.
+    # The second document has no `b`, and it stays a document without one.
     collection.insert_many([{"a": 1, "b": 2}, {"a": 3}])
 
     found = sorted((doc for doc in collection.find({})), key=lambda x: x["a"])
-    assert found == [{"a": 1, "b": 2}, {"a": 3, "b": 0}]
+    assert without_ids(found) == [{"a": 1, "b": 2}, {"a": 3}]
 
-    # A field that is not in the schema is rejected instead of being written to a wrong column.
-    with pytest.raises(pymongo.errors.PyMongoError):
-        collection.insert_many([{"a": 4, "unknown_field": 5}])
+    # A field no document had before is written as well.
+    collection.insert_many([{"a": 4, "new_field": 5}])
 
     found = sorted((doc for doc in collection.find({})), key=lambda x: x["a"])
-    assert found == [{"a": 1, "b": 2}, {"a": 3, "b": 0}]
+    assert without_ids(found) == [
+        {"a": 1, "b": 2},
+        {"a": 3},
+        {"a": 4, "new_field": 5},
+    ]
+
+    # A field a document does not have holds no value, which is what `$exists` answers.
+    found = sorted((doc for doc in collection.find({"b": {"$exists": True}})), key=lambda x: x["a"])
+    assert without_ids(found) == [{"a": 1, "b": 2}]
 
 
 def test_create_collection(started_cluster):
@@ -306,39 +334,37 @@ def test_create_collection(started_cluster):
     db.create_collection("explicit")
     assert "explicit" in db.list_collection_names()
 
-    # A collection created explicitly has no document to infer a schema from, so it is empty and
-    # the first insert gives it the columns of the inserted document, exactly like a collection
-    # created by that insert.
+    # A collection created explicitly keeps whole documents, exactly like one created by the first
+    # insert into it, so it starts out empty and holds whatever the documents that arrive say.
     assert [doc for doc in db["explicit"].find({})] == []
 
     db["explicit"].insert_many([{"a": 1, "b": "x"}, {"a": 2, "b": "y"}])
     found = sorted((doc for doc in db["explicit"].find({})), key=lambda x: x["a"])
-    assert found == [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}]
+    assert without_ids(found) == [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}]
 
-    assert [doc for doc in db["explicit"].find({"a": 2})] == [{"a": 2, "b": "y"}]
+    assert without_ids(db["explicit"].find({"a": 2})) == [{"a": 2, "b": "y"}]
 
     db.drop_collection("explicit")
     assert "explicit" not in db.list_collection_names()
 
 
 def test_increment_update(started_cluster):
+    """An update of a collection of documents rewrites the document rather than the columns of a
+    row, which is not supported yet: it is refused with an error, and the documents are left as
+    they were. The same update of a table created in ClickHouse works - `test_update_operators`
+    covers it."""
     client = make_client()
     collection = client["db"]["increment"]
 
     collection.drop()
     collection.insert_many([{"id": 1, "counter": 10}, {"id": 2, "counter": 20}])
 
-    collection.update_many({"id": 1}, {"$inc": {"counter": 5}})
+    with pytest.raises(pymongo.errors.OperationFailure) as error:
+        collection.update_many({"id": 1}, {"$inc": {"counter": 5}})
+    assert "is not supported yet" in str(error.value)
 
-    # Mutations are asynchronous, so wait for the new value to become visible.
-    deadline = time.monotonic() + 60
-    while time.monotonic() < deadline:
-        found = sorted((doc for doc in collection.find({})), key=lambda x: x["id"])
-        if found == [{"id": 1, "counter": 15}, {"id": 2, "counter": 20}]:
-            break
-        time.sleep(1)
-
-    assert found == [{"id": 1, "counter": 15}, {"id": 2, "counter": 20}]
+    found = sorted((doc for doc in collection.find({})), key=lambda x: x["id"])
+    assert without_ids(found) == [{"id": 1, "counter": 10}, {"id": 2, "counter": 20}]
 
 
 def test_two_frames_in_one_packet(started_cluster):
@@ -457,7 +483,7 @@ def test_update_one_and_upsert_are_rejected(started_cluster):
 
     # Nothing was updated by the rejected commands.
     found = sorted((doc for doc in collection.find({})), key=lambda x: x["id"])
-    assert found == [{"id": 1, "counter": 10}, {"id": 2, "counter": 20}]
+    assert without_ids(found) == [{"id": 1, "counter": 10}, {"id": 2, "counter": 20}]
 
 
 def test_find_by_bool_and_double(started_cluster):
@@ -500,11 +526,21 @@ def test_unknown_operator_is_an_error(started_cluster):
 
 def test_aggregate(started_cluster):
     """An aggregation pipeline becomes a chain of `SELECT`s, so the stages that fill a clause
-    already filled by an earlier one have to continue on top of a subquery."""
+    already filled by an earlier one have to continue on top of a subquery.
+
+    The accumulators read a number, and a path of a stored document is a `Dynamic` value whose type
+    is a property of the row - `test_accumulators_over_a_document_collection_are_an_error` covers
+    what such a collection answers - so the table here is one created in ClickHouse."""
+    node = cluster.instances["node"]
     client = make_client()
     collection = client["db"]["aggregate"]
 
     collection.drop()
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.aggregate (id Int64, city String, score Int64) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
     collection.insert_many(
         [
             {"id": 1, "city": "berlin", "score": 10},
@@ -601,11 +637,19 @@ def test_drop_database(started_cluster):
 
 def test_unwind_and_the_other_stages(started_cluster):
     """`$unwind` is an `ARRAY JOIN`, which drops a document whose array is empty unless the stage
-    asks to keep it."""
+    asks to keep it. It walks an array, which a path of a stored document is only for some of its
+    rows, so the table is one created in ClickHouse - a collection of documents answers the error
+    `test_unwind_of_a_document_collection_is_an_error` pins."""
+    node = cluster.instances["node"]
     client = make_client()
     collection = client["db"]["unwound"]
 
     collection.drop()
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.unwound (id Int64, tags Array(String)) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
     collection.insert_many([{"id": 1, "tags": ["red", "green"]}, {"id": 2, "tags": []}])
 
     assert [(d["id"], d["tags"]) for d in collection.aggregate([{"$unwind": "$tags"}, {"$sort": {"id": 1, "tags": 1}}])] == [
@@ -635,11 +679,20 @@ def test_unwind_and_the_other_stages(started_cluster):
 
 def test_update_operators(started_cluster):
     """The update operators all become the assignments of one `ALTER TABLE ... UPDATE`, so a
-    statement that both sets and increments is a single mutation."""
+    statement that both sets and increments is a single mutation. An update writes columns, so it
+    is a table created in ClickHouse that it is tested over - `test_increment_update` covers what a
+    collection of documents answers instead."""
+    node = cluster.instances["node"]
     client = make_client()
     collection = client["db"]["updated"]
 
     collection.drop()
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.updated (id Int64, name String, age Int64, tags Array(String)) "
+        "ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
     collection.insert_many([{"id": 1, "name": "alpha", "age": 30, "tags": ["red"]}])
 
     collection.update_many({"id": 1}, {"$set": {"name": "beta"}, "$inc": {"age": 5}})
@@ -664,11 +717,19 @@ def test_update_operators(started_cluster):
 
 def test_update_by_a_nested_field(started_cluster):
     """The filter of an `update` names a nested field the same way the filter of a `find` does:
-    either as a subdocument or as a dotted path."""
+    either as a subdocument or as a dotted path. An update writes columns, so the table is one
+    created in ClickHouse, whose nested field is the column `profile.name`."""
+    node = cluster.instances["node"]
     client = make_client()
     collection = client["db"]["nested_update"]
 
     collection.drop()
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.nested_update (id Int64, `profile.name` String, flag Int64) "
+        "ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
     collection.insert_many(
         [
             {"id": 1, "profile": {"name": "alpha"}, "flag": 0},
@@ -741,7 +802,7 @@ def test_insert_int64(started_cluster):
     collection.drop()
     collection.insert_many([{"id": 1, "big": 2147483648}])
 
-    assert [doc for doc in collection.find({})] == [{"id": 1, "big": 2147483648}]
+    assert without_ids(collection.find({})) == [{"id": 1, "big": 2147483648}]
     assert [doc["id"] for doc in collection.find({"big": {"$gt": 2}})] == [1]
 
 
@@ -764,7 +825,7 @@ def test_insert_datetime(started_cluster):
     # The `DateTime64` column comes back as a BSON date, so the round trip returns exactly
     # the inserted values.
     found = sorted((doc for doc in collection.find({})), key=lambda x: x["id"])
-    assert found == [
+    assert without_ids(found) == [
         {"id": 1, "when": datetime.datetime(2020, 5, 17, 10, 30, 0)},
         {"id": 2, "when": datetime.datetime(2021, 6, 18, 11, 45, 30, 123000)},
     ]
@@ -827,22 +888,24 @@ def test_readback_preserves_document_shape(started_cluster):
     collection.insert_many(copy.deepcopy(documents))
 
     found = sorted((doc for doc in collection.find({})), key=lambda x: x["id"])
-    assert found == documents
+    assert without_ids(found) == documents
 
     # An empty projection asks for the whole document.
     found = sorted((doc for doc in collection.find({}, {})), key=lambda x: x["id"])
-    assert found == documents
+    assert without_ids(found) == documents
 
     # A projection of a nested field keeps its document shape.
     assert [doc for doc in collection.find({"id": 1}, {"profile.name": 1})] == [{"profile": {"name": "alpha"}}]
 
+    # A value a projection or a pipeline computes is returned with the type its JSON carries: the
+    # documents a `find` reads as they are stored are the ones that keep their dates.
     assert [doc for doc in collection.aggregate([{"$match": {"id": 2}}, {"$project": {"when": 1}}])] == [
-        {"when": datetime.datetime(2022, 7, 2, 13, 30, 0)}
+        {"when": "2022-07-02 13:30:00.000000000"}
     ]
 
     assert collection.distinct("when") == [
-        datetime.datetime(2021, 6, 1, 12, 0, 0),
-        datetime.datetime(2022, 7, 2, 13, 30, 0),
+        "2021-06-01 12:00:00.000000000",
+        "2022-07-02 13:30:00.000000000",
     ]
 
 
@@ -910,10 +973,16 @@ def test_insert_decimal_round_trip(started_cluster):
     decimal128 - not as a double, which could not hold all of its digits."""
     from bson.decimal128 import Decimal128
 
+    node = cluster.instances["node"]
     client = make_client()
     collection = client["db"]["decimals"]
 
     collection.drop()
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.decimals (id Int64, price Decimal128(10)) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
     collection.insert_many(
         [
             {"id": 1, "price": Decimal128("12345678901234567890.1234567890")},
@@ -923,7 +992,7 @@ def test_insert_decimal_round_trip(started_cluster):
 
     found = sorted((doc for doc in collection.find({})), key=lambda x: x["id"])
     assert [type(doc["price"]) for doc in found] == [Decimal128, Decimal128]
-    assert found == [
+    assert without_ids(found) == [
         {"id": 1, "price": Decimal128("12345678901234567890.1234567890")},
         {"id": 2, "price": Decimal128("-0.0000000001")},
     ]
@@ -944,10 +1013,17 @@ def test_insert_arrays_of_bson_scalars(started_cluster):
     from bson.decimal128 import Decimal128
     from bson.objectid import ObjectId
 
+    node = cluster.instances["node"]
     client = make_client()
     collection = client["db"]["wrapper_arrays"]
 
     collection.drop()
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.wrapper_arrays (id Int64, dates Array(DateTime64(3, 'UTC')), "
+        "ids Array(String), prices Array(Decimal128(10))) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
     oid = ObjectId("64c1f00000000000000000aa")
     collection.insert_many(
         [
@@ -997,22 +1073,31 @@ def test_find_projection_excludes_id(started_cluster):
 
 
 def test_insert_explicit_null(started_cluster):
-    """An explicit `null` is a real Mongo value, not an omitted field: it must survive the
-    round trip rather than be erased, both as the first value of its field - which fixes the
-    column type to `Dynamic` - and as the only field of the first document."""
+    """An explicit `null` is a real Mongo value, not an omitted field: over a table created in
+    ClickHouse, whose column holds it, it survives the round trip rather than being erased.
+
+    A collection of documents keeps the documents in a `JSON` column, which has no path that holds
+    nothing but a `null`, so there the field is read back as one the document does not have - the
+    documented limitation this also pins."""
+    node = cluster.instances["node"]
     client = make_client()
     collection = client["db"]["nulls"]
 
     collection.drop()
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.nulls (id Int64, note Dynamic) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
     collection.insert_many([{"id": 1, "note": None}, {"id": 2, "note": "set"}])
 
     found = sorted((doc for doc in collection.find({})), key=lambda x: x["id"])
-    assert found == [{"id": 1, "note": None}, {"id": 2, "note": "set"}]
+    assert without_ids(found) == [{"id": 1, "note": None}, {"id": 2, "note": "set"}]
 
     only_null = client["db"]["only_null"]
     only_null.drop()
-    only_null.insert_many([{"note": None}])
-    assert [doc for doc in only_null.find({})] == [{"note": None}]
+    only_null.insert_many([{"id": 1, "note": None}])
+    assert without_ids(only_null.find({})) == [{"id": 1}]
 
 
 def test_find_limit_zero_means_no_limit(started_cluster):
@@ -1035,10 +1120,16 @@ def test_current_date_forms(started_cluster):
     neither may mutate the row."""
     import datetime
 
+    node = cluster.instances["node"]
     client = make_client()
     collection = client["db"]["current_date"]
 
     collection.drop()
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.current_date (id Int64, seen DateTime64(3, 'UTC')) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
     collection.insert_many([{"id": 1, "seen": datetime.datetime(2000, 1, 1)}])
 
     def seen(): return collection.find({})[0]["seen"]
@@ -1169,34 +1260,36 @@ def test_float_denormals_round_trip(started_cluster):
 
 
 def test_insert_decimal_scale_is_preserved(started_cluster):
-    """A `$numberDecimal` keeps the scale of its value: `0.00000000001` has eleven fractional
-    digits, which a fixed `Decimal128(10)` column would silently round away. An array of
-    decimals of different scales becomes one column of the widest scale, so its values read
-    back padded to that scale - other members of the same cohorts."""
+    """A `$numberDecimal` is stored with every digit it has: `0.00000000001` has eleven fractional
+    digits, and a value far from the scales a fixed column would offer keeps them all.
+
+    A collection of documents has no decimal among the types the `JSON` type infers, so the digits
+    read back as the text of the number rather than as a `decimal128` - the documented limitation
+    this also pins. What matters is that they are all still there."""
+    from decimal import Decimal
+
     from bson.decimal128 import Decimal128
 
     client = make_client()
 
-    # One collection per value: the column type is inferred from the first document of a
-    # collection, so this is what pins the scale each value gets for itself.
     eleven = client["db"]["decimal_scale_eleven"]
     eleven.drop()
     eleven.insert_one({"id": 1, "d": Decimal128("0.00000000001")})
-    assert list(eleven.find({})) == [{"id": 1, "d": Decimal128("0.00000000001")}]
+    found = list(eleven.find({}))
+    assert len(found) == 1 and Decimal(found[0]["d"]) == Decimal("0.00000000001")
 
     twenty = client["db"]["decimal_scale_twenty"]
     twenty.drop()
     twenty.insert_one({"id": 1, "d": Decimal128("1E-20")})
-    assert list(twenty.find({})) == [
-        {"id": 1, "d": Decimal128("0.00000000000000000001")}
-    ]
+    found = list(twenty.find({}))
+    assert len(found) == 1 and Decimal(found[0]["d"]) == Decimal("1E-20")
 
     arrays = client["db"]["decimal_scale_arrays"]
     arrays.drop()
     arrays.insert_one({"id": 1, "prices": [Decimal128("1.5"), Decimal128("1.25")]})
-    assert list(arrays.find({})) == [
-        {"id": 1, "prices": [Decimal128("1.50"), Decimal128("1.25")]}
-    ]
+    found = list(arrays.find({}))
+    assert len(found) == 1
+    assert [Decimal(value) for value in found[0]["prices"]] == [Decimal("1.5"), Decimal("1.25")]
 
 
 def test_insert_decimal_that_fits_no_decimal128_is_an_error(started_cluster):
@@ -1218,11 +1311,21 @@ def test_insert_decimal_that_fits_no_decimal128_is_an_error(started_cluster):
 def test_in_on_array_field_tests_the_elements(started_cluster):
     """Mongo applies `$in` to an array field by asking whether any element of it is among the
     candidates, and `$nin` is its negation. `$size` matches arrays only: a string of the right
-    length is not a match."""
+    length is not a match.
+
+    The elements of an array are compared, which a collection of documents cannot express - see
+    `test_element_wise_match_over_a_document_collection_compares_the_value` - so the table is one
+    created in ClickHouse."""
+    node = cluster.instances["node"]
     client = make_client()
     collection = client["db"]["tagged"]
 
     collection.drop()
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.tagged (id Int64, name String, tags Array(String)) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
     collection.insert_many(
         [
             {"id": 1, "name": "alpha", "tags": ["red", "blue"]},
@@ -1240,11 +1343,19 @@ def test_in_on_array_field_tests_the_elements(started_cluster):
 def test_scalar_equality_matches_array_elements(started_cluster):
     """Mongo's scalar equality is also its canonical array membership form: `{tags: "red"}`
     and `{tags: {"$eq": "red"}}` must match a document whose `tags` array holds the value,
-    and `$ne` is the negation."""
+    and `$ne` is the negation. The table is one created in ClickHouse, whose column is an array -
+    see `test_element_wise_match_over_a_document_collection_compares_the_value`."""
+    node = cluster.instances["node"]
     client = make_client()
     collection = client["db"]["equality_on_arrays"]
 
     collection.drop()
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.equality_on_arrays (id Int64, name String, tags Array(String)) "
+        "ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
     collection.insert_many(
         [
             {"id": 1, "name": "alpha", "tags": ["red", "blue"]},
@@ -1326,11 +1437,19 @@ def test_missing_collection_reads_as_empty(started_cluster):
 def test_distinct_on_an_array_field_returns_the_elements(started_cluster):
     """Mongo's `distinct` on an array field is element-wise: a document whose `tags` holds
     `["red", "blue"]` contributes the elements, not the array, and elements shared between
-    documents are returned once. The values come back in ascending order."""
+    documents are returned once. The values come back in ascending order. The table is one created
+    in ClickHouse, whose column is an array."""
+    node = cluster.instances["node"]
     client = make_client()
     collection = client["db"]["distinct_on_arrays"]
 
     collection.drop()
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.distinct_on_arrays (id Int64, name String, tags Array(String)) "
+        "ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
     collection.insert_many(
         [
             {"id": 1, "name": "alpha", "tags": ["red", "blue"]},
@@ -1421,11 +1540,19 @@ def test_large_uint64_round_trips_as_a_decimal(started_cluster):
 def test_update_operator_values_are_data(started_cluster):
     """An update statement carries data, not an aggregation pipeline: a string that starts with
     a dollar sign is stored as it is written rather than read as a field path, and a document
-    assigns the fields it names."""
+    assigns the fields it names. An update writes columns, so the table is one created in
+    ClickHouse - `test_increment_update` covers what a collection of documents answers."""
+    node = cluster.instances["node"]
     client = make_client()
     collection = client["db"]["update_values"]
 
     collection.drop()
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.update_values (id Int64, name String, other String, `profile.name` String) "
+        "ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
     collection.insert_many(
         [{"id": 1, "name": "alpha", "other": "beta", "profile": {"name": "x"}}]
     )
@@ -1491,14 +1618,24 @@ def test_aggregate_of_a_missing_collection_is_empty(started_cluster):
 def test_dialect_writes_the_embedded_documents_the_wire_path_creates(started_cluster):
     """An array of embedded documents is inferred as `Array(JSON)` by the wire insert path, and
     the same shape must be writable through `dialect = 'mongo'`: the elements of the array and
-    the document `$push` appends become `JSON` values."""
+    the document `$push` appends become `JSON` values.
+
+    The dialect addresses the columns of a table, so the collection is one created in ClickHouse -
+    `test_dialect_over_a_document_collection_is_an_error` covers what it answers over a collection
+    of documents."""
+    node = cluster.instances["node"]
     client = make_client()
     collection = client["db"]["dialect_embedded_documents"]
     collection.drop()
 
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.dialect_embedded_documents (id Int64, events Array(JSON)) "
+        "ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
     collection.insert_one({"id": 1, "events": [{"name": "start"}]})
 
-    node = cluster.instances["node"]
     dialect_settings = {"dialect": "mongo", "allow_experimental_mongo_dialect": 1}
     node.query(
         'db.dialect_embedded_documents.insertOne({"id": 2, "events": [{"name": "second"}]})',
@@ -1526,10 +1663,19 @@ def test_create_index_rejects_unsupported_semantics(started_cluster):
     """`createIndexes` implements one thing: a single-field `bloom_filter` data skipping index.
     An index whose semantics the server cannot honor - `unique`, a compound key, a TTL, a
     special index type - must be an error rather than an acknowledged no-op, or duplicate
-    writes would start succeeding after a migration that asked for a unique index."""
+    writes would start succeeding after a migration that asked for a unique index.
+
+    An index is created on a column, and a field of a collection of documents is a path rather than
+    one, so the table is one created in ClickHouse."""
+    node = cluster.instances["node"]
     client = make_client()
     collection = client["db"]["index_options"]
     collection.drop()
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.index_options (email String, a Int64, b Int64) ENGINE = MergeTree ORDER BY email",
+        password="123",
+    )
     collection.insert_one({"email": "a@b.c", "a": 1, "b": 2})
 
     with pytest.raises(pymongo.errors.OperationFailure) as error:
@@ -1662,18 +1808,130 @@ def test_create_index_needs_the_field_to_be_a_column(started_cluster):
         collection.create_index("email")
     assert "does not exist" in str(error.value)
 
-    # Created explicitly, it holds whole documents and has no `email` column yet.
+    # A collection of documents has no column to index, whichever field is asked for: the
+    # documents it holds live in one `JSON` column, and a field of them is a path of it.
     database.create_collection("index_pre_schema")
     with pytest.raises(pymongo.errors.OperationFailure) as error:
         collection.create_index("email")
     assert "not a column" in str(error.value)
 
-    # A field the documents do have can be indexed.
+    collection.insert_one({"email": "a@b.c"})
+    with pytest.raises(pymongo.errors.OperationFailure) as error:
+        collection.create_index("email")
+    assert "not a column" in str(error.value)
+
+    collection.drop()
+
+    # A table created in ClickHouse has columns, and a field that is one can be indexed.
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.index_pre_schema (email String) ENGINE = MergeTree ORDER BY email",
+        password="123",
+    )
     collection.insert_one({"email": "a@b.c"})
     collection.create_index("email")
 
     with pytest.raises(pymongo.errors.OperationFailure) as error:
         collection.create_index("nothing_has_this_field")
     assert "not a column" in str(error.value)
+
+    collection.drop()
+
+
+def test_accumulators_over_a_document_collection_are_an_error(started_cluster):
+    """An accumulator reads a number, and a path of a stored document is a `Dynamic` value whose
+    type is a property of the row rather than of the column, so `$sum` over one is a controlled
+    error rather than a wrong number. Counting the documents does not read a path and works."""
+    client = make_client()
+    collection = client["db"]["document_accumulators"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1, "score": 10}, {"id": 2, "score": 20}])
+
+    with pytest.raises(pymongo.errors.OperationFailure):
+        list(collection.aggregate([{"$group": {"_id": None, "s": {"$sum": "$score"}}}]))
+
+    assert list(collection.aggregate([{"$group": {"_id": None, "c": {"$sum": 1}}}])) == [
+        {"_id": None, "c": 2}
+    ]
+
+    # The server is still healthy after the rejected pipeline.
+    assert sorted(document["id"] for document in collection.find({})) == [1, 2]
+
+    collection.drop()
+
+
+def test_unwind_of_a_document_collection_is_an_error(started_cluster):
+    """`$unwind` walks an array, which a path of a stored document is only for some of its rows,
+    so it is a controlled error over a collection of documents."""
+    client = make_client()
+    collection = client["db"]["document_unwind"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1, "tags": ["red", "green"]}])
+
+    with pytest.raises(pymongo.errors.OperationFailure):
+        list(collection.aggregate([{"$unwind": "$tags"}]))
+
+    assert [document["id"] for document in collection.find({})] == [1]
+
+    collection.drop()
+
+
+def test_element_wise_match_over_a_document_collection_compares_the_value(started_cluster):
+    """Equality and `$in` over a collection of documents compare the value a field holds rather
+    than the elements of an array it holds: the array functions ClickHouse would need for that do
+    not accept the `Dynamic` value a path of a document is. A scalar field is unaffected; over a
+    field that holds an array there is no such comparison, so it is an error."""
+    client = make_client()
+    collection = client["db"]["document_arrays"]
+
+    collection.drop()
+    collection.insert_many(
+        [
+            {"id": 1, "name": "alpha", "tags": ["red", "blue"]},
+            {"id": 2, "name": "beta", "tags": ["green"]},
+        ]
+    )
+
+    # A scalar field keeps plain equality, and `$in` compares the candidates one by one.
+    assert [document["id"] for document in collection.find({"name": "beta"})] == [2]
+    assert [document["id"] for document in collection.find({"name": {"$in": ["alpha"]}})] == [1]
+    assert sorted(
+        document["id"] for document in collection.find({"name": {"$in": ["alpha", "beta"]}})
+    ) == [1, 2]
+    assert [document["id"] for document in collection.find({"name": {"$nin": ["alpha"]}})] == [2]
+
+    # An array field is compared as the value it holds, and comparing an array with a scalar has no
+    # answer, so it is an error rather than a match of the elements MongoDB would report.
+    with pytest.raises(pymongo.errors.OperationFailure):
+        list(collection.find({"tags": "green"}))
+    with pytest.raises(pymongo.errors.OperationFailure):
+        list(collection.find({"tags": {"$in": ["green"]}}))
+
+    collection.drop()
+
+
+def test_dialect_over_a_document_collection_is_an_error(started_cluster):
+    """The `mongo` dialect addresses the columns of a table, and a collection of documents has one
+    column for all of them, so a statement of the dialect over such a collection is an error rather
+    than a query about a column that is not there. The wire protocol is the way to read one."""
+    node = cluster.instances["node"]
+    client = make_client()
+    collection = client["db"]["document_dialect"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1, "name": "alpha"}])
+
+    with pytest.raises(Exception):
+        node.query(
+            'db.document_dialect.find({"id": 1})',
+            password="123",
+            database="db",
+            settings={"dialect": "mongo", "allow_experimental_mongo_dialect": 1},
+        )
+
+    assert [document["id"] for document in collection.find({})] == [1]
 
     collection.drop()

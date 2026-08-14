@@ -296,15 +296,23 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
     if (to_insert.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'insert' command does not contain any document");
 
-    createDatabase(collection, executor);
-
     /** A collection this endpoint creates keeps whole documents; a table that was created in
       * ClickHouse keeps its own columns, and a document is written into them as a row, so that an
       * application can be pointed at a table that already holds the data.
+      *
+      * The collection is created after the documents have been converted, so that an `insert` of a
+      * document this endpoint cannot write leaves nothing behind: a collection that only the failed
+      * command created would be an empty collection MongoDB never has.
       */
-    if (!objectExists(executor, "TABLE", collection.getQualifiedName()))
-        createCollection(collection, executor);
-    const auto shape = getCollectionShape(collection, executor);
+    const bool exists = objectExists(executor, "TABLE", collection.getQualifiedName());
+    CollectionShape shape;
+    if (exists)
+        shape = getCollectionShape(collection, executor);
+    else
+    {
+        shape.stores_documents = true;
+        shape.has_object_id = true;
+    }
 
     /// Values never go into the query text: the rows are passed as `JSONEachRow` data, which
     /// rapidjson escapes, so no value can change the meaning of the query.
@@ -351,6 +359,12 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
         rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
         row.Accept(writer);
         data << buffer.GetString() << "\n";
+    }
+
+    if (!exists)
+    {
+        createDatabase(collection, executor);
+        createCollection(collection, executor);
     }
 
     executor->execute(fmt::format(
