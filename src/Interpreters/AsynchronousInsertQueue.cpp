@@ -596,9 +596,9 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
 
         chassert(data);
         auto size_in_bytes = data->size_in_bytes;
-        data->size_in_bytes += entry_data_size;
         /// We rely on the fact that entries are being added to the list in order of creation time in `scheduleDataProcessingJob()`
         data->entries.emplace_back(entry);
+        data->size_in_bytes += entry_data_size;
         progress_future = entry->getFuture();
 
         LOG_TRACE(log, "Have {} pending inserts in shard {} with total {} bytes of data",
