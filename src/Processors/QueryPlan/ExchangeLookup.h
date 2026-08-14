@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
 #include <base/types.h>
 #include <boost/noncopyable.hpp>
 #include <memory>

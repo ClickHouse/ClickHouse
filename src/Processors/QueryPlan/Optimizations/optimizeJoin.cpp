@@ -16,7 +16,7 @@
 #include <Interpreters/TableJoin.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -25,6 +25,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #if CLICKHOUSE_CLOUD
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #endif
@@ -32,10 +33,12 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
-#include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/ReceiveRuntimeFilterStep.h>
+#include <Processors/QueryPlan/SendRuntimeFilterStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/Transforms/JoiningTransform.h>
 #include <Storages/System/StorageSystemOne.h>
 
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
@@ -355,9 +358,36 @@ static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggreg
     return aggregation_stats;
 }
 
+/// A runtime filter prunes nothing at plan time, so it must not count as a filter when estimating.
+/// True when the predicate is built only out of `__applyFilter` calls (possibly ANDed, via aliases).
+static bool isRuntimeFilterOnlyPredicate(const ActionsDAG::Node * node)
+{
+    if (!node)
+        return false;
+
+    if (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        return isRuntimeFilterOnlyPredicate(node->children.front());
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+        return false;
+
+    const auto & function_name = node->function_base->getName();
+    if (function_name == "__applyFilter")
+        return true;
+
+    if (function_name != "and" || node->children.empty())
+        return false;
+
+    return std::ranges::all_of(node->children, isRuntimeFilterOnlyPredicate);
+}
+
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
 {
+    /// Estimate the unfiltered relation: a runtime-filter-only predicate carries no plan-time selectivity.
+    if (isRuntimeFilterOnlyPredicate(filter))
+        filter = nullptr;
+
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
@@ -402,14 +432,22 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 .source = RowEstimateSource::NoStatistics};
         }
 
+        /// A PREWHERE that only applies runtime filters is likewise not a plan-time filter.
+        PrewhereInfoPtr prewhere_info_for_estimate = reading->getPrewhereInfo();
+        if (prewhere_info_for_estimate
+            && isRuntimeFilterOnlyPredicate(
+                static_cast<const ActionsDAG::Node *>(
+                    prewhere_info_for_estimate->prewhere_actions.tryFindInOutputs(prewhere_info_for_estimate->prewhere_column_name))))
+            prewhere_info_for_estimate = nullptr;
+
         const bool use_statistics = reading->getContext()->getSettingsRef()[Setting::use_statistics];
         if (use_statistics)
         {
             if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames(), analyzed_result))
             {
-                auto prewhere_info = reading->getPrewhereInfo();
-                const ActionsDAG::Node * prewhere_node = prewhere_info
-                    ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
+                const ActionsDAG::Node * prewhere_node = prewhere_info_for_estimate
+                    ? static_cast<const ActionsDAG::Node *>(
+                          prewhere_info_for_estimate->prewhere_actions.tryFindInOutputs(prewhere_info_for_estimate->prewhere_column_name))
                     : nullptr;
                 auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
                 RelationStats stats {
@@ -448,7 +486,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             if (is_filtered_by_index)
                 break;
         }
-        bool has_filter = filter || reading->getPrewhereInfo();
+        bool has_filter = filter || prewhere_info_for_estimate;
 
         /// If any conditions are pushed down to storage but not used in the index,
         /// we cannot precisely estimate the row count
@@ -498,6 +536,13 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         auto stats = estimateReadRowsCount(*node.children.front(), filter);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
+        return stats;
+    }
+
+    if (typeid_cast<const BuildRuntimeFilterStep *>(step) || typeid_cast<const SendRuntimeFilterStep *>(step)
+        || typeid_cast<const ReceiveRuntimeFilterStep *>(step))
+    {
+        auto stats = estimateReadRowsCount(*node.children.front(), filter);
         return stats;
     }
 
@@ -1187,7 +1232,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         }
     }
 
-    std::stack<QueryPlan::Node *> nodeStack;
+    std::stack<QueryPlan::Node *> node_stack;
     auto & input_nodes = query_graph_builder.inputs;
 
     if (!query_graph_builder.context)
@@ -1228,15 +1273,15 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             size_t relation_id = safe_cast<size_t>(entry->relation_id);
             if (relation_id >= input_nodes.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid relation id: {}, input nodes size: {}", relation_id, input_nodes.size());
-            nodeStack.push(input_nodes[relation_id]);
+            node_stack.push(input_nodes[relation_id]);
         }
         else
         {
             /// Combine two nodes from the stack into a single join operation
-            auto * left_child_node = nodeStack.top();
-            nodeStack.pop();
-            auto * right_child_node = nodeStack.top();
-            nodeStack.pop();
+            auto * left_child_node = node_stack.top();
+            node_stack.pop();
+            auto * right_child_node = node_stack.top();
+            node_stack.pop();
 
             auto join_operator = std::move(entry->join_operator);
             join_operator.strictness = join_strictness;
@@ -1467,11 +1512,11 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
             new_node.step = std::move(join_step);
             new_node.children = {left_child_node, right_child_node};
-            nodeStack.push(&new_node);
+            node_stack.push(&new_node);
         }
     }
 
-    if (nodeStack.size() != 1 || nodeStack.top() != &nodes.back())
+    if (node_stack.size() != 1 || node_stack.top() != &nodes.back())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal join sequence produced: [{}]",
             fmt::join(sequence | std::views::transform([](const auto * e) { return e ? e->dump() : "null"; }), ", "));
 

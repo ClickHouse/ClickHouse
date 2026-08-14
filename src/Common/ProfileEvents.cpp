@@ -1554,6 +1554,11 @@ The server successfully detected this situation and will download merged part fr
     M(RuntimeFilterRowsChecked, "Number of rows checked by JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterRowsPassed, "Number of rows that passed (not filtered out by) JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterRowsSkipped, "Number of rows in blocks that were skipped by JOIN Runtime Filters", ValueType::Number) \
+    M(RuntimeFilterStatesSent, "Number of serialized JOIN Runtime Filter states sent to other tasks of a distributed query plan, one per destination stream", ValueType::Number) \
+    M(RuntimeFilterStateBytesSent, "Bytes of serialized JOIN Runtime Filter states sent to other tasks of a distributed query plan, counted once per destination stream", ValueType::Bytes) \
+    M(RuntimeFilterStatesReceived, "Number of serialized JOIN Runtime Filter states received from other tasks of a distributed query plan", ValueType::Number) \
+    M(RuntimeFilterStateBytesReceived, "Bytes of serialized JOIN Runtime Filter states received from other tasks of a distributed query plan", ValueType::Bytes) \
+    M(RuntimeFilterOversizedStatesRejected, "Number of JOIN Runtime Filter states rejected because they exceeded the receiver-side size limit; the affected filter is skipped and rows pass unfiltered", ValueType::Number) \
     M(RuntimeFilterGranulesConsidered, "Number of granules examined for read time pruning by JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterGranulesDropped, "Number of granules pruned at read time by JOIN Runtime Filters", ValueType::Number) \
     \

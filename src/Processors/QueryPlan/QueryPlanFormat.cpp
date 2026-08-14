@@ -1,32 +1,33 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
-#include <Common/FieldVisitorToString.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/PreparedSets.h>
-#include <Functions/FunctionHelpers.h>
 #include <Parsers/ExpressionOperatorPrettyLookup.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/ReadFromTableStep.h>
+#include <Processors/QueryPlan/SendRuntimeFilterStep.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -672,12 +673,24 @@ namespace QueryPlanFormat
             const auto * window_step = static_cast<const WindowStep *>(step.get());
             addWindowFunctionPrettyNames(window_step->getWindowDescription(), pretty_names);
         }
-        else if (step_name == "BuildRuntimeFilter")
+        else if (step_name == "BuildRuntimeFilter" || step_name == "SendRuntimeFilter")
         {
-            const auto * rf_step = static_cast<const BuildRuntimeFilterStep *>(step.get());
+            String filter_name;
+            String filter_col;
+            if (const auto * rf_step = typeid_cast<const BuildRuntimeFilterStep *>(step.get()))
+            {
+                filter_name = rf_step->getFilterName();
+                filter_col = rf_step->getFilterColumnName();
+            }
+            else
+            {
+                const auto * send_step = static_cast<const SendRuntimeFilterStep *>(step.get());
+                filter_name = send_step->getFilterName();
+                filter_col = send_step->getFilterColumnName();
+            }
+
             String pretty_name = fmt::format("RF{}", runtime_filter_names.size() + 1);
 
-            const auto & filter_col = rf_step->getFilterColumnName();
             String build_column;
             if (auto it = pretty_names.find(filter_col); it != pretty_names.end())
                 build_column = it->second.expression;
@@ -685,8 +698,8 @@ namespace QueryPlanFormat
                 build_column = trimColumnIdentifier(filter_col);
 
             String build_table = findSourceTableName(node);
-            runtime_filter_names.try_emplace(rf_step->getFilterName(),
-                RuntimeFilterInfo{std::move(pretty_name), std::move(build_column), std::move(build_table)});
+            runtime_filter_names.try_emplace(
+                filter_name, RuntimeFilterInfo{std::move(pretty_name), std::move(build_column), std::move(build_table)});
         }
 
         if (const auto * source = dynamic_cast<const SourceStepWithFilter *>(step.get()))

@@ -3,35 +3,41 @@
 #if CLICKHOUSE_CLOUD
 #include <Processors/QueryPlan/ReadFromMergeTreeAtWorker.h>
 #endif
-#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <Processors/QueryPlan/TotalsHavingStep.h>
-#include <Processors/QueryPlan/RollupStep.h>
-#include <Processors/QueryPlan/CubeStep.h>
-#include <Processors/QueryPlan/ExtremesStep.h>
-#include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/IntersectOrExceptStep.h>
-#include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/LogicalExchangeStep.h>
-#include <Processors/QueryPlan/ScatterExchangeStep.h>
-#include <Processors/QueryPlan/ShuffleExchangeStep.h>
-#include <Processors/QueryPlan/BroadcastExchangeStep.h>
-#include <Processors/QueryPlan/GatherExchangeStep.h>
-#include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/QueryPlan/WindowStep.h>
-#include <fmt/ranges.h>
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/BroadcastExchangeStep.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
+#include <Processors/QueryPlan/CubeStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/ExtremesStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/GatherExchangeStep.h>
+#include <Processors/QueryPlan/IntersectOrExceptStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeFilterExchangeWiring.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/ReceiveRuntimeFilterStep.h>
+#include <Processors/QueryPlan/RollupStep.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <Processors/QueryPlan/ScatterExchangeStep.h>
+#include <Processors/QueryPlan/SendRuntimeFilterStep.h>
+#include <Processors/QueryPlan/ShuffleExchangeStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
+#include <Storages/SelectQueryInfo.h>
+#include <fmt/ranges.h>
 #include <Common/logger_useful.h>
 
 
@@ -75,6 +81,7 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void wireDistributedRuntimeFilters(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node);
 void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 bool keyTypeBreaksHashSharding(const IDataType & type);
@@ -1010,6 +1017,284 @@ void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPl
 }
 
 
+/// If `dag` contains an actual application of the runtime filter registered under `filter_key` —
+/// a `__applyFilter` call whose first argument is the const rendezvous key — returns the name of
+/// the input column the filter probes (empty when the probed expression is not a plain column).
+/// Matching the const VALUE (not the stable display name) cannot collide across plan builds, and
+/// ignores a leftover alias whose `__applyFilter` computation was pushed further down.
+static std::optional<String> findRuntimeFilterApplication(const ActionsDAG & dag, const String & filter_key)
+{
+    for (const auto & dag_node : dag.getNodes())
+    {
+        if (dag_node.type != ActionsDAG::ActionType::FUNCTION || !dag_node.function_base
+            || dag_node.function_base->getName() != "__applyFilter" || dag_node.children.size() < 2)
+            continue;
+
+        const auto * key_argument = dag_node.children.front();
+        if (!key_argument->column)
+            continue;
+
+        const auto * key_constant = typeid_cast<const ColumnConst *>(key_argument->column.get());
+        if (!key_constant || key_constant->getDataAt(0) != filter_key)
+            continue;
+
+        /// Unwrap the probed expression to its input column, looking through renames and the cast
+        /// to the filter element type.
+        const auto * probed = dag_node.children[1];
+        while (true)
+        {
+            if (probed->type == ActionsDAG::ActionType::ALIAS && !probed->children.empty())
+                probed = probed->children.front();
+            else if (
+                probed->type == ActionsDAG::ActionType::FUNCTION && probed->function_base
+                && (probed->function_base->getName() == "CAST" || probed->function_base->getName() == "_CAST") && !probed->children.empty())
+                probed = probed->children.front();
+            else
+                break;
+        }
+        return probed->type == ActionsDAG::ActionType::INPUT ? probed->result_name : String{};
+    }
+    return std::nullopt;
+}
+
+/// If executing `step` prunes its rows with the runtime filter registered under `filter_key` — as
+/// a `FilterStep` condition or inside a source's PREWHERE — returns the probed column name as in
+/// `findRuntimeFilterApplication`.
+static std::optional<String> stepAppliesRuntimeFilter(const IQueryPlanStep & step, const String & filter_key)
+{
+    if (const auto * filter = typeid_cast<const FilterStep *>(&step))
+        return findRuntimeFilterApplication(filter->getExpression(), filter_key);
+
+    if (const auto * source = dynamic_cast<const SourceStepWithFilter *>(&step))
+    {
+        if (auto prewhere_info = source->getPrewhereInfo())
+            return findRuntimeFilterApplication(prewhere_info->prewhere_actions, filter_key);
+    }
+
+    return std::nullopt;
+}
+
+/// Turns the runtime filters of distributed joins into transportable ones: on the build branch each
+/// `BuildRuntimeFilterStep` becomes a `SendRuntimeFilterStep`, and every probe-side fragment that
+/// applies the filter gets a matching `ReceiveRuntimeFilterStep`. The filter exchanges themselves
+/// are assigned later, when the plan is split into stages and the task counts are known.
+void wireDistributedRuntimeFilters(QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+{
+    std::vector<QueryPlan::Node *> stack = {&root};
+    while (!stack.empty())
+    {
+        auto * candidate_node = stack.back();
+        stack.pop_back();
+        for (auto * child : candidate_node->children)
+            stack.push_back(child);
+
+        if (!typeid_cast<JoinStepLogical *>(candidate_node->step.get()) || candidate_node->children.size() != 2)
+            continue;
+        auto * join_node = candidate_node;
+
+        /// The filter only needs transport when the build side is behind an exchange.
+        if (!dynamic_cast<LogicalExchangeStep *>(join_node->children[1]->step.get()))
+            continue;
+
+        /// The build filters sit right below the exchange, interleaved only with expression steps
+        /// (join key calculation) and receives that outer joins may have delivered into this
+        /// fragment. Anything else, e.g. a nested join, ends this join's filters.
+        std::vector<QueryPlan::Node *> build_filter_nodes;
+        auto * node = join_node->children[1]->children.front();
+        while (true)
+        {
+            if (typeid_cast<BuildRuntimeFilterStep *>(node->step.get()))
+                build_filter_nodes.push_back(node);
+            else if (!typeid_cast<ExpressionStep *>(node->step.get()) && !typeid_cast<ReceiveRuntimeFilterStep *>(node->step.get()))
+                break;
+            if (node->children.size() != 1)
+                break;
+            node = node->children.front();
+        }
+
+        for (auto * build_filter_node : build_filter_nodes)
+        {
+            const auto & build_step = *typeid_cast<BuildRuntimeFilterStep *>(build_filter_node->step.get());
+
+            /// Only over-approximating filters may cross tasks: an exclusion (anti-join) filter built
+            /// from a subset of the keys would wrongly drop rows, and only the bloom-style state can
+            /// be merged across tasks.
+            if (!build_step.allowsNotExactFilter() || !ApproximateRuntimeFilter::isDataTypeSupported(build_step.getFilterColumnType()))
+                continue;
+
+            /// Estimated count of distinct build keys: the build subtree's estimated rows, tightened
+            /// by the key column's distinct-value statistic when available.
+            std::optional<UInt64> estimated_keys;
+            {
+                RelationStats build_stats = estimateReadRowsCount(*build_filter_node->children.front());
+                estimated_keys = build_stats.estimated_rows;
+                if (auto it = build_stats.column_stats.find(build_step.getFilterColumnName());
+                    it != build_stats.column_stats.end() && it->second.num_distinct_values > 0)
+                {
+                    estimated_keys
+                        = estimated_keys ? std::min(*estimated_keys, it->second.num_distinct_values) : it->second.num_distinct_values;
+                }
+            }
+
+            /// A transported filter's exact phase is budgeted at what shipping the estimated key
+            /// set exactly would cost (variable-width keys are budgeted at the width of a 64-bit
+            /// hash each), capped at `MAX_RUNTIME_BLOOM_FILTER_BYTES`, and its row bound is raised
+            /// to the same estimate for every supported key type — `exact_bytes_limit` stays the
+            /// hard cap on the key bytes. A filter whose keys stay within the budget arrives
+            /// exact — no false positives — costing only the actual bytes of its keys; when the
+            /// estimate proves too low the state degrades to the bloom filter of the settings
+            /// geometry, so a degraded partial never costs more on the wire or per stream than a
+            /// settings-sized filter, no matter how far the estimate was off or how many task
+            /// pairs replicate it. The settings remain the floor: a filter without a usable
+            /// estimate transports exactly as before.
+            RuntimeFilterGeometry geometry = build_step.getGeometry();
+            bool budget_is_upsized = false;
+            if (estimated_keys)
+            {
+                const auto & key_type = build_step.getFilterColumnType();
+                const UInt64 key_width = key_type->haveMaximumSizeOfValue() ? key_type->getMaximumSizeOfValueInMemory() : sizeof(UInt64);
+                if (*estimated_keys > std::numeric_limits<UInt64>::max() / key_width)
+                    continue;
+                const UInt64 exact_transport_bytes = std::min(*estimated_keys * key_width, MAX_RUNTIME_BLOOM_FILTER_BYTES);
+                if (exact_transport_bytes > geometry.exact_bytes_limit)
+                {
+                    geometry.exact_bytes_limit = exact_transport_bytes;
+                    budget_is_upsized = true;
+                }
+                geometry.exact_values_limit = std::max(geometry.exact_values_limit, *estimated_keys);
+            }
+
+            /// A receive only registers the arrived filter in its own task's filter map; the
+            /// pruning happens at the `__applyFilter` sites, which the pushdown passes have already
+            /// moved down the probe subtree — typically into scan PREWHEREs several exchanges
+            /// deeper. So deliver the filter to every exchange-delimited region of the probe
+            /// subtree that applies it: a receive right below the region's exchange lands in the
+            /// same tasks as the apply. The join's own fragment needs no receive — a worker re-adds
+            /// a local build/apply pair when it optimizes that fragment.
+            std::vector<QueryPlan::Node *> probe_exchanges;
+            {
+                std::vector<QueryPlan::Node *> walk = {join_node->children[0]};
+                while (!walk.empty())
+                {
+                    auto * walk_node = walk.back();
+                    walk.pop_back();
+                    if (dynamic_cast<LogicalExchangeStep *>(walk_node->step.get()))
+                        probe_exchanges.push_back(walk_node);
+                    for (auto * child : walk_node->children)
+                        walk.push_back(child);
+                }
+            }
+
+            bool filter_is_received_somewhere = false;
+            for (auto * exchange_node : probe_exchanges)
+            {
+                auto * region_root = exchange_node->children.front();
+
+                QueryPlan::Node * site_node = nullptr;
+                String site_key_column;
+                std::vector<QueryPlan::Node *> region_walk = {region_root};
+                while (!region_walk.empty())
+                {
+                    auto * region_node = region_walk.back();
+                    region_walk.pop_back();
+                    if (auto probed_column = stepAppliesRuntimeFilter(*region_node->step, build_step.getFilterKey()))
+                    {
+                        site_node = region_node;
+                        site_key_column = *probed_column;
+                        break;
+                    }
+                    for (auto * child : region_node->children)
+                        if (!dynamic_cast<LogicalExchangeStep *>(child->step.get()))
+                            region_walk.push_back(child);
+                }
+                if (!site_node)
+                    continue;
+
+                /// Admission by the same estimates that sized the filter. Both gates assume the
+                /// usual join-key containment: a build key set at least as large as the site's key
+                /// set (or its whole row count) is not expected to prune anything, so shipping it
+                /// only costs. A filter with an upsized budget is only sent where the row estimate
+                /// confirmed the site outweighs it. With no estimates at all, transport stays as
+                /// it always was.
+                if (estimated_keys)
+                {
+                    RelationStats site_stats = estimateReadRowsCount(*site_node);
+                    if (site_stats.estimated_rows && *estimated_keys >= *site_stats.estimated_rows)
+                    {
+                        LOG_TRACE(
+                            getLogger("joinRuntimeFilter"),
+                            "Runtime-filter transport of '{}' refused at '{}': {} estimated build keys vs {} estimated site rows",
+                            build_step.getFilterName(),
+                            site_node->step->getName(),
+                            *estimated_keys,
+                            *site_stats.estimated_rows);
+                        continue;
+                    }
+                    if (auto it = site_stats.column_stats.find(site_key_column); !site_key_column.empty()
+                        && it != site_stats.column_stats.end() && it->second.num_distinct_values > 0
+                        && *estimated_keys >= it->second.num_distinct_values)
+                    {
+                        LOG_TRACE(
+                            getLogger("joinRuntimeFilter"),
+                            "Runtime-filter transport of '{}' refused at '{}': {} estimated build keys vs {} distinct values of '{}'",
+                            build_step.getFilterName(),
+                            site_node->step->getName(),
+                            *estimated_keys,
+                            it->second.num_distinct_values,
+                            site_key_column);
+                        continue;
+                    }
+                    if (budget_is_upsized && !site_stats.estimated_rows)
+                    {
+                        LOG_TRACE(
+                            getLogger("joinRuntimeFilter"),
+                            "Runtime-filter transport of '{}' refused at '{}': {} bytes upsized exact budget, but the site rows are "
+                            "unknown",
+                            build_step.getFilterName(),
+                            site_node->step->getName(),
+                            geometry.exact_bytes_limit);
+                        continue;
+                    }
+                    LOG_TRACE(
+                        getLogger("joinRuntimeFilter"),
+                        "Runtime-filter transport of '{}' admitted at '{}': {} estimated build keys, {} exact bytes budget, {} exact "
+                        "values limit",
+                        build_step.getFilterName(),
+                        site_node->step->getName(),
+                        *estimated_keys,
+                        geometry.exact_bytes_limit,
+                        geometry.exact_values_limit);
+                }
+
+                auto & receive_node = nodes.emplace_back();
+                receive_node.step = std::make_unique<ReceiveRuntimeFilterStep>(
+                    region_root->step->getOutputHeader(),
+                    build_step.getFilterName(),
+                    build_step.getFilterKey(),
+                    build_step.getFilterColumnType(),
+                    geometry);
+                receive_node.children = {region_root};
+                exchange_node->children.front() = &receive_node;
+                filter_is_received_somewhere = true;
+            }
+
+            /// No fragment to deliver to: keep the local build step, exactly as with the setting off.
+            if (!filter_is_received_somewhere)
+                continue;
+
+            auto send_step = std::make_unique<SendRuntimeFilterStep>(
+                build_filter_node->children.front()->step->getOutputHeader(),
+                build_step.getFilterColumnName(),
+                build_step.getFilterColumnType(),
+                build_step.getFilterName(),
+                build_step.getFilterKey(),
+                geometry);
+            send_step->setStepDescription(build_step);
+            build_filter_node->step = std::move(send_step);
+        }
+    }
+}
+
 /// Tries to build list of possible shards for the read steps that can be processed in parallel.
 Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step)
 {
@@ -1329,6 +1614,17 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
         distributed_plan.stages["main"] = std::move(stage);
         distributed_plan.stage_depends_on["main"] = main_stage_depends_on;
     }
+
+    /// Now that the stages and their task lists exist, assign an exchange to every send/receive
+    /// runtime filter pair (matched by the rendezvous key; see `wireDistributedRuntimeFilters`).
+    /// The filter exchanges start from the same kind as the data exchanges above, so a forced or
+    /// auto-selected Persisted plan does not plan Streaming filter exchanges.
+    if (optimization_settings.distributed_plan_join_runtime_filters)
+        wireRuntimeFilterExchangeTopology(
+            distributed_plan,
+            exchange_id,
+            optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ? ExchangeDescription::Kind::Persisted
+                                                                                      : ExchangeDescription::Kind::Streaming);
 
     return distributed_plan;
 }

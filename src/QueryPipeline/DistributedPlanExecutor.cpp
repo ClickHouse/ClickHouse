@@ -40,6 +40,8 @@
 #include <Poco/URI.h>
 #include <Server/StatelessWorker/StatelessWorkerClient.h>
 #include <Server/DistributedQuery/StreamingExchangeLookup.h>
+#include <Server/DistributedQuery/StreamingExchangeProtocol.h>
+#include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -76,6 +78,10 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+/// The runtime filter receive cap mirrors the data plane's packet limit; keep them in sync (see
+/// the comment at `MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES`).
+static_assert(MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES == StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES);
 
 namespace Setting
 {
