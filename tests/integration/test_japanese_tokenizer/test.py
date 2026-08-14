@@ -19,6 +19,9 @@ node_bad_sha = cluster.add_instance(
 node_s3 = cluster.add_instance(
     "node_s3", main_configs=["configs/mecab_tokenizer_s3.xml"], with_minio=True, stay_alive=True
 )
+node_s3_premature_eof = cluster.add_instance(
+    "node_s3_premature_eof", main_configs=["configs/mecab_tokenizer_s3.xml"], with_minio=True, stay_alive=True
+)
 
 DICT_FILE = "minimal_dic.tar.gz"
 DICT_IN_CONTAINER = "/var/lib/clickhouse/user_files/" + DICT_FILE
@@ -90,3 +93,15 @@ def test_dictionary_from_s3(started_cluster):
         node_s3.query("SELECT tokens('日本語の形態素解析エンジン', 'japanese')").strip()
         == "['日本語','の','形態','素','解析','エンジン']"
     )
+
+
+def test_dictionary_from_s3_recovers_from_premature_eof(started_cluster):
+    skip_if_no_mecab(node_s3_premature_eof)
+    node_s3_premature_eof.query("SYSTEM ENABLE FAILPOINT s3_read_buffer_force_premature_eof")
+    try:
+        assert (
+            node_s3_premature_eof.query("SELECT tokens('日本語の形態素解析エンジン', 'japanese')").strip()
+            == "['日本語','の','形態','素','解析','エンジン']"
+        )
+    finally:
+        node_s3_premature_eof.query("SYSTEM DISABLE FAILPOINT s3_read_buffer_force_premature_eof")
