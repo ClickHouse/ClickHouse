@@ -1026,12 +1026,17 @@ public:
                     return result_column;
                 }
 
-                // getMaxLinearMemorySize() reflects the allocator ceiling the guest can still
-                // grow into (the configured memory_limit), not just the pages currently mapped;
-                // gating on the current page count alone would reject inputs the guest's
-                // allocator could actually satisfy after growing.
-                const size_t wasm_linear_memory = compartment_ptr->getMaxLinearMemorySize();
+                // Splitting decisions use the guest's *current* linear memory as a realistic
+                // proxy for what it can hold right now; a guest that has not grown its memory
+                // yet cannot suddenly hold a batch sized to the configured ceiling. The hard
+                // "this can never fit" throws below instead use getMaxLinearMemorySize() (the
+                // configured memory_limit ceiling), since the guest's allocator can still grow
+                // into it before the call is made — gating those on the current size alone
+                // would reject inputs the guest could actually satisfy after growing.
+                const size_t wasm_linear_memory = compartment_ptr->getLinearMemorySize();
                 const size_t input_budget = wasm_linear_memory > 0 ? wasm_linear_memory / 2 : 0;
+                const size_t wasm_linear_memory_ceiling = compartment_ptr->getMaxLinearMemorySize();
+                const size_t input_budget_ceiling = wasm_linear_memory_ceiling > 0 ? wasm_linear_memory_ceiling / 2 : 0;
                 if (input_budget == 0)
                 {
                     flush_columnar_batch(0, input_rows_count);
@@ -1052,23 +1057,23 @@ public:
                 // with it and fail up front if it alone can never fit. See the matching
                 // comment in execute() below.
                 size_t const_reserved_bytes = estimateTotalSerializedSize(arguments, 0, /* preserve_const */ true);
-                if (const_reserved_bytes > input_budget)
+                if (const_reserved_bytes > input_budget_ceiling)
                     throw Exception(ErrorCodes::WASM_ERROR,
                         "WASM UDF preserved constant arguments alone require an estimated {} bytes, "
                         "exceeding the {} byte input budget derived from the module's linear memory",
-                        const_reserved_bytes, input_budget);
+                        const_reserved_bytes, input_budget_ceiling);
 
                 size_t batch_start = 0;
                 size_t running_bytes = const_reserved_bytes;
                 for (size_t row = 0; row < input_rows_count; ++row)
                 {
                     size_t row_bytes = estimateRowSerializedSize(arguments, row, /* preserve_const */ true);
-                    if (const_reserved_bytes + row_bytes > input_budget)
+                    if (const_reserved_bytes + row_bytes > input_budget_ceiling)
                         throw Exception(ErrorCodes::WASM_ERROR,
                             "WASM UDF input row {} alone requires an estimated {} bytes, exceeding the "
                             "{} byte input budget derived from the module's linear memory; it cannot be "
                             "split into a smaller batch",
-                            row, row_bytes, input_budget);
+                            row, row_bytes, input_budget_ceiling);
                     if (row > batch_start && running_bytes + row_bytes > input_budget)
                     {
                         flush_columnar_batch(batch_start, row);
@@ -1155,15 +1160,22 @@ private:
                     // could skip the split path and still build an oversized guest buffer.
                     const IColumn * data_col = &const_col->getDataColumn();
                     size_t null_map_bytes = 0;
+                    // Unwrap declared_type in lockstep with data_col: isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion()
+                    // is false for DataTypeNullable itself even when its nested type is
+                    // fixed-width, so sizing by the still-Nullable declared_type would fall
+                    // through to the flat 256-byte fallback for every Nullable fixed-width
+                    // argument (e.g. Nullable(UInt64)).
+                    DataTypePtr unwrapped_declared_type = declared_type;
                     if (const auto * const_null = typeid_cast<const ColumnNullable *>(data_col))
                     {
                         data_col = &const_null->getNestedColumn();
+                        unwrapped_declared_type = removeNullable(declared_type);
                         null_map_bytes = 1; // one null byte for the single represented value
                     }
                     if (const auto * const_s = typeid_cast<const ColumnString *>(data_col))
                         total += const_s->getChars().size() + null_map_bytes;
-                    else if (declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-                        total += declared_type->getSizeOfValueInMemory() + null_map_bytes;
+                    else if (unwrapped_declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+                        total += unwrapped_declared_type->getSizeOfValueInMemory() + null_map_bytes;
                     else if (typeid_cast<const ColumnArray *>(data_col) || typeid_cast<const ColumnTuple *>(data_col))
                         total += ColumnarV1::complexDataSize(*data_col, 1) + null_map_bytes;
                     else if (const auto * const_map = typeid_cast<const ColumnMap *>(data_col))
@@ -1197,6 +1209,9 @@ private:
                 is_col_nullable = true;
             }
             size_t null_map_bytes = is_col_nullable ? row_count : 0;
+            // Unwrap declared_type in lockstep with col: see the matching comment on
+            // unwrapped_declared_type in the preserved-const branch above.
+            DataTypePtr unwrapped_declared_type = is_col_nullable ? removeNullable(declared_type) : declared_type;
             // row_count == 0 is not just "no data": both call sites above also call this
             // function with row_count = 0 specifically to get the fixed reservation that
             // applies to every batch regardless of its size — the per-batch structural
@@ -1218,8 +1233,8 @@ private:
                 size_t offset_bytes = (row_count + 1) * sizeof(uint64_t);
                 total += (materialized_const ? bytes * row_count : bytes) + offset_bytes + null_map_bytes;
             }
-            else if (declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-                total += declared_type->getSizeOfValueInMemory() * row_count + null_map_bytes;
+            else if (unwrapped_declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+                total += unwrapped_declared_type->getSizeOfValueInMemory() * row_count + null_map_bytes;
             else if (typeid_cast<const ColumnArray *>(col) || typeid_cast<const ColumnTuple *>(col))
                 // complexDataSize matches the exact COL_COMPLEX byte layout (uint64 offsets +
                 // nested payload); a flat 256-byte guess badly undercounts e.g. an Array(UInt64)
@@ -1481,13 +1496,15 @@ private:
                 is_col_nullable = true;
             }
             size_t null_map_bytes = is_col_nullable ? 1 : 0;
+            // See the matching unwrapped_declared_type comment in estimateTotalSerializedSize above.
+            DataTypePtr unwrapped_declared_type = is_col_nullable ? removeNullable(declared_type) : declared_type;
             if (const auto * s = typeid_cast<const ColumnString *>(col))
                 // + sizeof(uint64_t): amortized per-row share of the wire offsets[row_count+1]
                 // array that accompanies every non-const String column; see the matching
                 // comment in estimateTotalSerializedSize above.
                 total += s->getOffsets()[row_index] - (row_index > 0 ? s->getOffsets()[row_index - 1] : 0) + sizeof(uint64_t) + null_map_bytes;
-            else if (declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-                total += declared_type->getSizeOfValueInMemory() + null_map_bytes;
+            else if (unwrapped_declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+                total += unwrapped_declared_type->getSizeOfValueInMemory() + null_map_bytes;
             else if (typeid_cast<const ColumnArray *>(col) || typeid_cast<const ColumnTuple *>(col)
                     || typeid_cast<const ColumnMap *>(col))
                 total += estimateComplexRowBytes(*col, row_index) + null_map_bytes;
@@ -1524,14 +1541,20 @@ private:
         const size_t fixed_block_size = context->getSettingsRef()[Setting::webassembly_udf_max_input_block_size];
 
         // When no explicit block size is given, split input dynamically: estimate the total
-        // serialized size once (O(1)) and split only if it would exceed 50% of the WASM
-        // module's linear memory ceiling. getMaxLinearMemorySize() reflects the configured
-        // memory_limit the engine enforces (the actual allocator ceiling the guest can grow
-        // into), not just the pages currently mapped, so it doesn't reject inputs the guest
-        // could still satisfy after growing.
-        const size_t wasm_linear_memory = compartment->getMaxLinearMemorySize();
+        // serialized size once (O(1)) and split only if it would exceed 50% of the guest's
+        // *current* linear memory — a realistic proxy for what it can hold right now, since a
+        // guest that hasn't grown its memory yet cannot suddenly hold a batch sized to the
+        // configured ceiling. The hard "this can never fit" throws below instead use
+        // getMaxLinearMemorySize() (the configured memory_limit ceiling): the guest's allocator
+        // can still grow into it before the call is made, so gating those on the current size
+        // alone would reject inputs the guest could actually satisfy after growing.
+        const size_t wasm_linear_memory = compartment->getLinearMemorySize();
         const size_t input_budget = (fixed_block_size == 0 && wasm_linear_memory > 0)
             ? wasm_linear_memory / 2  // 50% for input, leave room for GEOS heap
+            : 0;
+        const size_t wasm_linear_memory_ceiling = compartment->getMaxLinearMemorySize();
+        const size_t input_budget_ceiling = (fixed_block_size == 0 && wasm_linear_memory_ceiling > 0)
+            ? wasm_linear_memory_ceiling / 2
             : 0;
 
         size_t batch_start = 0;
@@ -1607,11 +1630,11 @@ private:
                 // with it (and fail up front if it alone can never fit), or a batch of many
                 // tiny rows could still exceed input_budget by the preserved const's size.
                 size_t const_reserved_bytes = estimateTotalSerializedSize(arguments, 0, preserve_const) * expansion;
-                if (const_reserved_bytes > input_budget)
+                if (const_reserved_bytes > input_budget_ceiling)
                     throw Exception(ErrorCodes::WASM_ERROR,
                         "WASM UDF preserved constant arguments alone require an estimated {} bytes, "
                         "exceeding the {} byte input budget derived from the module's linear memory",
-                        const_reserved_bytes, input_budget);
+                        const_reserved_bytes, input_budget_ceiling);
 
                 // Cumulative per-row pass: flush before the next row would cross the
                 // budget. A fixed stride derived from the average row size cannot bound
@@ -1621,12 +1644,12 @@ private:
                 for (size_t row = 0; row < input_rows_count; ++row)
                 {
                     size_t row_bytes = estimateRowSerializedSize(arguments, row, preserve_const) * expansion + per_row_overhead;
-                    if (const_reserved_bytes + row_bytes > input_budget)
+                    if (const_reserved_bytes + row_bytes > input_budget_ceiling)
                         throw Exception(ErrorCodes::WASM_ERROR,
                             "WASM UDF input row {} alone requires an estimated {} bytes, exceeding the "
                             "{} byte input budget derived from the module's linear memory; it cannot be "
                             "split into a smaller batch",
-                            row, row_bytes, input_budget);
+                            row, row_bytes, input_budget_ceiling);
                     if (row > batch_start && running_bytes + row_bytes > input_budget)
                     {
                         flush_batch(row);
