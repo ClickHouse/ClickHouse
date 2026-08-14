@@ -6,7 +6,7 @@
 -- without a null check. A JSON payload holding anything else must therefore be rejected at the
 -- deserialization boundary.
 
-SET allow_experimental_json_ast_dialect = 1;
+SET enable_json_ast_dialect = 1;
 
 -- Positives: every parser-produced subquery form round-trips.
 

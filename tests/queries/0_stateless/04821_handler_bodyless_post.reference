@@ -1,0 +1,10 @@
+=== a lengthless non-chunked POST to a handler that does not read the body succeeds ===
+1
+=== a handler reading _request_body still requires the length up front ===
+1
+=== and it returns the body when the length is given ===
+hello
+=== a lengthless urlencoded POST to a non-body-consuming handler still requires the length ===
+1
+=== the built-in dynamic handler keeps the unconditional POST contract ===
+1
