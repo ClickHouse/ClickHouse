@@ -157,6 +157,11 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     /// Will split block into segments with the same key
     while (key_end != rows)
     {
+        /// Cancellation is only checked between work() calls, but one consume() over a chunk with many
+        /// keys can run for a long time; check per key interval so a cancelled query stops promptly.
+        if (isCancelled())
+            return;
+
         /// Find the first position of new (not current) key in current chunk
         auto indices = collections::range(key_begin, rows);
         auto it = std::upper_bound(indices.begin(), indices.end(), cur_block_size - 1,
