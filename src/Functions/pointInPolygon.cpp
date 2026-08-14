@@ -260,7 +260,7 @@ public:
     /// invalid polygon does -- unless `validate` is false (`validate_polygons = 0`), in which case
     /// `executeImpl` skips this same check and never raises, so pruning must not fail closed either.
     bool tryGetMultiArgConstGeometryBbox(
-        const std::vector<const Field *> & args,
+        const std::vector<const Field *> & args, // STYLE_CHECK_ALLOW_STD_CONTAINERS
         double & xmin, double & ymin, double & xmax, double & ymax) const override
     {
         using namespace GeoBboxDetail;

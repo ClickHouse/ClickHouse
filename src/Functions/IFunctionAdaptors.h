@@ -83,7 +83,7 @@ public:
 
     bool hasMultiArgConstGeometryBboxConvention() const override { return function->hasMultiArgConstGeometryBboxConvention(); }
     bool tryGetMultiArgConstGeometryBbox(
-        const std::vector<const Field *> & args,
+        const std::vector<const Field *> & args, // STYLE_CHECK_ALLOW_STD_CONTAINERS
         double & xmin, double & ymin, double & xmax, double & ymax) const override
     {
         return function->tryGetMultiArgConstGeometryBbox(args, xmin, ymin, xmax, ymax);
