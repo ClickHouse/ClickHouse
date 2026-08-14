@@ -219,6 +219,10 @@ RestCatalog::RestCatalog(
         initial_state.auth_header = parseAuthHeader(auth_header_);
         validateAuthHeaders(initial_state.auth_header.value());
     }
+    /// `loadConfig` reaches the virtual `createReadBuffer`, but no catalog constructed through this
+    /// ctor (`OneLakeCatalog`, `BigLakeCatalog`) overrides it, so the base implementation is the intended
+    /// target. `S3TablesCatalog` overrides it and uses the separate ctor, calling `loadConfig` afterwards.
+    /// NOLINTNEXTLINE(clang-analyzer-optin.cplusplus.VirtualCall)
     initial_state.config = loadConfig(initial_state);
     state.set(std::make_unique<const CatalogState>(std::move(initial_state)));
 }
@@ -244,7 +248,7 @@ RestCatalog::RestCatalog(
 RestCatalog::Config RestCatalog::loadConfig(const CatalogState & catalog_state, const std::optional<DB::HTTPHeaderEntries> & auth_headers)
 {
     Poco::URI::QueryParameters params = {{"warehouse", warehouse}};
-    auto buf = createReadBuffer(catalog_state, CONFIG_ENDPOINT, params, /* headers */{}, auth_headers);
+    auto buf = createReadBuffer(catalog_state, CONFIG_ENDPOINT, params, /* headers */ {}, auth_headers);
 
     std::string json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
@@ -1058,7 +1062,7 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 {
     const auto & context = getContext();
 
-    /// enable_url_encoding=false to allow use tables with encoded sequences in names like 'foo%2Fbar'
+    /// enable_url_encoding=false to allow using tables with encoded sequences in names like 'foo%2Fbar'
     Poco::URI url(base_url / endpoint, /* enable_url_encoding */ false);
     if (!params.empty())
         url.setQueryParameters(params);
@@ -1232,7 +1236,8 @@ bool RestCatalog::hasFlatNamespaces() const
     /// of the parent is not turned into a fake child, which would otherwise recurse without bound.
     const auto type = getCatalogType();
     return type == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
-        || type == DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING;
+        || type == DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING
+        || type == DB::DatabaseDataLakeCatalogType::S3_TABLES;
 }
 
 RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & base_namespace) const
@@ -1263,7 +1268,8 @@ RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & bas
             if (!page_token.empty())
                 params.push_back({"pageToken", page_token});
 
-            auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / NAMESPACES_ENDPOINT, params);
+            auto buf = createReadBuffer(
+                *state_snapshot, state_snapshot->config.prefix / NAMESPACES_ENDPOINT, params, /* headers */ {}, /* auth_headers */ std::nullopt);
             String next_page_token;
             auto page_namespaces = parseNamespaces(*buf, base_namespace, next_page_token);
             LOG_DEBUG(
@@ -1424,7 +1430,8 @@ DB::Names RestCatalog::listTablesInNamespace(const std::string & base_namespace,
             if (!page_token.empty())
                 params.push_back({"pageToken", page_token});
 
-            auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, params);
+            auto buf = createReadBuffer(
+                *state_snapshot, state_snapshot->config.prefix / endpoint, params, /* headers */ {}, /* auth_headers */ std::nullopt);
 
             /// Pass through the remaining limit so that single-page short-circuiting still works
             /// when the caller is in `empty()` (limit=1) and the first page already contains a row.
@@ -1581,7 +1588,7 @@ bool RestCatalog::getTableMetadataImpl(
 
     const auto state_snapshot = state.get();
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
-    auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, /* params */{}, headers);
+    auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, headers, /* auth_headers */ std::nullopt);
 
     if (buf->eof())
     {
@@ -1679,8 +1686,9 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
         };
     }
 
-    /// enable_url_encoding=false to allow use tables with encoded sequences in names like 'foo%2Fbar'
+    /// enable_url_encoding=false to allow using tables with encoded sequences in names like 'foo%2Fbar'
     Poco::URI url(endpoint, /* enable_url_encoding */ false);
+
     auto wb = DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
         .withMethod(method)
@@ -1702,6 +1710,22 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
 void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
 {
     const auto state_snapshot = state.get();
+
+    /// Check existence first: creation may be denied to a principal that is still
+    /// allowed to use a pre-provisioned namespace.
+    const std::string check_endpoint
+        = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name)).generic_string();
+    try
+    {
+        sendRequest(*state_snapshot, check_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ true);
+        return;
+    }
+    catch (const DB::HTTPException & e)
+    {
+        if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+            throw;
+    }
+
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT).generic_string();
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
@@ -1718,18 +1742,18 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
-    catch (...)
+    catch (const DB::HTTPException & e)
     {
-        DB::tryLogCurrentException(log);
+        /// Lost the race to a concurrent creator.
+        if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+            throw;
     }
 }
 
 void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr metadata_content) const
 {
-    createNamespaceIfNotExists(namespace_name, metadata_content->getValue<String>("location"));
-
     const auto state_snapshot = state.get();
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
 
@@ -1761,7 +1785,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -1827,7 +1851,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -1890,7 +1914,7 @@ bool RestCatalog::updateSchema(
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body);
+        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -1900,7 +1924,7 @@ bool RestCatalog::updateSchema(
     return true;
 }
 
-void RestCatalog::dropTable(const String & namespace_name, const String & table_name) const
+void RestCatalog::dropTable(const String & namespace_name, const String & table_name, bool /*delete_data*/) const
 {
     const auto state_snapshot = state.get();
     const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}?purgeRequested=False", base_url, namespace_name, table_name);
@@ -1996,7 +2020,7 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
         const auto & table = storage_id.getTableName();
         auto [namespace_name, table_name] = DataLake::parseTableName(table);
         const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
-        auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, /* params */{}, headers);
+        auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, headers, /* auth_headers */ std::nullopt);
 
         if (buf->eof())
         {
