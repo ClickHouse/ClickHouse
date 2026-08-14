@@ -3777,22 +3777,40 @@ String ClientBase::getPrompt() const
 {
     String pattern = prompt;
 
-    /// A non-default dialect is shown after the server display name in parentheses,
-    /// e.g. `clickhouse-cloud (polyglot) :) `.
-    String display_name = server_display_name;
+    /// A non-default dialect is shown in parentheses, after the server display name if the prompt
+    /// contains it, e.g. `clickhouse-cloud (polyglot) :) `.
+    String dialect_indicator;
     if (client_context)
     {
         if (const Dialect dialect = client_context->getSettingsRef()[Setting::dialect]; dialect != Dialect::clickhouse)
-        {
-            if (!display_name.empty())
-                display_name += ' ';
-            display_name += '(';
-            display_name += client_context->getSettingsRef()[Setting::dialect].toString();
-            display_name += ')';
-        }
+            dialect_indicator = "(" + client_context->getSettingsRef()[Setting::dialect].toString() + ")";
+    }
+
+    const bool has_display_name = pattern.find("{display_name}") != String::npos;
+
+    String display_name = server_display_name;
+    if (has_display_name && !dialect_indicator.empty())
+    {
+        if (!display_name.empty())
+            display_name += ' ';
+        display_name += dialect_indicator;
     }
 
     boost::replace_all(pattern, "{display_name}", display_name);
+
+    /// A custom prompt does not have to contain the display name (e.g. `--prompt '{user}@{host}'`),
+    /// but the active dialect still has to be visible - append it before the trailing smiley, if any.
+    if (!has_display_name && !dialect_indicator.empty())
+    {
+        static constexpr std::string_view smiley = ":) ";
+        if (pattern.ends_with(smiley))
+            pattern = pattern.substr(0, pattern.size() - smiley.size()) + dialect_indicator + " " + String(smiley);
+        else if (pattern.empty())
+            pattern = dialect_indicator;
+        else
+            pattern += " " + dialect_indicator;
+    }
+
     return appendSmileyIfNeeded(pattern);
 }
 

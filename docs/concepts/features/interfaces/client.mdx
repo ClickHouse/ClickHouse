@@ -188,6 +188,8 @@ The command is equivalent to `SET dialect = 'polyglot'`, but unlike a `SET` quer
 clickhouse-cloud (polyglot) :)
 ```
 
+A custom prompt (see the `--prompt` option) does not have to contain the `{display_name}` placeholder - in that case the dialect is appended at the end of the prompt.
+
 Entering `/dialect` on its own prints the current dialect.
 
 ### Query processing information {#processing-info}

@@ -68,3 +68,17 @@ expect -- ":) "
 
 send -- "exit\r"
 expect eof
+
+# A custom prompt does not have to contain the {display_name} placeholder:
+# the active dialect is appended to it anyway.
+spawn bash -c "source $basedir/../shell_config.sh; TERM=xterm \$CLICKHOUSE_LOCAL --hints 0 --history_file=$history_file --prompt 'custom-prompt>'"
+expect "custom-prompt> :) "
+
+send -- "/dialect prql\r"
+expect -- "custom-prompt> (prql) :) "
+
+send -- "/dialect clickhouse\r"
+expect -- "custom-prompt> :) "
+
+send -- "exit\r"
+expect eof
