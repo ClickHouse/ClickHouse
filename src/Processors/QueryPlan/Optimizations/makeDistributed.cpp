@@ -75,7 +75,8 @@ void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & o
         "distributed_plan_default_reader_bucket_count");
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
+RelationStats estimateReadRowsCount(
+    QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr, bool for_runtime_filter_transport = false);
 
 void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
@@ -1122,19 +1123,13 @@ void wireDistributedRuntimeFilters(QueryPlan::Node & root, QueryPlan::Nodes & no
             if (!build_step.allowsNotExactFilter() || !ApproximateRuntimeFilter::isDataTypeSupported(build_step.getFilterColumnType()))
                 continue;
 
-            /// Estimated count of distinct build keys: the build subtree's estimated rows, tightened
-            /// by the key column's distinct-value statistic when available.
-            std::optional<UInt64> estimated_keys;
-            {
-                RelationStats build_stats = estimateReadRowsCount(*build_filter_node->children.front());
-                estimated_keys = build_stats.estimated_rows;
-                if (auto it = build_stats.column_stats.find(build_step.getFilterColumnName());
-                    it != build_stats.column_stats.end() && it->second.num_distinct_values > 0)
-                {
-                    estimated_keys
-                        = estimated_keys ? std::min(*estimated_keys, it->second.num_distinct_values) : it->second.num_distinct_values;
-                }
-            }
+            /// Estimated count of build-side rows. Do not tighten by column NDV: HyperLogLog
+            /// sketches undershoot, and `exact_values_limit` is a hard cap — a low NDV would
+            /// overflow a complete key set into a bloom filter. `exact_bytes_limit` still bounds
+            /// the exact phase when there are fewer distinct keys than rows.
+            std::optional<UInt64> estimated_keys
+                = estimateReadRowsCount(*build_filter_node->children.front(), /*filter=*/nullptr, /*for_runtime_filter_transport=*/true)
+                      .estimated_rows;
 
             /// A transported filter's exact phase is budgeted at what shipping the estimated key
             /// set exactly would cost (variable-width keys are budgeted at the width of a 64-bit

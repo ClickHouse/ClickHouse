@@ -24,11 +24,9 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
-#if CLICKHOUSE_CLOUD
-#include <Processors/QueryPlan/LogicalExchangeStep.h>
-#endif
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -40,10 +38,6 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Storages/System/StorageSystemOne.h>
-
-#include <Processors/QueryPlan/LogicalExchangeStep.h>
-#include <Processors/QueryPlan/ShuffleExchangeStep.h>
-#include <Processors/QueryPlan/GatherExchangeStep.h>
 
 #include <algorithm>
 #include <limits>
@@ -381,8 +375,9 @@ static bool isRuntimeFilterOnlyPredicate(const ActionsDAG::Node * node)
     return std::ranges::all_of(node->children, isRuntimeFilterOnlyPredicate);
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
+RelationStats estimateReadRowsCount(
+    QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr, bool for_runtime_filter_transport = false);
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport)
 {
     /// Estimate the unfiltered relation: a runtime-filter-only predicate carries no plan-time selectivity.
     if (isRuntimeFilterOnlyPredicate(filter))
@@ -440,6 +435,45 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     prewhere_info_for_estimate->prewhere_actions.tryFindInOutputs(prewhere_info_for_estimate->prewhere_column_name))))
             prewhere_info_for_estimate = nullptr;
 
+        bool is_filtered_by_index = false;
+        if (analyzed_result)
+        {
+            UInt64 total_parts = 0;
+            UInt64 total_granules = 0;
+            for (const auto & idx_stat : analyzed_result->index_stats)
+            {
+                /// We expect the first element to be an index with None type, which is used to estimate the total amount of data in the table.
+                /// Further index_stats are used to estimate amount of filtered data after applying the index.
+                if (ReadFromMergeTree::IndexType::None == idx_stat.type)
+                {
+                    total_parts = idx_stat.num_parts_after;
+                    total_granules = idx_stat.num_granules_after;
+                    continue;
+                }
+
+                is_filtered_by_index = is_filtered_by_index
+                    || (total_parts && idx_stat.num_parts_after < total_parts)
+                    || (total_granules && idx_stat.num_granules_after < total_granules);
+
+                if (is_filtered_by_index)
+                    break;
+            }
+        }
+        const bool has_filter = filter || prewhere_info_for_estimate;
+
+        /// Runtime-filter transport uses this estimate as a hard exact-phase row cap. An unindexed
+        /// plan-time filter makes that cap unusable: column statistics still emit a number, but it
+        /// would override a settings-tiny exact limit (the bloom-payload tests rely on that limit
+        /// staying in force). Join-order estimation keeps using statistics.
+        if (for_runtime_filter_transport && has_filter && !is_filtered_by_index)
+        {
+            return RelationStats{
+                .estimated_rows = {},
+                .table_name = table_display_name,
+                .imprecise_estimate = true,
+                .source = RowEstimateSource::NoStatistics};
+        }
+
         const bool use_statistics = reading->getContext()->getSettingsRef()[Setting::use_statistics];
         if (use_statistics)
         {
@@ -464,29 +498,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
         if (!analyzed_result)
             return RelationStats{.estimated_rows = {}, .table_name = table_display_name, .imprecise_estimate = true, .source = RowEstimateSource::NoStatistics};
-
-        bool is_filtered_by_index = false;
-        UInt64 total_parts = 0;
-        UInt64 total_granules = 0;
-        for (const auto & idx_stat : analyzed_result->index_stats)
-        {
-            /// We expect the first element to be an index with None type, which is used to estimate the total amount of data in the table.
-            /// Further index_stats are used to estimate amount of filtered data after applying the index.
-            if (ReadFromMergeTree::IndexType::None == idx_stat.type)
-            {
-                total_parts = idx_stat.num_parts_after;
-                total_granules = idx_stat.num_granules_after;
-                continue;
-            }
-
-            is_filtered_by_index = is_filtered_by_index
-                || (total_parts && idx_stat.num_parts_after < total_parts)
-                || (total_granules && idx_stat.num_granules_after < total_granules);
-
-            if (is_filtered_by_index)
-                break;
-        }
-        bool has_filter = filter || prewhere_info_for_estimate;
 
         /// If any conditions are pushed down to storage but not used in the index,
         /// we cannot precisely estimate the row count
@@ -517,7 +528,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
     {
-        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
+        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter, for_runtime_filter_transport);
     }
 
     if (node.children.size() != 1)
@@ -525,7 +536,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
     {
-        auto estimated = estimateReadRowsCount(*node.children.front(), filter);
+        auto estimated = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
         auto limit = limit_step->getLimit();
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
@@ -534,7 +545,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step); expression_step && !expression_step->getExpression().hasArrayJoin())
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
         return stats;
     }
@@ -542,7 +553,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (typeid_cast<const BuildRuntimeFilterStep *>(step) || typeid_cast<const SendRuntimeFilterStep *>(step)
         || typeid_cast<const ReceiveRuntimeFilterStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
         return stats;
     }
 
@@ -550,14 +561,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         const auto & dag = filter_step->getExpression();
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
-        auto stats = estimateReadRowsCount(*node.children.front(), predicate);
+        auto stats = estimateReadRowsCount(*node.children.front(), predicate, for_runtime_filter_transport);
         remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
     }
 
     if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
         auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
         return aggregation_stats;
     }
@@ -575,7 +586,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
         if (sorting_step->getLimit())
         {
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
@@ -584,14 +595,16 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return stats;
     }
 
-#if CLICKHOUSE_CLOUD
+    /// Shuffle/gather/broadcast do not set `preserves_number_of_rows` (per-stream counts change),
+    /// but the relation's cardinality is the child's. Runtime-filter transport sizes the exact
+    /// phase from this estimate, and the build filter sits below the join shuffle, so the walk
+    /// has to cross exchanges on every build.
     if (dynamic_cast<LogicalExchangeStep *>(step))
-        return estimateReadRowsCount(*node.children.front(), filter);
-#endif
+        return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
 
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
         transform && transform->getTransformTraits().preserves_number_of_rows)
-        return estimateReadRowsCount(*node.children.front(), filter);
+        return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
 
     return {};
 }
