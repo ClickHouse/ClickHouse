@@ -90,18 +90,8 @@ struct BackupSettings
     bool experimental_lightweight_snapshot = false;
 
     /// Batch limits for resumable `BACKUP FROM SNAPSHOT`, which is only available in ClickHouse Cloud.
-    /// They are declared here so that the backup settings surface is identical in both builds; nothing
-    /// in ClickHouse open-source reads them.
-    ///
-    /// Maximum number of logical backup files processed between Keeper checkpoints. Each checkpoint is a
-    /// barrier: the writer pool drains and waits for the slowest file of the batch before the batch is
-    /// recorded, so a small value costs parallelism, not just Keeper round-trips. Backups of tens of
-    /// millions of files are ordinary for this feature, which is why the default is not in the thousands.
-    /// The replayed work after a failure stays bounded by `resumable_backup_batch_size_bytes` below.
+    /// They bound how much work a failed attempt repeats, by file count and by newly written bytes.
     UInt64 resumable_backup_batch_size = 50000;
-
-    /// Target number of unique new data bytes written between Keeper checkpoints. This is what bounds the
-    /// data a retry has to copy again; the file count above bounds per-file overhead for small files.
     UInt64 resumable_backup_batch_size_bytes = 10ULL * 1024 * 1024 * 1024;
 
     /// Is it allowed to use blob paths to calculate checksums of backup entries?
