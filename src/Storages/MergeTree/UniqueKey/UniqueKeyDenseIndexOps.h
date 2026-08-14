@@ -45,8 +45,7 @@ public:
     /// is rejected earlier by `checkConsistencyBase` and the part is detached as
     /// broken. What reaches this function is (a) size-preserving damage, and
     /// (b) parts that legitimately carry no SST entry - written before the
-    /// sidecar was checksummed, or (once the index is written outside the INSERT
-    /// commit) with an asynchronously produced SST.
+    /// sidecar was checksummed.
     ///
     /// Fails closed: throws (CORRUPTED_DATA / SUPPORT_IS_DISABLED) when a
     /// non-empty UK part cannot get a dense index (missing UK column, empty read,

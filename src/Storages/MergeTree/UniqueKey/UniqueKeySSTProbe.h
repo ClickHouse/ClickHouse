@@ -30,8 +30,7 @@ class DeleteBitmap;
 
 /// Reads a part's `unique_key_index.sst` through `IDataPartStorage` via a custom
 /// RocksDB `Env`, so encrypted and remote (S3 etc.) disks work as well. Block
-/// cache is disabled (load-time validation would only pollute it; the probe path
-/// will wire it in).
+/// cache is disabled: load-time validation would only pollute it.
 class SSTFileReader
 {
 public:
