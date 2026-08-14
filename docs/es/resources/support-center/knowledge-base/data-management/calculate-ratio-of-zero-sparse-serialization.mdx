@@ -1,0 +1,69 @@
+---
+title: Cómo calcular la proporción de valores vacíos o cero en cada columna de una tabla
+description: Aprenda a calcular la proporción de valores vacíos o cero en cada columna de una tabla de ClickHouse para optimizar la serialización de columnas dispersas.
+date: 2023-05-18
+tags: ['Rendimiento y optimizaciones']
+keywords: ['Proporción de valores vacíos o cero', 'Calcular']
+---
+
+<div id="how-to-calculate-the-ratio-of-emptyzero-values-in-every-column-in-a-table">
+  ## Cómo calcular la proporción de valores vacíos o cero en cada columna de una tabla
+</div>
+
+Si una columna es dispersa (está vacía o contiene principalmente ceros), ClickHouse puede codificarla en un formato disperso y optimizar automáticamente los cálculos; los datos no requieren una descompresión completa durante las consultas. De hecho, si sabe cuán dispersa es una columna, puede definir su proporción mediante la [configuración `ratio_of_defaults_for_sparse_serialization`](/es/reference/settings/merge-tree-settings#ratio_of_defaults_for_sparse_serialization) para optimizar la serialización.
+
+Esta útil consulta puede tardar un poco, pero analiza cada fila de la tabla y determina la proporción de valores que son cero (o el valor predeterminado) en cada columna de la tabla especificada:
+
+```sql
+SELECT *
+    APPLY x -> (x = defaultValueOfArgumentType(x)) APPLY avg APPLY x -> round(x, 3)
+FROM table_name
+FORMAT Vertical
+```
+
+Por ejemplo, ejecutamos esta consulta en la tabla [conjunto de datos de sensores ambientales](/es/get-started/sample-datasets/environmental-sensors) llamada `sensors`, que tiene más de 20 mil millones de filas y 19 columnas:
+
+```sql
+SELECT *
+    APPLY x -> (x = defaultValueOfArgumentType(x)) APPLY avg APPLY x -> round(x, 3)
+FROM sensors
+FORMAT Vertical
+```
+
+Aquí está la respuesta:
+
+```response
+
+Row 1:
+──────
+round(avg(equals(sensor_id, defaultValueOfArgumentType(sensor_id))), 3):                 0
+round(avg(equals(sensor_type, defaultValueOfArgumentType(sensor_type))), 3):             0.159
+round(avg(equals(location, defaultValueOfArgumentType(location))), 3):                   0
+round(avg(equals(lat, defaultValueOfArgumentType(lat))), 3):                             0.001
+round(avg(equals(lon, defaultValueOfArgumentType(lon))), 3):                             0.001
+round(avg(equals(timestamp, defaultValueOfArgumentType(timestamp))), 3):                 0
+round(avg(equals(P1, defaultValueOfArgumentType(P1))), 3):                               0.474
+round(avg(equals(P2, defaultValueOfArgumentType(P2))), 3):                               0.475
+round(avg(equals(P0, defaultValueOfArgumentType(P0))), 3):                               0.995
+round(avg(equals(durP1, defaultValueOfArgumentType(durP1))), 3):                         0.999
+round(avg(equals(ratioP1, defaultValueOfArgumentType(ratioP1))), 3):                     0.999
+round(avg(equals(durP2, defaultValueOfArgumentType(durP2))), 3):                         1
+round(avg(equals(ratioP2, defaultValueOfArgumentType(ratioP2))), 3):                     1
+round(avg(equals(pressure, defaultValueOfArgumentType(pressure))), 3):                   0.83
+round(avg(equals(altitude, defaultValueOfArgumentType(altitude))), 3):                   1
+round(avg(equals(pressure_sealevel, defaultValueOfArgumentType(pressure_sealevel))), 3): 1
+round(avg(equals(temperature, defaultValueOfArgumentType(temperature))), 3):             0.532
+round(avg(equals(humidity, defaultValueOfArgumentType(humidity))), 3):                   0.544
+
+1 row in set. Elapsed: 992.041 sec. Processed 20.69 billion rows, 1.39 TB (20.86 million rows/s., 1.40 GB/s.)
+```
+
+De los resultados anteriores:
+
+* la columna `sensor_id` no es en absoluto dispersa. De hecho, todas las filas tienen un valor distinto de cero
+* la columna `sensor_type` solo es dispersa en aproximadamente el 15,9 % de los casos
+* la columna `P0` es muy dispersa: el 99,9 % de los valores son cero
+* la columna `pressure` es bastante dispersa: un 83 %
+* y la columna `temperature` tiene el 53,2 % de sus valores ausentes o en cero
+
+Como decíamos, ¡es una consulta muy útil para calcular lo dispersas que son las columnas de una tabla de ClickHouse!

@@ -1,0 +1,114 @@
+---
+slug: '/examples/aggregate-function-combinators/sumSimpleState'
+title: 'sumSimpleState'
+description: 'مثال على استخدام المُركِّب sumSimpleState'
+keywords: ['sum', 'state', 'simple', 'combinator', 'examples', 'sumSimpleState']
+sidebarTitle: 'sumSimpleState'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## الوصف
+</div>
+
+يمكن تطبيق المُركِّب [`SimpleState`](/ar/reference/functions/aggregate-functions/combinators#-simplestate) على الدالة [`sum`](/ar/reference/functions/aggregate-functions/sum)
+لإرجاع مجموع جميع قيم الإدخال. ويُرجِع النتيجة من النوع
+[`SimpleAggregateFunction`](/ar/reference/data-types/simpleaggregatefunction).
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+<div id="tracking-post-votes">
+  ### تتبّع الأصوات الإيجابية والسلبية
+</div>
+
+لنلقِ نظرة على مثال عملي يستخدم جدولًا يتتبّع الأصوات على المنشورات.
+لكل منشور، نريد الاحتفاظ بإجماليات تراكمية للأصوات الإيجابية والأصوات السلبية ودرجة
+إجمالية. ويُعد استخدام النوع `SimpleAggregateFunction` مع sum مناسبًا لهذا
+الاستخدام لأننا نحتاج فقط إلى تخزين الإجماليات التراكمية، وليس الحالة
+الكاملة للتجميع. ونتيجةً لذلك، سيكون أسرع ولن يتطلب دمج
+حالات التجميع الجزئية.
+
+أولًا، ننشئ جدولًا للبيانات الخام:
+
+```sql title="Query"
+CREATE TABLE raw_votes
+(
+    post_id UInt32,
+    vote_type Enum8('upvote' = 1, 'downvote' = -1)
+)
+ENGINE = MergeTree()
+ORDER BY post_id;
+```
+
+بعد ذلك، ننشئ الجدول الهدف الذي سيخزّن البيانات المجمّعة:
+
+```sql
+CREATE TABLE vote_aggregates
+(
+    post_id UInt32,
+    upvotes SimpleAggregateFunction(sum, UInt64),
+    downvotes SimpleAggregateFunction(sum, UInt64),
+    score SimpleAggregateFunction(sum, Int64)
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY post_id;
+```
+
+ثم ننشئ طريقة عرض مُجسَّدة بأعمدة من النوع `SimpleAggregateFunction`:
+
+```sql
+CREATE MATERIALIZED VIEW mv_vote_processor TO vote_aggregates
+AS
+SELECT
+  post_id,
+  -- Initial value for sum state (1 if upvote, 0 otherwise)
+  toUInt64(vote_type = 'upvote') AS upvotes,
+  -- Initial value for sum state (1 if downvote, 0 otherwise)
+  toUInt64(vote_type = 'downvote') AS downvotes,
+  -- Initial value for sum state (1 for upvote, -1 for downvote)
+  toInt64(vote_type) AS score
+FROM raw_votes;
+```
+
+أدرِج بيانات تجريبية:
+
+```sql
+INSERT INTO raw_votes VALUES
+    (1, 'upvote'),
+    (1, 'upvote'),
+    (1, 'downvote'),
+    (2, 'upvote'),
+    (2, 'downvote'),
+    (3, 'downvote');
+```
+
+استعلِم من العرض المُجسَّد باستخدام المُركِّب `SimpleState`:
+
+```sql
+SELECT
+  post_id,
+  sum(upvotes) AS total_upvotes,
+  sum(downvotes) AS total_downvotes,
+  sum(score) AS total_score
+FROM vote_aggregates -- Query the target table
+GROUP BY post_id
+ORDER BY post_id ASC;
+```
+
+```response
+┌─post_id─┬─total_upvotes─┬─total_downvotes─┬─total_score─┐
+│       1 │             2 │               1 │           1 │
+│       2 │             1 │               1 │           0 │
+│       3 │             0 │               1 │          -1 │
+└─────────┴───────────────┴─────────────────┴─────────────┘
+```
+
+<div id="see-also">
+  ## راجع أيضًا
+</div>
+
+* [`sum`](/ar/reference/functions/aggregate-functions/sum)
+* [`SimpleState مُركِّب`](/ar/reference/functions/aggregate-functions/combinators#-simplestate)
+* [`SimpleAggregateFunction type`](/ar/reference/data-types/simpleaggregatefunction)

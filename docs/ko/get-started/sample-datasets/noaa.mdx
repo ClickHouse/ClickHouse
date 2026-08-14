@@ -1,0 +1,380 @@
+---
+description: '지난 120년간의 기후 데이터 25억 행'
+sidebarTitle: 'NOAA Global Historical Climatology Network '
+slug: /getting-started/example-datasets/noaa
+title: 'NOAA Global Historical Climatology Network'
+doc_type: 'guide'
+keywords: ['예시 데이터셋', 'noaa', '기상 데이터', '샘플 데이터', '기후']
+---
+
+이 데이터셋에는 지난 120년간의 기상 관측 데이터가 포함되어 있습니다. 각 행은 특정 시점과 관측소에서 측정된 값입니다.
+
+보다 정확히는, [이 데이터의 출처](https://github.com/awslabs/open-data-docs/tree/main/docs/noaa/noaa-ghcn)에 따르면 다음과 같습니다:
+
+> GHCN-Daily는 전 세계 육지 지역의 일일 관측값을 담은 데이터셋입니다. 여기에는 전 세계 육상 관측소의 관측소별 측정값이 포함되며, 이 중 약 3분의 2는 강수량 측정만 제공합니다(Menne et al., 2012). GHCN-Daily는 여러 출처의 기후 기록을 머지해 구성한 복합 데이터셋으로, 공통된 품질 보증 검토 절차를 거쳤습니다(Durre et al., 2010). 이 아카이브에는 다음과 같은 기상 요소가 포함됩니다:
+
+* 일일 최고 기온
+  * 일일 최저 기온
+  * 관측 시점의 기온
+  * 강수량(예: 비, 녹은 눈)
+  * 강설량
+  * 적설 깊이
+  * 제공 가능한 기타 요소
+
+아래 섹션에서는 이 데이터셋을 ClickHouse로 가져오는 과정에 포함된 단계를 간략히 설명합니다. 각 단계에 대해 더 자세히 알아보려면 [&quot;Exploring massive, real-world data sets: 100+ Years of Weather Records in ClickHouse&quot;](https://clickhouse.com/blog/real-world-data-noaa-climate-data)라는 제목의 블로그 게시물을 참고하십시오.
+
+<div id="downloading-the-data">
+  ## 데이터 다운로드
+</div>
+
+* 정제, 재구성, 보강을 거친 ClickHouse용 데이터의 [사전 준비 버전](#pre-prepared-data)입니다. 이 데이터는 1900년부터 2022년까지를 다룹니다.
+* [원본 데이터](#original-data)를 다운로드하여 ClickHouse에 필요한 포맷으로 변환합니다. 자체 컬럼을 추가하려는 경우 이 방법을 고려할 수 있습니다.
+
+<div id="pre-prepared-data">
+  ### 사전 준비된 데이터
+</div>
+
+보다 구체적으로는 Noaa의 품질 보증 검사에서 한 번도 실패하지 않은 행은 제거되었습니다. 또한 데이터는 각 줄마다 측정값 1개가 있는 구조에서, station id와 날짜마다 행 1개가 있는 구조로 재구성되었습니다. 즉,
+
+```csv
+"station_id","date","tempAvg","tempMax","tempMin","precipitation","snowfall","snowDepth","percentDailySun","averageWindSpeed","maxWindSpeed","weatherType"
+"AEM00041194","2022-07-30",347,0,308,0,0,0,0,0,0,0
+"AEM00041194","2022-07-31",371,413,329,0,0,0,0,0,0,0
+"AEM00041194","2022-08-01",384,427,357,0,0,0,0,0,0,0
+"AEM00041194","2022-08-02",381,424,352,0,0,0,0,0,0,0
+```
+
+이 형식은 쿼리가 더 간단하고, 결과 테이블의 희소성도 낮춰 줍니다. 마지막으로, 데이터에는 위도와 경도도 보강되어 있습니다.
+
+이 데이터는 다음 S3 위치에서 사용할 수 있습니다. 데이터를 로컬 파일 시스템에 다운로드한 뒤 `clickhouse client`를 사용해 삽입하거나, ClickHouse에 직접 삽입하십시오([S3에서 삽입](#inserting-from-s3) 참조).
+
+다운로드하려면:
+
+```bash
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/noaa/noaa_enriched.parquet
+```
+
+<div id="original-data">
+  ### 원본 데이터
+</div>
+
+다음은 ClickHouse에 로드하기에 앞서 원본 데이터를 다운로드하고 변환하는 단계를 설명합니다.
+
+<div id="download">
+  #### 다운로드
+</div>
+
+원본 데이터를 다운로드하려면 다음과 같이 하십시오:
+
+```bash
+for i in {1900..2023}; do wget https://noaa-ghcn-pds.s3.amazonaws.com/csv.gz/${i}.csv.gz; done
+```
+
+<div id="sampling-the-data">
+  #### 데이터 샘플링
+</div>
+
+```bash
+$ clickhouse-local --query "SELECT * FROM '2021.csv.gz' LIMIT 10" --format PrettyCompact
+┌─c1──────────┬───────c2─┬─c3───┬──c4─┬─c5───┬─c6───┬─c7─┬───c8─┐
+│ AE000041196 │ 20210101 │ TMAX │ 278 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+│ AE000041196 │ 20210101 │ PRCP │   0 │ D    │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+│ AE000041196 │ 20210101 │ TAVG │ 214 │ H    │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+│ AEM00041194 │ 20210101 │ TMAX │ 266 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+│ AEM00041194 │ 20210101 │ TMIN │ 178 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+│ AEM00041194 │ 20210101 │ PRCP │   0 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+│ AEM00041194 │ 20210101 │ TAVG │ 217 │ H    │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+│ AEM00041217 │ 20210101 │ TMAX │ 262 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+│ AEM00041217 │ 20210101 │ TMIN │ 155 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+│ AEM00041217 │ 20210101 │ TAVG │ 202 │ H    │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+└─────────────┴──────────┴──────┴─────┴──────┴──────┴────┴──────┘
+```
+
+[포맷 문서](https://github.com/awslabs/open-data-docs/tree/main/docs/noaa/noaa-ghcn)를 요약하면 다음과 같습니다:
+
+포맷 문서와 컬럼을 순서대로 요약하면 다음과 같습니다:
+
+* 11자 관측소 식별 코드입니다. 이 코드 자체에 몇 가지 유용한 정보가 인코딩되어 있습니다.
+* YEAR/MONTH/DAY = YYYYMMDD 포맷의 8자 날짜입니다(예: 19860529 = 1986년 5월 29일).
+* ELEMENT = 요소 타입을 나타내는 4자 지표입니다. 사실상 측정 유형입니다. 사용할 수 있는 측정값은 많지만, 여기서는 다음만 선택합니다:
+  * PRCP - 강수량(0.1mm 단위)
+  * SNOW - 강설량(mm)
+  * SNWD - 적설 깊이(mm)
+  * TMAX - 최고 기온(섭씨 0.1도 단위)
+  * TAVG - 평균 기온(섭씨 0.1도 단위)
+  * TMIN - 최저 기온(섭씨 0.1도 단위)
+  * PSUN - 일일 가조 시간 비율(퍼센트)
+  * AWND - 일평균 풍속(0.1m/s 단위)
+  * WSFG - 최대 순간 풍속(0.1m/s 단위)
+  * WT** = **가 날씨 유형을 정의하는 Weather Type입니다. 전체 날씨 유형 목록은 여기에서 확인할 수 있습니다.
+  * DATA VALUE = ELEMENT에 대한 5자 데이터 값, 즉 측정값입니다.
+  * M-FLAG = 1자 Measurement Flag입니다. 가능한 값은 10개입니다. 이 값들 가운데 일부는 데이터 정확도에 문제가 있을 수 있음을 나타냅니다. 여기서는 &quot;P&quot;로 설정된 데이터는 허용합니다. 이는 결측이지만 0으로 추정되는 값으로 식별되며, PRCP, SNOW, SNWD 측정에만 관련되기 때문입니다.
+* Q-FLAG는 가능한 값이 14개인 측정 품질 플래그입니다. 여기서는 값이 비어 있는 데이터, 즉 품질 보증 검사에서 하나도 실패하지 않은 데이터에만 관심이 있습니다.
+* S-FLAG는 관측값의 소스 플래그입니다. 분석에는 유용하지 않으므로 무시합니다.
+* OBS-TIME = 시-분 포맷의 4자 관측 시각입니다(즉, 0700 = 오전 7:00). 일반적으로 오래된 데이터에는 없습니다. 여기서는 이 값도 무시합니다.
+
+측정값 하나당 한 줄로 저장하면 ClickHouse에서는 희소 테이블 구조가 됩니다. 따라서 시간과 관측소별로 하나의 행으로 변환하고, 측정값은 컬럼으로 두어야 합니다. 먼저 문제가 없는 행, 즉 `qFlag`가 빈 문자열인 행만 남기도록 데이터셋을 제한합니다.
+
+<div id="clean-the-data">
+  #### 데이터 정제
+</div>
+
+[ClickHouse local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)을 사용하면 관심 있는 측정값을 나타내는 행만 필터링하고, 품질 요구 사항을 충족하는 데이터만 남길 수 있습니다:
+
+```bash
+clickhouse local --query "SELECT count() 
+FROM file('*.csv.gz', CSV, 'station_id String, date String, measurement String, value Int64, mFlag String, qFlag String, sFlag String, obsTime String') WHERE qFlag = '' AND (measurement IN ('PRCP', 'SNOW', 'SNWD', 'TMAX', 'TAVG', 'TMIN', 'PSUN', 'AWND', 'WSFG') OR startsWith(measurement, 'WT'))"
+
+2679264563
+```
+
+26억 개가 넘는 행이 있어 모든 파일을 파싱해야 하므로, 이 쿼리는 빠르지 않습니다. 8코어 머신에서는 약 160초가 걸립니다.
+
+<div id="pivot-data">
+  ### 데이터 피벗
+</div>
+
+한 줄에 측정값 하나씩 두는 구조는 ClickHouse에서도 사용할 수 있지만, 이후 쿼리가 불필요하게 복잡해집니다. 이상적으로는 station id와 날짜별로 하나의 행을 두고, 각 측정 유형과 해당 값을 각각 하나의 컬럼으로 구성해야 합니다. 즉,
+
+```csv
+"station_id","date","tempAvg","tempMax","tempMin","precipitation","snowfall","snowDepth","percentDailySun","averageWindSpeed","maxWindSpeed","weatherType"
+"AEM00041194","2022-07-30",347,0,308,0,0,0,0,0,0,0
+"AEM00041194","2022-07-31",371,413,329,0,0,0,0,0,0,0
+"AEM00041194","2022-08-01",384,427,357,0,0,0,0,0,0,0
+"AEM00041194","2022-08-02",381,424,352,0,0,0,0,0,0,0
+```
+
+ClickHouse local과 간단한 `GROUP BY`를 사용하면 데이터를 이 구조로 다시 피벗할 수 있습니다. 메모리 오버헤드를 줄이기 위해 이 작업은 파일을 한 번에 하나씩 처리합니다.
+
+```bash
+for i in {1900..2022}
+do
+clickhouse-local --query "SELECT station_id,
+       toDate32(date) as date,
+       anyIf(value, measurement = 'TAVG') as tempAvg,
+       anyIf(value, measurement = 'TMAX') as tempMax,
+       anyIf(value, measurement = 'TMIN') as tempMin,
+       anyIf(value, measurement = 'PRCP') as precipitation,
+       anyIf(value, measurement = 'SNOW') as snowfall,
+       anyIf(value, measurement = 'SNWD') as snowDepth,
+       anyIf(value, measurement = 'PSUN') as percentDailySun,
+       anyIf(value, measurement = 'AWND') as averageWindSpeed,
+       anyIf(value, measurement = 'WSFG') as maxWindSpeed,
+       toUInt8OrZero(replaceOne(anyIf(measurement, startsWith(measurement, 'WT') AND value = 1), 'WT', '')) as weatherType
+FROM file('$i.csv.gz', CSV, 'station_id String, date String, measurement String, value Int64, mFlag String, qFlag String, sFlag String, obsTime String')
+ WHERE qFlag = '' AND (measurement IN ('PRCP', 'SNOW', 'SNWD', 'TMAX', 'TAVG', 'TMIN', 'PSUN', 'AWND', 'WSFG') OR startsWith(measurement, 'WT'))
+GROUP BY station_id, date
+ORDER BY station_id, date FORMAT CSV" >> "noaa.csv";
+done
+```
+
+이 쿼리를 실행하면 50GB 크기의 단일 파일 `noaa.csv`가 생성됩니다.
+
+<div id="enriching-the-data">
+  ### 데이터 보강
+</div>
+
+데이터에는 국가 코드 접두사가 포함된 관측소 ID 외에는 위치 정보가 없습니다. 이상적으로는 각 관측소에 위도와 경도가 연결되어 있어야 합니다. 이를 위해 NOAA는 각 관측소의 세부 정보를 별도의 [ghcnd-stations.txt](https://github.com/awslabs/open-data-docs/tree/main/docs/noaa/noaa-ghcn#format-of-ghcnd-stationstxt-file) 파일로 제공합니다. 이 파일에는 [여러 컬럼](https://github.com/awslabs/open-data-docs/tree/main/docs/noaa/noaa-ghcn#format-of-ghcnd-stationstxt-file)이 있으며, 이 중 향후 분석에 유용한 것은 id, latitude, longitude, elevation, name의 5개입니다.
+
+```bash
+wget http://noaa-ghcn-pds.s3.amazonaws.com/ghcnd-stations.txt
+```
+
+```bash
+clickhouse local --query "WITH stations AS (SELECT id, lat, lon, elevation, splitByString(' GSN ',name)[1] as name FROM file('ghcnd-stations.txt', Regexp, 'id String, lat Float64, lon Float64, elevation Float32, name String'))
+SELECT station_id,
+       date,
+       tempAvg,
+       tempMax,
+       tempMin,
+       precipitation,
+       snowfall,
+       snowDepth,
+       percentDailySun,
+       averageWindSpeed,
+       maxWindSpeed,
+       weatherType,
+       tuple(lon, lat) as location,
+       elevation,
+       name
+FROM file('noaa.csv', CSV,
+          'station_id String, date Date32, tempAvg Int32, tempMax Int32, tempMin Int32, precipitation Int32, snowfall Int32, snowDepth Int32, percentDailySun Int8, averageWindSpeed Int32, maxWindSpeed Int32, weatherType UInt8') as noaa LEFT OUTER
+         JOIN stations ON noaa.station_id = stations.id INTO OUTFILE 'noaa_enriched.parquet' FORMAT Parquet SETTINGS format_regexp='^(.{11})\s+(\-?\d{1,2}\.\d{4})\s+(\-?\d{1,3}\.\d{1,4})\s+(\-?\d*\.\d*)\s+(.*)\s+(?:[\d]*)'" 
+```
+
+이 쿼리는 실행에 몇 분 정도 걸리며, `noaa_enriched.parquet`라는 6.4 GB 파일을 생성합니다.
+
+<div id="create-table">
+  ## 테이블 생성
+</div>
+
+ClickHouse client에서 ClickHouse의 MergeTree 테이블(table)을 생성합니다.
+
+```sql
+CREATE TABLE noaa
+(
+   `station_id` LowCardinality(String),
+   `date` Date32,
+   `tempAvg` Int32 COMMENT 'Average temperature (tenths of a degrees C)',
+   `tempMax` Int32 COMMENT 'Maximum temperature (tenths of degrees C)',
+   `tempMin` Int32 COMMENT 'Minimum temperature (tenths of degrees C)',
+   `precipitation` UInt32 COMMENT 'Precipitation (tenths of mm)',
+   `snowfall` UInt32 COMMENT 'Snowfall (mm)',
+   `snowDepth` UInt32 COMMENT 'Snow depth (mm)',
+   `percentDailySun` UInt8 COMMENT 'Daily percent of possible sunshine (percent)',
+   `averageWindSpeed` UInt32 COMMENT 'Average daily wind speed (tenths of meters per second)',
+   `maxWindSpeed` UInt32 COMMENT 'Peak gust wind speed (tenths of meters per second)',
+   `weatherType` Enum8('Normal' = 0, 'Fog' = 1, 'Heavy Fog' = 2, 'Thunder' = 3, 'Small Hail' = 4, 'Hail' = 5, 'Glaze' = 6, 'Dust/Ash' = 7, 'Smoke/Haze' = 8, 'Blowing/Drifting Snow' = 9, 'Tornado' = 10, 'High Winds' = 11, 'Blowing Spray' = 12, 'Mist' = 13, 'Drizzle' = 14, 'Freezing Drizzle' = 15, 'Rain' = 16, 'Freezing Rain' = 17, 'Snow' = 18, 'Unknown Precipitation' = 19, 'Ground Fog' = 21, 'Freezing Fog' = 22),
+   `location` Point,
+   `elevation` Float32,
+   `name` LowCardinality(String)
+) ENGINE = MergeTree() ORDER BY (station_id, date);
+
+```
+
+<div id="inserting-into-clickhouse">
+  ## ClickHouse에 데이터 삽입
+</div>
+
+<div id="inserting-from-local-file">
+  ### 로컬 파일에서 삽입
+</div>
+
+다음과 같이 로컬 파일에서 데이터를 삽입할 수 있습니다(clickhouse client에서 실행):
+
+```sql
+INSERT INTO noaa FROM INFILE '<path>/noaa_enriched.parquet'
+```
+
+여기서 `<path>`는 디스크에 있는 로컬 파일의 전체 경로를 의미합니다.
+
+이 적재 속도를 높이는 방법은 [여기](https://clickhouse.com/blog/real-world-data-noaa-climate-data#load-the-data)를 참조하십시오.
+
+<div id="inserting-from-s3">
+  ### S3에서 데이터 삽입하기
+</div>
+
+```sql
+INSERT INTO noaa SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/noaa/noaa_enriched.parquet')
+
+```
+
+속도를 높이는 방법은 [대용량 데이터 로드 튜닝](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part2)에 관한 블로그 게시물을 참조하십시오.
+
+<div id="sample-queries">
+  ## 예제 쿼리
+</div>
+
+<div id="highest-temperature-ever">
+  ### 사상 최고 기온
+</div>
+
+```sql
+SELECT
+    tempMax / 10 AS maxTemp,
+    location,
+    name,
+    date
+FROM blogs.noaa
+WHERE tempMax > 500
+ORDER BY
+    tempMax DESC,
+    date ASC
+LIMIT 5
+```
+
+```response
+┌─maxTemp─┬─location──────────┬─name───────────────────────────────────────────┬───────date─┐
+│    56.7 │ (-116.8667,36.45) │ CA GREENLAND RCH                               │ 1913-07-10 │
+│    56.7 │ (-115.4667,32.55) │ MEXICALI (SMN)                                 │ 1949-08-20 │
+│    56.7 │ (-115.4667,32.55) │ MEXICALI (SMN)                                 │ 1949-09-18 │
+│    56.7 │ (-115.4667,32.55) │ MEXICALI (SMN)                                 │ 1952-07-17 │
+│    56.7 │ (-115.4667,32.55) │ MEXICALI (SMN)                                 │ 1952-09-04 │
+└─────────┴───────────────────┴────────────────────────────────────────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.514 sec. Processed 1.06 billion rows, 4.27 GB (2.06 billion rows/s., 8.29 GB/s.)
+```
+
+2023년 기준 [Furnace Creek](https://www.google.com/maps/place/36%C2%B027'00.0%22N+116%C2%B052'00.1%22W/@36.1329666,-116.1104099,8.95z/data=!4m5!3m4!1s0x0:0xf2ed901b860f4446!8m2!3d36.45!4d-116.8667)의 [공식 기록](https://en.wikipedia.org/wiki/List_of_weather_records#Highest_temperatures_ever_recorded)과도 무리 없이 일치합니다.
+
+<div id="best-ski-resorts">
+  ### 최고의 스키 리조트
+</div>
+
+미국의 [스키 리조트 목록](https://gist.githubusercontent.com/gingerwizard/dd022f754fd128fdaf270e58fa052e35/raw/622e03c37460f17ef72907afe554cb1c07f91f23/ski_resort_stats.csv)과 각 리조트의 위치 정보를 사용해, 지난 5년간 월별 관측 수가 가장 많았던 상위 1000개의 기상 관측소 데이터와 조인합니다. 이 조인 결과를 [geoDistance](/ko/reference/functions/regular-functions/geo/coordinates#geodistance) 기준으로 정렬하고, 거리가 20km 미만인 결과만 남긴 다음 각 리조트별 최상위 결과를 선택한 뒤 총 적설량 기준으로 다시 정렬합니다. 또한 전반적으로 좋은 스키 환경을 가늠하는 지표로 해발 1800m 이상인 리조트만 대상으로 제한합니다.
+
+```sql
+SELECT
+   resort_name,
+   total_snow / 1000 AS total_snow_m,
+   resort_location,
+   month_year
+FROM
+(
+   WITH resorts AS
+       (
+           SELECT
+               resort_name,
+               state,
+               (lon, lat) AS resort_location,
+               'US' AS code
+           FROM url('https://gist.githubusercontent.com/gingerwizard/dd022f754fd128fdaf270e58fa052e35/raw/622e03c37460f17ef72907afe554cb1c07f91f23/ski_resort_stats.csv', CSVWithNames)
+       )
+   SELECT
+       resort_name,
+       highest_snow.station_id,
+       geoDistance(resort_location.1, resort_location.2, station_location.1, station_location.2) / 1000 AS distance_km,
+       highest_snow.total_snow,
+       resort_location,
+       station_location,
+       month_year
+   FROM
+   (
+       SELECT
+           sum(snowfall) AS total_snow,
+           station_id,
+           any(location) AS station_location,
+           month_year,
+           substring(station_id, 1, 2) AS code
+       FROM noaa
+       WHERE (date > '2017-01-01') AND (code = 'US') AND (elevation > 1800)
+       GROUP BY
+           station_id,
+           toYYYYMM(date) AS month_year
+       ORDER BY total_snow DESC
+       LIMIT 1000
+   ) AS highest_snow
+   INNER JOIN resorts ON highest_snow.code = resorts.code
+   WHERE distance_km < 20
+   ORDER BY
+       resort_name ASC,
+       total_snow DESC
+   LIMIT 1 BY
+       resort_name,
+       station_id
+)
+ORDER BY total_snow DESC
+LIMIT 5
+```
+
+```response
+┌─resort_name──────────┬─total_snow_m─┬─resort_location─┬─month_year─┐
+│ Sugar Bowl, CA       │        7.799 │ (-120.3,39.27)  │     201902 │
+│ Donner Ski Ranch, CA │        7.799 │ (-120.34,39.31) │     201902 │
+│ Boreal, CA           │        7.799 │ (-120.35,39.33) │     201902 │
+│ Homewood, CA         │        4.926 │ (-120.17,39.08) │     201902 │
+│ Alpine Meadows, CA   │        4.926 │ (-120.22,39.17) │     201902 │
+└──────────────────────┴──────────────┴─────────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.750 sec. 처리된 행: 6억 8,910만 행, 3.20 GB (초당 9억 1,820만 행, 4.26 GB/s.)
+Peak memory usage: 67.66 MiB.
+```
+
+<div id="credits">
+  ## 제보
+</div>
+
+이 데이터의 준비, 정제 및 배포에 힘쓴 Global Historical Climatology Network의 노고에 감사드립니다.
+
+Menne, M.J., I. Durre, B. Korzeniewski, S. McNeal, K. Thomas, X. Yin, S. Anthony, R. Ray, R.S. Vose, B.E.Gleason, and T.G. Houston, 2012: Global Historical Climatology Network - Daily (GHCN-Daily), Version 3. [소수점 이하에 사용한 부분 집합을 표시하십시오. 예: Version 3.25]. NOAA National Centers for Environmental Information. http://doi.org/10.7289/V5D21VHZ [17/08/2020]

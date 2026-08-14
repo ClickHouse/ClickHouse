@@ -5,8 +5,6 @@
 #include <Common/Scheduler/Debug.h>
 #include <Common/Exception.h>
 
-#include <Poco/Util/AbstractConfiguration.h>
-
 #include <mutex>
 #include <vector>
 
@@ -28,12 +26,7 @@ class FifoQueue : public ISchedulerQueue
 {
     static constexpr Int64 default_max_queued = std::numeric_limits<Int64>::max();
 public:
-    FifoQueue(EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-        : ISchedulerQueue(event_queue_, config, config_prefix)
-        , max_queued(config.getInt64(config_prefix + ".max_queued", default_max_queued))
-    {}
-
-    FifoQueue(EventQueue & event_queue_, const SchedulerNodeInfo & info_, Int64 max_queued_)
+    explicit FifoQueue(EventQueue & event_queue_, const SchedulerNodeInfo & info_ = {}, Int64 max_queued_ = default_max_queued)
         : ISchedulerQueue(event_queue_, info_)
         , max_queued(max_queued_)
     {}
@@ -44,15 +37,6 @@ public:
     }
 
     std::string_view getTypeName() const override { return "fifo"; }
-
-    bool equals(ISchedulerNode * other) override
-    {
-        if (!ISchedulerNode::equals(other))
-            return false;
-        if (auto * _ = dynamic_cast<FifoQueue *>(other))
-            return true;
-        return false;
-    }
 
     void enqueueRequest(ResourceRequest * request) override
     {

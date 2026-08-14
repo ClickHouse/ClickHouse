@@ -1,0 +1,495 @@
+---
+sidebarTitle: '概览'
+slug: /cloud/manage/billing/overview
+title: '定价'
+description: 'ClickHouse Cloud 定价概览页面'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', '定价', '计费', '云成本', '计算定价']
+---
+
+有关定价信息，请参阅 [ClickHouse Cloud Pricing](https://clickhouse.com/pricing#pricing-calculator) 页面。
+ClickHouse Cloud 按计算、存储、[数据传输](/zh/products/cloud/reference/billing/network-data-transfer) (通过互联网和跨区域的出站流量) 以及 [ClickPipes](/zh/integrations/clickpipes/home) 的使用量计费。
+如需了解哪些因素会影响您的账单，以及可采用哪些方式来管理支出，请继续阅读。
+
+<div id="amazon-web-services-aws-example">
+  ## Amazon Web Services (AWS) 示例
+</div>
+
+<Note>
+  * 价格按 AWS us-east-1 区域的定价计算。
+  * 适用的数据传输费用和 ClickPipes 费用请参见[此处](/zh/products/cloud/reference/billing/network-data-transfer)。
+</Note>
+
+<div id="basic-from-6652-per-month">
+  ### 基础版：每月 $66.52 起
+</div>
+
+最适合：数据量较小、且无需严格可靠性保障的部门级用例。
+
+**基础版服务**
+
+* 1 个副本 x 8 GiB RAM，2 vCPU
+* 500 GB 压缩数据
+* 500 GB 数据备份容量
+* 10 GB 公共互联网出站流量
+* 5 GB 跨区域数据传输
+
+此示例的价格明细：
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>每天活跃 6 小时</th>
+      <th>每天活跃 12 小时</th>
+      <th>每天活跃 24 小时</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>计算资源</td>
+      <td>$39.91</td>
+      <td>$79.83</td>
+      <td>$159.66</td>
+    </tr>
+
+    <tr>
+      <td>存储</td>
+      <td>$25.30</td>
+      <td>$25.30</td>
+      <td>$25.30</td>
+    </tr>
+
+    <tr>
+      <td>公共互联网出站流量</td>
+      <td>$1.15</td>
+      <td>$1.15</td>
+      <td>$1.15</td>
+    </tr>
+
+    <tr>
+      <td>跨区域数据传输</td>
+      <td>$0.16</td>
+      <td>$0.16</td>
+      <td>$0.16</td>
+    </tr>
+
+    <tr>
+      <td>总计</td>
+      <td>$66.52</td>
+      <td>$106.44</td>
+      <td>$186.27</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="scale-always-on-auto-scaling-from-49938-per-month">
+  ### Scale (始终运行、自动扩缩容) ：每月 $499.38 起
+</div>
+
+最适合：需要更高 SLA (具有 2 个及以上副本的服务) 、扩展能力和高级安全性的工作负载。
+
+**Scale 层级服务**
+
+* 工作负载几乎 100% 时间处于活跃状态
+* 可配置自动扩缩容上限，以避免账单失控
+* 100 GB 公共互联网出站流量
+* 10 GB 跨区域数据传输
+
+此示例的定价明细：
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>示例 1</th>
+      <th>示例 2</th>
+      <th>示例 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>计算资源</td>
+      <td>2 个副本 x 8 GiB RAM，2 vCPU<br />$436.95</td>
+      <td>2 个副本 x 16 GiB RAM，4 vCPU<br />$873.89</td>
+      <td>3 个副本 x 16 GiB RAM，4 vCPU<br />$1,310.84</td>
+    </tr>
+
+    <tr>
+      <td>存储</td>
+      <td>1 TB 数据 + 1 个备份<br />$50.60</td>
+      <td>2 TB 数据 + 1 个备份<br />$101.20</td>
+      <td>3 TB 数据 + 1 个备份<br />$151.80</td>
+    </tr>
+
+    <tr>
+      <td>公共互联网出站流量</td>
+      <td>$11.52</td>
+      <td>$11.52</td>
+      <td>$11.52</td>
+    </tr>
+
+    <tr>
+      <td>跨区域数据传输</td>
+      <td>$0.31</td>
+      <td>$0.31</td>
+      <td>$0.31</td>
+    </tr>
+
+    <tr>
+      <td>总计</td>
+      <td>$499.38</td>
+      <td>$986.92</td>
+      <td>$1,474.47</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="enterprise-starting-prices-vary">
+  ### Enterprise：起始价格因配置而异
+</div>
+
+最适合：大规模、关键任务型部署，对安全性和合规性有严格要求
+
+**Enterprise 层级服务**
+
+* 工作负载活跃时间约为 100%
+* 1 TB 公共互联网出站流量
+* 500 GB 跨区域数据传输
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>示例 1</th>
+      <th>示例 2</th>
+      <th>示例 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>计算资源</td>
+      <td>2 个副本 x 32 GiB RAM，8 vCPU<br />$2,285.60</td>
+      <td>2 个副本 x 64 GiB RAM，16 vCPU<br />$4,571.19</td>
+      <td>2 x 120 GiB RAM，30 vCPU<br />$8,570.99</td>
+    </tr>
+
+    <tr>
+      <td>存储</td>
+      <td>5 TB + 1 份备份<br />$253.00</td>
+      <td>10 TB + 1 份备份<br />$506.00</td>
+      <td>20 TB + 1 份备份<br />$1,012.00</td>
+    </tr>
+
+    <tr>
+      <td>公共互联网出站流量</td>
+      <td>$115.20</td>
+      <td>$115.20</td>
+      <td>$115.20</td>
+    </tr>
+
+    <tr>
+      <td>跨区域数据传输</td>
+      <td>$15.60</td>
+      <td>$15.60</td>
+      <td>$15.60</td>
+    </tr>
+
+    <tr>
+      <td>总计</td>
+      <td>$2,669.40</td>
+      <td>$5,207.99</td>
+      <td>$9,713.79</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="faqs">
+  ## 常见问题
+</div>
+
+<div id="what-is-chc">
+  ### 什么是 ClickHouse Credit (CHC)？
+</div>
+
+ClickHouse Credit 是一种用于抵扣客户 ClickHouse Cloud 使用费用的信用单位：1 个 ClickHouse Credit 等值于 1 美元，具体抵扣将依据 ClickHouse 当时公布的现行价目表执行。
+
+<Note>
+  如果您是通过 Stripe 计费，您会在 Stripe 发票上看到 1 CHC 等于 $0.01 USD。这是为了适配 Stripe 无法对我们标准 SKU (1 CHC = $1 USD) 的非整数数量进行计费这一限制，从而实现准确计费。
+</Note>
+
+<div id="find-legacy-pricing">
+  ### 在哪里可以找到旧版定价信息？
+</div>
+
+旧版定价信息可在[这里](https://clickhouse.com/pricing?legacy=true)查看。
+
+<div id="how-is-compute-metered">
+  ### 计算资源如何计费？
+</div>
+
+ClickHouse Cloud 按分钟对计算资源计费，内存以每 8G RAM 为一个增量单位。
+计算资源成本会因层级、区域和云服务提供商而有所不同。
+
+<div id="how-is-storage-on-disk-calculated">
+  ### 磁盘存储是如何计算的？
+</div>
+
+ClickHouse Cloud 使用云对象存储，使用量按存储在 ClickHouse 表中的数据压缩后大小计量。
+各层级的存储成本相同，但会因区域和云服务提供商而异。
+
+<div id="do-backups-count-toward-total-storage">
+  ### 备份是否计入总存储？
+</div>
+
+存储和备份都会计入存储费用，并分别计费。
+所有服务默认都会有一个备份，保留一天。
+如果用户需要额外的备份，可以在 Cloud 控制台的设置选项卡中配置更多[备份](/zh/products/cloud/guides/backups/review-and-restore-backups)。
+
+<div id="how-do-i-estimate-compression">
+  ### 如何估算压缩率？
+</div>
+
+压缩率会因数据集而异。
+具体差异取决于数据本身的可压缩性 (例如高基数和低基数字段的数量) ，
+以及用户如何设计 schema (例如是否使用可选 codec) 。
+对于常见的分析型数据，压缩率通常可达到 10 倍左右，但也可能明显更低或更高。
+如需相关指导，请参阅[优化文档](/zh/concepts/features/operations/insert/asyncinserts)，并参考这篇 [Uber 博客](https://www.uber.com/blog/logging/) 中关于日志用例的详细示例。
+唯一切实可行的准确判断方式，是将你的数据集摄取到 ClickHouse 中，并比较原始数据集大小与存储在 ClickHouse 中后的大小。
+
+你可以使用以下查询：
+
+```sql title="Estimating compression"
+SELECT formatReadableSize(total_bytes) 
+FROM system.tables 
+WHERE name = <your table name>
+```
+
+<div id="what-tools-does-clickhouse-offer-to-estimate-the-cost-of-running-a-service-in-the-cloud-if-i-have-a-self-managed-deployment">
+  ### 如果我使用自管理部署，ClickHouse 提供了哪些工具来估算在云中运行服务的成本？
+</div>
+
+ClickHouse 查询日志会记录可用于估算在 ClickHouse Cloud 中运行工作负载成本的[关键指标](/zh/reference/system-tables/query_log)。
+有关从自管理迁移到 ClickHouse Cloud 的详细信息，请参阅[迁移文档](/zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud)；如果您还有其他问题，请联系 [ClickHouse Cloud 支持团队](https://console.clickhouse.cloud/support)。
+
+<div id="what-billing-options-are-available-for-clickhouse-cloud">
+  ### ClickHouse Cloud 有哪些可用的计费方式？
+</div>
+
+ClickHouse Cloud 支持以下计费方式：
+
+* 自助式按月付费 (美元，通过信用卡支付) 。
+* 直销的年度 / 多年期方案 (通过预付的“ClickHouse Credits”，以美元结算，并支持其他支付方式) 。
+* 通过 AWS、GCP 和 Azure 市场 (可选择按使用量付费 (PAYG) ，或通过市场与 ClickHouse Cloud 签订合约) 。
+
+<Note>
+  用于 PAYG 的 ClickHouse Cloud credits 按 $0.01 为单位开具发票，因此我们可以根据客户的实际使用量，对不足一个完整 ClickHouse credit 的部分收费。这与承诺消费的 ClickHouse credits 不同，后者需要按整 $1 单位预先购买。
+</Note>
+
+<div id="can-i-delete-my-credit-card">
+  ### 我可以删除我的信用卡吗？
+</div>
+
+你不能在 Billing UI 中删除信用卡，但可以随时更新。这样可确保你的组织始终拥有有效的付款方式。如果你需要移除信用卡，请联系 [ClickHouse Cloud 支持团队](https://console.clickhouse.cloud/support) 获取帮助。
+
+<div id="where-can-i-see-my-refunds">
+  ### 我可以在哪里查看退款？
+</div>
+
+在 ClickHouse Cloud 控制台中，前往 Organization &gt; Billing。Refunds 部分位于 Invoices 和 Credits 下方。您必须是 Organization Admin 或 Billing Admin 才能查看。
+
+<div id="how-long-does-it-take-for-a-refund-to-appear">
+  ### 退款多久到账？
+</div>
+
+退款在我们处理完成后即可显示。信用卡退款显示在您的账单上的时间可能会更长，具体取决于您的银行。
+
+<div id="how-long-is-the-billing-cycle">
+  ### 计费周期有多长？
+</div>
+
+采用按月计费周期，起始日期以创建 ClickHouse Cloud 组织的日期为准。
+
+<div id="committed-credits-consumed-first-with-active-payg-subscription">
+  ### 如果我有一个有效的 PAYG Marketplace 订阅，之后又签订了承诺合同，是否会优先消耗我的承诺额度？
+</div>
+
+是的。使用量会按以下付款方式顺序依次抵扣：
+
+* 承诺 (预付) 额度
+* Marketplace 订阅 (PAYG)
+* 信用卡
+
+<div id="what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-scale-and-enterprise-services">
+  ### ClickHouse Cloud 提供哪些控制项来管理 Scale 和 Enterprise 服务的成本？
+</div>
+
+* Trial 和 Annual Commit 客户在其使用量达到特定阈值时，会自动收到电子邮件通知：`50%`、`75%` 和 `90%`。这使您能够主动管理用量。
+* ClickHouse Cloud 允许您通过[高级扩缩容控制](/zh/products/cloud/features/autoscaling/overview)为计算资源设置自动扩缩容上限，而这正是分析型工作负载的重要成本因素。
+* [高级扩缩容控制](/zh/products/cloud/features/autoscaling/overview)允许您设置内存限制，并可选择控制服务在空闲期间的暂停/闲置行为。
+
+<div id="what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-basic-services">
+  ### ClickHouse Cloud 提供哪些控制选项来管理基础版服务的成本？
+</div>
+
+* [高级扩缩容控制](/zh/products/cloud/features/autoscaling/overview)可让您控制服务在无活动时的暂停/闲置行为。基础版服务不支持调整内存分配。
+* 请注意，默认设置会在服务一段时间无活动后将其暂停。
+
+<div id="if-i-have-multiple-services-do-i-get-an-invoice-per-service-or-a-consolidated-invoice">
+  ### 如果我有多个服务，是按服务分别开具发票，还是合并开具一张发票？
+</div>
+
+对于同一组织，在一个计费周期内的所有服务都会合并开具一张发票。
+
+<div id="if-i-add-my-credit-card-and-upgrade-before-my-trial-period-and-credits-expire-will-i-be-charged">
+  ### 如果我在试用期结束、试用额度失效前添加信用卡并升级，还会被收费吗？
+</div>
+
+如果用户在 30 天试用期结束前从试用转为付费，且试用赠送额度仍有剩余，
+我们会在最初 30 天试用期内继续优先扣减试用额度，之后才会向信用卡收费。
+
+<div id="how-can-i-keep-track-of-my-spending">
+  ### 如何跟踪我的支出？
+</div>
+
+ClickHouse Cloud 控制台提供“用量”视图，按服务详细展示使用情况。该明细按使用维度组织，可帮助您了解每个计量单位对应的成本。
+
+<div id="how-do-i-access-my-invoice-for-my-subscription-to-the-clickhouse-cloud-service">
+  ### 如何查看我所订阅的 ClickHouse Cloud 服务发票？
+</div>
+
+对于使用信用卡的直接订阅：
+
+要查看发票，请在 ClickHouse Cloud UI 左侧导航栏中选择您的组织，然后进入 Billing。您的所有发票都会列在 Invoices 部分下。
+
+对于通过云市场进行的订阅：
+
+所有 Marketplace 订阅的计费和开票均由相应市场负责。您可以直接通过对应云提供商的市场查看发票。
+
+<div id="why-do-the-dates-on-the-usage-statements-not-match-my-marketplace-invoice">
+  ### 为什么 Usage 语句上的日期与我的 Marketplace Invoice 不一致？
+</div>
+
+AWS Marketplace 的计费遵循自然月周期。
+例如，对于 2024 年 12 月 1 日至 2025 年 1 月 1 日期间的用量，
+发票会在 2025 年 1 月 3 日至 1 月 5 日之间生成
+
+ClickHouse Cloud 的 Usage 语句遵循不同的计费周期，其中用量会从注册当日开始，按 30 天周期进行计量
+并上报。
+
+如果这些日期不一致，用量和发票上的日期就会不同。由于 Usage 语句会按天跟踪特定 service 的用量，因此你可以通过语句查看成本明细。
+
+<div id="are-there-any-restrictions-around-the-usage-of-prepaid-credits">
+  ### 预付费额度的使用是否有任何限制？
+</div>
+
+ClickHouse Cloud 预付费额度 (无论是直接通过 ClickHouse 购买，还是通过云提供商的市场购买)
+只能在合同期限内使用。
+这意味着这些额度可自接受之日起或自未来某个日期起生效，不能追溯用于此前任何期间。
+任何未被预付费额度覆盖的超额用量，都必须通过信用卡付款或市场的月度计费支付。
+
+<div id="is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse">
+  ### 通过云提供商市场付费与直接向 ClickHouse 付费相比，ClickHouse Cloud 的定价是否有差异？
+</div>
+
+通过市场计费与直接向 ClickHouse 注册，价格没有任何差异。
+无论采用哪种方式，您使用 ClickHouse Cloud 的用量都会以 ClickHouse Cloud Credits (CHCs) 进行跟踪，
+并以相同方式计量和计费。
+
+<div id="how-is-compute-compute-separation-billed">
+  ### compute-compute separation 如何计费？
+</div>
+
+在基于现有服务新建另一个服务时，
+你可以选择新服务是否与现有服务共享同一份数据。
+如果选择共享，这两个服务就会组成一个[仓库](/zh/products/cloud/features/infrastructure/warehouses)。
+仓库中的数据只存储一份，可供多个计算服务访问。
+
+由于数据只存储一次，即使有多个服务访问它，你也只需为这一份数据付费。
+计算费用照常收取——compute-compute separation / 仓库不会产生额外费用。
+通过在这种部署中利用共享存储，用户可以同时节省存储和备份成本。
+
+在某些情况下，compute-compute separation 可以帮你节省大量 ClickHouse Credits。
+一个很好的示例如下：
+
+1. 你有全天候运行的 ETL 作业，持续向服务中摄取数据。这些 ETL 作业不需要太多内存，因此可以运行在较小的实例上，例如配备 32 GiB RAM 的实例。
+
+2. 同一团队中的一位数据科学家有临时报表需求，表示他们需要运行一个占用大量内存的查询——236 GiB，不过并不需要高可用性，而且如果第一次运行失败，也可以等待后重新运行。
+
+在这个示例中，作为数据库管理员，你可以执行以下操作：
+
+1. 创建一个小型服务，包含两个副本，每个副本 16 GiB——这样既能满足 ETL 作业需求，也能提供高可用性。
+
+2. 对于这位数据科学家，你可以在同一个仓库中创建第二个服务，仅包含一个 236 GiB 的副本。你可以为该服务启用闲置功能，这样在数据科学家不使用它时，就无需为该服务付费。
+
+此示例在 **Scale 层级** 上的成本估算 (每月) ：
+
+* 父服务每天运行 24 小时：2 个副本 x 16 GiB，每个副本 4 vCPU
+* 子服务：1 个副本 x 236 GiB，每个副本 59 vCPU
+* 3 TB 压缩数据 + 1 个备份
+* 100 GB 公共互联网出站流量
+* 50 GB 跨区域数据传输
+
+<table class="nowrap-header">
+  <thead>
+    <tr>
+      <th />
+
+      <th><span>子服务</span><br /><span>每天运行 1 小时</span></th>
+      <th><span>子服务</span><br /><span>每天运行 2 小时</span></th>
+      <th><span>子服务</span><br /><span>每天运行 4 小时</span></th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>计算资源</td>
+      <td>$1,142.43</td>
+      <td>$1,410.97</td>
+      <td>$1,948.05</td>
+    </tr>
+
+    <tr>
+      <td>存储</td>
+      <td>$151.80</td>
+      <td>$151.80</td>
+      <td>$151.80</td>
+    </tr>
+
+    <tr>
+      <td>公共互联网出站流量</td>
+      <td>$11.52</td>
+      <td>$11.52</td>
+      <td>$11.52</td>
+    </tr>
+
+    <tr>
+      <td>跨区域数据传输</td>
+      <td>$1.56</td>
+      <td>$1.56</td>
+      <td>$1.56</td>
+    </tr>
+
+    <tr>
+      <td>总计</td>
+      <td>$1,307.31</td>
+      <td>$1,575.85</td>
+      <td>$2,112.93</td>
+    </tr>
+  </tbody>
+</table>
+
+如果没有仓库，你就不得不按数据科学家执行查询所需的内存规模付费。
+而将两个服务放在同一个仓库中，并让其中一个进入闲置状态，则可以帮助你节省成本。
+
+<div id="clickpipes-pricing">
+  ## ClickPipes 定价
+</div>
+
+有关 ClickPipes 计费的信息，请参阅专门的[“ClickPipes 计费”章节](/zh/products/cloud/reference/billing/clickpipes/index)。

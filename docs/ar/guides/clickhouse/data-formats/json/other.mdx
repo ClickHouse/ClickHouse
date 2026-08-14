@@ -1,0 +1,711 @@
+---
+title: 'أساليب أخرى للتعامل مع JSON'
+slug: /integrations/data-formats/json/other-approaches
+description: 'أساليب أخرى لنمذجة JSON'
+keywords: ['json', 'التنسيقات']
+doc_type: 'reference'
+---
+
+**فيما يلي بدائل لنمذجة JSON في ClickHouse. وقد وُثِّقت هذه البدائل من باب الاكتمال، وكانت مناسبة قبل تطوير نوع JSON، لذا لا يُنصح بها عمومًا، كما أنها لا تناسب معظم حالات الاستخدام.**
+
+<Info>
+  **اتّبع نهجًا على مستوى الكائن**
+
+  يمكن تطبيق تقنيات مختلفة على كائنات مختلفة ضمن المخطط نفسه. على سبيل المثال، قد يكون من الأنسب التعامل مع بعض الكائنات باستخدام النوع `String` ومع أخرى باستخدام النوع `Map`. لاحظ أنه بمجرد استخدام النوع `String`، لا تعود هناك حاجة إلى اتخاذ قرارات إضافية بشأن المخطط. وفي المقابل، يمكن تضمين كائنات فرعية داخل مفتاح `Map`، بما في ذلك قيمة `String` تمثل JSON، كما نوضح أدناه:
+</Info>
+
+<div id="using-string">
+  ## استخدام النوع `String`
+</div>
+
+إذا كانت الكائنات شديدة الديناميكية، من دون بنية متوقعة وتحتوي على كائنات متداخلة عشوائية، فينبغي استخدام النوع `String`. ويمكن استخراج القيم في وقت الاستعلام باستخدام دوال JSON كما نوضح أدناه.
+
+غالبًا ما لا يكون التعامل مع البيانات باستخدام النهج المنظَّم الموضَّح أعلاه عمليًا للمستخدمين الذين يتعاملون مع JSON ديناميكي، سواء كان عرضة للتغيير أو كانت بنيته غير مفهومة جيدًا. وللحصول على أقصى قدر من المرونة، يمكنك ببساطة تخزين JSON على هيئة `String` قبل استخدام الدوال لاستخراج الحقول حسب الحاجة. ويمثل هذا الطرف المقابل تمامًا للتعامل مع JSON ككائن منظَّم. لكن هذه المرونة لها تكلفة وتنطوي على عيوب كبيرة، أبرزها زيادة تعقيد صياغة الاستعلام وتراجع الأداء.
+
+كما أشرنا سابقًا، بالنسبة إلى [كائن الشخص الأصلي](/ar/guides/clickhouse/data-formats/json/schema#static-vs-dynamic-json)، لا يمكننا ضمان بنية العمود `tags`. نُدرج الصف الأصلي (بما في ذلك `company.labels`، الذي نتجاهله في الوقت الحالي)، مع تعريف العمود `Tags` على أنه `String`:
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(city String, geo Tuple(lat Float32, lng Float32), street String, suite String, zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(catchPhrase String, name String),
+    `dob` Date,
+    `tags` String
+)
+ENGINE = MergeTree
+ORDER BY username
+
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021"}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+```
+
+```response
+Ok.
+1 row in set. Elapsed: 0.002 sec.
+```
+
+يمكننا اختيار العمود `tags` وملاحظة أن JSON أُدرِج كسلسلة نصية:
+
+```sql
+SELECT tags
+FROM people
+```
+
+```response
+┌─tags───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}} │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+يمكن استخدام دوال [`JSONExtract`](/ar/reference/functions/regular-functions/json-functions#jsonextract-functions) لاستخراج القيم من هذا الـ JSON. انظر إلى المثال البسيط أدناه:
+
+```sql
+SELECT JSONExtractString(tags, 'holidays') AS holidays FROM people
+```
+
+```response
+┌─holidays──────────────────────────────────────┐
+│ [{"year":2024,"location":"Azores, Portugal"}] │
+└───────────────────────────────────────────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+لاحظ كيف تتطلب الدوال كلاً من الإشارة إلى العمود `tags` من النوع `String`، ومسارًا داخل JSON لاستخراجه. أما المسارات المتداخلة فتتطلب تداخل الدوال، مثلًا `JSONExtractUInt(JSONExtractString(tags, 'car'), 'year')`، التي تستخرج العمود `tags.car.year`. ويمكن تبسيط استخراج المسارات المتداخلة باستخدام الدالتين [`JSON_QUERY`](/ar/reference/functions/regular-functions/json-functions#JSON_QUERY) و[`JSON_VALUE`](/ar/reference/functions/regular-functions/json-functions#JSON_VALUE).
+
+تأمل الحالة القصوى في مجموعة البيانات `arxiv`، حيث نعدّ المحتوى بالكامل من النوع `String`.
+
+```sql
+CREATE TABLE arxiv (
+  body String
+)
+ENGINE = MergeTree ORDER BY ()
+```
+
+لإدراج البيانات في هذا المخطّط، نحتاج إلى استخدام تنسيق `JSONAsString`:
+
+```sql
+INSERT INTO arxiv SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', 'JSONAsString')
+```
+
+```response
+0 rows in set. Elapsed: 25.186 sec. Processed 2.52 million rows, 1.38 GB (99.89 thousand rows/s., 54.79 MB/s.)
+```
+
+لنفترض أننا نريد إحصاء عدد الأوراق المنشورة حسب السنة. قارن الاستعلام التالي الذي يستخدم سلسلة نصية فقط مع [النسخة المهيكلة](/ar/guides/clickhouse/data-formats/json/inference#creating-tables) من المخطط:
+
+```sql
+-- using structured schema
+SELECT
+    toYear(parseDateTimeBestEffort(versions.created[1])) AS published_year,
+    count() AS c
+FROM arxiv_v2
+GROUP BY published_year
+ORDER BY c ASC
+LIMIT 10
+```
+
+```response
+┌─published_year─┬─────c─┐
+│           1986 │     1 │
+│           1988 │     1 │
+│           1989 │     6 │
+│           1990 │    26 │
+│           1991 │   353 │
+│           1992 │  3190 │
+│           1993 │  6729 │
+│           1994 │ 10078 │
+│           1995 │ 13006 │
+│           1996 │ 15872 │
+└────────────────┴───────┘
+
+10 rows in set. Elapsed: 0.264 sec. Processed 2.31 million rows, 153.57 MB (8.75 million rows/s., 582.58 MB/s.)
+```
+
+```sql
+-- using unstructured String
+
+SELECT
+    toYear(parseDateTimeBestEffort(JSON_VALUE(body, '$.versions[0].created'))) AS published_year,
+    count() AS c
+FROM arxiv
+GROUP BY published_year
+ORDER BY published_year ASC
+LIMIT 10
+```
+
+```response
+┌─published_year─┬─────c─┐
+│           1986 │     1 │
+│           1988 │     1 │
+│           1989 │     6 │
+│           1990 │    26 │
+│           1991 │   353 │
+│           1992 │  3190 │
+│           1993 │  6729 │
+│           1994 │ 10078 │
+│           1995 │ 13006 │
+│           1996 │ 15872 │
+└────────────────┴───────┘
+
+10 rows in set. Elapsed: 1.281 sec. Processed 2.49 million rows, 4.22 GB (1.94 million rows/s., 3.29 GB/s.)
+Peak memory usage: 205.98 MiB.
+```
+
+لاحظ هنا استخدام تعبير XPath لتصفية JSON حسب method، أي `JSON_VALUE(body, '$.versions[0].created')`.
+
+تكون دوال String أبطأ بكثير (&gt; 10x) من تحويلات النوع الصريحة مع الفهارس. وتتطلب الاستعلامات أعلاه دائمًا فحصًا كاملًا للجدول ومعالجة كل صف. ومع أن هذه الاستعلامات ستظل سريعة على مجموعة بيانات صغيرة كهذه، فإن الأداء سيتدهور مع مجموعات البيانات الأكبر.
+
+تأتي مرونة هذا النهج بتكلفة واضحة على صعيدي الأداء والصياغة، لذا ينبغي استخدامه فقط مع الكائنات عالية الديناميكية في المخطط.
+
+<div id="simple-json-functions">
+  ### دوال JSON البسيطة
+</div>
+
+تستخدم الأمثلة أعلاه عائلة الدوال JSON*. وتعتمد هذه الدوال على محلّل JSON كامل مبني على [simdjson](https://github.com/simdjson/simdjson)، ويتسم بالدقة في التحليل ويميّز بين الحقل نفسه إذا كان متداخلًا على مستويات مختلفة. كما تستطيع هذه الدوال التعامل مع JSON الصحيح نحويًا لكنه غير منسّق جيدًا، مثل وجود مسافتين بين المفاتيح.
+
+تتوفر أيضًا مجموعة دوال أسرع وأكثر صرامة. وتوفّر دوال `simpleJSON*` هذه أداءً قد يكون أفضل، ويرجع ذلك أساسًا إلى أنها تفترض بشكل صارم بنية JSON وتنسيقه. وتحديدًا:
+
+* يجب أن تكون أسماء الحقول ثوابت
+* ترميز متّسق لأسماء الحقول، مثل `simpleJSONHas('{"abc":"def"}', 'abc') = 1`، لكن `visitParamHas('{"\\u0061\\u0062\\u0063":"def"}', 'abc') = 0`
+* يجب أن تكون أسماء الحقول فريدة على امتداد جميع البنى المتداخلة. ولا يجري التمييز بين مستويات التداخل، إذ تتم المطابقة بشكل غير انتقائي. وفي حال وجود عدة حقول متطابقة، يُستخدم أول ظهور.
+* لا يُسمح بأحرف خاصة خارج القيم النصية. ويشمل ذلك المسافات. والمثال التالي غير صالح ولن يُحلَّل.
+
+  ```json
+  {"@timestamp": 893964617, "clientip": "40.135.0.0", "request": {"method": "GET",
+  "path": "/images/hm_bg.jpg", "version": "HTTP/1.0"}, "status": 200, "size": 24736}
+  ```
+
+أما المثال التالي فسيُحلَّل على نحو صحيح:
+
+````json
+{"@timestamp":893964617,"clientip":"40.135.0.0","request":{"method":"GET",
+    "path":"/images/hm_bg.jpg","version":"HTTP/1.0"},"status":200,"size":24736}
+
+In some circumstances, where performance is critical and your JSON meets the above requirements, these may be appropriate. An example of the earlier query, re-written to use `simpleJSON*` functions, is shown below:
+
+```sql
+SELECT
+    toYear(parseDateTimeBestEffort(simpleJSONExtractString(simpleJSONExtractRaw(body, 'versions'), 'created'))) AS published_year,
+    count() AS c
+FROM arxiv
+GROUP BY published_year
+ORDER BY published_year ASC
+LIMIT 10
+````
+
+```response
+┌─published_year─┬─────c─┐
+│           1986 │     1 │
+│           1988 │     1 │
+│           1989 │     6 │
+│           1990 │    26 │
+│           1991 │   353 │
+│           1992 │  3190 │
+│           1993 │  6729 │
+│           1994 │ 10078 │
+│           1995 │ 13006 │
+│           1996 │ 15872 │
+└────────────────┴───────┘
+
+10 rows in set. Elapsed: 0.964 sec. Processed 2.48 million rows, 4.21 GB (2.58 million rows/s., 4.36 GB/s.)
+Peak memory usage: 211.49 MiB.
+```
+
+يستخدم الاستعلام أعلاه الدالة `simpleJSONExtractString` لاستخراج المفتاح `created`، مستفيدًا من كوننا نحتاج إلى القيمة الأولى فقط لتاريخ النشر. في هذه الحالة، تُعدّ قيود دوال `simpleJSON*` مقبولة نظرًا لما توفره من تحسن في الأداء.
+
+## استخدام نوع Map
+
+إذا كان الكائن يُستخدم لتخزين مفاتيح عشوائية، ويكون معظمها من نوع واحد، ففكّر في استخدام النوع `Map`. ومن الناحية المثالية، ينبغي ألا يتجاوز عدد المفاتيح الفريدة بضع مئات. ويمكن أيضًا استخدام النوع `Map` للكائنات التي تحتوي على كائنات فرعية، بشرط أن تكون أنواع هذه الكائنات متجانسة. وبوجه عام، نوصي باستخدام النوع `Map` للتسميات والوسوم، مثل تسميات كبسولات Kubernetes في بيانات السجل.
+
+على الرغم من أن `Map` يوفّر طريقة بسيطة لتمثيل البُنى المتداخلة، فإن له بعض القيود الملحوظة:
+
+* يجب أن تكون جميع الحقول من النوع نفسه.
+* يتطلب الوصول إلى الأعمدة الفرعية صياغة خاصة بـ map لأن الحقول لا تكون موجودة كأعمدة. فالكائن بأكمله *هو* عمود.
+* يؤدي الوصول إلى عمود فرعي إلى تحميل قيمة `Map` بالكامل، أي جميع العناصر النظيرة وقيمها المقابلة. وبالنسبة إلى الخرائط الأكبر حجمًا، قد يترتب على ذلك تأثير كبير في الأداء.
+
+<Info>
+  **مفاتيح String**
+
+  عند نمذجة الكائنات على أنها `Map`، يُستخدم مفتاح من النوع `String` لتخزين اسم مفتاح JSON. لذلك ستكون الخريطة دائمًا `Map(String, T)`، حيث يعتمد `T` على البيانات.
+</Info>
+
+#### القيم البدائية
+
+أبسط استخدام لـ `Map` يكون عندما يحتوي الكائن على قيم من النوع البدائي نفسه. وفي معظم الحالات، يتضمن ذلك استخدام النوع `String` للقيمة `T`.
+
+تأمل [مثال JSON السابق الخاص بالشخص](/ar/guides/clickhouse/data-formats/json/schema#static-vs-dynamic-json)، حيث تبيّن أن الكائن `company.labels` ديناميكي. والمهم هنا أننا لا نتوقع إضافة سوى أزواج مفتاح-قيمة من النوع String إلى هذا الكائن. لذا يمكننا تعريفه على أنه `Map(String, String)`:
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(city String, geo Tuple(lat Float32, lng Float32), street String, suite String, zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(catchPhrase String, name String, labels Map(String,String)),
+    `dob` Date,
+    `tags` String
+)
+ENGINE = MergeTree
+ORDER BY username
+```
+
+يمكننا إدراج كائن JSON الأصلي بالكامل:
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021"}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+```
+
+```response
+Ok.
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+يتطلّب الاستعلام عن هذه الحقول داخل كائن الطلب استخدام صيغة `map`، على سبيل المثال:
+
+```sql
+SELECT company.labels FROM people
+```
+
+```response
+┌─company.labels───────────────────────────────┐
+│ {'type':'database systems','founded':'2021'} │
+└──────────────────────────────────────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+```sql
+SELECT company.labels['type'] AS type FROM people
+```
+
+```response
+┌─type─────────────┐
+│ database systems │
+└──────────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+تتوفر مجموعة كاملة من دوال `Map` للاستعلام عن هذا النوع، وهي موضحة [هنا](/ar/reference/functions/regular-functions/tuple-map-functions). إذا لم تكن بياناتك من نوع متسق، فتوجد دوال لإجراء [تحويل النوع اللازم](/ar/reference/functions/regular-functions/type-conversion-functions).
+
+#### قيم الكائنات
+
+يمكن أيضًا النظر في النوع `Map` للكائنات التي تتضمن كائنات فرعية، شريطة أن تكون أنواع هذه الكائنات متسقة.
+
+لنفترض أن المفتاح `tags` في الكائن `persons` يتطلب بنية متسقة، بحيث يحتوي الكائن الفرعي لكل `tag` على العمودين `name` و`time`. وقد يبدو مثال مبسّط على مستند JSON من هذا النوع كما يلي:
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "tags": {
+    "hobby": {
+      "name": "Diving",
+      "time": "2024-07-11 14:18:01"
+    },
+    "car": {
+      "name": "Tesla",
+      "time": "2024-07-11 15:18:23"
+    }
+  }
+}
+```
+
+يمكن نمذجة ذلك باستخدام `Map(String, Tuple(name String, time DateTime))` كما هو موضح أدناه:
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `tags` Map(String, Tuple(name String, time DateTime))
+)
+ENGINE = MergeTree
+ORDER BY username
+
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","tags":{"hobby":{"name":"Diving","time":"2024-07-11 14:18:01"},"car":{"name":"Tesla","time":"2024-07-11 15:18:23"}}}
+```
+
+```response
+Ok.
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+```sql
+SELECT tags['hobby'] AS hobby
+FROM people
+FORMAT JSONEachRow
+
+{"hobby":{"name":"Diving","time":"2024-07-11 14:18:01"}}
+```
+
+```response
+1 row in set. Elapsed: 0.001 sec.
+```
+
+يكون استخدام قيم maps في هذه الحالة نادرًا في العادة، وهذا يشير إلى أنه ينبغي إعادة نمذجة البيانات بحيث لا تتضمن أسماء المفاتيح الديناميكية كائنات فرعية. على سبيل المثال، يمكن إعادة نمذجة ما سبق على النحو التالي، بما يتيح استخدام `Array(Tuple(key String, name String, time DateTime))`.
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "tags": [
+    {
+      "key": "hobby",
+      "name": "Diving",
+      "time": "2024-07-11 14:18:01"
+    },
+    {
+      "key": "car",
+      "name": "Tesla",
+      "time": "2024-07-11 15:18:23"
+    }
+  ]
+}
+```
+
+## استخدام النوع Nested
+
+يمكن استخدام [النوع Nested](/ar/reference/data-types/nested-data-structures/index) لنمذجة الكائنات الثابتة التي نادرًا ما تتغير، ما يوفّر بديلًا لـ `Tuple` و`Array(Tuple)`. نوصي عمومًا بتجنّب استخدام هذا النوع مع JSON لأن سلوكه يكون مربكًا في كثير من الأحيان. وتتمثل الفائدة الأساسية لـ `Nested` في إمكانية استخدام الأعمدة الفرعية في مفاتيح الترتيب.
+
+فيما يلي مثال على استخدام النوع Nested لنمذجة كائن ثابت. لننظر إلى إدخال سجل بسيط التالي بصيغة JSON:
+
+```json
+{
+  "timestamp": 897819077,
+  "clientip": "45.212.12.0",
+  "request": {
+    "method": "GET",
+    "path": "/french/images/hm_nav_bar.gif",
+    "version": "HTTP/1.0"
+  },
+  "status": 200,
+  "size": 3305
+}
+```
+
+يمكننا تعريف الحقل `request` على أنه `Nested`. وكما هو الحال مع `Tuple`، يجب تحديد الأعمدة الفرعية.
+
+```sql
+-- default
+SET flatten_nested=1
+CREATE table http
+(
+   timestamp Int32,
+   clientip     IPv4,
+   request Nested(method LowCardinality(String), path String, version LowCardinality(String)),
+   status       UInt16,
+   size         UInt32,
+) ENGINE = MergeTree() ORDER BY (status, timestamp);
+```
+
+### flatten_nested
+
+يتحكّم الإعداد `flatten_nested` في سلوك النوع Nested.
+
+#### flatten_nested=1
+
+القيمة `1` (الافتراضية) لا تدعم مستوىً عشوائيًا من التداخل. ومع هذه القيمة، من الأسهل اعتبار بنية البيانات المتداخلة مجموعةً من أعمدة [Array](/ar/reference/data-types/array) المتعددة ذات الطول نفسه. وتكون الحقول `method` و`path` و`version` فعليًا أعمدة منفصلة من النوع `Array(Type)`، مع قيد أساسي واحد: **يجب أن يكون طول الحقول `method` و`path` و`version` متماثلًا.** ويوضح `SHOW CREATE TABLE` ذلك:
+
+```sql
+SHOW CREATE TABLE http
+
+CREATE TABLE http
+(
+    `timestamp` Int32,
+    `clientip` IPv4,
+    `request.method` Array(LowCardinality(String)),
+    `request.path` Array(String),
+    `request.version` Array(LowCardinality(String)),
+    `status` UInt16,
+    `size` UInt32
+)
+ENGINE = MergeTree
+ORDER BY (status, timestamp)
+```
+
+فيما يلي، نُدرِج بيانات في هذا الجدول:
+
+```sql
+SET input_format_import_nested_json = 1;
+INSERT INTO http
+FORMAT JSONEachRow
+{"timestamp":897819077,"clientip":"45.212.12.0","request":[{"method":"GET","path":"/french/images/hm_nav_bar.gif","version":"HTTP/1.0"}],"status":200,"size":3305}
+```
+
+هناك بعض النقاط المهمة التي ينبغي الانتباه إليها هنا:
+
+* نحتاج إلى استخدام الإعداد `input_format_import_nested_json` لإدراج بيانات JSON كبنية متداخلة. وبدون ذلك، سنضطر إلى تسطيح JSON، أي:
+
+  ```sql
+  INSERT INTO http FORMAT JSONEachRow
+  {"timestamp":897819077,"clientip":"45.212.12.0","request":{"method":["GET"],"path":["/french/images/hm_nav_bar.gif"],"version":["HTTP/1.0"]},"status":200,"size":3305}
+  ```
+* يجب تمرير الحقول المتداخلة `method` و`path` و`version` على شكل مصفوفات JSON، أي:
+
+  ```json
+  {
+    "@timestamp": 897819077,
+    "clientip": "45.212.12.0",
+    "request": {
+      "method": [
+        "GET"
+      ],
+      "path": [
+        "/french/images/hm_nav_bar.gif"
+      ],
+      "version": [
+        "HTTP/1.0"
+      ]
+    },
+    "status": 200,
+    "size": 3305
+  }
+  ```
+
+يمكن الاستعلام عن الأعمدة باستخدام ترميز النقطة:
+
+```sql
+SELECT clientip, status, size, `request.method` FROM http WHERE has(request.method, 'GET');
+```
+
+```response
+┌─clientip────┬─status─┬─size─┬─request.method─┐
+│ 45.212.12.0 │    200 │ 3305 │ ['GET']        │
+└─────────────┴────────┴──────┴────────────────┘
+1 row in set. Elapsed: 0.002 sec.
+```
+
+لاحظ أن استخدام `Array` في الأعمدة الفرعية يعني أنه يمكن الاستفادة من كامل إمكانات [دوال المصفوفات](/ar/reference/functions/regular-functions/array-functions)، بما في ذلك بند [`ARRAY JOIN`](/ar/reference/statements/select/array-join) — وهو مفيد إذا كانت أعمدتك تحتوي على قيم متعددة.
+
+#### flatten_nested=0
+
+يتيح هذا أي مستوى من التداخل، ويعني أن الأعمدة المتداخلة تبقى كمصفوفة واحدة من `Tuple` — أي إنها تصبح فعليًا مماثلة لـ `Array(Tuple)`.
+
+**يمثل هذا الأسلوب المفضل، وغالبًا ما يكون أيضًا أبسط طريقة، لاستخدام JSON مع `Nested`. وكما نوضح أدناه، لا يتطلب ذلك سوى أن تكون جميع الكائنات ضمن قائمة.**
+
+فيما يلي، نعيد إنشاء جدولنا ونعيد إدراج صف:
+
+```sql
+CREATE TABLE http
+(
+    `timestamp` Int32,
+    `clientip` IPv4,
+    `request` Nested(method LowCardinality(String), path String, version LowCardinality(String)),
+    `status` UInt16,
+    `size` UInt32
+)
+ENGINE = MergeTree
+ORDER BY (status, timestamp)
+
+SHOW CREATE TABLE http
+
+-- note Nested type is preserved.
+CREATE TABLE default.http
+(
+    `timestamp` Int32,
+    `clientip` IPv4,
+    `request` Nested(method LowCardinality(String), path String, version LowCardinality(String)),
+    `status` UInt16,
+    `size` UInt32
+)
+ENGINE = MergeTree
+ORDER BY (status, timestamp)
+
+INSERT INTO http
+FORMAT JSONEachRow
+{"timestamp":897819077,"clientip":"45.212.12.0","request":[{"method":"GET","path":"/french/images/hm_nav_bar.gif","version":"HTTP/1.0"}],"status":200,"size":3305}
+```
+
+فيما يلي بعض النقاط المهمة التي ينبغي الانتباه إليها هنا:
+
+* لا يلزم `input_format_import_nested_json` لعملية الإدراج.
+* يظل النوع `Nested` محفوظًا في `SHOW CREATE TABLE`. وفعليًا، تكون البنية الداخلية لهذا العمود هي `Array(Tuple(Nested(method LowCardinality(String), path String, version LowCardinality(String))))`
+* ونتيجةً لذلك، يجب إدراج `request` على هيئة مصفوفة، أي:
+
+  ```json
+  {
+    "timestamp": 897819077,
+    "clientip": "45.212.12.0",
+    "request": [
+      {
+        "method": "GET",
+        "path": "/french/images/hm_nav_bar.gif",
+        "version": "HTTP/1.0"
+      }
+    ],
+    "status": 200,
+    "size": 3305
+  }
+  ```
+
+يمكن أيضًا الاستعلام عن الأعمدة باستخدام ترميز النقطة:
+
+```sql
+SELECT clientip, status, size, `request.method` FROM http WHERE has(request.method, 'GET');
+```
+
+```response
+┌─clientip────┬─status─┬─size─┬─request.method─┐
+│ 45.212.12.0 │    200 │ 3305 │ ['GET']        │
+└─────────────┴────────┴──────┴────────────────┘
+1 row in set. Elapsed: 0.002 sec.
+```
+
+### مثال
+
+يتوفر مثال أكبر للبيانات أعلاه ضمن bucket عامة على S3 على: `s3://datasets-documentation/http/`.
+
+```sql
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONEachRow')
+LIMIT 1
+FORMAT PrettyJSONEachRow
+
+{
+    "@timestamp": "893964617",
+    "clientip": "40.135.0.0",
+    "request": {
+        "method": "GET",
+        "path": "\/images\/hm_bg.jpg",
+        "version": "HTTP\/1.0"
+    },
+    "status": "200",
+    "size": "24736"
+}
+```
+
+```response
+1 row in set. Elapsed: 0.312 sec.
+```
+
+نظرًا إلى القيود وصيغة الإدخال الخاصة بـ JSON، نُدرِج مجموعة البيانات النموذجية هذه باستخدام الاستعلام التالي. هنا، نضبط `flatten_nested=0`.
+
+تُدرِج التعليمة التالية 10 ملايين صف، لذا قد يستغرق تنفيذها بضع دقائق. استخدم `LIMIT` إذا لزم الأمر:
+
+```sql
+INSERT INTO http
+SELECT `@timestamp` AS `timestamp`, clientip, [request], status,
+size FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz',
+'JSONEachRow');
+```
+
+يتطلّب الاستعلام عن هذه البيانات الوصول إلى حقول الطلب باعتبارها مصفوفات. فيما يلي نلخّص الأخطاء وطرق HTTP ضمن فترة زمنية ثابتة.
+
+```sql
+SELECT status, request.method[1] AS method, count() AS c
+FROM http
+WHERE status >= 400
+  AND toDateTime(timestamp) BETWEEN '1998-01-01 00:00:00' AND '1998-06-01 00:00:00'
+GROUP BY method, status
+ORDER BY c DESC LIMIT 5;
+```
+
+```response
+┌─status─┬─method─┬─────c─┐
+│    404 │ GET    │ 11267 │
+│    404 │ HEAD   │   276 │
+│    500 │ GET    │   160 │
+│    500 │ POST   │   115 │
+│    400 │ GET    │    81 │
+└────────┴────────┴───────┘
+
+5 rows in set. Elapsed: 0.007 sec.
+```
+
+### استخدام المصفوفات الثنائية
+
+توفر المصفوفات الثنائية توازناً بين مرونة تمثيل JSON على هيئة Strings وأداء نهج أكثر تنظيماً. ويظل المخطط مرناً، إذ يمكن نظرياً إضافة أي حقول جديدة إلى الجذر. لكن هذا يتطلب صياغة query أكثر تعقيداً بدرجة كبيرة، كما أنه غير متوافق مع البُنى المتداخلة.
+
+على سبيل المثال، تأمل الجدول التالي:
+
+```sql
+CREATE TABLE http_with_arrays (
+   keys Array(String),
+   values Array(String)
+)
+ENGINE = MergeTree  ORDER BY tuple();
+```
+
+لإدراج البيانات في هذا الجدول، نحتاج إلى هيكلة JSON في صورة قائمة من المفاتيح والقيم. يوضّح الاستعلام التالي كيفية استخدام `JSONExtractKeysAndValues` لتحقيق ذلك:
+
+```sql
+SELECT
+    arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
+    arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+keys:   ['@timestamp','clientip','request','status','size']
+values: ['893964617','40.135.0.0','{"method":"GET","path":"/images/hm_bg.jpg","version":"HTTP/1.0"}','200','24736']
+
+1 row in set. Elapsed: 0.416 sec.
+```
+
+لاحظ كيف يظل عمود الطلب بنيةً متداخلةً ممثَّلةً كسلسلة نصية. يمكننا إدراج أي مفاتيح جديدة في المستوى الجذري. ويمكن أيضًا أن تكون هناك اختلافات كيفما كانت في JSON نفسه. للإدراج في جدولنا المحلي، نفّذ ما يلي:
+
+```sql
+INSERT INTO http_with_arrays
+SELECT
+    arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
+    arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
+```
+
+```response
+0 rows in set. Elapsed: 12.121 sec. Processed 10.00 million rows, 107.30 MB (825.01 thousand rows/s., 8.85 MB/s.)
+```
+
+يتطلب الاستعلام عن هذا التركيب استخدام الدالة [`indexOf`](/ar/reference/functions/regular-functions/array-functions#indexOf) لتحديد فهرس المفتاح المطلوب (على أن يكون متوافقًا مع ترتيب القيم). ويمكن استخدام ذلك للوصول إلى عمود المصفوفة `values`، أي `values[indexOf(keys, 'status')]`. وما زلنا بحاجة إلى طريقة لتحليل JSON لعمود `request` — وفي هذه الحالة، `simpleJSONExtractString`.
+
+```sql
+SELECT toUInt16(values[indexOf(keys, 'status')])                           AS status,
+       simpleJSONExtractString(values[indexOf(keys, 'request')], 'method') AS method,
+       count()                                                             AS c
+FROM http_with_arrays
+WHERE status >= 400
+  AND toDateTime(values[indexOf(keys, '@timestamp')]) BETWEEN '1998-01-01 00:00:00' AND '1998-06-01 00:00:00'
+GROUP BY method, status ORDER BY c DESC LIMIT 5;
+```
+
+```response
+┌─status─┬─method─┬─────c─┐
+│    404 │ GET    │ 11267 │
+│    404 │ HEAD   │   276 │
+│    500 │ GET    │   160 │
+│    500 │ POST   │   115 │
+│    400 │ GET    │    81 │
+└────────┴────────┴───────┘
+
+5 rows in set. Elapsed: 0.383 sec. Processed 8.22 million rows, 1.97 GB (21.45 million rows/s., 5.15 GB/s.)
+Peak memory usage: 51.35 MiB.
+```

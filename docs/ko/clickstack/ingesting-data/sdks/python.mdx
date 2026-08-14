@@ -1,0 +1,162 @@
+---
+slug: /use-cases/observability/clickstack/sdks/python
+description: 'ClickStack용 Python - ClickHouse 관측성 스택'
+title: 'Python'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', '로깅', '통합', '애플리케이션 모니터링']
+---
+
+ClickStack은 텔레메트리 데이터(로그 및
+트레이스)를 수집하기 위해 OpenTelemetry 표준을 사용합니다. 트레이스는 자동 계측을 통해 자동으로 생성되므로, 트레이싱의 이점을 얻는 데 수동
+계측은 필요하지 않습니다.
+
+이 가이드에서는 다음 항목을 통합합니다:
+
+* **로그**
+* **메트릭**
+* **트레이스**
+
+<div id="getting-started">
+  ## 시작하기
+</div>
+
+<div id="install-clickstack-otel-instrumentation-package">
+  ### ClickStack OpenTelemetry 계측 패키지 설치
+</div>
+
+다음 명령을 사용하여 [ClickStack OpenTelemetry 패키지](https://pypi.org/project/hyperdx-opentelemetry/)를 설치하세요.
+
+```shell
+pip install hyperdx-opentelemetry
+```
+
+Python 애플리케이션에서 사용하는 패키지용 OpenTelemetry 자동 계측 라이브러리를 설치합니다. OpenTelemetry Python SDK에 포함된
+`opentelemetry-bootstrap` 도구를 사용해 애플리케이션 패키지를 검사하고 사용 가능한 라이브러리 목록을 생성하는 것을 권장합니다.
+
+```shell
+opentelemetry-bootstrap -a install
+```
+
+<div id="configure-environment-variables">
+  ### 환경 변수 구성
+</div>
+
+그런 다음 셸에서 다음 환경 변수를 설정하여 OpenTelemetry collector를 통해 텔레메트리를 ClickStack으로 수집합니다:
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ```shell
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ```shell
+    export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 
+    ```
+  </Tab>
+</Tabs>
+
+*`OTEL_SERVICE_NAME` 환경 변수는 HyperDX 앱에서 서비스를 식별하는 데 사용되며, 원하는 이름으로 지정할 수 있습니다.*
+
+<div id="run-the-application-with-otel-python-agent">
+  ### OpenTelemetry Python agent로 애플리케이션 실행하기
+</div>
+
+이제 OpenTelemetry Python agent(`opentelemetry-instrument`)를 사용해 애플리케이션을 실행할 수 있습니다.
+
+```shell
+opentelemetry-instrument python app.py
+```
+
+<div id="using-uvicorn-gunicorn-uwsgi">
+  #### `Gunicorn`, `uWSGI` 또는 `uvicorn`을 사용하는 경우
+</div>
+
+이 경우 OpenTelemetry Python agent가 작동하려면 추가 변경이 필요합니다.
+
+pre-fork 웹 서버 모드를 사용하는 애플리케이션 서버에 OpenTelemetry를 구성하려면 post-fork hook 내부에서 `configure_opentelemetry` 메서드를 호출해야 합니다.
+
+<Tabs>
+  <Tab title="Gunicorn">
+    ```python
+    from hyperdx.opentelemetry import configure_opentelemetry
+
+    def post_fork(server, worker):
+        configure_opentelemetry()
+    ```
+  </Tab>
+
+  <Tab title="uWSGI">
+    ```python
+    from hyperdx.opentelemetry import configure_opentelemetry
+    from uwsgidecorators import postfork
+
+    @postfork
+    def init_tracing():
+        configure_opentelemetry()
+    ```
+  </Tab>
+
+  <Tab title="uvicorn">
+    OpenTelemetry는 현재 `--reload` 플래그를 사용해 실행한 `uvicorn`이나 여러 worker(`--workers`)로 실행한 경우 [작동하지 않습니다](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/385).
+    테스트 중에는 해당 플래그를 비활성화하거나 Gunicorn을 사용하는 것을 권장합니다.
+  </Tab>
+</Tabs>
+
+<div id="advanced-configuration">
+  ## 고급 구성
+</div>
+
+<div id="network-capture">
+  #### 네트워크 캡처
+</div>
+
+네트워크 캡처 기능을 활성화하면 개발자가
+HTTP 요청 헤더와 본문 payload를 효과적으로 디버깅할 수 있습니다. 이는
+`HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE` 플래그를 1로 설정하기만 하면
+간단히 수행할 수 있습니다.
+
+```shell
+export HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE=1
+```
+
+<div id="troubleshooting">
+  ## 문제 해결
+</div>
+
+<div id="logs-not-appearing-due-to-log-level">
+  ### 로그 레벨로 인해 로그가 표시되지 않는 경우
+</div>
+
+기본적으로 OpenTelemetry 로깅 handler는 `logging.NOTSET` 수준을 사용하며,
+이 경우 기본값은 WARNING 수준입니다. 로거를 생성할 때 로깅 수준을 지정할 수
+있습니다:
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+```
+
+<div id="exporting-to-the-console">
+  ### 콘솔로 내보내기
+</div>
+
+OpenTelemetry Python SDK는 일반적으로 오류가 발생하면 해당 내용을 콘솔에
+표시합니다. 하지만 오류가 발생하지 않았는데도 데이터가 예상대로
+HyperDX에 나타나지 않는다면 디버그 모드를 활성화할 수 있습니다.
+디버그 모드를 활성화하면 모든 텔레메트리 데이터가 콘솔에 출력되므로,
+애플리케이션이 예상한 데이터를 수집하도록 올바르게 계측되었는지
+확인할 수 있습니다.
+
+```shell
+export DEBUG=true
+```
+
+Python OpenTelemetry 계측에 대한 자세한 내용은 여기에서 확인하십시오:
+[https://opentelemetry.io/docs/instrumentation/python/manual/](https://opentelemetry.io/docs/instrumentation/python/manual/)

@@ -1,0 +1,10 @@
+--- a UNIQUE KEY part cannot carry a materialized _row_exists mask
+0
+--- and a UNIQUE KEY read does not use the cache at all
+0
+0
+04670_uk_prime	0	0
+04670_uk_reuse	0	0
+--- results are correct
+100000
+10

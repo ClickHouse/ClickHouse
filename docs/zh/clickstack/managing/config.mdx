@@ -1,0 +1,480 @@
+---
+slug: /use-cases/observability/clickstack/config
+title: '配置选项'
+description: 'ClickStack（ClickHouse 可观测性栈）的配置选项'
+keywords: ['ClickStack 配置', '可观测性配置', 'HyperDX 设置', '采集器配置', '环境变量']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickStack 的各个组件均提供以下配置选项：
+
+<div id="modifying-settings">
+  ## 开源发行版设置
+</div>
+
+<div id="docker">
+  ### Docker
+</div>
+
+如果使用 [All in One](/zh/clickstack/deployment/all-in-one)、[HyperDX Only](/zh/clickstack/deployment/hyperdx-only) 或 [Local Mode](/zh/clickstack/deployment/local-mode-only)，只需通过环境变量传入所需设置，例如：
+
+```shell
+docker run  -e HYPERDX_LOG_LEVEL='debug' -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
+```
+
+<div id="docker-compose">
+  ### Docker Compose
+</div>
+
+如果使用 [Docker Compose](/zh/clickstack/deployment/docker-compose) 部署指南，可以通过 [`.env`](https://github.com/hyperdxio/hyperdx/blob/main/.env) 文件修改设置。
+
+或者，也可以直接在 [`docker-compose.yaml`](https://github.com/hyperdxio/hyperdx/blob/main/docker-compose.yml) 文件中显式覆盖这些设置，例如：
+
+示例：
+
+```yaml
+services:
+  app:
+    environment:
+      HYPERDX_API_KEY: ${HYPERDX_API_KEY}
+      HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+      # ... 其他设置
+```
+
+<div id="helm">
+  ### Helm
+</div>
+
+<div id="customizing-values">
+  #### 自定义配置值 (可选)
+</div>
+
+你可以使用 `--set` 参数来自定义设置，例如：
+
+```shell
+helm install my-hyperdx hyperdx/hdx-oss-v2 \
+  --set replicaCount=2 \
+  --set resources.limits.cpu=500m \
+  --set resources.limits.memory=512Mi \
+  --set resources.requests.cpu=250m \
+  --set resources.requests.memory=256Mi \
+  --set ingress.enabled=true \
+  --set ingress.annotations."kubernetes\.io/ingress\.class"=nginx \
+  --set ingress.hosts[0].host=hyperdx.example.com \
+  --set ingress.hosts[0].paths[0].path=/ \
+  --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific \
+  --set env[0].name=CLICKHOUSE_USER \
+  --set env[0].value=abc
+```
+
+也可以编辑 `values.yaml`。如需获取默认配置值：
+
+```shell
+helm show values hyperdx/hdx-oss-v2 > values.yaml
+```
+
+示例配置：
+
+```yaml
+replicaCount: 2
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: nginx
+  hosts:
+    - host: hyperdx.example.com
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  env:
+    - name: CLICKHOUSE_USER
+      value: abc
+```
+
+<div id="hyperdx">
+  ## ClickStack UI (HyperDX) 应用
+</div>
+
+<div id="datasource-settings">
+  ### 数据源设置
+</div>
+
+ClickStack UI 依赖用户为每一种可观测性数据类型/支柱定义一个数据源：
+
+* `Logs`
+* `Traces`
+* `Metrics`
+* `Sessions`
+
+此配置可在应用内的 `Team Settings -> Sources` 中完成，下面以日志为例：
+
+<Image img="/images/use-cases/observability/hyperdx-25.webp" alt="HyperDX 数据源配置" size="md" />
+
+创建这些数据源时，每个数据源都至少需要指定一张表，以及一组供 HyperDX 查询数据的列。
+
+如果使用 ClickStack 附带的[默认 OpenTelemetry (OTel) schema](/zh/guides/use-cases/observability/build-your-own/integrating-opentelemetry#out-of-the-box-schema)，则每个数据源所需的这些列都可以自动推断出来。如果[修改 schema](#clickhouse)或使用自定义 schema，则用户需要指定并更新这些映射。
+
+<Note>
+  ClickStack 附带的默认 ClickHouse schema，是由 [OTel collector 的 ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) 创建的 schema。这些列名与 [此处](https://opentelemetry.io/docs/specs/otel/logs/data-model/) 文档中的 OTel 官方规范相对应。
+</Note>
+
+以下是每个数据源可用的设置：
+
+<div id="logs">
+  #### 日志
+</div>
+
+| 设置                               | 描述                                                           | 必填 | 在默认 schema 中推断 | 推断值                                                |
+| -------------------------------- | ------------------------------------------------------------ | -- | -------------- | -------------------------------------------------- |
+| `Name`                           | 数据源名称。                                                       | 是  | 否              | –                                                  |
+| `Section`                        | 可选标签，用于在数据源选择器中对数据源进行分组。属于同一分组的数据源会显示在一起，搜索时除数据源名称外还会匹配分组名称。 | 否  | 否              | –                                                  |
+| `Server Connection`              | 服务器连接名称。                                                     | 是  | 否              | `Default`                                          |
+| `Database`                       | ClickHouse 数据库名称。                                            | 是  | 是              | `default`                                          |
+| `Table`                          | 目标表名称。如果使用默认 schema，则设置为 `otel_logs`。                        | 是  | 否              |                                                    |
+| `Timestamp Column`               | 作为主键一部分的日期时间列或表达式。                                           | 是  | 是              | `TimestampTime`                                    |
+| `Default Select`                 | 默认搜索结果中显示的列。                                                 | 是  | 是              | `Timestamp`, `ServiceName`, `SeverityText`, `Body` |
+| `Service Name Expression`        | 服务名称对应的表达式或列。                                                | 是  | 是              | `ServiceName`                                      |
+| `Log Level Expression`           | 日志级别对应的表达式或列。                                                | 是  | 是              | `SeverityText`                                     |
+| `Body Expression`                | 日志消息对应的表达式或列。                                                | 是  | 是              | `Body`                                             |
+| `Log Attributes Expression`      | 自定义日志属性对应的表达式或列。                                             | 是  | 是              | `LogAttributes`                                    |
+| `Resource Attributes Expression` | 资源级属性对应的表达式或列。                                               | 是  | 是              | `ResourceAttributes`                               |
+| `Displayed Timestamp Column`     | 在 UI 中显示时使用的时间戳列。                                            | 是  | 是              | `ResourceAttributes`                               |
+| `Correlated Metric Source`       | 关联的指标数据源 (例如 HyperDX metrics) 。                              | 否  | 否              | –                                                  |
+| `Correlated Trace Source`        | 关联的链路追踪数据源 (例如 HyperDX traces) 。                             | 否  | 否              | –                                                  |
+| `Trace Id Expression`            | 用于提取 trace ID 的表达式或列。                                        | 是  | 是              | `TraceId`                                          |
+| `Span Id Expression`             | 用于提取 span ID 的表达式或列。                                         | 是  | 是              | `SpanId`                                           |
+| `Implicit Column Expression`     | 未指定字段时用于全文搜索的列 (Lucene 风格) 。通常是日志正文。                         | 是  | 是              | `Body`                                             |
+| `Highlighted Attributes`         | 打开日志详情时显示的表达式或列。返回 URL 的表达式会显示为链接。                           | 否  | 否              | –                                                  |
+| `Highlighted Trace Attributes`   | 从 trace 中每条日志提取并显示在 trace 瀑布图上方的表达式或列。返回 URL 的表达式会显示为链接。     | 否  | 否              | –                                                  |
+
+<div id="traces">
+  #### 链路追踪
+</div>
+
+| 设置                               | 描述                                                                         | 必填 | 在默认 schema 中推断 | 推断值                                                                                                   |
+| -------------------------------- | -------------------------------------------------------------------------- | -- | -------------- | ----------------------------------------------------------------------------------------------------- |
+| `Name`                           | 数据源名称。                                                                     | 是  | 否              | –                                                                                                     |
+| `Section`                        | 可选标签，用于在数据源选择器中对数据源进行分组。使用相同 section 的数据源会显示在一起，搜索时除数据源名称外还会匹配 section 名称。 | 否  | 否              | –                                                                                                     |
+| `Server Connection`              | 服务器连接名称。                                                                   | 是  | 否              | `Default`                                                                                             |
+| `Database`                       | ClickHouse 数据库名称。                                                          | 是  | 是              | `default`                                                                                             |
+| `Table`                          | 目标表名称。如果使用默认 schema，请设为 `otel_traces`。                                     | 是  | 是              | -                                                                                                     |
+| `Timestamp Column`               | 主键中包含的日期时间列或表达式。                                                           | 是  | 是              | `Timestamp`                                                                                           |
+| `Timestamp`                      | `Timestamp Column` 的别名。                                                    | 是  | 是              | `Timestamp`                                                                                           |
+| `Default Select`                 | 默认搜索结果中显示的列。                                                               | 是  | 是              | `Timestamp, ServiceName as service, StatusCode as level, round(Duration / 1e6) as duration, SpanName` |
+| `Duration Expression`            | 用于计算 span 耗时的表达式。                                                          | 是  | 是              | `Duration`                                                                                            |
+| `Duration Precision`             | 耗时表达式的精度 (例如纳秒、微秒) 。                                                       | 是  | 是              | ns                                                                                                    |
+| `Trace Id Expression`            | trace ID 对应的表达式或列。                                                         | 是  | 是              | `TraceId`                                                                                             |
+| `Span Id Expression`             | span ID 对应的表达式或列。                                                          | 是  | 是              | `SpanId`                                                                                              |
+| `Parent Span Id Expression`      | 父 span ID 对应的表达式或列。                                                        | 是  | 是              | `ParentSpanId`                                                                                        |
+| `Span Name Expression`           | span 名称对应的表达式或列。                                                           | 是  | 是              | `SpanName`                                                                                            |
+| `Span Kind Expression`           | span 类型对应的表达式或列 (例如 client、server) 。                                       | 是  | 是              | `SpanKind`                                                                                            |
+| `Correlated Log Source`          | 可选。关联的日志数据源 (例如 HyperDX logs) 。                                            | 否  | 否              | –                                                                                                     |
+| `Correlated Session Source`      | 可选。关联的会话数据源。                                                               | 否  | 否              | –                                                                                                     |
+| `Correlated Metric Source`       | 可选。关联的指标数据源 (例如 HyperDX metrics) 。                                         | 否  | 否              | –                                                                                                     |
+| `Status Code Expression`         | span 状态码对应的表达式。                                                            | 是  | 是              | `StatusCode`                                                                                          |
+| `Status Message Expression`      | span 状态消息对应的表达式。                                                           | 是  | 是              | `StatusMessage`                                                                                       |
+| `Service Name Expression`        | 服务名称对应的表达式或列。                                                              | 是  | 是              | `ServiceName`                                                                                         |
+| `Resource Attributes Expression` | 资源级属性对应的表达式或列。                                                             | 是  | 是              | `ResourceAttributes`                                                                                  |
+| `Event Attributes Expression`    | 事件属性对应的表达式或列。                                                              | 是  | 是              | `SpanAttributes`                                                                                      |
+| `Span Events Expression`         | 用于提取 span 事件的表达式。通常为 `Nested` 类型的列。这使得可以在受支持的语言 SDK 中渲染异常堆栈跟踪。             | 是  | 是              | `Events`                                                                                              |
+| `Implicit Column Expression`     | 未指定 field 时用于全文搜索的列 (Lucene 风格) 。通常为日志正文。                                  | 是  | 是              | `SpanName`                                                                                            |
+| `Highlighted Attributes`         | 打开 span 详情时显示的表达式或列。返回 URL 的表达式会显示为链接。                                     | 否  | 否              | –                                                                                                     |
+| `Highlighted Trace Attributes`   | 从 trace 的每个 span 中提取并显示在 trace 瀑布图上方的表达式或列。返回 URL 的表达式会显示为链接。              | 否  | 否              | –                                                                                                     |
+
+<div id="metrics">
+  #### 指标
+</div>
+
+| 设置项                     | 描述                                                             | 必填 | 在默认 schema 中推断 | 推断值                      |
+| ----------------------- | -------------------------------------------------------------- | -- | -------------- | ------------------------ |
+| `Name`                  | 数据源名称。                                                         | 是  | 否              | –                        |
+| `Section`               | 可选。用于在数据源选择器中对数据源进行分组的标签。属于同一分组的数据源会显示在一起，搜索时除数据源名称外，也会匹配分组名称。 | 否  | 否              | –                        |
+| `Server Connection`     | 服务器连接名称。                                                       | 是  | 否              | `Default`                |
+| `Database`              | ClickHouse 数据库名称。                                              | 是  | 是              | `default`                |
+| `Gauge Table`           | 存储 Gauge 类型指标的表。                                               | 是  | 否              | `otel_metrics_gauge`     |
+| `Histogram Table`       | 存储 Histogram 类型指标的表。                                           | 是  | 否              | `otel_metrics_histogram` |
+| `Sum Table`             | 存储 Sum 类型 (Counter) 指标的表。                                      | 是  | 否              | `otel_metrics_sum`       |
+| `Correlated Log Source` | 可选。关联的日志数据源 (例如 HyperDX 日志) 。                                  | 否  | 否              | –                        |
+
+<div id="settings">
+  #### 会话
+</div>
+
+| 设置                               | 说明                                                               | 必填 | 在默认 schema 中推断 | 推断值                  |
+| -------------------------------- | ---------------------------------------------------------------- | -- | -------------- | -------------------- |
+| `Name`                           | 数据源名称。                                                           | 是  | 否              | –                    |
+| `Section`                        | 可选。用于在数据源选择器中对数据源进行分组的标签。共享同一分组的数据源会显示在一起，搜索时除匹配数据源名称外，还会匹配分组名称。 | 否  | 否              | –                    |
+| `Server Connection`              | 服务器连接名称。                                                         | 是  | 否              | `Default`            |
+| `Database`                       | ClickHouse 数据库名称。                                                | 是  | 是              | `default`            |
+| `Table`                          | 会话数据的目标表。目标表名称。若使用默认 schema，请设置为 `hyperdx_sessions`。             | 是  | 是              | -                    |
+| `Timestamp Column`               | 作为主键一部分的日期时间列或表达式。                                               | 是  | 是              | `TimestampTime`      |
+| `Log Attributes Expression`      | 用于从会话数据中提取日志级属性的表达式。                                             | 是  | 是              | `LogAttributes`      |
+| `LogAttributes`                  | 用于存储日志属性的别名或字段引用。                                                | 是  | 是              | `LogAttributes`      |
+| `Resource Attributes Expression` | 用于提取资源级元数据的表达式。                                          | 是  | 是              | `ResourceAttributes` |
+| `Correlated Trace Source`        | 可选。用于会话关联的已关联链路追踪数据源。                                            | 否  | 否              | –                    |
+| `Implicit Column Expression`     | 未指定字段时用于全文搜索的列 (例如 Lucene 风格的查询解析) 。                             | 是  | 是              | `Body`               |
+
+<div id="highlighted-attributes">
+  #### 高亮属性
+</div>
+
+高亮属性和高亮 trace 属性都可以在日志和 trace 数据源上配置。
+
+* 高亮属性是查看日志或 span 详情时，为每条日志或 span 显示的列或表达式。
+* 高亮 trace 属性是从某个 trace 中的每条日志或 span 查询出的列或表达式，并显示在 trace 瀑布图上方。
+
+这些属性定义在数据源配置中，可以是任意 SQL 表达式。如果 SQL 表达式返回的值是 URL 格式，该属性会显示为链接。空值不会显示。
+
+例如，这个链路追踪数据源已配置了一个高亮属性和一个高亮 trace 属性：
+
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp" alt="高亮属性配置" size="md" />
+
+点击日志或 span 后，这些属性会显示在侧边面板中：
+
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes.webp" alt="高亮属性" size="md" />
+
+点击某个属性后，可以选择将该属性用作搜索值。如果在属性配置中提供了可选的 Lucene 表达式，搜索时将使用 Lucene 表达式而不是 SQL 表达式。
+
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp" alt="高亮属性搜索" size="md" />
+
+<div id="correlated-sources">
+  ### 关联来源
+</div>
+
+要在 ClickStack 中启用完整的跨数据源关联，您必须为日志、链路追踪、指标和会话配置关联来源。这样，HyperDX 就能将相关数据关联起来，并在渲染事件时提供更丰富的上下文。
+
+* `Logs`：可与链路追踪和指标关联。
+* `Traces`：可与日志、会话和指标关联。
+* `Metrics`：可与日志关联。
+* `Sessions`：可与链路追踪关联。
+
+配置这些关联后，即可启用多项功能。例如，HyperDX 可以在显示 trace 的同时呈现相关日志，或突出显示与会话相关联的指标异常。
+
+例如，下面是已配置关联来源的日志数据源：
+
+<Image img="/images/use-cases/observability/hyperdx-26.webp" alt="HyperDX 关联来源" size="md" />
+
+<div id="application-configuration-settings">
+  ### 应用配置设置
+</div>
+
+<Info>
+  **ClickHouse Cloud 中的 HyperDX**
+
+  当 HyperDX 由 ClickHouse Cloud 托管时，这些设置不可修改。
+</Info>
+
+* `HYPERDX_API_KEY`
+  * **默认值：** None (必填)
+  * **说明：** 用于 HyperDX API 的身份验证密钥。
+  * **指导：**
+  * 遥测和日志功能必需
+  * 在本地开发环境中，可使用任意非空值
+  * 在生产环境中，请使用安全且唯一的密钥
+  * 创建账户后，可从 Team Settings 页面获取
+
+* `HYPERDX_LOG_LEVEL`
+  * **默认值：** `info`
+  * **说明：** 设置日志详细程度。
+  * **可选项：** `debug`, `info`, `warn`, `error`
+  * **建议：**
+  * 使用 `debug` 进行详细故障排查
+  * 使用 `info` 用于正常运行
+  * 在生产环境中使用 `warn` 或 `error` 以减少日志量
+
+* `HYPERDX_API_PORT`
+  * **默认值：** `8000`
+  * **说明：** HyperDX API 服务器使用的端口。
+  * **指导：**
+  * 确保该端口在主机上可用
+  * 如果存在端口冲突，请更改此端口
+  * 必须与 API 客户端配置中的端口保持一致
+
+* `HYPERDX_APP_PORT`
+  * **默认值：** `8000`
+  * **说明：** HyperDX 前端应用使用的端口。
+  * **指导：**
+  * 确保此端口在主机上可用
+  * 如果发生端口冲突，请更改该端口
+  * 必须可通过浏览器访问
+
+* `HYPERDX_APP_URL`
+  * **默认值：** `http://localhost`
+  * **说明：** 前端应用的基础 URL。
+  * **指导：**
+  * 在生产环境中将其设置为你的域名
+  * 包含协议 (http/https)
+  * 不要包含末尾斜杠
+
+* `MONGO_URI`
+  * **默认值：** `mongodb://db:27017/hyperdx`
+  * **说明：** MongoDB 连接字符串。
+  * **指导：**
+  * 在使用 Docker 的本地开发环境中，可使用默认值
+  * 在生产环境中，请使用安全的连接字符串
+  * 如果需要，请包含身份验证信息
+  * 示例：`mongodb://user:pass@host:port/db`
+
+* `MINER_API_URL`
+  * **默认值：** `http://miner:5123`
+  * **说明：** 日志模式挖掘服务的 URL。
+  * **指导：**
+  * 在使用 Docker 的本地开发环境中使用默认值
+  * 在生产环境中，将其设置为你的 miner 服务 URL
+  * 必须可从 API 服务访问
+
+* `FRONTEND_URL`
+  * **默认值：** `http://localhost:3000`
+  * **说明：** 前端应用的 URL。
+  * **建议：**
+  * 本地开发时使用默认值
+  * 在生产环境中设置为您的域名
+  * API 服务必须能够访问该地址
+
+* `OTEL_SERVICE_NAME`
+  * **默认值：** `hdx-oss-api`
+  * **说明：** OpenTelemetry 插桩的服务名称。
+  * **指导：**
+  * 为 HyperDX 服务使用便于识别的名称。适用于 HyperDX 自行插桩的场景。
+  * 有助于在遥测数据中识别 HyperDX 服务
+
+* `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT`
+  * **默认值：** `http://localhost:4318`
+  * **说明：** OpenTelemetry collector 端点。
+  * **指导：**
+  * 适用于 HyperDX 自行埋点。
+  * 本地开发时使用默认值
+  * 在生产环境中，将其设置为你的 collector URL
+  * 必须可从你的 HyperDX 服务访问
+
+* `USAGE_STATS_ENABLED`
+  * **默认值：** `true`
+  * **说明：** 用于控制是否收集使用统计信息。
+  * **指导：**
+  * 设置为 `false` 可禁用使用情况跟踪
+  * 适用于对隐私较为敏感的部署
+  * 默认为 `true`，以便更好地改进产品
+
+* `IS_OSS`
+  * **默认值：** `true`
+  * **说明：** 表示是否以 OSS 模式运行。
+  * **指导：**
+  * 开源部署时，保持为 `true`
+  * Enterprise 部署时，设置为 `false`
+  * 会影响功能可用性
+
+* `IS_LOCAL_MODE`
+  * **默认值：** `false`
+  * **说明：** 指示是否以本地模式运行。
+  * **建议：**
+  * 本地开发时设置为 `true`
+  * 会禁用某些生产环境功能
+  * 适用于测试和开发
+
+* `EXPRESS_SESSION_SECRET`
+  * **默认值：** `hyperdx is cool 👋`
+  * **说明：** 用于 Express 会话管理的密钥。
+  * **指南：**
+  * 请在生产环境中更改
+  * 使用高强度的随机字符串
+  * 妥善保密并安全存储
+
+* `ENABLE_SWAGGER`
+  * **默认值：** `false`
+  * **说明：** 用于启用或禁用 Swagger API 文档。
+  * **指导：**
+  * 设置为 `true` 以启用 API 文档
+  * 适用于开发和测试环境
+  * 在生产环境中禁用
+
+* `BETA_CH_OTEL_JSON_SCHEMA_ENABLED`
+  * **默认值：** `false`
+  * **说明：** 在 HyperDX 中启用对 JSON type 的 Beta 支持。另请参阅 [`OTEL_AGENT_FEATURE_GATE_ARG`](#otel-collector)，以在 OTel collector 中启用 JSON 支持。
+  * **指导：**
+    * 这会启用一项 **Beta 功能**。对于典型的可观测性 workloads，**不建议**使用 JSON 类型的 schema。有关两者的对比及各自适用场景，请参阅 [Map vs JSON type](/zh/clickstack/ingesting-data/schema/map-vs-json)。
+    * 将其设置为 `true`，即可在 ClickStack UI 中启用 JSON 支持。
+
+<div id="otel-collector">
+  ## OpenTelemetry collector
+</div>
+
+更多详情，请参见 [&quot;ClickStack OpenTelemetry Collector&quot;](/zh/clickstack/ingesting-data/collector)。
+
+* `CLICKHOUSE_ENDPOINT`
+  * **默认值：** 独立镜像时为 *无 (必填)&#x20;*。如果是 All-in-one 或 Docker Compose 发行版，则会设置为集成的 ClickHouse 实例。
+  * **说明：** 用于将遥测数据导出到 ClickHouse 实例的 HTTPS URL。
+  * **指导：**
+    * 必须是包含端口的完整 HTTPS 端点 (例如：`https://clickhouse.example.com:8443`)
+    * collector 向 ClickHouse 发送数据时必需
+
+* `CLICKHOUSE_USER`
+  * **默认值：** `default`
+  * **说明：** 用于向 ClickHouse 实例进行身份验证的用户名。
+  * **指导：**
+    * 确保该用户具有 `INSERT` 和 `CREATE TABLE` 权限
+    * 建议为摄取创建专用用户
+
+* `CLICKHOUSE_PASSWORD`
+  * **默认值：** *无 (启用身份验证时必填)&#x20;*
+  * **说明：** 指定 ClickHouse 用户的密码。
+  * **指导：**
+    * 如果该用户账户设置了密码，则此项必填
+    * 在生产环境部署中通过 secrets 安全存储
+
+* `HYPERDX_LOG_LEVEL`
+  * **默认值：** `info`
+  * **说明：** collector 的日志详细级别。
+  * **指导：**
+    * 可接受的值包括 `debug`、`info`、`warn`、`error`
+    * 在故障排查期间使用 `debug`
+
+* `OPAMP_SERVER_URL`
+  * **默认值：** 独立镜像时为 *无 (必填)&#x20;*。如果是 All-in-one 或 Docker Compose 发行版，则指向已部署的 HyperDX 实例。
+  * **说明：** 用于管理 collector 的 OpAMP server URL (例如 HyperDX 实例) 。默认端口为 `4320`。
+  * **指导：**
+    * 必须指向你的 HyperDX 实例
+    * 启用动态配置和安全摄取
+    * 如果省略，则会禁用安全摄取，除非指定了 `OTLP_AUTH_TOKEN` 值。
+
+* `OTLP_AUTH_TOKEN`
+  * **默认值：** *无*。仅用于独立镜像。
+  * **说明：** 允许指定 OTLP 身份验证令牌。如果设置了该值，则所有通信都需要此 Bearer 令牌。
+  * **指导：**
+    * 如果在生产环境中使用独立 collector 镜像，建议设置此项。
+
+* `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`
+  * **默认值：** `default`
+  * **说明：** collector 将遥测数据写入的 ClickHouse database。
+  * **指导：**
+    * 如果使用自定义 database 名称，请设置此项
+    * 确保指定用户对该 database 具有访问权限
+
+* `OTEL_AGENT_FEATURE_GATE_ARG`
+  * **默认值：** `<empty string>`
+  * **说明：** 在 collector 中启用功能开关。如果设置为 `--feature-gates=clickhouse.json`，则会在 collector 中启用 JSON type 的 Beta 支持，并确保使用该类型创建 schema。另请参见 [`BETA_CH_OTEL_JSON_SCHEMA_ENABLED`](#hyperdx) 以在 HyperDX 中启用 JSON 支持。
+  * **指导：**
+    * 这会启用一项 **Beta 功能**。对于典型的可观测性 workload，**不建议**使用 JSON-typed schemas。有关对比以及各自适用场景，请参见 [Map vs JSON type](/zh/clickstack/ingesting-data/schema/map-vs-json)。
+    * 设置为 `--feature-gates=clickhouse.json`，以使用 JSON type 创建新表。
+
+<div id="clickhouse">
+  ## ClickHouse
+</div>
+
+ClickStack 开源版附带了一个面向多 TB 规模的默认 ClickHouse 配置，但用户也可以根据自身工作负载自由修改和优化。
+
+要有效调优 ClickHouse，你需要理解一些关键存储概念，例如 [parts](/zh/concepts/core-concepts/parts)、[分区](/zh/concepts/core-concepts/partitions)、[分片和副本](/zh/guides/oss/deployment-and-scaling/shards)，以及 [合并](/zh/concepts/core-concepts/merges) 如何在写入时发生。我们建议你先了解 [主索引](/zh/concepts/core-concepts/primary-indexes)、[稀疏二级索引](/zh/concepts/features/performance/skip-indexes/skipping-indexes) 和数据跳过索引的基础知识，以及[管理数据生命周期](/zh/guides/use-cases/observability/build-your-own/managing-data)的相关方法，例如使用生存时间 (TTL) 进行生命周期管理。
+
+ClickStack 支持 [schema 自定义](/zh/guides/use-cases/observability/build-your-own/schema-design)——你可以修改列类型、提取新字段 (例如从日志中提取) 、应用编解码器和字典，并使用 projections 加速查询。
+
+此外，materialized views 可用于[在摄取期间转换或过滤数据](/zh/guides/use-cases/observability/build-your-own/schema-design#materialized-columns)，前提是数据写入该视图的源表，并且应用程序从目标表读取数据。materialized views 也可用于在 ClickStack 中[以原生方式加速查询](/zh/clickstack/managing/materialized-views)。
+
+更多详情请参阅 ClickHouse 关于 schema 设计、索引策略和数据管理最佳实践的文档——其中大部分内容都可直接应用于 ClickStack 部署。

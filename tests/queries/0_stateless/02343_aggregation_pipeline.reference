@@ -2,17 +2,19 @@
 
 explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0;
 (Expression)
-ExpressionTransform
+ExpressionTransform × 16
   (Aggregating)
-  AggregatingTransform
-    (Expression)
-    ExpressionTransform
-      (Aggregating)
-      AggregatingTransform
-        (Expression)
-        ExpressionTransform
-          (ReadFromSystemNumbers)
-          NumbersRange 0 → 1
+  Resize 16 → 16
+    AggregatingTransform × 16
+      (Expression)
+      ExpressionTransform × 16
+        (Aggregating)
+        Resize 1 → 16
+          AggregatingTransform
+            (Expression)
+            ExpressionTransform
+              (ReadFromSystemNumbers)
+              NumbersRange 0 → 1
 explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0;
 (Expression)
 ExpressionTransform × 16
@@ -47,17 +49,19 @@ ExpressionTransform
                   NumbersRange × 16 0 → 1
 explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 36;
 (Expression)
-ExpressionTransform
+ExpressionTransform × 36
   (Aggregating)
-  AggregatingTransform
-    (Expression)
-    ExpressionTransform
-      (Aggregating)
-      AggregatingTransform
-        (Expression)
-        ExpressionTransform
-          (ReadFromSystemNumbers)
-          NumbersRange 0 → 1
+  Resize 36 → 36
+    AggregatingTransform × 36
+      (Expression)
+      ExpressionTransform × 36
+        (Aggregating)
+        Resize 1 → 36
+          AggregatingTransform
+            (Expression)
+            ExpressionTransform
+              (ReadFromSystemNumbers)
+              NumbersRange 0 → 1
 explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 36;
 (Expression)
 ExpressionTransform × 36
@@ -92,17 +96,20 @@ ExpressionTransform
                   NumbersRange × 36 0 → 1
 explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 48;
 (Expression)
-ExpressionTransform
+ExpressionTransform × 48
   (Aggregating)
-  AggregatingTransform
-    (Expression)
-    ExpressionTransform
-      (Aggregating)
-      AggregatingTransform
+  Resize × 2 24 → 24
+    AggregatingTransform × 48
+      StrictResize × 2 24 → 24
         (Expression)
-        ExpressionTransform
-          (ReadFromSystemNumbers)
-          NumbersRange 0 → 1
+        ExpressionTransform × 48
+          (Aggregating)
+          Resize 1 → 48
+            AggregatingTransform
+              (Expression)
+              ExpressionTransform
+                (ReadFromSystemNumbers)
+                NumbersRange 0 → 1
 explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 48;
 (Expression)
 ExpressionTransform × 48
@@ -138,17 +145,20 @@ ExpressionTransform
                   NumbersRange × 48 0 → 1
 explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 49;
 (Expression)
-ExpressionTransform
+ExpressionTransform × 49
   (Aggregating)
-  AggregatingTransform
-    (Expression)
-    ExpressionTransform
-      (Aggregating)
-      AggregatingTransform
+  Resize × 2 25 → 25
+    AggregatingTransform × 49
+      StrictResize × 2 25 → 25
         (Expression)
-        ExpressionTransform
-          (ReadFromSystemNumbers)
-          NumbersRange 0 → 1
+        ExpressionTransform × 49
+          (Aggregating)
+          Resize 1 → 49
+            AggregatingTransform
+              (Expression)
+              ExpressionTransform
+                (ReadFromSystemNumbers)
+                NumbersRange 0 → 1
 explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 49;
 (Expression)
 ExpressionTransform × 49

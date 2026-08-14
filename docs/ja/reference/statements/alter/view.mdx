@@ -1,0 +1,230 @@
+---
+description: 'ALTER TABLE ... MODIFY QUERY ステートメントのドキュメント'
+sidebarTitle: 'VIEW'
+slug: /sql-reference/statements/alter/view
+title: 'ALTER TABLE ... MODIFY QUERY ステートメント'
+doc_type: 'reference'
+---
+
+インジェスト処理を中断することなく、`ALTER TABLE ... MODIFY QUERY` ステートメントを使用して、[materialized view](/ja/reference/statements/create/view#materialized-view) の作成時に指定した `SELECT` クエリを変更できます。
+
+このコマンドは、`TO [db.]name` 句を指定して作成された materialized view を変更するためのものです。基盤となるストレージテーブルの構造は変更されず、materialized view のカラム定義も変更されません。そのため、`TO [db.]name` 句なしで作成された materialized view に対しては、このコマンドの適用範囲は非常に限定的です。
+
+**TO テーブルを使った例**
+
+```sql
+CREATE TABLE events (ts DateTime, event_type String)
+ENGINE = MergeTree ORDER BY (event_type, ts);
+
+CREATE TABLE events_by_day (ts DateTime, event_type String, events_cnt UInt64)
+ENGINE = SummingMergeTree ORDER BY (event_type, ts);
+
+CREATE MATERIALIZED VIEW mv TO events_by_day AS
+SELECT toStartOfDay(ts) ts, event_type, count() events_cnt
+FROM events
+GROUP BY ts, event_type;
+
+INSERT INTO events
+SELECT DATE '2020-01-01' + interval number * 900 second,
+       ['imp', 'click'][number%2+1]
+FROM numbers(100);
+
+SELECT ts, event_type, sum(events_cnt)
+FROM events_by_day
+GROUP BY ts, event_type
+ORDER BY ts, event_type;
+
+┌──────────────────ts─┬─event_type─┬─sum(events_cnt)─┐
+│ 2020-01-01 00:00:00 │ click      │              48 │
+│ 2020-01-01 00:00:00 │ imp        │              48 │
+│ 2020-01-02 00:00:00 │ click      │               2 │
+│ 2020-01-02 00:00:00 │ imp        │               2 │
+└─────────────────────┴────────────┴─────────────────┘
+
+-- 新しい測定値 `cost` と新しいディメンション `browser` を追加します。
+
+ALTER TABLE events
+  ADD COLUMN browser String,
+  ADD COLUMN cost Float64;
+
+-- materialized view と TO（宛先テーブル）でカラムが一致している必要はないため、
+-- 次の ALTER を実行しても挿入は中断されません。
+
+ALTER TABLE events_by_day
+    ADD COLUMN cost Float64,
+    ADD COLUMN browser String after event_type,
+    MODIFY ORDER BY (event_type, ts, browser);
+
+INSERT INTO events
+SELECT Date '2020-01-02' + interval number * 900 second,
+       ['imp', 'click'][number%2+1],
+       ['firefox', 'safary', 'chrome'][number%3+1],
+       10/(number+1)%33
+FROM numbers(100);
+
+-- まだ Materialized View を変更していないため、新しいカラム `browser` と `cost` は空になっています。
+
+SELECT ts, event_type, browser, sum(events_cnt) events_cnt, round(sum(cost),2) cost
+FROM events_by_day
+GROUP BY ts, event_type, browser
+ORDER BY ts, event_type;
+
+┌──────────────────ts─┬─event_type─┬─browser─┬─events_cnt─┬─cost─┐
+│ 2020-01-01 00:00:00 │ click      │         │         48 │    0 │
+│ 2020-01-01 00:00:00 │ imp        │         │         48 │    0 │
+│ 2020-01-02 00:00:00 │ click      │         │         50 │    0 │
+│ 2020-01-02 00:00:00 │ imp        │         │         50 │    0 │
+│ 2020-01-03 00:00:00 │ click      │         │          2 │    0 │
+│ 2020-01-03 00:00:00 │ imp        │         │          2 │    0 │
+└─────────────────────┴────────────┴─────────┴────────────┴──────┘
+
+ALTER TABLE mv MODIFY QUERY
+  SELECT toStartOfDay(ts) ts, event_type, browser,
+  count() events_cnt,
+  sum(cost) cost
+  FROM events
+  GROUP BY ts, event_type, browser;
+
+INSERT INTO events
+SELECT Date '2020-01-03' + interval number * 900 second,
+       ['imp', 'click'][number%2+1],
+       ['firefox', 'safary', 'chrome'][number%3+1],
+       10/(number+1)%33
+FROM numbers(100);
+
+SELECT ts, event_type, browser, sum(events_cnt) events_cnt, round(sum(cost),2) cost
+FROM events_by_day
+GROUP BY ts, event_type, browser
+ORDER BY ts, event_type;
+
+┌──────────────────ts─┬─event_type─┬─browser─┬─events_cnt─┬──cost─┐
+│ 2020-01-01 00:00:00 │ click      │         │         48 │     0 │
+│ 2020-01-01 00:00:00 │ imp        │         │         48 │     0 │
+│ 2020-01-02 00:00:00 │ click      │         │         50 │     0 │
+│ 2020-01-02 00:00:00 │ imp        │         │         50 │     0 │
+│ 2020-01-03 00:00:00 │ click      │ firefox │         16 │  6.84 │
+│ 2020-01-03 00:00:00 │ click      │         │          2 │     0 │
+│ 2020-01-03 00:00:00 │ click      │ safary  │         16 │  9.82 │
+│ 2020-01-03 00:00:00 │ click      │ chrome  │         16 │  5.63 │
+│ 2020-01-03 00:00:00 │ imp        │         │          2 │     0 │
+│ 2020-01-03 00:00:00 │ imp        │ firefox │         16 │ 15.14 │
+│ 2020-01-03 00:00:00 │ imp        │ safary  │         16 │  6.14 │
+│ 2020-01-03 00:00:00 │ imp        │ chrome  │         16 │  7.89 │
+│ 2020-01-04 00:00:00 │ click      │ safary  │          1 │   0.1 │
+│ 2020-01-04 00:00:00 │ click      │ firefox │          1 │   0.1 │
+│ 2020-01-04 00:00:00 │ imp        │ firefox │          1 │   0.1 │
+│ 2020-01-04 00:00:00 │ imp        │ chrome  │          1 │   0.1 │
+└─────────────────────┴────────────┴─────────┴────────────┴───────┘
+
+-- !!! `MODIFY ORDER BY` の実行時に PRIMARY KEY が暗黙的に設定されました。
+
+SHOW CREATE TABLE events_by_day FORMAT TSVRaw
+
+CREATE TABLE test.events_by_day
+(
+    `ts` DateTime,
+    `event_type` String,
+    `browser` String,
+    `events_cnt` UInt64,
+    `cost` Float64
+)
+ENGINE = SummingMergeTree
+PRIMARY KEY (event_type, ts)
+ORDER BY (event_type, ts, browser)
+
+-- !!! カラムの定義は変更されていませんが、問題ありません。クエリ対象は MATERIALIZED VIEW ではなく、
+-- TO（ストレージ）テーブルです。
+-- SELECT セクションは更新されています。
+
+SHOW CREATE TABLE mv FORMAT TSVRaw;
+
+CREATE MATERIALIZED VIEW test.mv TO test.events_by_day
+(
+    `ts` DateTime,
+    `event_type` String,
+    `events_cnt` UInt64
+) AS
+SELECT
+    toStartOfDay(ts) AS ts,
+    event_type,
+    browser,
+    count() AS events_cnt,
+    sum(cost) AS cost
+FROM test.events
+GROUP BY
+    ts,
+    event_type,
+    browser
+```
+
+**TO テーブルを使わない例**
+
+新しいカラムを追加できず、変更できるのは `SELECT` セクションだけなので、このアプリケーションには大きな制約があります。
+
+```sql
+CREATE TABLE src_table (`a` UInt32) ENGINE = MergeTree ORDER BY a;
+CREATE MATERIALIZED VIEW mv (`a` UInt32) ENGINE = MergeTree ORDER BY a AS SELECT a FROM src_table;
+INSERT INTO src_table (a) VALUES (1), (2);
+SELECT * FROM mv;
+```
+
+```text
+┌─a─┐
+│ 1 │
+│ 2 │
+└───┘
+```
+
+```sql
+ALTER TABLE mv MODIFY QUERY SELECT a * 2 as a FROM src_table;
+INSERT INTO src_table (a) VALUES (3), (4);
+SELECT * FROM mv;
+```
+
+```text
+┌─a─┐
+│ 6 │
+│ 8 │
+└───┘
+┌─a─┐
+│ 1 │
+│ 2 │
+└───┘
+```
+
+<div id="alter-table--modify-refresh-statement">
+  ## ALTER TABLE ... MODIFY REFRESH ステートメント
+</div>
+
+`ALTER TABLE ... MODIFY REFRESH` は、スケジュール、依存関係、ランダム化、[リフレッシュ設定](/ja/reference/statements/create/view#refresh-settings) など、[リフレッシャブルmaterialized view](/ja/reference/statements/create/view#refreshable-materialized-view) のリフレッシュパラメータを変更します。
+
+```sql
+ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPENDS ON ...] [SETTINGS ...]
+```
+
+スケジュール (`EVERY` または `AFTER`) の指定は必須です。このステートメントでは、*すべて*のリフレッシュパラメータが一度に置き換えられます。`RANDOMIZE FOR`、`DEPENDS ON`、`SETTINGS` のいずれであっても、指定されなかった句は削除されるか、既定値にリセットされます。リフレッシュ設定のみを変更する場合は、現在のスケジュールも再度指定してください。
+
+```sql
+-- スケジュールを変更する。
+ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
+
+-- 再試行設定を変更する（スケジュールの指定は必須）。
+ALTER TABLE rmv MODIFY REFRESH EVERY 1 HOUR
+SETTINGS refresh_retries = 5,
+         refresh_retry_initial_backoff_ms = 500,
+         refresh_retry_max_backoff_ms = 60000;
+
+-- 依存関係を追加または維持する。
+ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
+
+-- `DEPENDS ON` を省略して依存関係を削除する。
+ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
+```
+
+制限事項:
+
+* `ALTER TABLE ... MODIFY SETTING` は materialized view ではサポートされていません。リフレッシュ設定は `MODIFY REFRESH` でのみ変更できます。
+* `APPEND` の追加または削除はサポートされていません。
+* `all_replicas` リフレッシュ設定は、ビューの作成後は変更できません。
+
+リフレッシュ設定の一覧は、[リフレッシュ設定](/ja/reference/statements/create/view#refresh-settings) に記載されています。現在適用されている設定を含むリフレッシュの状態は、[`system.view_refreshes`](/ja/reference/system-tables/view_refreshes) で確認できます。

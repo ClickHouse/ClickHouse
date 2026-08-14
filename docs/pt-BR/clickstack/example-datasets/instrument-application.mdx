@@ -1,0 +1,32 @@
+---
+slug: /use-cases/observability/clickstack/example-datasets/instrument-app
+title: 'Instrumente uma aplicação com Managed ClickStack'
+sidebarTitle: 'Demo do HackerNews Analyzer'
+description: 'Guia para instrumentar uma aplicação em Node.js com OpenTelemetry e enviar logs, métricas e traces ao Managed ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'instrumentação', 'opentelemetry', 'managed clickstack', 'observabilidade']
+---
+
+import InstrumentApplication from '/snippets/pt-BR/clickstack/_instrument_application.mdx';
+
+Este guia mostra como instrumentar uma aplicação Node.js simples usando OpenTelemetry e enviar seus logs, métricas e traces para o [Managed ClickStack](/pt-BR/clickstack/getting-started/managed). O backend é instrumentado sem exigir nenhuma alteração no código-fonte da aplicação.
+
+O [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) é um pequeno aplicativo Node.js que faz consultas ao conjunto de dados do HackerNews hospedado na instância demo pública do ClickHouse. Cada gráfico, tabela e caixa de busca é alimentado por uma consulta real ao ClickHouse, portanto cada interação produz um trace cujo span principal é a chamada HTTPS do backend para o ClickHouse.
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* Um OTel collector disponível e acessível, com ingestão no seu serviço Managed ClickStack. Você precisará do endpoint OTLP dele e de um token de ingestão.
+* Node 18+ e npm.
+
+<InstrumentApplication />
+
+<div id="learn-more">
+  ## Saiba mais
+</div>
+
+* [Session Replay](/pt-BR/clickstack/features/session-replay): visão geral da funcionalidade, opções de SDK e controles de privacidade.
+* [Session Replay Demo](/pt-BR/clickstack/example-datasets/session-replay): uma demonstração completa com uma instância local do ClickStack.
+* [ClickStack Primeiros passos](/pt-BR/clickstack/getting-started/index): implante o ClickStack e faça a ingestão dos seus primeiros dados.
+* [Todos os datasets de exemplo](/pt-BR/clickstack/example-datasets/index): outros datasets de exemplo e guias.

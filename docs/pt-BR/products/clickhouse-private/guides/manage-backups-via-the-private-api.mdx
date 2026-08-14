@@ -1,0 +1,200 @@
+---
+noindex: true
+title: "Gerenciar backups pela API Privada"
+sidebarTitle: "Gerenciar backups via API"
+description: "Crie, monitore, agende e restaure backups do ClickHouse usando a API Privada."
+---
+
+Crie, monitore, agende e restaure backups do ClickHouse usando a API Privada.
+
+Para operações manuais de backup sem usar a API, consulte [Backup and Restore](/pt-BR/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual).
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* ClickHouse API Privada instalada e acessível (por exemplo, via redirecionamento de porta para `http://localhost:8080/`)
+* Pelo menos um cluster do ClickHouse implantado (este guia usa `default-xx-01`)
+
+<div id="create-a-full-backup">
+  ## Criar backup completo
+</div>
+
+```json
+{
+    "incremental": false
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    -d '{"incremental": false}'
+```
+
+A resposta inclui um UUID que identifica o backup.
+
+<div id="check-backup-status">
+  ## Verificar o status do backup
+</div>
+
+Consulte um backup específico por UUID:
+
+```bash
+curl "http://localhost:8080/api/v1/backups/{uuid}?instance_id=default-xx-01"
+```
+
+Quando o backup for concluído com sucesso, o campo `status.state` retornará `Ready`.
+
+<div id="list-all-backups">
+  ## Listar todos os backups
+</div>
+
+```bash
+curl "http://localhost:8080/api/v1/backups?instance_id=default-xx-01"
+```
+
+O endpoint oferece suporte a parâmetros de consulta para filtrar e ordenar. Por exemplo, para encontrar o último backup bem-sucedido:
+
+```bash
+curl "http://localhost:8080/api/v1/backups?instance_id=default-xx-01&status__state__eq=Ready&sort=status__finishTime&limit=1"
+```
+
+<div id="create-incremental-backups">
+  ## Criar backups incrementais
+</div>
+
+Os backups incrementais fazem backup apenas dos dados alterados desde um backup anterior, formando uma sequência que começa com um backup completo.
+
+```json
+{
+    "incremental": true,
+    "baseBackupUuid": "<uuid of previous backup>"
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    --data-binary "@backup.json"
+```
+
+<div id="back-up-specific-tables-or-databases">
+  ## Faça backup de tabelas ou bancos de dados específicos
+</div>
+
+Controle o que será incluído no backup usando os campos `databases` e `tables`. Os nomes das tabelas devem ser informados com o nome totalmente qualificado (ou seja, `db.table`).
+
+```json
+{
+    "incremental": false,
+    "databases": ["mydb"],
+    "tables": ["mydb2.table"]
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    --data-binary "@backup.json"
+```
+
+<div id="schedule-backups-with-a-cronjob">
+  ## Agende backups com um CronJob
+</div>
+
+Use um CronJob do Kubernetes para automatizar a criação de backups:
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: clickhouse-daily-backup
+  namespace: clickhouse-private-api
+spec:
+  schedule: "0 2 * * *"  # Run daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: backup
+            image: curlimages/curl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              curl -X POST "http://clickhouse-private-api-airgap-management:8080/api/v1/backups?instance_id=default-xx-01" \
+                -H "Content-Type: application/json" \
+                -d '{
+                  "incremental": false
+                }'
+          restartPolicy: OnFailure
+```
+
+Isso agenda um backup completo diariamente às 2h. Parte do pressuposto de que a API Privada esteja acessível via `http://clickhouse-private-api-airgap-management:8080`.
+
+<div id="restore-from-a-backup">
+  ## Restaurar de um backup
+</div>
+
+<div id="via-the-api">
+  ### Pela API
+</div>
+
+A API expõe um endpoint de restauração que restaura um backup para uma instância de destino diferente:
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups/{uuid}/restore?instance_id=default-xx-01&target_instance_id=default-xx-02"
+```
+
+Por segurança, a API não permite a restauração na própria instância. Recomenda-se criar um novo cluster para a restauração, a fim de evitar sobrecarregar o original.
+
+<div id="manual-sql-alternative">
+  ### Alternativa manual com SQL
+</div>
+
+Para ter um controle mais granular, restaure diretamente com SQL. Por exemplo, para restaurar um único banco de dados com outro nome:
+
+```sql
+RESTORE DATABASE example
+AS example_restored
+FROM S3('https://<bucket_name>.s3.amazonaws.com/backups/<uuid>')
+```
+
+<div id="manage-backup-lifecycle">
+  ## Gerenciar o ciclo de vida do backup
+</div>
+
+<div id="s3-lifecycle-policy">
+  ### Política de ciclo de vida do S3
+</div>
+
+Use políticas de ciclo de vida do S3 para mover backups antigos entre classes de armazenamento e excluí-los automaticamente:
+
+```json
+{
+  "Rules": [
+    {
+      "ID": "ClickHouseBackupLifecycle",
+      "Prefix": "backups/",
+      "Status": "Enabled",
+      "Transitions": [
+        { "Days": 7, "StorageClass": "STANDARD_IA" },
+        { "Days": 30, "StorageClass": "GLACIER_IR" }
+      ],
+      "Expiration": { "Days": 90 }
+    }
+  ]
+}
+```
+
+Este exemplo move os backups para Standard-IA após 7 dias, para Glacier após 30 dias e os exclui após 90 dias.
+
+<div id="backup-chain-integrity-warning">
+  ### Aviso sobre a integridade da cadeia de backups
+</div>
+
+As políticas de ciclo de vida do S3 não levam em conta cadeias de backups incrementais. Se um backup completo na base de uma cadeia for excluído enquanto backups incrementais ainda fizerem referência a ele, esses backups incrementais não poderão mais ser restaurados.
+
+Certifique-se de que o período de retenção dos backups completos seja maior do que o intervalo entre os ciclos de backup completo. Teste regularmente se os backups podem ser restaurados.

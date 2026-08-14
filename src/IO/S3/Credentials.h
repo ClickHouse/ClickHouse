@@ -227,6 +227,16 @@ struct CredentialsConfiguration
     std::string external_id{};
     std::string sts_endpoint_override{};
     std::string kms_role_arn{};
+
+    /// When true, no server-managed credential source is resolved (environment/IMDS/IRSA/instance-profile/
+    /// AWS-config providers and role_arn-based STS); only explicit credentials are honored. Defaults to true
+    /// (fail closed): server-internal callers that legitimately use the server's credentials opt out explicitly.
+    bool forbid_implicit_credentials = true;
+
+    /// With `forbid_implicit_credentials`, build an anonymous client instead of throwing when a request would
+    /// be refused. Set only when loading a persistent table from existing metadata (so it becomes inaccessible
+    /// rather than aborting startup); never for user-issued queries, which must still be rejected.
+    bool anonymous_fallback_for_server_credentials = false;
 };
 
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain

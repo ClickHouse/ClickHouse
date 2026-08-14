@@ -1,0 +1,112 @@
+---
+slug: /parts
+title: '테이블 파트'
+description: 'ClickHouse 데이터 파트란 무엇인가'
+keywords: ['part']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="what-are-table-parts-in-clickhouse">
+  ## ClickHouse의 테이블 파트란 무엇입니까?
+</div>
+
+<br />
+
+ClickHouse [MergeTree 엔진 계열](/ko/reference/engines/table-engines/mergetree-family/index)에 속한 각 테이블의 데이터는 디스크에 변경할 수 없는 `데이터 파트` 모음으로 구성됩니다.
+
+이를 설명하기 위해 영국에서 거래된 부동산의 날짜, 도시, 거리, 가격을 기록한 [이](https://sql.clickhouse.com/?query=U0hPVyBDUkVBVEUgVEFCTEUgdWsudWtfcHJpY2VfcGFpZF9zaW1wbGU\&run_query=true\&tab=results) 테이블([영국 부동산 가격 데이터셋](/ko/get-started/sample-datasets/uk-price-paid)을 바탕으로 수정)을 사용합니다:
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = MergeTree
+ORDER BY (town, street);
+```
+
+이 테이블은 ClickHouse SQL Playground에서 [쿼리할 수 있습니다](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJPTSB1ay51a19wcmljZV9wYWlkX3NpbXBsZTs\&run_query=true\&tab=results).
+
+테이블에 행 집합이 삽입될 때마다 데이터 파트가 생성됩니다. 아래 다이어그램은 이를 개략적으로 보여줍니다:
+
+<Image img="/images/managing-data/core-concepts/part.webp" size="lg" />
+
+<br />
+
+ClickHouse 서버가 위 다이어그램에 표시된 4개 행의 예시 삽입(예: [INSERT INTO 문](/ko/reference/statements/insert-into)을 통해)을 처리할 때는 여러 단계를 수행합니다:
+
+① **정렬**: 행은 테이블의 정렬 키 `(town, street)`를 기준으로 정렬되며, 정렬된 행에 대해 [희소 프라이머리 인덱스](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)가 생성됩니다.
+
+② **분할**: 정렬된 데이터는 컬럼별로 분할됩니다.
+
+③ **압축**: 각 컬럼은 [압축됩니다](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+
+④ **디스크에 쓰기**: 압축된 컬럼은 삽입으로 생성된 데이터 파트를 나타내는 새 디렉터리 안에 바이너리 컬럼 파일로 저장됩니다. 희소 프라이머리 인덱스도 압축되어 같은 디렉터리에 저장됩니다.
+
+테이블의 구체적인 엔진에 따라 정렬과 함께 추가 변환이 [수행될 수 있습니다](/ko/reference/settings/session-settings).
+
+데이터 파트는 중앙 카탈로그가 없어도 내용을 해석하는 데 필요한 모든 메타데이터를 포함하는 자체 완결형 단위입니다. 희소 프라이머리 인덱스 외에도 파트에는 보조 [데이터 스키핑 인덱스](/ko/concepts/features/performance/skip-indexes/skipping-indexes), [컬럼 통계](https://clickhouse.com/blog/clickhouse-release-23-11#column-statistics-for-prewhere), 체크섬, MinMax 인덱스([파티셔닝](/ko/concepts/core-concepts/partitions)을 사용하는 경우) 등의 추가 메타데이터가 포함됩니다. 더 자세한 내용은 [여기](https://github.com/ClickHouse/ClickHouse/blob/a065b11d591f22b5dd50cb6224fab2ca557b4989/src/Storages/MergeTree/MergeTreeData.h#L104)를 참조하십시오.
+
+<div id="part-merges">
+  ## 파트 머지
+</div>
+
+테이블별 파트 수를 관리하기 위해 [백그라운드 머지](/ko/concepts/core-concepts/merges) 작업이 주기적으로 더 작은 파트를 더 큰 파트로 머지하며, [설정 가능한](/ko/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) 압축된 크기(일반적으로 약 150 GB)에 도달할 때까지 이 과정을 반복합니다. 머지된 파트는 비활성 상태로 표시되며, [설정 가능한](/ko/reference/settings/merge-tree-settings#old_parts_lifetime) 시간 간격이 지나면 삭제됩니다. 시간이 지나면서 이 과정은 머지된 파트의 계층적 구조를 형성하며, 이것이 MergeTree 테이블이라는 이름이 붙은 이유입니다:
+
+<Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
+
+<br />
+
+초기 파트 수와 머지 오버헤드를 최소화하려면 데이터베이스 클라이언트에서 [권장하는 방식](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance)은 튜플을 대량으로 삽입하는 것(예: 한 번에 20,000행) 또는 [비동기 삽입 모드](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)를 사용하는 것입니다. 이 모드에서는 ClickHouse가 동일한 테이블로 들어오는 여러 INSERT의 행을 버퍼링하고, 버퍼 크기가 설정 가능한 임계값을 초과하거나 타임아웃이 만료된 경우에만 새 파트를 생성합니다.
+
+<div id="monitoring-table-parts">
+  ## 테이블 파트 모니터링
+</div>
+
+[가상 컬럼(virtual column)](/ko/reference/engines/table-engines/index#table_engines-virtual_columns) `_part`를 사용하면 예시 테이블에 현재 존재하는 모든 활성 파트의 목록을 [쿼리](https://sql.clickhouse.com/?query=U0VMRUNUIF9wYXJ0CkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGUKR1JPVVAgQlkgX3BhcnQKT1JERVIgQlkgX3BhcnQgQVNDOw\&run_query=true\&tab=results)할 수 있습니다:
+
+```sql
+SELECT _part
+FROM uk.uk_price_paid_simple
+GROUP BY _part
+ORDER BY _part ASC;
+```
+
+```response
+   ┌─_part───────┐
+1. │ all_0_5_1   │
+2. │ all_12_17_1 │
+3. │ all_18_23_1 │
+4. │ all_6_11_1  │
+   └─────────────┘
+```
+
+위 쿼리는 디스크에 있는 디렉터리 이름을 조회하며, 각 디렉터리는 테이블의 활성 데이터 파트를 나타냅니다. 이러한 디렉터리 이름을 구성하는 각 요소에는 고유한 의미가 있으며, 더 자세히 알아보려면 [여기](https://github.com/ClickHouse/ClickHouse/blob/f90551824bb90ade2d8a1d8edd7b0a3c0a459617/src/Storages/MergeTree/MergeTreeData.h#L130)에 관련 내용이 문서화되어 있습니다.
+
+또는 ClickHouse는 모든 테이블의 모든 파트 정보를 [system.parts](/ko/reference/system-tables/parts) 시스템 테이블(system table)에서 추적합니다. 다음 쿼리는 위의 예시 테이블에 대해 현재 활성 상태인 모든 파트의 목록과 각 파트의 머지 수준, 그리고 해당 파트에 저장된 행 수를 [반환합니다](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICBuYW1lLAogICAgbGV2ZWwsCiAgICByb3dzCkZST00gc3lzdGVtLnBhcnRzCldIRVJFIChkYXRhYmFzZSA9ICd1aycpIEFORCAoYHRhYmxlYCA9ICd1a19wcmljZV9wYWlkX3NpbXBsZScpIEFORCBhY3RpdmUKT1JERVIgQlkgbmFtZSBBU0M7\&run_query=true\&tab=results):
+
+```sql
+SELECT
+    name,
+    level,
+    rows
+FROM system.parts
+WHERE (database = 'uk') AND (`table` = 'uk_price_paid_simple') AND active
+ORDER BY name ASC;
+```
+
+```response
+   ┌─name────────┬─level─┬────rows─┐
+1. │ all_0_5_1   │     1 │ 6368414 │
+2. │ all_12_17_1 │     1 │ 6442494 │
+3. │ all_18_23_1 │     1 │ 5977762 │
+4. │ all_6_11_1  │     1 │ 6459763 │
+   └─────────────┴───────┴─────────┘
+```
+
+머지 레벨은 해당 파트에 추가 머지가 수행될 때마다 1씩 증가합니다. 레벨이 0이면 아직 머지되지 않은 새 파트임을 의미합니다.

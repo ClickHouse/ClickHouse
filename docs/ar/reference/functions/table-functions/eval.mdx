@@ -1,0 +1,130 @@
+---
+description: 'تُقيِّم دالة الجدول `eval` تعبيرًا ثابتًا إلى سلسلة استعلام، ثم تنفّذ استعلام `SELECT` الناتج.'
+sidebarTitle: 'eval'
+slug: /sql-reference/table-functions/eval
+title: 'eval'
+doc_type: 'reference'
+---
+
+تُقيِّم دالة الجدول `eval` وسيطها إلى سلسلة استعلام، ثم تنفّذ هذه السلسلة باعتبارها استعلام `SELECT` واحدًا.
+
+هذه دالة الجدول تجريبية ومُعطّلة افتراضيًا. فعِّلها باستخدام الإعداد `allow_experimental_eval_table_function`:
+
+```sql
+SET allow_experimental_eval_table_function = 1;
+```
+
+كما يتطلب أيضًا المُحلِّل ([`enable_analyzer`](/ar/reference/settings/session-settings#allow_experimental_analyzer)، وهو مُمكَّن افتراضيًا).
+
+<div id="syntax">
+  ## الصياغة
+</div>
+
+```sql
+eval(expression)
+eval(SELECT ...)
+```
+
+<div id="arguments">
+  ## الوسائط
+</div>
+
+* `expression` — تعبير ثابت يُرجع سلسلة استعلام. يُسمح باستخدام مَعلمات الاستعلام والاستعلامات الفرعية ذات القيمة المفردة.
+* `SELECT ...` — استعلام `SELECT` يُرجع سلسلة استعلام. هذا الشكل اختصار نحوي لاستعلام فرعي قيَمي: `eval(SELECT ...)` مكافئ لـ `eval((SELECT ...))`، لذا يجب أن يُرجع الاستعلام صفًا واحدًا وعمودًا واحدًا فقط.
+
+يجب أن تكون قيمة التعبير من أحد هذه الأنواع:
+
+* `String`
+* `Nullable(String)`
+* `LowCardinality(String)`
+* `LowCardinality(Nullable(String))`
+
+إذا كانت القيمة `NULL`، فإن `eval` يطرح استثناءً.
+
+<div id="returned-value">
+  ## القيمة المُعادة
+</div>
+
+تُرجِع نتيجة استعلام `SELECT` المُولَّد في صورة جدول.
+
+يُحدَّد مخطط الإخراج عند تحليل دالة الجدول `eval`، لذا يمكن للاستعلامات الخارجية الرجوع إلى أسماء الأعمدة الفعلية وأنواعها في الاستعلام المُولَّد.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+قيِّم تعبيرًا ثابتًا:
+
+```sql
+SELECT * FROM eval('SEL' || 'ECT 1 AS x');
+```
+
+النتيجة:
+
+```text
+┌─x─┐
+│ 1 │
+└───┘
+```
+
+استخدم معلَمة استعلام:
+
+```sql
+SET param_q = 'SELECT 2 AS y';
+SELECT * FROM eval({q:String});
+```
+
+النتيجة:
+
+```text
+┌─y─┐
+│ 2 │
+└───┘
+```
+
+قيِّم استعلام `SELECT` مُدخلًا يُعيد نص الاستعلام:
+
+```sql
+SELECT * FROM eval(SELECT 'SELECT 3 AS z');
+```
+
+النتيجة:
+
+```text
+┌─z─┐
+│ 3 │
+└───┘
+```
+
+استخدم المخطط الذي تم إنشاؤه في الاستعلام الخارجي:
+
+```sql
+SELECT x + 1 FROM eval('SELECT 4 AS x');
+```
+
+النتيجة:
+
+```text
+┌─plus(x, 1)─┐
+│          5 │
+└────────────┘
+```
+
+<div id="restrictions">
+  ## القيود
+</div>
+
+* يعمل `eval` فقط مع محلّل الاستعلامات (`enable_analyzer = 1`).
+* يجب أن يكون الاستعلام المُنشأ استعلام `SELECT` واحدًا من دون خيارات إخراج مثل `INTO OUTFILE` أو `FORMAT`. ولا ينفّذ `eval` عدة عبارات.
+* يجب أن يكون الاستعلام المُنشأ مستقلًا بذاته: إذ يُحل ضمن نطاقه الخاص، ولا يمكنه الرجوع إلى الأسماء المستعارة في `WITH` أو إلى أعمدة الاستعلام الخارجي.
+* لا يمكن للاستعلام المُنشأ استخدام دالة الجدول `eval` مرة أخرى.
+* لا يمكن استخدام `eval` كوسيطة لدالة جدول أخرى، مثل `remote('host', eval(...))`. لتنفيذ الاستعلام المُنشأ على خادم بعيد، ضعه داخل `view`: `remote('host', view(SELECT * FROM eval(...)))`.
+* تُقيَّم الوسيطة مرة واحدة أثناء تحليل الاستعلام، وليس مرة لكل صف أو block.
+* يسجّل سجل الاستعلامات الخاص بالاستعلام الخارجي الاستعلام الأصلي الذي يحتوي على `eval`؛ ولا يُسجَّل استعلام `SELECT` المُنشأ كاستعلام مستخدم منفصل.
+
+<div id="related">
+  ## ذات صلة
+</div>
+
+* [دالة الجدول `view`](/ar/reference/functions/table-functions/view)
+* إعداد `allow_experimental_eval_table_function`

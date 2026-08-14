@@ -74,6 +74,9 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
             cached_block_stats_for_sync_inserts,
             log);
 
+        // Old replicas (pre-unified-hash) still write the legacy async-insert ids to /async_blocks
+        // during a rolling upgrade; the current leader keeps draining that directory with the legacy
+        // window settings until the minimum supported version no longer uses it.
         size_t async_blocks = clearOldBlocks(storage.zookeeper_path, "async_blocks", *zookeeper,
             (*storage_settings)[MergeTreeSetting::replicated_deduplication_window_seconds_for_async_inserts],
             (*storage_settings)[MergeTreeSetting::replicated_deduplication_window_for_async_inserts],
@@ -348,9 +351,10 @@ struct ReplicatedMergeTreeCleanupThread::NodeWithStat
 
     /// Sort by (ctime, czxid) rather than (ctime, node_name) to ensure consistent ordering
     /// across different deduplication directories (blocks/, deduplication_hashes/).
-    /// With COMPATIBLE_DOUBLE_HASHES, entries for the same insert exist in both directories
-    /// with different node names but the same czxid (created in the same multi-op).
-    /// Using czxid ensures both directories remove entries for the same logical inserts.
+    /// On instances migrated from the legacy per-insert deduplication hashes, entries for the
+    /// same insert can exist in both directories with different node names but the same czxid
+    /// (created in the same multi-op). Using czxid ensures both directories remove entries for
+    /// the same logical inserts.
     static bool greaterByTime(const NodeWithStat & lhs, const NodeWithStat & rhs)
     {
         return std::forward_as_tuple(lhs.ctime, lhs.czxid) > std::forward_as_tuple(rhs.ctime, rhs.czxid);

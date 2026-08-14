@@ -1,0 +1,85 @@
+---
+title: 'Analytics agentique'
+description: 'Découvrez comment ClickHouse permet l’analytics agentique'
+keywords: ['cas d''utilisation', 'analytics agentique', 'agents']
+sidebarTitle: 'Analytics agentique'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Les charges de travail d’IA imposent un ensemble constant d’exigences, quel que soit le cas d’usage :
+
+* forte simultanéité des requêtes
+* temps de réponse inférieurs à une seconde
+* données exhaustives à grande échelle
+
+Ce document explique comment ClickHouse répond à ces exigences dans l’analytics en temps réel, le data warehousing et l’observability, et comment ces cas d’usage convergent vers une plateforme de données unifiée pour les applications agentiques.
+
+<div id="agentic-workloads">
+  ## ClickHouse pour les charges de travail agentiques
+</div>
+
+<Tabs>
+  <Tab title="analytics en temps réel" icon="bolt">
+    Les fonctionnalités d&#39;application alimentées par l&#39;IA, comme les insights générés, la détection d&#39;anomalies, les recommandations et les interfaces en langage naturel pour les données produit, exigent toutes une boucle de rétroaction étroite entre les écritures transactionnelles et les lectures analytiques.
+    L&#39;architecture de référence est Postgres + ClickHouse :
+
+    * Postgres gère les transactions et l&#39;état de l&#39;application, tandis que ClickHouse gère l&#39;analytique.
+    * ClickHouse offre une ingestion rapide, des requêtes en moins d&#39;une seconde sur des milliards de lignes, ainsi que les niveaux de concurrence qu&#39;exigent les applications orientées client.
+
+    À mesure que les applications deviennent agentiques, cette association gagne encore en importance.
+    Les agents doivent interroger en continu les données produit en temps réel, ce qui augmente à la fois la fréquence des requêtes et la concurrence.
+    ClickHouse répond à ce besoin avec une intégration Postgres + ClickHouse native qui assure la réplication automatique des données et une expérience développeur unifiée, sans avoir à gérer un pipeline CDC distinct.
+  </Tab>
+
+  <Tab title="data warehousing" icon="database">
+    Les interfaces d&#39;analytique en langage naturel (parfois appelées AI Analyst) passent de l&#39;expérimentation à la production.
+    Les utilisateurs posent des questions en anglais courant et attendent des réponses en quelques secondes.
+
+    Sur le plan de l&#39;infrastructure, cela signifie qu&#39;une seule requête en langage naturel ne génère pas une seule requête SQL — elle en génère généralement des dizaines en succession rapide, tandis que l&#39;agent explore les jeux de données disponibles et évalue plusieurs chemins de raisonnement.
+    Par conséquent, les charges de travail des analystes internes commencent à ressembler, par leur profil de concurrence et de latence, à celles d&#39;applications externes orientées client.
+
+    Les entrepôts de données traditionnels ont été conçus pour des requêtes peu fréquentes, orientées traitement par lots. Ils optimisent le débit global sur de nombreuses requêtes, et non des temps de réponse inférieurs à une seconde à forte concurrence. Exécuter des charges de travail AI Analyst sur cette architecture entraîne soit une latence inacceptable, soit des coûts qui augmentent plus vite que la valeur apportée.
+
+    ClickHouse a été conçu pour les requêtes interactives à forte concurrence : données à l&#39;échelle du pétaoctet, milliers d&#39;utilisateurs simultanés, temps de réponse inférieurs à une seconde sur des milliards de lignes.
+  </Tab>
+
+  <Tab title="Observabilité" icon="eye">
+    Les stacks d&#39;observabilité traditionnelles reposent sur trois piliers distincts — métriques, logs et traces — avec des données préagrégées et échantillonnées pour maîtriser les coûts de stockage. Ce compromis est acceptable pour des workflows pilotés par des humains, mais il ne tient plus dans le cas de l&#39;AI SRE.
+    Le triage automatisé des incidents, l&#39;analyse des causes racines et la corrélation des anomalies exigent des données granulaires, à forte cardinalité et à longue rétention. Un AI agent qui corrèle un motif d&#39;erreur avec un événement de déploiement datant de trois jours ne peut pas fonctionner avec des logs échantillonnés ou des métriques sous-échantillonnées.
+
+    L&#39;architecture adaptée à l&#39;AI SRE repose sur une source unique de vérité fondée sur des wide events structurés stockés dans un stockage en colonnes. Les événements à pleine fidélité sont stockés une seule fois, et les métriques, traces et SLO en sont dérivés au moment de la requête plutôt que préagrégés lors de l&#39;ingestion.
+    ClickHouse est particulièrement bien adapté à ce modèle :
+
+    * Forte compression des logs et des données d&#39;événements
+    * Requêtes en moins d&#39;une seconde sur des wide events à forte cardinalité
+    * Ingestion efficace à des volumes d&#39;infrastructure de production
+    * Modèle de coût fondé sur le compute et le stockage, et non sur des frais d&#39;ingestion par Go
+
+    ClickStack est la stack d&#39;observabilité de ClickHouse construite sur ce modèle, avec OpenTelemetry comme couche de collecte des données.
+    Elle est disponible en open source et en offre managée.
+  </Tab>
+</Tabs>
+
+<div id="convergence-dwh-o11y">
+  ## Convergence du data warehousing et de l’observability
+</div>
+
+Le data warehousing et l’observability ont historiquement été des domaines distincts, avec des fournisseurs, des acheteurs et des stacks séparés. Cette séparation relève de plus en plus d’une convention plutôt que d’une exigence technique.
+Les deux domaines s’appuient désormais sur le stockage objet. Tous deux nécessitent des requêtes interactives, à faible latence, avec un haut niveau de concurrence. Et au niveau des données, les mêmes événements sont souvent stockés deux fois — une fois dans une plateforme d’observability et une fois dans un entrepôt de données — avec entre les deux une couche de synchronisation fragile.
+Le fait de tout stocker une seule fois dans des formats ouverts, interrogeables à la fois par les outils AI Analyst et AI SRE, élimine cette duplication et rend le contexte disponible dans les deux workflows.
+
+<div id="platform-layer">
+  ## La couche de plateforme : interfaces adaptées aux agents et observability des LLM
+</div>
+
+Deux composants supplémentaires sont nécessaires aux côtés de la base de données pour disposer d’une plateforme complète d’analytics agentique.
+
+**Interfaces adaptées aux agents**
+
+Lorsque les agents IA constituent l’interface principale avec les données, la plateforme de données doit exposer ses fonctionnalités d’une manière que les agents puissent exploiter — API compatibles avec MCP, interfaces en langage naturel et frameworks d’agents qui s’intègrent sans développement sur mesure pour chaque cas d’usage. L’Agentic Data Stack combine ClickHouse et LibreChat pour offrir une solution clé en main permettant de déployer des agents d’analytics sur vos données.
+
+**Observability des LLM**
+
+À mesure que les agents se multiplient, le traçage de leur exécution, le suivi des performances des modèles, le suivi des coûts et le débogage des échecs dans des workflows en plusieurs étapes deviennent des exigences d’ingénierie essentielles. Langfuse s’exécute sur ClickHouse Cloud pour fournir une observability des LLM en temps réel à grande échelle.

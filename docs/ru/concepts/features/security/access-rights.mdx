@@ -1,0 +1,580 @@
+---
+slug: /operations/access-rights
+sidebarTitle: 'Пользователи и роли'
+title: 'Система управления доступом и учётными записями'
+keywords: ['ClickHouse Cloud', 'управление доступом', 'управление пользователями', 'RBAC', 'безопасность']
+description: 'Описывает систему управления доступом и учётными записями в ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+ClickHouse поддерживает управление доступом на основе модели [RBAC](https://en.wikipedia.org/wiki/Role-based_access_control).
+
+Объекты управления доступом в ClickHouse:
+
+* [Учётная запись пользователя](#user-account-management)
+* [Роль](#role-management)
+* [ROW POLICY](#row-policy-management)
+* [Профиль настроек](#settings-profiles-management)
+* [Квота](#quotas-management)
+
+Вы можете настраивать объекты управления доступом с помощью:
+
+* SQL-команд.
+
+  Для этого нужно [включить](#enabling-access-control) эту возможность.
+
+* файлов [конфигурации](/ru/concepts/features/configuration/server-config/configuration-files) сервера `users.xml` и `config.xml`.
+
+Мы рекомендуем использовать SQL-команды. Оба метода конфигурации работают одновременно, поэтому, если вы используете файлы конфигурации сервера для управления учётными записями и правами доступа, вы можете плавно перейти на использование SQL-команд.
+
+<Note>
+  Нельзя одновременно управлять одним и тем же объектом управления доступом обоими методами конфигурации.
+</Note>
+
+<Note>
+  Если вы хотите управлять пользователями консоли ClickHouse Cloud, обратитесь к этой [странице](/ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users)
+</Note>
+
+Чтобы увидеть всех пользователей, роли, профили и т. д., а также все назначенные им привилегии, используйте оператор [`SHOW ACCESS`](/ru/reference/statements/show#show-access).
+
+<div id="access-control-usage">
+  ## Обзор
+</div>
+
+По умолчанию сервер ClickHouse предоставляет учётную запись `default`, для которой нельзя использовать систему управления доступом и учётными записями на основе SQL, но при этом у неё есть все права и разрешения. Учётная запись `default` используется во всех случаях, когда имя пользователя не указано, например при входе из клиента или в распределённых запросах. При обработке распределённых запросов учётная запись `default` используется, если в конфигурации сервера или кластера не указаны свойства [user and password](/ru/reference/engines/table-engines/special/distributed).
+
+Если вы только начали использовать ClickHouse, рассмотрите следующий сценарий:
+
+1. [Включите](#enabling-access-control) систему управления доступом и учётными записями на основе SQL для пользователя `default`.
+2. Войдите в учётную запись `default` и создайте всех необходимых пользователей. Не забудьте создать учётную запись администратора (`GRANT ALL ON *.* TO admin_user_account WITH GRANT OPTION`).
+3. [Ограничьте разрешения](/ru/concepts/features/configuration/settings/permissions-for-queries) для пользователя `default` и отключите для него систему управления доступом и учётными записями на основе SQL.
+
+<div id="access-control-properties">
+  ### Свойства текущего решения
+</div>
+
+* Вы можете выдавать разрешения на базы данных и таблицы, даже если они не существуют.
+* Если таблица удалена, все привилегии, связанные с этой таблицей, не отзываются. Это означает, что даже если позже вы создадите новую таблицу с тем же именем, все привилегии останутся действительными. Чтобы отозвать привилегии, связанные с удалённой таблицей, нужно выполнить, например, запрос `REVOKE ALL PRIVILEGES ON db.table FROM ALL`.
+* Для привилегий нет настроек времени действия.
+
+<div id="user-account-management">
+  ### Учетная запись пользователя
+</div>
+
+Учетная запись пользователя — это объект управления доступом, который позволяет аутентифицировать пользователя в ClickHouse. Учетная запись пользователя содержит:
+
+* Идентификационную информацию.
+* [Привилегии](/ru/reference/statements/grant#privileges), которые определяют, какие запросы пользователь может выполнять.
+* Хосты, которым разрешено подключаться к серверу ClickHouse.
+* Назначенные роли и роли по умолчанию.
+* Настройки с их ограничениями, которые по умолчанию применяются при входе пользователя в систему.
+* Назначенные профили настроек.
+
+Привилегии могут быть предоставлены учетной записи пользователя с помощью запроса [GRANT](/ru/reference/statements/grant) или путем назначения [ролей](#role-management). Чтобы отозвать привилегии у пользователя, в ClickHouse предусмотрен запрос [REVOKE](/ru/reference/statements/revoke). Чтобы вывести список привилегий пользователя, используйте оператор [SHOW GRANTS](/ru/reference/statements/show#show-grants).
+
+Запросы для управления:
+
+* [CREATE USER](/ru/reference/statements/create/user)
+* [ALTER USER](/ru/reference/statements/alter/user)
+* [DROP USER](/ru/reference/statements/drop)
+* [SHOW CREATE USER](/ru/reference/statements/show#show-create-user)
+* [SHOW USERS](/ru/reference/statements/show#show-users)
+
+<div id="access-control-settings-applying">
+  ### Применение настроек
+</div>
+
+Настройки можно задавать на разных уровнях: для учетной записи пользователя, в назначенных ей ролях и в профилях настроек. При входе пользователя в систему, если настройка задана для разных сущностей управления доступом, ее значение и constraints применяются следующим образом (от более высокого приоритета к более низкому):
+
+1. Настройки учетной записи пользователя.
+2. Настройки ролей по умолчанию для учетной записи пользователя. Если настройка задана в нескольких ролях, порядок ее применения не определен.
+3. Настройки из профилей настроек, назначенных пользователю или его ролям по умолчанию. Если настройка задана в нескольких профилях, порядок ее применения не определен.
+4. Настройки, применяемые ко всему server по умолчанию или из [профиля по умолчанию](/ru/reference/settings/server-settings/settings#default_profile).
+
+<div id="role-management">
+  ### Роль
+</div>
+
+Роль — это контейнер для сущностей доступа, которые можно предоставить учётной записи пользователя.
+
+Роль содержит:
+
+* [Привилегии](/ru/reference/statements/grant#privileges)
+* Настройки и ограничения
+* Список назначенных ролей
+
+Команды управления:
+
+* [CREATE ROLE](/ru/reference/statements/create/role)
+* [ALTER ROLE](/ru/reference/statements/alter/role)
+* [DROP ROLE](/ru/reference/statements/drop#drop-role)
+* [SET ROLE](/ru/reference/statements/set-role)
+* [SET DEFAULT ROLE](/ru/reference/statements/set-role)
+* [SHOW CREATE ROLE](/ru/reference/statements/show#show-create-role)
+* [SHOW ROLES](/ru/reference/statements/show#show-roles)
+
+Привилегии можно предоставить роли с помощью запроса [GRANT](/ru/reference/statements/grant). Чтобы отозвать привилегии у роли, ClickHouse предоставляет запрос [REVOKE](/ru/reference/statements/revoke).
+
+<div id="row-policy-management">
+  #### ROW POLICY
+</div>
+
+ROW POLICY — это фильтр, определяющий, какие строки доступны пользователю или роли. ROW POLICY содержит фильтры для одной конкретной таблицы, а также список ролей и/или пользователей, к которым должна применяться эта ROW POLICY.
+
+<Note>
+  ROW POLICY имеет смысл только при доступе только для чтения. Если вы можете изменять таблицу или копировать партиции между таблицами, это сводит на нет ограничения ROW POLICY.
+</Note>
+
+Команды управления:
+
+* [CREATE ROW POLICY](/ru/reference/statements/create/row-policy)
+* [ALTER ROW POLICY](/ru/reference/statements/alter/row-policy)
+* [DROP ROW POLICY](/ru/reference/statements/drop#drop-row-policy)
+* [SHOW CREATE ROW POLICY](/ru/reference/statements/show#show-create-row-policy)
+* [SHOW POLICIES](/ru/reference/statements/show#show-policies)
+
+<div id="settings-profiles-management">
+  ### Профиль настроек
+</div>
+
+Профиль настроек — это набор [настроек](/ru/reference/settings/index). Профиль настроек содержит настройки и ограничения, а также список ролей и/или пользователей, для которых применяется этот профиль.
+
+Команды управления:
+
+* [CREATE SETTINGS PROFILE](/ru/reference/statements/create/settings-profile)
+* [ALTER SETTINGS PROFILE](/ru/reference/statements/alter/settings-profile)
+* [DROP SETTINGS PROFILE](/ru/reference/statements/drop#drop-settings-profile)
+* [SHOW CREATE SETTINGS PROFILE](/ru/reference/statements/show#show-create-settings-profile)
+* [SHOW PROFILES](/ru/reference/statements/show#show-profiles)
+
+<div id="quotas-management">
+  ### Квота
+</div>
+
+Квота ограничивает использование ресурсов. См. [Квоты](/ru/concepts/features/configuration/server-config/quotas).
+
+Квота содержит набор ограничений для определённых интервалов времени, а также список ролей и/или пользователей, к которым применяется эта квота.
+
+Команды управления:
+
+* [CREATE QUOTA](/ru/reference/statements/create/quota)
+* [ALTER QUOTA](/ru/reference/statements/alter/quota)
+* [DROP QUOTA](/ru/reference/statements/drop#drop-quota)
+* [SHOW CREATE QUOTA](/ru/reference/statements/show#show-create-quota)
+* [SHOW QUOTA](/ru/reference/statements/show#show-quota)
+* [SHOW QUOTAS](/ru/reference/statements/show#show-quotas)
+
+<div id="enabling-access-control">
+  ### Включение системы управления доступом и учётными записями на основе SQL
+</div>
+
+* Настройте каталог для хранения конфигурации.
+
+  ClickHouse хранит конфигурации объектов управления доступом в каталоге, заданном параметром конфигурации сервера [access&#95;control&#95;path](/ru/reference/settings/server-settings/settings#access_control_path).
+
+* Включите систему управления доступом и учётными записями на основе SQL как минимум для одной учётной записи пользователя.
+
+  По умолчанию система управления доступом и учётными записями на основе SQL отключена для всех пользователей. Необходимо настроить как минимум одного пользователя в файле конфигурации `users.xml` и установить для настроек [`access_management`](/ru/concepts/features/configuration/settings/settings-users#access_management-user-setting), `named_collection_control`, `show_named_collections` и `show_named_collections_secrets` значение 1.
+
+<div id="defining-sql-users-and-roles">
+  ## Определение SQL-пользователей и ролей
+</div>
+
+<Tip>
+  Если вы работаете в ClickHouse Cloud, см. [Управление доступом в Cloud](/ru/products/cloud/reference/security/console-roles).
+</Tip>
+
+В этой статье рассматриваются основы определения SQL-пользователей и ролей, а также применения этих привилегий и разрешений к базам данных, таблицам, строкам и столбцам.
+
+<div id="enabling-sql-user-mode">
+  ### Включение режима SQL-пользователей
+</div>
+
+1. Включите режим SQL-пользователей в файле `users.xml` в секции пользователя `<default>`:
+   ```xml
+   <access_management>1</access_management>
+   <named_collection_control>1</named_collection_control>
+   <show_named_collections>1</show_named_collections>
+   <show_named_collections_secrets>1</show_named_collections_secrets>
+   ```
+
+<Note>
+  Пользователь `default` — единственный пользователь, который создается при новой установке, и именно эта учетная запись по умолчанию используется для межузлового взаимодействия.
+
+  В рабочей среде рекомендуется отключить этого пользователя после того, как межузловое взаимодействие будет настроено с SQL-пользователем с правами администратора, а также будут настроены `<secret>`, учетные данные кластера и/или учетные данные HTTP и транспортного протокола для межузлового взаимодействия, поскольку учетная запись `default` используется для межузлового взаимодействия.
+</Note>
+
+2. Перезапустите узлы, чтобы применить изменения.
+
+3. Запустите клиент ClickHouse:
+   ```sql
+   clickhouse-client --user default --password <password>
+   ```
+
+<div id="defining-users">
+  ### Создание пользователей
+</div>
+
+1. Создайте учетную запись администратора SQL:
+   ```sql
+   CREATE USER clickhouse_admin IDENTIFIED BY 'password';
+   ```
+2. Предоставьте новому пользователю полные административные права
+   ```sql
+   GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION;
+   ```
+
+<div id="alter-permissions">
+  ## Разрешения ALTER
+</div>
+
+Эта статья поможет вам лучше понять, как задавать разрешения и как они работают при использовании команд `ALTER` привилегированными пользователями.
+
+Команды `ALTER` делятся на несколько категорий: некоторые из них иерархические, а некоторые — нет и должны быть явно определены.
+
+**Пример конфигурации DB, таблицы и пользователя**
+
+1. Используя пользователя с ролью Admin, создайте тестового пользователя
+
+```sql
+CREATE USER my_user IDENTIFIED BY 'password';
+```
+
+2. Создайте тестовую базу данных
+
+```sql
+CREATE DATABASE my_db;
+```
+
+3. Создайте тестовую таблицу
+
+```sql
+CREATE TABLE my_db.my_table (id UInt64, column1 String) ENGINE = MergeTree() ORDER BY id;
+```
+
+4. Создайте тестового пользователя с правами администратора для назначения/отзыва привилегий
+
+```sql
+CREATE USER my_alter_admin IDENTIFIED BY 'password';
+```
+
+<Note>
+  Чтобы выдавать или отзывать разрешения, пользователь admin должен иметь привилегию `WITH GRANT OPTION`.
+  Например:
+
+  ```sql
+  GRANT ALTER ON my_db.* WITH GRANT OPTION
+  ```
+
+  Чтобы выдавать (`GRANT`) или отзывать (`REVOKE`) привилегии, пользователь должен сначала сам иметь эти привилегии.
+</Note>
+
+**Выдача или отзыв привилегий**
+
+Иерархия `ALTER`:
+
+```response
+├── ALTER (только для таблиц и представлений)/
+│   ├── ALTER TABLE/
+│   │   ├── ALTER UPDATE
+│   │   ├── ALTER DELETE
+│   │   ├── ALTER COLUMN/
+│   │   │   ├── ALTER ADD COLUMN
+│   │   │   ├── ALTER DROP COLUMN
+│   │   │   ├── ALTER MODIFY COLUMN
+│   │   │   ├── ALTER COMMENT COLUMN
+│   │   │   ├── ALTER CLEAR COLUMN
+│   │   │   └── ALTER RENAME COLUMN
+│   │   ├── ALTER INDEX/
+│   │   │   ├── ALTER ORDER BY
+│   │   │   ├── ALTER SAMPLE BY
+│   │   │   ├── ALTER ADD INDEX
+│   │   │   ├── ALTER DROP INDEX
+│   │   │   ├── ALTER MATERIALIZE INDEX
+│   │   │   └── ALTER CLEAR INDEX
+│   │   ├── ALTER CONSTRAINT/
+│   │   │   ├── ALTER ADD CONSTRAINT
+│   │   │   └── ALTER DROP CONSTRAINT
+│   │   ├── ALTER TTL/
+│   │   │   └── ALTER MATERIALIZE TTL
+│   │   ├── ALTER SETTINGS
+│   │   ├── ALTER MOVE PARTITION
+│   │   ├── ALTER FETCH PARTITION
+│   │   └── ALTER FREEZE PARTITION
+│   └── ALTER LIVE VIEW/
+│       ├── ALTER LIVE VIEW REFRESH
+│       └── ALTER LIVE VIEW MODIFY QUERY
+├── ALTER DATABASE
+├── ALTER USER
+├── ALTER ROLE
+├── ALTER QUOTA
+├── ALTER [ROW] POLICY
+└── ALTER [SETTINGS] PROFILE
+```
+
+1. Предоставление привилегий `ALTER` пользователю или роли
+
+Команда `GRANT ALTER on *.* TO my_user` влияет только на `ALTER TABLE` и `ALTER VIEW` верхнего уровня; остальные команды `ALTER` нужно выдавать или отзывать по отдельности.
+
+например, предоставление базовой привилегии `ALTER`:
+
+```sql
+GRANT ALTER ON my_db.my_table TO my_user;
+```
+
+Итоговый набор привилегий:
+
+```sql
+SHOW GRANTS FOR  my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: 706befbc-525e-4ec1-a1a2-ba2508cc09e3
+
+┌─GRANTS FOR my_user───────────────────────────────────────────┐
+│ GRANT ALTER TABLE, ALTER VIEW ON my_db.my_table TO my_user   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Это предоставит все разрешения из `ALTER TABLE` и `ALTER VIEW`, показанные в примере выше, однако не предоставит некоторые другие разрешения `ALTER`, такие как `ALTER ROW POLICY` (вернитесь к иерархии, и вы увидите, что `ALTER ROW POLICY` не является дочерним элементом `ALTER TABLE` или `ALTER VIEW`). Их нужно явно предоставить или отозвать.
+
+Если требуется только часть разрешений `ALTER`, каждое из них можно предоставить отдельно; если у такого разрешения есть подпривилегии, они тоже будут предоставлены автоматически.
+
+Например:
+
+```sql
+GRANT ALTER COLUMN ON my_db.my_table TO my_user;
+```
+
+Привилегии задаются следующим образом:
+
+```sql
+SHOW GRANTS FOR my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: 47b3d03f-46ac-4385-91ec-41119010e4e2
+
+┌─GRANTS FOR my_user────────────────────────────────┐
+│ GRANT ALTER COLUMN ON default.my_table TO my_user │
+└───────────────────────────────────────────────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+Это также предоставляет следующие подпривилегии:
+
+```sql
+ALTER ADD COLUMN
+ALTER DROP COLUMN
+ALTER MODIFY COLUMN
+ALTER COMMENT COLUMN
+ALTER CLEAR COLUMN
+ALTER RENAME COLUMN
+```
+
+2. Отзыв привилегий `ALTER` у пользователей и ролей
+
+Оператор `REVOKE` работает аналогично оператору `GRANT`.
+
+Если пользователю/роли была выдана дочерняя привилегия, вы можете либо отозвать её напрямую, либо отозвать вышестоящую привилегию, от которой она наследуется.
+
+Например, если пользователю был предоставлен grant `ALTER ADD COLUMN`
+
+```sql
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user;
+```
+
+```response
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user
+
+Query id: 61fe0fdc-1442-4cd6-b2f3-e8f2a853c739
+
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+SHOW GRANTS FOR my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: 27791226-a18f-46c8-b2b4-a9e64baeb683
+
+┌─GRANTS FOR my_user──────────────────────────────────┐
+│ GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user │
+└─────────────────────────────────────────────────────┘
+```
+
+Привилегию можно отозвать по отдельности:
+
+```sql
+REVOKE ALTER ADD COLUMN ON my_db.my_table FROM my_user;
+```
+
+Или можно отозвать на любом из вышестоящих уровней (отозвать все подпривилегии COLUMN):
+
+```response
+REVOKE ALTER COLUMN ON my_db.my_table FROM my_user;
+```
+
+```response
+REVOKE ALTER COLUMN ON my_db.my_table FROM my_user
+
+Query id: b882ba1b-90fb-45b9-b10f-3cda251e2ccc
+
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+SHOW GRANTS FOR my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: e7d341de-de65-490b-852c-fa8bb8991174
+
+Ok.
+
+0 rows in set. Elapsed: 0.003 sec.
+```
+
+**Дополнительно**
+
+Привилегии должны быть выданы пользователем, который не только имеет `WITH GRANT OPTION`, но и сам располагает этими привилегиями.
+
+1. Чтобы предоставить пользователю-администратору эту привилегию, а также разрешить ему управлять набором привилегий
+   Ниже приведён пример:
+
+```sql
+GRANT SELECT, ALTER COLUMN ON my_db.my_table TO my_alter_admin WITH GRANT OPTION;
+```
+
+Теперь пользователь может выполнять grant или отзывать привилегии `ALTER COLUMN` и все дочерние привилегии.
+
+**Тестирование**
+
+1. Добавьте право `SELECT`
+
+```sql
+GRANT SELECT ON my_db.my_table TO my_user;
+```
+
+2. Добавьте пользователю привилегию добавления столбца
+
+```sql
+GRANT ADD COLUMN ON my_db.my_table TO my_user;
+```
+
+3. Войдите под пользователем с ограниченными правами
+
+```bash
+clickhouse-client --user my_user --password password --port 9000 --host <your_clickhouse_host>
+```
+
+4. Проверка добавления столбца
+
+```sql
+ALTER TABLE my_db.my_table ADD COLUMN column2 String;
+```
+
+```response
+ALTER TABLE my_db.my_table
+    ADD COLUMN `column2` String
+
+Query id: d5d6bfa1-b80c-4d9f-8dcd-d13e7bd401a5
+
+Ok.
+
+0 rows in set. Elapsed: 0.010 sec.
+```
+
+```sql
+DESCRIBE my_db.my_table;
+```
+
+```response
+DESCRIBE TABLE my_db.my_table
+
+Query id: ab9cb2d0-5b1a-42e1-bc9c-c7ff351cb272
+
+┌─name────┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ id      │ UInt64 │              │                    │         │                  │                │
+│ column1 │ String │              │                    │         │                  │                │
+│ column2 │ String │              │                    │         │                  │                │
+└─────────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+4. Проверка удаления столбца
+
+```sql
+ALTER TABLE my_db.my_table DROP COLUMN column2;
+```
+
+```response
+ALTER TABLE my_db.my_table
+    DROP COLUMN column2
+
+Query id: 50ad5f6b-f64b-4c96-8f5f-ace87cea6c47
+
+0 rows in set. Elapsed: 0.004 sec.
+
+Received exception from server (version 22.5.1):
+Code: 497. DB::Exception: Received from chnode1.marsnet.local:9440. DB::Exception: my_user: Not enough privileges. To execute this query it's necessary to have grant ALTER DROP COLUMN(column2) ON my_db.my_table. (ACCESS_DENIED)
+```
+
+5. Проверка привилегии alter admin путем выдачи права
+
+```sql
+GRANT SELECT, ALTER COLUMN ON my_db.my_table TO my_alter_admin WITH GRANT OPTION;
+```
+
+6. Войдите под пользователем alter admin
+
+```bash
+clickhouse-client --user my_alter_admin --password password --port 9000 --host <my_clickhouse_host>
+```
+
+7. Предоставить подпривилегию
+
+```sql
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user;
+```
+
+```response
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user
+
+Query id: 1c7622fa-9df1-4c54-9fc3-f984c716aeba
+
+Ok.
+```
+
+8. Проверьте выдачу привилегии, которой нет у пользователя alter admin и которая не входит в число подпривилегий привилегий пользователя admin.
+
+```sql
+GRANT ALTER UPDATE ON my_db.my_table TO my_user;
+```
+
+```response
+GRANT ALTER UPDATE ON my_db.my_table TO my_user
+
+Query id: 191690dc-55a6-4625-8fee-abc3d14a5545
+
+0 rows in set. Elapsed: 0.004 sec.
+
+Received exception from server (version 22.5.1):
+Code: 497. DB::Exception: Received from chnode1.marsnet.local:9440. DB::Exception: my_alter_admin: Not enough privileges. To execute this query it's necessary to have grant ALTER UPDATE ON my_db.my_table WITH GRANT OPTION. (ACCESS_DENIED)
+```
+
+**Сводка**
+Привилегии `ALTER` образуют иерархию для операций `ALTER` над таблицами и представлениями, но не для других операторов `ALTER`. Разрешения можно задавать как на детальном уровне, так и через их группировку, и аналогичным образом отзывать. Пользователь, который выдает или отзывает привилегии, должен иметь `WITH GRANT OPTION`, чтобы назначать привилегии пользователям, включая самого себя, и уже должен обладать соответствующей привилегией. Действующий пользователь не может отозвать собственные привилегии, если у него самого нет привилегии `GRANT OPTION`.

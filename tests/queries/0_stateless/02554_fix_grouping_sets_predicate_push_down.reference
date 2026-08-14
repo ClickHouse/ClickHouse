@@ -22,11 +22,11 @@ WHERE equals(type_1, \'all\')
 
 ---Explain Pipeline---
 (Expression)
-ExpressionTransform
+ExpressionTransform × 8
   (Filter)
-  FilterTransform × 2
+  FilterTransform × 16
     (Aggregating)
-    Resize 2 → 1
+    Resize 2 → 8
       ExpressionTransform × 2
         AggregatingTransform × 2
           Copy 1 → 2
@@ -37,11 +37,11 @@ ExpressionTransform
                 (ReadFromMergeTree)
                 MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 (Expression)
-ExpressionTransform
+ExpressionTransform × 8
   (Filter)
-  FilterTransform
+  FilterTransform × 8
     (Aggregating)
-    Resize 2 → 1
+    Resize 2 → 8
       ExpressionTransform × 2
         AggregatingTransform × 2
           Copy 1 → 2
@@ -57,9 +57,9 @@ ExpressionTransform
 
 ---Explain Pipeline---
 (Expression)
-ExpressionTransform
+ExpressionTransform × 8
   (Aggregating)
-  Resize 2 → 1
+  Resize 2 → 8
     ExpressionTransform × 2
       AggregatingTransform × 2
         Copy 1 → 2
@@ -68,9 +68,9 @@ ExpressionTransform
             (ReadFromMergeTree)
             MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 (Expression)
-ExpressionTransform
+ExpressionTransform × 8
   (Aggregating)
-  Resize 2 → 1
+  Resize 2 → 8
     ExpressionTransform × 2
       AggregatingTransform × 2
         Copy 1 → 2
