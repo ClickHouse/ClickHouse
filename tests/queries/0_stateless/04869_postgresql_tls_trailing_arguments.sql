@@ -9,8 +9,8 @@
 
 -- A TLS parameter of a PostgreSQL source given twice in the trailing key-value arguments must be
 -- rejected, and the trailing arguments must not count towards the positional ones.
--- The database name comes from the CLICKHOUSE_DATABASE_1 macro: the flaky check runs this test
--- many times in parallel, and a fixed name collides across runs.
+-- The database name comes from the CLICKHOUSE_DATABASE_1 macro rather than a fixed name, so
+-- concurrent independent runs of this test against the same server do not collide on it.
 
 DROP TABLE IF EXISTS t_04869;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
