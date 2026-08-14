@@ -282,6 +282,9 @@ std::optional<String> optimizeUseNormalProjections(
     QueryPlan::Nodes & nodes,
     const QueryPlanOptimizationSettings & optimization_settings);
 
+/// Returns `COUNT()` query directly from the text index posting metadata.
+bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+
 bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 
 /// Resolve all DelayedMaterializingCTEsStep nodes in the plan tree.
