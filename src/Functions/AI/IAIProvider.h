@@ -1,13 +1,38 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/Net/HTTPResponse.h>
 #include <memory>
 
 namespace DB
 {
+
+/// Thrown when an AI provider returns a non-2xx HTTP response. Carries the HTTP status code so the
+/// retry logic (`FunctionBaseAI::isRetriableProviderError`) can apply the same retriable-status
+/// policy as the `url` table function (`isRetriableHTTPError`): deterministic client errors
+/// (e.g. 400, 401, 403, 404, 405, 501) are surfaced immediately, while transient/server-side errors
+/// are retried. Uses the `RECEIVED_ERROR_FROM_REMOTE_IO_SERVER` error code, as the providers did
+/// before the status was preserved, so error messages and `throw_on_error` behavior are unchanged.
+class AIProviderHTTPException : public Exception
+{
+public:
+    AIProviderHTTPException(Poco::Net::HTTPResponse::HTTPStatus http_status_, PreformattedMessage msg);
+
+    AIProviderHTTPException * clone() const override { return new AIProviderHTTPException(*this); }
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+
+    Poco::Net::HTTPResponse::HTTPStatus getHTTPStatus() const { return http_status; }
+
+private:
+    Poco::Net::HTTPResponse::HTTPStatus http_status;
+
+    const char * name() const noexcept override { return "DB::AIProviderHTTPException"; }
+    const char * className() const noexcept override { return "DB::AIProviderHTTPException"; }
+};
 
 /** Parameters for a single AI chat completion request.
   *
@@ -41,6 +66,10 @@ struct AIRequest
 
     /// Maximum number of tokens the model may generate in its response. This is a per-request limit, not a per-query limit.
     UInt64 max_tokens = 0;
+
+    /// SQL name of the AI function that produced this request (e.g. "aiGenerate").
+    /// Emitted by OpenAIProvider as the `X-ClickHouse-AI-Function` header; ignored by other providers.
+    String function_name;
 };
 
 /// Response from a single AI chat completion request. Returned by IAIProvider::call after parsing the provider's HTTP response.
@@ -76,6 +105,10 @@ struct AIEmbeddingRequest
     /// Optional target dimensionality for the output vectors. 0 means use the model's native size.
     /// Supported by OpenAI's `text-embedding-3-*` models; providers that ignore it return the native size.
     UInt64 dimensions = 0;
+
+    /// SQL name of the AI function that produced this request (e.g. "aiEmbed").
+    /// Emitted by OpenAIProvider as the `X-ClickHouse-AI-Function` header; ignored by other providers.
+    String function_name;
 };
 
 /// Response from a single embedding request. `embeddings` is aligned 1:1 with `AIEmbeddingRequest::inputs`.

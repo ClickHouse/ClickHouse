@@ -28,6 +28,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageMaterializedView.h>
@@ -168,6 +169,23 @@ ColumnPtr getFilteredTables(
         VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*dag), context), block);
 
     return block.getByPosition(0).column;
+}
+
+}
+
+namespace
+{
+
+/// Returns data lake metadata (Iceberg, DeltaLake, ...) of the table, if it has any.
+/// Object storage table engines are instantiated as StorageObjectStorageCluster, which is not derived
+/// from StorageObjectStorage, so both storage types have to be handled here.
+IDataLakeMetadata * tryGetDataLakeMetadata(const StoragePtr & table, ContextPtr context)
+{
+    if (auto * object_storage = dynamic_cast<StorageObjectStorage *>(table.get()))
+        return object_storage->getExternalMetadata(context);
+    if (auto * object_storage_cluster = dynamic_cast<StorageObjectStorageCluster *>(table.get()))
+        return object_storage_cluster->getExternalMetadata(context);
+    return nullptr;
 }
 
 }
@@ -705,17 +723,13 @@ protected:
                     try
                     {
                         // Extract from specific DataLake metadata if suitable
-                        if (auto * obj = dynamic_cast<StorageObjectStorage *>(table.get()))
+                        if (auto * dl_meta = tryGetDataLakeMetadata(table, context))
                         {
-                            if (auto * dl_meta = obj->getExternalMetadata(context))
+                            if (auto p = dl_meta->partitionKey(context); p.has_value())
                             {
-                                if (auto p = dl_meta->partitionKey(context); p.has_value())
-                                {
-                                    res_columns[res_index++]->insert(*p);
-                                    inserted = true;
-                                }
+                                res_columns[res_index++]->insert(*p);
+                                inserted = true;
                             }
-
                         }
                     }
                     catch (const Exception &)
@@ -740,15 +754,12 @@ protected:
                     try
                     {
                         // Extract from specific DataLake metadata if suitable
-                        if (auto * obj = dynamic_cast<StorageObjectStorage *>(table.get()))
+                        if (auto * dl_meta = tryGetDataLakeMetadata(table, context))
                         {
-                            if (auto * dl_meta = obj->getExternalMetadata(context))
+                            if (auto p = dl_meta->sortingKey(context); p.has_value())
                             {
-                                if (auto p = dl_meta->sortingKey(context); p.has_value())
-                                {
-                                    res_columns[res_index++]->insert(*p);
-                                    inserted = true;
-                                }
+                                res_columns[res_index++]->insert(*p);
+                                inserted = true;
                             }
                         }
                     }

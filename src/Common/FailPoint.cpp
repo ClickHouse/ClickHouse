@@ -42,6 +42,7 @@ static struct InitFiu
     ONCE(remote_query_executor_cancel_before_send) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \
+    REGULAR(hybrid_watermarks_read_fail) \
     ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
     ONCE(smt_commit_merge_mutate_zk_fail_before_op) \
     ONCE(smt_commit_write_zk_fail_after_op) \
@@ -70,6 +71,7 @@ static struct InitFiu
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(object_storage_queue_fail_commit_after_success) \
+    ONCE(object_storage_queue_skip_one_file_in_batch) \
     ONCE(object_storage_queue_cancel_in_generate) \
     ONCE(object_storage_queue_sleep_in_generate) \
     ONCE(distributed_cache_fail_continue_request) \
@@ -163,6 +165,13 @@ static struct InitFiu
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
     REGULAR(storage_cluster_read_sleep) \
+    ONCE(iceberg_writes_non_retry_cleanup) \
+    ONCE(iceberg_writes_post_publish_throw) \
+    ONCE(iceberg_export_after_commit_before_zk_completed) \
+    REGULAR(export_partition_commit_always_throw) \
+    ONCE(export_partition_status_change_throw) \
+    REGULAR(export_part_non_retryable_throw) \
+    REGULAR(export_part_retryable_throw) \
     ONCE(backup_add_empty_memory_table) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \

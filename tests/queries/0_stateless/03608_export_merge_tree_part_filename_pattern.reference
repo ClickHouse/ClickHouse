@@ -1,0 +1,16 @@
+---- Test: Default pattern {part_name}_{checksum}
+1	2020
+2	2020
+3	2020
+---- Verify filename matches 2020_1_1_0_*.1.parquet
+1
+---- Test: Custom prefix pattern
+4	2021
+---- Verify filename matches myprefix_2021_2_2_0.1.parquet
+1
+---- Test: Pattern with macros
+1	2020
+2	2020
+3	2020
+---- Verify macros expanded (no literal braces in parquet filenames, that's the best we can do for stateless tests)
+1

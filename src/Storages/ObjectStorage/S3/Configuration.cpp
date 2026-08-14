@@ -109,6 +109,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "partition_columns_in_data_file",
     "storage_class_name",
     "storage_class", /// Interchangeable alias for `storage_class_name`, see issue #68551
+    "storage_type",
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials
@@ -688,6 +689,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         compression_method = compression_method_value.value();
     }
 
+
     if (auto partition_strategy_value = getFromPositionOrKeyValue<String>("partition_strategy", args, engine_args_to_idx, key_value_args);
         partition_strategy_value.has_value())
     {
@@ -1090,6 +1092,31 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
     addStructureAndFormatToArgsIfNeededS3(
         args, structure_, format_, context, with_structure, S3StorageParsedArguments::getMaxNumberOfArguments(with_structure));
 }
+
+ASTPtr StorageS3Configuration::createArgsWithAccessData() const
+{
+    auto arguments = make_intrusive<ASTExpressionList>();
+
+    arguments->children.push_back(make_intrusive<ASTLiteral>(url.uri_str));
+    if (s3_settings->auth_settings[S3AuthSetting::no_sign_request])
+    {
+        arguments->children.push_back(make_intrusive<ASTLiteral>("NOSIGN"));
+    }
+    else
+    {
+        arguments->children.push_back(make_intrusive<ASTLiteral>(s3_settings->auth_settings[S3AuthSetting::access_key_id].value));
+        arguments->children.push_back(make_intrusive<ASTLiteral>(s3_settings->auth_settings[S3AuthSetting::secret_access_key].value));
+        if (!s3_settings->auth_settings[S3AuthSetting::session_token].value.empty())
+            arguments->children.push_back(make_intrusive<ASTLiteral>(s3_settings->auth_settings[S3AuthSetting::session_token].value));
+        if (getFormat() != "auto")
+            arguments->children.push_back(make_intrusive<ASTLiteral>(getFormat()));
+        if (!getCompressionMethod().empty())
+            arguments->children.push_back(make_intrusive<ASTLiteral>(getCompressionMethod()));
+    }
+
+    return arguments;
+}
+
 }
 
 #endif

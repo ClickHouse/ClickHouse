@@ -68,20 +68,31 @@ StorageFileCluster::StorageFileCluster(
 
     auto & storage_columns = storage_metadata.columns;
 
+    const auto sample_path = paths.empty() ? "" : paths.front();
+
     /// Not grabbing the file_columns because it is not necessary to do it here.
     std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
         storage_columns,
-        paths.empty() ? "" : paths.front(),
+        sample_path,
         columns_.empty(),
         std::nullopt,
         context);
 
     storage_metadata.setConstraints(constraints_);
-    storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context));
+    storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        storage_metadata.columns,
+        context,
+        std::nullopt,
+        PartitionStrategyFactory::StrategyType::NONE,
+        sample_path));
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const DB::ContextPtr & context)
+void StorageFileCluster::updateQueryToSendIfNeeded(
+    DB::ASTPtr & query,
+    const StorageSnapshotPtr & storage_snapshot,
+    const DB::ContextPtr & context,
+    bool /*make_cluster_function*/)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -95,18 +106,49 @@ void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const Sto
     );
 }
 
-RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr metadata) const
+class FileTaskIterator : public TaskIterator
 {
-    auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
-    auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
+public:
+    FileTaskIterator(const Strings & files,
+        std::optional<StorageFile::ArchiveInfo> archive_info,
+        const ActionsDAG::Node * predicate,
+        const NamesAndTypesList & virtual_columns,
+        const NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
+        const ContextPtr & context,
+        bool distributed_processing = false)
+        : iterator(files
+            , archive_info
+            , predicate
+            , virtual_columns
+            , hive_partition_columns_to_read_from_file_path
+            , context
+            , distributed_processing) {}
+
+    ~FileTaskIterator() override = default;
+
+    ClusterFunctionReadTaskResponsePtr operator()(size_t /* number_of_current_replica */) const override
     {
-        auto file = iter->next();
+        auto file = iterator.next();
         if (file.empty())
             return std::make_shared<ClusterFunctionReadTaskResponse>();
         return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(file));
-    };
-    auto callback = std::make_shared<TaskIterator>(std::move(next_callback));
+    }
+
+private:
+    mutable StorageFileSource::FilesIterator iterator;
+};
+
+RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
+    const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr metadata) const
+{
+    auto callback = std::make_shared<FileTaskIterator>(
+        paths,
+        std::nullopt,
+        predicate,
+        metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+        getHivePartitionColumnsWithoutVirtuals(metadata),
+        context
+    );
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }
 
