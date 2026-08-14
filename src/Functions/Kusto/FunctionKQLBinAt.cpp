@@ -42,6 +42,7 @@ public:
     size_t getNumberOfArguments() const override { return 3; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -84,7 +85,7 @@ public:
                 || (operands[2].nulls && (*operands[2].nulls)[row]))
             {
                 nested->insertDefault();
-                null_map.push_back(1);
+                null_map.push_back(UInt8(1));
                 continue;
             }
 
@@ -92,7 +93,7 @@ public:
             if (bin <= 0)
             {
                 nested->insertDefault();
-                null_map.push_back(1);
+                null_map.push_back(UInt8(1));
                 continue;
             }
 
@@ -102,7 +103,7 @@ public:
             if (span % bin != 0 && span < 0)
                 --quotient;
             insertNanoseconds(*nested, value_type, fixed + quotient * bin);
-            null_map.push_back(0);
+            null_map.push_back(UInt8(0));
         }
         return ColumnNullable::create(std::move(nested), std::move(nulls));
     }
@@ -323,7 +324,6 @@ private:
 
 REGISTER_FUNCTION(KQLBinAt)
 {
-    factory.registerFunction<FunctionKQLDateTimeBinAt>();
     FunctionDocumentation bin_at_documentation{
         .description = R"(
 Rounds a value down to a multiple of `binSize` counted from `fixedPoint`, as the Kusto Query
@@ -350,6 +350,15 @@ from SQL.
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Arithmetic,
     };
+
+    factory.registerFunction<FunctionKQLDateTimeBinAt>(FunctionDocumentation{
+        .description = "Rounds a datetime down to a timespan multiple counted from a datetime fixed point.",
+        .syntax = "kqlDateTimeBinAt(value, binSize, fixedPoint)",
+        .arguments = {{"value", "The datetime to round."}, {"binSize", "The timespan bin size."}, {"fixedPoint", "The datetime fixed point."}},
+        .returned_value = {"The rounded datetime."},
+        .introduced_in = {26, 8},
+        .category = FunctionDocumentation::Category::Arithmetic,
+    });
 
     factory.registerFunction(
         FunctionKQLBinAtOverloadResolver::name,
