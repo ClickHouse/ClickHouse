@@ -90,6 +90,13 @@ struct JoinOperator
     /// expression by the time the join is built.
     bool hasSingleSidePreFilterCondition() const;
 
+    /// Whether the join planning turns the ON expression into a mixed join expression: a condition over
+    /// both inputs that is claimed neither as a hash-join key nor as a pre-filter condition of the clause,
+    /// and that cannot be applied as a filter over the join result either (`build_mixed_join_expression` in
+    /// `JoinStepLogical.cpp`). Only the hash family evaluates such a condition, so `MergeJoin::isSupported`
+    /// and `FullSortingMergeJoin::isSupported` decline a join carrying one rather than silently dropping it.
+    bool buildsMixedJoinExpression() const;
+
     String dump() const;
 };
 
@@ -190,9 +197,8 @@ struct JoinSettings
     /// `ConstantJoin`, so they count only when the join shape admits one
     /// (`JoinOperator::canBecomeConstantJoin`). The `join_algorithm` list is walked in the planner's
     /// first-buildable-wins order, so a spill-capable algorithm listed after one that always builds an
-    /// in-memory join does not count either. Conservative: the parts of the planners' tests that need the
-    /// full `TableJoin` (no mixed expression) are unknowable here and count as satisfied, since
-    /// under-reporting would make a shard reject the codec at its first spill.
+    /// in-memory join does not count either. Conservative: where the answer cannot be decided exactly it
+    /// errs towards true, since under-reporting would make a shard reject the codec at its first spill.
     bool canSpillToTemporaryFiles(const JoinOperator & join_operator) const;
 
     /// Whether `chooseJoinAlgorithm`'s first-buildable-wins walk over the `join_algorithm` list always

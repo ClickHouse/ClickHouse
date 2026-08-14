@@ -339,19 +339,20 @@ bool JoinSettings::canSpillToTemporaryFiles(const JoinOperator & join_operator) 
     /// Both spilling implementations accept only some kind/strictness pairs, and both require the
     /// single-clause join shape (`TableJoin::oneDisjunct`), which a top-level disjunction never plans
     /// into; a join the implementation rejects falls back to an in-memory algorithm (or fails to plan)
-    /// instead of spilling. The remaining part of the planners' `isSupported` tests (no mixed expression)
-    /// needs the full `TableJoin` and conservatively counts as satisfied here.
+    /// instead of spilling. `MergeJoin` additionally declines a join whose ON expression becomes a mixed
+    /// join expression, because it never evaluates one.
     const bool single_clause_join = !join_operator.expressionIsTopLevelDisjunction();
     const bool spilling_hash_join_is_possible = single_clause_join && GraceHashJoin::isSupported(join_operator.kind, join_operator.strictness);
-    const bool merge_join_is_possible = single_clause_join && MergeJoin::isSupported(join_operator.kind, join_operator.strictness);
+    const bool merge_join_is_possible = single_clause_join
+        && !join_operator.buildsMixedJoinExpression()
+        && MergeJoin::isSupported(join_operator.kind, join_operator.strictness);
     const bool external_join_threshold_is_set = max_bytes_before_external_join != 0 || max_bytes_ratio_before_external_join != 0.;
 
     /// `chooseJoinAlgorithm` walks the algorithm list in order and the first algorithm that builds a join
     /// wins, so this walks the same list the same way: a spill-capable candidate that may be chosen makes
     /// the answer true, while an entry that always builds an in-memory join makes everything after it
-    /// unreachable. Where this cannot decide exactly what the planner does (the `TableJoin`-only parts of
-    /// the `isSupported` tests), it errs towards true: under-emitting the opt-in would make a shard reject
-    /// the codec at its first spill.
+    /// unreachable. Where this cannot decide exactly what the planner does, it errs towards true:
+    /// under-emitting the opt-in would make a shard reject the codec at its first spill.
     for (auto algorithm : join_algorithms)
     {
         /// `prefer_partial_merge` tries `MergeJoin` (which writes the right table through
@@ -605,6 +606,46 @@ bool JoinOperator::hasSingleSidePreFilterCondition() const
 
         if (side && !canPushDownFromOn(side))
             return true;
+    }
+
+    return false;
+}
+
+bool JoinOperator::buildsMixedJoinExpression() const
+{
+    /// A condition left in the ON clause can be applied as a filter over the join result instead of being
+    /// evaluated during the join, which is what the planning does whenever the kind and the strictness
+    /// allow it (`build_mixed_join_expression` in `JoinStepLogical.cpp`).
+    if (canPushDownFromOn())
+        return false;
+
+    /// An ASOF join claims its one cross-side inequality as the ASOF key (more than one is an error), so
+    /// that condition does not end up in the mixed expression.
+    bool asof_key_is_pending = strictness == JoinStrictness::Asof;
+
+    for (const auto & condition : expression)
+    {
+        /// A condition over a single input (or over no input at all) becomes the pre-filter condition of
+        /// the clause, not part of the mixed expression.
+        if (condition.fromLeft() || condition.fromNone() || condition.fromRight())
+            continue;
+
+        auto [op, lhs, rhs] = condition.asBinaryPredicate();
+        const bool operands_are_cross_side = (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
+
+        /// Claimed as a hash-join key (`addJoinPredicatesToTableJoin`).
+        if (operands_are_cross_side && (op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals))
+            continue;
+
+        if (asof_key_is_pending && operands_are_cross_side
+            && (op == JoinConditionOperator::Less || op == JoinConditionOperator::LessOrEquals
+                || op == JoinConditionOperator::Greater || op == JoinConditionOperator::GreaterOrEquals))
+        {
+            asof_key_is_pending = false;
+            continue;
+        }
+
+        return true;
     }
 
     return false;

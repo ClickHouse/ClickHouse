@@ -2065,16 +2065,16 @@ void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & setting
     /// `hash,full_sorting_merge` the sorts are never added). An IEJoin needs two cross-side inequalities
     /// over operands its operator can compare in the ON expression (`tryExtractIEJoinDescription`), and is
     /// planned only when `ie_join` heads the list (`isIEJoinPreferred`) or no condition provides an equality
-    /// join key (the no-keys fallback). The remaining parts of `FullSortingMergeJoin::isSupported`
-    /// conservatively count as satisfied: no mixed expression (a `TableJoin`-only test), and the `USING`
-    /// with `join_use_nulls` and special-storage cases, which this path cannot reach at all
-    /// (`TableJoin::hasUsing` is false whenever a join operator is set, and a plan with a
-    /// `JoinStepLogicalLookup` - the only source of a special storage and of `join_use_nulls` here - is not
-    /// serializable).
+    /// join key (the no-keys fallback). A mixed join expression, which `FullSortingMergeJoin::isSupported`
+    /// declines as well, is ruled out the same way. Its remaining tests - `USING` with `join_use_nulls` and
+    /// a special storage - cannot be reached from a serialized plan at all: `TableJoin::hasUsing` is false
+    /// whenever a join operator is set, and a plan with a `JoinStepLogicalLookup`, the only source of a
+    /// special storage and of `join_use_nulls` here, is not serializable.
     bool full_sorting_merge_join_is_reachable = false;
     if (FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(join_operator.kind, join_operator.strictness)
         && !join_operator.expressionIsTopLevelDisjunction()
-        && !join_operator.hasSingleSidePreFilterCondition())
+        && !join_operator.hasSingleSidePreFilterCondition()
+        && !join_operator.buildsMixedJoinExpression())
     {
         for (auto algorithm : join_settings.join_algorithms)
         {

@@ -537,3 +537,57 @@ TEST(ExperimentalSpillCodecPlanSetting, FullSortingMergeJoinNeedsAClauseWithoutA
     cross_side_conditions_only.expression.push_back(make_condition(JoinConditionOperator::Less, "l.v", "r.v"));
     EXPECT_FALSE(cross_side_conditions_only.hasSingleSidePreFilterCondition());
 }
+
+TEST(ExperimentalSpillCodecPlanSetting, TheMergeAlgorithmsDeclineAMixedOnExpression)
+{
+    tryRegisterFunctions();
+
+    auto type = std::make_shared<DataTypeUInt64>();
+    ColumnsWithTypeAndName left_header{{type, "l.k"}, {type, "l.v"}};
+    ColumnsWithTypeAndName right_header{{type, "r.k"}, {type, "r.v"}};
+    JoinExpressionActions expression_actions(left_header, right_header);
+    auto actions_dag = expression_actions.getActionsDAG();
+    actions_dag->getOutputs() = actions_dag->getInputs();
+
+    auto make_condition = [&](JoinConditionOperator op, const String & lhs, const String & rhs)
+    {
+        return JoinActionRef::transform({
+            JoinActionRef(actions_dag->tryFindInOutputs(lhs), expression_actions),
+            JoinActionRef(actions_dag->tryFindInOutputs(rhs), expression_actions),
+        }, JoinActionRef::AddFunction(op));
+    };
+
+    /// The extra cross-side inequality of a `LEFT` join affects matching, so it cannot become a filter over
+    /// the join result and is evaluated during the join as a mixed join expression. Neither `MergeJoin` nor
+    /// `FullSortingMergeJoin` evaluates one, so both decline the join and neither the spill carrier of
+    /// `partial_merge` nor the sort carrier of `full_sorting_merge` may put the opt-in on the wire.
+    JoinOperator left_join_with_inequality(JoinKind::Left);
+    left_join_with_inequality.expression.push_back(make_condition(JoinConditionOperator::Equals, "l.k", "r.k"));
+    left_join_with_inequality.expression.push_back(make_condition(JoinConditionOperator::Less, "l.v", "r.v"));
+    EXPECT_TRUE(left_join_with_inequality.buildsMixedJoinExpression());
+    EXPECT_FALSE(joinCarriesSetting(
+        makeJoinSettings(experimental_codec, true, {JoinAlgorithm::PARTIAL_MERGE, JoinAlgorithm::HASH}),
+        left_join_with_inequality));
+
+    /// For an `INNER` join the same condition is equivalent to a filter over the join result, so no mixed
+    /// expression is built and `MergeJoin` takes the join.
+    JoinOperator inner_join_with_inequality(JoinKind::Inner);
+    inner_join_with_inequality.expression.push_back(make_condition(JoinConditionOperator::Equals, "l.k", "r.k"));
+    inner_join_with_inequality.expression.push_back(make_condition(JoinConditionOperator::Less, "l.v", "r.v"));
+    EXPECT_FALSE(inner_join_with_inequality.buildsMixedJoinExpression());
+    EXPECT_TRUE(joinCarriesSetting(
+        makeJoinSettings(experimental_codec, true, {JoinAlgorithm::PARTIAL_MERGE, JoinAlgorithm::HASH}),
+        inner_join_with_inequality));
+
+    /// The keys of a keyed join and the single-side conditions of the clause are not mixed conditions.
+    JoinOperator left_join_keyed(JoinKind::Left);
+    left_join_keyed.expression.push_back(make_condition(JoinConditionOperator::Equals, "l.k", "r.k"));
+    left_join_keyed.expression.push_back(make_condition(JoinConditionOperator::Less, "l.k", "l.v"));
+    EXPECT_FALSE(left_join_keyed.buildsMixedJoinExpression());
+
+    /// An ASOF join claims its one cross-side inequality as the ASOF key.
+    JoinOperator asof_join(JoinKind::Left, JoinStrictness::Asof);
+    asof_join.expression.push_back(make_condition(JoinConditionOperator::Equals, "l.k", "r.k"));
+    asof_join.expression.push_back(make_condition(JoinConditionOperator::Less, "l.v", "r.v"));
+    EXPECT_FALSE(asof_join.buildsMixedJoinExpression());
+}
