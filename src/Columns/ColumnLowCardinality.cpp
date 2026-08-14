@@ -12,6 +12,8 @@
 #include <base/sort.h>
 #include <base/scope_guard.h>
 
+#include <algorithm>
+#include <limits>
 #include <new>
 
 
@@ -23,6 +25,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 void throwUnexpectedLowCardinalityIndexType(size_t size)
@@ -42,6 +45,16 @@ namespace
     PaddedPODArray<T> * getIndexesData(IColumn & indexes)
     {
         auto * column = typeid_cast<ColumnVector<T> *>(&indexes);
+        if (column)
+            return &column->getData();
+
+        return nullptr;
+    }
+
+    template <typename T>
+    const PaddedPODArray<T> * getIndexesData(const IColumn & indexes)
+    {
+        const auto * column = typeid_cast<const ColumnVector<T> *>(&indexes);
         if (column)
             return &column->getData();
 
@@ -141,6 +154,75 @@ namespace
             return mapUniqueIndexImpl(*data_uint64);
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for getUniqueIndex must be ColumnUInt, got {}", column.getName());
     }
+
+    template <typename SourceIndexType>
+    MutableColumnPtr translateSparseIndexesForSourceType(
+        const IColumn & source_indexes_column,
+        const PaddedPODArray<SourceIndexType> & source_indexes,
+        size_t start,
+        size_t length,
+        size_t source_dictionary_size,
+        const IColumn & source_keys,
+        IColumnUnique & destination_dictionary)
+    {
+        /// Every valid source index is dense-path eligible without scanning in this case.
+        if (source_dictionary_size == 0 || source_dictionary_size - 1 <= length)
+            return nullptr;
+
+        SourceIndexType max_source_index = source_indexes[start];
+        for (size_t i = 1; i < length; ++i)
+            max_source_index = std::max(max_source_index, source_indexes[start + i]);
+
+        /// Preserve the existing dense mapping path and its crossover exactly.
+        if (max_source_index <= length)
+            return nullptr;
+
+        auto compact_indexes = IColumn::mutate(source_indexes_column.cut(start, length));
+        auto distinct_source_indexes = mapUniqueIndex(*compact_indexes);
+        const size_t distinct_source_index_count = distinct_source_indexes->size();
+        const size_t max_new_keys = std::min(distinct_source_index_count, source_dictionary_size);
+        const size_t destination_dictionary_size = destination_dictionary.size();
+        if (max_new_keys > std::numeric_limits<size_t>::max() - destination_dictionary_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LowCardinality dictionary size overflow");
+        const size_t destination_size_upper_bound = destination_dictionary_size + max_new_keys;
+        auto translated_distinct_indexes = destination_dictionary.uniqueInsertRangeFromDictionary(
+            source_keys,
+            *distinct_source_indexes,
+            0,
+            distinct_source_index_count,
+            destination_size_upper_bound);
+
+        if (distinct_source_index_count == length)
+            return translated_distinct_indexes;
+        return IColumn::mutate(translated_distinct_indexes->index(*compact_indexes, 0));
+    }
+
+    MutableColumnPtr translateSparseIndexes(
+        const IColumn & source_indexes,
+        size_t start,
+        size_t length,
+        size_t source_dictionary_size,
+        const IColumn & source_keys,
+        IColumnUnique & destination_dictionary)
+    {
+        if (const auto * indexes = getIndexesData<UInt8>(source_indexes))
+            return translateSparseIndexesForSourceType(
+                source_indexes, *indexes, start, length, source_dictionary_size, source_keys, destination_dictionary);
+        if (const auto * indexes = getIndexesData<UInt16>(source_indexes))
+            return translateSparseIndexesForSourceType(
+                source_indexes, *indexes, start, length, source_dictionary_size, source_keys, destination_dictionary);
+        if (const auto * indexes = getIndexesData<UInt32>(source_indexes))
+            return translateSparseIndexesForSourceType(
+                source_indexes, *indexes, start, length, source_dictionary_size, source_keys, destination_dictionary);
+        if (const auto * indexes = getIndexesData<UInt64>(source_indexes))
+            return translateSparseIndexesForSourceType(
+                source_indexes, *indexes, start, length, source_dictionary_size, source_keys, destination_dictionary);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Indexes column for LowCardinality translation must be ColumnUInt, got {}",
+            source_indexes.getName());
+    }
+
 }
 
 
@@ -215,6 +297,16 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     if (!low_cardinality_src)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
 
+    const size_t source_size = low_cardinality_src->size();
+    if (start > source_size || length > source_size - start)
+        throw Exception(
+            ErrorCodes::PARAMETER_OUT_OF_BOUND,
+            "Parameters start = {}, length = {} are out of bound in ColumnLowCardinality::insertRangeFrom method "
+            "(source.size() = {})",
+            start,
+            length,
+            source_size);
+
     if (length == 0)
         return;
 
@@ -238,13 +330,24 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     {
         compactIfSharedDictionary();
 
-        /// TODO: Support native insertion from other unique column. It will help to avoid null map creation.
+        const auto & source_keys = *low_cardinality_src->getDictionary().getNestedColumn();
+        auto translated_indexes = translateSparseIndexes(
+            low_cardinality_src->getIndexes(),
+            start,
+            length,
+            low_cardinality_src->getDictionary().size(),
+            source_keys,
+            getDictionary());
+        if (translated_indexes)
+        {
+            idx.insertIndexesRange(*translated_indexes, 0, length);
+            return;
+        }
 
+        /// Keep the existing batched path for dense source indexes.
         auto sub_idx = IColumn::mutate(low_cardinality_src->getIndexes().cut(start, length));
         auto idx_map = mapUniqueIndex(*sub_idx);
-
-        auto src_nested = low_cardinality_src->getDictionary().getNestedColumn();
-        auto used_keys = src_nested->index(*idx_map, 0);
+        auto used_keys = source_keys.index(*idx_map, 0);
 
         auto inserted_indexes = getDictionary().uniqueInsertRangeFrom(*used_keys, 0, used_keys->size());
         idx.insertIndexesRange(*inserted_indexes->index(*sub_idx, 0), 0, length);

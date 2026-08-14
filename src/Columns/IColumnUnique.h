@@ -47,6 +47,14 @@ public:
     /// Appends range of elements from other column.
     /// Could be used to concatenate columns.
     virtual MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
+    /// Translates a range of dictionary indexes. Callers can pass distinct positions to insert each referenced key once.
+    /// The returned indexes correspond one-to-one with src_indexes[start, start + length).
+    virtual MutableColumnPtr uniqueInsertRangeFromDictionary(
+        const IColumn & src_dictionary,
+        const IColumn & src_indexes,
+        size_t start,
+        size_t length,
+        size_t destination_size_upper_bound) = 0;
 
     struct IndexesWithOverflow
     {

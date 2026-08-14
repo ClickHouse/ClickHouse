@@ -1,8 +1,11 @@
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -11,6 +14,11 @@
 
 #include <algorithm>
 #include <vector>
+
+namespace DB::ErrorCodes
+{
+    extern const int PARAMETER_OUT_OF_BOUND;
+}
 
 using namespace DB;
 
@@ -96,7 +104,7 @@ TEST(ColumnLowCardinality, CloneNullableKeepsZeroValue)
     ASSERT_EQ(value.safeGet<UInt64>(), 2);
 }
 
-TEST(ColumnLowCardinality, InsertRangeFromChecksBoundsAfterSharingDictionary)
+TEST(ColumnLowCardinality, InsertRangeFromChecksBoundsBeforeSharingDictionary)
 {
     auto dictionary_keys = ColumnUInt64::create();
     for (UInt64 value : {0, 10})
@@ -113,10 +121,23 @@ TEST(ColumnLowCardinality, InsertRangeFromChecksBoundsAfterSharingDictionary)
     auto wide_column = ColumnLowCardinality::create(dictionary, std::move(wide_indexes), /* is_shared = */ false);
     auto destination = wide_column->cloneEmpty();
     const auto & low_cardinality_destination = assert_cast<const ColumnLowCardinality &>(*destination);
+    const auto * original_dictionary = &low_cardinality_destination.getDictionary();
 
     ASSERT_EQ(low_cardinality_destination.getSizeOfIndexType(), sizeof(UInt16));
-    EXPECT_THROW(destination->insertRangeFrom(*source, source->size(), 1), Exception);
+    ASSERT_NE(original_dictionary, &source->getDictionary());
+    try
+    {
+        destination->insertRangeFrom(*source, source->size(), 1);
+        FAIL() << "Expected PARAMETER_OUT_OF_BOUND for an invalid source range";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::PARAMETER_OUT_OF_BOUND);
+    }
     EXPECT_TRUE(destination->empty());
+    EXPECT_EQ(&low_cardinality_destination.getDictionary(), original_dictionary);
+    EXPECT_FALSE(low_cardinality_destination.isSharedDictionary());
+    EXPECT_EQ(low_cardinality_destination.getSizeOfIndexType(), sizeof(UInt16));
 }
 
 TEST(ColumnLowCardinality, EmptyDictionaryEmptyIndexes)
@@ -146,12 +167,16 @@ namespace
 
 template <typename IndexType>
 ColumnLowCardinality::MutablePtr makeLowCardinalityUInt64Column(
-    size_t dictionary_size, const std::vector<IndexType> & index_values, bool is_shared = false)
+    size_t dictionary_size,
+    const std::vector<IndexType> & index_values,
+    UInt64 key_offset = 0,
+    bool is_shared = false)
 {
     auto keys = ColumnUInt64::create(dictionary_size);
     auto & key_data = keys->getData();
-    for (size_t i = 0; i < dictionary_size; ++i)
-        key_data[i] = i;
+    key_data[0] = 0;
+    for (size_t i = 1; i < dictionary_size; ++i)
+        key_data[i] = key_offset + i;
 
     auto dictionary_type = std::make_shared<DataTypeUInt64>();
     MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*dictionary_type, std::move(keys));
@@ -159,6 +184,63 @@ ColumnLowCardinality::MutablePtr makeLowCardinalityUInt64Column(
     assert_cast<ColumnVector<IndexType> &>(*indexes).getData().assign(index_values.begin(), index_values.end());
 
     return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), is_shared);
+}
+
+template <typename IndexType>
+ColumnLowCardinality::MutablePtr makeLowCardinalityUInt128Column(
+    size_t dictionary_size, const std::vector<IndexType> & index_values, UInt128 key_offset = 0)
+{
+    auto keys = ColumnUInt128::create(dictionary_size);
+    auto & key_data = keys->getData();
+    key_data[0] = 0;
+    for (size_t i = 1; i < dictionary_size; ++i)
+        key_data[i] = key_offset + i;
+
+    auto dictionary_type = std::make_shared<DataTypeUInt128>();
+    MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*dictionary_type, std::move(keys));
+    MutableColumnPtr indexes = ColumnVector<IndexType>::create();
+    assert_cast<ColumnVector<IndexType> &>(*indexes).getData().assign(index_values.begin(), index_values.end());
+
+    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/false);
+}
+
+template <typename IndexType>
+ColumnLowCardinality::MutablePtr makeNullableLowCardinalityUInt128Column(
+    size_t dictionary_size, const std::vector<IndexType> & index_values, UInt128 key_offset = 0)
+{
+    auto keys = ColumnUInt128::create(dictionary_size);
+    auto & key_data = keys->getData();
+    key_data[0] = 0;
+    key_data[1] = 0;
+    for (size_t i = 2; i < dictionary_size; ++i)
+        key_data[i] = key_offset + i;
+
+    auto dictionary_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt128>());
+    MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*dictionary_type, std::move(keys));
+    MutableColumnPtr indexes = ColumnVector<IndexType>::create();
+    assert_cast<ColumnVector<IndexType> &>(*indexes).getData().assign(index_values.begin(), index_values.end());
+
+    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/false);
+}
+
+template <typename IndexType>
+ColumnLowCardinality::MutablePtr makeLowCardinalityStringColumn(
+    size_t dictionary_size, const std::vector<IndexType> & index_values, const String & key_prefix)
+{
+    auto keys = ColumnString::create();
+    keys->insertDefault();
+    for (size_t i = 1; i < dictionary_size; ++i)
+    {
+        const String key = key_prefix + std::to_string(i);
+        keys->insertData(key.data(), key.size());
+    }
+
+    auto dictionary_type = std::make_shared<DataTypeString>();
+    MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*dictionary_type, std::move(keys));
+    MutableColumnPtr indexes = ColumnVector<IndexType>::create();
+    assert_cast<ColumnVector<IndexType> &>(*indexes).getData().assign(index_values.begin(), index_values.end());
+
+    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/false);
 }
 
 template <typename IndexType>
@@ -237,6 +319,19 @@ void checkSparseMinimalDictionaryForIndexType()
     checkMinimalDictionary<IndexType>({17, 200, 5}, 1, 2);
 }
 
+void expectRangeEquals(
+    const IColumn & destination,
+    size_t destination_offset,
+    const IColumn & source,
+    size_t source_offset,
+    size_t length)
+{
+    ASSERT_LE(destination_offset + length, destination.size());
+    ASSERT_LE(source_offset + length, source.size());
+    for (size_t i = 0; i < length; ++i)
+        EXPECT_EQ(destination[destination_offset + i], source[source_offset + i]);
+}
+
 }
 
 TEST(ColumnLowCardinality, SparseMinimalDictionaryAllIndexTypes)
@@ -267,17 +362,40 @@ TEST(ColumnLowCardinality, InsertSparseRangeFromDifferentDictionary)
     auto source = makeLowCardinalityUInt64Column<UInt32>(256, {17, 200, 5, 200, 0, 130, 5, 17});
     auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
     auto destination = low_cardinality_type->createColumn();
+    destination->insert(UInt64{999});
 
     destination->insertRangeFrom(*source, 1, 6);
 
-    ASSERT_EQ(destination->size(), 6);
-    for (size_t i = 0; i < destination->size(); ++i)
-        EXPECT_EQ((*destination)[i], (*source)[i + 1]);
+    ASSERT_EQ(destination->size(), 7);
+    EXPECT_EQ(destination->getUInt(0), 999);
+    for (size_t i = 0; i < 6; ++i)
+        EXPECT_EQ((*destination)[i + 1], (*source)[i + 1]);
+}
+
+TEST(ColumnLowCardinality, InsertSparseRangeFromChecksBoundsBeforeReadingSourceIndexes)
+{
+    auto source = makeLowCardinalityUInt64Column<UInt32>(256, {17, 200, 5});
+    auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
+    auto destination = low_cardinality_type->createColumn();
+    destination->insert(UInt64{999});
+
+    try
+    {
+        destination->insertRangeFrom(*source, source->size(), 1);
+        FAIL() << "Expected PARAMETER_OUT_OF_BOUND for an invalid source range";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::PARAMETER_OUT_OF_BOUND);
+    }
+    ASSERT_EQ(destination->size(), 1);
+    EXPECT_EQ(destination->getUInt(0), 999);
 }
 
 TEST(ColumnLowCardinality, EmptyDestinationSharesMinimalSourceDictionary)
 {
-    auto source = makeLowCardinalityUInt64Column<UInt32>(5, {4, 1, 3, 2, 4, 2, 1}, /*is_shared=*/true);
+    auto source = makeLowCardinalityUInt64Column<UInt32>(
+        5, {4, 1, 3, 2, 4, 2, 1}, /*key_offset=*/0, /*is_shared=*/true);
     auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
 
     auto full_destination = low_cardinality_type->createColumn();
@@ -411,7 +529,8 @@ TEST(ColumnLowCardinality, EmptyRangeDoesNotShareSourceDictionary)
 
 TEST(ColumnLowCardinality, SharedDestinationCompactsForDifferentDictionary)
 {
-    auto first_source = makeLowCardinalityUInt64Column<UInt32>(3, {0, 2, 1, 2, 0}, /*is_shared=*/true);
+    auto first_source = makeLowCardinalityUInt64Column<UInt32>(
+        3, {0, 2, 1, 2, 0}, /*key_offset=*/0, /*is_shared=*/true);
     auto second_source = makeLowCardinalityUInt64Column<UInt16>(256, {17, 5, 250, 17});
     auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
     auto destination = low_cardinality_type->createColumn();
@@ -431,7 +550,8 @@ TEST(ColumnLowCardinality, SharedDestinationCompactsForDifferentDictionary)
 
 TEST(ColumnLowCardinality, MutationAfterSharingDoesNotChangeSource)
 {
-    auto source = makeLowCardinalityUInt64Column<UInt32>(4, {3, 1, 3, 0, 2}, /*is_shared=*/true);
+    auto source = makeLowCardinalityUInt64Column<UInt32>(
+        4, {3, 1, 3, 0, 2}, /*key_offset=*/0, /*is_shared=*/true);
     auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
     auto destination = low_cardinality_type->createColumn();
     const size_t source_dictionary_size = source->getDictionary().size();
@@ -450,7 +570,8 @@ TEST(ColumnLowCardinality, MutationAfterSharingDoesNotChangeSource)
 
 TEST(ColumnLowCardinality, SourceMutationAfterSharingDoesNotChangeDestination)
 {
-    auto source = makeLowCardinalityUInt64Column<UInt32>(4, {3, 1, 3, 0, 2}, /*is_shared=*/true);
+    auto source = makeLowCardinalityUInt64Column<UInt32>(
+        4, {3, 1, 3, 0, 2}, /*key_offset=*/0, /*is_shared=*/true);
     auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
     auto destination = low_cardinality_type->createColumn();
     const size_t source_size = source->size();
@@ -495,4 +616,139 @@ TEST(ColumnLowCardinality, NullableDefaultsSurviveSharingAndCompaction)
         EXPECT_EQ((*destination)[i], (*first_source)[i]);
     for (size_t i = 0; i < second_source->size(); ++i)
         EXPECT_EQ((*destination)[first_source->size() + i], (*second_source)[i]);
+}
+
+TEST(ColumnLowCardinality, TranslateSparseDifferentDictionaries)
+{
+    auto source = makeLowCardinalityUInt64Column<UInt32>(256, {200, 5, 200, 0, 130});
+    auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
+
+    auto disjoint_destination = low_cardinality_type->createColumn();
+    disjoint_destination->insert(UInt64{999});
+    disjoint_destination->insertRangeFrom(*source, 0, source->size());
+    expectRangeEquals(*disjoint_destination, 1, *source, 0, source->size());
+
+    auto overlapping_destination = low_cardinality_type->createColumn();
+    overlapping_destination->insert(UInt64{200});
+    overlapping_destination->insert(UInt64{5});
+    overlapping_destination->insert(UInt64{0});
+    overlapping_destination->insert(UInt64{130});
+    overlapping_destination->insertRangeFrom(*source, 0, source->size());
+    expectRangeEquals(*overlapping_destination, 4, *source, 0, source->size());
+
+    auto partially_overlapping_destination = low_cardinality_type->createColumn();
+    partially_overlapping_destination->insert(UInt64{999});
+    partially_overlapping_destination->insert(UInt64{200});
+    partially_overlapping_destination->insertRangeFrom(*source, 0, source->size());
+    expectRangeEquals(*partially_overlapping_destination, 2, *source, 0, source->size());
+}
+
+TEST(ColumnLowCardinality, TranslateSparseHighUInt32IndexesWithOffset)
+{
+    auto source = makeLowCardinalityUInt64Column<UInt32>(100000, {1, 99999, 70000, 99999, 50000});
+    auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
+    auto destination = low_cardinality_type->createColumn();
+    destination->insert(UInt64{200000});
+
+    destination->insertRangeFrom(*source, 1, 4);
+
+    ASSERT_EQ(destination->size(), 5);
+    expectRangeEquals(*destination, 1, *source, 1, 4);
+}
+
+TEST(ColumnLowCardinality, TranslateSparseIndexesPromotesDestinationType)
+{
+    auto source = makeLowCardinalityUInt64Column<UInt32>(256, {200, 201}, 1000000);
+
+    auto destination_uint8 = makeLowCardinalityUInt64Column<UInt8>(255, {1});
+    destination_uint8->insertRangeFrom(*source, 0, source->size());
+    EXPECT_EQ(destination_uint8->getSizeOfIndexType(), sizeof(UInt16));
+    expectRangeEquals(*destination_uint8, 1, *source, 0, source->size());
+
+    auto destination_uint16 = makeLowCardinalityUInt64Column<UInt16>(65535, {1});
+    destination_uint16->insertRangeFrom(*source, 0, source->size());
+    EXPECT_EQ(destination_uint16->getSizeOfIndexType(), sizeof(UInt32));
+    expectRangeEquals(*destination_uint16, 1, *source, 0, source->size());
+
+    auto destination_uint32 = makeLowCardinalityUInt64Column<UInt32>(70000, {1});
+    destination_uint32->insertRangeFrom(*source, 0, source->size());
+    EXPECT_EQ(destination_uint32->getSizeOfIndexType(), sizeof(UInt32));
+    expectRangeEquals(*destination_uint32, 1, *source, 0, source->size());
+}
+
+TEST(ColumnLowCardinality, TranslateSparseIndexesFromAlternatingDictionaries)
+{
+    auto first_source = makeLowCardinalityUInt64Column<UInt32>(256, {200, 5, 200, 130}, 1000);
+    auto second_source = makeLowCardinalityUInt64Column<UInt16>(256, {250, 17, 250}, 2000);
+    auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
+    auto destination = low_cardinality_type->createColumn();
+    destination->insert(UInt64{999999});
+
+    destination->insertRangeFrom(*first_source, 0, first_source->size());
+    destination->insertRangeFrom(*second_source, 0, second_source->size());
+    destination->insertRangeFrom(*first_source, 1, 2);
+
+    size_t offset = 1;
+    expectRangeEquals(*destination, offset, *first_source, 0, first_source->size());
+    offset += first_source->size();
+    expectRangeEquals(*destination, offset, *second_source, 0, second_source->size());
+    offset += second_source->size();
+    expectRangeEquals(*destination, offset, *first_source, 1, 2);
+}
+
+TEST(ColumnLowCardinality, TranslateSparseIndexesForNestedTypes)
+{
+    {
+        auto source = makeLowCardinalityUInt128Column<UInt32>(256, {200, 5, 200, 130}, UInt128{1} << 100);
+        auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt128>());
+        auto destination = low_cardinality_type->createColumn();
+        destination->insert(UInt128{999});
+        destination->insertRangeFrom(*source, 0, source->size());
+        expectRangeEquals(*destination, 1, *source, 0, source->size());
+    }
+
+    {
+        auto source = makeLowCardinalityStringColumn<UInt16>(256, {200, 5, 200, 130}, "source_");
+        auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+        auto destination = low_cardinality_type->createColumn();
+        destination->insert(String{"seed"});
+        destination->insertRangeFrom(*source, 0, source->size());
+        expectRangeEquals(*destination, 1, *source, 0, source->size());
+    }
+
+    {
+        auto source = makeNullableLowCardinalityUInt128Column<UInt32>(256, {200, 0, 1, 200}, UInt128{1} << 100);
+        auto nested_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt128>());
+        auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(nested_type);
+        auto destination = low_cardinality_type->createColumn();
+        destination->insert(Field(Null()));
+        destination->insertRangeFrom(*source, 0, source->size());
+        expectRangeEquals(*destination, 1, *source, 0, source->size());
+        EXPECT_TRUE(destination->isNullAt(2));
+        EXPECT_FALSE(destination->isNullAt(3));
+    }
+}
+
+TEST(ColumnLowCardinality, TranslateSparseIndexesInsideArray)
+{
+    MutableColumnPtr source_nested = makeLowCardinalityUInt128Column<UInt32>(
+        256, {200, 5, 200, 130}, UInt128{1} << 100);
+    MutableColumnPtr source_offsets = ColumnArray::ColumnOffsets::create();
+    auto & source_offset_data = assert_cast<ColumnArray::ColumnOffsets &>(*source_offsets).getData();
+    source_offset_data.push_back(UInt64{2});
+    source_offset_data.push_back(UInt64{4});
+    MutableColumnPtr source = ColumnArray::create(std::move(source_nested), std::move(source_offsets));
+
+    auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt128>());
+    MutableColumnPtr destination_nested = low_cardinality_type->createColumn();
+    destination_nested->insert(UInt128{999});
+    MutableColumnPtr destination_offsets = ColumnArray::ColumnOffsets::create();
+    assert_cast<ColumnArray::ColumnOffsets &>(*destination_offsets).getData().push_back(UInt64{1});
+    MutableColumnPtr destination = ColumnArray::create(std::move(destination_nested), std::move(destination_offsets));
+
+    destination->insertRangeFrom(*source, 0, source->size());
+
+    ASSERT_EQ(destination->size(), 3);
+    EXPECT_EQ((*destination)[1], (*source)[0]);
+    EXPECT_EQ((*destination)[2], (*source)[1]);
 }

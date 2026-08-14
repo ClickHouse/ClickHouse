@@ -19,6 +19,7 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <base/range.h>
+#include <base/scope_guard.h>
 #include <base/unaligned.h>
 
 
@@ -64,6 +65,12 @@ public:
     bool tryUniqueInsert(const Field & x, size_t & index) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
     MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+    MutableColumnPtr uniqueInsertRangeFromDictionary(
+        const IColumn & src_dictionary,
+        const IColumn & src_indexes,
+        size_t start,
+        size_t length,
+        size_t destination_size_upper_bound) override;
     IColumnUnique::IndexesWithOverflow uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length,
                                                                      size_t max_dictionary_size) override;
     size_t uniqueInsertData(const char * pos, size_t length) override;
@@ -238,6 +245,20 @@ private:
         typename ColumnVector<IndexType>::MutablePtr && positions_column,
         ReverseIndex<UInt64, ColumnType> * secondary_index,
         size_t max_dictionary_size);
+
+    template <typename SourceIndexType, typename DestinationIndexType>
+    MutableColumnPtr uniqueInsertRangeFromDictionaryImpl(
+        const IColumn & src_dictionary,
+        const PaddedPODArray<SourceIndexType> & src_indexes,
+        size_t start,
+        size_t length);
+
+    template <typename DestinationIndexType>
+    MutableColumnPtr uniqueInsertRangeFromDictionaryForDestinationType(
+        const IColumn & src_dictionary,
+        const IColumn & src_indexes,
+        size_t start,
+        size_t length);
 };
 
 template <typename ColumnType>
@@ -442,6 +463,119 @@ size_t ColumnUnique<ColumnType>::uniqueInsertFrom(const IColumn & src, size_t n)
 
     auto ref = src.getDataAt(n);
     return uniqueInsertData(ref.data(), ref.size());
+}
+
+template <typename ColumnType>
+template <typename SourceIndexType, typename DestinationIndexType>
+MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeFromDictionaryImpl(
+    const IColumn & src_dictionary,
+    const PaddedPODArray<SourceIndexType> & src_indexes,
+    size_t start,
+    size_t length)
+{
+    auto translated_column = ColumnVector<DestinationIndexType>::create();
+    auto & translated_indexes = translated_column->getData();
+    translated_indexes.reserve(length);
+
+    const ColumnType * source_column = nullptr;
+    const NullMap * source_null_map = nullptr;
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&src_dictionary))
+    {
+        source_column = typeid_cast<const ColumnType *>(&nullable_column->getNestedColumn());
+        source_null_map = &nullable_column->getNullMapData();
+    }
+    else
+        source_column = typeid_cast<const ColumnType *>(&src_dictionary);
+
+    if (!source_column)
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Invalid source dictionary type for ColumnUnique. Expected {}, got {}",
+            column_holder->getName(),
+            src_dictionary.getName());
+
+    auto * destination_column = getRawColumnPtr();
+    SCOPE_EXIT(updateNullMask());
+
+    auto insert_source_index = [&](size_t source_index) -> size_t
+    {
+        if (source_null_map && (*source_null_map)[source_index])
+            return getNullValueIndex();
+        if (destination_column->compareAt(
+                getNestedTypeDefaultValueIndex(), source_index, *source_column, 1) == 0)
+            return getNestedTypeDefaultValueIndex();
+
+        auto ref = source_column->getDataAt(source_index);
+        if constexpr (is_float_vector_v<ColumnType>)
+        {
+            const auto value = unalignedLoad<typename ColumnType::ValueType>(ref.data());
+            if (isNaN(value))
+            {
+                const auto nan = NaNOrZero<typename ColumnType::ValueType>();
+                return reverse_index.insert(
+                    std::string_view(reinterpret_cast<const char *>(&nan), sizeof(nan)));
+            }
+        }
+        return reverse_index.insert(ref);
+    };
+
+    for (size_t i = 0; i < length; ++i)
+    {
+        const auto source_index = src_indexes[start + i];
+        const size_t destination_index = insert_source_index(static_cast<size_t>(source_index));
+        if (destination_index > std::numeric_limits<DestinationIndexType>::max())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "LowCardinality dictionary index {} does not fit in {} bytes",
+                destination_index,
+                sizeof(DestinationIndexType));
+        translated_indexes.push_back(static_cast<DestinationIndexType>(destination_index));
+    }
+
+    return translated_column;
+}
+
+template <typename ColumnType>
+template <typename DestinationIndexType>
+MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeFromDictionaryForDestinationType(
+    const IColumn & src_dictionary,
+    const IColumn & src_indexes,
+    size_t start,
+    size_t length)
+{
+    if (const auto * indexes = typeid_cast<const ColumnUInt8 *>(&src_indexes))
+        return uniqueInsertRangeFromDictionaryImpl<UInt8, DestinationIndexType>(
+            src_dictionary, indexes->getData(), start, length);
+    if (const auto * indexes = typeid_cast<const ColumnUInt16 *>(&src_indexes))
+        return uniqueInsertRangeFromDictionaryImpl<UInt16, DestinationIndexType>(
+            src_dictionary, indexes->getData(), start, length);
+    if (const auto * indexes = typeid_cast<const ColumnUInt32 *>(&src_indexes))
+        return uniqueInsertRangeFromDictionaryImpl<UInt32, DestinationIndexType>(
+            src_dictionary, indexes->getData(), start, length);
+    if (const auto * indexes = typeid_cast<const ColumnUInt64 *>(&src_indexes))
+        return uniqueInsertRangeFromDictionaryImpl<UInt64, DestinationIndexType>(
+            src_dictionary, indexes->getData(), start, length);
+    throw Exception(
+        ErrorCodes::ILLEGAL_COLUMN,
+        "Indexes column for LowCardinality translation must be ColumnUInt, got {}",
+        src_indexes.getName());
+}
+
+template <typename ColumnType>
+MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeFromDictionary(
+    const IColumn & src_dictionary,
+    const IColumn & src_indexes,
+    size_t start,
+    size_t length,
+    size_t destination_size_upper_bound)
+{
+    if (destination_size_upper_bound <= std::numeric_limits<UInt8>::max())
+        return uniqueInsertRangeFromDictionaryForDestinationType<UInt8>(src_dictionary, src_indexes, start, length);
+    if (destination_size_upper_bound <= std::numeric_limits<UInt16>::max())
+        return uniqueInsertRangeFromDictionaryForDestinationType<UInt16>(src_dictionary, src_indexes, start, length);
+    if (destination_size_upper_bound <= std::numeric_limits<UInt32>::max())
+        return uniqueInsertRangeFromDictionaryForDestinationType<UInt32>(src_dictionary, src_indexes, start, length);
+    return uniqueInsertRangeFromDictionaryForDestinationType<UInt64>(src_dictionary, src_indexes, start, length);
 }
 
 template <typename ColumnType>
