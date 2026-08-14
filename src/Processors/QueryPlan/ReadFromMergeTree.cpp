@@ -5414,8 +5414,7 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
                 required_final_output_positions.insert(pos);
         }
 
-        /// Merging columns absent from the output header are not this step's to read: initializePipeline
-        /// appends them to column_names_to_read itself and projects them back off afterwards.
+        /// Merging columns absent from the output header are added by initializePipeline and projected back off there.
         for (size_t pos = 0; pos < all_column_names.size(); ++pos)
         {
             if (required_for_final.contains(all_column_names[pos]) && output_header->has(all_column_names[pos]))
