@@ -969,13 +969,27 @@ DataTypePtr DataTypeObject::getTypeOfNestedObjects() const
 
 DataTypePtr DataTypeObject::getTypeOfNestedObjects(const String & path_prefix_from_root) const
 {
-    if (shared_data_path_rules.empty())
+    /// Typed paths and literal SKIP paths declared under this prefix (e.g. `arr.forced`, `SKIP
+    /// arr.skip`) still apply to the inferred element at `arr`, but relative to *its* own root, so
+    /// project them the same way buildSubObjectTypeAndSerialization does for the explicit `^`
+    /// subcolumn accessor: keep only entries under the prefix, with it stripped.
+    std::unordered_map<String, DataTypePtr> nested_typed_paths;
+    for (const auto & [path, type] : typed_paths)
+        if (path.size() > path_prefix_from_root.size() && path.starts_with(path_prefix_from_root))
+            nested_typed_paths.emplace(path.substr(path_prefix_from_root.size()), type);
+
+    std::unordered_set<String> nested_paths_to_skip;
+    for (const auto & path : paths_to_skip)
+        if (path.size() > path_prefix_from_root.size() && path.starts_with(path_prefix_from_root))
+            nested_paths_to_skip.insert(path.substr(path_prefix_from_root.size()));
+
+    if (shared_data_path_rules.empty() && nested_typed_paths.empty() && nested_paths_to_skip.empty())
         return getTypeOfNestedObjects();
 
     return std::make_shared<DataTypeObject>(
         schema_format,
-        std::unordered_map<String, DataTypePtr>{},
-        std::unordered_set<String>{},
+        std::move(nested_typed_paths),
+        std::move(nested_paths_to_skip),
         std::vector<String>{},
         max_dynamic_paths / NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR,
         max_dynamic_types / NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR,

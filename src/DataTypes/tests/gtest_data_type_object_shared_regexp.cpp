@@ -331,5 +331,49 @@ TEST(DataTypeObjectSharedRegexp, GetTypeOfNestedObjectsPropagatesRulesAndExtends
     EXPECT_EQ(asJSON(for_arr_inner).getSharedDataPathPrefix(), "arr.inner.");
 }
 
+TEST(DataTypeObjectSharedRegexp, GetTypeOfNestedObjectsProjectsTypedAndSkipPathsUnderPrefix)
+{
+    /// JSON(`arr.forced` UInt64, SKIP arr.skip, SHARED REGEXP '^arr[.]forced$'): `forced` and `skip`
+    /// are declared relative to the root, but once `arr`'s elements are inferred as their own nested
+    /// JSON object, those two policies must still apply -- projected onto the element's own root as
+    /// plain "forced"/"skip" -- so typed paths and literal SKIP keep taking precedence over
+    /// SHARED REGEXP for inferred nested objects the same way they already do for declared ones.
+    const auto root = std::make_shared<DataTypeObject>(
+        DataTypeObject::SchemaFormat::JSON,
+        std::unordered_map<String, DataTypePtr>{{"arr.forced", std::make_shared<DataTypeString>()}, {"other.field", std::make_shared<DataTypeString>()}},
+        std::unordered_set<String>{"arr.skip", "other.skip"},
+        std::vector<String>{},
+        DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS,
+        DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES,
+        std::vector<JSONPathRegexpRule>{{"^arr[.]forced$", MatchMode::Full}});
+    const auto & root_object = asJSON(root);
+
+    const auto for_arr = root_object.getTypeOfNestedObjects("arr.");
+    const auto & for_arr_object = asJSON(for_arr);
+
+    const auto & nested_typed_paths = for_arr_object.getTypedPaths();
+    ASSERT_EQ(nested_typed_paths.size(), 1);
+    ASSERT_TRUE(nested_typed_paths.contains("forced"));
+    EXPECT_TRUE(nested_typed_paths.at("forced")->equals(DataTypeString{}));
+
+    const auto & nested_paths_to_skip = for_arr_object.getPathsToSkip();
+    ASSERT_EQ(nested_paths_to_skip.size(), 1);
+    EXPECT_TRUE(nested_paths_to_skip.contains("skip"));
+
+    /// A prefix with no typed paths or SKIP entries of its own still carries the root's rules
+    /// (`shared_data_path_rules` isn't empty, so this doesn't take the bare-fallback shortcut), but
+    /// must not pick up "other.field"/"other.skip" -- those belong to a sibling, not this prefix.
+    const auto for_unrelated = root_object.getTypeOfNestedObjects("unrelated.");
+    EXPECT_TRUE(asJSON(for_unrelated).getTypedPaths().empty());
+    EXPECT_TRUE(asJSON(for_unrelated).getPathsToSkip().empty());
+    EXPECT_FALSE(asJSON(for_unrelated).getSharedDataPathRules().empty());
+
+    /// With no rules and nothing under the prefix at all, the cheap bare-fallback shortcut applies.
+    const auto no_rules = makeJSONTypeWithTypedPath({}, std::make_shared<DataTypeString>());
+    const auto for_prefix_without_rules = asJSON(no_rules).getTypeOfNestedObjects("unrelated.");
+    EXPECT_TRUE(asJSON(for_prefix_without_rules).getTypedPaths().empty());
+    EXPECT_TRUE(asJSON(for_prefix_without_rules).getSharedDataPathRules().empty());
+}
+
 }
 }
