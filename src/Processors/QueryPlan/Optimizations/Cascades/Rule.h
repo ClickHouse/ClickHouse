@@ -70,6 +70,10 @@ protected:
     void addPhysicalToMemo(GroupExpressionPtr expression, const ExpressionProperties & required_properties,
         Memo & memo, std::vector<GroupExpressionPtr> & result) const;
 
+    /// Same, for a rule that produces one expression: returns the result list directly.
+    std::vector<GroupExpressionPtr> addPhysicalToMemo(
+        GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const;
+
     /// Registers a two-stage split of `source_expression`: the partial expression becomes its own
     /// group (inheriting the source's inputs) and `final_step` becomes a logical alternative in
     /// the source group, consuming the partial group with the given input requirements. Returns
@@ -90,5 +94,21 @@ std::unique_ptr<Step> cloneStepAs(const Step & step)
 }
 
 using OptimizationRulePtr = std::shared_ptr<const IOptimizationRule>;
+
+/// Rule factories; every rule class is local to its source file under `Rules/`.
+OptimizationRulePtr createJoinCommutativity();
+OptimizationRulePtr createHashJoinImplementation();
+OptimizationRulePtr createAggregationImplementation();
+OptimizationRulePtr createTwoStageAggregationTransformation();
+OptimizationRulePtr createLocalReadImplementation();
+OptimizationRulePtr createParallelReadImplementation();
+OptimizationRulePtr createReplicatedReadImplementation();
+OptimizationRulePtr createReplicatedSubplanImplementation();
+OptimizationRulePtr createTopNImplementation();
+OptimizationRulePtr createTwoStageTopN();
+OptimizationRulePtr createDefaultImplementation();
+OptimizationRulePtr createDistributionPassthrough();
+OptimizationRulePtr createDistributionEnforcer();
+OptimizationRulePtr createSortingEnforcer();
 
 }

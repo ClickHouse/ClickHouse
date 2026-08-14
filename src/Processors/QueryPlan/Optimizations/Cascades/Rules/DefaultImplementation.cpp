@@ -54,14 +54,11 @@ protected:
         auto implementation_expression = std::make_shared<GroupExpression>(*expression);
         /// No distribution propagation: output stays at default {1 node}.
 
-        std::vector<GroupExpressionPtr> result;
-        addPhysicalToMemo(implementation_expression, required_properties, memo, result);
-        return result;
+        return addPhysicalToMemo(implementation_expression, required_properties, memo);
     }
 };
 
 
-OptimizationRulePtr createDefaultImplementation();
 OptimizationRulePtr createDefaultImplementation() { return std::make_shared<DefaultImplementation>(); }
 
 }

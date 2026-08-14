@@ -142,9 +142,7 @@ std::vector<GroupExpressionPtr> TwoStageTopN::applyImpl(GroupExpressionPtr expre
     return {final_expr};
 }
 
-OptimizationRulePtr createTopNImplementation();
 OptimizationRulePtr createTopNImplementation() { return std::make_shared<TopNImplementation>(); }
-OptimizationRulePtr createTwoStageTopN();
 OptimizationRulePtr createTwoStageTopN() { return std::make_shared<TwoStageTopN>(); }
 
 }

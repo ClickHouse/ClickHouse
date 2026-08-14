@@ -59,6 +59,14 @@ void IOptimizationRule::addPhysicalToMemo(GroupExpressionPtr expression, const E
         result.push_back(expression);
 }
 
+std::vector<GroupExpressionPtr> IOptimizationRule::addPhysicalToMemo(
+    GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+{
+    std::vector<GroupExpressionPtr> result;
+    addPhysicalToMemo(std::move(expression), required_properties, memo, result);
+    return result;
+}
+
 std::vector<GroupExpressionPtr> IOptimizationRule::apply(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     auto new_expressions = applyImpl(expression, required_properties, memo);

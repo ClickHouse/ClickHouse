@@ -94,9 +94,7 @@ std::vector<GroupExpressionPtr> ParallelReadImplementation::applyImpl(GroupExpre
         return {};
     }
 
-    std::vector<GroupExpressionPtr> result;
-    addPhysicalToMemo(parallel_read_expression, required_properties, memo, result);
-    return result;
+    return addPhysicalToMemo(parallel_read_expression, required_properties, memo);
 }
 
 /// Replicated read: every node reads the full table, pinned to the coordinator's single-bucket mark
@@ -149,9 +147,7 @@ std::vector<GroupExpressionPtr> ReplicatedReadImplementation::applyImpl(GroupExp
         return {};
     }
 
-    std::vector<GroupExpressionPtr> result;
-    addPhysicalToMemo(replicated_read_expression, required_properties, memo, result);
-    return result;
+    return addPhysicalToMemo(replicated_read_expression, required_properties, memo);
 }
 
 /// Unsorted single-node read: fallback for `ReadFromMergeTree` at {1 node}.
@@ -173,17 +169,12 @@ protected:
     {
         auto implementation_expression = std::make_shared<GroupExpression>(*expression);
         /// No distribution propagation: output stays at default {1 node}.
-        std::vector<GroupExpressionPtr> result;
-        addPhysicalToMemo(implementation_expression, required_properties, memo, result);
-        return result;
+        return addPhysicalToMemo(implementation_expression, required_properties, memo);
     }
 };
 
-OptimizationRulePtr createLocalReadImplementation();
 OptimizationRulePtr createLocalReadImplementation() { return std::make_shared<LocalReadImplementation>(); }
-OptimizationRulePtr createParallelReadImplementation();
 OptimizationRulePtr createParallelReadImplementation() { return std::make_shared<ParallelReadImplementation>(); }
-OptimizationRulePtr createReplicatedReadImplementation();
 OptimizationRulePtr createReplicatedReadImplementation() { return std::make_shared<ReplicatedReadImplementation>(); }
 
 }

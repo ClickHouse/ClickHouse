@@ -69,12 +69,9 @@ std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr ex
         std::move(output_properties),
         EnforcerAxis::Sorting);
 
-    std::vector<GroupExpressionPtr> result;
-    addPhysicalToMemo(sort_expr, required_properties, memo, result);
-    return result;
+    return addPhysicalToMemo(sort_expr, required_properties, memo);
 }
 
-OptimizationRulePtr createSortingEnforcer();
 OptimizationRulePtr createSortingEnforcer() { return std::make_shared<SortingEnforcer>(); }
 
 }

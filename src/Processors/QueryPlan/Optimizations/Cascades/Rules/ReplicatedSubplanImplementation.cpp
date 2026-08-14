@@ -70,13 +70,10 @@ protected:
             input.required_properties.distribution = replicated_distribution;
         replicated_expression->properties.distribution = replicated_distribution;
 
-        std::vector<GroupExpressionPtr> result;
-        addPhysicalToMemo(replicated_expression, required_properties, memo, result);
-        return result;
+        return addPhysicalToMemo(replicated_expression, required_properties, memo);
     }
 };
 
-OptimizationRulePtr createReplicatedSubplanImplementation();
 OptimizationRulePtr createReplicatedSubplanImplementation() { return std::make_shared<ReplicatedSubplanImplementation>(); }
 
 }

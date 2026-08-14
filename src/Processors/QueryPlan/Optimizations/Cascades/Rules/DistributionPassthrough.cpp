@@ -159,7 +159,6 @@ private:
 };
 
 
-OptimizationRulePtr createDistributionPassthrough();
 OptimizationRulePtr createDistributionPassthrough() { return std::make_shared<DistributionPassthrough>(); }
 
 }

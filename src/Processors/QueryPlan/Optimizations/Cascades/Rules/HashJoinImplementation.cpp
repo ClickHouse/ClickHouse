@@ -476,7 +476,6 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
     return result;
 }
 
-OptimizationRulePtr createHashJoinImplementation();
 OptimizationRulePtr createHashJoinImplementation() { return std::make_shared<HashJoinImplementation>(); }
 
 }

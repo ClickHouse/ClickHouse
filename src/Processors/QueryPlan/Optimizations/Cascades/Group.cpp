@@ -16,8 +16,6 @@ void Group::addLogicalExpression(GroupExpressionPtr group_expression)
 
 bool Group::addPhysicalExpression(GroupExpressionPtr group_expression)
 {
-    group_expression->group_id = group_id;
-
     /// Drop only a structurally-equal duplicate; a mere fingerprint hash collision keeps both.
     auto & same_fingerprint = physical_expressions_by_fingerprint[group_expression->fingerprint()];
     for (const auto * existing : same_fingerprint)
@@ -26,6 +24,7 @@ bool Group::addPhysicalExpression(GroupExpressionPtr group_expression)
             return false;
     }
 
+    group_expression->group_id = group_id;
     same_fingerprint.push_back(group_expression.get());
     physical_expressions.push_back(std::move(group_expression));
     return true;
@@ -93,6 +92,8 @@ void Group::updateBestImplementation(GroupExpressionPtr expression, const CostCo
             (*best_it)->cost->subtree_cost.total(cost_config) > expression->cost->subtree_cost.total(cost_config) &&
             !enforcer_over_provides_for(expression, *best_it))
         {
+            /// Keep the bucket order: when alternatives cost the same, the first one wins.
+            /// A cheaper swap-with-the-last removal would reorder them and change plans.
             best_it = bucket.erase(best_it);
         }
         else

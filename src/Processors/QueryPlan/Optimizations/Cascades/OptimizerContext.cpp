@@ -21,20 +21,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-OptimizationRulePtr createJoinCommutativity();
-OptimizationRulePtr createHashJoinImplementation();
-OptimizationRulePtr createAggregationImplementation();
-OptimizationRulePtr createTwoStageAggregationTransformation();
-OptimizationRulePtr createLocalReadImplementation();
-OptimizationRulePtr createParallelReadImplementation();
-OptimizationRulePtr createReplicatedReadImplementation();
-OptimizationRulePtr createReplicatedSubplanImplementation();
-OptimizationRulePtr createTopNImplementation();
-OptimizationRulePtr createTwoStageTopN();
-OptimizationRulePtr createDefaultImplementation();
-OptimizationRulePtr createDistributionPassthrough();
-OptimizationRulePtr createDistributionEnforcer();
-OptimizationRulePtr createSortingEnforcer();
 
 OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics, OptimizationEnvironment environment)
     : cost_estimator(memo)
