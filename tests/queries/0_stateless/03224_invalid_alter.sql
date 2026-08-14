@@ -62,6 +62,9 @@ ALTER TABLE test3 ON CLUSTER test_shard_localhost ADD COLUMN valid_column_2 Stri
 INSERT INTO test3(str, column_with_codec) VALUES ('test3', 'test32');
 SELECT str, column_with_alias, valid_column_1, valid_column_2 FROM test3;
 
+-- ignore_drop_queries_probability = 0: the stress runner sets it to 0.2, which makes a DROP a no-op.
+DROP TABLE test3 SETTINGS ignore_drop_queries_probability = 0;
+
 -- {CLICKHOUSE_DATABASE} must not be re-engined: with --database it is shared by every test in
 -- the client. {CLICKHOUSE_DATABASE_2} is shared too, so both DROPs are required.
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
@@ -86,3 +89,7 @@ INSERT INTO {CLICKHOUSE_DATABASE_2:Identifier}.test4(str, column_with_codec) VAL
 SELECT str, column_with_alias, valid_column_1, valid_column_2 FROM {CLICKHOUSE_DATABASE_2:Identifier}.test4;
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
+
+-- The engine varies with the runner flags, so assert only what must hold: this test must never
+-- leave the database it was given Replicated.
+SELECT engine = 'Replicated' FROM system.databases WHERE name = currentDatabase();
