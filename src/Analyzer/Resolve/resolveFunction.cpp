@@ -43,7 +43,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/grouping.h>
 #include <Storages/StorageJoin.h>
-#include <unordered_set>
 
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -102,25 +101,23 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
 }
 
-/** Attempts to compute a constant result for any function by evaluating its arguments at the query analysis phase.
- * This function implements general constant folding optimization. It recursively processes function
- * arguments to determine if the entire function can be evaluated to a constant value without
- * executing the query.
- * The function works by:
- * 1. Processing each function argument recursively
- * 2. For constant arguments: use their values directly
- * 3. For function arguments: recursively call this function to get constant results
- * 4. For other arguments: use UInt8 as fallback type
- * 5. Building the function with resolved arguments
- * 6. Calling getConstantResultForNonConstArguments() to check if the function can be evaluated
- * Returns:
- * - ConstantNodePtr: if the function can be evaluated to a constant at compile time
- * - nullptr: if the function cannot be folded (requires runtime evaluation)
+/** Attempts to compute a decisive constant result for an AND/OR expression before all
+ * arguments are analyzed. Nested AND/OR expressions are processed recursively. Unresolved
+ * arguments use UInt8 only as a placeholder; no type-dependent function is evaluated here.
  */
-ConstantNodePtr getConstantResultFromFunctionArgs(const QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+ConstantNodePtr getEarlyConstantResultForAndOr(
+    const QueryTreeNodePtr & node,
+    IdentifierResolveScope & scope,
+    const String & function_name_to_fold)
 {
     FunctionNodePtr function_node = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node->getFunctionName();
+    if (function_name != function_name_to_fold
+        || !function_node->getParameters().getNodes().empty()
+        || function_node->getNullsAction() != NullsAction::EMPTY
+        || function_node->isWindowFunction())
+        return nullptr;
+
     ColumnsWithTypeAndName arg_columns;
     auto & arg_nodes = function_node->getArguments().getNodes();
     arg_columns.reserve(arg_nodes.size());
@@ -135,31 +132,18 @@ ConstantNodePtr getConstantResultFromFunctionArgs(const QueryTreeNodePtr & node,
         }
         else if (arg->as<FunctionNode>())
         {
-            auto res = getConstantResultFromFunctionArgs(arg, scope);
+            auto res = getEarlyConstantResultForAndOr(arg, scope, function_name_to_fold);
             if (res)
             {
                 col.column = res->getColumn();
                 col.type = res->getResultType();
             }
-            else col.type = std::make_shared<DataTypeUInt8>();
+            else
+                col.type = std::make_shared<DataTypeUInt8>();
         }
         else
             col.type = std::make_shared<DataTypeUInt8>();
         arg_columns.emplace_back(std::move(col));
-    }
-    // Check if this function supports getConstantResultForNonConstArguments
-    // by checking function name patterns before attempting to build
-    static const std::unordered_set<std::string> supported_functions = {
-        "and", "or", "xor",
-        "if", "multiIf",
-        "toTypeName", "toColumnTypeName", "getSizeOfEnumType", "defaultValueOfArgumentType",
-        "isNull", "isNotNull", "isNullable",
-        "timezoneOf"
-    };
-
-    if (!supported_functions.contains(function_name))
-    {
-        return nullptr;
     }
 
     FunctionOverloadResolverPtr resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
@@ -653,21 +637,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
 
-    /** Early short-circuit optimization: attempt to evaluate functions at the analysis phase
-      * This can avoid expensive subquery execution when the result is determined by one of the arguments
-      * Use enable_function_early_short_circuit setting as guardrail to disable this optimization if needed
-      */
-    if (scope.context->getSettingsRef()[Setting::enable_function_early_short_circuit])
-    {
-        auto const_res = getConstantResultFromFunctionArgs(node, scope);
-        if (const_res)
-        {
-            auto value_string = const_res->getValueStringRepresentation();
-            node = std::move(const_res);
-            return { value_string };
-        }
-    }
-
     /// Resolve function parameters
 
     auto parameters_projection_names = resolveExpressionNodeList(
@@ -703,6 +672,28 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
+    }
+
+    /** Early short-circuit optimization for ordinary builtin AND/OR functions. Perform this
+      * only after checking scoped lambdas and registered UDFs, so a builtin cannot bypass a
+      * user-defined function with the same name.
+      */
+    if (scope.context->getSettingsRef()[Setting::enable_function_early_short_circuit]
+        && (function_name == "and" || function_name == "or")
+        && parameters.empty()
+        && function_node_ptr->getNullsAction() == NullsAction::EMPTY
+        && !function_node_ptr->isWindowFunction()
+        && !lambda_expression_untyped
+        && !UserDefinedSQLFunctionFactory::instance().tryGet(function_name)
+        && !UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters)) /// NOLINT(readability-static-accessed-through-instance)
+    {
+        auto const_res = getEarlyConstantResultForAndOr(node, scope, function_name);
+        if (const_res)
+        {
+            auto value_string = const_res->getValueStringRepresentation();
+            node = std::move(const_res);
+            return { value_string };
+        }
     }
 
     bool is_special_function_in = false;

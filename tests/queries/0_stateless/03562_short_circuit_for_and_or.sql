@@ -28,6 +28,14 @@ SELECT 0 OR (0 AND (SELECT count(*) FROM test_03562) > 1) AS bool; -- 0
 SELECT true AND (true OR (SELECT count(*) FROM test_03562) > 1) AS bool; -- true
 SELECT false OR (false AND (SELECT count(*) FROM test_03562) > 1) AS bool; -- false
 
+SELECT 'Test type-dependent functions use resolved argument types';
+SELECT isNullable(CAST(NULL AS Nullable(UInt8)));
+SELECT isNull(CAST(NULL AS Nullable(UInt8)));
+SELECT toTypeName(toDateTime64('2020-01-01 00:00:00', 3));
+SELECT defaultValueOfArgumentType(CAST(NULL AS Nullable(UInt8))) IS NULL;
+
+SELECT 'Test scoped lambda shadows a builtin function';
+WITH (x -> 42) AS toTypeName SELECT toTypeName(number) FROM numbers(1);
 
 SELECT 'Check the read_rows of the above queries to ensure that the short circuit is working';
 SYSTEM FLUSH LOGS query_log;

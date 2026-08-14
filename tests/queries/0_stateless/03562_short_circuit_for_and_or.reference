@@ -11,6 +11,13 @@ Test with nested OR and AND
 0
 true
 false
+Test type-dependent functions use resolved argument types
+1
+1
+DateTime64(3)
+1
+Test scoped lambda shadows a builtin function
+42
 Check the read_rows of the above queries to ensure that the short circuit is working
 1
 0
