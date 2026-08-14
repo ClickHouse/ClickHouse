@@ -230,7 +230,7 @@ dbt-clickhouse generates version-appropriate DDL automatically:
 | ClickHouse version | Generated SQL |
 |--------------------|---------------|
 | 26.1+ | `ADD PROJECTION proj_by_age INDEX age TYPE basic` |
-| 25.6 – 26.0 | `ADD PROJECTION proj_by_age (SELECT _part_offset ORDER BY age)` |
+| 25.8 – 26.0 | `ADD PROJECTION proj_by_age (SELECT _part_offset ORDER BY age)` |
 
 ## Materialization: incremental {#materialization-incremental}
 
