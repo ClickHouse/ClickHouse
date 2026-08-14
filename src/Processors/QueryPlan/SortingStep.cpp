@@ -210,6 +210,8 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
 
 void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
 {
+    checkMaxStreamsPerHierarchicalMerge(max_streams_per_hierarchical_merge);
+
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
     settings[QueryPlanSerializationSetting::max_rows_to_sort] = size_limits.max_rows;
     settings[QueryPlanSerializationSetting::max_bytes_to_sort] = size_limits.max_bytes;
@@ -223,11 +225,6 @@ void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes] = max_block_bytes;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
-}
-
-void SortingStep::Settings::validateMaxStreamsPerHierarchicalMerge() const
-{
-    checkMaxStreamsPerHierarchicalMerge(max_streams_per_hierarchical_merge);
 }
 
 static ITransformingStep::Traits getTraits(size_t limit)
@@ -806,9 +803,6 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
-    if (type == Type::Full)
-        sort_settings.validateMaxStreamsPerHierarchicalMerge();
-
     sort_settings.updatePlanSettings(settings);
 }
 

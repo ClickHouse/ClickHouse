@@ -63,7 +63,6 @@ public:
         explicit Settings(const QueryPlanSerializationSettings & settings);
 
         void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
-        void validateMaxStreamsPerHierarchicalMerge() const;
 
         bool operator==(const Settings & other) const = default;
     };
