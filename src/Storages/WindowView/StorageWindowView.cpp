@@ -761,43 +761,39 @@ inline void StorageWindowView::fire(UInt32 watermark)
 ASTPtr StorageWindowView::getSourceTableSelectQuery()
 {
     throwIfWindowViewIsDisabled();
-    auto query = select_query->clone();
-    auto & modified_select = query->as<ASTSelectQuery &>();
 
-    if (hasJoin(modified_select))
-    {
-        auto analyzer_res = TreeRewriterResult({});
-        removeJoin(modified_select, analyzer_res, getContext());
-    }
-    else
-    {
-        modified_select.setExpression(ASTSelectQuery::Expression::HAVING, {});
-        modified_select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
-    }
+    /// This query backfills the view on `CREATE WINDOW VIEW ... POPULATE`: the rows it produces are
+    /// inserted into the window view, where `writeIntoWindowView` executes the mergeable view query
+    /// over them - exactly like blocks inserted into the source table in steady state, which are
+    /// delivered raw (`getInputHeader` is the source table header no matter how the view query wraps
+    /// or transforms the table). So the backfill query must deliver the raw source table rows in full
+    /// and leave every row transformation of the original query to the view query; otherwise the
+    /// initialized state diverges from live behavior. Instead of stripping each row-shaping construct
+    /// from a clone of the view query (JOIN, ARRAY JOIN, WHERE, PREWHERE, GROUP BY, ORDER BY,
+    /// LIMIT [BY], DISTINCT, SAMPLE, FINAL, ... - including inside wrapped subqueries and CTE
+    /// definitions, which would need the same rewrite recursively), build a fresh query that reads
+    /// the source table directly.
+    auto query = make_intrusive<ASTSelectQuery>();
 
     auto select_list = make_intrusive<ASTExpressionList>();
     for (const auto & column_name : getInputHeader().getNames())
         select_list->children.emplace_back(make_intrusive<ASTIdentifier>(column_name));
-    modified_select.setExpression(ASTSelectQuery::Expression::SELECT, select_list);
+    query->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
 
+    query->replaceDatabaseAndTable(select_table_id);
+
+    /// `writeIntoWindowView` initializes the watermark from the first delivered record, so deliver
+    /// the rows in timestamp order. When the time window function uses `now`, there is no raw
+    /// timestamp column to order by; the rows get the processing time on insertion instead.
     if (!is_time_column_func_now)
     {
-        auto query_ = select_query->clone();
-        DropTableIdentifierMatcher::Data drop_table_identifier_data;
-        DropTableIdentifierMatcher::Visitor(drop_table_identifier_data).visit(query_);
-
-        WindowFunctionMatcher::Data query_info_data;
-        WindowFunctionMatcher::Visitor(query_info_data).visit(query_);
-
         auto order_by = make_intrusive<ASTExpressionList>();
         auto order_by_elem = make_intrusive<ASTOrderByElement>();
         order_by_elem->children.push_back(make_intrusive<ASTIdentifier>(timestamp_column_name));
         order_by_elem->direction = 1;
         order_by->children.push_back(order_by_elem);
-        modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by));
+        query->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_by);
     }
-    else
-        modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
 
     const auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
     select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();

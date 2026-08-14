@@ -450,8 +450,8 @@ Prior to searching, the function tokenizes
 using the tokenizer specified for the text index.
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead.
 If the `needle` argument is of type [Array(String)](/reference/data-types/array), each array element is treated as a token — no additional tokenization takes place.
-If the text index has a [preprocessor](/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) expression configured, the preprocessor is applied to the needle (if given as a `String`) before tokenization.
-If the text index has a [postprocessor](/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) expression configured, the postprocessor is applied to needle tokens and the input tokens (i.e. both after tokenization).
+If the text index has a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) expression configured, the preprocessor is applied to the needle (if given as a `String`) before tokenization.
+If the text index has a [postprocessor](/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) expression configured, the postprocessor is applied to needle tokens and the input tokens (i.e. both after tokenization).
 
 Duplicate tokens are ignored.
 For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
@@ -658,8 +658,8 @@ Prior to searching, the function tokenizes
 using the tokenizer specified for the text index.
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead.
 If the `needle` argument is of type [Array(String)](/reference/data-types/array), each array element is treated as a token — no additional tokenization takes place.
-If the text index has a [preprocessor](/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) expression configured, the preprocessor is applied to the needle (if given as a `String`) before tokenization.
-If the text index has a [postprocessor](/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) expression configured, the postprocessor is applied to needle tokens and the input tokens (i.e. both after tokenization).
+If the text index has a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) expression configured, the preprocessor is applied to the needle (if given as a `String`) before tokenization.
+If the text index has a [postprocessor](/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) expression configured, the postprocessor is applied to needle tokens and the input tokens (i.e. both after tokenization).
 
 Duplicate tokens are ignored.
 For example, needles = ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
