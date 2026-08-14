@@ -1604,8 +1604,12 @@ static BlockIO executeQueryImpl(
         /// `internal` flag (their query should still be logged and accounted as a user query), so
         /// they instead clear `query_rules` on their private per-request context before calling
         /// `executeQuery`: the Prometheus HTTP API (`PrometheusHTTPProtocolAPI`), the PostgreSQL
-        /// wire protocol's `COPY` / cancel handling (`PostgreSQLHandler`), and the Arrow Flight
-        /// prepared-statement schema inference (`ArrowFlightServer`).
+        /// wire protocol's `COPY` / cancel handling (`PostgreSQLHandler`), the MySQL wire
+        /// protocol's command replacements (`MySQLHandler::comQuery`), and Arrow Flight's
+        /// synthesized SQL — `PATH` descriptors, the metadata commands, `CommandStatementIngest`,
+        /// `GetSessionOptions` and prepared-statement schema inference (`ArrowFlightServer`,
+        /// see `ArrowFlight::SQLSet::sql_is_synthesized`). SQL the client submitted over the same
+        /// interfaces keeps the setting and is matched as usual.
         ///
         /// Distributed DDL (`ON CLUSTER` / `Replicated` database) workers replay the initiator's
         /// query with `QueryFlags{ .internal = false }` (`DDLWorker::tryExecuteQuery`), so the
