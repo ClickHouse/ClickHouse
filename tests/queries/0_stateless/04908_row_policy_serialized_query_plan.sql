@@ -1,6 +1,9 @@
 -- Tags: distributed
 
 SET prefer_localhost_replica = 0;
+-- The initiator only ships a serialized plan under the analyzer, so without this every arm
+-- below is unable to tell a filtered read from an unfiltered one.
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS rp_leaf;
 DROP TABLE IF EXISTS rp_dist;
@@ -8,6 +11,8 @@ DROP TABLE IF EXISTS rp_final;
 DROP TABLE IF EXISTS rp_final_dist;
 DROP TABLE IF EXISTS rp_mem;
 DROP TABLE IF EXISTS rp_mem_dist;
+DROP TABLE IF EXISTS rp_mem_nd;
+DROP TABLE IF EXISTS rp_mem_nd_dist;
 
 CREATE TABLE rp_leaf (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY x;
 INSERT INTO rp_leaf SELECT number, number FROM numbers(10);
@@ -39,12 +44,16 @@ DROP ROW POLICY rp_dist_policy ON rp_dist;
 -- Read limits still apply to the re-planned read.
 SELECT count() FROM rp_dist SETTINGS serialize_query_plan = 1, max_rows_to_read = 1; -- { serverError TOO_MANY_ROWS }
 
--- FINAL keeps deduplicating before a policy on a non-sorting-key column is applied, under both
--- values of apply_row_policy_after_final, exactly as on the non-serialized path.
-CREATE TABLE rp_final (k UInt32, v UInt32) ENGINE = ReplacingMergeTree ORDER BY k;
--- One row per key, so the result does not depend on which duplicate FINAL keeps
--- (that choice varies with optimize_on_insert, which CI randomizes).
-INSERT INTO rp_final VALUES (1, 9), (2, 2), (3, 7);
+-- A policy on a non-sorting-key column interacts with FINAL, so for each value of
+-- apply_row_policy_after_final the serialized read must agree with the non-serialized one.
+CREATE TABLE rp_final (k UInt32, v UInt32, ver UInt32) ENGINE = ReplacingMergeTree(ver) ORDER BY k;
+-- Two rows per key with distinct versions, in separate parts: the row FINAL keeps is the
+-- max-version one. The policy reads `v`, a non-sorting-key column, and the winning row's `v`
+-- decides whether the key survives, so applying the policy before FINAL gives a different
+-- answer than applying it after. Each part holds one row per key, so the rows on disk do not
+-- depend on optimize_on_insert, which CI randomizes and which only dedups within one block.
+INSERT INTO rp_final VALUES (1, 9, 1), (2, 2, 1), (3, 7, 1);
+INSERT INTO rp_final VALUES (1, 2, 2), (2, 9, 2), (3, 3, 2);
 CREATE TABLE rp_final_dist AS rp_final ENGINE = Distributed(test_shard_localhost, currentDatabase(), rp_final);
 DROP ROW POLICY IF EXISTS rp_final_policy ON rp_final;
 CREATE ROW POLICY rp_final_policy ON rp_final FOR SELECT USING v < 5 TO ALL;
@@ -64,6 +73,21 @@ CREATE ROW POLICY rp_mem_policy ON rp_mem FOR SELECT USING y < 5 TO ALL;
 SELECT 'memory sqp=1', count() FROM rp_mem_dist SETTINGS serialize_query_plan = 1;
 SELECT 'memory sqp=0', count() FROM rp_mem_dist SETTINGS serialize_query_plan = 0;
 
+-- A deterministic policy returns the same count whether it is applied once or twice, so the
+-- exactly-once property needs a policy that keeps a different subset per evaluation: applied
+-- once it keeps about half the rows, twice about a quarter. Classify instead of comparing raw
+-- counts, which vary per run.
+CREATE TABLE rp_mem_nd (x UInt32) ENGINE = Memory;
+INSERT INTO rp_mem_nd SELECT number FROM numbers(100000);
+CREATE TABLE rp_mem_nd_dist AS rp_mem_nd ENGINE = Distributed(test_shard_localhost, currentDatabase(), rp_mem_nd);
+DROP ROW POLICY IF EXISTS rp_mem_nd_policy ON rp_mem_nd;
+CREATE ROW POLICY rp_mem_nd_policy ON rp_mem_nd FOR SELECT USING rand64() % 2 = 0 TO ALL;
+SELECT 'memory nd sqp=1', if(abs(count() - 50000) < 2000, 'ONCE', if(abs(count() - 25000) < 2000, 'TWICE', 'OTHER'))
+FROM rp_mem_nd_dist SETTINGS serialize_query_plan = 1;
+SELECT 'memory nd sqp=0', if(abs(count() - 50000) < 2000, 'ONCE', if(abs(count() - 25000) < 2000, 'TWICE', 'OTHER'))
+FROM rp_mem_nd_dist SETTINGS serialize_query_plan = 0;
+DROP ROW POLICY rp_mem_nd_policy ON rp_mem_nd;
+
 DROP ROW POLICY rp_leaf_policy ON rp_leaf;
 DROP ROW POLICY rp_final_policy ON rp_final;
 DROP ROW POLICY rp_mem_policy ON rp_mem;
@@ -78,3 +102,5 @@ DROP TABLE rp_final_dist;
 DROP TABLE rp_final;
 DROP TABLE rp_mem_dist;
 DROP TABLE rp_mem;
+DROP TABLE rp_mem_nd_dist;
+DROP TABLE rp_mem_nd;

@@ -5,6 +5,9 @@ SET serialize_query_plan = 1;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1;
+-- A remote replica receives the serialized plan only when the initiator builds a local plan,
+-- and a non-zero automatic mode turns parallel replicas off entirely.
+SET parallel_replicas_local_plan = 1, automatic_parallel_replicas_mode = 0;
 -- Remote replicas must actually get read tasks: only then do they receive the serialized plan.
 SET parallel_replicas_mark_segment_size = 1, merge_tree_min_rows_for_concurrent_read = 1;
 
