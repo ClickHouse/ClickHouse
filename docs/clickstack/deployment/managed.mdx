@@ -332,6 +332,8 @@ To run ClickStack on read-only compute:
 
 Once launched, ClickStack UI will automatically bind to this read-only service.
 
+Note that dashboards, saved searches and alerts are scoped to the service ClickStack was launched from, so anything saved on another service in the warehouse isn't available here and has to be recreated. Data sources are auto-detected, so search works immediately.
+
 For the full topology - including where to point ingestion, which service to run DDL against, and how alerts behave - see ["Isolating read and write workloads"](/clickstack/managing/isolating-read-write).
 
 ### Adding more data sources {#adding-data-sources}

@@ -92,12 +92,22 @@ The ClickStack UI always connects to the ClickHouse service from which it is lau
 
 Every query issued by the UI then runs on that read-only compute. No configuration inside ClickStack is required. See our guide on [Using ClickStack with read-only compute](/clickstack/deployment/managed#clickstack-read-only-compute).
 
+<Warning>
+**ClickStack state is scoped to the service**
+
+Dashboards, saved searches and alerts belong to the service ClickStack was launched from, and don't follow you to another service in the same warehouse - even though both services share the same data. Data sources are auto-detected on the new service, so search works straight away, but anything you saved on the previous service has to be recreated.
+
+Choose the service you want to run ClickStack from before building dashboards. If you're switching an established deployment, note that alerts created on the previous service keep evaluating there - on that service's compute - until you delete them.
+</Warning>
+
 </Tab>
 <Tab title="Self-hosted UI">
 
 If you're running the ClickStack UI yourself against ClickHouse Cloud - for example the [HyperDX only](/clickstack/deployment/hyperdx-only) distribution - set its connection host to the **read-only** service endpoint.
 
-Connections can be edited in the UI under `Team Settings → Connections` or provided at deployment time. For example, with Helm:
+The UI needs only read access to ClickHouse - dashboards, saved searches, alerts and other application state are stored in MongoDB. Even [SQL-based visualizations](/clickstack/features/dashboards/sql-visualizations) execute with `readonly` mode enabled, permitting only `SELECT` queries. Create a dedicated query user with the [permissions required by the ClickStack UI](/clickstack/managing/production#user-permissions). Like the ingestion user, it only needs creating once for the whole warehouse.
+
+Connections can then be edited in the UI under `Team Settings → Connections`, or provided at deployment time. For example, with Helm:
 
 ```yaml
 hyperdx:
@@ -107,13 +117,11 @@ hyperdx:
         "name": "Observability (read-only)",
         "host": "https://<read-only-service>.clickhouse.cloud:8443",
         "port": 8443,
-        "username": "hyperdx_query",
+        "username": "<query-user>",
         "password": "<password>"
       }
     ]
 ```
-
-The UI needs only read access to ClickHouse - dashboards, saved searches, alerts and other application state are stored in MongoDB. Even [SQL-based visualizations](/clickstack/features/dashboards/sql-visualizations) execute with `readonly` mode enabled, permitting only `SELECT` queries. Create a dedicated query user with the [permissions required by the ClickStack UI](/clickstack/managing/production#user-permissions).
 
 If individual data sources need to target a different service, the connection used by each source can be overridden with its [`Server Connection` setting](/clickstack/managing/config#datasource-settings).
 
@@ -182,7 +190,7 @@ All schema changes must be run against the **read-write** service, including:
 - Creating [materialized views](/clickstack/managing/materialized-views) for query acceleration
 - Adding [skip indexes, projections and other performance optimizations](/clickstack/managing/performance-tuning)
 
-Users, roles and grants aren't schema changes - they're shared by every service in the warehouse and only need to be created once. The [setup steps](#prepare-read-write-service) above create them on the read-write service, alongside the database.
+Users, roles and grants aren't schema changes - they're shared by every service in the warehouse, so each only needs to be created once, from any service. The [setup steps](#prepare-read-write-service) above create the ingestion user; a self-hosted ClickStack UI additionally needs its own query user, created the same way.
 
 Connect to the read-write service using the [SQL console or ClickHouse client](/clickstack/managing/admin). Because the warehouse shares storage and access controls, the changes are immediately visible to the read-only service. If you've [separated merges from ingestion](#separating-merges), statements can be submitted against either read-write service - but note that mutations are executed and tracked on the merge service.
 
