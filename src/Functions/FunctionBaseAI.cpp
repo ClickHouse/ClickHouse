@@ -520,9 +520,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     UInt64 rows_processed = 0;
     UInt64 rows_skipped = 0;
 
-    /// Flush the AI counters to `ProfileEvents` on every exit from the row loop. Rejecting an
-    /// incomplete response throws out of `executeImpl`, so a plain increment after the loop would
-    /// leave `system.query_log` reporting zero usage for a query the provider had already charged for.
+    /// Increment ProfileEvents counters upon destruction, to avoid underreporting on error
     SCOPE_EXIT({
         ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls);
         ProfileEvents::increment(ProfileEvents::AIInputTokens, total_input_tokens);

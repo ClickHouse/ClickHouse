@@ -74,7 +74,7 @@ enum class FinishReason : UInt8
     Complete, /// Full answer produced: natural end, a stop sequence, or Anthropic structured-output `tool_use`.
     Truncated, /// Output was cut off by a token limit (`max_tokens` / `length` / context window exceeded).
     ContentFilter, /// The provider withheld or filtered the content.
-    RequiresAction, /// Model stopped expecting the caller to act (run a tool / resume the turn), not a final answer (e.g. OpenAI `tool_calls`, Anthropic `pause_turn`).
+    RequiresAction, /// Model stopped expecting the caller to act (run a tool / resume the turn), not a final answer
     Unknown, /// Unrecognized finish reason, potentially new reason introduced in API update.
 };
 
@@ -158,8 +158,7 @@ AIProviderPtr createAIProvider(const String & provider_name, const String & endp
 String formatProviderError(int status_code, const String & response_body);
 
 /// Replace control characters (including `\t \n \r`) with spaces so provider-controlled text cannot
-/// forge log lines or corrupt a terminal when embedded in a logged exception. Apply to any externally
-/// derived string before interpolating it into a message that reaches the logs or `system.query_log`.
+/// forge log lines or corrupt a terminal when embedded in a logged exception.
 String sanitizeForLog(std::string_view input);
 
 }

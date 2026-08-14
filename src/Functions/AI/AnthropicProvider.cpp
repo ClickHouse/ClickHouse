@@ -112,11 +112,16 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
 
     AIResponse ai_response;
 
-    /// Map Anthropic's `stop_reason` onto the canonical `FinishReason`. An absent field defaults to
-    /// `end_turn` (a normal completion). `end_turn` and `stop_sequence` are complete answers, and so
-    /// is `tool_use`: structured output is implemented via a forced tool call (see the request above),
-    /// so a `tool_use` stop is the successful structured-output response, parsed into `result` below.
-    /// Only a token/context limit counts as truncation.
+    /** Map Anthropic's `stop_reason` onto the canonical `FinishReason`.
+      *
+      * An absent field defaults to `end_turn` (a normal completion).
+      *
+      * `end_turn` and `stop_sequence` are complete answers, and so is `tool_use`: structured output is
+      * implemented via a forced tool call (see the request above), so a `tool_use` stop is the successful
+      * structured-output response, parsed into `result` below.
+      *
+      * Only a token/context limit counts as truncation.
+      */
     ai_response.raw_finish_reason = json_obj->optValue<String>("stop_reason", "end_turn");
     if (ai_response.raw_finish_reason == "end_turn" || ai_response.raw_finish_reason == "stop_sequence"
         || ai_response.raw_finish_reason == "tool_use")
