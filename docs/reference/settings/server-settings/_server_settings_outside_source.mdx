@@ -177,7 +177,7 @@ We recommend not changing this if you have just started using ClickHouse.
 - `min_part_size` – The minimum size of a data part.
 - `min_part_size_ratio` – The ratio of the data part size to the table size.
 - `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
-- `level` – Compression level. See [Codecs](/reference/statements/create/table#general-purpose-codecs).
+- `level` – Compression level. See [Codecs](/reference/statements/create/table/codec#general-purpose-codecs).
 
 <Note>
 You can configure multiple `<case>` sections.
@@ -206,7 +206,7 @@ If no conditions are met for a data part, ClickHouse uses the `lz4` compression.
 ```
 
 ## encryption {#encryption}
-Configures a command to obtain a key to be used by [encryption codecs](/reference/statements/create/table#encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
+Configures a command to obtain a key to be used by [encryption codecs](/reference/statements/create/table/codec#encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
 
 Keys can be hex or string with a length equal to 16 bytes.
 
@@ -1267,10 +1267,11 @@ Settings:
 - `events` – Expose metrics from the [system.events](/reference/system-tables/events) table.
 - `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](/reference/system-tables/asynchronous_metrics) table.
 - `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](/reference/system-tables/errors) as well.
+- `labels` – Constant labels added to every exposed metric. Each child element defines one label: the element name is the label name (must match `[a-zA-Z_][a-zA-Z0-9_]*`) and the element value is the label value. Label values support standard config substitutions such as the `from_env` attribute. A label name is rejected when it starts with `__` (reserved by Prometheus), or when it would collide with a label this endpoint already writes for one of its enabled sections — otherwise a sample would carry the same label name twice. The reserved set therefore follows the endpoint's active export surface: `le` when `histograms` is enabled; the `ClickHouse_Info` labels (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`) when `info` is enabled; and any label used by an exposed histogram or dimensional metric family (for example `group`, `direction`, or `operation_type`) when `histograms`/`dimensional_metrics` is enabled. Because it depends on what the endpoint actually exposes, a name can be valid on one endpoint but rejected on another — for example a Keeper `keeper_metrics_only` endpoint exposes only the `keeper_*` families, so labels used only by server families are accepted there.
 
 **Example**
 
-```xml highlight={5-12}
+```xml highlight={5-16}
 <clickhouse>
     <listen_host>0.0.0.0</listen_host>
     <http_port>8123</http_port>
@@ -1282,6 +1283,10 @@ Settings:
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
         <errors>true</errors>
+        <labels>
+            <environment>production</environment>
+            <shard from_env="SHARD_NAME"></shard>
+        </labels>
     </prometheus>
 </clickhouse>
 ```
