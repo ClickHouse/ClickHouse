@@ -206,7 +206,10 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
             /// a `SQL SECURITY DEFINER` view.
             auto view_context = view_metadata->getSQLSecurityOverriddenContext(current_context);
             fillColumnsFromSubqueryImpl(query, view_context);
-            validateParameterizedViewSchema(table_name, columns, view_metadata->getColumns());
+            NamesAndTypesList actual_columns;
+            for (const auto & column : columns)
+                actual_columns.emplace_back(column.name, column.type);
+            validateParameterizedViewSchema(table_name, actual_columns, view_metadata->getColumns());
             return;
         }
     }
