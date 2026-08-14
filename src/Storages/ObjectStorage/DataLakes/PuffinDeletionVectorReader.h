@@ -41,6 +41,13 @@ void validateDeletionVectorV1Fields(const std::vector<Int32> & fields, size_t bl
 /// Validate that [offset, offset + length) fits within file_size.
 void validatePuffinBlobBounds(Int64 offset, Int64 length, size_t file_size, std::string_view context = "Puffin deletion vector");
 
+/// Iceberg deletion-vector-v1 envelope magic (`0xD1D33964`), shared with SQL `Puffin` decode.
+inline constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
+
+/// Fail closed before envelope peek / full allocate. Shared by SQL `Puffin` and Iceberg loaders.
+/// Order: cardinality ceiling, then length bounds (`length < 0`, absolute blob cap, min envelope).
+void checkDeletionVectorBlobReadLimits(Int64 length, std::optional<UInt64> expected_cardinality);
+
 /// Validate deletion-vector-v1 envelope (combined_length + magic) against declared blob `length`.
 /// `header` must point at the first 8 bytes of the blob. Throws on mismatch before a full allocate.
 void validateDeletionVectorEnvelope(const UInt8 * header, Int64 length);

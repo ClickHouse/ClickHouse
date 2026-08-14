@@ -53,7 +53,6 @@ namespace ErrorCodes
     extern const int LZ4_DECODER_FAILED;
 }
 
-constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
 constexpr Int64 DELETION_VECTOR_MAX_POSITION = 0x7FFFFFFE80000000LL;
 constexpr Int32 DELETION_VECTOR_MAX_KEY = std::numeric_limits<Int32>::max() - 1;
 
@@ -78,9 +77,7 @@ struct ScopedPuffinFileReadProfileEvent
 
 constexpr UInt8 PUFFIN_MAGIC[4] = {0x50, 0x46, 0x41, 0x31};
 constexpr UInt8 PUFFIN_FOOTER_COMPRESSED_FLAG = 0x01;
-constexpr size_t PUFFIN_FOOTER_TRAILER_SIZE = 12;
 constexpr size_t PUFFIN_FOOTER_LZ4_MAX_RATIO = 255;
-constexpr size_t PUFFIN_FOOTER_MAX_PAYLOAD_SIZE = 16 * 1024 * 1024;
 constexpr const char * PUFFIN_DELETION_VECTOR_BLOB_TYPE = "deletion-vector-v1";
 
 void checkMagic(const UInt8 * p, const char * context)
@@ -270,37 +267,6 @@ String requireBlobMetadataString(const Poco::JSON::Object::Ptr & blob_obj, const
 {
     requireBlobMetadataField(blob_obj, field_name, blob_index);
     return requireJSONStringValue(blob_obj->get(field_name), blob_index, field_name);
-}
-
-void requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_index)
-{
-    /// Puffin v1: snapshot-id and sequence-number are unknown when the file is written and must be -1.
-    if (blob.snapshot_id != -1 || blob.sequence_number != -1)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Puffin blob {}: deletion-vector-v1 snapshot-id and sequence-number must be -1",
-            blob_index);
-
-    validateDeletionVectorV1Fields(blob.fields, blob_index);
-
-    static constexpr const char * required_properties[] = {"referenced-data-file", "cardinality"};
-    for (const char * key : required_properties)
-    {
-        auto it = blob.properties.find(key);
-        if (it == blob.properties.end() || it->second.empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Puffin blob {}: deletion-vector-v1 missing required property '{}'",
-                blob_index,
-                key);
-    }
-
-    UInt64 cardinality = 0;
-    if (!tryParse(cardinality, blob.properties.at("cardinality")))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Puffin blob {}: deletion-vector-v1 property 'cardinality' must be an unsigned integer",
-            blob_index);
 }
 
 void parseStringValuedProperties(
@@ -588,27 +554,9 @@ String readDeletionVectorBlobBytes(
 {
     ScopedPuffinFileReadProfileEvent profile_event;
 
-    /// Fail closed before envelope peek / full allocate — same order as Iceberg
+    /// Fail closed before envelope peek / full allocate — shared with Iceberg
     /// `readDeletionVectorFromPuffin`. `deserializeDeletionVectorV1` still re-checks.
-    if (expected_cardinality > PUFFIN_DV_MAX_MATERIALIZED_POSITIONS)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Deletion vector cardinality {} exceeds materialization limit {}",
-            expected_cardinality,
-            PUFFIN_DV_MAX_MATERIALIZED_POSITIONS);
-
-    if (blob.length < 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob length is negative");
-
-    if (static_cast<UInt64>(blob.length) > PUFFIN_DV_MAX_BLOB_SIZE)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Deletion vector blob length {} exceeds absolute limit {}",
-            blob.length,
-            PUFFIN_DV_MAX_BLOB_SIZE);
-
-    if (static_cast<UInt64>(blob.length) < 12)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob is too small");
+    checkDeletionVectorBlobReadLimits(blob.length, expected_cardinality);
 
     UInt8 header[8];
     readDeletionVectorEnvelopePrefix(blob, buf, data, seekable_read, header);
@@ -684,6 +632,39 @@ void checkPuffinHeader(const Block & header)
     checkPuffinFormatHeader(header, getPuffinSchema(), "Puffin");
 }
 
+}
+
+UInt64 requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_index)
+{
+    /// Puffin v1: snapshot-id and sequence-number are unknown when the file is written and must be -1.
+    if (blob.snapshot_id != -1 || blob.sequence_number != -1)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin blob {}: deletion-vector-v1 snapshot-id and sequence-number must be -1",
+            blob_index);
+
+    validateDeletionVectorV1Fields(blob.fields, blob_index);
+
+    static constexpr const char * required_properties[] = {"referenced-data-file", "cardinality"};
+    for (const char * key : required_properties)
+    {
+        auto it = blob.properties.find(key);
+        if (it == blob.properties.end() || it->second.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Puffin blob {}: deletion-vector-v1 missing required property '{}'",
+                blob_index,
+                key);
+    }
+
+    UInt64 cardinality = 0;
+    if (!tryParse(cardinality, blob.properties.at("cardinality")))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin blob {}: deletion-vector-v1 property 'cardinality' must be an unsigned integer",
+            blob_index);
+
+    return cardinality;
 }
 
 namespace
@@ -970,14 +951,8 @@ Chunk PuffinInputFormat::read()
         if (blob.type != PUFFIN_DELETION_VECTOR_BLOB_TYPE)
             continue;
 
+        const UInt64 expected_cardinality = requireDeletionVectorV1Properties(blob, current_blob_index);
         const auto & referenced_data_file = blob.properties.at("referenced-data-file");
-
-        UInt64 expected_cardinality = 0;
-        if (!tryParse(expected_cardinality, blob.properties.at("cardinality")))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Puffin blob {}: deletion-vector-v1 property 'cardinality' must be an unsigned integer",
-                current_blob_index);
 
         auto col_file = ColumnString::create();
         col_file->insertData(referenced_data_file.data(), referenced_data_file.size());

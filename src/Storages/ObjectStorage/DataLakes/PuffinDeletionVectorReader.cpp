@@ -57,8 +57,6 @@ struct ScopedPuffinFileReadProfileEvent
     }
 };
 
-constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
-
 UInt32 readBigEndianUInt32(const UInt8 * data)
 {
     return (static_cast<UInt32>(data[0]) << 24)
@@ -83,6 +81,30 @@ void validatePuffinBlobBounds(Int64 offset, Int64 length, size_t file_size, std:
 
     if (static_cast<UInt64>(end) > file_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: offset/length out of bounds", context);
+}
+
+void checkDeletionVectorBlobReadLimits(Int64 length, std::optional<UInt64> expected_cardinality)
+{
+    /// Same fail-closed order as the SQL `Puffin` path: cardinality before blob length / allocate.
+    if (expected_cardinality.has_value() && *expected_cardinality > PUFFIN_DV_MAX_MATERIALIZED_POSITIONS)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector cardinality {} exceeds materialization limit {}",
+            *expected_cardinality,
+            PUFFIN_DV_MAX_MATERIALIZED_POSITIONS);
+
+    if (length < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob length is negative");
+
+    if (static_cast<UInt64>(length) > PUFFIN_DV_MAX_BLOB_SIZE)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector blob length {} exceeds absolute limit {}",
+            length,
+            PUFFIN_DV_MAX_BLOB_SIZE);
+
+    if (static_cast<UInt64>(length) < 12)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob is too small");
 }
 
 void validateDeletionVectorEnvelope(const UInt8 * header, Int64 length)
@@ -122,31 +144,12 @@ std::vector<UInt64> readDeletionVectorFromPuffin(ReadBuffer & file, Int64 offset
 {
     ScopedPuffinFileReadProfileEvent profile_event;
 
-    if (length < 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob length is negative");
-
-    if (static_cast<UInt64>(length) > PUFFIN_DV_MAX_BLOB_SIZE)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Deletion vector blob length {} exceeds absolute limit {}",
-            length,
-            PUFFIN_DV_MAX_BLOB_SIZE);
-
-    /// Reject before envelope peek / full allocate: cardinality alone is enough to fail closed.
-    if (expected_cardinality.has_value() && *expected_cardinality > PUFFIN_DV_MAX_MATERIALIZED_POSITIONS)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Deletion vector cardinality {} exceeds materialization limit {}",
-            *expected_cardinality,
-            PUFFIN_DV_MAX_MATERIALIZED_POSITIONS);
+    checkDeletionVectorBlobReadLimits(length, expected_cardinality);
 
     if (auto file_size = tryGetFileSizeFromReadBuffer(file))
         validatePuffinBlobBounds(offset, length, *file_size);
     else if (offset < 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Puffin deletion vector offset {} or length {}", offset, length);
-
-    if (static_cast<UInt64>(length) < 12)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob is too small");
 
     auto * seekable = dynamic_cast<SeekableReadBuffer *>(&file);
     if (!seekable)
@@ -264,51 +267,18 @@ const PuffinBlob & bindDeletionVectorBlob(
             matched_index);
     }
 
-    if (matched->snapshot_id != -1 || matched->sequence_number != -1)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Puffin blob {}: deletion-vector-v1 snapshot-id and sequence-number must be -1",
-            matched_index);
-    }
+    /// Structural DV footer checks live in the pre-existing SQL `Puffin` helper.
+    const UInt64 footer_cardinality = requireDeletionVectorV1Properties(*matched, matched_index);
 
-    validateDeletionVectorV1Fields(matched->fields, matched_index);
-
-    const auto ref_it = matched->properties.find("referenced-data-file");
-    if (ref_it == matched->properties.end() || ref_it->second.empty())
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Puffin blob {}: deletion-vector-v1 missing required property 'referenced-data-file'",
-            matched_index);
-    }
-
-    if (ref_it->second != expected_referenced_data_file)
+    const auto & referenced_data_file = matched->properties.at("referenced-data-file");
+    if (referenced_data_file != expected_referenced_data_file)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Puffin blob {} referenced-data-file '{}' does not match expected data file '{}'",
             matched_index,
-            ref_it->second,
+            referenced_data_file,
             expected_referenced_data_file);
-    }
-
-    const auto card_it = matched->properties.find("cardinality");
-    if (card_it == matched->properties.end() || card_it->second.empty())
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Puffin blob {}: deletion-vector-v1 missing required property 'cardinality'",
-            matched_index);
-    }
-
-    UInt64 footer_cardinality = 0;
-    if (!tryParse(footer_cardinality, card_it->second))
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Puffin blob {}: deletion-vector-v1 property 'cardinality' must be an unsigned integer",
-            matched_index);
     }
 
     if (footer_cardinality != expected_cardinality)

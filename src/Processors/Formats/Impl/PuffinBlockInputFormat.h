@@ -41,6 +41,11 @@ std::vector<UInt64> deserializeRoaringPositionBitmap(
     std::string_view bytes, std::optional<UInt64> expected_cardinality = std::nullopt);
 void deserializeDeletionVectorV1(std::string_view blob, UInt64 expected_cardinality, ColumnUInt64 & positions);
 
+/// Validate deletion-vector-v1 footer identity (`snapshot-id` / `sequence-number` / `fields` /
+/// required string properties). Returns parsed `cardinality`. Used by the SQL `Puffin` path and
+/// by `bindDeletionVectorBlob`.
+UInt64 requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_index);
+
 class PuffinMetadataInputFormat : public IInputFormat
 {
 public:
