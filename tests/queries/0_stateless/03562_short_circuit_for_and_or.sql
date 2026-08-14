@@ -45,11 +45,13 @@ SELECT 'Test aggregate and arrayJoin branches are not erased';
 SELECT 0 AND sum(number) FROM numbers(10);
 SELECT 1 OR arrayJoin([1, 2]);
 
-SELECT 'Test EXISTS type-only analysis returns a literal';
+SELECT 'Test EXISTS falls back when its runtime value is unknown';
 SELECT 0 AND exists(SELECT [1]);
 SELECT 1 OR exists(SELECT tuple(1));
+SELECT 1 OR tupleElement((10, 20), exists(SELECT * FROM numbers(0))); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
-SELECT 'Test value-dependent scalar arguments fall back to normal analysis';
+SELECT 'Test scalar cardinality and value-dependent arguments fall back to normal analysis';
+SELECT 1 OR ((SELECT number FROM numbers(2)) > 0); -- { serverError INCORRECT_RESULT_OF_SCALAR_SUBQUERY }
 SELECT 1 OR tupleElement((10, 20), assumeNotNull((SELECT 2)));
 
 SELECT 'Check the read_rows of the above queries to ensure that the short circuit is working';

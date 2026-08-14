@@ -25,10 +25,10 @@ Test aggregate and arrayJoin branches are not erased
 0
 1
 1
-Test EXISTS type-only analysis returns a literal
+Test EXISTS falls back when its runtime value is unknown
 0
 1
-Test value-dependent scalar arguments fall back to normal analysis
+Test scalar cardinality and value-dependent arguments fall back to normal analysis
 1
 Check the read_rows of the above queries to ensure that the short circuit is working
 1

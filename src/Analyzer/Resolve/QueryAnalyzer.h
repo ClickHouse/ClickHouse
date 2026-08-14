@@ -355,6 +355,10 @@ private:
     /// short-circuit hook is disabled to avoid recursion.
     bool early_short_circuit_type_inference_in_process = false;
 
+    /// Set during early short-circuit type inference when a scalar subquery needs runtime
+    /// cardinality or value information. The optimization must then fall back to normal analysis.
+    bool early_short_circuit_type_inference_failed = false;
+
     /// True while arguments of a table function are resolved. Table functions are resolved
     /// into storages even in only-analyze mode (the storage is required to infer the query
     /// header), so scalar subqueries in their arguments must be executed for real instead of

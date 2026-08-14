@@ -664,8 +664,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             try
             {
                 const bool previous_type_inference_state = early_short_circuit_type_inference_in_process;
+                const bool previous_type_inference_failure = early_short_circuit_type_inference_failed;
                 early_short_circuit_type_inference_in_process = true;
-                SCOPE_EXIT({ early_short_circuit_type_inference_in_process = previous_type_inference_state; });
+                early_short_circuit_type_inference_failed = false;
+                SCOPE_EXIT({
+                    early_short_circuit_type_inference_in_process = previous_type_inference_state;
+                    early_short_circuit_type_inference_failed = previous_type_inference_failure;
+                });
 
                 resolveExpressionNode(
                     node_for_type_inference,
@@ -674,7 +679,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     false /*allow_table_expression*/,
                     false /*ignore_alias*/,
                     allow_niladic_functions);
-                type_inference_succeeded = true;
+                type_inference_succeeded = !early_short_circuit_type_inference_failed;
             }
             catch (...)
             {

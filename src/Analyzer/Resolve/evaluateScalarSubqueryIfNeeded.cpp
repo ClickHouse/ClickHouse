@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnTuple.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
@@ -78,6 +79,31 @@ bool subtreeHasViewSource(const IQueryTreeNode * node, const Context & context)
     return false;
 }
 
+bool scalarSubqueryCardinalityIsProven(const QueryNode & query)
+{
+    /// Aggregation without GROUP BY produces at most one row (HAVING may remove it).
+    if (!query.hasGroupBy() && hasAggregateFunctionNodes(query.getProjectionNode()))
+        return true;
+
+    if (!query.hasLimit() || query.isLimitWithTies())
+        return false;
+
+    const auto * limit = query.getLimit()->as<ConstantNode>();
+    if (!limit)
+        return false;
+
+    const auto value = limit->getValue();
+    if (value.getType() == Field::Types::UInt64)
+        return value.safeGet<UInt64>() <= 1;
+    if (value.getType() == Field::Types::Int64)
+    {
+        const auto signed_value = value.safeGet<Int64>();
+        return signed_value >= 0 && signed_value <= 1;
+    }
+
+    return false;
+}
+
 }
 
 /// Evaluate scalar subquery and perform constant folding if scalar subquery does not have constant value
@@ -108,6 +134,14 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     const bool only_analyze_subquery = (only_analyze || early_short_circuit_type_inference_in_process)
         && !table_function_arguments_in_resolve_process
         && !parameterized_view_arguments_in_resolve_process;
+
+    if (early_short_circuit_type_inference_in_process
+        && (execute_for_exists || !query_node || !scalarSubqueryCardinalityIsProven(*query_node)))
+    {
+        /// Type-only analysis cannot validate scalar cardinality or determine the runtime value
+        /// of EXISTS. Keep resolving the clone for its type, but prevent the early fold.
+        early_short_circuit_type_inference_failed = true;
+    }
 
     Block scalar_block;
 
@@ -390,8 +424,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     /// Always convert to literals when there is no query context, or when resolving a
     /// parameterized view argument (its value must fold to a literal to be matched against
     /// the view's query parameters, see `parameterized_view_arguments_in_resolve_process`).
-    /// The EXISTS caller also requires a ConstantNode so it can derive the boolean result from
-    /// whether the scalar subquery returned NULL; this must hold in type-only analysis as well.
+    /// The EXISTS caller also requires a ConstantNode. In type-only analysis its sample value is
+    /// only a placeholder; `early_short_circuit_type_inference_failed` prevents folding from it.
     if (execute_for_exists || !context->getSettingsRef()[Setting::enable_scalar_subquery_optimization]
         || !useless_literal_types.contains(scalar_type_name) || !context->hasQueryContext()
         || !nearest_query_scope || parameterized_view_arguments_in_resolve_process)

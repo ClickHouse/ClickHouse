@@ -8322,7 +8322,7 @@ Possible values:
 )", 0) \
     DECLARE(Bool, enable_function_early_short_circuit, false, R"(
 Enable early short-circuit constant folding for `and` and `or` during query analysis.
-When enabled, dead scalar-subquery branches are analyzed to preserve their types and validate query semantics, but they are not executed.
+When enabled, eligible dead scalar-subquery branches are analyzed to preserve their types and validate query semantics, but they are not executed. The optimization falls back to normal analysis when scalar cardinality or runtime values are required.
 )", 0) \
     DECLARE(Bool, query_plan_remove_unused_columns, true, R"(
 Toggles a query-plan-level optimization which tries to remove unused columns (both input and output columns) from query plan steps.
