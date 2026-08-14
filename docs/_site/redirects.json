@@ -1,7 +1,11 @@
 [
   {
-    "destination": "/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore",
-    "source": "/products/cloud/guides/migration/oss-to-cloud-backup-restore"
+    "source": "/products/cloud/features/backups/faq",
+    "destination": "/products/cloud/features/backups/overview"
+  },
+  {
+    "source": "/products/cloud/guides/migration/oss-to-cloud-backup-restore",
+    "destination": "/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
   },
   {
     "destination": "/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
@@ -1532,7 +1536,7 @@
     "source": "/cloud/features/backups"
   },
   {
-    "destination": "/products/cloud/features/backups/faq",
+    "destination": "/products/cloud/features/backups/overview",
     "source": "/cloud/features/backups/faq"
   },
   {
