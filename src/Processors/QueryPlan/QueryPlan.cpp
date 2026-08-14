@@ -24,6 +24,7 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistributedPlanSets.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -83,6 +84,26 @@ void assertFragmentSerializable(const QueryPlan & fragment, const String & stage
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan cannot distribute this query: step '{}' in stage '{}' is not "
             "serializable for remote execution", node->step->getName(), stage_name);
+}
+
+/// A `DelayedMaterializingCTEsStep`'s gate holds back only the pipeline below it, so a
+/// `DelayedCreatingSetsStep` whose sources may read a materialized CTE belongs below the whole
+/// root-level chain (`addBuildSubqueriesForMaterializedCTEsIfNeeded` stacks one step per level).
+/// Returns nullptr when the root is not such a step.
+QueryPlan::Node ** findSlotBelowDelayedMaterializingCTEs(QueryPlan::Node *& root)
+{
+    QueryPlan::Node ** slot = nullptr;
+    QueryPlan::Node ** current = &root;
+    while (*current && typeid_cast<DelayedMaterializingCTEsStep *>((*current)->step.get()))
+    {
+        if ((*current)->children.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Expected DelayedMaterializingCTEsStep to have exactly one child, got {}",
+                (*current)->children.size());
+        current = &(*current)->children.front();
+        slot = current;
+    }
+    return slot;
 }
 
 }
@@ -879,11 +900,24 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         /// locally, so add the detached sets back and expand them the ordinary way (sets already
         /// built during planning are reused).
         if (!delayed_sets.empty() && optimization_settings.build_sets)
-            addStep(std::make_unique<DelayedCreatingSetsStep>(
-                getCurrentHeader(),
+        {
+            /// The planner nests the sets below the materialized-CTE steps, so the CTE gate
+            /// encloses the set-build pipeline; adding them at the root would invert that.
+            QueryPlan::Node ** slot = findSlotBelowDelayedMaterializingCTEs(root);
+            auto step = std::make_unique<DelayedCreatingSetsStep>(
+                slot ? (*slot)->step->getOutputHeader() : getCurrentHeader(),
                 std::move(delayed_sets),
                 optimization_settings.network_transfer_limits,
-                optimization_settings.prepared_sets_cache));
+                optimization_settings.prepared_sets_cache);
+
+            if (slot)
+            {
+                auto & node = nodes.emplace_back(Node{.step = std::move(step), .children = {*slot}});
+                *slot = &node;
+            }
+            else
+                addStep(std::move(step));
+        }
 
         QueryPlanOptimizationSettings local_settings = optimization_settings;
         local_settings.make_distributed_plan = false;

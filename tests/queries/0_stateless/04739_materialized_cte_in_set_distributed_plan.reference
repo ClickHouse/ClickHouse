@@ -1,0 +1,20 @@
+-- CTE read by both the outer query and the set
+4
+4
+-- nested set
+4
+-- chained CTEs, one gate step per dependency level
+4
+4
+-- UNION ALL
+4
+4
+-- CTE over a MergeTree table, primary-key and non-primary-key sets
+4
+4
+-- only one side reads the CTE
+4
+4
+-- unchanged without a distributed plan
+4
+-- a plan that stays multi-stage is still refused
