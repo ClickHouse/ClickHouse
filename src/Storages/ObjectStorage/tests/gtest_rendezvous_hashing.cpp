@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
-
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 
