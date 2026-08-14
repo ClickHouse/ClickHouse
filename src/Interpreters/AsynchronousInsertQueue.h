@@ -335,6 +335,8 @@ private:
 
     static std::vector<std::string> getInsertQueryIds(InsertData & data);
 
+    void clear();
+
 public:
     auto getQueueLocked(size_t shard_num) const TSA_NO_THREAD_SAFETY_ANALYSIS
     {
