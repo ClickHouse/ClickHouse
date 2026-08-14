@@ -14,3 +14,13 @@
 201
 202
 1
+-- a structure that omits the colliding column: ORC returns the tuple element
+100
+101
+102
+1
+0
+-- a structure that omits the colliding column: Parquet refuses the ambiguous name
+100
+101
+102
