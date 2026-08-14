@@ -73,7 +73,23 @@ function check_clickhouse_version()
 
 function is_fast_build()
 {
-    return $(clickhouse local --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
+    # Tests with MinIO/azure can be slow
+    if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]] || [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
+        return 1
+    fi
+    # Encrypted storage is slow (but it is enabled only for object storages)
+    if [[ "$USE_ENCRYPTED_STORAGE" == "1" ]]; then
+        return 1
+    fi
+    # Coverage instrumentation is ~2-3x slower. WITH_COVERAGE has a dedicated row in
+    # system.build_options; the coverage flags are applied per-directory, so they never
+    # reach CXX_FLAGS and cannot be probed from there. An unanswerable probe declines,
+    # because CXX_FLAGS cannot distinguish a coverage build.
+    if [[ "$(clickhouse local --query "SELECT upper(value) NOT IN ('ON', '1') FROM system.build_options WHERE name = 'WITH_COVERAGE'")" != "1" ]]; then
+        return 1
+    fi
+    # sanitizers and debug builds are slow
+    [ "$(clickhouse local --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" == "1" ]
 }
 
 echo "Going to install test configs from $SRC_PATH into $DEST_SERVER_PATH"
@@ -183,7 +199,6 @@ ln -sf $SRC_PATH/config.d/session_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/background_schedule_pool_log.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/system_unfreeze.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/nlp.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/nb_models.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/forbidden_headers.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/enable_keeper_map.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/custom_disks_base_path.xml $DEST_SERVER_PATH/config.d/
@@ -196,10 +211,12 @@ cp $SRC_PATH/config.d/backups.xml $DEST_SERVER_PATH/config.d/
 cp $SRC_PATH/config.d/filesystem_caches_path.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/validate_tcp_client_information.xml $DEST_SERVER_PATH/config.d/
 # distributed_query.xml sets distributed_query.streaming_exchange_port, which the server rejects on
-# non-Linux builds; only install it where the streaming exchange is supported.
-if [ "$(uname -s)" = "Linux" ]; then
-    ln -sf $SRC_PATH/config.d/distributed_query.xml $DEST_SERVER_PATH/config.d/
-fi
+# platforms without the streaming exchange (only Linux and macOS support it); install it there only.
+case "$(uname -s)" in
+    Linux|Darwin)
+        ln -sf $SRC_PATH/config.d/distributed_query.xml $DEST_SERVER_PATH/config.d/
+        ;;
+esac
 
 ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/handlers.yaml $DEST_SERVER_PATH/config.d/
@@ -226,6 +243,10 @@ ln -sf $SRC_PATH/config.d/zookeeper_enforce_component_name.yaml $DEST_SERVER_PAT
 
 if [ "$FAST_TEST" != "1" ]; then
     ln -sf $SRC_PATH/config.d/abort_on_logical_error.yaml $DEST_SERVER_PATH/config.d/
+fi
+
+if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    ln -sf $SRC_PATH/config.d/replicated_access_storage.xml $DEST_SERVER_PATH/config.d/
 fi
 
 # SSH protocol support (not supported with fasttest or OpenSSL FIPS).
@@ -265,7 +286,10 @@ ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
 if check_clickhouse_version 26.1; then
     ln -sf $SRC_PATH/users.d/distributed_index_analysis.yaml $DEST_SERVER_PATH/users.d/
 fi
-if [[ $(is_fast_build) == 1 ]]; then
+# Only the Fast test job, whose runner already gives each test file a 60 second wall-clock
+# budget, so a 60 second per-query limit cannot be the first thing to fire on a healthy
+# test there. Other jobs that satisfy is_fast_build run the long tests that Fast test skips.
+if [ "$FAST_TEST" == "1" ] && is_fast_build; then
     ln -sf $SRC_PATH/users.d/limits_fast.yaml $DEST_SERVER_PATH/users.d/
 fi
 
@@ -311,9 +335,6 @@ ln -sf $SRC_PATH/ext-en.txt $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/ext-ru.txt $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/lem-en.bin $DEST_SERVER_PATH/config.d/
 
-ln -sf $SRC_PATH/nb_model_sentiment_token_1.bin $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/nb_model_lang_codepoint_1.bin $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/nb_model_lang_byte_2.bin $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/server.key $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/server.crt $DEST_SERVER_PATH/
@@ -351,8 +372,8 @@ echo "Replacing create_snapshot_on_exit with $value_create_snapshot_on_exit"
 value_latest_logs_cache_size_threshold=$(((RANDOM + 100) * 2048))
 echo "Replacing latest_logs_cache_size_threshold with $value_latest_logs_cache_size_threshold"
 
-value_commit_logs_cache_size_threshold=$(((RANDOM + 100) * 2048))
-echo "Replacing commit_logs_cache_size_threshold with $value_commit_logs_cache_size_threshold"
+value_log_readahead_commit_window_bytes=$(((RANDOM + 100) * 2048))
+echo "Replacing log_readahead_commit_window_bytes with $value_log_readahead_commit_window_bytes"
 
 value=$((RANDOM % 2))
 echo "Replacing digest_enabled_on_commit with $value"
@@ -362,7 +383,7 @@ echo "Replacing nuraft_use_bg_thread_for_snapshot_io with $value_nuraft_use_bg_t
 
 sed -E "s|<create_snapshot_on_exit>[01]</create_snapshot_on_exit>|<create_snapshot_on_exit>$value_create_snapshot_on_exit</create_snapshot_on_exit>|; \
     s|<latest_logs_cache_size_threshold>[[:digit:]]+</latest_logs_cache_size_threshold>|<latest_logs_cache_size_threshold>$value_latest_logs_cache_size_threshold</latest_logs_cache_size_threshold>|; \
-    s|<commit_logs_cache_size_threshold>[[:digit:]]+</commit_logs_cache_size_threshold>|<commit_logs_cache_size_threshold>$value_commit_logs_cache_size_threshold</commit_logs_cache_size_threshold>|; \
+    s|<log_readahead_commit_window_bytes>[[:digit:]]+</log_readahead_commit_window_bytes>|<log_readahead_commit_window_bytes>$value_log_readahead_commit_window_bytes</log_readahead_commit_window_bytes>|; \
     s|<digest_enabled_on_commit>[01]</digest_enabled_on_commit>|<digest_enabled_on_commit>$value</digest_enabled_on_commit>|; \
     s|<nuraft_use_bg_thread_for_snapshot_io>[01]</nuraft_use_bg_thread_for_snapshot_io>|<nuraft_use_bg_thread_for_snapshot_io>$value_nuraft_use_bg_thread_for_snapshot_io</nuraft_use_bg_thread_for_snapshot_io>|" \
     $SRC_PATH/config.d/keeper_port.xml > $DEST_SERVER_PATH/config.d/keeper_port.xml
@@ -548,6 +569,7 @@ if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 || "$PREVIOUS_RELEASE_CONFIG" -eq 1 ]]; the
     }
 
     remove_keeper_config "nuraft_use_bg_thread_for_snapshot_io" "[[:digit:]]\+"
+    remove_keeper_config "log_readahead_commit_window_bytes" "[[:digit:]]\+"
 fi
 
 if [[ $REMOTE_DATABASE_DISK -eq 1 ]]; then

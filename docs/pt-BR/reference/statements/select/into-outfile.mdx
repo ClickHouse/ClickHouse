@@ -18,7 +18,7 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 
 `file_name` e `type` são literais de string. Os tipos de compressão suportados são: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
 
-`level` é um literal numérico. Há suporte para inteiros positivos nos seguintes intervalos: `1-12` para o tipo `lz4`, `1-22` para o tipo `zstd` e `1-9` para os demais tipos de compressão.
+`level` é um literal numérico. Há suporte para inteiros positivos nos seguintes intervalos: `1-12` para os tipos `gzip`, `deflate` e `lz4`, `1-22` para o tipo `zstd` e `1-9` para os demais tipos de compressão. Para `gzip` e `deflate`, níveis acima de `9` exigem a compilação padrão com `libdeflate`; uma compilação sem `libdeflate` oferece suporte aos níveis `1-9`.
 
 <div id="implementation-details">
   ## Detalhes de implementação

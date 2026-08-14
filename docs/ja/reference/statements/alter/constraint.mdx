@@ -6,19 +6,24 @@ title: '制約の操作'
 doc_type: 'reference'
 ---
 
-制約は、次の構文で追加または削除できます。
+制約は、次の構文で追加、変更、削除できます。
 
 ```sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name CHECK expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name {CHECK|ASSUME} expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY CONSTRAINT [IF EXISTS] constraint_name {CHECK|ASSUME} expression;
 ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name;
 ```
 
-[制約](/ja/reference/statements/create/table#constraints)の詳細については、こちらを参照してください。
+テーブル作成時と同様に、制約は `CHECK` (`INSERT` 時に適用) または `ASSUME` (検証は行わず、オプティマイザが正しいものとして扱う) のいずれかとして宣言できます。両者の違いについては、[constraints](/ja/reference/statements/create/table#constraints) を参照してください。
 
-クエリでは、テーブルの制約に関するメタデータの追加や削除は即座に処理されます。
+`MODIFY CONSTRAINT` は、既存の制約の宣言を、テーブル定義内での位置を維持したまま置き換えます。また、制約の種類 (たとえば `CHECK` から `ASSUME` へ) を変更することもできます。これは、制約を削除して新しい宣言で再度追加するのと同等です。制約が存在しない場合は、`IF EXISTS` が指定されていない限り、クエリはエラーをスローします。
+
+詳しくは [constraints](/ja/reference/statements/create/table#constraints) を参照してください。
+
+これらのクエリは、テーブルの制約に関するメタデータを追加、変更、または削除するだけなので、即座に処理されます。
 
 <Tip>
-  制約を追加しても、既存のデータに対しては制約チェックは**実行されません**。
+  制約チェックは、制約を追加または変更しても、既存のデータに対しては**実行されません**。
 </Tip>
 
 レプリケートテーブルに対するすべての変更は ZooKeeper にブロードキャストされ、他のレプリカにも適用されます。

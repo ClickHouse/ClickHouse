@@ -22,7 +22,6 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   * Maven Central (página web del proyecto): https://mvnrepository.com/artifact/com.clickhouse/client-v2
   * Versiones nocturnas (enlace al repositorio): https://central.sonatype.com/repository/maven-snapshots/
-  * Artifactory de compilaciones Nightly anteriores (enlace al repositorio): https://s01.oss.sonatype.org/content/repositories/snapshots/
 
   <br />
 
@@ -149,7 +148,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
       | `useBearerTokenAuth(String bearerToken)`             | `bearerToken` - un token Bearer codificado                             | Especifica si se debe usar la autenticación Bearer y qué token usar. El token se enviará tal cual.                                                                                      | -              | `bearer_token`        |
     </Tab>
 
-    <Tab title="Tiempos de espera & reintentos">
+    <Tab title="Timeouts & reintentos">
       | Método                                                       | Argumentos                                                                | Descripción                                                                                                      | Predeterminado                                               | Clave                        |
       | ------------------------------------------------------------ | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ---------------------------- |
       | `setConnectTimeout(long timeout, ChronoUnit unit)`           | `timeout` - valor del tiempo de espera<br />`unit` - unidad de tiempo     | Establece el tiempo de espera para iniciar cualquier conexión saliente.                                          | -                                                            | `connection_timeout`         |
@@ -512,10 +511,10 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   | `setQueryId(String queryId)`                    | Establece el ID de consulta que se asignará a la operación. Valor predeterminado: `null`.                                                                                                                   |
   | `setDeduplicationToken(String token)`           | Establece el token de deduplicación. Este token se enviará al servidor y puede utilizarse para identificar la consulta. Valor predeterminado: `null`.                                                       |
   | `setInputStreamCopyBufferSize(int size)`        | Tamaño del búfer de copia. El búfer se utiliza durante las operaciones de escritura para copiar datos del flujo de entrada proporcionado por el usuario a un flujo de salida. Valor predeterminado: `8196`. |
-  | `serverSetting(String name, String value)`      | Establece ajustes de servidor individuales para una operación.                                                                                                                                              |
+  | `serverSetting(String name, String value)`      | Establece ajustes individuales del servidor para una operación.                                                                                                                                             |
   | `serverSetting(String name, Collection values)` | Establece opciones de configuración individuales del servidor con varios valores para una operación. Los elementos de la colección deben ser valores `String`.                                              |
   | `setDBRoles(Collection dbRoles)`                | Establece los roles de DB que deben configurarse antes de ejecutar una operación. Los elementos de la colección deben ser valores `String`.                                                                 |
-  | `setOption(String option, Object value)`        | Establece una opción de configuración en formato raw. No se trata de un ajuste del servidor.                                                                                                                |
+  | `setOption(String option, Object value)`        | Establece una opción de configuración en formato raw. No es una configuración del servidor.                                                                                                                 |
 
   ### InsertResponse
 
@@ -711,7 +710,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   ### getTableSchema(String table)
 
-  Obtiene el esquema de la tabla para `table`.
+  Obtiene el esquema de la tabla `table`.
 
   **Firmas**
 
@@ -809,7 +808,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
       ClickHouseBinaryFormatReader reader = client.newBinaryFormatReader(response);
       while (reader.next() != null) {
-          
+
           Object[] uint64 = reader.getObjectArray("uint64_arr"); // Array(UInt64) -> BigInteger[]
           Object[] arr2d = reader.getObjectArray("arr2d");       // Array(Array(Int64)) -> Object[]
 
@@ -822,10 +821,10 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   **Métodos de `GenericRecord`**
 
-  * `getList(...)` - lee cualquier `Array(...)` como `List<T>`. Buena opción predeterminada para lecturas flexibles con tipado. Admite arrays anidados.
-  * `getByteArray(...)`, `getShortArray(...)`, `getIntArray(...)`, `getLongArray(...)`, `getFloatArray(...)`, `getDoubleArray(...)`, `getBooleanArray(...)` - ideal para arrays unidimensionales de valores compatibles con tipos primitivos.
+  * `getList(...)` - lee cualquier `Array(...)` como `List<T>`. Es una buena opción predeterminada para lecturas flexibles con tipado. Admite arrays anidados.
+  * `getByteArray(...)`, `getShortArray(...)`, `getIntArray(...)`, `getLongArray(...)`, `getFloatArray(...)`, `getDoubleArray(...)`, `getBooleanArray(...)` - mejor para arrays 1D de valores compatibles con tipos primitivos.
   * `getStringArray(...)` - para `Array(String)` (y valores de `enum` representados por nombres).
-  * `getObjectArray(...)` - opción genérica para cualquier tipo de elemento de `Array(...)`, incluidos los arrays anidados. Úsela para leer arrays con valores que admiten NULL y arrays anidados.
+  * `getObjectArray(...)` - opción genérica para cualquier tipo de elemento de `Array(...)`, incluidos los arrays anidados. Úselo para leer arrays con valores anulables y arrays anidados.
 
   Las sobrecargas basadas en índice y en nombre están disponibles para todos los métodos. El índice es base 1. Las sobrecargas basadas en índice realizan acceso directo a una columna.
   Los métodos basados en nombre requieren una búsqueda por índice en cada invocación.
@@ -1028,7 +1027,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
       | `ClickHouseClientOption#CHECK_ALL_NODES`         | ✗                     |             |
     </Tab>
 
-    <Tab title="Miscelánea">
+    <Tab title="Varios">
       | Configuración V1                                                                 | Método Builder V2                 | Comentarios                                |
       | -------------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------ |
       | `ClickHouseDefaults#AUTO_SESSION`                                                | ✗                                 | Se revisará la compatibilidad con sesiones |

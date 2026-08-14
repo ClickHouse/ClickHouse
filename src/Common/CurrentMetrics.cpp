@@ -33,6 +33,8 @@
     M(BackgroundDistributedSchedulePoolSize, "Limit on number of tasks in BackgroundDistributedSchedulePool") \
     M(BackgroundMessageBrokerSchedulePoolTask, "Number of active tasks in BackgroundMessageBrokerSchedulePool for message streaming") \
     M(BackgroundMessageBrokerSchedulePoolSize, "Limit on number of tasks in BackgroundMessageBrokerSchedulePool for message streaming") \
+    M(BackgroundStreamingSchedulePoolTask, "Number of active tasks in BackgroundStreamingSchedulePool for streaming queries tasks") \
+    M(BackgroundStreamingSchedulePoolSize, "Limit on number of tasks in BackgroundStreamingSchedulePool for streaming queries tasks") \
     M(CacheDictionaryUpdateQueueBatches, "Number of 'batches' (a set of keys) in update queue in CacheDictionaries.") \
     M(CacheDictionaryUpdateQueueKeys, "Exact number of keys in update queue in CacheDictionaries.") \
     M(DiskSpaceReservedForMerge, "Disk space reserved for currently running background merges. It is slightly more than the total size of currently merging parts.") \
@@ -223,6 +225,8 @@
     M(IcebergCompactionThreadsActive, "Number of threads in the IcebergCompaction thread pool running a task.") \
     M(IcebergCompactionThreadsScheduled, "Number of queued or active jobs in the IcebergCompaction thread pool.") \
     M(IcebergCompactionSnapshots, "Number of iceberg compactions.") \
+    M(IcebergCompactionMerge, "Number of executing background Iceberg compaction merges.") \
+    M(IcebergCompactionSourceFiles, "Number of input source files (data files and position delete files) participating in currently executing Iceberg compaction merges.") \
     M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
@@ -291,6 +295,11 @@
     M(KeeperReadThreads, "Number of threads in the threadpool for keeper server reads.") \
     M(KeeperReadThreadsActive, "Number of active threads in the threadpool for keeper server reads.") \
     M(KeeperReadThreadsScheduled, "Number of queued or active jobs in the threadpool for keeper server reads. Meaningless metric, the actual read tasks on this thread pool are scheduled through a different mechanism.") \
+    M(KeeperChangelogReadAheadThreads, "Number of threads in the threadpool for Keeper changelog read-ahead fill tasks.") \
+    M(KeeperChangelogReadAheadThreadsActive, "Number of active threads in the threadpool for Keeper changelog read-ahead fill tasks.") \
+    M(KeeperChangelogReadAheadThreadsScheduled, "Number of queued or active jobs in the threadpool for Keeper changelog read-ahead fill tasks.") \
+    M(KeeperBlockCacheBytes, "Total size of blocks in the Keeper storage block cache, in bytes.") \
+    M(KeeperBlockCacheBlocks, "Number of blocks in the Keeper storage block cache.") \
     M(DistributedBytesToInsert, "Number of pending bytes to process for asynchronous insertion into Distributed tables. Number of bytes for every shard is summed.") \
     M(BrokenDistributedBytesToInsert, "Number of bytes for asynchronous insertion into Distributed tables that has been marked as broken. Number of bytes for every shard is summed.") \
     M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
@@ -342,9 +351,14 @@
     M(FilesystemCacheEvictionThreads, "Number of threads in the filesystem cache background eviction (removal) pool") \
     M(FilesystemCacheEvictionThreadsActive, "Number of threads in the filesystem cache background eviction pool running a task") \
     M(FilesystemCacheEvictionThreadsScheduled, "Number of queued or active jobs in the filesystem cache background eviction pool") \
+    M(FilesystemCacheDropCacheThreads, "Number of threads in the filesystem cache pool for parallel keys removal on SYSTEM DROP FILESYSTEM CACHE") \
+    M(FilesystemCacheDropCacheThreadsActive, "Number of threads in the filesystem cache keys removal pool running a task") \
+    M(FilesystemCacheDropCacheThreadsScheduled, "Number of queued or active jobs in the filesystem cache keys removal pool") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(IcebergMetadataFilesCacheBytes, "Size of the Iceberg metadata cache in bytes") \
     M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \
+    M(PaimonMetadataFilesCacheBytes, "Size of the Paimon metadata cache in bytes") \
+    M(PaimonMetadataFilesCacheFiles, "Number of cached files in the Paimon metadata cache") \
     M(ParquetMetadataCacheBytes, "Size of the Parquet metadata cache in bytes") \
     M(ParquetMetadataCacheFiles, "Number of cached files in the Parquet metadata cache") \
     M(AvroSchemaCacheBytes, "Size of the Avro schema cache in bytes") \
@@ -377,7 +391,7 @@
     M(DeleteBitmapCacheBytes, "Total size of the UNIQUE KEY delete-bitmap cache in bytes") \
     M(DeleteBitmapCacheEntries, "Total number of UNIQUE KEY delete bitmaps cached") \
     M(NamedCollection, "Number of named collections") \
-    M(PrimaryIndexCacheBytes, "Total size of primary index cache in bytes. Holds primary-key indices loaded on demand when `primary_key_lazy_load=1` and `use_primary_key_cache=1`. Allocations live in the dedicated cache jemalloc arena (`jemalloc.cache_arena.*`). NEVER overlaps with `system.parts.primary_key_bytes_in_memory[_allocated]` — a part's index lives either in this cache (counted here) or in the part itself (counted there); never both. To get total primary-index memory across all parts, sum the two.") \
+    M(PrimaryIndexCacheBytes, "Total size of primary index cache in bytes. Holds primary-key indices loaded on demand when `primary_key_lazy_load=1` and `use_primary_key_cache=1`. When the dedicated MergeTree metadata arena pool is enabled (`jemalloc_merge_tree_arenas` > 0 with jemalloc), the index columns are allocated there (`jemalloc.mergetree_arena.*`) even when owned by this cache. NEVER overlaps with `system.parts.primary_key_bytes_in_memory[_allocated]` — a part's index lives either in this cache (counted here) or in the part itself (counted there); never both. To get total primary-index memory across all parts, sum the two.") \
     M(PrimaryIndexCacheFiles, "Total number of index files cached in the primary index cache") \
     M(PageCacheBytes, "Total size of userspace page cache in bytes") \
     M(PageCacheCells, "Total number of entries in the userspace page cache") \
@@ -392,6 +406,8 @@
     M(QueryCacheEntries, "Total number of entries in the query cache") \
     M(QueryConditionCacheBytes, "Total size of the query condition cache in bytes") \
     M(QueryConditionCacheEntries, "Total number of entries in the query condition cache") \
+    M(EncryptionHeaderCacheBytes, "Total size of the encryption header cache in bytes") \
+    M(EncryptionHeaderCacheEntries, "Total number of entries in the encryption header cache") \
     M(CompiledExpressionCacheBytes, "Reserved page-block capacity (rounded up to whole pages with a 2x over-provisioning factor) held by `JITModuleMemoryManager` for executable/data sections of cached JIT-compiled functions. NOT the actual bytes of machine code in use (that's smaller). Allocated via `posix_memalign`, which is intercepted into jemalloc, so this is accounted within the dedicated JIT arena and is a subset of `jemalloc.jit_arena.active_bytes`.") \
     M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled machine code.") \
     M(SerializationCacheBytesInMemoryAllocated, "Total size of the serialization cache in bytes including keys and overhead from empty slots") \
@@ -402,10 +418,15 @@
     M(BcryptCacheBytes, "Total size of the bcrypt authentication cache in bytes") \
     M(BcryptCacheSize, "Total number of entries in the bcrypt authentication cache") \
     M(ColumnsDescriptionsCacheSize, "Size of ColumnsDescriptions cache (per-table cache)") \
+    M(SharedPartSerializationsCacheSize, "Number of distinct serializations maps shared across data parts (sum over per-table caches)") \
+    M(SharedPartSerializationGroupsCacheSize, "Number of distinct per-column serialization groups shared across data parts (sum over per-table caches)") \
+    M(SharedPartColumnsSubstreamsCacheSize, "Number of distinct columns substreams lists shared across data parts (sum over per-table caches)") \
+    M(SharedPartColumnSubstreamsEntriesCacheSize, "Number of distinct per-column substream entries shared across data parts (sum over per-table caches)") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \
     M(KeeperTTLNodes, "Number of nodes with a TTL set currently stored in Keeper.") \
+    M(KeeperContainerNodes, "Number of container nodes currently stored in Keeper.") \
     M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \
     M(IOUringPendingEvents, "Number of io_uring SQEs waiting to be submitted") \
     M(IOUringInFlightEvents, "Number of io_uring SQEs in flight") \
@@ -526,6 +547,9 @@
     M(StatelessWorkerThreads, "Number of threads in the stateless worker thread pool.") \
     M(StatelessWorkerThreadsActive, "Number of threads in the stateless worker thread pool running a task.") \
     M(StatelessWorkerThreadsScheduled, "Number of queued or active jobs in the stateless worker thread pool.") \
+    M(StatelessWorkerInUse, "Number of stateless workers currently in use by running queries.") \
+    M(StatelessWorkerIdle, "Number of stateless workers currently held by the server but not used by any running query.") \
+    M(StatelessWorkerServerActiveTasks, "Number of query execution tasks currently active on a stateless worker (accepted from a tenant and not yet released).") \
     M(ExchangeServerThreads, "Number of threads in the distributed exchange server handshake thread pool.") \
     M(ExchangeServerThreadsActive, "Number of threads in the distributed exchange server handshake thread pool running a task.") \
     M(ExchangeServerThreadsScheduled, "Number of queued or active jobs in the distributed exchange server handshake thread pool.") \

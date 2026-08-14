@@ -165,7 +165,7 @@ void TotalsHavingStep::updateOutputHeader()
             getAggregatesMask(*input_headers.front(), aggregates)));
 }
 
-void TotalsHavingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+void TotalsHavingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
     settings[QueryPlanSerializationSetting::totals_mode] = totals_mode;
     settings[QueryPlanSerializationSetting::totals_auto_threshold] = auto_include_threshold;
@@ -229,6 +229,11 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::totals_mode],
         ctx.settings[QueryPlanSerializationSetting::totals_auto_threshold],
         final);
+}
+
+QueryPlanStepPtr TotalsHavingStep::clone() const
+{
+    return std::make_unique<TotalsHavingStep>(*this);
 }
 
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry);

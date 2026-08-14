@@ -4,10 +4,19 @@ title: 'バックアップ'
 description: 'バックアップの目次ページ。'
 keywords: ['バックアップ', '設定可能なバックアップ', '自身のCloudアカウントへのバックアップのエクスポート']
 doc_type: 'landing-page'
+mode: wide
 ---
 
-| Page                                                                                                                     | Description                                                             |
-| ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| [概要](/ja/products/cloud/guides/backups/review-and-restore-backups)                                                          | バックアップの概要ページです。                                                         |
-| [設定可能なバックアップ](/ja/products/cloud/guides/backups/configurable-backups)                                                       | Scale tierおよびEnterprise tierで、ビジネスニーズに応じてバックアップスケジュールをカスタマイズする方法を説明します。 |
-| [自身のCloudアカウントへのバックアップのエクスポート](/ja/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) | 自身のCloudアカウントにバックアップをエクスポートする方法を説明します。                                  |
+<CardGroup cols={2}>
+  <Card title="バックアップの確認と復元" icon="clock-rotate-left" href="/ja/products/cloud/guides/backups/review-and-restore-backups">
+    ClickHouse Cloud のバックアップの概要を説明します。
+  </Card>
+
+  <Card title="バックアップスケジュールを設定する" icon="calendar-days" href="/ja/products/cloud/guides/backups/configurable-backups">
+    Scale tierおよびEnterprise tierで、ビジネスニーズに応じてバックアップスケジュールをカスタマイズできます。
+  </Card>
+
+  <Card title="独自バックアップの使用" icon="box-archive" href="/ja/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account">
+    バックアップを自身のCloudアカウントにエクスポートし、UI またはコマンドを使って自身のバケット経由でバックアップの作成や復元を行えます。
+  </Card>
+</CardGroup>

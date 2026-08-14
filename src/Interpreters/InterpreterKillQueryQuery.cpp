@@ -39,7 +39,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
 }
@@ -441,18 +440,28 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
 
     auto io = executeQuery(select_query, std::move(query_context), QueryFlags{ .internal = true }).second;
 
-    Block res;
-    Block tmp_block;
+    /// The pipeline can legitimately produce multiple blocks (e.g. when the
+    /// `WHERE` clause contains a per-row subquery that the planner splits into
+    /// chunks, when `max_block_size` is small, or when parallel reads are used).
+    /// Previously this code asserted "Expected one block from input stream",
+    /// which fired as a LOGICAL_ERROR for valid queries surfaced by the AST
+    /// fuzzer (issue #104857). Collect every produced block and concatenate
+    /// them — the result set is bounded by the size of `system.processes`,
+    /// `system.mutations`, `system.part_moves_between_shards` or
+    /// `system.transactions`, so this remains cheap.
+    Blocks blocks;
     io.executeWithCallbacks([&]()
     {
         PullingPipelineExecutor executor(io.pipeline);
-        while (res.empty() && executor.pull(res));
-
-        while (executor.pull(tmp_block));
+        Block block;
+        while (executor.pull(block))
+        {
+            if (!block.empty())
+                blocks.push_back(std::move(block));
+        }
     });
 
-    if (!tmp_block.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected one block from input stream");
+    Block res = concatenateBlocks(blocks);
 
     /// Materialize const columns, because callers use typeid_cast to concrete column types.
     materializeBlockInplace(res);

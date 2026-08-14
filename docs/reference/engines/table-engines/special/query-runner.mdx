@@ -1,0 +1,118 @@
+---
+description: 'Records inserted into a `QueryRunner` table represent queries that the
+  engine executes, either locally or on a remote cluster, in the "fire and forget" mode.'
+sidebarTitle: 'QueryRunner'
+slug: /engines/table-engines/special/query-runner
+title: 'QueryRunner table engine'
+doc_type: 'reference'
+---
+
+Records inserted into a `QueryRunner` table represent queries that the engine executes.
+The engine can be used for asynchronous query execution, batch execution of generated queries,
+directing queries to remote clusters, benchmarks, fuzzing, and testing with shadow traffic.
+
+## Creating a table {#creating-a-table}
+
+```sql
+CREATE TABLE runner
+(
+    query String,
+    database String,
+    settings Map(LowCardinality(String), String)
+)
+ENGINE = QueryRunner
+SETTINGS
+    cluster = 'cluster_name',
+    shard = '1',
+    mode = 'asynchronous',
+    threads = 4,
+    max_queue_size = 1000
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }];
+```
+
+The table must be created with a subset of the allowed columns: `query`, `database`, `settings`.
+The column `query` is mandatory, and the other columns are optional.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `query` | `String` | The query to execute. |
+| `database` | `String` | The default database for the query. If empty, the server's default database is used. |
+| `settings` | `Map(String, String)` | Settings applied to the query. |
+
+## Engine settings {#engine-settings}
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `cluster` | `''` | Name of the cluster to send the queries to. If empty, the queries are executed locally. |
+| `shard` | `'1'` | 1-based index of the cluster's shard to send the queries to, or `'random'` to pick a random shard per query, or `'all'` to run each query on every shard. Requires the `cluster` setting. |
+| `mode` | `'asynchronous'` | In the `synchronous` mode, INSERT returns after all queries of the inserted batch have finished. In the `asynchronous` mode, INSERT returns as soon as the queries are queued. |
+| `threads` | `4` | Number of background threads executing the queries. |
+| `max_queue_size` | `1000` | Maximum number of queued queries. When the queue is full, newly inserted queries are discarded, and an error is logged. |
+
+## Details {#details}
+
+The table allows only INSERT queries.
+The queries are executed in the "fire and forget" mode: in case of an exception, there are no retries,
+and the results of SELECT queries are discarded (the only way to keep results is `INSERT SELECT`).
+The success of each query can be checked in the `system.query_log` table, where queries initiated by
+this engine are marked with `is_internal = 1` on the initiating server.
+
+The queued queries are kept in memory and do not survive a server restart. On server shutdown
+(or `DROP`/`DETACH` of the table), the queries that have not started yet are discarded. Of the
+queries already being executed, those dispatched to a cluster are cancelled, while those running
+locally are awaited until they finish.
+
+When a query to run is itself an `INSERT`, its data must be inline — `INSERT ... VALUES (...)`,
+`INSERT ... SELECT ...`, or `INSERT ... FORMAT ...` with the data in the query text. An `INSERT` that
+expects its data from a separate stream is not supported.
+
+## Local mode and SQL SECURITY {#local-mode-and-sql-security}
+
+Without the `cluster` setting, the queries are executed on the local server.
+The user under whom they run is determined by the `SQL SECURITY` clause:
+
+- `INVOKER` (default): the queries run on behalf of the user who performed the INSERT.
+- `DEFINER`: the queries run on behalf of the specified `DEFINER` user. Because the inserted queries are arbitrary, granting `INSERT` on such a table delegates all privileges of the definer.
+- `NONE`: the queries run with full access, without a user. Requires the `ALLOW_SQL_SECURITY_NONE` grant at table creation.
+
+## Cluster mode {#cluster-mode}
+
+When the `cluster` setting is specified, the queries are sent to the specified cluster.
+
+The target shard is selected by `shard`: a fixed 1-based index (`'1'` by default), `'random'` to pick a
+random shard for each query, or `'all'` to run each query on every shard of the cluster. A replica within
+the shard is chosen according to the server's `load_balancing` setting.
+
+The `database` column sets the default database of the connection to the remote server. Because the
+default database is set once per connection, each distinct `database` value uses its own
+connection pool, which is created on first use and reused for the lifetime of the table.
+
+`DEFINER` and `SQL SECURITY` have an effect only in the local mode, and combining them with the
+`cluster` setting is an error. On the remote servers, the queries are authenticated with the
+credentials from the cluster configuration and run as ordinary initial queries: they are recorded in
+`system.query_log` with `is_initial_query = 1` and their own `query_id` (not linked to the INSERT that
+produced them). On the initiating server, the dispatched queries are recorded in `system.query_log`
+with `is_internal = 1`.
+
+Because the engine discards query results, it always runs the dispatched queries with
+`discard_query_data = 1`, so the result data of SELECT queries is not transferred over the network
+(this overrides any `discard_query_data` value set in the `settings` column).
+
+## Waiting for queries to finish {#waiting-for-queries-to-finish}
+
+In asynchronous mode, the following query can be used to block until every query submitted to the table so far has finished:
+```sql
+SYSTEM WAIT QUERY RUNNER runner;
+```
+
+## Example {#example}
+
+Replaying recent `SELECT` queries from the query log:
+
+```sql
+INSERT INTO runner (query, database, settings)
+SELECT query, current_database, Settings
+FROM system.query_log
+WHERE type = 'QueryFinish' AND is_initial_query AND NOT is_internal AND query_kind = 'Select'
+  AND event_time > now() - INTERVAL 1 HOUR;
+```

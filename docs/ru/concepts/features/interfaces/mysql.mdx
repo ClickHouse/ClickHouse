@@ -24,10 +24,10 @@ ClickHouse поддерживает протокол MySQL. Это позвол�
 
 Если в вашем сценарии используется конкретный инструмент, у которого нет нативного драйвера ClickHouse, и вы хотите работать с ним через интерфейс MySQL, но столкнулись с определёнными несовместимостями, пожалуйста, [создайте issue](https://github.com/ClickHouse/ClickHouse/issues) в репозитории ClickHouse.
 
-::::note
-Чтобы лучше поддерживать SQL-диалект указанных выше BI-инструментов, интерфейс MySQL в ClickHouse неявно выполняет SELECT-запросы с настройкой [prefer&#95;column&#95;name&#95;to&#95;alias = 1](/ru/reference/settings/session-settings#prefer_column_name_to_alias).
-Отключить это нельзя, и в редких пограничных случаях это может приводить к различиям в поведении между запросами, отправленными через обычный интерфейс запросов ClickHouse и через интерфейс запросов MySQL.
-::::
+<Note>
+  Чтобы лучше поддерживать SQL-диалект указанных выше BI-инструментов, интерфейс MySQL в ClickHouse неявно выполняет SELECT-запросы с настройкой [prefer&#95;column&#95;name&#95;to&#95;alias = 1](/ru/reference/settings/session-settings#prefer_column_name_to_alias).
+  Отключить это нельзя, и в редких пограничных случаях это может приводить к различиям в поведении между запросами, отправленными через обычный интерфейс запросов ClickHouse и через интерфейс запросов MySQL.
+</Note>
 
 <div id="enabling-the-mysql-interface-on-clickhouse-cloud">
   ## Включение интерфейса MySQL в ClickHouse Cloud

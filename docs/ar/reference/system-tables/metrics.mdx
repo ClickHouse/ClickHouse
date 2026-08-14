@@ -719,6 +719,18 @@ SELECT * FROM system.metrics LIMIT 10
 
 عدد استعلامات INSERT التي يُقيَّد معدلها بسبب الارتفاع الكبير في عدد أجزاء البيانات النشطة ضمن قسم في جدول MergeTree.
 
+<div id="deletebitmapcachebytes">
+  ### DeleteBitmapCacheBytes
+</div>
+
+إجمالي حجم ذاكرة التخزين المؤقت لـ delete-خريطة بت الخاصة بـ UNIQUE KEY، بالبايت
+
+<div id="deletebitmapcacheentries">
+  ### DeleteBitmapCacheEntries
+</div>
+
+إجمالي عدد خرائط البت الخاصة بالحذف لـ UNIQUE KEY المخزنة مؤقتًا
+
 <div id="deltalakesnapshotcachesizeelements">
   ### DeltaLakeSnapshotCacheSizeElements
 </div>
@@ -1036,6 +1048,24 @@ SELECT * FROM system.metrics LIMIT 10
 </div>
 
 عناصر ذاكرة التخزين المؤقت لنظام الملفات (أجزاء الملفات)
+
+<div id="filesystemcacheevictionthreads">
+  ### خيوط إخلاء ذاكرة التخزين المؤقت لنظام الملفات
+</div>
+
+عدد خيوط التنفيذ في مجمّع الإخلاء (الإزالة) في الخلفية لذاكرة التخزين المؤقت لنظام الملفات
+
+<div id="filesystemcacheevictionthreadsactive">
+  ### FilesystemCacheEvictionThreadsActive
+</div>
+
+عدد خيوط التنفيذ في مجمّع الإخلاء الخلفي لذاكرة التخزين المؤقت لنظام الملفات العاملة على تنفيذ مهمة
+
+<div id="filesystemcacheevictionthreadsscheduled">
+  ### FilesystemCacheEvictionThreadsScheduled
+</div>
+
+عدد المهام قيد الانتظار أو النشطة في مجمّع الإخلاء الخلفي لذاكرة التخزين المؤقت لنظام الملفات
 
 <div id="filesystemcacheholdfilesegments">
   ### FilesystemCacheHoldFileSegments
@@ -1481,6 +1511,12 @@ SELECT * FROM system.metrics LIMIT 10
 
 عدد المهام الموجودة في قائمة الانتظار أو النشطة في مجمع الخيوط لعمليات القراءة على خادم Keeper. مقياس غير ذي معنى، إذ تُجدول مهام القراءة الفعلية في مجمع الخيوط هذا عبر آلية مختلفة.
 
+<div id="keeperttlnodes">
+  ### KeeperTTLNodes
+</div>
+
+عدد العُقد المخزّنة حاليًا في Keeper والمُعيَّن لها TTL.
+
 <div id="licenseremainingseconds">
   ### LicenseRemainingSeconds
 </div>
@@ -1570,6 +1606,18 @@ SELECT * FROM system.metrics LIMIT 10
 </div>
 
 أقصى إدخال DDL قام DDLWorker بدفعه إلى ZooKeeper.
+
+<div id="memoryreservationapproved">
+  ### MemoryReservationApproved
+</div>
+
+إجمالي عدد البايتات المخصّصة حاليًا (المعتمدة) لحجوزات الذاكرة
+
+<div id="memoryreservationdemand">
+  ### MemoryReservationDemand
+</div>
+
+إجمالي عدد البايتات في طلبات زيادة حجز الذاكرة المعلّقة
 
 <div id="memorytracking">
   ### MemoryTracking
@@ -2086,6 +2134,24 @@ SELECT * FROM system.metrics LIMIT 10
 </div>
 
 عدد عمليات الإدراج غير المتزامنة التي تنتظر التفريغ.
+
+<div id="pointinpolygoncachebytes">
+  ### PointInPolygonCacheBytes
+</div>
+
+حجم ذاكرة التخزين المؤقت، بالبايت، للمضلعات الثابتة المُعالجة مسبقًا الخاصة بالدالة `pointInPolygon`
+
+<div id="pointinpolygoncachecells">
+  ### PointInPolygonCacheCells
+</div>
+
+عدد المضلعات الثابتة التي جرت معالجتها مسبقًا في ذاكرة التخزين المؤقت للدالة `pointInPolygon`
+
+<div id="pointinpolygoncachesizelimit">
+  ### PointInPolygonCacheSizeLimit
+</div>
+
+الحد الأقصى لحجم ذاكرة التخزين المؤقت، بالبايت، للمضلعات الثابتة المُعالجة مسبقًا للدالة `pointInPolygon` (القيمة المطبَّقة لإعداد الخادم `point_in_polygon_cache_size`)
 
 <div id="polygondictionarythreads">
   ### PolygonDictionaryThreads
@@ -2926,6 +2992,24 @@ SELECT * FROM system.metrics LIMIT 10
 </div>
 
 عدد الملفات المؤقتة المُنشأة
+
+<div id="udfdriverinvokerthreads">
+  ### UDFDriverInvokerThreads
+</div>
+
+عدد الخيوط في مجمّعات خيوط التي تخدم قنوات أوامر برنامج تشغيل UDF القابل للتنفيذ.
+
+<div id="udfdriverinvokerthreadsactive">
+  ### UDFDriverInvokerThreadsActive
+</div>
+
+عدد خيوط التنفيذ النشطة في مجمّعات الخيوط التي تخدم قنوات أوامر برنامج تشغيل UDF القابل للتنفيذ.
+
+<div id="udfdriverinvokerthreadsscheduled">
+  ### UDFDriverInvokerThreadsScheduled
+</div>
+
+عدد المهام الموجودة في قائمة الانتظار أو النشطة في مجمّعات خيوط التي تخدم قنوات أوامر برنامج تشغيل UDF القابل للتنفيذ.
 
 <div id="uncompressedcachebytes">
   ### UncompressedCacheBytes

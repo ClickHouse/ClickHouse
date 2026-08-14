@@ -311,7 +311,7 @@ Les lignes insérées sont stockées sur disque dans l&#39;ordre lexicographique
   ClickHouse permet d&#39;insérer plusieurs lignes avec des valeurs identiques dans les colonnes de la clé primaire. Dans ce cas (voir les lignes 1 et 2 dans le schéma ci-dessous), l&#39;ordre final est déterminé par la clé de tri spécifiée, et donc par la valeur de la colonne `EventTime`.
 </Note>
 
-ClickHouse est un <a href="/fr/get-started/about/distinctive-features#true-column-oriented-dbms" target="_blank">système de gestion de base de données orienté colonnes</a>. Comme le montre le schéma ci-dessous :
+ClickHouse est un <a href="/fr/get-started/about/distinctive-features#true-column-oriented-database-management-system" target="_blank">système de gestion de base de données orienté colonnes</a>. Comme le montre le schéma ci-dessous :
 
 * dans la représentation sur disque, il y a un seul fichier de données (*.bin) par colonne de table, dans lequel toutes les valeurs de cette colonne sont stockées au format <a href="/fr/get-started/about/distinctive-features#data-compression" target="_blank">compressé</a>, et
 * les 8,87 millions de lignes sont stockées sur disque dans l&#39;ordre lexicographique croissant des colonnes de la clé primaire (et des colonnes supplémentaires de la clé de tri), c&#39;est-à-dire ici
@@ -386,76 +386,91 @@ Au total, l’index comporte 1083 entrées pour notre table de 8,87 millions de
 <Note>
   * Pour les tables avec [granularité d’index adaptative](/fr/resources/changelogs/oss/2019#experimental-features-1), une marque « finale » supplémentaire est également stockée dans l’index primaire, afin d’enregistrer les valeurs des colonnes de clé primaire de la dernière ligne de la table. Cependant, comme nous avons désactivé la granularité d’index adaptative (afin de simplifier les explications de ce guide et de rendre les schémas ainsi que les résultats reproductibles), l’index de notre table d’exemple n’inclut pas cette marque finale.
 
-  * Le fichier d’index primaire est entièrement chargé en mémoire vive. Si sa taille dépasse l’espace mémoire libre disponible, ClickHouse génère une erreur.
+  * Le fichier d’index primaire est entièrement chargé en mémoire principale. Si sa taille dépasse l’espace mémoire libre disponible, ClickHouse génère une erreur.
 </Note>
 
 <Accordion title="Inspection du contenu de l’index primaire">
-  <p>
-    Sur un cluster ClickHouse autogéré, nous pouvons utiliser la <a href="/fr/reference/functions/table-functions/file" target="_blank">fonction de table file</a> pour inspecter le contenu de l’index primaire de notre table d’exemple.
+  Sur un cluster ClickHouse autogéré, nous pouvons utiliser la [fonction de table file](/fr/reference/functions/table-functions/file) pour inspecter le contenu de l’index primaire de notre table d’exemple.
 
-    Pour cela, nous devons d’abord copier le fichier d’index primaire dans le <a href="/fr/reference/settings/server-settings/settings#user_files_path" target="_blank">user&#95;files&#95;path</a> d’un nœud du cluster actif :
+  Pour cela, nous devons d’abord copier le fichier d’index primaire dans le [user&#95;files&#95;path](/fr/reference/settings/server-settings/settings#user_files_path) d’un nœud du cluster en cours d’exécution :
 
-    <ul>
-      <li>Étape 1 : obtenir le chemin de la part qui contient le fichier d’index primaire</li>
-      `SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1`
+  **Étape 1 : obtenir le chemin de la part qui contient le fichier d’index primaire**
 
-      renvoie `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` sur la machine de test.
+  ```sql
+  SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
+  ```
 
-      <li>Étape 2 : obtenir le user&#95;files&#95;path</li>
-      Le <a href="https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505" target="_blank">user&#95;files&#95;path par défaut</a> sous Linux est
-      `/var/lib/clickhouse/user_files/`
+  renvoie `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` sur la machine de test.
 
-      et sous Linux, vous pouvez vérifier s’il a été modifié : `$ grep user_files_path /etc/clickhouse-server/config.xml`
+  **Étape 2 : obtenir user&#95;files&#95;path**
 
-      Sur la machine de test, le chemin est `/Users/tomschreiber/Clickhouse/user_files/`
+  Le [user&#95;files&#95;path par défaut](https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505) sous Linux est `/var/lib/clickhouse/user_files/`
 
-      <li>Étape 3 : copier le fichier d’index primaire dans le user&#95;files&#95;path</li>
+  et sous Linux, vous pouvez vérifier s’il a été modifié : `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-      `cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx`
-    </ul>
+  Sur la machine de test, le chemin est `/Users/tomschreiber/Clickhouse/user_files/`
 
-    <br />
+  **Étape 3 : copier le fichier d’index primaire dans le user&#95;files&#95;path**
 
-    Nous pouvons maintenant inspecter le contenu de l’index primaire en SQL :
+  ```bash
+  cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
+  ```
 
-    <ul>
-      <li>Obtenir le nombre d’entrées</li>
-      `SELECT count( )<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');`
-      renvoie `1083`
+  Nous pouvons maintenant inspecter le contenu de l’index primaire via SQL :
 
-      <li>Obtenir les deux premiers index marks</li>
-      `SELECT UserID, URL<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 0, 2;`
+  **Obtenir le nombre d’entrées**
 
-      renvoie
+  ```sql
+  SELECT count()
+  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');
+  ```
 
-      `240923, http://showtopics.html%3...<br/>
-            4073710, http://mk.ru&pos=3_0`
+  renvoie `1083`
 
-      <li>Obtenir le dernier index mark</li>
-      `SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 1082, 1;`
-      renvoie
-      `4292714039 │ http://sosyal-mansetleri...`
-    </ul>
+  **Obtenir les deux premières index marks**
 
-    <br />
+  ```sql
+  SELECT UserID, URL
+  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
+  LIMIT 0, 2;
+  ```
 
-    Cela correspond exactement à notre diagramme du contenu de l’index primaire pour notre table d’exemple :
-  </p>
+  renvoie
+
+  ```response
+  240923, http://showtopics.html%3...
+  4073710, http://mk.ru&pos=3_0
+  ```
+
+  **Obtenir la dernière index mark**
+
+  ```sql
+  SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
+  LIMIT 1082, 1;
+  ```
+
+  renvoie
+
+  ```response
+  4292714039 │ http://sosyal-mansetleri...
+  ```
+
+  Cela correspond exactement à notre schéma du contenu de l’index primaire pour notre table d’exemple :
 </Accordion>
 
 Les entrées de la clé primaire sont appelées index marks, car chaque entrée d’index marque le début d’une plage de données spécifique. Plus précisément, pour la table d’exemple :
 
-* Index marks de UserID :
+* Index marks UserID :
 
   Les valeurs `UserID` stockées dans l’index primaire sont triées par ordre croissant.<br />
-  « mark 1 » dans le diagramme ci-dessus indique donc que les valeurs `UserID` de toutes les lignes de la table dans le granule 1, ainsi que dans tous les granules suivants, sont nécessairement supérieures ou égales à 4.073.710.
+  La « marque 1 » dans le schéma ci-dessus indique donc que les valeurs `UserID` de toutes les lignes de la table dans le granule 1, ainsi que dans tous les granules suivants, sont garanties supérieures ou égales à 4.073.710.
 
-[Comme nous le verrons plus tard](#the-primary-index-is-used-for-selecting-granules), cet ordre global permet à ClickHouse d’<a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">utiliser un algorithme de recherche binaire</a> sur les index marks de la première colonne de clé lorsqu’une query filtre sur la première colonne de la clé primaire.
+[Comme nous le verrons plus tard](#the-primary-index-is-used-for-selecting-granules), cet ordre global permet à ClickHouse d’<a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">utiliser un algorithme de recherche binaire</a> sur les index marks de la première colonne de clé lorsqu’une requête applique un filtre sur la première colonne de la clé primaire.
 
-* Marques d’index URL :
+* Index marks URL :
 
   La cardinalité assez similaire des colonnes de clé primaire `UserID` et `URL`
-  signifie que les marques d’index de toutes les colonnes de clé après la première n’indiquent généralement une plage de données que tant que la valeur de la colonne de clé précédente reste la même pour toutes les lignes de la table, au moins dans le granule courant.<br />
+  signifie que les index marks de toutes les colonnes de clé après la première n’indiquent généralement une plage de données que tant que la valeur de la colonne de clé précédente reste la même pour toutes les lignes de la table, au moins dans le granule courant.<br />
   Par exemple, comme les valeurs `UserID` de la marque 0 et de la marque 1 sont différentes dans le diagramme ci-dessus, ClickHouse ne peut pas supposer que toutes les valeurs `URL` de toutes les lignes de la table dans le granule 0 sont supérieures ou égales à `'http://showtopics.html%3...'`. En revanche, si les valeurs `UserID` de la marque 0 et de la marque 1 étaient identiques dans le diagramme ci-dessus (ce qui signifie que la valeur `UserID` reste la même pour toutes les lignes de la table dans le granule 0), ClickHouse pourrait supposer que toutes les valeurs `URL` de toutes les lignes de la table dans le granule 0 sont supérieures ou égales à `'http://showtopics.html%3...'`.
 
   Nous examinerons plus en détail, plus tard, les conséquences de cela sur les performances d’exécution des requêtes.
@@ -602,7 +617,7 @@ Le schéma suivant montre les trois fichiers de marks `UserID.mrk`, `URL.mrk` et
 
 <Image img="/images/guides/best-practices/sparse-primary-indexes-05.webp" size="lg" alt="Index primaires clairsemés 05" />
 
-Nous avons vu que l’index primaire est un fichier tableau plat non compressé (primary.idx), contenant des marques d’index numérotées à partir de 0.
+Nous avons vu que l’index primaire est un fichier tableau plat non compressé (primary.idx), contenant des index marks numérotées à partir de 0.
 
 De la même manière, un fichier de marks est lui aussi un fichier tableau plat non compressé (*.mrk) contenant des marques numérotées à partir de 0.
 
@@ -760,7 +775,7 @@ Ce qui suit illustre le fonctionnement de l’<a href="https://github.com/ClickH
 
 * une requête qui recherche des lignes avec la valeur URL = &quot;W3&quot;.
 * une version abstraite de notre table hits avec des valeurs simplifiées pour UserID et URL.
-* la même clé primaire composée (UserID, URL) pour l’index. Cela signifie que les lignes sont d’abord triées par valeurs UserID. Les lignes ayant la même valeur UserID sont ensuite triées par URL.
+* la même clé primaire composée (UserID, URL) pour l’index. Cela signifie que les lignes sont d’abord triées selon les valeurs de UserID. Les lignes ayant la même valeur UserID sont ensuite triées par URL.
 * une taille de granule de deux, c’est-à-dire que chaque granule contient deux lignes.
 
 Dans les schémas ci-dessous, nous avons marqué en orange les valeurs des colonnes de clé de la première ligne de table pour chaque granule..
@@ -1185,7 +1200,7 @@ Processed 319.49 thousand rows, 1
 1.38 MB (11.05 million rows/s., 393.58 MB/s.)
 ```
 
-Comme, en pratique, la table cachée (et son index primaire) créée par la projection est identique à la [table secondaire que nous avons créée explicitement](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), la requête est donc exécutée exactement de la même manière qu’avec la table créée explicitement.
+Comme, en pratique, la table masquée (et son index primaire) créée par la projection est identique à la [table secondaire que nous avons créée explicitement](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), la requête est donc exécutée exactement de la même manière qu’avec la table créée explicitement.
 
 Le journal de trace correspondant dans le fichier journal du serveur ClickHouse confirme que ClickHouse effectue une recherche binaire sur les marques d’index :
 

@@ -468,7 +468,7 @@ As consultas do ClickHouse podem aceitar dados externos em qualquer formato do C
 | file&#95;path | str               | Caminho para um arquivo no sistema local, de onde os dados externos serão lidos. `file_path` ou `data` é obrigatório                                           |
 | file&#95;name | str               | O nome do &quot;arquivo&quot; de dados externos. Se não for fornecido, será determinado com base em `file_path` (sem extensões)                                |
 | data          | bytes             | Os dados externos em formato binário (em vez de serem lidos de um arquivo). `data` ou `file_path` é obrigatório                                                |
-| fmt           | str               | O [Formato de entrada](/pt-BR/reference/formats/index) do ClickHouse para os dados. O padrão é `TSV`                                                                 |
+| fmt           | str               | O [Formato de entrada](/pt-BR/reference/formats) do ClickHouse para os dados. O padrão é `TSV`                                                                       |
 | types         | str or seq of str | Uma lista de tipos de dados das colunas nos dados externos. Se for uma string, os tipos devem ser separados por vírgulas. `types` ou `structure` é obrigatório |
 | structure     | str or seq of str | Uma lista de nomes de colunas + tipos de dados nos dados (veja os exemplos). `structure` ou `types` é obrigatório                                              |
 | mime&#95;type | str               | Tipo MIME opcional dos dados do arquivo. No momento, o ClickHouse ignora esse subcabeçalho HTTP                                                                |

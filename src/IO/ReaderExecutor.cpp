@@ -1,11 +1,13 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
 #include <algorithm>
+#include <cstring>
 
 namespace ProfileEvents
 {
@@ -16,6 +18,7 @@ namespace ProfileEvents
     extern const Event ReaderExecutorCachePopulateRequests;
     extern const Event ReaderExecutorIncompleteConnections;
     extern const Event ReaderExecutorWorkMicroseconds;
+    extern const Event ReaderExecutorDecryptMicroseconds;
     extern const Event ReaderExecutorModeledCostMicroseconds;
     extern const Event ReaderExecutorLongConnectionOpened;
     extern const Event ReaderExecutorLongConnectionHits;
@@ -94,6 +97,9 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
         case WorkMicroseconds:
             ProfileEvents::increment(ProfileEvents::ReaderExecutorWorkMicroseconds, value);
             break;
+        case DecryptMicroseconds:
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorDecryptMicroseconds, value);
+            break;
         case LongConnectionOpened:
             ProfileEvents::increment(ProfileEvents::ReaderExecutorLongConnectionOpened, value);
             break;
@@ -117,8 +123,9 @@ ReaderExecutor::ReaderExecutor(
     Options options)
     : source(std::move(source_))
     , block_size(options.block_size ? options.block_size : DEFAULT_BLOCK_SIZE)
-    , continuity_tracker(ReadContinuityTracker::Options{.bridgeable_gap = options.min_bytes_for_seek})
+    , fetch_tracker(ReadContinuityTracker::Options{.bridgeable_gap = options.min_bytes_for_seek})
     , long_connection_limit(std::move(options.long_connection_limit))
+    , encryption_header_cache(std::move(options.encryption_header_cache))
     , min_bytes_for_seek(options.min_bytes_for_seek)
     , max_tail_for_drain(options.max_tail_for_drain)
     , active_metric(CurrentMetrics::ReaderExecutorActive)
@@ -211,10 +218,12 @@ ReaderExecutor::LongConnection::drainTail(size_t max_tail, size_t block_bytes, L
     }
 }
 
-size_t ReaderExecutor::clampReach(size_t reach, size_t logical_pos) const
+size_t ReaderExecutor::clampReach(size_t predicted_end, size_t logical_pos) const
 {
-    /// The estimator's reach is unclamped; bound it to the file end when the size is known.
-    size_t end = logical_pos + reach;
+    /// The estimator's predicted run end is run-anchored and unclamped: bound it to the file end
+    /// when the size is known, and never below `logical_pos` (a prediction behind the current
+    /// position means no reach there, not a negative one).
+    size_t end = std::max(predicted_end, logical_pos);
     if (!offset_map.hasUnknownSize())
         end = std::min(end, totalSize());
     return end;
@@ -224,8 +233,8 @@ bool ReaderExecutor::shouldOpenLongConnection() const
 {
     if (long_conn || !long_connection_limit)
         return false;
-    /// Open a long connection when the predicted contiguous reach runs past this window.
-    return clampReach(continuity_tracker.predictedForwardLength(), position) > position + block_size;
+    /// Open a long connection when the predicted run end runs past this window.
+    return clampReach(fetch_tracker.predictedEnd(), position) > position + block_size;
 }
 
 bool ReaderExecutor::tryOpenLongConnection(const StoredObject & object, size_t object_offset)
@@ -237,13 +246,13 @@ bool ReaderExecutor::tryOpenLongConnection(const StoredObject & object, size_t o
         return false;
     }
 
-    /// Bound the held GET to the predicted forward reach (`clampReach` of the estimator), kept
+    /// Bound the held GET to the predicted run end (`clampReach` of the estimator), kept
     /// object-local and clamped to the object end. The estimate adapts: a long contiguous run
     /// grows it toward the whole object, while sparse access keeps it small -- so the connection
     /// reads ahead only as far as the pattern predicts (no full-object over-read when just a
     /// slice is used). Reuse spans this bound; once the read runs past it the connection completes
     /// (pool-reusable) and the next window opens a fresh, longer one as the run keeps growing.
-    const size_t forward = clampReach(continuity_tracker.predictedForwardLength(), position) - position;
+    const size_t forward = clampReach(fetch_tracker.predictedEnd(), position) - position;
     size_t read_until_obj = object_offset + forward;
     if (!offset_map.hasUnknownSize())
         read_until_obj = std::min<size_t>(read_until_obj, object.bytes_size);
@@ -323,6 +332,111 @@ void ReaderExecutor::dropLongConnection()
     long_conn.reset();
 }
 
+size_t ReaderExecutor::totalSize() const
+{
+    const size_t physical = offset_map.totalSize();
+    /// An empty encrypted source has no header; a non-empty one always has the full header
+    /// (initDecryption throws on a partial file), so physical is either 0 or >= data_start_offset.
+    if (physical == 0)
+        return 0;
+    return toLogical(physical);
+}
+
+void ReaderExecutor::addDecryptionLayer(
+    [[maybe_unused]] String path,
+    [[maybe_unused]] KeyFinderFunc key_finder)
+{
+#if USE_SSL
+    decryptor.addLayer(std::move(path), std::move(key_finder));
+    data_start_offset = decryptor.headerBytes();
+    LOG_DEBUG(log, "Added decryption layer, data_start_offset={}", data_start_offset);
+#endif
+}
+
+void ReaderExecutor::initDecryption()
+{
+#if USE_SSL
+    if (decryptor.initialized() || decryptor.empty())
+        return;
+
+    const size_t total_source_size = offset_map.totalSize();
+
+    /// An empty underlying source (e.g. DiskObjectStorage's empty-file fallback for paths with no
+    /// storage objects) has no encryption header. Skip — subsequent reads return 0 bytes, matching
+    /// reading an empty file on an unencrypted disk.
+    if (total_source_size == 0)
+    {
+        LOG_DEBUG(log, "initDecryption: source is empty, skipping");
+        return;
+    }
+
+    /// Source exists but is smaller than the header(s) — corrupted.
+    if (total_source_size < data_start_offset)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Encrypted source has {} bytes, less than header size {}",
+            total_source_size, data_start_offset);
+
+    /// The headers sit at the front of the first object; identify it (its `remote_path` is the
+    /// stable cache key for disk files).
+    const auto * segment = offset_map.findObjectAt(0);
+    if (!segment)
+        return;
+    const StoredObject & object = segment->object;
+
+    /// Cache hit: parse the cached header bytes and skip the source read. The size check guards
+    /// against a stale entry from a differently-layered file at the same path.
+    if (encryption_header_cache)
+    {
+        if (auto cached = encryption_header_cache->read(object.remote_path);
+            cached && cached->size() == data_start_offset)
+        {
+            auto cached_block = std::make_shared<OwnedChainedBuffer>(data_start_offset);
+            std::memcpy(cached_block->data(), cached->data(), data_start_offset);
+            ChainedBuffers header_chain;
+            header_chain.append(ChainedBufferNode{std::move(cached_block), 0, data_start_offset, 0});
+            decryptor.parseHeaders(header_chain);
+            return;
+        }
+    }
+
+    LOG_DEBUG(log, "initDecryption: reading headers ({} bytes)", data_start_offset);
+
+    /// Miss: read the headers from the source (one-shot; no long connection).
+    auto block = std::make_shared<OwnedChainedBuffer>(data_start_offset);
+    const size_t got = readOneShot(object, /*object_offset=*/0, data_start_offset, block->data());
+
+    /// Under size-unknown sources a short read means EOF rather than an error, so 0 bytes is an
+    /// empty object (same as the size-known empty branch above) and a partial read is corruption.
+    if (offset_map.hasUnknownSize() && got == 0)
+    {
+        LOG_DEBUG(log, "initDecryption: unknown-size source returned 0 bytes (empty object), skipping");
+        return;
+    }
+    if (got != data_start_offset)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Encrypted source returned {} header bytes, expected {} (corrupted/truncated)",
+            got, data_start_offset);
+
+    ChainedBuffers header_chain;
+    header_chain.append(ChainedBufferNode{block, 0, got, 0});
+    decryptor.parseHeaders(header_chain);
+
+    if (encryption_header_cache)
+        encryption_header_cache->write(object.remote_path, String(block->data(), got));
+#endif
+}
+
+void ReaderExecutor::decryptInPlaceIfNeeded(
+    [[maybe_unused]] char * data, [[maybe_unused]] size_t size, [[maybe_unused]] size_t logical_offset)
+{
+#if USE_SSL
+    if (decryptor.empty() || size == 0)
+        return;
+    StatTimer decrypt_scope(stats, Stats::DecryptMicroseconds);
+    decryptor.decrypt(data, size, logical_offset);
+#endif
+}
+
 ChainedBuffers ReaderExecutor::readNextWindow()
 {
     StatTimer work_timer(stats, Stats::WorkMicroseconds);
@@ -330,15 +444,17 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     if (atEnd())
         return {};
 
-    size_t object_logical_start_offset = 0;
-    const StoredObject * object = offset_map.findObjectAt(position, &object_logical_start_offset);
-    if (!object)
+    /// The offset map and object sizes are physical; `toPhysical` crosses logical `position` into it.
+    const size_t position_physical = toPhysical(position);
+    const auto * segment = offset_map.findObjectAt(position_physical);
+    if (!segment)
     {
         reached_eof = true;
         return {};
     }
 
-    const size_t object_offset = position - object_logical_start_offset;
+    const StoredObject & object = segment->object;
+    const size_t object_offset = position_physical - segment->file_offset;
 
     /// Clamp the block to the object boundary so a window never straddles two
     /// objects; the next call continues in the next object. Unknown total size
@@ -346,7 +462,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     size_t want = block_size;
     if (!offset_map.hasUnknownSize())
     {
-        const size_t remaining_in_object = object->bytes_size - object_offset;
+        const size_t remaining_in_object = object.bytes_size - object_offset;
         want = std::min(block_size, remaining_in_object);
         if (want == 0)
         {
@@ -363,12 +479,13 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     auto block = std::make_shared<OwnedChainedBuffer>(want);
 
     size_t got = 0;
-    if (long_conn && long_conn->servesObject(object->remote_path)
-        && long_conn->canContinue(object_offset, want, min_bytes_for_seek))
+    if (long_conn && long_conn->servesObject(object.remote_path)
+        && long_conn->canServeAt(object_offset, min_bytes_for_seek))
     {
-        /// Reuse the held connection for this contiguous (or small-gap) window.
+        /// Serve only up to the bound (a short window is fine); avoids draining and re-reading it.
         stats.add(Stats::LongConnectionHits);
-        got = serveFromLongConnection(object_offset, want, block->data());
+        const size_t serve = std::min(want, long_conn->read_until - object_offset);
+        got = serveFromLongConnection(object_offset, serve, block->data());
     }
     else
     {
@@ -377,10 +494,10 @@ ChainedBuffers ReaderExecutor::readNextWindow()
         /// to continue, else fall back to a one-shot read.
         if (long_conn)
             dropLongConnection();
-        if (shouldOpenLongConnection() && tryOpenLongConnection(*object, object_offset))
+        if (shouldOpenLongConnection() && tryOpenLongConnection(object, object_offset))
             got = serveFromLongConnection(object_offset, want, block->data());
         else
-            got = readOneShot(*object, object_offset, want, block->data());
+            got = readOneShot(object, object_offset, want, block->data());
     }
 
     /// Requested bytes equal source bytes until caches / over-read coalescing land; any bridged
@@ -388,25 +505,24 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     stats.add(Stats::BytesFromSource, got);
     stats.add(Stats::RequestedBytes, got);
 
-    if (offset_map.hasUnknownSize())
+    /// A short window is normal (advance by `got`, re-call); only `got == 0` is EOF, where a
+    /// known-size source ending early is truncation.
+    if (got == 0)
     {
-        /// At unknown total size a short read is the only EOF signal.
-        if (got == 0)
-        {
-            reached_eof = true;
-            long_conn.reset();   /// at EOF the connection is done, not an incomplete drop
-            return {};
-        }
-    }
-    else if (got < want)
-    {
-        /// The object is shorter than its declared size — truncated or corrupt.
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-            "ReaderExecutor: read {} of {} bytes at offset {} from {} (declared size {})",
-            got, want, position, object->remote_path, object->bytes_size);
+        reached_eof = true;
+        long_conn.reset();
+        if (!offset_map.hasUnknownSize() && position < totalSize())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                "ReaderExecutor: source ended at {} of {} bytes for {} (declared size {})",
+                position, totalSize(), object.remote_path, object.bytes_size);
+        return {};
     }
 
-    continuity_tracker.recordReadRange(position, got);
+    fetch_tracker.recordReadRange(position, got);
+
+    /// Decrypt the freshly-read, uniquely-owned block in place at its logical offset. CTR is
+    /// position-addressable, so decrypting just this window is exact.
+    decryptInPlaceIfNeeded(block->data(), got, position);
 
     ChainedBuffers chain;
     chain.append(ChainedBufferNode{std::move(block), 0, got, position});
@@ -418,8 +534,8 @@ void ReaderExecutor::seek(size_t new_position)
 {
     LOG_TRACE(log, "seek: {} -> {}", position, new_position);
     /// Feed the estimator; a held connection that can't continue to `new_position` is dropped
-    /// lazily by the next `readNextWindow` (its `canContinue` check).
-    continuity_tracker.recordSeek(new_position);
+    /// lazily by the next `readNextWindow` (its `canServeAt` check).
+    fetch_tracker.recordSeek(new_position);
     position = new_position;
     reached_eof = false;
 }

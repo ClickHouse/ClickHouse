@@ -51,7 +51,7 @@ quantileTimingWeighted(level)(expr, weight)
 
 **Argumentos**
 
-* `expr` — Expressão sobre os valores de uma coluna que retorna um número do tipo Float*. Se valores negativos forem passados para a função, o comportamento será indefinido. Se o valor for maior que 30.000 (um tempo de carregamento de página superior a 30 segundos), ele será tratado como 30.000. [`Float*`](/pt-BR/reference/data-types/float)
+* `expr` — Expressão sobre os valores da coluna que resulta em tipos de dado numéricos, `Date` ou `DateTime`. Se valores negativos forem passados para a função, o comportamento será indefinido. Se o valor for maior que 30.000 (um tempo de carregamento de página superior a 30 segundos), ele será tratado como 30.000. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Date`](/pt-BR/reference/data-types/date) ou [`DateTime`](/pt-BR/reference/data-types/datetime)
 * `weight` — Coluna com os pesos dos elementos da sequência. O peso é o número de ocorrências do valor. [`UInt*`](/pt-BR/reference/data-types/int-uint)
 
 **Valor retornado**

@@ -720,6 +720,18 @@ Número de operaciones de descompresión que utilizan códecs de compresión int
 
 Número de consultas INSERT que se ven limitadas debido al elevado número de partes de datos activas de la partición en una tabla MergeTree.
 
+<div id="deletebitmapcachebytes">
+  ### DeleteBitmapCacheBytes
+</div>
+
+Tamaño total en bytes de la caché de bitmaps de eliminación de UNIQUE KEY
+
+<div id="deletebitmapcacheentries">
+  ### DeleteBitmapCacheEntries
+</div>
+
+Número total de bitmaps de eliminación de UNIQUE KEY almacenados en caché
+
 <div id="deltalakesnapshotcachesizeelements">
   ### DeltaLakeSnapshotCacheSizeElements
 </div>
@@ -1037,6 +1049,24 @@ Elementos de la caché del sistema de archivos en cola de descarga
 </div>
 
 Elementos de la caché del sistema de archivos (segmentos de archivo)
+
+<div id="filesystemcacheevictionthreads">
+  ### FilesystemCacheEvictionThreads
+</div>
+
+Número de hilos del grupo de expulsión (eliminación) en segundo plano de la caché del sistema de archivos
+
+<div id="filesystemcacheevictionthreadsactive">
+  ### FilesystemCacheEvictionThreadsActive
+</div>
+
+Número de hilos del grupo de expulsión en segundo plano de la caché del sistema de archivos que están ejecutando una tarea
+
+<div id="filesystemcacheevictionthreadsscheduled">
+  ### FilesystemCacheEvictionThreadsScheduled
+</div>
+
+Número de tareas en cola o activas en el grupo de expulsión en segundo plano de la caché del sistema de archivos
 
 <div id="filesystemcacheholdfilesegments">
   ### FilesystemCacheHoldFileSegments
@@ -1482,6 +1512,12 @@ Número de hilos activos en el pool de hilos para las lecturas del Keeper server
 
 Número de jobs en cola o activos en el pool de hilos para las lecturas del Keeper server. Métrica sin sentido; las tareas de lectura reales de este pool de hilos se programan mediante un mecanismo distinto.
 
+<div id="keeperttlnodes">
+  ### KeeperTTLNodes
+</div>
+
+Número de nodos con un TTL configurado que están almacenados actualmente en Keeper.
+
 <div id="licenseremainingseconds">
   ### LicenseRemainingSeconds
 </div>
@@ -1571,6 +1607,18 @@ Máxima entrada DDL procesada por DDLWorker.
 </div>
 
 Entrada máxima de DDL de DDLWorker enviada a ZooKeeper.
+
+<div id="memoryreservationapproved">
+  ### MemoryReservationApproved
+</div>
+
+Número total de bytes asignados actualmente (aprobados) para reservas de memoria
+
+<div id="memoryreservationdemand">
+  ### MemoryReservationDemand
+</div>
+
+Número total de bytes correspondientes a solicitudes pendientes de aumento de reservas de memoria
 
 <div id="memorytracking">
   ### MemoryTracking
@@ -2087,6 +2135,24 @@ Partes de tipo wide.
 </div>
 
 Número de inserciones asíncronas que están pendientes de vaciarse.
+
+<div id="pointinpolygoncachebytes">
+  ### PointInPolygonCacheBytes
+</div>
+
+Tamaño, en bytes, de la caché de polígonos constantes preprocesados para la función `pointInPolygon`
+
+<div id="pointinpolygoncachecells">
+  ### PointInPolygonCacheCells
+</div>
+
+Número de polígonos constantes preprocesados en caché para la función `pointInPolygon`
+
+<div id="pointinpolygoncachesizelimit">
+  ### Límite del tamaño de caché de PointInPolygon
+</div>
+
+Tamaño máximo, en bytes, de la caché de polígonos constantes preprocesados para la función `pointInPolygon` (es decir, el valor aplicado de la configuración del servidor `point_in_polygon_cache_size`)
 
 <div id="polygondictionarythreads">
   ### PolygonDictionaryThreads
@@ -2927,6 +2993,24 @@ Número de hilos en espera en OvercommitTracker
 </div>
 
 Número de archivos temporales creados
+
+<div id="udfdriverinvokerthreads">
+  ### UDFDriverInvokerThreads
+</div>
+
+Número de hilos en los pools de hilos que atienden las pipes de los comandos del driver de UDF ejecutable.
+
+<div id="udfdriverinvokerthreadsactive">
+  ### UDFDriverInvokerThreadsActive
+</div>
+
+Número de hilos activos en los pools de hilos que atienden pipes de comandos del driver de UDF ejecutable.
+
+<div id="udfdriverinvokerthreadsscheduled">
+  ### UDFDriverInvokerThreadsScheduled
+</div>
+
+Número de trabajos en cola o activos en pools de hilos que atienden pipes de comandos del driver de UDF ejecutable.
 
 <div id="uncompressedcachebytes">
   ### UncompressedCacheBytes

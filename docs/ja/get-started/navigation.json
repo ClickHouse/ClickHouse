@@ -1,0 +1,208 @@
+{
+  "icon": "/images/icons/icon-get-started.svg",
+  "item": "はじめに",
+  "pages": [
+    {
+      "group": "はじめに",
+      "icon": "/images/menu-icon-lightning.svg",
+      "pages": [
+        "ja/get-started/quickstarts/home",
+        {
+          "expandable": true,
+          "expanded": true,
+          "group": "はじめに",
+          "pages": [
+            "ja/get-started/about/intro",
+            "ja/get-started/about/why-clickhouse-is-so-fast",
+            "ja/get-started/about/distinctive-features"
+          ]
+        },
+        {
+          "expanded": true,
+          "group": "ユースケース",
+          "pages": [
+            "ja/get-started/use-cases/real-time-analytics",
+            "ja/get-started/use-cases/observability",
+            "ja/get-started/use-cases/data-warehousing",
+            "ja/get-started/use-cases/agentic-analytics"
+          ],
+          "root": "ja/get-started/use-cases/overview"
+        },
+        "ja/get-started/about/deployment-modes"
+      ],
+      "root": "ja/get-started/index"
+    },
+    {
+      "expanded": true,
+      "group": "セットアップ",
+      "icon": "/images/menu-icon-gear.svg",
+      "pages": [
+        "ja/get-started/setup/cloud",
+        {
+          "expanded": true,
+          "group": "セルフマネージド",
+          "pages": [
+            {
+              "group": "ローカル開発",
+              "pages": [
+                "ja/get-started/setup/self-managed/quick-install",
+                "ja/get-started/setup/self-managed/clickhousectl",
+                "ja/get-started/setup/self-managed/docker",
+                "ja/get-started/setup/self-managed/advanced"
+              ]
+            },
+            {
+              "group": "本番サーバー",
+              "pages": [
+                "ja/get-started/setup/self-managed/debian-ubuntu",
+                "ja/get-started/setup/self-managed/redhat",
+                "ja/get-started/setup/self-managed/nixos",
+                "ja/get-started/setup/self-managed/other-linux"
+              ]
+            }
+          ],
+          "root": "ja/get-started/setup/self-managed/overview"
+        }
+      ],
+      "root": "ja/get-started/setup/install"
+    },
+    {
+      "expanded": true,
+      "group": "サンプルデータセット",
+      "icon": "/images/menu-icon-database.svg",
+      "pages": [
+        "ja/get-started/sample-datasets/playground",
+        {
+          "group": "ベンチマーク",
+          "pages": [
+            "ja/get-started/sample-datasets/amplab-benchmark",
+            "ja/get-started/sample-datasets/brown-benchmark",
+            "ja/get-started/sample-datasets/criteo",
+            "ja/get-started/sample-datasets/job",
+            "ja/get-started/sample-datasets/star-schema",
+            "ja/get-started/sample-datasets/tpcds",
+            "ja/get-started/sample-datasets/tpch"
+          ]
+        },
+        {
+          "group": "ベクトル検索と埋め込み",
+          "pages": [
+            "ja/get-started/sample-datasets/dbpedia",
+            "ja/get-started/sample-datasets/hacker-news-vector-search",
+            "ja/get-started/sample-datasets/laion",
+            "ja/get-started/sample-datasets/laion5b"
+          ]
+        },
+        {
+          "group": "Web・ソーシャル分析",
+          "pages": [
+            "ja/get-started/sample-datasets/amazon-reviews",
+            "ja/get-started/sample-datasets/anon-web-analytics-metrica",
+            "ja/get-started/sample-datasets/github",
+            "ja/get-started/sample-datasets/github-events",
+            "ja/get-started/sample-datasets/hacker-news",
+            "ja/get-started/sample-datasets/stackoverflow",
+            "ja/get-started/sample-datasets/youtube-dislikes"
+          ]
+        },
+        {
+          "group": "Geoと位置情報",
+          "pages": [
+            "ja/get-started/sample-datasets/cell-towers",
+            "ja/get-started/sample-datasets/foursquare-os-places",
+            "ja/get-started/sample-datasets/nyc-taxi"
+          ]
+        },
+        {
+          "group": "時系列とセンサー",
+          "pages": [
+            "ja/get-started/sample-datasets/environmental-sensors",
+            "ja/get-started/sample-datasets/noaa",
+            "ja/get-started/sample-datasets/tw-weather",
+            "ja/get-started/sample-datasets/wikistat"
+          ]
+        },
+        {
+          "group": "公的記録とオープンデータ",
+          "pages": [
+            "ja/get-started/sample-datasets/covid19",
+            "ja/get-started/sample-datasets/menus",
+            "ja/get-started/sample-datasets/nypd-complaint-data",
+            "ja/get-started/sample-datasets/ontime",
+            "ja/get-started/sample-datasets/uk-price-paid"
+          ]
+        }
+      ],
+      "root": "ja/get-started/sample-datasets/index"
+    },
+    {
+      "expanded": true,
+      "group": "移行",
+      "icon": "/images/caret-double-right.svg",
+      "pages": [
+        {
+          "group": "PostgreSQL",
+          "pages": [
+            "ja/get-started/migrate/postgres/overview",
+            {
+              "group": "移行ガイド",
+              "pages": [
+                "ja/get-started/migrate/postgres/migration-guide/migration-guide-part1",
+                "ja/get-started/migrate/postgres/migration-guide/migration-guide-part2",
+                "ja/get-started/migrate/postgres/migration-guide/migration-guide-part3"
+              ]
+            },
+            "ja/get-started/migrate/postgres/appendix"
+          ],
+          "root": "ja/get-started/migrate/postgres/index"
+        },
+        {
+          "group": "BigQuery",
+          "pages": [
+            "ja/get-started/migrate/bigquery/overview",
+            "ja/get-started/migrate/bigquery/migrating-to-clickhouse-cloud",
+            "ja/get-started/migrate/bigquery/loading-data"
+          ],
+          "root": "ja/get-started/migrate/bigquery/index"
+        },
+        {
+          "group": "Snowflake",
+          "pages": [
+            "ja/get-started/migrate/snowflake/overview",
+            "ja/get-started/migrate/snowflake/migration-guide",
+            "ja/get-started/migrate/snowflake/sql-translation-reference"
+          ]
+        },
+        {
+          "group": "Elasticsearch",
+          "pages": [
+            "ja/get-started/migrate/elastic/overview"
+          ]
+        },
+        {
+          "group": "Redshift",
+          "pages": [
+            "ja/get-started/migrate/redshift/overview",
+            "ja/get-started/migrate/redshift/migration-guide",
+            "ja/get-started/migrate/redshift/sql-translation-reference"
+          ]
+        },
+        {
+          "group": "OSS から Cloud への移行",
+          "pages": [
+            "ja/get-started/migrate/oss-to-cloud/clickhouse-to-cloud"
+          ]
+        },
+        {
+          "group": "その他の方法",
+          "pages": [
+            "ja/get-started/migrate/other-methods/clickhouse-local-etl",
+            "ja/get-started/migrate/other-methods/etl-tool-to-clickhouse",
+            "ja/get-started/migrate/other-methods/object-storage-to-clickhouse"
+          ]
+        }
+      ],
+      "root": "ja/get-started/migrate/overview"
+    }
+  ]
+}

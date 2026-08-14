@@ -250,7 +250,7 @@ Consulte también nuestro [Trust Center](https://trust.clickhouse.com/) para ver
 
 En los servicios existentes de ClickHouse Cloud, las réplicas gestionan tanto las lecturas como las escrituras, y no hay forma de configurar una réplica concreta para que gestione solo un tipo de operación. Próximamente lanzaremos una nueva funcionalidad llamada Compute-compute separation que le permite designar servicios específicos como de lectura y escritura o de solo lectura, para que pueda diseñar la configuración de compute óptima para su aplicación y optimizar así el costo y el rendimiento.
 
-Nuestra nueva funcionalidad Compute-compute separation le permite crear varios grupos de nodos de compute, cada uno con su propio endpoint, que utilizan la misma carpeta de object storage y, por lo tanto, las mismas tablas, vistas, etc. Obtenga más información sobre [Compute-compute separation aquí](/es/products/cloud/features/infrastructure/warehouses). Si desea acceder a esta funcionalidad en vista previa privada, [contacte con el equipo de soporte](https://clickhouse.com/support/program).
+Nuestra nueva funcionalidad Compute-compute separation le permite crear varios grupos de nodos de compute, cada uno con su propio endpoint, que utilizan la misma carpeta de almacenamiento de objetos y, por lo tanto, las mismas tablas, vistas, etc. Obtenga más información sobre [Compute-compute separation aquí](/es/products/cloud/features/infrastructure/warehouses). Si desea acceder a esta funcionalidad en vista previa privada, [contacte con el equipo de soporte](https://clickhouse.com/support/program).
 
 <Image img="/images/cloud/reference/aug-15-compute-compute.webp" size="lg" alt="Diagrama que muestra una arquitectura de ejemplo de compute-compute separation con grupos de servicios de lectura y escritura y de solo lectura" border />
 
@@ -395,7 +395,7 @@ Esperamos que ClickHouse Cloud para Azure esté listo para General Availability 
 Nota: Los servicios de **Development** para Azure no son compatibles por el momento.
 
 <div id="set-up-private-link-via-the-cloud-console">
-  ### Configurar Private Link a través de la consola de ClickHouse Cloud
+  ### Configurar Private Link a través de la Cloud Console
 </div>
 
 Nuestra funcionalidad de Private Link le permite conectar sus servicios de ClickHouse Cloud con servicios internos de su cuenta del proveedor de nube sin tener que dirigir el tráfico a la Internet pública, lo que reduce costos y mejora la seguridad. Antes, esto era difícil de configurar y requería usar la ClickHouse Cloud API.
@@ -739,4 +739,4 @@ Esta versión incorpora una nueva región en AWS (Londres / eu-west-2), añade c
   ### Cambios de fiabilidad
 </div>
 
-* Cambio incompatible con versiones anteriores visible para el usuario: Anteriormente, dos funciones ([is&#95;deleted](/es/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) y `OPTIMIZE CLEANUP`), en determinadas condiciones, podían provocar la corrupción de los datos en ClickHouse. Para proteger la integridad de los datos de nuestros usuarios sin alterar la esencia de esta funcionalidad, ajustamos su funcionamiento. En concreto, la configuración de MergeTree `clean_deleted_rows` ahora está en desuso y ya no tiene ningún efecto. La palabra clave `CLEANUP` no está permitida de forma predeterminada (para usarla, tendrás que habilitar `allow_experimental_replacing_merge_with_cleanup`). Si decides usar `CLEANUP`, debes asegurarte de que siempre se utilice junto con `FINAL` y debes garantizar que no se inserten filas con versiones anteriores después de ejecutar `OPTIMIZE FINAL CLEANUP`.
+* Cambio incompatible con versiones anteriores para los usuarios: Anteriormente, dos funciones ([is&#95;deleted](/es/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) y `OPTIMIZE CLEANUP`), en determinadas condiciones, podían provocar la corrupción de datos en ClickHouse. Para proteger la integridad de los datos de nuestros usuarios sin alterar la esencia de la funcionalidad, ajustamos su funcionamiento. En concreto, la configuración de MergeTree `clean_deleted_rows` ahora está obsoleta y ya no tiene ningún efecto. La palabra clave `CLEANUP` no está permitida de forma predeterminada (para usarla, deberá habilitar `allow_experimental_replacing_merge_with_cleanup`). Si decide usar `CLEANUP`, debe asegurarse de que se utilice siempre junto con `FINAL`, y debe garantizar que no se inserten filas con versiones anteriores después de ejecutar `OPTIMIZE FINAL CLEANUP`.
