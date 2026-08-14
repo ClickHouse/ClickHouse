@@ -1,6 +1,8 @@
 #include <Storages/System/StorageSystemObjectStorageQueueMetadata.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
+#include <base/pathToString.h>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
@@ -148,7 +150,7 @@ void readFolder(
     if (!need_count && !need_contents)
         return;
 
-    const std::string folder_path = base_path / folder;
+    const std::string folder_path = pathToGenericString(base_path / folder);
     if (!need_contents)
     {
         Coordination::Stat stat;
@@ -170,7 +172,7 @@ void readFolder(
     std::vector<std::string> node_paths;
     node_paths.reserve(nodes.size());
     for (const auto & node : nodes)
-        node_paths.push_back(base_path / folder / node);
+        node_paths.push_back(pathToGenericString(base_path / folder / node));
 
     const auto data = readNodeDataBatched(metadata, zk_retries, batch_size, node_paths);
 
@@ -203,11 +205,11 @@ NodeContents readProcessedPointers(
     if (metadata.useBucketsForProcessing())
     {
         for (size_t bucket = 0; bucket < metadata.getBucketsNum(); ++bucket)
-            roots.push_back(base_path / "buckets" / toString(bucket) / "processed");
+            roots.push_back(pathToGenericString(base_path / "buckets" / toString(bucket) / "processed"));
     }
     else
     {
-        roots.push_back(base_path / "processed");
+        roots.push_back(pathToGenericString(base_path / "processed"));
     }
 
     std::vector<std::string> leaf_paths;
@@ -241,7 +243,7 @@ NodeContents readProcessedPointers(
             leaf_is_node_metadata.push_back(1);
             for (const auto & partition : partitions)
             {
-                leaf_paths.push_back(std::filesystem::path(root) / partition);
+                leaf_paths.push_back(pathToGenericString(pathFromString(root) / partition));
                 leaf_is_node_metadata.push_back(0);
             }
         }
@@ -261,7 +263,7 @@ NodeContents readProcessedPointers(
         std::string file_path = leaf_is_node_metadata[i]
             ? ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(*data[i]).file_path
             : *data[i];
-        auto key = std::filesystem::path(leaf_paths[i]).lexically_relative(base_path).string();
+        auto key = pathToGenericString(pathFromString(leaf_paths[i]).lexically_relative(base_path));
         result.emplace_back(std::move(key), std::move(file_path));
     }
     return result;
@@ -319,7 +321,7 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
         /// prefixed with "<keeper>:". It is used only for display. Keeper reads
         /// must use the raw path returned by `getPath`; the client returned by
         /// `getZooKeeper` is already bound to the right Keeper.
-        const std::filesystem::path base_path(metadata->getPath());
+        const std::filesystem::path base_path = pathFromString(metadata->getPath());
         const bool unordered = metadata->getTableMetadata().mode == "unordered";
         const size_t batch_size = std::max<size_t>(1, metadata->getKeeperMultireadBatchSize());
 
