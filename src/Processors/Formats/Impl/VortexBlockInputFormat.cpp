@@ -835,6 +835,19 @@ void registerVortexSchemaReader(FormatFactory & factory)
         {
             return std::make_shared<VortexSchemaReader>(buf, settings);
         });
+
+    /// The inferred types depend on these settings, so they must be a part of the schema cache key.
+    factory.registerAdditionalInfoForSchemaCacheGetter(
+        "Vortex",
+        [](const FormatSettings & settings)
+        {
+            return fmt::format(
+                "schema_inference_make_columns_nullable={};schema_inference_allow_nullable_tuple_type={};"
+                "allow_geoparquet_parser={}",
+                settings.schema_inference_make_columns_nullable,
+                settings.schema_inference_allow_nullable_tuple_type,
+                settings.parquet.allow_geoparquet_parser);
+        });
 }
 
 }

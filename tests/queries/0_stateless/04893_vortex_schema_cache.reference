@@ -1,0 +1,7 @@
+n	Nullable(UInt64)					
+s	Nullable(String)					
+n	UInt64					
+s	String					
+n	Nullable(UInt64)					
+s	Nullable(String)					
+2
