@@ -164,6 +164,13 @@ Chunk makeAggregateFunctionChunk(const AggregateFunctionPtr & function, const st
     return Chunk(Columns{std::move(key), std::move(payload)}, keys.size());
 }
 
+/// The two inputs of `getFirstAggregateFunctionChunkSize` interleave, so that neither of them is
+/// consumed as a whole chunk: the batch queue would insert such a chunk directly, bypassing the
+/// block size limit in bytes (see the fast-forward optimization, also present in the default queue).
+constexpr size_t aggregate_function_rows_per_input = 50;
+constexpr size_t aggregate_function_second_first_key = 25;
+constexpr size_t aggregate_function_input_rows = 2 * aggregate_function_rows_per_input;
+
 size_t getFirstAggregateFunctionChunkSize(SortingQueueStrategy strategy)
 {
     tryRegisterAggregateFunctions();
@@ -194,12 +201,16 @@ size_t getFirstAggregateFunctionChunkSize(SortingQueueStrategy strategy)
         std::nullopt,
         false);
 
+    std::vector<UInt64> first_keys;
     std::vector<UInt64> second_keys;
-    for (UInt64 key = 1; key < 100; ++key)
-        second_keys.push_back(key);
+    for (size_t row = 0; row < aggregate_function_rows_per_input; ++row)
+    {
+        first_keys.push_back(row);
+        second_keys.push_back(aggregate_function_second_first_key + row);
+    }
 
     IMergingAlgorithm::Inputs inputs(2);
-    inputs[0].chunk = makeAggregateFunctionChunk(function, {0, 1000});
+    inputs[0].chunk = makeAggregateFunctionChunk(function, first_keys);
     inputs[1].chunk = makeAggregateFunctionChunk(function, second_keys);
     algorithm.initialize(std::move(inputs));
 
@@ -241,5 +252,9 @@ TEST(MergingSortedBatchLimits, MaxBlockSizeBytesWithAggregateFunctionState)
 {
     const auto default_chunk_size = getFirstAggregateFunctionChunkSize(SortingQueueStrategy::Default);
     EXPECT_EQ(default_chunk_size, getFirstAggregateFunctionChunkSize(SortingQueueStrategy::Batch));
-    EXPECT_EQ(2uz, default_chunk_size);
+    /// The exact number of rows depends on `sizeOfData` of the aggregate state, which differs
+    /// between build types, so only check that the byte limit really did flush the block early
+    /// (otherwise the comparison above would be vacuous).
+    EXPECT_GT(default_chunk_size, 0uz);
+    EXPECT_LT(default_chunk_size, aggregate_function_input_rows);
 }
