@@ -448,8 +448,11 @@ echo '--- 9. the definer cannot be dropped while a dictionary uses it'
 # Dropping the last dictionary of an ephemeral definer must also collect its `<user>:definer` clone,
 # which only happens if the storage released the dependency on drop. The definer dependency is
 # released by the background removal, so a drop a later `DROP USER` depends on must be `SYNC`.
-${CLICKHOUSE_CLIENT} -m --ignore-error -q "
-DROP USER ${owner};
+${CLICKHOUSE_CLIENT} -q "DROP USER ${owner}" 2>&1 | grep -o -m1 'HAVE_DEPENDENT_OBJECTS'
+# These drops are not teardown: the two assertions below read the state they leave behind, so a
+# failure among them has to reach stdout. Each drop a later `DROP USER` depends on is `SYNC`,
+# because the definer dependency is released by the background removal.
+${CLICKHOUSE_CLIENT} -m -q "
 DROP DICTIONARY ${db}.dict_definer SYNC;
 DROP DICTIONARY ${db}.dict_polp SYNC;
 DROP DICTIONARY ${db}.dict_grant SYNC;
@@ -466,7 +469,7 @@ DROP USER ${owner};
 SELECT 'definer dropped:', count() = 0 FROM system.users WHERE name = '${owner}';
 DROP DICTIONARY ${db}.dict_ephemeral_ok SYNC;
 SELECT 'ephemeral definer clone collected:', count() = 0 FROM system.users WHERE name = '${ephemeral}:definer';
-" 2>&1 | grep -o -E "HAVE_DEPENDENT_OBJECTS|^definer dropped:.*|^ephemeral definer clone collected:.*"
+"
 
 echo '--- 9b. a dictionary that gains a UUID by being renamed still protects its definer'
 # A dependency is keyed on the UUID, and an Ordinary database has none, so moving into an Atomic one
@@ -511,11 +514,15 @@ DROP USER ${renamer};
 SELECT 'definer survived the drop attempt:', count() FROM system.users WHERE name = '${renamer}';
 SYSTEM RELOAD DICTIONARY ${atom_db}.dict_renamed;
 SELECT 'reloads with the definer:', dictGet('${atom_db}.dict_renamed', 'v', toUInt64(1));
+" 2>&1 | grep -o -E "HAVE_DEPENDENT_OBJECTS|^definer survived the drop attempt:.*|^reloads with the definer:.*"
+# Teardown stays outside the error-tolerant pipeline above, so a failure here still reaches stdout.
+# The dictionary drop is SYNC because the definer dependency is released by the background removal.
+${CLICKHOUSE_CLIENT} -m -q "
 DROP DICTIONARY ${atom_db}.dict_renamed SYNC;
 DROP USER ${renamer};
 DROP DATABASE ${ord_db} SYNC;
 DROP DATABASE ${atom_db} SYNC;
-" 2>&1 | grep -o -E "HAVE_DEPENDENT_OBJECTS|^definer survived the drop attempt:.*|^reloads with the definer:.*"
+"
 
 echo '--- 10. a table over a dictionary still rejects the clause, because that engine cannot enforce it'
 # The definer must be a user that still exists here: an unknown one fails earlier with UNKNOWN_USER
@@ -524,8 +531,12 @@ ${CLICKHOUSE_CLIENT} -m --ignore-error -q "
 CREATE TABLE ${db}.dict_as_table (k UInt64, v String) ENGINE = Dictionary('${db}.dict_plain')
 DEFINER = ${creator} SQL SECURITY DEFINER;
 SELECT 'table over a dictionary persisted:', count() FROM system.tables WHERE database = '${db}' AND name = 'dict_as_table';
+" 2>&1 | grep -o -E "Engine Dictionary doesn't support SQL SECURITY clause|^table over a dictionary persisted:.*"
+
+# Teardown stays outside the error-tolerant pipeline above, so a failure here still reaches stdout.
+${CLICKHOUSE_CLIENT} -m -q "
 DROP DICTIONARY IF EXISTS ${db}.dict_current SYNC;
 DROP DICTIONARY IF EXISTS ${db}.dict_constrained SYNC;
 DROP NAMED COLLECTION IF EXISTS ${coll_local};
 DROP USER IF EXISTS ${owner}, ${creator}, ${ephemeral}, ${loader}, ${constrained}, ${renamer};
-" 2>&1 | grep -o -E "Engine Dictionary doesn't support SQL SECURITY clause|^table over a dictionary persisted:.*"
+"
