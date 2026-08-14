@@ -178,7 +178,18 @@ OPTIMIZE TABLE t_ttl_normal FINAL;
 SELECT count() FROM t_ttl_normal;
 DROP TABLE t_ttl_normal;
 
--- Case 12: backward compatibility — a TTL using a function that accepts only the narrow
+-- Case 12: `DELETE WHERE` must keep the original source-column types. Only the
+-- timestamp expression is widened; widening this predicate would make the condition
+-- below false (`DateTime64` instead of `DateTime`) and incorrectly retain the row.
+DROP TABLE IF EXISTS t_ttl_delete_where_type;
+CREATE TABLE t_ttl_delete_where_type (ts DateTime, value UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_ttl_delete_where_type VALUES ('2000-01-01 00:00:00', 1);
+ALTER TABLE t_ttl_delete_where_type MODIFY TTL ts + INTERVAL 1 DAY DELETE WHERE toTypeName(ts) = 'DateTime';
+OPTIMIZE TABLE t_ttl_delete_where_type FINAL;
+SELECT count() FROM t_ttl_delete_where_type;
+DROP TABLE t_ttl_delete_where_type;
+
+-- Case 13: backward compatibility — a TTL using a function that accepts only the narrow
 -- `DateTime` type (e.g. `tumbleStart`) must keep working. Widening the source column to
 -- `DateTime64` makes `tumbleStart` reject it, so analysis falls back to the original
 -- column types for such expressions: they explicitly operate in the narrow domain and
@@ -192,7 +203,7 @@ OPTIMIZE TABLE t_ttl_tumble FINAL;
 SELECT count() FROM t_ttl_tumble;
 DROP TABLE t_ttl_tumble;
 
--- Case 13: a bare `LowCardinality(DateTime)` column as the whole TTL expression
+-- Case 14: a bare `LowCardinality(DateTime)` column as the whole TTL expression
 -- (found by AST fuzzer). Analysis widens it to `DateTime64` (dropping `LowCardinality`),
 -- so the `CREATE` is accepted, but the runtime block still holds the original
 -- `LowCardinality` column and takes the shortcut path in `executeExpressionAndGetColumn`

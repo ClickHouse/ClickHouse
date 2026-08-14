@@ -1210,7 +1210,11 @@ static ExpressionAndSets analyzeExpressionAndSets(
 }
 
 static ExpressionAndSets buildExpressionAndSets(
-    ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context, NamesAndTypesList * required_source_columns = nullptr)
+    ASTPtr & ast,
+    const NamesAndTypesList & columns,
+    const ContextPtr & context,
+    NamesAndTypesList * required_source_columns = nullptr,
+    bool widen_temporal_columns = true)
 {
     /// Analyze the TTL expression against `Date` / `DateTime` source columns widened to
     /// `Date32` / `DateTime64(0, tz)`, so `column + INTERVAL ...` arithmetic runs in the
@@ -1222,6 +1226,9 @@ static ExpressionAndSets buildExpressionAndSets(
     /// `ATTACH` of legacy tables after an upgrade, so we fall back to analyzing against
     /// the original column types. Such expressions explicitly operate in the narrow
     /// `Date` / `DateTime` domain and are out of scope for the overflow fix.
+    if (!widen_temporal_columns)
+        return analyzeExpressionAndSets(ast, columns, context, required_source_columns);
+
     auto widened_columns = widenTemporalColumns(columns);
     bool widened_any = !std::equal(
         columns.begin(), columns.end(), widened_columns.begin(), widened_columns.end(),
@@ -1311,7 +1318,9 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
     if (where_expression_ast)
     {
         auto ast = where_expression_ast->clone();
-        return buildExpressionAndSets(ast, where_expression_source_columns, context);
+        /// Only the TTL timestamp expression needs widening. The `DELETE WHERE`
+        /// predicate must keep the table's original static column types.
+        return buildExpressionAndSets(ast, where_expression_source_columns, context, nullptr, false);
     }
 
     return {};
