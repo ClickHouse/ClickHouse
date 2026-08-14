@@ -160,6 +160,22 @@ bool hasNestedQueryOrUnion(const IQueryTreeNode & node)
     return false;
 }
 
+bool hasNondeterministicFunctionForEarlyShortCircuit(const QueryTreeNodePtr & node, const ContextPtr & context)
+{
+    if (const auto * function = node->as<FunctionNode>())
+    {
+        auto resolver = FunctionFactory::instance().tryGet(function->getFunctionName(), context);
+        if (resolver && (!resolver->isDeterministic() || !resolver->isDeterministicInScopeOfQuery()))
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child && hasNondeterministicFunctionForEarlyShortCircuit(child, context))
+            return true;
+
+    return false;
+}
+
 bool isSafeCountScalarSubqueryForEarlyShortCircuit(const QueryNode & query)
 {
     if (hasNestedQueryOrUnion(query)
@@ -724,7 +740,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         && !UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters)) /// NOLINT(readability-static-accessed-through-instance)
     {
         auto short_circuit_result = getEarlyShortCircuitResultForAndOr(node, function_name);
-        if (short_circuit_result && !hasScopeDependentNodesForEarlyShortCircuit(node))
+        if (short_circuit_result
+            && !hasScopeDependentNodesForEarlyShortCircuit(node)
+            && !hasNondeterministicFunctionForEarlyShortCircuit(node, scope.context))
         {
             /// Resolve a clone in type-only mode. Scalar subqueries are analyzed but not executed,
             /// which gives the logical expression its real Nullable/Bool result type. It also

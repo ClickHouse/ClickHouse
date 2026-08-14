@@ -36,6 +36,7 @@ Test nested scalars in count subqueries fall back to normal analysis
 1
 1
 Test live prefix arguments are not skipped
+Test nondeterministic functions fall back to normal analysis
 Test disabled short-circuit evaluation is respected
 Check the read_rows of the above queries to ensure that the short circuit is working
 1

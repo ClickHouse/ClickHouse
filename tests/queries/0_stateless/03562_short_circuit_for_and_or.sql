@@ -67,6 +67,9 @@ SELECT 'Test live prefix arguments are not skipped';
 SELECT (SELECT throwIf(1)) OR 1; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 SELECT (SELECT throwIf(1)) AND 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
+SELECT 'Test nondeterministic functions fall back to normal analysis';
+SELECT 1 OR ((SELECT count() FROM numbers(1) WHERE throwIf(randConstant() % 1 = 0) = 0) > 0); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+
 SELECT 'Test disabled short-circuit evaluation is respected';
 SELECT 1 OR (SELECT throwIf(1)) SETTINGS short_circuit_function_evaluation = 'disable'; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
