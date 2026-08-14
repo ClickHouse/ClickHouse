@@ -824,6 +824,12 @@ public:
         Int16 format_param_result = 0;
         for (Int16 i = 0; i < num_format_params_result; ++i)
             readBinaryBigEndian(format_param_result, in);
+
+        /// Extended-protocol parameter values are typed values, not SQL fragments. Decoding their
+        /// text and binary encodings requires the type OIDs from the corresponding `Parse` message;
+        /// until that is implemented, reject them instead of treating wire bytes as query text.
+        if (num_params != 0)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Bind parameters are not supported in the PostgreSQL wire protocol");
     }
 
     MessageType getMessageType() const override
