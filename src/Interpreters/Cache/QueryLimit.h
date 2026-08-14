@@ -83,10 +83,8 @@ public:
 private:
     using QueryContextMap = std::unordered_map<String, QueryContextPtr>;
     QueryContextMap query_map;
-    /// query_map is reached under two different cache locks: reads (tryGetQueryContext) run under
-    /// CacheStateGuard while writes (getOrSetQueryContext/removeQueryContext) run under
-    /// CachePriorityGuard, so neither cache lock serializes access to the map by itself. This
-    /// dedicated leaf mutex is the single lock that actually guards query_map.
+    /// query_map is protected by this dedicated leaf mutex. Its callers can hold the cache
+    /// priority lock, but the mutex is the single lock that serializes map access.
     mutable std::mutex query_map_mutex;
 };
 

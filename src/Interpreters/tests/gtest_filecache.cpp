@@ -1614,7 +1614,6 @@ TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
     /// of the revived context must not fail with "Attempt to release query context that does not exist".
 
     CachePriorityGuard cache_guard;
-    CacheStateGuard state_guard;
     FileCacheQueryLimit query_limit;
 
     const std::string query_id = "query_id_revive";
@@ -1646,9 +1645,9 @@ TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
         auto query_context = DB::Context::createCopy(getContext().context);
         query_context->makeQueryContext();
         query_context->setCurrentQueryId(query_id);
-        auto query_scope_holder = DB::QueryScope::create(query_context);
+        DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
-        auto found = query_limit.tryGetQueryContext(state_guard.lock());
+        auto found = query_limit.tryGetQueryContext(cache_guard.lock());
         ASSERT_EQ(found.get(), context2.get());
     }
 
@@ -1667,9 +1666,9 @@ TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
         auto query_context = DB::Context::createCopy(getContext().context);
         query_context->makeQueryContext();
         query_context->setCurrentQueryId(query_id);
-        auto query_scope_holder = DB::QueryScope::create(query_context);
+        DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
-        auto found = query_limit.tryGetQueryContext(state_guard.lock());
+        auto found = query_limit.tryGetQueryContext(cache_guard.lock());
         ASSERT_EQ(found.get(), nullptr);
     }
 }
@@ -1686,7 +1685,6 @@ TEST_F(FileCacheTest, QueryLimitConcurrentReleaseNoLeak)
     /// reference under the lock and erases once the map entry is the sole owner.
 
     CachePriorityGuard cache_guard;
-    CacheStateGuard state_guard;
     FileCacheQueryLimit query_limit;
 
     const std::string query_id = "query_id_concurrent_release";
@@ -1728,9 +1726,9 @@ TEST_F(FileCacheTest, QueryLimitConcurrentReleaseNoLeak)
         auto query_context = DB::Context::createCopy(getContext().context);
         query_context->makeQueryContext();
         query_context->setCurrentQueryId(query_id);
-        auto query_scope_holder = DB::QueryScope::create(query_context);
+        DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
-        auto found = query_limit.tryGetQueryContext(state_guard.lock());
+        auto found = query_limit.tryGetQueryContext(cache_guard.lock());
         ASSERT_EQ(found.get(), nullptr);
     }
 }
