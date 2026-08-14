@@ -23,6 +23,13 @@
 #    define SIZE_T_IS_A_DISTINCT_TYPE 1
 #endif
 
+/// `size_t` is `unsigned long` or `unsigned int`, so a platform where it is distinct from every
+/// fixed-width type is one where `long` is too. Getting this wrong makes `itoa(size_t)` ambiguous
+/// rather than failing anywhere obvious, so state the implication where both are defined.
+#if defined(SIZE_T_IS_A_DISTINCT_TYPE) && !defined(LONG_IS_A_DISTINCT_TYPE)
+#    error "SIZE_T_IS_A_DISTINCT_TYPE implies LONG_IS_A_DISTINCT_TYPE"
+#endif
+
 /// Whether the platform delivers POSIX signals to the process: handlers installed with
 /// `sigaction`, masked with `pthread_sigmask`, raised with `raise`. A WebAssembly sandbox has no
 /// signals at all - nothing can fault into one and nothing can send one - so arming a handler

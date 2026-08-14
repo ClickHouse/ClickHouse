@@ -1244,7 +1244,12 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
 
     auto & or_argument_nodes = or_node->getArguments().getNodes();
 
-    chassert(or_argument_nodes.size() > 1);
+    /// An `or` with a single argument can reach this point: when an argument has the type `Nothing`,
+    /// function resolution short-circuits the return type before the "at least 2 arguments" check
+    /// runs, so e.g. `JOIN ... ON or(t1.c0 = a0)`, where `a0` aliases an empty array from
+    /// `ARRAY JOIN`, resolves successfully. There is nothing to extract from such a node.
+    if (or_argument_nodes.size() < 2)
+        return {};
 
     bool first_argument = true;
     QueryTreeNodePtrWithHashSet common_exprs_set;
