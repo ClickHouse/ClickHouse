@@ -729,9 +729,11 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
                         column.settings.removeSetting(setting);
                 }
 
-                /// User specified default expression or changed
-                /// datatype. We have to replace default.
-                if (default_expression || data_type)
+                /// The default is replaced only when the command carries one. A command that only
+                /// restates the type keeps the default the column currently has, which is what the
+                /// preceding commands of the same ALTER have already written here. Removals are
+                /// handled by the `to_remove` branches above.
+                if (default_expression)
                 {
                     column.default_desc.kind = default_kind;
                     column.default_desc.expression = default_expression;
@@ -1720,13 +1722,6 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
                         }
                     }
                 }
-
-                if (command.data_type && !command.default_expression && column_from_table.default_desc.expression)
-                {
-                    command.default_kind = column_from_table.default_desc.kind;
-                    command.default_expression = column_from_table.default_desc.expression;
-                }
-
             }
         }
         else if (command.type == AlterCommand::ADD_COLUMN)
@@ -1856,7 +1851,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (command.codec)
             {
-                /// `default_kind` is what the parser set: `validate` runs before `prepare`, which back-fills it from the table.
+                /// `default_kind` is meaningful only together with `default_expression`: it holds its
+                /// enumerator's zero value on a command that carries no default.
                 const bool becomes_physical = command.default_expression
                     && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized);
                 if (all_columns.hasAlias(column_name) && !becomes_physical)
