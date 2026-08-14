@@ -651,7 +651,24 @@ fi
 ${CLICKHOUSE_CLIENT} -q "DROP VIEW IF EXISTS t_reattach_dest_view"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${DEST_USER}"
 
-# 2. Taken destination name. `CREATE ... IF NOT EXISTS` over an existing destination is a pure no-op that
+# 2. SQL-security and definer validation follows the destination-access check but precedes reading the
+# source of a view. A nonexistent `DEFINER` therefore rejects the statement before it reaches `src`, so
+# the hook must keep `src` attached.
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} \
+    --reattach_tables_before_query_execution=1 \
+    --query "CREATE VIEW t_reattach_dest_view DEFINER = missing_reattach_definer SQL SECURITY DEFINER AS SELECT * FROM t_reattach_dest_src" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -eq 0 ]; then
+    echo "FAIL (query unexpectedly succeeded)"
+elif ! echo "$REATTACH_OUTPUT" | grep -q "THERE_IS_NO_SUCH_USER"; then
+    echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_dest_src"; then
+    echo "FAIL (source detached for a SQL-security-rejected query)"
+else
+    echo "OK"
+fi
+
+# 3. Taken destination name. `CREATE ... IF NOT EXISTS` over an existing destination is a pure no-op that
 # never runs the `SELECT`, and the plain form fails with `TABLE_ALREADY_EXISTS` before it — in both cases
 # the source must stay attached. The same statement over a free destination name does detach the source.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_taken"

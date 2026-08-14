@@ -1484,6 +1484,27 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
     if (!context->getAccess()->isGranted(createQueryDestinationAccess(create, destination_database, destination_table)))
         return true;
 
+    /// `InterpreterCreateQuery::createTable` validates a view's `SQL SECURITY` clause immediately after
+    /// the destination access check and before it reads an `AS src` source or a populating `SELECT`.
+    /// Use a clone because `processSQLSecurityOption` resolves `CURRENT_USER` in the AST.
+    /// A rejected definer or an unavailable `SQL SECURITY NONE` privilege must suppress the hook just like
+    /// a rejected destination privilege does; otherwise the rejected statement would reattach a source it
+    /// never reaches.
+    if (create.sql_security)
+    {
+        ASTPtr sql_security = create.sql_security->clone();
+
+        try
+        {
+            InterpreterCreateQuery::processSQLSecurityOption(
+                context->getQueryContext(), sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view, LoadingStrictnessLevel::CREATE);
+        }
+        catch (const Exception &)
+        {
+            return true;
+        }
+    }
+
     /// `createQueryDestinationAccess` covers the `TABLE ENGINE` grant only for an engine spelled out in the
     /// statement, but `getTablePropertiesAndNormalizeCreateQuery` re-checks that grant after `setEngine` has
     /// inferred an engine for the engine-less forms — and it does so before the populating `SELECT` is
