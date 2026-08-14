@@ -4,7 +4,6 @@ slug: /manage/replica-aware-routing
 description: 'Direcione solicitações relacionadas à mesma réplica do ClickHouse Cloud para tabelas temporárias, sessões, reutilização de cache e consistência de leitura após gravação'
 keywords: ['cloud', 'endpoints sticky', 'sticky', 'endpoints', 'roteamento sticky', 'roteamento', 'roteamento com reconhecimento de réplicas', 'X-ClickHouse-Replica-Tag', 'session_id', 'afinidade de sessão', 'tabelas temporárias', 'consistência de leitura após gravação']
 doc_type: 'guide'
-noindex: true
 ---
 
 import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
@@ -18,7 +17,7 @@ O roteamento com reconhecimento de réplicas (também conhecido como sessões pe
 <Warning>
   **Requer a interface HTTP**
 
-  O roteamento com reconhecimento de réplicas é aplicado na camada de proxy por meio da [interface HTTP/HTTPS](/pt-BR/concepts/features/interfaces/http). O ClickHouse Cloud está migrando o roteamento com reconhecimento de réplicas de `session_id` para o header `X-ClickHouse-Replica-Tag`. As abas abaixo descrevem ambos os métodos durante o rollout.
+  O roteamento com reconhecimento de réplicas é aplicado na camada de proxy por meio da [interface HTTP/HTTPS](/pt-BR/concepts/features/interfaces/http). O ClickHouse Cloud está migrando o roteamento com reconhecimento de réplicas de `session_id` para o cabeçalho `X-ClickHouse-Replica-Tag`. As abas abaixo descrevem ambos os métodos durante o rollout.
 
   O roteamento com reconhecimento de réplicas está **indisponível atualmente no protocolo nativo** (porta nativa, por exemplo, o driver [clickhouse-go](/pt-BR/integrations/language-clients/go/index) em seu modo nativo padrão). Clientes do protocolo nativo devem mudar para HTTP e enviar o valor de roteamento em cada solicitação.
 </Warning>

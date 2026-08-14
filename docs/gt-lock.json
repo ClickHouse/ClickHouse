@@ -7,37 +7,37 @@
       "versionId": "138b2ddf9c6f3544641c95967a19e82eb07861ef53f1f01da0818d45f243060e",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:04.166Z",
+          "updatedAt": "2026-08-14T11:20:24.300Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:04.375Z",
+          "updatedAt": "2026-08-14T11:20:24.553Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:04.677Z",
+          "updatedAt": "2026-08-14T11:20:24.718Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:04.877Z",
+          "updatedAt": "2026-08-14T11:20:24.918Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:05.140Z",
+          "updatedAt": "2026-08-14T11:20:25.110Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:05.306Z",
+          "updatedAt": "2026-08-14T11:20:25.317Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:05.423Z",
+          "updatedAt": "2026-08-14T11:20:25.503Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:05.549Z",
+          "updatedAt": "2026-08-14T11:20:25.684Z",
           "fileName": "docs.json",
-          "postProcessHash": "8a387504bd8dc1bffbc90951128511a2244f4cffd1dabca7fc0319d1e03a9455"
+          "postProcessHash": "72e71b64b0083687a7c32bde19762a565bae96bb2caf1c7a566741fe6592a765"
         }
       },
       "fileName": "docs.json",
@@ -40413,47 +40413,47 @@
     },
     {
       "fileId": "f331979756defdc6f7467963ad9fa803deb7e6eae7636d196d2e895ec92e35d4",
-      "versionId": "e14b077a1be141e11baf05850043166e2ce7b0308f11f1930e93e3b204b2cef8",
+      "versionId": "c79242b95d310abc3d76f73041c164061b3da509e0ccbefb0f03c7567488cb79",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.591Z",
-          "fileName": "es/integrations/connectors/data-visualization/looker-studio-and-clickhouse.mdx",
-          "postProcessHash": "8e741bccede00c1f45f01a5c7c4348239415150b385346b7fd762d38a9be404a"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.592Z",
-          "fileName": "ja/integrations/connectors/data-visualization/looker-studio-and-clickhouse.mdx",
-          "postProcessHash": "6f3064e78141806aae89d70cf62fd84416ae71eb2db62f494d4519cc700c5b3c"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.592Z",
-          "fileName": "ko/integrations/connectors/data-visualization/looker-studio-and-clickhouse.mdx",
-          "postProcessHash": "cabec12d76ef379fc8a32def3b41c9b2ef7b496bcb7fa0dfc37ae4361944a7bd"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.592Z",
-          "fileName": "pt-BR/integrations/connectors/data-visualization/looker-studio-and-clickhouse.mdx",
-          "postProcessHash": "85f25e688c7d8472be8f226c4b801ff63e3f007c29ae93f2b63746b57f25524a"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.592Z",
-          "fileName": "ru/integrations/connectors/data-visualization/looker-studio-and-clickhouse.mdx",
-          "postProcessHash": "d87c19fb5cb23458a540c888b04db6853e345001835b2785ad80b46bf5d338ee"
+        "fr": {
+          "updatedAt": "2026-08-14T11:20:32.272Z",
+          "fileName": "fr/integrations/connectors/data-visualization/looker-studio-and-clickhouse.mdx",
+          "postProcessHash": "86d00c2cea378b24bec9b6ba65b7ec5a78db1bbdc6282f9dcd119d3090447feb"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:06.592Z",
+          "updatedAt": "2026-08-14T11:20:32.273Z",
           "fileName": "zh/integrations/connectors/data-visualization/looker-studio-and-clickhouse.mdx",
-          "postProcessHash": "90f82775f82b6e8d9600cd2bbaa7fbd49d5f1f6fba0cb5366161392f3289e063"
+          "postProcessHash": "ef31ce46c08ed16605e39139dee3eb0e3a0322a382874ec9f8382df2a5d9e117"
+        },
+        "ja": {
+          "updatedAt": "2026-08-14T11:20:32.276Z",
+          "fileName": "ja/integrations/connectors/data-visualization/looker-studio-and-clickhouse.mdx",
+          "postProcessHash": "087204d97d68a06244f8cbf8764d14722b5d39e6f7d29166771b02abdb4cc244"
+        },
+        "ru": {
+          "updatedAt": "2026-08-14T11:20:32.276Z",
+          "fileName": "ru/integrations/connectors/data-visualization/looker-studio-and-clickhouse.mdx",
+          "postProcessHash": "e54e510a4e7fbbced1fc643ff0f900fc22acaf7114560c5c4bd50578d9d1f2c9"
+        },
+        "ko": {
+          "updatedAt": "2026-08-14T11:20:32.277Z",
+          "fileName": "ko/integrations/connectors/data-visualization/looker-studio-and-clickhouse.mdx",
+          "postProcessHash": "dfce701398821eb659d2440cac09a57b9259b9ae834be8a9ed88177e1ab09b45"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-14T11:20:32.279Z",
+          "fileName": "pt-BR/integrations/connectors/data-visualization/looker-studio-and-clickhouse.mdx",
+          "postProcessHash": "75990f60cd3fc75f685236b0c3dab5486a9d99a7d341ced72b69541ee2bc45f1"
+        },
+        "es": {
+          "updatedAt": "2026-08-14T11:20:32.280Z",
+          "fileName": "es/integrations/connectors/data-visualization/looker-studio-and-clickhouse.mdx",
+          "postProcessHash": "e52cb77b3149acf452daf828ff3c54b594145492c92155fad52de5166a9147a8"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:06.592Z",
+          "updatedAt": "2026-08-14T11:20:32.280Z",
           "fileName": "ar/integrations/connectors/data-visualization/looker-studio-and-clickhouse.mdx",
-          "postProcessHash": "c8e805f80e5896bde23f5d5957e1ab1d0d107f865a97a2ed8db1d2de41aa5aa9"
-        },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:06.592Z",
-          "fileName": "fr/integrations/connectors/data-visualization/looker-studio-and-clickhouse.mdx",
-          "postProcessHash": "2610bf7a5689b0bc0f0548736dfe71c6eb2a46a60d034157388d01c688c5720f"
+          "postProcessHash": "de6a8b9a16982f6661d4cae7324b851ba46134608eee70c884495f5ba97e3d19"
         }
       },
       "fileName": "integrations/connectors/data-visualization/looker-studio-and-clickhouse.mdx",
@@ -66717,47 +66717,47 @@
     },
     {
       "fileId": "7ed5349a06a9e9f516a5f7b6af36a424875a6e22f174836fb8715f821a8cd318",
-      "versionId": "56551e2aa18ed63c40c42a840cb85f956a2f806bc1c7c6ea1f20fca9e2298dfe",
+      "versionId": "09912b192813932e8f5191f3cd6da22cdad7d88ea5ecb5c62e2092664a874a63",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:07.345Z",
-          "fileName": "es/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "f1e6445a70884a78759b6445a3b8b38c974b57e4ee795fb79dfac32288ab4b9c"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:07.345Z",
-          "fileName": "ja/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "05a05661593a04cf739da5a9cd6802383976b2f2c161ea1a1230d9287ce9d1ec"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:07.346Z",
-          "fileName": "ko/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "1a640e20e72a02c5312779b5e2ea196dab3dfd794def1a029b9f60bcca36e8be"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:07.346Z",
-          "fileName": "pt-BR/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "0440cc84c7d6184d22326dc461422d2de91d2e4f2acb378ebff3620883de180f"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:07.347Z",
-          "fileName": "ru/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "3efbb419ca2118a7e4384d9064bcf731d18d4c1c98c4ec39d40155b133a5e3ea"
-        },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:07.348Z",
+          "updatedAt": "2026-08-14T11:20:32.282Z",
           "fileName": "zh/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "14641b0f5c6a6dc2c7f7743d8c1282bea0acdb8720793a2cba73fe3ccd1c5b20"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:07.348Z",
-          "fileName": "ar/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "510247ad23a926bd7b9122179ba4d22997c45b7d4eb79d4e1c7ce54c5393d491"
+          "postProcessHash": "c1483b95742807788302db7551398d0ceb1416ebb85e858f0c0027d53e0347c7"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:07.349Z",
+          "updatedAt": "2026-08-14T11:20:32.284Z",
           "fileName": "fr/reference/settings/server-settings/_server_settings_outside_source.mdx",
-          "postProcessHash": "05b6467598800434d53ab3b0aa04fa3020e26b296e9fedf49b4b84df37efd8fa"
+          "postProcessHash": "ab88228133262c5ccf01fd662a48316304d684a2d5e9cb1dfbb8385d708acb95"
+        },
+        "es": {
+          "updatedAt": "2026-08-14T11:20:32.286Z",
+          "fileName": "es/reference/settings/server-settings/_server_settings_outside_source.mdx",
+          "postProcessHash": "a41486be84f1608eedcbabb692338fbce86281248eef1316ce4e8c8851f5cebb"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-14T11:20:32.288Z",
+          "fileName": "pt-BR/reference/settings/server-settings/_server_settings_outside_source.mdx",
+          "postProcessHash": "3f2e1095ef7b282024e61d6587217f3f600f87c35349bfbfd3c4cd2c3de1f2d1"
+        },
+        "ja": {
+          "updatedAt": "2026-08-14T11:20:32.290Z",
+          "fileName": "ja/reference/settings/server-settings/_server_settings_outside_source.mdx",
+          "postProcessHash": "4ef2cafaa91264cae503120eb5774abab6a047ce6e01eb5d8fb6aea856f4189f"
+        },
+        "ar": {
+          "updatedAt": "2026-08-14T11:20:32.292Z",
+          "fileName": "ar/reference/settings/server-settings/_server_settings_outside_source.mdx",
+          "postProcessHash": "6d7c5ac949a6b56327a4f7e82e86f9b6a922a25fc147c80716f9089477766434"
+        },
+        "ru": {
+          "updatedAt": "2026-08-14T11:20:32.294Z",
+          "fileName": "ru/reference/settings/server-settings/_server_settings_outside_source.mdx",
+          "postProcessHash": "79a4c4e44d71c68cf7f99ca41a3847db3db2dec3a36b631ff0ac2e0072416aa1"
+        },
+        "ko": {
+          "updatedAt": "2026-08-14T11:20:32.295Z",
+          "fileName": "ko/reference/settings/server-settings/_server_settings_outside_source.mdx",
+          "postProcessHash": "df1e3dd7c49c87e8865b7140dd2077ae5e268848e39cf5dc9ab8192787a54162"
         }
       },
       "fileName": "reference/settings/server-settings/_server_settings_outside_source.mdx",
@@ -83325,47 +83325,47 @@
     },
     {
       "fileId": "1485b59e55065d39944a24a23d30aeace37dd8746b155123e6fd7e2b3b962877",
-      "versionId": "dd238f24979611f9b8409075666e1b4bec22130e787c92a427dededb1212a9d2",
+      "versionId": "4a53cae42b8cf4feec25121493b4d1336e974318e36c022c5bd64cd110144fc3",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.093Z",
-          "fileName": "es/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "41552a0c0d8621e49da659793d889754bbe53c707c85b5a204123b65e8faaee5"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.093Z",
-          "fileName": "ja/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "845390d299834c8f9d48e04c032f7dbc75735887c3ece04f7142b6936d3700f3"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.094Z",
-          "fileName": "ko/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "23336a7c9f21c4ed39dc5195361da2d639229aab7a2fdc39843f1e923501908d"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.094Z",
-          "fileName": "pt-BR/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "d1ea996b636b3c8549aa69e225ac0b3b999a4ccb1f41493b3fe952e884553e94"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.094Z",
-          "fileName": "ru/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "0a2e64b58b6cacad8d15cc710cc2518df14fec75c41a6350a5fb987cefbfb4e2"
-        },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.094Z",
+          "updatedAt": "2026-08-14T11:20:32.272Z",
           "fileName": "zh/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "738f53b8e82a156ac8263ab07f57db85025040340e9597b6556d3df1cd518b05"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.094Z",
-          "fileName": "ar/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "e6a4cee989890d98bade4ac9097bee225692010a1563bad6d79d09ce1b103660"
+          "postProcessHash": "d9fd6b249eb9c651860389d9a843c28cfa62155898a59108a5ba1dddebc5fa1d"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.094Z",
+          "updatedAt": "2026-08-14T11:20:32.278Z",
           "fileName": "fr/products/cloud/features/infrastructure/replica-aware-routing.mdx",
-          "postProcessHash": "ecc7be48a1217dd60ec53ce07975f9f6bff2c26d35fa206c7cb01cb97a18046d"
+          "postProcessHash": "81a3896c8221129f597dd8a75b5b58b8f65418389a63db32f6afac9aeed0f6cc"
+        },
+        "ru": {
+          "updatedAt": "2026-08-14T11:20:32.279Z",
+          "fileName": "ru/products/cloud/features/infrastructure/replica-aware-routing.mdx",
+          "postProcessHash": "be9117e22bbc4bb738facca4f31c5f94ff66ad955ee4ecb017b8d86396b95cb5"
+        },
+        "es": {
+          "updatedAt": "2026-08-14T11:20:32.281Z",
+          "fileName": "es/products/cloud/features/infrastructure/replica-aware-routing.mdx",
+          "postProcessHash": "59bb42439e5dbf320406b82fcc487971249ed8102ba1be17f7ce965540689737"
+        },
+        "ar": {
+          "updatedAt": "2026-08-14T11:20:32.285Z",
+          "fileName": "ar/products/cloud/features/infrastructure/replica-aware-routing.mdx",
+          "postProcessHash": "34c809f95812a84ca36060905e038d3b5d95a1b9bbd702cacf15f058f5a5411c"
+        },
+        "ko": {
+          "updatedAt": "2026-08-14T11:20:32.287Z",
+          "fileName": "ko/products/cloud/features/infrastructure/replica-aware-routing.mdx",
+          "postProcessHash": "cfac61e4f1073250ae8a89dcd1d66ba92868dd3b520c23fdf05ef17393d5397f"
+        },
+        "ja": {
+          "updatedAt": "2026-08-14T11:20:32.289Z",
+          "fileName": "ja/products/cloud/features/infrastructure/replica-aware-routing.mdx",
+          "postProcessHash": "88e7b7a9237853e5789c1e0fb9f1da8c15c2c0efd2c6a558c824b01ae51cd9c1"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-14T11:20:32.289Z",
+          "fileName": "pt-BR/products/cloud/features/infrastructure/replica-aware-routing.mdx",
+          "postProcessHash": "da48d8d5a1edcc950323007dd415e8c950e26bec367281fcd539fd32d1e9fcdc"
         }
       },
       "fileName": "products/cloud/features/infrastructure/replica-aware-routing.mdx",
@@ -134541,47 +134541,47 @@
     },
     {
       "fileId": "a1b4fc5d7bb2e0aa44280b81ec5c3aa3edaceb3b8156d7fc58d543bf9231f4ab",
-      "versionId": "20b436bd775661c591ee87e32df51837516057402cc9ba3e11f8acf0b5e029de",
+      "versionId": "87f6d6e54783f1618b9aaadc6baab3602b123ad72a518e19469592b8eedc7d70",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.606Z",
-          "fileName": "es/integrations/connectors/sql-clients/probedeck.mdx",
-          "postProcessHash": "a3351747bdbb24685ea367d638d85701aa79bac5bb727a52afeb512a48cba0ca"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.606Z",
-          "fileName": "ja/integrations/connectors/sql-clients/probedeck.mdx",
-          "postProcessHash": "9d7c003ae1cc2bb4cf39ef96f92b1073e2d7c95ea288236a0c1135526d98dcfb"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.606Z",
-          "fileName": "ko/integrations/connectors/sql-clients/probedeck.mdx",
-          "postProcessHash": "6bff5e5d505163577f33d0d670b15d6056b8a06e8f6f17999b43d72c4bce1eff"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.606Z",
-          "fileName": "pt-BR/integrations/connectors/sql-clients/probedeck.mdx",
-          "postProcessHash": "2f316c7cc29c37f9f1912e1da38d35d21a0bdf6ac6753c2509b08af271350821"
-        },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:06.606Z",
+          "updatedAt": "2026-08-14T11:20:32.268Z",
           "fileName": "ru/integrations/connectors/sql-clients/probedeck.mdx",
-          "postProcessHash": "99cbca1ce3e88a9a8bb071dc02b81cd2a5bccc2404dd0dfb9056195fd4c88727"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.607Z",
-          "fileName": "zh/integrations/connectors/sql-clients/probedeck.mdx",
-          "postProcessHash": "f4659599b85b942fe09879713474dc6722140472c8d068f205f53bcca350c231"
+          "postProcessHash": "dde58dff3ae990c33a948b38a495a10090f059d982705bb15ff6e208eba3be4c"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:06.607Z",
+          "updatedAt": "2026-08-14T11:20:32.269Z",
           "fileName": "ar/integrations/connectors/sql-clients/probedeck.mdx",
-          "postProcessHash": "1a2a1ab03b338dac0216f45f2c9dbdf2aeb18679c32b5bf1df0f50f1d10442b3"
+          "postProcessHash": "508ddd598d1a1f905f18a4940d8e5a0202491e622b7d3aa4eda60b2ccb1a57fd"
+        },
+        "es": {
+          "updatedAt": "2026-08-14T11:20:32.269Z",
+          "fileName": "es/integrations/connectors/sql-clients/probedeck.mdx",
+          "postProcessHash": "48de235aa40aecbdd9615184ecab0cfe880087f267427375a816683a7bee79d9"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.607Z",
+          "updatedAt": "2026-08-14T11:20:32.270Z",
           "fileName": "fr/integrations/connectors/sql-clients/probedeck.mdx",
-          "postProcessHash": "c8ef257d33f190da9de05ffac7a2f12a583b741a603dd98bf2218550ca4825d6"
+          "postProcessHash": "ed73ca48ca7d0c7d59967e59ec947745473c51d11494884bab219b2b4e566c77"
+        },
+        "ko": {
+          "updatedAt": "2026-08-14T11:20:32.271Z",
+          "fileName": "ko/integrations/connectors/sql-clients/probedeck.mdx",
+          "postProcessHash": "fa617baf8423e767e096f6498240611272958910c6fc763afcf148d9b33cd5c8"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-14T11:20:32.274Z",
+          "fileName": "pt-BR/integrations/connectors/sql-clients/probedeck.mdx",
+          "postProcessHash": "1a1010eea0c7c38389bf676d74f1c425c8f49d9f6dab222381795469d42da156"
+        },
+        "zh": {
+          "updatedAt": "2026-08-14T11:20:32.275Z",
+          "fileName": "zh/integrations/connectors/sql-clients/probedeck.mdx",
+          "postProcessHash": "929c3e67ca11d641e8688c551fcbfdba48258f53cdcbce4990fefc0cb27d9673"
+        },
+        "ja": {
+          "updatedAt": "2026-08-14T11:20:32.275Z",
+          "fileName": "ja/integrations/connectors/sql-clients/probedeck.mdx",
+          "postProcessHash": "4539141ecb8869c2377d1fd858d3b339d7417faa25f4bc65f17d6a2aaefe651b"
         }
       },
       "fileName": "integrations/connectors/sql-clients/probedeck.mdx",

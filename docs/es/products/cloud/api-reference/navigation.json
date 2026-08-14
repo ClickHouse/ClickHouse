@@ -129,7 +129,7 @@
     "group": "Prometheus",
     "pages": [
       "GET /v1/organizations/{organizationId}/prometheus",
-      "products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
+      "es/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
       "es/products/cloud/api-reference/prometheus/postgres-org-prometheus-get",
       "es/products/cloud/api-reference/prometheus/postgres-instance-prometheus-get"

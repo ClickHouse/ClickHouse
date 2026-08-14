@@ -4,7 +4,6 @@ slug: /manage/replica-aware-routing
 description: '一時テーブル、セッション、cacheの再利用、書き込み後の読み取り整合性のため、関連するリクエストを同じClickHouse Cloudレプリカにルーティングします'
 keywords: ['cloud', 'sticky endpoints', 'sticky', 'endpoints', 'sticky routing', 'routing', 'replica aware routing', 'X-ClickHouse-Replica-Tag', 'session_id', 'session affinity', 'temporary tables', 'read-after-write consistency']
 doc_type: 'guide'
-noindex: true
 ---
 
 import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
@@ -13,12 +12,12 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 レプリカ対応ルーティング (sticky sessions、スティッキールーティング、session affinity とも呼ばれます) は、関連するリクエストを同じ ClickHouse レプリカに振り分けます。[一時テーブル](/ja/reference/statements/create/table/temporary-table)や[名前付きセッション状態](/ja/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol)をクエリ間で利用可能な状態に保つ必要がある場合、関連するクエリで同じレプリカのローカル cache を再利用する場合、または書き込みとその後の読み取りで[書き込み後の読み取り整合性](#read-after-write-consistency)が必要な場合に使用します。
 
-これはベストエフォートであり、分離は保証されません。プロキシ は各ルーティング値を 1 つのレプリカにマッピングします。レプリカ数が変わらない限り、このマッピングは安定していますが、service をスケーリングすると、その値が別のレプリカにマッピングされる可能性があります。
+これはベストエフォートであり、分離は保証されません。プロキシ は各ルーティング値を 1 つのレプリカにマッピングします。レプリカ数が変わらない限り、このマッピングは安定していますが、サービス をスケーリングすると、その値が別のレプリカにマッピングされる可能性があります。
 
 <Warning>
   **HTTP インターフェイスが必要です**
 
-  レプリカ対応ルーティングは、[HTTP/HTTPS インターフェイス](/ja/concepts/features/interfaces/http)上の プロキシ レイヤーで適用されます。ClickHouse Cloud は、レプリカ対応ルーティングを `session_id` から `X-ClickHouse-Replica-Tag` ヘッダー に移行中です。以下の tabs では、rollout 中の両方の方法について説明します。
+  レプリカ対応ルーティングは、[HTTP/HTTPS インターフェイス](/ja/concepts/features/interfaces/http)上の プロキシ レイヤーで適用されます。ClickHouse Cloud は、レプリカ対応ルーティングを `session_id` から `X-ClickHouse-Replica-Tag` ヘッダー に移行中です。以下の tabs では、ロールアウト 中の両方の方法について説明します。
 
   レプリカ対応ルーティングは**現在、ネイティブプロトコル経由では使用できません** (ネイティブポート、たとえばデフォルトのネイティブ mode で使用する [clickhouse-go](/ja/integrations/language-clients/go/index) ドライバー) 。ネイティブプロトコル clients は HTTP に切り替え、すべてのリクエストでルーティング値を送信する必要があります。
 </Warning>
