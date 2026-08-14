@@ -54,7 +54,6 @@
 #include <Access/ContextAccess.h>
 #include <Access/EnabledQuota.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
-#include <Interpreters/BackgroundQueriesDistributedRegistry.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -227,8 +226,6 @@ namespace Setting
 
 namespace ServerSetting
 {
-    extern const ServerSettingsUInt64 background_queries_registry_max_error_length;
-    extern const ServerSettingsUInt64 background_queries_registry_max_query_length;
     extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
 }
 
@@ -2587,14 +2584,10 @@ void executeQueryInBackground(std::string_view query, ContextMutablePtr context)
     if (context->hasSessionContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A background query context must not be attached to a session");
 
-    auto handle = context->getBackgroundQueriesDistributedRegistry().registerQuery(
-        context->getClientInfo().current_query_id,
-        context->getClientInfo().current_user,
-        wipeSensitiveDataAndCutToLength(
-            String(query), context->getServerSettings()[ServerSetting::background_queries_registry_max_query_length], true));
-
-    auto job = [query_text = String(query), context, handle]() mutable
+    GlobalThreadPool::instance().scheduleOrThrow([query_text = String(query), context]
     {
+        ThreadStatus thread_status;
+
         try
         {
             auto thread_group = ThreadGroup::createForQuery(context);
@@ -2623,59 +2616,19 @@ void executeQueryInBackground(std::string_view query, ContextMutablePtr context)
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Queries that receive data from the client cannot be run in the background");
                     }
                 }
+                io.onFinish();
             }
             catch (...)
             {
-                try
-                {
-                    io.onException();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("executeQueryInBackground");
-                }
-
+                io.onException();
                 throw;
             }
-
-            io.onFinish();
-            handle->onFinish();
         }
         catch (...)
         {
             tryLogCurrentException("executeQueryInBackground");
-
-            try
-            {
-                handle->onException(
-                    getCurrentExceptionCode(),
-                    wipeSensitiveDataAndCutToLength(
-                        getCurrentExceptionMessage(true),
-                        context->getServerSettings()[ServerSetting::background_queries_registry_max_error_length],
-                        true));
-            }
-            catch (...)
-            {
-                tryLogCurrentException("executeQueryInBackground");
-            }
         }
-    };
-
-    try
-    {
-        context->getBackgroundQueryPool().scheduleOrThrow(std::move(job));
-    }
-    catch (...)
-    {
-        tryLogCurrentException("executeQueryInBackground");
-        handle->onException(
-            getCurrentExceptionCode(),
-            wipeSensitiveDataAndCutToLength(
-                getCurrentExceptionMessage(true),
-                context->getServerSettings()[ServerSetting::background_queries_registry_max_error_length],
-                true));
-        throw;
-    }
+    });
 }
 
 void executeQuery(

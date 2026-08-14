@@ -241,7 +241,6 @@ void HTTPHandler::processQuery(
     /// after releasing the session below, this whole call will be no-op (due to named_session being nullptr already inside a session).
     SCOPE_EXIT_SAFE({ releaseOrCloseSession(session_id, close_session); });
 
-    /// TODO(stetsyuk): make sure SET run_query_in_background = 1; <your queries>; SET run_query_in_background = 0; works
     const bool run_query_in_background = params.getParsedLast<bool>(
         "run_query_in_background", session->sessionContext()->getSettingsRef()[Setting::run_query_in_background]);
 

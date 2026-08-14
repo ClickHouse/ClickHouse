@@ -109,7 +109,6 @@
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Interpreters/BackgroundQueriesDistributedRegistry.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
@@ -241,9 +240,6 @@ namespace CurrentMetrics
     extern const Metric IcebergSchedulePoolSize;
     extern const Metric BackgroundStreamingSchedulePoolTask;
     extern const Metric BackgroundStreamingSchedulePoolSize;
-    extern const Metric BackgroundQueryThreads;
-    extern const Metric BackgroundQueryThreadsActive;
-    extern const Metric BackgroundQueryThreadsScheduled;
     extern const Metric MarksLoaderThreads;
     extern const Metric MarksLoaderThreadsActive;
     extern const Metric MarksLoaderThreadsScheduled;
@@ -418,7 +414,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_replicated_fetches_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_replicated_sends_network_bandwidth_for_server;
-    extern const ServerSettingsUInt64 max_thread_pool_size;
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsBool message_queue_disable_insertion;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
@@ -572,12 +567,6 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag backups_worker_initialized;
     std::optional<BackupsWorker> backups_worker;
-
-    mutable OnceFlag background_queries_distributed_registry_initialized;
-    std::shared_ptr<BackgroundQueriesDistributedRegistry> background_queries_distributed_registry;
-
-    mutable OnceFlag background_query_pool_initialized;
-    mutable std::unique_ptr<ThreadPool> background_query_pool;
 
     /// No lock required for default_profile_name, system_profile_name, buffer_profile_name modified only during initialization
     String default_profile_name;                                /// Default profile name used for default values.
@@ -985,13 +974,6 @@ struct ContextSharedPart : boost::noncopyable
         if (delete_async_insert_queue)
             delete_async_insert_queue->flushAndShutdown();
 
-        /// Stop accepting new jobs in background query pool before killing all queries.
-        {
-            std::lock_guard lock(mutex);
-            if (background_query_pool)
-                background_query_pool->finish();
-        }
-
         /// Stop periodic reloading of the configuration files.
         /// This must be done first because otherwise the reloading may pass a changed config
         /// to some destroyed parts of ContextSharedPart.
@@ -1052,17 +1034,6 @@ struct ContextSharedPart : boost::noncopyable
         FileCacheFactory::instance().clear();
 
         NamedCollectionFactory::instance().shutdown();
-
-        /// Finalize the background query pool after new jobs are no longer accepted and all the queries are killed.
-        std::unique_ptr<ThreadPool> delete_background_query_pool;
-        {
-            std::lock_guard lock(mutex);
-            delete_background_query_pool = std::move(background_query_pool);
-        }
-        delete_background_query_pool.reset();
-
-        /// After the background query pool is joined, so that the registry records the outcome of every query that was still running.
-        SHUTDOWN(log, "background queries registry", background_queries_distributed_registry, shutdown());
 
         delete_async_insert_queue.reset();
 
@@ -4218,31 +4189,6 @@ BackupsWorker & Context::getBackupsWorker() const
     });
 
     return *shared->backups_worker;
-}
-
-BackgroundQueriesDistributedRegistry & Context::getBackgroundQueriesDistributedRegistry() const
-{
-    callOnce(shared->background_queries_distributed_registry_initialized, [&] {
-        shared->background_queries_distributed_registry = std::make_shared<BackgroundQueriesDistributedRegistry>(getGlobalContext());
-    });
-
-    return *shared->background_queries_distributed_registry;
-}
-
-ThreadPool & Context::getBackgroundQueryPool() const
-{
-    callOnce(shared->background_query_pool_initialized, [&] {
-        shared->background_query_pool = std::make_unique<ThreadPool>(
-            CurrentMetrics::BackgroundQueryThreads,
-            CurrentMetrics::BackgroundQueryThreadsActive,
-            CurrentMetrics::BackgroundQueryThreadsScheduled,
-            shared->server_settings[ServerSetting::max_thread_pool_size],
-            /*max_free_threads_=*/ 0,
-            /*queue_size_=*/ 0,
-            /*shutdown_on_exception_=*/ false);
-    });
-
-    return *shared->background_query_pool;
 }
 
 void Context::waitAllBackupsAndRestores() const

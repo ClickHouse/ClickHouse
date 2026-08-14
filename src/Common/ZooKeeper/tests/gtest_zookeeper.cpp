@@ -20,17 +20,6 @@ TEST(ZooKeeperTest, TestMatchPath)
     ASSERT_EQ(matchPath("/path/", "/path"), PathMatchResult::EXACT);
 }
 
-TEST(ZooKeeperTest, GetAncestorNodePaths)
-{
-    using Paths = std::vector<std::string>;
-
-    ASSERT_EQ(getAncestorNodePaths("/a/b/c"), (Paths{"/a", "/a/b"}));
-    ASSERT_EQ(getAncestorNodePaths("/a/b"), (Paths{"/a"}));
-    ASSERT_EQ(getAncestorNodePaths("/a"), Paths{});
-    ASSERT_EQ(getAncestorNodePaths("/"), Paths{});
-    ASSERT_EQ(getAncestorNodePaths("/a/b/"), (Paths{"/a", "/a/b"}));
-}
-
 TEST(ZooKeeperTest, ExtractZooKeeperPathAndCollapseTrailingSlashes)
 {
     using zkutil::extractZooKeeperPathAndCollapseTrailingSlashes;

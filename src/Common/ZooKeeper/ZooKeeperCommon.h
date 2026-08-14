@@ -909,8 +909,6 @@ PathMatchResult matchPath(std::string_view path, std::string_view match_to);
 
 std::string_view parentNodePath(std::string_view path);
 
-std::vector<std::string> getAncestorNodePaths(std::string_view path);
-
 std::string_view getBaseNodeName(std::string_view path);
 
 /// RAII guard for setting component name in thread-local storage

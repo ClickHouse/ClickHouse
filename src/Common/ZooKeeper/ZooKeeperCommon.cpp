@@ -1916,14 +1916,6 @@ std::string_view parentNodePath(std::string_view path)
     return "/";
 }
 
-std::vector<std::string> getAncestorNodePaths(std::string_view path)
-{
-    std::vector<std::string> ancestors;
-    for (size_t pos = path.find('/', 1); pos != std::string_view::npos; pos = path.find('/', pos + 1))
-        ancestors.emplace_back(path.substr(0, pos));
-    return ancestors;
-}
-
 std::string_view getBaseNodeName(std::string_view path)
 {
     size_t basename_start = findLastSlash(path);

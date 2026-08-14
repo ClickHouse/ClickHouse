@@ -21,8 +21,6 @@ class IInterpreter;
 class ReadBuffer;
 class WriteBuffer;
 class IOutputFormat;
-class ThreadGroup;
-using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 struct QueryStatusInfo;
 struct QueryPlanAndSets;
 

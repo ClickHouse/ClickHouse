@@ -2665,7 +2665,6 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     /// gracefully instead of triggering rolling-upgrade incompatibilities.
     client_info.connection_parallel_replicas_protocol_version = client_parallel_replicas_protocol_version;
 
-    /// TODO(stetsyuk): make sure SET run_query_in_background = 1; <your queries>; SET run_query_in_background = 0; works
     state->run_query_in_background = passed_settings[Setting::run_query_in_background].changed
         ? passed_settings[Setting::run_query_in_background].value
         : session->sessionOrGlobalContext()->getSettingsRef()[Setting::run_query_in_background].value;

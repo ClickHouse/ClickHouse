@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, zookeeper
+# Tags: no-ordinary-database
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,7 +25,7 @@ echo '--- server-minted query_id is returned in the header and inline body data 
 headers=$($CLICKHOUSE_CURL -sS -D - -o /dev/null "${CLICKHOUSE_URL}&run_query_in_background=1&async_insert=0" -d "INSERT INTO t VALUES (1000), (1001)")
 http_id=$(echo "$headers" | grep -i '^X-ClickHouse-Query-Id:' | tr -d '\r' | awk '{print $2}')
 [[ -n "$http_id" ]] && echo "query_id header present"
-wait_for "count() = 1 FROM system.background_queries WHERE query_id = '$http_id' AND status = 'Finished'"
+wait_for_query_log "$(finished_in_query_log "$http_id")"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM t WHERE n >= 1000"
 
 echo '--- inline SETTINGS is rejected synchronously'

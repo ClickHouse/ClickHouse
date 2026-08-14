@@ -569,8 +569,6 @@ if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 || "$PREVIOUS_RELEASE_CONFIG" -eq 1 ]]; the
     }
 
     remove_keeper_config "nuraft_use_bg_thread_for_snapshot_io" "[[:digit:]]\+"
-    remove_keeper_config "create_ttl" "[01]"
-    remove_keeper_config "write_snapshot_version" "[[:digit:]]\+"
     remove_keeper_config "log_readahead_commit_window_bytes" "[[:digit:]]\+"
 fi
 

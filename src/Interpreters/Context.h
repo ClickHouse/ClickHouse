@@ -145,7 +145,6 @@ class DeltaMetadataLog;
 class PredicateStatisticsLog;
 class SessionLog;
 class BackupsWorker;
-class BackgroundQueriesDistributedRegistry;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
@@ -1235,7 +1234,6 @@ public:
 #endif
 
     BackupsWorker & getBackupsWorker() const;
-    BackgroundQueriesDistributedRegistry & getBackgroundQueriesDistributedRegistry() const;
     void waitAllBackupsAndRestores() const;
     void cancelAllBackupsAndRestores() const;
     std::shared_ptr<BackupsInMemoryHolder> getBackupsInMemory();
@@ -1612,7 +1610,6 @@ public:
 
     ThreadPool & getBuildVectorSimilarityIndexThreadPool() const;
     ThreadPool & getIcebergCatalogThreadpool() const;
-    ThreadPool & getBackgroundQueryPool() const;
 
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;

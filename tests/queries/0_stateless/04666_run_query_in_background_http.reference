@@ -3,9 +3,8 @@
 no output
 30
 1	1
-1	1	1	0	1	1
 --- a long-running background query is visible and attributed in system.processes, and KILL QUERY kills it
-attributed in system.processes and system.background_queries
+attributed in system.processes
 no output
 killed
 --- SELECT in background discards the result

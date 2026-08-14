@@ -2767,7 +2767,7 @@ If enabled, the server schedules the query in the background, immediately return
 
 A background query does not survive a server restart.
 
-A background query registers itself in [Zoo]Keeper, so its status (including errors) can be tracked from any server of the cluster in `system.background_queries`. A server without a [Zoo]Keeper connection declines background queries. Entries expire `background_queries_registry_entry_ttl` seconds after the query finishes, and the whole registry can be cleared with `TRUNCATE TABLE system.background_queries`.
+Track the query by its `query_id`: in `system.processes` while it is running and in `system.query_log` after it finishes and the query log entry is flushed.
 
 Applies to queries received over the native TCP and HTTP protocols. Over HTTP, pass the setting as a URL parameter. It cannot be changed with `SET`; enable it per query, or at the user or profile level.
 
