@@ -18,6 +18,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/QueryParameterVisitor.h>
+#include <Common/SQLDefinedHandlers/SQLDefinedHandler.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
 #include <Processors/Port.h>
@@ -100,6 +101,16 @@ namespace FailPoints
 
 namespace
 {
+/// Whether the request declares a body that the HTTP handler layer reads by itself, regardless of the query:
+/// Poco's `HTMLForm` loads `application/x-www-form-urlencoded` payloads, and `multipart/form-data` is parsed as
+/// "external data for query processing". Such a body must come with a length on a non-chunked request.
+bool requestDeclaresFormBody(const HTTPServerRequest & request)
+{
+    const auto & content_type = request.getContentType();
+    return startsWith(content_type, "application/x-www-form-urlencoded")
+        || startsWith(content_type, "multipart/form-data");
+}
+
 void addHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
     if (!config.has("http_options_response"))
@@ -249,6 +260,26 @@ void HTTPHandler::processQuery(
 
     auto context = session->makeQueryContext();
 
+    /// Expose the HTTP request URL and the SQL-defined handler name (if any) to the query
+    /// via `currentRequestURL()` / `currentHandler()` and the query_log.
+    context->setHTTPRequestURL(request.getURI());
+    if (!introspection_handler_name.empty())
+    {
+        context->setHTTPHandlerName(introspection_handler_name);
+
+        /// The query a SQL-defined handler executes is the server's own stored text, parsed and validated
+        /// when the handler was created (possibly in a session with raised parser limits) and re-parsed
+        /// with unlimited limits on every reload (see `SQLDefinedHandlersMetadataStorage::readHandler`).
+        /// Parse it with unlimited depth and backtracks (`0` disables the limit) here too, so a handler
+        /// that was accepted at creation stays invokable under ordinary session limits instead of failing
+        /// each request until the caller raises `max_parser_depth` / `max_parser_backtracks` themselves.
+        /// The client controls only the typed query parameters, never the query text, and could raise
+        /// these settings per-request anyway (they are changeable under `readonly = 2`); `parseQuery`
+        /// still guards against stack overflow via `checkStackSize`.
+        context->setSetting("max_parser_depth", Field(0));
+        context->setSetting("max_parser_backtracks", Field(0));
+    }
+
     auto roles = params.getAll("role");
     if (!roles.empty())
         context->setCurrentRoles(roles);
@@ -261,8 +292,10 @@ void HTTPHandler::processQuery(
     if (!default_format.empty())
         context->setDefaultFormat(default_format);
 
-    /// Anything else beside HTTP POST should be readonly queries.
-    setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
+    /// POST always allows modifying queries. For SQL-defined handlers (which set `introspection_handler_name`)
+    /// the mutating idempotent methods PUT and DELETE are allowed to modify data too, as decided per handler in
+    /// `makeSQLDefinedHandler`. Config-defined and built-in handlers keep the POST-only behavior.
+    setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod(), /*allow_mutating_idempotent_methods=*/ !introspection_handler_name.empty());
 
     /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
     String query_id = params.get("query_id", request.get("X-ClickHouse-Query-Id", ""));
@@ -470,7 +503,10 @@ void HTTPHandler::processQuery(
     /// NOTE: this may create pretty huge allocations that will not be accounted in trace_log,
     /// because memory_profiler_sample_probability/memory_profiler_step are not applied yet,
     /// they will be applied in ProcessList::insert() from executeQuery() itself.
-    const auto & query = getQuery(request, params, context);
+    /// Hand the handler the same body object the query itself would read (see `getQuery` in the header):
+    /// whatever the handler layer consumes from it (form fields, `_request_body`) is then genuinely gone
+    /// from the stream, instead of resurfacing when the body is appended to the query text below.
+    const auto & query = getQuery(request, params, context, *in_post_maybe_compressed);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
 
     used_output.out_holder->setSendProgress(settings[Setting::send_progress_in_http_headers]);
@@ -520,7 +556,11 @@ void HTTPHandler::processQuery(
 
     customizeContext(request, context, *in_post_maybe_compressed);
     std::unique_ptr<ReadBuffer> in;
-    if (has_external_data)
+    /// `feeds_request_body_to_query` is false for a SQL-defined handler whose query never reads the body. Appending
+    /// the body to such a query would be meaningless, and it would also hang a lengthless non-chunked `PUT`: that
+    /// body is delimited only by the connection close, while `executeQuery` reads the query text ahead up to
+    /// `max_query_size`, so it would wait for a client that is itself waiting for the response.
+    if (has_external_data || !feeds_request_body_to_query)
     {
         in = std::move(in_param);
         in_post_maybe_compressed.reset();
@@ -909,11 +949,37 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         /// FIXME: maybe this check is already unnecessary.
         /// Workaround. Poco does not detect 411 Length Required case.
-        if (request.getMethod() == HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
+        /// SQL-defined handlers (CREATE HANDLER) may run mutating queries over PUT and DELETE, in which case those
+        /// methods carry a request body just like POST. Without Content-Length a non-chunked PUT body is read until
+        /// EOF - so a dropped connection would be accepted as a partial INSERT - and a non-chunked DELETE is treated
+        /// as an empty body. Require the length up front for these methods too, matching the POST contract.
+        ///
+        /// But require it only when the body is actually consumed - either by the handler's query
+        /// (`consumes_request_body`) or by the form/multipart parsing that the handler layer itself performs. A
+        /// handler such as `CREATE HANDLER h URL '/x' METHODS (DELETE) AS SELECT 1` never looks at the body, and
+        /// demanding `Content-Length: 0` from every ordinary HTTP client would make that class of handlers unusable.
+        /// The same applies to `POST` when the handler's body contract is known (a SQL-defined handler): a plain
+        /// `curl -X POST` sends neither a body nor `Content-Length`, and a handler that never reads the body must
+        /// accept it. For the other handlers `POST` keeps the historical unconditional requirement: their body may
+        /// be the rest of the query text or the data of an `INSERT`, so they have to assume that it is consumed.
+        ///
+        /// Accepting a lengthless non-chunked `POST`/`PUT` here is framing-safe even if the client does send
+        /// bytes: the request stream stays unbounded (EOF-delimited), so `HTTPServerRequest::canKeepAlive`
+        /// returns false, `HTTPServerResponse::writeHeaders` advertises `Connection: close`, and
+        /// `HTTPServerConnection` closes the socket after the response - the unread bytes can never be
+        /// misread as the next request on the connection (pinned by 04826_handler_lengthless_body_keep_alive).
+        const auto & method = request.getMethod();
+        const bool is_body_carrying_method
+            = method == HTTPRequest::HTTP_POST || method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE;
+        const bool body_may_be_consumed = body_contract_known
+            ? (consumes_request_body || requestDeclaresFormBody(request))
+            : (method == HTTPRequest::HTTP_POST || requestDeclaresFormBody(request));
+        const bool method_requires_content_length = is_body_carrying_method && body_may_be_consumed;
+        if (method_requires_content_length && !request.getChunkedTransferEncoding() && !request.hasContentLength())
         {
             throw Exception(ErrorCodes::HTTP_LENGTH_REQUIRED,
                             "The Transfer-Encoding is not chunked and there "
-                            "is no Content-Length header for POST request");
+                            "is no Content-Length header for a {} request", method);
         }
 
         processQuery(request, params, response, used_output, query_scope, write_event);
@@ -986,7 +1052,7 @@ bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const s
     return false;
 }
 
-std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
+std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
 {
     if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
     {
@@ -1000,8 +1066,7 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
     /// Support for "external data for query processing".
     /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
     ExternalTablesHandler handler(context, params);
-    auto input_stream = request.getStream();
-    params.load(request, *input_stream, handler);
+    params.load(request, body, handler);
 
     std::string full_query;
     /// Params are of both form params POST and uri (GET params)
@@ -1105,17 +1170,102 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     }
 }
 
-std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
+std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
 {
+    bool body_fields_loaded = false;
+
+    /// A handler may declare `_request_body` alongside form-bindable parameters. Form parsing consumes the
+    /// body, while `_request_body` is bound in `customizeContext`, which runs only after `getQuery` - so it
+    /// would find the body at EOF and bind an empty string. Preserve a copy of the raw body up front and
+    /// parse the form from the copy, so both contracts hold: `_request_body` receives the raw body and the
+    /// form fields bind their parameters. The copy is bounded by `http_max_request_param_data_size` - the same
+    /// limit `customizeContext` applies when it reads the body itself.
+    const auto & preserve_raw_body = [&]
+    {
+        WriteBufferFromOwnString value;
+        copyDataMaxBytes(body, value, context->getSettingsRef()[Setting::http_max_request_param_data_size]);
+        context->setQueryParameter("_request_body", value.str());
+        return std::make_unique<ReadBufferFromOwnString>(std::move(value.str()));
+    };
+    const bool wants_request_body
+        = receive_params.contains("_request_body") && !context->getQueryParameters().contains("_request_body");
+
     if (unlikely(startsWith(request.getContentType(), "multipart/form-data")))
     {
         /// Support for "external data for query processing".
         ExternalTablesHandler handler(context, params);
-        auto input_stream = request.getStream();
-        params.load(request, *input_stream, handler);
+        if (wants_request_body)
+        {
+            auto body_copy = preserve_raw_body();
+            params.load(request, *body_copy, handler);
+        }
+        else
+            params.load(request, body, handler);
+        body_fields_loaded = true;
+    }
+    else if (unlikely(startsWith(request.getContentType(), "application/x-www-form-urlencoded")))
+    {
+        /// A urlencoded body carries parameter values for the query, so parse it - but only for a handler that
+        /// declares parameters bindable this way, and only on a body-carrying method. `_request_body` alone does
+        /// not count: a handler whose only body use is `_request_body` gets the raw body instead of form parsing.
+        const bool wants_form_body_params = std::any_of(
+            receive_params.begin(), receive_params.end(), [](const String & name) { return name != "_request_body"; });
+        const auto & method = request.getMethod();
+        const bool body_carrying_method
+            = method == HTTPRequest::HTTP_POST || method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE;
+        if (wants_form_body_params && body_carrying_method)
+        {
+            if (wants_request_body)
+            {
+                auto body_copy = preserve_raw_body();
+                params.read(*body_copy);
+            }
+            else
+                params.read(body);
+            body_fields_loaded = true;
+        }
+    }
+
+    if (body_fields_loaded)
+    {
+        /// The parameter loop in `processQuery` ran before the body was parsed, so bind the body-sourced fields
+        /// here. Unlike URL parameters they only bind declared query parameters and are never treated as settings
+        /// (mirroring the `DynamicQueryHandler` multipart path), and a parameter already bound - e.g. from the
+        /// URL query string, which `params` still also contains - keeps its value.
+        for (const auto & [key, value] : params)
+        {
+            String name = key;
+            if (startsWith(key, QUERY_PARAMETER_NAME_PREFIX))
+                name = key.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
+
+            if (receive_params.contains(name) && !context->getQueryParameters().contains(name))
+                context->setQueryParameter(name, value);
+        }
     }
 
     return predefined_query;
+}
+
+SQLDefinedQueryHandler::SQLDefinedQueryHandler(
+    IServer & server_,
+    const HTTPHandlerConnectionConfig & connection_config,
+    const SQLDefinedHandler & handler)
+    : PredefinedQueryHandler(
+        server_,
+        connection_config,
+        handler.receive_params,
+        handler.query,
+        handler.url_match_type == SQLDefinedHandler::URLMatchType::Regexp ? handler.url_regex : CompiledRegexPtr{},
+        {},
+        std::nullopt)
+{
+    setIntrospectionHandlerName(handler.name);
+    setConsumesRequestBody(handler.consumes_request_body);
+}
+
+std::string SQLDefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
+{
+    return PredefinedQueryHandler::getQuery(request, params, context, body) + "\n";
 }
 
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
