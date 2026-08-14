@@ -821,8 +821,7 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     ActionsDAG & filter_dag,
     const TextIndexReadInfos & text_index_read_infos,
     const String & filter_column_name,
-    bool direct_read_from_text_index,
-    Names * retained_columns = nullptr)
+    bool direct_read_from_text_index)
 {
     TextIndexDAGReplacer replacer(filter_dag, text_index_read_infos, direct_read_from_text_index);
     auto result = replacer.replace(read_from_merge_tree_step.getContext(), filter_column_name);
@@ -846,15 +845,24 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
             for (const auto & name : row_level_filter->actions.getRequiredColumnsNames())
                 required_columns_by_readers.insert(name);
 
+        Names retained_columns;
         std::erase_if(result.removed_columns, [&](const String & column)
         {
             if (!required_columns_by_readers.contains(column))
                 return false;
 
-            if (retained_columns)
-                retained_columns->push_back(column);
+            retained_columns.push_back(column);
             return true;
         });
+
+        /// A retained column stays in the read header but is no longer read by this DAG, so make it an
+        /// input: an unmatched header column would otherwise be appended to the step's output header.
+        const auto & read_header = *read_from_merge_tree_step.getOutputHeader();
+        for (const auto & column : retained_columns)
+        {
+            if (read_header.has(column))
+                filter_dag.addInput(read_header.getByName(column));
+        }
     }
 
     auto logger = getLogger("processAndOptimizeTextIndexFunctions");
@@ -947,24 +955,13 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
         return;
 
     ActionsDAG & filter_dag = filter_step->getExpression();
-    Names retained_columns;
-    const auto * result_filter_node = processAndOptimizeTextIndexDAG(*read_from_merge_tree_step, filter_dag, text_index_read_infos, filter_step->getFilterColumnName(), direct_read_from_text_index && !optimized && !already_has_direct_read, &retained_columns);
+    const auto * result_filter_node = processAndOptimizeTextIndexDAG(*read_from_merge_tree_step, filter_dag, text_index_read_infos, filter_step->getFilterColumnName(), direct_read_from_text_index && !optimized && !already_has_direct_read);
 
     if (!result_filter_node)
         return;
 
     bool removes_filter_column = filter_step->removesFilterColumn();
     auto new_filter_column_name = result_filter_node->result_name;
-
-    /// A retained column is in the input header but is no longer read by this DAG, so make it an input:
-    /// an unmatched header column would otherwise be appended to the output header.
-    const auto & read_header = *read_from_merge_tree_step->getOutputHeader();
-    for (const auto & column : retained_columns)
-    {
-        if (read_header.has(column))
-            filter_dag.addInput(read_header.getByName(column));
-    }
-
     filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
 }
 

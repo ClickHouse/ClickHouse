@@ -23,10 +23,16 @@ foo bar	fb
 -- join order optimizer reachable (no GLOBAL)
 fb
 foo updated
+fb
+foo updated
 -- both predicates in WHERE
 fb
 foo updated
+fb
+foo updated
 -- no join
+fb
+foo updated
 fb
 foo updated
 -- the direct read is still exercised by the queries above
@@ -40,3 +46,9 @@ fb
 foo
 foo updated
 m7
+-- a row policy is the other reader that retains a PREWHERE column
+2
+alpha
+alpha beta
+alpha
+alpha beta
