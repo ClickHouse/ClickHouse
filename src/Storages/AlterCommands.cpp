@@ -789,6 +789,13 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
                         column.settings.removeSetting(setting);
                 }
 
+                /// Whether the column was an ALIAS over a real expression (not a simple column
+                /// reference): the implicit index of such a column is built over the alias
+                /// expression rather than over the column's own values. Must be checked before
+                /// the default is replaced below.
+                bool was_expression_alias = column.default_desc.kind == ColumnDefaultKind::Alias
+                    && column.default_desc.expression && !column.default_desc.expression->as<ASTIdentifier>();
+
                 /// User specified default expression or changed
                 /// datatype. We have to replace default.
                 if (default_expression || data_type)
@@ -803,8 +810,20 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
                 /// and a column turning physical may gain one.
                 if (data_type || default_expression)
                 {
+                    bool is_expression_alias = column.default_desc.kind == ColumnDefaultKind::Alias
+                        && column.default_desc.expression && !column.default_desc.expression->as<ASTIdentifier>();
+
                     metadata.dropImplicitIndicesForColumn(column_name);
-                    metadata.addImplicitIndicesForColumn(column, context);
+
+                    /// An implicit index over an alias expression indexes something else than the
+                    /// column's own values, so a transition into or out of an expression alias
+                    /// invalidates the index files of the existing parts. `MODIFY COLUMN` does not
+                    /// rewrite them - not even when it changes the type - and re-creating the
+                    /// same-named implicit index would silently reuse the stale files and prune
+                    /// wrong. Drop the index and do not re-create it, the same way
+                    /// `MODIFY COLUMN ... REMOVE ALIAS` above does.
+                    if (!was_expression_alias && !is_expression_alias)
+                        metadata.addImplicitIndicesForColumn(column, context);
                 }
             }
         });
