@@ -8,6 +8,7 @@ import urllib.parse
 import uuid
 
 import pytest
+import requests
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
@@ -15,6 +16,7 @@ from .prometheus_test_utils import (
     convert_metrics_metadata_to_protobuf,
     convert_time_series_to_protobuf,
     get_response_to_http_api,
+    get_response_to_remote_write,
     send_protobuf_to_remote_write,
     extract_data_from_http_api_response,
 )
@@ -221,6 +223,21 @@ def test_remote_write_time_series_and_metadata_together_are_stored():
         timeseries_metrics_has_metric_family_sql("prometheus", metric_name),
         "1\n",
     )
+
+
+def test_remote_write_rejects_time_series_without_metric_name():
+    """
+    A remote write whose timeseries has no non-empty __name__ label must fail
+    instead of being accepted and dropped.
+    """
+    protobuf = convert_time_series_to_protobuf(
+        [({"job": "test"}, {1753176720.0: 1})]
+    )
+    response = get_response_to_remote_write(
+        node.ip_address, 9093, "/write", protobuf
+    )
+    assert response.status_code != requests.codes.no_content
+    assert "Metric name is missing" in response.text
 
 
 def test_query_range_api_appears_in_query_log_with_read_rows():
