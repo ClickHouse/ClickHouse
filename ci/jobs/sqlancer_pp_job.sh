@@ -223,12 +223,17 @@ fi
     printf '  ],\n'
     printf '  "files": ['
 
-    for i in "${!ATTACHED_FILES_ARRAY[@]}"; do
-        printf '"%s"' "${ATTACHED_FILES_ARRAY[i]}"
-        if [ "$i" -lt $((${#ATTACHED_FILES_ARRAY[@]} - 1)) ]; then
-            printf ', '
-        fi
+    # Skip files that were never created: the per-oracle logs are registered
+    # before the oracle runs, so an oracle skipped after the server died leaves
+    # none. Praktika replaces the whole job `info` with "WARNING: File [...] was
+    # not found" for each missing path, which buries the actual result.
+    files_out=""
+    for f in "${ATTACHED_FILES_ARRAY[@]}"; do
+        [ -f "$f" ] || continue
+        [ -n "$files_out" ] && files_out+=", "
+        files_out+="\"$f\""
     done
+    printf '%s' "$files_out"
 
     printf '],\n'
     printf '  "info": ""\n'
