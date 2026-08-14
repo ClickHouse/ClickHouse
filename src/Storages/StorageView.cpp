@@ -19,14 +19,19 @@
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageView.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/SelectQueryDescription.h>
-
-#include <Interpreters/Cache/QueryResultCache.h>
 
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 #include <Common/scope_guard_safe.h>
+
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTWindowDefinition.h>
 #include <Common/typeid_cast.h>
 
 #include <Core/Settings.h>
@@ -122,6 +127,199 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
     }
     return false;
 }
+
+bool hasSubquery(const ASTPtr & expr)
+{
+    if (!expr)
+    {
+        return false;
+    }
+    if (expr->as<ASTSubquery>())
+    {
+        return true;
+    }
+    for (const auto & child : expr->children)
+    {
+        if (hasSubquery(child))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Returns true if the expression contains an aggregate function anywhere in its tree.
+bool hasAggregate(const ASTPtr & expr)
+{
+    if (!expr)
+    {
+        return false;
+    }
+    if (const auto * func = expr->as<ASTFunction>())
+    {
+        if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->name))
+        {
+            return true;
+        }
+    }
+    for (const auto & child : expr->children)
+    {
+        if (hasAggregate(child))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Returns true if the expression contains a scalar subquery or a window function anywhere in its tree.
+bool hasSubqueryOrWindow(const ASTPtr & expr)
+{
+    if (!expr)
+    {
+        return false;
+    }
+    if (expr->as<ASTSubquery>())
+    {
+        return true;
+    }
+    if (const auto * func = expr->as<ASTFunction>())
+    {
+        if (!func->window_name.empty() || func->window_definition)
+        {
+            return true;
+        }
+    }
+    for (const auto & child : expr->children)
+    {
+        if (hasSubqueryOrWindow(child))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Returns the underlying storage if the view's inner query is "trivial":
+/// a plain SELECT of columns, expressions, or * from a single table, optionally with a simple WHERE
+/// (no subqueries), and no other transformations. Scalar subqueries, window functions, and aggregate
+/// functions in the SELECT list are not allowed.
+/// Returns nullptr if any condition is not met.
+StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, ContextPtr context)
+{
+    const auto * select_with_union = inner_query->as<ASTSelectWithUnionQuery>();
+    if (!select_with_union || select_with_union->list_of_selects->children.size() != 1)
+    {
+        return nullptr;
+    }
+
+    const auto * select = select_with_union->list_of_selects->children[0]->as<ASTSelectQuery>();
+    if (!select)
+    {
+        return nullptr;
+    }
+
+    /// Non-deterministic / server-local functions (hostName, nowInBlock, ...) inside the view
+    /// body are intentionally not checked here: the body is read through StorageDistributed::read
+    /// in both the pushdown and non-pushdown paths, so those expressions run on the shards either
+    /// way. Only the outer query needs that gate, applied in PlannerJoinTree.cpp.
+    ///
+    /// A SETTINGS clause in the view body is rejected outright (fail close). Some query-level
+    /// settings (notably `limit` and `offset`) are turned into QueryNode limit/offset by
+    /// QueryTreeBuilder, so a body such as `SELECT id FROM dist SETTINGS limit = 1` would be limited
+    /// once globally on the normal path but once per shard on the pushdown path, changing the
+    /// result. Rather than enumerate every result-changing setting, disqualify any SETTINGS clause.
+    /// GROUP BY ALL and LIMIT BY ALL set boolean flags (group_by_all / limit_by_all) while leaving the
+    /// corresponding expression lists (groupBy() / limitBy()) empty, so the list checks above miss them
+    /// and they must be checked via the flags. Like their explicit counterparts, they aggregate or
+    /// limit per shard under the pushdown instead of once globally on the normal path, changing the
+    /// result. The WITH TOTALS/ROLLUP/CUBE/GROUPING SETS modifiers are likewise aggregation markers,
+    /// and limitByLength()/limitByOffset() carry the N/OFFSET of a LIMIT BY — all rejected fail-close.
+    ///
+    /// ORDER BY ALL differs: the parser populates orderBy() with a placeholder `all` element in
+    /// addition to setting order_by_all, so the orderBy() check above already rejects it (ORDER BY ALL
+    /// with an outer LIMIT would otherwise let the coordinator return a shard-local first row instead
+    /// of the globally first one). order_by_all is still checked here as defense-in-depth in case the
+    /// body AST is ever produced without that placeholder.
+    if (select->with() || select->prewhere()
+        || (select->where() && hasSubquery(select->where()))
+        || select->groupBy() || select->group_by_all
+        || select->group_by_with_totals || select->group_by_with_rollup
+        || select->group_by_with_cube || select->group_by_with_grouping_sets
+        || select->having() || select->qualify()
+        || select->orderBy() || select->order_by_all
+        || select->limitLength() || select->limitOffset()
+        || select->limitBy() || select->limit_by_all
+        || select->limitByLength() || select->limitByOffset()
+        || select->distinct || select->arrayJoinExpressionList().first
+        || select->settings())
+    {
+        return nullptr;
+    }
+
+    const auto * select_expr_list = select->select().get();
+    if (!select_expr_list)
+    {
+        return nullptr;
+    }
+    for (const auto & expr : select_expr_list->children)
+    {
+        if (const auto * asterisk = expr->as<ASTAsterisk>())
+        {
+            /// Column transformers (APPLY/REPLACE/EXCEPT) can carry aggregate, window, or
+            /// non-deterministic expressions, making the view non-trivial.
+            if (asterisk->transformers)
+                return nullptr;
+            continue;
+        }
+        if (const auto * qualified_asterisk = expr->as<ASTQualifiedAsterisk>())
+        {
+            if (qualified_asterisk->transformers)
+                return nullptr;
+            continue;
+        }
+        if (hasSubqueryOrWindow(expr) || hasAggregate(expr))
+        {
+            return nullptr;
+        }
+    }
+
+    const auto * tables = select->tables().get();
+    if (!tables || tables->children.size() != 1)
+    {
+        return nullptr;
+    }
+
+    const auto * table_element = tables->children[0]->as<ASTTablesInSelectQueryElement>();
+    if (!table_element || !table_element->table_expression
+        || table_element->table_join || table_element->array_join)
+    {
+        return nullptr;
+    }
+
+    const auto * table_expr = table_element->table_expression->as<ASTTableExpression>();
+    if (!table_expr || !table_expr->database_and_table_name
+        || table_expr->subquery || table_expr->table_function
+        || table_expr->final || table_expr->sample_size)
+    {
+        return nullptr;
+    }
+
+    const auto * table_id_node = table_expr->database_and_table_name->as<ASTTableIdentifier>();
+    if (!table_id_node)
+    {
+        return nullptr;
+    }
+
+    StorageID storage_id = table_id_node->getTableId();
+    if (storage_id.database_name.empty())
+    {
+        storage_id.database_name = context->getCurrentDatabase();
+    }
+
+    return DatabaseCatalog::instance().tryGetTable(storage_id, context);
+}
+
 
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
@@ -323,6 +521,21 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
     return find_storage(inner_query_tree.get());
 }
 
+StoragePtr StorageView::tryGetUnderlyingDistributed(const StorageSnapshotPtr & snapshot, ContextPtr context) const
+{
+    if (is_parameterized_view || snapshot->metadata->sql_security_type == SQLSecurityType::DEFINER)
+    {
+        return nullptr;
+    }
+    const auto & inner_query = snapshot->metadata->getSelectQuery().inner_query;
+    auto underlying = tryGetTrivialViewUnderlyingStorage(inner_query, context);
+    if (!underlying || !typeid_cast<const StorageDistributed *>(underlying.get()))
+    {
+        return nullptr;
+    }
+    return underlying;
+}
+
 void StorageView::readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -430,14 +643,6 @@ void StorageView::alter(
 
 std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
-    /// A view holds no data of its own: reading it reads the tables behind its stored SELECT, so its
-    /// modification hash is derived from theirs. A view can reference other views, so this recurses
-    /// through `computeTableModificationHashForConsistency` (which checks the invoker's `SELECT` access on
-    /// every referenced table and folds each table's identity), and two views can reference each other
-    /// (`Ordinary` databases allow creating such a cycle). Match `Merge` and `Distributed`: track the views
-    /// currently being hashed on this thread and fail closed on re-entry. The size of that set is the view
-    /// nesting depth, so cap it as well - any sane chain is shallow, and a very deep one would recurse as
-    /// deeply here as it costs to hash.
     static constexpr size_t max_view_nesting_depth = 32;
     static thread_local std::unordered_set<const IStorage *> views_being_hashed;
     if (views_being_hashed.size() >= max_view_nesting_depth)
@@ -446,65 +651,32 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
         return {};
     SCOPE_EXIT({ views_being_hashed.erase(this); });
 
-    /// A parameterized view is not readable without its parameters, and the parameters are part of what
-    /// the query reads, so there is nothing meaningful to report.
+    /// A parameterized view is not readable without its parameters, so it has no stable dependency set.
     if (is_parameterized_view)
         return {};
 
-    /// Without a table UUID (a view in an `Ordinary` database) we cannot distinguish incarnations of a
-    /// same-named view: a DROP + CREATE resets the per-lifetime metadata version folded below, so a
-    /// definition change that keeps the same columns and stored SELECT (e.g. `SQL SECURITY INVOKER` ->
-    /// `DEFINER`, which changes the visible rows under row policies) could repeat an earlier hash.
-    /// Fail closed, matching the other engines.
+    /// An `Ordinary`-database view has no incarnation-safe identity.
     if (!getStorageID().hasUUID())
         return {};
 
     try
     {
-        /// The stored SELECT was CTE-expanded and database-qualified at CREATE time
-        /// (`InterpreterCreateQuery`), so its table references resolve unambiguously here.
         const auto & inner_query = storage_snapshot->metadata->getSelectQuery().inner_query;
         if (!inner_query)
             return {};
 
-        /// Reading a view runs its stored SELECT under `getSQLSecurityOverriddenContext`, so for
-        /// `SQL SECURITY DEFINER` / `NONE` the rows the view returns are the rows the *effective* reader
-        /// sees, not the ones the invoker would see. Sample the tables behind the view under that same
-        /// context, otherwise the hash answers a different question than the read:
-        /// `computeTableModificationHashForConsistency` fails closed on a non-trivial `SELECT` row policy of
-        /// the reading context, and under `DEFINER` it is the definer's policies - not the invoker's - that
-        /// shape the result, so an `ALTER ROW POLICY` for the definer would change what the view returns
-        /// while a caller-context hash stayed the same (a stale cache hit / a skipped refresh). It also
-        /// makes the check follow the definer's grants, which is what the read is allowed by.
-        /// For `INVOKER` (and for a view without a security clause) this is a plain copy of the caller
-        /// context, so nothing changes there.
-        /// Exposing the resulting hash is not a leak of the definer's data: every caller checks the
-        /// invoker's `SELECT` access on the view itself first (`computeTableModificationHashForConsistency`
-        /// and the `system.tables` fill path), and a caller that may read the view already observes those
-        /// changes in the rows it gets back.
+        /// Hash dependencies under the same SQL-security context that executes the view query.
         auto effective_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
-
         auto referenced_tables_hash = computeQueryReferencedTablesModificationHash(inner_query, effective_context);
         if (!referenced_tables_hash)
             return {};
 
         SipHash hash;
-        /// Per-incarnation identity: a DROP + CREATE in an `Atomic` database gets a fresh UUID, so a
-        /// re-created view never repeats the hash of an earlier incarnation even when the definition,
-        /// columns and referenced tables are identical.
         hash.update(getStorageID().uuid);
         hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
-        /// Loop-free metadata version for this view's own column metadata (a reverted metadata-only `ALTER`
-        /// would otherwise repeat the column string above). See `IStorage::getMetadataVersionForModificationHash`.
         hash.update(getMetadataVersionForModificationHash());
-        /// The execution security context is part of what the view returns (under row policies an
-        /// `INVOKER` and a `DEFINER` view over the same tables can see different rows), but it is not
-        /// part of the stored SELECT tree hashed below - fold it explicitly.
         hash.update(storage_snapshot->metadata->sql_security_type ? static_cast<Int8>(*storage_snapshot->metadata->sql_security_type) : Int8(-1));
         hash.update(storage_snapshot->metadata->definer.value_or(""));
-        /// A view in a database without UUIDs (`Ordinary`) can be re-created with a different definition
-        /// but the same identity, and the new definition may read the same tables. Fold the stored SELECT
-        /// so that a definition change is detected as a modification.
         IASTHash view_query_hash = inner_query->getTreeHash(/*ignore_aliases*/ false);
         hash.update(view_query_hash.low64);
         hash.update(view_query_hash.high64);
@@ -513,8 +685,7 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
     }
     catch (...)
     {
-        /// Ok to ignore: we could not inspect a referenced table, so we conservatively assume the data may
-        /// have changed.
+        /// If a dependency cannot be inspected, cached data must not be reused.
         return {};
     }
 }
