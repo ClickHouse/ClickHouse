@@ -102,11 +102,6 @@ public:
     {
         return {.is_monotonic = true, .is_always_monotonic = true};
     }
-
-    Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const ColumnValueRef & /*left*/, const ColumnValueRef & /*right*/) const override
-    {
-        return {.is_monotonic = true, .is_always_monotonic = true};
-    }
 };
 
 

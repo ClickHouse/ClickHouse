@@ -5,7 +5,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/RangeRef.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeString.h>
@@ -507,14 +506,6 @@ public:
     {
         return FunctionUnaryArithmeticMonotonicity<Name>::get(type, left, right);
     }
-
-    Monotonicity getMonotonicityForRange(const IDataType & type, const ColumnValueRef & left, const ColumnValueRef & right) const override
-    {
-        if constexpr (requires(const IDataType & t, const ColumnValueRef & l, const ColumnValueRef & r) { FunctionUnaryArithmeticMonotonicity<Name>::get(t, l, r); })
-            return FunctionUnaryArithmeticMonotonicity<Name>::get(type, left, right);
-
-        return IFunction::getMonotonicityForRange(type, left, right);
-    }
 };
 
 
@@ -527,11 +518,6 @@ struct PositiveMonotonicity
             return {};
         if (isNaNField(left) || isNaNField(right))
             return {};
-        return { .is_monotonic = true };
-    }
-
-    static IFunction::Monotonicity get(const IDataType &, const ColumnValueRef &, const ColumnValueRef &)
-    {
         return { .is_monotonic = true };
     }
 };

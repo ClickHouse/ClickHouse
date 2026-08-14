@@ -246,11 +246,6 @@ public:
         return std::make_unique<FunctionToFunctionBaseAdaptor>(function, data_types, return_type);
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType &, const ColumnValueRef &, const ColumnValueRef &) const override
-    {
-        return {.is_monotonic = true, .is_always_monotonic = true};
-    }
-
 private:
     FunctionOverloadResolverPtr to_start_of_interval;
     UInt64 function_date_trunc_return_type_behavior;

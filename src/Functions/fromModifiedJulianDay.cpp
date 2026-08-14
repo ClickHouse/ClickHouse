@@ -126,17 +126,6 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
-            return getMonotonicity();
-        }
-
-        Monotonicity getMonotonicityForRange(const IDataType &, const ColumnValueRef &, const ColumnValueRef &) const override
-        {
-            return getMonotonicity();
-        }
-
-    private:
-        static Monotonicity getMonotonicity()
-        {
             /// The OrNull variant maps multiple out-of-range inputs to NULL, breaking monotonicity.
             if constexpr (nullOnErrors)
                 return {};
@@ -151,6 +140,7 @@ namespace DB
             return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true, };
         }
 
+    private:
         DataTypes argument_types;
         DataTypePtr return_type;
     };
