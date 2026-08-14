@@ -4,7 +4,6 @@
 #if USE_AVRO
 #include <Databases/DataLake/ICatalog.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
-#include <Common/MultiVersion.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
@@ -50,9 +49,7 @@ public:
 
     bool empty() const override;
 
-    CatalogTables getTables() const override;
-
-    Namespaces getNamespaces() const override;
+    DB::Names getTables() const override;
 
     bool existsTable(const std::string & namespace_name, const std::string & table_name) const override;
 
@@ -76,13 +73,6 @@ public:
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
-
-    bool updateSchema(
-        const String & namespace_name,
-        const String & table_name,
-        const String & new_metadata_path,
-        Poco::JSON::Object::Ptr new_schema,
-        Int32 previous_schema_id) const override;
 
     bool isTransactional() const override { return true; }
 
@@ -112,7 +102,6 @@ public:
         std::string client_secret;
         std::string tenant_id;
         std::string bearer_token;
-        std::string refresh_token;
         Config config;
     };
     using CatalogStateVersion = MultiVersion<CatalogState>::Version;
@@ -178,23 +167,11 @@ protected:
         StopCondition stop_condition,
         ExecuteFunc func) const;
 
-    /// Whether this catalog has flat (single-level) namespaces and ignores the `parent` filter when
-    /// listing namespaces. Such catalogs (BigLake, Databricks Delta Sharing) echo the same namespaces
-    /// for any parent; treating those echoes as children would recurse without bound, so sub-namespace
-    /// listing is skipped for them (see `parseNamespaces`).
-    bool hasFlatNamespaces() const;
-
-    /// List the immediate child namespaces directly under `base_namespace`
-    /// (single level, not recursive). An empty base lists the root namespaces.
-    Namespaces listChildNamespaces(const std::string & base_namespace) const;
+    Namespaces getNamespaces(const std::string & base_namespace) const;
 
     Namespaces parseNamespaces(DB::ReadBuffer & buf, const std::string & base_namespace, String & next_page_token) const;
 
-    /// Non-recursive list of tables directly in `base_namespace` (not in sub-namespaces).
-    /// `limit` is a soft cap on the number of returned names; 0 means no limit.
-    DB::Names listTablesInNamespace(const std::string & base_namespace, size_t limit = 0) const;
-
-    CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
+    DB::Names getTables(const std::string & base_namespace, size_t limit = 0) const;
 
     DB::Names parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit, String & next_page_token) const;
 
@@ -239,25 +216,6 @@ protected:
 class OneLakeCatalog : public RestCatalog
 {
 public:
-    /// The authentication mode, fixed when the database is created:
-    /// exactly one of `onelake_bearer_token`, `onelake_refresh_token` (+ client id)
-    /// or the `onelake_client_id` + `onelake_client_secret` pair is provided.
-    enum class AuthMode
-    {
-        BearerToken,
-        RefreshToken,
-        ClientCredentials,
-    };
-
-    static AuthMode getAuthMode(const std::string & bearer_token, const std::string & refresh_token)
-    {
-        if (!bearer_token.empty())
-            return AuthMode::BearerToken;
-        if (!refresh_token.empty())
-            return AuthMode::RefreshToken;
-        return AuthMode::ClientCredentials;
-    }
-
     explicit OneLakeCatalog(
         const std::string & warehouse_,
         const std::string & base_url_,
@@ -265,7 +223,6 @@ public:
         const std::string & onelake_client_id,
         const std::string & onelake_client_secret,
         const std::string & bearer_token_,
-        const std::string & refresh_token_,
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
@@ -278,11 +235,10 @@ public:
 
     DB::HTTPHeaderEntries getAuthHeaders(const CatalogState & catalog_state, bool update_token) const override;
 
-    static void validateSettingsChanges(const DB::SettingsChanges & changes, AuthMode auth_mode);
-
-    /// A currently valid access token together with its expiration time, for object storage
-    /// access in refresh-token mode. Renews the token transparently when it is expired.
-    std::pair<std::string, std::chrono::system_clock::time_point> getCurrentAccessToken() const;
+    /// `bearer_mode` means the catalog authenticates with `onelake_bearer_token`,
+    /// otherwise with the `onelake_client_id` + `onelake_client_secret` pair.
+    /// The mode is fixed when the database is created.
+    static void validateSettingsChanges(const DB::SettingsChanges & changes, bool bearer_mode);
 
 protected:
     void applySettingsChangesToState(
@@ -291,15 +247,6 @@ protected:
         CatalogState & new_state,
         std::optional<DB::HTTPHeaderEntries> & new_auth_headers,
         std::unique_ptr<AccessToken> & new_access_token) override;
-
-private:
-    /// Cached access token for refresh-token mode; renews it via the refresh token grant
-    /// when it is missing, expired, or `force_update` is set.
-    AccessToken getValidAccessToken(const CatalogState & catalog_state, bool force_update) const;
-
-    /// Redeems the refresh token from `catalog_state` for an access token
-    /// (`grant_type=refresh_token` against the Entra ID token endpoint).
-    AccessToken retrieveAccessTokenViaRefreshToken(const CatalogState & catalog_state) const;
 };
 
 class BigLakeCatalog : public RestCatalog
@@ -315,8 +262,7 @@ public:
         const std::string & google_adc_client_secret_,
         const std::string & google_adc_refresh_token_,
         const std::string & google_adc_quota_project_id_,
-        DB::ContextPtr context_,
-        bool allow_server_credentials_in_user_queries_);
+        DB::ContextPtr context_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
@@ -338,27 +284,9 @@ private:
     const std::string google_adc_client_secret;
     const std::string google_adc_refresh_token;
     const std::string google_adc_quota_project_id;
-    /// Effective `s3_allow_server_credentials_in_user_queries` captured when the database was created; the
-    /// catalog is cached and holds the global context, whose settings never reflect the creating session.
-    const bool allow_server_credentials_in_user_queries;
 
     AccessToken retrieveGoogleCloudAccessToken() const;
     AccessToken retrieveGoogleCloudAccessTokenFromRefreshToken() const;
-};
-
-/// Databricks Delta Sharing exposes an Iceberg REST catalog with a flat, single-level namespace model
-/// (share -> namespace/schema -> table) and ignores the `parent` filter when listing namespaces. It is
-/// otherwise a plain REST catalog, so it reuses RestCatalog's behaviour and only reports a distinct type
-/// so `hasFlatNamespaces()` applies the same top-level-only listing used for BigLake.
-class DeltaSharingCatalog : public RestCatalog
-{
-public:
-    using RestCatalog::RestCatalog;
-
-    DB::DatabaseDataLakeCatalogType getCatalogType() const override
-    {
-        return DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING;
-    }
 };
 
 }

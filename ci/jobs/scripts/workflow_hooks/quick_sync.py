@@ -35,7 +35,7 @@ def check():
 if __name__ == "__main__":
     try:
         check()
-    except Exception:
+    except Exception as e:
         print("Failed to initiate sync")
         traceback.print_exc()
         sys.exit(1)

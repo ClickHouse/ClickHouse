@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
@@ -19,7 +18,7 @@ bool isDateOrDateTime(const IDataType & type)
 
 }
 
-class FunctionMonthName final : public IFunction
+class FunctionMonthName : public IFunction
 {
 public:
     static constexpr auto name = "monthName";
@@ -60,7 +59,7 @@ public:
         const DataTypePtr & result_type,
         size_t input_rows_count) const override
     {
-        ColumnPtr month_column = DataTypeString().createColumnConst(arguments[0].column->size(), month_str);
+        auto month_column = DataTypeString().createColumnConst(arguments[0].column->size(), month_str);
         ColumnsWithTypeAndName temporary_columns
         {
             ColumnWithTypeAndName(month_column, std::make_shared<DataTypeString>(), ""),

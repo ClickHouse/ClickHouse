@@ -96,7 +96,7 @@ std::string rsaSHA256Sign(EVP_PKEY * pkey, const std::string & data)
     return signature;
 }
 
-static bool genericSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature)
+bool genericSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature)
 {
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();
 

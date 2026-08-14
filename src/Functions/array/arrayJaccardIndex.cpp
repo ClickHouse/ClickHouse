@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class FunctionArrayJaccardIndex final : public IFunction
+class FunctionArrayJaccardIndex : public IFunction
 {
 private:
     using ResultType = Float64;
@@ -31,8 +31,8 @@ private:
     template <bool left_is_const, bool right_is_const>
     static LeftAndRightSizes getArraySizes(const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, size_t i)
     {
-        size_t left_size = 0;
-        size_t right_size = 0;
+        size_t left_size;
+        size_t right_size;
 
         if constexpr (left_is_const)
             left_size = left_offsets[0];

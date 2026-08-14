@@ -82,12 +82,7 @@ void IcebergMetadataLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_index++]->insert(pruning_status ? *pruning_status : iceberg_pruning_status_datatype_nullable->getDefault());
 }
 
-IcebergMetadataLogLevel getIcebergMetadataLogLevel(const ContextPtr & local_context)
-{
-    return local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
-}
-
-void insertRowToLogTableImpl(
+void insertRowToLogTable(
     const ContextPtr & local_context,
     String row,
     IcebergMetadataLogLevel row_log_level,
@@ -96,6 +91,9 @@ void insertRowToLogTableImpl(
     std::optional<UInt64> row_in_file,
     std::optional<Iceberg::PruningReturnStatus> pruning_status)
 {
+    IcebergMetadataLogLevel set_log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
+    if (set_log_level < row_log_level)
+        return;
     timespec spec{};
     if (clock_gettime(CLOCK_REALTIME, &spec))
         throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
@@ -107,9 +105,8 @@ void insertRowToLogTableImpl(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg metadata log table is not configured");
     }
 
-    iceberg_metadata_log->add([&](DB::IcebergMetadataLogElement & element)
-    {
-        element = DB::IcebergMetadataLogElement{
+    iceberg_metadata_log->add(
+        DB::IcebergMetadataLogElement{
             .current_time = spec.tv_sec,
             .query_id = local_context->getCurrentQueryId(),
             .content_type = row_log_level,
@@ -117,7 +114,6 @@ void insertRowToLogTableImpl(
             .file_path = file_path.serialize(),
             .metadata_content = row,
             .row_in_file = row_in_file,
-            .pruning_status = pruning_status};
-    });
+            .pruning_status = pruning_status});
 }
 }

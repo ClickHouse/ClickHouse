@@ -14,5 +14,3 @@
 1	1	1	1
 --- passed <= input ---
 1
---- q7 parallel-replica reads logged ---
-1	1	0.1

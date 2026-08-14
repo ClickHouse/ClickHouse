@@ -29,7 +29,7 @@ Block LazyMaterializingTransform::transformHeader(const Block & main_header, con
     return Block(std::move(columns));
 }
 
-LazyMaterializingTransform::LazyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, ILazyMaterializingRowsPtr lazy_materializing_rows_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+LazyMaterializingTransform::LazyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, LazyMaterializingRowsPtr lazy_materializing_rows_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : IProcessor(
         InputPorts({main_header, lazy_header}),
         OutputPorts({OutputPort(std::make_shared<Block>(transformHeader(*main_header, *lazy_header)))}))
@@ -255,11 +255,11 @@ void LazyMaterializingRows::filterRangesAndFillRows(const PaddedPODArray<UInt64>
 
 void LazyMaterializingTransform::prepareMainChunk()
 {
-    UInt64 squash_ms = 0;
-    UInt64 sort_ms = 0;
-    UInt64 permute_ms = 0;
-    UInt64 prepare_offsets_ms = 0;
-    UInt64 filter_intervals_ms = 0;
+    UInt64 squash_ms;
+    UInt64 sort_ms;
+    UInt64 permute_ms;
+    UInt64 prepare_offsets_ms;
+    UInt64 filter_intervals_ms;
 
     Stopwatch main_chunk_watch;
 
@@ -355,9 +355,9 @@ void LazyMaterializingTransform::prepareMainChunk()
 
 void LazyMaterializingTransform::prepareLazyChunk()
 {
-    UInt64 squash_ms = 0;
+    UInt64 squash_ms;
     UInt64 reverse_permutation_ms = 0;
-    UInt64 permute_ms = 0;
+    UInt64 permute_ms;
 
     Stopwatch total_watch;
 

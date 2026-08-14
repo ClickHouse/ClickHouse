@@ -78,7 +78,7 @@ public:
     }
 };
 
-class FunctionGrouping final : public FunctionGroupingBase
+class FunctionGrouping : public FunctionGroupingBase
 {
 public:
     explicit FunctionGrouping(bool force_compatibility_)
@@ -94,7 +94,7 @@ public:
     }
 };
 
-class FunctionGroupingOrdinary final : public FunctionGroupingBase
+class FunctionGroupingOrdinary : public FunctionGroupingBase
 {
 public:
     FunctionGroupingOrdinary(ColumnNumbers arguments_indexes_, bool force_compatibility_)
@@ -112,7 +112,7 @@ public:
     }
 };
 
-class FunctionGroupingForRollup final : public FunctionGroupingBase
+class FunctionGroupingForRollup : public FunctionGroupingBase
 {
     const UInt64 aggregation_keys_number;
 
@@ -141,7 +141,7 @@ public:
     }
 };
 
-class FunctionGroupingForCube final : public FunctionGroupingBase
+class FunctionGroupingForCube : public FunctionGroupingBase
 {
     const UInt64 aggregation_keys_number;
 
@@ -172,7 +172,7 @@ public:
     }
 };
 
-class FunctionGroupingForGroupingSets final : public FunctionGroupingBase
+class FunctionGroupingForGroupingSets : public FunctionGroupingBase
 {
     ColumnNumbersSetList grouping_sets;
 public:

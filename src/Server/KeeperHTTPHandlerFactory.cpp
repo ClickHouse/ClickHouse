@@ -10,6 +10,7 @@
 #include <IO/Operators.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTPHandlerFactory.h>
+#include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
@@ -17,7 +18,6 @@
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Util/LayeredConfiguration.h>
 
 #include <Server/KeeperDashboardRequestHandler.h>
 #include <Server/KeeperHTTPStorageHandler.h>
@@ -59,24 +59,14 @@ std::unique_ptr<HTTPRequestHandler> KeeperHTTPRequestHandlerFactory::createReque
     return nullptr;
 }
 
-static void addDashboardHandlersToFactory(
+void addDashboardHandlersToFactory(
     KeeperHTTPRequestHandlerFactory & factory, std::shared_ptr<KeeperDispatcher> keeper_dispatcher)
 {
     auto dashboard_ui_creator = []() -> std::unique_ptr<KeeperDashboardWebUIRequestHandler>
     { return std::make_unique<KeeperDashboardWebUIRequestHandler>(); };
 
-    auto dashboard_path_filter = [](const String & path)
-    {
-        return [path](const auto & request)
-        {
-            const auto & uri = request.getURI();
-            return uri == path
-                || (uri.size() > path.size() && uri.starts_with(path) && uri[path.size()] == '?');
-        };
-    };
-
     auto dashboard_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperDashboardWebUIRequestHandler>>(dashboard_ui_creator);
-    dashboard_handler->addFilter(dashboard_path_filter("/dashboard"));
+    dashboard_handler->attachStrictPath("/dashboard");
     dashboard_handler->allowGetAndHeadRequest();
     factory.addPathToHints("/dashboard");
     factory.addHandler(dashboard_handler);
@@ -86,12 +76,12 @@ static void addDashboardHandlersToFactory(
 
     auto dashboard_content_handler
         = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperDashboardContentRequestHandler>>(dashboard_content_creator);
-    dashboard_content_handler->addFilter(dashboard_path_filter("/dashboard/content"));
+    dashboard_content_handler->attachStrictPath("/dashboard/content");
     dashboard_content_handler->allowGetAndHeadRequest();
     factory.addHandler(dashboard_content_handler);
 }
 
-static void addReadinessHandlerToFactory(
+void addReadinessHandlerToFactory(
     KeeperHTTPRequestHandlerFactory & factory,
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher,
     const Poco::Util::AbstractConfiguration & config)
@@ -105,7 +95,7 @@ static void addReadinessHandlerToFactory(
     factory.addHandler(readiness_handler);
 }
 
-static void addCommandsHandlersToFactory(
+void addCommandsHandlersToFactory(
     KeeperHTTPRequestHandlerFactory & factory,
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher,
     std::shared_ptr<KeeperHTTPClient> keeper_client)
@@ -122,7 +112,7 @@ static void addCommandsHandlersToFactory(
 }
 
 template <typename H>
-static void addStrictHandler(KeeperHTTPRequestHandlerFactory & factory, const std::string & path)
+void addStrictHandler(KeeperHTTPRequestHandlerFactory & factory, const std::string & path)
 {
     auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<H>>(
         [] { return std::make_unique<H>(); });
@@ -136,7 +126,7 @@ static void addStrictHandler(KeeperHTTPRequestHandlerFactory & factory, const st
     factory.addHandler(handler);
 }
 
-static void addJemallocHandlersToFactory(KeeperHTTPRequestHandlerFactory & factory)
+void addJemallocHandlersToFactory(KeeperHTTPRequestHandlerFactory & factory)
 {
     addStrictHandler<KeeperJemallocWebUIHandler>(factory, "/jemalloc");
     factory.addPathToHints("/jemalloc");
@@ -154,7 +144,7 @@ static void addJemallocHandlersToFactory(KeeperHTTPRequestHandlerFactory & facto
 #endif
 }
 
-static void addStorageHandlersToFactory(
+void addStorageHandlersToFactory(
     KeeperHTTPRequestHandlerFactory & factory,
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher,
     std::shared_ptr<KeeperHTTPClient> keeper_client)
@@ -170,7 +160,7 @@ static void addStorageHandlersToFactory(
     factory.addHandler(storage_handler);
 }
 
-static std::shared_ptr<KeeperHTTPClient> createKeeperClient(
+std::shared_ptr<KeeperHTTPClient> createKeeperClient(
     const IServer & server,
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher)
 {
@@ -193,7 +183,7 @@ static std::shared_ptr<KeeperHTTPClient> createKeeperClient(
     return std::make_shared<KeeperHTTPClient>(std::move(client_factory));
 }
 
-static void addDefaultHandlersToFactory(
+void addDefaultHandlersToFactory(
     KeeperHTTPRequestHandlerFactory & factory,
     const IServer & server,
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher,

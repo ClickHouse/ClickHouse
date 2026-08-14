@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionCutURLParameter final : public IFunction
+class FunctionCutURLParameter : public IFunction
 {
 public:
     static constexpr auto name = "cutURLParameter";
@@ -140,12 +140,12 @@ public:
         PODArrayWithStackMemory<std::pair<size_t, size_t>, 16 * sizeof(size_t)> cuts;
 
         size_t prev_offset = 0;
-        size_t cur_offset = 0;
-        size_t cur_len = 0;
+        size_t cur_offset;
+        size_t cur_len;
         size_t res_offset = 0;
-        size_t cur_res_offset = 0;
-        size_t cut_begin = 0;
-        size_t cut_end = 0;
+        size_t cur_res_offset;
+        size_t cut_begin;
+        size_t cut_end;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -203,8 +203,7 @@ REGISTER_FUNCTION(CutURLParameter)
 {
     /// cutURLParameter documentation
     FunctionDocumentation::Description description_cutURLParameter = R"(
-Removes the first `name=value` occurrence of each requested parameter from a URL.
-Only parameters spelled as `name=` are matched, so a value-less flag parameter is left intact, e.g. `cutURLParameter('http://bigmir.net/?a&c=d', 'a')` returns the URL unchanged.
+Removes the `name` parameter from a URL, if present.
 This function does not encode or decode characters in parameter names, e.g. `Client ID` and `Client%20ID` are treated as different parameter names.
     )";
     FunctionDocumentation::Syntax syntax_cutURLParameter = "cutURLParameter(url, name)";
@@ -212,7 +211,7 @@ This function does not encode or decode characters in parameter names, e.g. `Cli
         {"url", "URL.", {"String"}},
         {"name", "Name of URL parameter.", {"String", "Array(String)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_cutURLParameter = {"URL with the first `name=value` occurrence of each requested parameter removed.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value_cutURLParameter = {"URL with `name` URL parameter removed.", {"String"}};
     FunctionDocumentation::Examples examples_cutURLParameter = {
     {
         "Usage example",

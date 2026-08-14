@@ -3,7 +3,6 @@
 #include <google/cloud/kms/v1/key_management_client.h>
 #include <google/cloud/location.h>
 #include <iostream>
-#include <Examples/clickhouse_examples.h>
 
 int mainEntryExampleGcloudKms(int argc, char* argv[]) try
 {

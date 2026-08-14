@@ -17,7 +17,6 @@
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/JSONUtils.h>
-#include <Formats/ParseError.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -74,7 +73,7 @@ void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr, 
     for (const auto & elem : map)
     {
         const auto & tuple = elem.safeGet<Tuple>();
-        chassert(tuple.size() == 2);
+        assert(tuple.size() == 2);
         key_serialization->serializeBinary(tuple[0], ostr, settings);
         value_serialization->serializeBinary(tuple[1], ostr, settings);
     }
@@ -82,7 +81,7 @@ void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr, 
 
 void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    size_t size = 0;
+    size_t size;
     readVarUInt(size, istr);
     if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
         throw Exception(
@@ -285,42 +284,11 @@ ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & 
 
         if constexpr (throw_exception)
             throw;
-        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
-        rethrowIfNotParseError();
         return ReturnType(false);
     }
 
     offsets.push_back(offsets.back() + size);
     return ReturnType(true);
-}
-
-void SerializationMap::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    const auto & column_map = assert_cast<const ColumnMap &>(column);
-
-    const auto & nested_array = column_map.getNestedColumn();
-    const auto & nested_tuple = column_map.getNestedData();
-    const auto & offsets = nested_array.getOffsets();
-
-    size_t offset = offsets[row_num - 1];
-    size_t next_offset = offsets[row_num];
-
-    const size_t level = settings.hive_text.nesting_level;
-    const char entry_separator = getHiveTextDelimiter(settings, level);
-    const char key_value_separator = getHiveTextDelimiter(settings, level + 1);
-
-    auto child_settings = settings;
-    child_settings.hive_text.nesting_level = level + 2;
-
-    for (size_t i = offset; i < next_offset; ++i)
-    {
-        if (i != offset)
-            writeChar(entry_separator, ostr);
-
-        key_serialization->serializeTextHive(nested_tuple.getColumn(0), i, ostr, child_settings);
-        writeChar(key_value_separator, ostr);
-        value_serialization->serializeTextHive(nested_tuple.getColumn(1), i, ostr, child_settings);
-    }
 }
 
 void SerializationMap::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -595,21 +563,6 @@ struct DeserializeBinaryBulkStateMap : public ISerialization::DeserializeBinaryB
         new_state->bucket_index_state = bucket_index_state ? bucket_index_state->clone() : nullptr;
         return new_state;
     }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (reading_info_state)
-            callback(reading_info_state);
-        if (nested_state)
-            callback(nested_state);
-        if (buckets_info_state)
-            callback(buckets_info_state);
-        for (const auto & bucket_nested_state : bucket_nested_states)
-        {
-            if (bucket_nested_state)
-                callback(bucket_nested_state);
-        }
-    }
 };
 
 namespace
@@ -875,13 +828,13 @@ SerializationMap::deserializeBucketsInfoStatePrefix(DeserializeBinaryBulkSetting
     /// Otherwise read the buckets info stream from disk.
     else if (auto * stream = settings.getter(settings.path))
     {
-        UInt8 version = 0;
+        UInt8 version;
         readBinary(version, *stream);
         if (!magic_enum::enum_cast<BucketsInfoSerializationVersion>(version))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown Map buckets info serialization version: {}", static_cast<UInt32>(version));
 
         /// Read number of buckets.
-        UInt64 buckets = 0;
+        UInt64 buckets;
         readBinaryLittleEndian(buckets, *stream);
 
         /// Read statistics if any.
@@ -996,7 +949,7 @@ size_t SerializationMap::calculateNumberOfBuckets(const ColumnMap::StatisticsPtr
     if (min_avg_size > 0 && statistics->avg < static_cast<Float64>(min_avg_size))
         return 1;
 
-    UInt64 result = 0;
+    UInt64 result;
     switch (strategy)
     {
         /// Always use max_buckets_in_map regardless of the average map size.
@@ -1387,7 +1340,7 @@ void SerializationMap::serializeBinaryBulkWithMultipleStreams(
     /// Accumulate statistics from each serialized range.
     /// They will be written to the stream in `serializeBinaryBulkStateSuffix`.
     if (map_state->recalculate_statistics)
-        map_state->statistics.merge(assert_cast<const ColumnMap &>(column).calculateStatisticsForRange(offset, end));
+        map_state->statistics.merge(*assert_cast<const ColumnMap &>(column).calculateStatisticsForRange(offset, end));
 }
 
 void SerializationMap::deserializeBinaryBulkWithMultipleStreams(

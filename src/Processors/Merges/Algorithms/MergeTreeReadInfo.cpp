@@ -1,6 +1,5 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 
-#include <Columns/ColumnConst.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -43,7 +42,7 @@ bool isVirtualRow(const Chunk & chunk)
     return false;
 }
 
-Block setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_conversions)
+void setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_conversions)
 {
     auto read_info = chunk.getChunkInfos().extract<MergeTreeReadInfo>();
     chassert(read_info);
@@ -73,16 +72,11 @@ Block setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_
 
             ordered_columns.push_back(pk_col->column);
         }
-        /// Only the sort columns are compared and the row is skipped before emission, so reuse the header column.
-        else if (col.column)
-            ordered_columns.push_back(col.column->cloneResized(1));
         else
             ordered_columns.push_back(col.type->createColumnConstWithDefaultValue(1));
     }
 
     chunk.setColumns(ordered_columns, 1);
-
-    return pk_block;
 }
 
 }

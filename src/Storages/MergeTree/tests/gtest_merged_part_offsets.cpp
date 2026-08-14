@@ -5,12 +5,11 @@
 
 using namespace DB;
 
-// TEST_PAGE_SIZE is 1024 (2^10), matching MergedPartOffsets' internal page size.
-// Named to avoid PAGE_SIZE, which musl's <limits.h> defines as a macro (unlike glibc).
-constexpr static size_t TEST_PAGE_SIZE = 1024;
+// PAGE_SIZE is 1024 (2^10)
+constexpr static size_t PAGE_SIZE = 1024;
 
 // Helper to generate monotonically increasing values
-static std::vector<UInt64> generateMonotonicValues(size_t count, UInt64 start = 0, UInt64 max_step = 10)
+std::vector<UInt64> generateMonotonicValues(size_t count, UInt64 start = 0, UInt64 max_step = 10)
 {
     std::vector<UInt64> result;
     result.reserve(count);
@@ -70,7 +69,7 @@ TEST(PackedPartOffsetsTest, SingleValuePage)
 TEST(PackedPartOffsetsTest, ExactlyOnePage)
 {
     PackedPartOffsets offsets;
-    auto values = generateMonotonicValues(TEST_PAGE_SIZE);
+    auto values = generateMonotonicValues(PAGE_SIZE);
 
     // Insert all values
     for (const auto & val : values)
@@ -82,7 +81,7 @@ TEST(PackedPartOffsetsTest, ExactlyOnePage)
     offsets.flush();
 
     // Verify all values were stored correctly
-    for (size_t i = 0; i < TEST_PAGE_SIZE; ++i)
+    for (size_t i = 0; i < PAGE_SIZE; ++i)
     {
         EXPECT_EQ(offsets[i], values[i]);
     }
@@ -93,7 +92,7 @@ TEST(PackedPartOffsetsTest, MultiplePages)
 {
     PackedPartOffsets offsets;
     const size_t num_pages = 3;
-    auto values = generateMonotonicValues(TEST_PAGE_SIZE * num_pages);
+    auto values = generateMonotonicValues(PAGE_SIZE * num_pages);
 
     // Insert all values
     for (const auto & val : values)
@@ -105,7 +104,7 @@ TEST(PackedPartOffsetsTest, MultiplePages)
     offsets.flush();
 
     // Verify all values were stored correctly
-    for (size_t i = 0; i < TEST_PAGE_SIZE * num_pages; ++i)
+    for (size_t i = 0; i < PAGE_SIZE * num_pages; ++i)
     {
         EXPECT_EQ(offsets[i], values[i]);
     }
@@ -115,7 +114,7 @@ TEST(PackedPartOffsetsTest, MultiplePages)
 TEST(PackedPartOffsetsTest, AutoFlushOnPageFill)
 {
     PackedPartOffsets offsets;
-    const size_t total_values = TEST_PAGE_SIZE + 100;
+    const size_t total_values = PAGE_SIZE + 100;
     auto values = generateMonotonicValues(total_values);
 
     // Insert all values (should auto-flush when page fills)

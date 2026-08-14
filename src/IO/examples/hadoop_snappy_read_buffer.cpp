@@ -10,9 +10,8 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/HadoopSnappyReadBuffer.h>
-#include <Examples/clickhouse_examples.h>
 
-static std::string uncompress(size_t buf_size)
+std::string uncompress(size_t buf_size)
 {
     using namespace DB;
 

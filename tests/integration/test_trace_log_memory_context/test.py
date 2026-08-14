@@ -4,6 +4,7 @@ import logging
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
 
 
 cluster = ClickHouseCluster(__file__)
@@ -58,8 +59,7 @@ def test_memory_context_in_trace_log(started_cluster):
     #     server-wide allocations including background activity, not just
     #     this query's allocations.
     # Retrying bounds the test runtime while keeping it reliable.
-    peak_forcing_attempt = 0
-    for attempt in range(0, 15):
+    for _ in range(0, 15):
         # Generate some logs to generate entries with memory_blocked_context=Global and trace_type=JemallocSample
         for i in range(10):
             node.query("SELECT logTrace('foo')")
@@ -67,24 +67,6 @@ def test_memory_context_in_trace_log(started_cluster):
         node.query("SELECT * FROM numbers(100000) ORDER BY number", query_id=query_id)
 
         node.query("SYSTEM FLUSH LOGS system.trace_log")
-
-        # `Memory`/`MemoryPeak` with `memory_context = 'Global'` are sent only when the
-        # server-wide memory usage grows past its previous peak by at least
-        # `total_memory_profiler_step` (4 MiB). The peak reached during server startup can
-        # be above anything the small queries here allocate, in which case retrying alone
-        # never helps. Force a new global peak by allocating more memory on each attempt
-        # where these events are still missing. The escalation is decoupled from the
-        # probabilistic per-query sample checks below, so retries that only miss a
-        # `MemorySample`/`JemallocSample` do not keep increasing the allocation size.
-        # `max_threads = 1` keeps the growth per attempt close to ~100 MB.
-        if (
-            get_trace_events("Global", "Max", "Memory") == 0 or
-            get_trace_events("Global", "Max", "MemoryPeak") == 0
-        ):
-            peak_forcing_attempt += 1
-            node.query(f"SELECT groupArray(number) FROM numbers({peak_forcing_attempt * 12500000}) SETTINGS max_threads = 1 FORMAT Null")
-            node.query("SYSTEM FLUSH LOGS system.trace_log")
-
         if (
             get_trace_events("Unknown", "Max", "MemorySample", query_id) > 0 and
             get_trace_events("Unknown", "Max", "JemallocSample", query_id) > 0 and

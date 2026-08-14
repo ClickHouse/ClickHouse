@@ -1,10 +1,8 @@
+#include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/IStorage.h>
-
-#include <Compression/CompressionFactory.h>
-#include <Compression/ICompressionCodec.h>
-
 #include <Common/quoteString.h>
 
 #include <base/StringViewHash.h>
@@ -44,11 +42,6 @@ std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
     return std::make_shared<StorageSnapshot>(storage, metadata, std::move(data_));
 }
 
-std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(StorageMetadataPtr metadata_, DataPtr data_) const
-{
-    return std::make_shared<StorageSnapshot>(storage, std::move(metadata_), std::move(data_));
-}
-
 ColumnsDescription StorageSnapshot::getAllColumnsDescription() const
 {
     auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
@@ -61,27 +54,20 @@ NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options)
 {
     auto all_columns = metadata->getColumns().get(options);
 
-    if (options.virtuals_kind == VirtualsKind::None || metadata->virtuals.empty())
-        return all_columns;
-
-    /// Iterate virtuals directly: skip the `Block` round-trip in `getSampleBlock` and
-    /// the throwaway `NameSet` over every column of the table. There are typically a
-    /// handful of virtuals and many regular columns, so a linear `find` per virtual is
-    /// cheaper than hashing all regular columns up front.
-    auto virtuals_list = metadata->virtuals.getNamesAndTypes(options.virtuals_kind, options.virtuals_place);
-    for (const auto & virtual_column : virtuals_list)
+    if (options.virtuals_kind != VirtualsKind::None)
     {
-        bool already_present = false;
-        for (const auto & existing : all_columns)
+        NameSet column_names;
+        for (const auto & column : all_columns)
+            column_names.insert(column.name);
+
+        auto virtuals_list = metadata->virtuals.getSampleBlock(options.virtuals_kind, options.virtuals_place).getNamesAndTypesList();
+        for (const auto & column : virtuals_list)
         {
-            if (existing.name == virtual_column.name)
-            {
-                already_present = true;
-                break;
-            }
+            if (column_names.contains(column.name))
+                continue;
+
+            all_columns.emplace_back(column.name, column.type);
         }
-        if (!already_present)
-            all_columns.push_back(virtual_column);
     }
 
     return all_columns;

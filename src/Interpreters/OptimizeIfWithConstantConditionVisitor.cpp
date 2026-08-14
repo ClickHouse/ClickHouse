@@ -94,7 +94,7 @@ void OptimizeIfWithConstantConditionVisitorData::visit(ASTFunction & function_no
     ASTPtr then_expr = args->children[1];
     ASTPtr else_expr = args->children[2];
 
-    bool condition = false;
+    bool condition;
     if (tryExtractConstValueFromCondition(condition_expr, condition))
     {
         ASTPtr replace_ast = condition ? then_expr : else_expr;

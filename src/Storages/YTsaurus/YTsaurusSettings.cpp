@@ -38,7 +38,9 @@ YTsaurusSettings::YTsaurusSettings(const YTsaurusSettings & settings) : impl(std
 {
 }
 
-YTsaurusSettings::YTsaurusSettings(YTsaurusSettings && settings) noexcept = default;
+YTsaurusSettings::YTsaurusSettings(YTsaurusSettings && settings) noexcept : impl(std::make_unique<YTsaurusSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 YTsaurusSettings::~YTsaurusSettings() = default;
 
@@ -78,9 +80,9 @@ YTsaurusSettings YTsaurusSettings::createFromQuery(ASTStorage & storage_def) {
     return settings;
 }
 
-VectorWithMemoryTracking<std::string_view> YTsaurusSettings::getAllRegisteredNames() const
+std::vector<std::string_view> YTsaurusSettings::getAllRegisteredNames() const
 {
-    VectorWithMemoryTracking<std::string_view> all_settings;
+    std::vector<std::string_view> all_settings;
     for (const auto & setting_field : impl->all())
         all_settings.push_back(setting_field.getName());
     return all_settings;

@@ -35,7 +35,9 @@ SetSettings::SetSettings(const SetSettings & settings) : impl(std::make_unique<S
 {
 }
 
-SetSettings::SetSettings(SetSettings && settings) noexcept = default;
+SetSettings::SetSettings(SetSettings && settings) noexcept : impl(std::make_unique<SetSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 SetSettings::~SetSettings() = default;
 
