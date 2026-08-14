@@ -90,13 +90,10 @@ public:
     void setDataLakeSpecificProperties(std::optional<DataLakeSpecificProperties> && metadata);
     std::optional<DataLakeSpecificProperties> getDataLakeSpecificProperties() const;
 
-<<<<<<< HEAD
     void setTableUUID(const std::string & uuid_) { table_uuid = uuid_; }
     std::optional<std::string> getTableUUID() const { return table_uuid; }
-=======
     void setTableFormat(DataLakeTableFormat format) { table_format = format; }
     DataLakeTableFormat getTableFormat() const { return table_format; }
->>>>>>> 75adaaaef43 (Add unified Unity Catalog support for DataLakeCatalog)
 
     bool requiresLocation() const { return with_location; }
     bool requiresSchema() const { return with_schema; }
