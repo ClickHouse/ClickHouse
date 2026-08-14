@@ -1,4 +1,6 @@
 #include <Common/logger_useful.h>
+#include <limits>
+#include <zlib.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -43,6 +45,7 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int ZLIB_INFLATE_FAILED;
 }
 
 namespace ProfileEvents
@@ -126,6 +129,85 @@ static bool tryDecompressLZ4Hadoop(const char * data, size_t compressed_size, si
     return uncompressed_size == 0;
 }
 
+/// One-shot gzip decompression of a whole page.
+///
+/// The streaming path (`ZlibInflatingReadBuffer`) is not used for gzip because it cannot tell a
+/// clean end of the stream from a damaged one: zlib validates the gzip trailer (`CRC32` and
+/// `ISIZE`) only on the read after the one that filled the output exactly, and the reader stops as
+/// soon as it has `uncompressed_page_size` bytes. Here we drive `inflate` ourselves and require
+/// `Z_STREAM_END`, so a corrupted trailer is always reported.
+///
+/// Bytes left in the page after the last member are ignored: `compressed_page_size` is the number
+/// of bytes the page owns, not necessarily the exact length of the codec frame, and a writer may
+/// pad it (`04651_parquet_v3_dictionary_filter_expanding_codec_budget` relies on that for `ZSTD`).
+/// Concatenated members are supported, like in `ZlibInflatingReadBuffer`.
+static void decompressGzip(const char * data, size_t compressed_size, size_t uncompressed_size, char * out)
+{
+    z_stream zstr{};
+    /// 15 window bits, +16 to expect a gzip (not zlib) wrapper.
+    int rc = inflateInit2(&zstr, 15 + 16);
+    if (rc != Z_OK)
+        throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflateInit2 failed: {}; zlib version: {}.", zError(rc), ZLIB_VERSION);
+    /// Not `SCOPE_EXIT`: `inflateEnd` is a self-referential macro in `zlib-ng`, and expanding it
+    /// inside another macro trips `-Wdisabled-macro-expansion`.
+    struct StreamGuard
+    {
+        z_stream & stream;
+        ~StreamGuard() { inflateEnd(&stream); }
+    } stream_guard{zstr};
+
+    /// zlib takes buffer sizes as `uInt`, so feed the page in chunks if it is bigger than that.
+    static constexpr size_t max_chunk = std::numeric_limits<uInt>::max();
+    const auto * in_end = reinterpret_cast<const unsigned char *>(data) + compressed_size;
+    auto * out_end = reinterpret_cast<unsigned char *>(out) + uncompressed_size;
+    zstr.next_in = reinterpret_cast<unsigned char *>(const_cast<char *>(data));
+    zstr.next_out = reinterpret_cast<unsigned char *>(out);
+
+    while (true)
+    {
+        if (zstr.avail_in == 0)
+            zstr.avail_in = static_cast<uInt>(std::min<size_t>(in_end - zstr.next_in, max_chunk));
+        if (zstr.avail_out == 0)
+            zstr.avail_out = static_cast<uInt>(std::min<size_t>(out_end - zstr.next_out, max_chunk));
+
+        const auto * prev_in = zstr.next_in;
+        const auto * prev_out = zstr.next_out;
+        rc = inflate(&zstr, Z_NO_FLUSH);
+
+        if (rc == Z_STREAM_END)
+        {
+            /// The trailer of this member is verified. If the page produced everything it promised,
+            /// whatever is left in it is padding and is not our business.
+            if (zstr.next_out == out_end)
+                return;
+            if (zstr.next_in == in_end)
+                throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+                    "Unexpected end of compressed page: expected {} uncompressed bytes, got {}",
+                    uncompressed_size, zstr.next_out - reinterpret_cast<unsigned char *>(out));
+
+            rc = inflateReset(&zstr);
+            if (rc != Z_OK)
+                throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflateReset failed: {}", zError(rc));
+            continue;
+        }
+
+        if (rc != Z_OK && rc != Z_BUF_ERROR)
+            throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflate failed: {}", zError(rc));
+
+        if (zstr.next_in == prev_in && zstr.next_out == prev_out)
+        {
+            /// No progress: either the output is full while the stream continues, or the page ended
+            /// in the middle of a member.
+            if (zstr.next_out == out_end)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Compressed page uncompresses to more than the declared {} bytes", uncompressed_size);
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+                "Unexpected end of compressed page: expected {} uncompressed bytes, got {}",
+                uncompressed_size, zstr.next_out - reinterpret_cast<unsigned char *>(out));
+        }
+    }
+}
+
 static void decompress(const char * data, size_t compressed_size, size_t uncompressed_size, parq::CompressionCodec::type codec, char * out)
 {
     CompressionMethod method = CompressionMethod::None;
@@ -152,8 +234,8 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
             throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "Cannot decompress Snappy: ClickHouse was compiled without Snappy support");
 #endif
         case parq::CompressionCodec::GZIP:
-            method = CompressionMethod::Gzip;
-            break;
+            decompressGzip(data, compressed_size, uncompressed_size, out);
+            return;
         case parq::CompressionCodec::LZO:
             /// Arrow also doesn't support it.
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LZO decompression is not supported");
@@ -200,23 +282,6 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
         size_t n = decompressor->available();
         chassert(n <= uncompressed_size - pos);
         pos += n;
-    }
-    /// For gzip, producing the expected number of bytes does not prove that the compressed stream
-    /// ended cleanly: zlib reports a missing or corrupted gzip trailer only on the read after the
-    /// one that filled the output exactly. Force one more read: it throws on a damaged stream,
-    /// and returns data if the stream uncompresses to more bytes than the page header declared.
-    /// Only gzip gets this check: `compressed_page_size` may legally overstate the frame (writers
-    /// may pad a page, and `04651_parquet_v3_dictionary_filter_expanding_codec_budget` relies on
-    /// that), and for other codecs the extra read would try to decode the padding as a new frame
-    /// and reject a valid file. For gzip we accept rejecting padded pages as the cost of not
-    /// accepting a corrupted trailer silently; no known writer pads gzip pages.
-    if (method == CompressionMethod::Gzip)
-    {
-        char check_byte = 0;
-        decompressor->set(&check_byte, 1);
-        if (decompressor->next())
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Compressed page has extra data after the expected {} uncompressed bytes", uncompressed_size);
     }
 }
 
