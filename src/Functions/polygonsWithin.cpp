@@ -65,6 +65,11 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool isSpatialPredicate() const override { return std::is_same_v<Point, CartesianPoint>; }
 
+    /// executeImpl below only calls `boost::geometry::correct` before `boost::geometry::within`,
+    /// never `boost::geometry::is_valid` -- unlike `pointInPolygon`, this predicate never validates
+    /// topology at all, so an invalid constant polygon argument can never make it raise.
+    bool requiresValidConstGeometry() const override { return false; }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto res_column = ColumnUInt8::create();
