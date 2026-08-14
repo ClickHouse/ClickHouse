@@ -201,7 +201,7 @@ static Plan getPlan(
 
     const auto effective_cache = context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
         ? persistent_table_components.metadata_cache : nullptr;
-    const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, resolved_compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
@@ -212,8 +212,11 @@ static Plan getPlan(
         persistent_table_components.data_source_description,
         persistent_table_components.metadata_compression_method);
 
+    /// Use `resolved_compression_method` (derived from the actual selected metadata file), not the
+    /// `compression_method` argument -- that one is the write-target codec for newly generated
+    /// files, which may differ from the codec of the metadata file being read here.
     Poco::JSON::Object::Ptr initial_metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, effective_cache, context, log, compression_method, persistent_table_components.table_uuid, persistent_table_components.data_source_description);
+        = getMetadataJSONObject(metadata_file_path, object_storage, effective_cache, context, log, resolved_compression_method, persistent_table_components.table_uuid, persistent_table_components.data_source_description);
 
     /// Exactly version 2: v1 lacks the sequence-number machinery the rewrite relies on, and
     /// a v3 table must not be accepted either -- writeMetadataFiles rebuilds the metadata
