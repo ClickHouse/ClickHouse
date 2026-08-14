@@ -373,6 +373,9 @@ protected:
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
     String current_database;
+    /// The SQL-defined HTTP handler name and the HTTP request URL are stored in `client_info` (see
+    /// `ClientInfo::http_handler_name` / `http_request_url`) so that they are serialized on distributed
+    /// fan-out and remain visible to `currentHandler()` / `currentRequestURL()` on remote shards.
     bool can_use_query_result_cache = false;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
@@ -434,6 +437,11 @@ protected:
     /// Max block numbers in partitions to read from MergeTree tables.
     /// Saved separately for each table uuid used in the query.
     std::unordered_map<UUID, PartitionIdToMaxBlockPtr> partition_id_to_max_block;
+
+    /// A pinned point-in-time storage snapshot to read instead of taking a fresh one, keyed by table uuid.
+    /// Used by atomic `CREATE MATERIALIZED VIEW ... POPULATE` to populate the view from the exact data
+    /// captured at the moment the view was subscribed to new inserts. See InterpreterCreateQuery.
+    std::unordered_map<UUID, StorageSnapshotPtr> pinned_storage_snapshots;
 
 public:
     /// Record entities accessed by current query, and store this information in system.query_log.
@@ -1130,6 +1138,15 @@ public:
 
     String getCurrentDatabase() const;
     String getCurrentQueryId() const { return client_info.current_query_id; }
+
+    /// The name of the SQL-defined HTTP handler that invoked the query, if any (see `currentHandler`).
+    /// Stored in `client_info` so it is serialized on distributed fan-out (visible on remote shards).
+    String getHTTPHandlerName() const { return client_info.http_handler_name; }
+    void setHTTPHandlerName(const String & name) { client_info.http_handler_name = name; }
+    /// The HTTP request URL (path and query string) that invoked the query, if any (see `currentRequestURL`).
+    /// Stored in `client_info` so it is serialized on distributed fan-out (visible on remote shards).
+    String getHTTPRequestURL() const { return client_info.http_request_url; }
+    void setHTTPRequestURL(const String & url) { client_info.http_request_url = url; }
 
     /// Id of initiating query for distributed queries; or current query id if it's not a distributed query.
     String getInitialQueryId() const;
@@ -1952,6 +1969,11 @@ public:
 
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
+
+    /// A pinned storage snapshot to be returned by the table's getStorageSnapshot instead of a fresh one.
+    /// Used by atomic `CREATE MATERIALIZED VIEW ... POPULATE`.
+    void setPinnedStorageSnapshot(const UUID & table_uuid, StorageSnapshotPtr snapshot);
+    StorageSnapshotPtr getPinnedStorageSnapshot(const UUID & table_uuid) const;
 
     const ServerSettings & getServerSettings() const;
 

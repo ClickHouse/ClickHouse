@@ -41,6 +41,7 @@
 #include <IO/WithFileSize.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <Functions/DateTimeTransforms.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -1855,11 +1856,24 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(
 }
 
 static ColumnWithTypeAndName readColumnWithDateData(
-    const orc::ColumnVectorBatch * orc_column, const String & column_name, const DataTypePtr & type_hint)
+    const orc::ColumnVectorBatch * orc_column,
+    const String & column_name,
+    const DataTypePtr & raw_type_hint,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
 {
+    /// The hint is the raw header type: `readColumnFromORCColumn` strips an outer Nullable but not
+    /// LowCardinality, so e.g. a LowCardinality(DateTime('UTC')) target would fall through to the
+    /// raw Int32 branch below and the later context-less cast would read the day count as unix
+    /// seconds. Strip the wrappers so such targets take the same branches as the plain types.
+    const DataTypePtr type_hint = raw_type_hint ? removeNullable(recursiveRemoveLowCardinality(raw_type_hint)) : nullptr;
+
     DataTypePtr internal_type;
     bool check_date32_range = false;
     bool check_date_range = false;
+    bool check_datetime_range = false;
+    bool check_datetime64_range = false;
+    Int32 datetime64_min_day = 0;
+    Int32 datetime64_max_day = 0;
 
     /// Make result type Date32 when requested type is actually Date32 or when we use schema inference
     if (!type_hint || isDate32(*type_hint))
@@ -1875,6 +1889,29 @@ static ColumnWithTypeAndName readColumnWithDateData(
         internal_type = std::make_shared<DataTypeInt32>();
         check_date_range = true;
     }
+    else if (isDateTime(*type_hint))
+    {
+        /// Keep the intermediate as Date32, so the later cast converts the day count to midnight
+        /// of that day instead of reading it as unix seconds. The cast is context-less, so
+        /// `date_time_overflow_behavior` does not reach it and a day number whose midnight does
+        /// not fit into DateTime would wrap to an unrelated timestamp. Validate the range here
+        /// against the same [0, MAX_DATETIME_DAY_NUM] window that `ToDateTimeImpl` uses.
+        internal_type = std::make_shared<DataTypeDate32>();
+        check_datetime_range = true;
+    }
+    else if (isDateTime64(*type_hint))
+    {
+        /// Keep the intermediate as Date32, so the later cast converts the day count to midnight
+        /// of that day instead of reading it as raw DateTime64 ticks. The cast is context-less and
+        /// therefore clamps whole seconds that do not fit the target scale, so validate the day
+        /// number here against what the scale can represent - at scale 9 that is only up to
+        /// `2262-04-11`, far below the Date32 upper bound.
+        const auto & dt64_type = assert_cast<const DataTypeDateTime64 &>(*type_hint);
+        const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_type.getScale());
+        std::tie(datetime64_min_day, datetime64_max_day) = getDateTime64DayNumRange(scale_multiplier, dt64_type.getTimeZone());
+        internal_type = std::make_shared<DataTypeDate32>();
+        check_datetime64_range = true;
+    }
     else
     {
         internal_type = std::make_shared<DataTypeInt32>();
@@ -1889,25 +1926,65 @@ static ColumnWithTypeAndName readColumnWithDateData(
     {
         if (!orc_int_column->hasNulls || orc_int_column->notNull[i])
         {
-            Int32 days_num = static_cast<Int32>(orc_int_column->data[i]);
-            if (check_date32_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH))
-                throw Exception(
-                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                    "Input value {} of a column \"{}\" exceeds the range of type Date32, which is [{}, {}]",
-                    days_num,
-                    column_name,
-                    -DAYNUM_OFFSET_EPOCH,
-                    DATE_LUT_MAX_EXTEND_DAY_NUM);
+            /// Range-check the original Int64 day count before narrowing to Int32,
+            /// otherwise a malformed value could wrap into an apparently valid date.
+            Int64 days_num = orc_int_column->data[i];
+            if (check_date32_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < DATE_LUT_MIN_EXTEND_DAY_NUM))
+            {
+                if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    days_num = (days_num < DATE_LUT_MIN_EXTEND_DAY_NUM) ? DATE_LUT_MIN_EXTEND_DAY_NUM : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                else
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Input value {} of a column \"{}\" exceeds the range of type Date32, which is [{}, {}]",
+                        days_num,
+                        column_name,
+                        DATE_LUT_MIN_EXTEND_DAY_NUM,
+                        DATE_LUT_MAX_EXTEND_DAY_NUM);
+            }
 
             if (check_date_range && (days_num > DATE_LUT_MAX_DAY_NUM || days_num < 0))
-                throw Exception(
-                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                    "Input value {} of a column \"{}\" exceeds the range of type Date, which is [0, {}]",
-                    days_num,
-                    column_name,
-                    DATE_LUT_MAX_DAY_NUM);
+            {
+                if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    days_num = (days_num < 0) ? 0 : DATE_LUT_MAX_DAY_NUM;
+                else
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Input value {} of a column \"{}\" exceeds the range of type Date, which is [0, {}]",
+                        days_num,
+                        column_name,
+                        DATE_LUT_MAX_DAY_NUM);
+            }
 
-            column_data.push_back(days_num);
+            if (check_datetime64_range && (days_num > datetime64_max_day || days_num < datetime64_min_day))
+            {
+                if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    days_num = (days_num < datetime64_min_day) ? datetime64_min_day : datetime64_max_day;
+                else
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Input value {} of a column \"{}\" exceeds the day range representable by type {}, which is [{}, {}]",
+                        days_num,
+                        column_name,
+                        type_hint->getName(),
+                        datetime64_min_day,
+                        datetime64_max_day);
+            }
+
+            if (check_datetime_range && (days_num > MAX_DATETIME_DAY_NUM || days_num < 0))
+            {
+                if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    days_num = (days_num < 0) ? 0 : MAX_DATETIME_DAY_NUM;
+                else
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Input value {} of a column \"{}\" exceeds the day range of type DateTime, which is [0, {}]",
+                        days_num,
+                        column_name,
+                        MAX_DATETIME_DAY_NUM);
+            }
+
+            column_data.push_back(static_cast<Int32>(days_num));
         }
         else
         {
@@ -2606,7 +2683,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         case orc::DOUBLE:
             return readColumnWithNumericData<Float64, orc::DoubleVectorBatch>(orc_column, column_name);
         case orc::DATE:
-            return readColumnWithDateData(orc_column, column_name, type_hint);
+            return readColumnWithDateData(orc_column, column_name, type_hint, date_time_overflow_behavior);
         case orc::TIMESTAMP: [[fallthrough]];
         case orc::TIMESTAMP_INSTANT:
             return readColumnWithTimestampData(orc_column, column_name, type_hint, date_time_overflow_behavior);
@@ -2890,35 +2967,35 @@ void registerInputFormatORC(FormatFactory & factory)
 
 ## Data types matching {#data-types-matching-orc}
 
-The table below compares supported ORC data types and their corresponding ClickHouse [data types](/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
+The table below compares supported ORC data types and their corresponding ClickHouse [data types](/reference/data-types) in `INSERT` and `SELECT` queries.
 
 | ORC data type (`INSERT`)              | ClickHouse data type                                                                                              | ORC data type (`SELECT`) |
 |---------------------------------------|-------------------------------------------------------------------------------------------------------------------|--------------------------|
-| `Boolean`                             | [Bool](/sql-reference/data-types/boolean.md)                                                              | `Boolean`                |
-| `Tinyint`                             | [Int8/UInt8](/sql-reference/data-types/int-uint.md)/[Enum8](/sql-reference/data-types/enum.md)    | `Tinyint`                |
-| `Smallint`                            | [Int16/UInt16](/sql-reference/data-types/int-uint.md)/[Enum16](/sql-reference/data-types/enum.md) | `Smallint`               |
-| `Int`                                 | [Int32/UInt32](/sql-reference/data-types/int-uint.md)                                                     | `Int`                    |
-| `Bigint`                              | [Int64/UInt64](/sql-reference/data-types/int-uint.md)                                                     | `Bigint`                 |
-| `Float`                               | [Float32](/sql-reference/data-types/float.md)                                                             | `Float`                  |
-| `Double`                              | [Float64](/sql-reference/data-types/float.md)                                                             | `Double`                 |
-| `Decimal`                             | [Decimal](/sql-reference/data-types/decimal.md)                                                           | `Decimal`                |
-| `Date`                                | [Date32](/sql-reference/data-types/date32.md)                                                             | `Date`                   |
-| `Timestamp`                           | [DateTime64](/sql-reference/data-types/datetime64.md)                                                     | `Timestamp`              |
-| `String`, `Varchar`, `Binary`         | [String](/sql-reference/data-types/string.md)                                                             | `String`                 |
-| `Char`                                | [FixedString](/sql-reference/data-types/fixedstring.md)                                                   | `String`                 |
-| `List`                                | [Array](/sql-reference/data-types/array.md)                                                               | `List`                   |
-| `Struct`                              | [Tuple](/sql-reference/data-types/tuple.md)                                                               | `Struct`                 |
-| `Map`                                 | [Map](/sql-reference/data-types/map.md)                                                                   | `Map`                    |
-| `Int`                                 | [IPv4](/sql-reference/data-types/int-uint.md)                                                             | `Int`                    |
-| `Binary`                              | [IPv6](/sql-reference/data-types/ipv6.md)                                                                 | `Binary`                 |
-| `Binary`                              | [Int128/UInt128/Int256/UInt256](/sql-reference/data-types/int-uint.md)                                    | `Binary`                 |
-| `Binary`                              | [Decimal256](/sql-reference/data-types/decimal.md)                                                        | `Binary`                 |
-| `Union`                               | [Variant](/sql-reference/data-types/variant.md)                                                           | `Union`                  |
+| `Boolean`                             | [Bool](/reference/data-types/boolean)                                                              | `Boolean`                |
+| `Tinyint`                             | [Int8/UInt8](/reference/data-types/int-uint)/[Enum8](/reference/data-types/enum)    | `Tinyint`                |
+| `Smallint`                            | [Int16/UInt16](/reference/data-types/int-uint)/[Enum16](/reference/data-types/enum) | `Smallint`               |
+| `Int`                                 | [Int32/UInt32](/reference/data-types/int-uint)                                                     | `Int`                    |
+| `Bigint`                              | [Int64/UInt64](/reference/data-types/int-uint)                                                     | `Bigint`                 |
+| `Float`                               | [Float32](/reference/data-types/float)                                                             | `Float`                  |
+| `Double`                              | [Float64](/reference/data-types/float)                                                             | `Double`                 |
+| `Decimal`                             | [Decimal](/reference/data-types/decimal)                                                           | `Decimal`                |
+| `Date`                                | [Date32](/reference/data-types/date32)                                                             | `Date`                   |
+| `Timestamp`                           | [DateTime64](/reference/data-types/datetime64)                                                     | `Timestamp`              |
+| `String`, `Varchar`, `Binary`         | [String](/reference/data-types/string)                                                             | `String`                 |
+| `Char`                                | [FixedString](/reference/data-types/fixedstring)                                                   | `String`                 |
+| `List`                                | [Array](/reference/data-types/array)                                                               | `List`                   |
+| `Struct`                              | [Tuple](/reference/data-types/tuple)                                                               | `Struct`                 |
+| `Map`                                 | [Map](/reference/data-types/map)                                                                   | `Map`                    |
+| `Int`                                 | [IPv4](/reference/data-types/int-uint)                                                             | `Int`                    |
+| `Binary`                              | [IPv6](/reference/data-types/ipv6)                                                                 | `Binary`                 |
+| `Binary`                              | [Int128/UInt128/Int256/UInt256](/reference/data-types/int-uint)                                    | `Binary`                 |
+| `Binary`                              | [Decimal256](/reference/data-types/decimal)                                                        | `Binary`                 |
+| `Union`                               | [Variant](/reference/data-types/variant)                                                           | `Union`                  |
 
 - Other types are not supported.
-- An ORC `Union` column is read as a [Variant](/sql-reference/data-types/variant.md) over the union's branch types, and a `Variant` column is written as an ORC `Union` over its branch types. Note that `Variant` sorts its branch types, so the branch order may differ from the ORC file. Unions with duplicate branch types (e.g. `uniontype<int,int>`) are not supported.
+- An ORC `Union` column is read as a [Variant](/reference/data-types/variant) over the union's branch types, and a `Variant` column is written as an ORC `Union` over its branch types. Note that `Variant` sorts its branch types, so the branch order may differ from the ORC file. Unions with duplicate branch types (e.g. `uniontype<int,int>`) are not supported.
 - Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
-- The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
+- The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
 
 ## Example usage {#example-usage}
 

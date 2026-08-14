@@ -98,8 +98,10 @@ MergeTreeReadTask::MergeTreeReadTask(
 {
     if (updater)
     {
-        dataflow_cache_update_cb
-            = [&](const ColumnsWithTypeAndName & columns, size_t read_bytes, std::optional<bool> & should_continue_sampling) -> void
+        dataflow_cache_update_cb = [&](const ColumnsWithTypeAndName & columns,
+                                       const NameSet & partially_read_columns,
+                                       size_t read_bytes,
+                                       std::optional<bool> & should_continue_sampling) -> void
         {
             chassert(updater);
             const auto & part_columns = info->data_part_info->getColumns();
@@ -107,7 +109,12 @@ MergeTreeReadTask::MergeTreeReadTask(
             static const std::unordered_map<String, ColumnSize> no_column_sizes;
             auto column_sizes = info->data_part_info->getColumnSizes();
             updater->recordInputColumns(
-                columns, part_columns, column_sizes ? *column_sizes : no_column_sizes, read_bytes, should_continue_sampling);
+                columns,
+                partially_read_columns,
+                part_columns,
+                column_sizes ? *column_sizes : no_column_sizes,
+                read_bytes,
+                should_continue_sampling);
         };
     }
 }
