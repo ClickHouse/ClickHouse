@@ -8,7 +8,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/PortUtils.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -681,13 +680,6 @@ ExchangeLookupPtr createExchangeLookup(
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
             "`distributed_query.streaming_exchange_port` must be in range 1..65535, got {}", streaming_exchange_port);
 
-    /// The server shifts its exchange listener by `port_offset`, so the same shift applies when this
-    /// server-level setting is used as the fallback port for peers (which are assumed to share the
-    /// configuration when no per-stream port was shipped).
-    streaming_exchange_port = applyPortOffset(
-        static_cast<UInt16>(streaming_exchange_port),
-        static_cast<Int32>(context->getConfigRef().getInt64("port_offset", 0)));
-
     /// The listener starts only when a listen host is also configured, so streaming peers are
     /// unreachable without one. Reject here instead of connecting to a listener that never started.
     if (getMultipleValuesFromConfig(context->getConfigRef(), "distributed_query", "streaming_exchange_listen_host").empty())
@@ -696,8 +688,9 @@ ExchangeLookupPtr createExchangeLookup(
             "set it, force `distributed_plan_force_exchange_kind = 'Persisted'`, or enable "
             "`distributed_plan_execute_locally` for in-process testing");
 
-    /// A task from an older initiator (version 1) ships no per-stream ports; fall back to this
-    /// node's configured exchange port to preserve the previous single-port behavior.
+    /// A task from an older initiator (version 1) ships no per-stream ports; fall back to the
+    /// unshifted configured exchange port to preserve the previous single-port behavior. A local
+    /// `port_offset` cannot be applied here: the endpoint belongs to another worker.
     ExchangeStreamSources sources_with_ports = exchange_stream_sources;
     for (auto & [stream, address] : sources_with_ports.stream_hosts)
         if (address.port == 0)
@@ -1072,13 +1065,22 @@ static WorkerAddress resolveWorkerAddress(
     if (server_level_exchange_port > 65535)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
             "`distributed_query.streaming_exchange_port` must be in range 0..65535, got {}", server_level_exchange_port);
-    /// A per-replica port from the cluster configuration is explicit and used as-is; only the
-    /// server-level fallback is shifted by `port_offset`, matching the listener in `Server.cpp`.
+    /// A worker can have a different `port_offset` from the initiator, so its actual
+    /// listener port cannot be derived from the initiator's server-level setting.
+    /// Require the worker to advertise its shifted port explicitly in the cluster
+    /// configuration whenever the initiator itself uses an offset.
+    const Int32 port_offset = static_cast<Int32>(
+        context->getConfigRef().getInt64("port_offset", 0));
+    if (cluster_streaming_exchange_port == 0 && port_offset != 0)
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "`port_offset` requires an explicit `streaming_exchange_port` for worker '{}' "
+            "in the stateless worker cluster",
+            host);
+
     address.streaming_exchange_port = cluster_streaming_exchange_port != 0
         ? cluster_streaming_exchange_port
-        : applyPortOffset(
-              static_cast<UInt16>(server_level_exchange_port),
-              static_cast<Int32>(context->getConfigRef().getInt64("port_offset", 0)));
+        : static_cast<UInt16>(server_level_exchange_port);
 
     /// Fall back to the global client port, then the interserver port (read lazily, since
     /// getInterserverIOAddress throws when unconfigured, so an explicit per-node port avoids it).

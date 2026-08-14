@@ -1792,6 +1792,8 @@ modifying individual port configurations. Can be positive or negative. The resul
 must be in range 1-65535, otherwise the server will refuse to start.
 A port configured as `0` (an OS-assigned, ephemeral port) is never offset. An explicit
 client-side `port` setting (for example `--port` of `clickhouse-client`) is not affected.
+For stateless-worker distributed plans, configure each worker's actual shifted
+`streaming_exchange_port` explicitly in the worker cluster configuration.
 
 **Example**
 
