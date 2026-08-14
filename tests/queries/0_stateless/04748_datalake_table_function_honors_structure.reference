@@ -1,0 +1,50 @@
+-- paimon: DESC and SELECT report the same declared type
+f_int Nullable(Int64)
+Nullable(Int64)
+-- paimon: the declared subset is honored and the values are intact
+[1,3,5,7,9]
+-- paimon: a declared column absent from the metadata reads as a default, as for file()
+Nullable(String)	10
+-- iceberg: DESC and SELECT report the same declared type
+c0 LowCardinality(String)
+LowCardinality(String)	a
+-- iceberg: a conflicting declared type is rejected instead of silently using the metadata schema
+Code: 53
+-- paimon: a conflicting declared type is rejected instead of silently using the metadata schema
+Code: 53
+-- iceberg: a structure-bearing read does not keep the metadata sorting key
+0
+1
+-- iceberg: a declared subset that omits a key column does not keep the metadata sorting key
+0
+1
+-- iceberg cluster: a worker keeps the metadata sorting key when only the initiator injected a structure
+0
+1
+-- iceberg cluster: a worker keeps declared columns that the metadata does not have
+[]
+-- iceberg cluster: a declared type that reorders the key column is not ordered by the metadata key
+['10','2','9']
+[2,9,10]
+-- iceberg cluster: DESC and SELECT report the same declared type
+c0 LowCardinality(String)
+LowCardinality(String)
+-- control: a cluster read without a structure argument still works
+a	String
+-- control: without a structure argument the metadata schema is still used
+44
+Nullable(Int32)
+Nullable(Int32)
+10
+-- control: the persistent engine still takes its schema from the metadata
+Nullable(Int32)
+-- control: a column added externally stays visible on a table created with columns
+1
+-- control: an INSERT writes with the authoritative iceberg schema, not the declared one
+7	String
+2
+-- control: deltaLake is unchanged at its default
+Nullable(Int64)	10
+Nullable(Int64)	20
+-- control: deltaLake with an explicit schema reload still prefers the metadata schema
+Tuple(\n    `values` Nullable(String),\n    id Nullable(Int32))

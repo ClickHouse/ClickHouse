@@ -38,6 +38,10 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
     else if (!cached_columns.empty())
         columns = cached_columns;
 
+    /// See TableFunctionObjectStorage::executeImpl.
+    const bool preserve_structure_for_reads = configuration->structure != "auto" && !is_insert_query
+        && configuration->schemaReloadIgnoresExplicitStructure();
+
     auto object_storage = Base::getObjectStorage(context, !is_insert_query);
     StoragePtr storage;
 
@@ -67,7 +71,8 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             /* partition_by_ */Base::partition_by,
             /* order_by_ */nullptr,
             /* is_table_function */true,
-            /* lazy_init */ true);
+            /* lazy_init */ true,
+            preserve_structure_for_reads);
     }
     else
     {
@@ -80,7 +85,8 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             ConstraintsDescription{},
             Base::partition_by,
             context,
-            /* is_table_function */true);
+            /* is_table_function */true,
+            preserve_structure_for_reads);
     }
 
     storage->startup();

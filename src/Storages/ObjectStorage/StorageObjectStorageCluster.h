@@ -19,7 +19,8 @@ public:
         const ConstraintsDescription & constraints_,
         const ASTPtr & partition_by,
         ContextPtr context_,
-        bool is_table_function_ = false);
+        bool is_table_function_ = false,
+        bool preserve_structure_for_reads_ = false);
 
     std::string getName() const override;
 
@@ -43,9 +44,16 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context) override;
 
+    /// Pins `state` and, when the per-format reload is enabled, adopts the snapshot-derived
+    /// metadata; `preserve_structure_for_reads` keeps the caller's columns across that adoption.
+    void applyDataLakeSnapshotToMetadata(
+        StorageInMemoryMetadata & metadata, const DataLakeTableStateSnapshot & state, const ContextPtr & context) const;
+
     const String engine_name;
     const StorageObjectStorageConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
+    /// See StorageObjectStorage::preserve_structure_for_reads.
+    const bool preserve_structure_for_reads = false;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 

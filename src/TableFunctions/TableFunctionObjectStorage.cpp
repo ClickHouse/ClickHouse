@@ -241,6 +241,11 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     else if (!cached_columns.empty())
         columns = cached_columns;
 
+    /// `getActualTableStructure` returns the explicit structure, so DESC reports it. Formats whose
+    /// schema reload is not a user opt-in would then overwrite it in the storage, making DESC and
+    /// SELECT disagree on the same expression. Writes keep using the authoritative lake schema.
+    const bool preserve_structure_for_reads = configuration->structure != "auto" && !is_insert_query
+        && configuration->schemaReloadIgnoresExplicitStructure();
     StoragePtr storage;
     const auto & query_settings = context->getSettingsRef();
 
@@ -267,7 +272,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
             ConstraintsDescription{},
             partition_by,
             context,
-            /* is_table_function */true);
+            /* is_table_function */true,
+            preserve_structure_for_reads);
 
         storage->startup();
         return storage;
@@ -305,7 +311,9 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         /* distributed_processing */ false,
         /* partition_by */ partition_by,
         /* order_by */ nullptr,
-        /* is_table_function */true);
+        /* is_table_function */true,
+        /* lazy_init */ false,
+        preserve_structure_for_reads);
 
     storage->startup();
     return storage;
@@ -1494,6 +1502,11 @@ Description of the arguments coincides with description of arguments in table fu
 
 For `icebergS3`, an optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
+An explicit `structure` is used for reads, so it can select a subset of the columns or override
+their types. A declared type the data files cannot supply raises an error rather than falling back
+to the schema from the Iceberg metadata. Omit the argument to read with that schema. Inserts always
+use the schema from the metadata.
+
 ### Returned value {#returned-value}
 
 A table with the specified structure for reading data in the specified Iceberg table.
@@ -2245,6 +2258,10 @@ Description of the arguments coincides with description of arguments in table fu
 `format` stands for the format of data files in the Paimon table.
 
 For `paimonS3`, an optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
+
+An explicit `structure` is used for reads, so it can select a subset of the columns or override
+their types. A declared type the data files cannot supply raises an error rather than falling back
+to the schema from the Paimon metadata. Omit the argument to read with that schema.
 
 ### Returned value {#returned-value}
 

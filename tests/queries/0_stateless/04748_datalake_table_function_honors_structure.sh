@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# Random settings limits: optimize_read_in_order=(1, None)
+# Tag no-fasttest: Depends on Avro and Parquet
+# The clamp above pins optimize_read_in_order because the sorting-key arm asserts whether
+# read-in-order was taken, which optimize_read_in_order=0 disables outright. Everything else
+# stays randomized.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+PAIMON="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_paimon"
+DELTA="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_delta"
+ICE="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_ice"
+mkdir -p "${USER_FILES_PATH}"
+cp -r "${CUR_DIR}/data_minio/paimon_no_partition" "${PAIMON}"
+cp -r "${CUR_DIR}/data_delta_lake/struct_column_mapping" "${DELTA}"
+
+CH="${CLICKHOUSE_CLIENT}"
+
+echo "-- paimon: DESC and SELECT report the same declared type"
+${CH} -q "DESC paimonLocal('${PAIMON}', 'Parquet', 'f_int Nullable(Int64)')" | awk -F'\t' '{print $1, $2}'
+${CH} -q "SELECT toTypeName(f_int) FROM paimonLocal('${PAIMON}', 'Parquet', 'f_int Nullable(Int64)') LIMIT 1"
+
+echo "-- paimon: the declared subset is honored and the values are intact"
+${CH} -q "SELECT groupArray(f_int) FROM (SELECT f_int FROM paimonLocal('${PAIMON}', 'Parquet', 'f_int Nullable(Int64)') ORDER BY f_int)"
+
+echo "-- paimon: a declared column absent from the metadata reads as a default, as for file()"
+${CH} -q "SELECT toTypeName(zzz), countIf(zzz IS NULL) FROM paimonLocal('${PAIMON}', 'Parquet', 'zzz Nullable(String)')"
+
+echo "-- iceberg: DESC and SELECT report the same declared type"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "CREATE TABLE ice (c0 String) ENGINE = IcebergLocal('${ICE}/', 'Parquet')"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "INSERT INTO TABLE FUNCTION icebergLocal('${ICE}/', 'Parquet', 'c0 String') (c0) SELECT 'a'"
+${CH} -q "DESC icebergLocal('${ICE}/', 'Parquet', 'c0 LowCardinality(String)')" | awk -F'\t' '{print $1, $2}'
+${CH} -q "SELECT toTypeName(c0), c0 FROM icebergLocal('${ICE}/', 'Parquet', 'c0 LowCardinality(String)')"
+
+# The compatible override just above is the pair for this arm: it stays green while a declared type
+# the file cannot supply is rejected, which is what makes the rejection specific rather than the
+# expression being broken. Map over a scalar is a structural conflict, so the outcome does not depend
+# on the fixture's values.
+echo "-- iceberg: a conflicting declared type is rejected instead of silently using the metadata schema"
+${CH} -q "SELECT c0 FROM icebergLocal('${ICE}/', 'Parquet', 'c0 Map(String, String)')" 2>&1 | grep -oE 'Code: [0-9]+' | head -1
+
+echo "-- paimon: a conflicting declared type is rejected instead of silently using the metadata schema"
+${CH} -q "SELECT f_int FROM paimonLocal('${PAIMON}', 'Parquet', 'f_int Map(String, String)')" 2>&1 | grep -oE 'Code: [0-9]+' | head -1
+
+# A sorted iceberg table: the metadata sorting key is resolved against the metadata schema, so it
+# must not survive alongside a user-declared structure. An empty table counts as sorted, which is
+# what makes this reachable without a Spark-written fixture.
+echo "-- iceberg: a structure-bearing read does not keep the metadata sorting key"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "CREATE TABLE ice13 (id Int64, data String) ENGINE = IcebergLocal('${ICE}13/', 'Parquet') ORDER BY id"
+${CH} -q "EXPLAIN PIPELINE SELECT * FROM icebergLocal('${ICE}13/', 'Parquet') ORDER BY id" | grep -c PartialSortingTransform
+${CH} -q "EXPLAIN PIPELINE SELECT id FROM icebergLocal('${ICE}13/', 'Parquet', 'id Nullable(Int64)') ORDER BY id" | grep -c PartialSortingTransform
+
+# The arm above retypes the key column; this one omits a key column instead. A declared subset that
+# drops the second component of `(id, data)` leaves the key describing a column that will not be
+# emitted, so it must be cleared too, even though the surviving prefix would still order correctly.
+echo "-- iceberg: a declared subset that omits a key column does not keep the metadata sorting key"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "CREATE TABLE ice15 (id Int64, data String) ENGINE = IcebergLocal('${ICE}15/', 'Parquet') ORDER BY (id, data)"
+${CH} -q "EXPLAIN PIPELINE SELECT * FROM icebergLocal('${ICE}15/', 'Parquet') ORDER BY id" | grep -c PartialSortingTransform
+${CH} -q "EXPLAIN PIPELINE SELECT id FROM icebergLocal('${ICE}15/', 'Parquet', 'id Int64') ORDER BY id" | grep -c PartialSortingTransform
+
+# A cluster initiator injects its own resolved columns into the remote query whether or not the user
+# passed a structure, so the worker still sees a structure and must keep the key those columns match.
+# `icebergLocalCluster` cannot express this (its argument injection is a no-op), so this arm goes
+# through S3. The oracle has to be the WORKER's plan: an initiator-side EXPLAIN cannot see it, and a
+# value or type oracle reads the same on both sides.
+echo "-- iceberg cluster: a worker keeps the metadata sorting key when only the initiator injected a structure"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "CREATE TABLE ice14 (id Int64, data String) ENGINE = IcebergS3(s3_conn, filename='${CLICKHOUSE_DATABASE}_ice14/') ORDER BY id"
+QID_NOSTRUCT="04748-nostruct-${CLICKHOUSE_DATABASE}"
+QID_STRUCT="04748-struct-${CLICKHOUSE_DATABASE}"
+${CH} --query_id="${QID_NOSTRUCT}" -q "SELECT id FROM icebergS3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='${CLICKHOUSE_DATABASE}_ice14/', format='Parquet') ORDER BY id SETTINGS optimize_read_in_order = 1" > /dev/null
+${CH} --query_id="${QID_STRUCT}" -q "SELECT id FROM icebergS3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='${CLICKHOUSE_DATABASE}_ice14/', format='Parquet', structure='id Nullable(Int64)') ORDER BY id SETTINGS optimize_read_in_order = 1" > /dev/null
+${CH} -q "SYSTEM FLUSH LOGS processors_profile_log"
+# Worker rows only: query_id differs from initial_query_id on a secondary query. No sort on the
+# worker means the key survived and read-in-order was taken there.
+${CH} -q "SELECT countIf(name = 'PartialSortingTransform') FROM system.processors_profile_log WHERE initial_query_id = '${QID_NOSTRUCT}' AND query_id != initial_query_id"
+# The same read WITH a user structure still reaches the worker, which proves the arm above is not
+# green merely because nothing was dispatched.
+${CH} -q "SELECT count() > 0 FROM system.processors_profile_log WHERE initial_query_id = '${QID_STRUCT}' AND query_id != initial_query_id"
+
+# Keeping the key and keeping the columns are two separate decisions: clearing the key must not also
+# discard the declared columns, or the snapshot would overwrite them and a column that exists only in
+# the declared structure would not be found on the shard. Declaring a column absent from the metadata
+# is what shows the columns survive the clear.
+echo "-- iceberg cluster: a worker keeps declared columns that the metadata does not have"
+${CH} -q "SELECT groupArray(zzz) FROM icebergS3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='${CLICKHOUSE_DATABASE}_ice14/', format='Parquet', structure='zzz Nullable(String)')"
+
+# The key describes the metadata schema, so a declared type that reorders the key column makes it
+# unsound: read-in-order would then emit rows in the underlying numeric order while the user asked
+# for a String. Rows 2, 9, 10 differ numerically and lexicographically, so the ORDER is the oracle.
+# The fixture is committed because read-in-order additionally needs a per-file `sort_order_id`
+# matching the table's `default-sort-order-id`, which ClickHouse's own writer leaves NULL; Spark
+# writes 0, which is what this manifest carries.
+echo "-- iceberg cluster: a declared type that reorders the key column is not ordered by the metadata key"
+${CH} -q "SELECT groupArray(id) FROM (SELECT id FROM icebergS3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='iceberg_sorted_order_test/', format='Parquet', structure='id String') ORDER BY id)"
+# Same table without a structure: still in its own correct order, so the arm above cannot pass
+# merely because nothing was dispatched or the fixture is unsorted.
+${CH} -q "SELECT groupArray(id) FROM (SELECT id FROM icebergS3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='iceberg_sorted_order_test/', format='Parquet') ORDER BY id)"
+
+echo "-- iceberg cluster: DESC and SELECT report the same declared type"
+${CH} -q "DESC icebergLocalCluster('test_cluster_two_shards_localhost', '${ICE}/', 'Parquet', 'c0 LowCardinality(String)')" | awk -F'\t' '{print $1, $2}'
+${CH} -q "SELECT DISTINCT toTypeName(c0) FROM icebergLocalCluster('test_cluster_two_shards_localhost', '${ICE}/', 'Parquet', 'c0 LowCardinality(String)')"
+
+echo "-- control: a cluster read without a structure argument still works"
+${CH} -q "SELECT DISTINCT c0, toTypeName(c0) FROM icebergLocalCluster('test_cluster_two_shards_localhost', '${ICE}/', 'Parquet')"
+
+echo "-- control: without a structure argument the metadata schema is still used"
+${CH} -q "DESC paimonLocal('${PAIMON}')" | wc -l
+${CH} -q "DESC paimonLocal('${PAIMON}')" | awk -F'\t' '$1=="f_int"{print $2}'
+${CH} -q "SELECT toTypeName(f_int) FROM paimonLocal('${PAIMON}') LIMIT 1"
+${CH} -q "SELECT count() FROM paimonLocal('${PAIMON}')"
+
+echo "-- control: the persistent engine still takes its schema from the metadata"
+${CH} --allow_experimental_paimon_storage_engine=1 -q "CREATE TABLE pt (f_int Int64) ENGINE = PaimonLocal('${PAIMON}', 'Parquet')"
+${CH} -q "DESC pt" | awk -F'\t' '$1=="f_int"{print $2}'
+
+echo "-- control: a column added externally stays visible on a table created with columns"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "CREATE TABLE t7 (c0 String) ENGINE = IcebergLocal('${ICE}7/', 'Parquet')"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "INSERT INTO TABLE FUNCTION icebergLocal('${ICE}7/', 'Parquet', 'c0 String') (c0) SELECT 'a'"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "CREATE TABLE u7 ENGINE = IcebergLocal('${ICE}7/', 'Parquet')"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "ALTER TABLE u7 ADD COLUMN c_ext Nullable(Int64)"
+${CH} -q "DESC t7" | grep -c c_ext
+
+echo "-- control: an INSERT writes with the authoritative iceberg schema, not the declared one"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "CREATE TABLE t11 (c0 String) ENGINE = IcebergLocal('${ICE}11/', 'Parquet')"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "INSERT INTO TABLE FUNCTION icebergLocal('${ICE}11/', 'Parquet', 'c0 Int64') (c0) SELECT 7"
+${CH} -q "SELECT c0, toTypeName(c0) FROM icebergLocal('${ICE}11/')"
+
+# A value the declared type accepts and the iceberg schema does not: the INSERT must be rejected
+# while converting, because the sink header comes from the iceberg schema. If the read-side policy
+# leaked into writes, the INSERT would instead succeed and store a wrongly typed column.
+${CH} --allow_experimental_insert_into_iceberg=1 -q "CREATE TABLE t12 (c0 Int64) ENGINE = IcebergLocal('${ICE}12/', 'Parquet')"
+${CH} --allow_experimental_insert_into_iceberg=1 -q \
+    "INSERT INTO TABLE FUNCTION icebergLocal('${ICE}12/', 'Parquet', 'c0 String') (c0) SELECT 'zzz'" 2>&1 \
+    | grep -c "while converting source column"
+
+echo "-- control: deltaLake is unchanged at its default"
+${CH} -q "SELECT toTypeName(c0), c0 FROM deltaLakeLocal('${DELTA}', 'Parquet', 'c0 Nullable(Int64)') ORDER BY c0"
+
+echo "-- control: deltaLake with an explicit schema reload still prefers the metadata schema"
+${CH} -q "SELECT DISTINCT toTypeName(c1) FROM deltaLakeLocal('${DELTA}', 'Parquet', 'c1 String') SETTINGS delta_lake_reload_schema_for_consistency = 1"
+
+${CH} -q "DROP TABLE IF EXISTS ice14"
+rm -rf "${PAIMON}" "${DELTA}" "${ICE}" "${ICE}7" "${ICE}11" "${ICE}12" "${ICE}13" "${ICE}15"

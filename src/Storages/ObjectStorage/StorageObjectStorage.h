@@ -60,7 +60,8 @@ public:
         ASTPtr partition_by_ = nullptr,
         ASTPtr order_by_ = nullptr,
         bool is_table_function_ = false,
-        bool lazy_init = false);
+        bool lazy_init = false,
+        bool preserve_structure_for_reads_ = false);
 
     String getName() const override;
 
@@ -217,6 +218,14 @@ protected:
 
     VirtualColumnsDescription createVirtualColumns(ColumnsDescription & columns, const std::string & sample_path, const ContextPtr & context) const;
 
+    /// Pins `state` into `metadata` and, when the per-format reload is enabled, adopts the
+    /// snapshot-derived metadata. `preserve_structure_for_reads` keeps the caller's columns
+    /// across that adoption, so an explicit `structure` argument survives; the snapshot's sorting
+    /// key is then kept only while it still describes those columns.
+    /// Returns true when the snapshot-derived metadata was adopted.
+    bool applyDataLakeSnapshotToMetadata(
+        StorageInMemoryMetadata & metadata, const DataLakeTableStateSnapshot & state, const ContextPtr & context) const;
+
     /// Creates ReadBufferIterator for schema inference implementation.
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
         const ObjectStoragePtr & object_storage,
@@ -238,6 +247,9 @@ protected:
     bool supports_prewhere = false;
     bool supports_tuple_elements = false;
     bool is_table_function = false;
+    /// A read-side table function was given an explicit `structure`: keep those columns
+    /// instead of overwriting them from the data lake snapshot.
+    const bool preserve_structure_for_reads = false;
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;
