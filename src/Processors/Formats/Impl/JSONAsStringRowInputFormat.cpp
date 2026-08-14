@@ -217,12 +217,12 @@ If the input has several JSON objects (which are comma separated), they are inte
 If the input data is enclosed in `[]`, it is interpreted as an array of JSON objects.
 
 :::note
-This format can only be parsed for a table with a single field of type [String](/sql-reference/data-types/string.md). 
-The remaining columns must be set to either [`DEFAULT`](/sql-reference/statements/create/table.md/#default) or [`MATERIALIZED`](/sql-reference/statements/create/view#materialized-view), 
+This format can only be parsed for a table with a single field of type [String](/reference/data-types/string).
+The remaining columns must be set to either [`DEFAULT`](/reference/statements/create/table#default) or [`MATERIALIZED`](/reference/statements/create/view#materialized-view),
 or be omitted. 
 :::
 
-Once you serialize the entire JSON object to a String you can use the [JSON functions](/sql-reference/functions/json-functions.md) to process it.
+Once you serialize the entire JSON object to a String you can use the [JSON functions](/reference/functions/regular-functions/json-functions) to process it.
 
 ## Example usage {#example-usage}
 
@@ -300,9 +300,9 @@ void registerInputFormatJSONAsObject(FormatFactory & factory)
         .description = R"DOCS_MD(
 ## Description {#description}
 
-In this format, a single JSON object is interpreted as a single [JSON](/sql-reference/data-types/newjson.md) value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in `[]`, it is interpreted as an array of JSONs.
+In this format, a single JSON object is interpreted as a single [JSON](/reference/data-types/newjson) value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in `[]`, it is interpreted as an array of JSONs.
 
-This format can only be parsed for a table with a single field of type [JSON](/sql-reference/data-types/newjson.md). The remaining columns must be set to [`DEFAULT`](/sql-reference/statements/create/table.md/#default) or [`MATERIALIZED`](/sql-reference/statements/create/view#materialized-view).
+This format can only be parsed for a table with a single field of type [JSON](/reference/data-types/newjson). The remaining columns must be set to [`DEFAULT`](/reference/statements/create/table#default) or [`MATERIALIZED`](/reference/statements/create/view#materialized-view).
 
 ## Example usage {#example-usage}
 
