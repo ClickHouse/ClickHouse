@@ -291,6 +291,7 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
         catch (...)
         {
             LOG_TRACE(getLogger("GeoBbox"), "Failed to parse WKB geometry for bbox extraction: {}", getCurrentExceptionMessage(false));
+            acc.valid = false;
             return false;
         }
         return acc.found;
