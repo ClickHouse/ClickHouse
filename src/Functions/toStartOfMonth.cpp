@@ -14,7 +14,7 @@ REGISTER_FUNCTION(ToStartOfMonth)
 Rounds down a date or date with time to the first day of the month.
 
 :::note
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/operations/settings/settings#enable_extended_results_for_datetime_functions).
 :::
     )";
     FunctionDocumentation::Syntax syntax = R"(
@@ -36,7 +36,7 @@ SELECT toStartOfMonth(toDateTime('2023-04-21 10:20:30'))
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToStartOfMonth>(documentation);
 }

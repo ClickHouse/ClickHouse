@@ -4,7 +4,6 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <Formats/FormatSettings.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <capnp/dynamic.h>
 
@@ -13,7 +12,7 @@ namespace DB
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
+using DataTypes = std::vector<DataTypePtr>;
 
 class CapnProtoSerializer
 {

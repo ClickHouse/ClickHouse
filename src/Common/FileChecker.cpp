@@ -62,11 +62,6 @@ void FileChecker::update(const String & full_file_path)
     map[fileName(full_file_path)] = real_size;
 }
 
-void FileChecker::update(const String & filename, size_t size)
-{
-    map[filename] = size;
-}
-
 void FileChecker::setEmpty(const String & full_file_path)
 {
     map[fileName(full_file_path)] = 0;
@@ -97,7 +92,7 @@ FileChecker::DataValidationTasksPtr FileChecker::getDataValidationTasks()
 std::optional<CheckResult> FileChecker::checkNextEntry(DataValidationTasksPtr & check_data_tasks) const
 {
     String name;
-    size_t expected_size = 0;
+    size_t expected_size;
     bool is_finished = check_data_tasks->next(name, expected_size);
     if (is_finished)
         return {};
@@ -139,35 +134,31 @@ void FileChecker::repair()
     }
 }
 
-void FileChecker::save(WriteBuffer & buffer) const
-{
-    /// So complex JSON structure - for compatibility with the old format.
-    writeCString("{\"clickhouse\":{", buffer);
-
-    auto settings = FormatSettings();
-    for (auto it = map.begin(); it != map.end(); ++it)
-    {
-        if (it != map.begin())
-            writeString(",", buffer);
-
-        /// `escapeForFileName` is not really needed. But it is left for compatibility with the old code.
-        writeJSONString(escapeForFileName(it->first), buffer, settings);
-        writeString(R"(:{"size":")", buffer);
-        writeIntText(it->second, buffer);
-        writeString("\"}", buffer);
-    }
-
-    writeCString("}}", buffer);
-
-}
-
 void FileChecker::save() const
 {
     std::string tmp_files_info_path = parentPath(files_info_path) + "tmp_" + fileName(files_info_path);
 
     {
         std::unique_ptr<WriteBufferFromFileBase> out = disk ? disk->writeFile(tmp_files_info_path) : std::make_unique<WriteBufferFromFile>(tmp_files_info_path);
-        save(*out);
+
+        /// So complex JSON structure - for compatibility with the old format.
+        writeCString("{\"clickhouse\":{", *out);
+
+        auto settings = FormatSettings();
+        for (auto it = map.begin(); it != map.end(); ++it)
+        {
+            if (it != map.begin())
+                writeString(",", *out);
+
+            /// `escapeForFileName` is not really needed. But it is left for compatibility with the old code.
+            writeJSONString(escapeForFileName(it->first), *out, settings);
+            writeString(R"(:{"size":")", *out);
+            writeIntText(it->second, *out);
+            writeString("\"}", *out);
+        }
+
+        writeCString("}}", *out);
+
         out->sync();
         out->finalize();
     }
@@ -191,7 +182,7 @@ void FileChecker::load()
     /// The JSON library does not support whitespace. We delete them. Inefficient.
     while (!in->eof())
     {
-        char c = 0;
+        char c;
         readChar(c, *in);
         if (!isspace(c))
             writeChar(c, out);

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
 #include <Core/UUID.h>
 #include <Core/Types.h>
 #include <boost/container/flat_set.hpp>
@@ -39,8 +38,8 @@ struct RolesOrUsersSet
     RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControl & access_control);
     RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControl & access_control, const std::optional<UUID> & current_user_id);
 
-    boost::intrusive_ptr<ASTRolesOrUsersSet> toAST() const;
-    boost::intrusive_ptr<ASTRolesOrUsersSet> toASTWithNames(const AccessControl & access_control) const;
+    std::shared_ptr<ASTRolesOrUsersSet> toAST() const;
+    std::shared_ptr<ASTRolesOrUsersSet> toASTWithNames(const AccessControl & access_control) const;
 
     String toString() const;
     String toStringWithNames(const AccessControl & access_control) const;

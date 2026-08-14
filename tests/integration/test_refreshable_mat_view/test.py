@@ -1,3 +1,4 @@
+import datetime
 import logging
 import time
 from datetime import datetime
@@ -143,52 +144,49 @@ MODIFY REFRESH
 
 @pytest.fixture(scope="module", autouse=True)
 def module_setup_tables(started_cluster):
-    node.query("DROP DATABASE IF EXISTS test_db")
-    node.query("CREATE DATABASE test_db ON CLUSTER default")
+    node.query(f"DROP DATABASE IF EXISTS test_db")
+    node.query(f"CREATE DATABASE IF NOT EXISTS test_db ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
-    node.query("DROP TABLE IF EXISTS test_db.test_rmv ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS src1 ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS src2 ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS tgt2 ON CLUSTER default")
+    node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
+    node.query("DROP TABLE IF EXISTS test_db.test_rmv ON CLUSTER default")
 
     node.query(
-        "CREATE TABLE src1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
+        f"CREATE TABLE src1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
     )
     node.query(
-        "CREATE TABLE src2 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
+        f"CREATE TABLE src2 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
     )
     node.query(
-        "CREATE TABLE tgt1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = MergeTree ORDER BY tuple()"
+        f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = MergeTree ORDER BY tuple()"
     )
     node.query(
-        "CREATE TABLE tgt2 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
+        f"CREATE TABLE tgt2 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
     )
     node.query(
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS dummy_rmv ON CLUSTER default "
-        "REFRESH EVERY 10 HOUR engine Memory EMPTY AS select number as x from numbers(1)"
+        f"CREATE MATERIALIZED VIEW IF NOT EXISTS dummy_rmv ON CLUSTER default "
+        f"REFRESH EVERY 10 HOUR engine Memory EMPTY AS select number as x from numbers(1)"
     )
 
 
 @pytest.fixture(scope="function")
 def fn_setup_tables():
-    node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
-    node.query("DROP TABLE IF EXISTS test_db.test_rmv ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS src1 ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default")
+    node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
+    node.query("DROP TABLE IF EXISTS test_db.test_rmv ON CLUSTER default")
 
     node.query(
-        "CREATE TABLE tgt1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = MergeTree ORDER BY tuple()"
+        f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = MergeTree ORDER BY tuple()"
     )
 
     node.query(
-        "CREATE TABLE src1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
+        f"CREATE TABLE src1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = Memory"
     )
-    node.query("INSERT INTO src1 VALUES ('2020-01-01', 1), ('2020-01-02', 2)")
-
-
-def opposite_minutes():
-    return (60 - datetime.now().minute) % 60
+    node.query(f"INSERT INTO src1 VALUES ('2020-01-01', 1), ('2020-01-02', 2)")
 
 
 @pytest.mark.parametrize(
@@ -200,6 +198,11 @@ def opposite_minutes():
 )
 @pytest.mark.parametrize("with_append", [True, False])
 @pytest.mark.parametrize("empty", [True, False])
+@pytest.mark.skipif(
+    datetime.now().minute > 57,
+    reason='"EVERY 1 HOUR" refresh interval schedules the refresh to occur at the start of the next hour, '
+           'which might trigger it earlier than expected'
+)
 def test_simple_append(
     module_setup_tables,
     fn_setup_tables,
@@ -209,7 +212,7 @@ def test_simple_append(
 ):
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
-        refresh_interval=f"EVERY 1 HOUR OFFSET {opposite_minutes()} MINUTE",
+        refresh_interval="EVERY 1 HOUR",
         to_clause="tgt1",
         select_query=select_query,
         with_append=with_append,
@@ -246,6 +249,7 @@ def test_simple_append(
 
 
 @pytest.mark.parametrize("with_append", [True, False])
+@pytest.mark.parametrize("if_not_exists", [True, False])
 @pytest.mark.parametrize("on_cluster", [True, False])
 @pytest.mark.parametrize("depends_on", [None, ["default.dummy_rmv"]])
 @pytest.mark.parametrize("empty", [True, False])
@@ -261,10 +265,16 @@ def test_simple_append(
         },
     ],
 )
+@pytest.mark.skipif(
+    datetime.now().minute > 57,
+    reason='"EVERY 1 HOUR" refresh interval schedules the refresh to occur at the start of the next hour, '
+           'which might trigger it earlier than expected'
+)
 def test_alters(
     module_setup_tables,
     fn_setup_tables,
     with_append,
+    if_not_exists,
     on_cluster,
     depends_on,
     empty,
@@ -274,12 +284,11 @@ def test_alters(
     """
     Check correctness of functional states of RMV after CREATE, DROP, ALTER, trigger of RMV, ...
     """
-    schedule_offset = opposite_minutes()
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
-        if_not_exists=False,
+        if_not_exists=if_not_exists,
         db=database_name,
-        refresh_interval=f"EVERY 1 HOUR OFFSET {schedule_offset} MINUTE",
+        refresh_interval="EVERY 1 HOUR",
         depends_on=depends_on,
         to_clause="tgt1",
         select_query="SELECT * FROM src1",
@@ -311,9 +320,9 @@ def test_alters(
 
     alter_sql = ALTER_RMV.render(
         table_name="test_rmv",
-        if_not_exists=False,
+        if_not_exists=if_not_exists,
         db=database_name,
-        refresh_interval=f"EVERY 1 HOUR OFFSET {schedule_offset} MINUTE",
+        refresh_interval="EVERY 1 HOUR",
         depends_on=depends_on,
         # can't change select with alter
         # select_query="SELECT * FROM src1",
@@ -344,8 +353,6 @@ def get_rmv_info(
                 if wait_status
                 else (lambda r: r.iloc[0]["status"] != "Scheduling")
             ),
-            retry_count=max_attempts,
-            sleep_time=delay,
             parse=True,
         ).to_dict("records")[0]
 
@@ -379,13 +386,18 @@ def expect_rows(rows, table="test_rmv"):
     assert len(inserted_data) == rows
 
 
+@pytest.mark.skipif(
+    datetime.now().minute > 57,
+    reason='"EVERY 1 HOUR" refresh interval schedules the refresh to occur at the start of the next hour, '
+           'which might trigger it earlier than expected'
+)
 def test_long_query(fn_setup_tables):
     if node.is_built_with_sanitizer():
         pytest.skip("Disabled for sanitizers")
 
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
-        refresh_interval=f"EVERY 1 HOUR OFFSET {opposite_minutes()} MINUTE",
+        refresh_interval="EVERY 1 HOUR",
         to_clause="tgt1",
         select_query="SELECT now() a, sleep(1) b from numbers(10) settings max_block_size=1",
         with_append=False,
@@ -426,9 +438,9 @@ def test_long_query_cancel(fn_setup_tables):
 
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
-        refresh_interval="EVERY 2 SECONDS",
+        refresh_interval="EVERY 3 SECONDS",
         to_clause="tgt1",
-        select_query="SELECT now() a, sleep(1) b from numbers(3) settings max_block_size=1",
+        select_query="SELECT now() a, sleep(1) b from numbers(5) settings max_block_size=1",
         with_append=False,
         empty=True,
         settings={"refresh_retries": "0"},
@@ -437,9 +449,7 @@ def test_long_query_cancel(fn_setup_tables):
     get_rmv_info(node, "test_rmv", delay=0.1, max_attempts=1000, wait_status="Running")
 
     node.query("SYSTEM CANCEL VIEW test_rmv")
-    rmv = get_rmv_info(
-        node, "test_rmv", delay=0.1, max_attempts=1000, wait_status="Scheduled"
-    )
+    rmv = get_rmv_info(node, "test_rmv", wait_status="Scheduled")
     assert rmv["status"] == "Scheduled"
     assert rmv["exception"] == "cancelled"
     assert rmv["last_success_time"] is None
@@ -451,7 +461,7 @@ def test_long_query_cancel(fn_setup_tables):
         node, "test_rmv", delay=0.1, max_attempts=1000, wait_status="Scheduled"
     )
 
-    assert node.query("SELECT count() FROM tgt1") == "3\n"
+    assert node.query("SELECT count() FROM tgt1") == "5\n"
 
 
 @pytest.fixture(scope="function")
@@ -460,7 +470,7 @@ def fn3_setup_tables():
     node.query("DROP TABLE IF EXISTS test_db.test_rmv ON CLUSTER default SYNC")
     node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default")
 
-    node.query("CREATE TABLE tgt1 ON CLUSTER default (a DateTime) ENGINE = Memory")
+    node.query(f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime) ENGINE = Memory")
 
 
 def test_query_fail(fn3_setup_tables):
@@ -485,11 +495,11 @@ def test_query_fail(fn3_setup_tables):
             exc.value
         )
     assert (
-        node.query("SELECT count() FROM system.view_refreshes WHERE view='test_rmv'")
+        node.query(f"SELECT count() FROM system.view_refreshes WHERE view='test_rmv'")
         == "0\n"
     )
     assert (
-        node.query("SELECT count() FROM system.tables WHERE name='test_rmv'") == "0\n"
+        node.query(f"SELECT count() FROM system.tables WHERE name='test_rmv'") == "0\n"
     )
 
 

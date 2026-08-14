@@ -45,7 +45,6 @@ public:
     explicit X509Certificate(const std::string & path);
 
     static X509Certificate::List fromFile(const std::string & path);
-    static X509Certificate::List fromBuffer(const std::string & buffer);
 
     uint64_t version() const;
     std::string serialNumber() const;
@@ -58,10 +57,6 @@ public:
     std::string publicKeyAlgorithm() const;
     std::string validFrom() const;
     std::string expiresOn() const;
-
-    /// Validity period as Unix timestamps (seconds since epoch).
-    time_t notBefore() const;
-    time_t notAfter() const;
 
     class Subjects
     {
@@ -89,7 +84,7 @@ public:
         bool operator==(const X509Certificate::Subjects & rhs) const;
     };
 
-    Subjects extractAllSubjects() const;
+    Subjects extractAllSubjects();
 
 private:
     X509 * certificate;

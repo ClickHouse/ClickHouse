@@ -10,7 +10,6 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <DataTypes/EnumValues.h>
 
@@ -370,7 +369,7 @@ struct EnumSource
 
     size_t getElementSize() const
     {
-        std::string_view name = data_type.getNameForValue(data[row_num]);
+        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
         return name.size();
     }
 
@@ -381,13 +380,13 @@ struct EnumSource
 
     Slice getWhole() const
     {
-        std::string_view name = data_type.getNameForValue(data[row_num]);
+        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
         return {reinterpret_cast<const UInt8 *>(name.data()), name.size()};
     }
 
     Slice getSliceFromLeft(size_t offset) const
     {
-        std::string_view name = data_type.getNameForValue(data[row_num]);
+        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
         if (offset >= name.size())
             return {reinterpret_cast<const UInt8 *>(name.data()), 0};
         return {reinterpret_cast<const UInt8 *>(name.data()) + offset, name.size() - offset};
@@ -395,7 +394,7 @@ struct EnumSource
 
     Slice getSliceFromLeft(size_t offset, size_t length) const
     {
-        std::string_view name = data_type.getNameForValue(data[row_num]);
+        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
         if (offset >= name.size())
             return {reinterpret_cast<const UInt8 *>(name.data()), 0};
         return {reinterpret_cast<const UInt8 *>(name.data()) + offset, std::min(length, name.size() - offset)};
@@ -403,7 +402,7 @@ struct EnumSource
 
     Slice getSliceFromRight(size_t offset) const
     {
-        std::string_view name = data_type.getNameForValue(data[row_num]);
+        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
         if (offset > name.size())
             return {reinterpret_cast<const UInt8 *>(name.data()), name.size()};
         return {reinterpret_cast<const UInt8 *>(name.data()) + name.size() - offset, offset};
@@ -411,7 +410,7 @@ struct EnumSource
 
     Slice getSliceFromRight(size_t offset, size_t length) const
     {
-        std::string_view name = data_type.getNameForValue(data[row_num]);
+        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
         if (offset > name.size())
             return {reinterpret_cast<const UInt8 *>(name.data()), length + name.size() > offset ? std::min(name.size(), length + name.size() - offset) : 0};
         return {reinterpret_cast<const UInt8 *>(name.data()) + name.size() - offset, std::min(length, offset)};
@@ -639,7 +638,7 @@ inline std::unique_ptr<IStringSource> createDynamicStringSource(const IColumn & 
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of string column: {}", col.getName());
 }
 
-using StringSources = VectorWithMemoryTracking<std::unique_ptr<IStringSource>>;
+using StringSources = std::vector<std::unique_ptr<IStringSource>>;
 
 
 struct GenericArraySource : public ArraySourceImpl<GenericArraySource>

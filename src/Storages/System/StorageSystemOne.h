@@ -1,8 +1,6 @@
 #pragma once
 
-#include <Processors/QueryPlan/ISourceStep.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 
 
 namespace DB
@@ -16,49 +14,25 @@ class Context;
   * Used when the table is not specified in the query.
   * Analog of the DUAL table in Oracle and MySQL.
   */
-class StorageSystemOne final : public StorageWithCommonVirtualColumns
+class StorageSystemOne final : public IStorage
 {
 public:
     explicit StorageSystemOne(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemOne"; }
 
-    static VirtualColumnsDescription createVirtuals();
-
-    void readImpl(
-        QueryPlan & query_plan,
-        const Names & /*column_names*/,
-        const StorageSnapshotPtr & /*storage_snapshot*/,
-        SelectQueryInfo & /*query_info*/,
-        ContextPtr /*context*/,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        size_t /*max_block_size*/,
-        size_t /*num_streams*/) override;
+    Pipe read(
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t num_streams) override;
 
     bool isSystemStorage() const override { return true; }
 
     bool supportsTransactions() const override { return true; }
-};
-
-class ReadFromSystemOneStep final : public ISourceStep
-{
-public:
-    ReadFromSystemOneStep(
-        const Names & column_names_,
-        const StorageSnapshotPtr & storage_snapshot_
-    );
-
-    ReadFromSystemOneStep(const ReadFromSystemOneStep &) = default;
-    ReadFromSystemOneStep(ReadFromSystemOneStep &&) = default;
-
-    String getName() const override { return "ReadFromSystemOne"; }
-
-    QueryPlanStepPtr clone() const override
-    {
-        return std::make_unique<ReadFromSystemOneStep>(*this);
-    }
-
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 };
 
 }

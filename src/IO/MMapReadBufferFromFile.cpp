@@ -3,7 +3,6 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
-#include <Common/ErrnoException.h>
 #include <IO/MMapReadBufferFromFile.h>
 
 

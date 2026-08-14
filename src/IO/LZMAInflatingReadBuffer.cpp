@@ -42,7 +42,7 @@ bool LZMAInflatingReadBuffer::nextImpl()
         return false;
 
     lzma_action action = LZMA_RUN;
-    lzma_ret ret = {};
+    lzma_ret ret;
 
     do
     {
@@ -51,14 +51,6 @@ bool LZMAInflatingReadBuffer::nextImpl()
             in->nextIfAtEnd();
             lstr.next_in = reinterpret_cast<unsigned char *>(in->position());
             lstr.avail_in = in->buffer().end() - in->position();
-
-            /// If the inner stream is completely empty (e.g. a URL returned 404
-            /// and http_skip_not_found_url_for_globs is set), there is nothing to decompress.
-            if (!lstr.avail_in && in->eof() && lstr.total_in == 0)
-            {
-                eof_flag = true;
-                return false;
-            }
         }
 
         if (in->eof())

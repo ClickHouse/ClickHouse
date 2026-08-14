@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-random-settings, no-random-merge-tree-settings, no-flaky-check, no-distributed-cache
-# no-flaky-check: the test is long and timeouts because of thread-fuzzer
+# Tags: no-fasttest, no-parallel, no-random-settings, no-random-merge-tree-settings
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,7 +15,6 @@ SETTINGS disk = disk(type = cache,
                      max_file_segment_size = '40Mi',
                      boundary_alignment = '20Mi',
                      path = '$CLICKHOUSE_TEST_UNIQUE_NAME',
-                     name = '$CLICKHOUSE_TEST_UNIQUE_NAME',
                      disk = 's3_disk');
 
 INSERT INTO test SELECT number, randomString(100) FROM numbers(1000000);
@@ -26,18 +24,12 @@ QUERY_ID=$RANDOM
 $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" -m -q "
 SET enable_filesystem_cache_log = 1;
 SET read_through_distributed_cache=0;
-SYSTEM CLEAR FILESYSTEM CACHE;
+SYSTEM DROP FILESYSTEM CACHE;
 SELECT * FROM test WHERE NOT ignore() LIMIT 1 FORMAT Null;
 SYSTEM FLUSH LOGS filesystem_cache_log;
 "
 
-# Materialize the file-segment view once instead of re-deriving it for every
-# assertion below. Scanning system.remote_data_paths walks the metadata of all
-# disks, which is slow under thread fuzzer; evaluating it once keeps the test
-# from timing out.
-$CLICKHOUSE_CLIENT -m -q "
-DROP TABLE IF EXISTS file_segments;
-CREATE TABLE file_segments ENGINE = Memory AS
+query="
 SELECT cache_path, file_size,
     tupleElement(file_segment_range, 2) - tupleElement(file_segment_range, 1) + 1 as file_segment_size,
     formatReadableSize(file_size) as formatted_file_size,
@@ -53,20 +45,19 @@ FROM (
 ) AS data_paths
 INNER JOIN system.filesystem_cache_log AS cache_log
 ON data_paths.remote_path = cache_log.source_file_path
-WHERE query_id = '$QUERY_ID';
-"
+WHERE query_id = '$QUERY_ID' "
 
 # File segments cannot be less that 20Mi,
 # except for last file segment in a file or if file size is less.
 $CLICKHOUSE_CLIENT -m -q "
-SELECT count() FROM file_segments
+SELECT count() FROM ($query)
 WHERE file_segment_size < file_size
 AND end_offset + 1 != file_size
 AND file_segment_size < 20 * 1024 * 1024;
 "
 
 all=$($CLICKHOUSE_CLIENT -m -q "
-SELECT count() FROM file_segments
+SELECT count() FROM ($query)
 WHERE file_segment_size < file_size AND end_offset + 1 != file_size;
 ")
 #echo $all
@@ -78,7 +69,7 @@ else
 fi
 
 count=$($CLICKHOUSE_CLIENT -m -q "
-SELECT count() FROM file_segments
+SELECT count() FROM ($query)
 WHERE file_segment_size < file_size
 AND end_offset + 1 != file_size
 AND formatted_file_segment_size in ('20.00 MiB', '40.00 MiB')
@@ -90,32 +81,28 @@ else
   echo "FAIL"
 fi
 
-# Same idea for the join against system.filesystem_cache: materialize once.
-$CLICKHOUSE_CLIENT -m -q "
-DROP TABLE IF EXISTS file_segments_cache;
-CREATE TABLE file_segments_cache ENGINE = Memory AS
+query2="
 SELECT *
-FROM file_segments AS cache_log
+FROM (SELECT * FROM ($query)) AS cache_log
 INNER JOIN system.filesystem_cache AS cache
-ON cache_log.cache_path = cache.cache_path AND cache.cache_name = '$CLICKHOUSE_TEST_UNIQUE_NAME';
-"
+ON cache_log.cache_path = cache.cache_path "
 
 $CLICKHOUSE_CLIENT -m -q "
-SELECT count() FROM file_segments_cache
+SELECT count() FROM ($query2)
 WHERE file_segment_range_begin - file_segment_range_end + 1 < file_size
 AND file_segment_range_end + 1 != file_size
 AND downloaded_size < 20 * 1024 * 1024;
 "
 
 $CLICKHOUSE_CLIENT -m -q "
-SELECT count() FROM file_segments_cache
+SELECT count() FROM ($query2)
 WHERE file_segment_range_begin - file_segment_range_end + 1 < file_size
 AND file_segment_range_end + 1 != file_size
 AND formatReadableSize(downloaded_size) not in ('20.00 MiB', '40.00 MiB');
 "
 
 all=$($CLICKHOUSE_CLIENT -m -q "
-SELECT count() FROM file_segments_cache
+SELECT count() FROM ($query2)
 WHERE file_segment_size < file_size AND file_segment_range_end + 1 != file_size;
 ")
 
@@ -126,7 +113,7 @@ else
 fi
 
 count2=$($CLICKHOUSE_CLIENT -m -q "
-SELECT count() FROM file_segments_cache
+SELECT count() FROM ($query2)
 WHERE file_segment_range_begin - file_segment_range_end + 1 < file_size
 AND file_segment_range_end + 1 != file_size
 AND formatReadableSize(downloaded_size) in ('20.00 MiB', '40.00 MiB');

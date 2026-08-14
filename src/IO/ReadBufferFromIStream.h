@@ -19,10 +19,9 @@ private:
     };
 
     std::optional<StreamHolder> stream_holder;
-    bool eof = false;
 
-protected:
     bool nextImpl() override;
+    bool eof = false;
 
 public:
     explicit ReadBufferFromIStream(std::istream & istr_, size_t size = DBMS_DEFAULT_BUFFER_SIZE);

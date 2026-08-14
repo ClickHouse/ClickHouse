@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 
 
 namespace DB
@@ -61,7 +60,7 @@ static Capabilities getCapabilities()
 bool hasLinuxCapability(int cap)
 {
     static Capabilities capabilities = getCapabilities();
-    return (UInt64(1) << cap) & capabilities.effective;
+    return (1 << cap) & capabilities.effective;
 }
 
 }

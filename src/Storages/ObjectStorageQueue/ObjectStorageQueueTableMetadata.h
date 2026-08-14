@@ -24,10 +24,6 @@ struct ObjectStorageQueueTableMetadata
     const String columns;
     const String mode;
     const String last_processed_path;
-    const String bucketing_mode;
-    const String partitioning_mode;
-    const String partition_regex;
-    const String partition_component;
     /// Changeable settings.
     std::atomic<ObjectStorageQueueAction> after_processing;
     std::atomic<UInt64> loading_retries;
@@ -49,10 +45,6 @@ struct ObjectStorageQueueTableMetadata
         , columns(other.columns)
         , mode(other.mode)
         , last_processed_path(other.last_processed_path)
-        , bucketing_mode(other.bucketing_mode)
-        , partitioning_mode(other.partitioning_mode)
-        , partition_regex(other.partition_regex)
-        , partition_component(other.partition_component)
         , after_processing(other.after_processing.load())
         , loading_retries(other.loading_retries.load())
         , processing_threads_num(other.processing_threads_num.load())
@@ -82,14 +74,11 @@ struct ObjectStorageQueueTableMetadata
     String toString() const;
 
     ObjectStorageQueueMode getMode() const;
-    ObjectStorageQueueBucketingMode getBucketingMode() const;
-    ObjectStorageQueuePartitioningMode getPartitioningMode() const;
 
     void adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk);
 
     void checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const;
 
-    /// Whether a queue setting contributes to metadata stored in Keeper.
     static bool isStoredInKeeper(const std::string & name)
     {
         static const std::unordered_set<std::string_view> settings_names
@@ -99,11 +88,6 @@ struct ObjectStorageQueueTableMetadata
             "mode",
             "buckets",
             "last_processed_path",
-            "bucketing_mode",
-            "partitioning_mode",
-            "partition_regex",
-            "partition_component",
-            "use_hive_partitioning",
             "after_processing",
             "loading_retries",
             "processing_threads_num",
@@ -121,9 +105,6 @@ struct ObjectStorageQueueTableMetadata
             return buckets;
         return processing_threads_num;
     }
-
-    bool hasTrackedFilesLimit() const { return tracked_files_limit || tracked_files_ttl_sec; }
-
 private:
     void checkImmutableFieldsEquals(const ObjectStorageQueueTableMetadata & from_zk) const;
 };

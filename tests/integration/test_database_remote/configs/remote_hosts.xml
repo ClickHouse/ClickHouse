@@ -1,6 +1,0 @@
-<clickhouse>
-    <remote_url_allow_hosts>
-        <host>2001:db8::1</host>
-        <host>node2</host>
-    </remote_url_allow_hosts>
-</clickhouse>
