@@ -600,6 +600,7 @@ FileSegment::State FileSegment::wait(size_t offset, size_t timeout_ms)
         chassert(!isDownloaderUnlocked(lk));
 
         std::unique_lock<std::mutex> cv_lk(*lk.mutex(), std::adopt_lock);
+        SCOPE_EXIT({ cv_lk.release(); });
 
         /// Wait for the download in short slices so that cancellation of the waiting query
         /// (KILL QUERY, max_execution_time, a dropped/stopped refreshable materialized view, ...)
@@ -630,7 +631,6 @@ FileSegment::State FileSegment::wait(size_t offset, size_t timeout_ms)
             if (cv.wait_for(cv_lk, slice, downloaded))
                 break;
         }
-        cv_lk.release();
     }
 
     return download_state;
