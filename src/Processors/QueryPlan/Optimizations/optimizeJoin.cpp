@@ -28,7 +28,6 @@
 #if CLICKHOUSE_CLOUD
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #endif
-#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
