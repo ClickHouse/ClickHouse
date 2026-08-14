@@ -56,6 +56,13 @@ void FilterSortedStreamByRange::transform(Chunk & chunk)
     /// so a transform re-entered after the cancellation blocks here and the test times out.
     FailPointInjection::pauseFailPoint(FailPoints::filter_sorted_stream_by_range_pause);
 
+    /// The cancellation can land after the guard above, so check it again right before delegating to
+    /// the inner transform: the inner `FilterTransform` observes the cancellation only once it is
+    /// already inside `ExpressionActions::execute`, so without this the killed query would evaluate
+    /// at least one action of the filter expression for this chunk.
+    if (stopIfCancelled(chunk))
+        return;
+
     const UInt64 rows_before_filtration = chunk.getNumRows();
     if (rows_before_filtration < 2)
     {
@@ -92,6 +99,13 @@ void FilterSortedStreamByRange::transform(Chunk & chunk)
     if (!all_rows_will_pass_filter)
     {
         FailPointInjection::pauseFailPoint(FailPoints::filter_sorted_stream_by_range_fallback_pause);
+
+        /// Same as before the probe: the cancellation can land while the range predicate of the
+        /// probe is being evaluated (or while this thread is paused above), and the fallback call
+        /// re-evaluates the predicate for the whole chunk — do not start it when cancelled.
+        if (stopIfCancelled(chunk))
+            return;
+
         filter_transform.transform(chunk);
         /// Same as above: a kill during the full evaluation must not leave a partially processed
         /// chunk in the output, and must stop this outer transform from pulling further input.
