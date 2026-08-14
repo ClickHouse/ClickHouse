@@ -165,7 +165,7 @@ void TotalsHavingStep::updateOutputHeader()
             getAggregatesMask(*input_headers.front(), aggregates)));
 }
 
-void TotalsHavingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+void TotalsHavingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
     settings[QueryPlanSerializationSetting::totals_mode] = totals_mode;
     settings[QueryPlanSerializationSetting::totals_auto_threshold] = auto_include_threshold;

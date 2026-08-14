@@ -182,6 +182,11 @@ bool remoteTableTargetHasLimitShuffle(ASTs & args, size_t arg_num, const Context
                 query->clone(), context, visited_views, /*fail_on_missing_dependency*/ true);
         }
 
+        if (nested_function->name == "merge" || nested_function->name == "loop"
+            || nested_function->name == "cluster" || nested_function->name == "clusterAllReplicas"
+            || nested_function->name == "remote" || nested_function->name == "remoteSecure")
+            return tableFunctionHasLimitShuffle(*nested_function, context, visited_views);
+
         return true;
     }
 

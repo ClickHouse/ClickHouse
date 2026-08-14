@@ -1,4 +1,5 @@
 SELECT number FROM numbers(10) LIMIT 1 SHUFFLE; -- { serverError SUPPORT_IS_DISABLED }
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT number FROM numbers(10) LIMIT 1 SHUFFLE'));
 SELECT number FROM numbers(10) LIMIT 1 SHUFFLE SETTINGS allow_experimental_shuffle_query = 1, enable_analyzer = 0; -- { serverError SUPPORT_IS_DISABLED }
 SELECT number FROM numbers(10) LIMIT 1 SHUFFLE SETTINGS allow_experimental_shuffle_query = 1, enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
 CREATE TEMPORARY TABLE limit_shuffle_insert_sink (number UInt64);
@@ -37,6 +38,7 @@ SELECT * FROM numbers(3) SETTINGS enable_analyzer = 1, use_query_cache = 1 FORMA
 SELECT * FROM merge(currentDatabase(), '^limit_shuffle_view$') SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
 SELECT * FROM cluster('test_shard_localhost', currentDatabase(), 'limit_shuffle_view') SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
 SELECT * FROM cluster('test_shard_localhost', merge(currentDatabase(), '^limit_shuffle_view$')) SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
+SELECT * FROM cluster('test_shard_localhost', merge(currentDatabase(), '^limit_shuffle_plain_local$')) SETTINGS enable_analyzer = 1, use_query_cache = 1 FORMAT Null;
 SELECT * FROM remote('127.0.0.1', currentDatabase(), 'limit_shuffle_view') SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
 SELECT * FROM loop(limit_shuffle_view) LIMIT 1 SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
 SELECT * FROM loop(merge(currentDatabase(), '^limit_shuffle_view$')) LIMIT 1 SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }

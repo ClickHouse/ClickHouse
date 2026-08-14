@@ -529,14 +529,27 @@ void ASTSelectQuery::setExpression(Expression expr, ASTPtr && ast)
         else
             children[it->second] = ast;
     }
-    else if (positions.contains(expr))
+    else
     {
-        size_t pos = positions[expr];
-        children.erase(children.begin() + pos);
-        positions.erase(expr);
-        for (auto & pr : positions)
-            if (pr.second > pos)
-                --pr.second;
+        /// Removing the ORDER BY clause must also reset the `order_by_all` flag, because the flag
+        /// without the clause is a malformed state: a later (re-)analysis of such a query would try
+        /// to expand ALL over the missing clause. This cannot be done for `group_by_all`: unlike
+        /// ORDER BY ALL, which is always parsed into a one-element ORDER BY list, GROUP BY ALL is
+        /// legitimately represented as the flag with no GROUP BY expression until `expandGroupByAll`
+        /// materializes the list (and the parser itself ends with `setExpression(GROUP_BY, nullptr)`
+        /// for such queries), so the code that removes GROUP BY resets that flag explicitly.
+        if (expr == Expression::ORDER_BY)
+            order_by_all = false;
+
+        if (positions.contains(expr))
+        {
+            size_t pos = positions[expr];
+            children.erase(children.begin() + pos);
+            positions.erase(expr);
+            for (auto & pr : positions)
+                if (pr.second > pos)
+                    --pr.second;
+        }
     }
 }
 
@@ -650,6 +663,8 @@ void ASTSelectQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("order_by_all", true);
     if (limit_with_ties)
         w.writeBool("limit_with_ties", true);
+    if (limit_shuffle)
+        w.writeBool("limit_shuffle", true);
     if (limit_by_all)
         w.writeBool("limit_by_all", true);
 
@@ -690,6 +705,7 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     group_by_with_grouping_sets = r.getBool("group_by_with_grouping_sets");
     order_by_all = r.getBool("order_by_all");
     limit_with_ties = r.getBool("limit_with_ties");
+    limit_shuffle = r.getBool("limit_shuffle");
     limit_by_all = r.getBool("limit_by_all");
 
     auto setExpr = [&](const char * key, ASTSelectQuery::Expression expr)
@@ -851,6 +867,11 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// Reject the parser-impossible shape at the JSON boundary.
     if (limit_with_ties && !orderBy())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_with_ties requires an ORDER BY clause during AST JSON deserialization");
+
+    if (limit_shuffle && !limitLength())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_shuffle requires a LIMIT length clause during AST JSON deserialization");
+    if (limit_shuffle && (limitOffset() || limit_with_ties || orderBy()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_shuffle cannot be used with LIMIT OFFSET, LIMIT WITH TIES, or ORDER BY during AST JSON deserialization");
 }
 
 }

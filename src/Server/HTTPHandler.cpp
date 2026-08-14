@@ -25,6 +25,7 @@
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
@@ -34,6 +35,7 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Processors/Formats/Framing/FramingFormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
 
@@ -87,6 +89,13 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int HTTP_LENGTH_REQUIRED;
     extern const int SESSION_ID_EMPTY;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char http_output_finalize_throw[];
+    extern const char http_push_delayed_results_throw[];
 }
 
 namespace
@@ -523,9 +532,12 @@ void HTTPHandler::processQuery(
 
     applyHTTPResponseHeaders(response, http_response_headers_override);
 
-    auto set_query_result = [&response, this] (const QueryResultDetails & details)
+    auto set_query_result = [&response, &used_output, this] (const QueryResultDetails & details)
     {
         response.add("X-ClickHouse-Query-Id", details.query_id);
+
+        if (details.framed)
+            used_output.framed = true;
 
         if (!(http_response_headers_override && http_response_headers_override->contains(Poco::Net::HTTPMessage::CONTENT_TYPE))
             && details.content_type)
@@ -552,7 +564,23 @@ void HTTPHandler::processQuery(
                                                  const ContextPtr & context_,
                                                  const std::optional<FormatSettings> & format_settings)
     {
-        if (settings[Setting::http_write_exception_in_output_format] && current_output_format.supportsWritingException())
+        const auto & framing = current_output_format.getFraming();
+
+        /// Latch the fail-close guard for framed responses here as well, not only in
+        /// `set_query_result`. On the exception path `executeQuery` deliberately swallows a failure
+        /// of the `set_result_details` callback (see the
+        /// `execute_query_calling_empty_set_result_func_on_exception` failpoint and the `04629`
+        /// test), so the callback may never run even though the response is about to be written
+        /// through a framing format. Without this, a second failure - while writing the exception
+        /// packet or while closing the response - would make `trySendExceptionToClient` miss the
+        /// framed fast path and append a plain `__exception__` block after a partial packet stream.
+        if (framing)
+            used_output.framed = true;
+
+        /// With a framing format, the exception is always written as a separate packet, because the
+        /// client parses the response as a stream of packets. Otherwise the exception is written into
+        /// the output format if the format supports it and the corresponding setting is enabled.
+        if (framing || (settings[Setting::http_write_exception_in_output_format] && current_output_format.supportsWritingException()))
         {
             /// If wait_end_of_query=true in case of an exception all data written to output format during query execution will be
             /// ignored, so we cannot write exception message in current output format as it will be also ignored.
@@ -561,7 +589,21 @@ void HTTPHandler::processQuery(
             if (wait_end_of_query)
             {
                 auto header = current_output_format.getPort(IOutputFormat::PortKind::Main).getHeader();
-                used_output.exception_writer = [&, format_name, header, context_, format_settings, session_id, close_session](WriteBuffer & buf, int code, const String & message)
+                String framing_name = framing ? framing->getName() : "";
+
+                /// The buffered output is discarded on an exception, so the framing format is recreated
+                /// below from `framing_name` alone. Carry over the log and profile-events queues that
+                /// were attached during parsing and planning (the `framing` object goes out of scope
+                /// before this writer runs, so the queues are captured by value here) - otherwise the
+                /// framed exception response would drop the `log` / `profile_events` packets that the
+                /// streaming path and the documentation promise.
+                std::shared_ptr<InternalTextLogsQueue> framing_logs_queue = framing ? framing->getLogsQueue() : nullptr;
+                InternalProfileEventsQueuePtr framing_profile_events_queue = framing ? framing->getProfileEventsQueue() : nullptr;
+                String framing_profile_events_host_name = framing ? framing->getProfileEventsHostName() : "";
+                UInt64 framing_profile_events_period_us = framing ? framing->getProfileEventsPeriodMicroseconds() : 0;
+
+                used_output.exception_writer = [&, format_name, framing_name, header, context_, format_settings, session_id, close_session,
+                    framing_logs_queue, framing_profile_events_queue, framing_profile_events_host_name, framing_profile_events_period_us](WriteBuffer & buf, int code, const String & message)
                 {
                     if (used_output.out_holder->isCanceled())
                     {
@@ -572,9 +614,27 @@ void HTTPHandler::processQuery(
                     drainRequestIfNeeded(request, response);
                     used_output.out_holder->setExceptionCode(code);
 
-                    auto output_format = FormatFactory::instance().getOutputFormat(format_name, buf, header, context_, format_settings);
-                    output_format->setException(message);
-                    output_format->finalize();
+                    if (!framing_name.empty())
+                    {
+                        /// All the output buffered so far is discarded, so the framing format is created
+                        /// anew, and the response consists of the auxiliary packets (logs, profile events)
+                        /// accumulated so far followed by a single exception packet.
+                        auto framing_for_exception = createFramingFormat(
+                            framing_name, buf, format_settings ? *format_settings : getFormatSettings(context_), {.is_http = true});
+                        if (framing_logs_queue)
+                            framing_for_exception->setLogsQueue(framing_logs_queue);
+                        if (framing_profile_events_queue)
+                            framing_for_exception->setProfileEventsQueue(
+                                framing_profile_events_queue, framing_profile_events_host_name, framing_profile_events_period_us);
+                        framing_for_exception->setException(message);
+                        framing_for_exception->finalize();
+                    }
+                    else
+                    {
+                        auto output_format = FormatFactory::instance().getOutputFormat(format_name, buf, header, context_, format_settings);
+                        output_format->setException(message);
+                        output_format->finalize();
+                    }
                     releaseOrCloseSession(session_id, close_session);
                     used_output.finalize();
                     used_output.exception_is_written = true;
@@ -590,8 +650,16 @@ void HTTPHandler::processQuery(
 
                 drainRequestIfNeeded(request, response);
                 used_output.out_holder->setExceptionCode(status.code);
-                current_output_format.setException(status.message);
+                if (framing)
+                    framing->setException(status.message);
+                else
+                    current_output_format.setException(status.message);
                 current_output_format.finalize();
+                /// The output format may defer finalizing the framing format (see
+                /// `deferFramingFinalize`); finalize it here so the exception packet is written.
+                /// `finalize` is idempotent, so this is a no-op if it was already finalized.
+                if (framing)
+                    framing->finalize();
                 releaseOrCloseSession(session_id, close_session);
                 used_output.finalize();
 
@@ -604,9 +672,14 @@ void HTTPHandler::processQuery(
     {
         releaseOrCloseSession(session_id, close_session);
 
-        /// Flush all the data from one buffer to another, to track
-        /// NetworkSendElapsedMicroseconds/NetworkSendBytes from the query
-        /// context
+        /// Flush all the data from one buffer to another. For a plain response the callback runs
+        /// before the QueryFinish entry is recorded (inside `finishExecutedQuery`), so the
+        /// NetworkSendElapsedMicroseconds/NetworkSendBytes of this flush are attributed to the
+        /// query. For a framed response it runs after the QueryFinish entry instead (the framed
+        /// stream tail must include the packets emitted by the query-finish logging, and closing
+        /// the response must come after that - see `executeQuery.h`), so the send counters of the
+        /// response tail are not part of the query's snapshot, like the trailing sends of the
+        /// native protocol.
         used_output.finalize();
     };
 
@@ -670,6 +743,49 @@ try
         /// If nothing was sent yet and we don't even know if we must compress the response.
         auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
         return wb.cancelWithException(request, exception_code, message, nullptr);
+    }
+
+    /// A framed response fails closed once its transmission has started. That covers a failure in
+    /// the middle of `Output::finalize` after some of the response was pushed towards the client
+    /// (pushing the delayed results, finalizing the compression, closing the response stream) and
+    /// a failure of the framed exception delivery itself: when `handle_exception_in_output_format`
+    /// throws while writing the terminal `exception` packet (for example while draining the `log`
+    /// / `profile_events` queues) after `data` packets were already streamed, the escaped
+    /// exception lands here with the packet stream unterminated and `exception_is_written` still
+    /// false. In both cases some (or all) of the framed stream is already on the wire. The same
+    /// applies when framed packets are merely buffered: even before `response.sent()`, bytes
+    /// written into `out_maybe_compressed` / `out_holder` are not discarded by
+    /// `cancelWithException` (it keeps non-empty buffers and appends the error message after
+    /// them), so the client would receive a partial packet stream followed by a plain error body.
+    /// Note that `count` is cumulative (bytes ever consumed by the buffer, not bytes currently
+    /// pending in its working buffer), and `out_maybe_compressed` is the buffer the framing
+    /// writes into - the topmost of the HTTP compression wrapper, the internal `compress=1`
+    /// layer and the response buffer. So framed bytes that a transport compressor has already
+    /// swallowed into its internal codec state (where nothing can discard them, and where a
+    /// `count` of the buffers below would show nothing) still make this check fire.
+    /// Appending anything at that point - whether a fresh framed `exception` stream or the generic
+    /// `__exception__` block that `cancelWithException` writes -
+    /// would follow a partial packet stream, breaking the "always a stream of packets" contract.
+    /// The client observes a truncated response and an aborted connection instead - the same
+    /// fail-close rule as for a half-written packet (see `IFramingFormat`). A framed response
+    /// that has not produced any output yet takes the paths below instead: the `exception_writer`
+    /// set up for `wait_end_of_query` discards the stream buffered in the cascade (which does not
+    /// pass through `out_maybe_compressed` until `pushDelayedResults`) and writes a fresh framed
+    /// exception response, and the generic path produces a proper HTTP error response.
+    /// Deliberately NOT gated on `Output::isFinalized`: `finalized` is latched at the very start
+    /// of `Output::finalize`, before `pushDelayedResults` moves anything out of the cascade. Under
+    /// `wait_end_of_query` that push can fail before a single delayed byte reaches
+    /// `out_maybe_compressed` (finalizing the cascade, reopening a temporary file to re-read it),
+    /// and then the response is still untouched - `response.sent()` is false and both counters
+    /// are zero - so a clean error response is still possible and fail-close would only turn a
+    /// reportable error into an aborted connection for no benefit.
+    bool framed_bytes_produced = (used_output.out_maybe_compressed && used_output.out_maybe_compressed->count() > 0)
+        || (used_output.out_holder && used_output.out_holder->count() > 0);
+    if (used_output.framed && !used_output.exception_is_written
+        && (response.sent() || framed_bytes_produced))
+    {
+        used_output.cancel();
+        return false;
     }
 
     chassert(used_output.out_maybe_compressed);
@@ -1080,6 +1196,14 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
 
 void HTTPHandler::Output::pushDelayedResults() const
 {
+    /// Test-only: emulate a failure before any delayed byte reaches the real response (finalizing
+    /// the cascade, reopening a temporary file to re-read it). A framed response must still get a
+    /// proper HTTP error response here, not an aborted connection (see `trySendExceptionToClient`).
+    fiu_do_on(FailPoints::http_push_delayed_results_throw,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before pushing the delayed results");
+    });
+
     auto * cascade_buffer = typeid_cast<CascadeWriteBuffer *>(out_maybe_delayed_and_compressed.get());
     if (!cascade_buffer)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected CascadeWriteBuffer");
@@ -1125,6 +1249,14 @@ void HTTPHandler::Output::finalize()
 
     if (hasDelayed())
         pushDelayedResults();
+
+    /// Test-only: emulate a failure in the middle of finalizing the response - after the delayed
+    /// results were pushed towards the client, but before the response stream is closed. A framed
+    /// response must fail closed here (see `trySendExceptionToClient`).
+    fiu_do_on(FailPoints::http_output_finalize_throw,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while finalizing the HTTP response");
+    });
 
     if (out_delayed_and_compressed_holder)
         out_delayed_and_compressed_holder->finalize();
