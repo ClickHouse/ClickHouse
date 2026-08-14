@@ -149,7 +149,8 @@ Ative o logging da tabela usando a configuração de tabela `enable_logging_to_q
 Os recursos de introspecção são os mesmos do [motor de tabela S3Queue](/pt-BR/reference/engines/table-engines/integrations/s3queue#introspection), com algumas diferenças específicas:
 
 1. Use `system.azure_queue_metadata_cache` para o estado em memória da fila em versões do servidor &gt;= 25.1. Em versões anteriores, use `system.s3queue_metadata_cache` (ele também conterá informações para tabelas `azure`).
-2. Ative `system.azure_queue_log` por meio da configuração principal do ClickHouse, por exemplo.
+2. Use a tabela `system.azure_queue_metadata` para inspecionar diretamente o estado armazenado no Keeper: o número de nós `processed`, `processing` e `failed` por objeto de metadados e, sob demanda, seus conteúdos. Esta é a equivalente `AzureQueue` de `system.s3_queue_metadata`.
+3. Ative `system.azure_queue_log` por meio da configuração principal do ClickHouse, por exemplo.
 
 ```xml
 <azure_queue_log>

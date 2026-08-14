@@ -86,13 +86,15 @@ doc_type: 'reference'
 * `client_version_patch` ([UInt32](/ko/reference/data-types/int-uint)) — clickhouse-client 또는 다른 TCP 클라이언트 버전의 패치 구성 요소입니다.
 * `script_query_number` ([UInt32](/ko/reference/data-types/int-uint)) — 여러 쿼리가 포함된 clickhouse-client 스크립트에서의 쿼리 번호입니다.
 * `script_line_number` ([UInt32](/ko/reference/data-types/int-uint)) — 여러 쿼리가 포함된 clickhouse-client 스크립트에서 쿼리가 시작되는 줄 번호입니다.
-* `http_method` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리를 시작한 HTTP 메서드입니다. 가능한 값: 0 — TCP 인터페이스에서 쿼리 시작, 1 — GET 메서드 사용, 2 — POST 메서드 사용.
+* `http_method` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리를 시작한 HTTP 메서드입니다. 가능한 값: 0 - TCP 인터페이스에서 쿼리 시작, 1 - GET 메서드 사용, 2 - POST 메서드 사용, 4 - PUT 메서드 사용, 5 - DELETE 메서드 사용, 6 - HEAD 메서드 사용.
 * `http_user_agent` ([String](/ko/reference/data-types/string)) — HTTP 쿼리에 전달된 UserAgent HTTP 헤더입니다.
 * `http_referer` ([String](/ko/reference/data-types/string)) — HTTP 쿼리에 전달된 Referer HTTP 헤더입니다(쿼리를 수행한 페이지의 전체 또는 일부 주소를 포함합니다).
 * `forwarded_for` ([String](/ko/reference/data-types/string)) — HTTP 쿼리에 전달된 X-Forwarded-For HTTP 헤더입니다.
 * `quota_key` ([String](/ko/reference/data-types/string)) — 쿼터 설정에서 지정한 쿼터 키입니다(keyed 참조).
 * `distributed_depth` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리가 서버 간에 전달된 횟수입니다.
 * `revision` ([UInt32](/ko/reference/data-types/int-uint)) — ClickHouse revision입니다.
+* `http_handler_name` ([String](/ko/reference/data-types/string)) — 쿼리를 호출한 SQL로 정의된 HTTP handler(CREATE HANDLER)의 이름입니다. 쿼리가 이러한 handler를 통해 호출되지 않은 경우 비어 있습니다.
+* `http_request_url` ([String](/ko/reference/data-types/string)) — 쿼리를 호출한 HTTP 요청 경로(쿼리 문자열 제외)입니다. 민감한 요청 매개변수가 저장되지 않도록 쿼리 문자열은 생략됩니다. HTTP가 아닌 쿼리에서는 비어 있습니다.
 * `log_comment` ([String](/ko/reference/data-types/string)) — 로그 주석입니다. max&#95;query&#95;size 이하 길이의 임의 문자열로 설정할 수 있습니다. 정의되지 않은 경우 빈 문자열입니다.
 * `thread_ids` ([Array(UInt64)](/ko/reference/data-types/array)) — 쿼리 실행에 참여하는 스레드 ID입니다. 이 스레드들은 동시에 실행되지 않았을 수 있습니다.
 * `peak_threads_usage` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리를 실행하는 동시 스레드의 최대 수입니다.

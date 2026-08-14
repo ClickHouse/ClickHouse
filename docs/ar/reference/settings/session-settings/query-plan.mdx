@@ -330,6 +330,17 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 التحكم في الحد الأدنى لعدد أعمدة البيانات من الجانب الأيسر اللازمة لتفعيل تحسين الفهرسة الكسولة في JOIN. تعني القيمة 0 أن هذا التحسين معطّل.
 
+<div id="query_plan_optimize_count_from_text_index">
+  ## query_plan_optimize_count_from_text_index
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد"}]}]} />
+
+يتيح الإجابة عن `SELECT count() ... WHERE <text search predicate>` مباشرةً بالاعتماد على عدد عناصر قوائم الإسناد في فهرس النص، من دون تجسيد الصفوف المطابقة.
+لا يسري إلا عند تمكين `query_plan_direct_read_from_text_index`.
+
 <div id="query_plan_optimize_join_order_algorithm">
   ## query_plan_optimize_join_order_algorithm
 </div>

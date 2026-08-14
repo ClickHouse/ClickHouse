@@ -86,13 +86,15 @@ doc_type: 'reference'
 * `client_version_patch` ([UInt32](/zh/reference/data-types/int-uint)) — clickhouse-client 或其他 TCP 客户端版本的补丁版本号。
 * `script_query_number` ([UInt32](/zh/reference/data-types/int-uint)) — clickhouse-client 多查询脚本中的查询编号。
 * `script_line_number` ([UInt32](/zh/reference/data-types/int-uint)) — clickhouse-client 多查询脚本中查询起始位置的行号。
-* `http_method` ([UInt8](/zh/reference/data-types/int-uint)) — 发起查询的 HTTP 方法。可能的值：0 — 查询通过 TCP 接口发起，1 — 使用 GET 方法，2 — 使用 POST 方法。
+* `http_method` ([UInt8](/zh/reference/data-types/int-uint)) — 发起查询的 HTTP 方法。可能的值：0 — 查询通过 TCP 接口发起，1 — 使用 GET 方法，2 — 使用 POST 方法，4 — 使用 PUT 方法，5 — 使用 DELETE 方法，6 — 使用 HEAD 方法。
 * `http_user_agent` ([String](/zh/reference/data-types/string)) — HTTP 查询中传递的 UserAgent HTTP 请求头。
 * `http_referer` ([String](/zh/reference/data-types/string)) — HTTP 查询中传递的 Referer HTTP 请求头 (包含发起查询的页面的完整或部分地址) 。
 * `forwarded_for` ([String](/zh/reference/data-types/string)) — HTTP 查询中传递的 X-Forwarded-For HTTP 请求头。
 * `quota_key` ([String](/zh/reference/data-types/string)) — quotas 设置中指定的配额键 (请参阅 keyed) 。
 * `distributed_depth` ([UInt64](/zh/reference/data-types/int-uint)) — 查询在服务器之间被转发的次数。
 * `revision` ([UInt32](/zh/reference/data-types/int-uint)) — ClickHouse 修订版本。
+* `http_handler_name` ([String](/zh/reference/data-types/string)) — 调用该查询的 SQL 定义 HTTP handler (`CREATE HANDLER`) 的名称。未通过此类 handler 调用查询时为空。
+* `http_request_url` ([String](/zh/reference/data-types/string)) — 调用该查询的 HTTP 请求路径 (不含查询字符串) 。为避免持久化敏感请求参数，省略查询字符串。对于非 HTTP 查询为空。
 * `log_comment` ([String](/zh/reference/data-types/string)) — 日志注释。可设置为长度不超过 max&#95;query&#95;size 的任意字符串。未定义时为空字符串。
 * `thread_ids` ([Array(UInt64)](/zh/reference/data-types/array)) — 参与查询执行的线程 ID。这些线程不一定同时运行。
 * `peak_threads_usage` ([UInt64](/zh/reference/data-types/int-uint)) — 同时执行查询的最大线程数。

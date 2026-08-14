@@ -44,7 +44,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
     [nats_credential_file = '/var/nats_credentials',]
-    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
     [nats_commit_on_select = false,]
@@ -75,7 +74,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `nats_password` - كلمة مرور NATS.
 * `nats_token` - رمز مصادقة NATS.
 * `nats_credential_file` - مسار ملف بيانات اعتماد NATS.
-* `nats_credentials` - محتوى بيانات اعتماد NATS (الـ payload نفسه الموجود في ملف `.creds` مع JWT المستخدم والبذرة).
 * `nats_startup_connect_tries` - عدد محاولات الاتصال عند بدء التشغيل. القيمة الافتراضية: `5`.
 * `nats_max_rows_per_message` — الحد الأقصى لعدد `rows` المكتوبة في رسالة NATS واحدة للتنسيقات المعتمدة على الصفوف. (القيمة الافتراضية: `1`).
 * `nats_commit_on_select` - ثبّت الرسائل عند تنفيذ query. ينطبق على JetStream فقط؛ إذ لا يحتوي NATS core على إقرارات. القيمة الافتراضية: `0`.
@@ -84,14 +82,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 اتصال SSL:
 
 لإجراء اتصال آمن استخدم `nats_secure = 1`.
-يتم التحكم في التحقق من الشهادة عبر متغير البيئة `CLICKHOUSE_NATS_TLS_SECURE`؛
-إذا كانت الشهادة منتهية الصلاحية، أو موقَّعة ذاتيًا، أو مفقودة، أو غير صالحة لأي سبب آخر، فعطِّل التحقق بتعيين `CLICKHOUSE_NATS_TLS_SECURE=0`.
+يتم التحكم في التحقق من الشهادة عبر متغير البيئة `CLICKHOUSE_NATS_TLS_SECURE`.
+إذا كانت الشهادة منتهية الصلاحية، أو موقعة ذاتيًا، أو مفقودة، أو غير صالحة لأي سبب آخر، فقم بتعطيل التحقق بتعيين `CLICKHOUSE_NATS_TLS_SECURE=0`.
 
 الكتابة في جدول NATS:
 
-إذا كان الجدول يقرأ من موضوع واحد فقط، فسيُنشر أي إدراج إلى نفس الموضوع.
-أما إذا كان الجدول يقرأ من عدة مواضيع، فيجب تحديد الموضوع الذي نريد النشر إليه.
-لهذا السبب، عند الإدراج في جدول يقرأ من عدة مواضيع، يلزم ضبط `stream_like_engine_insert_queue`.
+إذا كان الجدول يقرأ فقط من موضوع واحد، فسيُنشَر أي إدراج إلى نفس الموضوع.
+ومع ذلك، إذا كان الجدول يقرأ من عدة مواضيع، فسنحتاج إلى تحديد الموضوع الذي نرغب في النشر إليه.
+لذلك، عند الإدراج في جدول يقرأ من عدة مواضيع، يلزم ضبط `stream_like_engine_insert_queue`.
 يمكنك اختيار أحد المواضيع التي يقرأ منها الجدول ونشر بياناتك هناك. على سبيل المثال:
 
 ```sql
@@ -124,8 +122,8 @@ CREATE TABLE queue (
              date_time_input_format = 'best_effort';
 ```
 
-يمكن إضافة إعدادات خادم NATS باستخدام ملف إعداد ClickHouse.
-وبشكل أكثر تحديدًا، يمكنك إضافة كلمة المرور الخاصة بك لمحرك NATS:
+يمكن إضافة إعدادات خادم NATS باستخدام ملف إعدادات ClickHouse.
+وبشكل أكثر تحديدًا، يمكنك إضافة كلمة مرور NATS لمحرك NATS:
 
 ```xml
 <nats>

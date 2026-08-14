@@ -149,7 +149,8 @@ SELECT * FROM stats ORDER BY key;
 Возможности интроспекции такие же, как у [движка таблицы S3Queue](/ru/reference/engines/table-engines/integrations/s3queue#introspection), однако есть несколько важных отличий:
 
 1. Используйте `system.azure_queue_metadata_cache` для состояния очереди в памяти в версиях сервера &gt;= 25.1. Для более старых версий используйте `system.s3queue_metadata_cache` (он также содержит информацию о таблицах `azure`).
-2. Включите `system.azure_queue_log` через основную конфигурацию ClickHouse, например:
+2. Используйте таблицу `system.azure_queue_metadata`, чтобы напрямую проверить состояние, хранящееся в Keeper: количество узлов `processed`, `processing` и `failed` для каждого объекта метаданных, а при необходимости — их содержимое. Это аналог `system.s3_queue_metadata` для `AzureQueue`.
+3. Включите `system.azure_queue_log` через основную конфигурацию ClickHouse, например:
 
 ```xml
 <azure_queue_log>

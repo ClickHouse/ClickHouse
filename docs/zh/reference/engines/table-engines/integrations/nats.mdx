@@ -43,7 +43,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
     [nats_credential_file = '/var/nats_credentials',]
-    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
     [nats_commit_on_select = false,]
@@ -54,7 +53,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 * `nats_url` – host:port (例如 `localhost:4222`) 。
 * `nats_subjects` – NATS 表要订阅/发布的 subject 列表。支持通配符 subject，例如 `foo.*.bar` 或 `baz.>`
-* `nats_format` – 消息格式。使用与 SQL `FORMAT` 函数相同的表示法，例如 `JSONEachRow`。更多信息，请参见[Formats](/zh/reference/formats/index)部分。
+* `nats_format` – 消息格式。使用与 SQL `FORMAT` 函数相同的表示法，例如 `JSONEachRow`。更多信息，请参见[格式](/zh/reference/formats/index)部分。
 
 可选参数：
 
@@ -74,7 +73,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `nats_password` - NATS 密码。
 * `nats_token` - NATS 认证标记。
 * `nats_credential_file` - NATS 凭据文件的 path。
-* `nats_credentials` - NATS 凭据内容 (与包含用户 JWT 和 seed 的 `.creds` 文件中的载荷相同) 。
 * `nats_startup_connect_tries` - 启动时的连接尝试次数。默认值：`5`。
 * `nats_max_rows_per_message` — 对于基于行的格式，一条 NATS 消息中写入的最大行数。默认值：`1`。
 * `nats_commit_on_select` - 发出查询时提交消息。仅适用于 JetStream；NATS core 不提供确认机制。默认值：`0`。
@@ -84,7 +82,7 @@ SSL 连接：
 
 如需安全连接，请使用 `nats_secure = 1`。
 证书验证由 `CLICKHOUSE_NATS_TLS_SECURE` 环境变量控制；
-如果证书已过期、为自签名、缺失或因其他原因无效，可通过设置 `CLICKHOUSE_NATS_TLS_SECURE=0` 来禁用验证。
+如果证书已过期、自签名、缺失或以其他方式无效，可通过设置 `CLICKHOUSE_NATS_TLS_SECURE=0` 来禁用验证。
 
 写入 NATS 表：
 
@@ -107,7 +105,7 @@ SETTINGS stream_like_engine_insert_queue = 'subject2'
 VALUES (1, 1);
 ```
 
-此外，还可以在 nats 相关设置的基础上添加格式设置。
+此外，还可以添加格式设置以及 NATS 相关设置。
 
 示例：
 
@@ -123,8 +121,8 @@ CREATE TABLE queue (
              date_time_input_format = 'best_effort';
 ```
 
-可以通过 ClickHouse 配置文件添加 NATS 服务器配置。
-更具体地说，你可以为 NATS 引擎添加密码：
+可通过 ClickHouse 配置文件添加 NATS 服务器配置。
+更具体地说，可以添加 NATS 引擎的密码：
 
 ```xml
 <nats>

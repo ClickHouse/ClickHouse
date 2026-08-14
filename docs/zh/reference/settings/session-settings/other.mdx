@@ -683,6 +683,55 @@ SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+<div id="framing_output_format">
+  ## framing_output_format
+</div>
+
+<BetaBadge />
+
+<SettingsInfoBlock type="String" default_value="None" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "None"},{"label": "用于选择一种帧格式的新设置。该格式可通过 HTTP 在单个输出流中复用数据、totals、extremes、Progress 信息、日志和 profile events 数据包。"}]}]} />
+
+允许在单个 stream 中复用查询响应的不同部分：数据 chunks、totals 和 extremes、Progress 信息数据包、profile events (指标) 以及 server logs，即 native protocol 支持的所有内容。
+
+帧格式独立于输出格式：它们通过分隔并可能编码这些字节 chunks，来封装任意输出格式生成的字节。所有 `data`、`totals` 和 `extremes` 数据包的载荷拼接后，与不使用 framing 时输出格式生成的内容完全一致。辅助数据包 (Progress 信息、日志、profile events、exceptions) 以 JSON 表示。
+
+有一个特意设计的例外：某些输出格式因无法表示 totals 和 extremes 而在普通输出中省略它们 (`JSONCompactEachRow` 系列) ，但在 framing 下会将它们写入 `totals` 和 `extremes` 数据包。对于此类 formats，仅拼接 `data` 数据包即可得到与未分帧输出完全相同的结果，而 `totals` 和 `extremes` 数据包则携带未分帧输出中没有的额外行。
+
+设置了 `send_logs_level` 时会包含 server logs；启用 `send_profile_events` 时会包含 profile events (它们最多每 `interactive_delay` 微秒发送一次，Progress 信息数据包同样受 `interactive_delay` 限流) 。
+
+成功的 stream 会以最终的 `progress` 数据包结束。该数据包携带最终计数器 (`result_rows`、`result_bytes`、`memory_usage`) ，在查询完成日志记录产生的尾随 `log` 和 `profile_events` 数据包之后写入，类似于 native protocol 中的最终 Progress 信息数据包。失败时，`exception` 数据包会成为最后一个数据包；但有一个例外：如果在响应中已生成部分数据包 stream、无法再丢弃时发生失败 (例如数据包写入中途失败、`exception` 数据包本身发送失败，或响应 stream 在刷新或关闭时失败) ，framing 会以失败关闭的方式处理：stream 会在没有终止 `exception` 数据包的情况下结束，客户端看到的是截断的响应和中止的 HTTP connection，而不是可解析的终止数据包。部分数据包 stream 之后绝不会追加任何内容，因此普通 HTTP 错误正文绝不会混入其中。
+
+查询仅通过自身的 `SETTINGS` clause 启用的内容——帧格式、`send_logs_level` 或 `send_profile_events`——在查询解析完成前无法得知，因此相应的日志和 profile events 只能从查询执行开始后捕获。只有当设置来自 session 或 URL 时，才能捕获 parse、plan 和 analysis 阶段的日志和 profile events。例如，某个查询在 analysis 期间失败 (如引用未知表) ，且仅在其 `SETTINGS` clause 中启用 `send_logs_level`，则只会传递 `exception` 数据包，不会传递 analysis 阶段的日志；请在 session 或 URL 中设置 `send_logs_level` 以捕获这些日志。
+
+同样的延迟发现限制也适用于 `send_logs_source_regexp`：日志队列会在捕获每个条目时按 source 过滤，因此仅在查询自身的 `SETTINGS` clause 中设置的 regexp 会从查询执行开始后生效。parse、plan 和 analysis 阶段的 `log` 数据包会按该设置的 session 或 URL 值过滤 (如果未在其中设置，则不过滤) ，因此其中可能包含不匹配查询级别 regexp 的 sources；反之，被更严格的 session 或 URL regexp 丢弃的条目，也无法通过更宽泛的查询级别 regexp 恢复。请在 session 或 URL 中设置 `send_logs_source_regexp`，以过滤整个查询生命周期。
+
+该设置目前仅适用于 HTTP protocol，其他 interfaces 会忽略它。
+
+可能的值：
+
+* `None` - 将所有适用内容 (数据、totals、extremes、Progress 信息) 透明地传递给输出格式，并忽略所有不适用内容 (指标、日志) ，因此默认情况下即可正常工作。
+* `EventStream` - 将数据包封装为 HTTP 服务器发送事件 (`text/event-stream`) 。每个数据包都会作为具有相应名称的事件发送：`data`、`totals`、`extremes`、`progress`、`log`、`profile_events`、`exception`。Progress 信息和其他辅助数据包以 JSON 格式发送。由于服务器发送事件是一种将换行符 (包括回车符 `\r`) 视为分隔符的文本协议，格式化数据块会经过 base64 编码并置于事件的单个 `data` 字段中；解码后即可得到包含所有换行符的完整格式化载荷。`Content-Type` 包含 `payload=base64` 参数以表明这一点。通过这种方式，任何输出格式都可进行字节精确传输，无论是文本还是二进制格式。
+* `JSONEachPacketBase64` - 每个数据包都是单独一行中的 JSON 对象，格式化数据经过 base64 编码，例如 `{"packet":"data","data":"eyJ4IjoxfQo="}`。适用于二进制输出格式。
+* `JSONEachPacketString` - 每个数据包都是单独一行中的 JSON 对象，格式化数据会放入字符串中，例如 `{"packet":"data","data":"{\"x\":1}\n"}`。
+
+`JSONEachPacketString` 会将载荷字节放入 JSON 字符串中，而不对其进行验证或重新编码。`String` 和 `FixedString` 列可存储任意字节，因此文本输出格式 (如 `JSONEachRow`、`TSV` 或 `CSV`) 可能会为此类值输出无效的 UTF-8——正如 ClickHouse&#39; 自身的 `JSONEachRow` 在默认 `output_format_json_validate_utf8 = 0` 时所做的一样——因此生成的 NDJSON 流不保证是有效的 UTF-8。若要以字节精确方式传输任意字节，请使用 `JSONEachPacketBase64`。
+
+示例：
+
+```bash
+curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
+```
+
+结果：
+
+```text
+{"packet":"data","data":"{\"number\":\"0\"}\n{\"number\":\"1\"}\n{\"number\":\"2\"}\n"}
+{"packet":"profile_events","profile_events":[{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"}]}
+{"packet":"progress","progress":{"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1265958"}}
+```
+
 <div id="fsync_metadata">
   ## fsync_metadata
 </div>

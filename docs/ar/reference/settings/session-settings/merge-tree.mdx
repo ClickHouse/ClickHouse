@@ -190,6 +190,16 @@ Possible values:
 
 * أي عدد صحيح موجب.
 
+<div id="merge_tree_prefetch_json_shared_data_substreams">
+  ## merge_tree_prefetch_json_shared_data_substreams
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد للتحكم في prefetch للتدفقات الفرعية للبيانات المشتركة في JSON التي تُقرأ بالانتقال إلى علامة في أجزاء Wide."}]}]} />
+
+يُفعّل prefetch للتدفقات الفرعية للبيانات المشتركة في JSON ضمن أجزاء Wide، والتي تُقرأ بالانتقال إلى علامة. يقرأ هذا prefetch من بداية granule، وهي عادةً ليست الموضع الذي يُقرأ منه التدفق الفرعي، لذلك قد يكون غير ضروري. عطّله لتجاوز عمليات prefetch هذه.
+
 <div id="merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability">
   ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability
 </div>

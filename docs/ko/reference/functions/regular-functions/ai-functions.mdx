@@ -465,6 +465,73 @@ SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials'
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
+<div id="aiRedact">
+  ## aiRedact
+</div>
+
+도입 버전: v26.8.0
+
+LLM 프로바이더를 사용하여 지정된 텍스트에서 개인 식별 정보(PII)를 감지하고 마스킹합니다.
+
+<Warning>
+  `aiRedact`는 LLM을 사용해 최선의 노력으로 PII를 감지하고 마스킹하므로, 출력 결과를
+  신뢰할 수 없습니다. PII의 감지 및 제거 여부는 선택한 모델, 프롬프트, 입력에 따라 달라집니다. 모델은
+  식별자를 놓치거나 일부만 마스킹하거나 주변 텍스트를 변경할 수 있습니다. 형식이 잘 갖춰진 영어 텍스트에서
+  가장 잘 작동하며, 다른 언어 또는 철자, 문장 부호, 문법 오류가 많은 텍스트에서는 결과가 더 나쁠 수 있습니다.
+  `aiRedact`는 출력에 PII가 없음을 보장하지 않으며, 그 자체로 안전하거나 충분한 익명화 수단으로
+  간주해서는 안 됩니다. 신뢰할 수 없는 당사자에게 데이터를 노출하기 전에 항상 출력을 검토하여 조직의 데이터
+  개인정보 보호 및 컴플라이언스 정책을 충족하는지 확인하십시오.
+</Warning>
+
+감지된 각 PII 스팬은 마스킹 토큰(기본값은 `[REDACTED]`이며,
+`replacement` 매개변수로 구성 가능)으로 대체됩니다. `categories` 배열은 마스킹할 PII 유형을 제한하며, 빈 배열을 지정하면
+일반적인 카테고리(이름, 이메일, 전화번호, 주소, 신용카드, IP 주소)의 기본 세트가 사용됩니다.
+
+`aiRedact`는 모델에 감지된 PII 스팬만 변경하도록 지시하지만, 주변 텍스트 보존은
+최선의 노력으로만 이루어지므로 모델이 여전히 이를 변경할 수 있습니다(위 경고 참고). 탭,
+줄바꿈, 캐리지 리턴 이외의 제어 문자는 요청 전에 공백으로 정규화되므로, 이러한 문자가 포함된 입력의 경우 출력은
+입력과 바이트 단위로 동일하지 않습니다.
+
+`aiRedact`는 PII가 대체된 전체 입력 텍스트를 반환하므로 출력 길이는 입력과 거의 같습니다.
+`max_tokens`(기본값 `1024`)는 입력의 토큰 길이보다 크게 설정하십시오. 제한값이 너무 낮아 응답이 잘리면
+불완전해집니다.
+
+**구문**
+
+```sql
+aiRedact(text, categories[, params])
+```
+
+**별칭**: `AIRedact`
+
+**인수**
+
+* `text` — 마스킹할 텍스트입니다. [`String`](/ko/reference/data-types/string)
+* `categories` — 마스킹할 PII 카테고리의 상수 목록입니다(예: `['name', 'ssn', 'credit_card']`). 빈 배열을 지정하면 일반적인 카테고리(이름, 이메일, 전화번호, 주소, 신용카드, IP 주소)의 기본 집합이 사용됩니다. [`Array(String)`](/ko/reference/data-types/array)
+* `params` — 선택적 상수 `Map(String, String)` 매개변수입니다. 함수별 키는 다음과 같습니다. `temperature`(무작위성을 제어하는 샘플링 온도, 기본값 `0.0`), `max_tokens`(호출당 최대 출력 토큰 수, 기본값 `1024` — `aiRedact`는 전체 텍스트를 반환하므로 입력 토큰 수보다 크게 설정해야 합니다. 그렇지 않으면 응답이 잘리거나 불완전할 수 있습니다), `replacement`(감지된 각 PII 스팬을 대체할 토큰, 기본값 `[REDACTED]`). 공통 매개변수인 `credentials` 및 `model`도 적용됩니다([AI 함수](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
+
+**반환 값**
+
+감지된 PII를 마스킹 토큰으로 대체한 텍스트입니다. 요청에 실패하고 `ai_function_throw_on_error`가 비활성화된 경우에는 컬럼 타입의 기본값(빈 문자열)을 반환합니다. [`String`](/ko/reference/data-types/string)
+
+**예시**
+
+**특정 카테고리 마스킹**
+
+```sql title=Query
+SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
+```
+
+```response title=Response
+Purchase was done by customer [REDACTED] with email [REDACTED]
+```
+
+**사용자 지정 토큰으로 기본 PII 카테고리를 마스킹합니다**
+
+```sql title=Query
+SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
+```
+
 <div id="aiSimilarity">
   ## aiSimilarity
 </div>

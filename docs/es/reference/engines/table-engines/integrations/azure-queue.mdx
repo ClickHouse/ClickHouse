@@ -149,7 +149,8 @@ Habilite el registro de la tabla mediante la configuración de tabla `enable_log
 Las capacidades de introspección son las mismas que las del [motor de tabla S3Queue](/es/reference/engines/table-engines/integrations/s3queue#introspection), con varias diferencias concretas:
 
 1. Use `system.azure_queue_metadata_cache` para el estado en memoria de la cola en las versiones del servidor &gt;= 25.1. Para versiones anteriores, use `system.s3queue_metadata_cache` (también contendría información de las tablas `azure`).
-2. Habilite `system.azure_queue_log` mediante la configuración principal de ClickHouse; por ejemplo:
+2. Use la tabla `system.azure_queue_metadata` para inspeccionar directamente el estado almacenado en Keeper: el número de nodos `processed`, `processing` y `failed` por objeto de metadatos y, cuando se solicite, su contenido. Esta es la contraparte de `AzureQueue` de `system.s3_queue_metadata`.
+3. Habilite `system.azure_queue_log` mediante la configuración principal de ClickHouse; por ejemplo:
 
 ```xml
 <azure_queue_log>

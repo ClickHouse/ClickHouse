@@ -250,7 +250,7 @@ SELECT bitmapCardinality(bitmapBuild([1, 3, 3, 5, 7, 7])) AS res
 
 引入版本：v20.1.0
 
-检查 bitmap 是否包含指定元素。该值会按 bitmap 元素类型的无符号整数进行比较。对于有符号 bitmap，负元素会匹配其无符号对应值 (例如，`Int8` 值 `-1` 匹配 `255`) 。
+检查 bitmap 是否包含指定元素。该值会按 bitmap 元素类型的无符号整数进行比较。对于有符号 bitmap，负元素会匹配其对应的无符号值 (例如，`Int8` 值 `-1` 匹配 `255`) 。
 
 **语法**
 
@@ -260,7 +260,7 @@ bitmapContains(bitmap, value)
 
 **参数**
 
-* `bitmap` — bitmap 对象。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)。- `value` — 待检查的元素，其被解释为 bitmap 元素类型的无符号整数。[(U)Int8/16/32/64](/zh/reference/data-types/int-uint)
+* `bitmap` — bitmap 对象。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)。- `value` — 待检查的元素。[(U)Int8/16/32/64](/zh/reference/data-types/int-uint)
 
 **返回值**
 
@@ -548,7 +548,7 @@ bitmapSubsetInRange(bitmap, start, end)
 
 **参数**
 
-* `bitmap` — 要从中提取 子集 的 bitmap。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)。- `start` — 值范围的起始位置 (含) 。[`UInt*`](/zh/reference/data-types/int-uint) - `end` — 值范围的结束位置 (不含) 。[`UInt*`](/zh/reference/data-types/int-uint)
+* `bitmap` — 要从中提取 子集 的 bitmap。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)。- `start` — 范围的起始位置 (含) 。[`UInt*`](/zh/reference/data-types/int-uint) - `end` — 值范围的结束位置 (不含) 。[`UInt*`](/zh/reference/data-types/int-uint)
 
 **返回值**
 
@@ -584,7 +584,7 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 **参数**
 
-* `bitmap` — bitmap 对象。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)。- `range_start` — 要包含的最小元素值 (含) 。[`UInt*`](/zh/reference/data-types/int-uint) - `cardinality_limit` — 子集的最大基数。[`UInt*`](/zh/reference/data-types/int-uint)
+* `bitmap` — bitmap 对象。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)。- `range_start` — 范围的起始值 (含) 。[`UInt32`](/zh/reference/data-types/int-uint) - `cardinality_limit` — 子集的最大基数。[`UInt32`](/zh/reference/data-types/int-uint)
 
 **返回值**
 
@@ -660,7 +660,7 @@ SELECT arraySort(bitmapToArray(bitmapBuild([-128, -1]::Array(Int8)))) AS res;
 
 根据从 `from_array` 到 `to_array` 的映射替换 bitmap 中的元素。
 值会被解释为 bitmap 元素类型的无符号整数 (与 [`bitmapContains`](/zh/reference/functions/regular-functions/bitmap-functions#bitmapContains) 位于同一值域) 。
-对于有符号 bitmap，负元素会与其无符号对应值匹配 (例如，`Int8` 值 `-1` 与 `255` 匹配) 。
+对于有符号 bitmap，负元素会与其对应的无符号值匹配 (例如，`Int8` 值 `-1` 与 `255` 匹配) 。
 `to_array` 中不适合 bitmap 元素类型的值会引发 `BAD_ARGUMENTS`。`from_array` 中
 不适合该类型的值不会被找到，因此不会应用相应的替换。
 
@@ -672,7 +672,7 @@ bitmapTransform(bitmap, from_array, to_array)
 
 **参数**
 
-* `bitmap` — bitmap 对象。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)。- `from_array` — 要替换的元素值组成的 Array，按 bitmap 元素类型的无符号整数解释。[`Array(UInt*)`](/zh/reference/data-types/array)。- `to_array` — 替换值组成的 Array，按 bitmap 元素类型的无符号整数解释。其长度必须与 `from_array` 相同。[`Array(UInt*)`](/zh/reference/data-types/array)。
+* `bitmap` — bitmap 对象。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction)。- `from_array` — 要替换的原始置位组成的 Array。[`Array(T)`](/zh/reference/data-types/array)。- `to_array` — 用于替换的新置位组成的 Array。[`Array(T)`](/zh/reference/data-types/array)。
 
 **返回值**
 
@@ -683,7 +683,7 @@ bitmapTransform(bitmap, from_array, to_array)
 **用法示例**
 
 ```sql title=Query
-SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5]), [2, 4], [20, 40])) AS res;
+SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5]), [2, 4], [20, 40])) AS res;
 ```
 
 ```response title=Response
@@ -792,7 +792,7 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 **参数**
 
-* `bitmap` — Bitmap 对象。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction). - `offset` — 按无符号值升序要跳过的元素数量 (从零开始计数) 。[`UInt*`](/zh/reference/data-types/int-uint) - `cardinality_limit` — 子集中最多包含的元素数量。[`UInt*`](/zh/reference/data-types/int-uint)
+* `bitmap` — Bitmap 对象。[`AggregateFunction(groupBitmap, T)`](/zh/reference/data-types/aggregatefunction). - `offset` — 从开头要跳过的置位数量 (从零开始计数) 。[`UInt32`](/zh/reference/data-types/int-uint) - `cardinality_limit` — 子集中最多包含的置位数量。[`UInt32`](/zh/reference/data-types/int-uint)
 
 **返回值**
 

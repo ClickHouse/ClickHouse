@@ -101,7 +101,7 @@ ClickHouse はテーブルからデータを自動的に削除しません。詳
 * `client_version_patch` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client または他の TCP クライアントのバージョンにおけるパッチ部分。
 * `script_query_number` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client で、複数のクエリを含むスクリプト内のクエリ番号。
 * `script_line_number` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client において、複数のクエリを含むスクリプトでクエリが開始される行番号です。
-* `http_method` ([UInt8](/ja/reference/data-types/int-uint)) — クエリの実行を開始した HTTP メソッド。設定可能な値: 0 — クエリは TCP インターフェイス経由で実行された、1 — GET メソッドが使用された、2 — POST メソッドが使用された、4 — PUT メソッドが使用された、5 — DELETE メソッドが使用された、6 — HEAD メソッドが使用された。
+* `http_method` ([UInt8](/ja/reference/data-types/int-uint)) — クエリの実行を開始した HTTP メソッド。設定可能な値: 0 - クエリは TCP インターフェイス経由で実行された、1 - GET メソッドが使用された、2 - POST メソッドが使用された、4 - PUT メソッドが使用された、5 - DELETE メソッドが使用された、6 - HEAD メソッドが使用された。
 * `http_user_agent` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — HTTPクエリで送信されるHTTPヘッダー UserAgent。
 * `http_referer` ([String](/ja/reference/data-types/string)) — HTTPクエリで渡されるHTTPヘッダーのReferer (クエリを行うページの絶対アドレスまたは部分的なアドレスを含みます) 。
 * `forwarded_for` ([文字列](/ja/reference/data-types/string)) — HTTPクエリで渡される X-Forwarded-For HTTPヘッダー。

@@ -148,7 +148,8 @@ Activez la journalisation pour la table via le paramètre de table `enable_loggi
 Les capacités d&#39;introspection sont les mêmes que pour le [moteur de table S3Queue](/fr/reference/engines/table-engines/integrations/s3queue#introspection), avec toutefois quelques différences notables :
 
 1. Utilisez `system.azure_queue_metadata_cache` pour l&#39;état en mémoire de la file d&#39;attente pour les versions du serveur &gt;= 25.1. Pour les versions antérieures, utilisez `system.s3queue_metadata_cache` (il contiendrait également des informations sur les tables `azure`).
-2. Activez `system.azure_queue_log` via la configuration principale de ClickHouse, par exemple.
+2. Utilisez la table `system.azure_queue_metadata` pour inspecter directement l&#39;état stocké dans Keeper : le nombre de nœuds `processed`, `processing` et `failed` par objet de métadonnées et, à la demande, leur contenu. Il s&#39;agit de l&#39;équivalent `AzureQueue` de `system.s3_queue_metadata`.
+3. Activez `system.azure_queue_log` via la configuration principale de ClickHouse, par exemple.
 
 ```xml
 <azure_queue_log>

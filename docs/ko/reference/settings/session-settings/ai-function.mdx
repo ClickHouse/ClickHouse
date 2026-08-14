@@ -132,7 +132,7 @@ AI 함수가 수행하는 개별 HTTP 요청(AI chat completions 및 임베딩 A
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "새로운 설정"}]}]} />
 
-텍스트 AI 함수(`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`) 호출에서 매개변수 맵에 `credentials`가 전달되지 않은 경우 사용되는 명명된 컬렉션의 이름입니다. 비어 있으면 기본값이 없다는 뜻이며, 이러한 호출에서는 `credentials`를 명시적으로 전달해야 합니다. chat-completions 엔드포인트와 모델은 임베딩 엔드포인트 및 모델과 다르므로, 이 설정은 `ai_function_embedding_default_credentials`와는 별개입니다.
+텍스트 AI 함수(`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) 호출에서 매개변수 맵에 `credentials`가 전달되지 않은 경우 사용되는 명명된 컬렉션의 이름입니다. 비어 있으면 기본값이 없다는 뜻이며, 이러한 호출에서는 `credentials`를 명시적으로 전달해야 합니다. chat-completions 엔드포인트는 임베딩 엔드포인트와 다르므로, 이 설정은 `ai_function_embedding_default_credentials`와는 별개입니다.
 
 <div id="ai_function_throw_on_error">
   ## ai_function_throw_on_error

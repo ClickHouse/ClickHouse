@@ -190,6 +190,16 @@ ClickHouse가 하나의 쿼리에서 `merge_tree_max_rows_to_use_cache`보다 �
 
 * 임의의 양의 정수.
 
+<div id="merge_tree_prefetch_json_shared_data_substreams">
+  ## merge_tree_prefetch_json_shared_data_substreams
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Wide 파트에서 마크를 탐색해 읽는 JSON 공유 데이터 서브스트림의 프리페치를 제어하는 새로운 설정입니다."}]}]} />
+
+마크를 탐색해 읽는 Wide 파트의 JSON 공유 데이터 서브스트림에 대한 프리페치를 활성화합니다. 이러한 프리페치는 그래뉼의 시작 부분부터 읽지만, 일반적으로 서브스트림을 읽는 위치와는 다르므로 불필요할 수 있습니다. 이러한 프리페치를 건너뛰려면 비활성화하십시오.
+
 <div id="merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability">
   ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability
 </div>

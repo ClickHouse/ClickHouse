@@ -1218,7 +1218,7 @@ Devuelve el identificador del fragmento sin el símbolo hash inicial. [`String`]
 **Ejemplo de uso**
 
 ```sql title=Query
-SELECT fragment('https://clickhouse.com/docs/getting-started/quick-start/cloud#1-create-a-clickhouse-service');
+SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-clickhouse-service');
 ```
 
 ```response title=Response
@@ -1290,7 +1290,7 @@ Devuelve la ruta de la URL sin la cadena de consulta. [`String`](/es/reference/d
 **Ejemplo de uso**
 
 ```sql title=Query
-SELECT path('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value');
+SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value');
 ```
 
 ```response title=Response
@@ -1326,7 +1326,7 @@ Devuelve la ruta de la URL, incluida la cadena de consulta y el fragmento. [`Str
 **Ejemplo de uso**
 
 ```sql title=Query
-SELECT pathFull('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value#section');
+SELECT pathFull('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value#section');
 ```
 
 ```response title=Response

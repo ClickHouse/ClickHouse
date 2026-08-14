@@ -330,6 +330,17 @@ EXPLAIN PLAN 中步骤描述的最大长度。
 
 控制启用 JOIN 中惰性索引优化时左侧所需的最小载荷列数。0 表示禁用此优化。
 
+<div id="query_plan_optimize_count_from_text_index">
+  ## query_plan_optimize_count_from_text_index
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置"}]}]} />
+
+允许直接利用文本索引倒排列表的基数执行 `SELECT count() ... WHERE <text search predicate>`，无需具体化匹配的行。
+仅在启用 `query_plan_direct_read_from_text_index` 时生效。
+
 <div id="query_plan_optimize_join_order_algorithm">
   ## query_plan_optimize_join_order_algorithm
 </div>

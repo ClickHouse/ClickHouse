@@ -132,7 +132,7 @@ Atraso inicial, em milissegundos, antes da primeira nova tentativa de uma solici
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nova configuração"}]}]} />
 
-Nome da coleção nomeada usada pelas funções de IA de texto (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`) quando a chamada não fornece `credentials` no mapa de parâmetros. Vazio significa que não há padrão: essas chamadas devem fornecer `credentials` explicitamente. Um endpoint e modelo de chat completions são diferentes de um de embeddings, portanto isso é separado de `ai_function_embedding_default_credentials`.
+Nome da coleção nomeada usada pelas funções de IA de texto (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) quando a chamada não fornece `credentials` no mapa de parâmetros. Vazio significa que não há padrão: essas chamadas devem fornecer `credentials` explicitamente. Um endpoint de chat completions é diferente de um de embeddings, portanto isso é separado de `ai_function_embedding_default_credentials`.
 
 <div id="ai_function_throw_on_error">
   ## ai_function_throw_on_error

@@ -190,6 +190,16 @@ Valores posibles:
 
 * Cualquier entero positivo.
 
+<div id="merge_tree_prefetch_json_shared_data_substreams">
+  ## merge_tree_prefetch_json_shared_data_substreams
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nueva configuración para controlar el prefetch de subflujos de datos compartidos JSON que se leen mediante un reposicionamiento hasta una marca en partes Wide."}]}]} />
+
+Habilita el prefetch de subflujos de datos compartidos JSON en partes Wide que se leen mediante un reposicionamiento hasta una marca. Este prefetch lee desde el inicio del gránulo, que normalmente no es la posición desde la que se lee el subflujo, por lo que puede resultar innecesaria. Desactívela para omitir estos prefetches.
+
 <div id="merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability">
   ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability
 </div>

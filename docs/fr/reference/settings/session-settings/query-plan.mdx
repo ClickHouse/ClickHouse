@@ -330,6 +330,17 @@ Permet de fusionner les filtres dans le plan de requête.
 
 Contrôle le nombre minimal de colonnes de charge utile du côté gauche nécessaire pour activer l’optimisation d’indexation paresseuse dans JOIN. 0 signifie que l’optimisation est désactivée.
 
+<div id="query_plan_optimize_count_from_text_index">
+  ## query_plan_optimize_count_from_text_index
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New setting"}]}]} />
+
+Permet de répondre à `SELECT count() ... WHERE <text search predicate>` directement à partir de la cardinalité des listes de publication de l’index de texte, sans matérialiser les lignes correspondantes.
+Ne prend effet que si `query_plan_direct_read_from_text_index` est activé.
+
 <div id="query_plan_optimize_join_order_algorithm">
   ## query_plan_optimize_join_order_algorithm
 </div>

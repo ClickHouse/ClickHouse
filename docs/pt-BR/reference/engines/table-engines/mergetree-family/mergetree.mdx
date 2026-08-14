@@ -262,7 +262,7 @@ Esse recurso é útil ao usar os motores de tabela [SummingMergeTree](/pt-BR/ref
 
 Nesse caso, faz sentido manter apenas algumas colunas na chave primária para garantir varreduras de intervalo eficientes e adicionar as colunas de dimensão restantes à tupla da chave de ordenação.
 
-O [ALTER](/pt-BR/reference/statements/alter/index) da chave de ordenação é uma operação leve porque, quando uma nova coluna é adicionada simultaneamente à tabela e à chave de ordenação, as partes de dados existentes não precisam ser alteradas. Como a chave de ordenação antiga é um prefixo da nova chave de ordenação e não há dados na coluna recém-adicionada, os dados ficam ordenados tanto pela chave de ordenação antiga quanto pela nova no momento da modificação da tabela.
+O [ALTER](/pt-BR/reference/statements/alter/skipping-index) da chave de ordenação é uma operação leve porque, quando uma nova coluna é adicionada simultaneamente à tabela e à chave de ordenação, as partes de dados existentes não precisam ser alteradas. Como a chave de ordenação antiga é um prefixo da nova chave de ordenação e não há dados na coluna recém-adicionada, os dados ficam ordenados tanto pela chave de ordenação antiga quanto pela nova no momento da modificação da tabela.
 
 <div id="use-of-indexes-and-partitions-in-queries">
   ### Uso de índices e partições em consultas

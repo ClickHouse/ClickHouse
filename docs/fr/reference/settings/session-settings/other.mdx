@@ -693,6 +693,55 @@ SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+<div id="framing_output_format">
+  ## framing_output_format
+</div>
+
+<BetaBadge />
+
+<SettingsInfoBlock type="String" default_value="None" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "None"},{"label": "Nouveau paramètre permettant de sélectionner un format de tramage qui multiplexe les paquets de données, de totaux, d’extrêmes, de progression, de journaux et d’événements de profilage dans un flux de sortie unique via HTTP."}]}]} />
+
+Permet de multiplexer différentes parties de la réponse à une requête dans un flux unique : fragments de données, totaux et extrêmes, paquets de progression, événements de profilage (métriques) et journaux du serveur — tout ce que prend en charge le protocole natif.
+
+Les formats de tramage sont indépendants des formats de sortie : ils encapsulent les octets produits par n’importe quel format de sortie, en séparant et, éventuellement, en encodant ces fragments d’octets. La concaténation des charges utiles de tous les paquets `data`, `totals` et `extremes` correspond exactement à ce que le format de sortie aurait produit sans tramage. Les paquets auxiliaires (progression, journaux, événements de profilage, exceptions) sont représentés en JSON.
+
+Une exception délibérée : un format de sortie qui omet les totaux et les extrêmes de sa sortie brute parce qu’il ne peut pas les représenter (la famille `JSONCompactEachRow`) les émet malgré tout avec le tramage, dans les paquets `totals` et `extremes`. Pour ces formats, la concaténation des seuls paquets `data` correspond exactement à la sortie sans tramage, tandis que les paquets `totals` et `extremes` contiennent des lignes supplémentaires absentes de cette sortie.
+
+Les journaux du serveur sont inclus si le paramètre `send_logs_level` est défini, et les événements de profilage si le paramètre `send_profile_events` est activé (ils sont envoyés au plus une fois toutes les `interactive_delay` microsecondes, et les paquets de progression sont également limités par `interactive_delay`).
+
+Un flux réussi se termine par un paquet `progress` final contenant les compteurs finaux (`result_rows`, `result_bytes`, `memory_usage`), écrit après les paquets `log` et `profile_events` de fin émis par la journalisation de fin de requête, à l’instar du paquet de progression final du protocole natif. En cas d’échec, le paquet `exception` est le dernier paquet — à une exception près : lorsque l’échec survient après qu’une partie du flux de paquets a déjà été produite dans la réponse et ne peut plus être supprimée (l’écriture d’un paquet échoue en cours de route, la transmission du paquet `exception` lui-même échoue, ou le flux de réponse échoue lors de son vidage ou de sa fermeture), le tramage échoue de manière sécurisée : le flux est interrompu sans paquet `exception` terminal, et le client observe une réponse tronquée ainsi qu’une connexion HTTP interrompue au lieu d’un paquet terminal analysable. Rien n’est jamais ajouté après un flux de paquets partiel ; un corps d’erreur HTTP brut n’y est donc jamais mélangé.
+
+Tout ce qu’une requête active uniquement via sa propre clause `SETTINGS` — un format de tramage, `send_logs_level` ou `send_profile_events` — n’est connu qu’après l’analyse de la requête ; les journaux et événements de profilage correspondants ne sont donc capturés qu’à partir de l’exécution de la requête. Les journaux et événements de profilage des phases d’analyse syntaxique, de planification et d’analyse sont capturés uniquement lorsque le paramètre provient de la session ou de l’URL. Par exemple, une requête qui échoue pendant l’analyse (par exemple, en raison d’une référence à une table inconnue) et n’active `send_logs_level` que dans sa clause `SETTINGS` ne transmet que le paquet `exception`, et non les journaux de la phase d’analyse ; définissez `send_logs_level` dans la session ou l’URL pour les capturer.
+
+La même réserve liée à la découverte tardive s’applique à `send_logs_source_regexp` : la file de journaux filtre les entrées par source au moment où chacune est capturée, de sorte qu’une expression régulière définie uniquement dans la clause `SETTINGS` de la requête ne prend effet qu’à partir de l’exécution de la requête. Les paquets `log` des phases d’analyse syntaxique, de planification et d’analyse sont filtrés selon la valeur du paramètre définie dans la session ou l’URL (ils ne sont pas filtrés si elle n’y est pas définie) ; ils peuvent donc inclure des sources qui ne correspondent pas à l’expression régulière définie au niveau de la requête. Inversement, les entrées ignorées par une expression régulière plus restrictive définie dans la session ou l’URL ne sont pas récupérées par une expression régulière plus large définie au niveau de la requête. Définissez `send_logs_source_regexp` dans la session ou l’URL pour filtrer l’ensemble du cycle de vie de la requête.
+
+Le paramètre s’applique actuellement au protocole HTTP et est ignoré par les autres interfaces.
+
+Valeurs possibles :
+
+* `None` - achemine de manière transparente tous les éléments applicables (données, totaux, extrêmes, progression) vers le format de sortie et ignore ceux qui ne le sont pas (métriques, journaux), de sorte que tout fonctionne comme par défaut.
+* `EventStream` - encapsule les paquets sous forme d’événements HTTP envoyés par le serveur (`text/event-stream`). Chaque paquet est envoyé comme un événement portant le nom correspondant : `data`, `totals`, `extremes`, `progress`, `log`, `profile_events`, `exception`. La progression et les autres paquets auxiliaires sont envoyés au format JSON. Comme les événements envoyés par le serveur constituent un protocole texte qui traite les sauts de ligne (y compris les retours chariot, `\r`) comme des délimiteurs, un bloc de données formatées est encodé en base64 dans un unique champ `data` de l’événement. Ce champ se décode en payload entièrement formaté, avec tous ses sauts de ligne ; le `Content-Type` contient un paramètre `payload=base64` pour l’indiquer. Tout format de sortie peut ainsi être transporté exactement octet pour octet, qu’il soit textuel ou binaire.
+* `JSONEachPacketBase64` - chaque paquet est un objet JSON sur une ligne distincte et les données formatées sont encodées en base64, par exemple `{"packet":"data","data":"eyJ4IjoxfQo="}`. Convient aux formats de sortie binaires.
+* `JSONEachPacketString` - chaque paquet est un objet JSON sur une ligne distincte et les données formatées sont placées dans une chaîne, par exemple `{"packet":"data","data":"{\"x\":1}\n"}`.
+
+`JSONEachPacketString` place les octets du payload dans une chaîne JSON sans les valider ni les réencoder. Les colonnes `String` et `FixedString` peuvent contenir des octets arbitraires ; les formats de sortie textuels (tels que `JSONEachRow`, `TSV` ou `CSV`) peuvent donc émettre des valeurs UTF-8 non valides, tout comme le `JSONEachRow` natif de ClickHouse avec la valeur par défaut `output_format_json_validate_utf8 = 0`. Le flux NDJSON résultant n’est alors pas garanti comme étant en UTF-8 valide. Utilisez `JSONEachPacketBase64` pour transporter des octets arbitraires exactement octet pour octet.
+
+Exemple :
+
+```bash
+curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
+```
+
+Résultat :
+
+```text
+{"packet":"data","data":"{\"number\":\"0\"}\n{\"number\":\"1\"}\n{\"number\":\"2\"}\n"}
+{"packet":"profile_events","profile_events":[{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"}]}
+{"packet":"progress","progress":{"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1265958"}}
+```
+
 <div id="fsync_metadata">
   ## fsync_metadata
 </div>

@@ -260,7 +260,7 @@ bitmapContains(bitmap, value)
 
 **Аргументы**
 
-* `bitmap` — объект битмапа. [`AggregateFunction(groupBitmap, T)`](/ru/reference/data-types/aggregatefunction). - `value` — Проверяемый элемент, интерпретируемый как беззнаковое целое число типа элемента битмапа. [(U)Int8/16/32/64](/ru/reference/data-types/int-uint)
+* `bitmap` — объект битмапа. [`AggregateFunction(groupBitmap, T)`](/ru/reference/data-types/aggregatefunction). - `value` — Проверяемый элемент. [(U)Int8/16/32/64](/ru/reference/data-types/int-uint)
 
 **Возвращаемое значение**
 
@@ -548,7 +548,7 @@ bitmapSubsetInRange(bitmap, start, end)
 
 **Аргументы**
 
-* `bitmap` — битмап, из которого извлекается подмножество. [`AggregateFunction(groupBitmap, T)`](/ru/reference/data-types/aggregatefunction). - `start` — начало диапазона значений (включительно). [`UInt*`](/ru/reference/data-types/int-uint) - `end` — конец диапазона значений (исключая). [`UInt*`](/ru/reference/data-types/int-uint)
+* `bitmap` — битмап, из которого извлекается подмножество. [`AggregateFunction(groupBitmap, T)`](/ru/reference/data-types/aggregatefunction). - `start` — начало диапазона (включительно). [`UInt*`](/ru/reference/data-types/int-uint) - `end` — конец диапазона (исключая). [`UInt*`](/ru/reference/data-types/int-uint)
 
 **Возвращаемое значение**
 
@@ -584,7 +584,7 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 **Аргументы**
 
-* `bitmap` — объект битмапа. [`AggregateFunction(groupBitmap, T)`](/ru/reference/data-types/aggregatefunction). - `range_start` — минимальное включаемое значение элемента (включительно). [`UInt*`](/ru/reference/data-types/int-uint) - `cardinality_limit` — максимальная мощность подмножества. [`UInt*`](/ru/reference/data-types/int-uint)
+* `bitmap` — объект битмапа. [`AggregateFunction(groupBitmap, T)`](/ru/reference/data-types/aggregatefunction). - `range_start` — начало диапазона (включительно). [`UInt32`](/ru/reference/data-types/int-uint) - `cardinality_limit` — максимальная мощность подмножества. [`UInt32`](/ru/reference/data-types/int-uint)
 
 **Возвращаемое значение**
 
@@ -672,7 +672,7 @@ bitmapTransform(bitmap, from_array, to_array)
 
 **Аргументы**
 
-* `bitmap` — объект битмапа. [`AggregateFunction(groupBitmap, T)`](/ru/reference/data-types/aggregatefunction). - `from_array` — Array значений элементов для замены, интерпретируемых как беззнаковые целые числа типа элементов битмапа. [`Array(UInt*)`](/ru/reference/data-types/array). - `to_array` — Array значений для замены, интерпретируемых как беззнаковые целые числа типа элементов битмапа. Должен иметь ту же длину, что и `from_array`. [`Array(UInt*)`](/ru/reference/data-types/array).
+* `bitmap` — объект битмапа. [`AggregateFunction(groupBitmap, T)`](/ru/reference/data-types/aggregatefunction). - `from_array` — массив исходных установленных битов, которые необходимо заменить. [`Array(T)`](/ru/reference/data-types/array). - `to_array` — массив новых установленных битов для замены. [`Array(T)`](/ru/reference/data-types/array).
 
 **Возвращаемое значение**
 
@@ -792,7 +792,7 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 **Аргументы**
 
-* `bitmap` — объект битмапа. [`AggregateFunction(groupBitmap, T)`](/ru/reference/data-types/aggregatefunction). - `offset` — количество элементов, которые нужно пропустить в порядке возрастания беззнаковых значений (отсчёт с нуля). [`UInt*`](/ru/reference/data-types/int-uint) - `cardinality_limit` — максимальное количество элементов, включаемых в подмножество. [`UInt*`](/ru/reference/data-types/int-uint)
+* `bitmap` — объект битмапа. [`AggregateFunction(groupBitmap, T)`](/ru/reference/data-types/aggregatefunction). - `offset` — количество установленных битов, которые нужно пропустить с начала (отсчёт с нуля). [`UInt32`](/ru/reference/data-types/int-uint) - `cardinality_limit` — максимальное количество установленных битов, включаемых в подмножество. [`UInt32`](/ru/reference/data-types/int-uint)
 
 **Возвращаемое значение**
 

@@ -693,6 +693,55 @@ SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+<div id="framing_output_format">
+  ## framing_output_format
+</div>
+
+<BetaBadge />
+
+<SettingsInfoBlock type="String" default_value="None" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "None"},{"label": "Nueva configuración para seleccionar un formato de enmarcado que multiplexa paquetes de datos, totales, extremos, progreso, registros y eventos de perfil en un único flujo de salida a través de HTTP."}]}]} />
+
+Permite multiplexar distintas partes de la respuesta de la consulta en un único flujo: fragmentos de datos, totales y extremos, paquetes de progreso, eventos de perfil (métricas) y registros del servidor; todo lo que admite el protocolo nativo.
+
+Los formatos de enmarcado son independientes de los formatos de salida: encapsulan los bytes producidos por cualquier formato de salida, separando y, potencialmente, codificando estos fragmentos de bytes. La concatenación de las cargas útiles de todos los paquetes `data`, `totals` y `extremes` es exactamente lo que habría producido el formato de salida sin enmarcado. Los paquetes auxiliares (progreso, registros, eventos de perfil y excepciones) se representan como JSON.
+
+Hay una excepción deliberada: un formato de salida que omite los totales y extremos en su salida sin enmarcado porque no puede representarlos (la familia `JSONCompactEachRow`) sí los emite con enmarcado, en los paquetes `totals` y `extremes`. Para dichos formatos, la concatenación de los paquetes `data` por sí sola es exactamente la salida sin enmarcado, y los paquetes `totals` y `extremes` contienen filas adicionales que la salida sin enmarcado no incluye.
+
+Los registros del servidor se incluyen si se ha configurado `send_logs_level`, y los eventos de perfil se incluyen si `send_profile_events` está habilitada (se envían como máximo una vez cada `interactive_delay` microsegundos, y los paquetes de progreso también se limitan mediante `interactive_delay`).
+
+Un flujo correcto termina con un paquete `progress` final que contiene los contadores finales (`result_rows`, `result_bytes`, `memory_usage`), escrito después de los paquetes finales `log` y `profile_events` emitidos al registrar la finalización de la consulta, al igual que el paquete de progreso final del protocolo nativo. En caso de error, el paquete `exception` es el último paquete, salvo en un caso: cuando el error ocurre después de que parte del flujo de paquetes ya se haya incluido en la respuesta y ya no pueda descartarse (si la escritura de un paquete falla a mitad de camino, falla la entrega del propio paquete `exception`, o el flujo de respuesta falla durante el vaciado o el cierre), el enmarcado falla de forma segura: el flujo termina sin un paquete `exception` final, y el cliente recibe una respuesta truncada y una conexión HTTP interrumpida en lugar de un paquete final que pueda analizarse. Nunca se añade nada después de un flujo parcial de paquetes, por lo que nunca se mezcla con él un cuerpo de error HTTP sin formato.
+
+Todo lo que una consulta habilita únicamente mediante su propia cláusula `SETTINGS` —un formato de enmarcado, `send_logs_level` o `send_profile_events`— no se conoce hasta que se ha analizado la consulta, por lo que los registros y eventos de perfil correspondientes solo se capturan a partir de la ejecución de la consulta. Los registros y eventos de perfil de las fases de análisis sintáctico, planificación y análisis solo se capturan cuando la configuración procede de la sesión o de la URL. Por ejemplo, una consulta que falla durante el análisis (como una referencia a una tabla desconocida) y habilita `send_logs_level` solo en su cláusula `SETTINGS` entrega únicamente el paquete `exception`, no los registros de la fase de análisis; configure `send_logs_level` en la sesión o en la URL para capturarlos.
+
+La misma salvedad sobre el descubrimiento tardío se aplica a `send_logs_source_regexp`: la cola de registros filtra las entradas por origen en el momento en que se captura cada una, por lo que una expresión regular establecida solo en la propia cláusula `SETTINGS` de la consulta surte efecto a partir de la ejecución de la consulta. Los paquetes `log` de las fases de análisis sintáctico, planificación y análisis se filtran según el valor de la configuración de la sesión o de la URL (no se filtran si no está configurado allí), por lo que pueden incluir orígenes que no coincidan con la expresión regular de nivel de consulta; a la inversa, las entradas descartadas por una expresión regular más restrictiva de la sesión o la URL no se recuperan mediante otra más amplia de nivel de consulta. Configure `send_logs_source_regexp` en la sesión o en la URL para filtrar todo el ciclo de vida de la consulta.
+
+Actualmente, la configuración se aplica al protocolo HTTP y se ignora en otras interfaces.
+
+Valores posibles:
+
+* `None` - enruta de forma transparente todo lo aplicable (datos, totales, extremos, progreso) al formato de salida e ignora todo lo que no lo es (métricas, registros), por lo que todo funciona como de forma predeterminada.
+* `EventStream` - encapsula los paquetes como eventos HTTP enviados por el servidor (`text/event-stream`). Cada paquete se envía como un evento con el nombre correspondiente: `data`, `totals`, `extremes`, `progress`, `log`, `profile_events`, `exception`. El progreso y otros paquetes auxiliares se envían como JSON. Dado que los eventos enviados por el servidor son un protocolo de texto que trata los saltos de línea (incluidos los retornos de carro, `\r`) como delimitadores, un bloque de datos formateados se codifica en Base64 en un único campo `data` del evento, que se decodifica en la carga útil completamente formateada con todos sus saltos de línea; `Content-Type` incluye un parámetro `payload=base64` para indicarlo. Cualquier formato de salida, ya sea de texto o binario, puede transportarse de esta forma con exactitud de bytes.
+* `JSONEachPacketBase64` - cada paquete es un objeto JSON en una línea independiente y los datos formateados se codifican en Base64, por ejemplo: `{"packet":"data","data":"eyJ4IjoxfQo="}`. Adecuado para formatos de salida binarios.
+* `JSONEachPacketString` - cada paquete es un objeto JSON en una línea independiente y los datos formateados se incluyen en una cadena, por ejemplo: `{"packet":"data","data":"{\"x\":1}\n"}`.
+
+`JSONEachPacketString` coloca los bytes de la carga útil en una cadena JSON sin validarlos ni recodificarlos. Las columnas `String` y `FixedString` pueden contener bytes arbitrarios, por lo que los formatos de salida de texto (como `JSONEachRow`, `TSV` o `CSV`) pueden emitir UTF-8 no válido para dichos valores, igual que el propio `JSONEachRow` de ClickHouse con el valor predeterminado `output_format_json_validate_utf8 = 0`; por tanto, no se garantiza que el flujo NDJSON resultante sea UTF-8 válido. Use `JSONEachPacketBase64` para transportar bytes arbitrarios con exactitud de bytes.
+
+Ejemplo:
+
+```bash
+curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
+```
+
+Resultado:
+
+```text
+{"packet":"data","data":"{\"number\":\"0\"}\n{\"number\":\"1\"}\n{\"number\":\"2\"}\n"}
+{"packet":"profile_events","profile_events":[{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"}]}
+{"packet":"progress","progress":{"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1265958"}}
+```
+
 <div id="fsync_metadata">
   ## fsync_metadata
 </div>

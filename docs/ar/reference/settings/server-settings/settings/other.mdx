@@ -574,11 +574,10 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 مسار ملف الاستبدالات. يدعم كلاً من تنسيقي XML وYAML.
 
+لمزيد من المعلومات، راجع قسم [ملفات الإعدادات](/ar/concepts/features/configuration/server-config/configuration-files).
 يكون فارغًا افتراضيًا، ما يعني عدم استخدام أي ملف استبدالات. قبل الإصدار 26.8، كان الملف `/etc/metrika.xml` يُستخدم ضمنيًا متى وُجد؛ إذا كنت تعتمد عليه، فحدّد مساره صراحةً.
 
 لاحظ أن ملفات الإعدادات التي تُحمَّل بشكل منفصل عن إعدادات الخادم الرئيسية — إعدادات المستخدمين (مثل `users.xml` عندما لا يكون مُضمّنًا في الملف الرئيسي) وإعدادات القواميس بتنسيق XML — تقرأ العنصر `include_from` من محتواها الخاص، لا من إعدادات الخادم. ويحتاج كل ملف من هذا النوع يعتمد على الاستبدالات إلى عنصر `include_from` خاص به.
-
-لمزيد من المعلومات، راجع قسم [ملفات الإعدادات](/ar/concepts/features/configuration/server-config/configuration-files).
 
 **مثال**
 

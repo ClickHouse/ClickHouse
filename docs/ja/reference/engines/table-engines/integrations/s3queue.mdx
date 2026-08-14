@@ -529,7 +529,11 @@ CREATE MATERIALIZED VIEW consumer TO stats
   ## イントロスペクション
 </div>
 
-内部状態の確認には、ステートレスな `system.s3queue_metadata_cache` テーブルと、永続的な `system.s3queue_log` テーブルを使用します。
+内部状態の確認には、ステートレスな `system.s3queue_metadata_cache` および `system.s3_queue_metadata` テーブルと、永続テーブル `system.s3queue_log` を使用します。
+
+* ローカルサーバー上で、ファイルごとの処理状態 (現在処理中、処理済み、または失敗したファイル) のインメモリ cache を確認するには、`system.s3queue_metadata_cache` を使用します。
+* Keeper に直接保存されている状態、すなわちメタデータオブジェクトごとの `processed`、`processing`、`failed` ノード数と、必要に応じてその内容を確認するには、`system.s3_queue_metadata` を使用します。これは、インメモリ cache が (まだ) Keeper を反映していない場合や、クラスター全体で共有される状態を確認する場合に役立ちます。
+* `processed` および `failed` ファイルの永続的な履歴には、`system.s3queue_log` を使用します。
 
 1. `system.s3queue_metadata_cache`。このテーブルは永続化されず、`S3Queue` のインメモリ状態、つまり現在処理中のファイル、処理済みのファイル、または処理に失敗したファイルを表示します。
 
@@ -571,7 +575,25 @@ ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMul
 exception:
 ```
 
-2. `system.s3queue_log`。永続テーブルです。`system.s3queue_metadata_cache` と同じ情報を持ちますが、`processed` および `failed` ファイルに関するものです。
+2. `system.s3_queue_metadata`。このテーブルは永続化されず、Keeper から直接状態を読み取ります。メタデータオブジェクトごとの `processed`、`processing`、`failed` ノード数と、必要に応じてそれらの内容を取得します。
+
+`processed_nodes`、`processing_nodes`、`failed_nodes`、`processed_path` カラムはKeeper リクエストを発行し、対応するカラムが選択された場合にのみ取得されます。そのため、`*_nodes_count` カウンターのみを選択すると、追加のKeeper トラフィックを回避できます。
+
+```sql
+SELECT zookeeper_path, processed_nodes_count, processing_nodes_count, failed_nodes_count
+FROM system.s3_queue_metadata
+
+Row 1:
+──────
+zookeeper_path:         /clickhouse/s3queue/25ea5621-ae8c-40c7-96d0-cec959c5ab88/3b3f66a1-9866-4c2e-ba78-b6bfa154207e
+processed_nodes_count:  128
+processing_nodes_count: 2
+failed_nodes_count:     0
+```
+
+カラムの完全な一覧については、`system.s3_queue_metadata` のリファレンスページを参照してください。
+
+3. `system.s3queue_log`。永続テーブルです。`system.s3queue_metadata_cache` と同じ情報を持ちますが、`processed` および `failed` ファイルに関するものです。
 
 このテーブルは次の構造を持ちます。
 

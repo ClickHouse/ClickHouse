@@ -31,6 +31,16 @@ Ignora a cláusula ON CLUSTER em consultas de gerenciamento de entidades de aces
 
 Sempre ignora a cláusula ON CLUSTER em consultas DDL com bancos de dados Replicated.
 
+<div id="ignore_on_cluster_for_replicated_handler_queries">
+  ## ignore_on_cluster_for_replicated_handler_queries
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para ignorar a cláusula ON CLUSTER em consultas de gerenciamento de handlers quando os handlers usam armazenamento replicado (Keeper)."}]}]} />
+
+Ignora a cláusula ON CLUSTER para consultas de gerenciamento de handlers replicados.
+
 <div id="ignore_on_cluster_for_replicated_named_collections_queries">
   ## ignore_on_cluster_for_replicated_named_collections_queries
 </div>

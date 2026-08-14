@@ -260,7 +260,7 @@ bitmapContains(bitmap, value)
 
 **引数**
 
-* `bitmap` — ビットマップオブジェクト。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)。 - `value` — 確認対象の要素。ビットマップの要素型の符号なし整数として解釈されます。[(U)Int8/16/32/64](/ja/reference/data-types/int-uint)
+* `bitmap` — ビットマップオブジェクト。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)。 - `value` — 確認対象の要素。[(U)Int8/16/32/64](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
@@ -548,7 +548,7 @@ bitmapSubsetInRange(bitmap, start, end)
 
 **引数**
 
-* `bitmap` — 部分集合 を抽出する対象のビットマップ。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)。 - `start` — 値の範囲の開始 (含む) 。[`UInt*`](/ja/reference/data-types/int-uint) - `end` — 値の範囲の終了 (含まない) 。[`UInt*`](/ja/reference/data-types/int-uint)
+* `bitmap` — 部分集合 を抽出する対象のビットマップ。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)。 - `start` — 範囲の開始 (含む) 。[`UInt*`](/ja/reference/data-types/int-uint) - `end` — 範囲の終了 (含まない) 。[`UInt*`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
@@ -584,7 +584,7 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 **引数**
 
-* `bitmap` — ビットマップオブジェクト。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)。 - `range_start` — 含める最小要素値 (この値を含む) 。[`UInt*`](/ja/reference/data-types/int-uint) - `cardinality_limit` — 部分集合の最大カーディナリティ。[`UInt*`](/ja/reference/data-types/int-uint)
+* `bitmap` — ビットマップオブジェクト。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)。 - `range_start` — 範囲の開始 (この値を含む) 。[`UInt32`](/ja/reference/data-types/int-uint) - `cardinality_limit` — 部分集合の最大カーディナリティ。[`UInt32`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
@@ -672,7 +672,7 @@ bitmapTransform(bitmap, from_array, to_array)
 
 **引数**
 
-* `bitmap` — ビットマップオブジェクト。 [`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction). - `from_array` — 置き換える要素値の Array。ビットマップ要素型の符号なし整数として解釈されます。 [`Array(UInt*)`](/ja/reference/data-types/array). - `to_array` — 置き換え値の Array。ビットマップ要素型の符号なし整数として解釈されます。`from_array` と同じ長さである必要があります。 [`Array(UInt*)`](/ja/reference/data-types/array).
+* `bitmap` — ビットマップオブジェクト。 [`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction). - `from_array` — 置き換える元のセットビットの Array。 [`Array(T)`](/ja/reference/data-types/array). - `to_array` — 置き換え先となる新しいセットビットの Array。 [`Array(T)`](/ja/reference/data-types/array).
 
 **戻り値**
 
@@ -792,7 +792,7 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 **引数**
 
-* `bitmap` — ビットマップオブジェクト。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction). - `offset` — 符号なし値の昇順でスキップする要素数 (0ベース) 。[`UInt*`](/ja/reference/data-types/int-uint) - `cardinality_limit` — 部分集合に含める要素の最大数。[`UInt*`](/ja/reference/data-types/int-uint)
+* `bitmap` — ビットマップオブジェクト。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction). - `offset` — 先頭からスキップするセットビット数 (0ベース) 。[`UInt32`](/ja/reference/data-types/int-uint) - `cardinality_limit` — 部分集合に含めるセットビットの最大数。[`UInt32`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 

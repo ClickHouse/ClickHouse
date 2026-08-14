@@ -330,6 +330,17 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Управляет минимальным количеством столбцов полезной нагрузки из левой части, необходимым для включения оптимизации отложенной индексации в JOIN. 0 означает, что оптимизация отключена.
 
+<div id="query_plan_optimize_count_from_text_index">
+  ## query_plan_optimize_count_from_text_index
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Новая настройка"}]}]} />
+
+Позволяет выполнять `SELECT count() ... WHERE <text search predicate>` непосредственно по числу элементов в списках проводок текстового индекса, без материализации подходящих строк.
+Работает только при включённой настройке `query_plan_direct_read_from_text_index`.
+
 <div id="query_plan_optimize_join_order_algorithm">
   ## query_plan_optimize_join_order_algorithm
 </div>

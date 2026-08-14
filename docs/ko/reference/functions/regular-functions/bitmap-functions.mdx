@@ -260,7 +260,7 @@ bitmapContains(bitmap, value)
 
 **인수**
 
-* `bitmap` — 비트맵 객체. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction). - `value` — 비트맵 원소 타입의 부호 없는 정수로 해석되는 확인할 원소. [(U)Int8/16/32/64](/ko/reference/data-types/int-uint)
+* `bitmap` — 비트맵 객체. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction). - `value` — 확인할 원소. [(U)Int8/16/32/64](/ko/reference/data-types/int-uint)
 
 **반환 값**
 
@@ -548,7 +548,7 @@ bitmapSubsetInRange(bitmap, start, end)
 
 **인수**
 
-* `bitmap` — 부분 집합을 추출할 비트맵입니다. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction). - `start` — 값 범위의 시작(포함)입니다. [`UInt*`](/ko/reference/data-types/int-uint) - `end` — 값 범위의 끝(미포함)입니다. [`UInt*`](/ko/reference/data-types/int-uint)
+* `bitmap` — 부분 집합을 추출할 비트맵입니다. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction). - `start` — 범위의 시작(포함)입니다. [`UInt*`](/ko/reference/data-types/int-uint) - `end` — 범위의 끝(미포함)입니다. [`UInt*`](/ko/reference/data-types/int-uint)
 
 **반환 값**
 
@@ -584,7 +584,7 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 **인수**
 
-* `bitmap` — 비트맵 객체. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction). - `range_start` — 포함할 원소의 최솟값(포함). [`UInt*`](/ko/reference/data-types/int-uint) - `cardinality_limit` — 부분 집합의 최대 카디널리티. [`UInt*`](/ko/reference/data-types/int-uint)
+* `bitmap` — 비트맵 객체. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction). - `range_start` — 범위의 시작(포함). [`UInt32`](/ko/reference/data-types/int-uint) - `cardinality_limit` — 부분 집합의 최대 카디널리티. [`UInt32`](/ko/reference/data-types/int-uint)
 
 **반환 값**
 
@@ -672,11 +672,11 @@ bitmapTransform(bitmap, from_array, to_array)
 
 **인수**
 
-* `bitmap` — 비트맵 객체. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction). - `from_array` — 대체할 원소 값의 배열이며, 비트맵 원소 타입의 부호 없는 정수로 해석됩니다. [`Array(UInt*)`](/ko/reference/data-types/array). - `to_array` — 대체 값의 배열이며, 비트맵 원소 타입의 부호 없는 정수로 해석됩니다. `from_array`와 길이가 같아야 합니다. [`Array(UInt*)`](/ko/reference/data-types/array).
+* `bitmap` — 비트맵 객체. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction). - `from_array` — 대체할 기존의 설정된 비트 배열. [`Array(T)`](/ko/reference/data-types/array). - `to_array` — 대체에 사용할 새로 설정된 비트 배열. [`Array(T)`](/ko/reference/data-types/array).
 
 **반환 값**
 
-지정된 매핑에 따라 요소가 변환된 비트맵을 반환합니다. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction)
+지정된 매핑에 따라 원소가 변환된 비트맵을 반환합니다. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction)
 
 **예시**
 
@@ -792,7 +792,7 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 **인수**
 
-* `bitmap` — 비트맵 객체. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction). - `offset` — 부호 없는 값의 오름차순에서 건너뛸 원소 수(0부터 시작). [`UInt*`](/ko/reference/data-types/int-uint) - `cardinality_limit` — 부분 집합에 포함할 원소의 최대 개수. [`UInt*`](/ko/reference/data-types/int-uint)
+* `bitmap` — 비트맵 객체. [`AggregateFunction(groupBitmap, T)`](/ko/reference/data-types/aggregatefunction). - `offset` — 처음부터 건너뛸 설정된 비트 수(0부터 시작). [`UInt32`](/ko/reference/data-types/int-uint) - `cardinality_limit` — 부분 집합에 포함할 설정된 비트의 최대 개수. [`UInt32`](/ko/reference/data-types/int-uint)
 
 **반환 값**
 

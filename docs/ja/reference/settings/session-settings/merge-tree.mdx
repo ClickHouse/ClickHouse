@@ -190,6 +190,16 @@ ClickHouse が 1 回のクエリで `merge_tree_max_rows_to_use_cache` 行を超
 
 * 任意の正の整数。
 
+<div id="merge_tree_prefetch_json_shared_data_substreams">
+  ## merge_tree_prefetch_json_shared_data_substreams
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Wide パーツで索引マークへのシークにより読み取られる JSON 共有データサブストリームのプリフェッチを制御する新しい設定。"}]}]} />
+
+索引マークへのシークにより読み取られる Wide パーツ内の JSON 共有データサブストリームのプリフェッチを有効にします。このようなプリフェッチはグラニュールの先頭から読み取りますが、通常そこはサブストリームの読み取り位置ではないため、無駄になる場合があります。これらのプリフェッチをスキップするには、無効にします。
+
 <div id="merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability">
   ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability
 </div>

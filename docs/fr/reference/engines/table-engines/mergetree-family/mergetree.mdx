@@ -255,14 +255,14 @@ Pour sélectionner les données dans leur ordre initial, utilisez des requêtes 
   ### Choisir une clé primaire différente de la clé de tri
 </div>
 
-Il est possible de définir une clé primaire (une expression dont les valeurs sont écrites dans le fichier d&#39;index pour chaque marqueur) différente de la clé de tri (une expression utilisée pour trier les lignes dans les parties de données). Dans ce cas, le tuple d&#39;expressions de la clé primaire doit être un préfixe du tuple d&#39;expressions de la clé de tri.
+Il est possible de définir une clé primaire (une expression dont les valeurs sont écrites dans le fichier d&#39;index pour chaque marque) différente de la clé de tri (une expression utilisée pour trier les lignes dans les parties de données). Dans ce cas, le tuple d&#39;expressions de la clé primaire doit être un préfixe du tuple d&#39;expressions de la clé de tri.
 
 Cette fonctionnalité est utile avec les moteurs de table [SummingMergeTree](/fr/reference/engines/table-engines/mergetree-family/summingmergetree) et
 [AggregatingMergeTree](/fr/reference/engines/table-engines/mergetree-family/aggregatingmergetree). Dans le cas d&#39;usage le plus courant de ces moteurs, la table comporte deux types de colonnes : les *dimensions* et les *mesures*. Les requêtes typiques agrègent les valeurs des colonnes de mesure avec des `GROUP BY` arbitraires et un filtrage sur les dimensions. Comme SummingMergeTree et AggregatingMergeTree agrègent les lignes ayant la même valeur de clé de tri, il est naturel d&#39;y inclure toutes les dimensions. Par conséquent, l&#39;expression de clé se compose d&#39;une longue liste de colonnes, et cette liste doit être mise à jour fréquemment à mesure que de nouvelles dimensions sont ajoutées.
 
 Dans ce cas, il est judicieux de ne conserver dans la clé primaire que quelques colonnes permettant des lectures par plage efficaces, et d&#39;ajouter les autres colonnes de dimension au tuple de la clé de tri.
 
-La modification de la clé de tri avec [ALTER](/fr/reference/statements/alter/index) est une opération légère, car lorsqu&#39;une nouvelle colonne est ajoutée simultanément à la table et à la clé de tri, les parties de données existantes n&#39;ont pas besoin d&#39;être modifiées. Comme l&#39;ancienne clé de tri est un préfixe de la nouvelle et qu&#39;il n&#39;y a pas de données dans la colonne nouvellement ajoutée, les données sont triées à la fois selon l&#39;ancienne et la nouvelle clé de tri au moment de la modification de la table.
+La modification de la clé de tri avec [ALTER](/fr/reference/statements/alter/skipping-index) est une opération légère, car lorsqu&#39;une nouvelle colonne est ajoutée simultanément à la table et à la clé de tri, les parties de données existantes n&#39;ont pas besoin d&#39;être modifiées. Comme l&#39;ancienne clé de tri est un préfixe de la nouvelle et qu&#39;il n&#39;y a pas de données dans la colonne nouvellement ajoutée, les données sont triées à la fois selon l&#39;ancienne et la nouvelle clé de tri au moment de la modification de la table.
 
 <div id="use-of-indexes-and-partitions-in-queries">
   ### Utilisation des index et des partitions dans les requêtes

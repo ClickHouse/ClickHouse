@@ -101,7 +101,7 @@ ClickHouse не удаляет данные из таблицы автомати
 * `client_version_patch` ([UInt32](/ru/reference/data-types/int-uint)) — номер патча в версии `clickhouse-client` или другого TCP-клиента.
 * `script_query_number` ([UInt32](/ru/reference/data-types/int-uint)) — Номер запроса в скрипте, содержащем несколько запросов, для clickhouse-client.
 * `script_line_number` ([UInt32](/ru/reference/data-types/int-uint)) — Номер строки, с которой начинается запрос в скрипте с несколькими запросами в clickhouse-client.
-* `http_method` ([UInt8](/ru/reference/data-types/int-uint)) — HTTP-метод, которым был инициирован запрос. Возможные значения: 0 — запрос был выполнен через интерфейс TCP, 1 — использовался метод GET, 2 — использовался метод POST, 4 — использовался метод PUT, 5 — использовался метод DELETE, 6 — использовался метод HEAD.
+* `http_method` ([UInt8](/ru/reference/data-types/int-uint)) — HTTP-метод, которым был инициирован запрос. Возможные значения: 0 - запрос был выполнен через интерфейс TCP, 1 - использовался метод GET, 2 - использовался метод POST, 4 - использовался метод PUT, 5 - использовался метод DELETE, 6 - использовался метод HEAD.
 * `http_user_agent` ([LowCardinality(String)](/ru/reference/data-types/lowcardinality)) — HTTP-заголовок UserAgent, передаваемый в HTTP-запросе.
 * `http_referer` ([String](/ru/reference/data-types/string)) — HTTP-заголовок Referer, передаваемый в HTTP-запросе (содержит полный или частичный адрес страницы, с которой выполняется запрос).
 * `forwarded_for` ([String](/ru/reference/data-types/string)) — HTTP-заголовок X-Forwarded-For, передаваемый с HTTP-запросом.

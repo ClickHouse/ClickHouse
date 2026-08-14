@@ -692,6 +692,55 @@ SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+<div id="framing_output_format">
+  ## framing_output_format
+</div>
+
+<BetaBadge />
+
+<SettingsInfoBlock type="String" default_value="None" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "None"},{"label": "HTTP 経由でデータ、totals、extremes、progress、ログ、profile events のパケットを単一の出力ストリームに多重化するフレーミングフォーマットを選択するための新しい設定。"}]}]} />
+
+クエリ応答のさまざまな部分を単一ストリームに多重化できます。データの chunk、totals と extremes、progress パケット、profile events (メトリクス) 、サーバーログなど、ネイティブプロトコルがサポートするすべてが対象です。
+
+フレーミングフォーマットは出力フォーマットとは独立しています。任意の出力フォーマットで生成されたバイトを、そのバイト列の chunk を分離し、必要に応じてエンコードすることでカプセル化します。すべての `data`、`totals`、`extremes` パケットのペイロードを連結したものは、フレーミングなしで出力フォーマットが生成する内容と完全に一致します。補助パケット (progress、ログ、profile events、exceptions) は JSON で表現されます。
+
+意図的な例外が 1 つあります。totals と extremes を表現できないため通常の出力では省略する出力フォーマット (`JSONCompactEachRow` ファミリー) は、フレーミング使用時には `totals` および `extremes` パケットにそれらを出力します。このようなフォーマットでは、`data` パケットのみを連結したものがフレーミングなしの出力と完全に一致し、`totals` および `extremes` パケットにはフレーミングなしの出力には含まれない追加の行が格納されます。
+
+サーバーログは `send_logs_level` 設定が指定されている場合に含まれ、profile events は `send_profile_events` 設定が有効な場合に含まれます (これらは `interactive_delay` マイクロ秒ごとに最大 1 回送信され、progress パケットも `interactive_delay` によりスロットリングされます) 。
+
+成功したストリームは、ネイティブプロトコルの最終 progress パケットと同様に、クエリ終了時のロギングで出力される末尾の `log` および `profile_events` パケットの後に書き込まれる、最終カウンター (`result_rows`、`result_bytes`、`memory_usage`) を含む最終 `progress` パケットで終了します。失敗時には、`exception` パケットが最後のパケットになります。ただし、パケットストリームの一部がすでに応答として出力され、破棄できなくなった後に失敗が発生した場合は例外です (パケット書き込みが途中で失敗した場合、`exception` パケット自体の配信に失敗した場合、またはフラッシュやクローズ中に応答ストリームが失敗した場合) 。この場合、フレーミングはフェイルクローズとなります。つまり、ストリームは終端 `exception` パケットなしで終了し、クライアントには解析可能な終端パケットではなく、切り詰められた応答と中断された HTTP 接続が示されます。部分的なパケットストリームの後に何かが追加されることはないため、通常の HTTP エラー本文がそこに混在することはありません。
+
+クエリが自身の `SETTINGS` clause によってのみ有効化するもの (フレーミングフォーマット、`send_logs_level`、`send_profile_events`) は、クエリがパースされるまで判明しません。そのため、対応するログおよび profile events はクエリ実行以降でのみキャプチャされます。パース、プラン、分析フェーズのログおよび profile events は、設定がセッションまたは URL で指定されている場合にのみキャプチャされます。たとえば、分析中に失敗するクエリ (未知のテーブルへの参照など) で、`SETTINGS` clause 内でのみ `send_logs_level` を有効にした場合、分析フェーズのログではなく `exception` パケットのみが配信されます。これらをキャプチャするには、セッションまたは URL で `send_logs_level` を設定してください。
+
+同じ検出タイミングに関する注意点は `send_logs_source_regexp` にも適用されます。ログキューは各エントリがキャプチャされた時点でソースに基づいてエントリをフィルタリングするため、クエリ自身の `SETTINGS` clause でのみ設定された正規表現は、クエリ実行以降でのみ有効になります。パース、プラン、分析フェーズの `log` パケットは設定のセッションまたは URL の値でフィルタリングされます (そこで設定されていない場合はフィルタリングされません) 。そのため、クエリレベルの正規表現に一致しないソースが含まれる場合があります。反対に、より限定的なセッションまたは URL の正規表現によって除外されたエントリは、より広範なクエリレベルの正規表現によって復元されません。クエリのライフサイクル全体をフィルタリングするには、セッションまたは URL で `send_logs_source_regexp` を設定してください。
+
+この設定は現在 HTTP プロトコルに適用され、その他のインターフェイスでは無視されます。
+
+設定可能な値:
+
+* `None` - 該当するもの (data、totals、extremes、progress) をすべて出力フォーマットにそのまま渡し、該当しないもの (メトリクス、ログ) はすべて無視します。そのため、デフォルトでは従来どおり動作します。
+* `EventStream` - パケットを HTTP のサーバー送信イベント (`text/event-stream`) としてフレーミングします。各パケットは、対応する名前 (`data`、`totals`、`extremes`、`progress`、`log`、`profile_events`、`exception`) を持つイベントとして送信されます。progress およびその他の補助パケットは JSON として送信されます。サーバー送信イベントは、改行 (キャリッジリターン `\r` を含む) を区切り文字として扱うテキストプロトコルであるため、整形済みデータのブロックはイベントの単一の `data` フィールドに base64 エンコードされます。デコードすると、すべての改行を含む完全に整形されたペイロードになります。これを示すため、`Content-Type` には `payload=base64` パラメータが含まれます。この方法では、テキスト形式・バイナリ形式を問わず、任意の出力フォーマットをバイト単位で正確に転送できます。
+* `JSONEachPacketBase64` - 各パケットは1行ごとの JSON オブジェクトであり、整形済みデータは base64 エンコードされます。例: `{"packet":"data","data":"eyJ4IjoxfQo="}`。バイナリ出力フォーマットに適しています。
+* `JSONEachPacketString` - 各パケットは1行ごとの JSON オブジェクトであり、整形済みデータは文字列に格納されます。例: `{"packet":"data","data":"{\"x\":1}\n"}`。
+
+`JSONEachPacketString` は、ペイロードのバイトを検証または再エンコードせずに JSON 文字列に格納します。`String` および `FixedString` カラムには任意のバイトを格納できるため、テキスト出力フォーマット (`JSONEachRow`、`TSV`、`CSV` など) は、このような値に対して無効な UTF-8 を出力する場合があります。これは、デフォルトの `output_format_json_validate_utf8 = 0` を使用した場合の ClickHouse 自身の `JSONEachRow` と同様です。そのため、生成される NDJSON ストリームが有効な UTF-8 であることは保証されません。任意のバイトをバイト単位で正確に転送するには、`JSONEachPacketBase64` を使用してください。
+
+例:
+
+```bash
+curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
+```
+
+結果：
+
+```text
+{"packet":"data","data":"{\"number\":\"0\"}\n{\"number\":\"1\"}\n{\"number\":\"2\"}\n"}
+{"packet":"profile_events","profile_events":[{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"}]}
+{"packet":"progress","progress":{"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1265958"}}
+```
+
 <div id="fsync_metadata">
   ## fsync_metadata
 </div>

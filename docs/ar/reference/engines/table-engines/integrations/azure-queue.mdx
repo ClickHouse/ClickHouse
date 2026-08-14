@@ -149,7 +149,8 @@ SELECT * FROM stats ORDER BY key;
 قدرات الاستقصاء الداخلي مماثلة لتلك الخاصة بـ [محرك الجدول S3Queue](/ar/reference/engines/table-engines/integrations/s3queue#introspection)، مع بعض الاختلافات الواضحة:
 
 1. استخدم `system.azure_queue_metadata_cache` للحالة الموجودة في الذاكرة الخاصة بقائمة الانتظار في إصدارات الخادم &gt;= 25.1. أمّا في الإصدارات الأقدم، فاستخدم `system.s3queue_metadata_cache` (وسيحتوي أيضًا على معلومات عن جداول `azure`).
-2. فعِّل `system.azure_queue_log` عبر إعداد ClickHouse الرئيسي، على سبيل المثال:
+2. استخدم الجدول `system.azure_queue_metadata` لفحص الحالة المخزنة في Keeper مباشرةً: عدد العُقد `processed` و`processing` و`failed` لكل كائن بيانات وصفية، ومحتوياتها عند الطلب. هذا هو النظير `AzureQueue` لـ `system.s3_queue_metadata`.
+3. فعِّل `system.azure_queue_log` عبر إعداد ClickHouse الرئيسي، على سبيل المثال:
 
 ```xml
 <azure_queue_log>

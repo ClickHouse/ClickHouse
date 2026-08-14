@@ -29,7 +29,7 @@ Les candidats sont le codec par défaut de la table (voir le paramètre `default
 Actuellement, seuls les types semblables aux entiers sont adaptatifs.
 Le plus petit résultat est retenu. La compression n&#39;est donc jamais moins efficace que le codec par défaut, et les blocs incompressibles sont stockés bruts.
 Une colonne dont le codec par défaut inclut le chiffrement (par exemple, `AES_128_GCM_SIV`) n&#39;est jamais sélectionnée de manière adaptative, ce qui garantit que le chiffrement est toujours appliqué.
-Les codecs par bloc sont indiqués par la fonction de table [`mergeTreeCodecBlockCounts`](/fr/reference/functions/table-functions/mergeTreeCodecBlockCounts).
+Les codecs par bloc sont indiqués par la fonction de table [`mergeTreeCodecBlockCounts`](/fr/reference/functions/table-functions/index).
 
 <div id="allow_experimental_replacing_merge_with_cleanup">
   ## allow_experimental_replacing_merge_with_cleanup

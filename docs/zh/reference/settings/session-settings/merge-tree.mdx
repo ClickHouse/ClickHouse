@@ -190,6 +190,16 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 * 任意正整数。
 
+<div id="merge_tree_prefetch_json_shared_data_substreams">
+  ## merge_tree_prefetch_json_shared_data_substreams
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置，用于控制预取在 Wide parts 中通过寻道至标记读取的 JSON shared data 子流。"}]}]} />
+
+启用预取在 Wide parts 中通过寻道至标记读取的 JSON shared data 子流。此类预取会从粒度开头读取，而这通常不是读取子流的位置，因此可能造成浪费。禁用此设置可跳过这些预取操作。
+
 <div id="merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability">
   ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability
 </div>

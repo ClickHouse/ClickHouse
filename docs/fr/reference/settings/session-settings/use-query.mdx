@@ -47,13 +47,13 @@ Valeurs possibles :
   ## use_query_condition_cache_for_top_k
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre permettant d'activer le cache de conditions de requête pour les lectures `ORDER BY ... LIMIT n` (TopK) ; désactivé par défaut."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant d'activer le cache de conditions de requête pour les lectures `ORDER BY ... LIMIT n` (TopK) ; activé par défaut. Le contrôle est désactivé dans la version 26.7, donc la `compatibility` avec une version antérieure le maintient désactivé."}]}]} />
 
 Activez le [cache de conditions de requête](/fr/concepts/features/performance/caches/query-condition-cache) pour les requêtes utilisant l&#39;optimisation `ORDER BY <column> LIMIT n` (TopK), basée sur le filtrage dynamique ou les index de saut. Lorsqu&#39;il est désactivé, ces lectures ne consultent pas le cache et ne l&#39;alimentent pas non plus.
 
-Ces requêtes peuvent ignorer des granules lors de l&#39;exécution selon le seuil courant. Leurs entrées de cache sont donc partitionnées en fonction des paramètres du plan TopK et de l&#39;ensemble des parties de données lues. Ce paramètre est désactivé par défaut le temps de vérifier la validité de ces entrées de cache ; il n&#39;a aucun effet si `use_query_condition_cache` n&#39;est pas également activé.
+Ces requêtes peuvent ignorer des granules lors de l&#39;exécution selon le seuil courant. Leurs entrées de cache sont donc partitionnées en fonction des paramètres du plan TopK et de l&#39;ensemble des parties de données lues. Ce paramètre n&#39;a aucun effet si `use_query_condition_cache` n&#39;est pas également activé.
 
 Valeurs possibles :
 

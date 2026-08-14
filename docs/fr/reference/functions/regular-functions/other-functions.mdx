@@ -998,6 +998,43 @@ SELECT CURRENT_DATABASE
 └──────────────────┘
 ```
 
+<div id="currentHandler">
+  ## currentHandler
+</div>
+
+Introduite dans : v26.6.0
+
+Renvoie le nom du gestionnaire HTTP défini en SQL (créé avec `CREATE HANDLER`) qui a appelé la requête.
+Renvoie une chaîne vide si la requête n’a pas été appelée par un tel gestionnaire.
+
+Permet de personnaliser le comportement d’une requête selon le gestionnaire qui l’a appelée.
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
+**Syntaxe**
+
+```sql
+currentHandler()
+```
+
+**Arguments**
+
+* Aucun.
+
+**Valeur renvoyée**
+
+Renvoie le nom du gestionnaire actuel. [`String`](/fr/reference/data-types/string)
+
+**Exemples**
+
+**Exemple d&#39;utilisation**
+
+```sql title=Query
+SELECT currentHandler()
+```
+
 <div id="currentProfiles">
   ## currentProfiles
 </div>
@@ -1076,6 +1113,44 @@ SELECT currentQueryID();
 ┌─currentQueryID()─────────────────────┐
 │ 1280d0e8-1a08-4524-be6e-77975bb68e7d │
 └──────────────────────────────────────┘
+```
+
+<div id="currentRequestURL">
+  ## currentRequestURL
+</div>
+
+Introduite dans : v26.6.0
+
+Renvoie l’URL de la requête HTTP (chemin et chaîne de requête) ayant déclenché la requête.
+Renvoie une chaîne vide si la requête n’a pas été effectuée via HTTP.
+
+Utile, en combinaison avec les gestionnaires HTTP définis en SQL (`CREATE HANDLER`), pour extraire les paramètres
+intégrés au chemin de la requête.
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
+
+**Syntaxe**
+
+```sql
+currentRequestURL()
+```
+
+**Arguments**
+
+* Aucun.
+
+**Valeur renvoyée**
+
+Renvoie l’URL de la requête HTTP actuelle. [`String`](/fr/reference/data-types/string)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT currentRequestURL()
 ```
 
 <div id="currentRoles">

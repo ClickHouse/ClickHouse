@@ -465,6 +465,73 @@ SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials'
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
+<div id="aiRedact">
+  ## aiRedact
+</div>
+
+導入バージョン: v26.8.0
+
+LLMプロバイダーを使用して、指定されたテキスト内の個人を特定できる情報 (PII) を検出し、マスキングします。
+
+<Warning>
+  `aiRedact` は LLM を使用してベストエフォートで PII を検出・マスキングするため、その出力は
+  信頼できません。PII が検出・削除されるかどうかは、選択したモデル、プロンプト、入力によって異なります。モデルが
+  識別子を見落としたり、一部だけをマスキングしたり、周囲のテキストを変更したりする可能性があります。整形式の
+  英語テキストで最も適切に機能しますが、他の言語のテキストや、スペル、句読点、文法の誤りが多いテキストでは、
+  結果が悪くなる可能性があります。`aiRedact` は出力に PII が含まれないことを保証せず、単独で安全または十分な
+  匿名化手段として扱ってはなりません。信頼できない第三者にデータを公開する前に、必ず出力を確認し、
+  組織&#39;のデータプライバシーおよびコンプライアンスポリシーを満たしていることを確認してください。
+</Warning>
+
+検出された各 PII span は、マスキングトークン (デフォルトでは `[REDACTED]`、`replacement`
+parameter で設定可能) に置き換えられます。`categories` Array は、マスキングする PII の種類を制限します。空の Array を指定した場合は、
+一般的なカテゴリ (名前、メールアドレス、電話番号、住所、クレジットカード、IP アドレス) からなるデフォルトのセットにフォールバックします。
+
+`aiRedact` は、検出された PII span のみを変更するようモデルに指示しますが、周囲のテキストの保持は
+ベストエフォートであり、モデルが変更する可能性があります (上記の警告を参照) 。タブ、
+改行、復帰以外の制御文字もリクエスト前にスペースへ正規化されるため、これらを含む入力では出力が
+バイト単位で同一にはなりません。
+
+`aiRedact` は PII を置き換えた入力テキスト全体を返すため、出力は入力とほぼ同じ長さになります。
+`max_tokens` (デフォルトは `1024`) を、トークン単位の入力長より大きく設定してください。上限が低すぎて切り詰められた応答は
+不完全になります。
+
+**構文**
+
+```sql
+aiRedact(text, categories[, params])
+```
+
+**別名**: `AIRedact`
+
+**引数**
+
+* `text` — マスキング対象のテキスト。[`String`](/ja/reference/data-types/string)
+* `categories` — マスキングする PII カテゴリの定数リスト (例: `['name', 'ssn', 'credit_card']`) 。空の配列を指定すると、一般的なカテゴリ (名前、メールアドレス、電話番号、住所、クレジットカード、IP アドレス) のデフォルトセットが使用されます。[`Array(String)`](/ja/reference/data-types/array)
+* `params` — 任意の定数 `Map(String, String)` パラメータ。関数固有のキー: `temperature` (ランダム性を制御するサンプリング温度、デフォルト `0.0`) 、`max_tokens` (呼び出しごとの最大出力トークン数、デフォルト `1024` — `aiRedact` はテキスト全体を返すため、入力のトークン数より大きい値に設定してください。そうしないと、応答が切り詰められて不完全になる可能性があります) 、`replacement` (検出された各 PII span を置き換えるトークン、デフォルト `[REDACTED]`) 。共通パラメータの `credentials` と `model` も適用されます ([AI 関数](/ja/reference/functions/regular-functions/ai-functions)を参照) 。[`Map(String, String)`](/ja/reference/data-types/map)
+
+**戻り値**
+
+検出された PII をマスキングトークンで置き換えたテキスト。リクエストが失敗し、`ai_function_throw_on_error` が無効の場合は、カラム型のデフォルト値 (空文字列) 。[`String`](/ja/reference/data-types/string)
+
+**例**
+
+**特定のカテゴリをマスキングする**
+
+```sql title=Query
+SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
+```
+
+```response title=Response
+Purchase was done by customer [REDACTED] with email [REDACTED]
+```
+
+**カスタムトークンを使用してデフォルトのPIIカテゴリをマスキングする**
+
+```sql title=Query
+SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
+```
+
 <div id="aiSimilarity">
   ## aiSimilarity
 </div>

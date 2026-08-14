@@ -86,13 +86,15 @@ doc_type: 'reference'
 * `client_version_patch` ([UInt32](/ar/reference/data-types/int-uint)) — مكوّن التصحيح من إصدار clickhouse-client أو عميل TCP آخر.
 * `script_query_number` ([UInt32](/ar/reference/data-types/int-uint)) — رقم الاستعلام في برنامج نصي يضم استعلامات متعددة لـ clickhouse-client.
 * `script_line_number` ([UInt32](/ar/reference/data-types/int-uint)) — رقم السطر الذي يبدأ فيه الاستعلام في برنامج نصي يضم استعلامات متعددة لـ clickhouse-client.
-* `http_method` ([UInt8](/ar/reference/data-types/int-uint)) — طريقة HTTP التي بدأت الاستعلام. القيم الممكنة: 0 — شُغِّل الاستعلام من واجهة TCP، 1 — استُخدمت طريقة GET، 2 — استُخدمت طريقة POST.
+* `http_method` ([UInt8](/ar/reference/data-types/int-uint)) — طريقة HTTP التي بدأت الاستعلام. القيم الممكنة: 0 — شُغِّل الاستعلام من واجهة TCP، 1 — استُخدمت طريقة GET، 2 — استُخدمت طريقة POST، 4 — استُخدمت طريقة PUT، 5 — استُخدمت طريقة DELETE، 6 — استُخدمت طريقة HEAD.
 * `http_user_agent` ([String](/ar/reference/data-types/string)) — ترويسة HTTP ‏UserAgent المُمرَّرة في استعلام HTTP.
 * `http_referer` ([String](/ar/reference/data-types/string)) — ترويسة HTTP ‏Referer المُمرَّرة في استعلام HTTP (تحتوي على عنوان كامل أو جزئي للصفحة التي تُجري الاستعلام).
 * `forwarded_for` ([String](/ar/reference/data-types/string)) — ترويسة HTTP ‏X-Forwarded-For المُمرَّرة في استعلام HTTP.
 * `quota_key` ([String](/ar/reference/data-types/string)) — مفتاح الحصة المحدد في إعداد quotas (راجع keyed).
 * `distributed_depth` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات إعادة توجيه الاستعلام بين الخوادم.
 * `revision` ([UInt32](/ar/reference/data-types/int-uint)) — مراجعة ClickHouse.
+* `http_handler_name` ([String](/ar/reference/data-types/string)) — اسم معالج HTTP المعرّف بلغة SQL ‏(CREATE HANDLER) الذي استدعى الاستعلام. تكون القيمة فارغة إذا لم يُستدعَ الاستعلام عبر هذا المعالج.
+* `http_request_url` ([String](/ar/reference/data-types/string)) — مسار طلب HTTP (دون سلسلة الاستعلام) الذي استدعى الاستعلام. تُحذف سلسلة الاستعلام كي لا تُحفظ معلمات الطلب الحساسة. تكون القيمة فارغة للاستعلامات غير التابعة لـ HTTP.
 * `log_comment` ([String](/ar/reference/data-types/string)) — تعليق السجل. يمكن ضبطه على سلسلة نصية عشوائية لا تتجاوز max&#95;query&#95;size. تكون القيمة سلسلة فارغة إذا لم يُعرَّف.
 * `thread_ids` ([Array(UInt64)](/ar/reference/data-types/array)) — معرّفات الخيوط المشاركة في تنفيذ الاستعلام. قد لا تكون هذه الخيوط قد عملت بالتزامن.
 * `peak_threads_usage` ([UInt64](/ar/reference/data-types/int-uint)) — الحد الأقصى لعدد الخيوط التي تنفذ الاستعلام بالتزامن.

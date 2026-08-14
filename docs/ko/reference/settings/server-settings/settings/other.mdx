@@ -574,11 +574,10 @@ false이면 [`default_normal_view_sql_security`](/ko/reference/settings/session-
 
 치환이 정의된 파일의 경로입니다. XML 및 YAML 포맷을 모두 지원합니다.
 
+자세한 내용은 [설정 파일](/ko/concepts/features/configuration/server-config/configuration-files) 섹션을 참조하십시오.
 기본값은 비어 있으며, 치환 파일을 사용하지 않음을 의미합니다. 버전 26.8 이전에는 `/etc/metrika.xml` 파일이 존재하면 암시적으로 사용되었습니다. 이 파일에 의존하는 경우 경로를 명시적으로 지정하십시오.
 
 기본 서버 구성과 별도로 로드되는 설정 파일, 즉 사용자 구성(예: 기본 파일에 포함되지 않은 `users.xml`) 및 XML 딕셔너리 구성은 서버 구성이 아닌 자체 내용에서 `include_from` 요소를 읽습니다. 치환을 사용하는 각 파일에는 자체 `include_from` 요소가 필요합니다.
-
-자세한 내용은 [설정 파일](/ko/concepts/features/configuration/server-config/configuration-files) 섹션을 참조하십시오.
 
 **예시**
 

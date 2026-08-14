@@ -998,6 +998,43 @@ SELECT CURRENT_DATABASE
 └──────────────────┘
 ```
 
+<div id="currentHandler">
+  ## currentHandler
+</div>
+
+導入バージョン: v26.6.0
+
+クエリを呼び出した、SQL で定義された HTTP ハンドラー (`CREATE HANDLER` で作成) の名前を返します。
+このようなハンドラー経由でクエリが呼び出されなかった場合は、空文字列を返します。
+
+呼び出されたハンドラーに応じてクエリの動作をカスタマイズする場合に役立ちます。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対しても異なる結果を返すことがあります。
+</Note>
+
+**構文**
+
+```sql
+currentHandler()
+```
+
+**引数**
+
+* なし。
+
+**戻り値**
+
+現在のハンドラー名を返します。[`String`](/ja/reference/data-types/string)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT currentHandler()
+```
+
 <div id="currentProfiles">
   ## currentProfiles
 </div>
@@ -1076,6 +1113,44 @@ SELECT currentQueryID();
 ┌─currentQueryID()─────────────────────┐
 │ 1280d0e8-1a08-4524-be6e-77975bb68e7d │
 └──────────────────────────────────────┘
+```
+
+<div id="currentRequestURL">
+  ## currentRequestURL
+</div>
+
+導入バージョン: v26.6.0
+
+クエリを実行した HTTP リクエストの URL (パスおよびクエリ文字列) を返します。
+クエリが HTTP 経由で実行されなかった場合は、空文字列を返します。
+
+SQL で定義された HTTP ハンドラー (`CREATE HANDLER`) と組み合わせることで、リクエストパスに
+埋め込まれたパラメータを抽出できます。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返す場合があります。
+</Note>
+
+**構文**
+
+```sql
+currentRequestURL()
+```
+
+**引数**
+
+* なし。
+
+**戻り値**
+
+現在のHTTPリクエストのURLを返します。[`String`](/ja/reference/data-types/string)
+
+**例**
+
+**使用例**
+
+```sql title=Query
+SELECT currentRequestURL()
 ```
 
 <div id="currentRoles">

@@ -163,15 +163,14 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 
 يجب أن يحتوي جدول *tags* على الأعمدة التالية:
 
-| Name                 | Mandatory? | Default type                          | Possible types                                                                                                          | Description                                                                                                                                                       |
-| -------------------- | ---------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                 | [x]        | `Tuple(UInt64, UUID)`                 | any (must match the type of `id` in the [samples](#samples-table) table)                                                | يعرّف `id` توليفة من اسم مقياس والوسوم. ويحدّد تعبير DEFAULT كيفية حساب هذا المعرّف                                                                               |
-| `metric_name`        | [x]        | `LowCardinality(String)`              | `String` or `LowCardinality(String)`                                                                                    | اسم المقياس                                                                                                                                                       |
-| `<tag_value_column>` | [ ]        | `String`                              | `String` or `LowCardinality(String)` or `LowCardinality(Nullable(String))`                                              | قيمة وسم معيّن، ويُحدَّد اسم الوسم واسم العمود المقابل له في الإعداد [tags&#95;to&#95;columns](#settings)                                                         |
-| `tags`               | [x]        | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | خريطة الوسوم مع استبعاد الوسم `__name__` الذي يحتوي على اسم المقياس، واستبعاد الوسوم التي أُدرجت أسماؤها في الإعداد [tags&#95;to&#95;columns](#settings)          |
-| `all_tags`           | [ ]        | `Map(String, String)`                 | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | عمود مؤقت، ويمثل كل صف فيه خريطة لجميع الوسوم مع استبعاد الوسم `__name__` فقط الذي يحتوي على اسم المقياس. والغرض الوحيد من هذا العمود هو استخدامه أثناء حساب `id` |
-| `min_time`           | [ ]        | `Nullable(DateTime64(3))`             | `DateTime64(X)` or `Nullable(DateTime64(X))`                                                                            | أدنى طابع زمني للسلسلة الزمنية ذات `id` هذا. يُنشأ العمود إذا كانت قيمة [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) هي `true`                    |
-| `max_time`           | [ ]        | `Nullable(DateTime64(3))`             | `DateTime64(X)` or `Nullable(DateTime64(X))`                                                                            | أقصى طابع زمني للسلسلة الزمنية ذات `id` هذا. يُنشأ العمود إذا كانت قيمة [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) هي `true`                    |
+| Name                 | Mandatory? | Default type                          | Possible types                                                                                                          | Description                                                                                                                                                                                                                                                                                                                |
+| -------------------- | ---------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                 | [x]        | `Tuple(UInt64, UUID)`                 | any (must match the type of `id` in the [samples](#samples-table) table)                                                | يعرّف `id` توليفة من اسم مقياس والوسوم. ويحدّد تعبير DEFAULT كيفية حساب هذا المعرّف                                                                                                                                                                                                                                        |
+| `metric_name`        | [x]        | `LowCardinality(String)`              | `String` or `LowCardinality(String)`                                                                                    | اسم المقياس                                                                                                                                                                                                                                                                                                                |
+| `<tag_value_column>` | [ ]        | `String`                              | `String` or `LowCardinality(String)` or `LowCardinality(Nullable(String))`                                              | قيمة وسم معيّن، ويُحدَّد اسم الوسم واسم العمود المقابل له في الإعداد [tags&#95;to&#95;columns](#settings)                                                                                                                                                                                                                  |
+| `tags`               | [x]        | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | خريطة لجميع الوسوم، بما فيها الوسم `__name__` الذي يحتوي على اسم المقياس، والوسوم التي أُدرجت أسماؤها في الإعداد [tags&#95;to&#95;columns](#settings). كانت الجداول التي أنشأتها الإصدارات الأقدم من ClickHouse تخزّن في هذا العمود الوسوم التي لا تحتوي على أعمدة مخصصة فقط ودون اسم المقياس؛ وتدعم القراءة كلتا الحالتين |
+| `min_time`           | [ ]        | `Nullable(DateTime64(3))`             | `DateTime64(X)` or `Nullable(DateTime64(X))`                                                                            | أدنى طابع زمني للسلسلة الزمنية ذات `id` هذا. يُنشأ العمود إذا كانت قيمة [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) هي `true`                                                                                                                                                                             |
+| `max_time`           | [ ]        | `Nullable(DateTime64(3))`             | `DateTime64(X)` or `Nullable(DateTime64(X))`                                                                            | أقصى طابع زمني للسلسلة الزمنية ذات `id` هذا. يُنشأ العمود إذا كانت قيمة [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) هي `true`                                                                                                                                                                             |
 
 <div id="metrics-table">
   ### جدول المقاييس
@@ -222,10 +221,9 @@ SAMPLES INNER COLUMNS
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 TAGS INNER COLUMNS
 (
-    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags))),
+    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
-    `all_tags` Map(String, String) EPHEMERAL,
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
@@ -262,10 +260,9 @@ SETTINGS index_granularity = 32768
 ```sql
 CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags))),
+    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
-    `all_tags` Map(String, String) EPHEMERAL,
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
@@ -324,11 +321,11 @@ SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
 </div>
 
 يحتوي العمود `id` على معرّفات، ويُحتسب كل معرّف استنادًا إلى تركيبة من اسم المقياس والوسوم.
-يمكن تخصيص النوع وتعبير `DEFAULT` المستخدم لتوليد المعرّفات عبر البند `TAGS INNER COLUMNS`:
+يمكن تخصيص النوع وتعبير `DEFAULT` المستخدم لتوليد المعرّفات عبر العبارة `TAGS INNER COLUMNS`:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(metric_name, all_tags))
+TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(tags))
 ```
 
 يمكن أن يكون العمود `id` من أي نوع غير `Nullable` قابل للمقارنة. يجب أن تتطابق أنواع `id` المُعلنة في الجدولين الداخليين `samples` و`tags`.
@@ -339,18 +336,19 @@ TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(metric_name, all_tags))
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SETTINGS id_generator = 'sipHash64(metric_name, all_tags)'
+SETTINGS id_generator = 'sipHash64(tags)'
 ```
 
 إذا كان هذا الإعداد مُعيَّنًا، فسيُستخدم لتوليد `id` حتى إذا كانت قيمة `DEFAULT` الخاصة بالعمود تحتوي على تعبير مختلف.
 
-<div id="tags-and-all-tags">
-  ## العمودان `tags` و`all_tags`
+<div id="tags-column">
+  ## العمود `tags`
 </div>
 
-هناك عمودان يحتويان على قيم خريطة للوسوم، هما `tags` و`all_tags`. في هذا المثال، يشيران إلى المعنى نفسه، لكن قد يختلفان
-إذا استُخدم الإعداد `tags_to_columns`. يتيح هذا الإعداد تحديد وسم معيّن لتخزينه في عمود منفصل بدلًا من تخزينه
-في خريطة داخل العمود `tags`:
+يحتوي العمود `tags` على جميع وسوم السلسلة الزمنية، بما في ذلك الوسم `__name__` الذي يحتوي على اسم المقياس.
+
+يتيح الإعداد `tags_to_columns` تحديد وسم معيّن لتخزينه أيضًا في عمود منفصل
+بالإضافة إلى الخريطة داخل العمود `tags`:
 
 ```sql
 CREATE TABLE my_table
@@ -359,9 +357,13 @@ SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
 ```
 
 ستضيف هذه العبارة العمودين `instance` و`job` إلى جدول [الوسوم](#tags-table) الهدف الداخلي.
-في هذه الحالة، لن يحتوي العمود `tags` على الوسمين `instance` و`job`،
-لكن العمود `all_tags` سيحتوي عليهما. العمود `all_tags` مؤقت، والغرض الوحيد منه هو استخدامه في تعبير DEFAULT
-للعمود `id`.
+ستُخزَّن قيم الوسمين `instance` و`job` في العمودين المذكورين وفي العمود `tags`.
+
+<Note>
+  في الجداول التي أنشأتها إصدارات أقدم من ClickHouse، يحتوي العمود `tags` على الوسوم التي لا توجد لها
+  أعمدة مخصصة فقط، ولا يتضمن اسم المقياس، بينما يكون العمود `all_tags` عمودًا مؤقتًا جرى ملؤه عند الإدراج
+  بجميع الوسوم باستثناء اسم المقياس.
+</Note>
 
 <div id="inner-table-engines">
   ## محركات الجداول الخاصة بالجداول الهدف الداخلية
@@ -384,7 +386,7 @@ TAGS ENGINE=ReplicatedAggregatingMergeTree
 METRICS ENGINE=ReplicatedReplacingMergeTree
 ```
 
-يُبقي جدول [الوسوم](#tags-table) أعمدة الوسوم (والـ Maps `tags`/`all_tags`) خارج مفتاح الفرز الخاص به،
+يُبقي جدول [الوسوم](#tags-table) أعمدة الوسوم (والـ Map `tags`) خارج مفتاح الفرز الخاص به،
 وهو ما يرفضه `AggregatingMergeTree` افتراضيًا (راجع [`allow_dimensions_outside_sorting_key`](/ar/reference/engines/table-engines/mergetree-family/aggregatingmergetree)).
 وهذا آمن هنا لأن تلك الأعمدة تعتمد وظيفيًا على `id`، وهو جزء من مفتاح الفرز، لذا فإن جميع
 الصفوف التي تدمجها عملية دمج في الخلفية معًا تتشارك القيم نفسها. وعندما يُنشأ جدول الوسوم الداخلي أو يُحدَّد محركه inline كما هو موضح أعلاه، يضبط `TimeSeries` القيمة `allow_dimensions_outside_sorting_key = 1` عليه تلقائيًا؛
@@ -427,7 +429,7 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 * `filter_by_min_time_and_max_time`
 
 ```sql
-ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(metric_name, all_tags)';
+ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
 ```
 
@@ -445,7 +447,7 @@ ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
 | ------------------------------------ | ---------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id_generator`                       | Expression | يعتمد على نوع `id` | تعبير يحسب معرّف (بصمة) السلسلة الزمنية من وسومها. إذا لم يتم تعيينه، فسيُستخدم التعبير الافتراضي للعمود `id`. وإذا كان التعبير الافتراضي للعمود `id` غير معيّن أيضًا، فسيُختار التعبير تلقائيًا                            |
 | `tags_to_columns`                    | خريطة      | {}                 | قيمة خريطة تحدد الوسوم التي يجب وضعها في أعمدة منفصلة في جدول [tags](#tags-table). الصياغة: `{'tag1': 'column1', 'tag2' : column2, ...}`                                                                                    |
-| `use_all_tags_column_to_generate_id` | Bool       | true               | عند إنشاء تعبير لحساب معرّف سلسلة زمنية، يتيح هذا الخيار استخدام العمود `all_tags` في هذا الحساب                                                                                                                            |
+| `use_all_tags_column_to_generate_id` | Bool       | false              | إعداد متقادم، لا يفعل شيئًا                                                                                                                                                                                                 |
 | `store_min_time_and_max_time`        | Bool       | true               | إذا تم تعيينه إلى true، فسيخزّن الجدول `min_time` و`max_time` لكل سلسلة زمنية                                                                                                                                               |
 | `aggregate_min_time_and_max_time`    | Bool       | true               | عند إنشاء جدول `tags` الداخلي الهدف، يتيح هذا الخيار استخدام `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` بدلًا من `Nullable(DateTime64(3))` فقط كنوع للعمود `min_time`، وينطبق الأمر نفسه على العمود `max_time` |
 | `filter_by_min_time_and_max_time`    | Bool       | true               | إذا تم تعيينه إلى true، فسيستخدم الجدول العمودين `min_time` و`max_time` لتصفية السلاسل الزمنية                                                                                                                              |

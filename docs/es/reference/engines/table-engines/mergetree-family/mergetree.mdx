@@ -262,7 +262,7 @@ Esta característica resulta útil al usar los motores de tabla [SummingMergeTre
 
 En este caso, tiene sentido dejar solo unas pocas columnas en la clave primaria para permitir exploraciones de rango eficientes y añadir el resto de las columnas de dimensión a la tupla de la clave de ordenación.
 
-[ALTER](/es/reference/statements/alter/index) de la clave de ordenación es una operación ligera porque, cuando se añade simultáneamente una nueva columna a la tabla y a la clave de ordenación, no es necesario modificar las partes de datos existentes. Como la antigua clave de ordenación es un prefijo de la nueva clave de ordenación y no hay datos en la columna recién añadida, en el momento de modificar la tabla los datos quedan ordenados tanto por la antigua como por la nueva clave de ordenación.
+[ALTER](/es/reference/statements/alter/skipping-index) de la clave de ordenación es una operación ligera porque, cuando se añade simultáneamente una nueva columna a la tabla y a la clave de ordenación, no es necesario modificar las partes de datos existentes. Como la antigua clave de ordenación es un prefijo de la nueva clave de ordenación y no hay datos en la columna recién añadida, en el momento de modificar la tabla los datos quedan ordenados tanto por la antigua como por la nueva clave de ordenación.
 
 <div id="use-of-indexes-and-partitions-in-queries">
   ### Uso de índices y particiones en consultas

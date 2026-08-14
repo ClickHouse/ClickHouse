@@ -330,6 +330,17 @@ Permite mesclar filtros no plano de consulta.
 
 Controla o número mínimo de colunas de payload do lado esquerdo necessário para ativar a otimização de lazy indexing em JOIN. 0 significa que a otimização está desativada.
 
+<div id="query_plan_optimize_count_from_text_index">
+  ## query_plan_optimize_count_from_text_index
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração"}]}]} />
+
+Permite responder a `SELECT count() ... WHERE <text search predicate>` diretamente com base nas cardinalidades das listas de postagens do índice de texto, sem materializar as linhas correspondentes.
+Só tem efeito quando `query_plan_direct_read_from_text_index` está habilitada.
+
 <div id="query_plan_optimize_join_order_algorithm">
   ## query_plan_optimize_join_order_algorithm
 </div>

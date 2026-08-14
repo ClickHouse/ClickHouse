@@ -162,15 +162,14 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 
 *tags* 表必须包含以下列：
 
-| 名称                   | 必填？ | 默认类型                                  | 可能的类型                                                                                                                 | 描述                                                                                                   |
-| -------------------- | --- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `id`                 | [x] | `Tuple(UInt64, UUID)`                 | any (必须与 [samples](#samples-table) 表中 `id` 的类型匹配)                                                                     | `id` 用于标识一种指标名称与标签的组合。DEFAULT 表达式指定了如何计算该标识符                                                         |
-| `metric_name`        | [x] | `LowCardinality(String)`              | `String` 或 `LowCardinality(String)`                                                                                   | 指标名称                                                                                                 |
-| `<tag_value_column>` | [ ] | `String`                              | `String` 或 `LowCardinality(String)` 或 `LowCardinality(Nullable(String))`                                              | 特定标签的值；该标签的名称以及对应列的名称在 [tags&#95;to&#95;columns](#settings) 设置中指定                                    |
-| `tags`               | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` 或 `Map(LowCardinality(String), String)` 或 `Map(LowCardinality(String), LowCardinality(String))` | 标签映射，不包括表示指标名称的标签 `__name__`，也不包括 [tags&#95;to&#95;columns](#settings) 设置中枚举的标签名称                    |
-| `all_tags`           | [ ] | `Map(String, String)`                 | `Map(String, String)` 或 `Map(LowCardinality(String), String)` 或 `Map(LowCardinality(String), LowCardinality(String))` | 临时列，每一行都是一个包含所有标签的映射，仅排除表示指标名称的标签 `__name__`。该列的唯一用途是在计算 `id` 时使用                                    |
-| `min_time`           | [ ] | `Nullable(DateTime64(3))`             | `DateTime64(X)` 或 `Nullable(DateTime64(X))`                                                                           | 具有该 `id` 的时间序列的最小时间戳。如果 [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) 为 `true`，则会创建此列 |
-| `max_time`           | [ ] | `Nullable(DateTime64(3))`             | `DateTime64(X)` 或 `Nullable(DateTime64(X))`                                                                           | 具有该 `id` 的时间序列的最大时间戳。如果 [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) 为 `true`，则会创建此列 |
+| 名称                   | 必填？ | 默认类型                                  | 可能的类型                                                                                                                 | 描述                                                                                                                                      |
+| -------------------- | --- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                 | [x] | `Tuple(UInt64, UUID)`                 | any (必须与 [samples](#samples-table) 表中 `id` 的类型匹配)                                                                     | `id` 用于标识一种指标名称与标签的组合。DEFAULT 表达式指定了如何计算该标识符                                                                                            |
+| `metric_name`        | [x] | `LowCardinality(String)`              | `String` 或 `LowCardinality(String)`                                                                                   | 指标名称                                                                                                                                    |
+| `<tag_value_column>` | [ ] | `String`                              | `String` 或 `LowCardinality(String)` 或 `LowCardinality(Nullable(String))`                                              | 特定标签的值；该标签的名称以及对应列的名称在 [tags&#95;to&#95;columns](#settings) 设置中指定                                                                       |
+| `tags`               | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` 或 `Map(LowCardinality(String), String)` 或 `Map(LowCardinality(String), LowCardinality(String))` | 所有标签的映射，包括表示指标名称的标签 `__name__`，以及 [tags&#95;to&#95;columns](#settings) 设置中枚举的标签名称。由旧版 ClickHouse 创建的表在此列中仅存储没有专用列且不含指标名称的标签；读取时会处理这两种情况 |
+| `min_time`           | [ ] | `Nullable(DateTime64(3))`             | `DateTime64(X)` 或 `Nullable(DateTime64(X))`                                                                           | 具有该 `id` 的时间序列的最小时间戳。如果 [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) 为 `true`，则会创建此列                                    |
+| `max_time`           | [ ] | `Nullable(DateTime64(3))`             | `DateTime64(X)` 或 `Nullable(DateTime64(X))`                                                                           | 具有该 `id` 的时间序列的最大时间戳。如果 [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) 为 `true`，则会创建此列                                    |
 
 <div id="metrics-table">
   ### 指标表
@@ -221,10 +220,9 @@ SAMPLES INNER COLUMNS
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 TAGS INNER COLUMNS
 (
-    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags))),
+    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
-    `all_tags` Map(String, String) EPHEMERAL,
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
@@ -261,10 +259,9 @@ SETTINGS index_granularity = 32768
 ```sql
 CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags))),
+    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
-    `all_tags` Map(String, String) EPHEMERAL,
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
@@ -327,7 +324,7 @@ SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(metric_name, all_tags))
+TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(tags))
 ```
 
 `id` 列可以是任何可比较的非 `Nullable` 类型。samples 和 标签 内部表中声明的 `id` 类型必须保持一致。
@@ -338,18 +335,19 @@ TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(metric_name, all_tags))
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SETTINGS id_generator = 'sipHash64(metric_name, all_tags)'
+SETTINGS id_generator = 'sipHash64(tags)'
 ```
 
 如果设置了此项，即使该列的 `DEFAULT` 包含其他表达式，也会用它来生成 `id`。
 
-<div id="tags-and-all-tags">
-  ## `tags` 和 `all_tags` 列
+<div id="tags-column">
+  ## `tags` 列
 </div>
 
-有两列包含标签的 Map：`tags` 和 `all_tags`。在这个示例中，它们的含义相同；但如果使用 `tags_to_columns` 设置，
-它们也可能不同。此设置允许指定将某个特定标签存储在单独的列中，而不是存储
-在 `tags` 列中的 Map 内：
+`tags` 列包含时间序列的所有标签，其中包括带有指标名称的 `__name__` 标签。
+
+`tags_to_columns` 设置允许指定将某个特定标签也存储在单独的列中，
+作为 `tags` 列中 Map 的补充：
 
 ```sql
 CREATE TABLE my_table
@@ -358,9 +356,13 @@ SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
 ```
 
 该语句将把 `instance` 和 `job` 列添加到内部[标签](#tags-table)目标表中。
-在这种情况下，`tags` 列将不包含 `instance` 和 `job` 这两个标签，
-但 `all_tags` 列会包含它们。`all_tags` 列是临时列，其唯一用途是用于 `id` 列的 DEFAULT 表达式
-中。
+标签 `instance` 和 `job` 的值将同时存储在这些列和 `tags` 列中。
+
+<Note>
+  在由旧版 ClickHouse 创建的表中，`tags` 列仅包含未存储在专用
+  列中且不含指标名称的标签，而 `all_tags` 列是一个临时列，会在插入时填充
+  除指标名称外的所有标签。
+</Note>
 
 <div id="inner-table-engines">
   ## 内部目标表的表引擎
@@ -382,7 +384,7 @@ TAGS ENGINE=ReplicatedAggregatingMergeTree
 METRICS ENGINE=ReplicatedReplacingMergeTree
 ```
 
-[标签](#tags-table) 表将标签列 (以及 `tags`/`all_tags` Map) 放在其排序键之外，
+[标签](#tags-table) 表将标签列 (以及 `tags` Map) 放在其排序键之外，
 而 `AggregatingMergeTree` 默认会拒绝这种做法 (请参见 [`allow_dimensions_outside_sorting_key`](/zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree)) 。
 这在这里是安全的，因为这些列在函数上依赖于 `id`，而 `id` 是排序键的一部分，因此后台合并折叠到一起的所有
 行都具有相同的值。当内部 标签 表被生成，或者其引擎像上面那样以内联方式指定时，
@@ -426,11 +428,11 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 * `filter_by_min_time_and_max_time`
 
 ```sql
-ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(metric_name, all_tags)';
+ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
 ```
 
-请注意，如果在标签表中已有数据后更改 `id_generator`，同一 metric+tag 组合可能会生成不同的 ID——旧行会保留原来的 ID，新行则会使用新的生成器。
+请注意，如果在标签表中已有数据后更改 `id_generator`，同一指标+tag 组合可能会生成不同的 ID——旧行会保留原来的 ID，新行则会使用新的生成器。
 
 其他设置不能通过 `ALTER ... MODIFY SETTING` 更改，因为它们在 `CREATE` 时就已经固化在内部表的 schema 中。
 
@@ -444,7 +446,7 @@ ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
 | ------------------------------------ | ------ | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id_generator`                       | 表达式    | 取决于 `id` 类型 | 根据时间序列的标签计算其标识符 (指纹) 的表达式。如果未设置，则使用 `id` 列的默认表达式。如果 `id` 列的默认表达式也未设置，则会自动选择该表达式                                                                      |
 | `tags_to_columns`                    | Map    | {}          | 指定哪些标签应映射到 [标签](#tags-table) 表中的独立列。语法：`{'tag1': 'column1', 'tag2' : column2, ...}`                                                                  |
-| `use_all_tags_column_to_generate_id` | Bool   | true        | 在生成用于计算时间序列标识符的表达式时，此标志会启用在计算中使用 `all_tags` 列                                                                                                        |
+| `use_all_tags_column_to_generate_id` | Bool   | false       | 已废弃设置，不执行任何操作                                                                                                                                        |
 | `store_min_time_and_max_time`        | Bool   | true        | 如果设置为 true，则该表会为每个时间序列存储 `min_time` 和 `max_time`                                                                                                     |
 | `aggregate_min_time_and_max_time`    | Bool   | true        | 创建内部目标 `tags` 表时，此标志会启用将 `min_time` 列的类型设为 `SimpleAggregateFunction(min, Nullable(DateTime64(3)))`，而不是仅使用 `Nullable(DateTime64(3))`；`max_time` 列同样如此 |
 | `filter_by_min_time_and_max_time`    | Bool   | true        | 如果设置为 true，则该表会使用 `min_time` 和 `max_time` 列来过滤时间序列                                                                                                   |

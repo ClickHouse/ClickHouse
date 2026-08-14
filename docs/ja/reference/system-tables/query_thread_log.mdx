@@ -79,11 +79,11 @@ ClickHouse はテーブルからデータを自動では削除しません。詳
 * `client_version_patch` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client または別の TCP クライアントのバージョンにおけるパッチ部分です。
 * `script_query_number` ([UInt32](/ja/reference/data-types/int-uint)) — 複数クエリからなるスクリプトにおける連番のクエリ番号。
 * `script_line_number` ([UInt32](/ja/reference/data-types/int-uint)) — 複数クエリを含むスクリプト内で、現在のクエリが開始される行番号。
-* `http_method` ([UInt8](/ja/reference/data-types/int-uint)) — クエリの開始に使用された HTTP メソッド。設定可能な値: 0 — クエリは TCP インターフェイス経由で実行された、1 — GET メソッドが使用された。, 2 — POST メソッドが使用された、4 — PUT メソッドが使用された、5 — DELETE メソッドが使用された、6 — HEAD メソッドが使用された。
+* `http_method` ([UInt8](/ja/reference/data-types/int-uint)) — クエリの開始に使用された HTTP メソッド。設定可能な値: 0 - クエリは TCP インターフェイス経由で実行された、1 - GET メソッドが使用された、2 - POST メソッドが使用された、4 - PUT メソッドが使用された、5 - DELETE メソッドが使用された、6 - HEAD メソッドが使用された。
 * `http_user_agent` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — HTTPリクエストで渡されるUser-Agentヘッダー。
 * `http_referer` ([String](/ja/reference/data-types/string)) — HTTPクエリで送信される HTTP ヘッダー `Referer` (クエリを実行したページの絶対アドレスまたは部分的なアドレスを含みます) 。
 * `forwarded_for` ([String](/ja/reference/data-types/string)) — HTTPクエリに含まれるHTTPヘッダー `X-Forwarded-For`。
-* `quota_key` ([String](/ja/reference/data-types/string)) — quotas 設定で指定する「quota key」。
+* `quota_key` ([String](/ja/reference/data-types/string)) — quotas 設定で指定する&#39;quota key&#39;。
 * `distributed_depth` ([UInt64](/ja/reference/data-types/int-uint)) — サーバー間でクエリが転送された回数。
 * `revision` ([UInt32](/ja/reference/data-types/int-uint)) — ClickHouse のリビジョン番号。
 * `ProfileEvents` ([Map(LowCardinality(String), UInt64)](/ja/reference/data-types/map)) — このスレッドのさまざまなメトリクスを計測する `ProfileEvents` です。各イベントの説明は `system.events` テーブルにあります。

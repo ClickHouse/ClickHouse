@@ -149,7 +149,8 @@ SELECT * FROM stats ORDER BY key;
 내부 검사 기능은 [S3Queue 테이블 엔진](/ko/reference/engines/table-engines/integrations/s3queue#introspection)과 동일하지만, 몇 가지 분명한 차이점이 있습니다:
 
 1. 서버 버전이 &gt;= 25.1이면 큐의 인메모리 상태에 `system.azure_queue_metadata_cache`를 사용합니다. 이전 버전에서는 `system.s3queue_metadata_cache`를 사용합니다(`azure` 테이블에 대한 정보도 포함됨).
-2. 예를 들어, 기본 ClickHouse 구성에서 `system.azure_queue_log`를 활성화합니다.
+2. `system.azure_queue_metadata` 테이블을 사용하여 Keeper에 저장된 상태를 직접 검사합니다. 메타데이터 객체별 `processed`, `processing`, `failed` 노드 수와 필요에 따라 그 내용을 확인할 수 있습니다. 이는 `system.s3_queue_metadata`에 대응하는 `AzureQueue` 항목입니다.
+3. 예를 들어, 기본 ClickHouse 구성에서 `system.azure_queue_log`를 활성화합니다.
 
 ```xml
 <azure_queue_log>

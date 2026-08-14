@@ -1218,7 +1218,7 @@ fragment(url)
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT fragment('https://clickhouse.com/docs/getting-started/quick-start/cloud#1-create-a-clickhouse-service');
+SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-clickhouse-service');
 ```
 
 ```response title=Response
@@ -1290,7 +1290,7 @@ path(url)
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT path('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value');
+SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value');
 ```
 
 ```response title=Response
@@ -1305,7 +1305,7 @@ SELECT path('https://clickhouse.com/docs/sql-reference/functions/url-functions/?
 
 قُدِّم في: v1.1.0
 
-مماثل لـ [`path`](#path)، لكنه يتضمن سلسلة الاستعلام والمقطع من URL.
+مماثل لـ [`path`](#path)، لكنه يتضمن سلسلة الاستعلام والجزء من URL.
 
 **الصيغة**
 
@@ -1319,14 +1319,14 @@ pathFull(url)
 
 **القيمة المُعادة**
 
-تعيد مسار URL، بما في ذلك سلسلة الاستعلام والجزء التعريفي. [`String`](/ar/reference/data-types/string)
+تعيد مسار URL، بما في ذلك سلسلة الاستعلام والجزء. [`String`](/ar/reference/data-types/string)
 
 **أمثلة**
 
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT pathFull('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value#section');
+SELECT pathFull('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value#section');
 ```
 
 ```response title=Response

@@ -260,7 +260,7 @@ bitmapContains(bitmap, value)
 
 **الوسيطات**
 
-* `bitmap` — كائن bitmap. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction). - `value` — العنصر المراد التحقق منه، ويُفسَّر كعدد صحيح غير موقّع من نوع عنصر bitmap. [(U)Int8/16/32/64](/ar/reference/data-types/int-uint)
+* `bitmap` — كائن bitmap. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction). - `value` — العنصر المراد التحقق منه. [(U)Int8/16/32/64](/ar/reference/data-types/int-uint)
 
 **القيمة المُعادة**
 
@@ -548,7 +548,7 @@ bitmapSubsetInRange(bitmap, start, end)
 
 **الوسيطات**
 
-* `bitmap` — الـ bitmap المطلوب استخراج المجموعة الجزئية منه. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction). - `start` — بداية نطاق القيم (شامل). [`UInt*`](/ar/reference/data-types/int-uint) - `end` — نهاية نطاق القيم (غير شامل). [`UInt*`](/ar/reference/data-types/int-uint)
+* `bitmap` — الـ bitmap المطلوب استخراج المجموعة الفرعية منه. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction). - `start` — بداية النطاق (شامل). [`UInt*`](/ar/reference/data-types/int-uint) - `end` — نهاية النطاق (غير شامل). [`UInt*`](/ar/reference/data-types/int-uint)
 
 **القيمة المُعادة**
 
@@ -584,7 +584,7 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 **الوسيطات**
 
-* `bitmap` — كائن bitmap. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction). - `range_start` — الحد الأدنى لقيمة العنصر المراد تضمينه (متضمنة). [`UInt*`](/ar/reference/data-types/int-uint) - `cardinality_limit` — الحد الأقصى لعدد العناصر للمجموعة الفرعية. [`UInt*`](/ar/reference/data-types/int-uint)
+* `bitmap` — كائن bitmap. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction). - `range_start` — بداية النطاق (متضمنة). [`UInt32`](/ar/reference/data-types/int-uint) - `cardinality_limit` — الحد الأقصى لعدد العناصر للمجموعة الفرعية. [`UInt32`](/ar/reference/data-types/int-uint)
 
 **القيمة المعادة**
 
@@ -672,7 +672,7 @@ bitmapTransform(bitmap, from_array, to_array)
 
 **الوسيطات**
 
-* `bitmap` — كائن bitmap. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction). - `from_array` — مصفوفة من قيم العناصر المطلوب استبدالها، وتُفسَّر كأعداد صحيحة غير موقعة من نوع عنصر bitmap. [`Array(UInt*)`](/ar/reference/data-types/array). - `to_array` — مصفوفة من قيم الاستبدال، وتُفسَّر كأعداد صحيحة غير موقعة من نوع عنصر bitmap. يجب أن يكون طولها مساويًا لطول `from_array`. [`Array(UInt*)`](/ar/reference/data-types/array).
+* `bitmap` — كائن bitmap. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction). - `from_array` — مصفوفة من البتات المضبوطة الأصلية المطلوب استبدالها. [`Array(T)`](/ar/reference/data-types/array). - `to_array` — مصفوفة من البتات المضبوطة الجديدة التي سيُستبدل بها. [`Array(T)`](/ar/reference/data-types/array).
 
 **القيمة المُعادة**
 
@@ -792,7 +792,7 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 **الوسيطات**
 
-* `bitmap` — كائن bitmap. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction). - `offset` — عدد العناصر المطلوب تخطيها بترتيب تصاعدي للقيم غير الموقعة (بفهرسة تبدأ من الصفر). [`UInt*`](/ar/reference/data-types/int-uint) - `cardinality_limit` — الحد الأقصى لعدد العناصر التي يمكن تضمينها في المجموعة الفرعية. [`UInt*`](/ar/reference/data-types/int-uint)
+* `bitmap` — كائن bitmap. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction). - `offset` — عدد البتات المضبوطة المطلوب تخطيها من البداية (بفهرسة تبدأ من الصفر). [`UInt32`](/ar/reference/data-types/int-uint) - `cardinality_limit` — الحد الأقصى لعدد البتات المضبوطة التي يمكن تضمينها في المجموعة الفرعية. [`UInt32`](/ar/reference/data-types/int-uint)
 
 **القيمة المُعادة**
 

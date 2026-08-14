@@ -529,7 +529,11 @@ CREATE MATERIALIZED VIEW consumer TO stats
   ## Интроспекция
 </div>
 
-Для интроспекции используйте stateless-таблицу `system.s3queue_metadata_cache` и постоянную таблицу `system.s3queue_log`.
+Для интроспекции используйте stateless-таблицы `system.s3queue_metadata_cache` и `system.s3_queue_metadata`, а также постоянную таблицу `system.s3queue_log`.
+
+* Используйте `system.s3queue_metadata_cache` для проверки кэша в памяти, содержащего состояние обработки каждого файла (какие файлы сейчас обрабатываются, уже обработаны или завершились ошибкой) на локальном сервере.
+* Используйте `system.s3_queue_metadata` для проверки состояния, хранящегося непосредственно в Keeper: количества узлов `processed`, `processing` и `failed` для каждого объекта метаданных, а также, при необходимости, их содержимого. Это полезно, если кэш в памяти ещё не отражает состояние Keeper, или для просмотра общего состояния всего кластера.
+* Используйте `system.s3queue_log` для хранения постоянной истории файлов со статусами `processed` и `failed`.
 
 1. `system.s3queue_metadata_cache`. Эта таблица не является постоянной и показывает текущее состояние `S3Queue` в памяти: какие файлы обрабатываются в данный момент, какие уже обработаны, а какие завершились ошибкой.
 
@@ -571,7 +575,25 @@ ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMul
 exception:
 ```
 
-2. `system.s3queue_log`. Постоянная таблица. Содержит ту же информацию, что и `system.s3queue_metadata_cache`, но для файлов со статусами `processed` и `failed`.
+2. `system.s3_queue_metadata`. Эта таблица не является постоянной и считывает состояние непосредственно из Keeper: количество узлов `processed`, `processing` и `failed` для каждого объекта метаданных, а также, по запросу, их содержимое.
+
+Столбцы `processed_nodes`, `processing_nodes`, `failed_nodes` и `processed_path` выполняют запросы к Keeper и извлекаются только при выборе соответствующего столбца, поэтому выбор только счётчиков `*_nodes_count` позволяет избежать дополнительного трафика к Keeper.
+
+```sql
+SELECT zookeeper_path, processed_nodes_count, processing_nodes_count, failed_nodes_count
+FROM system.s3_queue_metadata
+
+Row 1:
+──────
+zookeeper_path:         /clickhouse/s3queue/25ea5621-ae8c-40c7-96d0-cec959c5ab88/3b3f66a1-9866-4c2e-ba78-b6bfa154207e
+processed_nodes_count:  128
+processing_nodes_count: 2
+failed_nodes_count:     0
+```
+
+Полный список столбцов см. на справочной странице `system.s3_queue_metadata`.
+
+3. `system.s3queue_log`. Постоянная таблица. Содержит ту же информацию, что и `system.s3queue_metadata_cache`, но для файлов со статусами `processed` и `failed`.
 
 Таблица имеет следующую структуру:
 

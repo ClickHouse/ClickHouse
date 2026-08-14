@@ -86,13 +86,15 @@ doc_type: 'reference'
 * `client_version_patch` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client または別の TCP クライアントのバージョンのパッチ番号。
 * `script_query_number` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client 用の、複数のクエリを含むスクリプト内のクエリ番号。
 * `script_line_number` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client 用の、複数のクエリを含むスクリプトでクエリが開始する行番号。
-* `http_method` ([UInt8](/ja/reference/data-types/int-uint)) — クエリを開始した HTTP メソッド。設定可能な値: 0 — TCP インターフェイスからクエリが開始された、1 — GET メソッドが使用された、2 — POST メソッドが使用された。
+* `http_method` ([UInt8](/ja/reference/data-types/int-uint)) — クエリを開始した HTTP メソッド。設定可能な値: 0 - TCP インターフェイスからクエリが開始された、1 - GET メソッドが使用された、2 - POST メソッドが使用された、4 - PUT メソッドが使用された、5 - DELETE メソッドが使用された、6 - HEAD メソッドが使用された。
 * `http_user_agent` ([String](/ja/reference/data-types/string)) — HTTP クエリで渡された UserAgent HTTP ヘッダー。
 * `http_referer` ([String](/ja/reference/data-types/string)) — HTTP クエリで渡された Referer HTTP ヘッダー (クエリを実行するページの絶対アドレスまたは一部のアドレスを含みます) 。
 * `forwarded_for` ([String](/ja/reference/data-types/string)) — HTTP クエリで渡された X-Forwarded-For HTTP ヘッダー。
 * `quota_key` ([String](/ja/reference/data-types/string)) — quotas 設定で指定された quota key (keyed を参照) 。
 * `distributed_depth` ([UInt64](/ja/reference/data-types/int-uint)) — クエリがサーバー間で転送された回数。
 * `revision` ([UInt32](/ja/reference/data-types/int-uint)) — ClickHouse のリビジョン。
+* `http_handler_name` ([String](/ja/reference/data-types/string)) — クエリを呼び出した SQL 定義の HTTP ハンドラー (CREATE HANDLER) の名前。このようなハンドラー経由でクエリが呼び出されなかった場合は空です。
+* `http_request_url` ([String](/ja/reference/data-types/string)) — クエリを呼び出した HTTP リクエストパス (クエリ文字列を除く) 。機密性の高いリクエストパラメータが永続化されないよう、クエリ文字列は省略されます。HTTP 以外のクエリでは空です。
 * `log_comment` ([String](/ja/reference/data-types/string)) — ログコメント。max&#95;query&#95;size 以下の任意の文字列に設定できます。定義されていない場合は空の文字列です。
 * `thread_ids` ([Array(UInt64)](/ja/reference/data-types/array)) — クエリ実行に参加したスレッド ID。これらのスレッドが同時に実行されたとは限りません。
 * `peak_threads_usage` ([UInt64](/ja/reference/data-types/int-uint)) — クエリを実行した同時スレッド数の最大値。

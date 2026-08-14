@@ -330,6 +330,17 @@ JOIN 재정렬 최적화 중 표현식을 JOIN 단계에 머지하도록 허용�
 
 JOIN에서 lazy indexing 최적화를 활성화하는 데 필요한 왼쪽 입력의 payload 컬럼 최소 개수를 제어합니다. 0으로 설정하면 최적화가 비활성화됩니다.
 
+<div id="query_plan_optimize_count_from_text_index">
+  ## query_plan_optimize_count_from_text_index
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "새로운 설정"}]}]} />
+
+일치하는 행을 구체화하지 않고 텍스트 인덱스의 포스팅 목록 카디널리티를 사용하여 `SELECT count() ... WHERE <text search predicate>`에 직접 응답할 수 있도록 합니다.
+`query_plan_direct_read_from_text_index`가 활성화된 경우에만 적용됩니다.
+
 <div id="query_plan_optimize_join_order_algorithm">
   ## query_plan_optimize_join_order_algorithm
 </div>

@@ -527,7 +527,11 @@ Les constructions avec `{}` sont similaires à la fonction de table [remote](/fr
   ## Introspection
 </div>
 
-Pour l’introspection, utilisez la table sans état `system.s3queue_metadata_cache` et la table persistante `system.s3queue_log`.
+Pour l’introspection, utilisez les tables sans état `system.s3queue_metadata_cache` et `system.s3_queue_metadata`, ainsi que la table persistante `system.s3queue_log`.
+
+* Utilisez `system.s3queue_metadata_cache` pour inspecter le cache en mémoire de l’état de traitement de chaque fichier (fichiers en cours de traitement, traités ou ayant échoué) sur le serveur local.
+* Utilisez `system.s3_queue_metadata` pour inspecter directement l’état stocké dans Keeper : le nombre de nœuds `processed`, `processing` et `failed` par objet de métadonnées et, à la demande, leur contenu. Cela est utile lorsque le cache en mémoire ne reflète pas (encore) Keeper, ou pour examiner l’état partagé à l’échelle du cluster.
+* Utilisez `system.s3queue_log` pour consulter l’historique persistant des fichiers `processed` et `failed`.
 
 1. `system.s3queue_metadata_cache`. Cette table n’est pas persistante et affiche l’état en mémoire de `S3Queue` : les fichiers en cours de traitement, ceux qui ont été traités ou ont échoué.
 
@@ -569,7 +573,25 @@ ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMul
 exception:
 ```
 
-2. `system.s3queue_log`. Table persistante. Contient les mêmes informations que `system.s3queue_metadata_cache`, mais pour les fichiers `processed` et `failed`.
+2. `system.s3_queue_metadata`. Cette table n’est pas persistante et lit l’état directement depuis Keeper : le nombre de nœuds `processed`, `processing` et `failed` par objet de métadonnées ainsi que, à la demande, leur contenu.
+
+Les colonnes `processed_nodes`, `processing_nodes`, `failed_nodes` et `processed_path` effectuent des requêtes à Keeper et ne sont récupérées que lorsque la colonne correspondante est sélectionnée. Ainsi, sélectionner uniquement les compteurs `*_nodes_count` évite du trafic supplémentaire vers Keeper.
+
+```sql
+SELECT zookeeper_path, processed_nodes_count, processing_nodes_count, failed_nodes_count
+FROM system.s3_queue_metadata
+
+Row 1:
+──────
+zookeeper_path:         /clickhouse/s3queue/25ea5621-ae8c-40c7-96d0-cec959c5ab88/3b3f66a1-9866-4c2e-ba78-b6bfa154207e
+processed_nodes_count:  128
+processing_nodes_count: 2
+failed_nodes_count:     0
+```
+
+Pour la liste complète des colonnes, consultez la page de référence `system.s3_queue_metadata`.
+
+3. `system.s3queue_log`. Table persistante. Contient les mêmes informations que `system.s3queue_metadata_cache`, mais pour les fichiers `processed` et `failed`.
 
 La table présente la structure suivante :
 

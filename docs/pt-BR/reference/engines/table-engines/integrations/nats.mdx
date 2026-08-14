@@ -44,7 +44,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
     [nats_credential_file = '/var/nats_credentials',]
-    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
     [nats_commit_on_select = false,]
@@ -75,7 +74,6 @@ Parâmetros opcionais:
 * `nats_password` - Senha do NATS.
 * `nats_token` - Token de autenticação do NATS.
 * `nats_credential_file` - Caminho para um arquivo de credentials do NATS.
-* `nats_credentials` - Conteúdo das credentials do NATS (a mesma carga útil de um arquivo `.creds` com JWT de usuário e seed).
 * `nats_startup_connect_tries` - Número de tentativas de conexão na inicialização. Padrão: `5`.
 * `nats_max_rows_per_message` — O número máximo de linhas gravadas em uma mensagem NATS para formatos baseados em linha. (padrão: `1`).
 * `nats_commit_on_select` - Faz commit das mensagens quando uma consulta é realizada. Aplica-se somente ao JetStream; o NATS Core não tem confirmações. Padrão: `0`.
@@ -84,14 +82,14 @@ Parâmetros opcionais:
 Conexão SSL:
 
 Para uma conexão segura, use `nats_secure = 1`.
-A verificação de certificados é controlada pela variável de ambiente `CLICKHOUSE_NATS_TLS_SECURE`;
+A verificação de certificados é controlada pela variável de ambiente `CLICKHOUSE_NATS_TLS_SECURE`.
 Se o certificado estiver expirado, for autoassinado, estiver ausente ou for inválido por qualquer outro motivo, desative a verificação definindo `CLICKHOUSE_NATS_TLS_SECURE=0`.
 
 Gravando em uma tabela NATS:
 
 Se a tabela lê de apenas um subject, qualquer insert publicará nesse mesmo subject.
 No entanto, se a tabela lê de múltiplos subjects, é preciso especificar em qual subject queremos publicar.
-Por isso, ao inserir em uma tabela com múltiplos subjects, é necessário definir a configuração `stream_like_engine_insert_queue`.
+Por isso, ao inserir em uma tabela com múltiplos subjects, é necessário definir `stream_like_engine_insert_queue`.
 Você pode selecionar um dos subjects dos quais a tabela lê e publicar seus dados nele. Por exemplo:
 
 ```sql
@@ -125,7 +123,7 @@ CREATE TABLE queue (
 ```
 
 A configuração do servidor NATS pode ser adicionada usando o arquivo de configuração do ClickHouse.
-Mais especificamente, você pode adicionar sua senha para o engine NATS:
+Mais especificamente, você pode adicionar sua senha para o mecanismo NATS:
 
 ```xml
 <nats>

@@ -998,6 +998,43 @@ SELECT CURRENT_DATABASE
 └──────────────────┘
 ```
 
+<div id="currentHandler">
+  ## currentHandler
+</div>
+
+Introduzido em: v26.6.0
+
+Retorna o nome do handler HTTP definido em SQL (criado com `CREATE HANDLER`) que invocou a consulta.
+Retorna uma string vazia se a consulta não tiver sido invocada por esse handler.
+
+Útil para personalizar o comportamento da consulta conforme o handler invocado.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
+**Sintaxe**
+
+```sql
+currentHandler()
+```
+
+**Argumentos**
+
+* Nenhum.
+
+**Valor retornado**
+
+Retorna o nome do handler atual. [`String`](/pt-BR/reference/data-types/string)
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT currentHandler()
+```
+
 <div id="currentProfiles">
   ## currentProfiles
 </div>
@@ -1076,6 +1113,44 @@ SELECT currentQueryID();
 ┌─currentQueryID()─────────────────────┐
 │ 1280d0e8-1a08-4524-be6e-77975bb68e7d │
 └──────────────────────────────────────┘
+```
+
+<div id="currentRequestURL">
+  ## currentRequestURL
+</div>
+
+Introduzida na versão: v26.6.0
+
+Retorna a URL da requisição HTTP (caminho e string de consulta) que invocou a consulta.
+Retorna uma string vazia se a consulta não tiver sido invocada por HTTP.
+
+Útil em combinação com handlers HTTP definidos em SQL (`CREATE HANDLER`) para extrair parâmetros
+embutidos no caminho da requisição.
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
+**Sintaxe**
+
+```sql
+currentRequestURL()
+```
+
+**Argumentos**
+
+* Nenhum.
+
+**Valor retornado**
+
+Retorna a URL da requisição HTTP atual. [`String`](/pt-BR/reference/data-types/string)
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT currentRequestURL()
 ```
 
 <div id="currentRoles">

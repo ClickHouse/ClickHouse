@@ -29,7 +29,7 @@ As opções são o codec padrão da tabela (consulte a configuração `default_c
 No momento, apenas tipos semelhantes a inteiros são adaptativos.
 O menor resultado é escolhido. Portanto, a compactação nunca é pior do que a padrão, e blocos incompressíveis são armazenados em formato raw.
 Uma coluna cujo codec padrão inclui criptografia (por exemplo, `AES_128_GCM_SIV`) nunca é selecionada de forma adaptativa, garantindo que a criptografia seja sempre aplicada.
-Os codecs por bloco são informados pela função de tabela [`mergeTreeCodecBlockCounts`](/pt-BR/reference/functions/table-functions/mergeTreeCodecBlockCounts).
+Os codecs por bloco são informados pela função de tabela [`mergeTreeCodecBlockCounts`](/pt-BR/reference/functions/table-functions/index).
 
 <div id="allow_experimental_replacing_merge_with_cleanup">
   ## allow_experimental_replacing_merge_with_cleanup

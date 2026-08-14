@@ -468,6 +468,73 @@ SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials'
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
+<div id="aiRedact">
+  ## aiRedact
+</div>
+
+引入版本：v26.8.0
+
+使用 LLM 提供商检测并脱敏给定文本中的个人身份信息 (PII) 。
+
+<Warning>
+  `aiRedact` 使用 LLM 尽力检测和脱敏 PII，其输出并不
+  可靠。能否检测和移除 PII 取决于所选模型、提示词和输入：模型可能遗漏
+  标识符、仅部分脱敏，或修改周围文本。它最适合处理
+  格式规范的英文文本；对于其他语言或存在大量拼写、
+  标点或语法错误的文本，结果可能较差。`aiRedact` 不保证其输出不含 PII，因此不得
+  单独将其视为安全或充分的匿名化机制。在向不受信任方暴露数据之前，务必审查输出，以确保其
+  符合您组织的数据隐私和合规政策。
+</Warning>
+
+每个检测到的 PII span 都会被替换为脱敏标记 (默认为 `[REDACTED]`，可通过
+`replacement` 参数配置) 。`categories` 数组用于限制要脱敏的 PII 类型；空数组
+会回退到一组常见类别的默认集合 (姓名、电子邮件、电话号码、地址、信用卡、IP 地址) 。
+
+`aiRedact` 会指示模型仅修改检测到的 PII span，但保留周围文本只能
+尽力而为，模型仍可能对其进行修改 (请参阅上方警告) 。除制表符、
+换行符和回车符外，其他控制字符也会在发送请求前归一化为空格，因此对于包含这些字符的输入，输出
+不会与输入按字节完全相同。
+
+由于 `aiRedact` 返回替换 PII 后的完整输入文本，输出长度大致与输入相同。
+请将 `max_tokens` (默认值为 `1024`) 设置为大于输入的标记数；因限制过低而被截断的回复
+将不完整。
+
+**语法**
+
+```sql
+aiRedact(text, categories[, params])
+```
+
+**别名**：`AIRedact`
+
+**参数**
+
+* `text` — 要脱敏的文本。[`String`](/zh/reference/data-types/string)
+* `categories` — 要脱敏的 PII 类别常量列表 (例如 `['name', 'ssn', 'credit_card']`) 。空数组会使用一组默认的常见类别 (姓名、电子邮件、电话号码、地址、信用卡、IP 地址) 。[`Array(String)`](/zh/reference/data-types/array)
+* `params` — 可选的常量 `Map(String, String)` 参数映射。函数专用键包括：`temperature` (控制随机性的采样温度；默认值为 `0.0`) 、`max_tokens` (每次调用的最大输出标记数；默认值为 `1024`——由于 `aiRedact` 返回完整文本，应将其设为大于输入标记数的值，否则响应可能被截断而不完整) 、`replacement` (用于替换每个检测到的 PII span 的标记；默认值为 `[REDACTED]`) 。通用参数 `credentials` 和 `model` 同样适用 (请参阅 [AI 函数](/zh/reference/functions/regular-functions/ai-functions)) 。[`Map(String, String)`](/zh/reference/data-types/map)
+
+**返回值**
+
+将检测到的 PII 替换为脱敏标记后的文本；如果请求失败且禁用了 `ai_function_throw_on_error`，则返回列类型的默认值 (空字符串) 。[`String`](/zh/reference/data-types/string)
+
+**示例**
+
+**对特定类别进行脱敏**
+
+```sql title=Query
+SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
+```
+
+```response title=Response
+Purchase was done by customer [REDACTED] with email [REDACTED]
+```
+
+**使用自定义标记对默认 PII 类别进行脱敏**
+
+```sql title=Query
+SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
+```
+
 <div id="aiSimilarity">
   ## aiSimilarity
 </div>

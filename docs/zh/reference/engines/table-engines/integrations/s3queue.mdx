@@ -527,7 +527,11 @@ CREATE MATERIALIZED VIEW consumer TO stats
   ## 内部信息
 </div>
 
-如需查看内部信息，可使用无状态表 `system.s3queue_metadata_cache` 和持久化表 `system.s3queue_log`。
+如需查看内部信息，可使用无状态表 `system.s3queue_metadata_cache` 和 `system.s3_queue_metadata`，以及持久化表 `system.s3queue_log`。
+
+* 使用 `system.s3queue_metadata_cache` 查看本地服务器上按文件记录的处理状态内存缓存 (哪些文件当前正在处理、已处理或处理失败) 。
+* 使用 `system.s3_queue_metadata` 直接查看存储在 Keeper 中的状态：每个元数据对象的 `processed`、`processing` 和 `failed` 节点数量，以及按需查看其内容。当内存缓存尚未反映 Keeper 中的状态时，或需要查看整个集群中的共享状态时，此功能非常有用。
+* 使用 `system.s3queue_log` 查看 `processed` 和 `failed` 文件的持久化历史记录。
 
 1. `system.s3queue_metadata_cache`。此表不是持久化的，用于显示 `S3Queue` 的内存状态：当前正在处理哪些文件，以及哪些文件已处理或处理失败。
 
@@ -569,7 +573,25 @@ ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMul
 exception:
 ```
 
-2. `system.s3queue_log`。持久化表。包含与 `system.s3queue_metadata_cache` 相同的信息，但针对 `processed` 和 `failed` 文件。
+2. `system.s3_queue_metadata`。此表不是持久化的，直接从 Keeper 读取状态：每个元数据对象中 `processed`、`processing` 和 `failed` 节点的数量，以及按需读取这些节点的内容。
+
+`processed_nodes`、`processing_nodes`、`failed_nodes` 和 `processed_path` 列会发出 Keeper 请求，并且仅在选取相应列时才会拉取，因此仅选取 `*_nodes_count` 计数器可避免额外的 Keeper 流量。
+
+```sql
+SELECT zookeeper_path, processed_nodes_count, processing_nodes_count, failed_nodes_count
+FROM system.s3_queue_metadata
+
+Row 1:
+──────
+zookeeper_path:         /clickhouse/s3queue/25ea5621-ae8c-40c7-96d0-cec959c5ab88/3b3f66a1-9866-4c2e-ba78-b6bfa154207e
+processed_nodes_count:  128
+processing_nodes_count: 2
+failed_nodes_count:     0
+```
+
+有关完整的列列表，请参阅 `system.s3_queue_metadata` 参考页面。
+
+3. `system.s3queue_log`。持久化表。包含与 `system.s3queue_metadata_cache` 相同的信息，但针对 `processed` 和 `failed` 文件。
 
 该表的结构如下：
 

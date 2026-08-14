@@ -528,7 +528,11 @@ CREATE MATERIALIZED VIEW consumer TO stats
   ## الاستقصاء الداخلي
 </div>
 
-للاستقصاء الداخلي، استخدم الجدول عديم الحالة `system.s3queue_metadata_cache` والجدول الدائم `system.s3queue_log`.
+للاستقصاء الداخلي، استخدم الجدولين عديمي الحالة `system.s3queue_metadata_cache` و`system.s3_queue_metadata` والجدول الدائم `system.s3queue_log`.
+
+* استخدم `system.s3queue_metadata_cache` لفحص التخزين المؤقت داخل الذاكرة لحالة معالجة كل ملف (الملفات التي تجري معالجتها حاليًا، أو التي تمت معالجتها أو فشلت) على الخادم المحلي.
+* استخدم `system.s3_queue_metadata` لفحص الحالة المخزنة في Keeper مباشرةً: عدد العُقد `processed` و`processing` و`failed` لكل كائن بيانات وصفية، ومحتوياتها عند الطلب. يفيد ذلك عندما لا يعكس التخزين المؤقت داخل الذاكرة Keeper (بعد)، أو للاطلاع على الحالة المشتركة عبر الكتلة.
+* استخدم `system.s3queue_log` للسجل الدائم للملفات `processed` و`failed`.
 
 1. `system.s3queue_metadata_cache`. هذا الجدول غير دائم ويعرض الحالة المخزنة في الذاكرة لـ `S3Queue`: الملفات التي تجري معالجتها حاليًا، والملفات التي تمت معالجتها أو التي فشلت.
 
@@ -570,7 +574,25 @@ ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMul
 exception:
 ```
 
-2. ‏`system.s3queue_log`. جدول دائم. يتضمن المعلومات نفسها الموجودة في `system.s3queue_metadata_cache`، ولكن لملفات `processed` و`failed`.
+2. `system.s3_queue_metadata`. هذا الجدول غير دائم ويقرأ الحالة مباشرةً من Keeper: عدد العُقد `processed` و`processing` و`failed` لكل كائن بيانات وصفية، ومحتوياتها عند الطلب.
+
+تُصدر الأعمدة `processed_nodes` و`processing_nodes` و`failed_nodes` و`processed_path` طلبات إلى Keeper ولا تُجلب إلا عند اختيار العمود المقابل، لذا فإن اختيار عدادات `*_nodes_count` فقط يتجنب حركة مرور إضافية إلى Keeper.
+
+```sql
+SELECT zookeeper_path, processed_nodes_count, processing_nodes_count, failed_nodes_count
+FROM system.s3_queue_metadata
+
+Row 1:
+──────
+zookeeper_path:         /clickhouse/s3queue/25ea5621-ae8c-40c7-96d0-cec959c5ab88/3b3f66a1-9866-4c2e-ba78-b6bfa154207e
+processed_nodes_count:  128
+processing_nodes_count: 2
+failed_nodes_count:     0
+```
+
+للاطلاع على القائمة الكاملة للأعمدة، راجع صفحة مرجع `system.s3_queue_metadata`.
+
+3. ‏`system.s3queue_log`. جدول دائم. يتضمن المعلومات نفسها الموجودة في `system.s3queue_metadata_cache`، ولكن لملفات `processed` و`failed`.
 
 لدى الجدول البنية التالية:
 

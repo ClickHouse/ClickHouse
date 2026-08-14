@@ -86,13 +86,15 @@ Les conditions sur la partition et les colonnes clés du journal de requêtes (`
 * `client_version_patch` ([UInt32](/fr/reference/data-types/int-uint)) — Composant correctif de la version de clickhouse-client ou d’un autre client TCP.
 * `script_query_number` ([UInt32](/fr/reference/data-types/int-uint)) — Numéro de la requête dans un script contenant plusieurs requêtes pour clickhouse-client.
 * `script_line_number` ([UInt32](/fr/reference/data-types/int-uint)) — Numéro de la ligne où débute la requête dans un script contenant plusieurs requêtes pour clickhouse-client.
-* `http_method` ([UInt8](/fr/reference/data-types/int-uint)) — Méthode HTTP ayant initié la requête. Valeurs possibles : 0 — requête lancée depuis l’interface TCP, 1 — méthode GET utilisée, 2 — méthode POST utilisée.
+* `http_method` ([UInt8](/fr/reference/data-types/int-uint)) — Méthode HTTP ayant initié la requête. Valeurs possibles : 0 - requête lancée depuis l’interface TCP, 1 - méthode GET utilisée, 2 - méthode POST utilisée, 4 - méthode PUT utilisée, 5 - méthode DELETE utilisée, 6 - méthode HEAD utilisée.
 * `http_user_agent` ([String](/fr/reference/data-types/string)) — En-tête HTTP UserAgent transmis avec la requête HTTP.
 * `http_referer` ([String](/fr/reference/data-types/string)) — En-tête HTTP Referer transmis avec la requête HTTP (contient l’adresse absolue ou partielle de la page à l’origine de la requête).
 * `forwarded_for` ([String](/fr/reference/data-types/string)) — En-tête HTTP X-Forwarded-For transmis avec la requête HTTP.
 * `quota_key` ([String](/fr/reference/data-types/string)) — Clé de quota spécifiée dans le paramètre quotas (voir keyed).
 * `distributed_depth` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de fois qu’une requête a été transmise entre des serveurs.
 * `revision` ([UInt32](/fr/reference/data-types/int-uint)) — Révision de ClickHouse.
+* `http_handler_name` ([String](/fr/reference/data-types/string)) — Nom du handler HTTP défini en SQL (CREATE HANDLER) ayant invoqué la requête. Vide si la requête n’a pas été invoquée via un tel handler.
+* `http_request_url` ([String](/fr/reference/data-types/string)) — Chemin de la requête HTTP (sans la chaîne de requête) ayant invoqué la requête. La chaîne de requête est omise afin que les paramètres sensibles de la requête ne soient pas persistés. Vide pour les requêtes non HTTP.
 * `log_comment` ([String](/fr/reference/data-types/string)) — Commentaire de Log. Peut être défini sur une chaîne arbitraire ne dépassant pas max&#95;query&#95;size. Chaîne vide s’il n’est pas défini.
 * `thread_ids` ([Array(UInt64)](/fr/reference/data-types/array)) — Identifiants des threads participant à l’exécution de la requête. Ces threads peuvent ne pas s’être exécutés simultanément.
 * `peak_threads_usage` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre maximal de threads exécutant simultanément la requête.

@@ -86,13 +86,15 @@ doc_type: 'reference'
 * `client_version_patch` ([UInt32](/ru/reference/data-types/int-uint)) — Компонент патча версии clickhouse-client или другого TCP-клиента.
 * `script_query_number` ([UInt32](/ru/reference/data-types/int-uint)) — Номер запроса в скрипте с несколькими запросами, выполняемом через clickhouse-client.
 * `script_line_number` ([UInt32](/ru/reference/data-types/int-uint)) — Номер строки, с которой начинается запрос в скрипте с несколькими запросами, выполняемом через clickhouse-client.
-* `http_method` ([UInt8](/ru/reference/data-types/int-uint)) — HTTP-метод, инициировавший запрос. Возможные значения: 0 — запрос запущен через TCP-интерфейс, 1 — использован метод GET, 2 — использован метод POST.
+* `http_method` ([UInt8](/ru/reference/data-types/int-uint)) — HTTP-метод, инициировавший запрос. Возможные значения: 0 — запрос запущен через TCP-интерфейс, 1 — использован метод GET, 2 — использован метод POST, 4 — использован метод PUT, 5 — использован метод DELETE, 6 — использован метод HEAD.
 * `http_user_agent` ([String](/ru/reference/data-types/string)) — HTTP-заголовок UserAgent, переданный в HTTP-запросе.
 * `http_referer` ([String](/ru/reference/data-types/string)) — HTTP-заголовок Referer, переданный в HTTP-запросе (содержит полный или частичный адрес страницы, отправившей запрос).
 * `forwarded_for` ([String](/ru/reference/data-types/string)) — HTTP-заголовок X-Forwarded-For, переданный в HTTP-запросе.
 * `quota_key` ([String](/ru/reference/data-types/string)) — Ключ квоты, указанный в настройке quotas (см. keyed).
 * `distributed_depth` ([UInt64](/ru/reference/data-types/int-uint)) — Количество перенаправлений запроса между серверами.
 * `revision` ([UInt32](/ru/reference/data-types/int-uint)) — Ревизия ClickHouse.
+* `http_handler_name` ([String](/ru/reference/data-types/string)) — Имя определённого в SQL HTTP-обработчика (CREATE HANDLER), вызвавшего запрос. Пустое значение, если запрос не был вызван через такой обработчик.
+* `http_request_url` ([String](/ru/reference/data-types/string)) — Путь HTTP-запроса (без строки запроса), вызвавшего запрос. Строка запроса исключается, чтобы конфиденциальные параметры запроса не сохранялись. Пустое значение для запросов, не использующих HTTP.
 * `log_comment` ([String](/ru/reference/data-types/string)) — Комментарий Log. Его можно задать произвольной строкой длиной не более max&#95;query&#95;size. Если он не задан, возвращается пустая строка.
 * `thread_ids` ([Array(UInt64)](/ru/reference/data-types/array)) — Идентификаторы потоков, участвующих в выполнении запроса. Эти потоки могли выполняться не одновременно.
 * `peak_threads_usage` ([UInt64](/ru/reference/data-types/int-uint)) — Максимальное количество потоков, одновременно выполняющих запрос.

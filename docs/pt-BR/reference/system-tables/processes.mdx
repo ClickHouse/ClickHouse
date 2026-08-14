@@ -40,7 +40,7 @@ Esta tabela de sistema é usada para implementar a consulta `SHOW PROCESSLIST`.
 * `client_version_major` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Versão principal do clickhouse-client ou de outro cliente TCP.
 * `client_version_minor` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Versão secundária do clickhouse-client ou de outro cliente TCP.
 * `client_version_patch` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Componente de patch da versão do clickhouse-client ou de outro cliente TCP.
-* `http_method` ([UInt8](/pt-BR/reference/data-types/int-uint)) — Método HTTP que iniciou a consulta. Valores possíveis: 0 — A consulta foi iniciada pela interface TCP. 1 — Foi usado o método GET. 2 — Foi usado o método POST. 4 — Foi usado o método PUT. 5 — Foi usado o método DELETE. 6 — Foi usado o método HEAD.
+* `http_method` ([UInt8](/pt-BR/reference/data-types/int-uint)) — Método HTTP que iniciou a consulta. Valores possíveis: 0 - A consulta foi iniciada pela interface TCP, 1 - Foi usado o método GET, 2 - Foi usado o método POST, 4 - Foi usado o método PUT, 5 - Foi usado o método DELETE, 6 - Foi usado o método HEAD.
 * `http_user_agent` ([String](/pt-BR/reference/data-types/string)) — Cabeçalho HTTP UserAgent enviado na consulta HTTP.
 * `http_referer` ([String](/pt-BR/reference/data-types/string)) — Cabeçalho HTTP Referer enviado na consulta HTTP (contém um endereço absoluto ou parcial da página que fez a consulta).
 * `forwarded_for` ([String](/pt-BR/reference/data-types/string)) — Cabeçalho HTTP X-Forwarded-For enviado na consulta HTTP.

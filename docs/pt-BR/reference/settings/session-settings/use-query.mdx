@@ -47,13 +47,13 @@ Valores possíveis:
   ## use_query_condition_cache_for_top_k
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para controlar o cache de condição de consulta para leituras com `ORDER BY ... LIMIT n` (TopK); desativada por padrão."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para controlar o cache de condição de consulta para leituras com `ORDER BY ... LIMIT n` (TopK); ativada por padrão. O controle é desativado na versão 26.7, portanto, a `compatibility` com uma versão anterior o mantém desativado."}]}]} />
 
 Ative o [cache de condição de consulta](/pt-BR/concepts/features/performance/caches/query-condition-cache) para consultas que usam a otimização `ORDER BY <column> LIMIT n` (TopK) (baseada em filtragem dinâmica ou em índices de omissão). Quando desativado, essas leituras não consultam nem preenchem o cache.
 
-Essas consultas podem descartar grânulos durante a execução, dependendo do limiar em uso. Por isso, suas entradas de cache são particionadas pelos parâmetros do plano TopK e pelo conjunto de partes lidas. Essa configuração é desativada por padrão enquanto a validade dessas entradas de cache é estabelecida; ela não tem efeito, a menos que `use_query_condition_cache` também esteja ativada.
+Essas consultas podem descartar grânulos durante a execução, dependendo do limiar em uso. Por isso, suas entradas de cache são particionadas pelos parâmetros do plano TopK e pelo conjunto de partes lidas. Essa configuração não tem efeito, a menos que `use_query_condition_cache` também esteja ativada.
 
 Valores possíveis:
 

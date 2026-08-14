@@ -43,7 +43,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
     [nats_credential_file = '/var/nats_credentials',]
-    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
     [nats_commit_on_select = false,]
@@ -74,7 +73,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `nats_password` - NATS password。
 * `nats_token` - NATS auth token。
 * `nats_credential_file` - NATS credentials file への path。
-* `nats_credentials` - NATS credentials の内容 (user JWT と seed を含む `.creds` file と同じ payload) 。
 * `nats_startup_connect_tries` - 起動時の接続試行回数。デフォルト: `5`。
 * `nats_max_rows_per_message` — 行ベースのフォーマットで、1 つの NATS message に書き込まれる最大行数。 (デフォルト: `1`) 。
 * `nats_commit_on_select` - クエリ実行時に message を commit します。JetStream にのみ適用されます。core NATS には acknowledgement はありません。デフォルト: `0`。
@@ -86,7 +84,7 @@ SSL 接続:
 証明書の検証は `CLICKHOUSE_NATS_TLS_SECURE` 環境変数によって制御されます。
 証明書が期限切れ、自己署名、欠落、またはその他の理由で無効な場合は、`CLICKHOUSE_NATS_TLS_SECURE=0` を設定して検証を無効にしてください。
 
-NATS table への書き込み:
+NATSテーブルへの書き込み:
 
 テーブルが1つのサブジェクトのみを読み取る場合、いかなるINSERTも同じサブジェクトにパブリッシュされます。
 ただし、テーブルが複数のサブジェクトを読み取る場合は、どのサブジェクトにパブリッシュするかを指定する必要があります。
@@ -123,8 +121,8 @@ CREATE TABLE queue (
              date_time_input_format = 'best_effort';
 ```
 
-NATSサーバーの設定は、ClickHouseの設定ファイルを使用して追加できます。
-具体的には、NATSエンジン用のパスワードを追加できます：
+NATS server の設定は、ClickHouse の設定ファイルを使用して追加できます。
+具体的には、NATS エンジン用の password を追加できます:
 
 ```xml
 <nats>

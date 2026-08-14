@@ -132,7 +132,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Новая настройка"}]}]} />
 
-Имя именованной коллекции, которую текстовые функции ИИ (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`) используют, если в карте параметров вызова не указаны `credentials`. Пустое значение означает отсутствие значения по умолчанию: в таких вызовах `credentials` нужно передавать явно. Конечная точка и модель chat-completions отличаются от конечной точки и модели для эмбеддингов, поэтому этот параметр отделён от `ai_function_embedding_default_credentials`.
+Имя именованной коллекции, которую текстовые функции ИИ (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) используют, если в карте параметров вызова не указаны `credentials`. Пустое значение означает отсутствие значения по умолчанию: в таких вызовах `credentials` нужно передавать явно. Конечная точка chat-completions отличается от конечной точки для эмбеддингов, поэтому этот параметр отделён от `ai_function_embedding_default_credentials`.
 
 <div id="ai_function_throw_on_error">
   ## ai_function_throw_on_error

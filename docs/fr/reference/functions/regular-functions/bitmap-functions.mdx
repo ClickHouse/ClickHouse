@@ -260,7 +260,7 @@ bitmapContains(bitmap, value)
 
 **Arguments**
 
-* `bitmap` — objet bitmap. [`AggregateFunction(groupBitmap, T)`](/fr/reference/data-types/aggregatefunction). - `value` — Élément à rechercher, interprété comme un entier non signé du type d’élément du bitmap. [(U)Int8/16/32/64](/fr/reference/data-types/int-uint)
+* `bitmap` — objet bitmap. [`AggregateFunction(groupBitmap, T)`](/fr/reference/data-types/aggregatefunction). - `value` — Élément à rechercher. [(U)Int8/16/32/64](/fr/reference/data-types/int-uint)
 
 **Valeur renvoyée**
 
@@ -548,7 +548,7 @@ bitmapSubsetInRange(bitmap, start, end)
 
 **Arguments**
 
-* `bitmap` — Bitmap à partir duquel extraire le sous-ensemble. [`AggregateFunction(groupBitmap, T)`](/fr/reference/data-types/aggregatefunction). - `start` — Début de la plage de valeurs (inclus). [`UInt*`](/fr/reference/data-types/int-uint) - `end` — Fin de la plage de valeurs (exclue). [`UInt*`](/fr/reference/data-types/int-uint)
+* `bitmap` — Bitmap à partir duquel extraire le sous-ensemble. [`AggregateFunction(groupBitmap, T)`](/fr/reference/data-types/aggregatefunction). - `start` — Début de la plage (inclus). [`UInt*`](/fr/reference/data-types/int-uint) - `end` — Fin de la plage (exclue). [`UInt*`](/fr/reference/data-types/int-uint)
 
 **Valeur renvoyée**
 
@@ -584,7 +584,7 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 **Arguments**
 
-* `bitmap` — Objet bitmap. [`AggregateFunction(groupBitmap, T)`](/fr/reference/data-types/aggregatefunction). - `range_start` — Valeur minimale de l’élément à inclure (incluse). [`UInt*`](/fr/reference/data-types/int-uint) - `cardinality_limit` — Cardinalité maximale du sous-ensemble. [`UInt*`](/fr/reference/data-types/int-uint)
+* `bitmap` — Objet bitmap. [`AggregateFunction(groupBitmap, T)`](/fr/reference/data-types/aggregatefunction). - `range_start` — Début de la plage (inclus). [`UInt32`](/fr/reference/data-types/int-uint) - `cardinality_limit` — Cardinalité maximale du sous-ensemble. [`UInt32`](/fr/reference/data-types/int-uint)
 
 **Valeur renvoyée**
 
@@ -672,7 +672,7 @@ bitmapTransform(bitmap, from_array, to_array)
 
 **Arguments**
 
-* `bitmap` — objet bitmap. [`AggregateFunction(groupBitmap, T)`](/fr/reference/data-types/aggregatefunction). - `from_array` — Array des valeurs d’éléments à remplacer, interprétées comme des entiers non signés du type d’élément du bitmap. [`Array(UInt*)`](/fr/reference/data-types/array). - `to_array` — Array des valeurs de remplacement, interprétées comme des entiers non signés du type d’élément du bitmap. Doit avoir la même longueur que `from_array`. [`Array(UInt*)`](/fr/reference/data-types/array).
+* `bitmap` — objet bitmap. [`AggregateFunction(groupBitmap, T)`](/fr/reference/data-types/aggregatefunction). - `from_array` — Array des bits à 1 d’origine à remplacer. [`Array(T)`](/fr/reference/data-types/array). - `to_array` — Array des nouveaux bits à 1 de remplacement. [`Array(T)`](/fr/reference/data-types/array).
 
 **Valeur renvoyée**
 
@@ -792,7 +792,7 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 **Arguments**
 
-* `bitmap` — Objet bitmap. [`AggregateFunction(groupBitmap, T)`](/fr/reference/data-types/aggregatefunction). - `offset` — Nombre d’éléments à ignorer dans l’ordre croissant des valeurs non signées (indexation à partir de zéro). [`UInt*`](/fr/reference/data-types/int-uint) - `cardinality_limit` — Nombre maximal d’éléments à inclure dans le sous-ensemble. [`UInt*`](/fr/reference/data-types/int-uint)
+* `bitmap` — Objet bitmap. [`AggregateFunction(groupBitmap, T)`](/fr/reference/data-types/aggregatefunction). - `offset` — Nombre de bits à 1 à ignorer depuis le début (indexation à partir de zéro). [`UInt32`](/fr/reference/data-types/int-uint) - `cardinality_limit` — Nombre maximal de bits à 1 à inclure dans le sous-ensemble. [`UInt32`](/fr/reference/data-types/int-uint)
 
 **Valeur renvoyée**
 

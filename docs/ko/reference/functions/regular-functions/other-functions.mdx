@@ -998,6 +998,43 @@ SELECT CURRENT_DATABASE
 └──────────────────┘
 ```
 
+<div id="currentHandler">
+  ## currentHandler
+</div>
+
+도입 버전: v26.6.0
+
+쿼리를 호출한 SQL로 정의된 HTTP 핸들러(`CREATE HANDLER`로 생성)의 이름을 반환합니다.
+쿼리가 이러한 핸들러를 통해 호출되지 않은 경우 빈 문자열을 반환합니다.
+
+호출된 핸들러에 따라 쿼리 동작을 사용자 지정할 때 유용합니다.
+
+<Note>
+  이 함수는 비결정적이며, 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
+**구문**
+
+```sql
+currentHandler()
+```
+
+**인수**
+
+* None.
+
+**반환 값**
+
+현재 핸들러 이름을 반환합니다. [`String`](/ko/reference/data-types/string)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT currentHandler()
+```
+
 <div id="currentProfiles">
   ## currentProfiles
 </div>
@@ -1076,6 +1113,44 @@ SELECT currentQueryID();
 ┌─currentQueryID()─────────────────────┐
 │ 1280d0e8-1a08-4524-be6e-77975bb68e7d │
 └──────────────────────────────────────┘
+```
+
+<div id="currentRequestURL">
+  ## currentRequestURL
+</div>
+
+도입 버전: v26.6.0
+
+쿼리를 호출한 HTTP 요청 URL(경로 및 쿼리 문자열)을 반환합니다.
+쿼리가 HTTP를 통해 호출되지 않은 경우에는 빈 문자열을 반환합니다.
+
+SQL로 정의된 HTTP 핸들러(`CREATE HANDLER`)와 함께 사용하면 요청 경로에
+내장된 매개변수를 추출하는 데 유용합니다.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
+**구문**
+
+```sql
+currentRequestURL()
+```
+
+**인수**
+
+* 없음.
+
+**반환 값**
+
+현재 HTTP 요청 URL을 반환합니다. [`String`](/ko/reference/data-types/string)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT currentRequestURL()
 ```
 
 <div id="currentRoles">

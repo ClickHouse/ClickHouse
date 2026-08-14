@@ -470,6 +470,73 @@ SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials'
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
+<div id="aiRedact">
+  ## aiRedact
+</div>
+
+Introduzido em: v26.8.0
+
+Detecta e oculta informações de identificação pessoal (PII) no texto fornecido usando um provedor de LLM.
+
+<Warning>
+  `aiRedact` detecta e oculta PII de acordo com as melhores práticas possíveis usando um LLM, mas sua saída não é
+  confiável. A detecção e remoção de PII dependem do modelo escolhido, do prompt e da entrada: o
+  modelo pode deixar de identificar dados, ocultá-los apenas parcialmente ou alterar o texto ao redor. Funciona melhor com
+  texto em inglês bem escrito; os resultados podem ser piores em outros idiomas ou em textos com muitos erros de ortografia,
+  pontuação ou gramática. `aiRedact` não garante que sua saída esteja livre de PII e não deve
+  ser considerado, por si só, um mecanismo de anonimização seguro ou suficiente. Sempre revise a saída para garantir que ela
+  esteja em conformidade com as políticas de privacidade de dados e compliance da sua organização antes de expor dados a partes não confiáveis.
+</Warning>
+
+Cada span de PII detectado é substituído por um token de ocultação (`[REDACTED]` por padrão, configurável pelo
+parâmetro `replacement`). O array `categories` restringe quais tipos de PII são ocultados; um array vazio
+recorre a um conjunto padrão de categorias comuns (nome, e-mail, número de telefone, endereço, cartão de crédito, endereço IP).
+
+`aiRedact` instrui o modelo a alterar apenas os spans de PII detectados, mas a preservação do texto ao redor é
+feita conforme as melhores práticas possíveis, e o modelo ainda pode alterá-lo (consulte o aviso acima). Caracteres de controle diferentes de tabulação,
+quebra de linha e retorno de carro também são normalizados para espaços antes da solicitação; portanto, a saída não é
+idêntica em bytes a entradas que os contêm.
+
+Como `aiRedact` retorna todo o texto de entrada com PII substituída, a saída tem aproximadamente o mesmo tamanho da entrada.
+Defina `max_tokens` (padrão `1024`) como um valor maior que o comprimento da entrada em tokens; uma resposta truncada por um limite muito baixo
+ficará incompleta.
+
+**Sintaxe**
+
+```sql
+aiRedact(text, categories[, params])
+```
+
+**Aliases**: `AIRedact`
+
+**Argumentos**
+
+* `text` — Texto a ser ocultado. [`String`](/pt-BR/reference/data-types/string)
+* `categories` — Lista constante de categorias de PII a serem ocultadas (por exemplo, `['name', 'ssn', 'credit_card']`). Um array vazio usa um conjunto padrão de categorias comuns (nome, e-mail, número de telefone, endereço, cartão de crédito, endereço IP). [`Array(String)`](/pt-BR/reference/data-types/array)
+* `params` — `Map(String, String)` constante opcional de parâmetros. Chaves específicas da função: `temperature` (temperatura de amostragem que controla a aleatoriedade; padrão `0.0`), `max_tokens` (número máximo de tokens de saída por chamada; padrão `1024` — como `aiRedact` retorna o texto completo, defina-o como maior que o comprimento da entrada em tokens; caso contrário, a resposta poderá ser truncada e incompleta), `replacement` (token que substitui cada span de PII detectado; padrão `[REDACTED]`). Os parâmetros comuns `credentials` e `model` também se aplicam (consulte [Funções de IA](/pt-BR/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/pt-BR/reference/data-types/map)
+
+**Valor retornado**
+
+O texto com as PII detectadas substituídas pelo token de ocultação ou o valor padrão do tipo da coluna (string vazia), caso a solicitação falhe e `ai_function_throw_on_error` esteja desabilitado. [`String`](/pt-BR/reference/data-types/string)
+
+**Exemplos**
+
+**Ocultar categorias específicas**
+
+```sql title=Query
+SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
+```
+
+```response title=Response
+Purchase was done by customer [REDACTED] with email [REDACTED]
+```
+
+**Oculte as categorias de PII predefinidas com um token personalizado**
+
+```sql title=Query
+SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
+```
+
 <div id="aiSimilarity">
   ## aiSimilarity
 </div>

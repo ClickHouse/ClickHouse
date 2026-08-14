@@ -330,6 +330,17 @@ JOIN 順序の最適化時に、式を JOIN ステップにマージできるよ
 
 JOIN で遅延索引最適化を有効にするために必要な、左側の payload カラムの最小数を制御します。0 はこの最適化が無効であることを意味します。
 
+<div id="query_plan_optimize_count_from_text_index">
+  ## query_plan_optimize_count_from_text_index
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "新しい設定"}]}]} />
+
+一致する行をマテリアライズすることなく、テキスト索引のポスティングリストのカーディナリティから直接 `SELECT count() ... WHERE <text search predicate>` に応答できるようにします。
+`query_plan_direct_read_from_text_index` が有効な場合にのみ有効です。
+
 <div id="query_plan_optimize_join_order_algorithm">
   ## query_plan_optimize_join_order_algorithm
 </div>

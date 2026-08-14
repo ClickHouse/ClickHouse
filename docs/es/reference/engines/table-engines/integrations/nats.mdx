@@ -44,7 +44,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
     [nats_credential_file = '/var/nats_credentials',]
-    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
     [nats_commit_on_select = false,]
@@ -75,7 +74,6 @@ Parámetros opcionales:
 * `nats_password` - Contraseña de NATS.
 * `nats_token` - Token de autenticación de NATS.
 * `nats_credential_file` - Ruta a un archivo de credentials de NATS.
-* `nats_credentials` - Contenido de las credentials de NATS (el mismo payload que en un archivo `.creds` con JWT de usuario y seed).
 * `nats_startup_connect_tries` - Número de intentos de conexión al inicio. Valor predeterminado: `5`.
 * `nats_max_rows_per_message` — El número máximo de filas escritas en un mensaje NATS para formatos basados en filas. (valor predeterminado: `1`).
 * `nats_commit_on_select` - Hace commit de los mensajes cuando se realiza una consulta. Solo se aplica a JetStream; NATS core no tiene confirmaciones. Valor predeterminado: `0`.
@@ -125,7 +123,7 @@ CREATE TABLE queue (
 ```
 
 La configuración del servidor NATS se puede añadir mediante el archivo de configuración de ClickHouse.
-Más concretamente, puede añadir la contraseña del motor NATS:
+En concreto, puedes añadir tu contraseña para el motor NATS:
 
 ```xml
 <nats>

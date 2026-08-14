@@ -470,6 +470,73 @@ SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials'
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
+<div id="aiRedact">
+  ## aiRedact
+</div>
+
+Introduite dans : v26.8.0
+
+Détecte et masque les informations personnelles identifiables (PII) dans le texte fourni à l’aide d’un fournisseur de LLM.
+
+<Warning>
+  `aiRedact` détecte et masque les PII au mieux à l’aide d’un LLM, mais sa sortie n’est pas
+  fiable. La détection et la suppression des PII dépendent du modèle choisi, du prompt et de l’entrée : le
+  modèle peut ne pas détecter certains identifiants, ne les masquer que partiellement ou modifier le texte environnant. Il fonctionne mieux avec
+  du texte anglais bien rédigé ; les résultats peuvent être moins bons dans d’autres langues ou pour du texte comportant de nombreuses erreurs d’orthographe,
+  de ponctuation ou de grammaire. `aiRedact` ne garantit pas que sa sortie est exempte de PII et ne doit pas
+  être considéré, à lui seul, comme un mécanisme d’anonymisation sûr ou suffisant. Vérifiez toujours la sortie afin de vous assurer qu’elle
+  respecte les politiques de confidentialité et de conformité des données de votre organisation avant d’exposer des données à des tiers non fiables.
+</Warning>
+
+Chaque occurrence de PII détectée est remplacée par un jeton de masquage (`[REDACTED]` par défaut, configurable via le
+paramètre `replacement`). Le tableau `categories` limite les types de PII à masquer ; un tableau vide
+utilise un ensemble par défaut de catégories courantes (nom, e-mail, numéro de téléphone, adresse, carte de crédit, adresse IP).
+
+`aiRedact` demande au modèle de modifier uniquement les occurrences de PII détectées, mais la préservation du texte environnant reste
+approximative : le modèle peut tout de même le modifier (voir l’avertissement ci-dessus). Les caractères de contrôle autres que la tabulation,
+le saut de ligne et le retour chariot sont également remplacés par des espaces avant la requête ; la sortie n’est donc pas
+identique octet pour octet aux entrées qui en contiennent.
+
+Étant donné que `aiRedact` renvoie l’intégralité du texte d’entrée avec les PII remplacées, la sortie est environ aussi longue que l’entrée.
+Définissez `max_tokens` (valeur par défaut : `1024`) sur une valeur supérieure à la longueur de l’entrée en tokens ; une réponse tronquée en raison d’une limite trop basse
+sera incomplète.
+
+**Syntaxe**
+
+```sql
+aiRedact(text, categories[, params])
+```
+
+**Alias** : `AIRedact`
+
+**Arguments**
+
+* `text` — Texte à masquer. [`String`](/fr/reference/data-types/string)
+* `categories` — Liste constante de catégories d’informations personnelles identifiables à masquer (par ex. `['name', 'ssn', 'credit_card']`). Un tableau vide utilise un ensemble par défaut de catégories courantes (nom, e-mail, numéro de téléphone, adresse, carte de crédit, adresse IP). [`Array(String)`](/fr/reference/data-types/array)
+* `params` — `Map(String, String)` constant facultatif de paramètres. Clés spécifiques à la fonction : `temperature` (température d’échantillonnage contrôlant le caractère aléatoire ; valeur par défaut : `0.0`), `max_tokens` (nombre maximal de tokens de sortie par appel ; valeur par défaut : `1024` — comme `aiRedact` renvoie l’intégralité du texte, définissez cette valeur au-dessus de la longueur de l’entrée en tokens, faute de quoi la réponse risque d’être tronquée et incomplète), `replacement` (jeton qui remplace chaque span d’informations personnelles identifiables détecté ; valeur par défaut : `[REDACTED]`). Les paramètres communs `credentials` et `model` s’appliquent également (voir [Fonctions d’IA](/fr/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/fr/reference/data-types/map)
+
+**Valeur renvoyée**
+
+Le texte dans lequel les informations personnelles identifiables détectées sont remplacées par le jeton de masquage, ou la valeur par défaut du type de la colonne (chaîne vide) si la requête a échoué et que `ai_function_throw_on_error` est désactivé. [`String`](/fr/reference/data-types/string)
+
+**Exemples**
+
+**Masquer des catégories spécifiques**
+
+```sql title=Query
+SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
+```
+
+```response title=Response
+Purchase was done by customer [REDACTED] with email [REDACTED]
+```
+
+**Masquez les catégories d’IPI par défaut à l’aide d’un token personnalisé**
+
+```sql title=Query
+SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
+```
+
 <div id="aiSimilarity">
   ## aiSimilarity
 </div>

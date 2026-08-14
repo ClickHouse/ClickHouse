@@ -43,7 +43,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
     [nats_credential_file = '/var/nats_credentials',]
-    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
     [nats_commit_on_select = false,]
@@ -74,19 +73,18 @@ Paramètres facultatifs :
 * `nats_password` - Mot de passe NATS.
 * `nats_token` - Jeton d’authentification NATS.
 * `nats_credential_file` - Chemin vers un fichier d’identifiants NATS.
-* `nats_credentials` - Contenu des identifiants NATS (la même charge utile que dans un fichier `.creds` avec le JWT utilisateur et la seed).
 * `nats_startup_connect_tries` - Nombre de tentatives de connexion au démarrage. Par défaut : `5`.
 * `nats_max_rows_per_message` — Nombre maximal de lignes écrites dans un message NATS pour les formats basés sur les lignes. (par défaut : `1`).
 * `nats_commit_on_select` - Valider les messages lorsqu’une requête est effectuée. S’applique uniquement à JetStream ; NATS core ne comporte pas d’accusés de réception. Par défaut : `0`.
 * `nats_handle_error_mode` — Comment gérer les erreurs pour le moteur NATS. Valeurs possibles : default (une exception sera levée en cas d’échec de l’analyse d’un message), stream (le message d’exception et le message brut seront enregistrés dans les colonnes virtuelles `_error` et `_raw_message`).
 
-Connexion SSL :
+Connexion SSL :
 
 Pour une connexion sécurisée, utilisez `nats_secure = 1`.
-La vérification du certificat est contrôlée par la variable d’environnement `CLICKHOUSE_NATS_TLS_SECURE` ;
+La vérification du certificat est contrôlée par la variable d’environnement `CLICKHOUSE_NATS_TLS_SECURE` ;
 Si le certificat est expiré, auto-signé, manquant ou invalide pour une autre raison, désactivez la vérification en définissant `CLICKHOUSE_NATS_TLS_SECURE=0`.
 
-Écriture dans une table NATS :
+Écriture dans une table NATS :
 
 Si la table lit depuis un seul sujet, tout insert publiera vers ce même sujet.
 En revanche, si la table lit depuis plusieurs sujets, il faut préciser vers quel sujet nous souhaitons publier.
@@ -109,7 +107,7 @@ VALUES (1, 1);
 
 Des paramètres de format peuvent également être ajoutés en plus des paramètres liés à NATS.
 
-Exemple :
+Exemple :
 
 ```sql
 CREATE TABLE queue (
@@ -123,8 +121,8 @@ CREATE TABLE queue (
              date_time_input_format = 'best_effort';
 ```
 
-La configuration du serveur NATS peut être ajoutée dans le fichier de configuration de ClickHouse.
-Plus précisément, vous pouvez y ajouter votre mot de passe pour le moteur NATS :
+Vous pouvez ajouter la configuration du serveur NATS à l’aide du fichier de configuration ClickHouse.
+Plus précisément, vous pouvez ajouter votre mot de passe pour le moteur NATS :
 
 ```xml
 <nats>

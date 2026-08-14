@@ -47,13 +47,13 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
   ## use_query_condition_cache_for_top_k
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "`ORDER BY ... LIMIT n`（TopK）の読み取りに対するクエリ条件キャッシュを制御する新しい設定。デフォルトでは無効。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`ORDER BY ... LIMIT n`（TopK）の読み取りに対するクエリ条件キャッシュを制御する新しい設定。デフォルトで有効。26.7ではゲートが無効になっているため、以前のバージョンとの`compatibility`では無効のままになります。"}]}]} />
 
 `ORDER BY <column> LIMIT n` (TopK) 最適化 (動的フィルタリングまたはスキップ索引ベース) を使用するクエリで、[クエリ条件キャッシュ](/ja/concepts/features/performance/caches/query-condition-cache)を有効にします。無効の場合、このような読み取りではcacheの参照も格納も行いません。
 
-このようなクエリでは、実行時にしきい値に応じてgranuleを除外できるため、cacheエントリはTopKプランのパラメータと読み取られるパーツのセットごとに分割されます。これらのcacheエントリの正しさを検証中のため、この設定はデフォルトで無効になっています。`use_query_condition_cache`も有効でない限り、効果はありません。
+このようなクエリでは、実行時にしきい値に応じてgranuleを除外できるため、cacheエントリはTopKプランのパラメータと読み取られるパーツのセットごとに分割されます。`use_query_condition_cache`も有効でない限り、効果はありません。
 
 設定可能な値:
 

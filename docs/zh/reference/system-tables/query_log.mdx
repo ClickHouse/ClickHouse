@@ -100,7 +100,7 @@ ClickHouse 不会自动从该表中删除数据。更多详细信息，请参见
 * `client_version_patch` ([UInt32](/zh/reference/data-types/int-uint)) — clickhouse-client 或其他 TCP 客户端版本的补丁版本号部分。
 * `script_query_number` ([UInt32](/zh/reference/data-types/int-uint)) — 在 clickhouse-client 中，多查询脚本中的查询编号。
 * `script_line_number` ([UInt32](/zh/reference/data-types/int-uint)) — 在包含多个查询的脚本中，clickhouse-client 使用的查询起始行号。
-* `http_method` ([UInt8](/zh/reference/data-types/int-uint)) — 发起该查询的 HTTP 方法。可能的值：0 — 查询通过 TCP 接口发起，1 — 使用了 GET 方法，2 — 使用了 POST 方法，4 — 使用了 PUT 方法，5 — 使用了 DELETE 方法，6 — 使用了 HEAD 方法。
+* `http_method` ([UInt8](/zh/reference/data-types/int-uint)) — 发起该查询的 HTTP 方法。可能的值：0 - 查询通过 TCP 接口发起，1 - 使用了 GET 方法，2 - 使用了 POST 方法，4 - 使用了 PUT 方法，5 - 使用了 DELETE 方法，6 - 使用了 HEAD 方法。
 * `http_user_agent` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — HTTP 查询中传递的 HTTP 请求头 UserAgent。
 * `http_referer` ([String](/zh/reference/data-types/string)) — 在 HTTP 查询中传递的 HTTP 请求头 Referer (包含发出该查询的页面的完整或部分地址) 。
 * `forwarded_for` ([String](/zh/reference/data-types/string)) — 在 HTTP 查询里传递的 HTTP 请求头 X-Forwarded-For。
