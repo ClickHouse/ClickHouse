@@ -170,18 +170,7 @@ EOL
                     <readonly/>
                 </max_ast_depth>
 
-               <!--
-                Disable experimental WINDOW VIEW tests for stress tests, since they may be
-                created with old analyzer and then, after server restart it will refuse to start.
-                FIXME: remove once the support for WINDOW VIEW will be implemented in analyzer.
-               -->
-               <allow_experimental_window_view>
-                   <readonly/>
-               </allow_experimental_window_view>
-
             </constraints>
-
-            <allow_experimental_window_view>false</allow_experimental_window_view>
         </default>
     </profiles>
 </clickhouse>

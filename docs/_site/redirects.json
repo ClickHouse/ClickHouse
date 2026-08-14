@@ -14396,7 +14396,7 @@
     "source": "/jp/sql-reference/statements/use"
   },
   {
-    "destination": "/ja/reference/statements/watch",
+    "destination": "/ja/reference/statements/create/view",
     "source": "/jp/sql-reference/statements/watch"
   },
   {
@@ -25148,7 +25148,7 @@
     "source": "/ko/sql-reference/statements/use"
   },
   {
-    "destination": "/ko/reference/statements/watch",
+    "destination": "/ko/reference/statements/create/view",
     "source": "/ko/sql-reference/statements/watch"
   },
   {
@@ -37256,7 +37256,7 @@
     "source": "/ru/sql-reference/statements/use"
   },
   {
-    "destination": "/ru/reference/statements/watch",
+    "destination": "/ru/reference/statements/create/view",
     "source": "/ru/sql-reference/statements/watch"
   },
   {
@@ -40548,7 +40548,7 @@
     "source": "/sql-reference/statements/use"
   },
   {
-    "destination": "/reference/statements/watch",
+    "destination": "/reference/statements/create/view",
     "source": "/sql-reference/statements/watch"
   },
   {
@@ -50816,7 +50816,7 @@
     "source": "/zh/sql-reference/statements/use"
   },
   {
-    "destination": "/zh/reference/statements/watch",
+    "destination": "/zh/reference/statements/create/view",
     "source": "/zh/sql-reference/statements/watch"
   },
   {
@@ -54358,5 +54358,41 @@
   {
     "destination": "/products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles",
     "source": "/cloud/guides/security/migrating-rbac-custom-roles"
+  },
+  {
+    "destination": "/reference/statements/create/view",
+    "source": "/reference/statements/watch"
+  },
+  {
+    "destination": "/ar/reference/statements/create/view",
+    "source": "/ar/reference/statements/watch"
+  },
+  {
+    "destination": "/es/reference/statements/create/view",
+    "source": "/es/reference/statements/watch"
+  },
+  {
+    "destination": "/fr/reference/statements/create/view",
+    "source": "/fr/reference/statements/watch"
+  },
+  {
+    "destination": "/ja/reference/statements/create/view",
+    "source": "/ja/reference/statements/watch"
+  },
+  {
+    "destination": "/ko/reference/statements/create/view",
+    "source": "/ko/reference/statements/watch"
+  },
+  {
+    "destination": "/pt-BR/reference/statements/create/view",
+    "source": "/pt-BR/reference/statements/watch"
+  },
+  {
+    "destination": "/ru/reference/statements/create/view",
+    "source": "/ru/reference/statements/watch"
+  },
+  {
+    "destination": "/zh/reference/statements/create/view",
+    "source": "/zh/reference/statements/watch"
   }
 ]

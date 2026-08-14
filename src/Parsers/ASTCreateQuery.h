@@ -109,8 +109,6 @@ public:
     ASTColumns * columns_list = nullptr;
     ASTExpressionList * aliases_list = nullptr; /// Aliases such as "(a, b)" in "CREATE VIEW my_view (a, b) AS SELECT 1, 2"
     ASTStorage * storage = nullptr;
-    IAST * watermark_function = nullptr;
-    IAST * lateness_function = nullptr;
     IAST * as_table_function = nullptr;
     ASTSelectWithUnionQuery * select = nullptr;
     ASTViewTargets * targets = nullptr;
@@ -129,12 +127,11 @@ public:
     /// Optional bool (3 states)
     std::optional<bool> attach_as_replicated = std::nullopt;
 
-    /// Bit-packed bools (20 bools packed into ~3 bytes instead of 20 bytes)
+    /// Bit-packed bools (16 bools packed into 2 bytes instead of 16 bytes)
     bool attach : 1 = false;               /// Query ATTACH TABLE, not CREATE TABLE.
     bool if_not_exists : 1 = false;
     bool is_ordinary_view : 1 = false;
     bool is_materialized_view : 1 = false;
-    bool is_window_view : 1 = false;
     bool is_time_series_table : 1 = false; /// CREATE TABLE ... ENGINE=TimeSeries() ...
     bool is_populate : 1 = false;
     bool is_create_empty : 1 = false;      /// CREATE TABLE ... EMPTY AS SELECT ...
@@ -144,10 +141,6 @@ public:
     bool has_uuid_clause : 1 = false;      /// Parser saw an explicit `UUID '...'` clause, true even when the value is `Nil`
     bool has_inner_uuid_clause : 1 = false; /// Parser saw an explicit `TO INNER UUID '...'` clause
     bool is_dictionary : 1 = false;        /// CREATE DICTIONARY
-    bool is_watermark_strictly_ascending : 1 = false; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
-    bool is_watermark_ascending : 1 = false;          /// ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
-    bool is_watermark_bounded : 1 = false;            /// BOUNDED OUT OF ORDERNESS WATERMARK STRATEGY FOR WINDOW VIEW
-    bool allowed_lateness : 1 = false;     /// ALLOWED LATENESS FOR WINDOW VIEW
     bool attach_short_syntax : 1 = false;
     bool replace_table : 1 = false;
     bool create_or_replace : 1 = false;
@@ -165,7 +158,7 @@ public:
         return removeOnCluster<ASTCreateQuery>(clone(), params.default_database);
     }
 
-    bool isView() const { return is_ordinary_view || is_materialized_view || is_window_view; }
+    bool isView() const { return is_ordinary_view || is_materialized_view; }
 
     bool isParameterizedView() const;
 
