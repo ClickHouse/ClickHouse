@@ -1,0 +1,119 @@
+<test>
+    <!--
+        Exercise ColumnLowCardinality::insertRangeFrom while an in-order read
+        merges independently encoded parts. Each measured output block contains
+        one 4,096-row run from each of eight parts. With 16 array elements per
+        row, an inserted run contains 65,536 indexes from a 1,048,576-entry
+        source dictionary.
+
+        The two payloads isolate destination dictionary behavior:
+          * disjoint_ids has part-private UInt128 values;
+          * overlapping_ids has identical values in separate dictionary objects.
+    -->
+
+    <settings>
+        <max_memory_usage>20G</max_memory_usage>
+        <allow_suspicious_low_cardinality_types>1</allow_suspicious_low_cardinality_types>
+        <low_cardinality_max_dictionary_size>1000000000</low_cardinality_max_dictionary_size>
+        <low_cardinality_use_single_dictionary_for_part>1</low_cardinality_use_single_dictionary_for_part>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>part</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+                <value>2</value>
+                <value>3</value>
+                <value>4</value>
+                <value>5</value>
+                <value>6</value>
+                <value>7</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>DROP TABLE IF EXISTS low_cardinality_ordered_merge_insert_range</create_query>
+    <create_query>
+        CREATE TABLE low_cardinality_ordered_merge_insert_range
+        (
+            part UInt8,
+            sort_key UInt64,
+            disjoint_ids Array(LowCardinality(UInt128)),
+            overlapping_ids Array(LowCardinality(UInt128))
+        )
+        ENGINE = MergeTree
+        PARTITION BY part
+        ORDER BY sort_key
+        SETTINGS index_granularity = 4096
+    </create_query>
+    <create_query>SYSTEM STOP MERGES low_cardinality_ordered_merge_insert_range</create_query>
+
+    <!-- One INSERT per partition guarantees one independently encoded part. -->
+    <fill_query>
+        INSERT INTO low_cardinality_ordered_merge_insert_range
+        SELECT
+            toUInt8({part}) AS part,
+            ((intDiv(number, 4096) * 8 + part) * 4096) + (number % 4096) AS sort_key,
+            arrayMap(
+                element -&gt;
+                    bitOr(
+                        bitShiftLeft(toUInt128(part + 1), 120),
+                        toUInt128((number * 16 + element) % 1048576)),
+                range(16)) AS disjoint_ids,
+            arrayMap(
+                element -&gt; toUInt128((number * 16 + element) % 1048576),
+                range(16)) AS overlapping_ids
+        FROM numbers(262144)
+        SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 262144
+    </fill_query>
+
+    <fill_query>
+        SELECT throwIf(
+            count() != 8
+                OR min(active_parts) != 1
+                OR max(active_parts) != 1
+                OR min(part_rows) != 262144
+                OR max(part_rows) != 262144,
+            'Expected one 262144-row active part in each of eight partitions')
+        FROM
+        (
+            SELECT partition, count() AS active_parts, sum(rows) AS part_rows
+            FROM system.parts
+            WHERE database = currentDatabase()
+                AND table = 'low_cardinality_ordered_merge_insert_range'
+                AND active
+            GROUP BY partition
+        )
+    </fill_query>
+
+    <query>
+        SELECT sort_key, disjoint_ids
+        FROM low_cardinality_ordered_merge_insert_range
+        ORDER BY sort_key
+        FORMAT Null
+        SETTINGS
+            max_threads = 8,
+            max_streams_for_merge_tree_reading = 8,
+            max_block_size = 32768,
+            preferred_block_size_bytes = 0,
+            read_in_order_use_buffering = 1
+    </query>
+
+    <query>
+        SELECT sort_key, overlapping_ids
+        FROM low_cardinality_ordered_merge_insert_range
+        ORDER BY sort_key
+        FORMAT Null
+        SETTINGS
+            max_threads = 8,
+            max_streams_for_merge_tree_reading = 8,
+            max_block_size = 32768,
+            preferred_block_size_bytes = 0,
+            read_in_order_use_buffering = 1
+    </query>
+
+    <drop_query>SYSTEM START MERGES low_cardinality_ordered_merge_insert_range</drop_query>
+    <drop_query>DROP TABLE IF EXISTS low_cardinality_ordered_merge_insert_range</drop_query>
+</test>
