@@ -48,6 +48,9 @@ struct FormatSettings
     String column_names_for_schema_inference{};
     String schema_inference_hints{};
 
+    /// Cap for power-of-two growth of the JSON column's internal String buffers while materializing (0 = unlimited).
+    size_t json_max_string_column_growth_step = 0;
+
     bool try_infer_integers = true;
     bool try_infer_dates = true;
     bool try_infer_datetimes = true;
@@ -270,7 +273,11 @@ struct FormatSettings
         char collection_items_delimiter = '\x02';
         char map_keys_delimiter = '\x03';
         bool allow_variable_number_of_columns = true;
+        char rows_delimiter = '\n';
         Names input_field_names;
+        /// Transient state used only by the HiveText output serialization to track the current
+        /// Hive separator nesting level (see getHiveTextDelimiter). Not a user-facing setting.
+        size_t nesting_level = 1;
     } hive_text{};
 
     struct Custom
@@ -596,6 +603,9 @@ struct FormatSettings
         UInt64 width = 1024;
         UInt64 height = 1024;
         String terminal_mode;
+        UInt64 time_multiplier_seconds = 1;
+        UInt64 time_divisor_seconds = 60;
+        bool streaming_animation = false;
     } image{};
 
     struct

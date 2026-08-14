@@ -103,7 +103,7 @@ public:
 
     const JoinSettings & getSettings() const { return join_settings; }
 
-    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
+    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
@@ -117,7 +117,11 @@ public:
     }
 
     void addConditions(ActionsDAG actions_dag);
-    std::optional<ActionsDAG::ActionsForFilterPushDown> getFilterActions(JoinTableSide side, const SharedHeader & stream_header);
+
+    /// Extract the part of the JOIN ON expression that can be evaluated on `side` alone, to be applied
+    /// as a filter on that input.
+    std::optional<ActionsDAG::ActionsForFilterPushDown> getFilterActions(
+        JoinTableSide side, const SharedHeader & left_header, const SharedHeader & right_header);
 
     struct ActionsDAGWithKeys
     {
