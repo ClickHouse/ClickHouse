@@ -331,9 +331,9 @@ To run a reduced-dimension search, pass the number of dimensions to read as the 
 
 These are the distance functions for vector similarity search that use `QBit` data type:
 
-* [`L2DistanceTransposed`](../functions/distance-functions.md#L2DistanceTransposed)
-* [`cosineDistanceTransposed`](../functions/distance-functions.md#cosineDistanceTransposed)
-* [`dotProductTransposed`](../functions/distance-functions.md#dotProductTransposed)
+* [`L2DistanceTransposed`](/reference/functions/regular-functions/distance-functions#L2DistanceTransposed)
+* [`cosineDistanceTransposed`](/reference/functions/regular-functions/distance-functions#cosineDistanceTransposed)
+* [`dotProductTransposed`](/reference/functions/regular-functions/distance-functions#dotProductTransposed)
 
 For a strided `QBit`, these functions accept an optional fourth argument `used_dims` — the number of leading dimensions to read — which reads only the stride groups covering those dimensions. The reference vector must have at least `used_dims` elements (any extra trailing elements are ignored, so a full-size query vector can be reused for a reduced-dimension search without slicing it first), and `used_dims` must be a multiple of `stride`.
 )DOCS_MD",
