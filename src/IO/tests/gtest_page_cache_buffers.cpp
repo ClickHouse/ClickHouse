@@ -128,7 +128,8 @@ TEST(PageCacheBuffers, WriteWholeBlockThenHit)
         /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
 
     /// One openWriter over the aligned miss block.
-    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & misses = view_misses->misses();
+    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     ASSERT_NE(misses[0].writer, nullptr);
     auto & writer = *misses[0].writer;
@@ -165,7 +166,8 @@ TEST(PageCacheBuffers, WriteBufferDoublesAsReadBuffer)
         cache, file, block_size, /*inject_eviction=*/false,
         /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
 
-    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & misses = view_misses->misses();
+    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     auto & writer = *misses[0].writer;
 
@@ -196,7 +198,8 @@ TEST(PageCacheBuffers, EofTailBlockShort)
         /*bypass_if_missing=*/false, file_size);
 
     /// The aligned miss range for the tail is clamped to the file's real length.
-    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{tail_off, tail_size}}); const auto & misses = view_misses->misses();
+    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{tail_off, tail_size}});
+    const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     auto & writer = *misses[0].writer;
     EXPECT_EQ(writer.range().size, tail_size);
@@ -231,7 +234,8 @@ TEST(PageCacheBuffers, BypassOpensNoWritersAndPopulatesNothing)
         /*bypass_if_missing=*/true, /*file_size_in_bytes=*/block_size);
 
     /// The bypass upgrade is a no-op: the miss cell remains, the writer stays null.
-    auto view_misses = openWriters(bypass_provider, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & misses = view_misses->misses();
+    auto view_misses = openWriters(bypass_provider, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     EXPECT_EQ(misses[0].writer, nullptr);
 
@@ -295,9 +299,11 @@ TEST(PageCacheBuffers, FirstWriterWins)
 
     /// Open TWO writers over the still-uncached block: page `resolve` uses
     /// `cache->get`, so it creates no cell - both see a miss until a write lands.
-    auto view_first = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & first = view_first->misses();
+    auto view_first = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & first = view_first->misses();
     ASSERT_EQ(first.size(), 1u);
-    auto view_second = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & second = view_second->misses();
+    auto view_second = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & second = view_second->misses();
     ASSERT_EQ(second.size(), 1u);
 
     /// First writer populates the block with 'F'.
@@ -330,7 +336,8 @@ TEST(PageCacheBuffers, WriteAcrossTwoBlocks)
         cache, file, block_size, /*inject_eviction=*/false,
         /*bypass_if_missing=*/false, file_size);
 
-    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, span}}); const auto & misses = view_misses->misses();
+    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, span}});
+    const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 2u);
     auto & w0 = *misses[0].writer;
     auto & w1 = *misses[1].writer;
@@ -373,7 +380,8 @@ TEST(PageCacheBuffers, PartialBlockWriteIsSkipped)
         cache, file, block_size, /*inject_eviction=*/false,
         /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
 
-    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & misses = view_misses->misses();
+    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     auto & writer = *misses[0].writer;
 
@@ -406,7 +414,8 @@ TEST(PageCacheBuffers, HitMissInterleavedTiling)
 
     /// Populate ONLY the middle block (block 1), leaving blocks 0 and 2 cold.
     {
-        auto view_middle = openWriters(provider, StoredObject{}, 0, {ByteRange{block_size, block_size}}); const auto & middle = view_middle->misses();
+        auto view_middle = openWriters(provider, StoredObject{}, 0, {ByteRange{block_size, block_size}});
+        const auto & middle = view_middle->misses();
         ASSERT_EQ(middle.size(), 1u);
         size_t wrote = claimedWrite(*middle[0].writer, makeChain(block_size, block_size, 'M'));
         EXPECT_EQ(wrote, block_size);
@@ -449,9 +458,11 @@ TEST(PageCacheBuffers, FirstWriterWinsAcrossProviders)
 
     /// Open a writer through EACH provider over the still-uncached block (page
     /// `resolve` creates no cell, so both see a miss until a write lands).
-    auto view_first = openWriters(provider1, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & first = view_first->misses();
+    auto view_first = openWriters(provider1, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & first = view_first->misses();
     ASSERT_EQ(first.size(), 1u);
-    auto view_second = openWriters(provider2, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & second = view_second->misses();
+    auto view_second = openWriters(provider2, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & second = view_second->misses();
     ASSERT_EQ(second.size(), 1u);
 
     /// provider1 populates the block with 'F'.
