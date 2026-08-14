@@ -226,10 +226,12 @@ def check_functional_test_cases(files):
 
 # A query that pulls a server-side filesystem path out of a system table into the shell.
 # Single quotes are allowed inside the window so that a derived expression such as
-# `concat(path, '/data.bin')` is still recognized; double quotes, backticks, pipes, and
-# semicolons still bound the match to one query.
+# `concat(path, '/data.bin')` is still recognized. `SELECT *` is included because it
+# materializes every column of the tracked system tables, including their path column.
+# Double quotes, backticks, pipes, and semicolons still bound the match to one query.
 FETCHES_SERVER_PATH_RE = re.compile(
-    r"(?i)\b(path|data_paths|metadata_path)\b[^\"`|;]{0,300}?"
+    r"(?i)(?:\b(path|data_paths|metadata_path)\b[^\"`|;]{0,300}?"
+    r"|\bselect\s+(?:distinct\s+)?\*\s*)"
     r"\bfrom\s+system\.(parts|detached_parts|projection_parts|tables|disks)\b"
 )
 # The server data root fetched as SELECT value FROM system.server_settings WHERE name = 'path'.
@@ -244,16 +246,22 @@ FETCHES_SERVER_ROOT_RE = re.compile(
 # consume a following value (`sudo -u nobody rm ...`, `env -u HOME rm ...`,
 # `timeout -s KILL 60 rm ...`), and leading variable assignments (`FOO=1 rm ...`). All of
 # these must be skipped over, otherwise the mutation verb is not recognized and the check is
-# trivially bypassed. An option's value may not start with `-`, and the regex engine
-# backtracks when the value would swallow the mutation verb itself (`sudo -n rm ...`).
+# trivially bypassed. Values can be quoted and options can use an attached `=value` spelling.
+# An option's separate value may not start with `-`, and the regex engine backtracks when the
+# value would swallow the mutation verb itself (`sudo -n rm ...`).
 MUTATION_CMD_WRAPPER = (
     r"(?:sudo|command|builtin|exec|env|time|nice|ionice|nohup|stdbuf|timeout|xargs)"
 )
+MUTATION_CMD_VERB = r"(?:rm|cp|mv|dd|truncate|ln|chmod|touch|mkdir|tar|install|shred)"
+MUTATION_CMD_WORD = r"(?:'(?:[^']*)'|\"(?:\\.|[^\"])*\"|[^\s;|&<>`]+)"
+MUTATION_CMD_OPTION_VALUE = (
+    rf"(?:'(?:[^']*)'|\"(?:\\.|[^\"])*\"|(?!{MUTATION_CMD_VERB}\b)[^-\s;|&<>`][^\s;|&<>`]*)"
+)
 MUTATION_CMD_WRAPPER_ARG = (
-    r"(?:-{1,2}[\w-]+(?:\s+[^-\s;|&<>`][^\s;|&<>`]*)?|[0-9]+(?:\.[0-9]+)?[smhd]?)"
+    rf"(?:-{{1,2}}[\w-]+(?:={MUTATION_CMD_WORD})?(?:\s+{MUTATION_CMD_OPTION_VALUE})?|[0-9]+(?:\.[0-9]+)?[smhd]?)"
 )
 MUTATION_CMD_PREFIX = (
-    r"(?:[A-Za-z_]\w*=[^\s;|&]*\s+"
+    rf"(?:[A-Za-z_]\w*={MUTATION_CMD_WORD}\s+"
     rf"|{MUTATION_CMD_WRAPPER}\s+(?:{MUTATION_CMD_WRAPPER_ARG}\s+)*)*"
 )
 # Shell commands that create, modify, or delete files, at the start of a line or after
@@ -263,12 +271,13 @@ MUTATION_CMD_PREFIX = (
 FILE_MUTATION_CMD_RE = re.compile(
     r"(?:^|[|&;(){)`]|\b(?:if|then|elif|else|do|while|until)\b)\s*"
     + MUTATION_CMD_PREFIX
-    + r"(?:rm|cp|mv|dd|truncate|ln|chmod|touch|mkdir|tar|install|shred)\s"
+    + MUTATION_CMD_VERB
+    + r"\s"
 )
 SED_IN_PLACE_RE = re.compile(r"\bsed\s+(?:-\w+\s+)*-i\b")
 # Redirection into a path built from a shell variable, except well-known test scratch areas.
 REDIRECT_TO_VAR_RE = re.compile(
-    r">>?\s*\"?\$\{?(?!CLICKHOUSE_TMP|CUR_DIR|CURDIR|USER_FILES_PATH"
+    r"(?<!-)>>?\s*\"?\$\{?(?!CLICKHOUSE_TMP|CUR_DIR|CURDIR|USER_FILES_PATH"
     r"|CLICKHOUSE_USER_FILES|CLICKHOUSE_SCHEMA_FILES|CLICKHOUSE_LOG|\()"
 )
 # Redirection into a path built from an inline command substitution, e.g.
@@ -276,7 +285,7 @@ REDIRECT_TO_VAR_RE = re.compile(
 # substitution is handled separately from `$var` because a scratch path such as `$(mktemp)` is
 # fine, while a substitution that itself pulls a server path out of a system table is not - so
 # this pattern only counts when the same line also contains such a query.
-REDIRECT_TO_COMMAND_SUBSTITUTION_RE = re.compile(r">>?\s*\"?\$\(")
+REDIRECT_TO_COMMAND_SUBSTITUTION_RE = re.compile(r"(?<!-)>>?\s*\"?\$\(")
 CLICKHOUSE_DISKS_WRITE_RE = re.compile(
     r"clickhouse-disks\b.*\b(?:write|remove|copy|move|mkdir|link|truncate)\b"
 )

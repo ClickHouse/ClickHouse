@@ -128,6 +128,24 @@ def test_derived_path_expression_is_flagged(tmp_path):
     )
 
 
+def test_select_star_from_path_table_is_flagged(tmp_path):
+    # `SELECT *` materializes the `path` column too, even when the shell extracts it
+    # later from TSV output rather than selecting it by name.
+    assert _run(
+        tmp_path,
+        'row=$(${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.parts '
+        "WHERE table = 't' AND active FORMAT TSVRaw\")\n"
+        'path=$(printf \'%s\' "$row" | cut -f22)\n'
+        'rm -f "$path/data.bin"\n',
+    )
+
+
+def test_arrow_followed_by_variable_is_not_a_redirection(tmp_path):
+    # An arrow in diagnostic output is not a file redirection merely because its right
+    # side starts with `$`.
+    assert not _run(tmp_path, FETCH_PART_PATH + 'echo "query -> $output"\n')
+
+
 def test_server_root_fetch_is_flagged(tmp_path):
     assert _run(
         tmp_path,
@@ -151,6 +169,23 @@ def test_server_settings_inspection_without_value_is_not_flagged(tmp_path):
 def test_no_server_path_fetch_is_not_flagged(tmp_path):
     # File mutations over the test's own scratch files are fine.
     assert not _run(tmp_path, 'f=$(mktemp)\nrm -f "$f"\n')
+
+
+def test_mutation_behind_attached_wrapper_options_and_quoted_assignment_is_flagged(tmp_path):
+    # Regression case from the review of #114070: attached long-option values and
+    # assignment values containing shell quotes must not hide the mutation verb.
+    assert _run(
+        tmp_path,
+        FETCH_PART_PATH + 'timeout --signal=KILL 60 rm -f "$path/data.bin"\n',
+    )
+    assert _run(
+        tmp_path,
+        FETCH_PART_PATH + 'env --chdir=/tmp rm -f "$path/data.bin"\n',
+    )
+    assert _run(
+        tmp_path,
+        FETCH_PART_PATH + "FOO='a b' rm -f \"$path/data.bin\"\n",
+    )
 
 
 def test_fetch_without_mutation_is_not_flagged(tmp_path):
