@@ -421,13 +421,11 @@ void UnifiedUnityCatalog::getDeltaCredentials(const std::string & table_id, Tabl
     if (storage_type != StorageType::S3 && storage_type != StorageType::Azure)
         return;
 
-    auto callback = [&table_id](std::ostream & os)
-    {
-        Poco::JSON::Object request_body;
-        request_body.set("table_id", table_id);
-        request_body.set("operation", "READ");
-        request_body.stringify(os);
-    };
+    Poco::JSON::Object request_body;
+    request_body.set("table_id", table_id);
+    request_body.set("operation", "READ");
+
+    auto callback = [&request_body](std::ostream & os) { request_body.stringify(os); };
 
     auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
     const Poco::JSON::Object::Ptr & response = json.extract<Poco::JSON::Object::Ptr>();
