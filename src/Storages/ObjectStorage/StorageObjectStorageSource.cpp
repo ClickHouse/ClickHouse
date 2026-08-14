@@ -30,6 +30,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
@@ -1307,6 +1308,60 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             });
         }
 
+        /// A data lake schema transform emits exactly the lake's own schema, so a requested column
+        /// that no schema declares is absent from the block and reads as a default. It has to exist
+        /// before the fallback filters below, which may reference it.
+        NameSet synthesized_columns;
+        if (schema_changed)
+        {
+            const Block & header_after_transform = builder.getHeader();
+            NamesAndTypesList columns_with_synthesized;
+            NameSet seen_names;
+            /// The inputs of a stripped filter are not in `requested_columns`, which is
+            /// post-`PREWHERE`, yet the fallback filters below evaluate against them.
+            NamesAndTypesList wanted_columns = read_from_format_info.requested_columns;
+            auto add_filter_inputs = [&](const ActionsDAG & dag)
+            {
+                for (const auto & required : dag.getRequiredColumns())
+                    wanted_columns.push_back(required);
+            };
+            if (stripped_row_level_filter)
+                add_filter_inputs(stripped_row_level_filter->actions);
+            if (stripped_prewhere_info)
+                add_filter_inputs(stripped_prewhere_info->prewhere_actions);
+
+            for (const auto & wanted_column : wanted_columns)
+            {
+                /// Keyed by name in storage: several requested subcolumns can share one parent.
+                auto name_in_storage = wanted_column.getNameInStorage();
+                if (!seen_names.emplace(name_in_storage).second)
+                    continue;
+                columns_with_synthesized.emplace_back(name_in_storage, wanted_column.getTypeInStorage());
+                /// A name the file's own schema carries is left alone even when the transform does
+                /// not emit it: the reader resolves it by field id, so it denotes that physical
+                /// column rather than a missing one, and filters on it are evaluated there.
+                if (!header_after_transform.has(name_in_storage) && !initial_header.has(name_in_storage))
+                    synthesized_columns.emplace(name_in_storage);
+            }
+
+            if (!synthesized_columns.empty())
+            {
+                for (const auto & column : header_after_transform)
+                    if (seen_names.emplace(column.name).second)
+                        columns_with_synthesized.emplace_back(column.name, column.type);
+
+                auto synthesize_actions = std::make_shared<ExpressionActions>(addMissingDefaults(
+                    header_after_transform,
+                    columns_with_synthesized,
+                    read_from_format_info.columns_description,
+                    context_));
+                builder.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<ExpressionTransform>(header, synthesize_actions);
+                });
+            }
+        }
+
         /// Apply row-level security filter and `PREWHERE` as fallback `FilterTransform`s
         /// when the file format doesn't support `PREWHERE`. For mixed-format data lake
         /// tables (e.g. Iceberg with Parquet + ORC files), table-level `PREWHERE` support
@@ -1371,12 +1426,20 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             });
         }
 
-        if (read_from_format_info.columns_description.hasDefaults())
+        /// `AddingDefaultsTransform` looks the missing-value bitmask up by a column's position in
+        /// the block, so it must only be given columns the reader itself produced. The synthesized
+        /// ones already carry their declared defaults.
+        auto columns_description_for_defaults = read_from_format_info.columns_description;
+        for (const auto & name : synthesized_columns)
+            if (columns_description_for_defaults.has(name))
+                columns_description_for_defaults.remove(name);
+
+        if (columns_description_for_defaults.hasDefaults())
         {
             builder.addSimpleTransform(
                 [&](const SharedHeader & header)
                 {
-                    return std::make_shared<AddingDefaultsTransform>(header, read_from_format_info.columns_description, *input_format, context_);
+                    return std::make_shared<AddingDefaultsTransform>(header, columns_description_for_defaults, *input_format, context_);
                 });
         }
 

@@ -1482,16 +1482,16 @@ Provides a read-only table-like interface to Apache [Iceberg](https://iceberg.ap
 ## Syntax {#syntax}
 
 ```sql
-icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
+icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method] [,extra_credentials])
 icebergS3(named_collection[, option=value [,..]])
 
-icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method] [,structure])
 icebergAzure(named_collection[, option=value [,..]])
 
-icebergHDFS(path_to_table, [,format] [,compression_method])
+icebergHDFS(path_to_table, [,format] [,structure] [,compression_method])
 icebergHDFS(named_collection[, option=value [,..]])
 
-icebergLocal(path_to_table, [,format] [,compression_method])
+icebergLocal(path_to_table, [,format] [,structure] [,compression_method])
 icebergLocal(named_collection[, option=value [,..]])
 ```
 
@@ -2245,11 +2245,11 @@ paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compress
 
 paimonS3(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 
-paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method] [,structure])
 
-paimonHDFS(path_to_table, [,format] [,compression_method])
+paimonHDFS(path_to_table, [,format] [,structure] [,compression_method])
 
-paimonLocal(path_to_table, [,format] [,compression_method])
+paimonLocal(path_to_table, [,format] [,structure] [,compression_method])
 ```
 
 ## Arguments {#arguments}

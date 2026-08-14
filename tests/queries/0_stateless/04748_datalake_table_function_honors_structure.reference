@@ -12,6 +12,15 @@ LowCardinality(String)	a
 Code: 53
 -- paimon: a conflicting declared type is rejected instead of silently using the metadata schema
 Code: 53
+-- iceberg: a declared column absent from the metadata reads as a default after schema evolution
+[0,1,2]
+3	3	Nullable(String)
+[0,1,2]	3	3
+[42,42,42]
+3
+3
+[0,1,2]
+Code: 10
 -- iceberg: a structure-bearing read does not keep the metadata sorting key
 0
 1
@@ -22,7 +31,7 @@ Code: 53
 0
 1
 -- iceberg cluster: a worker keeps declared columns that the metadata does not have
-[]
+2	2	Nullable(String)
 -- iceberg cluster: a declared type that reorders the key column is not ordered by the metadata key
 ['10','2','9']
 [2,9,10]

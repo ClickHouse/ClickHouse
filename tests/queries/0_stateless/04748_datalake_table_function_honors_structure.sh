@@ -45,6 +45,38 @@ ${CH} -q "SELECT c0 FROM icebergLocal('${ICE}/', 'Parquet', 'c0 Map(String, Stri
 echo "-- paimon: a conflicting declared type is rejected instead of silently using the metadata schema"
 ${CH} -q "SELECT f_int FROM paimonLocal('${PAIMON}', 'Parquet', 'f_int Map(String, String)')" 2>&1 | grep -oE 'Code: [0-9]+' | head -1
 
+# Files written before a rename carry an older schema id, so they are read through the evolution
+# transform, whose output is the metadata schema alone. A declared column that no schema has must
+# still reach the caller, and a declared column the CURRENT schema renamed away must not resurrect.
+echo "-- iceberg: a declared column absent from the metadata reads as a default after schema evolution"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "CREATE TABLE ice16 (a Int64, b String) ENGINE = IcebergLocal('${ICE}16/', 'Parquet')"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "INSERT INTO ice16 SELECT number, 'x' FROM numbers(3)"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "ALTER TABLE ice16 RENAME COLUMN a TO renamed_a"
+# The evolved read itself works, so the arms below cannot pass or fail for want of a readable file.
+${CH} -q "SELECT groupArray(renamed_a) FROM ice16"
+# Row counts are part of every oracle here: `groupArray` skips NULLs, so an empty array reads the
+# same whether default rows arrived or the read returned nothing.
+${CH} -q "SELECT count(), countIf(zzz IS NULL), toTypeName(zzz) FROM icebergLocal('${ICE}16/', 'Parquet', 'zzz Nullable(String)')"
+# A declared column alongside one the file does have, to show the surviving column still carries values.
+${CH} -q "SELECT groupArray(renamed_a), count(), countIf(zzz IS NULL) FROM icebergLocal('${ICE}16/', 'Parquet', 'renamed_a Nullable(Int64), zzz Nullable(String)')"
+# A declared DEFAULT expression is honored rather than replaced by the bare type default.
+${CH} -q "SELECT groupArray(zzz) FROM icebergLocal('${ICE}16/', 'Parquet', 'zzz UInt64 DEFAULT 42')"
+# A filter on the declared column is evaluated against those defaults, so it must not read as
+# absent and drop every row. PREWHERE is separate from WHERE here because on this path it is
+# re-applied after the evolution transform rather than inside the reader.
+${CH} -q "SELECT count() FROM icebergLocal('${ICE}16/', 'Parquet', 'zzz Nullable(String)') WHERE zzz IS NULL"
+# `parallel_replicas_for_cluster_engines = 0` is required, not tidying: otherwise the table
+# function is wrapped in `StorageObjectStorageCluster`, which does not support PREWHERE, and the
+# analyzer rejects the query before any reader runs. Scoped to this arm so the cluster arms below
+# keep their coverage.
+${CH} -q "SELECT count() FROM icebergLocal('${ICE}16/', 'Parquet', 'zzz Nullable(String)') PREWHERE zzz IS NULL SETTINGS parallel_replicas_for_cluster_engines = 0"
+# Selecting a different column is a separate case: the declared column is then filter-only, and
+# filter-only inputs are not in the reader's requested columns.
+${CH} -q "SELECT groupArray(renamed_a) FROM icebergLocal('${ICE}16/', 'Parquet', 'renamed_a Nullable(Int64), zzz Nullable(String)') PREWHERE zzz IS NULL SETTINGS parallel_replicas_for_cluster_engines = 0"
+# A name the file's own (older) schema carries is NOT a missing column: the reader resolves it by
+# field id. It stays rejected, as before, rather than being turned into a silent default.
+${CH} -q "SELECT groupArray(a) FROM icebergLocal('${ICE}16/', 'Parquet', 'a Nullable(Int64)')" 2>&1 | grep -oE 'Code: [0-9]+' | head -1
+
 # A sorted iceberg table: the metadata sorting key is resolved against the metadata schema, so it
 # must not survive alongside a user-declared structure. An empty table counts as sorted, which is
 # what makes this reachable without a Spark-written fixture.
@@ -85,7 +117,11 @@ ${CH} -q "SELECT count() > 0 FROM system.processors_profile_log WHERE initial_qu
 # the declared structure would not be found on the shard. Declaring a column absent from the metadata
 # is what shows the columns survive the clear.
 echo "-- iceberg cluster: a worker keeps declared columns that the metadata does not have"
-${CH} -q "SELECT groupArray(zzz) FROM icebergS3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='${CLICKHOUSE_DATABASE}_ice14/', format='Parquet', structure='zzz Nullable(String)')"
+# Rows are required: on an empty table no reader runs, so the extraction that has to find `zzz` is
+# never reached. The row count is part of the oracle because `groupArray` skips NULLs, so an empty
+# array reads the same whether two default rows arrived or none did.
+${CH} --allow_experimental_insert_into_iceberg=1 -q "INSERT INTO ice14 SELECT number, 'x' FROM numbers(2)"
+${CH} -q "SELECT count(), countIf(zzz IS NULL), toTypeName(zzz) FROM icebergS3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='${CLICKHOUSE_DATABASE}_ice14/', format='Parquet', structure='zzz Nullable(String)')"
 
 # The key describes the metadata schema, so a declared type that reorders the key column makes it
 # unsound: read-in-order would then emit rows in the underlying numeric order while the user asked
@@ -143,4 +179,4 @@ echo "-- control: deltaLake with an explicit schema reload still prefers the met
 ${CH} -q "SELECT DISTINCT toTypeName(c1) FROM deltaLakeLocal('${DELTA}', 'Parquet', 'c1 String') SETTINGS delta_lake_reload_schema_for_consistency = 1"
 
 ${CH} -q "DROP TABLE IF EXISTS ice14"
-rm -rf "${PAIMON}" "${DELTA}" "${ICE}" "${ICE}7" "${ICE}11" "${ICE}12" "${ICE}13" "${ICE}15"
+rm -rf "${PAIMON}" "${DELTA}" "${ICE}" "${ICE}7" "${ICE}11" "${ICE}12" "${ICE}13" "${ICE}15" "${ICE}16"
