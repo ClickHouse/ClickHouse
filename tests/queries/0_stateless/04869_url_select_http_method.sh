@@ -91,8 +91,9 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM url('file:///nonexistent_62352.csv', 'CSV',
 $CLICKHOUSE_CLIENT -q "SELECT * FROM url(nc_disp_62352, http_method='POST')" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
 $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION nc_disp_62352"
 # A full-definition ATTACH is fresh user input: the engine guards apply to it, unlike the
-# short-syntax ATTACH of stored metadata.
-$CLICKHOUSE_CLIENT -q "ATTACH TABLE url_attach_full_62352 (x String) ENGINE = URL('file:///nonexistent_62352.csv', CSV, http_method='POST')" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
+# short-syntax ATTACH of stored metadata. (Atomic databases require an explicit UUID for
+# the full-definition form; the guard fires before anything is registered under it.)
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE url_attach_full_62352 UUID 'a8695867-2352-4869-b62a-5f5e0e552352' (x String) ENGINE = URL('file:///nonexistent_62352.csv', CSV, http_method='POST')" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
 
 # 8. The schema-inference cache is method-aware: with the cache enabled (the default), a
 #    repeated POST inference stays all-POST. For POST reads no cache-validation probe is sent
