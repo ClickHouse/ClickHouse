@@ -893,13 +893,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                     if (expired_columns.contains(storage_column.name))
                         continue;
 
-                    /// A column stored in at least one source part cannot be expired: that would
-                    /// drop the stored values. Such a column is materialized during the merge, and
-                    /// for the parts where it is missing the values recomputed from its DEFAULT are
-                    /// reconciled with the shared Nested offsets those parts store (see
-                    /// reconcileEvaluatedDefaultWithSharedOffsets), so the mixed case does not
-                    /// corrupt the shared offsets either.
-                    if (columns_present_in_parts.contains(storage_column.name))
+                    /// A column stored in a base part, patch part, or pending rename target cannot
+                    /// be expired: that would drop its live values. Such a column is materialized
+                    /// during the merge, and for the parts where it is missing the values recomputed
+                    /// from its DEFAULT are reconciled with the shared Nested offsets those parts
+                    /// store (see `reconcileEvaluatedDefaultWithSharedOffsets`), so the mixed case
+                    /// does not corrupt the shared offsets either.
+                    if (columns_present_in_parts.contains(storage_column.name)
+                        || columns_present_in_patch_parts.contains(storage_column.name)
+                        || renamed_column_targets.contains(storage_column.name))
                         continue;
 
                     auto split = Nested::splitName(storage_column.name);

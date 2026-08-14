@@ -67,6 +67,10 @@ public:
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
+    /// Apply a reader-chain filter to the cached shared Nested offsets before the matching
+    /// missing defaults are evaluated.
+    void filterSharedOffsetsOfMissingDefaults(const ColumnPtr & filter, size_t result_size) const;
+
     /// If part metadata is not equal to storage metadata,
     /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;

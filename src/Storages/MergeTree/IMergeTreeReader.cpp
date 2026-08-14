@@ -355,6 +355,19 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
     }
 }
 
+void IMergeTreeReader::filterSharedOffsetsOfMissingDefaults(const ColumnPtr & filter, size_t result_size) const
+{
+    if (shared_offsets_of_missing_defaults.empty())
+        return;
+
+    const auto & filter_data = assert_cast<const ColumnUInt8 &>(*filter).getData();
+    for (auto & [_, offsets] : shared_offsets_of_missing_defaults)
+    {
+        for (auto & offset : offsets)
+            offset = offset->filter(filter_data, result_size);
+    }
+}
+
 bool IMergeTreeReader::isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const
 {
     if (!(*storage_settings)[MergeTreeSetting::share_nested_offsets])

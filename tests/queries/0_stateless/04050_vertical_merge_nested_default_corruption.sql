@@ -449,3 +449,66 @@ SELECT count() FROM system.parts
 SELECT id, `n.a`, `n.b` FROM t_nested_const_default ORDER BY id;
 
 DROP TABLE t_nested_const_default;
+
+-- A `Nested` subcolumn whose only live values are in a patch part must not be expired. The base
+-- parts predate both `m` and `n.b`; `m` is therefore expired, but the lightweight update supplies
+-- live `n.b` values in a patch part. Expiring `n.b` would omit it from the merge read set and lose
+-- those values before `AlterConversions::getPatchesForColumns` can request the patch.
+SET enable_lightweight_update = 1;
+SET apply_patch_parts = 1;
+
+DROP TABLE IF EXISTS t_nested_patch_part;
+
+CREATE TABLE t_nested_patch_part (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO t_nested_patch_part VALUES (1, [10,20]);
+INSERT INTO t_nested_patch_part VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_patch_part ADD COLUMN m Array(UInt32);
+ALTER TABLE t_nested_patch_part ADD COLUMN `n.b` Array(String) DEFAULT arrayMap(v -> toString(v), m);
+
+UPDATE t_nested_patch_part SET `n.b` = ['x','y'] WHERE id = 1;
+
+OPTIMIZE TABLE t_nested_patch_part FINAL;
+
+SELECT id, `n.a`, `n.b` FROM t_nested_patch_part ORDER BY id;
+
+DROP TABLE t_nested_patch_part;
+
+-- Reader-chain filters must be applied to the cached shared offsets before a missing default is
+-- evaluated. The delete filter removes the row whose array has one element, leaving the row whose
+-- sibling has two. The constant default has one element, so after the merge it must be reconciled
+-- to two type-default values rather than written with incompatible shared Nested offsets.
+DROP TABLE IF EXISTS t_nested_filtered_default;
+
+CREATE TABLE t_nested_filtered_default (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO t_nested_filtered_default VALUES (1, [10]);
+INSERT INTO t_nested_filtered_default VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_filtered_default ADD COLUMN `n.b` Array(String) DEFAULT ['x'];
+
+DELETE FROM t_nested_filtered_default WHERE id = 1;
+OPTIMIZE TABLE t_nested_filtered_default FINAL;
+
+SELECT id, `n.a`, `n.b` FROM t_nested_filtered_default ORDER BY id;
+
+DROP TABLE t_nested_filtered_default;

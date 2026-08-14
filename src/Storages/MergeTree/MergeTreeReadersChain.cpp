@@ -409,6 +409,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Final filter is missing or has mistaching size, read_result: {}", result.dumpInfo());
 
         MergeTreeRangeReader::filterColumns(read_columns, result.final_filter);
+        merge_tree_reader->filterSharedOffsetsOfMissingDefaults(result.final_filter.getColumn(), result.num_rows);
     }
 
     auto patch_max_version = getMaxPatchVersionForStep(range_reader);
