@@ -19,8 +19,8 @@ public:
 
     virtual ProcessorMemoryStats getMemoryStats() = 0;
 
-    // If the in-memory data's size is not larger then bytes, it doesn't spill
-    virtual bool spillOnSize(size_t bytes) = 0;
+    /// Request to spill @at_least_bytes and return how many had been spilled
+    virtual size_t spillOnSize(size_t at_least_bytes) = 0;
 };
 
 }

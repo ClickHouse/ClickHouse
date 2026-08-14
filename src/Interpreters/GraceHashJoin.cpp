@@ -359,8 +359,6 @@ bool GraceHashJoin::addBlockToJoin(const Block & block, bool /*check_limits*/)
 
 bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) const
 {
-    if (force_spill)
-        return true;
     /// One row can't be split, avoid loop
     if (total_rows < 2)
         return false;
@@ -387,8 +385,6 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
 
 bool GraceHashJoin::hasMemoryOverflow(const BlocksList & blocks) const
 {
-    if (force_spill)
-        return true;
     size_t total_rows = 0;
     size_t total_bytes = 0;
     for (const auto & block : blocks)
@@ -401,8 +397,6 @@ bool GraceHashJoin::hasMemoryOverflow(const BlocksList & blocks) const
 
 bool GraceHashJoin::hasMemoryOverflow(const InMemoryJoinPtr & hash_join_) const
 {
-    if (force_spill)
-        return true;
     size_t total_rows = hash_join_->getTotalRowCount();
     size_t total_bytes = hash_join_->getTotalByteCount();
 
@@ -844,6 +838,27 @@ Block GraceHashJoin::prepareRightBlock(const Block & block)
     return HashJoin::prepareRightBlock(block, hash_join_sample_block);
 }
 
+void GraceHashJoin::spill()
+{
+    std::lock_guard lock(hash_join_mutex);
+
+    Buckets buckets_snapshot = getCurrentBuckets();
+
+    stats.peak_in_memory_bytes = std::max(stats.peak_in_memory_bytes, hash_join->getPeakBuildBytes());
+    auto prev_keys_num = hash_join->getTotalRowCount();
+    auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure= */ false);
+    hash_join = nullptr;
+
+    for (const auto & right_block : right_blocks)
+    {
+        Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, right_block, buckets_snapshot.size());
+        flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, /*except_index=*/ 0);
+    }
+
+    size_t bucket_index = current_bucket->idx;
+    hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), prev_keys_num / 2);
+}
+
 void GraceHashJoin::addBlockToJoinImpl(Block block)
 {
     block = prepareRightBlock(block);
@@ -913,7 +928,6 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
 
         // Must use the latest buckets snapshot in case that it has been rehashed by other threads.
         buckets_snapshot = rehashBuckets();
-        force_spill = false;
         /// The replacement table reserves only ~half, so capture the peak before the rehash splits it away.
         stats.peak_in_memory_bytes = std::max(stats.peak_in_memory_bytes, hash_join->getPeakBuildBytes());
         /// `releaseJoinedBlocks` resets the join's data before it finishes allocating, so detach

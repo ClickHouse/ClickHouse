@@ -1,14 +1,25 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/Runtime/ExecutionThreadContext.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/ISpillable.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/StepWallClock.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <base/defines.h>
+#include <base/numeric.h>
+#include <Common/Logger.h>
 #include <Common/MemorySpillScheduler.h>
 #include <Common/CurrentThread.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
+#include <Common/Scheduler/MemoryReservation.h>
+#include <Common/logger_useful.h>
+
+namespace ProfileEvents
+{
+    extern const Event MemoryReservationSpilledBytes;
+}
 
 namespace DB
 {
@@ -53,10 +64,35 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
 {
     try
     {
-        if (auto * spillable = node->processor()->getSpillable(); spillable && CurrentThread::getGroup())
-            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(spillable);
+        const auto & processor = node->processor();
 
-        node->processor()->work();
+        processor->work();
+        if (auto * spillable = processor->getSpillable())
+        {
+            auto memory = spillable->getMemoryStats();
+            if (memory.spillable_memory_bytes > 0)
+            {
+                if (auto * reservation = read_progress_callback->getProcessListElement()->getMemoryReservation())
+                {
+                    auto spill_requested = reservation->spillRequested();
+                    if (spill_requested > 0)
+                    {
+                        size_t spilled = spillable->spillOnSize(memory.spillable_memory_bytes);
+                        LOG_TEST(getLogger("Scheduler"), "memory.spillable_memory_bytes={}, memory.need_reserved_memory_bytes={}, spill_requested={}, spilled={}", memory.spillable_memory_bytes, memory.need_reserved_memory_bytes, spill_requested, spilled);
+                        ProfileEvents::increment(ProfileEvents::MemoryReservationSpilledBytes, spilled);
+                        reservation->finishSpill(saturating_sub<size_t>(spill_requested, spilled));
+                    }
+                    else
+                        reservation->setReclaimable(memory.spillable_memory_bytes);
+                }
+                else
+                {
+                    if (CurrentThread::getGroup())
+                        CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(spillable);
+                }
+            }
+
+        }
 
         /// Update read progress only for source nodes.
         bool is_source = node->back_edges.empty();

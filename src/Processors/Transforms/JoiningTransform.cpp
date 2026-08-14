@@ -409,18 +409,15 @@ ProcessorMemoryStats FillingRightJoinSideTransform::getMemoryStats()
     return {};
 }
 
-bool FillingRightJoinSideTransform::spillOnSize(size_t bytes)
+size_t FillingRightJoinSideTransform::spillOnSize(size_t /*at_least_bytes*/)
 {
     if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
     {
         auto total_bytes = grace_join->getTotalByteCount();
-        if (total_bytes >= bytes)
-        {
-            grace_join->forceSpill();
-            return true;
-        }
+        grace_join->spill();
+        return total_bytes;
     }
-    return false;
+    return 0;
 }
 
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(

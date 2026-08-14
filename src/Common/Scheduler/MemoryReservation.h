@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <mutex>
+#include <base/defines.h>
 
 class MemoryTracker;
 
@@ -55,6 +56,11 @@ public:
     // Sync actual size with MemoryTracker, issues and waits increase/decrease requests as needed.
     void syncWithMemoryTracker(const MemoryTracker * memory_tracker);
 
+    void setReclaimable(ResourceCost reclaimable_total);
+    void finishSpill(ResourceCost reclaimable_total);
+
+    ResourceCost spillRequested();
+
 private:
     void throwIfNeeded();
 
@@ -96,6 +102,8 @@ private:
         UInt64 killed = 0;
         void apply();
     } metrics;
+
+    ResourceCost spill_at_least_bytes TSA_GUARDED_BY(mutex) = 0;
 
     /// Introspection
     CurrentMetrics::Increment approved_increment;

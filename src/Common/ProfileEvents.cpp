@@ -1560,6 +1560,8 @@ The server successfully detected this situation and will download merged part fr
     M(MemoryReservationDecreases, "Total number of approved memory reservation decrease requests", ValueType::Number) \
     M(MemoryReservationKilled, "Total number of memory reservation kill signals", ValueType::Number) \
     M(MemoryReservationFailed, "Total number of failed memory reservations", ValueType::Number) \
+    M(MemoryReservationReclaimableBytes, "Total number of reclaimable memory", ValueType::Bytes) \
+    M(MemoryReservationSpilledBytes, "Total number of spilled to disk memory", ValueType::Bytes) \
     \
     M(CoordinatedMergesMergeCoordinatorUpdateCount, "Total number of merge coordinator updates", ValueType::Number) \
     M(CoordinatedMergesMergeCoordinatorUpdateMicroseconds, "Total time spend on updating merge coordinator state", ValueType::Microseconds) \

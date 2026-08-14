@@ -1,3 +1,5 @@
+#include <mutex>
+#include <Common/Scheduler/CostUnit.h>
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/Scheduler/IAllocationQueue.h>
 #include <Common/MemoryTracker.h>
@@ -15,6 +17,7 @@ namespace ProfileEvents
     extern const Event MemoryReservationDecreases;
     extern const Event MemoryReservationKilled;
     extern const Event MemoryReservationFailed;
+    extern const Event MemoryReservationReclaimableBytes;
 }
 
 namespace CurrentMetrics
@@ -179,6 +182,27 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
     }
 }
 
+void MemoryReservation::setReclaimable(ResourceCost reclaimable_total)
+{
+    queue.setReclaimable(*this, reclaimable_total);
+    ProfileEvents::increment(ProfileEvents::MemoryReservationReclaimableBytes, reclaimable_total);
+}
+
+void MemoryReservation::finishSpill(ResourceCost reclaimable_total)
+{
+    {
+        std::lock_guard lock(mutex);
+        spill_at_least_bytes -= reclaimable_total;
+    }
+    queue.finishSpill(*this, reclaimable_total);
+}
+
+ResourceCost MemoryReservation::spillRequested()
+{
+    std::lock_guard lock(mutex);
+    return spill_at_least_bytes;
+}
+
 void MemoryReservation::throwIfNeeded()
 {
     if (kill_reason)
@@ -211,10 +235,10 @@ void MemoryReservation::killAllocation(const std::exception_ptr & reason)
     cv.notify_all(); // notify syncWithMemoryTracker
 }
 
-void MemoryReservation::spillAllocation(ResourceCost /*at_least_bytes*/)
+void MemoryReservation::spillAllocation(ResourceCost at_least_bytes)
 {
-    // No-op for now. Reporting reclaimable memory and reacting to spill signals is done on the query
-    // side (in the pipeline executor) and will be wired up in a separate change.
+    std::lock_guard lock(mutex);
+    spill_at_least_bytes = at_least_bytes;
 }
 
 void MemoryReservation::increaseApproved(const IncreaseRequest & increase)
