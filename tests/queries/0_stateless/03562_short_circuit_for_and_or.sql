@@ -56,7 +56,7 @@ SELECT 1 OR tupleElement((10, 20), assumeNotNull((SELECT 2)));
 WITH (SELECT 2) AS idx SELECT 1 OR tupleElement((10, 20), assumeNotNull(idx));
 
 SELECT 'Test disabled short-circuit evaluation is respected';
-SELECT 1 OR throwIf(1) SETTINGS short_circuit_function_evaluation = 'disable'; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+SELECT 1 OR (SELECT throwIf(1)) SETTINGS short_circuit_function_evaluation = 'disable'; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 SELECT 'Check the read_rows of the above queries to ensure that the short circuit is working';
 SYSTEM FLUSH LOGS query_log;
