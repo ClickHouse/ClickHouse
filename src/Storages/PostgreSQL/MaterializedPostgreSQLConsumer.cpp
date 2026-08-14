@@ -52,6 +52,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     const std::string & start_lsn,
     const size_t max_block_size_,
     bool schema_as_a_part_of_table_name_,
+    bool coordinated_,
     StorageInfos storages_info_,
     const String & name_for_logger)
     : log(getLogger("PostgreSQLReplicaConsumer(" + name_for_logger + ")"))
@@ -64,6 +65,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     , lsn_value(getLSNValue(start_lsn))
     , max_block_size(max_block_size_)
     , schema_as_a_part_of_table_name(schema_as_a_part_of_table_name_)
+    , coordinated(coordinated_)
 {
     {
         auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
@@ -82,8 +84,10 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
             /// The structure of the PostgreSQL table might no longer match the structure of
             /// the nested ClickHouse table (for example, a column was added or dropped in
             /// PostgreSQL while the server was down). Do not fail the whole consumer because
-            /// of a single out-of-sync table: skip it (the user can bring it back with
-            /// DETACH/ATTACH) and keep replicating the rest of the tables. Only the expected
+            /// of a single out-of-sync table: skip it and keep replicating the rest of the tables.
+            /// In a non-coordinated setup the user can repair the table with `DETACH`/`ATTACH`;
+            /// a coordinated setup must instead be recreated, because a per-table change would
+            /// affect only the local replica. Only the expected
             /// structure-mismatch error is handled this way; any other error is a real problem
             /// and must propagate.
             if (e.code() != ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR)
@@ -92,9 +96,11 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
             tryLogCurrentException(
                 log,
                 fmt::format("Table {} is skipped from replication because its structure does not match "
-                            "the structure of the nested ClickHouse table. "
-                            "Please perform manual DETACH and ATTACH of the table to bring it back",
-                            table_name));
+                            "the structure of the nested ClickHouse table. {}",
+                            table_name,
+                            coordinated
+                                ? "Recreate the coordinated database after reconciling the PostgreSQL schema"
+                                : "Please perform manual DETACH and ATTACH of the table to bring it back"));
         }
     }
 
@@ -888,9 +894,12 @@ void MaterializedPostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const
     tables_to_sync.erase(relation_name);
     LOG_WARNING(
         log,
-        "Table {} is skipped from replication stream because its structure has changes. "
-        "Please detach this table and reattach to resume the replication (relation id: {})",
-        relation_name, relation_id);
+        "Table {} is skipped from replication stream because its structure has changes. {} (relation id: {})",
+        relation_name,
+        coordinated
+            ? "Recreate the coordinated database after reconciling the PostgreSQL schema to resume replication"
+            : "Please detach this table and reattach to resume replication",
+        relation_id);
 }
 
 void MaterializedPostgreSQLConsumer::addNested(

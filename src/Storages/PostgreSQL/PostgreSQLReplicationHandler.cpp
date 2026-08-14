@@ -1336,6 +1336,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 start_lsn,
                 max_block_size,
                 schema_as_a_part_of_table_name,
+                coordination_enabled,
                 nested_storages,
                 (is_materialized_postgresql_database ? postgres_database : postgres_database + '.' + tables_list));
     }
@@ -3104,7 +3105,7 @@ void PostgreSQLReplicationHandler::removeTableFromPublication(pqxx::nontransacti
         /// attached (see `DatabaseMaterializedPostgreSQL::attachTable`, which keeps a failed attach visible
         /// when the nested table could not be dropped), and `DETACH TABLE ... PERMANENTLY` is how such a
         /// table is removed. The publication can also have been altered externally.
-        if (std::string_view(e.what()).find("is not part of the publication") == std::string_view::npos)
+        if (!std::string_view(e.what()).contains("is not part of the publication"))
             throw;
 
         LOG_WARNING(log, "Did not remove table {} from publication, because it is not part of it (publication: {})",

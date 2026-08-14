@@ -82,6 +82,7 @@ public:
             const String & start_lsn,
             size_t max_block_size_,
             bool schema_as_a_part_of_table_name_,
+            bool coordinated_,
             StorageInfos storages_,
             const String & name_for_logger);
 
@@ -155,6 +156,7 @@ private:
     size_t max_block_size;
 
     bool schema_as_a_part_of_table_name;
+    const bool coordinated;
 
     String table_to_insert;
 
