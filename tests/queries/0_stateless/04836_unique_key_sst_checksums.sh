@@ -1,25 +1,15 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
 #
-# UNIQUE KEY: load-time dense-index lifecycle now that `unique_key_index.sst`
-# is recorded in `checksums.txt`.
-#
-# The checksum entry splits the failure modes in two:
-#   - A missing or wrongly-sized SST is rejected by `checkConsistencyBase`
-#     before the UK validator runs, so the part is detached as broken.
-#   - Damage that preserves the file size passes the size check and is caught by
-#     `ensureValidDenseIndex`, which removes and rebuilds the index.
-#
+# UNIQUE KEY load-time dense-index lifecycle now that `unique_key_index.sst` is
+# recorded in `checksums.txt`:
 # 1. Normal round-trip: a valid SST survives DETACH + ATTACH.
-# 2. Size-preserving corruption: detected by RocksDB, rebuilt, part activates.
+# 2. Size-preserving corruption: passes the size check, caught by RocksDB, rebuilt.
 # 3. Missing SST: rejected by the size check, part detached as broken.
-# 4. Readonly startup (`table_readonly = 1`): validation still runs (read-only
-#    I/O) but a rebuild is impossible, so a corrupt SST fails the ATTACH with
-#    UNIQUE_KEY_DENSE_INDEX_UNREADABLE and the file is left untouched.
+# 4. Readonly startup: rebuild is impossible, so a corrupt SST fails the ATTACH.
 
-# `ratio_of_defaults_for_sparse_serialization = 1.0` pins sparse serialization
-# off: CI injects a random value for it, and `readUniqueKeyColumns` (the rebuild
-# path exercised below) does not handle `ColumnSparse` yet.
+# Pin sparse serialization off (CI injects a random value): the rebuild path
+# `readUniqueKeyColumns` does not handle `ColumnSparse` yet.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -38,11 +28,8 @@ ${CLICKHOUSE_CLIENT} --query "
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO uk_sst_checksums SELECT number, toString(number) FROM numbers(500)"
 
-# Section 1: the SST is written and recorded in checksums.txt. `checksums.txt`
-# lists every checksummed file, so grepping it proves the sidecar is covered
-# (CHECK TABLE is rejected for UNIQUE KEY tables, so we inspect the file
-# directly). The size check in `checkConsistencyBase` then relies on this entry -
-# exercised by section 3.
+# Section 1: the SST is written and recorded in checksums.txt (grepped directly
+# since CHECK TABLE is rejected for UNIQUE KEY tables).
 echo "sst_present"
 PART_PATH=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 'uk_sst_checksums' AND active")
 [ -f "${PART_PATH}unique_key_index.sst" ] && echo "yes" || echo "no"
@@ -59,8 +46,7 @@ echo "rows_after_attach"
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(id) FROM uk_sst_checksums"
 
 # Section 2: size-preserving corruption. Overwrite bytes in the middle without
-# changing the length, so `checkSize` passes and RocksDB's block checksums are
-# what detects the damage. The validator then rebuilds the index.
+# changing the length, so the size check passes and RocksDB detects the damage.
 PART_PATH=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 'uk_sst_checksums' AND active")
 FULL=$(stat -c%s "${PART_PATH}unique_key_index.sst")
 printf 'XXXXXXXXXXXXXXXX' | dd of="${PART_PATH}unique_key_index.sst" bs=1 seek=$(( FULL / 2 )) conv=notrunc status=none
@@ -76,8 +62,8 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.parts WHERE database = 
 echo "rows_after_corrupt_rebuild"
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(id) FROM uk_sst_checksums"
 
-# Section 3: missing SST. The checksum entry makes this a plain consistency
-# failure - the part is detached as broken instead of being rebuilt.
+# Section 3: missing SST. With a checksum entry this is a plain consistency
+# failure, so the part is detached as broken rather than rebuilt.
 PART_PATH=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 'uk_sst_checksums' AND active")
 ${CLICKHOUSE_CLIENT} --query "DETACH TABLE uk_sst_checksums"
 rm -f "${PART_PATH}unique_key_index.sst"
@@ -90,11 +76,10 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM system.detached_parts WHER
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE uk_sst_checksums"
 
-# Section 4: readonly startup. Validation is read-only I/O so it still runs, but
-# neither removal nor rebuild is possible: the ATTACH must fail closed with
+# Section 4: readonly startup. Validation still runs (read-only I/O) but rebuild
+# is impossible, so a corrupt SST must fail the ATTACH with
 # UNIQUE_KEY_DENSE_INDEX_UNREADABLE and leave the file untouched. The corruption
-# has to preserve the size, otherwise `checkConsistencyBase` rejects the part
-# first and the readonly branch is never reached.
+# preserves the size, otherwise the part is rejected before the readonly branch.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS uk_sst_ro"
 ${CLICKHOUSE_CLIENT} --query "
     SET allow_experimental_unique_key = 1;

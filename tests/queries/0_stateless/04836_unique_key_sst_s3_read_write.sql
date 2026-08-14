@@ -17,9 +17,8 @@ SETTINGS disk = 's3_disk', min_rows_for_wide_part = 1, min_bytes_for_wide_part =
 
 INSERT INTO uk_s3_rw VALUES (10, 'a'), (20, 'b'), (30, 'c');
 
--- DETACH + ATTACH: load-time validation reads the SST from S3 through
--- IDataPartStorage. Before the refactor this failed because getFullPath()
--- returns a local path that doesn't exist on S3.
+-- DETACH + ATTACH: load-time validation reads the SST back from S3 through
+-- IDataPartStorage.
 DETACH TABLE uk_s3_rw;
 ATTACH TABLE uk_s3_rw;
 
