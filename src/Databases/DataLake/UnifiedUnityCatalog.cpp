@@ -76,7 +76,6 @@ UnifiedUnityCatalog::UnifiedUnityCatalog(
     , auth_scope(auth_scope_)
     , oauth_server_uri(oauth_server_uri_)
     , oauth_server_use_request_body(oauth_server_use_request_body_)
-    , catalog_credential(catalog_credential_)
 {
     auto colon_pos = catalog_credential_.find(':');
     if (colon_pos != std::string::npos)
@@ -84,9 +83,6 @@ UnifiedUnityCatalog::UnifiedUnityCatalog(
         use_oauth = true;
         client_id = catalog_credential_.substr(0, colon_pos);
         client_secret = catalog_credential_.substr(colon_pos + 1);
-
-        if (auth_scope == "PRINCIPAL_ROLE:ALL")
-            auth_scope = "all-apis";
     }
     else
     {
@@ -250,20 +246,6 @@ bool UnifiedUnityCatalog::empty() const
 
 CatalogTables UnifiedUnityCatalog::getTables() const
 {
-    static constexpr auto CACHE_TTL = std::chrono::seconds(30);
-
-    {
-        std::lock_guard lock(table_cache_mutex);
-        if (!cached_table_names.empty()
-            && table_names_cached_at != std::chrono::system_clock::time_point{}
-            && std::chrono::system_clock::now() < table_names_cached_at + CACHE_TTL)
-        {
-            return cached_table_names;
-        }
-
-        table_json_cache.clear();
-    }
-
     CatalogTables result;
     auto all_schemas = getSchemas("");
     for (const auto & schema : all_schemas)
@@ -271,13 +253,6 @@ CatalogTables UnifiedUnityCatalog::getTables() const
         auto schema_tables = getTablesForSchema(schema);
         result.insert(result.end(), schema_tables.begin(), schema_tables.end());
     }
-
-    {
-        std::lock_guard lock(table_cache_mutex);
-        cached_table_names = result;
-        table_names_cached_at = std::chrono::system_clock::now();
-    }
-
     return result;
 }
 
@@ -326,26 +301,15 @@ bool UnifiedUnityCatalog::tryGetTableMetadata(
     TableMetadata & result) const
 {
     auto full_table_name = warehouse + "." + schema_name + "." + table_name;
-    auto cache_key = schema_name + "." + table_name;
 
     Poco::JSON::Object::Ptr object;
     std::string json_str;
 
-    {
-        std::lock_guard lock(table_cache_mutex);
-        auto it = table_json_cache.find(cache_key);
-        if (it != table_json_cache.end())
-            object = it->second;
-    }
-
     try
     {
-        if (!object)
-        {
-            Poco::Dynamic::Var json;
-            std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name);
-            object = json.extract<Poco::JSON::Object::Ptr>();
-        }
+        Poco::Dynamic::Var json;
+        std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name);
+        object = json.extract<Poco::JSON::Object::Ptr>();
 
         if (!hasValueAndItsNotNone("name", object) || object->get("name").extract<String>() != table_name)
             return false;
@@ -499,15 +463,17 @@ std::shared_ptr<RestCatalog> UnifiedUnityCatalog::getIcebergRestCatalog() const
     ensureBearerToken();
     std::string rest_auth_header = "Authorization: Bearer " + bearer_token.value();
 
+    /// The RestCatalog authenticates via the ready-made auth header,
+    /// so it needs neither a credential nor an OAuth scope.
     iceberg_rest_catalog = std::make_shared<RestCatalog>(
         warehouse,
         iceberg_rest_url,
         /* catalog_credential= */ "",
-        auth_scope,
+        /* auth_scope= */ "",
         rest_auth_header,
         oauth_server_uri,
         oauth_server_use_request_body,
-        DB::Context::getGlobalContextInstance());
+        getContext());
 
     return iceberg_rest_catalog;
 }
@@ -545,11 +511,6 @@ CatalogTables UnifiedUnityCatalog::getTablesForSchema(const std::string & schema
                     .name = qualified_name,
                     .is_readable = detectTableFormat(current_table_json) != DataLakeTableFormat::UNKNOWN,
                 });
-
-                {
-                    std::lock_guard lock(table_cache_mutex);
-                    table_json_cache[qualified_name] = current_table_json;
-                }
 
                 if (limit && tables.size() >= limit)
                     break;

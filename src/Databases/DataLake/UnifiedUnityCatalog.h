@@ -10,7 +10,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <filesystem>
 #include <chrono>
-#include <mutex>
 
 namespace DataLake
 {
@@ -23,6 +22,8 @@ class RestCatalog;
 class UnifiedUnityCatalog final : public ICatalog, private DB::WithContext
 {
 public:
+    /// catalog_credential_ is either a bearer token or "client_id:client_secret".
+    /// oauth_server_use_request_body_ is almost always false. It exists for backwards compatibility.
     UnifiedUnityCatalog(
         const std::string & catalog_,
         const std::string & base_url_,
@@ -67,28 +68,15 @@ private:
     std::string client_secret;
     std::string auth_scope;
     std::string oauth_server_uri;
-    bool oauth_server_use_request_body;
+    bool oauth_server_use_request_body = false;
     bool use_oauth = false;
     mutable std::optional<std::string> bearer_token;
     mutable std::chrono::system_clock::time_point token_expires_at{};
     Poco::Net::HTTPBasicCredentials credentials{};
 
-    /// Original credential for passing to the internal RestCatalog.
-    std::string catalog_credential;
-
     /// Lazy-initialized RestCatalog for Iceberg table metadata,
     /// pointing to {base_url}/iceberg-rest.
     mutable std::shared_ptr<RestCatalog> iceberg_rest_catalog;
-
-    /// Cache of table JSON from listing, keyed by "schema.table".
-    /// Populated during getTables()/getTablesForSchema() and consumed
-    /// by tryGetTableMetadata() to avoid per-table API round-trips.
-    mutable std::mutex table_cache_mutex;
-    mutable std::unordered_map<std::string, Poco::JSON::Object::Ptr> table_json_cache;
-
-    /// Cache of getTables() result to avoid repeated schema/table listing.
-    mutable CatalogTables cached_table_names;
-    mutable std::chrono::system_clock::time_point table_names_cached_at{};
 
     std::pair<Poco::Dynamic::Var, std::string> getJSONRequest(
         const std::string & route,
