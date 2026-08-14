@@ -266,7 +266,7 @@ BlobKillerThread::BlobKillerThread(
     , remove_tasks_pool(CurrentMetrics::BlobKillerThreads, CurrentMetrics::BlobKillerThreadsActive, CurrentMetrics::BlobKillerThreadsScheduled, 0, 0, 0)
     , remove_tasks_runner(remove_tasks_pool, ThreadName::BLOB_KILLER_TASK)
 {
-    task = context->getSchedulePool().createTask(StorageID::createEmpty(), log->name(), [this]() { run(); });
+    task = context->getSchedulePool()->createTask(StorageID::createEmpty(), log->name(), [this]() { run(); });
     task->deactivate();
 }
 
