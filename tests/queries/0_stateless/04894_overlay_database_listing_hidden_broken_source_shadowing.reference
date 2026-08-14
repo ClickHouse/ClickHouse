@@ -1,0 +1,20 @@
+Hidden broken source: SHOW TABLES lists nothing, the same as for a hidden healthy source
+Hidden broken source: system.tables and system.columns agree with the healthy-source facade
+0
+0
+0
+0
+Hidden broken source: the read path stays denied, matching the listing
+0
+ACCESS_DENIED
+Negative control: a hidden source without the name keeps the later source listed and readable
+t
+1
+22
+Precedence is intact for a caller granted on both sources
+t
+11
+A caller granted on the broken source still sees its own error
+ALL_CONNECTION_TRIES_FAILED
+Listing the later source directly is unaffected
+t

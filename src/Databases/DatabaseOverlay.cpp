@@ -677,8 +677,9 @@ void DatabaseOverlay::collectFromSourceDatabases(ContextPtr context_, const std:
         /// oracle for hidden broken sources — the same fencing as in `isSourceTableVisibleNoLoad`.
         /// A caller granted `SHOW TABLES` on the whole source database is entitled to the error
         /// (listing the source directly would surface the same), so it propagates as theirs to see;
-        /// for anyone else a failing source contributes nothing, indistinguishable from an empty or
-        /// denied one. Per-table visibility of the collected names is still enforced by the
+        /// for anyone else a failing source contributes nothing and ends the walk, so the listing is
+        /// indistinguishable from the one a hidden healthy source would produce. Per-table
+        /// visibility of the collected names is still enforced by the
         /// metadata readers themselves against the owning source table.
         if (readonly && context_ && !context_->getAccess()->isGranted(AccessType::SHOW_TABLES, db->getDatabaseName()))
         {
@@ -691,6 +692,13 @@ void DatabaseOverlay::collectFromSourceDatabases(ContextPtr context_, const std:
                 /// Ok to swallow: the caller has not proven the source-side `SHOW TABLES` grant,
                 /// so the source's error must not surface through the facade (see above).
                 tryLogCurrentException(log, fmt::format("Hidden from the caller: failed to list tables of the source database {}", backQuote(db->getDatabaseName())));
+                /// Stop the walk. The failed source contributed an unknown set of names, and any of
+                /// them could have shadowed a same-named table of a later source. Continuing would
+                /// list the later source's table while the read path — which stops at the first
+                /// source that owns the name — still refuses it, and it would make the listing of a
+                /// hidden *broken* source differ from that of a hidden *healthy* one under the same
+                /// grants, i.e. exactly the oracle this fencing exists to prevent.
+                return;
             }
         }
         else
@@ -1321,7 +1329,7 @@ System views and metrics that aggregate or enumerate tables across all databases
 
 For the same reason a read-only `Overlay` reports no detached tables in `system.detached_tables`: `ATTACH` and `DETACH` through the facade are rejected, so a table detached in a source database is not part of the facade's namespace and is reported for the source database only. A facade being present never makes a whole-server scan of the detached tables fail.
 
-The dual-grant checks are fail-closed even when a source database is broken or unreachable (for example a `PostgreSQL` or `MySQL` source whose server is down). The data entrypoints that resolve a facade name to a source table (`SELECT`, `INSERT`, `WATCH`, `CHECK TABLE`) prove source-side visibility **before** the source table is resolved and loaded — for every table of the query, including the tables of a `JOIN`, the right-hand side of an `IN` and the tables of the subqueries of a distributed query, and both with and without the analyzer — so a user without a grant on the source receives the same access-denied error for a hidden broken source as for a hidden healthy one: the facade never surfaces the hidden source's own error and cannot be used as an oracle for the state of sources the user is not allowed to see. Once the source-side grant is present, the source's own error propagates as usual. The listing-style readers (`SHOW TABLES` / `system.tables`, `system.columns`, `system.data_skipping_indices`, and the other per-database enumerations) follow the same rule when they walk the facade: a source database that fails while being listed contributes no rows unless the caller is granted `SHOW TABLES` on that source database, in which case the source's own error propagates, the same as when listing the source directly.
+The dual-grant checks are fail-closed even when a source database is broken or unreachable (for example a `PostgreSQL` or `MySQL` source whose server is down). The data entrypoints that resolve a facade name to a source table (`SELECT`, `INSERT`, `WATCH`, `CHECK TABLE`) prove source-side visibility **before** the source table is resolved and loaded — for every table of the query, including the tables of a `JOIN`, the right-hand side of an `IN` and the tables of the subqueries of a distributed query, and both with and without the analyzer — so a user without a grant on the source receives the same access-denied error for a hidden broken source as for a hidden healthy one: the facade never surfaces the hidden source's own error and cannot be used as an oracle for the state of sources the user is not allowed to see. Once the source-side grant is present, the source's own error propagates as usual. The listing-style readers (`SHOW TABLES` / `system.tables`, `system.columns`, `system.data_skipping_indices`, and the other per-database enumerations) follow the same rule when they walk the facade: a source database that fails while being listed contributes no rows and ends the walk, so the sources after it are not listed either, unless the caller is granted `SHOW TABLES` on that source database, in which case the source's own error propagates, the same as when listing the source directly. Ending the walk is what keeps the listing of a hidden broken source identical to the listing of a hidden healthy one: a table that a hidden source owns is not visible through the facade anyway, so continuing to a later source could only advertise a name that the read path, which stops at the first source owning it, still refuses.
 
 Every diagnostic raised through a facade names only the facade, exactly as it was written in the query, and never the source database a name resolved to. A caller who holds the facade-side grant but not the source-side one is denied on the facade name, so the denial does not disclose which source database owns the name, and the runtime rejection of a facade that became nested through a late reconfiguration (a source database dropped and re-created as another read-only `Overlay`) names only the facade as well. The source names remain available through `SHOW CREATE DATABASE` and `system.databases.engine_full` to a caller holding `SHOW DATABASES` on every source.
 
