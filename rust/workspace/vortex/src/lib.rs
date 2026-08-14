@@ -10,7 +10,10 @@
 //! Threading model: all work is driven by a `CurrentThreadRuntime`, which makes progress only
 //! inside the FFI calls, on the calling thread. No background threads are spawned, and the IO
 //! callbacks are only ever invoked from within an FFI call. Handles must not be used from
-//! multiple threads concurrently, but may be moved between threads.
+//! multiple threads concurrently, but may be moved between threads. Keeping this invariant
+//! requires care: several of the library's convenience entry points (such as
+//! `ScanBuilder::into_iter`) offload work to a global thread pool, so the scan is assembled
+//! here instead - see `vortex_ffi_scanner_create`.
 //!
 //! Error convention: fallible functions take a `char ** error` out-parameter. On failure it is
 //! set to a heap-allocated message that must be freed with `vortex_ffi_free_string`.
@@ -24,7 +27,7 @@ use arrow_array::ffi::{from_ffi, to_ffi, FFI_ArrowArray, FFI_ArrowSchema};
 use arrow_array::{Array, RecordBatch, StructArray};
 use arrow_schema::{Field, Schema, SchemaRef};
 use futures::future::BoxFuture;
-use futures::FutureExt;
+use futures::{FutureExt, StreamExt};
 use vortex::array::buffer::BufferHandle;
 use vortex::array::{ArrayRef, ExecutionCtx, VortexSessionExecute};
 use vortex::arrow::ArrowSessionExt;
@@ -250,9 +253,8 @@ pub unsafe extern "C" fn vortex_ffi_reader_schema(
 
 /// Creates a scanner over the file. If `columns` is not null, only the `num_columns` columns
 /// with the given names are read, in the given order. If `filter` is not null, only the rows
-/// matching the filter expression are returned; the file may use it to prune whole segments by
-/// statistics and to decode only the matching rows. The reader must stay alive for the whole
-/// lifetime of the scanner; `filter` is not consumed.
+/// matching the filter expression are returned, and only the matching rows are decoded. The
+/// reader must stay alive for the whole lifetime of the scanner; `filter` is not consumed.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_scanner_create(
     reader: *const VortexFFIReader,
@@ -292,7 +294,21 @@ pub unsafe extern "C" fn vortex_ffi_scanner_create(
                 builder = builder.with_filter((*filter).0.clone());
             }
 
-            let chunks = builder.into_iter(&reader.runtime).map_err(|e| e.to_string())?;
+            // Note: `ScanBuilder::into_iter` is deliberately not used here. It wraps the scan in
+            // the library's `LazyScanStream`, which offloads `ScanBuilder::prepare` to the
+            // `blocking` crate's global thread pool and joins it through a `oneshot` channel.
+            // That contradicts our threading model (see the module documentation): work would
+            // run on threads ClickHouse knows nothing about, and the IO callbacks - which drive
+            // a `ReadBuffer` that is not thread-safe - could be reached from them. `prepare` and
+            // `execute` are pure, synchronous computation (expression optimization and split
+            // computation, no IO), so we run them here and drive the resulting per-split futures
+            // on the calling thread with the same concurrency and ordering as the library does.
+            let concurrency = std::cmp::max(builder.concurrency(), 1);
+            let tasks = builder.build().map_err(|e| e.to_string())?;
+            let stream = futures::stream::iter(tasks)
+                .buffered(concurrency)
+                .filter_map(|chunk| async move { chunk.transpose() });
+            let chunks = reader.runtime.block_on_stream(stream);
             Ok(Box::into_raw(Box::new(VortexFFIScanner {
                 session: reader.session.clone(),
                 schema,
@@ -396,6 +412,9 @@ pub enum VortexFFIComparison {
 /// Creates an expression referencing the top-level column `name`.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_expr_column(name: *const c_char) -> *mut VortexFFIExpression {
+    if name.is_null() {
+        return std::ptr::null_mut();
+    }
     let Ok(name) = (unsafe { CStr::from_ptr(name) }).to_str() else {
         return std::ptr::null_mut();
     };
@@ -486,14 +505,23 @@ pub unsafe extern "C" fn vortex_ffi_expr_literal_bool(value: bool) -> *mut Vorte
 }
 
 /// Creates a string literal: `Utf8` if `is_utf8` is true (the bytes must be valid UTF-8,
-/// otherwise null is returned), `Binary` otherwise.
+/// otherwise null is returned), `Binary` otherwise. A null `data` is accepted only for an empty
+/// literal (`length` 0), which is the empty string.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_expr_literal_string(
     data: *const u8,
     length: u64,
     is_utf8: bool,
 ) -> *mut VortexFFIExpression {
-    let bytes = unsafe { std::slice::from_raw_parts(data, length as usize) };
+    // `from_raw_parts` requires a non-null, aligned pointer even for an empty slice.
+    let bytes: &[u8] = if data.is_null() {
+        if length != 0 {
+            return std::ptr::null_mut();
+        }
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(data, length as usize) }
+    };
     let scalar = if is_utf8 {
         let Ok(string) = std::str::from_utf8(bytes) else {
             return std::ptr::null_mut();

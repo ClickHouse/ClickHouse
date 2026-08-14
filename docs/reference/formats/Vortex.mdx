@@ -81,7 +81,7 @@ SELECT * FROM numbers(3) INTO OUTFILE 'numbers.vortex' FORMAT Vortex;
 
 | Setting                                  | Description                                                          | Default |
 |------------------------------------------|----------------------------------------------------------------------|---------|
-| `input_format_vortex_filter_push_down`   | Push the `WHERE` condition down into the scan, pruning whole segments by statistics and decoding only the matching rows. | `1` |
+| `input_format_vortex_filter_push_down`   | Push the `WHERE` condition down into the scan, so that selective queries decode only the matching rows. Whole segments are not yet pruned by statistics. | `1` |
 
 As in other columnar formats, only the columns used by the query are read from the file, and
 columns missing in the file are filled with default values.
