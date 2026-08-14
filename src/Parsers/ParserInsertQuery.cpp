@@ -81,6 +81,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr partition_by_expr;
     ASTPtr compression;
     ASTPtr with_expression_list;
+    bool has_format_clause = false;
 
     /// Insertion data
     const char * data = nullptr;
@@ -185,6 +186,20 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
+    /// Check for 'COMPRESSION' parameter (optional), for insert data supplied inline (bare FORMAT
+    /// or via input()), as opposed to FROM INFILE (whose own COMPRESSION, if any, was already
+    /// consumed above, right after the file name). Parsed here, after SETTINGS but before
+    /// VALUES/FORMAT/SELECT are recognized, so it can never be confused with insert data: the data
+    /// zone hasn't opened yet at this position, unlike a clause placed after FORMAT would be. This
+    /// order (SETTINGS then COMPRESSION) matches formatImpl's printing order, so round-tripping
+    /// through EXPLAIN AST / query logging stays reparseable.
+    if (!infile && s_compression.ignore(pos, expected))
+    {
+        ParserStringLiteral compression_p;
+        if (!compression_p.parse(pos, compression, expected))
+            return false;
+    }
+
     String format_str;
     Pos before_values = pos;
 
@@ -206,26 +221,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         tryGetIdentifierNameInto(format, format_str);
-
-        /// Check for 'COMPRESSION' parameter (optional), only meaningful when there is no FROM INFILE
-        /// (in that case COMPRESSION, if any, was already consumed right after the infile name).
-        /// This clause is ambiguous with inline insert data starting with the literal word
-        /// "COMPRESSION" (the same ambiguity SETTINGS-after-FORMAT has): only commit to it when a
-        /// valid string literal actually follows, otherwise rewind and let it fall through as
-        /// ordinary insert data. Data is allowed to immediately follow a recognized clause here
-        /// (e.g. `COMPRESSION 'none'` or `'auto'` next to inline data) -- that combination is
-        /// accepted or rejected later based on what the method actually resolves to, not by the
-        /// parser, so the clause must not be required to end the query.
-        if (!infile)
-        {
-            Pos before_compression = pos;
-            if (s_compression.ignore(pos, expected))
-            {
-                ParserStringLiteral compression_p;
-                if (!compression_p.parse(pos, compression, expected))
-                    pos = before_compression;
-            }
-        }
+        has_format_clause = true;
     }
     else if (s_select.ignore(pos, expected) || s_with.ignore(pos, expected) || s_lparen.ignore(pos, expected))
     {
@@ -261,23 +257,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
 
             tryGetIdentifierNameInto(format, format_str);
-
-            /// Check for 'COMPRESSION' parameter (optional), only meaningful when the SELECT
-            /// reads inline data through the `input` table function (otherwise there is no
-            /// data to decompress, the rows come from the SELECT itself), and only when
-            /// there is no FROM INFILE (whose own COMPRESSION, if any, was already consumed
-            /// right after the infile name). Same ambiguity-avoidance as the bare-FORMAT branch
-            /// above: only commit to the clause when a valid string literal actually follows.
-            if (!infile && selectReadsInlineDataViaInputFunction(select))
-            {
-                Pos before_compression = pos;
-                if (s_compression.ignore(pos, expected))
-                {
-                    ParserStringLiteral compression_p;
-                    if (!compression_p.parse(pos, compression, expected))
-                        pos = before_compression;
-                }
-            }
+            has_format_clause = true;
         }
         else
         {
@@ -289,6 +269,14 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// If all previous conditions were false and it's not FROM INFILE, query is incorrect
         return false;
     }
+
+    /// COMPRESSION is only meaningful when there's a real data stream to decompress: bare FORMAT,
+    /// input(), or FROM INFILE. Reject it next to VALUES or a plain SELECT (no input()), where
+    /// there's nothing to decompress.
+    if (compression && !infile && !has_format_clause)
+        throw Exception(ErrorCodes::SYNTAX_ERROR,
+                        "COMPRESSION clause is only supported next to FORMAT (including via input()) "
+                        "or FROM INFILE, not with VALUES or a plain SELECT");
 
     /// Read SETTINGS after FORMAT.
     ///

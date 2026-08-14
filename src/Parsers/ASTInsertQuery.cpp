@@ -116,6 +116,16 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     ///
     char delim = settings_ast ? settings.nl_or_ws : ' ';
 
+    /// COMPRESSION for inline data (bare FORMAT or via input()) is parsed before the whole
+    /// VALUES/FORMAT/SELECT clause, so it must be printed before it too -- mirroring the FROM
+    /// INFILE case above, which already prints its own COMPRESSION right after the file name.
+    if (!infile && compression)
+    {
+        ostr << delim
+            << "COMPRESSION" << " " << quoteString(compression->as<ASTLiteral &>().value.safeGet<std::string>());
+        delim = ' ';
+    }
+
     if (select)
     {
         ostr << delim;
@@ -129,15 +139,8 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         /// For INSERT ... SELECT ... FROM input('...') FORMAT Values,
         /// the FORMAT clause must be preserved in the formatted output.
         if (!format.empty())
-        {
             ostr << delim
                 << "FORMAT" << " " << format;
-            if (!infile && compression)
-                ostr
-                    << " "
-                    << "COMPRESSION"
-                    << " " << quoteString(compression->as<ASTLiteral &>().value.safeGet<std::string>());
-        }
     }
     else
     {
@@ -145,11 +148,6 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             ostr << delim
                 << "FORMAT" << " " << format;
-            if (!infile && compression)
-                ostr
-                    << " "
-                    << "COMPRESSION"
-                    << " " << quoteString(compression->as<ASTLiteral &>().value.safeGet<std::string>());
         }
         else if (!infile)
         {
