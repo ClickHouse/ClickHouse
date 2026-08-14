@@ -33,7 +33,7 @@ $CLICKHOUSE_CLIENT --query "
 
 "
 
-PR_SETTINGS="enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1, parallel_replicas_prefer_local_replica = 1, serialize_query_plan = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_allow_merge_tables = 1"
+PR_SETTINGS="enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1, parallel_replicas_prefer_local_replica = 0, serialize_query_plan = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_allow_merge_tables = 1"
 
 # The left table expression matches both children, the right one only the second child, so dropping
 # the first child makes the left one resolve to exactly the child set of the right one. Both leaves
