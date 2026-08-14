@@ -179,6 +179,31 @@ Guidelines:
 
 <a name="how-to-build-docs"/>
 
-## How to Build Documentation
+## Run docs CI locally {#run-docs-ci-locally}
 
-You can build your documentation manually by following the instructions in the docs repo [contrib-writing-guide](https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/contrib-writing-guide.md). Also, our CI runs the documentation build after the `pr-documentation` label is added to PR. You can see the results of a build in the GitHub interface. If you have no permissions to add labels, a reviewer of your PR will add it.
+### Prerequisites {#docs-ci-prerequisites}
+
+- Python 3
+- Docker, with the Docker service running
+
+### Run a docs check {#run-docs-check}
+
+From the repository root, pass the check name to `--test`. For example, to validate the Mintlify configuration and content, run:
+
+```shell
+python3 -m ci.praktika run "Docs check (Mintlify)" --test "Validate docs.json"
+```
+
+Praktika pulls the configured `clickhouse/docs-builder` image and runs the selected check in a container, so you do not need to install its dependencies.
+
+### Run individual checks {#run-individual-docs-checks}
+
+The following checks can be run locally. The `--test` match is case-insensitive and accepts partial names, but using the full names below avoids selecting the wrong check.
+
+| Check | Command | What it does |
+|---|---|---|
+| `Check snippet imports` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check snippet imports"` | Verifies that snippets import every custom MDX component they use and do not import the custom `Image` component. |
+| `Validate docs.json` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Validate docs.json"` | Runs `mint validate` to validate the Mintlify configuration and MDX content. |
+| `Check internal links and anchors` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check internal links and anchors"` | Checks English documentation links and heading anchors offline. |
+| `Check redirects` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check redirects"` | Verifies that every destination in `_site/redirects.json`, including any anchor, exists. |
+| `Check external links (warnings)` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check external links (warnings)"` | Checks external HTTP links and reports failures as non-blocking warnings. |
