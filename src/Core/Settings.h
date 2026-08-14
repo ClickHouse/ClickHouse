@@ -60,6 +60,7 @@ class WriteBuffer;
     M(CLASS_NAME, DistributedCachePoolBehaviourOnLimit) /* Cloud only */ \
     M(CLASS_NAME, DistributedDDLOutputMode) \
     M(CLASS_NAME, DistributedProductMode) \
+    M(CLASS_NAME, ObjectStorageClusterJoinMode) \
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, EscapingRule) \
     M(CLASS_NAME, Float) \
@@ -85,6 +86,7 @@ class WriteBuffer;
     M(CLASS_NAME, LogsLevel) \
     M(CLASS_NAME, Map) \
     M(CLASS_NAME, MaxThreads) \
+    M(CLASS_NAME, MergeTreePartExportFileAlreadyExistsPolicy) \
     M(CLASS_NAME, Milliseconds) \
     M(CLASS_NAME, MsgPackUUIDRepresentation) \
     M(CLASS_NAME, MySQLDataTypesSupport) \
@@ -120,7 +122,8 @@ class WriteBuffer;
     M(CLASS_NAME, JoinOrderAlgorithm) \
     M(CLASS_NAME, DeduplicateInsertSelectMode) \
     M(CLASS_NAME, DeduplicateInsertMode) \
-    M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy)
+    M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy) \
+    M(CLASS_NAME, ExportPartitionAllOnError) \
 
 
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)

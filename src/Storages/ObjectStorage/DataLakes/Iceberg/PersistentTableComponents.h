@@ -25,6 +25,7 @@ struct PersistentTableComponents
     const String table_path;
     const std::optional<String> table_uuid;
     const IcebergPathResolver path_resolver;
+    const String common_namespace;
 
     /// Invalidate cached metadata for this table under both keys we may have used to cache it
     /// (`table_path` and `table_uuid`).

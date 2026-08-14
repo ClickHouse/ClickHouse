@@ -36,7 +36,10 @@ enum class MetadataStorageType : uint8_t
     Memory,
 };
 
-MetadataStorageType metadataTypeFromString(const String & type);
+MetadataStorageType metadataTypeFromString(const std::string & type);
+
+ObjectStorageType objectStorageTypeFromString(const std::string & type);
+std::string toString(ObjectStorageType type);
 
 struct DataSourceDescription
 {

@@ -433,6 +433,8 @@ public:
     /// Returns the inner (unwrapped) object storage for decorator types such as `CachedObjectStorage`.
     /// Returns nullptr for non-decorator types, meaning this storage is already the base.
     virtual ObjectStoragePtr getUnderlying() { return nullptr; }
+
+    virtual bool supportsListObjectsCache() { return false; }
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
