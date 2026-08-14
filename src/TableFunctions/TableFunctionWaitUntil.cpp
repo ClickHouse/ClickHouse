@@ -78,13 +78,19 @@ public:
 
         const String condition_query = wait_args.condition->formatWithSecretsOneLine();
         bool satisfied = false;
+        auto query_status = context->getProcessListElementSafe();
         for (size_t i = 0; i < wait_args.max_tries; ++i)
         {
+            /// The condition executes in a copied query context, whose timer begins anew. Check
+            /// the parent query around every attempt so that repeated conditions cannot exceed
+            /// the caller's total execution-time budget.
+            if (query_status && !query_status->checkTimeLimit())
+                break;
+
             ContextMutablePtr local_context = Context::createCopy(context);
             local_context->makeQueryContext();
             /// max_threads = 1 is used to avoid consuming excessive CPU resources.
             local_context->setSetting("max_threads", 1);
-            local_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
             local_context->setQueryKindInitial();
             local_context->setCurrentQueryId("");
 
@@ -124,12 +130,14 @@ public:
                     break;
             }
 
+            if (query_status && !query_status->checkTimeLimit())
+                break;
+
             /// Skip the last sleep
             if (i + 1 >= wait_args.max_tries)
                 break;
 
             UInt64 elapsed = 0;
-            auto query_status = context->getProcessListElementSafe();
             bool time_limit_reached = false;
             while (elapsed < wait_args.sleep_microseconds)
             {
