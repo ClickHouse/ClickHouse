@@ -4,10 +4,11 @@ slug: /migrations/snowflake/equivalent-concepts
 description: 'Table-format reference mapping each core Snowflake concept to its ClickHouse equivalent'
 keywords: ['Snowflake', 'migration', 'concept mapping', 'equivalent concepts', 'comparison']
 sidebar_label: 'Equivalent concepts'
+sidebar_position: 4
 doc_type: 'reference'
 ---
 
-The tables below map each Snowflake concept to its ClickHouse equivalent. For function-by-function SQL syntax mapping, see the [SQL translation reference](/migrations/snowflake-translation-reference). For the end-to-end migration walkthrough, see [Migrating from Snowflake to ClickHouse](./02_migration_guide.md).
+The tables below map each Snowflake concept to its ClickHouse equivalent. For function-by-function SQL syntax mapping, see the [SQL translation reference](/migrations/snowflake-translation-reference). For the end-to-end migration walkthrough, see [Migrating from Snowflake to ClickHouse](./migration-guide).
 
 ## Resource hierarchy {#resource-hierarchy}
 
@@ -69,7 +70,7 @@ ClickHouse has no separate database-role tier, but ClickHouse Cloud can still gr
 
 ClickHouse bills based on dedicated machines, metered in per-minute [compute units (8 GiB RAM, 2 vCPU)](https://github.com/cloud/manage/billing/overview#how-is-compute-metered). Storage pricing is based on compressed bytes, and backups are billed separately. [ClickPipes](/integrations/clickpipes) is [metered separately](/cloud/reference/billing/clickpipes).
 
-Snowflake bills on credits scaled by warehouse size, charges for storage as compressed bytes without Time Travel or Fail-safe overhead, and bills backups as a separate line item rather than bundling them into retention windows. Most Snowflake "serverless compute" features (Snowpipe, Search Optimization, Auto-clustering, materialized view refresh, Cortex) are bundled into service compute on ClickHouse. 
+Snowflake bills on credits scaled by warehouse size, charges for storage as compressed bytes without Time Travel or Fail-safe overhead, and bills backups as a separate line item rather than bundling them into retention windows. Most Snowflake "serverless compute" features (Snowpipe, Search Optimization, Auto-clustering, materialized view refresh, Cortex) are bundled into service compute on ClickHouse.
 
 Both charges for public internet egress and cross-region data transfer and offers committed-spend discounts. See [ClickHouse Cloud pricing](/cloud/manage/billing/overview) for current rates, tiers, and commitment options.
 
