@@ -659,6 +659,14 @@ You can also read the same column into:
 
 Accessing `Dynamic` or `JSON` subcolumns read from Parquet `VARIANT` through subqueries currently requires `enable_analyzer = 1`.
 
+### Scope of the read optimizations {#parquet-variant-read-optimization-scope}
+
+Reading a subcolumn of a Parquet `VARIANT` column always returns the same values, but only some shapes are read directly from the shredded columns:
+
+* Paths declared in the requested type, such as `a` in `JSON(a UInt64)`, are read directly: only the corresponding `typed_value` (and the residual `value`, when it can contribute) is decoded.
+* Plain dynamic paths (`json.a` on a `json JSON` column) and `Dynamic` type-subcolumns (`d.String` on a `d Dynamic` column) are not pushed into the reader: the whole `VARIANT` column is decoded and the subcolumn is extracted afterwards.
+* `PREWHERE` on a `VARIANT` subcolumn still prunes row groups and pages (through the usual min/max, bloom filter and dictionary filters), but the filter itself is applied after the chunk is materialized, so it does not perform late materialization of the projected columns within the surviving row groups.
+
 ### Writing `Dynamic`, `Variant` and `JSON` {#parquet-variant-writing-dynamic-and-json}
 
 ClickHouse writes:
