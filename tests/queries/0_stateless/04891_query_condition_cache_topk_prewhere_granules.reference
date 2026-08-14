@@ -19,6 +19,18 @@
 2
 3
 4
+--- Different WHERE must not reuse the PREWHERE granule decisions: prime w = 0
+0
+1
+2
+3
+4
+--- Different WHERE must not reuse the PREWHERE granule decisions
+8192
+8193
+8194
+8195
+8196
 --- DESC LIMIT 5: must not reuse the granule decisions of the ASC plan
 99999
 99998

@@ -445,9 +445,9 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                                 /// granule with no surviving rows has no row that could have reached the
                                 /// final top-N. The entry is keyed with the TopK plan salt (mirroring the
                                 /// WHERE write path in `updateQueryConditionCache` and the consult in
-                                /// `filterPartsByQueryConditionCache`), so only the same TopK plan over the
-                                /// same part set ever reuses it. Any other non-deterministic condition must
-                                /// not be cached at all.
+                                /// `filterPartsByQueryConditionCache`), so only the same TopK plan, part set,
+                                /// and post-PREWHERE predicate ever reuses it. Any other non-deterministic
+                                /// condition must not be cached at all.
                                 if (!reader_settings.query_condition_cache_top_k_salt
                                     || !VirtualColumnUtils::isDeterministicAllowingTopKFilter(output))
                                     break;

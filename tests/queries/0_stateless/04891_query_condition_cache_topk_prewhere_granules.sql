@@ -40,7 +40,7 @@ DROP TABLE IF EXISTS tab;
 -- armed at its final value (`k = 4` for `ASC LIMIT 5`), so every later chunk loses all
 -- of its rows at the `__topKFilter` PREWHERE and its granules are recorded as skippable.
 -- 4294959104 is `2^32 - 8192`, so the ids stay within UInt32.
-CREATE TABLE tab (id UInt32, k UInt32) ENGINE = MergeTree ORDER BY id
+CREATE TABLE tab (id UInt32, k UInt32, w UInt8) ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 64,
          min_bytes_for_wide_part = 0,
          min_bytes_for_full_part_storage = 0,
@@ -48,7 +48,8 @@ SETTINGS index_granularity = 64,
 
 INSERT INTO tab SELECT
     if(number < 8192, number, 8192 + intHash32(number) % 4294959104),
-    number
+    number,
+    number >= 8192
 FROM numbers(100_000)
 SETTINGS max_insert_threads = 1, max_insert_block_size = 2_000_000, min_insert_block_size_rows = 2_000_000;
 
@@ -67,6 +68,15 @@ SELECT count() > 0 FROM system.query_condition_cache;
 
 SELECT '--- ASC LIMIT 5: the second run consults them, must match ground truth';
 SELECT k FROM tab ORDER BY k ASC LIMIT 5 SETTINGS log_comment = '04891_second';
+
+-- The threshold is learned after WHERE, while __topKFilter runs in PREWHERE. Priming the
+-- cache with w = 0 therefore records every later granule as skippable; that PREWHERE entry
+-- must not be reused for w = 1, whose five smallest rows all live in those granules.
+SYSTEM CLEAR QUERY CONDITION CACHE;
+SELECT '--- Different WHERE must not reuse the PREWHERE granule decisions: prime w = 0';
+SELECT k FROM tab WHERE w = 0 ORDER BY k ASC LIMIT 5;
+SELECT '--- Different WHERE must not reuse the PREWHERE granule decisions';
+SELECT k FROM tab WHERE w = 1 ORDER BY k ASC LIMIT 5;
 
 -- The opposite sort direction needs the rows with the *largest* `k`, which live
 -- exclusively in granules the ASC plan just recorded as skippable (every row outside

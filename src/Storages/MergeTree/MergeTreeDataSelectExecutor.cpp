@@ -1617,14 +1617,18 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         }
 
         /// Mirror the salting done by the write paths: when the read goes through a TopK filter, the
-        /// cached granule decisions are valid only for the same TopK plan, so the cache key must be
-        /// partitioned by the TopK parameters. The WHERE write path (`updateQueryConditionCache`)
+        /// cached granule decisions are valid only for the same TopK plan and post-PREWHERE predicate,
+        /// so the cache key must be partitioned by both. The WHERE write path (`updateQueryConditionCache`)
         /// salts unconditionally for TopK reads; the PREWHERE write path
         /// (`MergeTreeSelectProcessor::read`) salts exactly when the PREWHERE condition contains the
         /// dynamic `__topKFilter` — a deterministic user PREWHERE writes plain entries shared with
         /// non-TopK queries. The caller passes `apply_top_k_salt` accordingly.
         if (apply_top_k_salt && top_k_filter_info)
+        {
             boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
+            if (select_query_info.filter_actions_dag)
+                boost::hash_combine(condition_hash, select_query_info.filter_actions_dag->getOutputs().front()->getHash());
+        }
 
         /// The skip-index-analysis exclusions written by ReadFromMergeTree are stored under a key
         /// salted with the effective skip-index profile, computed from the same (top-k-salted)

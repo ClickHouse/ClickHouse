@@ -4312,13 +4312,19 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         reader_settings.use_query_condition_cache = false;
 
     /// For a TopK read, granules fully filtered by the dynamic `__topKFilter` PREWHERE may be
-    /// recorded in the query condition cache under a key salted with the TopK plan parameters
-    /// and part set (see `MergeTreeSelectProcessor::read` for the write and
+    /// recorded in the query condition cache under a key salted with the TopK plan parameters,
+    /// part set, and the post-PREWHERE filter that determines the running threshold (see
+    /// `MergeTreeSelectProcessor::read` for the write and
     /// `MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache` for the consult).
     /// `allow_query_condition_cache` is already false here when `use_query_condition_cache_for_top_k`
     /// is off (see `setTopKColumn`), so reaching this point with the cache on means the salt applies.
     if (top_k_filter_info && reader_settings.use_query_condition_cache)
-        reader_settings.query_condition_cache_top_k_salt = top_k_filter_info->condition_hash;
+    {
+        size_t salt = top_k_filter_info->condition_hash;
+        if (query_info.filter_actions_dag)
+            boost::hash_combine(salt, query_info.filter_actions_dag->getOutputs().front()->getHash());
+        reader_settings.query_condition_cache_top_k_salt = salt;
+    }
 
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
     /// local plan for initiator to prevent coordinator initialization by other replicas
