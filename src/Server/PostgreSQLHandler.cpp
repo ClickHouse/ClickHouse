@@ -1096,7 +1096,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
 
         const Settings & settings = query_context->getSettingsRef();
 
-        message_transport->send(PostgreSQLProtocol::Messaging::CopyInResponse(), true);
+        message_transport->send(PostgreSQLProtocol::Messaging::CopyInResponse(static_cast<Int32>(io.pipeline.getHeader().columns())), true);
 
         /// `CopyData` frame boundaries carry no meaning: a single logical row may arrive split across
         /// several frames (a client is free to chunk the payload however it likes), and one frame may
@@ -1805,6 +1805,8 @@ void PostgreSQLHandler::processDescribeQuery()
     {
         std::unique_ptr<PostgreSQLProtocol::Messaging::DescribeQuery> query =
             message_transport->receive<PostgreSQLProtocol::Messaging::DescribeQuery>();
+
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Describe is not supported in the PostgreSQL wire protocol");
     }
     catch (const Exception & e)
     {
@@ -1829,6 +1831,9 @@ void PostgreSQLHandler::processExecuteQuery()
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Execute on a named portal is not supported in the PostgreSQL wire protocol, "
                 "got portal name '{}'", query->portal_name);
+
+        if (query->max_rows != 0)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Bounded Execute is not supported in the PostgreSQL wire protocol");
 
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(currentQueryId());

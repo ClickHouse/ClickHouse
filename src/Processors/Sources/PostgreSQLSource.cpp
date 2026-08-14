@@ -158,7 +158,7 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
     }
 
     auto status = ISource::prepare();
-    if (status == Status::Finished && !stop_requested.load())
+    if (status == Status::Finished && !stop_requested.exchange(true))
     {
         /// Only a finish that was not cancelled commits here and claims the teardown. After a
         /// cancel it is left to the destructor: the cancelling thread may still be in
@@ -169,7 +169,6 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
         if (tx && auto_commit)
             tx->commit();
 
-        stop_requested.store(true);
         finalized.store(true);
     }
 

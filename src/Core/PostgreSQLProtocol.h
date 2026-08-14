@@ -1136,18 +1136,27 @@ public:
 
 class CopyInResponse : public BackendMessage
 {
+    int num_columns;
+
 public:
+    explicit CopyInResponse(int num_columns_ = 1)
+        : num_columns(num_columns_)
+    {
+    }
+
     void serialize(WriteBuffer & out) const override
     {
         out.write('G');
         writeBinaryBigEndian(size(), out);
         writeBinaryBigEndian(static_cast<char>(0), out);
-        writeBinaryBigEndian(static_cast<Int16>(0), out);
+        writeBinaryBigEndian(static_cast<Int16>(num_columns), out);
+        for (int i = 0; i < num_columns; ++i)
+            writeBinaryBigEndian(static_cast<Int16>(FormatCode::TEXT), out);
     }
 
     Int32 size() const override
     {
-        return 4 + 1 + 2;
+        return 4 + 1 + 2 + 2 * num_columns;
     }
 
     MessageType getMessageType() const override
