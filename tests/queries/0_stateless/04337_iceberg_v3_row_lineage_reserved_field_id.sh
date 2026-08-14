@@ -47,7 +47,11 @@ pq.write_table(table, path)
 PY
 
 # A spec-compliant reader ignores the reserved field id and returns the projected column.
-${CLICKHOUSE_CLIENT} --query "SELECT x FROM icebergLocal('${ICEBERG_TABLE_PATH}') ORDER BY x;"
+# `allow_experimental_iceberg_read_optimization` is disabled here (and below) on purpose: it can
+# answer a query from the manifest statistics alone (e.g. when a projected column is constant in the
+# file), in which case the data file is never opened and the parquet schema is never converted, so
+# this test would not exercise the reserved-field-id handling it is about.
+${CLICKHOUSE_CLIENT} --query "SELECT x FROM icebergLocal('${ICEBERG_TABLE_PATH}') ORDER BY x SETTINGS allow_experimental_iceberg_read_optimization = 0;"
 
 # Conversely, 2147483447 (Integer.MAX_VALUE - 200) is the highest field id a table may use, i.e.
 # NOT reserved. An unmapped column with that id is a genuine schema mismatch and must still be
@@ -79,7 +83,7 @@ table = pa.table(
 pq.write_table(table, path)
 PY
 
-${CLICKHOUSE_CLIENT} --query "SELECT x FROM icebergLocal('${ICEBERG_TABLE_PATH_UNMAPPED}') ORDER BY x;" 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
+${CLICKHOUSE_CLIENT} --query "SELECT x FROM icebergLocal('${ICEBERG_TABLE_PATH_UNMAPPED}') ORDER BY x SETTINGS allow_experimental_iceberg_read_optimization = 0;" 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
 
 # Cleanup
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_v3_row_lineage;"

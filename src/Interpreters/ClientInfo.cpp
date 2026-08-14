@@ -201,13 +201,23 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
 
     if (server_protocol_revision >= DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER)
     {
-        if (!jwt.empty())
-        {
-            writeBinary(static_cast<UInt8>(1), out);
-            writeBinary(jwt, out);
-        }
-        else
-            writeBinary(static_cast<UInt8>(0), out);
+        /// Never serialize the bearer token over the interserver wire.
+        ///
+        /// Distributed queries use this `ClientInfo` to fan out to remote shards
+        /// and replicas. Interserver transport is plaintext by default
+        /// (`interserver_http_port` vs `interserver_https_port`), so writing the
+        /// raw JWT here exposes session credentials on the internal network for
+        /// every distributed query whenever the operator hasn't opted into TLS
+        /// for interserver -- and no code on the receiving side currently reads
+        /// `client_info.jwt`, so the transmission is pure leakage with no
+        /// functional benefit.
+        ///
+        /// The protocol-revision byte is still emitted (always `0` = "no JWT")
+        /// to preserve wire compatibility with peers that expect this field at
+        /// this offset; receivers will read it as "no JWT present" and skip
+        /// the body. The `jwt` member of `ClientInfo` is retained for any
+        /// in-process use within the same node.
+        writeBinary(static_cast<UInt8>(0), out);
     }
 
     /// Sent for all interfaces (not only TCP): the detected client agent must also be preserved
@@ -412,6 +422,13 @@ void ClientInfo::setFromHTTPRequest(const Poco::Net::HTTPRequest & request)
     for (const auto & header : request)
     {
         /// These headers can contain authentication info and shouldn't be accessible by the user.
+        ///
+        /// The standard HTTP authorization header is `Authorization` (RFC 7235 §4.2);
+        /// `Authentication` is a separate header (RFC 7615) that ClickHouse does not use
+        /// for credentials. Filter both: `Authorization` is the actual credential header
+        /// (Basic, Bearer, etc.) and must not be exposed via `getClientHTTPHeader` or
+        /// relayed through `<forward_headers>` on HTTP auth servers; `Authentication` is
+        /// filtered defensively to preserve prior behavior.
         String key_lowercase = Poco::toLower(header.first);
         if (key_lowercase.starts_with("x-clickhouse") || key_lowercase == "authentication" || key_lowercase == "authorization")
             continue;

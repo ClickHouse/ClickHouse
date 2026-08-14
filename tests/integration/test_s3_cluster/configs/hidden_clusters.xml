@@ -1,0 +1,20 @@
+<clickhouse>
+  <remote_servers>
+    <hidden_cluster_with_username_and_password>
+        <shard>
+            <replica>
+                <host>s0_0_1</host>
+                <port>9000</port>
+                <user>foo</user>
+                <password>bar</password>
+            </replica>
+            <replica>
+                <host>s0_1_0</host>
+                <port>9000</port>
+                <user>foo</user>
+                <password>bar</password>
+            </replica>
+        </shard>
+    </hidden_cluster_with_username_and_password>
+  </remote_servers>
+</clickhouse>

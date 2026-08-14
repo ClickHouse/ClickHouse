@@ -58,6 +58,7 @@ namespace Setting
     extern const SettingsBool enable_add_distinct_to_in_subqueries;
     extern const SettingsInt64 optimize_const_name_size;
     extern const SettingsOverflowMode transfer_overflow_mode;
+    extern const SettingsObjectStorageClusterJoinMode object_storage_cluster_join_mode;
 }
 
 namespace ErrorCodes
@@ -136,8 +137,9 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<DistributedProductModeRewriteInJoinVisitor>;
     using Base::Base;
 
-    explicit DistributedProductModeRewriteInJoinVisitor(const ContextPtr & context_)
+    explicit DistributedProductModeRewriteInJoinVisitor(const ContextPtr & context_, bool find_cross_join_)
         : Base(context_)
+        , find_cross_join(find_cross_join_)
     {}
 
     struct InFunctionOrJoin
@@ -173,9 +175,11 @@ public:
     {
         auto * function_node = node->as<FunctionNode>();
         auto * join_node = node->as<JoinNode>();
+        CrossJoinNode * cross_join_node = find_cross_join ? node->as<CrossJoinNode>() : nullptr;
 
         if ((function_node && isNameOfGlobalInFunction(function_node->getFunctionName())) ||
-            (join_node && join_node->getLocality() == JoinLocality::Global))
+            (join_node && join_node->getLocality() == JoinLocality::Global) ||
+            cross_join_node)
         {
             InFunctionOrJoin in_function_or_join_entry;
             in_function_or_join_entry.query_node = node;
@@ -239,7 +243,9 @@ private:
                 replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
             replacement_map.emplace(table_node.get(), std::move(replacement_table_expression));
         }
-        else if ((distributed_product_mode == DistributedProductMode::GLOBAL || getSettings()[Setting::prefer_global_in_and_join]) &&
+        else if ((distributed_product_mode == DistributedProductMode::GLOBAL ||
+            getSettings()[Setting::prefer_global_in_and_join] ||
+            (find_cross_join && getSettings()[Setting::object_storage_cluster_join_mode] == ObjectStorageClusterJoinMode::GLOBAL)) &&
             !in_function_or_join_stack.empty())
         {
             auto * in_or_join_node_to_modify = in_function_or_join_stack.back().query_node.get();
@@ -273,6 +279,8 @@ private:
     std::vector<InFunctionOrJoin> in_function_or_join_stack;
     std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
+
+    bool find_cross_join = false;
 };
 
 /** Replaces large constant values with `__getScalar` function calls to avoid
@@ -600,14 +608,18 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
 
 }
 
-QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)
+QueryTreeNodePtr buildQueryTreeForShard(
+    const PlannerContextPtr & planner_context,
+    QueryTreeNodePtr query_tree_to_modify,
+    bool allow_global_join_for_right_table,
+    bool find_cross_join)
 {
     CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
     collect_column_source_to_columns_visitor.visit(query_tree_to_modify);
 
     const auto & column_source_to_columns = collect_column_source_to_columns_visitor.getColumnSourceToColumns();
 
-    DistributedProductModeRewriteInJoinVisitor visitor(planner_context->getQueryContext());
+    DistributedProductModeRewriteInJoinVisitor visitor(planner_context->getQueryContext(), find_cross_join);
     visitor.visit(query_tree_to_modify);
 
     auto replacement_map = visitor.getReplacementMap();
@@ -667,6 +679,41 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             }
 
             replacement_map.emplace(join_table_expression.get(), std::move(temporary_table_expression_node));
+            continue;
+        }
+        if (auto * cross_join_node = global_in_or_join_node.query_node->as<CrossJoinNode>())
+        {
+            auto tables_count = cross_join_node->getTableExpressions().size();
+            for (size_t i = 1; i < tables_count; ++i)
+            {
+                QueryTreeNodePtr join_table_expression = cross_join_node->getTableExpressions()[i];
+
+                auto subquery_node = getSubqueryFromTableExpression(join_table_expression, column_source_to_columns, planner_context->getQueryContext());
+
+                auto temporary_table_expression_node = executeSubqueryNode(subquery_node,
+                    planner_context->getMutableQueryContext(),
+                    global_in_or_join_node.subquery_depth);
+                temporary_table_expression_node->setAlias(join_table_expression->getAlias());
+
+                std::vector<const IQueryTreeNode *> descendants_to_map;
+                for (const auto & child : join_table_expression->getChildren())
+                    if (child)
+                        descendants_to_map.push_back(child.get());
+
+                while (!descendants_to_map.empty())
+                {
+                    const auto * descendant = descendants_to_map.back();
+                    descendants_to_map.pop_back();
+
+                    replacement_map.emplace(descendant, temporary_table_expression_node);
+
+                    for (const auto & child : descendant->getChildren())
+                        if (child)
+                            descendants_to_map.push_back(child.get());
+                }
+
+                replacement_map.emplace(join_table_expression.get(), std::move(temporary_table_expression_node));
+            }
             continue;
         }
         if (auto * in_function_node = global_in_or_join_node.query_node->as<FunctionNode>())
@@ -778,7 +825,7 @@ public:
     {
         if (auto * join_node = node->as<JoinNode>())
         {
-            bool prefer_local_join = getContext()->getSettingsRef()[Setting::parallel_replicas_prefer_local_join];
+            bool prefer_local_join = !force_prefer_local_join && getContext()->getSettingsRef()[Setting::parallel_replicas_prefer_local_join];
             bool should_use_global_join = !prefer_local_join || !allStoragesAreMergeTree(join_node->getRightTableExpression());
             if (should_use_global_join)
                 join_node->setLocality(JoinLocality::Global);
@@ -793,11 +840,79 @@ public:
 
         return true;
     }
+
+    void setForcePreferLocalJoin(bool force_prefer_local_join_) { force_prefer_local_join = force_prefer_local_join_; }
+
+private:
+    bool force_prefer_local_join = false;
 };
 
-void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr context)
+void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr context, bool force_prefer_local_join)
 {
     RewriteJoinToGlobalJoinVisitor visitor(context);
+    visitor.setForcePreferLocalJoin(force_prefer_local_join);
+    visitor.visit(query_tree_to_modify);
+}
+
+class RewriteInToGlobalInVisitor : public InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>;
+    using Base::Base;
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
+        if (auto * function_node = node->as<FunctionNode>(); function_node && isNameOfLocalInFunction(function_node->getFunctionName()))
+        {
+            auto * query = function_node->getArguments().getNodes()[1]->as<QueryNode>();
+            if (!query)
+                return;
+            if (!rewrite_for_distributed)
+            {
+                bool no_replace = true;
+                for (const auto & table_node : extractTableExpressions(query->getJoinTree(), false, true))
+                {
+                    const StorageDistributed * storage_distributed = nullptr;
+                    if (const TableNode * table_node_typed = table_node->as<TableNode>())
+                        storage_distributed = typeid_cast<const StorageDistributed *>(table_node_typed->getStorage().get());
+                    else if (const TableFunctionNode * table_function_node_typed = table_node->as<TableFunctionNode>())
+                        storage_distributed = typeid_cast<const StorageDistributed *>(table_function_node_typed->getStorage().get());
+
+                    if (!storage_distributed)
+                    {
+                        no_replace = false;
+                        break;
+                    }
+                }
+                if (no_replace)
+                    return;
+            }
+
+            auto result_function = std::make_shared<FunctionNode>(getGlobalInFunctionNameForLocalInFunctionName(function_node->getFunctionName()));
+            result_function->getArguments().getNodes() = std::move(function_node->getArguments().getNodes());
+            resolveOrdinaryFunctionNodeByName(*result_function, result_function->getFunctionName(), getContext());
+            node = result_function;
+        }
+    }
+
+    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr &)
+    {
+        if (auto * function_node = parent->as<FunctionNode>(); function_node && function_node->getFunctionName().starts_with("global"))
+            return false;
+
+        return true;
+    }
+
+    void setRewriteForDistributed(bool rewrite_for_distributed_) { rewrite_for_distributed = rewrite_for_distributed_; }
+
+private:
+    bool rewrite_for_distributed = false;
+};
+
+void rewriteInToGlobalIn(QueryTreeNodePtr & query_tree_to_modify, ContextPtr context, bool rewrite_for_distributed)
+{
+    RewriteInToGlobalInVisitor visitor(context);
+    visitor.setRewriteForDistributed(rewrite_for_distributed);
     visitor.visit(query_tree_to_modify);
 }
 

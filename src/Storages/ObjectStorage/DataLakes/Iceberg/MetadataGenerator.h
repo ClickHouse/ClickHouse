@@ -39,7 +39,8 @@ public:
         Int64 added_delete_files,
         Int64 num_deleted_rows,
         std::optional<Int64> user_defined_snapshot_id = std::nullopt,
-        std::optional<Int64> user_defined_timestamp = std::nullopt);
+        std::optional<Int64> user_defined_timestamp = std::nullopt,
+        bool is_truncate = false);
 
     void generateAddColumnMetadata(const String & column_name, DataTypePtr type);
     void generateDropColumnMetadata(const String & column_name);
