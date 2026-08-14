@@ -71,7 +71,6 @@
     "allow_experimental_time_series_table": "/reference/settings/session-settings/allow-experimental",
     "allow_experimental_unique_key": "/reference/settings/session-settings/allow-experimental",
     "allow_experimental_url_wildcard_from_index_pages": "/reference/settings/session-settings/allow-experimental",
-    "allow_experimental_window_view": "/reference/settings/session-settings/allow-experimental",
     "allow_experimental_ytsaurus_dictionary_source": "/reference/settings/session-settings/allow-experimental",
     "allow_experimental_ytsaurus_table_engine": "/reference/settings/session-settings/allow-experimental",
     "allow_experimental_ytsaurus_table_function": "/reference/settings/session-settings/allow-experimental",
@@ -1288,15 +1287,12 @@
     "wait_for_async_insert": "/reference/settings/session-settings/wait-for",
     "wait_for_async_insert_timeout": "/reference/settings/session-settings/wait-for",
     "wait_for_part_commit_in_dependent_materialized_views": "/reference/settings/session-settings/wait-for",
-    "wait_for_window_view_fire_signal_timeout": "/reference/settings/session-settings/wait-for",
     "webassembly_udf_max_fuel": "/reference/settings/session-settings/webassembly-udf",
     "webassembly_udf_max_input_block_size": "/reference/settings/session-settings/webassembly-udf",
     "webassembly_udf_max_instances": "/reference/settings/session-settings/webassembly-udf",
     "webassembly_udf_max_memory": "/reference/settings/session-settings/webassembly-udf",
     "what-is-a-resize-node": "/reference/settings/session-settings/min",
     "why-the-resize-node-needs-to-be-split": "/reference/settings/session-settings/min",
-    "window_view_clean_interval": "/reference/settings/session-settings/window-view",
-    "window_view_heartbeat_interval": "/reference/settings/session-settings/window-view",
     "workload": "/reference/settings/session-settings/other",
     "write_full_path_in_iceberg_metadata": "/reference/settings/session-settings/other",
     "write_through_distributed_cache": "/reference/settings/session-settings/write-through-distributed-cache",
@@ -1998,11 +1994,6 @@
       "prefix": "use_variant",
       "mode": "token",
       "target": "/reference/settings/session-settings/use-variant"
-    },
-    {
-      "prefix": "window_view",
-      "mode": "token",
-      "target": "/reference/settings/session-settings/window-view"
     },
     {
       "prefix": "additional",
@@ -2846,7 +2837,6 @@
     "/reference/settings/session-settings/vector-search",
     "/reference/settings/session-settings/wait-for",
     "/reference/settings/session-settings/webassembly-udf",
-    "/reference/settings/session-settings/window-view",
     "/reference/settings/session-settings/write-through-distributed-cache"
   ]
 }
