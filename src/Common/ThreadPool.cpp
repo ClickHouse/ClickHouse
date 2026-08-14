@@ -695,6 +695,12 @@ void ThreadPoolImpl<Thread>::finishNoLock(const std::lock_guard<std::mutex> &)
 {
     finished = true;
 
+    /// scheduleImpl doesn't check for `finished` outside the critical section,
+    /// so we set remaining_pool_capacity to a large negative value
+    /// (e.g., -MAX_THEORETICAL_THREAD_COUNT) to signal that no new threads are needed.
+    /// This effectively prevents any new threads from being started during shutdown.
+    remaining_pool_capacity.store(-MAX_THEORETICAL_THREAD_COUNT, std::memory_order_relaxed);
+
     /// Wake up all idle threads so they can see it and exit gracefully.
     wakeUpAllIdleThreadsNoLock();
     job_finished.notify_all();
@@ -713,12 +719,6 @@ void ThreadPoolImpl<Thread>::finalize()
     {
         std::lock_guard lock(mutex);
         finishNoLock(lock);
-
-        /// scheduleImpl doesn't check for `finished` outside the critical section,
-        /// so we set remaining_pool_capacity to a large negative value
-        /// (e.g., -MAX_THEORETICAL_THREAD_COUNT) to signal that no new threads are needed.
-        /// This effectively prevents any new threads from being started during shutdown.
-        remaining_pool_capacity.store(-MAX_THEORETICAL_THREAD_COUNT, std::memory_order_relaxed);
 
         /// Disable thread self-removal from `threads`. Otherwise, if threads remove themselves,
         /// the thread.join() operation will fail later in this function.
@@ -1006,7 +1006,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                     {
                         parent_pool.finished = true;
 
-                        // Prevent new thread creation, as explained in finalize.
+                        // Prevent new thread creation, as explained in finishNoLock.
                         parent_pool.remaining_pool_capacity.store(-MAX_THEORETICAL_THREAD_COUNT, std::memory_order_relaxed);
                     }
                     exception_from_job = {};
