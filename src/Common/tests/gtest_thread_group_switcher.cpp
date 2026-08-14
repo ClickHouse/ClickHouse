@@ -19,6 +19,25 @@ namespace FailPoints
     extern const char thread_group_switcher_post_attach_failure[];
 }
 
+TEST(ThreadGroup, ChildKeepsParentAlive)
+{
+    std::thread t([]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto parent = std::make_shared<ThreadGroup>(context, 0);
+        std::weak_ptr<ThreadGroup> weak_parent = parent;
+        auto child = std::make_shared<ThreadGroup>(parent);
+
+        parent.reset();
+        EXPECT_FALSE(weak_parent.expired());
+
+        child.reset();
+        EXPECT_TRUE(weak_parent.expired());
+    });
+    t.join();
+}
+
 /// After a failed ThreadGroupSwitcher construction the thread must be left in the
 /// state it was in before construction started (detached or attached to the original
 /// group), so the next switcher on the same thread can attach cleanly.

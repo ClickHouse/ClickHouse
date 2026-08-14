@@ -72,11 +72,15 @@ using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
 class ThreadGroup
 {
+    /// Child counters keep raw pointers to the parent counters. Keep the parent `ThreadGroup`
+    /// alive until after the child counters are destroyed.
+    const ThreadGroupPtr parent_thread_group;
+
 public:
     using FatalErrorCallback = std::function<void()>;
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
-    explicit ThreadGroup(ThreadGroupPtr parent);
-    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
+    explicit ThreadGroup(ThreadGroupPtr parent_);
+    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_);
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;

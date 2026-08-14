@@ -131,29 +131,31 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
 }
 
 // c-tor for method createForMaterializedView
-ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
-    : master_thread_id(parent->master_thread_id)
-    , query_context(parent->query_context)
-    , global_context(parent->global_context)
-    , fatal_error_callback(parent->fatal_error_callback)
-    , os_threads_nice_value(parent->os_threads_nice_value)
-    , memory_spill_scheduler(parent->memory_spill_scheduler)
-    , performance_counters(VariableContext::Process, &parent->performance_counters)
-    , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
-    , shared_data(parent->getSharedData())
+ThreadGroup::ThreadGroup(ThreadGroupPtr parent_)
+    : parent_thread_group(std::move(parent_))
+    , master_thread_id(parent_thread_group->master_thread_id)
+    , query_context(parent_thread_group->query_context)
+    , global_context(parent_thread_group->global_context)
+    , fatal_error_callback(parent_thread_group->fatal_error_callback)
+    , os_threads_nice_value(parent_thread_group->os_threads_nice_value)
+    , memory_spill_scheduler(parent_thread_group->memory_spill_scheduler)
+    , performance_counters(VariableContext::Process, &parent_thread_group->performance_counters)
+    , memory_tracker(&parent_thread_group->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
+    , shared_data(parent_thread_group->getSharedData())
 {
 }
 
 // c-tor for method createForFlushAsyncInsertQueue
-ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
-    : master_thread_id(CurrentThread::get().thread_id)
+ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_)
+    : parent_thread_group(std::move(parent_))
+    , master_thread_id(CurrentThread::get().thread_id)
     , query_context(query_context_)
     , global_context(query_context_->getGlobalContext())
-    , fatal_error_callback(parent->fatal_error_callback)
-    , os_threads_nice_value(parent->os_threads_nice_value)
-    , memory_spill_scheduler(parent->memory_spill_scheduler)
-    , performance_counters(VariableContext::Process, &parent->performance_counters)
-    , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
+    , fatal_error_callback(parent_thread_group->fatal_error_callback)
+    , os_threads_nice_value(parent_thread_group->os_threads_nice_value)
+    , memory_spill_scheduler(parent_thread_group->memory_spill_scheduler)
+    , performance_counters(VariableContext::Process, &parent_thread_group->performance_counters)
+    , memory_tracker(&parent_thread_group->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
 {
     shared_data.query_is_canceled_predicate = [this] () -> bool {
         if (auto context_locked = query_context.lock())
