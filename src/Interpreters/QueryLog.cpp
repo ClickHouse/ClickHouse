@@ -121,7 +121,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"client_version_patch", std::make_shared<DataTypeUInt32>(), "Patch component of the clickhouse-client or another TCP client version."},
         {"script_query_number", std::make_shared<DataTypeUInt32>(), "The query number in a script with multiple queries for clickhouse-client."},
         {"script_line_number", std::make_shared<DataTypeUInt32>(), "The line number of the query start in a script with multiple queries for clickhouse-client."},
-        {"http_method", std::make_shared<DataTypeUInt8>(), "HTTP method that initiated the query. Possible values: 0 — The query was launched from the TCP interface, 1 — GET method was used, 2 — POST method was used."},
+        {"http_method", std::make_shared<DataTypeUInt8>(), "HTTP method that initiated the query. Possible values: 0 - The query was launched from the TCP interface, 1 - GET method was used, 2 - POST method was used, 4 - PUT method was used, 5 - DELETE method was used, 6 - HEAD method was used."},
         {"http_user_agent", low_cardinality_string, "HTTP header UserAgent passed in the HTTP query."},
         {"http_referer", std::make_shared<DataTypeString>(), "HTTP header Referer passed in the HTTP query (contains an absolute or partial address of the page making the query)."},
         {"forwarded_for", std::make_shared<DataTypeString>(), "HTTP header X-Forwarded-For passed in the HTTP query."},
@@ -129,6 +129,9 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"distributed_depth", std::make_shared<DataTypeUInt64>(), "How many times a query was forwarded between servers."},
 
         {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse revision."},
+
+        {"http_handler_name", std::make_shared<DataTypeString>(), "Name of the SQL-defined HTTP handler (CREATE HANDLER) that invoked the query. Empty if the query was not invoked through such a handler."},
+        {"http_request_url", std::make_shared<DataTypeString>(), "The HTTP request path (without the query string) that invoked the query. The query string is omitted so that sensitive request parameters are not persisted. Empty for non-HTTP queries."},
 
         {"log_comment", std::make_shared<DataTypeString>(), "Log comment. It can be set to arbitrary string no longer than max_query_size. An empty string if it is not defined."},
 
@@ -247,6 +250,9 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(ClickHouseRevision::getVersionRevision());
 
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(http_handler_name.data(), http_handler_name.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(http_request_url.data(), http_request_url.size());
+
     typeid_cast<ColumnString &>(*columns[i++]).insertData(log_comment.data(), log_comment.size());
 
     {
@@ -272,14 +278,23 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
     }
 
-    if (query_settings)
     {
-        auto * column = columns[i++].get();
-        query_settings->dumpToMapColumn(column, true);
-    }
-    else
-    {
-        typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
+        /// Write into the subcolumns directly: IColumn::insert(Field) reaches
+        /// ColumnUnique::uniqueInsert(Field), which clones a whole ColumnString per boxed value.
+        /// Both key and value are LowCardinality here, so that would be two clones per entry.
+        auto & column_map = typeid_cast<ColumnMap &>(*columns[i++]);
+        auto & offsets = column_map.getNestedColumn().getOffsets();
+        auto & tuple_column = column_map.getNestedData();
+        auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
+        auto & value_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(1));
+
+        for (const auto & [name, value] : query_settings)
+        {
+            key_column.insertData(name.data(), name.size());
+            value_column.insertData(value.data(), value.size());
+        }
+
+        offsets.push_back(offsets.back() + query_settings.size());
     }
 
     {
@@ -337,10 +352,22 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(uint8_t(query_result_cache_usage));
 
-    if (async_read_counters)
-        async_read_counters->dumpToMapColumn(columns[i++].get());
-    else
-        typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
+    {
+        /// Same as for Settings above: avoid boxing through Field. Only the key is LowCardinality.
+        auto & column_map = typeid_cast<ColumnMap &>(*columns[i++]);
+        auto & offsets = column_map.getNestedColumn().getOffsets();
+        auto & tuple_column = column_map.getNestedData();
+        auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
+        auto & value_column = typeid_cast<ColumnUInt64 &>(tuple_column.getColumn(1));
+
+        for (const auto & [name, value] : async_read_counters)
+        {
+            key_column.insertData(name.data(), name.size());
+            value_column.getData().push_back(value);
+        }
+
+        offsets.push_back(offsets.back() + async_read_counters.size());
+    }
 
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(is_internal);
 }

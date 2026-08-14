@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['clickpipes', 'openapi', 'api', 'programmatic', 'rest', 'curl']
 ---
 
-所有 ClickPipes 类型都可以通过 [ClickHouse Cloud OpenAPI](/zh/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes) 以编程方式创建、更新和删除。本页介绍身份验证以及可用的 ClickPipes 端点，并为每种 ClickPipe 类型提供 `curl` 请求示例。
+所有 ClickPipes 类型都可以通过 [ClickHouse Cloud OpenAPI](/zh/products/cloud/api-reference/clickpipes/list-clickpipes) 以编程方式创建、更新和删除。本页介绍身份验证以及可用的 ClickPipes 端点，并为每种 ClickPipe 类型提供 `curl` 请求示例。
 
 <div id="authentication">
   ## 身份验证
@@ -38,17 +38,17 @@ https://api.clickhouse.cloud/v1
 
 所有 ClickPipes 端点都限定在特定的 ClickHouse Cloud 服务范围内：
 
-| Method   | Path                                                                                     | Description              |
-| -------- | ---------------------------------------------------------------------------------------- | ------------------------ |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | 列出所有 ClickPipes          |
-| `POST`   | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | 创建 ClickPipe             |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | 获取 ClickPipe             |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | 更新 ClickPipe             |
-| `DELETE` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | 删除 ClickPipe             |
-| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | 获取 ClickPipe 设置          |
-| `PUT`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | 更新 ClickPipe 设置          |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling`  | 更新 ClickPipe 扩缩容         |
-| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state`    | 更新 ClickPipe 状态 (启动/停止)  |
+| Method   | Path                                                                                     | Description             |
+| -------- | ---------------------------------------------------------------------------------------- | ----------------------- |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | 列出所有 ClickPipes         |
+| `POST`   | `/organizations/{organizationId}/services/{serviceId}/clickpipes`                        | 创建 ClickPipe            |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | 获取 ClickPipe            |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | 更新 ClickPipe            |
+| `DELETE` | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}`          | 删除 ClickPipe            |
+| `GET`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | 获取 ClickPipe 设置         |
+| `PUT`    | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings` | 更新 ClickPipe 设置         |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling`  | 更新 ClickPipe 扩缩容        |
+| `PATCH`  | `/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state`    | 更新 ClickPipe 状态 (启动/停止) |
 
 对于 CDC ClickPipes (Postgres、MySQL、MongoDB) ，还提供了用于共享 CDC 基础设施扩缩容的组织级端点：
 
@@ -57,7 +57,7 @@ https://api.clickhouse.cloud/v1
 | `GET`   | `/organizations/{organizationId}/clickpipes/cdcScaling` | 获取 CDC ClickPipes 扩缩容 |
 | `PATCH` | `/organizations/{organizationId}/clickpipes/cdcScaling` | 更新 CDC ClickPipes 扩缩容 |
 
-如需查看每个端点的完整请求和响应 schema，请参阅 [Swagger UI](/zh/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes)。
+如需查看每个端点的完整请求和响应 schema，请参阅 [API 参考文档](/zh/products/cloud/api-reference/clickpipes/list-clickpipes)。
 
 <div id="examples">
   ## 示例
@@ -117,7 +117,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   ## 创建 ClickPipes
 </div>
 
-`POST /clickpipes` 的请求体会因源类型不同而有所差异。以下示例展示了每种受支持的 ClickPipe 类型的结构。有关权威 JSON schema，请参阅 [Swagger UI](/zh/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes)。
+`POST /clickpipes` 的请求体会因源类型不同而有所差异。以下示例展示了每种受支持的 ClickPipe 类型的结构。有关权威 JSON schema，请参阅 [API 参考文档](/zh/products/cloud/api-reference/clickpipes/list-clickpipes)。
 
 <div id="create-kafka">
   ### Kafka

@@ -32,9 +32,7 @@ HyperDX 可以脱离其余技术栈独立使用，并且兼容任何数据 schem
 <br />
 
 <Steps>
-  <Step>
-    ### 使用 Docker 部署
-
+  <Step title="使用 Docker 部署" id="deploy-hyperdx-with-docker">
     运行以下命令，并按需修改 `YOUR_MONGODB_URI`。
 
     ```shell
@@ -42,10 +40,8 @@ HyperDX 可以脱离其余技术栈独立使用，并且兼容任何数据 schem
     ```
   </Step>
 
-  <Step>
-    ### 访问 HyperDX UI
-
-    访问 [http://localhost:8080](http://localhost:8080) 打开 HyperDX UI。
+  <Step title="访问 HyperDX UI" id="navigate-to-hyperdx-ui">
+    访问 [http://localhost:8080](http://localhost:8080) 即可进入 HyperDX UI。
 
     创建用户，并填写符合要求的用户名和密码。
 
@@ -54,19 +50,17 @@ HyperDX 可以脱离其余技术栈独立使用，并且兼容任何数据 schem
     <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
   </Step>
 
-  <Step>
-    ### 完善连接信息
-
+  <Step title="完成连接信息" id="complete-connection-details">
     连接到你自己的外部 ClickHouse 集群，例如 ClickHouse Cloud。
 
-    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="HyperDX 登录" size="md" />
+    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="HyperDX Login" size="md" />
 
-    如果系统提示创建数据源，请保留所有默认值，并在 `Table` 字段中填入 `otel_logs`。其余设置应会自动检测，你可以直接点击 `Save New Source`。
+    如果系统提示你创建 source，请保留所有默认值，并在 `Table` 字段中填入 `otel_logs`。其余设置应会自动检测，你可以直接点击 `Save New Source`。
 
     <Info>
-      **创建数据源**
+      **创建 source**
 
-      创建数据源要求 ClickHouse 中已存在相关表。如果你还没有数据，建议部署 ClickStack OpenTelemetry collector 来创建这些表。
+      创建 source 的前提是 ClickHouse 中已存在相关表。如果你还没有数据，建议部署 ClickStack OpenTelemetry collector 来创建这些表。
     </Info>
   </Step>
 </Steps>

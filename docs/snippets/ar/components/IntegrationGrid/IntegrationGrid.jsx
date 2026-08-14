@@ -170,17 +170,17 @@ export const IntegrationGrid = () => {
 
   function getSectionDescription(type) {
     const descriptions = {
-      ClickPipes: "ClickPipes هو محرك تكامل يجعل استيعاب كميات ضخمة من البيانات من مصادر متنوعة بسيطاً كالنقر على بضعة أزرار.",
-      "Data ingestion": "بسّط خطوط أنابيب بياناتك مع ClickHouse! تضمن عمليات التكامل السلسة استيعاباً فعّالاً للبيانات، مما يُحسّن تحليلات الوقت الفعلي.",
-      "Data visualization": "أضِئ قصص بياناتك! تُعزّز تكاملات ClickHouse التصور، مما يجعل الرؤى أكثر وضوحاً وقابلية للتنفيذ.",
-      "SQL client": "تصفّح قواعد بيانات ClickHouse واستعلم عنها باستخدام أدوات وواجهات عميل SQL المألوفة.",
-      "Language client": "برمج في بيئتك المفضّلة! تجعل تكاملات مكتبة العملاء للغات البرمجة في ClickHouse الوصول إلى البيانات سلساً عبر لغات برمجة متعددة.",
-      "AI/ML": "استفد من ClickHouse في أعباء عمل التعلم الآلي والذكاء الاصطناعي باستخدام أدوات وأطر عمل ML المتكاملة.",
-      "Data management": "أدِر بيانات ClickHouse وراقبها وحسّنها باستخدام أدوات إدارة متخصصة.",
-      "Data integration": "ادمج ClickHouse مع البنية التحتية لبياناتك وسير عملك الحاليين.",
-      "Security governance": "طبّق أطر الأمان والحوكمة لبيئة ClickHouse الخاصة بك."
+      ClickPipes: "ClickPipes is an integration engine that makes ingesting massive volumes of data from a diverse set of sources as simple as clicking a few buttons.",
+      "Data ingestion": "Streamline your data pipelines with ClickHouse! Seamless integrations ensure efficient ingestion, optimizing real-time analytics.",
+      "Data visualization": "Illuminate your data stories! ClickHouse integrations enhance visualization, making insights more vivid & actionable.",
+      "SQL client": "Access and query ClickHouse databases using familiar SQL client tools and interfaces.",
+      "Language client": "Code in your comfort zone! ClickHouse's language client integrations make data access fluent across multiple programming languages.",
+      "AI/ML": "Leverage ClickHouse for machine learning and AI workloads with integrated ML tools and frameworks.",
+      "Data management": "Manage, monitor, and optimize your ClickHouse data with specialized management tools.",
+      "Data integration": "Integrate ClickHouse with your existing data infrastructure and workflows.",
+      "Security governance": "Implement security and governance frameworks for your ClickHouse environment."
     }
-    return descriptions[type] || "ادمج ClickHouse مع أدوات وخدمات متخصصة."
+    return descriptions[type] || "Integrate ClickHouse with specialized tools and services."
   }
 
   // Plain render function (not a component) so cards reconcile by key instead of
@@ -328,7 +328,7 @@ export const IntegrationGrid = () => {
         } catch (cmsErr) {
           if (cmsErr instanceof Error) {
             if (cmsErr.name === "AbortError") {
-              console.log("تم إلغاء طلب CMS بسبب انتهاء المهلة، جارٍ استخدام البيانات الاحتياطية")
+              console.log("تم إلغاء طلب CMS بسبب انتهاء المهلة")
             } else {
               console.error("خطأ في تحميل التكاملات من CMS:", cmsErr.message)
             }

@@ -38,12 +38,12 @@ quantileExactWeightedInterpolated(level)(expr, weight)
 
 **实参**
 
-* `expr` — 针对列值计算后得到数值数据类型、Date 或 DateTime 的表达式。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal*`](/zh/reference/data-types/decimal) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime)
+* `expr` — 针对列值计算后得到数值数据类型、`Date`、`DateTime` 或 `DateTime64` 的表达式。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Int128`](/zh/reference/data-types/int-uint) 或 [`UInt128`](/zh/reference/data-types/int-uint) 或 [`Int256`](/zh/reference/data-types/int-uint) 或 [`UInt256`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal*`](/zh/reference/data-types/decimal) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
 * `weight` — 包含序列成员权重的列。权重表示值出现的次数。[`UInt*`](/zh/reference/data-types/int-uint)
 
 **返回值**
 
-指定级别的分位数。[`Float64`](/zh/reference/data-types/float) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime)
+指定级别的分位数。数值实参会生成 `Float64`，而 `Decimal`、`Date`、`DateTime` 和 `DateTime64` 实参会保留其输入格式。[`Float64`](/zh/reference/data-types/float) 或 [`Decimal*`](/zh/reference/data-types/decimal) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
 
 **示例**
 

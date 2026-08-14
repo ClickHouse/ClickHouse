@@ -116,6 +116,12 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     /// Extract N
     size_t n = limit_step->getLimitForSorting();
 
+    /// LIMIT ... WITH TIES can return more rows than n. The vector search optimization
+    /// bounds the ANN search to exactly n candidates, so rows tied with the n-th row
+    /// are never retrieved. Skip the optimization and fall back to brute force.
+    if (limit_step->withTies())
+        return no_layers_updated;
+
     /// Check that the LIMIT specified by the user isn't too big - otherwise the cost of vector search outweighs the benefit.
     if (n > settings.max_limit_for_vector_search_queries)
         return no_layers_updated;
@@ -526,6 +532,18 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     }
 
     const bool vector_optimization_applied = optimize_plan || apply_row_filter_for_rescoring;
+
+    /// Both vector-search optimizations narrow each granule to the candidate rows returned by the
+    /// vector index before the WHERE/PREWHERE filter runs. The query condition cache key encodes
+    /// only the filter predicate, so a granule whose candidates all fail the filter would be
+    /// recorded as "the predicate matches nothing" and a later ordinary query with the same
+    /// predicate would skip it and lose rows. Same reasoning as the SAMPLE exclusion in
+    /// ReadFromMergeTree::initializePipeline. Reading and index analysis are already excluded for
+    /// vector search (MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache and
+    /// ReadFromMergeTree::selectRangesToRead); this covers the remaining write paths.
+    if (vector_optimization_applied)
+        read_from_mergetree_step->disableQueryConditionCache();
+
     if (!vector_optimization_applied && settings.optimize_prewhere && filter_step)
         optimizePrewhere(*filter_or_prewhere_node, settings.remove_unused_columns, false);
 

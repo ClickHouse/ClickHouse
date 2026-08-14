@@ -106,8 +106,8 @@ ASTPtr ApplyColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options
     else
     {
         auto & lambda_expression = expression_node->as<LambdaNode &>();
-        if (!lambda_expression.getArgumentNames().empty())
-            ast_apply_transformer->lambda_arg = lambda_expression.getArgumentNames()[0];
+        if (!lambda_expression.getArguments().getNames().empty())
+            ast_apply_transformer->lambda_arg = lambda_expression.getArguments().getNames()[0];
         ast_apply_transformer->lambda = lambda_expression.toAST(options);
     }
 

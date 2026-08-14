@@ -37,9 +37,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 * お使いのマシンにDockerがインストールされていること
 
 <Steps>
-  <Step>
-    ## ディレクトリ構造とテスト環境のセットアップ
-
+  <Step title="ディレクトリ構造とテスト環境のセットアップ" id="set-up">
     <ExampleFiles />
 
     このチュートリアルでは、[Docker compose](https://docs.docker.com/compose/) を使用して ClickHouse クラスターをセットアップします。この構成は、個別のローカルマシン、仮想マシン、またはクラウドインスタンスでも動作するよう変更することができます。
@@ -50,12 +48,12 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     mkdir cluster_2S_2R
     cd cluster_2S_2R
 
-    # clickhouse-keeperディレクトリを作成する
+    # Create clickhouse-keeper directories
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # clickhouse-serverディレクトリを作成する
+    # Create clickhouse-server directories
     for i in {01..04}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -169,9 +167,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## ClickHouseノードの設定
-
+  <Step title="ClickHouseノードの設定" id="configure-clickhouse-servers">
     ### サーバーのセットアップ
 
     次に、`fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d` にある空の設定ファイル `config.xml` をそれぞれ編集します。以下でハイライトされている行は、各ノードに固有の値に変更する必要があります。
@@ -285,11 +281,11 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 
     ```xml
     <remote_servers>
-       <!-- クラスター名（ドットを含めないこと） -->
+       <!-- cluster name (should not contain dots) -->
       <cluster_2S_2R>
           <!-- <allow_distributed_ddl_queries>false</allow_distributed_ddl_queries> -->
           <shard>
-              <!-- 省略可能。データをレプリカの1つだけに書き込むかどうか。デフォルト: false（すべてのレプリカにデータを書き込む）。 -->
+              <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
               <internal_replication>true</internal_replication>
               <replica>
                   <host>clickhouse-01</host>
@@ -410,9 +406,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ## ClickHouse Keeper を設定する
-
+  <Step title="ClickHouse Keeper を設定する" id="configure-clickhouse-keeper-nodes">
     次に、協調に使用する ClickHouse Keeper を設定します。
 
     ### Keeper のセットアップ
@@ -430,9 +424,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     <CloudTip />
   </Step>
 
-  <Step>
-    ## セットアップをテストする
-
+  <Step title="セットアップをテストする" id="test-the-setup">
     お使いのマシンで Docker が起動していることを確認してください。
     `cluster_2S_2R` ディレクトリのルートで `docker-compose up` コマンドを実行して、クラスターを起動します。
 
@@ -459,7 +451,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     クエリを実行します。最初のノードに接続するコマンドを以下に示します。
 
     ```bash
-    # 任意のノードに接続する
+    # Connect to any node
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -514,9 +506,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     次のステップでは、クラスター内にテーブルを作成します。
   </Step>
 
-  <Step>
-    ## データベースを作成する
-
+  <Step title="データベースを作成する" id="creating-a-database">
     クラスターが正しくセットアップされ、稼働中であることを確認できたので、[UK property prices](/ja/get-started/sample-datasets/uk-price-paid)
     のサンプルデータセットのチュートリアルで使用したものと同じテーブルを再作成します。これには、1995 年以降のイングランドとウェールズの不動産取引価格に関する約 3,000 万行のデータが含まれています。
 
@@ -572,9 +562,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## クラスター上にテーブルを作成する
-
+  <Step title="クラスター上にテーブルを作成する" id="creating-a-table">
     データベースを作成したら、次はレプリケーション対応のテーブルを作成します。
 
     以下のクエリを、いずれかのホストクライアントで実行します。
@@ -645,9 +633,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 分散テーブルにデータを挿入する
-
+  <Step title="分散テーブルにデータを挿入する" id="inserting-data-using-distributed">
     テーブルにデータを挿入する際、`ON CLUSTER` は `INSERT`、`UPDATE`、`DELETE` などの DML (Data Manipulation Language) クエリには適用されないため、使用できません。データを挿入するには、
     [`Distributed`](/ja/reference/engines/table-engines/special/distributed) テーブルエンジンを利用する必要があります。
     2 分片・1 レプリカのクラスターをセットアップする[ガイド](/ja/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)で学んだように、分散テーブルは異なる
@@ -725,11 +711,11 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 
     ```response
        ┌──count()─┐
-    1. │ 30212555 │ -- 3021万
+    1. │ 30212555 │ -- 30.21 million
        └──────────┘
 
        ┌──count()─┐
-    1. │ 15105983 │ -- 1511万
+    1. │ 15105983 │ -- 15.11 million
        └──────────┘
     ```
   </Step>
@@ -739,12 +725,12 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
   ## 結論
 </div>
 
-2 つの分片と 2 つのレプリカから成るこのクラスター構成の利点は、スケーラビリティと耐障害性の両方を備えていることです。
-データは個別のホストに分散されるため、各ノードで必要なストレージ容量と I/O を抑えられる一方、クエリは両方の分片にまたがって並列に処理されるため、パフォーマンスとメモリ効率が向上します。
-特に重要なのは、各分片について別のノードに予備のレプリカを用意できるため、1 台のノードが失われてもクラスターは停止することなくクエリ処理を継続できる点です。
+2 つの分片と 2 つのレプリカを持つこのクラスター構成の利点は、スケーラビリティと耐障害性の両方を備えていることです。
+データは別々のホストに分散されるため、各ノードのストレージおよび I/O の負荷を抑えられます。また、クエリは両方の分片にまたがって並列に処理されるため、パフォーマンスとメモリ効率が向上します。
+特に重要なのは、各分片に別のノード上のバックアップ用レプリカがあるため、1 台のノードが失われてもクラスターは中断することなくクエリを処理し続けられることです。
 
 このクラスター構成の主な欠点は、ストレージのオーバーヘッドが増えることです。各分片が複製されるため、レプリカのない構成に比べて 2 倍のストレージ容量が必要になります。
-さらに、クラスターは単一ノードの障害には耐えられるものの、どのノードで障害が発生するかや分片の配置によっては、2 台のノードを同時に失うとクラスターが動作不能になる可能性があります。
-この構成は可用性とコストのバランスが取れており、より高いレプリケーション係数に伴うコストをかけずに、一定水準の耐障害性が求められる本番環境に適しています。
+さらに、このクラスターは 1 台のノードの障害には耐えられる一方で、どのノードで障害が発生するかや、分片がどのように分散されているかによっては、2 台のノードが同時に失われると動作不能になる可能性があります。
+この構成は可用性とコストのバランスが取れており、より高いレプリケーション係数のコストをかけずに、一定レベルの耐障害性が求められる本番環境に適しています。
 
-スケーラビリティと耐障害性の両方を実現する ClickHouse Cloud のクエリ処理については、[&quot;並列レプリカ&quot;](/ja/products/cloud/features/infrastructure/parallel-replicas) のセクションを参照してください。
+ClickHouse Cloud がスケーラビリティと耐障害性の両方を実現しながらどのようにクエリを処理するかについては、[&quot;並列レプリカ&quot;](/ja/products/cloud/features/infrastructure/parallel-replicas) のセクションを参照してください。
