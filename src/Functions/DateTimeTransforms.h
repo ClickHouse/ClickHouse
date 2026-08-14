@@ -59,7 +59,7 @@ namespace ErrorCodes
 
 constexpr time_t MAX_DATETIME64_TIMESTAMP = 253402300799LL;   //  9999-12-31 23:59:59 UTC
 constexpr time_t MIN_DATETIME64_TIMESTAMP = -62167219200LL;   //  0000-01-01 00:00:00 UTC
-constexpr time_t MAX_DATE32_TIMESTAMP = 10413791999LL;        //  2299-12-31 23:59:59 UTC (last day of Date32)
+constexpr time_t MAX_DATE32_TIMESTAMP = 253402300799LL;       //  9999-12-31 23:59:59 UTC (last day of Date32)
 constexpr time_t MAX_DATETIME_TIMESTAMP = 0xFFFFFFFF;
 constexpr time_t MAX_DATE_TIMESTAMP = 5662310399;       // 2149-06-06 23:59:59 UTC
 constexpr time_t MAX_TIME_TIMESTAMP = 3599999;              // 999:59:59
@@ -79,6 +79,29 @@ inline time_t maxWholeSecondsForDateTime64(Int64 scale_multiplier)
 inline time_t minWholeSecondsForDateTime64(Int64 scale_multiplier)
 {
     return std::max<Int64>(MIN_DATETIME64_TIMESTAMP, std::numeric_limits<Int64>::min() / scale_multiplier);
+}
+
+/// The window of day numbers whose midnight in `time_zone` is representable as a `DateTime64` with the given scale
+/// multiplier, intersected with the `Date32` range. Because of the scale-dependent bounds above, a perfectly valid
+/// `Date32` value such as `9999-12-31` has no scale-9 representation at all, so a `Date32` -> `DateTime64` conversion
+/// has to reject (or saturate) day numbers outside this window instead of silently returning the clamped bound.
+inline std::pair<Int32, Int32> getDateTime64DayNumRange(Int64 scale_multiplier, const DateLUTImpl & time_zone)
+{
+    /// The cast to `DateLUTImpl::Time` is required: `toDayNum` only takes the out-of-LUT-range escape path for
+    /// exactly that type, and `time_t` is a distinct type from `Int64` on Darwin (see the note in `DateLUTImpl.h`).
+    const auto min_whole = static_cast<DateLUTImpl::Time>(minWholeSecondsForDateTime64(scale_multiplier));
+    const auto max_whole = static_cast<DateLUTImpl::Time>(maxWholeSecondsForDateTime64(scale_multiplier));
+
+    /// `toDayNum` returns the day containing the timestamp, whose midnight is not greater than it. That makes the
+    /// upper bound representable as is, while the lower one may need rounding up to the next day.
+    Int32 min_day = static_cast<Int32>(time_zone.toDayNum(min_whole));
+    if (time_zone.fromDayNum(ExtendedDayNum(min_day)) < min_whole)
+        ++min_day;
+    const Int32 max_day = static_cast<Int32>(time_zone.toDayNum(max_whole));
+
+    return {
+        std::max<Int32>(min_day, DATE_LUT_MIN_EXTEND_DAY_NUM),
+        std::min<Int32>(max_day, DATE_LUT_MAX_EXTEND_DAY_NUM)};
 }
 
 [[noreturn]] void throwDateIsNotSupported(const char * name);
@@ -1517,7 +1540,9 @@ struct ToYearImpl
         if (point.getType() != Field::Types::UInt64) return nullptr;
 
         auto year = point.safeGet<UInt64>();
-        if (year < DATE_LUT_MIN_YEAR || year >= DATE_LUT_MAX_YEAR) return nullptr;
+        /// The year DATE_LUT_MAX_REPRESENTABLE_YEAR is excluded because the exclusive upper endpoint of its
+        /// preimage would be the first moment of the next year, which is not representable.
+        if (year >= DATE_LUT_MAX_REPRESENTABLE_YEAR) return nullptr;
 
         const DateLUTImpl & date_lut = DateLUT::instance("UTC");
 
@@ -2511,7 +2536,9 @@ struct ToYYYYMMImpl
         auto year = year_month / 100;
         auto month = year_month % 100;
 
-        if (year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || (year == DATE_LUT_MAX_YEAR && month == 12))
+        /// The month DATE_LUT_MAX_REPRESENTABLE_YEAR-12 is excluded because the exclusive upper endpoint of its
+        /// preimage would be the first moment of the next month, which is not representable.
+        if (year > DATE_LUT_MAX_REPRESENTABLE_YEAR || month < 1 || month > 12 || (year == DATE_LUT_MAX_REPRESENTABLE_YEAR && month == 12))
             return nullptr;
 
         const DateLUTImpl & date_lut = DateLUT::instance("UTC");
@@ -2694,11 +2721,11 @@ struct Transformer
                     }
                     else if constexpr (std::is_same_v<ToType, DataTypeDate32>)
                     {
-                        /// `Date32` spans `[1900-01-01, 2299-12-31]`, and a numeric source is read either as an
+                        /// `Date32` spans `[0000-01-01, 9999-12-31]`, and a numeric source is read either as an
                         /// extended day number or as a unix timestamp, so its representable window is
-                        /// `[-getDayNumOffsetEpoch(), MAX_DATE32_TIMESTAMP]`. Anything outside is silently clamped
-                        /// by the transform below, which is exactly what the accurate cast must reject.
-                        static constexpr Int64 lower_bound = -static_cast<Int64>(DateLUTImpl::getDayNumOffsetEpoch());
+                        /// `[DATE_LUT_MIN_EXTEND_DAY_NUM, MAX_DATE32_TIMESTAMP]`. Anything outside is silently
+                        /// clamped by the transform below, which is exactly what the accurate cast must reject.
+                        static constexpr Int64 lower_bound = DATE_LUT_MIN_EXTEND_DAY_NUM;
                         if constexpr (is_floating_point<FromValueType>)
                         {
                             /// `Float64` represents every `BFloat16` and `Float32` value and both bounds exactly.
