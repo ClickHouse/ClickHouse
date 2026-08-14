@@ -277,7 +277,8 @@ function makeIndexedDB(seedTabs, seedMeta, openDelayMs) {
     const stores = new Map();
     stores.set('tabs', { keyPath: 'id', data: new Map((seedTabs || []).map(r => [r.id, structuredClone(r)])) });
     stores.set('meta', { keyPath: 'key', data: new Map(seedMeta ? [['state', structuredClone(seedMeta)]] : []) });
-    const stats = { persistCount: 0 };
+    /// `openFired` records that the load window has closed: the open callback below has run.
+    const stats = { persistCount: 0, openFired: false };
 
     function makeStoreHandle(name) {
         const s = stores.get(name);
@@ -304,6 +305,7 @@ function makeIndexedDB(seedTabs, seedMeta, openDelayMs) {
             /// `openDelayMs` lets a scenario make `IndexedDB.open` slower than any auto-run that
             /// races startup reconciliation (see the stale-reload-run-race scenario).
             setTimeout(() => {
+                stats.openFired = true;
                 req.result = {
                     objectStoreNames: { contains: (n) => stores.has(n) },
                     createObjectStore(n, opts) {
@@ -480,8 +482,16 @@ async function runScenario(js, config) {
     /// (see the dirty-startup scenario): run `config.duringLoad(sandbox)` inside the `openDelayMs`
     /// window, before `reconcileStartup` takes over the workspace (`bootstrap_settled`).
     if (config.duringLoad) {
-        await sleep(config.duringLoadDelayMs || 5);
+        /// The bootstrap is synchronous and `IndexedDB.open` can only resolve through a
+        /// `setTimeout`, so yielding to microtasks alone keeps the interaction before the open.
+        await Promise.resolve();
+        if (stats.openFired)
+            throw new Error('duringLoad ran after the IndexedDB open completed: the load window closed early');
+        if (vm.runInContext('bootstrap_settled', sandbox))
+            throw new Error('duringLoad ran after reconciliation settled: the load window closed early');
         config.duringLoad(sandbox);
+        if (!vm.runInContext('bootstrap_dirty', sandbox))
+            throw new Error('duringLoad did not mark the bootstrap workspace dirty');
     }
     /// Startup is asynchronous: `reconcileStartup` awaits IndexedDB and ends with the debounced
     /// `scheduleSave` (400 ms), whose `persist` writes the reconciled workspace back. Wait for
@@ -875,7 +885,9 @@ async function main() {
         const r = await runScenario(js, {
             href: base + '?tab=Scratch#' + stale_hash,
             historyState: { tabId: 't7', tabName: 'Scratch' },
-            openDelayMs: 30,
+            /// A zero-delay open leaves no wall-clock margin, so the load-window interaction below
+            /// holds only if it is ordered structurally rather than by timing.
+            openDelayMs: 0,
             duringLoad: (sandbox) => {
                 vm.runInContext(
                     "query_area.value = 'SELECT 999';" +
