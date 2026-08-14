@@ -24,7 +24,7 @@ namespace DB
  * Operations on a single vector:
  *  - addValue(index, value): v[index] += value;
  *  - getAllValueSum(): Get the sum of all elements of a vector;
- *  - getCardinality(): Get the number of non-zero values ​​in a vector
+ *  - getCardinality(): Get the number of indexes present in a vector, including those whose value is zero;
  *  - ......
  * Operations between two vectors:
  *  - pointwiseAdd(v1, v2, res): Pointwise addition of v1 and v2, result stored in res vector.
