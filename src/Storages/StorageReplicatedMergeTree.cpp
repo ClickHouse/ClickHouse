@@ -1305,10 +1305,7 @@ void StorageReplicatedMergeTree::createReplicaAttempt(const StorageMetadataPtr &
                 getContext());
             return ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).checkEquals(
                 zk_metadata_parsed,
-                metadata_snapshot->columns,
-                metadata_snapshot->virtuals,
-                getStorageID().getNameForLogs(),
-                getContext());
+                getStorageID().getNameForLogs());
         };
 
         auto is_same_columns = [&](const String & zk_columns_str)

@@ -223,7 +223,7 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, TTLElementCloneIsIsolated)
     const auto & element = original->children.at(0)->as<const ASTTTLElement &>();
     EXPECT_NE(copied_element.recompression_codec.get(), element.recompression_codec.get());
 
-    /// Mutating the clone the way `stripArtificialParens` does must not reach the original.
+    /// Mutating the clone the way the canonicalization does must not reach the original.
     copied_element.recompression_codec->setParenthesized(true);
     for (const auto & child : copied_element.recompression_codec->children)
         child->setParenthesized(true);
@@ -369,8 +369,8 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, ApplyTransformerParametersAreSigni
     EXPECT_TRUE(diffOf(lambda_median, lambda_high).projections_changed);
     EXPECT_FALSE(diffOf(lambda_median, lambda_median).projections_changed);
 
-    /// The same declarations written with redundant parentheses are still equal, which is what
-    /// `stripArtificialParens` has to reach through those same members.
+    /// The same declarations written with redundant parentheses are still equal, so the comparison
+    /// has to reach through those same members.
     MetadataFields quantile_median_parens;
     quantile_median_parens.projections = "pr (SELECT COLUMNS('b|c') APPLY quantile((0.5)) GROUP BY (a))";
     EXPECT_FALSE(diffOf(quantile_median, quantile_median_parens).projections_changed);
