@@ -95,6 +95,7 @@ namespace Setting
 
 namespace QueryPlanSerializationSetting
 {
+    extern const QueryPlanSerializationSettingsBool sorting_allow_unordered_output;
     extern const QueryPlanSerializationSettingsUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_sort;
     extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_sort;
