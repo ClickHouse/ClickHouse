@@ -116,6 +116,24 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
 INSERT INTO t_vert SELECT number, number, toString(number) FROM numbers(10); -- { serverError INCORRECT_FILE_NAME }
 DROP TABLE t_vert;
 
+-- The arm above is rejected by the insert writer, so the index must arrive after the parts exist
+-- for a merge to be the first producer that sees both owners.
+CREATE TABLE t_vert_merge (k UInt64, `skp_idx_a` UInt64, s String)
+ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         vertical_merge_algorithm_min_rows_to_activate = 1,
+         vertical_merge_algorithm_min_columns_to_activate = 1;
+INSERT INTO t_vert_merge SELECT number, number, toString(number) FROM numbers(10);
+INSERT INTO t_vert_merge SELECT number + 10, number, toString(number + 10) FROM numbers(10);
+ALTER TABLE t_vert_merge ADD INDEX a(s) TYPE set(100) GRANULARITY 1;
+OPTIMIZE TABLE t_vert_merge FINAL; -- { serverError INCORRECT_FILE_NAME }
+SYSTEM FLUSH LOGS part_log;
+SELECT 't_vert_merge', countIf(merge_algorithm = 'Vertical' AND error = 79)
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_vert_merge' AND event_type = 'MergeParts';
+SELECT 't_vert_merge-check', count(), sum(`skp_idx_a`) FROM t_vert_merge;
+DROP TABLE t_vert_merge;
+
 -- Text indices are written by MergeTextIndexesTask, which is a third producer over the directory.
 SET allow_experimental_full_text_index = 1;
 CREATE TABLE t_text (k UInt64, `skp_idx_a` UInt64, s String,

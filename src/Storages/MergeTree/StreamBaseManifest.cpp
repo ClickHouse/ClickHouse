@@ -36,7 +36,7 @@ void StreamBaseManifest::registerStreamBase(const String & base, Owner owner)
 
     throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
         "Stream base name `{}` is claimed by both {} `{}` and {} `{}`. They would share the same "
-        "data and marks files in one part directory. Rename one of them",
+        "marks file in one part directory. Rename one of them",
         base, kindToString(existing.kind), existing.name, kindToString(owner.kind), owner.name);
 }
 
