@@ -63,6 +63,10 @@ SELECT 1 OR ((SELECT count() FROM numbers(assumeNotNull((SELECT throwIf(1))))) >
 WITH (SELECT 3) AS idx SELECT 1 OR ((SELECT count() FROM numbers(assumeNotNull(idx))) > 0);
 WITH (SELECT throwIf(1)) AS idx SELECT 1 OR ((SELECT count() FROM numbers(assumeNotNull(idx))) > 0); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
+SELECT 'Test column-dependent count subqueries fall back to normal analysis';
+SELECT 1 OR ((SELECT count(*) FROM numbers(1) WHERE number >= 0) > 0);
+SELECT 1 OR ((SELECT count(*) FROM numbers(1) WHERE throwIf(number >= 0) = 0) > 0); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+
 SELECT 'Test live prefix arguments are not skipped';
 SELECT (SELECT throwIf(1)) OR 1; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 SELECT (SELECT throwIf(1)) AND 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }

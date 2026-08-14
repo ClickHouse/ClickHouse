@@ -160,6 +160,19 @@ bool hasNestedQueryOrUnion(const IQueryTreeNode & node)
     return false;
 }
 
+bool hasIdentifierOrColumn(const IQueryTreeNode & node)
+{
+    const auto node_type = node.getNodeType();
+    if (node_type == QueryTreeNodeType::IDENTIFIER || node_type == QueryTreeNodeType::COLUMN)
+        return true;
+
+    for (const auto & child : node.getChildren())
+        if (child && hasIdentifierOrColumn(*child))
+            return true;
+
+    return false;
+}
+
 bool hasUnsafeFunctionForEarlyShortCircuit(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     if (const auto * function = node->as<FunctionNode>())
@@ -186,6 +199,7 @@ bool hasUnsafeFunctionForEarlyShortCircuit(const QueryTreeNodePtr & node, const 
 bool isSafeCountScalarSubqueryForEarlyShortCircuit(const QueryNode & query)
 {
     if (hasNestedQueryOrUnion(query)
+        || hasIdentifierOrColumn(query)
         || query.hasGroupBy()
         || query.hasHaving()
         || query.hasWindow()
