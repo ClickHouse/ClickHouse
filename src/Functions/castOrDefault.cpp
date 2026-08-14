@@ -1,5 +1,4 @@
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -15,12 +14,13 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/castColumn.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/CastOverloadResolver.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
+#include <DataTypes/DataTypeFactory.h>
 
 namespace DB
 {
@@ -46,7 +46,11 @@ public:
         return std::make_shared<FunctionCastOrDefault>(context);
     }
 
-    explicit FunctionCastOrDefault(ContextPtr context_) : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable]) { }
+    explicit FunctionCastOrDefault(ContextPtr context_)
+        : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable])
+        , cast_or_null_resolver(createCastOverloadResolver(context_, CastType::accurateOrNull, {}))
+    {
+    }
 
     String getName() const override { return name; }
 
@@ -78,7 +82,21 @@ public:
                 getName(),
                 arguments[1].type->getName());
 
-        DataTypePtr result_type = DataTypeFactory::instance().get(type_column_typed->getValue<String>());
+        /// Delegate type determination to the cast resolver. This ensures that
+        /// DataTypeValidationSettings and timezone substitution are applied
+        /// consistently between getReturnTypeImpl and executeImpl.
+        ColumnsWithTypeAndName cast_args{arguments[0], arguments[1]};
+        DataTypePtr result_type = removeNullable(cast_or_null_resolver->getReturnType(cast_args));
+
+        /// The resolver uses CastType::accurateOrNull which wraps non-Nullable
+        /// targets in Nullable (to detect cast failures via NULL). We strip that
+        /// wrapper above. But when the user explicitly requested a Nullable target
+        /// type, the resolver didn't add the Nullable wrapper — the target was
+        /// already Nullable — so removeNullable incorrectly stripped the
+        /// user-requested Nullable. Restore it.
+        auto user_target_type = DataTypeFactory::instance().get(type_column_typed->getValue<String>());
+        if (user_target_type->isNullable())
+            result_type = makeNullable(result_type);
 
         if (keep_nullable && arguments.front().type->isNullable())
             result_type = makeNullable(result_type);
@@ -128,7 +146,18 @@ public:
         auto non_const_column_to_cast = column_to_cast.column->convertToFullColumnIfConst();
         ColumnWithTypeAndName column_to_cast_non_const{non_const_column_to_cast, column_to_cast.type, column_to_cast.name};
 
-        auto cast_result = castColumnAccurateOrNull(column_to_cast_non_const, return_type);
+        auto nullable_return_type = makeNullable(return_type);
+        ColumnsWithTypeAndName cast_args
+        {
+            column_to_cast_non_const,
+            {
+                DataTypeString().createColumnConst(non_const_column_to_cast->size(), return_type->getName()),
+                std::make_shared<DataTypeString>(),
+                ""
+            }
+        };
+        auto cast_func = cast_or_null_resolver->build(cast_args);
+        auto cast_result = cast_func->execute(cast_args, nullable_return_type, non_const_column_to_cast->size(), false);
 
         const auto & cast_result_nullable = assert_cast<const ColumnNullable &>(*cast_result);
         const auto & null_map_data = cast_result_nullable.getNullMapData();
@@ -194,8 +223,8 @@ public:
     }
 
 private:
-
     bool keep_nullable;
+    FunctionOverloadResolverPtr cast_or_null_resolver;
 };
 
 class FunctionCastOrDefaultTyped final : public IFunction
@@ -717,7 +746,9 @@ Like [toDate](#toDate) but if unsuccessful, returns a default value which is eit
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDateOrDefault", std::make_shared<DataTypeDate>()); },
         toDateOrDefault_documentation);
     FunctionDocumentation::Description toDate32OrDefault_description = R"(
-Converts the argument to the [Date32](/reference/data-types/date32) data type. If the value is outside the range, `toDate32OrDefault` returns the lower border value supported by [Date32](/reference/data-types/date32). If the argument has [Date](/reference/data-types/date) type, it's borders are taken into account. Returns default value if an invalid argument is received.
+Converts the argument to the [Date32](/reference/data-types/date32) data type. If the argument cannot be converted, which includes a numeric value outside of the range of [Date32](/reference/data-types/date32), the function returns a default value which is either the second argument (if specified), or otherwise `1900-01-01`, the historical default value of [Date32](/reference/data-types/date32) (not its lower boundary, which is `0000-01-01`). If the argument has [Date](/reference/data-types/date) type, its borders are taken into account.
+
+Note that, unlike [toDate32](#toDate32), this function does not saturate an out-of-range numeric argument to the boundaries of [Date32](/reference/data-types/date32); such an argument is treated as unconvertible.
     )";
     FunctionDocumentation::Syntax toDate32OrDefault_syntax = "toDate32OrDefault(expr[, default])";
     FunctionDocumentation::Arguments toDate32OrDefault_arguments = {
@@ -727,7 +758,8 @@ Converts the argument to the [Date32](/reference/data-types/date32) data type. I
     FunctionDocumentation::ReturnedValue toDate32OrDefault_returned_value = {"Value of type Date32 if successful, otherwise returns the default value if passed or 1900-01-01 if not.", {"Date32"}};
     FunctionDocumentation::Examples toDate32OrDefault_examples = {
         {"Successful conversion", "SELECT toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))", "1930-01-01"},
-        {"Failed conversion", "SELECT toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))", "2020-01-01"}
+        {"Failed conversion", "SELECT toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))", "2020-01-01"},
+        {"Out-of-range number", "SELECT toDate32OrDefault(toUInt64(18446744073709551615), toDate32('2020-01-01'))", "2020-01-01"}
     };
     FunctionDocumentation::Category toDate32OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toDate32OrDefault_introduced_in = {21, 11};

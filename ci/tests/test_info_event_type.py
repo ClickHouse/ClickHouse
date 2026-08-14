@@ -38,6 +38,7 @@ PAYLOADS = {
         "repository": REPOSITORY,
     },
     Workflow.Event.PULL_REQUEST: {
+        "action": "opened",
         "pull_request": {
             "number": 110395,
             "head": {"sha": "a" * 40, "repo": {"full_name": "ClickHouse/ClickHouse"}},
@@ -84,6 +85,11 @@ def test_merge_group_payload_yields_merge_queue_event_type(tmp_path, monkeypatch
     info = _info_for(Workflow.Event.MERGE_QUEUE, tmp_path, monkeypatch)
     assert info.env.EVENT_TYPE == Workflow.Event.MERGE_QUEUE
     assert info.env.EVENT_TYPE != "merge_group"
+
+
+def test_pull_request_payload_exposes_event_action(tmp_path, monkeypatch):
+    info = _info_for(Workflow.Event.PULL_REQUEST, tmp_path, monkeypatch)
+    assert info.event_action == "opened"
 
 
 def test_is_merge_queue_event_true_in_merge_queue(tmp_path, monkeypatch):
