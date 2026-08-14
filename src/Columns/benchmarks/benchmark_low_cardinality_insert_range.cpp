@@ -35,7 +35,12 @@ struct BenchmarkColumns
     ColumnPtr destination_keys;
 };
 
-MutableColumnPtr makeSource(size_t dictionary_size, size_t elements, size_t distinct_indexes, size_t first_index)
+MutableColumnPtr makeSource(
+    size_t dictionary_size,
+    size_t elements,
+    size_t distinct_indexes,
+    size_t first_index,
+    bool is_shared = false)
 {
     auto nested_type = std::make_shared<DataTypeUInt128>();
     auto keys = ColumnUInt128::create(dictionary_size);
@@ -49,7 +54,7 @@ MutableColumnPtr makeSource(size_t dictionary_size, size_t elements, size_t dist
     for (size_t i = 0; i < elements; ++i)
         index_data[i] = static_cast<UInt32>(first_index + i % distinct_indexes);
 
-    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/false);
+    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), is_shared);
 }
 
 ColumnPtr makeDestinationKeys(DestinationKeys kind, size_t distinct_indexes, size_t first_source_index)
@@ -147,7 +152,8 @@ void EmptyDestinationMinimalDictionary(benchmark::State & state)
         /*dictionary_size=*/distinct_indexes + 1,
         elements_per_operation,
         distinct_indexes,
-        /*first_index=*/1);
+        /*first_index=*/1,
+        /*is_shared=*/true);
     auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(nested_type);
 
     for (auto _ : state)
