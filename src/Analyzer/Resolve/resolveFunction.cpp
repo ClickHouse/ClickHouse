@@ -660,6 +660,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// which gives the logical expression its real Nullable/Bool result type. It also
             /// discovers aggregates and arrayJoin before they can be erased by the early fold.
             auto node_for_type_inference = node->clone();
+
+            /// Speculative resolution must not cache placeholders or leave in-progress stack
+            /// entries in the live scope when it falls back. Use an isolated cache-disabled copy;
+            /// dropping the parent link makes unresolved parent-scope dependencies fall back too.
+            IdentifierResolveScope type_inference_scope = scope;
+            type_inference_scope.parent_scope = nullptr;
+            type_inference_scope.identifier_in_lookup_process.clear();
+            type_inference_scope.clearIdentifierCache();
+            type_inference_scope.disableIdentifierCachePermanently();
+            type_inference_scope.projection_mask_map
+                = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>(*scope.projection_mask_map);
+
             bool type_inference_succeeded = false;
             try
             {
@@ -674,7 +686,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
                 resolveExpressionNode(
                     node_for_type_inference,
-                    scope,
+                    type_inference_scope,
                     false /*allow_lambda_expression*/,
                     false /*allow_table_expression*/,
                     false /*ignore_alias*/,
