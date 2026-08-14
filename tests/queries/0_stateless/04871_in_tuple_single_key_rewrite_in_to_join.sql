@@ -19,6 +19,13 @@ SELECT count() FROM numbers(1) WHERE (toUInt16(256), number) NOT IN (SELECT CAST
 -- The same one-key comparison with values that do fit keeps returning regular IN results.
 SELECT (1, number) IN (SELECT CAST((1, 0), 'Tuple(UInt8, UInt64)')) FROM numbers(2);
 
+-- A tuple wrapped into `Nullable` is kept as a single key by regular IN as well (`FunctionIn`
+-- unpacks only a raw top-level tuple), so the rewrite must be skipped for that shape too.
+SET enable_nullable_tuple_type = 1;
+SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Nullable(Tuple(UInt16, UInt64))') IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Nullable(Tuple(UInt16, UInt64))') NOT IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT CAST((1, number), 'Nullable(Tuple(UInt8, UInt64))') IN (SELECT CAST((1, 0), 'Tuple(UInt8, UInt64)')) FROM numbers(2);
+
 -- A multi-column right side of the same arity is unpacked element-wise by regular IN, so the
 -- rewrite still applies there and must keep working.
 SELECT number, (number, number + 1) IN (SELECT number, number + 1 FROM numbers(3)) FROM numbers(5) ORDER BY number;

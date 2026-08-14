@@ -1009,7 +1009,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 validateInColumnsCountMatch(in_first_argument, in_second_argument);
             }
 
-            /// When the right side is a single column and the left side is a top-level `Tuple`,
+            /// When the right side is a single column and the left side is a tuple kept as one key,
             /// regular IN does not unpack the tuple: the whole left value is one set key, and
             /// `Set::execute` accurately casts it to the right column type before probing (so
             /// e.g. `(toUInt16(256), x) IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)'))` throws
@@ -1019,13 +1019,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// handling below - the observable behavior must not depend on `rewrite_in_to_join`.
             /// The mutated clones are discarded; the regular path re-resolves the original
             /// arguments and flattens/validates them again itself.
+            /// A wrapped tuple such as `Nullable(Tuple(...))` (or a `LowCardinality(...)` wrapper) is
+            /// kept as a single key by `FunctionIn` as well - it unpacks only a raw top-level
+            /// `ColumnTuple`/`DataTypeTuple` - so unwrap the wrappers before looking for a tuple,
+            /// matching how `validateInColumnsCountMatch` counts the left operand's key columns.
             bool left_tuple_compared_as_single_key = false;
             if (const auto * rhs_query_node = in_second_argument->as<QueryNode>())
             {
                 const auto & left_result_type = in_first_argument->getResultType();
                 left_tuple_compared_as_single_key = rhs_query_node->getProjectionColumns().size() == 1
                     && left_result_type
-                    && typeid_cast<const DataTypeTuple *>(left_result_type.get());
+                    && typeid_cast<const DataTypeTuple *>(removeNullable(removeLowCardinality(left_result_type)).get());
             }
 
             if (in_second_argument->as<QueryNode>() && !left_tuple_compared_as_single_key)
