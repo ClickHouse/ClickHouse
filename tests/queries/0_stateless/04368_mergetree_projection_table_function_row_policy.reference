@@ -29,6 +29,9 @@ Carol	engineering
 1
 -- read-in-order + LIMIT skips the policy-hidden leading rows (expect 51)
 51
+-- row policy and additional_table_filters both apply (expect 1, 4)
+1
+4
 -- policy on an ALIAS column: read is refused
 -- policy on a DEFAULT column with only its dependency stored: read is refused
 -- policy on a MATERIALIZED column with only its dependency stored: read is refused

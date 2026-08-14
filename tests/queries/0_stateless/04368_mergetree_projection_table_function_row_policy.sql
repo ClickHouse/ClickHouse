@@ -151,6 +151,26 @@ SETTINGS optimize_read_in_order = 1;
 DROP ROW POLICY rp_order_limit_rls_proj ON order_limit_rls_proj;
 DROP TABLE order_limit_rls_proj;
 
+-- The row policy and an additional_table_filters entry must both apply, even when the filtered column is
+-- not selected (buildFilterInfo keeps the table-expression columns, so nothing is dropped mid-pipeline).
+DROP TABLE IF EXISTS addfilter_rls_proj;
+DROP ROW POLICY IF EXISTS rp_addfilter_rls_proj ON addfilter_rls_proj;
+
+CREATE TABLE addfilter_rls_proj (id UInt64, tenant String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO addfilter_rls_proj VALUES (1, 'a'), (2, 'x'), (3, 'y'), (4, 'a');
+
+ALTER TABLE addfilter_rls_proj ADD PROJECTION p (SELECT id, tenant ORDER BY tenant);
+ALTER TABLE addfilter_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+
+CREATE ROW POLICY rp_addfilter_rls_proj ON addfilter_rls_proj FOR SELECT USING tenant != 'x' TO ALL;
+
+SELECT '-- row policy and additional_table_filters both apply (expect 1, 4)';
+SELECT id FROM mergeTreeProjection(currentDatabase(), 'addfilter_rls_proj', 'p') AS p ORDER BY id
+SETTINGS additional_table_filters = {'p' : 'tenant != ''y'''};
+
+DROP ROW POLICY rp_addfilter_rls_proj ON addfilter_rls_proj;
+DROP TABLE addfilter_rls_proj;
+
 -- The remaining cases cannot be enforced against the projection, so the read is refused.
 
 -- ALIAS column: the projection stores the dependency `b`, not the alias `c`, and the analyzer resolves
