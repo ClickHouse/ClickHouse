@@ -61,3 +61,9 @@ SELECT arrayCombinations(arrayMap(x -> x + number, range(18)), 9) FROM numbers(3
 SELECT arrayPermutations(arrayMap(x -> x + number, range(8))) FROM numbers(4) FORMAT Null; -- {serverError TOO_LARGE_ARRAY_SIZE}
 -- arrayPartialPermutations: P(10,6)=151200, 151200*6 = 907200 elements per row; 2 rows = 1814400 > 1M.
 SELECT arrayPartialPermutations(arrayMap(x -> x + number, range(10)), 6) FROM numbers(2) FORMAT Null; -- {serverError TOO_LARGE_ARRAY_SIZE}
+
+-- all-constant arguments must not be evaluated once and wrapped in ColumnConst: the shared
+-- output cap applies after materializing every input row.
+SELECT materialize(arrayCombinations(range(toUInt8(18)), 9)) FROM numbers(3) FORMAT Null; -- {serverError TOO_LARGE_ARRAY_SIZE}
+SELECT materialize(arrayPermutations(range(toUInt8(8)))) FROM numbers(4) FORMAT Null; -- {serverError TOO_LARGE_ARRAY_SIZE}
+SELECT materialize(arrayPartialPermutations(range(toUInt8(10)), 6)) FROM numbers(2) FORMAT Null; -- {serverError TOO_LARGE_ARRAY_SIZE}

@@ -56,7 +56,11 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayPermutationsImpl>(); }
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return IsPartial ? 2 : 1; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    /// The output limit applies to the whole block. Running constant arguments only
+    /// once and wrapping the result in ColumnConst would bypass that limit when the
+    /// result is materialized for multiple input rows.
+    bool useDefaultImplementationForConstants() const override { return false; }
+    bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -83,9 +87,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        /// The array can arrive as a constant column when only the array argument is constant
-        /// while `k` varies by row (the all-constant case is already folded by
-        /// useDefaultImplementationForConstants). Read the single stored array for every row instead
+        /// The array can arrive as a constant column. Read the single stored array for every row instead
         /// of replicating it across `input_rows_count` rows with convertToFullColumnIfConst: a large
         /// constant array would otherwise be materialized for every row before the per-row output
         /// budget below could throw TOO_LARGE_ARRAY_SIZE.
