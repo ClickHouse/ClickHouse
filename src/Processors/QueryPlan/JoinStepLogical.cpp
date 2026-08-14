@@ -2109,10 +2109,7 @@ std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
     join_settings.updatePlanSettings(settings);
-    if (TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::FULL_SORTING_MERGE)
-        || TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
-        || TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::IE_JOIN))
-        sorting_settings.validateMaxStreamsPerHierarchicalMerge();
+    sorting_settings.validateMaxStreamsPerHierarchicalMerge();
     sorting_settings.updatePlanSettings(settings);
 }
 
