@@ -8,6 +8,7 @@
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
@@ -28,6 +29,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/addTypeConversionToAST.h>
@@ -43,6 +45,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -116,6 +119,23 @@ extern const int UNKNOWN_TABLE;
 
 namespace
 {
+
+bool queryHasOrderBy(const SelectQueryInfo & query_info)
+{
+    if (query_info.query_tree)
+    {
+        if (const auto * query_node = query_info.query_tree->as<QueryNode>())
+            return query_node->hasOrderBy();
+    }
+
+    if (query_info.query)
+    {
+        if (const auto * select = query_info.query->as<ASTSelectQuery>())
+            return select->orderBy() != nullptr;
+    }
+
+    return false;
+}
 
 /// The storage a database enumerates is not always the storage a read must go through: a
 /// `MaterializedPostgreSQL` database exposes the physical nested `ReplacingMergeTree` tables to
@@ -602,6 +622,40 @@ ReadFromMerge::ReadFromMerge(
 {
 }
 
+/// True if the query has subquery sets (`IN (SELECT ...)`). A child plan is built and optimized
+/// while the *outer* plan is already being executed (`ReadFromMerge` materializes its children
+/// lazily), so by this point `addStepsToBuildSets` has already moved the source plan out of every
+/// `FutureSetFromSubquery`. A child fragment referencing such a consumed set then fails to
+/// serialize with the logical error `Cannot serialize FutureSetFromSubquery with no query plan`.
+static bool queryHasSubquerySets(const SelectQueryInfo & query_info)
+{
+    if (query_info.planner_context && query_info.planner_context->getPreparedSets().hasSubqueries())
+        return true;
+    if (query_info.prepared_sets && query_info.prepared_sets->hasSubqueries())
+        return true;
+    return false;
+}
+
+/// Optimization settings for a child plan of a `Merge` table.
+///
+/// Parallel replicas must stay disabled here. The outer plan has decided its own
+/// parallel-replicas strategy, and distributing the child read from here ships a fragment that
+/// (a) silently loses the filters pushed down into it, and (b) may reference a subquery set
+/// consumed by the outer plan (see `queryHasSubquerySets`).
+///
+/// `make_distributed_plan` stays enabled — distributing the child plans is supported (see
+/// 04367_distributed_plan_merge_scatter_multishard; the second, materializing run of the
+/// transforms in `ReadFromMerge::buildPipeline` is fenced by `planContainsLogicalExchange`) —
+/// unless the query has subquery sets, whose plans a child fragment cannot carry anymore.
+static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(const ContextPtr & context, const SelectQueryInfo & query_info)
+{
+    QueryPlanOptimizationSettings optimization_settings(context);
+    optimization_settings.enable_parallel_replicas = false;
+    if (queryHasSubquerySets(query_info))
+        optimization_settings.make_distributed_plan = false;
+    return optimization_settings;
+}
+
 void ReadFromMerge::addFilter(FilterDAGInfo filter)
 {
     output_header = std::make_shared<const Block>(FilterTransform::transformHeader(
@@ -627,7 +681,7 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
             child.plan.addStep(std::move(filter_step));
 
             /// Push down this newly added filter if possible
-            child.plan.optimize(QueryPlanOptimizationSettings(context));
+            child.plan.optimize(getChildPlanOptimizationSettings(context, query_info));
         }
     }
 
@@ -676,9 +730,35 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     // Using narrowPipe instead. But in case of reading in order of primary key, we cannot do it,
     // because narrowPipe doesn't preserve order. Also, if we are doing a memory efficient distributed agggregation, bucket
     // order must be preserved.
-    const bool should_not_narrow = query_info.input_order_info || (
-        context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
-        && common_processed_stage == QueryProcessingStage::Enum::WithMergeableState);
+    //
+    // Order must be preserved as well when the children were read at a stage where the query's `ORDER BY` has already
+    // run remotely: every child then sorts on its own (a `Distributed` child sorts on the shards), so the step on top
+    // of `ReadFromMerge` is `Sorting (Merge sorted streams ... for ORDER BY)`, which requires each input stream to be
+    // sorted. Narrowing would feed it unsorted streams, silently producing a wrongly ordered - and, together with
+    // `LIMIT`, incomplete - result.
+    //
+    // That happens at any stage above `WithMergeableState` (the remote side did the full `ORDER BY`), and at
+    // `WithMergeableState` only for queries without aggregation and window functions - the same conditions under
+    // which the remote part of a distributed query performs the preliminary sort (and the planner merges sorted
+    // streams instead of doing a full sort on the initiator). For example, a window function query over `Distributed`
+    // is processed only up to `WithMergeableState` with no remote sort, so narrowing remains allowed.
+    const bool children_produce_sorted_streams = queryHasOrderBy(query_info)
+        && (common_processed_stage > QueryProcessingStage::WithMergeableState
+            || (common_processed_stage > QueryProcessingStage::FetchColumns && !query_info.need_aggregate
+                && !query_info.has_window));
+
+    // Memory efficient distributed aggregation delivers two-level blocks bucket by bucket, and that bucket order must be
+    // preserved. It can only happen when the query aggregates: without aggregation there are no buckets at all, so the
+    // setting alone - it is enabled by default - must not keep every shard's stream alive. Otherwise the very fan-out
+    // this optimization guards against would come back for all the other queries stopping at `WithMergeableState`, such
+    // as the window function queries above.
+    const bool memory_efficient_aggregation = query_info.need_aggregate
+        && context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
+        && common_processed_stage == QueryProcessingStage::Enum::WithMergeableState;
+
+    const bool should_not_narrow = query_info.input_order_info
+        || children_produce_sorted_streams
+        || memory_efficient_aggregation;
     if (!should_not_narrow)
     {
         size_t tables_count = selected_tables.size();
@@ -784,6 +864,16 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
         try
         {
             auto modified_context = Context::createCopy(context);
+            /// See `getChildPlanOptimizationSettings`: a child plan must never use parallel
+            /// replicas. The setting is cleared in the context as well, because the
+            /// parallel-replicas conversion re-checks `canUseParallelReplicasOnInitiator` against
+            /// the context captured by the reading step, not only the optimization settings, and
+            /// nested interpreters (e.g. for a `View` child) derive their own settings from this
+            /// context. `make_distributed_plan` is cleared under the same condition as in
+            /// `getChildPlanOptimizationSettings`.
+            modified_context->setSetting("enable_parallel_replicas", Field(0));
+            if (queryHasSubquerySets(query_info))
+                modified_context->setSetting("make_distributed_plan", Field(0));
 
             size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
             size_t current_streams = std::min(current_need_streams, remaining_streams);
@@ -1027,7 +1117,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     child.plan.addStep(std::move(filter_step));
                 }
 
-                child.plan.optimize(QueryPlanOptimizationSettings(modified_context));
+                child.plan.optimize(getChildPlanOptimizationSettings(modified_context, query_info));
             }
 
             res.emplace_back(std::move(child));
@@ -1325,7 +1415,11 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     if (!child.plan.isInitialized())
         return nullptr;
 
-    QueryPlanOptimizationSettings optimization_settings(context);
+    /// `buildQueryPipeline` honors `make_distributed_plan` even with `optimize_plan = false`:
+    /// this is the run that materializes the logical exchanges inserted into the child plan when
+    /// it was optimized at creation. See `getChildPlanOptimizationSettings` for why a child plan
+    /// referencing a subquery set must not be distributed.
+    auto optimization_settings = getChildPlanOptimizationSettings(context, query_info);
     /// All optimizations will be done at plans creation
     optimization_settings.optimize_plan = false;
     auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
@@ -1462,7 +1556,16 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     auto storage_columns = storage_metadata_snapshot->getColumns();
     auto needed_columns = storage_columns.getAll();
 
-    ASTPtr expr = row_policy_filter_ptr->expression;
+    /// `RowPolicyFilter::expression` is the parsed policy condition owned by `RowPolicyCache`. That AST is
+    /// shared: every query of every user reading this table gets the same nodes, and a policy defined on a
+    /// whole database is shared by all its tables. `TreeRewriter` and `ExpressionAnalyzer` rewrite the AST
+    /// they are given in place - they normalize identifiers, substitute the results of scalar subqueries for
+    /// the subqueries themselves, and record `ASTLiteral::unique_column_name` - so they must be handed a
+    /// private copy. Analyzing the shared AST is both a data race against concurrent readers of the same
+    /// policy and a correctness bug: a scalar subquery such as `USING x <= (SELECT max(v) FROM limits)` gets
+    /// replaced by its value in the cache and is then frozen for the rest of the server's lifetime.
+    /// `generateFilterActions` in `InterpreterSelectQuery` clones for the same reason.
+    ASTPtr expr = row_policy_filter_ptr->expression->clone();
 
     auto syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
     auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
@@ -1927,13 +2030,13 @@ IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
     return column_sizes;
 }
 
-IStorage::ColumnSizeByName StorageMerge::getColumnSizes(const Names & columns) const
+IStorage::ColumnSizeByName StorageMerge::getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const
 {
     ColumnSizeByName column_sizes;
 
     forEachTable([&](const auto & table)
     {
-        for (const auto & [name, size] : table->getColumnSizes(columns))
+        for (const auto & [name, size] : table->getColumnSizes(columns, calculate_subcolumn_sizes))
             column_sizes[name].add(size);
     });
 
