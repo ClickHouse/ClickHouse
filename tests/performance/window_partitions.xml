@@ -23,6 +23,10 @@
          the row width and skipping it helps the most. -->
     <create_query>CREATE TABLE test_wide_{partitions} (a UInt64, b UInt64, c1 UInt64, c2 UInt64, c3 UInt64, c4 UInt64, c5 UInt64, c6 UInt64, s String) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % {partitions}</create_query>
 
+    <!-- Heavy string payload: the sort keys stay narrow while the scatter would copy the 100-byte
+         string of every row, so the scatter dominates the baseline and skipping it wins the most. -->
+    <create_query>CREATE TABLE test_str_{partitions} (a UInt64, b UInt64, s String) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % {partitions}</create_query>
+
     <!-- Skewed layout (90% of the rows in one partition): the cost heuristic must decline the
          optimization here, so this query pins the absence of a regression. -->
     <create_query>CREATE TABLE t_skew90_{partitions} (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY if(sipHash64(a) % 10 &lt; 9, 0, 1 + sipHash64(a) % 15)</create_query>
@@ -36,6 +40,9 @@
 
     <fill_query>INSERT INTO test_wide_{partitions} SELECT number % 100000, number, number * 2, number * 3, number * 5, number * 7, number * 11, number * 13, toString(number) FROM numbers_mt(30000000)</fill_query>
     <fill_query>OPTIMIZE TABLE test_wide_{partitions} FINAL</fill_query>
+
+    <fill_query>INSERT INTO test_str_{partitions} SELECT number % 100000, number, randomPrintableASCII(100) FROM numbers_mt(30000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_str_{partitions} FINAL</fill_query>
 
     <fill_query>INSERT INTO t_skew90_{partitions} SELECT number % 100000, number FROM numbers_mt(10000000)</fill_query>
     <fill_query>OPTIMIZE TABLE t_skew90_{partitions} FINAL</fill_query>
@@ -56,6 +63,11 @@
     <!-- every column of the table passes through the (skipped) scatter -->
     <query>SELECT *, sum(b) OVER (PARTITION BY a ORDER BY b) FROM test_wide_{partitions} FORMAT Null</query>
 
+    <!-- string payload rides through the (skipped) scatter; the variant without a window ORDER BY has
+         the cheapest sort and therefore the largest scatter share -->
+    <query>SELECT a, s, count(b) OVER (PARTITION BY a) FROM test_str_{partitions} FORMAT Null</query>
+    <query>SELECT a, s, sum(b) OVER (PARTITION BY a ORDER BY b) FROM test_str_{partitions} FORMAT Null</query>
+
     <query>SELECT a, sum(b) OVER (PARTITION BY a ORDER BY b) FROM t_skew90_{partitions} FORMAT Null</query>
 
     <!-- scatter-as-source: the second window's scatter is skipped without any table PARTITION BY -->
@@ -63,6 +75,7 @@
 
     <drop_query>DROP TABLE test_{partitions}</drop_query>
     <drop_query>DROP TABLE test_wide_{partitions}</drop_query>
+    <drop_query>DROP TABLE test_str_{partitions}</drop_query>
     <drop_query>DROP TABLE t_skew90_{partitions}</drop_query>
     <drop_query>DROP TABLE test_plain_{partitions}</drop_query>
 </test>
