@@ -16,6 +16,7 @@
 #include <Common/randomSeed.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
 #include <IO/WriteHelpers.h>
 
 #include <Interpreters/FileCache/FileCache.h>
@@ -2661,8 +2662,8 @@ TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
     FileCacheQueryLimit query_limit;
 
     const std::string query_id = "query_id_revive";
-    FilesystemCacheSettings cache_settings;
-    cache_settings.max_download_size_per_query = 1024;
+    ReadSettings cache_settings;
+    cache_settings.filesystem_cache_max_download_size = 1024;
 
     /// holder1 takes the context; query_map and holder1 both reference it (use_count == 2).
     auto context1 = query_limit.getOrSetQueryContext(query_id, cache_settings, cache_guard.writeLock());
@@ -2733,8 +2734,8 @@ TEST_F(FileCacheTest, QueryLimitConcurrentReleaseNoLeak)
     FileCacheQueryLimit query_limit;
 
     const std::string query_id = "query_id_concurrent_release";
-    FilesystemCacheSettings cache_settings;
-    cache_settings.max_download_size_per_query = 1024;
+    ReadSettings cache_settings;
+    cache_settings.filesystem_cache_max_download_size = 1024;
 
     /// Two holders take the same context; query_map + both holders reference it (use_count == 3).
     auto context1 = query_limit.getOrSetQueryContext(query_id, cache_settings, cache_guard.writeLock());
