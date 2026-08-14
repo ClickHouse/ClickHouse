@@ -2761,8 +2761,8 @@ Operator `[n]` provides the same functionality.
     )";
     FunctionDocumentation::Syntax syntax = "arrayElement(arr, n)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Array((U)Int*)`](/sql-reference/data-types/array)."}
+        {"arr", "The array to search. [`Array(T)`](/reference/data-types/array)."},
+        {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"When `n` is a scalar, returns the element of type `T`. When `n` is an array, returns `Array(Nullable(T))` if the index elements are nullable and `T` can be wrapped in `Nullable`, otherwise `Array(T)`.", {"Any", "Array(T)", "Array(Nullable(T))"}};
     FunctionDocumentation::Examples examples = {
