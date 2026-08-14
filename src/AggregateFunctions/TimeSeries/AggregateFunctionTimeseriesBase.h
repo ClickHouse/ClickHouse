@@ -11,6 +11,9 @@
 
 #include <base/sort.h>
 
+#include <libdivide-config.h>
+#include <libdivide.h>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
@@ -106,8 +109,8 @@ public:
         , odd_bucket_step(bucketStep(true, step, window_remainder, buckets_per_step, buckets_per_first_window))
         , first_bucket_end_time(firstBucketEndTimestamp(start_timestamp_, step, window_remainder, buckets_per_step, buckets_per_first_window))
         , first_bucket_is_clamped(firstBucketIsClamped(first_bucket_end_time, even_bucket_width))
-        , bucket_math_fits_int64(bucketMathFitsInt64(start_timestamp, end_timestamp, step, window))
-        , min_useful_timestamp(bucket_math_fits_int64 ? static_cast<Int64>(start_timestamp) - static_cast<Int64>(window) : 0)
+        , fast_bucket_math(canUseFastBucketMath(start_timestamp, end_timestamp, step, window))
+        , step_divider(static_cast<Int64>(step) > 0 ? static_cast<Int64>(step) : 1)
     {
     }
 
@@ -417,10 +420,10 @@ protected:
     const TimestampType first_bucket_end_time{};  /// End timestamp of bucket #0
     const bool first_bucket_is_clamped{};         /// Whether bucket #0's start is below the type minimum (only it can be)
 
-    /// With grid parameters bounded by 2^61 (every practical case) the per-sample arithmetic in
-    /// `bucketIndexForTimestampFast` provably fits in Int64, avoiding Int128 division per sample.
-    const bool bucket_math_fits_int64{};
-    const Int64 min_useful_timestamp{};     /// Samples at or below it are out of window for every grid point (fast path only)
+    /// For grid parameters bounded by 2^61 only.
+    const bool fast_bucket_math{};
+    /// Reciprocal of `step` for the fast path (`step` is fixed at construction).
+    const libdivide::divider<Int64> step_divider{1};
 
 private:
     /// `HashMap` relocates cells with `memcpy`, so it requires position-independent buckets: trivially
@@ -716,7 +719,7 @@ private:
     /// Whether all the arithmetic in `bucketIndexForTimestampFast` fits in Int64 for every sample
     /// that passes its range checks. Bounding all grid parameters by 2^61 leaves headroom for the
     /// sums and products of two such values.
-    static bool bucketMathFitsInt64(TimestampType start, TimestampType end, IntervalType step_, IntervalType window_)
+    static bool canUseFastBucketMath(TimestampType start, TimestampType end, IntervalType step_, IntervalType window_)
     {
         constexpr Int128 bound = Int128(1) << 61;
         const Int128 start_128 = static_cast<Int128>(static_cast<Int64>(start));
@@ -727,21 +730,23 @@ private:
             && (0 <= step_128 && step_128 < bound) && (0 <= window_128 && window_128 < bound);
     }
 
-    /// Same as `bucketIndexForTimestamp` with all arithmetic in Int64. Requires `bucket_math_fits_int64`.
+    /// Same as `bucketIndexForTimestamp` with all arithmetic in Int64. Requires `fast_bucket_math`.
     size_t ALWAYS_INLINE bucketIndexForTimestampFast(const TimestampType timestamp) const
     {
         const Int64 ts = static_cast<Int64>(timestamp);
-        if (ts > static_cast<Int64>(end_timestamp) || ts <= min_useful_timestamp)
+        /// Samples at or below `start - window` are out of window for every grid point.
+        if (ts > static_cast<Int64>(end_timestamp) || ts <= static_cast<Int64>(start_timestamp) - static_cast<Int64>(window))
             return NO_BUCKET;
 
         const Int64 offset = ts - static_cast<Int64>(start_timestamp);
         const Int64 step_64 = static_cast<Int64>(step);
 
+        /// `step == 0` is possible only when `start == end` (a single grid point, see checkStep).
         Int64 unclamped_grid_index = 0;
         if (step_64 > 0)
         {
-            unclamped_grid_index = offset / step_64;
-            if ((offset % step_64) > 0)
+            unclamped_grid_index = offset / step_divider;
+            if (offset - unclamped_grid_index * step_64 > 0)
                 ++unclamped_grid_index;
         }
 
@@ -768,7 +773,7 @@ private:
 
     size_t ALWAYS_INLINE bucketIndex(const TimestampType timestamp) const
     {
-        return bucket_math_fits_int64 ? bucketIndexForTimestampFast(timestamp) : bucketIndexForTimestamp(timestamp);
+        return fast_bucket_math ? bucketIndexForTimestampFast(timestamp) : bucketIndexForTimestamp(timestamp);
     }
 
     /// Returns a half-open range [first, last) of bucket indices that fall in a grid point's window. The range has
