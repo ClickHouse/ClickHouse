@@ -95,7 +95,7 @@ Every query issued by the UI then runs on that read-only compute. No configurati
 <Warning>
 **ClickStack state is scoped to the service**
 
-Dashboards, saved searches and alerts belong to the service ClickStack was launched from, and don't follow you to another service in the same warehouse - even though both services share the same data. Data sources are auto-detected on the new service, so search works straight away, but anything you saved on the previous service has to be recreated.
+Dashboards, saved searches, alerts and sources belong to the service ClickStack was launched from, and don't follow you to another service in the same warehouse - even though both services share the same data. Sources using the [default OpenTelemetry schema](/clickstack/deployment/managed#adding-data-sources) are auto-detected on the new service, so search over that data works straight away, but custom or manually configured sources - and everything else you saved - has to be recreated.
 
 Choose the service you want to run ClickStack from before building dashboards. If you're switching an established deployment, note that alerts created on the previous service keep evaluating there - on that service's compute - until you delete them.
 </Warning>
