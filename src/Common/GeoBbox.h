@@ -139,27 +139,25 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
     using namespace GeoBboxDetail;
     const auto type = field.getType();
 
-    /// Tuple with exactly two numeric elements — a single point, matching the `Point`
-    /// domain type's own (Float64, Float64) contract. A wider tuple is not a point: it's
-    /// opaque to bbox extraction (e.g. a `isSpatialPredicate()` WASM UDF could take a
-    /// constant `Tuple(Float64, Float64, Float64, Float64)` bbox/rect argument with entirely
-    /// different semantics). Silently reading just its first two elements as (x, y) would
-    /// derive a bogus, too-small bbox and wrongly prune granules the predicate can still
-    /// match on -- fail the extraction instead so pruning is disabled for it.
-    /// SQL integer literals produce Int64/UInt64 fields, so we coerce all numeric
-    /// field types to double rather than accepting only Float64.
+    /// A `Tuple` constant is opaque to bbox extraction, deliberately including the
+    /// two-element case that would otherwise look like a `Point` domain type's own
+    /// (Float64, Float64) contract: none of the three builtins that currently set
+    /// `isSpatialPredicate()` (`pointInPolygon`, `polygonsIntersectCartesian`,
+    /// `polygonsWithinCartesian`) accept a bare `Point` as a constant geometry argument --
+    /// each unconditionally rejects one with `ILLEGAL_TYPE_OF_ARGUMENT` at evaluation time,
+    /// including when it arrives via a `Geometry`/`Variant`-typed constant (e.g.
+    /// `polygonsIntersectCartesian(poly, readWKT('POINT(0 0)'))`) rather than a raw literal,
+    /// since a raw literal would already be caught by argument type-checking before ever
+    /// reaching this code. Trusting a bbox derived from such a point would let pruning
+    /// discard every granule and silently hide the exception the predicate is guaranteed to
+    /// raise once evaluated on real data -- so, like a wider tuple (e.g. a
+    /// `isSpatialPredicate()` WASM UDF's constant `Tuple(Float64, Float64, Float64, Float64)`
+    /// bbox/rect argument with entirely different semantics), fail the extraction instead so
+    /// pruning is disabled for it; a future predicate that genuinely wants a constant `Point`
+    /// argument to contribute a bbox needs its own dedicated, predicate-specific handling
+    /// rather than this generic, shape-only guess.
     if (type == Field::Types::Tuple)
-    {
-        const auto & tuple = field.safeGet<Tuple>();
-        if (tuple.size() == 2)
-        {
-            auto x = fieldToDouble(tuple[0]);
-            auto y = fieldToDouble(tuple[1]);
-            if (x.has_value() && y.has_value())
-                acc.add(*x, *y);
-        }
-        return acc.found;
-    }
+        return false;
 
     /// Array — recurse into each element.
     if (type == Field::Types::Array)
