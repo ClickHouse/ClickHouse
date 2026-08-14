@@ -1968,6 +1968,33 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             /// for local connections this callback checks the signal handler flag.
             connection->setCancelCallback([this]() { return query_interrupt_handler.cancelled(); });
 
+            /// A non-`LocalFormatError` from receiveResult() otherwise unwinds out of this scope
+            /// and disarms query_interrupt_handler before processParsedSingleQuery() performs its
+            /// outer resetOutput(). Keep the handler armed for that reset: it may still have to
+            /// flush a format footer through a slow terminal, pager, or `INTO OUTFILE ... AND
+            /// STDOUT` sink, and its cancellation hooks are what make that flush interruptible.
+            /// The normal EndOfStream path already calls resetOutput() itself.
+            auto receiveResultAndResetOutputOnException = [&]
+            {
+                try
+                {
+                    receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
+                }
+                catch (...)
+                {
+                    try
+                    {
+                        resetOutput();
+                    }
+                    catch (...)
+                    {
+                        /// Preserve the exception from receiveResult(). resetOutput() records
+                        /// its own output error in client_exception when appropriate.
+                    }
+                    throw;
+                }
+            };
+
             try
             {
                 /// A failure before this point is purely local and leaves the connection in
@@ -1997,11 +2024,16 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                     cleanupTempFile(parsed_query, out_file);
 
                 // We still want to attempt to process whatever we already received or can receive (socket receive buffer can be not empty)
-                receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
+                receiveResultAndResetOutputOnException();
+
+                /// receiveResult() can return without an EndOfStream when the connection has
+                /// already been torn down. Flush while the handler is still armed before
+                /// propagating the original network exception.
+                resetOutput();
                 throw;
             }
 
-            receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
+            receiveResultAndResetOutputOnException();
 
             /// The teardown flushes in resetOutput() honor a late Ctrl+C (discarding the rest of
             /// the pending output) and latch it into `cancelled` there, while the output can still
