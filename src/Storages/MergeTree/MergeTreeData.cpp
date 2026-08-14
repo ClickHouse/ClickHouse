@@ -916,12 +916,20 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     if (parts.empty())
         return {};
 
+    ConditionSelectivityEstimatorPtr cached;
+    if (local_context->getSettingsRef()[Setting::use_statistics_cache])
     {
         std::lock_guard<std::mutex> lock(stats_mutex);
-        if (local_context->getSettingsRef()[Setting::use_statistics_cache]
-            && cached_estimator)
-            return cached_estimator;
+        cached = cached_estimator;
     }
+
+    /// The cached estimator is built by refreshStatistics() over all active parts.
+    /// Return it only if the query reads exactly that part set; a query pruned by
+    /// partition/PK analysis must compose statistics over the surviving parts
+    /// (issue #110281). The estimator is immutable once published, so the comparison
+    /// can run outside the mutex.
+    if (cached && !cached->isStale(parts))
+        return cached;
 
     LOG_DEBUG(log, "Loading statistics");
     ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
@@ -5594,7 +5602,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                                     reset_setting);
             }
         }
-        else if (command.isRequireMutationStage(*storage_metadata_snapshot, local_context))
+        else if (const auto mutation_stage = command.getMutationStageDecision(*storage_metadata_snapshot, local_context);
+                 mutation_stage.requires_mutation)
         {
             /// This alter will override data on disk. Let's check that it doesn't
             /// modify immutable column.
@@ -5681,9 +5690,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         else if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type
             && old_metadata.getColumns().hasPhysical(command.column_name)
             && new_metadata.getColumns().hasPhysical(command.column_name)
-            && isLazyMetadataConversion(old_types.at(command.column_name), command.data_type.get(), local_context))
+            && !mutation_stage.lazy_settings.empty())
         {
-            /// A lazy metadata-only conversion (JSON type-hint change) has no mutation to rebuild
+            const auto lazy_settings_description = fmt::format(
+                "{} '{}'",
+                mutation_stage.lazy_settings.size() == 1 ? "setting" : "settings",
+                fmt::join(mutation_stage.lazy_settings, "', '"));
+
+            /// A lazy metadata-only conversion has no mutation to rebuild
             /// `primary.idx`, partition-key files or `skp_idx_*`, which are read positionally without
             /// per-part CAST. Reject it when it changes the on-disk type of a subcolumn used by a
             /// key/index/projection.
@@ -5752,11 +5766,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 throw Exception(
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                     "ALTER of column {} changes the on-disk type of a subcolumn used by the MATERIALIZED column '{}'; "
-                    "a metadata-only ALTER cannot recompute it. Disable setting "
-                    "'allow_experimental_json_lazy_type_hints' to run this change as a full mutation that "
+                    "a metadata-only ALTER cannot recompute it. Disable {} to run this change as a full mutation that "
                     "recomputes the column, or drop the column first",
                     backQuoteIfNeed(command.column_name),
-                    column.name);
+                    column.name,
+                    lazy_settings_description);
             }
 
             /// Skip index (explicit or implicit): a full mutation can rebuild it, so suggest disabling the setting.
@@ -5776,11 +5790,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 throw Exception(
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                     "ALTER of column {} changes the on-disk type of a subcolumn stored by the skip index '{}'; "
-                    "a metadata-only ALTER cannot rebuild the index. Disable setting "
-                    "'allow_experimental_json_lazy_type_hints' to run this change as a full mutation, "
+                    "a metadata-only ALTER cannot rebuild the index. Disable {} to run this change as a full mutation, "
                     "or drop the index first",
                     backQuoteIfNeed(command.column_name),
-                    old_index.name);
+                    old_index.name,
+                    lazy_settings_description);
             }
 
             /// A subcolumn can feed a projection's sort key (positionally persisted) or a filtered
@@ -10841,9 +10855,11 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (my_snapshot->getColumns().getAllPhysical().sizeOfDifference(src_snapshot->getColumns().getAllPhysical()))
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
 
+    /// The definitions are compared as text, so the text must not depend on whether the user has
+    /// written redundant parentheses: `PARTITION BY (a)` and `PARTITION BY a` are the same key.
     auto query_to_string = [] (const ASTPtr & ast)
     {
-        return ast ? ast->formatWithSecretsOneLine() : "";
+        return ast ? ast->formatIgnoringRedundantParentheses() : "";
     };
 
     if (query_to_string(my_snapshot->getSortingKeyAST()) != query_to_string(src_snapshot->getSortingKeyAST()))
@@ -10868,10 +10884,10 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
         std::unordered_set<std::string> my_query_strings;
         for (const auto & description : my_descriptions)
-            my_query_strings.insert(description.definition_ast->formatWithSecretsOneLine());
+            my_query_strings.insert(description.definition_ast->formatIgnoringRedundantParentheses());
 
         for (const auto & src_description : src_descriptions)
-            if (!my_query_strings.contains(src_description.definition_ast->formatWithSecretsOneLine()))
+            if (!my_query_strings.contains(src_description.definition_ast->formatIgnoringRedundantParentheses()))
                 return false;
 
         return true;
@@ -12682,7 +12698,9 @@ bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
     bool any_enriched = false;
     subscription_manager.executeOnEachSubscription([&](StreamSubscriptionPtr & subscription)
     {
-        any_enriched |= enrichSubscription(*subscription->as<MergeTreeBoundsSubscription>(), local_parts, promoters);
+        auto & bounds_subscription = *subscription->as<MergeTreeBoundsSubscription>();
+        any_enriched |= enrichSubscription(bounds_subscription, local_parts, promoters);
+        bounds_subscription.onEnrichmentRound();
     });
 
     if (any_enriched)
