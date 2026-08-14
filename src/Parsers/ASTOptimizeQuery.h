@@ -3,6 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <Common/SipHash.h>
 
 namespace Poco::JSON { class Object; }
 
@@ -65,6 +66,18 @@ public:
         cloneOutputOptions(*res);
 
         return res;
+    }
+
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override
+    {
+        /// `deduplicate_by_columns` is not a child, so without hashing it `OPTIMIZE TABLE t
+        /// DEDUPLICATE BY a` and `... DEDUPLICATE BY b` would hash the same. The remaining
+        /// non-child members (`final`, `deduplicate`, `cleanup`, `dry_run`, `manifest`) are part of
+        /// `getID`, which the default implementation hashes.
+        hash_state.update(deduplicate_by_columns != nullptr);
+        if (deduplicate_by_columns)
+            deduplicate_by_columns->updateTreeHash(hash_state, ignore_aliases);
+        ASTQueryWithTableAndOutput::updateTreeHashImpl(hash_state, ignore_aliases);
     }
 
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

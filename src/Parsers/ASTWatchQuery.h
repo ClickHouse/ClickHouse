@@ -12,6 +12,7 @@ See the License for the specific language governing permissions and
 limitations under the License. */
 
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 
 
@@ -44,6 +45,17 @@ public:
     }
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
+
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override
+    {
+        /// Neither `limit_length` nor `is_watch_events` is a child, so without hashing them
+        /// `WATCH t`, `WATCH t EVENTS` and `WATCH t LIMIT 5` would all hash the same.
+        hash_state.update(is_watch_events);
+        hash_state.update(limit_length != nullptr);
+        if (limit_length)
+            limit_length->updateTreeHash(hash_state, ignore_aliases);
+        ASTQueryWithTableAndOutput::updateTreeHashImpl(hash_state, ignore_aliases);
+    }
 
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
