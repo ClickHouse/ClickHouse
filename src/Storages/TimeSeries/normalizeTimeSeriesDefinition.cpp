@@ -45,7 +45,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsUInt64 uuid_type_version;
+    extern const SettingsUUIDTypeVersion uuid_type_version;
 }
 
 namespace TimeSeriesSetting

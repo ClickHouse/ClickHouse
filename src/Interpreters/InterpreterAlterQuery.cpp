@@ -64,7 +64,7 @@ namespace Setting
     extern const SettingsTimezone session_timezone;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 uuid_type_version;
+    extern const SettingsUUIDTypeVersion uuid_type_version;
 }
 
 namespace ServerSetting
