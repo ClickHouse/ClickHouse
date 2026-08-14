@@ -33,13 +33,22 @@ CLICKHOUSE_BIN="$TMP_PATH/clickhouse"
 # and drop every oracle result and attached log - the job's real FAIL/OK status
 # was written to a file Praktika never reads. `JOB_NAME` is not propagated into
 # the docker container, so read it from the serialized environment Praktika dumps.
-NORMALIZED_JOB_NAME=$(python3 -c '
+# The `name` INSIDE the file must be the job name as well: the workflow report is
+# updated via `Result.update_sub_result`, which matches this job's placeholder
+# entry by name and silently keeps the placeholder when nothing matches - which is
+# why this job showed up in the report with no status, no oracle rows and no logs,
+# and why the 2026-08-13 nightly stayed green while two oracles here had failed.
+JOB_META=$(python3 -c '
 import sys
 sys.path.insert(0, ".")
 from ci.praktika._environment import _Environment
 from ci.praktika.utils import Utils
-print(Utils.normalize_string(_Environment.get().JOB_NAME))
+name = _Environment.get().JOB_NAME
+print(name)
+print(Utils.normalize_string(name))
 ')
+JOB_NAME="$(printf '%s\n' "$JOB_META" | sed -n 1p)"
+NORMALIZED_JOB_NAME="$(printf '%s\n' "$JOB_META" | sed -n 2p)"
 RESULT_FILE="$TMP_PATH/result_${NORMALIZED_JOB_NAME}.json"
 
 mkdir -p "$OUTPUT_PATH"
@@ -188,7 +197,7 @@ fi
 
 {
     printf '{\n'
-    printf '  "name": "SQLancerPP",\n'
+    printf '  "name": "%s",\n' "$JOB_NAME"
     printf '  "status": "%s",\n' "$OVERALL_STATUS"
     printf '  "start_time": %d,\n' "$JOB_START_TIME"
     printf '  "duration": %d,\n' "$(( $(date +%s) - JOB_START_TIME ))"

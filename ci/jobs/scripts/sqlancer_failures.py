@@ -28,9 +28,9 @@ different bugs.
 Outputs:
   <out-dir>/<databaseN>.log     one reproducer per finding (gzipped above 10 MB)
   <out-dir>/analysis.txt        human-readable analysis, attached to the report
-  <out-dir>/subresults.json     report rows: one per family, with the individual
-                                findings nested underneath, as a JSON fragment
-                                (comma-separated objects, no enclosing brackets)
+  <out-dir>/subresults.json     report rows: one per distinct failure, with that
+                                failure's reproducer logs attached, as a JSON
+                                fragment (comma-separated objects, no brackets)
   stdout                        "<findings>\t<families>\t<one-line summary>"
 """
 
@@ -241,29 +241,25 @@ def main():
         for finding in findings:
             print(f"{finding['database']}\t{finding['kind']}\t{finding['oracle']}\t{finding['head']}", file=f)
 
+    # One flat row per distinct failure, with its reproducer logs attached.
+    # Deliberately NOT nested per finding: the workflow report keeps only failed
+    # *leaves* of a job result (`Result._flat_failed_leaves`), so a parent row
+    # would be replaced by its children and the deduplication - the whole point
+    # here - would disappear from the report.
     rows = []
     for members in ordered:
-        children = []
-        for member in members[: args.max_per_family]:
-            children.append(
-                {
-                    "name": member["database"],
-                    "status": "FAIL",
-                    "files": [member["file"]] if member["file"] else [],
-                    "info": member["head"],
-                }
-            )
+        files = [m["file"] for m in members[: args.max_per_family] if m["file"]]
         info = "; ".join(message_shapes(members, limit=2))
         info += f" | {len(members)} occurrence(s): {' '.join(m['database'] for m in members)}"
-        if len(members) > len(children):
-            info += f" (first {len(children)} logs attached)"
+        if len(members) > len(files):
+            info += f" ({len(files)} log(s) attached)"
         rows.append(
             {
                 "name": f"{family_title(members)} (x{len(members)})",
                 "status": "FAIL",
-                "files": [],
+                "files": files,
                 "info": info,
-                "results": children,
+                "results": [],
             }
         )
 

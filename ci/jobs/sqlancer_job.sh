@@ -20,8 +20,8 @@
 #                                  index (see ci/jobs/scripts/sqlancer_failures.py)
 #   failures/server-fatal.log      sanitizer report / `<Fatal>` server messages
 # The report gets one row per *distinct* failure ("TLPWhere / AssertionError at
-# ComparatorHelper.assumeResultSetsAreEqual:127 (x7)") with the individual
-# findings and their logs nested underneath, so a 5h run that hit the same bug
+# ComparatorHelper.assumeResultSetsAreEqual:127 (x7)") listing every occurrence
+# and carrying that failure's reproducer logs, so a 5h run that hit the same bug
 # 40 times reads as one row - not 40, and not one wall of interleaved
 # multi-threaded text.
 #
@@ -50,15 +50,23 @@ CLICKHOUSE_BIN="$TMP_PATH/clickhouse"
 
 # Praktika reads the job result from `./ci/tmp/result_<normalized_job_name>.json`,
 # where the normalization matches `Utils.normalize_string` in `ci/praktika/utils.py`.
-# `JOB_NAME` is not propagated into the docker container, so read it from the
-# serialized environment file that Praktika writes before invoking the job.
-NORMALIZED_JOB_NAME=$(python3 -c '
+# The `name` INSIDE that file must be the job name too: the workflow report is
+# updated with `Result.update_sub_result`, which matches the job's placeholder
+# entry by name, and silently keeps the placeholder when nothing matches - which
+# is why this job used to show up in the report with no status, no sub-results and
+# no attached logs at all. `JOB_NAME` is not propagated into the docker container,
+# so read it from the serialized environment file Praktika writes before the job.
+JOB_META=$(python3 -c '
 import sys
 sys.path.insert(0, ".")
 from ci.praktika._environment import _Environment
 from ci.praktika.utils import Utils
-print(Utils.normalize_string(_Environment.get().JOB_NAME))
+name = _Environment.get().JOB_NAME
+print(name)
+print(Utils.normalize_string(name))
 ')
+JOB_NAME="$(printf '%s\n' "$JOB_META" | sed -n 1p)"
+NORMALIZED_JOB_NAME="$(printf '%s\n' "$JOB_META" | sed -n 2p)"
 RESULT_FILE="$TMP_PATH/result_${NORMALIZED_JOB_NAME}.json"
 
 mkdir -p "$OUTPUT_PATH" "$FAILURES_PATH"
@@ -121,7 +129,7 @@ write_result() {
     elif [ "$status" = "OK" ]; then
         info=""
     elif [ "$status" = "FAIL" ]; then
-        info="SQLancer found something - see the per-finding rows below"
+        info="SQLancer found something - see the rows below"
     else
         info="Script terminated unexpectedly"
     fi
@@ -161,7 +169,7 @@ write_result() {
     local job_duration=$(( $(date +%s) - JOB_START_TIME ))
 
     printf '{\n' > "$RESULT_FILE"
-    printf '  "name": "SQLancer",\n' >> "$RESULT_FILE"
+    printf '  "name": "%s",\n' "$(json_escape "$JOB_NAME")" >> "$RESULT_FILE"
     printf '  "status": "%s",\n' "$status" >> "$RESULT_FILE"
     printf '  "start_time": %d,\n' "$JOB_START_TIME" >> "$RESULT_FILE"
     printf '  "duration": %d,\n' "$job_duration" >> "$RESULT_FILE"
