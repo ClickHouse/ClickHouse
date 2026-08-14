@@ -557,7 +557,6 @@ def test_merge_over_stale_packed_tmp_dir(started_cluster):
     node.exec_in_container(
         ["bash", "-c", f"cp -r {part_path} {stale_dir}"],
         privileged=True,
-        user="root",
     )
     stale_files = node.exec_in_container(
         ["bash", "-c", f"ls {stale_dir}"], privileged=True, user="root"
