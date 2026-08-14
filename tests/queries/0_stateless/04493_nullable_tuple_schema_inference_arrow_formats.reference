@@ -2,6 +2,9 @@
 -- unless the Nullable(Tuple) type is allowed by allow_experimental_nullable_tuple_type, because otherwise
 -- DESCRIBE would return a type that CREATE TABLE rejects. The struct null map is propagated
 -- into the tuple elements instead, as it worked before Nullable(Tuple) was supported.
+-- Dropping the struct null map turns a NULL row into a visible one, whose element values the Arrow spec
+-- leaves undefined; the Arrow readers therefore show the type defaults there (ORC, whose null map does
+-- reach the elements, shows NULLs) rather than whatever the producer left under the null slot.
 -- The Parquet queries with input_format_parquet_use_native_reader_v3 = 0 exercise the legacy
 -- Arrow-based Parquet reader in releases that still have it; in newer releases the setting is
 -- obsolete and they run on the native reader.
@@ -24,8 +27,8 @@ s	Tuple(\n    a Int64,\n    b String)
 n	Tuple(\n    x Int64,\n    t Tuple(\n        y Int64,\n        z String))					
 SELECT * FROM file(currentDatabase() || '_04493.arrow', 'Arrow') ORDER BY id;
 0	(0,'x')	(0,(0,'y'))
-1	(10,'x')	(100,(1000,'y'))
-2	(20,'x')	(200,(2000,'y'))
+1	(0,'')	(100,(1000,'y'))
+2	(20,'x')	(0,(0,''))
 CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.arrow', 'Arrow');
 SELECT count() FROM test_04493;
 3
@@ -37,8 +40,8 @@ s	Tuple(\n    a Int64,\n    b String)
 n	Tuple(\n    x Int64,\n    t Tuple(\n        y Int64,\n        z String))					
 SELECT * FROM file(currentDatabase() || '_04493.arrowstream', 'ArrowStream') ORDER BY id;
 0	(0,'x')	(0,(0,'y'))
-1	(10,'x')	(100,(1000,'y'))
-2	(20,'x')	(200,(2000,'y'))
+1	(0,'')	(100,(1000,'y'))
+2	(20,'x')	(0,(0,''))
 CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.arrowstream', 'ArrowStream');
 SELECT count() FROM test_04493;
 3
