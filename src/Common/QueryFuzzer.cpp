@@ -5215,7 +5215,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// AI function, so it is not grouped for name-swapping.
         {"aiSimilarity"},
         /// AI functions: text + a per-function arg (categories / instruction / target_language) + optional params map
-        {"aiClassify", "aiExtract", "aiTranslate", "aiFilter"},
+        {"aiClassify", "aiExtract", "aiTranslate", "aiFilter", "aiRedact"},
         /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
         {"greatCircleDistance", "geoDistance", "greatCircleAngle"},
         /// Geo coordinate projections (longitude, latitude[, zone/precision] → Tuple/String)
@@ -8013,9 +8013,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 create_user->add_identified_with = false;
             }
         }
-        if (create_user->global_valid_until)
-            fuzz(create_user->global_valid_until);
-        /// The authentication methods are registered as children.
+        /// The authentication methods and the global `VALID UNTIL` are registered as children
+        /// (see `ParserCreateUserQuery`), so fuzzing `children` covers them; fuzzing
+        /// `global_valid_until` separately would visit the same node twice and trip the
+        /// loop detector.
         fuzz(create_user->children);
     }
     else if (auto * create_role = typeid_cast<ASTCreateRoleQuery *>(ast.get()))

@@ -111,11 +111,11 @@ Config example:
 
 ```xml
 <clickhouse>
-  <query_rules_storage>
+  <rewrite_rules_storage>
     <type>local</type>
     <path>/query_rules/</path>
     <update_timeout_ms>1000</update_timeout_ms>
-  </query_rules_storage>
+  </rewrite_rules_storage>
 </clickhouse>
 ```
 

@@ -37,6 +37,11 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+namespace Setting
+{
+    extern const SettingsBool enable_materialized_cte;
+}
+
 namespace
 {
 constexpr UInt32 LOOKBACK_DELTA_SCALE = 9;
@@ -121,6 +126,16 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     /// apply them to). The context is private to this HTTP request, so clearing the setting does
     /// not affect anything else.
     getContext()->setSetting("query_rules", String{});
+
+    /// The generated SQL relies on `AS MATERIALIZED` to avoid evaluating subqueries referenced more than once
+    /// repeatedly (see SQLSubqueryType::MATERIALIZED_TABLE), and that mark has effect only with the setting
+    /// `enable_materialized_cte` enabled. Enable it unless the user set it explicitly.
+    if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
+        getContext()->setSetting("enable_materialized_cte", true);
+
+    /// `AS MATERIALIZED` is honored by the analyzer only, so the generated SQL always runs the analyzer.
+    getContext()->setSetting("allow_experimental_analyzer", true);
+
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
     try

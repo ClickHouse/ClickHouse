@@ -8,6 +8,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -63,6 +64,12 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 
         if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
             visitChildren(describe_query->table_expression);
+        else if (dynamic_cast<ASTCreateHandlerQuery *>(ast.get()))
+        {
+            /// The handler's query (the AS clause) is the parameterizable interface of the handler;
+            /// its placeholders are substituted at handler-invocation time and must be preserved at
+            /// create/alter time. There is nothing else in the statement that needs substitution.
+        }
         else if (auto * create_query = dynamic_cast<ASTCreateQuery *>(ast.get()))
         {
             if (create_query->isParameterizedView())

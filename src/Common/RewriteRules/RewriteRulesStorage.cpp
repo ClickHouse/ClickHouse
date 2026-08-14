@@ -43,7 +43,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static const std::string query_rules_storage_config_path = "query_rules_storage";
+static const std::string rewrite_rules_storage_config_path = "rewrite_rules_storage";
 
 namespace
 {
@@ -591,7 +591,7 @@ bool RewriteRulesStorage::waitUpdate()
     }
 
     const auto & config = Context::getGlobalContextInstance()->getConfigRef();
-    const size_t timeout = config.getUInt(query_rules_storage_config_path + ".update_timeout_ms", 5000);
+    const size_t timeout = config.getUInt(rewrite_rules_storage_config_path + ".update_timeout_ms", 5000);
 
     return impl_storage->waitUpdate(timeout);
 }
@@ -599,12 +599,12 @@ bool RewriteRulesStorage::waitUpdate()
 std::unique_ptr<RewriteRulesStorage> RewriteRulesStorage::create(const ContextPtr & context_)
 {
     const auto & config = context_->getConfigRef();
-    const auto storage_type = config.getString(query_rules_storage_config_path + ".type", "local");
+    const auto storage_type = config.getString(rewrite_rules_storage_config_path + ".type", "local");
 
     if (storage_type == "local")
     {
         const auto path = config.getString(
-            query_rules_storage_config_path + ".path",
+            rewrite_rules_storage_config_path + ".path",
             std::filesystem::path(context_->getPath()) / "query_rules");
 
         LOG_TRACE(getLogger("RewriteRulesStorage"),
@@ -616,7 +616,7 @@ std::unique_ptr<RewriteRulesStorage> RewriteRulesStorage::create(const ContextPt
             new RewriteRulesStorage(std::move(local_storage), context_));
     } else if (storage_type == "zookeeper" || storage_type == "keeper")
     {
-        const auto path = config.getString(query_rules_storage_config_path + ".path");
+        const auto path = config.getString(rewrite_rules_storage_config_path + ".path");
 
         LOG_TRACE(getLogger("RewriteRulesStorage"),
                   "Using zookeeper storage for named collections at path: {}", path);
