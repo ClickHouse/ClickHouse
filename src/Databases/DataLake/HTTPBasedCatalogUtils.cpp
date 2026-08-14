@@ -4,6 +4,7 @@
 #include <IO/ReadHelpers.h>
 #include <Core/Types.h>
 #include <Common/FailPoint.h>
+#include <Common/HTTPHeaderFilter.h>
 
 namespace DB::ErrorCodes
 {
@@ -19,6 +20,19 @@ namespace DB::FailPoints
 namespace DataLake
 {
 
+void validateBearerToken(const DB::ContextPtr & context, const std::string & bearer_token)
+{
+    /// `createWithBearerToken` turns a non-empty token into an `Authorization: Bearer <token>`
+    /// header. Validate that synthetic header the same way a user-supplied `auth_header` is
+    /// validated, so a token cannot inject additional headers (an embedded newline) or send an
+    /// `Authorization` header that `http_forbid_headers` forbids. An empty token sends no header.
+    if (bearer_token.empty())
+        return;
+
+    DB::HTTPHeaderEntries auth_header{{"Authorization", "Bearer " + bearer_token}};
+    context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(auth_header);
+}
+
 DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
     const std::string & endpoint,
     DB::ContextPtr context,
@@ -28,6 +42,8 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
     const std::string & method,
     std::function<void(std::ostream &)> out_stream_callaback)
 {
+    validateBearerToken(context, bearer_token);
+
     Poco::URI url(endpoint);
     if (!params.empty())
         url.setQueryParameters(params);

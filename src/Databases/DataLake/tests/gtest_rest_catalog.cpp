@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/Context.h>
@@ -606,6 +607,22 @@ TEST(RestCatalog, OneLakeRejectsMalformedBearerToken)
                 context);
         },
         DB::ErrorCodes::BAD_ARGUMENTS);
+}
+
+TEST(RestCatalog, ValidateBearerTokenRejectsMalformedHeader)
+{
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    /// Every bearer-token catalog path (Unity, and Paimon via HTTPBasedCatalogUtils) runs this
+    /// shared check before the token becomes an `Authorization: Bearer <token>` header, matching
+    /// the explicit validation OneLake performs. A token with an embedded CR/LF would otherwise
+    /// smuggle a second header into the request.
+    expectThrowsCode([&] { validateBearerToken(context, "token\r\nX-Injected: evil"); }, DB::ErrorCodes::BAD_ARGUMENTS);
+
+    /// A well-formed token is accepted; an empty token sends no header and is a no-op.
+    EXPECT_NO_THROW(validateBearerToken(context, "good-token"));
+    EXPECT_NO_THROW(validateBearerToken(context, ""));
 }
 
 TEST(RestCatalog, OneLakeRefreshTokenTransparentRenewal)

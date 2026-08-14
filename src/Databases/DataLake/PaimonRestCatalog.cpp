@@ -15,6 +15,7 @@
 #include <vector>
 #include <Core/Names.h>
 #include <Databases/DataLake/Common.h>
+#include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/DataLake/PaimonRestCatalog.h>
 #include <Databases/DataLake/StorageCredentials.h>
@@ -283,7 +284,7 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
         }
         DB::HTTPHeaderEntries request_headers(headers);
         const String bearer_token = createAuthHeaders(request_headers, endpoint, query_parameters_map, method);
-
+        validateBearerToken(context, bearer_token);
 
         DB::WriteBufferFromOwnString headers_string;
         headers_string << "{";
