@@ -266,7 +266,11 @@ std::pair<std::string, rapidjson::Value> convertMongoExtendedJSONWrapper(
     {
         /// A Mongo date is an instant in UTC: the legacy Extended JSON spells it as the number of
         /// milliseconds since the epoch and the canonical one wraps that in `$numberLong`. It is
-        /// written as text so that the way the server reads it does not depend on any setting.
+        /// written as ISO 8601 text with the `Z` designator, so that the instant it names does not
+        /// depend on any setting, nor on the time zone of whichever context parses it: a value of a
+        /// `JSON` column carries no declared type, so a text without the designator would be read
+        /// as a local time - and the context that parses it is the session for an insert and the
+        /// server for a mutation, which would make the two write different instants.
         std::optional<Int64> milliseconds;
         if (member.value.IsInt64())
             milliseconds = member.value.GetInt64();
@@ -282,7 +286,7 @@ std::pair<std::string, rapidjson::Value> convertMongoExtendedJSONWrapper(
         if (milliseconds)
         {
             WriteBufferFromOwnString formatted;
-            writeDateTimeText(DateTime64(*milliseconds), 3, formatted, DateLUT::instance("UTC"));
+            writeDateTimeTextISO(DateTime64(*milliseconds), 3, formatted, DateLUT::instance("UTC"));
             rapidjson::Value value;
             value.SetString(formatted.str().c_str(), static_cast<rapidjson::SizeType>(formatted.str().size()), allocator);
             return {"DateTime64(3, 'UTC')", std::move(value)};

@@ -7,6 +7,10 @@
 
 SET dialect='clickhouse';
 
+-- A date of a `JSON` value carries no declared time zone, so the text it reads back as is the one of
+-- the session. The instant is the same in every session, which is what the parity is about.
+SET session_timezone = 'UTC';
+
 DROP TABLE IF EXISTS wrapper_parity;
 CREATE TABLE wrapper_parity (id Int64, events Array(JSON)) ENGINE = MergeTree ORDER BY id;
 

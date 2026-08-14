@@ -165,6 +165,7 @@ The limitations of a collection of documents - the shape this endpoint creates -
 - `createIndexes` needs a column to index and a path of a document is not one, so an index over such a collection is an error.
 - A value that a projection or a pipeline computes is returned with the type its JSON carries - a number, a string, a boolean - rather than the type of the path it came from: only the documents that a `find` reads as they are stored keep their dates and their decimals.
 - The `mongo` dialect addresses the columns of a table, so a document collection cannot be queried through it yet; the wire protocol is the way to read one.
+- The `_id` column is the primary key of the table, and a `MergeTree` primary key is not unique: an `insert` of a document whose `_id` another document already has is accepted rather than answered with MongoDB's duplicate-key error. Two documents of one `insert` command that share an object id are refused, because that command writes them together. The object id is stored as text, so ids of different BSON types that are written the same way - the number `1` and the string `"1"`, an `ObjectId` and its hexadecimal digits - address one and the same document.
 
 The limitations that hold for either shape are:
 

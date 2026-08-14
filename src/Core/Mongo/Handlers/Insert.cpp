@@ -24,6 +24,7 @@
 
 #include <map>
 #include <optional>
+#include <unordered_set>
 #include <vector>
 
 namespace DB::ErrorCodes
@@ -312,6 +313,9 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
 
     WriteBufferFromOwnString data;
 
+    /// The object ids of this command, which addresses one document by each of them.
+    std::unordered_set<String> object_ids;
+
     for (const auto * doc : to_insert)
     {
         const auto & document = doc->getRapidJSONRepresentation();
@@ -321,6 +325,12 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
         {
             /// The document as it arrived, next to the object id that addresses it.
             auto object_id = extractObjectId(document);
+            if (!object_ids.insert(object_id).second)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The 'insert' command holds more than one document with the object id '{}', and an object id addresses one "
+                    "document",
+                    object_id);
             rapidjson::Value id;
             id.SetString(object_id.c_str(), static_cast<rapidjson::SizeType>(object_id.size()), allocator);
             row.AddMember(rapidjson::Value(rapidjson::StringRef(Mongo::OBJECT_ID_COLUMN.data(), Mongo::OBJECT_ID_COLUMN.size())), id, allocator);

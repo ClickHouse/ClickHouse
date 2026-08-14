@@ -25,11 +25,45 @@ namespace Mongo
 namespace
 {
 
-/** Whether the select reads a table rather than the documents another select produces. Only such a
-  * select reads the collection, and only there does a field name a path of a stored document: the
-  * fields of the documents a stage builds are the aliases of that stage.
+bool readsDocuments(const ASTSelectQuery & select);
+
+/// Whether the select list is the one asterisk that hands the stored document on unchanged, so that
+/// a field of a document is still a path of the `json` column of the rows the select produces.
+bool selectsEveryColumn(const ASTSelectQuery & select)
+{
+    const auto select_list = select.select();
+    return select_list && select_list->children.size() == 1 && select_list->children.front()->as<ASTAsterisk>();
+}
+
+/// Whether a query - the one inside a subquery - produces the stored documents themselves.
+bool producesDocuments(const ASTPtr & query)
+{
+    if (!query)
+        return false;
+
+    if (const auto * union_query = query->as<ASTSelectWithUnionQuery>())
+    {
+        if (!union_query->list_of_selects || union_query->list_of_selects->children.empty())
+            return false;
+        for (const auto & child : union_query->list_of_selects->children)
+            if (!producesDocuments(child))
+                return false;
+        return true;
+    }
+
+    const auto * select = query->as<ASTSelectQuery>();
+    return select && readsDocuments(*select) && selectsEveryColumn(*select);
+}
+
+/** Whether the select reads the stored documents rather than the ones another select builds. Only
+  * such a select reads the collection, and only there does a field name a path of a stored document:
+  * the fields of the documents a stage builds are the aliases of that stage.
+  *
+  * A stage of a pipeline reads what the stage before it produced, so a select over a subquery that
+  * hands the documents on unchanged - the `SELECT *` of a `$match`, of a `$sort`, of the branches a
+  * `$unionWith` reads - still names their fields.
   */
-bool readsATable(const ASTSelectQuery & select)
+bool readsDocuments(const ASTSelectQuery & select)
 {
     const auto tables = select.tables();
     if (!tables || tables->children.empty())
@@ -40,7 +74,15 @@ bool readsATable(const ASTSelectQuery & select)
         return false;
 
     const auto * table_expression = element->table_expression->as<ASTTableExpression>();
-    return table_expression && table_expression->database_and_table_name != nullptr;
+    if (!table_expression)
+        return false;
+    if (table_expression->database_and_table_name)
+        return true;
+
+    const auto * subquery = table_expression->subquery ? table_expression->subquery->as<ASTSubquery>() : nullptr;
+    if (!subquery || subquery->children.empty())
+        return false;
+    return producesDocuments(subquery->children.front());
 }
 
 /// The names the select list of a select binds. An identifier of one of them names that expression
@@ -306,7 +348,7 @@ void rewriteSelects(const ASTPtr & node)
     if (auto * select = node->as<ASTSelectQuery>())
     {
         preferAliasesToColumns(*select);
-        if (readsATable(*select))
+        if (readsDocuments(*select))
             rewriteSelect(*select);
     }
 
