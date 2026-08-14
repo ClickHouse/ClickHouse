@@ -327,9 +327,13 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             table->checkTableCanBeDropped(context_);
 
             TableExclusiveLockHolder table_excl_lock;
-            /// We don't need any lock for ReplicatedMergeTree and for simple MergeTree
+            TableLockHolder table_shared_lock;
+            /// MergeTree removes its data under its own locks, but the storage still must not be
+            /// dropped or moved to another database meanwhile, the same as for ALTER TABLE ... DROP PARTITION.
             /// For the rest of tables types exclusive lock is needed
-            if (!std::dynamic_pointer_cast<MergeTreeData>(table))
+            if (std::dynamic_pointer_cast<MergeTreeData>(table))
+                table_shared_lock = table->lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
+            else
                 table_excl_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context_, false);
