@@ -59,6 +59,8 @@ WITH (SELECT 2) AS idx SELECT 1 OR tupleElement((10, 20), assumeNotNull(idx));
 SELECT 'Test nested scalars in count subqueries fall back to normal analysis';
 SELECT 1 OR ((SELECT count() FROM numbers(assumeNotNull((SELECT 3)))) > 0);
 SELECT 1 OR ((SELECT count() FROM numbers(assumeNotNull((SELECT throwIf(1))))) > 0); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+WITH (SELECT 3) AS idx SELECT 1 OR ((SELECT count() FROM numbers(assumeNotNull(idx))) > 0);
+WITH (SELECT throwIf(1)) AS idx SELECT 1 OR ((SELECT count() FROM numbers(assumeNotNull(idx))) > 0); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 SELECT 'Test live prefix arguments are not skipped';
 SELECT (SELECT throwIf(1)) OR 1; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }

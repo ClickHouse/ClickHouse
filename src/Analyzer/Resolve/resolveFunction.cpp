@@ -743,6 +743,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             type_inference_scope.identifier_in_lookup_process.clear();
             type_inference_scope.clearIdentifierCache();
             type_inference_scope.disableIdentifierCachePermanently();
+            type_inference_scope.expression_argument_name_to_node.clear();
+            type_inference_scope.aliases = {};
+            type_inference_scope.global_with_aliases = {};
+            type_inference_scope.cte_name_to_query_node.clear();
             type_inference_scope.table_expression_data_for_alias_resolution = nullptr;
             type_inference_scope.join_using_columns.clear();
             type_inference_scope.table_expression_node_to_data.clear();
