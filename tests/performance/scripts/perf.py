@@ -24,7 +24,11 @@ from scipy import stats
 # strip_setting_from_query lives in a sibling module so it can be unit-tested
 # (perf.py executes its whole body on import). See
 # ci/tests/test_strip_setting_from_query.py.
-from perf_create_query_utils import is_mergetree_create_query, strip_setting_from_query
+from perf_create_query_utils import (
+    first_keyword,
+    is_mergetree_create_query,
+    strip_setting_from_query,
+)
 
 logging.basicConfig(
     format="%(asctime)s: %(levelname)s: %(module)s: %(message)s", level="WARNING"
@@ -406,29 +410,6 @@ def split_sql_statements(sql):
     if stmt:
         statements.append(stmt)
     return statements
-
-
-def first_keyword(sql):
-    """Return the first SQL keyword from a statement, skipping --, #, and /* */ comments."""
-    i = 0
-    while i < len(sql):
-        ch = sql[i]
-        next_ch = sql[i + 1] if i + 1 < len(sql) else ""
-        if ch in (" ", "\t", "\n", "\r"):
-            i += 1
-        elif (ch == "-" and next_ch == "-") or ch == "#":
-            nl = sql.find("\n", i)
-            i = nl + 1 if nl != -1 else len(sql)
-        elif ch == "/" and next_ch == "*":
-            end = sql.find("*/", i + 2)
-            i = end + 2 if end != -1 else len(sql)
-        else:
-            # Found start of a token → read until whitespace or special chars
-            j = i
-            while j < len(sql) and sql[j] not in (" ", "\t", "\n", "\r", "(", ";"):
-                j += 1
-            return sql[i:j].upper()
-    return ""
 
 
 def execute_query_group(connection, q_list, query_id, settings):

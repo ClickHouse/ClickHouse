@@ -14,6 +14,7 @@ sys.path.insert(
 
 from perf_create_query_utils import (  # noqa: E402
     create_query_engine,
+    first_keyword,
     is_mergetree_create_query,
     strip_setting_from_query,
 )
@@ -610,3 +611,49 @@ def test_non_mergetree_fixture_is_not_rewritten_by_the_scanner():
     # `UNKNOWN_SETTING` on such a fixture.
     query = f"CREATE TABLE t (a UInt64) ENGINE = Memory SETTINGS {SETTING} = 0"
     assert not is_mergetree_create_query(query)
+
+
+# `first_keyword` routes an external `<query file=...>` statement to setup,
+# teardown, or the timed workload in `perf.py`, and also gates the baseline
+# `UNKNOWN_SETTING` retry on the statement really being a `CREATE`. It used to
+# carry its own reduced comment grammar (no `//`, no nested `/* */`, and `#`
+# unconditionally a comment), so a DDL introduced by such a comment was
+# reported as `//` / `STILL` and silently benchmarked instead of created, or
+# had its baseline retry suppressed. It now shares `comment_end` with every
+# other scanner here.
+FIRST_KEYWORD_CASES = [
+    ("plain", "CREATE TABLE t (a UInt64) ENGINE = Memory", "CREATE"),
+    ("leading_whitespace", "\n\t  SELECT 1", "SELECT"),
+    ("dash_comment", "-- note\nCREATE TABLE t (a UInt64) ENGINE = Memory", "CREATE"),
+    ("slash_line_comment", "// note\nCREATE TABLE t (a UInt64) ENGINE = Memory", "CREATE"),
+    ("mysql_comment", "# note\nDROP TABLE t", "DROP"),
+    ("shebang_comment", "#!note\nDROP TABLE t", "DROP"),
+    # A bare `#foo` is an error token in `src/Parsers/Lexer.cpp`, not a
+    # comment, so it must be reported as-is and fail fast downstream.
+    ("bare_hash_is_not_a_comment", "#tag\nCREATE TABLE t (a UInt64) ENGINE = Memory", "#TAG"),
+    ("block_comment", "/* note */ TRUNCATE TABLE t", "TRUNCATE"),
+    (
+        "nested_block_comment",
+        "/* outer /* inner */ still outer */ CREATE TABLE t (a UInt64) ENGINE = Memory",
+        "CREATE",
+    ),
+    (
+        "several_comments",
+        "-- one\n// two\n/* three /* four */ */\nALTER TABLE t MODIFY SETTING x = 1",
+        "ALTER",
+    ),
+    ("unterminated_block_comment", "/* note CREATE TABLE t", ""),
+    ("comment_only", "-- note", ""),
+    ("empty", "", ""),
+    ("keyword_ends_at_paren", "CREATE(", "CREATE"),
+    ("keyword_ends_at_semicolon", "DROP;", "DROP"),
+]
+
+
+@pytest.mark.parametrize(
+    "sql,expected",
+    [(q, e) for _, q, e in FIRST_KEYWORD_CASES],
+    ids=[name for name, _, _ in FIRST_KEYWORD_CASES],
+)
+def test_first_keyword(sql, expected):
+    assert first_keyword(sql) == expected

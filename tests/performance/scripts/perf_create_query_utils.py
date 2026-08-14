@@ -81,6 +81,23 @@ def skip_whitespace_and_comments(text, pos):
     return pos
 
 
+def first_keyword(sql):
+    """Return the first SQL keyword of a statement, in upper case, or `""`.
+
+    Leading whitespace and comments are skipped with the same grammar as
+    every other scanner here (see `comment_end`), so a statement introduced
+    by `--`, `//`, `#!`, or a nested `/* ... */` comment still reports its
+    real leading verb. A bare `#foo` is not a comment (`Lexer.cpp` treats it
+    as an error token), so it is reported as the keyword and the caller
+    fails fast on it.
+    """
+    pos = skip_whitespace_and_comments(sql, 0)
+    end = pos
+    while end < len(sql) and sql[end] not in (" ", "\t", "\n", "\r", "(", ";"):
+        end += 1
+    return sql[pos:end].upper()
+
+
 def create_query_engine(query):
     """Return the engine name of a `CREATE TABLE`, or `None` when there is none.
 
