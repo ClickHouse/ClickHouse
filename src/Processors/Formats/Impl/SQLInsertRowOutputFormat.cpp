@@ -184,12 +184,12 @@ void registerOutputFormatSQLInsert(FormatFactory & factory)
 
     factory.setContentType("SQLInsert", "text/plain; charset=UTF-8");
 
-    /// `output_format_sql_insert_table_name` and the column names (when
-    /// `output_format_sql_insert_include_column_names` is enabled) are written verbatim, so a table or
-    /// column name that is not valid UTF-8 makes the output non-textual. Quoted identifiers can contain
-    /// arbitrary bytes, so a column name is not guaranteed to be valid UTF-8 either. Both are knowable
-    /// before any row is written (from the settings and the header), so they are detected here and the
-    /// text framings reject or base64-encode the output accordingly.
+    /// `output_format_sql_insert_table_name`, column names, and (with
+    /// `output_format_sql_insert_include_table_schema`) data type names are written verbatim, so a value
+    /// that is not valid UTF-8 makes the output non-textual. Quoted identifiers and names of `Enum`
+    /// elements can contain arbitrary bytes. All are knowable before any row is written (from the
+    /// settings and the header), so they are detected here and the text framings reject or base64-encode
+    /// the output accordingly.
     factory.registerOutputFormatMayProduceRawBytesChecker("SQLInsert", [](const FormatSettings & settings, const Block & header)
     {
         auto is_not_valid_utf8 = [](const std::string & s)
@@ -206,6 +206,13 @@ void registerOutputFormatSQLInsert(FormatFactory & factory)
         {
             for (const auto & column_name : header.getNames())
                 if (is_not_valid_utf8(column_name))
+                    return true;
+        }
+
+        if (settings.sql_insert.include_table_schema)
+        {
+            for (const auto & type : header.getDataTypes())
+                if (is_not_valid_utf8(type->getName()))
                     return true;
         }
 
