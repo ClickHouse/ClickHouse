@@ -27,4 +27,20 @@ WHERE database = currentDatabase() AND table = 'uk_s3_rw' AND active;
 
 SELECT id, v FROM uk_s3_rw ORDER BY id;
 
+-- ALTER MODIFY SETTING disk: migrate an existing UNIQUE KEY table to S3.
+CREATE TABLE uk_s3_rw (id UInt64, v String)
+ENGINE = MergeTree
+UNIQUE KEY (id)
+ORDER BY (id)
+SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
+
+INSERT INTO uk_s3_rw VALUES (10, 'a'), (20, 'b'), (30, 'c');
+
+ALTER TABLE uk_s3_rw MODIFY SETTING disk = 's3_disk';
+
+SELECT count() FROM system.parts
+WHERE database = currentDatabase() AND table = 'uk_s3_rw' AND active;
+
+SELECT id, v FROM uk_s3_rw ORDER BY id;
+
 DROP TABLE uk_s3_rw;
