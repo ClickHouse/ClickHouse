@@ -95,6 +95,10 @@ public:
 
     void checkInsertIsAllowed(ContextPtr context) const override { getNested()->checkInsertIsAllowed(context); }
 
+    /// `prepareForDrop` is deliberately NOT forwarded alongside this: it runs on the query thread, so
+    /// resolving the nested storage there would turn a resolution failure into a failed `DROP TABLE`,
+    /// while `drop` resolves it in the background where the failure is only logged. The proxies that
+    /// can forward it without resolving (`StorageTableProxy`, `StorageTableFunctionProxy`) do so.
     void drop() override { getNested()->drop(); }
 
     void truncate(

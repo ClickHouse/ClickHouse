@@ -17,8 +17,10 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/MutationCommands.h>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 
 #include <Storages/IPartitionStrategy.h>
 namespace DB
@@ -91,6 +93,8 @@ public:
         TableExclusiveLockHolder &) override;
 
     void drop() override;
+
+    void prepareForDrop(ContextPtr query_context) override;
 
     bool supportsPartitionBy() const override { return true; }
 
@@ -253,6 +257,13 @@ protected:
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID storage_id;
     BackgroundJobsAssignee background_operations_assignee;
+
+    /// `data_lake_delete_data_on_drop` as it was set for the `DROP TABLE` query, captured by
+    /// `prepareForDrop` because `drop` runs without a query context. Stays empty when the drop does
+    /// not come from a `DROP TABLE` query (the rollback of a failed `CREATE`, or a lazily loaded
+    /// table that is only materialized inside `drop`); `drop` then falls back to the server-level
+    /// value, which is what this code read before the query-level capture existed.
+    std::atomic<std::optional<bool>> delete_data_on_drop;
 };
 
 }

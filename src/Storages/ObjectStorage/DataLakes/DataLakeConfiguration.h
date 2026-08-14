@@ -333,10 +333,10 @@ public:
         return current_metadata->getColumnMapperForCurrentSchema(storage_metadata_snapshot, context);
     }
 
-    void drop(ContextPtr local_context) override
+    void drop(bool delete_data) override
     {
         if (current_metadata)
-            current_metadata->drop(local_context);
+            current_metadata->drop(delete_data);
     }
 
     SinkToStoragePtr write(

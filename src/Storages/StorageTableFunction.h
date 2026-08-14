@@ -86,6 +86,13 @@ public:
             nested->drop();
     }
 
+    void prepareForDrop(ContextPtr query_context) override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            nested->prepareForDrop(query_context);
+    }
+
     /// File-like table functions rebuild the nested storage from the current external schema and
     /// ignore the columns cached at DDL time, while `read()` below hands PREWHERE to the nested
     /// storage and only converts types afterwards. `StorageProxy`'s forward is by name, so it
