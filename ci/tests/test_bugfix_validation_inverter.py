@@ -28,21 +28,31 @@ directly (not through `main`'s build-type loop, which swaps binaries and reads
 real server logs), so they guard the reconciliation logic itself rather than
 the caller wiring.
 
-See ClickHouse/ClickHouse#105789, #103541 and #110158.
+The last group covers `attach_post_verdict_artifacts`, which runs AFTER the
+inverter: the COLLECT_LOGS stage appends artifact-collection rows, and
+`extend_sub_results` re-derives the parent status from its children, so a failed
+log dump used to overwrite the validation verdict and block the PR.
+
+See ClickHouse/ClickHouse#105789, #103541, #110158 and #113397.
 """
 
+import ast
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.jobs.functional_tests import (
+    attach_post_verdict_artifacts,
     invert_bugfix_validation_status,
     reconcile_bugfix_crash_repro,
 )
 from ci.praktika.result import Result
+
+JOBS_DIR = Path(__file__).resolve().parent.parent / "jobs"
 
 
 def _make_leaf(name, status, info=""):
@@ -367,6 +377,189 @@ def test_reconcile_ok_run_with_blocker_fatal_still_flips_to_fail():
     assert ok_row.status == Result.Status.OK
     # The BLOCKER fatal makes the aggregate FAIL.
     assert bt_result.status == Result.Status.FAIL
+
+
+# ---------------------------------------------------------------------------
+# attach_post_verdict_artifacts (#113397): the COLLECT_LOGS stage appends
+# artifact-collection rows after the inverter has decided the verdict, and
+# `extend_sub_results` re-derives the parent status from its children. On
+# #113397 the PR's own bug hung `DROP TABLE ... SYNC`, `clickhouse stop` timed
+# out, the still-running server held its status-file lock and every
+# `clickhouse local` system-table dump failed - so a single "Scraping system
+# tables" FAIL row overwrote an `OK` verdict on both arches, and
+# `any_bugfix_validation_passed` (strict `is_success`) blocked a PR whose bug
+# had in fact been validated twice.
+# ---------------------------------------------------------------------------
+
+
+def _make_artifact_row(name="Scraping system tables"):
+    """A post-verdict artifact-collection row, as appended by the COLLECT_LOGS
+    stage from `ClickHouseProc.extra_tests_results` (clickhouse_proc.py)."""
+    return Result(
+        name=name,
+        status=Result.Status.FAIL,
+        info="Failed to dump system table: query_log",
+    )
+
+
+def test_artifact_row_cannot_unvalidate_a_reproduced_bug():
+    """#113397: a reproduction must survive a failed artifact dump.
+
+    `is_success` (not `is_ok`) is asserted because that is what
+    `any_bugfix_validation_passed` in `new_tests_check.py` uses to decide
+    whether any arch validated the bug.
+    """
+    leaf = _make_leaf("04700_regression_test", Result.Status.FAIL)
+    outer = _make_outer(Result.Status.FAIL, [leaf])
+
+    assert invert_bugfix_validation_status(outer) is False
+    assert outer.is_success()
+
+    attach_post_verdict_artifacts(outer, [_make_artifact_row()], preserve_verdict=True)
+
+    assert outer.status == Result.Status.OK
+    assert outer.is_success()
+    # The diagnostic row is still in the report.
+    assert [r.name for r in outer.results][-1] == "Scraping system tables"
+    assert outer.results[-1].status == Result.Status.FAIL
+
+
+def test_artifact_row_does_not_redden_a_no_repro_job():
+    """A no-repro arch reports SKIPPED so it exits 0 without counting as a
+    validation. A failed artifact dump must not turn it into a red job, nor
+    into a validation.
+    """
+    leaf = _make_leaf("04700_regression_test", Result.Status.OK)
+    outer = _make_outer(Result.Status.OK, [leaf])
+
+    assert invert_bugfix_validation_status(outer) is True
+    assert outer.status == Result.Status.SKIPPED
+
+    attach_post_verdict_artifacts(outer, [_make_artifact_row()], preserve_verdict=True)
+
+    assert outer.status == Result.Status.SKIPPED
+    assert outer.is_ok()
+    assert not outer.is_success()
+
+
+def test_artifact_row_does_not_downgrade_an_inconclusive_error():
+    """#105789 contract: an inconclusive run keeps `ERROR`. Downgrading it to
+    `FAIL` would report a verdict where the inverter deliberately reported
+    none.
+    """
+    outer = _make_outer(
+        Result.Status.ERROR,
+        results=[],
+        info="The test runner was terminated unexpectedly",
+    )
+
+    invert_bugfix_validation_status(outer)
+    assert outer.status == Result.Status.ERROR
+
+    attach_post_verdict_artifacts(outer, [_make_artifact_row()], preserve_verdict=True)
+
+    assert outer.status == Result.Status.ERROR
+
+
+def test_artifact_row_still_reddens_an_ordinary_functional_job():
+    """The negative control. On a job with no inversion a failed artifact dump
+    is a genuine failure of that job and must keep reddening it: that is real
+    signal on ordinary functional runs and is not suppressed here.
+    """
+    outer = _make_outer(
+        Result.Status.OK, [_make_leaf("04700_regression_test", Result.Status.OK)]
+    )
+
+    attach_post_verdict_artifacts(outer, [_make_artifact_row()], preserve_verdict=False)
+
+    assert outer.status == Result.Status.FAIL
+    assert not outer.is_ok()
+
+
+def test_artifact_rows_must_not_be_routed_through_the_inverter():
+    """Executable record of why the fix pins the consumer, not the producer.
+
+    Labelling the artifact row `LOG_CHECK` (or moving the append before the
+    inverter) looks like the smaller change, but a FAIL row reaching the
+    inverter is flipped to `OK` and counted as a reproduction - a broken log
+    dump would become evidence the bug was validated. The label only protects
+    a row that is already `OK`.
+    """
+    labelled_fail = _make_log_check("Scraping system tables", Result.Status.FAIL)
+    outer_labelled = _make_outer(Result.Status.FAIL, [labelled_fail])
+    assert invert_bugfix_validation_status(outer_labelled) is False
+    assert labelled_fail.status == Result.Status.OK
+    assert outer_labelled.is_success()
+
+    plain_fail = _make_leaf("Scraping system tables", Result.Status.FAIL)
+    outer_plain = _make_outer(Result.Status.FAIL, [plain_fail])
+    assert invert_bugfix_validation_status(outer_plain) is False
+    # Identical to the labelled arm: the label buys nothing for a FAIL row.
+    assert plain_fail.status == outer_labelled.results[0].status
+    assert outer_plain.status == outer_labelled.status
+
+    labelled_ok = _make_log_check("Scraping system tables", Result.Status.OK)
+    outer_ok = _make_outer(Result.Status.OK, [labelled_ok])
+    assert invert_bugfix_validation_status(outer_ok) is True
+    # The only case the label serves: a clean row is left alone.
+    assert labelled_ok.status == Result.Status.OK
+
+
+def test_collect_logs_append_preserves_the_bugfix_verdict():
+    """Pin the call site: the append must go through the helper, guarded by the
+    bugfix-validation label, and must stay after the inverter.
+
+    Asserted from the source because reaching this line at runtime needs a
+    server and a real log dump. Mirrors
+    `test_collect_logs_gate_sees_the_pre_inversion_verdict`
+    (`test_collect_core_dumps.py`), which pins the neighbouring read.
+    """
+    source = (JOBS_DIR / "functional_tests.py").read_text()
+    tree = ast.parse(source)
+    main = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "main"
+    )
+
+    def calls_to(name):
+        return [
+            node
+            for node in ast.walk(main)
+            if isinstance(node, ast.Call)
+            and (
+                (isinstance(node.func, ast.Name) and node.func.id == name)
+                or (isinstance(node.func, ast.Attribute) and node.func.attr == name)
+            )
+        ]
+
+    # The artifact rows are attached through the helper, not by a bare
+    # `extend_sub_results` that would re-derive the verdict.
+    attaches = calls_to("attach_post_verdict_artifacts")
+    assert len(attaches) == 1, [node.lineno for node in attaches]
+    guard = next(
+        (kw for kw in attaches[0].keywords if kw.arg == "preserve_verdict"), None
+    )
+    assert guard is not None and ast.get_source_segment(source, guard.value) == (
+        "is_labeled_bugfix_validation"
+    ), ast.get_source_segment(source, attaches[0])
+
+    # And it runs after the inversion, so the verdict it preserves is final.
+    inversions = calls_to("invert_bugfix_validation_status")
+    assert len(inversions) == 1
+    assert inversions[0].lineno < attaches[0].lineno, (
+        inversions[0].lineno,
+        attaches[0].lineno,
+    )
+
+    # And no bare `extend_sub_results` may consume the artifact rows: that call
+    # is what re-derives the parent status from them.
+    for node in calls_to("extend_sub_results"):
+        args = [ast.get_source_segment(source, arg) for arg in node.args]
+        assert not any("extra_tests_results" in (arg or "") for arg in args), (
+            node.lineno,
+            args,
+        )
 
 
 if __name__ == "__main__":
