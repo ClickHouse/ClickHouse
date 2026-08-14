@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/useDataParallelAggregation.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/KeyDescription.h>
 
 using namespace DB;
@@ -83,7 +84,7 @@ namespace DB::QueryPlanOptimizations
 /// 2. To find col1, ..., coln we apply removeInjectiveFunctionsFromResultsRecursively to the key actions.
 /// 3. We match partition key actions with the key actions to find col1', ..., coln' in partition key actions.
 /// 4. We check that partition key is indeed a deterministic function of col1', ..., coln'.
-bool isPartitionKeyFunctionOfKeys(const KeyDescription & partition_key, const ActionsDAG & key_actions, const Names & key_names)
+bool isPartitionKeyFunctionOfKeys(const ActionsDAG & partition_actions, const Names & partition_key_columns, const ActionsDAG & key_actions, const Names & key_names)
 {
     if (key_actions.hasArrayJoin() || key_actions.hasStatefulFunctions() || key_actions.hasNonDeterministic())
         return false;
@@ -93,8 +94,6 @@ bool isPartitionKeyFunctionOfKeys(const KeyDescription & partition_key, const Ac
     auto key_dag = ActionsDAG::cloneSubDAG(key_nodes, /*remove_aliases=*/true);
 
     const auto & key_required_columns = key_dag.getRequiredColumnsNames();
-
-    const auto & partition_actions = partition_key.expression->getActionsDAG();
 
     /// Check that PK columns is a subset of key columns.
     for (const auto & col : partition_actions.getRequiredColumnsNames())
@@ -109,9 +108,15 @@ bool isPartitionKeyFunctionOfKeys(const KeyDescription & partition_key, const Ac
     /// For example, if `PARTITION BY toYYYYMM(date)`, then `getOutputs() = [toYYYYMM(date), date]`. The `date` column is a source
     /// column but not a key value, and should be excluded from checks. We need to find the actual partition key output
     /// nodes to check that they depend only on the allowed set of nodes (`irreducible_nodes`).
-    const auto partition_key_outputs = partition_actions.findInOutputs(partition_key.column_names);
+    const auto partition_key_outputs = partition_actions.findInOutputs(partition_key_columns);
 
     return allOutputsDependsOnlyOnAllowedNodes(partition_key_outputs, irreducible_nodes, matches);
+}
+
+bool isPartitionKeyFunctionOfKeys(const KeyDescription & partition_key, const ActionsDAG & key_actions, const Names & key_names)
+{
+    return isPartitionKeyFunctionOfKeys(
+        partition_key.expression->getActionsDAG(), partition_key.column_names, key_actions, key_names);
 }
 
 void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & /*optimization_settings*/)
@@ -219,6 +224,43 @@ void optimizeDistinctPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, co
         && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, distinct_step->getColumnNames()))
     {
         reading->requestOutputEachPartitionThroughSeparatePortForDistinct();
+    }
+}
+
+void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & /*optimization_settings*/)
+{
+    if (node.children.size() != 1)
+        return;
+
+    auto * sorting_step = typeid_cast<SortingStep *>(node.step.get());
+    if (!sorting_step)
+        return;
+
+    /// Trigger only on a window-function sorting: a full sort that scatters the input by the hash of the
+    /// window `PARTITION BY` columns. A merge-join sorting may also scatter by the sort key
+    /// (`convertToScatteredFullSort`), but there both join sides must be sharded by the same hash, so it
+    /// must be left alone. This pass runs after `optimizeReadInOrder`, which may have converted the
+    /// sorting to `FinishSorting` (see `query_plan_reuse_storage_ordering_for_window_functions`); such a
+    /// sorting merges to a single stream and is not matched here.
+    if (sorting_step->getType() != SortingStep::Type::Full || !sorting_step->hasPartitions()
+        || sorting_step->isSortingForMergeJoin())
+        return;
+
+    auto * reading = findReadingStep(*node.children.front());
+    if (!reading)
+        return;
+
+    const Names key_names = sorting_step->getPartitionByColumnNames();
+
+    std::optional<ActionsDAG> dag;
+    buildKeyDAG(*node.children.front(), dag);
+    if (!dag)
+        return;
+
+    if (!reading->willOutputEachPartitionThroughSeparatePort()
+        && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, key_names))
+    {
+        reading->requestOutputEachPartitionThroughSeparatePortForWindow();
     }
 }
 }

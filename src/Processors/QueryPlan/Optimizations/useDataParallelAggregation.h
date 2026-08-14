@@ -31,6 +31,13 @@ namespace QueryPlanOptimizations
 /// Shared by the per-partition request passes (`optimize*PerPartition`) and `applyStreamDisjointness`.
 bool isPartitionKeyFunctionOfKeys(const KeyDescription & partition_key, const ActionsDAG & key_actions, const Names & key_names);
 
+/// Generalized form: the partitioning expression is given directly as a DAG and the names of its result
+/// columns. Besides table partition keys, this covers other stream-partitioning schemes, e.g. the hash
+/// scatter by the window `PARTITION BY` columns (where the partitioning expression is the identity over
+/// those columns).
+bool isPartitionKeyFunctionOfKeys(
+    const ActionsDAG & partition_actions, const Names & partition_key_columns, const ActionsDAG & key_actions, const Names & key_names);
+
 }
 
 }
