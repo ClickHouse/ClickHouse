@@ -130,7 +130,7 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
 
 export const IntegrationsBanner = () => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const href = '/integrations/home';
+    const href = '/ar/integrations/home';
     return (
         <a
             className="ch-hero-card ch-integrations-banner flex items-center justify-between gap-4 p-4 rounded-lg no-underline bg-[#f9f9f9] border border-[#e5e7eb] text-inherit"
@@ -325,13 +325,13 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "ما هو ClickHouse؟", href: "/get-started/about/intro" },
-        { label: "التثبيت", href: "/get-started/setup/cloud" },
-        { label: "الدلائل السريعة", href: "/get-started/quickstarts/home" },
-        { label: "مفاهيم ClickHouse", href: "/concepts/core-concepts/index" },
-        { label: "مجموعات بيانات نموذجية", href: "/get-started/sample-datasets/index" },
-        { label: "أدلة الترحيل", href: "/get-started/migrate/overview" },
-        { label: "أفضل الممارسات", href: "/concepts/best-practices/index" },
+        { label: "ما هو ClickHouse؟", href: "/ar/get-started/about/intro" },
+        { label: "التثبيت", href: "/ar/get-started/setup/cloud" },
+        { label: "الدلائل السريعة", href: "/ar/get-started/quickstarts/home" },
+        { label: "مفاهيم ClickHouse", href: "/ar/concepts/core-concepts/index" },
+        { label: "مجموعات بيانات نموذجية", href: "/ar/get-started/sample-datasets/index" },
+        { label: "أدلة الترحيل", href: "/ar/get-started/migrate/overview" },
+        { label: "أفضل الممارسات", href: "/ar/concepts/best-practices/index" },
     ]}
         />
 
@@ -346,10 +346,10 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "نمذجة البيانات", href: "/guides/clickhouse/data-modelling/schema-design" },
-        { label: "تحسين الأداء", href: "/guides/clickhouse/performance-and-monitoring/query-optimization" },
-        { label: "ClickHouse Cloud", href: "/products/cloud/guides" },
-        { label: "حالات الاستخدام", href: "/guides/use-cases" }
+        { label: "نمذجة البيانات", href: "/ar/guides/clickhouse/data-modelling/schema-design" },
+        { label: "تحسين الأداء", href: "/ar/guides/clickhouse/performance-and-monitoring/query-optimization" },
+        { label: "ClickHouse Cloud", href: "/ar/products/cloud/guides" },
+        { label: "حالات الاستخدام", href: "/ar/guides/use-cases" }
     ]}
         />
 
@@ -364,13 +364,13 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "مرجع SQL", href: "/reference/statements" },
-        { label: "الإعدادات", href: "/reference/settings/index" },
-        { label: "الدوال", href: "/reference/functions/regular-functions/overview" },
-        { label: "المحركات", href: "/reference/engines/engines" },
-        { label: "جداول النظام", href: "/reference/system-tables/overview" },
-        { label: "التنسيقات", href: "/reference/formats/index" },
-        { label: "أنواع البيانات", href: "/reference/data-types/index" }
+        { label: "مرجع SQL", href: "/ar/reference/statements" },
+        { label: "الإعدادات", href: "/ar/reference/settings/index" },
+        { label: "الدوال", href: "/ar/reference/functions/regular-functions/overview" },
+        { label: "المحركات", href: "/ar/reference/engines/engines" },
+        { label: "جداول النظام", href: "/ar/reference/system-tables/overview" },
+        { label: "التنسيقات", href: "/ar/reference/formats/index" },
+        { label: "أنواع البيانات", href: "/ar/reference/data-types/index" }
     ]}
         />
 
@@ -385,12 +385,12 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "ClickHouse Cloud", href: "/products/cloud/getting-started/cloud-get-started" },
-        { label: "ClickStack", href: "/clickstack" },
-        { label: "ClickHouse Managed Postgres", href: "/products/managed-postgres/overview" },
+        { label: "ClickHouse Cloud", href: "/ar/products/cloud/getting-started/cloud-get-started" },
+        { label: "ClickStack", href: "/ar/clickstack" },
+        { label: "ClickHouse Managed Postgres", href: "/ar/products/managed-postgres/overview" },
         { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
-        { label: "chDB", href: "/chdb" },
-        { label: "مشغّل Kubernetes", href: "/products/kubernetes-operator/overview" },
+        { label: "chDB", href: "/ar/chdb" },
+        { label: "مشغّل Kubernetes", href: "/ar/products/kubernetes-operator/overview" },
     ]}
         />
       </div>
@@ -436,11 +436,11 @@ export const PageWrapper = ({ children }) => {
               <p className="text-[#111827] dark:text-zinc-200 mt-5 text-sm">ما الذي ستتعلّمه:</p>
           </>}
               links={[
-              { label: "1. كيفية استيعاب البيانات من المصادر الشائعة بأقل جهد", href: "/integrations/home" },
-              { label: "2. أفضل الممارسات لتنظيم البيانات لأغراض analytics والنمو", href: "/guides/clickhouse/data-modelling/schema-design" },
-              { label: "3. طرق query على datasets كبيرة في الوقت الفعلي", href: "/get-started/use-cases/real-time-analytics" },
-              { label: "4. كيفية بناء dashboards وتنبيهات وfeatures قائمة على الأحداث فوقها", href: "/get-started/use-cases/data-warehousing" },
-              { label: "5. نصائح للحفاظ على انخفاض التكاليف مع بقاء الأداء مرتفعًا", href: "/concepts/best-practices/index" },
+              { label: "1. كيفية استيعاب البيانات من المصادر الشائعة بأقل جهد", href: "/ar/integrations/home" },
+              { label: "2. أفضل الممارسات لتنظيم البيانات لأغراض analytics والنمو", href: "/ar/guides/clickhouse/data-modelling/schema-design" },
+              { label: "3. طرق query على datasets كبيرة في الوقت الفعلي", href: "/ar/get-started/use-cases/real-time-analytics" },
+              { label: "4. كيفية بناء dashboards وتنبيهات وfeatures قائمة على الأحداث فوقها", href: "/ar/get-started/use-cases/data-warehousing" },
+              { label: "5. نصائح للحفاظ على انخفاض التكاليف مع بقاء الأداء مرتفعًا", href: "/ar/concepts/best-practices/index" },
           ]}
             />
           </div>

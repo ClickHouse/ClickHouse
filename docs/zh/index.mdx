@@ -130,7 +130,7 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
 
 export const IntegrationsBanner = () => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const href = '/integrations/home';
+    const href = '/zh/integrations/home';
     return (
         <a
             className="ch-hero-card ch-integrations-banner flex items-center justify-between gap-4 p-4 rounded-lg no-underline bg-[#f9f9f9] border border-[#e5e7eb] text-inherit"
@@ -325,13 +325,13 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "什么是 ClickHouse？", href: "/get-started/about/intro" },
-        { label: "安装", href: "/get-started/setup/cloud" },
-        { label: "快速入门", href: "/get-started/quickstarts/home" },
-        { label: "ClickHouse 概念", href: "/concepts/core-concepts/index" },
-        { label: "样本数据集", href: "/get-started/sample-datasets/index" },
-        { label: "迁移指南", href: "/get-started/migrate/overview" },
-        { label: "最佳实践", href: "/concepts/best-practices/index" },
+        { label: "什么是 ClickHouse？", href: "/zh/get-started/about/intro" },
+        { label: "安装", href: "/zh/get-started/setup/cloud" },
+        { label: "快速入门", href: "/zh/get-started/quickstarts/home" },
+        { label: "ClickHouse 概念", href: "/zh/concepts/core-concepts/index" },
+        { label: "样本数据集", href: "/zh/get-started/sample-datasets/index" },
+        { label: "迁移指南", href: "/zh/get-started/migrate/overview" },
+        { label: "最佳实践", href: "/zh/concepts/best-practices/index" },
     ]}
         />
 
@@ -346,10 +346,10 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "数据建模", href: "/guides/clickhouse/data-modelling/schema-design" },
-        { label: "性能优化", href: "/guides/clickhouse/performance-and-monitoring/query-optimization" },
-        { label: "ClickHouse Cloud", href: "/products/cloud/guides" },
-        { label: "使用场景", href: "/guides/use-cases" }
+        { label: "数据建模", href: "/zh/guides/clickhouse/data-modelling/schema-design" },
+        { label: "性能优化", href: "/zh/guides/clickhouse/performance-and-monitoring/query-optimization" },
+        { label: "ClickHouse Cloud", href: "/zh/products/cloud/guides" },
+        { label: "使用场景", href: "/zh/guides/use-cases" }
     ]}
         />
 
@@ -364,13 +364,13 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "SQL 参考", href: "/reference/statements" },
-        { label: "设置", href: "/reference/settings/index" },
-        { label: "函数", href: "/reference/functions/regular-functions/overview" },
-        { label: "引擎", href: "/reference/engines/engines" },
-        { label: "系统表", href: "/reference/system-tables/overview" },
-        { label: "格式", href: "/reference/formats/index" },
-        { label: "数据类型", href: "/reference/data-types/index" }
+        { label: "SQL 参考", href: "/zh/reference/statements" },
+        { label: "设置", href: "/zh/reference/settings/index" },
+        { label: "函数", href: "/zh/reference/functions/regular-functions/overview" },
+        { label: "引擎", href: "/zh/reference/engines/engines" },
+        { label: "系统表", href: "/zh/reference/system-tables/overview" },
+        { label: "格式", href: "/zh/reference/formats/index" },
+        { label: "数据类型", href: "/zh/reference/data-types/index" }
     ]}
         />
 
@@ -385,12 +385,12 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "ClickHouse Cloud", href: "/products/cloud/getting-started/cloud-get-started" },
-        { label: "ClickStack", href: "/clickstack" },
-        { label: "ClickHouse Managed Postgres", href: "/products/managed-postgres/overview" },
+        { label: "ClickHouse Cloud", href: "/zh/products/cloud/getting-started/cloud-get-started" },
+        { label: "ClickStack", href: "/zh/clickstack" },
+        { label: "ClickHouse Managed Postgres", href: "/zh/products/managed-postgres/overview" },
         { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
-        { label: "chDB", href: "/chdb" },
-        { label: "Kubernetes Operator", href: "/products/kubernetes-operator/overview" },
+        { label: "chDB", href: "/zh/chdb" },
+        { label: "Kubernetes Operator", href: "/zh/products/kubernetes-operator/overview" },
     ]}
         />
       </div>
@@ -436,11 +436,11 @@ export const PageWrapper = ({ children }) => {
               <p className="text-[#111827] dark:text-zinc-200 mt-5 text-sm">你将了解：</p>
           </>}
               links={[
-              { label: "1. 如何以最低成本从常见来源摄取数据", href: "/integrations/home" },
-              { label: "2. 面向分析和增长场景组织数据的最佳实践", href: "/guides/clickhouse/data-modelling/schema-design" },
-              { label: "3. 实时查询大型数据集的方法", href: "/get-started/use-cases/real-time-analytics" },
-              { label: "4. 如何在此基础上构建仪表盘、告警和事件驱动功能", href: "/get-started/use-cases/data-warehousing" },
-              { label: "5. 在保持高性能的同时降低成本的技巧", href: "/concepts/best-practices/index" },
+              { label: "1. 如何以最低成本从常见来源摄取数据", href: "/zh/integrations/home" },
+              { label: "2. 面向分析和增长场景组织数据的最佳实践", href: "/zh/guides/clickhouse/data-modelling/schema-design" },
+              { label: "3. 实时查询大型数据集的方法", href: "/zh/get-started/use-cases/real-time-analytics" },
+              { label: "4. 如何在此基础上构建仪表盘、告警和事件驱动功能", href: "/zh/get-started/use-cases/data-warehousing" },
+              { label: "5. 在保持高性能的同时降低成本的技巧", href: "/zh/concepts/best-practices/index" },
           ]}
             />
           </div>

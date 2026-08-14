@@ -130,7 +130,7 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
 
 export const IntegrationsBanner = () => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const href = '/integrations/home';
+    const href = '/ko/integrations/home';
     return (
         <a
             className="ch-hero-card ch-integrations-banner flex items-center justify-between gap-4 p-4 rounded-lg no-underline bg-[#f9f9f9] border border-[#e5e7eb] text-inherit"
@@ -325,13 +325,13 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "ClickHouse란?", href: "/get-started/about/intro" },
-        { label: "설치", href: "/get-started/setup/cloud" },
-        { label: "빠른 시작", href: "/get-started/quickstarts/home" },
-        { label: "ClickHouse 개념", href: "/concepts/core-concepts/index" },
-        { label: "샘플 데이터셋", href: "/get-started/sample-datasets/index" },
-        { label: "마이그레이션 가이드", href: "/get-started/migrate/overview" },
-        { label: "모범 사례", href: "/concepts/best-practices/index" },
+        { label: "ClickHouse란?", href: "/ko/get-started/about/intro" },
+        { label: "설치", href: "/ko/get-started/setup/cloud" },
+        { label: "빠른 시작", href: "/ko/get-started/quickstarts/home" },
+        { label: "ClickHouse 개념", href: "/ko/concepts/core-concepts/index" },
+        { label: "샘플 데이터셋", href: "/ko/get-started/sample-datasets/index" },
+        { label: "마이그레이션 가이드", href: "/ko/get-started/migrate/overview" },
+        { label: "모범 사례", href: "/ko/concepts/best-practices/index" },
     ]}
         />
 
@@ -346,10 +346,10 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "데이터 모델링", href: "/guides/clickhouse/data-modelling/schema-design" },
-        { label: "성능 최적화", href: "/guides/clickhouse/performance-and-monitoring/query-optimization" },
-        { label: "ClickHouse Cloud", href: "/products/cloud/guides" },
-        { label: "사용 사례", href: "/guides/use-cases" }
+        { label: "데이터 모델링", href: "/ko/guides/clickhouse/data-modelling/schema-design" },
+        { label: "성능 최적화", href: "/ko/guides/clickhouse/performance-and-monitoring/query-optimization" },
+        { label: "ClickHouse Cloud", href: "/ko/products/cloud/guides" },
+        { label: "사용 사례", href: "/ko/guides/use-cases" }
     ]}
         />
 
@@ -364,13 +364,13 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "SQL 레퍼런스", href: "/reference/statements" },
-        { label: "설정", href: "/reference/settings/index" },
-        { label: "함수", href: "/reference/functions/regular-functions/overview" },
-        { label: "엔진", href: "/reference/engines/engines" },
-        { label: "시스템 테이블", href: "/reference/system-tables/overview" },
-        { label: "포맷", href: "/reference/formats/index" },
-        { label: "데이터 타입", href: "/reference/data-types/index" }
+        { label: "SQL 레퍼런스", href: "/ko/reference/statements" },
+        { label: "설정", href: "/ko/reference/settings/index" },
+        { label: "함수", href: "/ko/reference/functions/regular-functions/overview" },
+        { label: "엔진", href: "/ko/reference/engines/engines" },
+        { label: "시스템 테이블", href: "/ko/reference/system-tables/overview" },
+        { label: "포맷", href: "/ko/reference/formats/index" },
+        { label: "데이터 타입", href: "/ko/reference/data-types/index" }
     ]}
         />
 
@@ -385,12 +385,12 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "ClickHouse Cloud", href: "/products/cloud/getting-started/cloud-get-started" },
-        { label: "ClickStack", href: "/clickstack" },
-        { label: "ClickHouse Managed Postgres", href: "/products/managed-postgres/overview" },
+        { label: "ClickHouse Cloud", href: "/ko/products/cloud/getting-started/cloud-get-started" },
+        { label: "ClickStack", href: "/ko/clickstack" },
+        { label: "ClickHouse Managed Postgres", href: "/ko/products/managed-postgres/overview" },
         { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
-        { label: "chDB", href: "/chdb" },
-        { label: "Kubernetes Operator", href: "/products/kubernetes-operator/overview" },
+        { label: "chDB", href: "/ko/chdb" },
+        { label: "Kubernetes Operator", href: "/ko/products/kubernetes-operator/overview" },
     ]}
         />
       </div>
@@ -436,11 +436,11 @@ export const PageWrapper = ({ children }) => {
               <p className="text-[#111827] dark:text-zinc-200 mt-5 text-sm">학습할 내용:</p>
           </>}
               links={[
-              { label: "1. 일반적인 데이터 소스에서 최소한의 작업으로 데이터를 수집하는 방법", href: "/integrations/home" },
-              { label: "2. analytics와 확장성을 위해 데이터를 구성하는 모범 사례", href: "/guides/clickhouse/data-modelling/schema-design" },
-              { label: "3. 대규모 데이터셋을 실시간으로 쿼리하는 방법", href: "/get-started/use-cases/real-time-analytics" },
-              { label: "4. 그 위에 대시보드, 알림, 이벤트 기반 기능을 구축하는 방법", href: "/get-started/use-cases/data-warehousing" },
-              { label: "5. 높은 성능을 유지하면서 비용을 낮추는 팁", href: "/concepts/best-practices/index" },
+              { label: "1. 일반적인 데이터 소스에서 최소한의 작업으로 데이터를 수집하는 방법", href: "/ko/integrations/home" },
+              { label: "2. analytics와 확장성을 위해 데이터를 구성하는 모범 사례", href: "/ko/guides/clickhouse/data-modelling/schema-design" },
+              { label: "3. 대규모 데이터셋을 실시간으로 쿼리하는 방법", href: "/ko/get-started/use-cases/real-time-analytics" },
+              { label: "4. 그 위에 대시보드, 알림, 이벤트 기반 기능을 구축하는 방법", href: "/ko/get-started/use-cases/data-warehousing" },
+              { label: "5. 높은 성능을 유지하면서 비용을 낮추는 팁", href: "/ko/concepts/best-practices/index" },
           ]}
             />
           </div>

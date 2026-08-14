@@ -130,7 +130,7 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
 
 export const IntegrationsBanner = () => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const href = '/integrations/home';
+    const href = '/ru/integrations/home';
     return (
         <a
             className="ch-hero-card ch-integrations-banner flex items-center justify-between gap-4 p-4 rounded-lg no-underline bg-[#f9f9f9] border border-[#e5e7eb] text-inherit"
@@ -325,13 +325,13 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "Что такое ClickHouse?", href: "/get-started/about/intro" },
-        { label: "Установка", href: "/get-started/setup/cloud" },
-        { label: "Быстрый старт", href: "/get-started/quickstarts/home" },
-        { label: "Концепции ClickHouse", href: "/concepts/core-concepts/index" },
-        { label: "Примеры датасетов", href: "/get-started/sample-datasets/index" },
-        { label: "Руководства по миграции", href: "/get-started/migrate/overview" },
-        { label: "Рекомендации", href: "/concepts/best-practices/index" },
+        { label: "Что такое ClickHouse?", href: "/ru/get-started/about/intro" },
+        { label: "Установка", href: "/ru/get-started/setup/cloud" },
+        { label: "Быстрый старт", href: "/ru/get-started/quickstarts/home" },
+        { label: "Концепции ClickHouse", href: "/ru/concepts/core-concepts/index" },
+        { label: "Примеры датасетов", href: "/ru/get-started/sample-datasets/index" },
+        { label: "Руководства по миграции", href: "/ru/get-started/migrate/overview" },
+        { label: "Рекомендации", href: "/ru/concepts/best-practices/index" },
     ]}
         />
 
@@ -346,10 +346,10 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "Моделирование данных", href: "/guides/clickhouse/data-modelling/schema-design" },
-        { label: "Оптимизация производительности", href: "/guides/clickhouse/performance-and-monitoring/query-optimization" },
-        { label: "ClickHouse Cloud", href: "/products/cloud/guides" },
-        { label: "Сценарии применения", href: "/guides/use-cases" }
+        { label: "Моделирование данных", href: "/ru/guides/clickhouse/data-modelling/schema-design" },
+        { label: "Оптимизация производительности", href: "/ru/guides/clickhouse/performance-and-monitoring/query-optimization" },
+        { label: "ClickHouse Cloud", href: "/ru/products/cloud/guides" },
+        { label: "Сценарии применения", href: "/ru/guides/use-cases" }
     ]}
         />
 
@@ -364,13 +364,13 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "Справочник по ClickHouse SQL", href: "/reference/statements" },
-        { label: "Настройки", href: "/reference/settings/index" },
-        { label: "Функции", href: "/reference/functions/regular-functions/overview" },
-        { label: "Движки", href: "/reference/engines/engines" },
-        { label: "Системные таблицы", href: "/reference/system-tables/overview" },
-        { label: "Форматы", href: "/reference/formats/index" },
-        { label: "Типы данных", href: "/reference/data-types/index" }
+        { label: "Справочник по ClickHouse SQL", href: "/ru/reference/statements" },
+        { label: "Настройки", href: "/ru/reference/settings/index" },
+        { label: "Функции", href: "/ru/reference/functions/regular-functions/overview" },
+        { label: "Движки", href: "/ru/reference/engines/engines" },
+        { label: "Системные таблицы", href: "/ru/reference/system-tables/overview" },
+        { label: "Форматы", href: "/ru/reference/formats/index" },
+        { label: "Типы данных", href: "/ru/reference/data-types/index" }
     ]}
         />
 
@@ -385,12 +385,12 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "ClickHouse Cloud", href: "/products/cloud/getting-started/cloud-get-started" },
-        { label: "ClickStack", href: "/clickstack" },
-        { label: "ClickHouse Managed Postgres", href: "/products/managed-postgres/overview" },
+        { label: "ClickHouse Cloud", href: "/ru/products/cloud/getting-started/cloud-get-started" },
+        { label: "ClickStack", href: "/ru/clickstack" },
+        { label: "ClickHouse Managed Postgres", href: "/ru/products/managed-postgres/overview" },
         { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
-        { label: "chDB", href: "/chdb" },
-        { label: "Оператор Kubernetes", href: "/products/kubernetes-operator/overview" },
+        { label: "chDB", href: "/ru/chdb" },
+        { label: "Оператор Kubernetes", href: "/ru/products/kubernetes-operator/overview" },
     ]}
         />
       </div>
@@ -436,11 +436,11 @@ export const PageWrapper = ({ children }) => {
               <p className="text-[#111827] dark:text-zinc-200 mt-5 text-sm">Что вы узнаете:</p>
           </>}
               links={[
-              { label: "1. Как организовать приём данных из распространённых источников с минимальными усилиями", href: "/integrations/home" },
-              { label: "2. Лучшие практики организации данных для аналитики и роста", href: "/guides/clickhouse/data-modelling/schema-design" },
-              { label: "3. Способы выполнять запросы к большим датасетам в реальном времени", href: "/get-started/use-cases/real-time-analytics" },
-              { label: "4. Как создавать панели мониторинга, оповещения и событийно-ориентированные возможности на этой платформе", href: "/get-started/use-cases/data-warehousing" },
-              { label: "5. Как снижать затраты без ущерба для производительности", href: "/concepts/best-practices/index" },
+              { label: "1. Как организовать приём данных из распространённых источников с минимальными усилиями", href: "/ru/integrations/home" },
+              { label: "2. Лучшие практики организации данных для аналитики и роста", href: "/ru/guides/clickhouse/data-modelling/schema-design" },
+              { label: "3. Способы выполнять запросы к большим датасетам в реальном времени", href: "/ru/get-started/use-cases/real-time-analytics" },
+              { label: "4. Как создавать панели мониторинга, оповещения и событийно-ориентированные возможности на этой платформе", href: "/ru/get-started/use-cases/data-warehousing" },
+              { label: "5. Как снижать затраты без ущерба для производительности", href: "/ru/concepts/best-practices/index" },
           ]}
             />
           </div>

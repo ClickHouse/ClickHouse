@@ -130,7 +130,7 @@ export const KBExplorer = ({ index, featured = [] }) => {
       const article = data.articles.find((a) => a.id === f.id)
       return {
         id: f.id,
-        href: (article && article.href) || `/resources/support-center/knowledge-base/${f.id}`,
+        href: (article && article.href) || `/ja/resources/support-center/knowledge-base/${f.id}`,
         title: (article && article.title) || ""
       }
     })

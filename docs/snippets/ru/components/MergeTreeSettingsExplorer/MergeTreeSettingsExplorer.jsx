@@ -7,11 +7,11 @@ const MergeTreeSettingsExplorer = () => {
       label: "add_minmax_*",
       count: 5,
       settings: [
-        { name: "add_minmax_index_for_block_number_column", href: "/reference/settings/merge-tree-settings/add-minmax#add_minmax_index_for_block_number_column", default: "0" },
-        { name: "add_minmax_index_for_block_offset_column", href: "/reference/settings/merge-tree-settings/add-minmax#add_minmax_index_for_block_offset_column", default: "0" },
-        { name: "add_minmax_index_for_numeric_columns", href: "/reference/settings/merge-tree-settings/add-minmax#add_minmax_index_for_numeric_columns", default: "0" },
-        { name: "add_minmax_index_for_string_columns", href: "/reference/settings/merge-tree-settings/add-minmax#add_minmax_index_for_string_columns", default: "0" },
-        { name: "add_minmax_index_for_temporal_columns", href: "/reference/settings/merge-tree-settings/add-minmax#add_minmax_index_for_temporal_columns", default: "0" }
+        { name: "add_minmax_index_for_block_number_column", href: "/ru/reference/settings/merge-tree-settings/add-minmax#add_minmax_index_for_block_number_column", default: "0" },
+        { name: "add_minmax_index_for_block_offset_column", href: "/ru/reference/settings/merge-tree-settings/add-minmax#add_minmax_index_for_block_offset_column", default: "0" },
+        { name: "add_minmax_index_for_numeric_columns", href: "/ru/reference/settings/merge-tree-settings/add-minmax#add_minmax_index_for_numeric_columns", default: "0" },
+        { name: "add_minmax_index_for_string_columns", href: "/ru/reference/settings/merge-tree-settings/add-minmax#add_minmax_index_for_string_columns", default: "0" },
+        { name: "add_minmax_index_for_temporal_columns", href: "/ru/reference/settings/merge-tree-settings/add-minmax#add_minmax_index_for_temporal_columns", default: "0" }
       ],
       children: []
     },
@@ -19,19 +19,19 @@ const MergeTreeSettingsExplorer = () => {
       label: "allow_*",
       count: 13,
       settings: [
-        { name: "allow_coalescing_columns_in_partition_or_order_key", href: "/reference/settings/merge-tree-settings/allow#allow_coalescing_columns_in_partition_or_order_key", default: "0" },
-        { name: "allow_commit_order_projection", href: "/reference/settings/merge-tree-settings/allow#allow_commit_order_projection", default: "0" },
-        { name: "allow_dimensions_outside_sorting_key", href: "/reference/settings/merge-tree-settings/allow#allow_dimensions_outside_sorting_key", default: "0" },
-        { name: "allow_floating_point_partition_key", href: "/reference/settings/merge-tree-settings/allow#allow_floating_point_partition_key", default: "0" },
-        { name: "allow_minmax_index_for_json", href: "/reference/settings/merge-tree-settings/allow#allow_minmax_index_for_json", default: "0" },
-        { name: "allow_nullable_key", href: "/reference/settings/merge-tree-settings/allow#allow_nullable_key", default: "0" },
-        { name: "allow_part_offset_column_in_projections", href: "/reference/settings/merge-tree-settings/allow#allow_part_offset_column_in_projections", default: "1" },
-        { name: "allow_reduce_blocking_parts_task", href: "/reference/settings/merge-tree-settings/allow#allow_reduce_blocking_parts_task", default: "1" },
-        { name: "allow_remote_fs_zero_copy_replication", href: "/reference/settings/merge-tree-settings/allow#allow_remote_fs_zero_copy_replication", default: "0" },
-        { name: "allow_summing_columns_in_partition_or_order_key", href: "/reference/settings/merge-tree-settings/allow#allow_summing_columns_in_partition_or_order_key", default: "0" },
-        { name: "allow_suspicious_indices", href: "/reference/settings/merge-tree-settings/allow#allow_suspicious_indices", default: "0" },
-        { name: "allow_tuple_element_aggregation", href: "/reference/settings/merge-tree-settings/allow#allow_tuple_element_aggregation", default: "0" },
-        { name: "allow_vertical_merges_from_compact_to_wide_parts", href: "/reference/settings/merge-tree-settings/allow#allow_vertical_merges_from_compact_to_wide_parts", default: "1" }
+        { name: "allow_coalescing_columns_in_partition_or_order_key", href: "/ru/reference/settings/merge-tree-settings/allow#allow_coalescing_columns_in_partition_or_order_key", default: "0" },
+        { name: "allow_commit_order_projection", href: "/ru/reference/settings/merge-tree-settings/allow#allow_commit_order_projection", default: "0" },
+        { name: "allow_dimensions_outside_sorting_key", href: "/ru/reference/settings/merge-tree-settings/allow#allow_dimensions_outside_sorting_key", default: "0" },
+        { name: "allow_floating_point_partition_key", href: "/ru/reference/settings/merge-tree-settings/allow#allow_floating_point_partition_key", default: "0" },
+        { name: "allow_minmax_index_for_json", href: "/ru/reference/settings/merge-tree-settings/allow#allow_minmax_index_for_json", default: "0" },
+        { name: "allow_nullable_key", href: "/ru/reference/settings/merge-tree-settings/allow#allow_nullable_key", default: "0" },
+        { name: "allow_part_offset_column_in_projections", href: "/ru/reference/settings/merge-tree-settings/allow#allow_part_offset_column_in_projections", default: "1" },
+        { name: "allow_reduce_blocking_parts_task", href: "/ru/reference/settings/merge-tree-settings/allow#allow_reduce_blocking_parts_task", default: "1" },
+        { name: "allow_remote_fs_zero_copy_replication", href: "/ru/reference/settings/merge-tree-settings/allow#allow_remote_fs_zero_copy_replication", default: "0" },
+        { name: "allow_summing_columns_in_partition_or_order_key", href: "/ru/reference/settings/merge-tree-settings/allow#allow_summing_columns_in_partition_or_order_key", default: "0" },
+        { name: "allow_suspicious_indices", href: "/ru/reference/settings/merge-tree-settings/allow#allow_suspicious_indices", default: "0" },
+        { name: "allow_tuple_element_aggregation", href: "/ru/reference/settings/merge-tree-settings/allow#allow_tuple_element_aggregation", default: "0" },
+        { name: "allow_vertical_merges_from_compact_to_wide_parts", href: "/ru/reference/settings/merge-tree-settings/allow#allow_vertical_merges_from_compact_to_wide_parts", default: "1" }
       ],
       children: []
     },
@@ -39,10 +39,10 @@ const MergeTreeSettingsExplorer = () => {
       label: "allow_experimental_*",
       count: 4,
       settings: [
-        { name: "allow_experimental_adaptive_codec_selection", href: "/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_adaptive_codec_selection", default: "0" },
-        { name: "allow_experimental_replacing_merge_with_cleanup", href: "/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_replacing_merge_with_cleanup", default: "0" },
-        { name: "allow_experimental_reverse_key", href: "/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_reverse_key", default: "0" },
-        { name: "allow_experimental_text_index_phrase_search", href: "/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search", default: "0" }
+        { name: "allow_experimental_adaptive_codec_selection", href: "/ru/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_adaptive_codec_selection", default: "0" },
+        { name: "allow_experimental_replacing_merge_with_cleanup", href: "/ru/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_replacing_merge_with_cleanup", default: "0" },
+        { name: "allow_experimental_reverse_key", href: "/ru/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_reverse_key", default: "0" },
+        { name: "allow_experimental_text_index_phrase_search", href: "/ru/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search", default: "0" }
       ],
       children: []
     },
@@ -50,8 +50,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "always_fetch_*",
       count: 2,
       settings: [
-        { name: "always_fetch_merged_part", href: "/reference/settings/merge-tree-settings/always-fetch#always_fetch_merged_part", default: "0" },
-        { name: "always_fetch_mutated_part", href: "/reference/settings/merge-tree-settings/always-fetch#always_fetch_mutated_part", default: "0" }
+        { name: "always_fetch_merged_part", href: "/ru/reference/settings/merge-tree-settings/always-fetch#always_fetch_merged_part", default: "0" },
+        { name: "always_fetch_mutated_part", href: "/ru/reference/settings/merge-tree-settings/always-fetch#always_fetch_mutated_part", default: "0" }
       ],
       children: []
     },
@@ -59,8 +59,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "async_*",
       count: 2,
       settings: [
-        { name: "async_block_ids_cache_update_wait_ms", href: "/reference/settings/merge-tree-settings/async#async_block_ids_cache_update_wait_ms", default: "100" },
-        { name: "async_insert", href: "/reference/settings/merge-tree-settings/async#async_insert", default: "0" }
+        { name: "async_block_ids_cache_update_wait_ms", href: "/ru/reference/settings/merge-tree-settings/async#async_block_ids_cache_update_wait_ms", default: "100" },
+        { name: "async_insert", href: "/ru/reference/settings/merge-tree-settings/async#async_insert", default: "0" }
       ],
       children: []
     },
@@ -68,8 +68,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "cache_populated_by_fetch_*",
       count: 2,
       settings: [
-        { name: "cache_populated_by_fetch", href: "/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch", default: "0" },
-        { name: "cache_populated_by_fetch_filename_regexp", href: "/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch_filename_regexp", default: '""' }
+        { name: "cache_populated_by_fetch", href: "/ru/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch", default: "0" },
+        { name: "cache_populated_by_fetch_filename_regexp", href: "/ru/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch_filename_regexp", default: '""' }
       ],
       children: []
     },
@@ -77,8 +77,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "check_*",
       count: 2,
       settings: [
-        { name: "check_delay_period", href: "/reference/settings/merge-tree-settings/check#check_delay_period", default: "60" },
-        { name: "check_sample_column_is_correct", href: "/reference/settings/merge-tree-settings/check#check_sample_column_is_correct", default: "1" }
+        { name: "check_delay_period", href: "/ru/reference/settings/merge-tree-settings/check#check_delay_period", default: "60" },
+        { name: "check_sample_column_is_correct", href: "/ru/reference/settings/merge-tree-settings/check#check_sample_column_is_correct", default: "1" }
       ],
       children: []
     },
@@ -86,8 +86,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "cleanup_*",
       count: 2,
       settings: [
-        { name: "cleanup_thread_preferred_points_per_iteration", href: "/reference/settings/merge-tree-settings/cleanup#cleanup_thread_preferred_points_per_iteration", default: "150" },
-        { name: "cleanup_threads", href: "/reference/settings/merge-tree-settings/cleanup#cleanup_threads", default: "128" }
+        { name: "cleanup_thread_preferred_points_per_iteration", href: "/ru/reference/settings/merge-tree-settings/cleanup#cleanup_thread_preferred_points_per_iteration", default: "150" },
+        { name: "cleanup_threads", href: "/ru/reference/settings/merge-tree-settings/cleanup#cleanup_threads", default: "128" }
       ],
       children: []
     },
@@ -95,8 +95,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "cleanup_delay_period_*",
       count: 2,
       settings: [
-        { name: "cleanup_delay_period", href: "/reference/settings/merge-tree-settings/cleanup-delay-period#cleanup_delay_period", default: "30" },
-        { name: "cleanup_delay_period_random_add", href: "/reference/settings/merge-tree-settings/cleanup-delay-period#cleanup_delay_period_random_add", default: "10" }
+        { name: "cleanup_delay_period", href: "/ru/reference/settings/merge-tree-settings/cleanup-delay-period#cleanup_delay_period", default: "30" },
+        { name: "cleanup_delay_period_random_add", href: "/ru/reference/settings/merge-tree-settings/cleanup-delay-period#cleanup_delay_period_random_add", default: "10" }
       ],
       children: []
     },
@@ -104,8 +104,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "columns_*",
       count: 2,
       settings: [
-        { name: "columns_and_secondary_indices_sizes_lazy_calculation", href: "/reference/settings/merge-tree-settings/columns#columns_and_secondary_indices_sizes_lazy_calculation", default: "1" },
-        { name: "columns_to_prewarm_mark_cache", href: "/reference/settings/merge-tree-settings/columns#columns_to_prewarm_mark_cache", default: '""' }
+        { name: "columns_and_secondary_indices_sizes_lazy_calculation", href: "/ru/reference/settings/merge-tree-settings/columns#columns_and_secondary_indices_sizes_lazy_calculation", default: "1" },
+        { name: "columns_to_prewarm_mark_cache", href: "/ru/reference/settings/merge-tree-settings/columns#columns_to_prewarm_mark_cache", default: '""' }
       ],
       children: []
     },
@@ -113,9 +113,9 @@ const MergeTreeSettingsExplorer = () => {
       label: "compact_parts_*",
       count: 3,
       settings: [
-        { name: "compact_parts_max_bytes_to_buffer", href: "/reference/settings/merge-tree-settings/compact-parts#compact_parts_max_bytes_to_buffer", default: "134217728" },
-        { name: "compact_parts_max_granules_to_buffer", href: "/reference/settings/merge-tree-settings/compact-parts#compact_parts_max_granules_to_buffer", default: "128" },
-        { name: "compact_parts_merge_max_bytes_to_prefetch_part", href: "/reference/settings/merge-tree-settings/compact-parts#compact_parts_merge_max_bytes_to_prefetch_part", default: "16777216" }
+        { name: "compact_parts_max_bytes_to_buffer", href: "/ru/reference/settings/merge-tree-settings/compact-parts#compact_parts_max_bytes_to_buffer", default: "134217728" },
+        { name: "compact_parts_max_granules_to_buffer", href: "/ru/reference/settings/merge-tree-settings/compact-parts#compact_parts_max_granules_to_buffer", default: "128" },
+        { name: "compact_parts_merge_max_bytes_to_prefetch_part", href: "/ru/reference/settings/merge-tree-settings/compact-parts#compact_parts_merge_max_bytes_to_prefetch_part", default: "16777216" }
       ],
       children: []
     },
@@ -123,9 +123,9 @@ const MergeTreeSettingsExplorer = () => {
       label: "compress_*",
       count: 3,
       settings: [
-        { name: "compress_marks", href: "/reference/settings/merge-tree-settings/compress#compress_marks", default: "1" },
-        { name: "compress_per_column_in_compact_parts", href: "/reference/settings/merge-tree-settings/compress#compress_per_column_in_compact_parts", default: "1" },
-        { name: "compress_primary_key", href: "/reference/settings/merge-tree-settings/compress#compress_primary_key", default: "1" }
+        { name: "compress_marks", href: "/ru/reference/settings/merge-tree-settings/compress#compress_marks", default: "1" },
+        { name: "compress_per_column_in_compact_parts", href: "/ru/reference/settings/merge-tree-settings/compress#compress_per_column_in_compact_parts", default: "1" },
+        { name: "compress_primary_key", href: "/ru/reference/settings/merge-tree-settings/compress#compress_primary_key", default: "1" }
       ],
       children: []
     },
@@ -133,10 +133,10 @@ const MergeTreeSettingsExplorer = () => {
       label: "concurrent_part_removal_threshold_*",
       count: 2,
       settings: [
-        { name: "concurrent_part_removal_threshold", href: "/reference/settings/merge-tree-settings/concurrent-part-removal-threshold#concurrent_part_removal_threshold", default: "100" },
+        { name: "concurrent_part_removal_threshold", href: "/ru/reference/settings/merge-tree-settings/concurrent-part-removal-threshold#concurrent_part_removal_threshold", default: "100" },
         {
           name: "concurrent_part_removal_threshold_for_remote_disk",
-          href: "/reference/settings/merge-tree-settings/concurrent-part-removal-threshold#concurrent_part_removal_threshold_for_remote_disk",
+          href: "/ru/reference/settings/merge-tree-settings/concurrent-part-removal-threshold#concurrent_part_removal_threshold_for_remote_disk",
           default: "16"
         }
       ],
@@ -146,8 +146,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "dead_blobs_*",
       count: 2,
       settings: [
-        { name: "dead_blobs_to_delay_insert", href: "/reference/settings/merge-tree-settings/dead-blobs#dead_blobs_to_delay_insert", default: "100000" },
-        { name: "dead_blobs_to_throw_insert", href: "/reference/settings/merge-tree-settings/dead-blobs#dead_blobs_to_throw_insert", default: "1000000" }
+        { name: "dead_blobs_to_delay_insert", href: "/ru/reference/settings/merge-tree-settings/dead-blobs#dead_blobs_to_delay_insert", default: "100000" },
+        { name: "dead_blobs_to_throw_insert", href: "/ru/reference/settings/merge-tree-settings/dead-blobs#dead_blobs_to_throw_insert", default: "1000000" }
       ],
       children: []
     },
@@ -155,8 +155,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "detach_*",
       count: 2,
       settings: [
-        { name: "detach_not_byte_identical_parts", href: "/reference/settings/merge-tree-settings/detach#detach_not_byte_identical_parts", default: "0" },
-        { name: "detach_old_local_parts_when_cloning_replica", href: "/reference/settings/merge-tree-settings/detach#detach_old_local_parts_when_cloning_replica", default: "1" }
+        { name: "detach_not_byte_identical_parts", href: "/ru/reference/settings/merge-tree-settings/detach#detach_not_byte_identical_parts", default: "0" },
+        { name: "detach_old_local_parts_when_cloning_replica", href: "/ru/reference/settings/merge-tree-settings/detach#detach_old_local_parts_when_cloning_replica", default: "1" }
       ],
       children: []
     },
@@ -164,9 +164,9 @@ const MergeTreeSettingsExplorer = () => {
       label: "disable_*",
       count: 3,
       settings: [
-        { name: "disable_detach_partition_for_zero_copy_replication", href: "/reference/settings/merge-tree-settings/disable#disable_detach_partition_for_zero_copy_replication", default: "1" },
-        { name: "disable_fetch_partition_for_zero_copy_replication", href: "/reference/settings/merge-tree-settings/disable#disable_fetch_partition_for_zero_copy_replication", default: "1" },
-        { name: "disable_freeze_partition_for_zero_copy_replication", href: "/reference/settings/merge-tree-settings/disable#disable_freeze_partition_for_zero_copy_replication", default: "1" }
+        { name: "disable_detach_partition_for_zero_copy_replication", href: "/ru/reference/settings/merge-tree-settings/disable#disable_detach_partition_for_zero_copy_replication", default: "1" },
+        { name: "disable_fetch_partition_for_zero_copy_replication", href: "/ru/reference/settings/merge-tree-settings/disable#disable_fetch_partition_for_zero_copy_replication", default: "1" },
+        { name: "disable_freeze_partition_for_zero_copy_replication", href: "/ru/reference/settings/merge-tree-settings/disable#disable_freeze_partition_for_zero_copy_replication", default: "1" }
       ],
       children: []
     },
@@ -176,10 +176,10 @@ const MergeTreeSettingsExplorer = () => {
       settings: [
         {
           name: "distributed_index_analysis_min_indexes_bytes_to_activate",
-          href: "/reference/settings/merge-tree-settings/distributed-index#distributed_index_analysis_min_indexes_bytes_to_activate",
+          href: "/ru/reference/settings/merge-tree-settings/distributed-index#distributed_index_analysis_min_indexes_bytes_to_activate",
           default: "1073741824"
         },
-        { name: "distributed_index_analysis_min_parts_to_activate", href: "/reference/settings/merge-tree-settings/distributed-index#distributed_index_analysis_min_parts_to_activate", default: "10" }
+        { name: "distributed_index_analysis_min_parts_to_activate", href: "/ru/reference/settings/merge-tree-settings/distributed-index#distributed_index_analysis_min_parts_to_activate", default: "10" }
       ],
       children: []
     },
@@ -187,16 +187,16 @@ const MergeTreeSettingsExplorer = () => {
       label: "enable_*",
       count: 6,
       settings: [
-        { name: "enable_index_granularity_compression", href: "/reference/settings/merge-tree-settings/enable#enable_index_granularity_compression", default: "1" },
-        { name: "enable_max_bytes_limit_for_min_age_to_force_merge", href: "/reference/settings/merge-tree-settings/enable#enable_max_bytes_limit_for_min_age_to_force_merge", default: "1" },
-        { name: "enable_mixed_granularity_parts", href: "/reference/settings/merge-tree-settings/enable#enable_mixed_granularity_parts", default: "1" },
+        { name: "enable_index_granularity_compression", href: "/ru/reference/settings/merge-tree-settings/enable#enable_index_granularity_compression", default: "1" },
+        { name: "enable_max_bytes_limit_for_min_age_to_force_merge", href: "/ru/reference/settings/merge-tree-settings/enable#enable_max_bytes_limit_for_min_age_to_force_merge", default: "1" },
+        { name: "enable_mixed_granularity_parts", href: "/ru/reference/settings/merge-tree-settings/enable#enable_mixed_granularity_parts", default: "1" },
         {
           name: "enable_replacing_merge_with_cleanup_for_min_age_to_force_merge",
-          href: "/reference/settings/merge-tree-settings/enable#enable_replacing_merge_with_cleanup_for_min_age_to_force_merge",
+          href: "/ru/reference/settings/merge-tree-settings/enable#enable_replacing_merge_with_cleanup_for_min_age_to_force_merge",
           default: "0"
         },
-        { name: "enable_the_endpoint_id_with_zookeeper_name_prefix", href: "/reference/settings/merge-tree-settings/enable#enable_the_endpoint_id_with_zookeeper_name_prefix", default: "0" },
-        { name: "enable_vertical_merge_algorithm", href: "/reference/settings/merge-tree-settings/enable#enable_vertical_merge_algorithm", default: "1" }
+        { name: "enable_the_endpoint_id_with_zookeeper_name_prefix", href: "/ru/reference/settings/merge-tree-settings/enable#enable_the_endpoint_id_with_zookeeper_name_prefix", default: "0" },
+        { name: "enable_vertical_merge_algorithm", href: "/ru/reference/settings/merge-tree-settings/enable#enable_vertical_merge_algorithm", default: "1" }
       ],
       children: []
     },
@@ -204,8 +204,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "enable_block_*",
       count: 2,
       settings: [
-        { name: "enable_block_number_column", href: "/reference/settings/merge-tree-settings/enable-block#enable_block_number_column", default: "0" },
-        { name: "enable_block_offset_column", href: "/reference/settings/merge-tree-settings/enable-block#enable_block_offset_column", default: "0" }
+        { name: "enable_block_number_column", href: "/ru/reference/settings/merge-tree-settings/enable-block#enable_block_number_column", default: "0" },
+        { name: "enable_block_offset_column", href: "/ru/reference/settings/merge-tree-settings/enable-block#enable_block_offset_column", default: "0" }
       ],
       children: []
     },
@@ -213,8 +213,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "escape_*",
       count: 2,
       settings: [
-        { name: "escape_index_filenames", href: "/reference/settings/merge-tree-settings/escape#escape_index_filenames", default: "1" },
-        { name: "escape_variant_subcolumn_filenames", href: "/reference/settings/merge-tree-settings/escape#escape_variant_subcolumn_filenames", default: "1" }
+        { name: "escape_index_filenames", href: "/ru/reference/settings/merge-tree-settings/escape#escape_index_filenames", default: "1" },
+        { name: "escape_variant_subcolumn_filenames", href: "/ru/reference/settings/merge-tree-settings/escape#escape_variant_subcolumn_filenames", default: "1" }
       ],
       children: []
     },
@@ -222,8 +222,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "exclude_*",
       count: 2,
       settings: [
-        { name: "exclude_deleted_rows_for_part_size_in_merge", href: "/reference/settings/merge-tree-settings/exclude#exclude_deleted_rows_for_part_size_in_merge", default: "0" },
-        { name: "exclude_materialize_skip_indexes_on_merge", href: "/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge", default: '""' }
+        { name: "exclude_deleted_rows_for_part_size_in_merge", href: "/ru/reference/settings/merge-tree-settings/exclude#exclude_deleted_rows_for_part_size_in_merge", default: "0" },
+        { name: "exclude_materialize_skip_indexes_on_merge", href: "/ru/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge", default: '""' }
       ],
       children: []
     },
@@ -231,8 +231,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "fault_probability_*",
       count: 2,
       settings: [
-        { name: "fault_probability_after_part_commit", href: "/reference/settings/merge-tree-settings/fault-probability#fault_probability_after_part_commit", default: "0" },
-        { name: "fault_probability_before_part_commit", href: "/reference/settings/merge-tree-settings/fault-probability#fault_probability_before_part_commit", default: "0" }
+        { name: "fault_probability_after_part_commit", href: "/ru/reference/settings/merge-tree-settings/fault-probability#fault_probability_after_part_commit", default: "0" },
+        { name: "fault_probability_before_part_commit", href: "/ru/reference/settings/merge-tree-settings/fault-probability#fault_probability_before_part_commit", default: "0" }
       ],
       children: []
     },
@@ -240,8 +240,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "fsync_*",
       count: 2,
       settings: [
-        { name: "fsync_after_insert", href: "/reference/settings/merge-tree-settings/fsync#fsync_after_insert", default: "0" },
-        { name: "fsync_part_directory", href: "/reference/settings/merge-tree-settings/fsync#fsync_part_directory", default: "0" }
+        { name: "fsync_after_insert", href: "/ru/reference/settings/merge-tree-settings/fsync#fsync_after_insert", default: "0" },
+        { name: "fsync_part_directory", href: "/ru/reference/settings/merge-tree-settings/fsync#fsync_part_directory", default: "0" }
       ],
       children: []
     },
@@ -249,8 +249,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "in_memory_*",
       count: 2,
       settings: [
-        { name: "in_memory_parts_enable_wal", href: "/reference/settings/merge-tree-settings/in-memory#in_memory_parts_enable_wal", default: "1" },
-        { name: "in_memory_parts_insert_sync", href: "/reference/settings/merge-tree-settings/in-memory#in_memory_parts_insert_sync", default: "0" }
+        { name: "in_memory_parts_enable_wal", href: "/ru/reference/settings/merge-tree-settings/in-memory#in_memory_parts_enable_wal", default: "1" },
+        { name: "in_memory_parts_insert_sync", href: "/ru/reference/settings/merge-tree-settings/in-memory#in_memory_parts_insert_sync", default: "0" }
       ],
       children: []
     },
@@ -258,8 +258,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "inactive_parts_*",
       count: 2,
       settings: [
-        { name: "inactive_parts_to_delay_insert", href: "/reference/settings/merge-tree-settings/inactive-parts#inactive_parts_to_delay_insert", default: "0" },
-        { name: "inactive_parts_to_throw_insert", href: "/reference/settings/merge-tree-settings/inactive-parts#inactive_parts_to_throw_insert", default: "0" }
+        { name: "inactive_parts_to_delay_insert", href: "/ru/reference/settings/merge-tree-settings/inactive-parts#inactive_parts_to_delay_insert", default: "0" },
+        { name: "inactive_parts_to_throw_insert", href: "/ru/reference/settings/merge-tree-settings/inactive-parts#inactive_parts_to_throw_insert", default: "0" }
       ],
       children: []
     },
@@ -267,8 +267,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "index_granularity_*",
       count: 2,
       settings: [
-        { name: "index_granularity", href: "/reference/settings/merge-tree-settings/index-granularity#index_granularity", default: "8192" },
-        { name: "index_granularity_bytes", href: "/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes", default: "10485760" }
+        { name: "index_granularity", href: "/ru/reference/settings/merge-tree-settings/index-granularity#index_granularity", default: "8192" },
+        { name: "index_granularity_bytes", href: "/ru/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes", default: "10485760" }
       ],
       children: []
     },
@@ -276,8 +276,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "kill_delay_period_*",
       count: 2,
       settings: [
-        { name: "kill_delay_period", href: "/reference/settings/merge-tree-settings/kill-delay-period#kill_delay_period", default: "30" },
-        { name: "kill_delay_period_random_add", href: "/reference/settings/merge-tree-settings/kill-delay-period#kill_delay_period_random_add", default: "10" }
+        { name: "kill_delay_period", href: "/ru/reference/settings/merge-tree-settings/kill-delay-period#kill_delay_period", default: "30" },
+        { name: "kill_delay_period_random_add", href: "/ru/reference/settings/merge-tree-settings/kill-delay-period#kill_delay_period_random_add", default: "10" }
       ],
       children: []
     },
@@ -285,9 +285,9 @@ const MergeTreeSettingsExplorer = () => {
       label: "map_buckets_*",
       count: 3,
       settings: [
-        { name: "map_buckets_coefficient", href: "/reference/settings/merge-tree-settings/map-buckets#map_buckets_coefficient", default: "1" },
-        { name: "map_buckets_min_avg_size", href: "/reference/settings/merge-tree-settings/map-buckets#map_buckets_min_avg_size", default: "32" },
-        { name: "map_buckets_strategy", href: "/reference/settings/merge-tree-settings/map-buckets#map_buckets_strategy", default: "sqrt" }
+        { name: "map_buckets_coefficient", href: "/ru/reference/settings/merge-tree-settings/map-buckets#map_buckets_coefficient", default: "1" },
+        { name: "map_buckets_min_avg_size", href: "/ru/reference/settings/merge-tree-settings/map-buckets#map_buckets_min_avg_size", default: "32" },
+        { name: "map_buckets_strategy", href: "/ru/reference/settings/merge-tree-settings/map-buckets#map_buckets_strategy", default: "sqrt" }
       ],
       children: []
     },
@@ -295,10 +295,10 @@ const MergeTreeSettingsExplorer = () => {
       label: "map_serialization_version_*",
       count: 2,
       settings: [
-        { name: "map_serialization_version", href: "/reference/settings/merge-tree-settings/map-serialization-version#map_serialization_version", default: "basic" },
+        { name: "map_serialization_version", href: "/ru/reference/settings/merge-tree-settings/map-serialization-version#map_serialization_version", default: "basic" },
         {
           name: "map_serialization_version_for_zero_level_parts",
-          href: "/reference/settings/merge-tree-settings/map-serialization-version#map_serialization_version_for_zero_level_parts",
+          href: "/ru/reference/settings/merge-tree-settings/map-serialization-version#map_serialization_version_for_zero_level_parts",
           default: "basic"
         }
       ],
@@ -308,8 +308,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "marks_*",
       count: 2,
       settings: [
-        { name: "marks_compress_block_size", href: "/reference/settings/merge-tree-settings/marks#marks_compress_block_size", default: "65536" },
-        { name: "marks_compression_codec", href: "/reference/settings/merge-tree-settings/marks#marks_compression_codec", default: "ZSTD(3)" }
+        { name: "marks_compress_block_size", href: "/ru/reference/settings/merge-tree-settings/marks#marks_compress_block_size", default: "65536" },
+        { name: "marks_compression_codec", href: "/ru/reference/settings/merge-tree-settings/marks#marks_compression_codec", default: "ZSTD(3)" }
       ],
       children: []
     },
@@ -317,9 +317,9 @@ const MergeTreeSettingsExplorer = () => {
       label: "materialize_*",
       count: 3,
       settings: [
-        { name: "materialize_skip_indexes_on_merge", href: "/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge", default: "1" },
-        { name: "materialize_statistics_on_merge", href: "/reference/settings/merge-tree-settings/materialize#materialize_statistics_on_merge", default: "1" },
-        { name: "materialize_ttl_recalculate_only", href: "/reference/settings/merge-tree-settings/materialize#materialize_ttl_recalculate_only", default: "0" }
+        { name: "materialize_skip_indexes_on_merge", href: "/ru/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge", default: "1" },
+        { name: "materialize_statistics_on_merge", href: "/ru/reference/settings/merge-tree-settings/materialize#materialize_statistics_on_merge", default: "1" },
+        { name: "materialize_ttl_recalculate_only", href: "/ru/reference/settings/merge-tree-settings/materialize#materialize_ttl_recalculate_only", default: "0" }
       ],
       children: []
     },
@@ -327,8 +327,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "materialize_projections_*",
       count: 2,
       settings: [
-        { name: "materialize_projections_on_insert", href: "/reference/settings/merge-tree-settings/materialize-projections#materialize_projections_on_insert", default: "1" },
-        { name: "materialize_projections_on_merge", href: "/reference/settings/merge-tree-settings/materialize-projections#materialize_projections_on_merge", default: "0" }
+        { name: "materialize_projections_on_insert", href: "/ru/reference/settings/merge-tree-settings/materialize-projections#materialize_projections_on_insert", default: "1" },
+        { name: "materialize_projections_on_merge", href: "/ru/reference/settings/merge-tree-settings/materialize-projections#materialize_projections_on_merge", default: "0" }
       ],
       children: []
     },
@@ -336,16 +336,16 @@ const MergeTreeSettingsExplorer = () => {
       label: "max_*",
       count: 10,
       settings: [
-        { name: "max_avg_part_size_for_too_many_parts", href: "/reference/settings/merge-tree-settings/max#max_avg_part_size_for_too_many_parts", default: "1073741824" },
-        { name: "max_buckets_in_map", href: "/reference/settings/merge-tree-settings/max#max_buckets_in_map", default: "32" },
-        { name: "max_cleanup_delay_period", href: "/reference/settings/merge-tree-settings/max#max_cleanup_delay_period", default: "300" },
-        { name: "max_compress_block_size", href: "/reference/settings/merge-tree-settings/max#max_compress_block_size", default: "0" },
-        { name: "max_concurrent_queries", href: "/reference/settings/merge-tree-settings/max#max_concurrent_queries", default: "0" },
-        { name: "max_digestion_size_per_segment", href: "/reference/settings/merge-tree-settings/max#max_digestion_size_per_segment", default: "268435456" },
-        { name: "max_file_name_length", href: "/reference/settings/merge-tree-settings/max#max_file_name_length", default: "127" },
-        { name: "max_partitions_to_read", href: "/reference/settings/merge-tree-settings/max#max_partitions_to_read", default: "-1" },
-        { name: "max_projections", href: "/reference/settings/merge-tree-settings/max#max_projections", default: "25" },
-        { name: "max_uncompressed_bytes_in_patches", href: "/reference/settings/merge-tree-settings/max#max_uncompressed_bytes_in_patches", default: "32212254720" }
+        { name: "max_avg_part_size_for_too_many_parts", href: "/ru/reference/settings/merge-tree-settings/max#max_avg_part_size_for_too_many_parts", default: "1073741824" },
+        { name: "max_buckets_in_map", href: "/ru/reference/settings/merge-tree-settings/max#max_buckets_in_map", default: "32" },
+        { name: "max_cleanup_delay_period", href: "/ru/reference/settings/merge-tree-settings/max#max_cleanup_delay_period", default: "300" },
+        { name: "max_compress_block_size", href: "/ru/reference/settings/merge-tree-settings/max#max_compress_block_size", default: "0" },
+        { name: "max_concurrent_queries", href: "/ru/reference/settings/merge-tree-settings/max#max_concurrent_queries", default: "0" },
+        { name: "max_digestion_size_per_segment", href: "/ru/reference/settings/merge-tree-settings/max#max_digestion_size_per_segment", default: "268435456" },
+        { name: "max_file_name_length", href: "/ru/reference/settings/merge-tree-settings/max#max_file_name_length", default: "127" },
+        { name: "max_partitions_to_read", href: "/ru/reference/settings/merge-tree-settings/max#max_partitions_to_read", default: "-1" },
+        { name: "max_projections", href: "/ru/reference/settings/merge-tree-settings/max#max_projections", default: "25" },
+        { name: "max_uncompressed_bytes_in_patches", href: "/ru/reference/settings/merge-tree-settings/max#max_uncompressed_bytes_in_patches", default: "32212254720" }
       ],
       children: []
     },
@@ -353,8 +353,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "max_bytes_*",
       count: 2,
       settings: [
-        { name: "max_bytes_to_merge_at_max_space_in_pool", href: "/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool", default: "161061273600" },
-        { name: "max_bytes_to_merge_at_min_space_in_pool", href: "/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_min_space_in_pool", default: "1048576" }
+        { name: "max_bytes_to_merge_at_max_space_in_pool", href: "/ru/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool", default: "161061273600" },
+        { name: "max_bytes_to_merge_at_min_space_in_pool", href: "/ru/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_min_space_in_pool", default: "1048576" }
       ],
       children: []
     },
@@ -362,8 +362,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "max_delay_*",
       count: 2,
       settings: [
-        { name: "max_delay_to_insert", href: "/reference/settings/merge-tree-settings/max-delay#max_delay_to_insert", default: "1" },
-        { name: "max_delay_to_mutate_ms", href: "/reference/settings/merge-tree-settings/max-delay#max_delay_to_mutate_ms", default: "1000" }
+        { name: "max_delay_to_insert", href: "/ru/reference/settings/merge-tree-settings/max-delay#max_delay_to_insert", default: "1" },
+        { name: "max_delay_to_mutate_ms", href: "/ru/reference/settings/merge-tree-settings/max-delay#max_delay_to_mutate_ms", default: "1000" }
       ],
       children: []
     },
@@ -371,8 +371,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "max_files_*",
       count: 2,
       settings: [
-        { name: "max_files_to_modify_in_alter_columns", href: "/reference/settings/merge-tree-settings/max-files#max_files_to_modify_in_alter_columns", default: "75" },
-        { name: "max_files_to_remove_in_alter_columns", href: "/reference/settings/merge-tree-settings/max-files#max_files_to_remove_in_alter_columns", default: "50" }
+        { name: "max_files_to_modify_in_alter_columns", href: "/ru/reference/settings/merge-tree-settings/max-files#max_files_to_modify_in_alter_columns", default: "75" },
+        { name: "max_files_to_remove_in_alter_columns", href: "/ru/reference/settings/merge-tree-settings/max-files#max_files_to_remove_in_alter_columns", default: "50" }
       ],
       children: []
     },
@@ -380,8 +380,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "max_merge_*",
       count: 2,
       settings: [
-        { name: "max_merge_delayed_streams_for_parallel_write", href: "/reference/settings/merge-tree-settings/max-merge#max_merge_delayed_streams_for_parallel_write", default: "40" },
-        { name: "max_merge_selecting_sleep_ms", href: "/reference/settings/merge-tree-settings/max-merge#max_merge_selecting_sleep_ms", default: "60000" }
+        { name: "max_merge_delayed_streams_for_parallel_write", href: "/ru/reference/settings/merge-tree-settings/max-merge#max_merge_delayed_streams_for_parallel_write", default: "40" },
+        { name: "max_merge_selecting_sleep_ms", href: "/ru/reference/settings/merge-tree-settings/max-merge#max_merge_selecting_sleep_ms", default: "60000" }
       ],
       children: []
     },
@@ -389,8 +389,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "max_number_*",
       count: 2,
       settings: [
-        { name: "max_number_of_merges_with_ttl_in_pool", href: "/reference/settings/merge-tree-settings/max-number#max_number_of_merges_with_ttl_in_pool", default: "2" },
-        { name: "max_number_of_mutations_for_replica", href: "/reference/settings/merge-tree-settings/max-number#max_number_of_mutations_for_replica", default: "0" }
+        { name: "max_number_of_merges_with_ttl_in_pool", href: "/ru/reference/settings/merge-tree-settings/max-number#max_number_of_merges_with_ttl_in_pool", default: "2" },
+        { name: "max_number_of_mutations_for_replica", href: "/ru/reference/settings/merge-tree-settings/max-number#max_number_of_mutations_for_replica", default: "0" }
       ],
       children: []
     },
@@ -398,8 +398,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "max_part_*",
       count: 2,
       settings: [
-        { name: "max_part_loading_threads", href: "/reference/settings/merge-tree-settings/max-part#max_part_loading_threads", default: "auto(16)" },
-        { name: "max_part_removal_threads", href: "/reference/settings/merge-tree-settings/max-part#max_part_removal_threads", default: "auto(16)" }
+        { name: "max_part_loading_threads", href: "/ru/reference/settings/merge-tree-settings/max-part#max_part_loading_threads", default: "auto(16)" },
+        { name: "max_part_removal_threads", href: "/ru/reference/settings/merge-tree-settings/max-part#max_part_removal_threads", default: "auto(16)" }
       ],
       children: []
     },
@@ -407,8 +407,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "max_parts_*",
       count: 2,
       settings: [
-        { name: "max_parts_in_total", href: "/reference/settings/merge-tree-settings/max-parts#max_parts_in_total", default: "100000" },
-        { name: "max_parts_to_merge_at_once", href: "/reference/settings/merge-tree-settings/max-parts#max_parts_to_merge_at_once", default: "100" }
+        { name: "max_parts_in_total", href: "/ru/reference/settings/merge-tree-settings/max-parts#max_parts_in_total", default: "100000" },
+        { name: "max_parts_to_merge_at_once", href: "/ru/reference/settings/merge-tree-settings/max-parts#max_parts_to_merge_at_once", default: "100" }
       ],
       children: []
     },
@@ -416,14 +416,14 @@ const MergeTreeSettingsExplorer = () => {
       label: "max_postpone_*",
       count: 4,
       settings: [
-        { name: "max_postpone_time_for_failed_mutations_ms", href: "/reference/settings/merge-tree-settings/max-postpone#max_postpone_time_for_failed_mutations_ms", default: "300000" },
+        { name: "max_postpone_time_for_failed_mutations_ms", href: "/ru/reference/settings/merge-tree-settings/max-postpone#max_postpone_time_for_failed_mutations_ms", default: "300000" },
         {
           name: "max_postpone_time_for_failed_replicated_fetches_ms",
-          href: "/reference/settings/merge-tree-settings/max-postpone#max_postpone_time_for_failed_replicated_fetches_ms",
+          href: "/ru/reference/settings/merge-tree-settings/max-postpone#max_postpone_time_for_failed_replicated_fetches_ms",
           default: "60000"
         },
-        { name: "max_postpone_time_for_failed_replicated_merges_ms", href: "/reference/settings/merge-tree-settings/max-postpone#max_postpone_time_for_failed_replicated_merges_ms", default: "60000" },
-        { name: "max_postpone_time_for_failed_replicated_tasks_ms", href: "/reference/settings/merge-tree-settings/max-postpone#max_postpone_time_for_failed_replicated_tasks_ms", default: "300000" }
+        { name: "max_postpone_time_for_failed_replicated_merges_ms", href: "/ru/reference/settings/merge-tree-settings/max-postpone#max_postpone_time_for_failed_replicated_merges_ms", default: "60000" },
+        { name: "max_postpone_time_for_failed_replicated_tasks_ms", href: "/ru/reference/settings/merge-tree-settings/max-postpone#max_postpone_time_for_failed_replicated_tasks_ms", default: "300000" }
       ],
       children: []
     },
@@ -431,12 +431,12 @@ const MergeTreeSettingsExplorer = () => {
       label: "max_replicated_*",
       count: 6,
       settings: [
-        { name: "max_replicated_fetches_network_bandwidth", href: "/reference/settings/merge-tree-settings/max-replicated#max_replicated_fetches_network_bandwidth", default: "0" },
-        { name: "max_replicated_logs_to_keep", href: "/reference/settings/merge-tree-settings/max-replicated#max_replicated_logs_to_keep", default: "1000" },
-        { name: "max_replicated_merges_in_queue", href: "/reference/settings/merge-tree-settings/max-replicated#max_replicated_merges_in_queue", default: "1000" },
-        { name: "max_replicated_merges_with_ttl_in_queue", href: "/reference/settings/merge-tree-settings/max-replicated#max_replicated_merges_with_ttl_in_queue", default: "1" },
-        { name: "max_replicated_mutations_in_queue", href: "/reference/settings/merge-tree-settings/max-replicated#max_replicated_mutations_in_queue", default: "8" },
-        { name: "max_replicated_sends_network_bandwidth", href: "/reference/settings/merge-tree-settings/max-replicated#max_replicated_sends_network_bandwidth", default: "0" }
+        { name: "max_replicated_fetches_network_bandwidth", href: "/ru/reference/settings/merge-tree-settings/max-replicated#max_replicated_fetches_network_bandwidth", default: "0" },
+        { name: "max_replicated_logs_to_keep", href: "/ru/reference/settings/merge-tree-settings/max-replicated#max_replicated_logs_to_keep", default: "1000" },
+        { name: "max_replicated_merges_in_queue", href: "/ru/reference/settings/merge-tree-settings/max-replicated#max_replicated_merges_in_queue", default: "1000" },
+        { name: "max_replicated_merges_with_ttl_in_queue", href: "/ru/reference/settings/merge-tree-settings/max-replicated#max_replicated_merges_with_ttl_in_queue", default: "1" },
+        { name: "max_replicated_mutations_in_queue", href: "/ru/reference/settings/merge-tree-settings/max-replicated#max_replicated_mutations_in_queue", default: "8" },
+        { name: "max_replicated_sends_network_bandwidth", href: "/ru/reference/settings/merge-tree-settings/max-replicated#max_replicated_sends_network_bandwidth", default: "0" }
       ],
       children: []
     },
@@ -444,8 +444,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "max_suspicious_broken_parts_*",
       count: 2,
       settings: [
-        { name: "max_suspicious_broken_parts", href: "/reference/settings/merge-tree-settings/max-suspicious-broken-parts#max_suspicious_broken_parts", default: "100" },
-        { name: "max_suspicious_broken_parts_bytes", href: "/reference/settings/merge-tree-settings/max-suspicious-broken-parts#max_suspicious_broken_parts_bytes", default: "1073741824" }
+        { name: "max_suspicious_broken_parts", href: "/ru/reference/settings/merge-tree-settings/max-suspicious-broken-parts#max_suspicious_broken_parts", default: "100" },
+        { name: "max_suspicious_broken_parts_bytes", href: "/ru/reference/settings/merge-tree-settings/max-suspicious-broken-parts#max_suspicious_broken_parts_bytes", default: "1073741824" }
       ],
       children: []
     },
@@ -453,8 +453,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "merge_*",
       count: 2,
       settings: [
-        { name: "merge_total_max_bytes_to_prewarm_cache", href: "/reference/settings/merge-tree-settings/merge#merge_total_max_bytes_to_prewarm_cache", default: "16106127360" },
-        { name: "merge_workload", href: "/reference/settings/merge-tree-settings/merge#merge_workload", default: '""' }
+        { name: "merge_total_max_bytes_to_prewarm_cache", href: "/ru/reference/settings/merge-tree-settings/merge#merge_total_max_bytes_to_prewarm_cache", default: "16106127360" },
+        { name: "merge_workload", href: "/ru/reference/settings/merge-tree-settings/merge#merge_workload", default: '""' }
       ],
       children: []
     },
@@ -462,11 +462,11 @@ const MergeTreeSettingsExplorer = () => {
       label: "merge_max_*",
       count: 5,
       settings: [
-        { name: "merge_max_block_size", href: "/reference/settings/merge-tree-settings/merge-max#merge_max_block_size", default: "8192" },
-        { name: "merge_max_block_size_bytes", href: "/reference/settings/merge-tree-settings/merge-max#merge_max_block_size_bytes", default: "10485760" },
-        { name: "merge_max_bytes_to_prewarm_cache", href: "/reference/settings/merge-tree-settings/merge-max#merge_max_bytes_to_prewarm_cache", default: "1073741824" },
-        { name: "merge_max_dynamic_subcolumns_in_compact_part", href: "/reference/settings/merge-tree-settings/merge-max#merge_max_dynamic_subcolumns_in_compact_part", default: "auto" },
-        { name: "merge_max_dynamic_subcolumns_in_wide_part", href: "/reference/settings/merge-tree-settings/merge-max#merge_max_dynamic_subcolumns_in_wide_part", default: "auto" }
+        { name: "merge_max_block_size", href: "/ru/reference/settings/merge-tree-settings/merge-max#merge_max_block_size", default: "8192" },
+        { name: "merge_max_block_size_bytes", href: "/ru/reference/settings/merge-tree-settings/merge-max#merge_max_block_size_bytes", default: "10485760" },
+        { name: "merge_max_bytes_to_prewarm_cache", href: "/ru/reference/settings/merge-tree-settings/merge-max#merge_max_bytes_to_prewarm_cache", default: "1073741824" },
+        { name: "merge_max_dynamic_subcolumns_in_compact_part", href: "/ru/reference/settings/merge-tree-settings/merge-max#merge_max_dynamic_subcolumns_in_compact_part", default: "auto" },
+        { name: "merge_max_dynamic_subcolumns_in_wide_part", href: "/ru/reference/settings/merge-tree-settings/merge-max#merge_max_dynamic_subcolumns_in_wide_part", default: "auto" }
       ],
       children: []
     },
@@ -474,8 +474,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "merge_selecting_*",
       count: 2,
       settings: [
-        { name: "merge_selecting_sleep_ms", href: "/reference/settings/merge-tree-settings/merge-selecting#merge_selecting_sleep_ms", default: "5000" },
-        { name: "merge_selecting_sleep_slowdown_factor", href: "/reference/settings/merge-tree-settings/merge-selecting#merge_selecting_sleep_slowdown_factor", default: "1.2" }
+        { name: "merge_selecting_sleep_ms", href: "/ru/reference/settings/merge-tree-settings/merge-selecting#merge_selecting_sleep_ms", default: "5000" },
+        { name: "merge_selecting_sleep_slowdown_factor", href: "/ru/reference/settings/merge-tree-settings/merge-selecting#merge_selecting_sleep_slowdown_factor", default: "1.2" }
       ],
       children: []
     },
@@ -483,25 +483,25 @@ const MergeTreeSettingsExplorer = () => {
       label: "merge_selector_*",
       count: 7,
       settings: [
-        { name: "merge_selector_algorithm", href: "/reference/settings/merge-tree-settings/merge-selector#merge_selector_algorithm", default: "Simple" },
-        { name: "merge_selector_base", href: "/reference/settings/merge-tree-settings/merge-selector#merge_selector_base", default: "5" },
-        { name: "merge_selector_blurry_base_scale_factor", href: "/reference/settings/merge-tree-settings/merge-selector#merge_selector_blurry_base_scale_factor", default: "0" },
+        { name: "merge_selector_algorithm", href: "/ru/reference/settings/merge-tree-settings/merge-selector#merge_selector_algorithm", default: "Simple" },
+        { name: "merge_selector_base", href: "/ru/reference/settings/merge-tree-settings/merge-selector#merge_selector_base", default: "5" },
+        { name: "merge_selector_blurry_base_scale_factor", href: "/ru/reference/settings/merge-tree-settings/merge-selector#merge_selector_blurry_base_scale_factor", default: "0" },
         {
           name: "merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once",
-          href: "/reference/settings/merge-tree-settings/merge-selector#merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once",
+          href: "/ru/reference/settings/merge-tree-settings/merge-selector#merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once",
           default: "1"
         },
         {
           name: "merge_selector_enable_heuristic_to_remove_small_parts_at_right",
-          href: "/reference/settings/merge-tree-settings/merge-selector#merge_selector_enable_heuristic_to_remove_small_parts_at_right",
+          href: "/ru/reference/settings/merge-tree-settings/merge-selector#merge_selector_enable_heuristic_to_remove_small_parts_at_right",
           default: "1"
         },
         {
           name: "merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent",
-          href: "/reference/settings/merge-tree-settings/merge-selector#merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent",
+          href: "/ru/reference/settings/merge-tree-settings/merge-selector#merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent",
           default: "5"
         },
-        { name: "merge_selector_window_size", href: "/reference/settings/merge-tree-settings/merge-selector#merge_selector_window_size", default: "1000" }
+        { name: "merge_selector_window_size", href: "/ru/reference/settings/merge-tree-settings/merge-selector#merge_selector_window_size", default: "1000" }
       ],
       children: []
     },
@@ -511,16 +511,16 @@ const MergeTreeSettingsExplorer = () => {
       settings: [
         {
           name: "merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds",
-          href: "/reference/settings/merge-tree-settings/merge-tree#merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds",
+          href: "/ru/reference/settings/merge-tree-settings/merge-tree#merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds",
           default: "2592000"
         },
-        { name: "merge_tree_clear_old_parts_interval_seconds", href: "/reference/settings/merge-tree-settings/merge-tree#merge_tree_clear_old_parts_interval_seconds", default: "1" },
+        { name: "merge_tree_clear_old_parts_interval_seconds", href: "/ru/reference/settings/merge-tree-settings/merge-tree#merge_tree_clear_old_parts_interval_seconds", default: "1" },
         {
           name: "merge_tree_clear_old_temporary_directories_interval_seconds",
-          href: "/reference/settings/merge-tree-settings/merge-tree#merge_tree_clear_old_temporary_directories_interval_seconds",
+          href: "/ru/reference/settings/merge-tree-settings/merge-tree#merge_tree_clear_old_temporary_directories_interval_seconds",
           default: "60"
         },
-        { name: "merge_tree_enable_clear_old_broken_detached", href: "/reference/settings/merge-tree-settings/merge-tree#merge_tree_enable_clear_old_broken_detached", default: "0" }
+        { name: "merge_tree_enable_clear_old_broken_detached", href: "/ru/reference/settings/merge-tree-settings/merge-tree#merge_tree_enable_clear_old_broken_detached", default: "0" }
       ],
       children: []
     },
@@ -528,8 +528,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "merge_with_*",
       count: 2,
       settings: [
-        { name: "merge_with_recompression_ttl_timeout", href: "/reference/settings/merge-tree-settings/merge-with#merge_with_recompression_ttl_timeout", default: "14400" },
-        { name: "merge_with_ttl_timeout", href: "/reference/settings/merge-tree-settings/merge-with#merge_with_ttl_timeout", default: "14400" }
+        { name: "merge_with_recompression_ttl_timeout", href: "/ru/reference/settings/merge-tree-settings/merge-with#merge_with_recompression_ttl_timeout", default: "14400" },
+        { name: "merge_with_ttl_timeout", href: "/ru/reference/settings/merge-tree-settings/merge-with#merge_with_ttl_timeout", default: "14400" }
       ],
       children: []
     },
@@ -537,14 +537,14 @@ const MergeTreeSettingsExplorer = () => {
       label: "min_*",
       count: 8,
       settings: [
-        { name: "min_absolute_delay_to_close", href: "/reference/settings/merge-tree-settings/min#min_absolute_delay_to_close", default: "0" },
-        { name: "min_columns_to_activate_adaptive_write_buffer", href: "/reference/settings/merge-tree-settings/min#min_columns_to_activate_adaptive_write_buffer", default: "500" },
-        { name: "min_compress_block_size", href: "/reference/settings/merge-tree-settings/min#min_compress_block_size", default: "0" },
-        { name: "min_index_granularity_bytes", href: "/reference/settings/merge-tree-settings/min#min_index_granularity_bytes", default: "1024" },
-        { name: "min_marks_to_honor_max_concurrent_queries", href: "/reference/settings/merge-tree-settings/min#min_marks_to_honor_max_concurrent_queries", default: "0" },
-        { name: "min_merge_bytes_to_use_direct_io", href: "/reference/settings/merge-tree-settings/min#min_merge_bytes_to_use_direct_io", default: "10737418240" },
-        { name: "min_parts_to_merge_at_once", href: "/reference/settings/merge-tree-settings/min#min_parts_to_merge_at_once", default: "0" },
-        { name: "min_replicated_logs_to_keep", href: "/reference/settings/merge-tree-settings/min#min_replicated_logs_to_keep", default: "10" }
+        { name: "min_absolute_delay_to_close", href: "/ru/reference/settings/merge-tree-settings/min#min_absolute_delay_to_close", default: "0" },
+        { name: "min_columns_to_activate_adaptive_write_buffer", href: "/ru/reference/settings/merge-tree-settings/min#min_columns_to_activate_adaptive_write_buffer", default: "500" },
+        { name: "min_compress_block_size", href: "/ru/reference/settings/merge-tree-settings/min#min_compress_block_size", default: "0" },
+        { name: "min_index_granularity_bytes", href: "/ru/reference/settings/merge-tree-settings/min#min_index_granularity_bytes", default: "1024" },
+        { name: "min_marks_to_honor_max_concurrent_queries", href: "/ru/reference/settings/merge-tree-settings/min#min_marks_to_honor_max_concurrent_queries", default: "0" },
+        { name: "min_merge_bytes_to_use_direct_io", href: "/ru/reference/settings/merge-tree-settings/min#min_merge_bytes_to_use_direct_io", default: "10737418240" },
+        { name: "min_parts_to_merge_at_once", href: "/ru/reference/settings/merge-tree-settings/min#min_parts_to_merge_at_once", default: "0" },
+        { name: "min_replicated_logs_to_keep", href: "/ru/reference/settings/merge-tree-settings/min#min_replicated_logs_to_keep", default: "10" }
       ],
       children: []
     },
@@ -552,8 +552,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "min_age_*",
       count: 2,
       settings: [
-        { name: "min_age_to_force_merge_on_partition_only", href: "/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_on_partition_only", default: "0" },
-        { name: "min_age_to_force_merge_seconds", href: "/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_seconds", default: "0" }
+        { name: "min_age_to_force_merge_on_partition_only", href: "/ru/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_on_partition_only", default: "0" },
+        { name: "min_age_to_force_merge_seconds", href: "/ru/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_seconds", default: "0" }
       ],
       children: []
     },
@@ -561,11 +561,11 @@ const MergeTreeSettingsExplorer = () => {
       label: "min_bytes_*",
       count: 5,
       settings: [
-        { name: "min_bytes_for_compact_part", href: "/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_compact_part", default: "0" },
-        { name: "min_bytes_for_full_part_storage", href: "/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_full_part_storage", default: "0" },
-        { name: "min_bytes_for_wide_part", href: "/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part", default: "10485760" },
-        { name: "min_bytes_to_prewarm_caches", href: "/reference/settings/merge-tree-settings/min-bytes#min_bytes_to_prewarm_caches", default: "0" },
-        { name: "min_bytes_to_rebalance_partition_over_jbod", href: "/reference/settings/merge-tree-settings/min-bytes#min_bytes_to_rebalance_partition_over_jbod", default: "0" }
+        { name: "min_bytes_for_compact_part", href: "/ru/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_compact_part", default: "0" },
+        { name: "min_bytes_for_full_part_storage", href: "/ru/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_full_part_storage", default: "0" },
+        { name: "min_bytes_for_wide_part", href: "/ru/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part", default: "10485760" },
+        { name: "min_bytes_to_prewarm_caches", href: "/ru/reference/settings/merge-tree-settings/min-bytes#min_bytes_to_prewarm_caches", default: "0" },
+        { name: "min_bytes_to_rebalance_partition_over_jbod", href: "/ru/reference/settings/merge-tree-settings/min-bytes#min_bytes_to_rebalance_partition_over_jbod", default: "0" }
       ],
       children: []
     },
@@ -573,8 +573,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "min_compressed_*",
       count: 2,
       settings: [
-        { name: "min_compressed_bytes_to_fsync_after_fetch", href: "/reference/settings/merge-tree-settings/min-compressed#min_compressed_bytes_to_fsync_after_fetch", default: "0" },
-        { name: "min_compressed_bytes_to_fsync_after_merge", href: "/reference/settings/merge-tree-settings/min-compressed#min_compressed_bytes_to_fsync_after_merge", default: "0" }
+        { name: "min_compressed_bytes_to_fsync_after_fetch", href: "/ru/reference/settings/merge-tree-settings/min-compressed#min_compressed_bytes_to_fsync_after_fetch", default: "0" },
+        { name: "min_compressed_bytes_to_fsync_after_merge", href: "/ru/reference/settings/merge-tree-settings/min-compressed#min_compressed_bytes_to_fsync_after_merge", default: "0" }
       ],
       children: []
     },
@@ -582,8 +582,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "min_delay_*",
       count: 2,
       settings: [
-        { name: "min_delay_to_insert_ms", href: "/reference/settings/merge-tree-settings/min-delay#min_delay_to_insert_ms", default: "10" },
-        { name: "min_delay_to_mutate_ms", href: "/reference/settings/merge-tree-settings/min-delay#min_delay_to_mutate_ms", default: "10" }
+        { name: "min_delay_to_insert_ms", href: "/ru/reference/settings/merge-tree-settings/min-delay#min_delay_to_insert_ms", default: "10" },
+        { name: "min_delay_to_mutate_ms", href: "/ru/reference/settings/merge-tree-settings/min-delay#min_delay_to_mutate_ms", default: "10" }
       ],
       children: []
     },
@@ -591,8 +591,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "min_free_*",
       count: 2,
       settings: [
-        { name: "min_free_disk_bytes_to_perform_insert", href: "/reference/settings/merge-tree-settings/min-free#min_free_disk_bytes_to_perform_insert", default: "0" },
-        { name: "min_free_disk_ratio_to_perform_insert", href: "/reference/settings/merge-tree-settings/min-free#min_free_disk_ratio_to_perform_insert", default: "0" }
+        { name: "min_free_disk_bytes_to_perform_insert", href: "/ru/reference/settings/merge-tree-settings/min-free#min_free_disk_bytes_to_perform_insert", default: "0" },
+        { name: "min_free_disk_ratio_to_perform_insert", href: "/ru/reference/settings/merge-tree-settings/min-free#min_free_disk_ratio_to_perform_insert", default: "0" }
       ],
       children: []
     },
@@ -600,8 +600,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "min_level_*",
       count: 2,
       settings: [
-        { name: "min_level_for_full_part_storage", href: "/reference/settings/merge-tree-settings/min-level#min_level_for_full_part_storage", default: "0" },
-        { name: "min_level_for_wide_part", href: "/reference/settings/merge-tree-settings/min-level#min_level_for_wide_part", default: "0" }
+        { name: "min_level_for_full_part_storage", href: "/ru/reference/settings/merge-tree-settings/min-level#min_level_for_full_part_storage", default: "0" },
+        { name: "min_level_for_wide_part", href: "/ru/reference/settings/merge-tree-settings/min-level#min_level_for_wide_part", default: "0" }
       ],
       children: []
     },
@@ -609,9 +609,9 @@ const MergeTreeSettingsExplorer = () => {
       label: "min_relative_*",
       count: 3,
       settings: [
-        { name: "min_relative_delay_to_close", href: "/reference/settings/merge-tree-settings/min-relative#min_relative_delay_to_close", default: "300" },
-        { name: "min_relative_delay_to_measure", href: "/reference/settings/merge-tree-settings/min-relative#min_relative_delay_to_measure", default: "120" },
-        { name: "min_relative_delay_to_yield_leadership", href: "/reference/settings/merge-tree-settings/min-relative#min_relative_delay_to_yield_leadership", default: "120" }
+        { name: "min_relative_delay_to_close", href: "/ru/reference/settings/merge-tree-settings/min-relative#min_relative_delay_to_close", default: "300" },
+        { name: "min_relative_delay_to_measure", href: "/ru/reference/settings/merge-tree-settings/min-relative#min_relative_delay_to_measure", default: "120" },
+        { name: "min_relative_delay_to_yield_leadership", href: "/ru/reference/settings/merge-tree-settings/min-relative#min_relative_delay_to_yield_leadership", default: "120" }
       ],
       children: []
     },
@@ -619,10 +619,10 @@ const MergeTreeSettingsExplorer = () => {
       label: "min_rows_*",
       count: 4,
       settings: [
-        { name: "min_rows_for_compact_part", href: "/reference/settings/merge-tree-settings/min-rows#min_rows_for_compact_part", default: "0" },
-        { name: "min_rows_for_full_part_storage", href: "/reference/settings/merge-tree-settings/min-rows#min_rows_for_full_part_storage", default: "0" },
-        { name: "min_rows_for_wide_part", href: "/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part", default: "0" },
-        { name: "min_rows_to_fsync_after_merge", href: "/reference/settings/merge-tree-settings/min-rows#min_rows_to_fsync_after_merge", default: "0" }
+        { name: "min_rows_for_compact_part", href: "/ru/reference/settings/merge-tree-settings/min-rows#min_rows_for_compact_part", default: "0" },
+        { name: "min_rows_for_full_part_storage", href: "/ru/reference/settings/merge-tree-settings/min-rows#min_rows_for_full_part_storage", default: "0" },
+        { name: "min_rows_for_wide_part", href: "/ru/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part", default: "0" },
+        { name: "min_rows_to_fsync_after_merge", href: "/ru/reference/settings/merge-tree-settings/min-rows#min_rows_to_fsync_after_merge", default: "0" }
       ],
       children: []
     },
@@ -630,20 +630,20 @@ const MergeTreeSettingsExplorer = () => {
       label: "number_of_*",
       count: 6,
       settings: [
-        { name: "number_of_free_entries_in_pool_to_execute_mutation", href: "/reference/settings/merge-tree-settings/number-of#number_of_free_entries_in_pool_to_execute_mutation", default: "20" },
+        { name: "number_of_free_entries_in_pool_to_execute_mutation", href: "/ru/reference/settings/merge-tree-settings/number-of#number_of_free_entries_in_pool_to_execute_mutation", default: "20" },
         {
           name: "number_of_free_entries_in_pool_to_execute_optimize_entire_partition",
-          href: "/reference/settings/merge-tree-settings/number-of#number_of_free_entries_in_pool_to_execute_optimize_entire_partition",
+          href: "/ru/reference/settings/merge-tree-settings/number-of#number_of_free_entries_in_pool_to_execute_optimize_entire_partition",
           default: "25"
         },
         {
           name: "number_of_free_entries_in_pool_to_lower_max_size_of_merge",
-          href: "/reference/settings/merge-tree-settings/number-of#number_of_free_entries_in_pool_to_lower_max_size_of_merge",
+          href: "/ru/reference/settings/merge-tree-settings/number-of#number_of_free_entries_in_pool_to_lower_max_size_of_merge",
           default: "8"
         },
-        { name: "number_of_mutations_to_delay", href: "/reference/settings/merge-tree-settings/number-of#number_of_mutations_to_delay", default: "500" },
-        { name: "number_of_mutations_to_throw", href: "/reference/settings/merge-tree-settings/number-of#number_of_mutations_to_throw", default: "1000" },
-        { name: "number_of_partitions_to_consider_for_merge", href: "/reference/settings/merge-tree-settings/number-of#number_of_partitions_to_consider_for_merge", default: "10" }
+        { name: "number_of_mutations_to_delay", href: "/ru/reference/settings/merge-tree-settings/number-of#number_of_mutations_to_delay", default: "500" },
+        { name: "number_of_mutations_to_throw", href: "/ru/reference/settings/merge-tree-settings/number-of#number_of_mutations_to_throw", default: "1000" },
+        { name: "number_of_partitions_to_consider_for_merge", href: "/ru/reference/settings/merge-tree-settings/number-of#number_of_partitions_to_consider_for_merge", default: "10" }
       ],
       children: []
     },
@@ -651,12 +651,12 @@ const MergeTreeSettingsExplorer = () => {
       label: "object_shared_*",
       count: 4,
       settings: [
-        { name: "object_shared_data_buckets_for_compact_part", href: "/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part", default: "8" },
-        { name: "object_shared_data_buckets_for_wide_part", href: "/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part", default: "32" },
-        { name: "object_shared_data_serialization_version", href: "/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version", default: "advanced" },
+        { name: "object_shared_data_buckets_for_compact_part", href: "/ru/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part", default: "8" },
+        { name: "object_shared_data_buckets_for_wide_part", href: "/ru/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part", default: "32" },
+        { name: "object_shared_data_serialization_version", href: "/ru/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version", default: "advanced" },
         {
           name: "object_shared_data_serialization_version_for_zero_level_parts",
-          href: "/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts",
+          href: "/ru/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts",
           default: "map_with_buckets"
         }
       ],
@@ -666,8 +666,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "part_moves_*",
       count: 2,
       settings: [
-        { name: "part_moves_between_shards_delay_seconds", href: "/reference/settings/merge-tree-settings/part-moves#part_moves_between_shards_delay_seconds", default: "30" },
-        { name: "part_moves_between_shards_enable", href: "/reference/settings/merge-tree-settings/part-moves#part_moves_between_shards_enable", default: "0" }
+        { name: "part_moves_between_shards_delay_seconds", href: "/ru/reference/settings/merge-tree-settings/part-moves#part_moves_between_shards_delay_seconds", default: "30" },
+        { name: "part_moves_between_shards_enable", href: "/ru/reference/settings/merge-tree-settings/part-moves#part_moves_between_shards_enable", default: "0" }
       ],
       children: []
     },
@@ -675,8 +675,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "parts_to_*",
       count: 2,
       settings: [
-        { name: "parts_to_delay_insert", href: "/reference/settings/merge-tree-settings/parts-to#parts_to_delay_insert", default: "1000" },
-        { name: "parts_to_throw_insert", href: "/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert", default: "3000" }
+        { name: "parts_to_delay_insert", href: "/ru/reference/settings/merge-tree-settings/parts-to#parts_to_delay_insert", default: "1000" },
+        { name: "parts_to_throw_insert", href: "/ru/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert", default: "3000" }
       ],
       children: []
     },
@@ -684,8 +684,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "prefer_fetch_*",
       count: 2,
       settings: [
-        { name: "prefer_fetch_merged_part_size_threshold", href: "/reference/settings/merge-tree-settings/prefer-fetch#prefer_fetch_merged_part_size_threshold", default: "10737418240" },
-        { name: "prefer_fetch_merged_part_time_threshold", href: "/reference/settings/merge-tree-settings/prefer-fetch#prefer_fetch_merged_part_time_threshold", default: "3600" }
+        { name: "prefer_fetch_merged_part_size_threshold", href: "/ru/reference/settings/merge-tree-settings/prefer-fetch#prefer_fetch_merged_part_size_threshold", default: "10737418240" },
+        { name: "prefer_fetch_merged_part_time_threshold", href: "/ru/reference/settings/merge-tree-settings/prefer-fetch#prefer_fetch_merged_part_time_threshold", default: "3600" }
       ],
       children: []
     },
@@ -693,8 +693,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "prewarm_*",
       count: 2,
       settings: [
-        { name: "prewarm_mark_cache", href: "/reference/settings/merge-tree-settings/prewarm#prewarm_mark_cache", default: "0" },
-        { name: "prewarm_primary_key_cache", href: "/reference/settings/merge-tree-settings/prewarm#prewarm_primary_key_cache", default: "0" }
+        { name: "prewarm_mark_cache", href: "/ru/reference/settings/merge-tree-settings/prewarm#prewarm_mark_cache", default: "0" },
+        { name: "prewarm_primary_key_cache", href: "/ru/reference/settings/merge-tree-settings/prewarm#prewarm_primary_key_cache", default: "0" }
       ],
       children: []
     },
@@ -702,12 +702,12 @@ const MergeTreeSettingsExplorer = () => {
       label: "primary_key_*",
       count: 4,
       settings: [
-        { name: "primary_key_compress_block_size", href: "/reference/settings/merge-tree-settings/primary-key#primary_key_compress_block_size", default: "65536" },
-        { name: "primary_key_compression_codec", href: "/reference/settings/merge-tree-settings/primary-key#primary_key_compression_codec", default: "ZSTD(3)" },
-        { name: "primary_key_lazy_load", href: "/reference/settings/merge-tree-settings/primary-key#primary_key_lazy_load", default: "1" },
+        { name: "primary_key_compress_block_size", href: "/ru/reference/settings/merge-tree-settings/primary-key#primary_key_compress_block_size", default: "65536" },
+        { name: "primary_key_compression_codec", href: "/ru/reference/settings/merge-tree-settings/primary-key#primary_key_compression_codec", default: "ZSTD(3)" },
+        { name: "primary_key_lazy_load", href: "/ru/reference/settings/merge-tree-settings/primary-key#primary_key_lazy_load", default: "1" },
         {
           name: "primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns",
-          href: "/reference/settings/merge-tree-settings/primary-key#primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns",
+          href: "/ru/reference/settings/merge-tree-settings/primary-key#primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns",
           default: "0.9"
         }
       ],
@@ -717,8 +717,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "refresh_*",
       count: 2,
       settings: [
-        { name: "refresh_parts_interval", href: "/reference/settings/merge-tree-settings/refresh#refresh_parts_interval", default: "0" },
-        { name: "refresh_statistics_interval", href: "/reference/settings/merge-tree-settings/refresh#refresh_statistics_interval", default: "300" }
+        { name: "refresh_parts_interval", href: "/ru/reference/settings/merge-tree-settings/refresh#refresh_parts_interval", default: "0" },
+        { name: "refresh_statistics_interval", href: "/ru/reference/settings/merge-tree-settings/refresh#refresh_statistics_interval", default: "300" }
       ],
       children: []
     },
@@ -728,11 +728,11 @@ const MergeTreeSettingsExplorer = () => {
       settings: [
         {
           name: "remote_fs_execute_merges_on_single_replica_time_threshold",
-          href: "/reference/settings/merge-tree-settings/remote-fs#remote_fs_execute_merges_on_single_replica_time_threshold",
+          href: "/ru/reference/settings/merge-tree-settings/remote-fs#remote_fs_execute_merges_on_single_replica_time_threshold",
           default: "10800"
         },
-        { name: "remote_fs_zero_copy_path_compatible_mode", href: "/reference/settings/merge-tree-settings/remote-fs#remote_fs_zero_copy_path_compatible_mode", default: "0" },
-        { name: "remote_fs_zero_copy_zookeeper_path", href: "/reference/settings/merge-tree-settings/remote-fs#remote_fs_zero_copy_zookeeper_path", default: "/clickhouse/zero_copy" }
+        { name: "remote_fs_zero_copy_path_compatible_mode", href: "/ru/reference/settings/merge-tree-settings/remote-fs#remote_fs_zero_copy_path_compatible_mode", default: "0" },
+        { name: "remote_fs_zero_copy_zookeeper_path", href: "/ru/reference/settings/merge-tree-settings/remote-fs#remote_fs_zero_copy_zookeeper_path", default: "/clickhouse/zero_copy" }
       ],
       children: []
     },
@@ -740,9 +740,9 @@ const MergeTreeSettingsExplorer = () => {
       label: "remove_*",
       count: 3,
       settings: [
-        { name: "remove_empty_parts", href: "/reference/settings/merge-tree-settings/remove#remove_empty_parts", default: "1" },
-        { name: "remove_rolled_back_parts_immediately", href: "/reference/settings/merge-tree-settings/remove#remove_rolled_back_parts_immediately", default: "1" },
-        { name: "remove_unused_patch_parts", href: "/reference/settings/merge-tree-settings/remove#remove_unused_patch_parts", default: "1" }
+        { name: "remove_empty_parts", href: "/ru/reference/settings/merge-tree-settings/remove#remove_empty_parts", default: "1" },
+        { name: "remove_rolled_back_parts_immediately", href: "/ru/reference/settings/merge-tree-settings/remove#remove_rolled_back_parts_immediately", default: "1" },
+        { name: "remove_unused_patch_parts", href: "/ru/reference/settings/merge-tree-settings/remove#remove_unused_patch_parts", default: "1" }
       ],
       children: []
     },
@@ -750,16 +750,16 @@ const MergeTreeSettingsExplorer = () => {
       label: "replicated_deduplication_window_*",
       count: 4,
       settings: [
-        { name: "replicated_deduplication_window", href: "/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window", default: "10000" },
+        { name: "replicated_deduplication_window", href: "/ru/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window", default: "10000" },
         {
           name: "replicated_deduplication_window_for_async_inserts",
-          href: "/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_for_async_inserts",
+          href: "/ru/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_for_async_inserts",
           default: "10000"
         },
-        { name: "replicated_deduplication_window_seconds", href: "/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds", default: "3600" },
+        { name: "replicated_deduplication_window_seconds", href: "/ru/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds", default: "3600" },
         {
           name: "replicated_deduplication_window_seconds_for_async_inserts",
-          href: "/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds_for_async_inserts",
+          href: "/ru/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds_for_async_inserts",
           default: "604800"
         }
       ],
@@ -769,13 +769,13 @@ const MergeTreeSettingsExplorer = () => {
       label: "replicated_fetches_*",
       count: 5,
       settings: [
-        { name: "replicated_fetches_http_connection_timeout", href: "/reference/settings/merge-tree-settings/replicated-fetches#replicated_fetches_http_connection_timeout", default: "0" },
-        { name: "replicated_fetches_http_receive_timeout", href: "/reference/settings/merge-tree-settings/replicated-fetches#replicated_fetches_http_receive_timeout", default: "0" },
-        { name: "replicated_fetches_http_send_timeout", href: "/reference/settings/merge-tree-settings/replicated-fetches#replicated_fetches_http_send_timeout", default: "0" },
-        { name: "replicated_fetches_min_part_level", href: "/reference/settings/merge-tree-settings/replicated-fetches#replicated_fetches_min_part_level", default: "0" },
+        { name: "replicated_fetches_http_connection_timeout", href: "/ru/reference/settings/merge-tree-settings/replicated-fetches#replicated_fetches_http_connection_timeout", default: "0" },
+        { name: "replicated_fetches_http_receive_timeout", href: "/ru/reference/settings/merge-tree-settings/replicated-fetches#replicated_fetches_http_receive_timeout", default: "0" },
+        { name: "replicated_fetches_http_send_timeout", href: "/ru/reference/settings/merge-tree-settings/replicated-fetches#replicated_fetches_http_send_timeout", default: "0" },
+        { name: "replicated_fetches_min_part_level", href: "/ru/reference/settings/merge-tree-settings/replicated-fetches#replicated_fetches_min_part_level", default: "0" },
         {
           name: "replicated_fetches_min_part_level_timeout_seconds",
-          href: "/reference/settings/merge-tree-settings/replicated-fetches#replicated_fetches_min_part_level_timeout_seconds",
+          href: "/ru/reference/settings/merge-tree-settings/replicated-fetches#replicated_fetches_min_part_level_timeout_seconds",
           default: "300"
         }
       ],
@@ -785,13 +785,13 @@ const MergeTreeSettingsExplorer = () => {
       label: "replicated_max_*",
       count: 7,
       settings: [
-        { name: "replicated_max_mutations_in_one_entry", href: "/reference/settings/merge-tree-settings/replicated-max#replicated_max_mutations_in_one_entry", default: "10000" },
-        { name: "replicated_max_parallel_fetches", href: "/reference/settings/merge-tree-settings/replicated-max#replicated_max_parallel_fetches", default: "0" },
-        { name: "replicated_max_parallel_fetches_for_host", href: "/reference/settings/merge-tree-settings/replicated-max#replicated_max_parallel_fetches_for_host", default: "15" },
-        { name: "replicated_max_parallel_fetches_for_table", href: "/reference/settings/merge-tree-settings/replicated-max#replicated_max_parallel_fetches_for_table", default: "0" },
-        { name: "replicated_max_parallel_sends", href: "/reference/settings/merge-tree-settings/replicated-max#replicated_max_parallel_sends", default: "0" },
-        { name: "replicated_max_parallel_sends_for_table", href: "/reference/settings/merge-tree-settings/replicated-max#replicated_max_parallel_sends_for_table", default: "0" },
-        { name: "replicated_max_ratio_of_wrong_parts", href: "/reference/settings/merge-tree-settings/replicated-max#replicated_max_ratio_of_wrong_parts", default: "0.5" }
+        { name: "replicated_max_mutations_in_one_entry", href: "/ru/reference/settings/merge-tree-settings/replicated-max#replicated_max_mutations_in_one_entry", default: "10000" },
+        { name: "replicated_max_parallel_fetches", href: "/ru/reference/settings/merge-tree-settings/replicated-max#replicated_max_parallel_fetches", default: "0" },
+        { name: "replicated_max_parallel_fetches_for_host", href: "/ru/reference/settings/merge-tree-settings/replicated-max#replicated_max_parallel_fetches_for_host", default: "15" },
+        { name: "replicated_max_parallel_fetches_for_table", href: "/ru/reference/settings/merge-tree-settings/replicated-max#replicated_max_parallel_fetches_for_table", default: "0" },
+        { name: "replicated_max_parallel_sends", href: "/ru/reference/settings/merge-tree-settings/replicated-max#replicated_max_parallel_sends", default: "0" },
+        { name: "replicated_max_parallel_sends_for_table", href: "/ru/reference/settings/merge-tree-settings/replicated-max#replicated_max_parallel_sends_for_table", default: "0" },
+        { name: "replicated_max_ratio_of_wrong_parts", href: "/ru/reference/settings/merge-tree-settings/replicated-max#replicated_max_ratio_of_wrong_parts", default: "0.5" }
       ],
       children: []
     },
@@ -799,131 +799,131 @@ const MergeTreeSettingsExplorer = () => {
       label: "shared_merge_*",
       count: 51,
       settings: [
-        { name: "shared_merge_tree_activate_coordinated_merges_tasks", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_activate_coordinated_merges_tasks", default: "0" },
-        { name: "shared_merge_tree_create_per_replica_metadata_nodes", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_create_per_replica_metadata_nodes", default: "0" },
+        { name: "shared_merge_tree_activate_coordinated_merges_tasks", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_activate_coordinated_merges_tasks", default: "0" },
+        { name: "shared_merge_tree_create_per_replica_metadata_nodes", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_create_per_replica_metadata_nodes", default: "0" },
         {
           name: "shared_merge_tree_disable_merges_and_mutations_assignment",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_disable_merges_and_mutations_assignment",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_disable_merges_and_mutations_assignment",
           default: "0"
         },
-        { name: "shared_merge_tree_empty_partition_lifetime", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_empty_partition_lifetime", default: "86400" },
+        { name: "shared_merge_tree_empty_partition_lifetime", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_empty_partition_lifetime", default: "86400" },
         {
           name: "shared_merge_tree_enable_automatic_empty_partitions_cleanup",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_enable_automatic_empty_partitions_cleanup",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_enable_automatic_empty_partitions_cleanup",
           default: "1"
         },
-        { name: "shared_merge_tree_enable_coordinated_merges", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_enable_coordinated_merges", default: "1" },
-        { name: "shared_merge_tree_enable_keeper_parts_extra_data", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_enable_keeper_parts_extra_data", default: "1" },
-        { name: "shared_merge_tree_enable_outdated_parts_check", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_enable_outdated_parts_check", default: "1" },
-        { name: "shared_merge_tree_idle_parts_update_seconds", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_idle_parts_update_seconds", default: "3600" },
-        { name: "shared_merge_tree_inactive_replica_cutoff_seconds", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_inactive_replica_cutoff_seconds", default: "0" },
-        { name: "shared_merge_tree_initial_parts_update_backoff_ms", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_initial_parts_update_backoff_ms", default: "50" },
+        { name: "shared_merge_tree_enable_coordinated_merges", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_enable_coordinated_merges", default: "1" },
+        { name: "shared_merge_tree_enable_keeper_parts_extra_data", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_enable_keeper_parts_extra_data", default: "1" },
+        { name: "shared_merge_tree_enable_outdated_parts_check", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_enable_outdated_parts_check", default: "1" },
+        { name: "shared_merge_tree_idle_parts_update_seconds", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_idle_parts_update_seconds", default: "3600" },
+        { name: "shared_merge_tree_inactive_replica_cutoff_seconds", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_inactive_replica_cutoff_seconds", default: "0" },
+        { name: "shared_merge_tree_initial_parts_update_backoff_ms", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_initial_parts_update_backoff_ms", default: "50" },
         {
           name: "shared_merge_tree_interserver_http_connection_timeout_ms",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_interserver_http_connection_timeout_ms",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_interserver_http_connection_timeout_ms",
           default: "100"
         },
-        { name: "shared_merge_tree_interserver_http_timeout_ms", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_interserver_http_timeout_ms", default: "10000" },
+        { name: "shared_merge_tree_interserver_http_timeout_ms", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_interserver_http_timeout_ms", default: "10000" },
         {
           name: "shared_merge_tree_leader_update_period_random_add_seconds",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_leader_update_period_random_add_seconds",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_leader_update_period_random_add_seconds",
           default: "10"
         },
-        { name: "shared_merge_tree_leader_update_period_seconds", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_leader_update_period_seconds", default: "30" },
+        { name: "shared_merge_tree_leader_update_period_seconds", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_leader_update_period_seconds", default: "30" },
         {
           name: "shared_merge_tree_max_outdated_parts_to_process_at_once",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_max_outdated_parts_to_process_at_once",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_max_outdated_parts_to_process_at_once",
           default: "1000"
         },
-        { name: "shared_merge_tree_max_parts_update_backoff_ms", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_max_parts_update_backoff_ms", default: "5000" },
-        { name: "shared_merge_tree_max_parts_update_leaders_in_total", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_max_parts_update_leaders_in_total", default: "6" },
-        { name: "shared_merge_tree_max_parts_update_leaders_per_az", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_max_parts_update_leaders_per_az", default: "2" },
-        { name: "shared_merge_tree_max_replicas_for_parts_deletion", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_max_replicas_for_parts_deletion", default: "10" },
+        { name: "shared_merge_tree_max_parts_update_backoff_ms", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_max_parts_update_backoff_ms", default: "5000" },
+        { name: "shared_merge_tree_max_parts_update_leaders_in_total", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_max_parts_update_leaders_in_total", default: "6" },
+        { name: "shared_merge_tree_max_parts_update_leaders_per_az", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_max_parts_update_leaders_per_az", default: "2" },
+        { name: "shared_merge_tree_max_replicas_for_parts_deletion", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_max_replicas_for_parts_deletion", default: "10" },
         {
           name: "shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range",
           default: "5"
         },
-        { name: "shared_merge_tree_max_suspicious_broken_parts", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_max_suspicious_broken_parts", default: "0" },
-        { name: "shared_merge_tree_max_suspicious_broken_parts_bytes", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_max_suspicious_broken_parts_bytes", default: "0" },
-        { name: "shared_merge_tree_memo_ids_remove_timeout_seconds", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_memo_ids_remove_timeout_seconds", default: "1800" },
+        { name: "shared_merge_tree_max_suspicious_broken_parts", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_max_suspicious_broken_parts", default: "0" },
+        { name: "shared_merge_tree_max_suspicious_broken_parts_bytes", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_max_suspicious_broken_parts_bytes", default: "0" },
+        { name: "shared_merge_tree_memo_ids_remove_timeout_seconds", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_memo_ids_remove_timeout_seconds", default: "1800" },
         {
           name: "shared_merge_tree_merge_coordinator_distribution_algorithm",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_coordinator_distribution_algorithm",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_coordinator_distribution_algorithm",
           default: "sainte_lague"
         },
         {
           name: "shared_merge_tree_merge_coordinator_election_check_period_ms",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_coordinator_election_check_period_ms",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_coordinator_election_check_period_ms",
           default: "30000"
         },
-        { name: "shared_merge_tree_merge_coordinator_factor", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_coordinator_factor", default: "1.1" },
+        { name: "shared_merge_tree_merge_coordinator_factor", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_coordinator_factor", default: "1.1" },
         {
           name: "shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms",
           default: "10000"
         },
         {
           name: "shared_merge_tree_merge_coordinator_max_merge_request_size",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_coordinator_max_merge_request_size",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_coordinator_max_merge_request_size",
           default: "20"
         },
-        { name: "shared_merge_tree_merge_coordinator_max_period_ms", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_coordinator_max_period_ms", default: "10000" },
+        { name: "shared_merge_tree_merge_coordinator_max_period_ms", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_coordinator_max_period_ms", default: "10000" },
         {
           name: "shared_merge_tree_merge_coordinator_merges_prepare_count",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_coordinator_merges_prepare_count",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_coordinator_merges_prepare_count",
           default: "auto"
         },
-        { name: "shared_merge_tree_merge_coordinator_min_period_ms", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_coordinator_min_period_ms", default: "1" },
-        { name: "shared_merge_tree_merge_worker_fast_timeout_ms", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_worker_fast_timeout_ms", default: "100" },
-        { name: "shared_merge_tree_merge_worker_regular_timeout_ms", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_worker_regular_timeout_ms", default: "10000" },
-        { name: "shared_merge_tree_outdated_parts_group_size", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_outdated_parts_group_size", default: "2" },
+        { name: "shared_merge_tree_merge_coordinator_min_period_ms", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_coordinator_min_period_ms", default: "1" },
+        { name: "shared_merge_tree_merge_worker_fast_timeout_ms", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_worker_fast_timeout_ms", default: "100" },
+        { name: "shared_merge_tree_merge_worker_regular_timeout_ms", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_merge_worker_regular_timeout_ms", default: "10000" },
+        { name: "shared_merge_tree_outdated_parts_group_size", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_outdated_parts_group_size", default: "2" },
         {
           name: "shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations",
           default: "0.5"
         },
-        { name: "shared_merge_tree_parts_load_batch_size", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_parts_load_batch_size", default: "32" },
+        { name: "shared_merge_tree_parts_load_batch_size", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_parts_load_batch_size", default: "32" },
         {
           name: "shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms",
           default: "0"
         },
         {
           name: "shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold",
           default: "1000000"
         },
-        { name: "shared_merge_tree_range_for_merge_window_size", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_range_for_merge_window_size", default: "10" },
-        { name: "shared_merge_tree_read_virtual_parts_from_leader", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_read_virtual_parts_from_leader", default: "1" },
+        { name: "shared_merge_tree_range_for_merge_window_size", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_range_for_merge_window_size", default: "10" },
+        { name: "shared_merge_tree_read_virtual_parts_from_leader", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_read_virtual_parts_from_leader", default: "1" },
         {
           name: "shared_merge_tree_replica_set_max_lifetime_seconds",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_replica_set_max_lifetime_seconds",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_replica_set_max_lifetime_seconds",
           default: "1800"
         },
         {
           name: "shared_merge_tree_try_fetch_part_in_memory_data_from_replicas",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_try_fetch_part_in_memory_data_from_replicas",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_try_fetch_part_in_memory_data_from_replicas",
           default: "0"
         },
         {
           name: "shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup",
           default: "0"
         },
-        { name: "shared_merge_tree_update_replica_flags_delay_ms", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_update_replica_flags_delay_ms", default: "30000" },
-        { name: "shared_merge_tree_use_metadata_hints_cache", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_use_metadata_hints_cache", default: "1" },
-        { name: "shared_merge_tree_use_outdated_parts_compact_format", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_use_outdated_parts_compact_format", default: "1" },
+        { name: "shared_merge_tree_update_replica_flags_delay_ms", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_update_replica_flags_delay_ms", default: "30000" },
+        { name: "shared_merge_tree_use_metadata_hints_cache", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_use_metadata_hints_cache", default: "1" },
+        { name: "shared_merge_tree_use_outdated_parts_compact_format", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_use_outdated_parts_compact_format", default: "1" },
         {
           name: "shared_merge_tree_use_too_many_parts_count_from_virtual_parts",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_use_too_many_parts_count_from_virtual_parts",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_use_too_many_parts_count_from_virtual_parts",
           default: "0"
         },
-        { name: "shared_merge_tree_use_zookeeper_connection_pool", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_use_zookeeper_connection_pool", default: "0" },
-        { name: "shared_merge_tree_virtual_parts_discovery_batch", href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_virtual_parts_discovery_batch", default: "1" },
+        { name: "shared_merge_tree_use_zookeeper_connection_pool", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_use_zookeeper_connection_pool", default: "0" },
+        { name: "shared_merge_tree_virtual_parts_discovery_batch", href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_virtual_parts_discovery_batch", default: "1" },
         {
           name: "shared_merge_tree_virtual_parts_partition_atomic_discovery",
-          href: "/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_virtual_parts_partition_atomic_discovery",
+          href: "/ru/reference/settings/merge-tree-settings/shared-merge#shared_merge_tree_virtual_parts_partition_atomic_discovery",
           default: "1"
         }
       ],
@@ -935,10 +935,10 @@ const MergeTreeSettingsExplorer = () => {
       settings: [
         {
           name: "sleep_before_commit_local_part_in_replicated_table_ms",
-          href: "/reference/settings/merge-tree-settings/sleep-before#sleep_before_commit_local_part_in_replicated_table_ms",
+          href: "/ru/reference/settings/merge-tree-settings/sleep-before#sleep_before_commit_local_part_in_replicated_table_ms",
           default: "0"
         },
-        { name: "sleep_before_loading_outdated_parts_ms", href: "/reference/settings/merge-tree-settings/sleep-before#sleep_before_loading_outdated_parts_ms", default: "0" }
+        { name: "sleep_before_loading_outdated_parts_ms", href: "/ru/reference/settings/merge-tree-settings/sleep-before#sleep_before_loading_outdated_parts_ms", default: "0" }
       ],
       children: []
     },
@@ -946,8 +946,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "table_*",
       count: 2,
       settings: [
-        { name: "table_disk", href: "/reference/settings/merge-tree-settings/table#table_disk", default: "0" },
-        { name: "table_readonly", href: "/reference/settings/merge-tree-settings/table#table_readonly", default: "0" }
+        { name: "table_disk", href: "/ru/reference/settings/merge-tree-settings/table#table_disk", default: "0" },
+        { name: "table_readonly", href: "/ru/reference/settings/merge-tree-settings/table#table_readonly", default: "0" }
       ],
       children: []
     },
@@ -955,12 +955,12 @@ const MergeTreeSettingsExplorer = () => {
       label: "text_index_*",
       count: 6,
       settings: [
-        { name: "text_index_dictionary_block_frontcoding_compression", href: "/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression", default: "1" },
-        { name: "text_index_dictionary_block_size", href: "/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size", default: "512" },
-        { name: "text_index_max_memory_usage_before_flush", href: "/reference/settings/merge-tree-settings/text-index#text_index_max_memory_usage_before_flush", default: "1073741824" },
-        { name: "text_index_max_processed_tokens_before_flush", href: "/reference/settings/merge-tree-settings/text-index#text_index_max_processed_tokens_before_flush", default: "100000000" },
-        { name: "text_index_posting_list_block_size", href: "/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size", default: "1048576" },
-        { name: "text_index_posting_list_codec", href: "/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec", default: "none" }
+        { name: "text_index_dictionary_block_frontcoding_compression", href: "/ru/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression", default: "1" },
+        { name: "text_index_dictionary_block_size", href: "/ru/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size", default: "512" },
+        { name: "text_index_max_memory_usage_before_flush", href: "/ru/reference/settings/merge-tree-settings/text-index#text_index_max_memory_usage_before_flush", default: "1073741824" },
+        { name: "text_index_max_processed_tokens_before_flush", href: "/ru/reference/settings/merge-tree-settings/text-index#text_index_max_processed_tokens_before_flush", default: "100000000" },
+        { name: "text_index_posting_list_block_size", href: "/ru/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size", default: "1048576" },
+        { name: "text_index_posting_list_codec", href: "/ru/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec", default: "none" }
       ],
       children: []
     },
@@ -968,12 +968,12 @@ const MergeTreeSettingsExplorer = () => {
       label: "use_*",
       count: 6,
       settings: [
-        { name: "use_adaptive_write_buffer_for_dynamic_subcolumns", href: "/reference/settings/merge-tree-settings/use#use_adaptive_write_buffer_for_dynamic_subcolumns", default: "1" },
-        { name: "use_async_block_ids_cache", href: "/reference/settings/merge-tree-settings/use#use_async_block_ids_cache", default: "1" },
-        { name: "use_compact_variant_discriminators_serialization", href: "/reference/settings/merge-tree-settings/use#use_compact_variant_discriminators_serialization", default: "1" },
-        { name: "use_const_adaptive_granularity", href: "/reference/settings/merge-tree-settings/use#use_const_adaptive_granularity", default: "0" },
-        { name: "use_metadata_cache", href: "/reference/settings/merge-tree-settings/use#use_metadata_cache", default: "0" },
-        { name: "use_primary_key_cache", href: "/reference/settings/merge-tree-settings/use#use_primary_key_cache", default: "0" }
+        { name: "use_adaptive_write_buffer_for_dynamic_subcolumns", href: "/ru/reference/settings/merge-tree-settings/use#use_adaptive_write_buffer_for_dynamic_subcolumns", default: "1" },
+        { name: "use_async_block_ids_cache", href: "/ru/reference/settings/merge-tree-settings/use#use_async_block_ids_cache", default: "1" },
+        { name: "use_compact_variant_discriminators_serialization", href: "/ru/reference/settings/merge-tree-settings/use#use_compact_variant_discriminators_serialization", default: "1" },
+        { name: "use_const_adaptive_granularity", href: "/ru/reference/settings/merge-tree-settings/use#use_const_adaptive_granularity", default: "0" },
+        { name: "use_metadata_cache", href: "/ru/reference/settings/merge-tree-settings/use#use_metadata_cache", default: "0" },
+        { name: "use_primary_key_cache", href: "/ru/reference/settings/merge-tree-settings/use#use_primary_key_cache", default: "0" }
       ],
       children: []
     },
@@ -981,8 +981,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "use_minimalistic_*",
       count: 2,
       settings: [
-        { name: "use_minimalistic_checksums_in_zookeeper", href: "/reference/settings/merge-tree-settings/use-minimalistic#use_minimalistic_checksums_in_zookeeper", default: "1" },
-        { name: "use_minimalistic_part_header_in_zookeeper", href: "/reference/settings/merge-tree-settings/use-minimalistic#use_minimalistic_part_header_in_zookeeper", default: "1" }
+        { name: "use_minimalistic_checksums_in_zookeeper", href: "/ru/reference/settings/merge-tree-settings/use-minimalistic#use_minimalistic_checksums_in_zookeeper", default: "1" },
+        { name: "use_minimalistic_part_header_in_zookeeper", href: "/ru/reference/settings/merge-tree-settings/use-minimalistic#use_minimalistic_part_header_in_zookeeper", default: "1" }
       ],
       children: []
     },
@@ -990,12 +990,12 @@ const MergeTreeSettingsExplorer = () => {
       label: "vertical_merge_*",
       count: 6,
       settings: [
-        { name: "vertical_merge_algorithm_min_bytes_to_activate", href: "/reference/settings/merge-tree-settings/vertical-merge#vertical_merge_algorithm_min_bytes_to_activate", default: "0" },
-        { name: "vertical_merge_algorithm_min_columns_to_activate", href: "/reference/settings/merge-tree-settings/vertical-merge#vertical_merge_algorithm_min_columns_to_activate", default: "11" },
-        { name: "vertical_merge_algorithm_min_rows_to_activate", href: "/reference/settings/merge-tree-settings/vertical-merge#vertical_merge_algorithm_min_rows_to_activate", default: "131072" },
-        { name: "vertical_merge_optimize_lightweight_delete", href: "/reference/settings/merge-tree-settings/vertical-merge#vertical_merge_optimize_lightweight_delete", default: "1" },
-        { name: "vertical_merge_optimize_ttl_delete", href: "/reference/settings/merge-tree-settings/vertical-merge#vertical_merge_optimize_ttl_delete", default: "1" },
-        { name: "vertical_merge_remote_filesystem_prefetch", href: "/reference/settings/merge-tree-settings/vertical-merge#vertical_merge_remote_filesystem_prefetch", default: "1" }
+        { name: "vertical_merge_algorithm_min_bytes_to_activate", href: "/ru/reference/settings/merge-tree-settings/vertical-merge#vertical_merge_algorithm_min_bytes_to_activate", default: "0" },
+        { name: "vertical_merge_algorithm_min_columns_to_activate", href: "/ru/reference/settings/merge-tree-settings/vertical-merge#vertical_merge_algorithm_min_columns_to_activate", default: "11" },
+        { name: "vertical_merge_algorithm_min_rows_to_activate", href: "/ru/reference/settings/merge-tree-settings/vertical-merge#vertical_merge_algorithm_min_rows_to_activate", default: "131072" },
+        { name: "vertical_merge_optimize_lightweight_delete", href: "/ru/reference/settings/merge-tree-settings/vertical-merge#vertical_merge_optimize_lightweight_delete", default: "1" },
+        { name: "vertical_merge_optimize_ttl_delete", href: "/ru/reference/settings/merge-tree-settings/vertical-merge#vertical_merge_optimize_ttl_delete", default: "1" },
+        { name: "vertical_merge_remote_filesystem_prefetch", href: "/ru/reference/settings/merge-tree-settings/vertical-merge#vertical_merge_remote_filesystem_prefetch", default: "1" }
       ],
       children: []
     },
@@ -1003,8 +1003,8 @@ const MergeTreeSettingsExplorer = () => {
       label: "write_*",
       count: 2,
       settings: [
-        { name: "write_final_mark", href: "/reference/settings/merge-tree-settings/write#write_final_mark", default: "1" },
-        { name: "write_marks_for_substreams_in_compact_parts", href: "/reference/settings/merge-tree-settings/write#write_marks_for_substreams_in_compact_parts", default: "1" }
+        { name: "write_final_mark", href: "/ru/reference/settings/merge-tree-settings/write#write_final_mark", default: "1" },
+        { name: "write_marks_for_substreams_in_compact_parts", href: "/ru/reference/settings/merge-tree-settings/write#write_marks_for_substreams_in_compact_parts", default: "1" }
       ],
       children: []
     },
@@ -1012,9 +1012,9 @@ const MergeTreeSettingsExplorer = () => {
       label: "write_ahead_*",
       count: 3,
       settings: [
-        { name: "write_ahead_log_bytes_to_fsync", href: "/reference/settings/merge-tree-settings/write-ahead#write_ahead_log_bytes_to_fsync", default: "104857600" },
-        { name: "write_ahead_log_interval_ms_to_fsync", href: "/reference/settings/merge-tree-settings/write-ahead#write_ahead_log_interval_ms_to_fsync", default: "100" },
-        { name: "write_ahead_log_max_bytes", href: "/reference/settings/merge-tree-settings/write-ahead#write_ahead_log_max_bytes", default: "1073741824" }
+        { name: "write_ahead_log_bytes_to_fsync", href: "/ru/reference/settings/merge-tree-settings/write-ahead#write_ahead_log_bytes_to_fsync", default: "104857600" },
+        { name: "write_ahead_log_interval_ms_to_fsync", href: "/ru/reference/settings/merge-tree-settings/write-ahead#write_ahead_log_interval_ms_to_fsync", default: "100" },
+        { name: "write_ahead_log_max_bytes", href: "/ru/reference/settings/merge-tree-settings/write-ahead#write_ahead_log_max_bytes", default: "1073741824" }
       ],
       children: []
     },
@@ -1024,18 +1024,18 @@ const MergeTreeSettingsExplorer = () => {
       settings: [
         {
           name: "zero_copy_concurrent_part_removal_max_postpone_ratio",
-          href: "/reference/settings/merge-tree-settings/zero-copy#zero_copy_concurrent_part_removal_max_postpone_ratio",
+          href: "/ru/reference/settings/merge-tree-settings/zero-copy#zero_copy_concurrent_part_removal_max_postpone_ratio",
           default: "0.05"
         },
-        { name: "zero_copy_concurrent_part_removal_max_split_times", href: "/reference/settings/merge-tree-settings/zero-copy#zero_copy_concurrent_part_removal_max_split_times", default: "5" },
+        { name: "zero_copy_concurrent_part_removal_max_split_times", href: "/ru/reference/settings/merge-tree-settings/zero-copy#zero_copy_concurrent_part_removal_max_split_times", default: "5" },
         {
           name: "zero_copy_merge_mutation_min_parts_size_sleep_before_lock",
-          href: "/reference/settings/merge-tree-settings/zero-copy#zero_copy_merge_mutation_min_parts_size_sleep_before_lock",
+          href: "/ru/reference/settings/merge-tree-settings/zero-copy#zero_copy_merge_mutation_min_parts_size_sleep_before_lock",
           default: "1073741824"
         },
         {
           name: "zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock",
-          href: "/reference/settings/merge-tree-settings/zero-copy#zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock",
+          href: "/ru/reference/settings/merge-tree-settings/zero-copy#zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock",
           default: "0"
         }
       ],
@@ -1045,69 +1045,69 @@ const MergeTreeSettingsExplorer = () => {
       label: "Другое",
       count: 51,
       settings: [
-        { name: "adaptive_write_buffer_initial_size", href: "/reference/settings/merge-tree-settings/other#adaptive_write_buffer_initial_size", default: "16384" },
+        { name: "adaptive_write_buffer_initial_size", href: "/ru/reference/settings/merge-tree-settings/other#adaptive_write_buffer_initial_size", default: "16384" },
         {
           name: "add_implicit_sign_column_constraint_for_collapsing_engine",
-          href: "/reference/settings/merge-tree-settings/other#add_implicit_sign_column_constraint_for_collapsing_engine",
+          href: "/ru/reference/settings/merge-tree-settings/other#add_implicit_sign_column_constraint_for_collapsing_engine",
           default: "0"
         },
-        { name: "alter_column_secondary_index_mode", href: "/reference/settings/merge-tree-settings/other#alter_column_secondary_index_mode", default: "rebuild" },
-        { name: "always_use_copy_instead_of_hardlinks", href: "/reference/settings/merge-tree-settings/other#always_use_copy_instead_of_hardlinks", default: "0" },
-        { name: "apply_patches_on_merge", href: "/reference/settings/merge-tree-settings/other#apply_patches_on_merge", default: "1" },
-        { name: "assign_part_uuids", href: "/reference/settings/merge-tree-settings/other#assign_part_uuids", default: "0" },
-        { name: "auto_statistics_types", href: "/reference/settings/merge-tree-settings/other#auto_statistics_types", default: "basic, uniq_v2" },
-        { name: "background_task_preferred_step_execution_time_ms", href: "/reference/settings/merge-tree-settings/other#background_task_preferred_step_execution_time_ms", default: "50" },
-        { name: "clean_deleted_rows", href: "/reference/settings/merge-tree-settings/other#clean_deleted_rows", default: "Never" },
-        { name: "clone_replica_zookeeper_create_get_part_batch_size", href: "/reference/settings/merge-tree-settings/other#clone_replica_zookeeper_create_get_part_batch_size", default: "100" },
+        { name: "alter_column_secondary_index_mode", href: "/ru/reference/settings/merge-tree-settings/other#alter_column_secondary_index_mode", default: "rebuild" },
+        { name: "always_use_copy_instead_of_hardlinks", href: "/ru/reference/settings/merge-tree-settings/other#always_use_copy_instead_of_hardlinks", default: "0" },
+        { name: "apply_patches_on_merge", href: "/ru/reference/settings/merge-tree-settings/other#apply_patches_on_merge", default: "1" },
+        { name: "assign_part_uuids", href: "/ru/reference/settings/merge-tree-settings/other#assign_part_uuids", default: "0" },
+        { name: "auto_statistics_types", href: "/ru/reference/settings/merge-tree-settings/other#auto_statistics_types", default: "basic, uniq_v2" },
+        { name: "background_task_preferred_step_execution_time_ms", href: "/ru/reference/settings/merge-tree-settings/other#background_task_preferred_step_execution_time_ms", default: "50" },
+        { name: "clean_deleted_rows", href: "/ru/reference/settings/merge-tree-settings/other#clean_deleted_rows", default: "Never" },
+        { name: "clone_replica_zookeeper_create_get_part_batch_size", href: "/ru/reference/settings/merge-tree-settings/other#clone_replica_zookeeper_create_get_part_batch_size", default: "100" },
         {
           name: "compatibility_allow_sampling_expression_not_in_primary_key",
-          href: "/reference/settings/merge-tree-settings/other#compatibility_allow_sampling_expression_not_in_primary_key",
+          href: "/ru/reference/settings/merge-tree-settings/other#compatibility_allow_sampling_expression_not_in_primary_key",
           default: "0"
         },
-        { name: "compute_exact_num_defaults_for_sparse_columns", href: "/reference/settings/merge-tree-settings/other#compute_exact_num_defaults_for_sparse_columns", default: "1" },
-        { name: "deduplicate_merge_projection_mode", href: "/reference/settings/merge-tree-settings/other#deduplicate_merge_projection_mode", default: "throw" },
-        { name: "deduplication_hashes_cache_update_wait_ms", href: "/reference/settings/merge-tree-settings/other#deduplication_hashes_cache_update_wait_ms", default: "100" },
-        { name: "default_compression_codec", href: "/reference/settings/merge-tree-settings/other#default_compression_codec", default: '""' },
-        { name: "disk", href: "/reference/settings/merge-tree-settings/other#disk", default: '""' },
-        { name: "dynamic_serialization_version", href: "/reference/settings/merge-tree-settings/other#dynamic_serialization_version", default: "v3" },
+        { name: "compute_exact_num_defaults_for_sparse_columns", href: "/ru/reference/settings/merge-tree-settings/other#compute_exact_num_defaults_for_sparse_columns", default: "1" },
+        { name: "deduplicate_merge_projection_mode", href: "/ru/reference/settings/merge-tree-settings/other#deduplicate_merge_projection_mode", default: "throw" },
+        { name: "deduplication_hashes_cache_update_wait_ms", href: "/ru/reference/settings/merge-tree-settings/other#deduplication_hashes_cache_update_wait_ms", default: "100" },
+        { name: "default_compression_codec", href: "/ru/reference/settings/merge-tree-settings/other#default_compression_codec", default: '""' },
+        { name: "disk", href: "/ru/reference/settings/merge-tree-settings/other#disk", default: '""' },
+        { name: "dynamic_serialization_version", href: "/ru/reference/settings/merge-tree-settings/other#dynamic_serialization_version", default: "v3" },
         {
           name: "enforce_index_structure_match_on_partition_manipulation",
-          href: "/reference/settings/merge-tree-settings/other#enforce_index_structure_match_on_partition_manipulation",
+          href: "/ru/reference/settings/merge-tree-settings/other#enforce_index_structure_match_on_partition_manipulation",
           default: "0"
         },
-        { name: "execute_merges_on_single_replica_time_threshold", href: "/reference/settings/merge-tree-settings/other#execute_merges_on_single_replica_time_threshold", default: "0" },
-        { name: "finished_mutations_to_keep", href: "/reference/settings/merge-tree-settings/other#finished_mutations_to_keep", default: "100" },
-        { name: "force_read_through_cache_for_merges", href: "/reference/settings/merge-tree-settings/other#force_read_through_cache_for_merges", default: "0" },
-        { name: "initialization_retry_period", href: "/reference/settings/merge-tree-settings/other#initialization_retry_period", default: "60" },
-        { name: "kill_threads", href: "/reference/settings/merge-tree-settings/other#kill_threads", default: "128" },
-        { name: "lightweight_mutation_projection_mode", href: "/reference/settings/merge-tree-settings/other#lightweight_mutation_projection_mode", default: "throw" },
-        { name: "load_existing_rows_count_for_old_parts", href: "/reference/settings/merge-tree-settings/other#load_existing_rows_count_for_old_parts", default: "0" },
-        { name: "lock_acquire_timeout_for_background_operations", href: "/reference/settings/merge-tree-settings/other#lock_acquire_timeout_for_background_operations", default: "120" },
-        { name: "mutation_workload", href: "/reference/settings/merge-tree-settings/other#mutation_workload", default: '""' },
-        { name: "non_replicated_deduplication_window", href: "/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window", default: "0" },
-        { name: "notify_newest_block_number", href: "/reference/settings/merge-tree-settings/other#notify_newest_block_number", default: "0" },
-        { name: "nullable_serialization_version", href: "/reference/settings/merge-tree-settings/other#nullable_serialization_version", default: "basic" },
-        { name: "object_serialization_version", href: "/reference/settings/merge-tree-settings/other#object_serialization_version", default: "v3" },
-        { name: "old_parts_lifetime", href: "/reference/settings/merge-tree-settings/other#old_parts_lifetime", default: "480" },
-        { name: "optimize_row_order", href: "/reference/settings/merge-tree-settings/other#optimize_row_order", default: "0" },
-        { name: "packed_skip_index_max_bytes", href: "/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes", default: "1048576" },
-        { name: "part_minmax_index_columns", href: "/reference/settings/merge-tree-settings/other#part_minmax_index_columns", default: "partition_key_only" },
-        { name: "propagate_types_serialization_versions_to_nested_types", href: "/reference/settings/merge-tree-settings/other#propagate_types_serialization_versions_to_nested_types", default: "1" },
-        { name: "ratio_of_defaults_for_sparse_serialization", href: "/reference/settings/merge-tree-settings/other#ratio_of_defaults_for_sparse_serialization", default: "0.9375" },
-        { name: "reduce_blocking_parts_sleep_ms", href: "/reference/settings/merge-tree-settings/other#reduce_blocking_parts_sleep_ms", default: "5000" },
-        { name: "replace_long_file_name_to_hash", href: "/reference/settings/merge-tree-settings/other#replace_long_file_name_to_hash", default: "1" },
-        { name: "replicated_can_become_leader", href: "/reference/settings/merge-tree-settings/other#replicated_can_become_leader", default: "1" },
-        { name: "search_orphaned_parts_disks", href: "/reference/settings/merge-tree-settings/other#search_orphaned_parts_disks", default: "any" },
-        { name: "serialization_info_version", href: "/reference/settings/merge-tree-settings/other#serialization_info_version", default: "with_types" },
-        { name: "share_nested_offsets", href: "/reference/settings/merge-tree-settings/other#share_nested_offsets", default: "1" },
-        { name: "simultaneous_parts_removal_limit", href: "/reference/settings/merge-tree-settings/other#simultaneous_parts_removal_limit", default: "0" },
-        { name: "storage_policy", href: "/reference/settings/merge-tree-settings/other#storage_policy", default: "default" },
-        { name: "string_serialization_version", href: "/reference/settings/merge-tree-settings/other#string_serialization_version", default: "with_size_stream" },
-        { name: "temporary_directories_lifetime", href: "/reference/settings/merge-tree-settings/other#temporary_directories_lifetime", default: "86400" },
-        { name: "try_fetch_recompressed_part_timeout", href: "/reference/settings/merge-tree-settings/other#try_fetch_recompressed_part_timeout", default: "7200" },
-        { name: "ttl_only_drop_parts", href: "/reference/settings/merge-tree-settings/other#ttl_only_drop_parts", default: "0" },
-        { name: "wait_for_unique_parts_send_before_shutdown_ms", href: "/reference/settings/merge-tree-settings/other#wait_for_unique_parts_send_before_shutdown_ms", default: "0" },
-        { name: "zookeeper_session_expiration_check_period", href: "/reference/settings/merge-tree-settings/other#zookeeper_session_expiration_check_period", default: "60" }
+        { name: "execute_merges_on_single_replica_time_threshold", href: "/ru/reference/settings/merge-tree-settings/other#execute_merges_on_single_replica_time_threshold", default: "0" },
+        { name: "finished_mutations_to_keep", href: "/ru/reference/settings/merge-tree-settings/other#finished_mutations_to_keep", default: "100" },
+        { name: "force_read_through_cache_for_merges", href: "/ru/reference/settings/merge-tree-settings/other#force_read_through_cache_for_merges", default: "0" },
+        { name: "initialization_retry_period", href: "/ru/reference/settings/merge-tree-settings/other#initialization_retry_period", default: "60" },
+        { name: "kill_threads", href: "/ru/reference/settings/merge-tree-settings/other#kill_threads", default: "128" },
+        { name: "lightweight_mutation_projection_mode", href: "/ru/reference/settings/merge-tree-settings/other#lightweight_mutation_projection_mode", default: "throw" },
+        { name: "load_existing_rows_count_for_old_parts", href: "/ru/reference/settings/merge-tree-settings/other#load_existing_rows_count_for_old_parts", default: "0" },
+        { name: "lock_acquire_timeout_for_background_operations", href: "/ru/reference/settings/merge-tree-settings/other#lock_acquire_timeout_for_background_operations", default: "120" },
+        { name: "mutation_workload", href: "/ru/reference/settings/merge-tree-settings/other#mutation_workload", default: '""' },
+        { name: "non_replicated_deduplication_window", href: "/ru/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window", default: "0" },
+        { name: "notify_newest_block_number", href: "/ru/reference/settings/merge-tree-settings/other#notify_newest_block_number", default: "0" },
+        { name: "nullable_serialization_version", href: "/ru/reference/settings/merge-tree-settings/other#nullable_serialization_version", default: "basic" },
+        { name: "object_serialization_version", href: "/ru/reference/settings/merge-tree-settings/other#object_serialization_version", default: "v3" },
+        { name: "old_parts_lifetime", href: "/ru/reference/settings/merge-tree-settings/other#old_parts_lifetime", default: "480" },
+        { name: "optimize_row_order", href: "/ru/reference/settings/merge-tree-settings/other#optimize_row_order", default: "0" },
+        { name: "packed_skip_index_max_bytes", href: "/ru/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes", default: "1048576" },
+        { name: "part_minmax_index_columns", href: "/ru/reference/settings/merge-tree-settings/other#part_minmax_index_columns", default: "partition_key_only" },
+        { name: "propagate_types_serialization_versions_to_nested_types", href: "/ru/reference/settings/merge-tree-settings/other#propagate_types_serialization_versions_to_nested_types", default: "1" },
+        { name: "ratio_of_defaults_for_sparse_serialization", href: "/ru/reference/settings/merge-tree-settings/other#ratio_of_defaults_for_sparse_serialization", default: "0.9375" },
+        { name: "reduce_blocking_parts_sleep_ms", href: "/ru/reference/settings/merge-tree-settings/other#reduce_blocking_parts_sleep_ms", default: "5000" },
+        { name: "replace_long_file_name_to_hash", href: "/ru/reference/settings/merge-tree-settings/other#replace_long_file_name_to_hash", default: "1" },
+        { name: "replicated_can_become_leader", href: "/ru/reference/settings/merge-tree-settings/other#replicated_can_become_leader", default: "1" },
+        { name: "search_orphaned_parts_disks", href: "/ru/reference/settings/merge-tree-settings/other#search_orphaned_parts_disks", default: "any" },
+        { name: "serialization_info_version", href: "/ru/reference/settings/merge-tree-settings/other#serialization_info_version", default: "with_types" },
+        { name: "share_nested_offsets", href: "/ru/reference/settings/merge-tree-settings/other#share_nested_offsets", default: "1" },
+        { name: "simultaneous_parts_removal_limit", href: "/ru/reference/settings/merge-tree-settings/other#simultaneous_parts_removal_limit", default: "0" },
+        { name: "storage_policy", href: "/ru/reference/settings/merge-tree-settings/other#storage_policy", default: "default" },
+        { name: "string_serialization_version", href: "/ru/reference/settings/merge-tree-settings/other#string_serialization_version", default: "with_size_stream" },
+        { name: "temporary_directories_lifetime", href: "/ru/reference/settings/merge-tree-settings/other#temporary_directories_lifetime", default: "86400" },
+        { name: "try_fetch_recompressed_part_timeout", href: "/ru/reference/settings/merge-tree-settings/other#try_fetch_recompressed_part_timeout", default: "7200" },
+        { name: "ttl_only_drop_parts", href: "/ru/reference/settings/merge-tree-settings/other#ttl_only_drop_parts", default: "0" },
+        { name: "wait_for_unique_parts_send_before_shutdown_ms", href: "/ru/reference/settings/merge-tree-settings/other#wait_for_unique_parts_send_before_shutdown_ms", default: "0" },
+        { name: "zookeeper_session_expiration_check_period", href: "/ru/reference/settings/merge-tree-settings/other#zookeeper_session_expiration_check_period", default: "60" }
       ],
       children: []
     }
