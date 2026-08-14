@@ -15,6 +15,7 @@
 #include <Common/randomSeed.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
 #include <IO/WriteHelpers.h>
 
 #include <Interpreters/Cache/FileCache.h>
@@ -22,6 +23,7 @@
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/EvictionCandidates.h>
 #include <Interpreters/Cache/SLRUFileCachePriority.h>
+#include <Interpreters/Cache/QueryLimit.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/hex.h>
@@ -1721,4 +1723,71 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     priority.resetEvictionPos();
     ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
+}
+
+TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
+{
+    CachePriorityGuard cache_guard;
+    CacheStateGuard state_guard;
+    FileCacheQueryLimit query_limit;
+
+    const std::string query_id = "query_id_revive";
+    ReadSettings read_settings;
+    read_settings.filesystem_cache_max_download_size = 1024;
+
+    auto context1 = query_limit.getOrSetQueryContext(query_id, read_settings, cache_guard.writeLock());
+    ASSERT_TRUE(context1 != nullptr);
+    ASSERT_EQ(context1.use_count(), 2);
+
+    auto context2 = query_limit.getOrSetQueryContext(query_id, read_settings, cache_guard.writeLock());
+    ASSERT_EQ(context1.get(), context2.get());
+    ASSERT_EQ(context1.use_count(), 3);
+
+    FileCacheQueryLimit::QueryContextPtr doomed1;
+    ASSERT_NO_THROW(doomed1 = query_limit.removeQueryContext(query_id, context1, cache_guard.writeLock()));
+    ASSERT_EQ(doomed1, nullptr);
+    ASSERT_EQ(context1, nullptr);
+
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+        ASSERT_EQ(query_limit.tryGetQueryContext(state_guard.lock()).get(), context2.get());
+    }
+
+    const auto * context2_raw = context2.get();
+    FileCacheQueryLimit::QueryContextPtr doomed2;
+    ASSERT_NO_THROW(doomed2 = query_limit.removeQueryContext(query_id, context2, cache_guard.writeLock()));
+    ASSERT_EQ(doomed2.get(), context2_raw);
+    ASSERT_EQ(doomed2.use_count(), 1);
+    ASSERT_EQ(context2, nullptr);
+}
+
+TEST_F(FileCacheTest, QueryLimitConcurrentReleaseNoLeak)
+{
+    CachePriorityGuard cache_guard;
+    FileCacheQueryLimit query_limit;
+
+    const std::string query_id = "query_id_concurrent_release";
+    ReadSettings read_settings;
+    read_settings.filesystem_cache_max_download_size = 1024;
+
+    auto context1 = query_limit.getOrSetQueryContext(query_id, read_settings, cache_guard.writeLock());
+    auto context2 = query_limit.getOrSetQueryContext(query_id, read_settings, cache_guard.writeLock());
+    ASSERT_EQ(context1.get(), context2.get());
+    ASSERT_EQ(context1.use_count(), 3);
+
+    const auto * context_raw = context1.get();
+    FileCacheQueryLimit::QueryContextPtr doomed1;
+    FileCacheQueryLimit::QueryContextPtr doomed2;
+    ASSERT_NO_THROW(doomed1 = query_limit.removeQueryContext(query_id, context1, cache_guard.writeLock()));
+    ASSERT_NO_THROW(doomed2 = query_limit.removeQueryContext(query_id, context2, cache_guard.writeLock()));
+
+    ASSERT_EQ(context1, nullptr);
+    ASSERT_EQ(context2, nullptr);
+    ASSERT_EQ(doomed1, nullptr);
+    ASSERT_EQ(doomed2.get(), context_raw);
+    ASSERT_EQ(doomed2.use_count(), 1);
 }
