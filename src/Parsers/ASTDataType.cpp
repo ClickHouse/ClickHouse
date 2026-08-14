@@ -1,6 +1,9 @@
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserDataType.h>
 #include <Parsers/TokenIterator.h>
 #include <Common/Exception.h>
@@ -146,6 +149,88 @@ bool substituteBareUUIDInTypeNameLiteral(ASTFunction & function)
     return true;
 }
 
+/** Rewrites a string literal that holds a whole columns declaration list ("a UInt8, id UUID").
+  *
+  * Table functions such as `file`, `url`, `s3`, `format`, `input` and `generateRandom` take the schema of the
+  * data as such a string. When a definition containing one of them is persisted (a view, a `CREATE TABLE ... AS`
+  * a table function), that string is stored verbatim and reparsed on every execution through
+  * `parseColumnsListFromString`. Materializing the setting into the literal freezes the persisted schema, the
+  * same way it is frozen for a regular column declaration list.
+  */
+bool substituteBareUUIDInColumnsListLiteral(ASTLiteral & literal)
+{
+    if (literal.value.getType() != Field::Types::String)
+        return false;
+
+    const auto & structure = literal.value.safeGet<String>();
+    if (!containsCaseInsensitive(structure, "uuid"))
+        return false;
+
+    Tokens tokens(structure.data(), structure.data() + structure.size());
+    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    Expected expected;
+    ASTPtr columns_list;
+
+    /// Requiring the whole literal to parse as a columns declaration list is what makes this safe to try on
+    /// every string argument: a path, a format name or a URL does not parse as one, so it is left alone.
+    if (!ParserColumnDeclarationList{true, true}.parse(pos, columns_list, expected) || !columns_list
+        || pos->type != TokenType::EndOfStream)
+        return false;
+
+    if (!substituteBareUUIDInPlace(*columns_list))
+        return false;
+
+    literal.value = columns_list->formatWithSecretsOneLine();
+    return true;
+}
+
+/// Functions that take a columns declaration list as a string, in the argument at the given index.
+constexpr TypeNameArgument columns_list_arguments[]
+{
+    {"structureToCapnProtoSchema", 0},
+    {"structureToProtobufSchema", 0},
+};
+
+/** A table function in a persisted definition: rewrite every argument of it that is a columns declaration list.
+  *
+  * The position of that argument differs between table functions and even between overloads of one of them
+  * (`file(path, format)` versus `file(path, format, structure)`, `s3` with and without credentials), so instead
+  * of an allowlist of positions every string argument is tried and only the ones that really are a columns
+  * declaration list are rewritten.
+  */
+bool substituteBareUUIDInTableFunction(ASTFunction & table_function)
+{
+    if (!table_function.arguments)
+        return false;
+
+    bool substituted = false;
+    for (const auto & argument : table_function.arguments->children)
+        if (auto * literal = argument->as<ASTLiteral>())
+            substituted |= substituteBareUUIDInColumnsListLiteral(*literal);
+
+    return substituted;
+}
+
+bool substituteBareUUIDInColumnsListLiteralArgument(ASTFunction & function)
+{
+    if (!function.arguments)
+        return false;
+
+    const auto & arguments = function.arguments->children;
+    for (const auto & candidate : columns_list_arguments)
+    {
+        if (!equalsCaseInsensitiveString(function.name, candidate.function_name))
+            continue;
+        if (candidate.argument_index >= arguments.size())
+            return false;
+        if (auto * literal = arguments[candidate.argument_index]->as<ASTLiteral>())
+            return substituteBareUUIDInColumnsListLiteral(*literal);
+        return false;
+    }
+
+    return false;
+}
+
 bool substituteBareUUIDInPlace(IAST & ast)
 {
     bool substituted = false;
@@ -157,7 +242,24 @@ bool substituteBareUUIDInPlace(IAST & ast)
     }
 
     if (auto * function = ast.as<ASTFunction>())
+    {
         substituted |= substituteBareUUIDInTypeNameLiteral(*function);
+        substituted |= substituteBareUUIDInColumnsListLiteralArgument(*function);
+    }
+
+    /// A table function is recognized by its position rather than by its name, so that the schema string of any
+    /// table function is frozen, including ones added later.
+    if (const auto * table_expression = ast.as<ASTTableExpression>(); table_expression && table_expression->table_function)
+    {
+        if (auto * function = table_expression->table_function->as<ASTFunction>())
+            substituted |= substituteBareUUIDInTableFunction(*function);
+    }
+
+    if (const auto * create = ast.as<ASTCreateQuery>(); create && create->as_table_function)
+    {
+        if (auto * function = create->as_table_function->as<ASTFunction>())
+            substituted |= substituteBareUUIDInTableFunction(*function);
+    }
 
     for (const auto & child : ast.children)
         if (child)

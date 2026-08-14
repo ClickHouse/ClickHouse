@@ -600,7 +600,7 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, bool check_defaults_over_virtual_columns)
+    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, bool check_defaults_over_virtual_columns, bool materialize_uuid_type_version)
 {
     /// First, deduce implicit types.
 
@@ -626,7 +626,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     bool make_columns_nullable = normalize_on_create && context_->getSettingsRef()[Setting::data_type_default_nullable];
 
     /// `uuid_type_version == 2` materializes a bare `UUID` column type as the correctly-sorting `UUID2` type.
-    const UInt64 uuid_type_version = normalize_on_create ? context_->getSettingsRef()[Setting::uuid_type_version] : 1;
+    const UInt64 uuid_type_version
+        = normalize_on_create && materialize_uuid_type_version ? context_->getSettingsRef()[Setting::uuid_type_version] : 1;
 
     for (const auto & ast : columns_ast.children)
     {
