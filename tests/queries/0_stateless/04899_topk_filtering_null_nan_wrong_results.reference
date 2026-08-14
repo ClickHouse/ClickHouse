@@ -148,3 +148,5 @@ pres off varlen	0
 pres off master	0
 skipidx f64	0
 skipidx u64	1
+eff f64	1
+eff arr	1

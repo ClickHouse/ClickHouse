@@ -2453,8 +2453,8 @@ void ReadFromMergeTree::buildIndexes(
                 /// ORDER BY direction. Only allow types where raw Field ordering matches
                 /// the ORDER BY semantics.
                 /// TODO: generalize MinMaxGranuleItem comparison and getTopKMarks to use
-                /// nulls_direction/collator and a NaN-aware float order so this restriction
-                /// can be lifted.
+                /// nulls_direction/collator, and record NaN presence in the index itself
+                /// (getExtremes drops NaNs), so this restriction can be lifted.
                 if (top_k_filter_info->data_type->isNullable()
                     || hasTypeThatCanContainFloat(top_k_filter_info->data_type)
                     || !top_k_filter_info->data_type->isValueRepresentedByNumber())

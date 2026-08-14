@@ -1,4 +1,6 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-parallel-replicas, no-random-merge-tree-settings
+-- no-parallel-replicas: the plan assertions below read ReadFromMergeTree's own Indexes/prewhere
+-- output, and use_skip_indexes_on_data_read is not supported with parallel replicas.
 -- Random settings limits: query_plan_max_limit_for_top_k_optimization=(100, None)
 
 -- Each arm prints the answer with TopK filtering ON and with it OFF. The OFF row is the ground
@@ -17,8 +19,6 @@
 
 SET max_threads = 1;
 SET allow_suspicious_types_in_order_by = 1;
-SET allow_experimental_bfloat16_type = 1;
-SET enable_variant_type = 1;
 
 -- Every setting the arms depend on is pinned, because the test runner randomizes all of them and
 -- passes them on the client command line, where a value of 0 would leave no filter installed and
@@ -29,6 +29,8 @@ SET use_skip_indexes_for_top_k = 1;
 SET use_skip_indexes_on_data_read = 1;
 -- A value of 1 installs no filter at LIMIT 1.
 SET query_plan_max_limit_for_top_k_optimization = 100;
+-- The plan assertions below scan EXPLAIN text; pin the rendering (default is 'pretty' since 26.7).
+SET explain_query_plan_default = 'legacy';
 
 -- ==================== DENSE fixtures ====================
 
@@ -338,3 +340,27 @@ SELECT 'pres off master', count() FROM (EXPLAIN actions = 1 SELECT v FROM d_f64 
 -- still does. Without this the results above could be explained by the comparison change alone.
 SELECT 'skipidx f64', count() FROM (EXPLAIN indexes = 1 SELECT v FROM i_f64 ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1) WHERE explain ILIKE '%topk%';
 SELECT 'skipidx u64', count() > 0 FROM (EXPLAIN indexes = 1 SELECT v FROM i_u64 ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 1) WHERE explain ILIKE '%topk%';
+
+-- ==================== the general path still rejects rows ====================
+-- The arms above compare answers, so a filter that accepted every row would keep all of them
+-- correct and every presence row true. These two assert that the main reader reads at most half of
+-- what the prewhere readers did, which only holds while the filter rejects. Two fixture properties
+-- make the inequality bite: `id` is selected instead of the sort column, because reading only the
+-- sort column leaves the main reader no work at all; and half is the threshold rather than a strict
+-- inequality, because a filter accepting everything still skips the final granule.
+
+SELECT id FROM d_f64 ORDER BY v ASC NULLS FIRST LIMIT 1
+    SETTINGS log_comment = '04899_eff_f64', use_skip_indexes_for_top_k = 0 FORMAT Null;
+SELECT id FROM d_arr ORDER BY v ASC NULLS FIRST LIMIT 1
+    SETTINGS log_comment = '04899_eff_arr', use_skip_indexes_for_top_k = 0 FORMAT Null;
+SYSTEM FLUSH LOGS query_log;
+SELECT 'eff f64', ProfileEvents['RowsReadByMainReader'] * 2 <= ProfileEvents['RowsReadByPrewhereReaders']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+  AND event_date >= yesterday() AND event_time >= now() - 600
+  AND log_comment = '04899_eff_f64' ORDER BY event_time DESC LIMIT 1;
+SELECT 'eff arr', ProfileEvents['RowsReadByMainReader'] * 2 <= ProfileEvents['RowsReadByPrewhereReaders']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+  AND event_date >= yesterday() AND event_time >= now() - 600
+  AND log_comment = '04899_eff_arr' ORDER BY event_time DESC LIMIT 1;
