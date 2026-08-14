@@ -62,9 +62,6 @@ public:
 
     bool supportsReadAt() override;
 
-    /// nextImpl fills the caller's set() buffer only when built for external-buffer use.
-    bool supportsExternalBufferMode() const override { return use_external_buffer; }
-
 private:
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;
     bool use_external_buffer;

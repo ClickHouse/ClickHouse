@@ -25,7 +25,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3EdgeAngle final : public IFunction
+class FunctionH3EdgeAngle : public IFunction
 {
 public:
     static constexpr auto name = "h3EdgeAngle";

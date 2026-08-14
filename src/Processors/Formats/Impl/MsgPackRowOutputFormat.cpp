@@ -299,7 +299,6 @@ void MsgPackRowOutputFormat::write(const Columns & columns, size_t row_num)
 }
 
 
-void registerOutputFormatMsgPack(FormatFactory & factory);
 void registerOutputFormatMsgPack(FormatFactory & factory)
 {
     factory.registerOutputFormat("MsgPack", [](
@@ -322,7 +321,6 @@ void registerOutputFormatMsgPack(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerOutputFormatMsgPack(FormatFactory &);
 void registerOutputFormatMsgPack(FormatFactory &)
 {
 }

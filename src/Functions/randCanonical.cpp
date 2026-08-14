@@ -37,7 +37,7 @@ struct NameCanonicalRand
     static constexpr auto name = "randCanonical";
 };
 
-class FunctionCanonicalRand final : public FunctionRandomImpl<CanonicalRandImpl, Float64, NameCanonicalRand>
+class FunctionCanonicalRand : public FunctionRandomImpl<CanonicalRandImpl, Float64, NameCanonicalRand>
 {
 public:
     static FunctionPtr create(ContextPtr /*context*/) { return std::make_shared<FunctionCanonicalRand>(); }

@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteSettings.h>
@@ -16,9 +17,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     CompressionCodecPtr default_codec,
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     size_t part_uncompressed_bytes,
-    WrittenOffsetSubstreams * written_offset_substreams,
-    bool try_adaptive_codec,
-    PackedFilesWriter * external_packed_skip_indices_writer)
+    WrittenOffsetSubstreams * written_offset_substreams)
     : IMergedBlockOutputStream(
           std::move(data_settings),
           data_part->getDataPartStoragePtr(),
@@ -42,14 +41,11 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         /*rewrite_primary_key=*/ false,
         save_marks_in_cache,
         save_primary_index_in_memory,
-        /*blocks_are_granules_size=*/ false,
-        try_adaptive_codec);
-
-    writer_settings.external_packed_skip_indices_writer = external_packed_skip_indices_writer;
+        /*blocks_are_granules_size=*/ false);
 
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),
-        data_part->name, data_part->storage.getLogName(), data_part->getSerializations().toSerializationByName(),
+        data_part->name, data_part->storage.getLogName(), data_part->getSerializations(),
         data_part_storage, data_part->index_granularity_info,
         storage_settings,
         columns_list_,
@@ -68,7 +64,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     if (!block.rows())
         return;
 
-    writer->write(block, nullptr, nullptr);
+    writer->write(block, nullptr);
     new_serialization_infos.add(block);
 }
 
@@ -86,6 +82,14 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
 
     for (const auto & filename : checksums_to_remove)
         all_checksums.files.erase(filename);
+
+    for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
+    {
+        checksums.addFile(
+            projection_name + ".proj",
+            projection_part->checksums.getTotalSizeOnDisk(),
+            projection_part->checksums.getTotalChecksumUInt128());
+    }
 
     auto columns = new_part->getColumns();
     auto serialization_infos = new_part->getSerializationInfos();

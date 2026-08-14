@@ -174,11 +174,11 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
     for (const auto & domain : domains)
         zk->createIfNotExists(fs::path(zookeeper_path) / acme_hostname / "domains" / domain, "");
 
-    BackgroundSchedulePoolPtr bgpool = Context::getGlobalContextInstance()->getSchedulePool();
+    BackgroundSchedulePool & bgpool = Context::getGlobalContextInstance()->getSchedulePool();
 
-    refresh_certificates_task = bgpool->createTask(StorageID::createEmpty(), "ACME::refreshCertificatesTask", [this, &config] { refreshCertificatesTask(config); });
-    authentication_task = bgpool->createTask(StorageID::createEmpty(), "ACME::authenticationTask", [this] { authenticationTask(); });
-    refresh_key_task = bgpool->createTask(StorageID::createEmpty(), "ACME::refreshKeyTask", [this] { refreshKeyTask(); });
+    refresh_certificates_task = bgpool.createTask(StorageID::createEmpty(), "ACME::refreshCertificatesTask", [this, &config] { refreshCertificatesTask(config); });
+    authentication_task = bgpool.createTask(StorageID::createEmpty(), "ACME::authenticationTask", [this] { authenticationTask(); });
+    refresh_key_task = bgpool.createTask(StorageID::createEmpty(), "ACME::refreshKeyTask", [this] { refreshKeyTask(); });
 
     {
         std::lock_guard key_lock(private_acme_key_mutex);
@@ -220,7 +220,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
 
             LOG_TRACE(log, "Certificate for domain {} expires on {}", domain, x509_certificate.expiresOn());
 
-            int tzd = 0;
+            int tzd;
             auto expiration_date = Poco::DateTimeParser::parse("%y%m%d%H%M%S", x509_certificate.expiresOn(), tzd);
             auto best_before = Poco::Timestamp() + Poco::Timespan(refresh_certificates_before_seconds * Poco::Timespan::SECONDS);
 

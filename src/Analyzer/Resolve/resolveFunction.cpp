@@ -1,9 +1,7 @@
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <DataTypes/DataTypeString.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/JoinNode.h>
@@ -23,9 +21,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/hasNullable.h>
@@ -101,7 +97,7 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
 }
 
 /// Checks if node is a NULL constant
-static bool isNullConstant(const QueryTreeNodePtr & node)
+bool isNullConstant(const QueryTreeNodePtr & node)
 {
     if (const auto * const_node = node->as<ConstantNode>())
         return const_node->getValue().isNull();
@@ -109,120 +105,11 @@ static bool isNullConstant(const QueryTreeNodePtr & node)
 }
 
 /// Creates a NOT function node wrapping the given node (caller must resolve it)
-static QueryTreeNodePtr createNotWrapper(QueryTreeNodePtr node)
+QueryTreeNodePtr createNotWrapper(QueryTreeNodePtr node)
 {
     auto not_fn = std::make_shared<FunctionNode>("not");
     not_fn->getArguments().getNodes().push_back(node);
     return not_fn;
-}
-
-/// A subquery on the right of IN whose single result column is an Array exactly one dimension
-/// deeper than the left argument is the set of the elements of those arrays, exactly like an
-/// array literal or an array-returning function on the right of IN (e.g.
-/// `x IN (SELECT groupArray(x) ...)` means `x` is tested against the set `{groupArray(x)...}`).
-/// If the second argument of IN is such a subquery, wrap its column with arrayJoin so its elements
-/// become the set elements: `SELECT arrayJoin(<column>) FROM (<subquery>)`; otherwise leave it
-/// unchanged. Without this the whole array is treated as a single opaque set value and the left
-/// argument is coerced into the array type, giving a confusing "Array does not start with '['
-/// character" or type-mismatch error.
-/// `in_second_argument` must be a resolved QueryNode/UnionNode and `in_first_argument` resolved.
-/// Shared by both the regular IN handling and the `rewrite_in_to_join` EXISTS rewrite.
-static void flattenArraySubqueryOnRightOfIn(
-    QueryTreeNodePtr & in_second_argument,
-    const QueryTreeNodePtr & in_first_argument,
-    const ContextPtr & context)
-{
-    if (!(in_second_argument->as<QueryNode>() || in_second_argument->as<UnionNode>())
-        || in_first_argument->getNodeType() == QueryTreeNodeType::LAMBDA)
-        return;
-
-    const auto * subquery_query_node = in_second_argument->as<QueryNode>();
-    NamesAndTypes subquery_projection_columns = subquery_query_node
-        ? subquery_query_node->getProjectionColumns()
-        : in_second_argument->as<UnionNode>()->computeProjectionColumns();
-
-    const auto * rhs_array_type = subquery_projection_columns.size() == 1
-        ? typeid_cast<const DataTypeArray *>(subquery_projection_columns.front().type.get())
-        : nullptr;
-    if (!rhs_array_type)
-        return;
-
-    const auto & lhs_type = in_first_argument->getResultType();
-    const auto * lhs_array_type = typeid_cast<const DataTypeArray *>(lhs_type.get());
-    const size_t lhs_depth = lhs_array_type ? lhs_array_type->getNumberOfDimensions() : 0;
-
-    if (rhs_array_type->getNumberOfDimensions() != lhs_depth + 1)
-        return;
-
-    /// Wrap the subquery in `SELECT arrayJoin(<column>) FROM (<subquery>)`.
-    auto array_column_node = std::make_shared<ColumnNode>(subquery_projection_columns.front(), static_pointer_cast<ITableExpressionNode>(in_second_argument));
-
-    auto array_join_function = std::make_shared<FunctionNode>("arrayJoin");
-    array_join_function->getArguments().getNodes().push_back(std::move(array_column_node));
-    resolveOrdinaryFunctionNodeByName(*array_join_function, "arrayJoin", context);
-
-    auto element_type = array_join_function->getResultType();
-    auto element_name = "arrayJoin(" + subquery_projection_columns.front().name + ")";
-
-    auto projection_list = std::make_shared<ListNode>();
-    projection_list->getNodes().push_back(std::move(array_join_function));
-
-    auto flattened_subquery = std::make_shared<QueryNode>(Context::createCopy(context));
-    flattened_subquery->setIsSubquery(true);
-    flattened_subquery->getProjectionNode() = std::move(projection_list);
-    flattened_subquery->getJoinTreeNode() = std::move(in_second_argument);
-    flattened_subquery->resolveProjectionColumns(NamesAndTypes{{element_name, element_type}});
-
-    in_second_argument = std::move(flattened_subquery);
-}
-
-/// Same as `flattenArraySubqueryOnRightOfIn`, but for a table expression on the right of IN whose
-/// columns are described by a storage snapshot instead of a subquery's projection (a `TableNode`,
-/// e.g. `x IN some_array_table`). If the table has a single Array column exactly one dimension
-/// deeper than the left argument, wrap it as a `SELECT column FROM table` subquery and flatten it,
-/// so its elements become the set elements — consistent with an array subquery, an array literal, or an
-/// array-returning function. Tables with a non-Array column, a wrong depth, or more than one column
-/// are left untouched, so the common `x IN table` path (and any `StorageSet` fast path) is unchanged.
-static void flattenArrayTableExpressionOnRightOfIn(
-    QueryTreeNodePtr & in_second_argument,
-    const QueryTreeNodePtr & in_first_argument,
-    const StorageSnapshotPtr & storage_snapshot,
-    const ContextPtr & context)
-{
-    if (in_first_argument->getNodeType() == QueryTreeNodeType::LAMBDA)
-        return;
-
-    auto columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
-    if (columns.size() != 1)
-        return;
-
-    const auto & column = columns.front();
-    const auto * rhs_array_type = typeid_cast<const DataTypeArray *>(column.type.get());
-    if (!rhs_array_type)
-        return;
-
-    const auto & lhs_type = in_first_argument->getResultType();
-    const auto * lhs_array_type = typeid_cast<const DataTypeArray *>(lhs_type.get());
-    const size_t lhs_depth = lhs_array_type ? lhs_array_type->getNumberOfDimensions() : 0;
-
-    if (rhs_array_type->getNumberOfDimensions() != lhs_depth + 1)
-        return;
-
-    /// Wrap the table as a `SELECT column FROM table` subquery, then flatten it like an array subquery.
-    auto column_node = std::make_shared<ColumnNode>(column, static_pointer_cast<ITableExpressionNode>(in_second_argument));
-
-    auto projection_list = std::make_shared<ListNode>();
-    projection_list->getNodes().push_back(std::move(column_node));
-
-    auto subquery = std::make_shared<QueryNode>(Context::createCopy(context));
-    subquery->setIsSubquery(true);
-    subquery->getProjectionNode() = std::move(projection_list);
-    subquery->getJoinTreeNode() = in_second_argument;
-    subquery->resolveProjectionColumns(NamesAndTypes{column});
-
-    in_second_argument = std::move(subquery);
-
-    flattenArraySubqueryOnRightOfIn(in_second_argument, in_first_argument, context);
 }
 
 /// Builds and resolves `IF(isNull(element), NULL, has(array, element))`
@@ -470,7 +357,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     bool is_special_function_join_get = false;
     bool is_special_function_exists = false;
     bool is_special_function_if = false;
-    bool is_special_function_multi_if = false;
 
     if (!lambda_expression_untyped)
     {
@@ -479,7 +365,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         is_special_function_join_get = functionIsJoinGet(function_name);
         is_special_function_exists = function_name == "exists";
         is_special_function_if = function_name == "if";
-        is_special_function_multi_if = function_name == "multiIf";
 
         /** Special handling for count and countState functions (including with combinators like countIf, countIfState, etc.).
           *
@@ -643,145 +528,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
-    /** Handle multiIf analogously to the `if` special-case above: when every condition up to
-      * the selected branch is a compile-time constant and resolving the statically unreachable
-      * branches throws, replace the whole multiIf node with its live branch. Mirrors the `if`
-      * special-case: the fall-through path leaves the node intact so that
-      * `FunctionMultiIf::build` performs normal common-supertype unification — replacing
-      * unconditionally would bypass it (e.g. `toTypeName(multiIf(1, toUInt8(1), toUInt16(2)))`
-      * must stay `UInt16`, not collapse to `UInt8`).
-      *
-      * multiIf(cond1, val1, cond2, val2, ..., condN, valN, else): arity is odd and >= 3.
-      * Walk conditions left to right. When a condition is a true constant the corresponding
-      * value becomes the live branch; when a condition is a false constant the paired value is
-      * dead. If every condition is a false constant the else branch is live. Once a
-      * non-constant condition is seen we fall through to the generic path.
-      */
-    if (is_special_function_multi_if && !function_node_ptr->getArguments().getNodes().empty())
-    {
-        auto & multi_if_args = function_node_ptr->getArguments().getNodes();
-        const size_t arg_count = multi_if_args.size();
-
-        /// If arity is malformed let the generic path report the error as usual.
-        if (arg_count >= 3 && (arg_count % 2) == 1)
-        {
-            checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
-
-            const size_t num_pairs = arg_count / 2;
-            const size_t else_index = arg_count - 1;
-
-            bool found_true_branch = false;
-            size_t winner_index = else_index;
-            bool stopped_on_nonconstant = false;
-
-            for (size_t pair = 0; pair < num_pairs; ++pair)
-            {
-                /// Snapshot, not reference: `resolveExpressionNode` rebinds matchers in place.
-                QueryTreeNodePtr cond_node = multi_if_args[2 * pair];
-                resolveExpressionNode(cond_node,
-                    scope,
-                    false /*allow_lambda_expression*/,
-                    false /*allow_table_expression*/,
-                    allow_niladic_functions);
-
-                auto constant_condition = tryExtractConstantFromConditionNode(cond_node);
-                if (!constant_condition.has_value())
-                {
-                    stopped_on_nonconstant = true;
-                    break;
-                }
-
-                if (*constant_condition)
-                {
-                    found_true_branch = true;
-                    winner_index = 2 * pair + 1;
-                    break;
-                }
-                /// Constant false: the paired value is unreachable at run time.
-            }
-
-            /// Only fold when the winner is statically determined. Otherwise fall through to
-            /// the generic path which resolves the remaining arguments and lets
-            /// `FunctionMultiIf::build` run normal type unification.
-            if (!stopped_on_nonconstant)
-            {
-                /// Snapshot the live branch and every dead branch into local shared_ptr
-                /// copies before calling `resolveExpressionNode` on them. Mirrors the `if`
-                /// special case above: we must not index back into `multi_if_args` after
-                /// nested resolution, because resolving a branch may rewrite neighbouring
-                /// slots (matcher expansion, sub-node replacement, etc.) and leave a stale
-                /// pointer in the original vector slot.
-                QueryTreeNodePtr live_branch_copy = multi_if_args[winner_index];
-                std::vector<QueryTreeNodePtr> dead_branch_copies;
-                dead_branch_copies.reserve(arg_count);
-
-                for (size_t pair = 0; pair < num_pairs; ++pair)
-                {
-                    const size_t cond_idx = 2 * pair;
-                    const size_t val_idx = cond_idx + 1;
-
-                    /// The winner's own slot is resolved separately below.
-                    if (val_idx == winner_index)
-                        continue;
-
-                    /// Earlier pairs already had their condition resolved (constant false);
-                    /// only the paired value is dead.
-                    if (val_idx < winner_index)
-                    {
-                        dead_branch_copies.push_back(multi_if_args[val_idx]);
-                        continue;
-                    }
-
-                    /// Pairs after the winner: both the condition and the value are
-                    /// unreachable and have not been resolved yet.
-                    dead_branch_copies.push_back(multi_if_args[cond_idx]);
-                    dead_branch_copies.push_back(multi_if_args[val_idx]);
-                }
-
-                /// When a true condition wins, the else slot is dead too.
-                if (found_true_branch)
-                    dead_branch_copies.push_back(multi_if_args[else_index]);
-
-                /// Try to resolve every dead branch. If any throws we apply the fold,
-                /// mirroring the `if` special case: only then do we replace the node and
-                /// swallow the analysis error in the unreachable branch. If every dead
-                /// branch resolves cleanly we fall through so that normal type inference
-                /// (common-supertype unification) still runs on the full `multiIf`.
-                bool apply_constant_multi_if_optimization = false;
-                for (auto & dead_branch : dead_branch_copies)
-                {
-                    try
-                    {
-                        resolveExpressionNode(dead_branch,
-                            scope,
-                            false /*allow_lambda_expression*/,
-                            false /*allow_table_expression*/,
-                            allow_niladic_functions);
-                    }
-                    catch (const Exception &)
-                    {
-                        apply_constant_multi_if_optimization = true;
-                    }
-                }
-
-                if (apply_constant_multi_if_optimization)
-                {
-                    /// Resolve the live branch via the local copy and replace the whole
-                    /// multiIf node with it.
-                    auto result_projection_names = resolveExpressionNode(live_branch_copy,
-                        scope,
-                        false /*allow_lambda_expression*/,
-                        false /*allow_table_expression*/,
-                        allow_niladic_functions);
-                    node = std::move(live_branch_copy);
-                    return result_projection_names;
-                }
-                /// All dead branches resolved cleanly: fall through to the generic path so that
-                /// `FunctionMultiIf::build` can perform common-supertype unification.
-            }
-        }
-    }
-
     /// Replace IN (subquery)
     /// NOTE: the resulting subquery in the argument of EXISTS will have correlated column x, that's why this rewriting has to be before handling
     /// EXISTS which is done below in 'if (is_special_function_exists)' case.
@@ -826,13 +572,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (in_second_argument->as<QueryNode>())
             {
-                /// An array subquery on the right of IN is the set of its elements (see
-                /// `flattenArraySubqueryOnRightOfIn`). Flatten it with arrayJoin before building the
-                /// EXISTS rewrite, so the comparison below is `x = <element>` rather than `x = <array>`.
-                /// Otherwise this branch would keep the reported bug alive whenever `rewrite_in_to_join`
-                /// is enabled, making the new behavior depend on an unrelated setting.
-                flattenArraySubqueryOnRightOfIn(in_second_argument, in_first_argument, scope.context);
-
                 /// Rewrite 'x IN subquery' to 'EXISTS (SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE x = _unique_name_ LIMIT 1)'
 
                 /// Rename subquery projection to a unique name to avoid collisions with names from outer scope
@@ -873,7 +612,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 auto internal_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
                 internal_exists_subquery->setIsSubquery(true);
                 internal_exists_subquery->getProjection().getNodes().push_back(std::make_shared<IdentifierNode>(Identifier{unique_column_name}));
-                internal_exists_subquery->getJoinTreeNode() = std::move(subquery_node);
+                internal_exists_subquery->getJoinTree() = std::move(subquery_node);
 
                 /// SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE a = _unique_name_ LIMIT 1
                 auto new_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
@@ -881,7 +620,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     auto constant_data_type = std::make_shared<DataTypeUInt64>();
                     new_exists_subquery->setIsSubquery(true);
                     new_exists_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-                    new_exists_subquery->getJoinTreeNode() = std::move(internal_exists_subquery);
+                    new_exists_subquery->getJoinTree() = std::move(internal_exists_subquery);
 
                     auto equals_function_node_ptr = std::make_shared<FunctionNode>("equals");
 
@@ -931,7 +670,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     if (is_special_function_exists)
     {
         checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
-
         /// Rewrite EXISTS (subquery) into EXISTS (SELECT 1 FROM (subquery) LIMIT 1).
         const auto & exists_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
 
@@ -950,7 +688,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         new_exists_subquery->setIsSubquery(true);
         new_exists_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-        new_exists_subquery->getJoinTreeNode() = exists_subquery_argument;
+        new_exists_subquery->getJoinTree() = exists_subquery_argument;
         new_exists_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
 
         QueryTreeNodePtr new_exists_argument = new_exists_subquery;
@@ -1003,7 +741,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 auto res_col = ColumnUInt8::create();
                 const auto * const_node = new_exists_argument->as<ConstantNode>();
                 res_col->getData().push_back(static_cast<UInt8>(const_node->getColumn()->isNullAt(0) ? 0 : 1));
-                ConstantValue const_value(ColumnConst::create(std::move(res_col), 1), std::make_shared<DataTypeUInt8>());
+                ConstantValue const_value(std::move(res_col), std::make_shared<DataTypeUInt8>());
                 auto tme_const_node = std::make_shared<ConstantNode>(std::move(const_value), std::move(node));
                 auto res = tme_const_node->getValueStringRepresentation();
                 node = std::move(tme_const_node);
@@ -1184,9 +922,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                                 std::make_shared<IdentifierNode>(Identifier{arg_name}));
                                         }
 
-                                        auto lambda_args_node = std::make_shared<LambdaArgumentsNode>(std::move(lambda_arg_names));
                                         argument_nodes[0] = std::make_shared<LambdaNode>(
-                                            std::move(lambda_args_node), std::move(func_call), false /*is_operator*/);
+                                            std::move(lambda_arg_names), std::move(func_call), false /*is_operator*/);
                                     }
                                 }
                             }
@@ -1291,27 +1028,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Correlated subqueries are not supported as IN function arguments yet, but found in expression: {}",
                 node->formatASTForErrorMessage());
-
-        /// Table expressions are only allowed as the second (right) argument of IN.
-        /// A table on the left side is not a value expression, so reject it with a clear
-        /// error instead of failing later when getResultType is called on the table node.
-        auto first_argument_type = in_first_argument->getNodeType();
-        if (first_argument_type == QueryTreeNodeType::TABLE || first_argument_type == QueryTreeNodeType::TABLE_FUNCTION)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The first argument of function '{}' is a table expression '{}', but it must be a value expression. In scope {}",
-                function_name,
-                in_first_argument->formatASTForErrorMessage(),
-                scope.scope_node->formatASTForErrorMessage());
-
-        /// Edge case when the first argument of IN is scalar subquery.
-        if (first_argument_type == QueryTreeNodeType::QUERY || first_argument_type == QueryTreeNodeType::UNION)
-        {
-            IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(in_first_argument, &scope /*parent_scope*/);
-            subquery_scope.subquery_depth = scope.subquery_depth + 1;
-
-            evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
-        }
-
         auto * table_node = in_second_argument->as<TableNode>();
         auto * table_function_node = in_second_argument->as<TableFunctionNode>();
 
@@ -1319,11 +1035,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         {
             /// If table is already prepared set, we do not replace it with subquery.
             /// If table is not a StorageSet, we'll create plan to build set in the Planner.
-            ///
-            /// If its single column is an Array one dimension deeper than the left argument,
-            /// interpret it as the set of the array's elements, exactly like an array subquery,
-            /// an array literal, or an array-returning function on the right side of IN.
-            flattenArrayTableExpressionOnRightOfIn(in_second_argument, in_first_argument, table_node->getStorageSnapshot(), scope.context);
         }
         else if (table_function_node)
         {
@@ -1340,22 +1051,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             for (auto & column : columns_to_select)
             {
-                column_nodes_to_select->getNodes().emplace_back(std::make_shared<ColumnNode>(column, static_pointer_cast<ITableExpressionNode>(in_second_argument)));
+                column_nodes_to_select->getNodes().emplace_back(std::make_shared<ColumnNode>(column, in_second_argument));
                 projection_columns.emplace_back(column.name, column.type);
             }
 
             auto in_second_argument_query_node = std::make_shared<QueryNode>(Context::createCopy(scope.context));
             in_second_argument_query_node->setIsSubquery(true);
             in_second_argument_query_node->getProjectionNode() = std::move(column_nodes_to_select);
-            in_second_argument_query_node->getJoinTreeNode() = std::move(in_second_argument);
+            in_second_argument_query_node->getJoinTree() = std::move(in_second_argument);
             in_second_argument_query_node->resolveProjectionColumns(std::move(projection_columns));
 
             in_second_argument = std::move(in_second_argument_query_node);
-
-            /// If the wrapped subquery's single column is an Array one dimension deeper than the left
-            /// argument, interpret it as the set of the array's elements, exactly like an array
-            /// subquery, an array literal, or an array-returning function on the right side of IN.
-            flattenArraySubqueryOnRightOfIn(in_second_argument, in_first_argument, scope.context);
         }
         else
         {
@@ -1368,7 +1074,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 while (table_expression)
                 {
                     if (auto * query_node = table_expression->as<QueryNode>())
-                        table_expression = extractLeftTableExpression(query_node->getJoinTreeNodeTyped());
+                        table_expression = extractLeftTableExpression(query_node->getJoinTree());
                     else if (auto * union_node = table_expression->as<UnionNode>())
                         table_expression = union_node->getQueries().getNodes().at(0);
                     else
@@ -1382,46 +1088,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 {
                     auto replacement_table_expression_table_node = table_expression_table_node->clone();
                     replacement_table_expression_table_node->as<TableNode &>().updateStorage(storage, scope.context);
-                    in_second_argument = in_second_argument->cloneAndReplace(
-                        static_pointer_cast<ITableExpressionNode>(table_expression),
-                        static_pointer_cast<ITableExpressionNode>(std::move(replacement_table_expression_table_node)));
+                    in_second_argument = in_second_argument->cloneAndReplace(table_expression, std::move(replacement_table_expression_table_node));
                 }
             }
 
-            /// If the subquery's single column is an Array one dimension deeper than the left
-            /// argument, flatten it with arrayJoin so its elements become the set elements.
-            flattenArraySubqueryOnRightOfIn(in_second_argument, in_first_argument, scope.context);
-
-            /// If the second argument of IN is a bare column reference (e.g. from `IN (col)` where the
-            /// parentheses were stripped by the parser), decide how to treat it by its type.
-            if (auto * in_second_argument_column = in_second_argument->as<ColumnNode>())
+            /// If the second argument of IN is a non-constant, non-table expression (e.g. a column reference
+            /// from `IN (col)` where the parentheses were stripped by the parser), wrap it in tuple()
+            /// so it can be handled by the tuple/array → has() rewrite below.
+            if (in_second_argument->as<ColumnNode>())
             {
-                const bool is_not_in = (function_name == "notIn" || function_name == "globalNotIn" ||
-                                        function_name == "notNullIn" || function_name == "globalNotNullIn");
-                const bool transform_null_in = scope.context->getSettingsRef()[Setting::transform_null_in];
-
-                /// An Array-typed column on the right of IN is the set of its elements, exactly like an
-                /// array literal or an array-returning function, so rewrite `x IN arr` to `has(arr, x)` -
-                /// but only when the array is exactly one dimension deeper than the left argument, so that
-                /// the element type of `has` matches the left argument (e.g. a scalar and `Array(scalar)`,
-                /// or `Array(T)` and `Array(Array(T))`). When the depths are equal (e.g. `Array(T) IN
-                /// Array(T)`), the column is a single set element and must be handled as `x = col` below.
-                /// Without this, the column would be wrapped in tuple() and treated as a single set element,
-                /// giving a wrong (always-false) result for stringifiable elements or an error otherwise.
-                const auto * rhs_array_type = typeid_cast<const DataTypeArray *>(in_second_argument_column->getColumnType().get());
-                if (rhs_array_type && in_first_argument->getNodeType() != QueryTreeNodeType::LAMBDA)
-                {
-                    const auto & lhs_type = in_first_argument->getResultType();
-                    const auto * lhs_array_type = typeid_cast<const DataTypeArray *>(lhs_type.get());
-                    const size_t lhs_depth = lhs_array_type ? lhs_array_type->getNumberOfDimensions() : 0;
-
-                    if (rhs_array_type->getNumberOfDimensions() == lhs_depth + 1)
-                        return buildHasExpression(node, in_second_argument, in_first_argument, is_not_in, transform_null_in,
-                            arguments_projection_names, parameters_projection_names, scope);
-                }
-
-                /// Any other single column value is a one-element set; wrap it in tuple() so it can be
-                /// handled by the tuple → has() rewrite below.
                 auto tuple_function = std::make_shared<FunctionNode>("tuple");
                 tuple_function->getArguments().getNodes().push_back(std::move(in_second_argument));
                 in_second_argument = std::move(tuple_function);
@@ -1496,6 +1171,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
         }
 
+        /// Edge case when the first argument of IN is scalar subquery.
+        auto first_argument_type = in_first_argument->getNodeType();
+        if (first_argument_type == QueryTreeNodeType::QUERY || first_argument_type == QueryTreeNodeType::UNION)
+        {
+            IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(in_first_argument, &scope /*parent_scope*/);
+            subquery_scope.subquery_depth = scope.subquery_depth + 1;
+
+            evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
+        }
     }
 
     /// Initialize function argument columns
@@ -1522,7 +1206,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         const auto * lambda_node = function_argument->as<const LambdaNode>();
         if (lambda_node)
         {
-            size_t lambda_arguments_size = lambda_node->getArguments().getNames().size();
+            size_t lambda_arguments_size = lambda_node->getArguments().getNodes().size();
             argument_column.type = std::make_shared<DataTypeFunction>(DataTypes(lambda_arguments_size, nullptr), nullptr);
             function_lambda_arguments_indexes.push_back(function_argument_index);
         }
@@ -1816,7 +1500,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
-            VectorWithMemoryTracking<std::string> possible_function_names;
+            std::vector<std::string> possible_function_names;
 
             auto function_names = UserDefinedExecutableFunctionFactory::instance().getRegisteredNames(scope.context); /// NOLINT(readability-static-accessed-through-instance)
             possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
@@ -1878,34 +1562,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         function->getLambdaArgumentTypes(argument_types);
 
-        /** Validate every lambda argument BEFORE resolving any lambda body. getLambdaArgumentTypes
-          * only fills in the placeholder argument types for positions that actually expect a lambda;
-          * where it does not (e.g. arrayFold's accumulator: arrayFold(lambda, arr, another_lambda)),
-          * the placeholder DataTypeFunction keeps null argument types. Those nulls must be rejected up
-          * front: a later lambda that stays unresolved can be copied into an earlier lambda's argument
-          * type, so resolving the earlier lambda's body first would take the non-lambda path and
-          * dereference the null return type (FunctionArrayMapped::getReturnTypeImpl).
-          */
-        for (auto & function_lambda_argument_index : function_lambda_arguments_indexes)
-        {
-            const auto * function_data_type = typeid_cast<const DataTypeFunction *>(argument_types[function_lambda_argument_index].get());
-            if (!function_data_type)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Function '{}' expected function data type for lambda argument with index {}. Actual: {}. In scope {}",
-                    function_name,
-                    function_lambda_argument_index,
-                    argument_types[function_lambda_argument_index]->getName(),
-                    scope.scope_node->formatASTForErrorMessage());
-
-            for (const auto & lambda_argument_type : function_data_type->getArgumentTypes())
-                if (!lambda_argument_type)
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Function '{}' does not expect a lambda expression as argument {}. In scope {}",
-                        function_name,
-                        function_lambda_argument_index + 1,
-                        scope.scope_node->formatASTForErrorMessage());
-        }
-
         ProjectionNames lambda_projection_names;
         for (auto & function_lambda_argument_index : function_lambda_arguments_indexes)
         {
@@ -1913,8 +1569,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto lambda_to_resolve = lambda_argument->clone();
             auto & lambda_to_resolve_typed = lambda_to_resolve->as<LambdaNode &>();
 
-            const auto & lambda_argument_names = lambda_to_resolve_typed.getArguments().getNames();
-            size_t lambda_arguments_size = lambda_argument_names.size();
+            const auto & lambda_argument_names = lambda_to_resolve_typed.getArgumentNames();
+            size_t lambda_arguments_size = lambda_to_resolve_typed.getArguments().getNodes().size();
 
             const auto * function_data_type = typeid_cast<const DataTypeFunction *>(argument_types[function_lambda_argument_index].get());
             if (!function_data_type)
@@ -1961,12 +1617,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             {
                 const auto & argument_type = function_data_type_argument_types[i];
                 auto column_name_and_type = NameAndTypePair{lambda_argument_names[i], argument_type};
-                lambda_arguments.push_back(std::make_shared<ColumnNode>(std::move(column_name_and_type), lambda_to_resolve_typed.getArgumentsTyped()));
+                lambda_arguments.push_back(std::make_shared<ColumnNode>(std::move(column_name_and_type), lambda_to_resolve));
             }
-
-            /// Record the resolved argument types on the lambda arguments node so the planner
-            /// can reconstruct (name, type) pairs without the per-argument column list.
-            lambda_to_resolve_typed.getArguments().resolve(function_data_type_argument_types);
 
             lambda_projection_names = resolveLambda(lambda_argument, lambda_to_resolve, lambda_arguments, lambda_scope);
 
@@ -2093,7 +1745,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         auto * nearest_join_query_scope = scope.joins_count > 0 ? scope.getNearestQueryScope() : nullptr;
         auto * nearest_join_query_scope_query_node = nearest_join_query_scope ? nearest_join_query_scope->scope_node->as<QueryNode>() : nullptr;
-        const auto * join_node = nearest_join_query_scope_query_node ? nearest_join_query_scope_query_node->getJoinTreeNode()->as<JoinNode>() : nullptr;
+        const auto * join_node = nearest_join_query_scope_query_node ? nearest_join_query_scope_query_node->getJoinTree()->as<JoinNode>() : nullptr;
         if (join_node && join_node->getStrictness() == JoinStrictness::Asof &&
             scope.expressions_in_resolve_process_stack.has(join_node->getJoinExpression().get()))
         {
@@ -2147,14 +1799,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /** Do not perform constant folding if there are aggregate or arrayJoin functions inside function.
               * Example: SELECT toTypeName(sum(number)) FROM numbers(10);
               */
-            const auto * column_const = column ? typeid_cast<const ColumnConst *>(column.get()) : nullptr;
-            if (column_const && !column_const->getDataColumn().isDummy() &&
+            if (column && isColumnConst(*column) && !typeid_cast<const ColumnConst *>(column.get())->getDataColumn().isDummy() &&
                 !hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin") &&
                 /// Sanity check: do not convert large columns to constants
                 column->byteSize() < 1_MiB)
             {
                 /// Replace function node with result constant node
-                constant_node = std::make_shared<ConstantNode>(ConstantValue{ column_const->getPtr(), std::move(result_type) }, node, is_deterministic);
+                constant_node = std::make_shared<ConstantNode>(ConstantValue{ std::move(column), std::move(result_type) }, node, is_deterministic);
             }
         }
 
@@ -2168,10 +1819,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     if (constant_node)
         node = std::move(constant_node);
-
-    /// A resolved FunctionNode must produce exactly one projection name. Surface any violation here
-    /// instead of letting it cascade into a generic LOGICAL_ERROR in the expression-list resolver.
-    chassert(result_projection_names.size() == 1);
 
     return result_projection_names;
 }

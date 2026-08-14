@@ -52,7 +52,7 @@ struct FunctionArrayPartialShuffleTraits
 };
 
 template <typename Traits>
-class FunctionArrayShuffleImpl final : public IFunction
+class FunctionArrayShuffleImpl : public IFunction
 {
 public:
     static constexpr auto name = Traits::name;

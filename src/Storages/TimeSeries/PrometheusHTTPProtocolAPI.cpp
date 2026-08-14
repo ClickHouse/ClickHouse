@@ -1,7 +1,6 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
 #include <Common/logger_useful.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -11,11 +10,10 @@
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -37,30 +35,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-namespace Setting
-{
-    extern const SettingsBool enable_materialized_cte;
-}
-
-namespace
-{
-constexpr UInt32 LOOKBACK_DELTA_SCALE = 9;
-
-Decimal64 parsePrometheusLookbackDelta(const String & value, UInt32 timestamp_scale)
-{
-    const auto high_precision_value = parseTimeSeriesDuration(value, LOOKBACK_DELTA_SCALE);
-    if (high_precision_value <= 0 || timestamp_scale >= LOOKBACK_DELTA_SCALE)
-        return high_precision_value;
-
-    const auto divisor = DecimalUtils::scaleMultiplier<Decimal64>(LOOKBACK_DELTA_SCALE - timestamp_scale);
-    auto timestamp_ticks = high_precision_value.value / divisor;
-    if (high_precision_value.value % divisor)
-        ++timestamp_ticks;
-
-    return Decimal64{timestamp_ticks};
-}
-}
-
 PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextMutablePtr & context_)
     : WithMutableContext{context_}
     , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
@@ -72,22 +46,15 @@ PrometheusHTTPProtocolAPI::~PrometheusHTTPProtocolAPI() = default;
 
 void PrometheusHTTPProtocolAPI::executePromQLQuery(
     WriteBuffer & response,
-    const Params & params,
-    QueryFinishCallback query_finish_callback)
+    const Params & params)
 {
     PrometheusQueryEvaluationSettings evaluation_settings;
+    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, getContext())->getInMemoryMetadataPtr(getContext(), false);
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
-    auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
-    std::tie(evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type)
-        = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
-    UInt32 timestamp_scale = tryGetDecimalScale(*evaluation_settings.timestamp_data_type).value_or(0);
-
-    if (!params.lookback_delta_param.empty())
-    {
-        const auto lookback_delta = parsePrometheusLookbackDelta(params.lookback_delta_param, timestamp_scale);
-        if (lookback_delta > 0)
-            evaluation_settings.instant_selector_window = lookback_delta;
-    }
+    auto timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
+    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
+    evaluation_settings.timestamp_data_type = timestamp_data_type;
+    evaluation_settings.scalar_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
 
     auto query_tree = std::make_shared<PrometheusQueryTree>();
     query_tree->parse(params.promql_query, timestamp_scale);
@@ -120,43 +87,20 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
     chassert(sql_query);
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
-
-    /// The generated SQL relies on `AS MATERIALIZED` to avoid evaluating subqueries referenced more than once
-    /// repeatedly (see SQLSubqueryType::MATERIALIZED_TABLE), and that mark has effect only with the setting
-    /// `enable_materialized_cte` enabled. Enable it unless the user set it explicitly.
-    if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
-        getContext()->setSetting("enable_materialized_cte", true);
-
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
-    try
-    {
-        PullingAsyncPipelineExecutor executor(io.pipeline);
+    PullingPipelineExecutor executor(io.pipeline);
 
-        /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
-        writeQueryResponse(response, executor, converter.getResultType());
-
-        /// Store the buffered result in the query result cache now (no-op if no cache writers exist in the pipeline):
-        /// the executor's destructor cancels the pipeline processors, after which the pending write would be discarded.
-        io.pipeline.finalizeWriteInQueryResultCache();
-    }
-    catch (...)
-    {
-        io.onException();
-        throw;
-    }
-
-    /// Release the query slot early so a slow client draining the response does not keep occupying it,
-    /// then flush the response (query_finish_callback) and record QueryFinish.
-    finishExecutedQuery(io, query_finish_callback);
+    /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
+    writeQueryResponse(response, executor, converter.getResultType());
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponse(
-    WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type)
+    WriteBuffer & response, PullingPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type)
 {
     /// Pull until the first non-empty block is ready before writing the header
     /// because pulling_executor.pull() can throw an exception and it's better to catch it early and write
-    /// the correct error header {"status":"error", ...} in PrometheusRequestHandler::QueryImpl.
+    /// the correct error header {"status":"error", ...} in PrometheusRequestHandler::QueryAPIImpl.
     bool has_output = false;
     Block block;
     while (pulling_executor.pull(block))

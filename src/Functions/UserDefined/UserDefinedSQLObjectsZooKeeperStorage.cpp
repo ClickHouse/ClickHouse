@@ -19,11 +19,6 @@
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 
-namespace ProfileEvents
-{
-    extern const Event ZooKeeperWatchTriggeredUserDefinedSQLObjects;
-}
-
 namespace DB
 {
 namespace Setting
@@ -326,7 +321,6 @@ bool UserDefinedSQLObjectsZooKeeperStorage::getObjectDataAndSetWatch(
             /// Event::DELETED is processed as child event by getChildren watch
         };
     });
-    object_watcher.setTriggeredEvent(ProfileEvents::ZooKeeperWatchTriggeredUserDefinedSQLObjects);
 
     Coordination::Stat entity_stat;
     return zookeeper->tryGetWatch(path, data, &entity_stat, object_watcher);
@@ -401,7 +395,6 @@ Strings UserDefinedSQLObjectsZooKeeperStorage::getObjectNamesAndSetWatch(
             /// `inserted` can be false if `watch_queue` was already finalized (which happens when stopWatching() is called).
         };
     });
-    object_list_watcher.setTriggeredEvent(ProfileEvents::ZooKeeperWatchTriggeredUserDefinedSQLObjects);
 
     Coordination::Stat stat;
     const auto node_names = zookeeper->getChildrenWatch(zookeeper_path, &stat, object_list_watcher);
@@ -446,7 +439,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::refreshObjects(const zkutil::ZooKeep
     static constexpr UInt64 initial_backoff_ms = 200;
     static constexpr UInt64 max_backoff_ms = 5000;
 
-    VectorWithMemoryTracking<std::pair<String, ASTPtr>> function_names_and_asts;
+    std::vector<std::pair<String, ASTPtr>> function_names_and_asts;
     zkutil::ZooKeeperPtr current_zookeeper = zookeeper;
 
     ZooKeeperRetriesControl retries_ctl(

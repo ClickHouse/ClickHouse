@@ -9,10 +9,8 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
 #include <IO/ReadHelpers.h>
-#include <algorithm>
 #include <ranges>
 
 namespace DB
@@ -23,32 +21,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int NOT_IMPLEMENTED;
-}
-
-namespace
-{
-
-/// A per-granule count (the number of paths, or the number of substreams of a path) is read from a
-/// possibly-untrusted stream (e.g. a corrupted on-disk `Object` part) and used only as a sizing hint
-/// before the corresponding items are read one by one. It must not be handed to a container's
-/// `reserve` directly, for the same reasons as the outer path lists (see `reserveOrThrowTooManyPaths`
-/// in `SerializationObject.cpp`):
-///   * A count the container cannot hold (`> max_size()`, close to `SIZE_MAX`) would escape as an
-///     uncaught non-`DB::Exception` (`std::length_error`), so reject it as corruption up front.
-///   * A large-but-representable count (e.g. `100000000`) is far below `max_size()` for a
-///     `std::vector<String>`, yet handing it to `reserve` would allocate gigabytes before a single
-///     byte of payload is read and fail as `std::bad_alloc` / OOM.
-/// So cap the hint at `DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS`: the caller's read loop appends each
-/// item as it is decoded (growing the container on demand for a legitimately large count), while a
-/// corrupted over-count trips a normal read error at end of stream instead of a huge allocation.
-template <typename Container>
-void reserveOrThrowTooMany(Container & container, size_t count, const char * what)
-{
-    if (count > container.max_size())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "JSON/Object column has too many {}: {}", what, count);
-    container.reserve(std::min(count, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS));
-}
-
 }
 
 SerializationObjectSharedData::SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_)
@@ -131,22 +103,6 @@ struct DeserializeBinaryBulkStateObjectSharedData : public ISerialization::Deser
         for (size_t bucket = 0; bucket != bucket_structure_states.size(); ++bucket)
             new_state->bucket_structure_states[bucket] = bucket_structure_states[bucket] ? bucket_structure_states[bucket]->clone() : nullptr;
         return new_state;
-    }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (map_state)
-            callback(map_state);
-        for (const auto & bucket_map_state : bucket_map_states)
-        {
-            if (bucket_map_state)
-                callback(bucket_map_state);
-        }
-        for (const auto & bucket_structure_state : bucket_structure_states)
-        {
-            if (bucket_structure_state)
-                callback(bucket_structure_state);
-        }
     }
 };
 
@@ -670,7 +626,7 @@ void SerializationObjectSharedData::deserializeStructureGranulePrefix(
     readVarUInt(structure_granule.num_paths, buf);
 
     if (structure_state.need_all_paths)
-        reserveOrThrowTooMany(structure_granule.all_paths, structure_granule.num_paths, "paths");
+        structure_granule.all_paths.reserve(structure_granule.num_paths);
 
     /// Read list of paths.
     for (size_t i = 0; i != structure_granule.num_paths; ++i)
@@ -934,9 +890,9 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosGranules> Serialization
                 auto & path_info = path_to_info[requested_path];
                 /// Seek to the start of the substreams list for this path.
                 settings.seek_stream_to_mark_callback(settings.path, path_info.substreams_mark);
-                size_t num_substreams = 0;
+                size_t num_substreams;
                 readVarUInt(num_substreams, *paths_substreams_stream);
-                reserveOrThrowTooMany(path_info.substreams, num_substreams, "substreams for a path");
+                path_info.substreams.reserve(num_substreams);
                 for (size_t i = 0; i != num_substreams; ++i)
                 {
                     path_info.substreams.emplace_back();
@@ -963,7 +919,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosGranules> Serialization
                 settings.seek_stream_to_mark_callback(settings.path, path_info.substreams_marks_mark);
                 for (size_t i = 0; i != path_info.substreams.size(); ++i)
                 {
-                    MarkInCompressedFile substream_mark{};
+                    MarkInCompressedFile substream_mark;
                     readBinaryLittleEndian(substream_mark.offset_in_compressed_file, *paths_substreams_marks_stream);
                     readBinaryLittleEndian(substream_mark.offset_in_decompressed_block, *paths_substreams_marks_stream);
                     path_info.substream_to_mark[path_info.substreams[i]] = substream_mark;
@@ -1096,27 +1052,6 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
                     subcolumns_substream_data[pos].serialization->deserializeBinaryBulkWithMultipleStreams(subcolumn, 0, structure_granule.num_rows, deserialization_settings, subcolumns_substream_data[pos].deserialize_state, &cache_for_subcolumns);
                     paths_data_granule.paths_subcolumns_data[requested_path][subcolumns_infos[pos].name] = std::move(subcolumn);
                 }
-
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-                /// The local `cache_for_subcolumns` and `deserialize_states_cache` (and the per-subcolumn
-                /// deserialize states) are dropped when this block ends, before the outer
-                /// `SubstreamsCachePathsDataElement` that later covers these subcolumns is created. Verify
-                /// here that the reference counts of the just-produced path subcolumns account for those
-                /// holders too, so a broken copy-on-write reference count on a shared child (e.g. array
-                /// offsets or a LowCardinality dictionary) is not freed at this earlier destruction point
-                /// while it is still referenced from a produced subcolumn (issue #105626).
-                ColumnsOwnershipValidator ownership_validator;
-                ownership_validator.add(cache_for_subcolumns);
-                ownership_validator.add(deserialize_states_cache);
-                for (const auto & data : subcolumns_substream_data)
-                    ownership_validator.add(data.deserialize_state);
-                Columns produced_subcolumns;
-                const auto & subcolumns_of_path = paths_data_granule.paths_subcolumns_data[requested_path];
-                produced_subcolumns.reserve(subcolumns_of_path.size());
-                for (const auto & [_, column] : subcolumns_of_path)
-                    produced_subcolumns.push_back(column);
-                ownership_validator.validate(produced_subcolumns);
-#endif
             }
             /// Otherwise read the whole path data.
             else
@@ -1128,20 +1063,6 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
                 dynamic_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
                 dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(dynamic_column, 0, structure_granule.num_rows, deserialization_settings, path_state, nullptr);
                 paths_data_granule.paths_data[requested_path] = std::move(dynamic_column);
-
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-                /// The local `path_state` is dropped right here, before the outer
-                /// `SubstreamsCachePathsDataElement` that later covers the produced column is created.
-                /// The state can hold column references through nested states (e.g. nested `Object`
-                /// or `LowCardinality` content of the path values), so verify that the reference
-                /// count of the just-produced path column accounts for those holders too, and a
-                /// broken copy-on-write reference count on a shared child is not freed at this
-                /// earlier destruction point while it is still referenced from the produced column
-                /// (issue #105626).
-                ColumnsOwnershipValidator ownership_validator;
-                ownership_validator.add(path_state);
-                ownership_validator.validate({paths_data_granule.paths_data[requested_path]});
-#endif
             }
         }
     }
@@ -1178,7 +1099,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
     }
     else if (serialization_version.value == SerializationVersion::MAP_WITH_BUCKETS)
     {
-        Columns shared_data_buckets(buckets);
+        std::vector<ColumnPtr> shared_data_buckets(buckets);
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
             settings.path.push_back(Substream::Bucket);
@@ -1288,7 +1209,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 if (!paths_substreams_stream)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data paths substreams");
 
-                size_t num_substreams = 0;
+                size_t num_substreams;
                 size_t total_number_of_substreams = 0;
                 for (size_t i = 0; i != structure_granule.num_paths; ++i)
                 {

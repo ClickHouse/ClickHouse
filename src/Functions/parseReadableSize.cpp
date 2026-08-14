@@ -6,7 +6,6 @@
 #include <Columns/ColumnString.h>
 #include <Common/Exception.h>
 #include <Common/FunctionDocumentation.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -37,9 +36,9 @@ enum class ErrorHandling : uint8_t
     Null
 };
 
-using ScaleFactors = UnorderedMapWithMemoryTracking<std::string_view, size_t>;
+using ScaleFactors = std::unordered_map<std::string_view, size_t>;
 
-class FunctionParseReadable final : public IFunction
+class FunctionParseReadable : public IFunction
 {
 public:
     FunctionParseReadable(const char * name_, ErrorHandling error_handling_)
@@ -145,7 +144,7 @@ private:
         };
         ReadBufferFromString buf(value);
 
-        // The float parser does not raise an error on leading whitespace, so we check it explicitly
+        // tryReadFloatText does seem to not raise any error when there is leading whitespace so we check it explicitly
         skipWhitespaceIfAny(buf);
         if (buf.getPosition() > 0)
         {
@@ -158,7 +157,7 @@ private:
         }
 
         Float64 base = 0;
-        if (!tryReadFloatTextPrecise(base, buf))    // Precise rejects garbage input; the fast parser would accept it
+        if (!tryReadFloatTextPrecise(base, buf))    // If we use the default (fast) tryReadFloatText this returns True on garbage input so we use the Precise version
         {
             throw Exception(
                 ErrorCodes::CANNOT_PARSE_NUMBER,

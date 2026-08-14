@@ -191,7 +191,7 @@ void SpanHolder::finish(std::chrono::system_clock::time_point time) noexcept
         return;
 
     // First of all, restore old value of current span.
-    chassert(current_trace_context->span_id == span_id);
+    assert(current_trace_context->span_id == span_id);
     current_trace_context->span_id = parent_span_id;
 
     current_trace_context->trace_flags = old_trace_flags;
@@ -204,10 +204,7 @@ void SpanHolder::finish(std::chrono::system_clock::time_point time) noexcept
         if (log)
         {
             this->finish_time_us = std::chrono::duration_cast<std::chrono::microseconds>(time.time_since_epoch()).count();
-            log->add([&](OpenTelemetrySpanLogElement & element)
-            {
-                element.span = *this;
-            });
+            log->add(OpenTelemetrySpanLogElement(*this));
         }
     }
     catch (...)
@@ -405,7 +402,7 @@ TracingContextHolder::TracingContextHolder(
                 return;
 
             // Start the trace with some configurable probability.
-            std::bernoulli_distribution should_start_trace{static_cast<double>((*settings_ptr)[Setting::opentelemetry_start_trace_probability])};
+            std::bernoulli_distribution should_start_trace{(*settings_ptr)[Setting::opentelemetry_start_trace_probability]};
             if (!should_start_trace(thread_local_rng))
                 /// skip tracing context initialization on current thread
                 return;
@@ -466,10 +463,7 @@ TracingContextHolder::~TracingContextHolder()
             this->root_span.finish_time_us
                 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-            shared_span_log->add([&](OpenTelemetrySpanLogElement & element)
-            {
-                element.span = this->root_span;
-            });
+            shared_span_log->add(OpenTelemetrySpanLogElement(this->root_span));
         }
     }
     catch (...)
