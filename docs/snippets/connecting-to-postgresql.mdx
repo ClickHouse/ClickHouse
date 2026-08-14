@@ -198,7 +198,8 @@ This article is to illustrate basic methods of integration using one database, o
 
 ***In the following procedures, the PostgreSQL CLI (psql) and the ClickHouse CLI (clickhouse-client) are used. The PostgreSQL server is installed on linux. The following has minimum settings if the postgresql database is new test install***
 
-### 1. In PostgreSQL {#1-in-postgresql}
+<Steps>
+<Step title="In PostgreSQL" id="1-in-postgresql">
 1.  In `postgresql.conf`, set minimum listen levels, replication wal level and replication slots:
 
 add the following entries:
@@ -260,7 +261,8 @@ _*for demonstration purposes, this is using clear text password authentication m
  psql -U clickhouse_user -W -d db1 -h <your_postgresql_host>
 ```
 
-### 2. In ClickHouse {#2-in-clickhouse}
+</Step>
+<Step title="In ClickHouse" id="2-in-clickhouse">
 1. log into the ClickHouse CLI
 ```bash
 clickhouse-client --user default --password ClickHouse123!
@@ -311,7 +313,8 @@ Query id: df2381ac-4e30-4535-b22e-8be3894aaafc
 └────┴─────────┘
 ```
 
-### 3. Test basic replication {#3-test-basic-replication}
+</Step>
+<Step title="Test basic replication" id="3-test-basic-replication">
 1. In PostgreSQL, add new rows:
 ```sql
 INSERT INTO table1
@@ -346,9 +349,12 @@ Query id: b0729816-3917-44d3-8d1a-fed912fb59ce
 └────┴─────────┘
 ```
 
-### 4. Summary {#4-summary}
+</Step>
+<Step title="Summary" id="4-summary">
 This integration guide focused on a simple example on how to replicate a database with a table, however, there exist more advanced options which include replicating the whole database or adding new tables and schemas to the existing replications. Although DDL commands aren't supported for this replication, the engine can be set to detect changes and reload the tables when there are structural changes made.
 
 <Info>
 For more features available for advanced options, please see the [reference documentation](/reference/engines/database-engines/materialized-postgresql).
 </Info>
+</Step>
+</Steps>
