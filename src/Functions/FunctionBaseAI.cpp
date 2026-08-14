@@ -2,6 +2,7 @@
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
 #include <Common/ProfileEvents.h>
+#include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
@@ -391,6 +392,12 @@ FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
 {
     EmbeddingResult result;
     result.embeddings.resize(inputs.size());
+
+    /// Increment ProfileEvents counters upon destruction, to avoid underreporting on error
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::AIAPICalls, result.api_calls);
+        ProfileEvents::increment(ProfileEvents::AIInputTokens, result.input_tokens);
+    });
 
     for (size_t batch_start = 0; batch_start < inputs.size(); batch_start += max_batch_size)
     {

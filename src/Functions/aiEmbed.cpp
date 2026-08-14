@@ -203,8 +203,6 @@ public:
         for (; cursor < input_rows_count; ++cursor)
             offsets_vec.push_back(current_offset);
 
-        ProfileEvents::increment(ProfileEvents::AIAPICalls, embedding_result.api_calls);
-        ProfileEvents::increment(ProfileEvents::AIInputTokens, embedding_result.input_tokens);
         ProfileEvents::increment(ProfileEvents::AIRowsProcessed, embedding_result.texts_embedded);
         ProfileEvents::increment(ProfileEvents::AIRowsSkipped, embedding_result.texts_skipped);
 

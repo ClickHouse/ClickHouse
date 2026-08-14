@@ -61,7 +61,9 @@ def unique_query_id(prefix):
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
 
-def get_profile_events(query_id):
+def get_profile_events(query_id, query_type="QueryFinish"):
+    """AI counters from `system.query_log`. A query that threw logs `ExceptionWhileProcessing`
+    rather than `QueryFinish`, so the throwing paths pass that type explicitly."""
     instance.query("SYSTEM FLUSH LOGS")
     result = instance.query(
         f"""
@@ -72,12 +74,14 @@ def get_profile_events(query_id):
             ProfileEvents['AIRowsProcessed'] AS rows_processed,
             ProfileEvents['AIRowsSkipped'] AS rows_skipped
         FROM system.query_log
-        WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+        WHERE query_id = '{query_id}' AND type = '{query_type}'
         LIMIT 1
         FORMAT JSONEachRow
         """
     ).strip()
-    assert result, f"no system.query_log row found for query_id={query_id}"
+    assert (
+        result
+    ), f"no system.query_log row found for query_id={query_id} type={query_type}"
     return json.loads(result)
 
 
@@ -1019,6 +1023,33 @@ def test_embed_error_throw(started_cluster):
         settings=AI_SETTINGS,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+
+
+def test_embed_error_throw_records_api_calls(started_cluster):
+    """The provider was called and charged for it, so `embedTexts` must report the usage counters even
+    though it rethrows. They used to be lost with the `EmbeddingResult` that never reached the caller."""
+    qid = unique_query_id("embed_error_throw_events")
+    error = instance.query_and_get_error(
+        "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_embed_error'))",
+        settings={**AI_SETTINGS, "ai_function_max_retries": 0},
+        query_id=qid,
+    )
+    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+    # The query threw, so its log row is an exception row rather than QueryFinish.
+    events = get_profile_events(qid, query_type="ExceptionWhileProcessing")
+    assert int(events["api_calls"]) == 1  # one attempt, retries disabled
+
+
+def test_similarity_error_throw_records_api_calls(started_cluster):
+    """Same guarantee through the other `embedTexts` caller, which counts rows differently."""
+    qid = unique_query_id("similarity_error_throw_events")
+    instance.query_and_get_error(
+        "SELECT aiSimilarity('a', 'b', 'test-embed-model', map('credentials', 'ai_embed_error'))",
+        settings={**AI_SETTINGS, "ai_function_max_retries": 0},
+        query_id=qid,
+    )
+    events = get_profile_events(qid, query_type="ExceptionWhileProcessing")
+    assert int(events["api_calls"]) == 1
 
 
 def test_embed_error_graceful(started_cluster):
