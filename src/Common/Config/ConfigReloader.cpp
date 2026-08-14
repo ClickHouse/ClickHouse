@@ -171,6 +171,11 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             need_reload_from_zk = false;
         }
 
+        /// The config determines its own substitutions file by the <include_from> element,
+        /// which is not known until the config is loaded. Remember it to watch for its changes.
+        /// If it just appeared or changed, the next check will see a different file list and reload once more.
+        include_from_path = loaded_config.configuration->getString("include_from", "");
+
         LOG_DEBUG(log, "Loaded config '{}', performing update on configuration", config_path);
 
         try
@@ -232,6 +237,7 @@ ConfigReloader::FilesChangesTracker ConfigReloader::getNewFileList() const
     FilesChangesTracker file_list;
 
     file_list.addIfExists(config_path);
+    file_list.addIfExists(include_from_path);
     for (const std::string& path : extra_paths)
         file_list.addIfExists(path);
 
