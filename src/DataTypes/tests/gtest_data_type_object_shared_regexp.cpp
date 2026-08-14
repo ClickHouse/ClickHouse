@@ -254,5 +254,82 @@ TEST(DataTypeObjectSharedRegexp, MergeLooksThroughMapValueMismatchOnTargetSide)
     EXPECT_EQ(asJSON(result_map->getValueType()).getSharedDataPathRules().size(), 1);
 }
 
+TEST(DataTypeObjectSharedRegexp, MergeLooksThroughArrayMismatchOnSourceSide)
+{
+    /// The reverse shape, e.g. `arr[1]` over `arr Array(JSON(...))`: the expression's own output
+    /// type is bare, but the resolved source column still carries the Array.
+    const auto rule_bearing = makeJSONType({{"^tag_", MatchMode::Partial}});
+
+    const auto merged = mergeJSONSharedDataPathRules(
+        makeJSONType({}), std::make_shared<DataTypeArray>(rule_bearing));
+    EXPECT_EQ(asJSON(merged).getSharedDataPathRules().size(), 1);
+}
+
+TEST(DataTypeObjectSharedRegexp, MergeLooksThroughSingleElementTupleMismatchOnSourceSide)
+{
+    /// Source-side mirror: `tupleElement(t, 1)` over a single-element `t`.
+    const auto rule_bearing = makeJSONType({{"^tag_", MatchMode::Partial}});
+
+    const auto merged = mergeJSONSharedDataPathRules(
+        makeJSONType({}), std::make_shared<DataTypeTuple>(DataTypes{rule_bearing}));
+    EXPECT_EQ(asJSON(merged).getSharedDataPathRules().size(), 1);
+
+    /// A multi-element tuple source is equally ambiguous in reverse; leave the target untouched.
+    const auto bare_target = makeJSONType({});
+    const auto multi_element_source = std::make_shared<DataTypeTuple>(DataTypes{rule_bearing, makeJSONType({})});
+    EXPECT_EQ(mergeJSONSharedDataPathRules(bare_target, multi_element_source).get(), bare_target.get());
+}
+
+TEST(DataTypeObjectSharedRegexp, MergeLooksThroughMapValueMismatchOnSourceSide)
+{
+    /// Source-side mirror: the JSON value can only have come from the map's value type.
+    const auto rule_bearing = makeJSONType({{"^tag_", MatchMode::Partial}});
+
+    const auto merged = mergeJSONSharedDataPathRules(
+        makeJSONType({}), std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), rule_bearing));
+    EXPECT_EQ(asJSON(merged).getSharedDataPathRules().size(), 1);
+}
+
+TEST(DataTypeObjectSharedRegexp, GetTypeOfNestedObjectsPropagatesRulesAndExtendsPrefix)
+{
+    /// A JSON(SHARED REGEXP '^arr[.]forced$') column dynamically inferring `arr`'s elements as
+    /// their own nested JSON objects (see ObjectJSONNode::getDynamicNodeForPath in
+    /// JSONExtractTree.cpp) needs each element's own type to carry the same rules, with the
+    /// prefix extended by "arr.", so a path like "forced" *within* an element is matched
+    /// root-relative as "arr.forced" -- not evaluated bare, and not silently losing the policy.
+    const auto root = makeJSONType({{"^arr[.]forced$", MatchMode::Full}});
+    const auto & root_object = asJSON(root);
+
+    const auto no_path = root_object.getTypeOfNestedObjects();
+    EXPECT_TRUE(asJSON(no_path).getSharedDataPathRules().empty());
+
+    /// Unlike the no-arg overload, passing even an empty prefix still propagates the root's rules
+    /// (it only controls how much prefix is *appended*, not whether rules are carried at all) --
+    /// so this is deliberately not equal to `no_path`.
+    const auto empty_path = root_object.getTypeOfNestedObjects("");
+    const auto & empty_path_object = asJSON(empty_path);
+    EXPECT_FALSE(empty_path_object.getSharedDataPathRules().empty());
+    EXPECT_EQ(empty_path_object.getSharedDataPathPrefix(), "");
+
+    const auto for_arr = root_object.getTypeOfNestedObjects("arr.");
+    const auto & for_arr_object = asJSON(for_arr);
+    ASSERT_EQ(for_arr_object.getSharedDataPathRules().size(), 1);
+    EXPECT_EQ(for_arr_object.getSharedDataPathRules().front(), (JSONPathRegexpRule{"^arr[.]forced$", MatchMode::Full}));
+    EXPECT_EQ(for_arr_object.getSharedDataPathPrefix(), "arr.");
+
+    /// The matcher itself always expects a full, root-relative path -- callers reconstruct that by
+    /// prepending the prefix (see ColumnObject::shouldForceSharedData), the element's own bare path
+    /// is never matched directly. So "forced" alone must NOT match here, only "arr." + "forced".
+    const auto & matcher = for_arr_object.getSharedDataPathMatcher();
+    ASSERT_TRUE(matcher);
+    EXPECT_FALSE(matcher->matches("forced"));
+    EXPECT_TRUE(matcher->matches(for_arr_object.getSharedDataPathPrefix() + "forced"));
+
+    /// A nested call two levels deep composes prefixes, matching buildSubObjectTypeAndSerialization's
+    /// own `shared_data_path_prefix + prefix` convention for the explicit ^-subcolumn accessor.
+    const auto for_arr_inner = for_arr_object.getTypeOfNestedObjects("inner.");
+    EXPECT_EQ(asJSON(for_arr_inner).getSharedDataPathPrefix(), "arr.inner.");
+}
+
 }
 }

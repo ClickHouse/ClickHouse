@@ -90,6 +90,11 @@ public:
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
 
     DataTypePtr getTypeOfNestedObjects() const;
+    /// Same, but propagates this object's own SHARED REGEXP rules and prefix, extended by
+    /// `path_prefix_from_root`, to the nested type -- so a value dynamically inferred as a nested
+    /// object at that path can still correctly evaluate the rules against its own root-relative
+    /// paths instead of losing the policy or evaluating it unprefixed.
+    DataTypePtr getTypeOfNestedObjects(const String & path_prefix_from_root) const;
     DataTypePtr getDynamicType() const;
 
     /// Shared data has type Array(Tuple(String, String)).

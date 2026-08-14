@@ -1904,11 +1904,11 @@ public:
         std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
-        const DataTypePtr & type_of_nested_objects)
+        DataTypePtr object_type_)
         : typed_paths_types(typed_paths_types_)
         , typed_path_nodes(std::move(typed_path_nodes_))
         , paths_to_skip(paths_to_skip_)
-        , dynamic_node(std::make_unique<DynamicNode<JSONParser>>(type_of_nested_objects))
+        , object_type(std::move(object_type_))
         , dynamic_serialization(DataTypeDynamic().getDefaultSerialization())
     {
         sorted_paths_to_skip.assign(paths_to_skip.begin(), paths_to_skip.end());
@@ -1982,7 +1982,7 @@ public:
             {
                 /// Serialize value directly into shared data chars.
                 WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag(), format_settings.json_max_string_column_growth_step);
-                if (!insertIntoSharedData(value_buf, value, insert_settings, format_settings, error, tmp_dynamic_column))
+                if (!insertIntoSharedData(path, value_buf, value, insert_settings, format_settings, error, tmp_dynamic_column))
                 {
                     error += fmt::format(" (while reading path {})", path);
                     SerializationObject::restoreColumnObject(column_object, prev_size);
@@ -2174,7 +2174,7 @@ private:
                     return false;
                 }
             }
-            else if (!insertIntoDynamicPath(*dynamic_it->second, element, insert_settings, format_settings, error))
+            else if (!insertIntoDynamicPath(current_path, *dynamic_it->second, element, insert_settings, format_settings, error))
             {
                 error += fmt::format(" (while reading path {})", current_path);
                 return false;
@@ -2183,7 +2183,7 @@ private:
         /// Try to add a new dynamic path.
         else if (auto * dynamic_column = column_object.tryToAddNewDynamicPath(current_path))
         {
-            if (!insertIntoDynamicPath(*dynamic_column, element, insert_settings, format_settings, error))
+            if (!insertIntoDynamicPath(current_path, *dynamic_column, element, insert_settings, format_settings, error))
             {
                 error += fmt::format(" (while reading path {})", current_path);
                 return false;
@@ -2209,6 +2209,22 @@ private:
         else
             path += key;
         return path;
+    }
+
+    /// A value dynamically inferred as a nested object at `path` (relative to this object) needs a
+    /// type carrying this object's SHARED REGEXP rules with the prefix extended by `path`, so paths
+    /// inside it are matched root-relative (e.g. "forced" inside "outer" is matched as
+    /// "outer.forced", not "forced") instead of losing the policy or evaluating it unprefixed.
+    /// Cached per path since it's looked up on every row for a dynamic/shared-data path.
+    DynamicNode<JSONParser> & getDynamicNodeForPath(const String & path) const
+    {
+        auto it = dynamic_nodes_by_path.find(path);
+        if (it == dynamic_nodes_by_path.end())
+        {
+            auto nested_type = assert_cast<const DataTypeObject &>(*object_type).getTypeOfNestedObjects(path + ".");
+            it = dynamic_nodes_by_path.emplace(path, std::make_unique<DynamicNode<JSONParser>>(std::move(nested_type))).first;
+        }
+        return *it->second;
     }
 
     bool shouldSkipPath(const String & path, const JSONExtractInsertSettings & insert_settings) const
@@ -2240,7 +2256,7 @@ private:
         return false;
     }
 
-    bool insertIntoDynamicPath(ColumnDynamic & column_dynamic, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const
+    bool insertIntoDynamicPath(const String & path, ColumnDynamic & column_dynamic, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const
     {
         /// Check if element is NULL.
         if (element.isNull())
@@ -2356,10 +2372,10 @@ private:
                 break;
         }
 
-        return dynamic_node->insertResultToColumn(column_dynamic, element, insert_settings, format_settings, error);
+        return getDynamicNodeForPath(path).insertResultToColumn(column_dynamic, element, insert_settings, format_settings, error);
     }
 
-    bool insertIntoSharedData(WriteBuffer & buf, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error, MutableColumnPtr & tmp_dynamic_column) const
+    bool insertIntoSharedData(const String & path, WriteBuffer & buf, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error, MutableColumnPtr & tmp_dynamic_column) const
     {
         /// Fast track where we process simple data types explicitly and serialize them into
         /// shared data without inserting value into Dynamic column with subsequent binary serialization.
@@ -2449,7 +2465,7 @@ private:
         /// creating it every time is very slow. And so we need to always infer
         /// new type for new value and don't reuse existing variants.
         insert_settings_for_shared_data.try_existing_variants_in_dynamic_first = false;
-        if (dynamic_node->insertResultToColumn(*tmp_dynamic_column, element, insert_settings_for_shared_data, format_settings, error))
+        if (getDynamicNodeForPath(path).insertResultToColumn(*tmp_dynamic_column, element, insert_settings_for_shared_data, format_settings, error))
         {
             /// Use default format settings for binary serialization. Non-default settings may change
             /// the binary representation of the values and break the future deserialization.
@@ -2500,7 +2516,11 @@ private:
     std::unordered_set<String> paths_to_skip;
     std::vector<String> sorted_paths_to_skip;
     std::list<re2::RE2> path_regexps_to_skip;
-    std::unique_ptr<DynamicNode<JSONParser>> dynamic_node;
+    /// Kept so a Dynamic node for a nested object at a given path can be built with that path's own
+    /// SHARED REGEXP provenance (see getDynamicNodeForPath), instead of one node shared, pathless,
+    /// across every dynamically-inferred nested object regardless of where it was found.
+    DataTypePtr object_type;
+    mutable std::unordered_map<String, std::unique_ptr<DynamicNode<JSONParser>>> dynamic_nodes_by_path;
     SerializationPtr dynamic_serialization;
     const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
     const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
@@ -2704,7 +2724,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
                         std::move(typed_path_nodes),
                         object_type.getPathsToSkip(),
                         object_type.getPathRegexpsToSkip(),
-                        object_type.getTypeOfNestedObjects());
+                        type);
             }
         }
         default:

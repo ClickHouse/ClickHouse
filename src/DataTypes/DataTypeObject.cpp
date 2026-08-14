@@ -967,6 +967,22 @@ DataTypePtr DataTypeObject::getTypeOfNestedObjects() const
     return std::make_shared<DataTypeObject>(schema_format, max_dynamic_paths / NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR, max_dynamic_types / NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR);
 }
 
+DataTypePtr DataTypeObject::getTypeOfNestedObjects(const String & path_prefix_from_root) const
+{
+    if (shared_data_path_rules.empty())
+        return getTypeOfNestedObjects();
+
+    return std::make_shared<DataTypeObject>(
+        schema_format,
+        std::unordered_map<String, DataTypePtr>{},
+        std::unordered_set<String>{},
+        std::vector<String>{},
+        max_dynamic_paths / NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR,
+        max_dynamic_types / NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR,
+        shared_data_path_rules,
+        shared_data_path_prefix + path_prefix_from_root);
+}
+
 DataTypePtr DataTypeObject::getDynamicType() const
 {
     return std::make_shared<DataTypeDynamic>(max_dynamic_types);
@@ -1138,6 +1154,13 @@ DataTypePtr applyJSONSharedDataPathPolicyImpl(const DataTypePtr & type, const Da
         return std::make_shared<DataTypeArray>(std::move(nested));
     }
 
+    /// The reverse shape, e.g. `arr[1]` over `arr Array(JSON(...))`: the expression's own output
+    /// type is bare, but the resolved source column still has the wrapper. An Array's element type
+    /// is always singular, so unwrapping the source side to reach it is unambiguous.
+    if (const auto * source_array = typeid_cast<const DataTypeArray *>(policy_source_type.get());
+        source_array && !typeid_cast<const DataTypeArray *>(type.get()))
+        return applyJSONSharedDataPathPolicyImpl(type, source_array->getNestedType(), merge_rules);
+
     /// A single-element tuple (e.g. `tuple(j)`) has the same one-to-one relationship to its source
     /// as Array does; a tuple with more than one element has no single source column this policy
     /// could unambiguously belong to, so it's left alone.
@@ -1152,6 +1175,12 @@ DataTypePtr applyJSONSharedDataPathPolicyImpl(const DataTypePtr & type, const Da
         return std::make_shared<DataTypeTuple>(DataTypes{std::move(nested)});
     }
 
+    /// Source-side mirror of the tuple case above, e.g. `tupleElement(t, 1)` over a single-element
+    /// `t`: still an unambiguous one-to-one relationship, just with the wrapper on the other side.
+    if (const auto * source_tuple = typeid_cast<const DataTypeTuple *>(policy_source_type.get());
+        source_tuple && source_tuple->getElements().size() == 1 && !typeid_cast<const DataTypeTuple *>(type.get()))
+        return applyJSONSharedDataPathPolicyImpl(type, source_tuple->getElements().front(), merge_rules);
+
     /// `map('k', j)`: the JSON value only ever lives in the value type, so descend there, leaving
     /// the key type untouched.
     if (const auto * target_map = typeid_cast<const DataTypeMap *>(type.get());
@@ -1162,6 +1191,12 @@ DataTypePtr applyJSONSharedDataPathPolicyImpl(const DataTypePtr & type, const Da
             return type;
         return std::make_shared<DataTypeMap>(target_map->getKeyType(), std::move(nested));
     }
+
+    /// Source-side mirror of the map case above: the JSON value can only have come from the map's
+    /// value type, so descend there regardless of which side carries the Map wrapper.
+    if (const auto * source_map = typeid_cast<const DataTypeMap *>(policy_source_type.get());
+        source_map && !typeid_cast<const DataTypeMap *>(type.get()))
+        return applyJSONSharedDataPathPolicyImpl(type, source_map->getValueType(), merge_rules);
 
     if (const auto * object = typeid_cast<const DataTypeObject *>(type.get()))
     {
