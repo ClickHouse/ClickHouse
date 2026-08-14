@@ -769,7 +769,7 @@ Chunk CountSource::generate()
 
             ProfileEvents::increment(ProfileEvents::LanceRowsRead, *rows);
             addTotalRowsApprox(*rows);
-            rows_remaining = *rows;
+            rows_remaining = rows;
         }
 
         if (*rows_remaining == 0)

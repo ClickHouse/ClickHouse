@@ -65,8 +65,8 @@ void LanceObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBuff
     if (size > MAX_FRAGMENT_IDS_PER_LANCE_TASK || !std::in_range<size_t>(size))
         throw DB::Exception(ErrorCodes::INCORRECT_DATA, "Invalid Lance fragment count {}", size);
     fragment_ids.resize(static_cast<size_t>(size));
-    for (size_t i = 0; i < fragment_ids.size(); ++i)
-        readVarUInt(fragment_ids[i], in);
+    for (auto & fragment_id : fragment_ids)
+        readVarUInt(fragment_id, in);
     UInt64 pack_index_value = 0;
     UInt64 pack_count_value = 0;
     readVarUInt(pack_index_value, in);

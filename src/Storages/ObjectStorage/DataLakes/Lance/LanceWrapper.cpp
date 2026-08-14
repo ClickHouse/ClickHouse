@@ -93,8 +93,9 @@ int toClickHouseErrorCode(UInt32 kind, UInt32 origin)
         case CH_LANCE_ERROR_SNAPSHOT_MISMATCH:
             return ErrorCodes::INCORRECT_DATA;
         case CH_LANCE_ERROR_MEMORY_LIMIT: return ErrorCodes::MEMORY_LIMIT_EXCEEDED;
+        default:
+            return ErrorCodes::UNKNOWN_EXCEPTION;
     }
-    return ErrorCodes::UNKNOWN_EXCEPTION;
 }
 
 }

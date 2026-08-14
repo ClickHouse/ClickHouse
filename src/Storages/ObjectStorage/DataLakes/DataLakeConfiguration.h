@@ -261,7 +261,7 @@ public:
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
         bool need_only_count,
-        std::optional<size_t> limit = {}) const override
+        std::optional<size_t> limit) const override
     {
         assertInitialized();
         return current_metadata->read(

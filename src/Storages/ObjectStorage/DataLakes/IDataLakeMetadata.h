@@ -116,7 +116,7 @@ public:
         FormatParserSharedResourcesPtr,
         FormatFilterInfoPtr,
         bool,
-        std::optional<size_t> limit = {}) const
+        std::optional<size_t> limit) const
     {
         (void)limit;
         return std::nullopt;
