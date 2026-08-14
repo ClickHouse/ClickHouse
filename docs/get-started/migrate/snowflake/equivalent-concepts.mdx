@@ -18,9 +18,9 @@ The tables below map each Snowflake concept to its ClickHouse equivalent. For fu
 | Virtual warehouse | Service | Compute (replicas) plus storage, equivalent to a Snowflake warehouse and the database it queries combined. |
 | Database | [Database](/sql-reference/statements/create/database) | A namespace for tables and views. Snowflake's Database → Schema → Table flattens to Database → Table; see [Schemas](#schemas) below. |
 
-:::note[Warehouse terminology]
+<Note title="Warehouse terminology">
 A [**ClickHouse warehouse**](/cloud/reference/warehouses) is a grouping of services that share storage and scale compute independently, not a compute cluster as in Snowflake.
-:::
+</Note>
 
 ## Schemas {#schemas}
 
@@ -51,9 +51,9 @@ ClickHouse Cloud's access layer splits into [console roles](/cloud/security/cons
 | Object ownership and ownership transfer | — | Access in ClickHouse is controlled entirely through explicit grants. Snowflake patterns that rely on owners delegating access need to be rebuilt as explicit role-based grants. |
 | `USE ROLE` | [`SET ROLE`](/sql-reference/statements/set-role) | — |
 
-:::note[Per-user SQL console access]
+<Note title="Per-user SQL console access">
 ClickHouse has no separate database-role tier, but ClickHouse Cloud can still grant per-user, scoped access to the SQL console. Create a role matching the `sql-console-role:<email>` naming convention and grant it the privileges that user should have; the console assigns it in place of the default `sql_console_admin` / `sql_console_read_only` roles. These are ordinary service-scoped SQL roles — the namespace is just a mapping convention. See [granular access control](/cloud/security/common-access-management-queries#granular-access-control).
-:::
+</Note>
 
 ## Compute and capacity {#compute-capacity}
 
@@ -76,7 +76,7 @@ Both charges for public internet egress and cross-region data transfer and offer
 
 ## Storage and tables {#storage-tables}
 
-In ClickHouse, how a table stores and manages its data is set at creation time: the engine (MergeTree family) determines merge and storage semantics, and `ORDER BY` / `PARTITION BY` / `TTL` clauses configure physical layout and retention. Many Snowflake per-feature settings map to a clause in the ClickHouse `CREATE TABLE` statement. Physical schema design also differs between platforms; see the [migration guide](./02_migration_guide.md) for design tradeoffs.
+In ClickHouse, how a table stores and manages its data is set at creation time: the engine (MergeTree family) determines merge and storage semantics, and `ORDER BY` / `PARTITION BY` / `TTL` clauses configure physical layout and retention. Many Snowflake per-feature settings map to a clause in the ClickHouse `CREATE TABLE` statement. Physical schema design also differs between platforms; see the [migration guide](./migration-guide) for design tradeoffs.
 
 | Snowflake | ClickHouse | Notes |
 |---|---|---|
@@ -102,7 +102,7 @@ In ClickHouse, how a table stores and manages its data is set at creation time: 
 | Row access policy | [Row policy](/sql-reference/statements/create/row-policy) — a `WHERE`-style expression evaluated per user | Row policies apply transparently to every query against the table. |
 | Sequence | [`generateSerialID`](/sql-reference/functions/other-functions#generateSerialID) for a Keeper-backed sequential counter; [`generateSnowflakeID`](/sql-reference/functions/uuid-functions#generateSnowflakeID) or [`generateUUIDv7`](/sql-reference/functions/uuid-functions#generateUUIDv7) for distributed unique IDs | `generateSerialID` is the closest match to an auto-incrementing sequence: a named, monotonic counter coordinated through ClickHouse Keeper. The UUID functions suit high-throughput unique IDs that don't need a shared counter. |
 
-:::note[Updates and deletes]
+<Note title="Updates and deletes">
 ClickHouse is append-optimized. There's no SQL `MERGE` statement
 (unrelated to the `Merge` and `MergeTree` engines), and
 [`ALTER TABLE … UPDATE`](/sql-reference/statements/alter/update) /
@@ -114,7 +114,7 @@ keeps the latest row by sort key, [`CollapsingMergeTree`](/engines/table-engines
 cancels rows by inserting a matching row with `Sign = -1`, and [`AggregatingMergeTree`](/engines/table-engines/mergetree-family/aggregatingmergetree)
 maintains aggregated state. Engine choice is set at table creation and is
 non-trivial to change later.
-:::
+</Note>
 
 ## Query model and performance {#query-model}
 
@@ -198,4 +198,4 @@ ClickHouse surfaces operational state through `system.*` tables (queries, sessio
 ## Next steps {#next-steps}
 
 - For function-by-function SQL syntax mapping, see the [SQL translation reference](/migrations/snowflake-translation-reference).
-- For the end-to-end migration walkthrough, see [Migrating from Snowflake to ClickHouse](./02_migration_guide.md).
+- For the end-to-end migration walkthrough, see [Migrating from Snowflake to ClickHouse](./migration-guide).
