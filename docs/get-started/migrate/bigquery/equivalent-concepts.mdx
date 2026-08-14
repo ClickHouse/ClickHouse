@@ -4,10 +4,11 @@ slug: /migrations/bigquery/equivalent-concepts
 description: 'Table-format reference mapping each core BigQuery concept to its ClickHouse equivalent'
 keywords: ['BigQuery', 'migration', 'concept mapping', 'equivalent concepts', 'comparison']
 sidebar_label: 'Equivalent concepts'
+sidebar_position: 4
 doc_type: 'reference'
 ---
 
-The tables below map each BigQuery concept to its ClickHouse equivalent. For the end-to-end migration walkthrough, see [Migrating from BigQuery to ClickHouse Cloud](./02_migrating-to-clickhouse-cloud.md).
+The tables below map each BigQuery concept to its ClickHouse equivalent. For the end-to-end migration walkthrough, see [Migrating from BigQuery to ClickHouse Cloud](./migrating-to-clickhouse-cloud).
 
 ## Resource hierarchy {#resource-hierarchy}
 
@@ -26,12 +27,12 @@ The tables below map each BigQuery concept to its ClickHouse equivalent. For the
 | Slot reservation | Vertical and horizontal [autoscaling](/cloud/features/autoscaling/vertical) bounds; [warehouses](/cloud/reference/warehouses) for workload isolation | Where BigQuery reservations guarantee slot capacity, ClickHouse sizes via min/max autoscaling bounds. Setting min = max effectively fixes the size. |
 | Quotas | [Workload classes](/operations/workload-scheduling) plus per-query limits | Workload classes cover memory, CPU, concurrency, and I/O scheduling at runtime. Spend caps have no direct primitive; there's no setting that suspends a service on hitting a cost threshold. |
 
-:::note[Slot vs replica]
+<Note title="Slot vs replica">
 Unlike a BigQuery slot, a ClickHouse replica is a static compute
 node that serves many concurrent queries; it isn't allocated to a
 query from a pool. Replicas are also much coarser-grained: a slot
 is closer to a unit of CPU than to a whole node.
-:::
+</Note>
 
 ## Billing and pricing model {#billing}
 
@@ -39,7 +40,7 @@ ClickHouse Cloud meters compute as per-minute [compute units (8 GiB RAM, 2 vCPU)
 
 ## Storage and tables {#storage-tables}
 
-In ClickHouse, a table's behavior is set at creation time: the engine (MergeTree family) determines merge and storage semantics, and `ORDER BY` / `PARTITION BY` / `TTL` clauses configure physical layout and retention. Many BigQuery per-feature settings map to a clause in the ClickHouse `CREATE TABLE` statement. Physical schema design also differs between platforms; see the [migration guide](./02_migrating-to-clickhouse-cloud.md) for design tradeoffs.
+In ClickHouse, a table's behavior is set at creation time: the engine (MergeTree family) determines merge and storage semantics, and `ORDER BY` / `PARTITION BY` / `TTL` clauses configure physical layout and retention. Many BigQuery per-feature settings map to a clause in the ClickHouse `CREATE TABLE` statement. Physical schema design also differs between platforms; see the [migration guide](./migrating-to-clickhouse-cloud) for design tradeoffs.
 
 | BigQuery | ClickHouse | Notes |
 |---|---|---|
@@ -60,11 +61,11 @@ In ClickHouse, a table's behavior is set at creation time: the engine (MergeTree
 | Wildcard tables (`_TABLE_SUFFIX`) | [`Merge`](/engines/table-engines/special/merge) table engine (persistent grouping) or [`merge()`](/sql-reference/table-functions/merge) function (inline) | Same idea, different syntax. `Merge` is a persistent table-of-tables; `merge()` is inline without creating one. |
 | Table clone | [`CREATE TABLE ... CLONE AS`](/sql-reference/statements/create/table#with-a-schema-and-data-cloned-from-another-table) within a service, or [backup](/cloud/manage/backups/overview) restore into a new service | `CLONE AS` hardlinks the source table's parts (part-level copy-on-write), so no data is physically copied. Copying across services still reads the source fully. |
 
-:::note[Backups]
+<Note title="Backups">
 ClickHouse Cloud backups via the UI are per-service, and create a new service on restore. Finer backup granularity is possible with [`BACKUP`/`RESTORE` SQL commands](/operations/backup/overview#syntax).
-:::
+</Note>
 
-:::note[Updates and deletes]
+<Note title="Updates and deletes">
 ClickHouse is append-optimized. There's no SQL `MERGE` statement
 (unrelated to the `Merge` and `MergeTree` engines), and
 [`ALTER TABLE … UPDATE`](/sql-reference/statements/alter/update) /
@@ -76,7 +77,7 @@ keeps the latest row by sort key, [`CollapsingMergeTree`](/engines/table-engines
 cancels rows by inserting a matching row with `Sign = -1`, and [`AggregatingMergeTree`](/engines/table-engines/mergetree-family/aggregatingmergetree)
 maintains aggregated state. Engine choice is set at table creation and is
 non-trivial to change later.
-:::
+</Note>
 
 ## Query model and performance {#query-model}
 
@@ -141,6 +142,6 @@ ClickHouse surfaces operational state through `system.*` tables (queries, sessio
 
 ## Next steps {#next-steps}
 
-- For the end-to-end migration walkthrough, see [Migrating from BigQuery to ClickHouse Cloud](./02_migrating-to-clickhouse-cloud.md).
-- For the conceptual side-by-side, see [Comparing ClickHouse Cloud and BigQuery](./01_overview.md).
-- For loading data, see [Loading data from BigQuery](./03_loading-data.md).
+- For the end-to-end migration walkthrough, see [Migrating from BigQuery to ClickHouse Cloud](./migrating-to-clickhouse-cloud).
+- For the conceptual side-by-side, see [Comparing ClickHouse Cloud and BigQuery](./overview).
+- For loading data, see [Loading data from BigQuery](./loading-data).
