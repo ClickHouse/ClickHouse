@@ -39,10 +39,19 @@ INSERT INTO t_replayed_key SELECT toDateTime('2024-01-01 12:34:56');
 DETACH TABLE t_replayed_key;
 "
 
-${CLICKHOUSE_CLIENT} --allow_experimental_time_time64_type 1 --use_legacy_to_time 1 --multiquery -q "
+${CLICKHOUSE_CLIENT} --allow_experimental_time_time64_type 1 --use_legacy_to_time 1 --describe_compact_output 1 --multiquery -q "
 ATTACH TABLE t_replayed_key;
 SELECT 'replayed', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_replayed_key';
-SELECT 'replayed_rows', count() FROM t_replayed_key;
+-- The physical key type on disk is what a mismatch would corrupt, so assert it rather than a count.
+SELECT 'replayed_key_type';
+DESCRIBE mergeTreeIndex(currentDatabase(), t_replayed_key);
+"
+
+# A TTL GROUP BY key must stay a prefix of the primary key, so both have to be rewritten together.
+${CLICKHOUSE_CLIENT} --allow_experimental_time_time64_type 1 --use_legacy_to_time 1 --multiquery -q "
+CREATE TABLE t_ttl_key (c0 DateTime, v UInt32) ENGINE = MergeTree() ORDER BY toTime(c0)
+TTL c0 + INTERVAL 1 DAY GROUP BY toTime(c0) SET v = max(v);
+SELECT 'ttl_group_by', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_ttl_key';
 "
 
 ${CLICKHOUSE_CLIENT} --multiquery -q "
@@ -50,5 +59,6 @@ DROP TABLE t_udf_key;
 DROP TABLE t_attach_key;
 DROP TABLE t_qualified_key;
 DROP TABLE t_replayed_key;
+DROP TABLE t_ttl_key;
 DROP FUNCTION ${UDF};
 "

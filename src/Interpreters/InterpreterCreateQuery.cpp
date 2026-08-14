@@ -46,6 +46,7 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -220,6 +221,16 @@ void replaceLegacyToTimeInCreateQuery(ASTPtr & ast)
 
     for (auto & child : ast->children)
         replaceLegacyToTimeInCreateQuery(child);
+
+    /// A TTL element keeps these outside `children`, so they need the same walk `FunctionNameNormalizer`
+    /// gives them: a GROUP BY key rewritten inconsistently with the primary key stops being its prefix.
+    if (auto * ttl_element = ast->as<ASTTTLElement>())
+    {
+        for (auto & group_by_key : ttl_element->group_by_key)
+            replaceLegacyToTimeInCreateQuery(group_by_key);
+        for (auto & group_by_assignment : ttl_element->group_by_assignments)
+            replaceLegacyToTimeInCreateQuery(group_by_assignment);
+    }
 }
 
 }
@@ -1910,9 +1921,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
     /// The definition persisted below must not depend on the session setting, because reloads and
-    /// replicas re-derive the key type from the stored text. `attach_short_syntax` definitions come
-    /// back from that metadata and are already explicit.
-    if (!create.attach_short_syntax && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
+    /// replicas re-derive the key type from the stored text. A replayed definition (short attach,
+    /// metadata load, backup restore) already records the spelling it was created with.
+    if (!create.attach_short_syntax && !is_restore_from_backup
+        && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
         replaceLegacyToTimeInCreateQuery(query_ptr);
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
