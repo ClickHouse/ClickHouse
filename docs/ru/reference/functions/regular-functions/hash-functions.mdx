@@ -2694,6 +2694,46 @@ SELECT xxHash64('Hello, world!');
 └───────────────────────────┘
 ```
 
+<div id="xxHash64Spark">
+  ## xxHash64Spark
+</div>
+
+Добавленный в: v26.7.0
+
+Вычисляет [xxHash](http://cyan4973.github.io/xxHash/) для строки, используя тот же seed, что и Spark.
+
+Эта функция аналогична [`xxHash64`](#xxHash64), но использует seed `42` и возвращает результат типа `Int64`.
+Поддерживаются только входные значения `String` и `NULL`.
+Для `NULL` функция возвращает `42`, что соответствует поведению Spark при использовании seed.
+
+**Синтаксис**
+
+```sql
+xxHash64Spark(arg)
+```
+
+**Аргументы**
+
+* `arg` — Входная строка, для которой вычисляется хеш. [`String`](/ru/reference/data-types/string)
+
+**Возвращаемое значение**
+
+Возвращает вычисленный 64-битный хеш входной строки. [`Int64`](/ru/reference/data-types/int-uint)
+
+**Примеры**
+
+**Пример использования**
+
+```sql title=Query
+SELECT xxHash64Spark('ABC');
+```
+
+```response title=Response
+┌─xxHash64Spark('ABC')─┐
+│  4105715581806190027 │
+└──────────────────────┘
+```
+
 <div id="xxh3">
   ## xxh3
 </div>

@@ -1,4 +1,5 @@
 #include <memory>
+#include <optional>
 #include <Server/PostgreSQLHandler.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
@@ -65,6 +66,156 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int OPENSSL_ERROR;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
+}
+
+namespace
+{
+
+/// Some PostgreSQL drivers issue session-management commands during connection
+/// setup or teardown that have no ClickHouse equivalent, for example `RESET ALL`
+/// and `UNLISTEN *` sent by the Skunk driver. Instead of failing such a command
+/// with a syntax error, ClickHouse accepts it as a no-op and replies with a
+/// `CommandComplete` carrying the matching PostgreSQL command tag. See issue
+/// https://github.com/ClickHouse/ClickHouse/issues/12476.
+///
+/// Returns the command tag to report if `query` is such a no-op command, or
+/// std::nullopt if the query must be executed normally. None of the recognized
+/// keywords (`UNLISTEN`, `RESET`, `DISCARD`) is a valid ClickHouse statement
+/// start, so there are no false positives.
+///
+/// This is applied only in the simple-query (`Q`) protocol path, consistent with the other
+/// driver-compatibility no-ops (`BEGIN` / `COMMIT` / `SET application_name`): drivers emit these
+/// session-management commands as plain, unparameterized statements, so there is no reason to run
+/// them through the extended `Parse` / `Bind` / `Execute` flow, and the extended path deliberately
+/// performs no such driver-specific rewriting.
+std::optional<String> classifyNoOpDriverCommand(const String & query)
+{
+    /// Only treat the packet as a no-op when it consists of a single statement. A simple-query
+    /// packet may contain several `;`-separated statements; if we shortcut on the leading keyword
+    /// we would acknowledge the whole packet and silently skip the rest (e.g. `RESET ALL; SELECT 1`
+    /// or, worse, `RESET ALL; DROP TABLE t`). An interior `;` — anything other than trailing
+    /// whitespace after it — means there is more than one statement, so bail out and let the normal
+    /// multi-statement splitter handle it.
+    if (const size_t semicolon = query.find(';'); semicolon != String::npos)
+    {
+        for (size_t i = semicolon + 1; i < query.size(); ++i)
+        {
+            const char c = query[i];
+            if (c != ' ' && c != '\t' && c != '\n' && c != '\r' && c != '\f' && c != '\v')
+                return std::nullopt;
+        }
+    }
+
+    /// Enough to cover the longest recognized command plus its argument: a PostgreSQL identifier
+    /// is at most 63 bytes, and a qualified `RESET extension.setting` name consists of two of them.
+    /// If the normalized prefix fills this budget completely, the statement may continue beyond it,
+    /// so we could not verify that nothing trails the argument — treat it as not recognized.
+    static constexpr size_t max_prefix_len = 160;
+    String prefix = PostgreSQLProtocol::Messaging::CommandComplete::extractNormalizedPrefix(query, max_prefix_len);
+    if (prefix.size() == max_prefix_len)
+        return std::nullopt;
+
+    /// The multi-statement guard above rejected any statement after an interior `;`, so the only
+    /// `;` that can remain is a single trailing one (with trailing whitespace already collapsed).
+    /// Drop it so it is not mistaken for a command argument below.
+    while (!prefix.empty() && (prefix.back() == ';' || prefix.back() == ' '))
+        prefix.pop_back();
+
+    /// `extractNormalizedPrefix` already uppercased the text and collapsed runs of
+    /// whitespace to single spaces, so a keyword is a run of 'A'..'Z'. Take the next
+    /// such run, skipping a leading space; this also stops at a `;` or `*`.
+    size_t pos = 0;
+    const auto take_word = [&]() -> String
+    {
+        while (pos < prefix.size() && prefix[pos] == ' ')
+            ++pos;
+        const size_t start = pos;
+        while (pos < prefix.size() && prefix[pos] >= 'A' && prefix[pos] <= 'Z')
+            ++pos;
+        return prefix.substr(start, pos - start);
+    };
+    const auto has_more = [&]() -> bool
+    {
+        while (pos < prefix.size() && prefix[pos] == ' ')
+            ++pos;
+        return pos < prefix.size();
+    };
+
+    /// An argument in the normalized prefix: an identifier — a letter or `_` followed by letters,
+    /// digits, `_` or `$` (the text is already uppercased). With `allow_dots`, a qualified name
+    /// such as `EXTENSION.SETTING` (for `RESET`) is a single token as well.
+    const auto take_identifier = [&](bool allow_dots) -> String
+    {
+        while (pos < prefix.size() && prefix[pos] == ' ')
+            ++pos;
+        const size_t start = pos;
+        if (pos < prefix.size() && ((prefix[pos] >= 'A' && prefix[pos] <= 'Z') || prefix[pos] == '_'))
+        {
+            ++pos;
+            while (pos < prefix.size()
+                && ((prefix[pos] >= 'A' && prefix[pos] <= 'Z') || (prefix[pos] >= '0' && prefix[pos] <= '9')
+                    || prefix[pos] == '_' || prefix[pos] == '$' || (allow_dots && prefix[pos] == '.')))
+                ++pos;
+        }
+        return prefix.substr(start, pos - start);
+    };
+
+    /// Not `const`: the early returns below move it out, and `performance-no-automatic-move`
+    /// (clang-tidy) rejects returning a `const` local because constness prevents the move.
+    String command = take_word();
+
+    /// The keyword must end at a word boundary: `RESET1FOO` must not be taken for `RESET`.
+    if (pos < prefix.size() && prefix[pos] != ' ')
+        return std::nullopt;
+
+    /// Accept the connection-cleanup commands the Skunk driver actually sends: `RESET { name | ALL }`
+    /// and `UNLISTEN { channel | * }`, reporting the bare keyword as the tag. `LISTEN` and `NOTIFY`
+    /// are deliberately NOT accepted here: unlike `UNLISTEN` (idempotent unsubscribe-all cleanup),
+    /// they are application-visible PostgreSQL pub/sub operations, and this handler never delivers a
+    /// `NotificationResponse`, so acknowledging them would turn an unsupported feature into a silent
+    /// false success instead of a plain error. Issue #12476 only asks for `UNLISTEN *` / `RESET ALL`.
+    ///
+    /// Accept exactly one argument — an identifier (for `RESET` possibly a qualified
+    /// `extension.setting` name; `ALL` is itself covered as an identifier), or `*` for `UNLISTEN` —
+    /// and require the statement to end right after it, so that malformed variants such as a bare
+    /// `RESET`, `RESET foo bar` or `UNLISTEN * garbage` are not acknowledged as success but fall
+    /// through to the normal error path. Valid forms that no driver is known to emit — quoted
+    /// identifiers and multi-word variants such as `RESET SESSION AUTHORIZATION` — likewise fall
+    /// through, as before this change.
+    if (command == "UNLISTEN" || command == "RESET")
+    {
+        String arg;
+        if (command == "UNLISTEN" && has_more() && prefix[pos] == '*')
+        {
+            arg = "*";
+            ++pos;
+        }
+        else
+        {
+            arg = take_identifier(/* allow_dots = */ command == "RESET");
+        }
+        if (arg.empty() || has_more())
+            return std::nullopt;
+        return command;
+    }
+
+    if (command == "DISCARD")
+    {
+        /// PostgreSQL accepts only `DISCARD { ALL | PLANS | SEQUENCES | TEMP | TEMPORARY }`
+        /// (with `TEMPORARY` normalized to `TEMP`). Reject a bare `DISCARD` or an unknown
+        /// subcommand such as `DISCARD FOO` instead of claiming success for a command we were
+        /// never asked to emulate.
+        String arg = take_word();
+        if (arg == "TEMPORARY")
+            arg = "TEMP";
+        if ((arg == "ALL" || arg == "PLANS" || arg == "SEQUENCES" || arg == "TEMP") && !has_more())
+            return command + " " + arg;
+        return std::nullopt;
+    }
+
+    return std::nullopt;
+}
+
 }
 
 PostgreSQLHandler::PostgreSQLHandler(
@@ -602,6 +753,14 @@ void PostgreSQLHandler::processQuery()
             message_transport->send(
                 PostgreSQLProtocol::Messaging::CommandComplete(
                     PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(query->query), 0));
+            return;
+        }
+
+        /// Accept driver-specific session-management commands (e.g. `RESET ALL`,
+        /// `UNLISTEN *`) as no-ops instead of failing them with a syntax error.
+        if (auto noop_command_tag = classifyNoOpDriverCommand(query->query))
+        {
+            message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(std::move(*noop_command_tag)), true);
             return;
         }
 

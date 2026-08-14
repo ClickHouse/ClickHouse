@@ -1,7 +1,7 @@
 -- A join with a plain probe key against a LowCardinality build key selects the dictionary-aware map
 -- (the map is chosen from the build key, which is LowCardinality), while the probe column stays plain.
 -- Joins allow plain T vs LowCardinality(T) without a cast, so the dictionary-aware key getter must
--- handle a plain probe column. The old analyzer keeps the mixed key types; the new analyzer casts
+-- handle a plain probe column. The old analyzer keeps the mixed key types; the analyzer casts
 -- them to a common type first, so pin the old analyzer to actually exercise this path. Results must
 -- match the all-plain join. Regression for a LOGICAL_ERROR ("Expected LowCardinality column").
 

@@ -12,12 +12,20 @@ hide_advert: true
 import GatherCredentials from '/snippets/clickstack/_gather_credentials.mdx';
 import CreateIngestionUser from '/snippets/clickstack/_create_ingestion_user.mdx';
 import ConfirmInUI from '/snippets/clickstack/_confirm_in_ui.mdx';
+import { AgentPrompt } from '/snippets/components/AgentPrompt/AgentPrompt.jsx';
 
 This guide walks you through deploying an OpenTelemetry collector against an existing Managed ClickStack service, or adapting your existing collector, before verifying that data is flowing through.
 
+Install the official ClickHouse agent skills before using the setup assistant:
+
+```bash
+npx skills add clickhouse/agent-skills
+```
+
 <AgentPrompt
-  prompt="Use curl to download, read and follow: https://clickhouse.com/docs/skills/clickstack-otel-collector/SKILL.md"
+  prompt="Use the clickstack-otel-collector skill to wire an OpenTelemetry collector into my Managed ClickStack service."
   description="Your agent will set up the ClickStack OpenTelemetry collector for you. Works with Claude Code, Cursor, Codex, and other coding agents."
+  repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
     "Install clickhousectl if missing and authenticate it (asks you for a ClickHouse Cloud API key — paste in chat or run the login command yourself).",
     "Ask you for the target ClickHouse Cloud service ID or name, then fetch its HTTPS endpoint.",

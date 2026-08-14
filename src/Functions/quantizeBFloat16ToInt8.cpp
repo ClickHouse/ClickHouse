@@ -1,7 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/LloydMaxQuantization.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnQBit.h>
@@ -13,6 +12,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/LloydMaxQuantizer.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 
@@ -23,7 +23,9 @@
 /** quantizeBFloat16ToInt8 / dequantizeInt8ToBFloat16
   *
   * A scalar codec pair for compressing embedding components with a 256-level Gaussian
-  * Lloyd-Max quantizer (the MSE-optimal scalar quantizer for a standard-normal source).
+  * Lloyd-Max quantizer (the MSE-optimal scalar quantizer for a standard-normal source). The
+  * quantizer tables and the scalar quantize/dequantize live in Common/LloydMaxQuantizer.h, shared
+  * with the `int8` vector quantization method.
   *
   * It is intended for values that are approximately N(0, 1). A random orthogonal (randomized
   * Hadamard) rotation preserves the norm, so for a d-dimensional unit-norm embedding each rotated

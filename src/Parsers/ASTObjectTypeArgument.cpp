@@ -1,8 +1,8 @@
+#include <Common/StringUtils.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTObjectTypeArgument.h>
 #include <Parsers/CommonParsers.h>
 #include <Common/quoteString.h>
-#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -26,7 +26,7 @@ void ASTObjectTypedPathArgument::formatImpl(
     WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     /// We must quote path "SKIP" to avoid its confusion with SKIP keyword in Object arguments.
-    if (boost::to_upper_copy(path) == "SKIP")
+    if (equalsCaseInsensitive(path, "SKIP"))
         ostr << backQuote(path) << ' ';
     else
         ostr << backQuoteIfNeed(path) << ' ';

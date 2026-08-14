@@ -13,7 +13,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
   ## API des adresses IP statiques
 </div>
 
-Si vous devez récupérer la liste des adresses IP statiques, vous pouvez utiliser le point de terminaison suivant de l’API ClickHouse Cloud : [`https://api.clickhouse.cloud/static-ips.json`](https://api.clickhouse.cloud/static-ips.json). Cette API fournit les endpoints des services ClickHouse Cloud, comme les adresses IP d’entrée/de sortie et les endpoints S3 par région et par cloud.
+Si vous devez récupérer la liste des adresses IP statiques, vous pouvez utiliser le point de terminaison suivant de l’API ClickHouse Cloud : [`https://api.clickhouse.cloud/static-ips.json`](https://api.clickhouse.cloud/static-ips.json). Cette API fournit les points de terminaison des services ClickHouse Cloud, comme les adresses IP d’entrée/de sortie et les points de terminaison S3 par région et par cloud.
 
 Si vous utilisez une intégration comme MySQL ou PostgreSQL Engine, il est possible que vous deviez autoriser ClickHouse Cloud à accéder à vos instances. Vous pouvez utiliser cette API pour récupérer les adresses IP publiques et les configurer dans les `firewalls`, les `Authorized networks` de GCP, les `Security Groups` d’Azure ou d’AWS, ou dans tout autre système de gestion de l’egress de l’infrastructure que vous utilisez.
 

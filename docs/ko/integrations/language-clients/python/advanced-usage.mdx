@@ -64,7 +64,7 @@ import clickhouse_connect
 if __name__ == '__main__':
     client = clickhouse_connect.get_client()
     query = 'SELECT number, toString(number) AS number_as_str FROM system.numbers LIMIT 5'
-    fmt = 'CSVWithNames'  # or CSV, or CSVWithNamesAndTypes, or TabSeparated, etc.
+    fmt = 'CSVWithNames'  # 또는 CSV, CSVWithNamesAndTypes, TabSeparated 등
     stream = client.raw_stream(query=query, fmt=fmt)
     with open("output.csv", "wb") as f:
         for chunk in stream:
@@ -82,7 +82,7 @@ if __name__ == '__main__':
 4,"4"
 ```
 
-마찬가지로 [TabSeparated](/ko/reference/formats/TabSeparated/TabSeparated) 및 기타 포맷으로도 데이터를 저장할 수 있습니다. 사용 가능한 모든 포맷 옵션의 개요는 [입력 및 출력 데이터 포맷](/ko/reference/formats/index)에서 확인할 수 있습니다.
+마찬가지로 [TabSeparated](/ko/reference/formats/TabSeparated/TabSeparated) 및 기타 포맷으로도 데이터를 저장할 수 있습니다. 사용 가능한 모든 포맷 옵션의 개요는 [입력 및 출력 데이터 포맷](/ko/reference/formats)에서 확인할 수 있습니다.
 
 <div id="multithreaded-multiprocess-and-asyncevent-driven-use-cases">
   ## 멀티스레드, 멀티프로세스 및 async/이벤트 기반 사용 사례

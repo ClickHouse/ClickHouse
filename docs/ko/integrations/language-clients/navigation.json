@@ -1,0 +1,44 @@
+{
+  "groups": [
+    {
+      "group": "홈",
+      "icon": "house",
+      "pages": [],
+      "root": "ko/integrations/language-clients/index"
+    },
+    {
+      "$ref": "js/navigation.json"
+    },
+    {
+      "$ref": "python/navigation.json"
+    },
+    {
+      "$ref": "go/navigation.json"
+    },
+    {
+      "$ref": "java/navigation.json"
+    },
+    {
+      "$ref": "csharp/navigation.json"
+    },
+    {
+      "$ref": "rust/navigation.json"
+    },
+    {
+      "$ref": "cpp/navigation.json"
+    },
+    {
+      "$ref": "c/navigation.json"
+    },
+    {
+      "group": "타사 클라이언트",
+      "icon": "users",
+      "pages": [
+        "ko/integrations/language-clients/third-party/moose-olap",
+        "ko/integrations/language-clients/third-party/client-libraries"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-language-clients.svg",
+  "item": "언어 클라이언트"
+}

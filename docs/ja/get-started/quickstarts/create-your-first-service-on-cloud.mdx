@@ -14,7 +14,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <BackToQuickstarts />
 
 <div className="mt-2 flex flex-wrap gap-2">
-  <Badge size="lg" color="blue">リアルタイムアナリティクス</Badge>
+  <Badge size="lg" color="blue">リアルタイム分析</Badge>
   <Badge size="lg" color="blue">データウェアハウジング</Badge>
   <Badge size="lg" color="blue">オブザーバビリティ</Badge>
   <Badge size="lg" color="blue">AI/ML</Badge>
@@ -37,9 +37,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 完了するころには、データが読み込まれた稼働中の ClickHouse Cloud サービスが用意され、このクイックスタートシリーズの残りを進めるための土台として使えるようになります。
 
 <Steps titleSize="h3">
-  <Step>
-    ### ClickHouse Cloud に登録する
-
+  <Step title="ClickHouse Cloud に登録する" id="sign-up-for-clickhouse-cloud">
     [console.clickhouse.cloud](https://console.clickhouse.cloud/) にアクセスします。サインインページが表示されたら、下部の「Don&#39;t have an account yet?」の横にある **Register** をクリックします。
 
     <Frame caption="新しいアカウントを作成するには Register をクリック">
@@ -66,9 +64,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     確認が完了したら、新しいメールアドレスとパスワードでサインインします。
   </Step>
 
-  <Step>
-    ### 新しいサービスを作成する
-
+  <Step title="新しいサービスを作成する" id="create-a-new-service">
     初回サインイン後、すぐにサービス設定ページが表示されます。次の項目を設定してください。
 
     | 設定             | 推奨値                                                                 |
@@ -91,9 +87,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     </Frame>
   </Step>
 
-  <Step>
-    ### サンプルデータセットを読み込む
-
+  <Step title="サンプルデータセットを読み込む" id="load-an-example-dataset">
     左側のサイドバーで **Data sources** をクリックします。サービスにデータを取り込むためのオプションがいくつか表示されます。
 
     <Frame caption="データ読み込みオプションが表示された Data sources ページ">
@@ -115,9 +109,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     インポートには 1 ～ 2 分ほどかかります。完了すると、データをクエリできるようになります。
   </Step>
 
-  <Step>
-    ### データをクエリする
-
+  <Step title="データをクエリする" id="query-the-data">
     左側のサイドバーで **SQL Console** をクリックし、組み込みのクエリエディタを開きます。ここではブラウザ上で直接 SQL クエリを記述して実行できます。外部ツールは必要ありません。
 
     いくつかクエリを試して、英国の不動産価格データを見てみましょう。
@@ -152,7 +144,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   </Step>
 </Steps>
 
-## 次のステップ
+<div id="next-steps">
+  ## 次のステップ
+</div>
 
 これで、3,000万行の実データが読み込まれた稼働中の ClickHouse Cloud サービスを利用できるようになりました。このサービスとデータセットは、以降のクイックスタート全体で使用します。
 

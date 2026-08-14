@@ -1,0 +1,4 @@
+NaN and infinities survive the round trip, finite values stay within the error bound
+1	1	1	1	1	1	1	1	1	1	1	1	1
+The same holds after the data is recompressed by a merge
+1	1	1	1	1	1	1	1	1	1	1	1	1

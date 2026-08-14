@@ -299,7 +299,7 @@ ClickHouse 客户端的输出显示：
 
   - 为了提高内存使用效率，我们显式指定了一个主键，其中只包含查询中过滤条件使用的列。基于主键构建的主索引会完整加载到主内存中。
 
-  - 为了让本指南中的示意图保持一致，并尽可能提高压缩率，我们单独定义了一个包含表中所有列的排序键 (如果某一列中的相似数据彼此更接近，例如通过排序实现，那么这些数据通常会有更好的压缩效果) 。
+  - 为了让本指南中的示意图保持一致，并尽可能提高压缩率，我们单独定义了一个包含表中所有列的排序键 (如果某一列中的相似数据彼此更接近，例如通过排序实现，那么这些数据通常会有更好的压缩效果)。
 
   - 如果两者都指定了，主键必须是排序键的前缀。
 </Note>
@@ -307,13 +307,13 @@ ClickHouse 客户端的输出显示：
 插入的行会按照主键列 (以及排序键中的附加列 `EventTime`) 的词典序 (升序) 存储在磁盘上。
 
 <Note>
-  ClickHouse 允许插入多行主键列值相同的数据。在这种情况下 (见下图中的第 1 行和第 2 行) ，最终顺序由指定的排序键决定，因此取决于 `EventTime` 列的值。
+  ClickHouse 允许插入多行主键列值相同的数据。在这种情况下 (见下图中的第 1 行和第 2 行)，最终顺序由指定的排序键决定，因此取决于 `EventTime` 列的值。
 </Note>
 
-ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-column-oriented-dbms" target="_blank">列式数据库管理系统</a>。如下图所示：
+ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-column-oriented-database-management-system" target="_blank">列式数据库管理系统</a>。如下图所示
 
 * 在磁盘上的存储表示中，每个表列对应一个单独的数据文件 (*.bin)，该列的所有值都以<a href="/zh/get-started/about/distinctive-features#data-compression" target="_blank">压缩</a>格式存储在其中；并且
-* 887 万行数据在磁盘上按主键列 (以及附加的排序键列) 的词典序升序存储，也就是说在这个例子中：
+* 887 万行数据在磁盘上按主键列 (以及附加的排序键列) 的词典序升序存储，也就是说在这个例子中
   * 首先按 `UserID`，
   * 然后按 `URL`，
   * 最后按 `EventTime`：
@@ -350,11 +350,11 @@ ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-col
 <Note>
   * 最后一个粒度 (粒度 1082) “包含”的行数少于 8192 行。
 
-  * 我们在本指南开头的“DDL 语句详解”中提到过，我们禁用了[自适应索引粒度](/zh/resources/changelogs/oss/2019#experimental-features-1) (这是为了简化本指南中的讨论，同时让图示和结果可以复现) 。
+  * 我们在本指南开头的“DDL Statement Details”中提到过，我们禁用了[自适应索引粒度](/zh/resources/changelogs/oss/2019#experimental-features-1) (这是为了简化本指南中的讨论，同时让图示和结果可以复现) 。
 
     因此，示例表中的所有粒度 (最后一个除外) 大小都相同。
 
-  * 对于启用了自适应索引粒度的表 (默认情况下索引粒度是自适应的，参见 [default](/zh/reference/settings/merge-tree-settings#index_granularity_bytes)) ，某些粒度的大小可能会因行数据大小不同而少于 8192 行。
+  * 对于启用了 自适应索引粒度 的表 (默认情况下 index granularity 是自适应的，参见 [default](/zh/reference/settings/merge-tree-settings#index_granularity_bytes)) ，某些粒度的大小可能会因行数据大小不同而少于 8192 行。
 
   * 我们将主键列 (`UserID`、`URL`) 中的一些列值标记为橙色。
     这些橙色标记的列值，就是每个粒度第一行的主键列值。
@@ -388,68 +388,83 @@ ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-col
   * 主索引文件会完整加载到主内存中。如果该文件大于可用的空闲内存，ClickHouse 将报错。
 </Note>
 
-<Accordion title="查看主索引的内容">
-  <p>
-    在自管理 ClickHouse 集群中，我们可以使用 <a href="/zh/reference/functions/table-functions/file" target="_blank">file 表函数</a> 来查看示例表主索引的内容。
+<Accordion title="检查主索引的内容">
+  在自管理 ClickHouse 集群中，我们可以使用 [file table function](/zh/reference/functions/table-functions/file) 来检查示例表主索引的内容。
 
-    为此，首先需要将主索引文件复制到运行中集群某个节点的 <a href="/zh/reference/settings/server-settings/settings#user_files_path" target="_blank">user&#95;files&#95;path</a>：
+  为此，我们首先需要将主索引文件复制到运行中集群某个节点的 [user&#95;files&#95;path](/zh/reference/settings/server-settings/settings#user_files_path) 中：
 
-    <ul>
-      <li>步骤 1：获取包含主索引文件的 part 路径</li>
-      `SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1`
+  **步骤 1：获取包含主索引文件的 part 路径**
 
-      在测试机器上，该查询返回 `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4`。
+  ```sql
+  SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
+  ```
 
-      <li>步骤 2：获取 user&#95;files&#95;path</li>
-      Linux 上的 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505" target="_blank">默认 user&#95;files&#95;path</a> 是
-      `/var/lib/clickhouse/user_files/`
+  在测试机器上返回 `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4`。
 
-      在 Linux 上，你也可以检查它是否已被修改：`$ grep user_files_path /etc/clickhouse-server/config.xml`
+  **步骤 2：获取 user&#95;files&#95;path**
 
-      在测试机器上，该路径为 `/Users/tomschreiber/Clickhouse/user_files/`
+  Linux 上的[默认 user&#95;files&#95;path](https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505)是 `/var/lib/clickhouse/user_files/`
 
-      <li>步骤 3：将主索引文件复制到 user&#95;files&#95;path</li>
+  在 Linux 上，你可以检查它是否已被修改：`$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-      `cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx`
-    </ul>
+  在测试机器上，该路径是 `/Users/tomschreiber/Clickhouse/user_files/`
 
-    <br />
+  **步骤 3：将主索引文件复制到 user&#95;files&#95;path**
 
-    现在，我们就可以通过 SQL 查看主索引的内容：
+  ```bash
+  cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
+  ```
 
-    <ul>
-      <li>获取条目数</li>
-      `SELECT count( )<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');`
-      返回 `1083`
+  现在我们可以通过 SQL 检查主索引的内容：
 
-      <li>获取前两个索引标记</li>
-      `SELECT UserID, URL<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 0, 2;`
+  **获取条目数量**
 
-      返回
+  ```sql
+  SELECT count()
+  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');
+  ```
 
-      `240923, http://showtopics.html%3...<br/>
-                  4073710, http://mk.ru&pos=3_0`
+  返回 `1083`
 
-      <li>获取最后一个索引标记</li>
-      `SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 1082, 1;`
-      返回
-      `4292714039 │ http://sosyal-mansetleri...`
-    </ul>
+  **获取前两个索引标记**
 
-    <br />
+  ```sql
+  SELECT UserID, URL
+  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
+  LIMIT 0, 2;
+  ```
 
-    这与我们为示例表绘制的主索引内容示意图完全一致：
-  </p>
+  返回
+
+  ```response
+  240923, http://showtopics.html%3...
+  4073710, http://mk.ru&pos=3_0
+  ```
+
+  **获取最后一个索引标记**
+
+  ```sql
+  SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
+  LIMIT 1082, 1;
+  ```
+
+  返回
+
+  ```response
+  4292714039 │ http://sosyal-mansetleri...
+  ```
+
+  这与我们为示例表绘制的主索引内容示意图完全一致：
 </Accordion>
 
-主键条目之所以称为索引标记，是因为每个索引条目都标识着某个特定数据范围的起始位置。具体到这个示例表：
+主键条目之所以称为索引标记，是因为每个索引条目都标示着特定数据范围的起始位置。对于该示例表，具体来说：
 
 * UserID 索引标记：
 
   主索引中存储的 `UserID` 值按升序排列。<br />
-  因此，上图中的“标记 1”表示：粒度 1 以及其后所有粒度中的所有表行，其 `UserID` 值都保证大于或等于 4.073.710。
+  因此，上图中的“标记 1”表示，粒度 1 以及后续所有粒度中的所有表行，其 `UserID` 值都保证大于或等于 4.073.710。
 
-[正如我们稍后会看到的](#the-primary-index-is-used-for-selecting-granules)，当查询对主键第一列进行过滤时，这种全局有序性使 ClickHouse 能够<a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">对第一键列的索引标记使用二分查找算法</a>。
+[正如我们稍后将看到的](#the-primary-index-is-used-for-selecting-granules)，这种全局有序性使 ClickHouse 能够在查询按主键第一列进行过滤时，对第一键列的索引标记 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">使用二分查找算法</a>。
 
 * URL 索引标记：
 
@@ -616,7 +631,7 @@ LIMIT 10;
 随后，属于该已定位未压缩粒度的全部 8192 行都会流式传输到 ClickHouse 中做进一步处理。
 
 <Note>
-  * 对于使用 [wide format](/zh/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) 且未启用 [adaptive index granularity](/zh/resources/changelogs/oss/2019#experimental-features-1) 的表，ClickHouse 会使用如上图所示的 `.mrk` 标记文件，其中每个条目包含两个 8 字节长的地址。这些条目记录的是粒度的物理位置，而这些粒度的大小都相同。
+  * 对于使用 [wide format](/zh/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) 且未启用 [自适应索引粒度](/zh/resources/changelogs/oss/2019#experimental-features-1) 的表，ClickHouse 会使用如上图所示的 `.mrk` 标记文件，其中每个条目包含两个 8 字节长的地址。这些条目记录的是粒度的物理位置，而这些粒度的大小都相同。
 
   索引粒度默认是自适应的，参见 [default](/zh/reference/settings/merge-tree-settings#index_granularity_bytes)；但在本示例表中，我们禁用了自适应索引粒度 (以简化本指南中的说明，并使图示和结果可复现) 。我们的表使用 wide format，是因为数据大小超过了 [min&#95;bytes&#95;for&#95;wide&#95;part](/zh/reference/settings/merge-tree-settings#min_bytes_for_wide_part) (对于自管理 cluster，其默认值为 10 MB) 。
 
@@ -784,7 +799,7 @@ Processed 8.81 million rows,
 
 <Image img="/images/guides/best-practices/sparse-primary-indexes-08.webp" size="lg" alt="稀疏主索引 06" />
 
-正如我们在上图中看到的，所有显示出的 URL 值小于 W3 的标记都会被选中，以将其关联粒度中的行流式传输到 ClickHouse engine 中。
+正如我们在上图中看到的，所有显示出的 URL 值小于 W3 的标记都会被选中，以将其关联粒度中的行流式传输到 ClickHouse 引擎中。
 
 这是因为，虽然图中的所有索引标记都属于上文所述的场景 1，但它们不满足前面提到的排除前提，即 *紧随其后的索引标记与当前标记具有相同的 UserID 值*，因此不能被排除。
 
@@ -825,7 +840,7 @@ ClickHouse 现在又创建了一个额外索引，用于为每组 4 个连续的
 
 (ClickHouse 还为该数据跳过索引创建了一个特殊的[标记文件](#mark-files-are-used-for-locating-granules)，用于[定位](#mark-files-are-used-for-locating-granules)与这些索引标记对应的粒度组。)
 
-由于 UserID 和 URL 都具有类似的高基数，因此在执行[按 URL 过滤的查询](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)时，这个辅助数据跳过索引无法帮助排除可不选取的粒度。
+由于 UserID 和 URL 都具有类似的高基数，因此在执行[按 URL 过滤的查询](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)时，这个二级数据跳过索引无法帮助排除可不选取的粒度。
 
 查询要查找的特定 URL 值 (即“http://public&#95;search”) 极有可能落在索引为每组粒度存储的最小值和最大值之间，因此 ClickHouse 不得不选取这些粒度组 (因为其中可能包含与查询匹配的行) 。
 
@@ -959,7 +974,7 @@ Processed 319.49 thousand rows,
 
 在[原始表](#a-table-with-a-primary-key)的主索引中，UserID 是第一主键列，URL 是第二主键列。ClickHouse 为执行该查询，对索引标记使用了 [通用排除搜索](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm)，但由于 UserID 和 URL 的基数都很高，效果并不理想。
 
-而当 URL 成为主索引中的第一列后，ClickHouse 现在会对索引标记执行 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">binary search</a>。
+而当 URL 成为主索引中的第一列后，ClickHouse 现在会对索引标记执行 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">二分查找</a>。
 ClickHouse server 日志文件中相应的 trace 日志也证实了这一点：
 
 ```response highlight={3,8}

@@ -6,10 +6,6 @@ tags: ['错误和异常']
 keywords: ['OOM', '超出内存限制']
 ---
 
-{frontMatter.description}
-
-{/* truncate */}
-
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 <div id="troubleshooting-out-of-memory-issues">
@@ -68,7 +64,7 @@ Distributed 环境中特别重要，因为协调节点会接收来自各个分�
 <Image img="/images/knowledgebase/memory-limit-exceeded-for-query.webp" size="md" alt="连接算法" />
 
 自 20.3 起，ClickHouse 已支持将 `join_algorithm` 设置为 auto。
-这表示 ClickHouse 会采用自适应连接策略：优先使用 hash join
+这表示 ClickHouse 会采用自适应连接策略：优先使用 hash-join
 算法，直到超过内存限制，此时再尝试
 partial&#95;merge 算法。最后，关于连接，我们建议
 读者了解 Distributed joins 的行为方式，以及如何尽量减少
