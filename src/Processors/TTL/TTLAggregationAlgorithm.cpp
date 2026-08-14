@@ -17,11 +17,9 @@ namespace Setting
     extern const SettingsBool compile_aggregate_expressions;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
-    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_before_external_group_by;
     extern const SettingsDouble max_bytes_ratio_before_external_group_by;
-    extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
@@ -98,12 +96,15 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
     columns_for_aggregator.resize(description.aggregate_descriptions.size());
     const Settings & settings = storage_.getContext()->getSettingsRef();
 
+    /// Exact aggregation: every expired key must reach the written part, so no approximate cap
+    /// applies here. The unsorted path holds all keys of the part at once, where a cap would either
+    /// fail the merge (`throw`) or drop groups (`any`).
     Aggregator::Params params(
         keys,
         aggregates,
         /*overflow_row_=*/false,
-        settings[Setting::max_rows_to_group_by],
-        settings[Setting::group_by_overflow_mode],
+        /*max_rows_to_group_by_=*/0,
+        OverflowMode::THROW,
         /*group_by_two_level_threshold*/ 0,
         /*group_by_two_level_threshold_bytes*/ 0,
         Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
