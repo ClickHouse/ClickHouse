@@ -53,10 +53,11 @@ ORDER BY event_time DESC LIMIT 1;
 -- even when stress tests randomize max_threads to 1.
 SET max_threads = 16;
 
--- Also test the real time profiler with CPU-bound work (numbers_mt).
--- Use a short period so the fast multi-threaded scan reliably spans several
--- profiler periods (a 100ms period races the tens-of-ms scan -> 0 samples).
-SET query_profiler_real_time_period_ns = 1e6;
+-- Also test the real time profiler with CPU-bound work (numbers_mt). Use a 10us period for the
+-- counter oracle: 100000 delivered signals or overruns are readily attainable by the query
+-- profiler, while the two serverwide profilers would need more than 3000 seconds to produce that
+-- many samples for this 16-thread query.
+SET query_profiler_real_time_period_ns = 1e4;
 SET max_rows_to_read = 0;
 SET log_queries = 1;
 SELECT count(), ignore('test real time query profiler numbers_mt') FROM numbers_mt(1e9);
@@ -66,10 +67,11 @@ SYSTEM FLUSH LOGS trace_log, query_log;
 
 -- The serverwide profilers (1 second period in the test harness) also produce `trace_log` rows and
 -- `QueryProfiler*` counters for this query, so the `trace_log` check below alone cannot prove that
--- the per-query 1ms profiler ran. Require the same counter threshold as the sleep sub-test first:
--- the serverwide profilers contribute at most ~1 tick per thread per second, far below 64, while
--- the per-query profiler delivers thousands of signals here (1ms period, 16 CPU-bound threads).
-SELECT ProfileEvents['QueryProfilerRuns'] + ProfileEvents['QueryProfilerSignalOverruns'] + ProfileEvents['QueryProfilerConcurrencyOverruns'] > 64
+-- the per-query profiler ran. Require a counter threshold that the serverwide profilers cannot
+-- reach during a stateless test. At a 10us period on 16 CPU-bound threads, the per-query profiler
+-- delivers far more than 100000 signals or overruns; even counting both serverwide profilers, they
+-- need more than 3000 seconds to reach that threshold, well beyond the stateless test timeout.
+SELECT ProfileEvents['QueryProfilerRuns'] + ProfileEvents['QueryProfilerSignalOverruns'] + ProfileEvents['QueryProfilerConcurrencyOverruns'] > 100000
 FROM system.query_log
 WHERE current_database = currentDatabase() AND query LIKE '%test real time query profiler numbers_mt%' AND query NOT LIKE '%system%' AND type = 'QueryFinish'
 ORDER BY event_time DESC LIMIT 1;
@@ -99,7 +101,8 @@ SELECT count() > 0 FROM
 )
 WHERE symbol LIKE '%Source%';
 
-SET query_profiler_cpu_time_period_ns = 1000000;
+-- Keep the CPU sub-test's counter oracle independent of the 1-second serverwide profilers too.
+SET query_profiler_cpu_time_period_ns = 1e4;
 SET log_queries = 1;
 SET max_rows_to_read = 0;
 SELECT count(), ignore('test cpu time query profiler') FROM numbers_mt(1e9);
@@ -107,9 +110,9 @@ SET log_queries = 0;
 SET query_profiler_cpu_time_period_ns = 0;
 SYSTEM FLUSH LOGS trace_log, query_log;
 
--- Guarded by the same counter threshold as the sub-tests above: the serverwide profilers cannot
--- reach 64, so this proves the per-query 1ms CPU profiler fired.
-SELECT ProfileEvents['QueryProfilerRuns'] + ProfileEvents['QueryProfilerSignalOverruns'] + ProfileEvents['QueryProfilerConcurrencyOverruns'] > 64
+-- Guarded by the same counter threshold as the sub-test above: the serverwide profilers cannot
+-- reach 100000 before the stateless test timeout, so this proves the per-query 10us CPU profiler fired.
+SELECT ProfileEvents['QueryProfilerRuns'] + ProfileEvents['QueryProfilerSignalOverruns'] + ProfileEvents['QueryProfilerConcurrencyOverruns'] > 100000
 FROM system.query_log
 WHERE current_database = currentDatabase() AND query LIKE '%test cpu time query profiler%' AND query NOT LIKE '%system%' AND type = 'QueryFinish'
 ORDER BY event_time DESC LIMIT 1;
