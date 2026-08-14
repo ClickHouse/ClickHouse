@@ -77,6 +77,47 @@ ${CH} -q "SELECT groupArray(renamed_a) FROM icebergLocal('${ICE}16/', 'Parquet',
 # field id. It stays rejected, as before, rather than being turned into a silent default.
 ${CH} -q "SELECT groupArray(a) FROM icebergLocal('${ICE}16/', 'Parquet', 'a Nullable(Int64)')" 2>&1 | grep -oE 'Code: [0-9]+' | head -1
 
+# An added column is emitted by the evolution transform itself rather than synthesized here, so it
+# reaches `AddingDefaultsTransform` at a position the reader's missing-value bitmask does not
+# describe. A declared `DEFAULT` on such a column is what selects that transform, so these arms
+# exist separately from the renamed-column ones above.
+echo "-- iceberg: a declared DEFAULT on a column added by schema evolution reads the file's values"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "CREATE TABLE ice17 (a Int64) ENGINE = IcebergLocal('${ICE}17/', 'Parquet')"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "INSERT INTO ice17 SELECT number FROM numbers(3)"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "ALTER TABLE ice17 ADD COLUMN c Nullable(UInt64)"
+# Iceberg fills an added column with NULL for rows written before it existed, and the table read is
+# the authority on that. A declared DEFAULT must not override it, or one declaration would mean
+# different values per file, so the row count is asserted alongside the NULL count.
+${CH} -q "SELECT count(), countIf(c IS NULL) FROM ice17"
+${CH} -q "SELECT count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/', 'Parquet', 'c Nullable(UInt64) DEFAULT 42')"
+${CH} -q "SELECT groupArray(a), count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/', 'Parquet', 'a Nullable(Int64), c Nullable(UInt64) DEFAULT 42')"
+# A file written after the column was added carries real values, which the same declaration must
+# still return: this is what distinguishes reading the bitmask correctly from ignoring defaults.
+${CH} --allow_experimental_insert_into_iceberg=1 -q "INSERT INTO ice17 SELECT number + 10, number + 500 FROM numbers(2)"
+${CH} -q "SELECT groupArray(c) FROM (SELECT c FROM icebergLocal('${ICE}17/', 'Parquet', 'c Nullable(UInt64) DEFAULT 42') WHERE c IS NOT NULL ORDER BY c)"
+
+# Declaring a filtered column at a different nullability than the file's own schema is the separate
+# case: the evolution transform emits the file's type, so a filter planned against the declared one
+# would see its function return a differently-nullable result than the plan states. The filter is on
+# a column the file has while an evolution-added one is also returned, and `WHERE` and `PREWHERE`
+# are both covered because only the latter is re-applied after the transform.
+echo "-- iceberg: a filtered column declared at another nullability is read after schema evolution"
+${CH} -q "SELECT groupArray(a), count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/', 'Parquet', 'a Nullable(Int64), c Nullable(UInt64)') WHERE a < 3"
+${CH} -q "SELECT groupArray(a), count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/', 'Parquet', 'a Nullable(Int64), c Nullable(UInt64)') PREWHERE a < 3 SETTINGS parallel_replicas_for_cluster_engines = 0"
+# The declared type matching the file's is the control: it shares this path but needs no conversion.
+${CH} -q "SELECT groupArray(a), count(), countIf(c IS NULL) FROM icebergLocal('${ICE}17/', 'Parquet', 'a Int64, c Nullable(UInt64)') WHERE a < 3"
+
+# The reader's missing-value bitmask describes the reader's own rows, and a delete drops rows without
+# carrying it along, so a declared DEFAULT has to be applied before any row-dropping transform. The
+# row count is what makes this arm meaningful: it must reflect the delete.
+echo "-- iceberg: a declared DEFAULT is applied to a table with deleted rows"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "CREATE TABLE ice18 (a Int64) ENGINE = IcebergLocal('${ICE}18/', 'Parquet')"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "INSERT INTO ice18 SELECT number FROM numbers(6)"
+${CH} --allow_experimental_insert_into_iceberg=1 -q "DELETE FROM ice18 WHERE a = 2"
+# The delete must be visible here, or the arm below would read an undeleted table and pass either way.
+${CH} -q "SELECT count() FROM ice18"
+${CH} -q "SELECT groupArray(zzz) FROM icebergLocal('${ICE}18/', 'Parquet', 'zzz UInt64 DEFAULT 42')"
+
 # A sorted iceberg table: the metadata sorting key is resolved against the metadata schema, so it
 # must not survive alongside a user-declared structure. An empty table counts as sorted, which is
 # what makes this reachable without a Spark-written fixture.
@@ -179,4 +220,4 @@ echo "-- control: deltaLake with an explicit schema reload still prefers the met
 ${CH} -q "SELECT DISTINCT toTypeName(c1) FROM deltaLakeLocal('${DELTA}', 'Parquet', 'c1 String') SETTINGS delta_lake_reload_schema_for_consistency = 1"
 
 ${CH} -q "DROP TABLE IF EXISTS ice14"
-rm -rf "${PAIMON}" "${DELTA}" "${ICE}" "${ICE}7" "${ICE}11" "${ICE}12" "${ICE}13" "${ICE}15" "${ICE}16"
+rm -rf "${PAIMON}" "${DELTA}" "${ICE}" "${ICE}7" "${ICE}11" "${ICE}12" "${ICE}13" "${ICE}15" "${ICE}16" "${ICE}17" "${ICE}18"

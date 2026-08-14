@@ -218,11 +218,8 @@ protected:
 
     VirtualColumnsDescription createVirtualColumns(ColumnsDescription & columns, const std::string & sample_path, const ContextPtr & context) const;
 
-    /// Pins `state` into `metadata` and, when the per-format reload is enabled, adopts the
-    /// snapshot-derived metadata. `preserve_structure_for_reads` keeps the caller's columns
-    /// across that adoption, so an explicit `structure` argument survives; the snapshot's sorting
-    /// key is then kept only while it still describes those columns.
-    /// Returns true when the snapshot-derived metadata was adopted.
+    /// Returns true when the snapshot-derived metadata was adopted, which is the case in which
+    /// `preserve_structure_for_reads` decides whether the caller's columns survive.
     bool applyDataLakeSnapshotToMetadata(
         StorageInMemoryMetadata & metadata, const DataLakeTableStateSnapshot & state, const ContextPtr & context) const;
 

@@ -1253,6 +1253,24 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
+        /// `AddingDefaultsTransform` reads the reader's missing-value bitmask, which describes the
+        /// reader's own columns and rows, so it runs here: every transform below either drops rows
+        /// or changes column positions, and the bitmask is not carried across them.
+        const Block & header_from_reader = builder.getHeader();
+        auto columns_description_for_defaults = read_from_format_info.columns_description;
+        for (const auto & column : columns_description_for_defaults.getAll())
+            if (!header_from_reader.has(column.name))
+                columns_description_for_defaults.remove(column.name);
+
+        if (columns_description_for_defaults.hasDefaults())
+        {
+            builder.addSimpleTransform(
+                [&](const SharedHeader & header)
+                {
+                    return std::make_shared<AddingDefaultsTransform>(header, columns_description_for_defaults, *input_format, context_);
+                });
+        }
+
         configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
 
         if (object_info->data_lake_metadata
@@ -1320,10 +1338,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// The inputs of a stripped filter are not in `requested_columns`, which is
             /// post-`PREWHERE`, yet the fallback filters below evaluate against them.
             NamesAndTypesList wanted_columns = read_from_format_info.requested_columns;
+            NamesAndTypesList filter_input_columns;
             auto add_filter_inputs = [&](const ActionsDAG & dag)
             {
                 for (const auto & required : dag.getRequiredColumns())
+                {
                     wanted_columns.push_back(required);
+                    filter_input_columns.push_back(required);
+                }
             };
             if (stripped_row_level_filter)
                 add_filter_inputs(stripped_row_level_filter->actions);
@@ -1344,21 +1366,62 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     synthesized_columns.emplace(name_in_storage);
             }
 
-            if (!synthesized_columns.empty())
+            /// The transform emits the lake's own types, but a fallback filter below was planned
+            /// against the declared ones, so its function would return a differently-nullable
+            /// result than the plan states. Only what those filters read needs converting; the
+            /// columns merely being returned are converted after extraction as before.
+            NamesAndTypesList columns_to_align;
+            NameSet aligned_names;
+            for (const auto & filter_input : filter_input_columns)
             {
-                for (const auto & column : header_after_transform)
-                    if (seen_names.emplace(column.name).second)
-                        columns_with_synthesized.emplace_back(column.name, column.type);
+                auto name_in_storage = filter_input.getNameInStorage();
+                if (!header_after_transform.has(name_in_storage))
+                    continue;
+                if (header_after_transform.getByName(name_in_storage).type->equals(*filter_input.getTypeInStorage()))
+                    continue;
+                if (aligned_names.emplace(name_in_storage).second)
+                    columns_to_align.emplace_back(name_in_storage, filter_input.getTypeInStorage());
+            }
 
-                auto synthesize_actions = std::make_shared<ExpressionActions>(addMissingDefaults(
-                    header_after_transform,
-                    columns_with_synthesized,
-                    read_from_format_info.columns_description,
-                    context_));
-                builder.addSimpleTransform([&](const SharedHeader & header)
+            if (!synthesized_columns.empty() || !columns_to_align.empty())
+            {
+                Block header_to_synthesize_from = header_after_transform;
+                if (!columns_to_align.empty())
                 {
-                    return std::make_shared<ExpressionTransform>(header, synthesize_actions);
-                });
+                    ActionsDAG align_dag(header_after_transform.getColumnsWithTypeAndName());
+                    for (const auto & column : columns_to_align)
+                    {
+                        const auto & cast_node
+                            = align_dag.addCast(align_dag.findInOutputs(column.name), column.type, column.name, context_);
+                        for (auto & output : align_dag.getOutputs())
+                            if (output->result_name == column.name)
+                                output = &cast_node;
+                    }
+                    header_to_synthesize_from = Block(align_dag.getResultColumns());
+
+                    auto align_actions = std::make_shared<ExpressionActions>(std::move(align_dag));
+                    builder.addSimpleTransform([&](const SharedHeader & header)
+                    {
+                        return std::make_shared<ExpressionTransform>(header, align_actions);
+                    });
+                }
+
+                if (!synthesized_columns.empty())
+                {
+                    for (const auto & column : header_to_synthesize_from)
+                        if (seen_names.emplace(column.name).second)
+                            columns_with_synthesized.emplace_back(column.name, column.type);
+
+                    auto synthesize_actions = std::make_shared<ExpressionActions>(addMissingDefaults(
+                        header_to_synthesize_from,
+                        columns_with_synthesized,
+                        read_from_format_info.columns_description,
+                        context_));
+                    builder.addSimpleTransform([&](const SharedHeader & header)
+                    {
+                        return std::make_shared<ExpressionTransform>(header, synthesize_actions);
+                    });
+                }
             }
         }
 
@@ -1424,23 +1487,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
                     /*update_row_numbers_info=*/true);
             });
-        }
-
-        /// `AddingDefaultsTransform` looks the missing-value bitmask up by a column's position in
-        /// the block, so it must only be given columns the reader itself produced. The synthesized
-        /// ones already carry their declared defaults.
-        auto columns_description_for_defaults = read_from_format_info.columns_description;
-        for (const auto & name : synthesized_columns)
-            if (columns_description_for_defaults.has(name))
-                columns_description_for_defaults.remove(name);
-
-        if (columns_description_for_defaults.hasDefaults())
-        {
-            builder.addSimpleTransform(
-                [&](const SharedHeader & header)
-                {
-                    return std::make_shared<AddingDefaultsTransform>(header, columns_description_for_defaults, *input_format, context_);
-                });
         }
 
         source = input_format;
