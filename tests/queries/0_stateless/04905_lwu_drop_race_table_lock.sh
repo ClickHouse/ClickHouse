@@ -16,6 +16,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE_1}" < /dev/null
 ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLICKHOUSE_DATABASE_1} ENGINE = Memory" < /dev/null
 
+# Length of the pre-commit pause the drop has to land inside, and the lower bound its wait on the
+# table lock must reach. The bound leaves room for the time spent observing the pause.
+WINDOW_MS=10000
+MIN_LOCK_WAIT_MS=$((WINDOW_MS / 2))
+
 # Every DROP the test's logic depends on pins ignore_drop_queries_probability: the stress runner
 # injects 0.2 and clickhouse-client --fake-drop (upgrade check) injects 1, and for a storage that
 # keeps data on disk the injection returns success without dropping anything.
@@ -32,7 +37,7 @@ function setup_table()
         INSERT INTO ${CLICKHOUSE_DATABASE_1}.t SELECT number, 'a' FROM numbers(2);
 
         ALTER TABLE ${CLICKHOUSE_DATABASE_1}.t
-            MODIFY SETTING sleep_before_commit_local_part_in_replicated_table_ms = 10000;
+            MODIFY SETTING sleep_before_commit_local_part_in_replicated_table_ms = ${WINDOW_MS};
     " < /dev/null
 }
 
@@ -74,7 +79,8 @@ function race_with_drop()
 
     local drop=skipped
     if [ "$observed" -eq 1 ]; then
-        if ${CLICKHOUSE_CLIENT} --query "
+        local drop_qid="${qid}_drop"
+        if ${CLICKHOUSE_CLIENT} --query_id "$drop_qid" --query "
             DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.t SYNC
             SETTINGS ignore_drop_queries_probability = 0" < /dev/null > /dev/null 2>&1; then
             drop=ok
@@ -87,6 +93,23 @@ function race_with_drop()
             fi
         else
             drop=failed
+        fi
+        # Blocking on the table lock is the property under test. Wall-clock cannot show it, so the
+        # drop's own wait counter is read: a drop that never queued behind the lock reports zero.
+        if [ "$drop" = ok ]; then
+            local waited
+            waited=$(${CLICKHOUSE_CLIENT} --query "
+                SYSTEM FLUSH LOGS query_log;
+                SELECT ProfileEvents['RWLockWritersWaitMilliseconds'] FROM system.query_log
+                WHERE query_id = '$drop_qid' AND type = 'QueryFinish' AND event_date >= yesterday()
+                ORDER BY event_time_microseconds DESC LIMIT 1
+                SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0" < /dev/null 2>/dev/null) || waited=""
+            case "$waited" in
+                '' | *[!0-9]*) waited=-1 ;;
+            esac
+            if [ "$waited" -lt "$MIN_LOCK_WAIT_MS" ]; then
+                drop="did not wait for the lock (${waited}ms)"
+            fi
         fi
     fi
 
