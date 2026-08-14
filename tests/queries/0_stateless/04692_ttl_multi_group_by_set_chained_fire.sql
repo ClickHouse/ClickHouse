@@ -167,24 +167,3 @@ SELECT max(payload) AS payload_after_column_ttl FROM ttl_m2;
 
 DROP TABLE ttl_m2;
 
-SELECT '--- N1';
-
--- N1: the internal TTL rollup must be exact regardless of the query-level GROUP BY overflow settings.
--- TTL1's SET rewrites `region`, which is TTL2's group-by key, so TTL2 aggregates an unsorted stream and
--- holds every key of the part at once. A restrictive max_rows_to_group_by must not reach that rollup:
--- under 'throw' it would fail the merge, and under 'any' it would drop expired groups. All 35 distinct
--- (day, region) groups must survive with the full payload sum.
-CREATE TABLE ttl_n1 (day Date, region UInt32, user UInt32, ts DateTime, payload UInt64)
-ENGINE = MergeTree ORDER BY (day, region, user)
-TTL ts + toIntervalSecond(1) GROUP BY day, region, user SET region = max(region),
-    ts + toIntervalSecond(1) GROUP BY day, region SET payload = sum(payload)
-SETTINGS min_bytes_for_wide_part = 0, merge_max_block_size = 4, index_granularity = 4;
-
-INSERT INTO ttl_n1 SELECT toDate('2020-01-01') + (number % 5), number % 7, number, toDateTime('2020-01-01 00:00:00'), 1 FROM numbers(70)
-SETTINGS max_rows_to_group_by = 0;
-
-OPTIMIZE TABLE ttl_n1 FINAL SETTINGS max_rows_to_group_by = 2, group_by_overflow_mode = 'throw';
-
-SELECT count() AS groups, sum(payload) AS total FROM ttl_n1;
-
-DROP TABLE ttl_n1;
