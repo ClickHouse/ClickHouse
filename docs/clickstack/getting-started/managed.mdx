@@ -25,10 +25,6 @@ ClickHouse Cloud operates the ClickHouse backend while you retain control over t
 
 ## Before you begin {#before-you-begin}
 
-<Tip>
-Use the guide selector to choose the **OpenTelemetry** (recommended) or **Vector** path.
-</Tip>
-
 You can also send data directly to ClickHouse using a [supported integration](/integrations/home) and your own schema.
 
 ### Create a ClickHouse Cloud service {#create-a-managed-clickstack-service}
@@ -36,6 +32,10 @@ You can also send data directly to ClickHouse using a [supported integration](/i
 Complete [Create a ClickHouse service](/get-started/setup/cloud#1-create-a-clickhouse-service) in the ClickHouse Cloud quickstart. Before continuing, confirm that the service is running.
 
 <View title="OpenTelemetry">
+
+<Tip>
+This page is showing the **OpenTelemetry** path. Use the guide selector near the top of the guide to switch between **OpenTelemetry** (recommended) and **Vector**.
+</Tip>
 
 ### Prepare your ingestion environment {#prepare-your-ingestion-environment}
 
@@ -168,8 +168,8 @@ A successful request returns `HTTP/1.1 200 OK`.
 
 </Step>
 
-<Step title="Open ClickStack and confirm ingestion" id="open-clickstack-and-confirm-ingestion">
-ClickStack creates the OpenTelemetry data sources automatically. Open the logs view in ClickStack and search for `ClickStack ingestion test`.
+<Step title="Start exploring and confirm ingestion" id="open-clickstack-and-confirm-ingestion">
+After ClickStack detects the OpenTelemetry data sources, select **Start exploring** to open the **Search** view. Search for `ClickStack ingestion test`.
 
 The result should include the test event with the `clickstack-docs-test` service name.
 
@@ -338,21 +338,12 @@ For other source settings, see the [ClickStack configuration reference](/clickst
 <Step title="Send test data" id="send-test-data-vector">
 Send a representative event through the input of your existing Vector pipeline.
 
-In the ClickHouse Cloud SQL console, confirm that the event reached the target table:
-
-```sql
-SELECT *
-FROM logs.nginx_logs
-ORDER BY time_local DESC
-LIMIT 1;
-```
-
-The result should contain the event you sent. For more Vector source and transformation examples, see [Ingesting with Vector](/clickstack/ingesting-data/vector).
+For more Vector source and transformation examples, see [Ingesting with Vector](/clickstack/ingesting-data/vector).
 
 </Step>
 
-<Step title="Open ClickStack and confirm ingestion" id="open-clickstack-and-confirm-ingestion-vector">
-Select the data source for your table and confirm that the logs view contains the event you sent.
+<Step title="Start exploring and confirm ingestion" id="open-clickstack-and-confirm-ingestion-vector">
+After creating the data source, select **Start exploring** to open the **Search** view. Select the data source for your table and confirm that it contains the event you sent.
 
 <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="Logs in the ClickStack UI"/>
 
