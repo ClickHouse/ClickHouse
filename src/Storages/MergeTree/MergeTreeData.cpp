@@ -3091,10 +3091,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     /// `checksums.txt`, so a missing or wrongly-sized SST is already rejected by
     /// `checkConsistencyBase` above; what is left for the validation below is
     /// size-preserving damage plus parts that legitimately carry no SST entry
-    /// (written before the sidecar was checksummed, or - once the index is
-    /// written outside the INSERT commit - produced asynchronously). The active
-    /// set is captured here under `part_lock`; the I/O-heavy per-part
-    /// validate+rebuild runs below, after the lock is released.
+    /// (written before the sidecar was checksummed). The active set is captured
+    /// here under `part_lock`; the I/O-heavy per-part validate+rebuild runs
+    /// below, after the lock is released.
     ///
     /// The sweep deletes files, so it stays gated on writability. Validation is
     /// read-only I/O and runs regardless: a UK part with an unusable SST on
