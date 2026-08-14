@@ -371,6 +371,40 @@ public:
         if (dict_structure.key && hasNullableComponentInComplexKey(dictget_function_info.key_expr_node))
             return;
 
+        /// A complex-key dictionary with a single key column accepts both the bare key
+        /// expression (`dictGet(..., k)`) and its one-element tuple wrapper
+        /// (`dictGet(..., tuple(k))`). The rewrites below compare the key expression with
+        /// bare key values: scalar constants produced by `dictGetKeys` or a single-column
+        /// `SELECT` from `dictionary(...)`. Unwrap the tuple, otherwise the rewrite pits
+        /// `Tuple(T)` against `T` and fails with ILLEGAL_TYPE_OF_ARGUMENT.
+        /// Simple-key dictionaries are intentionally not affected: for them `dictGet`
+        /// rejects the tuple form even without this optimization.
+        if (dict_structure.key && key_cols.size() == 1)
+        {
+            auto & key_expr_node = dictget_function_info.key_expr_node;
+            const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_node->getResultType().get());
+            if (key_expr_tuple_type && key_expr_tuple_type->getElements().size() == 1)
+            {
+                const auto * key_expr_function = key_expr_node->as<FunctionNode>();
+                if (key_expr_function && key_expr_function->getFunctionName() == "tuple"
+                    && key_expr_function->getArguments().getNodes().size() == 1)
+                {
+                    /// A syntactic wrapper: `tuple(k)` -> `k`.
+                    key_expr_node = key_expr_function->getArguments().getNodes().front();
+                }
+                else
+                {
+                    /// Not a `tuple(...)` call, but still a one-element tuple (e.g. a column
+                    /// of type `Tuple(UUID)`): extract the element.
+                    auto tuple_element_function_node = std::make_shared<FunctionNode>("tupleElement");
+                    tuple_element_function_node->getArguments().getNodes()
+                        = {key_expr_node, std::make_shared<ConstantNode>(Field(static_cast<UInt64>(1)))};
+                    resolveOrdinaryFunctionNodeByName(*tuple_element_function_node, "tupleElement", getContext());
+                    key_expr_node = std::move(tuple_element_function_node);
+                }
+            }
+        }
+
         const String attr_col_name = dictget_function_info.attr_col_name_node->getValue().safeGet<String>();
 
         if (!dict_structure.hasAttribute(attr_col_name))
