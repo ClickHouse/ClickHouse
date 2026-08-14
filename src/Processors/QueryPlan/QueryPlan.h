@@ -85,6 +85,10 @@ struct ExplainPlanOptions
     bool estimates = false;
     /// For EXPLAIN ANALYZE: print the per-processor elapsed time distribution (min/median/max/sum).
     bool processors_profile = false;
+    /// For EXPLAIN ANALYZE: make joins do the extra per-row bookkeeping needed for the matched
+    /// Off by default because the work lands in the probe loop and creates biases in time and parallelism
+    /// durin colleciton
+    bool matches = false;
 
     SettingsChanges toSettingsChanges() const;
 };
