@@ -990,14 +990,14 @@ void processQuery(
 /// Exported column names of a target that are dead after the rewrite: an exported column with
 /// some references replaced by pushed subcolumns and no references remaining is removed by the
 /// subsequent RemoveUnusedProjectionColumnsPass. The same underlying column can be exported
-/// under several names (`SELECT tup AS x, tup FROM ...`); a never-referenced sibling of a dead
-/// export is unused in the parents too and is removed together with it, so when no name of such
-/// an alias-equivalent class has references remaining, every name of the class is dead — keying
-/// only by the exported name would keep the sibling slots, and the whole-column references
-/// inside them would block pushdown through the deeper levels. The aliasing structure of every
-/// leaf branch of the target contributes its own classes (they can differ between the branches
-/// of a union); a name marked dead through the class of one branch can complete a class of
-/// another branch, so the expansion runs to a fixpoint.
+/// under several names or paths (`SELECT tup.a AS x, tup FROM ...`); a never-referenced sibling
+/// of a dead export is unused in the parents too and is removed together with it. Therefore,
+/// when no export of an underlying column has references remaining, every export of that column
+/// is dead — keying only by the exported name or exact subcolumn path would keep sibling slots,
+/// and the whole-column references inside them would block pushdown through the deeper levels.
+/// The aliasing structure of every leaf branch of the target contributes its own classes (they
+/// can differ between the branches of a union); a name marked dead through the class of one
+/// branch can complete a class of another branch, so the expansion runs to a fixpoint.
 std::unordered_set<String> collectDeadExports(
     const std::unordered_map<String, size_t> & replaced_columns,
     const std::unordered_map<String, size_t> & alive_columns,
@@ -1023,9 +1023,9 @@ std::unordered_set<String> collectDeadExports(
     std::vector<std::vector<String>> alias_classes;
     for (const auto & canonical_exports : collectCanonicalExportsPerLeaf(node))
     {
-        std::map<CanonicalColumn, std::vector<String>> leaf_classes;
+        std::map<const IQueryTreeNode *, std::vector<String>> leaf_classes;
         for (const auto & [column_name, canonical] : canonical_exports)
-            leaf_classes[canonical].push_back(column_name);
+            leaf_classes[canonical.first].push_back(column_name);
 
         for (auto & [canonical, column_names] : leaf_classes)
         {

@@ -53,11 +53,9 @@ SELECT 'two levels, whole column not exported by the middle query, pushed to the
 SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT x.b FROM (SELECT tup.a AS x FROM (SELECT tup FROM t_push_subcolumns_derived_liveness))) WHERE explain LIKE '%Output%';
 SELECT x.b FROM (SELECT tup.a AS x FROM (SELECT tup FROM t_push_subcolumns_derived_liveness)) ORDER BY x.b;
 
--- The whole column exported by the middle query next to the derived export is never referenced, but
--- it is not in the alias-equivalent class of the replaced export (it is its parent, not the same
--- column), so it still counts as a use of the deeper export and stops the pushdown one level above
--- the table. The rewrite stays correct, it is only less profitable.
-SELECT 'two levels, unreferenced whole column exported by the middle query, pushed one level';
+-- The whole column exported by the middle query next to the derived export is never referenced.
+-- It is pruned together with the derived export, so it does not stop the pushdown to the table.
+SELECT 'two levels, unreferenced whole column exported by the middle query, pushed to the table';
 SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT x.b FROM (SELECT tup.a AS x, tup FROM (SELECT tup FROM t_push_subcolumns_derived_liveness))) WHERE explain LIKE '%Output%';
 SELECT x.b FROM (SELECT tup.a AS x, tup FROM (SELECT tup FROM t_push_subcolumns_derived_liveness)) ORDER BY x.b;
 

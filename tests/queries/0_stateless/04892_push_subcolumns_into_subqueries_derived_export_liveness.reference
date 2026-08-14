@@ -38,9 +38,9 @@ Output: tup.a.b
 Output: tup.a.b
 1
 2
-two levels, unreferenced whole column exported by the middle query, pushed one level
-Output: getSubcolumn(tup, \'a.b\')
-Output: tup
+two levels, unreferenced whole column exported by the middle query, pushed to the table
+Output: tup.a.b
+Output: tup.a.b
 1
 2
 setting off, not pushed
