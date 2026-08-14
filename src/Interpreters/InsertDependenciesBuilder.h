@@ -178,6 +178,12 @@ public:
     /// insert single-stream when this probe reports true and that setting is disabled.
     static bool forwardedInsertHidesDependentView(const StoragePtr & storage, size_t depth = 0);
 
+    /// Whether a same-context forwarding hop (`Alias`) hides a dependent-view graph. This is narrower
+    /// than `forwardedInsertHidesDependentView`: `Distributed` and `Buffer` also hide their targets,
+    /// but their write paths have separate safeguards and must retain the ordinary `INSERT SELECT`
+    /// fan-out when `parallel_view_processing` is disabled.
+    static bool aliasHidesDependentView(const StoragePtr & storage, size_t depth = 0);
+
     /// Whether the INSERT is a non-parallel quorum insert (`insert_quorum >= 2` or `'auto'`, with
     /// `insert_quorum_parallel = 0`). Such an insert permits a single in-flight quorum part per table:
     /// every `ReplicatedMergeTreeSink` checks in `onStart` that the quorum of all previous writes is

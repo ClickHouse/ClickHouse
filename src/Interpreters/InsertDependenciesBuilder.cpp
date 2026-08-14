@@ -972,6 +972,34 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StorageP
 }
 
 
+bool InsertDependenciesBuilder::aliasHidesDependentView(const StoragePtr & storage, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    /// Unlike `Distributed` and `Buffer`, `AliasSink` runs its nested `INSERT` in this query's
+    /// context. A fan-out before this hop would therefore bypass `parallel_view_processing = 0` by
+    /// running one hidden view graph per `AliasSink` concurrently.
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    {
+        auto target = alias->tryGetTargetTable();
+        return !target || forwardedInsertReachesDependentView(target, depth + 1);
+    }
+
+    /// These storages are followed by `collectAllDependencies`, so an `Alias` further down their
+    /// graph is not hidden from the outer builder.
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        auto target = materialized_view->tryGetTargetTable();
+        return !target || aliasHidesDependentView(target, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return aliasHidesDependentView(proxy->getNested(), depth + 1);
+
+    return false;
+}
+
+
 bool InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(const StoragePtr & storage, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)
