@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 SELECT '-- MATERIALIZED default evaluated on the insert pipeline';
 DROP TABLE IF EXISTS t_cast_expired_insert;
 CREATE TABLE t_cast_expired_insert (s String, ip IPv6 MATERIALIZED toIPv6OrDefault(s)) ENGINE = MergeTree ORDER BY tuple();
