@@ -9,7 +9,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/readDecimalText.h>
+#include <IO/ReadHelpers.h>
+#include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Core/Settings.h>
 #include <Core/Field.h>
 
@@ -27,47 +28,31 @@ namespace ErrorCodes
 }
 
 
-/// Extracts integer or decimal parameter value and converts it to decimal with the target scale (scale of the timestamp column)
-static Decimal64 normalizeParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, UInt32 target_scale)
+/// Extracts a timestamp parameter value and converts it to decimal with the target scale (scale of the timestamp column)
+static DateTime64 extractTimestampParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, UInt32 target_scale)
 {
-    auto target_scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(target_scale);
+    try
+    {
+        return parseTimeSeriesTimestamp(parameter_field, target_scale);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("While parsing {} parameter of aggregate function {}", parameter_name, function_name);
+        throw;
+    }
+}
 
-    if (parameter_field.getType() == Field::Types::Decimal64)
+/// Extracts a duration parameter value and converts it to decimal with the target scale (scale of the timestamp column)
+static Decimal64 extractDurationParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, UInt32 target_scale)
+{
+    try
     {
-        auto value = parameter_field.safeGet<DecimalField<Decimal64>>();
-        auto value_scale_multiplier = value.getScaleMultiplier();
-        return (Decimal128(value.getValue()) * Decimal128(target_scale_multiplier)) / Decimal128(value_scale_multiplier);
+        return parseTimeSeriesDuration(parameter_field, target_scale);
     }
-    else if (parameter_field.getType() == Field::Types::Decimal32)
+    catch (Exception & e)
     {
-        auto value = parameter_field.safeGet<DecimalField<Decimal32>>();
-        auto value_scale_multiplier = value.getScaleMultiplier();
-        return (Decimal128(value.getValue()) / Decimal128(value_scale_multiplier)) * Decimal128(target_scale_multiplier);
-    }
-    else if (Int64 int_value = 0; parameter_field.tryGet(int_value))
-    {
-        return Decimal128(int_value) * Decimal128(target_scale_multiplier);
-    }
-    else if (UInt64 uint_value = 0; parameter_field.tryGet(uint_value))
-    {
-        return Decimal128(uint_value) * Decimal128(target_scale_multiplier);
-    }
-    else if (String string_value; parameter_field.tryGet(string_value))
-    {
-        Decimal64 value{};
-        UInt32 scale = target_scale;
-        ReadBufferFromString buf(string_value);
-        if (tryReadDecimalText(buf, value, 20, scale))
-            return Decimal128(value) * Decimal128(DecimalUtils::scaleMultiplier<Decimal64>(scale));
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Cannot parse {} parameter for aggregate function {}", parameter_name, function_name);
-    }
-    else
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of {} parameter for aggregate function {}",
-            parameter_field.getTypeName(), parameter_name, function_name);
+        e.addMessage("While parsing {} parameter of aggregate function {}", parameter_name, function_name);
+        throw;
     }
 }
 
@@ -188,10 +173,10 @@ AggregateFunctionPtr createWithTypes(const std::string & name, const Array & par
     if constexpr (std::is_same_v<TimestampType, DateTime64>)
     {
         /// Convert start, end, step and staleness parameters to the scale of the timestamp column
-        DateTime64 start_timestamp = normalizeParameter(name, "start", parameters[0], target_scale);
-        DateTime64 end_timestamp = normalizeParameter(name, "end", parameters[1], target_scale);
-        DateTime64 step = normalizeParameter(name, "step", parameters[2], target_scale);
-        DateTime64 window = normalizeParameter(name, "window", parameters[3], target_scale);
+        DateTime64 start_timestamp = extractTimestampParameter(name, "start", parameters[0], target_scale);
+        DateTime64 end_timestamp = extractTimestampParameter(name, "end", parameters[1], target_scale);
+        DateTime64 step = extractDurationParameter(name, "step", parameters[2], target_scale);
+        DateTime64 window = extractDurationParameter(name, "window", parameters[3], target_scale);
         return make_function.template operator()<TimestampType, IntervalType, ValueType>(start_timestamp, end_timestamp, step, window, target_scale);
     }
     else
