@@ -230,10 +230,12 @@ namespace Setting
     extern const SettingsBool enable_vertical_final;
     extern const SettingsBool force_aggregate_partitions_independently;
     extern const SettingsBool force_distinct_partitions_independently;
+    extern const SettingsBool force_window_partitions_independently;
     extern const SettingsBool force_primary_key;
     extern const SettingsString ignore_data_skipping_indices;
     extern const SettingsUInt64 max_number_of_partitions_for_independent_aggregation;
     extern const SettingsUInt64 max_number_of_partitions_for_independent_distinct;
+    extern const SettingsUInt64 max_number_of_partitions_for_independent_window;
     extern const SettingsInt64 max_partitions_to_read;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_rows_to_read_leaf;
@@ -3429,17 +3431,34 @@ bool ReadFromMergeTree::isVectorColumnReplaced() const
 
 bool ReadFromMergeTree::isPartitionIndependentProcessingProfitable(ProcessorKind kind) const
 {
-    const bool is_distinct = kind == ProcessorKind::Distinct;
-    const std::string_view operation = is_distinct ? "DISTINCT" : "aggregation";
-    const std::string_view force_setting
-        = is_distinct ? "force_distinct_partitions_independently" : "force_aggregate_partitions_independently";
-    const std::string_view max_partitions_setting
-        = is_distinct ? "max_number_of_partitions_for_independent_distinct" : "max_number_of_partitions_for_independent_aggregation";
-
     const auto & settings = context->getSettingsRef();
-    const UInt64 max_partitions = is_distinct
-        ? settings[Setting::max_number_of_partitions_for_independent_distinct]
-        : settings[Setting::max_number_of_partitions_for_independent_aggregation];
+
+    std::string_view operation;
+    std::string_view force_setting;
+    std::string_view max_partitions_setting;
+    UInt64 max_partitions = 0;
+    switch (kind)
+    {
+        case ProcessorKind::Aggregation:
+            operation = "aggregation";
+            force_setting = "force_aggregate_partitions_independently";
+            max_partitions_setting = "max_number_of_partitions_for_independent_aggregation";
+            max_partitions = settings[Setting::max_number_of_partitions_for_independent_aggregation];
+            break;
+        case ProcessorKind::Distinct:
+            operation = "DISTINCT";
+            force_setting = "force_distinct_partitions_independently";
+            max_partitions_setting = "max_number_of_partitions_for_independent_distinct";
+            max_partitions = settings[Setting::max_number_of_partitions_for_independent_distinct];
+            break;
+        case ProcessorKind::Window:
+            operation = "window functions";
+            force_setting = "force_window_partitions_independently";
+            max_partitions_setting = "max_number_of_partitions_for_independent_window";
+            max_partitions = settings[Setting::max_number_of_partitions_for_independent_window];
+            break;
+    }
+
     const auto partitions_cnt = countPartitions(getParts());
 
     if (partitions_cnt == 1 || partitions_cnt < settings[Setting::max_threads] / 2)
@@ -3591,6 +3610,27 @@ void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForDistinct
 
     if (!context->getSettingsRef()[Setting::force_distinct_partitions_independently]
         && !isPartitionIndependentProcessingProfitable(ProcessorKind::Distinct))
+        return;
+
+    output_each_partition_through_separate_port = true;
+}
+
+/// Window functions use the same cost heuristic as GROUP BY / DISTINCT: the ordinary plan is already
+/// parallel (the input is scattered by the hash of the window `PARTITION BY` columns and every stream is
+/// sorted and processed by its own window transform), so per-partition processing must provide comparable
+/// parallelism (enough partitions, no dominant partition) to make skipping the scatter worthwhile.
+void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForWindow()
+{
+    if (isQueryWithFinal())
+        return;
+
+    /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
+    /// With window-by-partitions optimisation we might create a separate pool for each partition.
+    if (is_parallel_reading_from_replicas)
+        return;
+
+    if (!context->getSettingsRef()[Setting::force_window_partitions_independently]
+        && !isPartitionIndependentProcessingProfitable(ProcessorKind::Window))
         return;
 
     output_each_partition_through_separate_port = true;

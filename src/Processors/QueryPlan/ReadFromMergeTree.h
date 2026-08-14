@@ -373,6 +373,7 @@ public:
     bool requestOutputEachPartitionThroughSeparatePortForAggregation();
     bool requestOutputEachPartitionThroughSeparatePortForLimitBy();
     void requestOutputEachPartitionThroughSeparatePortForDistinct();
+    void requestOutputEachPartitionThroughSeparatePortForWindow();
 
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
@@ -657,8 +658,9 @@ private:
 
     void logPredicateStatistics(const AnalysisResult & result) const;
 
-    /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY and DISTINCT.
-    enum class ProcessorKind : uint8_t { Aggregation, Distinct };
+    /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY, DISTINCT and
+    /// window functions.
+    enum class ProcessorKind : uint8_t { Aggregation, Distinct, Window };
     bool isPartitionIndependentProcessingProfitable(ProcessorKind kind) const;
 
     int getSortDirection() const;
