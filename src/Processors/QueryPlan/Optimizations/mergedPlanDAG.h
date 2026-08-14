@@ -26,6 +26,11 @@ struct MergedPlanDAG
         QueryPlan::Node * plan_node = nullptr;
         /// One input node per column of that header, in header order.
         ActionsDAG::NodeRawConstPtrs inputs;
+        /// Whether a join above this source can produce rows its columns took no part in, where they
+        /// stand at their default or NULL. Only then does it matter that a value was computed below that
+        /// join: recomputing it above would run it on those rows, and for `x + 1` over a stuffed `x = 0`
+        /// that gives 1 where the plan gives the default 0.
+        bool may_be_stuffed = false;
     };
 
     /// The DAG, plus the sources every node reads. See `getSources`.
@@ -34,6 +39,9 @@ struct MergedPlanDAG
     /// Filter conditions met on the way up, bottom-up, a join's residual filter included. These decide
     /// which rows survive, so they are computed early wherever a caller draws its frontier.
     ActionsDAG::NodeRawConstPtrs filter_nodes;
+
+    /// Conditions the joins match rows on. A join computes them itself, so they are computed early too.
+    ActionsDAG::NodeRawConstPtrs join_condition_nodes;
 
     /// A position in this vector is the source index reported by `getSources`.
     std::vector<Source> sources;
@@ -56,6 +64,11 @@ struct MergedPlanDAG
     /// the join stuffed with defaults or NULLs, and recomputing it on the matched rows only would not
     /// reproduce that.
     std::optional<size_t> getDenseSource(const ActionsDAG::Node * node) const;
+
+    /// The source on whose own rows this node has to be recomputed, if it cannot be recomputed after the
+    /// join instead. That is the case only where the join can stuff rows, see `Source::may_be_stuffed`;
+    /// with one source and no join above it, nothing is stuffed and anything may be recomputed late.
+    std::optional<size_t> getSourceToRecomputeOn(const ActionsDAG::Node * node) const;
 };
 
 /// Returns nullopt when the subtree cannot be represented: it computes an `arrayJoin`, which changes the
