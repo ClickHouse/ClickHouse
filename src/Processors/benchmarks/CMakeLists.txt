@@ -14,4 +14,4 @@ target_link_libraries(benchmark_runtime_filter PRIVATE
 # debug sections make the binary multiple GiB. Keep the final target small regardless of build type.
 # `-S` strips debug info and is accepted by GNU ld, lld, and Apple ld; use CMake's LINKER wrapper
 # so the compiler driver receives the right platform-specific spelling.
-target_link_options(runtime_filter PRIVATE "LINKER:-S")
+target_link_options(benchmark_runtime_filter PRIVATE "LINKER:-S")
