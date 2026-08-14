@@ -36,6 +36,7 @@ SELECT defaultValueOfArgumentType(CAST(NULL AS Nullable(UInt8))) IS NULL;
 
 SELECT 'Test scoped lambda shadows an optimized builtin function';
 WITH ((x, y) -> 42) AS `or` SELECT `or`(1, number) FROM numbers(1);
+WITH ((x, y) -> 0) AS `or` SELECT 0 OR `or`(1, 2);
 
 SELECT 'Test folded logical expressions preserve their result types';
 SELECT toTypeName(0 AND CAST(NULL AS Nullable(UInt8)));

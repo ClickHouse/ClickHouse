@@ -18,6 +18,7 @@ DateTime64(3)
 1
 Test scoped lambda shadows an optimized builtin function
 42
+0
 Test folded logical expressions preserve their result types
 Nullable(UInt8)
 Bool

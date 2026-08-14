@@ -102,9 +102,9 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
 }
 
-/** Finds a decisive constant in an AND/OR expression before its arguments are analyzed.
-  * Nested expressions with the same function name are processed recursively. The returned value
-  * is independent of unresolved argument values and types: false decides AND, true decides OR.
+/** Finds a decisive constant in the direct prefix of an AND/OR expression before its
+  * arguments are analyzed. Nested calls are resolved independently so scoped lambdas and UDFs
+  * cannot be mistaken for builtin logical functions. False decides AND, true decides OR.
   */
 std::optional<bool> getEarlyShortCircuitResultForAndOr(
     const QueryTreeNodePtr & node,
@@ -128,10 +128,6 @@ std::optional<bool> getEarlyShortCircuitResultForAndOr(
             const auto value = constant_node->getValue();
             if (isNativeNumber(removeNullable(type)) && !value.isNull())
                 argument_value = applyVisitor(FieldVisitorConvertToNumber<bool>(), value);
-        }
-        else if (argument->as<FunctionNode>())
-        {
-            argument_value = getEarlyShortCircuitResultForAndOr(argument, function_name_to_fold);
         }
 
         /// Short-circuiting is prefix-based. An unresolved argument before the decisive constant
