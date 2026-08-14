@@ -8752,6 +8752,15 @@ Specifies which JOIN order algorithms to attempt during query plan optimization.
  - 'dphyp' - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
 Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to outer joins or disconnected components), the next one is used as a fallback.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, query_plan_optimize_join_order_use_eel_conflict_detector, false, R"(
+Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which outer-join
+reorderings are valid using IBM's EEL (Extended Eligibility List) conflict detector
+(Rao, Lindsay, Lohman, Pirahesh, Simmen, "Using EELs, a Practical Approach to Outerjoin and
+Antijoin Reordering", ICDE 2001) instead of the default per-relation ON-clause restriction.
+The EEL is computed from the original join tree and widens each null-supplying relation's
+required-partner set to account for reordering conflicts among nested outer joins, so it can
+only reject reorderings the default check would allow, never permit new ones.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
 )", EXPERIMENTAL) \

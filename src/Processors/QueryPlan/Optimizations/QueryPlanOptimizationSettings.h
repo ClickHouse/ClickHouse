@@ -82,6 +82,9 @@ struct QueryPlanOptimizationSettings
     UInt64 query_plan_optimize_join_order_max_searched_plans;
     /// When non-zero, randomize statistics for join reordering using this value as seed
     UInt64 query_plan_optimize_join_order_randomize = 0;
+    /// Use the EEL (Extended Eligibility List) conflict detector for outer-join reordering
+    /// validity in the DPsub algorithm instead of the default per-relation ON-clause restriction.
+    bool query_plan_optimize_join_order_use_eel_conflict_detector = false;
 
     /// Infer transitive equi-join predicates (e.g., A.x=B.x AND B.x=C.x implies A.x=C.x)
     bool enable_join_transitive_predicates = false;

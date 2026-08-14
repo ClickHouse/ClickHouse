@@ -661,6 +661,11 @@ struct QueryGraphBuilder
     /// ON-clause predicates of outer joins, see QueryGraph::outer_join_conditions
     std::unordered_map<JoinActionRef, size_t> outer_join_conditions;
 
+    /// One record per binary join operator of the original tree, captured for the optional EEL
+    /// conflict detector. Relation ids are local to this (sub)graph and shifted in `uniteGraphs`.
+    /// See QueryGraph::eel_ops / EelJoinOp.
+    std::vector<EelJoinOp> eel_ops;
+
     struct BuilderContext
     {
         const QueryPlanOptimizationSettings & optimization_settings;
@@ -725,6 +730,15 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
         lhs.join_kinds[id + shift] = std::move(restriction);
     }
 
+    /// Shift each captured EEL operator's relation sets into the parent's numbering and append.
+    for (auto & op : rhs.eel_ops)
+    {
+        op.left.shift(shift);
+        op.right.shift(shift);
+        op.nel.shift(shift);
+        lhs.eel_ops.push_back(std::move(op));
+    }
+
     for (auto & [sources, nodes] : rhs.type_changes)
         lhs.type_changes[sources + shift] = std::move(nodes);
 
@@ -766,6 +780,18 @@ constexpr bool isInnerOrCross(JoinKind kind)
     return kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma;
 }
 
+/// Semi/anti joins may be fully reordered (not just swapped) only when the EEL conflict detector
+/// is on AND DPsub is the sole join-order algorithm. The EEL detector is the only validity model
+/// that can express their non-commutativity, and only the DPsub solver consumes it, so exposing
+/// semi/anti to any other solver (greedy/dpsize/dphyp) would let it build an invalid order.
+static bool eelSemiAntiReorderingEnabled(const QueryPlanOptimizationSettings & optimization_settings)
+{
+    const auto & algorithms = optimization_settings.query_plan_optimize_join_order_algorithm;
+    return optimization_settings.query_plan_optimize_join_order_use_eel_conflict_detector
+        && algorithms.size() == 1
+        && algorithms.front() == JoinOrderAlgorithm::DPSUB;
+}
+
 static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit)
 {
     auto * join_node = node;
@@ -791,7 +817,14 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
         {
             auto child_join_kind = child_join_step->getJoinOperator().kind;
             bool allow_child_join_kind = isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind);
-            allow_child_join_kind = allow_child_join_kind && child_join_step->getJoinOperator().strictness == JoinStrictness::All;
+            const auto child_strictness = child_join_step->getJoinOperator().strictness;
+            /// Normally only plain (All) joins are flattened into the reorderable graph. With EEL
+            /// semi/anti reordering enabled, Semi/Anti children are flattened too so DPsub can
+            /// reorder them under the EEL conflict detector.
+            const bool allow_child_strictness = child_strictness == JoinStrictness::All
+                || (eelSemiAntiReorderingEnabled(graph.context->optimization_settings)
+                    && (child_strictness == JoinStrictness::Semi || child_strictness == JoinStrictness::Anti));
+            allow_child_join_kind = allow_child_join_kind && allow_child_strictness;
             /// Do not flatten joins that have type-changing sides (e.g., LEFT JOIN
             /// with `join_use_nulls` making right-side columns Nullable). Flattening
             /// such joins allows the optimizer to reorder them, which can separate
@@ -1009,6 +1042,13 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         }
     }
 
+    /// Capture this operator for the EEL conflict detector before `join_expression_sources` is
+    /// stripped of the null-supplying singleton below. `left_mask`/`right_mask` are this
+    /// operator's two input subtrees in the current (sub)graph's local numbering; `nel` is the
+    /// full set of relations the ON clause references. Records are shifted into global numbering
+    /// by `uniteGraphs`.
+    query_graph.eel_ops.push_back(EelJoinOp{left_mask, right_mask, join_expression_sources, join_kind, join_operator.strictness});
+
     if (isRightOrFull(join_kind))
     {
         if (lhs_count != 1)
@@ -1108,6 +1148,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     query_graph.edges = std::move(query_graph_builder.join_edges);
     query_graph.join_kinds = std::move(query_graph_builder.join_kinds);
     query_graph.outer_join_conditions = std::move(query_graph_builder.outer_join_conditions);
+    query_graph.eel_ops = std::move(query_graph_builder.eel_ops);
 
     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Optimizing join order for query graph with {} relations", query_graph.relation_stats.size());
 
@@ -1239,7 +1280,13 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             nodeStack.pop();
 
             auto join_operator = std::move(entry->join_operator);
-            join_operator.strictness = join_strictness;
+            /// Normally the whole reordered graph carries a single strictness (non-All graphs are
+            /// capped to one join), so we re-stamp it uniformly. With the EEL conflict detector the
+            /// graph may mix strictnesses (e.g. inner joins around a reordered semi/anti join), and
+            /// each entry already carries its own strictness from `buildPhysicalPlan` -- do not
+            /// overwrite it.
+            if (!optimization_settings.query_plan_optimize_join_order_use_eel_conflict_detector)
+                join_operator.strictness = join_strictness;
 
             /// The optimizer reconstructs an unconnected Inner pair (e.g. `INNER JOIN ... ON 1`,
             /// which produces no join edges) as Cross. That is equivalent only for ALL strictness:
@@ -1486,15 +1533,19 @@ static void collectJoinGraphRelationHeaders(
     const QueryPlan::Node * node,
     int join_steps_limit,
     const JoinSettings & join_settings,
-    std::vector<SharedHeader> & relation_headers);
+    std::vector<SharedHeader> & relation_headers,
+    bool allow_semi_anti_children);
 
 /// Mirrors `buildQueryGraph` for a single join node: collects the output headers of the relations
 /// that the join order optimizer would produce for it (descending into flattenable child joins).
+/// `allow_semi_anti_children` must match `addChildQueryGraph`'s flatten gate so this header shadow
+/// stays in sync when EEL semi/anti reordering is enabled.
 static void collectJoinGraphRelationHeadersForJoin(
     const QueryPlan::Node & join_node,
     int join_steps_limit,
     const JoinSettings & join_settings,
-    std::vector<SharedHeader> & relation_headers)
+    std::vector<SharedHeader> & relation_headers,
+    bool allow_semi_anti_children)
 {
     const auto * join_step = typeid_cast<const JoinStepLogical *>(join_node.step.get());
     if (!join_step || join_node.children.size() != 2)
@@ -1509,13 +1560,13 @@ static void collectJoinGraphRelationHeadersForJoin(
     const bool allow_left_subgraph
         = !type_changing_sides.contains(JoinTableSide::Left) && (isInnerOrCross(join_kind) || isLeft(join_kind));
     const size_t lhs_before = relation_headers.size();
-    collectJoinGraphRelationHeaders(join_node.children[0], allow_left_subgraph ? join_steps_limit - 1 : 0, join_settings, relation_headers);
+    collectJoinGraphRelationHeaders(join_node.children[0], allow_left_subgraph ? join_steps_limit - 1 : 0, join_settings, relation_headers, allow_semi_anti_children);
     const size_t lhs_count = relation_headers.size() - lhs_before;
 
     const bool allow_right_subgraph
         = !type_changing_sides.contains(JoinTableSide::Right) && (isInnerOrCross(join_kind) || isRight(join_kind));
     collectJoinGraphRelationHeaders(
-        join_node.children[1], allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0, join_settings, relation_headers);
+        join_node.children[1], allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0, join_settings, relation_headers, allow_semi_anti_children);
 }
 
 /// Mirrors `addChildQueryGraph`: either flattens a child join into multiple relations, or treats
@@ -1524,7 +1575,8 @@ static void collectJoinGraphRelationHeaders(
     const QueryPlan::Node * node,
     int join_steps_limit,
     const JoinSettings & join_settings,
-    std::vector<SharedHeader> & relation_headers)
+    std::vector<SharedHeader> & relation_headers,
+    bool allow_semi_anti_children)
 {
     if (isTrivialStep(node))
         node = node->children[0];
@@ -1533,14 +1585,20 @@ static void collectJoinGraphRelationHeaders(
         child_join_step && !child_join_step->isOptimized())
     {
         const auto child_join_kind = child_join_step->getJoinOperator().kind;
+        const auto child_strictness = child_join_step->getJoinOperator().strictness;
+        /// Keep in sync with `addChildQueryGraph`: normally only All strictness flattens; with EEL
+        /// semi/anti reordering, Semi/Anti children flatten too.
+        const bool allow_child_strictness = child_strictness == JoinStrictness::All
+            || (allow_semi_anti_children
+                && (child_strictness == JoinStrictness::Semi || child_strictness == JoinStrictness::Anti));
         const bool allow_child_join_kind
             = (isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind))
-            && child_join_step->getJoinOperator().strictness == JoinStrictness::All
+            && allow_child_strictness
             && child_join_step->typeChangingSides().empty();
 
         if (child_join_step->getJoinSettings() == join_settings && join_steps_limit > 1 && allow_child_join_kind)
         {
-            collectJoinGraphRelationHeadersForJoin(*node, join_steps_limit, join_settings, relation_headers);
+            collectJoinGraphRelationHeadersForJoin(*node, join_steps_limit, join_settings, relation_headers, allow_semi_anti_children);
             return;
         }
     }
@@ -1558,10 +1616,11 @@ static void collectJoinGraphRelationHeaders(
 static bool joinGraphHasOverlappingColumnNames(
     const QueryPlan::Node & join_node,
     int join_steps_limit,
-    const JoinSettings & join_settings)
+    const JoinSettings & join_settings,
+    bool allow_semi_anti_children)
 {
     std::vector<SharedHeader> relation_headers;
-    collectJoinGraphRelationHeadersForJoin(join_node, join_steps_limit, join_settings, relation_headers);
+    collectJoinGraphRelationHeadersForJoin(join_node, join_steps_limit, join_settings, relation_headers, allow_semi_anti_children);
 
     std::unordered_set<std::string_view> seen_names;
     for (const auto & header : relation_headers)
@@ -1613,8 +1672,14 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
         return;
     }
 
+    /// When EEL semi/anti reordering is enabled, Semi/Anti joins are fully reorderable rather than
+    /// swap-only, so we keep the full graph size limit for them. Full joins (swap-only *kind*) and
+    /// the Any strictness stay capped -- EEL does not model those for reordering.
+    const bool eel_reorder_semi_anti = eelSemiAntiReorderingEnabled(optimization_settings)
+        && (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti);
+
     int query_graph_size_limit = safe_cast<int>(optimization_settings.query_plan_optimize_join_order_limit);
-    if ((isSwapOnlyJoinStrictness(strictness) || isSwapOnlyJoinKind(kind)) && query_graph_size_limit > 2)
+    if ((isSwapOnlyJoinStrictness(strictness) || isSwapOnlyJoinKind(kind)) && query_graph_size_limit > 2 && !eel_reorder_semi_anti)
         /// Do not reorder joins, only allow swap
         query_graph_size_limit = 2;
 
@@ -1622,7 +1687,8 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     /// names, which the `JoinExpressionActions`-based reconstruction does not support. See the comment
     /// on `joinGraphHasOverlappingColumnNames`. This generalizes a check over the immediate children to
     /// the whole flattened relation set, so it also covers overlaps that only appear after flattening.
-    if (joinGraphHasOverlappingColumnNames(node, query_graph_size_limit, join_step->getJoinSettings()))
+    if (joinGraphHasOverlappingColumnNames(node, query_graph_size_limit, join_step->getJoinSettings(),
+                                           eelSemiAntiReorderingEnabled(optimization_settings)))
     {
         join_step->setOptimized();
         return;

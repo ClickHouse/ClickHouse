@@ -23,6 +23,7 @@
 #include <vector>
 #include <Processors/QueryPlan/Optimizations/dpTable.h>
 #include <Processors/QueryPlan/Optimizations/enumeratorChecker.h>
+#include <Processors/QueryPlan/Optimizations/eelConflictDetector.h>
 
 
 namespace ProfileEvents
@@ -306,10 +307,11 @@ String DPJoinEntry::dump() const
 class JoinOrderOptimizer
 {
 public:
-    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_, UInt64 max_searched_plans_)
+    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_, UInt64 max_searched_plans_, bool use_eel_conflict_detector_ = false)
         : query_graph(std::move(query_graph_))
         , max_searched_plans(max_searched_plans_)
         , enabled_algorithms(enabled_algorithms_)
+        , use_eel_conflict_detector(use_eel_conflict_detector_)
     {
         auto context = CurrentThread::tryGetQueryContext();
         if (context)
@@ -349,6 +351,16 @@ private:
     /// equivalent to the `BitSet` overloads but bypass per-CCP allocations entirely.
     void initDPsubScratch();
     std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
+
+    /// EEL variant: decide validity and the resulting (kind, strictness) using the per-operator
+    /// TES descriptors in `dpsub_data.eel_operators` (einbaubar test with orientation), which
+    /// supports semi/anti reordering. Returns nullopt to reject the split.
+    std::optional<std::pair<JoinKind, JoinStrictness>> isValidJoinOrderMaskEEL(UInt32 left_mask, UInt32 right_mask) const;
+
+    /// Dispatch used by the DPsub acceptor: routes to the EEL per-operator check when the EEL
+    /// conflict detector is enabled, otherwise to the per-relation `isValidJoinOrderMask` (with
+    /// strictness fixed to All, its only supported case).
+    std::optional<std::pair<JoinKind, JoinStrictness>> resolveJoinMask(UInt32 left_mask, UInt32 right_mask) const;
     /// Returns the connecting (and, for two-relation joins, the early non-connecting) predicates,
     /// reusing an internal scratch buffer that is overwritten on every call.
     const std::vector<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
@@ -422,6 +434,12 @@ private:
         std::vector<UInt64> class_visited;        /// generation stamp per equivalence class
         UInt64 equiv_generation = 0;              /// bumped on each computeSelectivityMask call
         std::vector<JoinActionRef *> applicable_scratch; /// reused output of collectJoinEdgesMask
+
+        /// Per-operator EEL descriptors, populated in `initDPsubScratch` only when the EEL
+        /// conflict detector is enabled. When non-empty, `isValidJoinOrderMaskEEL` uses these
+        /// (per-operator TES/einbaubar) instead of the per-relation `restriction_by_rel`, which
+        /// lets non-commutative semi/anti joins be reordered.
+        std::vector<EelOperator> eel_operators;
     };
     DPsubMaskData<UInt32> dpsub_data;
 
@@ -452,6 +470,12 @@ private:
     const UInt64 max_searched_plans;
 
     const std::vector<JoinOrderAlgorithm> enabled_algorithms;
+
+    /// When true, `initDPsubScratch` builds the DPsub outer-join restrictions from the EEL
+    /// conflict detector (see eelConflictDetector.h) instead of `query_graph.join_kinds`.
+    /// Affects only DPsub.
+    const bool use_eel_conflict_detector = false;
+
     LoggerPtr log = getLogger("JoinOrderOptimizer");
 
     QueryStatusPtr query_status;
@@ -744,16 +768,34 @@ void JoinOrderOptimizer::initDPsubScratch()
         }
     }
 
-    /// Outer-join restrictions: index by the null-supplying relation
+    /// Outer-join reordering constraints. Two mutually exclusive representations:
+    ///  - default: per-relation ON-clause restrictions from `query_graph.join_kinds`, consumed by
+    ///    `isValidJoinOrderMask`. Handles inner + outer joins only.
+    ///  - EEL enabled: per-operator TES descriptors from the EEL conflict detector, consumed by
+    ///    `isValidJoinOrderMaskEEL`. Handles inner/outer *and* semi/anti joins, with orientation.
     dpsub_data.restriction_by_rel.assign(num_relations, {});
-    for (const auto & [rel, restriction] : query_graph.join_kinds)
+    dpsub_data.eel_operators.clear();
+    if (use_eel_conflict_detector)
     {
-        if (rel >= num_relations)
-            continue;
-        auto & native = dpsub_data.restriction_by_rel[rel];
-        native.required = toMask(restriction.first);
-        native.kind = restriction.second;
-        native.present = true;
+        std::vector<EelJoinOpMask> ops;
+        ops.reserve(query_graph.eel_ops.size());
+        for (const auto & op : query_graph.eel_ops)
+            ops.push_back(EelJoinOpMask{toMask(op.left), toMask(op.right), toMask(op.nel), op.kind, op.strictness});
+
+        dpsub_data.eel_operators = computeEelOperators(ops, num_relations, log);
+        LOG_TRACE(log, "DPsub: using EEL conflict detector over {} captured join operators", dpsub_data.eel_operators.size());
+    }
+    else
+    {
+        for (const auto & [rel, restriction] : query_graph.join_kinds)
+        {
+            if (rel >= num_relations)
+                continue;
+            auto & native = dpsub_data.restriction_by_rel[rel];
+            native.required = toMask(restriction.first);
+            native.kind = restriction.second;
+            native.present = true;
+        }
     }
 
     /// Column-equivalence classes: build a per-relation incidence list so selectivity only
@@ -819,6 +861,71 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrderMask(UInt32 left_mas
 
     /// Conflicting outer-join constraints, the order is not possible
     return {};
+}
+
+std::optional<std::pair<JoinKind, JoinStrictness>>
+JoinOrderOptimizer::isValidJoinOrderMaskEEL(UInt32 left_mask, UInt32 right_mask) const
+{
+    /// Per-operator EEL validity. The enumerator only proposes connected, non-overlapping
+    /// (left_mask, right_mask) pairs. A split is valid iff at most one non-freely-reorderable
+    /// operator (outer/semi/anti/full) "straddles" it, and that operator is `einbaubar` in some
+    /// orientation. Freely-reorderable inner joins impose no constraint here; connectivity and
+    /// predicate placement are handled by `collectJoinEdgesMask`.
+    const UInt32 combined = left_mask | right_mask;
+
+    const EelOperator * boundary = nullptr;
+    for (const auto & op : dpsub_data.eel_operators)
+    {
+        if (op.freely_reorderable)
+            continue;
+
+        const bool in_left = (op.relations & left_mask) != 0;
+        const bool in_right = (op.relations & right_mask) != 0;
+        if (!in_left || !in_right)
+            continue; /// entirely on one side -> resolved below this join, or not here at all
+
+        /// The operator's relations straddle this split, so it must be the operator applied at
+        /// this join. Two straddling non-reorderable operators cannot both sit at one binary
+        /// node -> this ordering is impossible.
+        if (boundary)
+            return std::nullopt;
+        boundary = &op;
+    }
+
+    /// No outer/semi/anti operator straddles -> a plain inner join (connectivity already checked).
+    if (!boundary)
+        return std::make_pair(JoinKind::Inner, JoinStrictness::All);
+
+    /// All of the boundary operator's relations must be present in this subset; otherwise it
+    /// cannot be applied here and joining across it is illegal.
+    if (boundary->relations & ~combined)
+        return std::nullopt;
+
+    auto subset_of = [](UInt32 a, UInt32 b) { return (a & ~b) == 0; };
+
+    /// einbaubar: forward orientation keeps the operator's left/right inputs as (left_mask,
+    /// right_mask); the mirrored orientation swaps them (only satisfiable for a commutative
+    /// operator, or when the required sides genuinely fit the other way). `reverseJoinKind`
+    /// flips Left<->Right (and Full/Inner unchanged), which for semi/anti flips the preserved
+    /// side accordingly while `buildPhysicalPlan` keeps the child order.
+    if (subset_of(boundary->tes_left, left_mask) && subset_of(boundary->tes_right, right_mask))
+        return std::make_pair(boundary->kind, boundary->strictness);
+    if (subset_of(boundary->tes_left, right_mask) && subset_of(boundary->tes_right, left_mask))
+        return std::make_pair(reverseJoinKind(boundary->kind), boundary->strictness);
+
+    /// The operator straddles the split but neither orientation satisfies its TES -> invalid.
+    return std::nullopt;
+}
+
+std::optional<std::pair<JoinKind, JoinStrictness>>
+JoinOrderOptimizer::resolveJoinMask(UInt32 left_mask, UInt32 right_mask) const
+{
+    if (use_eel_conflict_detector)
+        return isValidJoinOrderMaskEEL(left_mask, right_mask);
+
+    if (auto kind = isValidJoinOrderMask(left_mask, right_mask))
+        return std::make_pair(*kind, JoinStrictness::All);
+    return std::nullopt;
 }
 
 const std::vector<JoinActionRef *> & JoinOrderOptimizer::collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask)
@@ -1044,10 +1151,14 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
     if (!entry.left && !entry.right)
         return std::make_shared<DPJoinEntry>(std::countr_zero(S), entry.estimated_rows, entry.column_stats);
 
-    JoinOperator join_operator(entry.kind, JoinStrictness::All, JoinLocality::Unspecified);
+    /// `entry.strictness` is All for every DP entry except semi/anti joins admitted by the EEL
+    /// conflict detector, which must keep their strictness in the reordered tree.
+    JoinOperator join_operator(entry.kind, entry.strictness, JoinLocality::Unspecified);
     /// A filter predicate applied at an outer join step must not go to the ON clause, where it
     /// would affect matching instead of filtering and let non-matching rows of the preserved side
     /// survive NULL-extended. Apply it after the join instead (see `solveGreedy`).
+    /// Semi/anti joins keep their ON predicates in the ON clause (they are in
+    /// `outer_join_conditions`), so this only diverts genuine post-join filters.
     bool is_inner_step = isInner(entry.kind) || isCrossOrComma(entry.kind);
     for (const auto * e : entry.edges)
     {
@@ -1098,6 +1209,9 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
         double cost{.0};
         double sel{.0};
         JoinKind kind{JoinKind::Inner};
+        /// Set by the acceptor; carried into the physical plan. Non-All only when the EEL
+        /// conflict detector admits a semi/anti join into the reordered tree.
+        JoinStrictness strictness{JoinStrictness::All};
         std::vector<JoinActionRef*> edges; // needed for physical plan generation
     };
     using DPTable = DPTable<DPEntry, Bitvector>;
@@ -1796,7 +1910,8 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
     JoinOrderOptimizer reorderer(
         std::move(query_graph),
         optimization_settings.query_plan_optimize_join_order_algorithm,
-        optimization_settings.query_plan_optimize_join_order_max_searched_plans);
+        optimization_settings.query_plan_optimize_join_order_max_searched_plans,
+        optimization_settings.query_plan_optimize_join_order_use_eel_conflict_detector);
     auto best_plan = reorderer.solve();
     if (!best_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");

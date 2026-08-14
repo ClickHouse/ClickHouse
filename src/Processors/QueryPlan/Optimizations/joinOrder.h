@@ -78,11 +78,33 @@ struct RelationStats
     RowEstimateSource source = RowEstimateSource::NoSource;
 };
 
+/// One binary join operator captured verbatim from the original (pre-flattening) join tree.
+/// Used only by the optional EEL conflict detector for DPsub (see eelConflictDetector.h).
+///   - `left` / `right`: the relation sets of the operator's two input subtrees;
+///   - `nel`: the "null-extension list" -- the relations referenced by the operator's ON clause;
+///   - `kind`: the operator's join kind.
+/// Relation ids are in the final (global) QueryGraph numbering.
+struct EelJoinOp
+{
+    BitSet left;
+    BitSet right;
+    BitSet nel;
+    JoinKind kind = JoinKind::Inner;
+    /// Strictness distinguishes plain joins (All) from semi/anti joins, which the EEL detector
+    /// models as distinct operators (LSJOIN/LAJOIN) with their own conflict rules.
+    JoinStrictness strictness = JoinStrictness::All;
+};
+
 struct QueryGraph
 {
     std::vector<RelationStats> relation_stats;
 
     std::vector<JoinActionRef> edges;
+
+    /// Operators of the original join tree, in tree (not enumeration) order. Populated during
+    /// `buildQueryGraph` and consumed by the EEL conflict detector when it is enabled; empty
+    /// otherwise. See `EelJoinOp`.
+    std::vector<EelJoinOp> eel_ops;
 
     /// Restriction for a null-supplying relation of an outer join.
     /// Maps (relation id) -> (set of relations referenced by the outer join's ON clause, join kind).
