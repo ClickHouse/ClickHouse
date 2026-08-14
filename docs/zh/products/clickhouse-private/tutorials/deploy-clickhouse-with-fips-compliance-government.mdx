@@ -45,9 +45,7 @@ description: "本教程介绍如何在 AWS 上部署符合 FIPS 140-2 规范的 
 ***
 
 <Steps>
-  <Step>
-    ## 阶段 1：创建 FIPS 证书
-
+  <Step title="阶段 1：创建 FIPS 证书" id="phase-1-create-fips-certificates">
     FIPS 合规要求在启用 FIPS 的环境中，使用经 FIPS 认可的算法生成 TLS 证书。你需要三组证书：
 
     | 证书     | 私钥           | 公钥           | 需要的 SAN                                                                                                                                         |
@@ -65,9 +63,7 @@ description: "本教程介绍如何在 AWS 上部署符合 FIPS 140-2 规范的 
     ***
   </Step>
 
-  <Step>
-    ## 第 2 阶段：安装 Kubernetes 前置条件
-
+  <Step title="第 2 阶段：安装 Kubernetes 前置条件" id="phase-2-install-kubernetes-prerequisites">
     ### 安装 VolumeSnapshot CRD 资源定义
 
     ```bash
@@ -96,9 +92,7 @@ description: "本教程介绍如何在 AWS 上部署符合 FIPS 140-2 规范的 
     ***
   </Step>
 
-  <Step>
-    ## 第 3 阶段：安装 Operator
-
+  <Step title="第 3 阶段：安装 Operator" id="phase-3-install-operator">
     请注意，FIPS ECR 端点的格式为：`0000000000.dkr-ecr-fips.us-west-2.on.aws` (而不是标准的 `.amazonaws.com` 端点) 。
 
     ```text
@@ -130,9 +124,7 @@ description: "本教程介绍如何在 AWS 上部署符合 FIPS 140-2 规范的 
     ***
   </Step>
 
-  <Step>
-    ## 阶段 4：创建证书 Secret
-
+  <Step title="阶段 4：创建证书 Secret" id="phase-4-create-certificate-secrets">
     这些 Secret 必须创建在运行 ClickHouse 集群的同一 Kubernetes 命名空间中。如果你的集群名称是 `default-xx-01`，则命名空间应为 `ns-default-xx-01`。
 
     请先确保该命名空间存在，然后再创建这些 Secret。**请勿更改 Secret 名称或键名。**
@@ -159,9 +151,7 @@ description: "本教程介绍如何在 AWS 上部署符合 FIPS 140-2 规范的 
     ***
   </Step>
 
-  <Step>
-    ## 阶段 5：部署 ClickHouse 集群
-
+  <Step title="阶段 5：部署 ClickHouse 集群" id="phase-5-deploy-clickhouse-cluster">
     请为 ECR 和 S3 使用正确的 FIPS 版本端点。FIPS 端点信息可在 [https://aws.amazon.com/compliance/fips/](https://aws.amazon.com/compliance/fips/) 中查阅。
 
     ```text expandable
@@ -264,9 +254,7 @@ description: "本教程介绍如何在 AWS 上部署符合 FIPS 140-2 规范的 
     ***
   </Step>
 
-  <Step>
-    ## 阶段 6：验证安装
-
+  <Step title="阶段 6：验证安装" id="phase-6-verify-installation">
     ### 在 TLS 端口上执行端口转发
 
     启用 FIPS 模式时，ClickHouse 使用 **9440** 端口进行 TLS 连接，而不是标准的 9000 端口。

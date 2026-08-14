@@ -16,43 +16,35 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
     O guia a seguir pressupõe que você concluiu o [Guia de Introdução ao Managed ClickStack](/pt-BR/clickstack/deployment/managed) e tem as [credenciais de conexão anotadas](/pt-BR/clickstack/getting-started/managed#next-steps).
 
     <Steps>
-      <Step>
-        ### Selecione seu serviço
-
+      <Step title="Selecione seu serviço" id="select-your-service-managed">
         Selecione o serviço com Managed ClickStack na página inicial do ClickHouse Cloud.
 
         <Image img="/images/clickstack/select_service.webp" alt="Selecionar serviço" size="lg" />
       </Step>
 
-      <Step>
-        ### Acesse a ClickStack UI (HyperDX)
-
+      <Step title="Acesse a ClickStack UI (HyperDX)" id="navigate-to-the-hyperdx-ui-managed">
         Selecione `ClickStack` no menu à esquerda para acessar a ClickStack UI, onde sua autenticação será feita automaticamente.
 
         <Image img="/images/use-cases/observability/hyperdx.webp" alt="ClickStack UI" size="lg" />
       </Step>
 
-      <Step>
-        ### Baixe os dados de exemplo
-
-        Para carregar dados de exemplo na UI, baixe o arquivo a seguir:
+      <Step title="Baixe os dados de exemplo" id="download-sample-data-managed">
+        Para preencher a UI com dados de exemplo, baixe o arquivo a seguir:
 
         [Dados de exemplo](https://storage.googleapis.com/hyperdx/sample.tar.gz)
 
         ```shell
         # curl
         curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
-        # ou
+        # or
         # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
         ```
 
-        Este arquivo contém logs, métricas e rastreamentos de exemplo do nosso [demo público do OpenTelemetry](https://github.com/ClickHouse/opentelemetry-demo) - uma loja virtual simples com microsserviços. Copie este arquivo para um diretório de sua escolha.
+        Este arquivo contém logs, métricas e traces de exemplo da nossa [demo pública do OpenTelemetry](https://github.com/ClickHouse/opentelemetry-demo) — uma loja virtual simples com microsserviços. Copie este arquivo para um diretório de sua escolha.
       </Step>
 
-      <Step>
-        ### Carregar dados de exemplo
-
-        Para carregar esses dados, basta enviá-los para o endpoint HTTP do OTel collector implantado.
+      <Step title="Carregar dados de exemplo" id="load-sample-data-managed">
+        Para carregar esses dados, basta enviá-los ao endpoint HTTP do coletor OpenTelemetry (OTel) implantado.
 
         Execute o comando a seguir para enviar os dados ao OTel collector:
 
@@ -69,7 +61,7 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
         done
         ```
 
-        Isso simula fontes OTLP de logs, traces e métricas enviando dados para o OTel collector. Em produção, essas fontes podem ser clientes de diferentes linguagens ou até mesmo outros OTel collectors.
+        Isso simula fontes OTLP de logs, traces e metrics enviando dados para o OTel collector. Em produção, essas fontes podem ser clientes para linguagens específicas ou até mesmo outros OTel collectors.
 
         Ao voltar para a visualização `Busca`, você deverá ver que os dados começaram a carregar (ajuste o período para `Last 1 hour` se os dados não aparecerem):
 
@@ -78,9 +70,7 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
         O carregamento dos dados levará alguns minutos. Aguarde a conclusão do carregamento antes de prosseguir para as próximas etapas.
       </Step>
 
-      <Step>
-        ### Explorar sessões
-
+      <Step title="Explorar sessões" id="explore-sessions-managed">
         Suponha que tenhamos relatos de que nossos usuários estão enfrentando problemas ao pagar por produtos. Podemos visualizar a experiência deles usando os recursos de replay de sessão do HyperDX.
 
         Selecione `Client Sessions` no menu à esquerda.
@@ -108,9 +98,7 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
         Selecione esse erro `500`. Nem `Overview` nem `Column Values` indicam a origem do problema, além do fato de que o erro é inesperado, resultando em um `Internal Error`.
       </Step>
 
-      <Step>
-        ### Explorar traces
-
+      <Step title="Explore traces" id="explore-traces-managed">
         Navegue até a aba `Trace` para ver o trace distribuído completo.
 
         <Image img="/images/use-cases/observability/hyperdx-14.webp" alt="Trace da sessão" size="lg" />
@@ -123,16 +111,14 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
 
         <Image img="/images/use-cases/observability/hyperdx-16.webp" alt="Valores da coluna" size="lg" />
 
-        Ao rolar de volta para cima e retornar ao trace, podemos ver que os logs estão correlacionados com o span, graças à configuração anterior. Eles fornecem mais contexto.
+        Ao subir de volta no trace, podemos ver que os logs estão correlacionados com o span, graças à configuração anterior. Eles fornecem mais contexto.
 
         <Image img="/images/use-cases/observability/hyperdx-17.webp" alt="Log correlacionado" size="lg" />
 
-        Concluímos que um cache está ficando cheio no serviço de pagamento, o que está impedindo a conclusão dos pagamentos.
+        Identificamos que um cache está ficando cheio no serviço de pagamento, o que está impedindo a conclusão dos pagamentos.
       </Step>
 
-      <Step>
-        ### Explorar logs
-
+      <Step title="Explorar logs" id="explore-logs-managed">
         Para ver mais detalhes, podemos voltar para `Busca`:
 
         Selecione `Logs` nas fontes e aplique um filtro no serviço `payment`.
@@ -142,12 +128,10 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
         Podemos ver que, embora o problema seja recente, o número de pagamentos afetados é alto. Além disso, um cache relacionado aos pagamentos com Visa parece estar causando problemas.
       </Step>
 
-      <Step>
-        ### Métricas do gráfico
+      <Step title="Métricas do gráfico" id="chart-metrics-managed">
+        Embora um erro tenha sido claramente inserido no código, podemos usar métricas para confirmar o tamanho do cache. Navegue até a visualização `Chart Explorer`.
 
-        Embora um erro tenha sido claramente introduzido no código, podemos usar métricas para confirmar o tamanho do cache. Navegue até a visualização `Chart Explorer`.
-
-        Selecione `Metrics` como a fonte de dados. Complete o construtor de gráficos para plotar o `Maximum` de `visa_validation_cache.size (Gauge)` e pressione o botão `play`. O cache vinha claramente aumentando antes de atingir um tamanho máximo, após o que erros passaram a ser gerados.
+        Selecione `Metrics` como a fonte de dados. Complete o construtor de gráficos para plotar o `Maximum` de `visa_validation_cache.size (Gauge)` e pressione o botão play. O cache estava claramente aumentando até atingir um tamanho máximo, após o qual erros passaram a ser gerados.
 
         <Image img="/images/use-cases/observability/hyperdx-19.webp" alt="Métricas" size="lg" />
       </Step>
@@ -158,25 +142,19 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
     O exemplo a seguir pressupõe que você iniciou o Open Source ClickStack seguindo as [instruções para a imagem all-in-one](/pt-BR/clickstack/getting-started/oss) e se conectou à [instância local do ClickHouse](/pt-BR/clickstack/getting-started/oss#complete-connection-credentials).
 
     <Steps>
-      <Step>
-        ### Acesse a ClickStack UI (HyperDX)
-
+      <Step title="Acesse a ClickStack UI (HyperDX)" id="navigate-to-the-hyperdx-ui">
         Acesse [http://localhost:8080](http://localhost:8080) para abrir a ClickStack UI.
 
         <Image img="/images/use-cases/observability/hyperdx.webp" alt="ClickStack UI" size="lg" />
       </Step>
 
-      <Step>
-        ### Copie a API key de ingestão
-
+      <Step title="Copie a API key de ingestão" id="copy-ingestion-api-key">
         Acesse [`Team Settings`](http://localhost:8080/team) e copie a `API key de ingestão` da seção `API Keys`. Essa API key garante a segurança da ingestão de dados pelo coletor do OpenTelemetry.
 
         <Image img="/images/use-cases/observability/copy_api_key.webp" alt="Copiar API key" size="lg" />
       </Step>
 
-      <Step>
-        ### Baixe os dados de exemplo
-
+      <Step title="Baixe os dados de exemplo" id="download-sample-data">
         Para preencher a UI com dados de exemplo, baixe o arquivo a seguir:
 
         [Dados de exemplo](https://storage.googleapis.com/hyperdx/sample.tar.gz)
@@ -184,22 +162,20 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
         ```shell
         # curl
         curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
-        # ou
+        # or
         # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
         ```
 
-        Este arquivo contém logs, métricas e traces de exemplo da nossa [demo pública do OpenTelemetry](https://github.com/ClickHouse/opentelemetry-demo) — uma loja virtual simples com microsserviços. Copie este arquivo para um diretório de sua escolha.
+        Este arquivo contém logs, métricas e rastreamentos de exemplo do nosso [demo público do OpenTelemetry](https://github.com/ClickHouse/opentelemetry-demo) - uma loja virtual simples com microsserviços. Copie este arquivo para um diretório de sua escolha.
       </Step>
 
-      <Step>
-        ### Carregar dados de exemplo
-
+      <Step title="Carregar dados de exemplo" id="load-sample-data">
         Para carregar esses dados, basta enviá-los ao endpoint HTTP do coletor OpenTelemetry (OTel) implantado.
 
         Primeiro, exporte a chave de API copiada acima.
 
         ```shell
-        # exportar API key
+        # export API key
         export CLICKSTACK_API_KEY=<YOUR_INGESTION_API_KEY>
         ```
 
@@ -227,9 +203,7 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
         O carregamento dos dados levará alguns minutos. Aguarde a conclusão do carregamento antes de prosseguir para as próximas etapas.
       </Step>
 
-      <Step>
-        ### Explorar sessões
-
+      <Step title="Explorar sessões" id="explore-sessions">
         Suponha que tenhamos relatos de que nossos usuários estão enfrentando problemas para pagar por produtos. Podemos visualizar a experiência deles usando os recursos de session replay do HyperDX.
 
         Selecione [`Client Sessions`](http://localhost:8080/sessions?from=1747312320000\&to=1747312920000\&sessionSource=l1324572572) no menu à esquerda.
@@ -257,9 +231,7 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
         Selecione esse erro `500`. Nem o `Overview` nem `Column Values` indicam a origem do problema, além do fato de que o erro é inesperado, causando um `Internal Error`.
       </Step>
 
-      <Step>
-        ### Explore traces
-
+      <Step title="Explore traces" id="explore-traces">
         Navegue até a aba `Trace` para ver o trace distribuído completo.
 
         <Image img="/images/use-cases/observability/hyperdx-14.webp" alt="Trace da sessão" size="lg" />
@@ -279,9 +251,7 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
         Identificamos que um cache está ficando cheio no serviço de pagamento, o que está impedindo a conclusão dos pagamentos.
       </Step>
 
-      <Step>
-        ### Explorar logs
-
+      <Step title="Explorar logs" id="explore-logs">
         Para mais detalhes, podemos voltar para a visualização [`Busca`](http://localhost:8080/search):
 
         Selecione `Logs` nas fontes e aplique um filtro para o serviço `payment`.
@@ -291,9 +261,7 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
         Podemos ver que, embora o problema seja recente, o número de pagamentos afetados é alto. Além disso, um cache relacionado aos pagamentos com Visa parece estar causando problemas.
       </Step>
 
-      <Step>
-        ### Métricas do gráfico
-
+      <Step title="Métricas do gráfico" id="chart-metrics">
         Embora um erro tenha sido claramente inserido no código, podemos usar métricas para confirmar o tamanho do cache. Navegue até a visualização `Chart Explorer`.
 
         Selecione `Metrics` como a fonte de dados. Complete o construtor de gráficos para plotar o `Maximum` de `visa_validation_cache.size (Gauge)` e pressione o botão play. O cache estava claramente aumentando até atingir um tamanho máximo, após o qual erros passaram a ser gerados.

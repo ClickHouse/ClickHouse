@@ -180,16 +180,17 @@ SELECT L2Distance((1, 2), (2, 3))
 **语法**
 
 ```sql
-L2DistanceTransposed(vector1, vector2, p)
+L2DistanceTransposed(vector1, vector2, p[, used_dims])
 ```
 
 **别名**: `distanceL2Transposed`
 
 **参数**
 
-* `vectors` — 向量。[`QBit(T, UInt64)`](/zh/reference/data-types/qbit)
+* `vectors` — 向量。[`QBit(T, UInt64[, UInt64])`](/zh/reference/data-types/qbit)
 * `reference` — 参考向量。[`Array(T)`](/zh/reference/data-types/array)
 * `p` — 在距离计算中，每个向量元素使用的位数 (1 到元素位宽) 。量化级别控制精度与速度之间的权衡。使用较少的位可提升 I/O 和计算速度，但精度会降低；使用较多的位则可提高精度，但会牺牲性能。[`UInt`](/zh/reference/data-types/int-uint)
+* `used_dims` — 可选。要读取的前几个维度，用于在带步幅的 `QBit` 上执行降维 (Matryoshka) 搜索。必须是 QBit 步幅的倍数，且不能超过其维度；参考向量也必须至少包含这么多元素 (多出的尾部元素会被忽略) 。只会读取覆盖这些维度的步幅分组。[`UInt`](/zh/reference/data-types/int-uint)
 
 **返回值**
 
@@ -207,8 +208,43 @@ SELECT L2DistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 
 ```response title=Response
 ┌─L2DistanceTransposed([0, 1], [1, 2], 16)─┐
-│                       1.4142135623730951 │
+│                       1.3922918381215914 │
 └──────────────────────────────────────────┘
+```
+
+<div id="L2DistanceTransposedQuantized">
+  ## L2DistanceTransposedQuantized
+</div>
+
+引入版本：v26.7.0
+
+计算 `quantizeBFloat16ToInt8` 编码的 `QBit(Int8)` (在计算时即时反量化) 与参考向量之间的近似 [欧几里得距离](https://en.wikipedia.org/wiki/Euclidean_distance)。`Float` 参考 (查询) 向量会直接以 `Float32` 精度进行比较——这正是反量化后编码的重建精度，因此 `Float64` 查询会缩窄为 `Float32`，而 `BFloat16` 查询则会精确扩展到该精度 (非对称距离计算) ；`Array(Int8)` 参考向量本身会被视为 `quantizeBFloat16ToInt8` 编码，并反量化到其重建级别。请注意，`p` 只会截断已存储的 `QBit` 编码；`Array(Int8)` 参考向量本身是完整查询，并且始终以完整的 8 位精度重建，因此只有在 `p = 8` 时，这才是对称的“量化对量化”距离 (当 `p < 8` 时，只有存储侧会以较粗精度读取) 。它必须与量化前的值处于同一空间中 (即经过相同的随机旋转和缩放之后) ，这由调用方负责保证。余弦距离具有缩放不变性；点积和 L2 距离则不具有。
+
+**语法**
+
+```sql
+L2DistanceTransposedQuantized(vectors, reference, p[, used_dims])
+```
+
+**参数**
+
+* `vectors` — `quantizeBFloat16ToInt8` 编码的向量。[`QBit(Int8, UInt64[, UInt64])`](/zh/reference/data-types/qbit)
+* `reference` — 参考 (查询) 向量：`Float` 数组 (即查询向量，以 `Float32` 精度进行比较——`Float64` 查询会收窄为 `Float32`) ，或由 `quantizeBFloat16ToInt8` 编码组成并在使用时即时反量化的 `Array(Int8)`。[`Array(Float32)`](/zh/reference/data-types/array) 或 [`Array(Int8)`](/zh/reference/data-types/array)
+* `p` — 每个已存储 `QBit` 编码要使用的高位数 (1 到 8) 。位数越少，重建出的嵌入式量化器越粗糙，I/O 越快，但准确性会降低；8 位则为全精度重建。`p` 只会截断已存储的 `QBit`；`Array(Int8)` 参考向量始终按完整的 8 位精度重建。[`UInt`](/zh/reference/data-types/int-uint)
+* `used_dims` — 可选。要读取的前几个维度，用于在带步幅的 `QBit` 上执行降维 (Matryoshka) 搜索。必须是 QBit 步幅的倍数，且不能超过其维度；参考向量也必须至少包含这么多元素 (任何额外的尾随元素都会被忽略) 。只会读取覆盖这些维度的步幅分组。[`UInt`](/zh/reference/data-types/int-uint)
+
+**返回值**
+
+返回近似的 2-范数距离。始终为 `Float64`。[`Float64`](/zh/reference/data-types/float)
+
+**示例**
+
+**基本用法**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
+SELECT L2DistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 ```
 
 <div id="L2Norm">
@@ -646,23 +682,24 @@ SELECT cosineDistance((1, 2), (2, 3));
   ## cosineDistanceTransposed
 </div>
 
-Introduced in：v26.1.0
+引入版本：v26.1.0
 
 计算两个点之间的近似[余弦距离](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance) (向量的值即为坐标) 。返回值越小，向量越相似。
 
-**Syntax**
+**语法**
 
 ```sql
-cosineDistanceTransposed(vector1, vector2, p)
+cosineDistanceTransposed(vector1, vector2, p[, used_dims])
 ```
 
 **别名**: `distanceCosineTransposed`
 
 **参数**
 
-* `vectors` — 向量。[`QBit(T, UInt64)`](/zh/reference/data-types/qbit)
+* `vectors` — 向量。[`QBit(T, UInt64[, UInt64])`](/zh/reference/data-types/qbit)
 * `reference` — 参考向量。[`Array(T)`](/zh/reference/data-types/array)
 * `p` — 在距离计算中，每个向量元素使用的位数 (从 1 到元素位宽) 。量化级别控制精度与速度之间的权衡。使用较少的位可加快 I/O 和计算速度，但会降低准确性；使用较多的位可提高准确性，但会牺牲性能。[`UInt`](/zh/reference/data-types/int-uint)
+* `used_dims` — 可选。要读取的起始维度数量，用于在带步幅的 `QBit` 上进行降维 (Matryoshka) 搜索。必须是 QBit 步幅的倍数，且不超过其维度；参考向量也必须至少包含这么多个元素 (任何额外的尾随元素都会被忽略) 。仅读取覆盖这些维度的步幅分组。[`UInt`](/zh/reference/data-types/int-uint)
 
 **返回值**
 
@@ -680,8 +717,121 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 
 ```response title=Response
 ┌─cosineDistanceTransposed([0, 1], [1, 2], 16)─┐
-│                          0.10557281085638826 │
+│                          0.10557280905788935 │
 └──────────────────────────────────────────────┘
+```
+
+<div id="cosineDistanceTransposedQuantized">
+  ## cosineDistanceTransposedQuantized
+</div>
+
+引入版本：v26.7.0
+
+计算由 `quantizeBFloat16ToInt8` 编码构成的 `QBit(Int8)` (在计算过程中即时反量化) 与参考向量之间的近似[余弦距离](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance)。返回值越小，向量越相似。`Float` 参考 (查询) 向量会直接以 `Float32` 精度进行比较——这也是反量化编码的重建精度，因此 `Float64` 查询会被降为 `Float32`，而 `BFloat16` 查询则会被精确提升到该精度 (非对称距离计算) ；`Array(Int8)` 参考本身会被视为 `quantizeBFloat16ToInt8` 编码，并反量化到其重建级别。请注意，`p` 只会截断已存储的 `QBit` 编码；`Array(Int8)` 参考本身是完整查询，始终以完整 8 位精度重建，因此只有在 `p = 8` 时，这才是对称的量化对量化距离 (对于 `p < 8`，只有存储侧会以较低精度读取) 。它必须与量化前的值所在的空间一致 (即经过相同的随机旋转和缩放之后) ，这由调用方负责。余弦距离具有缩放不变性；点积和 L2 距离则不具备。
+
+**语法**
+
+```sql
+cosineDistanceTransposedQuantized(vectors, reference, p[, used_dims])
+```
+
+**参数**
+
+* `vectors` — `quantizeBFloat16ToInt8` 编码的向量。[`QBit(Int8, UInt64[, UInt64])`](/zh/reference/data-types/qbit)
+* `reference` — 参考 (查询) 向量：可以是 `Float` 数组 (查询会以 `Float32` 精度进行比较——`Float64` 查询会被收窄为 `Float32`) ，也可以是会在使用时即时反量化的 `quantizeBFloat16ToInt8` 编码 `Array(Int8)`。[`Array(Float32)`](/zh/reference/data-types/array) 或 [`Array(Int8)`](/zh/reference/data-types/array)
+* `p` — 每个已存储 `QBit` 编码使用的高位数 (1 到 8) 。位数越少，重建出的量化器越粗略，从而以精度降低为代价获得更快的 I/O；8 位表示全精度重建。`p` 只会截断已存储的 `QBit`；`Array(Int8)` 参考始终按完整 8 位精度重建。[`UInt`](/zh/reference/data-types/int-uint)
+* `used_dims` — 可选。要读取的前导维度数，用于在带步幅的 `QBit` 上执行降维 (Matryoshka) 搜索。该值必须是 QBit 步幅的倍数，且不能超过其维度；同时参考向量必须至少包含这么多个元素 (任何额外的尾随元素都会被忽略) 。只会读取覆盖这些维度的 步幅分组。[`UInt`](/zh/reference/data-types/int-uint)
+
+**返回值**
+
+返回近似余弦距离 (即一减去余弦相似度) 。始终返回 `Float64`。[`Float64`](/zh/reference/data-types/float)
+
+**示例**
+
+**基本用法**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
+SELECT cosineDistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
+```
+
+<div id="dotProductTransposed">
+  ## dotProductTransposed
+</div>
+
+引入版本：v26.7.0
+
+计算两个向量的近似[点积](https://en.wikipedia.org/wiki/Dot_product) (内积)  (向量的值即为坐标) 。与距离函数不同，这是一个相似度度量：返回值越大，向量越相似。
+
+**语法**
+
+```sql
+dotProductTransposed(vector1, vector2, p[, used_dims])
+```
+
+**别名**: `scalarProductTransposed`
+
+**参数**
+
+* `vectors` — 向量。[`QBit(T, UInt64[, UInt64])`](/zh/reference/data-types/qbit)
+* `reference` — 参考向量。[`Array(T)`](/zh/reference/data-types/array)
+* `p` — 在计算中，每个向量元素使用的位数 (从 1 到元素位宽) 。量化级别控制精度与速度之间的权衡。使用较少的位可加快 I/O 和计算速度，但会降低准确性；使用较多的位可提高准确性，但会牺牲性能。[`UInt`](/zh/reference/data-types/int-uint)
+* `used_dims` — 可选。要读取的前几个维度的数量，用于在带步幅的 `QBit` 上执行降维 (Matryoshka) 搜索。必须是 QBit 步幅 的倍数，且不能超过其维度；参考向量必须至少包含这么多个元素 (任何额外的尾部元素都会被忽略) 。只会读取覆盖这些维度的 步幅分组。[`UInt`](/zh/reference/data-types/int-uint)
+
+**返回值**
+
+返回两个向量的近似点积。始终返回 `Float64`。[`Float64`](/zh/reference/data-types/float)
+
+**示例**
+
+**基本用法**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, [0, 1]);
+SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
+```
+
+```response title=Response
+┌─dotProductTransposed([0, 1], [1, 2], 16)─┐
+│                                   2.0625 │
+└──────────────────────────────────────────┘
+```
+
+<div id="dotProductTransposedQuantized">
+  ## dotProductTransposedQuantized
+</div>
+
+引入版本：v26.7.0
+
+计算 `quantizeBFloat16ToInt8` 编码的 `QBit(Int8)` (即时反量化) 与参考向量之间的近似[点积](https://en.wikipedia.org/wiki/Dot_product) (内积) 。这是一个相似度度量：返回值越大，向量越相似。`Float` 参考 (查询) 向量会直接以 `Float32` 精度进行比较——这也是反量化编码的重建精度，因此 `Float64` 查询会缩窄为 `Float32`，而 `BFloat16` 查询则会精确扩展到该精度 (非对称距离计算) ；`Array(Int8)` 参考向量本身会被视为 `quantizeBFloat16ToInt8` 编码，并反量化到其重建级别。请注意，`p` 只会截断已存储的 `QBit` 编码；`Array(Int8)` 参考向量是完整查询，始终会以完整的 8 位精度重建，因此只有在 `p = 8` 时，这才是对称的量化对量化距离 (当 `p < 8` 时，只有存储侧会以较粗的精度读取) 。它必须与量化前的值处于同一空间中 (即经过相同的随机旋转和缩放之后) ，这一点由调用方负责。余弦距离具有缩放不变性；点积和 L2 距离则不具备这一性质。
+
+**语法**
+
+```sql
+dotProductTransposedQuantized(vectors, reference, p[, used_dims])
+```
+
+**参数**
+
+* `vectors` — `quantizeBFloat16ToInt8` 编码的向量。[`QBit(Int8, UInt64[, UInt64])`](/zh/reference/data-types/qbit)
+* `reference` — 参考 (查询) 向量：`Float` 数组 (查询会以 `Float32` 精度进行比较——`Float64` 查询会被收窄为 `Float32`)，或 `quantizeBFloat16ToInt8` 编码的 `Array(Int8)`，并在运行时即时反量化。[`Array(Float32)`](/zh/reference/data-types/array) 或 [`Array(Int8)`](/zh/reference/data-types/array)
+* `p` — 每个已存储 `QBit` 编码中要使用的高位位数 (1 到 8)。位数越少，重建出的嵌入式量化器越粗糙，可获得更快的 I/O，但准确性会降低；8 位则为全精度重建。`p` 只会截断已存储的 `QBit`；`Array(Int8)` 参考向量始终以完整的 8 位精度重建。[`UInt`](/zh/reference/data-types/int-uint)
+* `used_dims` — 可选。要读取的前几个维度的数量，用于在带步幅的 `QBit` 上执行降维 (Matryoshka) 搜索。必须是 QBit 步幅 的倍数，且不能超过其维度；参考向量也必须至少包含这么多个元素 (任何额外的尾部元素都会被忽略)。只会读取覆盖这些维度的 步幅分组。[`UInt`](/zh/reference/data-types/int-uint)
+
+**返回值**
+
+返回两个向量的近似点积。始终返回 `Float64`。[`Float64`](/zh/reference/data-types/float)
+
+**示例**
+
+**基本用法**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
+SELECT dotProductTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 ```
 
 {/*AUTOGENERATED_END*/}

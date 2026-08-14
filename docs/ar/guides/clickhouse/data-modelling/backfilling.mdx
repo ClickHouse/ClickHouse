@@ -509,7 +509,7 @@ GROUP BY
   استخدمنا `pypi_downloads_per_day` هنا بصفته الجدول الهدف. ولمزيد من المتانة، يمكن للمستخدمين إنشاء جدول مكرّر، `pypi_downloads_per_day_v2`، واستخدامه بصفته الجدول الهدف للعرض، كما هو موضح في الأمثلة السابقة. وبعد اكتمال عملية insert، يمكن بعد ذلك نقل partitionات `pypi_downloads_per_day_v2` إلى `pypi_downloads_per_day.` ويتيح ذلك إمكانية recovery إذا فشلت عملية insert بسبب مشكلات في الذاكرة أو انقطاعات في server، أي يمكننا ببساطة تنفيذ TRUNCATE لـ `pypi_downloads_per_day_v2`، وضبط Settings، ثم إعادة المحاولة.
 </Note>
 
-ولملء هذا العرض المادي، نُدرج ببساطة البيانات ذات الصلة اللازمة لإجراء backfill في `pypi_v2` من `pypi.`
+ولملء هذا العرض المادي، نُدرج ببساطة البيانات ذات الصلة اللازمة لإجراء استكمال البيانات التاريخية في `pypi_v2` من `pypi.`
 
 ```sql
 INSERT INTO pypi_v2 SELECT timestamp, project FROM pypi WHERE timestamp < '2024-12-17 09:00:00'

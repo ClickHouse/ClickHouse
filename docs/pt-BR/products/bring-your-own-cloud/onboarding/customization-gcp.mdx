@@ -16,9 +16,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 Se preferir usar uma VPC existente para implantar o ClickHouse BYOC, em vez de permitir que o ClickHouse Cloud provisione uma nova VPC, siga as etapas abaixo. Essa abordagem oferece maior controle sobre a configuração da rede e permite integrar o ClickHouse BYOC à infraestrutura de rede existente.
 
 <Steps>
-  <Step>
-    ### Configure a VPC existente
-
+  <Step title="Configure a VPC existente" id="configure-existing-vpc">
     1. Aloque pelo menos 1 sub-rede privada em uma [região compatível com o ClickHouse BYOC](/pt-BR/products/cloud/reference/supported-regions) para o cluster Kubernetes (GKE) do ClickHouse. Garanta que a sub-rede tenha um intervalo CIDR mínimo de `/24` (por exemplo, 10.0.0.0/24) para fornecer endereços IP suficientes para os nós do cluster GKE.
     2. Dentro da sub-rede privada, aloque pelo menos 1 intervalo IPv4 secundário que será usado pelos pods do cluster GKE. O intervalo secundário deve ser de pelo menos `/23` para fornecer endereços IP suficientes para os pods do cluster GKE.
     3. Ative o **Private Google Access** na sub-rede. Isso permite que os nós do GKE acessem APIs e serviços do Google sem precisar de endereços IP externos.
@@ -26,9 +24,7 @@ Se preferir usar uma VPC existente para implantar o ClickHouse BYOC, em vez de p
     <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="Detalhes da sub-rede BYOC no GCP mostrando intervalos IPv4 primário e secundário com o Private Google Access ativado" />
   </Step>
 
-  <Step>
-    ### Garanta a conectividade de rede
-
+  <Step title="Garanta a conectividade de rede" id="ensure-network-connectivity">
     **Cloud NAT Gateway**
     Garanta que um [gateway Cloud NAT](https://cloud.google.com/nat/docs/overview) esteja implantado na VPC. Os componentes do ClickHouse BYOC exigem acesso de saída à internet para se comunicar com o plano de controle do Tailscale. O Tailscale é usado para fornecer rede segura no modelo zero trust para operações privadas de gerenciamento. O gateway Cloud NAT fornece essa conectividade de saída para instâncias sem endereços IP externos.
 
@@ -36,9 +32,7 @@ Se preferir usar uma VPC existente para implantar o ClickHouse BYOC, em vez de p
     Garanta que sua VPC tenha resolução de DNS funcionando e que não bloqueie, interfira nem sobrescreva nomes DNS padrão. O ClickHouse BYOC depende de DNS para resolver os servidores de controle do Tailscale e os endpoints de serviço do ClickHouse. Se o DNS não estiver disponível ou estiver configurado incorretamente, os serviços do BYOC poderão falhar ao se conectar ou operar corretamente.
   </Step>
 
-  <Step>
-    ### Configure a infraestrutura do BYOC
-
+  <Step title="Configure a infraestrutura do BYOC" id="set-up-byoc-infrastructure">
     No console do ClickHouse Cloud, configure o seguinte ao configurar uma nova infraestrutura:
 
     1. Em **VPC configuration**, selecione **Use existing VPC**.

@@ -53,9 +53,7 @@ ClickHouse Cloud 可通过多种身份验证方法连接到 Azure Blob 存储。
 </Warning>
 
 <Steps>
-  <Step>
-    ### 查找您的 ClickHouse Cloud 出站 IP
-
+  <Step title="查找您的 ClickHouse Cloud 出站 IP" id="find-egress-ips">
     要配置基于 IP 的防火墙规则，您需要将 ClickHouse Cloud 所在区域的出站 IP 地址加入允许列表。
 
     运行以下命令，按区域获取出站和入站 IP 列表。
@@ -91,9 +89,7 @@ ClickHouse Cloud 可通过多种身份验证方法连接到 Azure Blob 存储。
     更多详情，请参阅 [“Cloud IP addresses”](/zh/products/cloud/guides/data-sources/cloud-endpoints-api)。
   </Step>
 
-  <Step>
-    ### 配置 Azure 存储防火墙
-
+  <Step title="配置 Azure 存储防火墙" id="configure-firewall">
     在 Azure 门户中，进入您的存储账户。
 
     1. 前往 **Networking** → **Firewalls and virtual networks**

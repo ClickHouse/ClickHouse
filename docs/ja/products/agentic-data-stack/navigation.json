@@ -1,0 +1,21 @@
+{
+  "groups": [
+    {
+      "group": "はじめに",
+      "pages": [
+        "ja/products/agentic-data-stack/overview",
+        "ja/products/agentic-data-stack/docker-setup"
+      ]
+    },
+    {
+      "group": "コンポーネント",
+      "pages": [
+        "ja/products/agentic-data-stack/components/librechat",
+        "ja/products/agentic-data-stack/components/mcp-server",
+        "ja/products/agentic-data-stack/components/langfuse"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-agentic-data-stack.svg",
+  "item": "Agentic Data Stack"
+}

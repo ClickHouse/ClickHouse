@@ -13,8 +13,9 @@ INSERT INTO test_nullable_tuple_basic VALUES ((1, 'a')), (NULL), ((3, 'c'));
 
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065.parquet', 'Parquet', 'c0 Nullable(Tuple(UInt32, String))') SELECT c0 FROM test_nullable_tuple_basic;
 
--- Parquet V3 native reader (not yet supported)
-SELECT c0 FROM file(currentDatabase() || '_04065.parquet', 'Parquet', 'c0 Nullable(Tuple(UInt32, String))'); -- { serverError TYPE_MISMATCH }
+-- Parquet V3 native reader: physically nullable struct (OPTIONAL group, all-REQUIRED subtree)
+-- read as Nullable(Tuple). The group null map is reconstructed from the leaves (issue #109605).
+SELECT c0 FROM file(currentDatabase() || '_04065.parquet', 'Parquet', 'c0 Nullable(Tuple(UInt32, String))');
 
 DROP TABLE test_nullable_tuple_basic;
 
@@ -25,10 +26,26 @@ INSERT INTO test_nullable_tuple_both VALUES ((1, 'a')), (NULL), ((NULL, 'c')), (
 
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_both.parquet', 'Parquet') SELECT c0 FROM test_nullable_tuple_both;
 
--- Parquet V3 native reader (not yet supported)
+-- Parquet V3 native reader: nullable element makes the subtree not all-REQUIRED, so the group
+-- null map cannot be separated from the element null map. Reject rather than lose data.
 SELECT c0 FROM file(currentDatabase() || '_04065_both.parquet', 'Parquet', 'c0 Nullable(Tuple(Nullable(UInt32), String))'); -- { serverError TYPE_MISMATCH }
 
 DROP TABLE test_nullable_tuple_both;
+
+-- Physically-nullable struct (all-REQUIRED leaves) read as Nullable(Tuple) with a leaf hint that
+-- materializes the first leaf as Nullable. decodePrimitiveColumn moves the shared group null map
+-- into the leaf's ColumnNullable, so the group null map must be preserved separately or the middle
+-- (struct-level NULL) row would be silently returned as a non-null tuple. Middle row must stay NULL.
+DROP TABLE IF EXISTS test_nullable_tuple_leaf_nullable;
+CREATE TABLE test_nullable_tuple_leaf_nullable (c0 Nullable(Tuple(UInt32, String))) ENGINE = Memory;
+INSERT INTO test_nullable_tuple_leaf_nullable VALUES ((1, 'a')), (NULL), ((3, 'c'));
+
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_leaf_nullable.parquet', 'Parquet', 'c0 Nullable(Tuple(UInt32, String))') SELECT c0 FROM test_nullable_tuple_leaf_nullable;
+
+SELECT c0 FROM file(currentDatabase() || '_04065_leaf_nullable.parquet', 'Parquet', 'c0 Nullable(Tuple(Nullable(UInt32), String))');
+SELECT c0 IS NULL FROM file(currentDatabase() || '_04065_leaf_nullable.parquet', 'Parquet', 'c0 Nullable(Tuple(Nullable(UInt32), String))');
+
+DROP TABLE test_nullable_tuple_leaf_nullable;
 
 -- Non-nullable struct with nullable elements
 DROP TABLE IF EXISTS test_nullable_tuple_elem;
@@ -61,8 +78,8 @@ INSERT INTO test_nullable_tuple_named VALUES ((1, 'x')), (NULL), ((3, 'z'));
 
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_named.parquet', 'Parquet', 'c0 Nullable(Tuple(a UInt32, b String))') SELECT c0 FROM test_nullable_tuple_named;
 
--- Parquet V3 native reader named (not yet supported)
-SELECT c0 FROM file(currentDatabase() || '_04065_named.parquet', 'Parquet', 'c0 Nullable(Tuple(a UInt32, b String))'); -- { serverError TYPE_MISMATCH }
+-- Parquet V3 native reader named: physically nullable struct read as Nullable(Tuple)
+SELECT c0 FROM file(currentDatabase() || '_04065_named.parquet', 'Parquet', 'c0 Nullable(Tuple(a UInt32, b String))');
 
 DROP TABLE test_nullable_tuple_named;
 
@@ -73,8 +90,8 @@ INSERT INTO test_nullable_tuple_allnull VALUES (NULL), (NULL), (NULL);
 
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_allnull.parquet', 'Parquet', 'c0 Nullable(Tuple(UInt32, String))') SELECT c0 FROM test_nullable_tuple_allnull;
 
--- Parquet V3 native reader all null (not yet supported)
-SELECT c0 FROM file(currentDatabase() || '_04065_allnull.parquet', 'Parquet', 'c0 Nullable(Tuple(UInt32, String))'); -- { serverError TYPE_MISMATCH }
+-- Parquet V3 native reader all null: every row is a struct-level NULL
+SELECT c0 FROM file(currentDatabase() || '_04065_allnull.parquet', 'Parquet', 'c0 Nullable(Tuple(UInt32, String))');
 
 DROP TABLE test_nullable_tuple_allnull;
 
@@ -85,8 +102,8 @@ INSERT INTO test_nullable_tuple_nonull VALUES ((1, 'a')), ((2, 'b')), ((3, 'c'))
 
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_nonull.parquet', 'Parquet', 'c0 Nullable(Tuple(UInt32, String))') SELECT c0 FROM test_nullable_tuple_nonull;
 
--- Parquet V3 native reader no null (not yet supported)
-SELECT c0 FROM file(currentDatabase() || '_04065_nonull.parquet', 'Parquet', 'c0 Nullable(Tuple(UInt32, String))'); -- { serverError TYPE_MISMATCH }
+-- Parquet V3 native reader no null: nullable struct type, zero actual struct-level NULLs
+SELECT c0 FROM file(currentDatabase() || '_04065_nonull.parquet', 'Parquet', 'c0 Nullable(Tuple(UInt32, String))');
 
 DROP TABLE test_nullable_tuple_nonull;
 
@@ -97,8 +114,8 @@ INSERT INTO test_nullable_tuple_single VALUES ((1,)), (NULL), ((3,));
 
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_single.parquet', 'Parquet', 'c0 Nullable(Tuple(UInt32))') SELECT c0 FROM test_nullable_tuple_single;
 
--- Parquet V3 native reader single (not yet supported)
-SELECT c0 FROM file(currentDatabase() || '_04065_single.parquet', 'Parquet', 'c0 Nullable(Tuple(UInt32))'); -- { serverError TYPE_MISMATCH }
+-- Parquet V3 native reader single: single-element physically nullable struct
+SELECT c0 FROM file(currentDatabase() || '_04065_single.parquet', 'Parquet', 'c0 Nullable(Tuple(UInt32))');
 
 DROP TABLE test_nullable_tuple_single;
 
@@ -109,7 +126,8 @@ INSERT INTO test_nullable_tuple_deep VALUES (((1, 'a'), 10)), (NULL), ((NULL, 20
 
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_deep.parquet', 'Parquet') SELECT c0 FROM test_nullable_tuple_deep;
 
--- Parquet V3 native reader deep nested (not yet supported)
+-- Parquet V3 native reader deep nested: inner Nullable(Tuple) is an OPTIONAL inner group, so the
+-- subtree is not all-REQUIRED. Reject rather than lose the inner struct nulls.
 SELECT c0 FROM file(currentDatabase() || '_04065_deep.parquet', 'Parquet', 'c0 Nullable(Tuple(Nullable(Tuple(UInt32, String)), UInt64))'); -- { serverError TYPE_MISMATCH }
 
 DROP TABLE test_nullable_tuple_deep;
@@ -121,7 +139,8 @@ INSERT INTO test_nullable_tuple_arr VALUES (([1, 2], 'a')), (NULL), (([3], 'c'))
 
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_arr.parquet', 'Parquet') SELECT c0 FROM test_nullable_tuple_arr;
 
--- Parquet V3 native reader array elem (not yet supported)
+-- Parquet V3 native reader array elem: the Array element adds a repetition level, so the subtree
+-- is not all-REQUIRED and the leaf null maps no longer equal the group null map. Reject.
 SELECT c0 FROM file(currentDatabase() || '_04065_arr.parquet', 'Parquet', 'c0 Nullable(Tuple(Array(UInt32), String))'); -- { serverError TYPE_MISMATCH }
 
 DROP TABLE test_nullable_tuple_arr;
@@ -133,8 +152,8 @@ INSERT INTO test_nullable_tuple_multi VALUES ((1, 'a'), (1.5)), (NULL, (2.5)), (
 
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_multi.parquet', 'Parquet') SELECT c0, c1 FROM test_nullable_tuple_multi;
 
--- Parquet V3 native reader multi col (not yet supported)
-SELECT c0, c1 FROM file(currentDatabase() || '_04065_multi.parquet', 'Parquet', 'c0 Nullable(Tuple(UInt32, String)), c1 Nullable(Tuple(Float64))'); -- { serverError TYPE_MISMATCH }
+-- Parquet V3 native reader multi col: two independent physically nullable structs
+SELECT c0, c1 FROM file(currentDatabase() || '_04065_multi.parquet', 'Parquet', 'c0 Nullable(Tuple(UInt32, String)), c1 Nullable(Tuple(Float64))');
 
 DROP TABLE test_nullable_tuple_multi;
 
@@ -154,6 +173,18 @@ SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04065_mismatch2.parqu
 SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04065_mismatch2.parquet', 'Parquet', 'c0 Nullable(Tuple(`2` String, `1` UInt32))');
 
 DROP TABLE test_nullable_tuple_mismatch2;
+
+-- Physically nullable outer struct with a REQUIRED nested struct (all-REQUIRED subtree): the outer
+-- group's def-level null map is reconstructed and the nested tuple is preserved (issue #109605).
+DROP TABLE IF EXISTS test_nullable_tuple_nested_required;
+CREATE TABLE test_nullable_tuple_nested_required (c0 Nullable(Tuple(inner Tuple(a UInt32, b String), c UInt64))) ENGINE = Memory;
+INSERT INTO test_nullable_tuple_nested_required VALUES (((1, 'a'), 10)), (NULL), (((3, 'c'), 30));
+
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_nested_required.parquet', 'Parquet') SELECT c0 FROM test_nullable_tuple_nested_required;
+
+SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04065_nested_required.parquet', 'Parquet', 'c0 Nullable(Tuple(inner Tuple(a UInt32, b String), c UInt64))') ORDER BY c0.c;
+
+DROP TABLE test_nullable_tuple_nested_required;
 
 -- Schema inference: inferred type with toTypeName
 DROP TABLE IF EXISTS test_nullable_tuple_describe;
@@ -187,8 +218,10 @@ INSERT INTO test_nullable_tuple_arr_unnamed VALUES ([(1, 'a'), NULL, (3, 'c')]);
 
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_arr_unnamed.parquet', 'Parquet') SELECT c0 FROM test_nullable_tuple_arr_unnamed;
 
--- Parquet V3 native reader unnamed (not yet supported)
-SELECT c0 FROM file(currentDatabase() || '_04065_arr_unnamed.parquet', 'Parquet', 'c0 Array(Nullable(Tuple(UInt32, String)))'); -- { serverError TYPE_MISMATCH }
+-- Parquet V3 native reader unnamed: Array(Nullable(Tuple)) with an all-REQUIRED tuple subtree. An
+-- array ancestor is not an optional struct-group ancestor (array nulls become empty arrays), so
+-- each leaf's null map is exactly the per-element tuple null map and the tuple is wrapped losslessly.
+SELECT c0 FROM file(currentDatabase() || '_04065_arr_unnamed.parquet', 'Parquet', 'c0 Array(Nullable(Tuple(UInt32, String)))');
 
 DROP TABLE test_nullable_tuple_arr_unnamed;
 
@@ -228,3 +261,17 @@ INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_opt_ancestor.parque
 SELECT `c0.inner` FROM file(currentDatabase() || '_04065_opt_ancestor.parquet', 'Parquet', '`c0.inner` Nullable(Tuple(a UInt32))'); -- { serverError TYPE_MISMATCH }
 
 DROP TABLE test_nullable_tuple_opt_ancestor;
+
+-- Physically nullable struct read as Nullable(Tuple) where every requested element is missing and
+-- synthesized (input_format_parquet_allow_missing_columns). With no physical leaf, the group null
+-- map cannot be reconstructed, so reject rather than fabricate an all-non-null map (would abort /
+-- read past the decoded-leaf array otherwise).
+DROP TABLE IF EXISTS test_nullable_tuple_all_missing;
+CREATE TABLE test_nullable_tuple_all_missing (c0 Nullable(Tuple(a UInt32, b UInt64))) ENGINE = Memory;
+INSERT INTO test_nullable_tuple_all_missing VALUES ((1, 10)), (NULL), ((3, 30));
+
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_all_missing.parquet', 'Parquet') SELECT c0 FROM test_nullable_tuple_all_missing;
+
+SELECT c0 FROM file(currentDatabase() || '_04065_all_missing.parquet', 'Parquet', 'c0 Nullable(Tuple(z String))') SETTINGS input_format_parquet_allow_missing_columns = 1; -- { serverError TYPE_MISMATCH }
+
+DROP TABLE test_nullable_tuple_all_missing;

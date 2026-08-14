@@ -771,6 +771,78 @@ SELECT polygonsIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535
 
 UInt8, false이면 0, true이면 1
 
+<div id="geometryintersectcartesian">
+  ## geometryIntersectCartesian
+</div>
+
+두 지오메트리가 교차하여 공통 Point, 선 또는 면적을 하나라도 공유하면 true를 반환합니다.
+
+[`polygonsIntersectCartesian`](#polygonsintersectcartesian)와 달리, 공통
+[`Geometry`](/ko/reference/data-types/geo#geometry) 타입을 포함한 모든 기하 데이터 타입
+(`Point`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`)을 허용하며, 두 인수의 타입은 서로 달라도 됩니다.
+
+좌표는 데카르트 좌표계를 사용합니다.
+
+<div id="example">
+  ### 예시
+</div>
+
+```sql
+SELECT geometryIntersectCartesian([(2., 2.), (2., 3.), (3., 3.), (3., 2.)]::Ring, [(1., 1.), (1., 4.), (4., 4.), (4., 1.)]::Ring)
+```
+
+```response
+1
+```
+
+<div id="input-parameters">
+  ### 입력 매개변수
+</div>
+
+임의의 기하 데이터 타입(또는 `Geometry`)에 해당하는 두 개의 도형입니다.
+
+<div id="returned-value">
+  ### 반환 값
+</div>
+
+UInt8, false의 경우 0, true의 경우 1
+
+<div id="geometryintersectspherical">
+  ## geometryIntersectSpherical
+</div>
+
+두 기하 도형이 교차하여 공통 Point, 선 또는 영역을 하나라도 공유하면 true를 반환합니다.
+
+[`polygonsIntersectSpherical`](#polygonsintersectspherical)와 달리 모든 기하 데이터 타입
+(`Point`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`)을 허용하며, 공통
+[`Geometry`](/ko/reference/data-types/geo#geometry) 타입도 포함합니다. 또한 두 인수는 서로 다른 타입일 수 있습니다.
+
+좌표는 이상적인 구 위에 있는 것으로 해석됩니다.
+
+<div id="example">
+  ### 예시
+</div>
+
+```sql
+SELECT geometryIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]]::MultiPolygon, (4.36, 50.85)::Point)
+```
+
+```response
+1
+```
+
+<div id="input-parameters">
+  ### 입력 매개변수
+</div>
+
+임의의 기하 데이터 타입(또는 `Geometry`)에 해당하는 지오메트리 2개입니다.
+
+<div id="returned-value">
+  ### 반환 값
+</div>
+
+UInt8, false이면 0, true이면 1
+
 <div id="polygonconvexhullcartesian">
   ## polygonConvexHullCartesian
 </div>

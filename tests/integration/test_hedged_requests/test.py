@@ -7,6 +7,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
@@ -432,28 +433,46 @@ def test_async_connect(started_cluster):
         Distributed('test_cluster_connect', 'default', 'test_hedged')"""
     )
 
-    NODES["node"].query(
-        "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=0, max_threads=1, max_distributed_connections=1"
-    )
-    check_changing_replica_events(2)
-    check_if_query_sending_was_not_suspended()
+    # The first replica of each shard in test_cluster_connect is an unreachable
+    # address (129.0.0.1 / 129.0.0.2). Silently drop the initiator's packets to
+    # them so the connect always stalls and is preempted by the
+    # hedged_connection_timeout_ms timer (the path HedgedRequestsChangeReplica
+    # counts). Otherwise, on slow builds the connect can fail fast (host
+    # unreachable), switching the replica through the connection-failure path,
+    # which does not increment that event.
+    with PartitionManager() as pm:
+        for unreachable_ip in ("129.0.0.1", "129.0.0.2"):
+            pm.add_rule(
+                {
+                    "instance": NODES["node"],
+                    "chain": "OUTPUT",
+                    "destination": unreachable_ip,
+                    "action": "DROP",
+                }
+            )
 
-    # Restart server to reset connection pool state
-    NODES["node"].restart_clickhouse()
-
-    attempt = 0
-    while attempt < 100:
         NODES["node"].query(
-            "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=1, max_threads=1, max_distributed_connections=1"
+            "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=0, max_threads=1, max_distributed_connections=1"
         )
-
         check_changing_replica_events(2)
-        if check_if_query_sending_was_suspended():
-            break
+        check_if_query_sending_was_not_suspended()
 
-        attempt += 1
+        # Restart server to reset connection pool state
+        NODES["node"].restart_clickhouse()
 
-    assert attempt < 100
+        attempt = 0
+        while attempt < 100:
+            NODES["node"].query(
+                "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=1, max_threads=1, max_distributed_connections=1"
+            )
+
+            check_changing_replica_events(2)
+            if check_if_query_sending_was_suspended():
+                break
+
+            attempt += 1
+
+        assert attempt < 100
 
     NODES["node"].query("DROP TABLE distributed_connect")
 

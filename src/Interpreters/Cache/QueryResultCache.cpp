@@ -88,6 +88,15 @@ struct HasNonDeterministicFunctionsMatcher
 
         if (const auto * function = node->as<ASTFunction>())
         {
+            /// The `eval` table function hides its real query inside an opaque string argument, so the
+            /// generated query cannot be inspected here. Treat it as non-deterministic (and, in
+            /// HasSystemTablesMatcher, as touching a system table) to keep such queries out of the cache,
+            /// e.g. `eval('SELECT now()')` must not be cached as if it were deterministic.
+            if (function->name == "eval")
+            {
+                data.has_non_deterministic_functions = true;
+                return;
+            }
             if (const auto func = FunctionFactory::instance().tryGet(function->name, data.context))
             {
                 if (!func->isDeterministic())
@@ -157,6 +166,13 @@ struct HasSystemTablesMatcher
         ///     [...]
         else if (const auto * function = node->as<ASTFunction>())
         {
+            /// See HasNonDeterministicFunctionsMatcher: the query behind `eval` is opaque here, so
+            /// conservatively assume it may read a system table (e.g. `eval('SELECT * FROM system.processes')`).
+            if (function->name == "eval")
+            {
+                data.has_system_tables = true;
+                return;
+            }
             if (function->name == "clusterAllReplicas")
             {
                 const ASTs & function_children = function->children;

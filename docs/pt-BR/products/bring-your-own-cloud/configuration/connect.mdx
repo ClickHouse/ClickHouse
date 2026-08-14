@@ -11,6 +11,24 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 Esta página descreve as diferentes formas de se conectar aos seus serviços do ClickHouse no BYOC. Você pode escolher entre balanceadores de carga públicos, balanceadores de carga privados ou endpoints do PrivateLink/Private Service Connect, com base nos seus requisitos de segurança e rede.
 
+<div id="connection-via">
+  ## Selecionando um caminho de conexão no console
+</div>
+
+Os detalhes de conexão de cada serviço BYOC estão disponíveis no console do ClickHouse Cloud: abra o serviço e clique em **Connect**.
+
+Para serviços BYOC, a caixa de diálogo **Connect** inclui um menu suspenso **Connection via**. Use-o para escolher como você acessa o serviço:
+
+* **balanceador de carga público** — o endpoint voltado para a internet.
+* **balanceador de carga privado** — o endpoint interno, acessado por VPC peering ou redes conectadas. Listado somente quando um [balanceador de carga privado](#private-load-balancer) está habilitado para sua infraestrutura.
+* **PrivateLink** (AWS) / **Private Service Connect** (GCP) — o hostname do endpoint privado do provedor de Cloud. Listado somente quando [PrivateLink ou Private Service Connect](#privatelink-or-private-service-connect) está habilitado.
+
+Selecionar um caminho atualiza o hostname em cada exemplo de conexão na caixa de diálogo — o comando HTTPS (`curl`), o native client, JDBC, MySQL e os snippets de client para linguagem (Python, Node.js, Java, Go e C#) — para que você possa copiar um comando pronto para uso para o caminho exato de que precisa, sem editar o hostname manualmente.
+
+O menu suspenso lista apenas os caminhos habilitados para sua infraestrutura, e a lista é atualizada toda vez que a caixa de diálogo é aberta — um balanceador de carga privado ou endpoint PrivateLink recém-habilitado aparece na próxima vez que você abrir **Connect**, sem atraso de propagação. Quando apenas um caminho está disponível, o menu suspenso é exibido desabilitado, com esse endpoint selecionado.
+
+<Image img="/images/cloud/reference/byoc-connect-via.png" size="lg" alt="Caixa de diálogo Connect com o menu suspenso Connection via expandido, mostrando os caminhos de balanceador de carga público, balanceador de carga privado e PrivateLink" background="black" />
+
 <div id="public-load-balancer">
   ## Balanceador de carga público
 </div>
@@ -75,8 +93,11 @@ Para se conectar usando o endpoint privado:
    * Para outras redes privadas: garanta que o roteamento esteja configurado para alcançar a VPC do BYOC
 3. **Obtenha seu endpoint privado**:
    O endpoint privado está disponível no console do ClickHouse Cloud, na seção &quot;Connect&quot; do seu serviço. O endpoint privado segue o mesmo formato do endpoint público, mas com o sufixo `-private` adicionado à parte do ID do serviço. Por exemplo:
+
    * **Endpoint público**: `sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
    * **Endpoint privado**: `sb9jmrq2ne-private.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
+
+   Em vez de montar manualmente o hostname com `-private`, selecione **Private load balancer** na lista suspensa **Connection via** na caixa de diálogo **Connect** para copiar diretamente o endpoint e os comandos de conexão prontos.
 
 <div id="public-ip-filtering">
   ### Filtragem por IP
@@ -120,6 +141,8 @@ O formato do endpoint do PrivateLink é semelhante ao do endpoint público, mas 
 
 * **Endpoint público**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
 * **Endpoint do PrivateLink**: `h5ju65kv87.vpce.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+
+Depois que o endpoint estiver configurado e incluído na lista de permissões, selecione **PrivateLink** (ou **Private Service Connect** no GCP) no menu suspenso **Connection via** da caixa de diálogo **Connect** para copiar diretamente os detalhes de conexão do endpoint privado.
 
 <div id="endpoint-id-allowlist">
   ### Lista de permissões de Endpoint ID
