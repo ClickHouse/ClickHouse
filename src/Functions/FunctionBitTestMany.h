@@ -33,7 +33,10 @@ public:
 
     String getSignatureString() const override
     {
-        return "(Integer, NativeUInt, ...) -> UInt8";
+        /// Both positions match the legacy checks exactly: `isInteger` for the value and
+        /// `isUInt` for every bit position, so wide integers are accepted here and rejected
+        /// later by the column dispatch, as they have always been.
+        return "(Integer, UInt, ...) -> UInt8";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
