@@ -6,10 +6,14 @@
 #include <Common/Socket.h>
 
 #if USE_SSL
+#include <Common/Exception.h>
 #include <Poco/Net/SecureStreamSocketImpl.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#include <fcntl.h>
+#endif
+
+#if USE_SILK && USE_SSL
+#include <IO/SilkSecureFiberStreamSocketImpl.h>
 #endif
 
 namespace DB
@@ -82,23 +86,42 @@ namespace
 class ScopedNonBlocking
 {
 public:
-    explicit ScopedNonBlocking(Poco::Net::SocketImpl & socket_) : socket(socket_), was_blocking(socket_.getBlocking())
+    explicit ScopedNonBlocking(Poco::Net::SocketImpl & socket_impl_)
+        : socket_impl(socket_impl_)
     {
+#if USE_SILK
+        if (auto * fiber_socket_impl = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(&socket_impl))
+        {
+            was_blocking = !fiber_socket_impl->getDontWait();
+            if (was_blocking)
+                fiber_socket_impl->setDontWait(true);
+            return;
+        }
+#endif
+        was_blocking = socket_impl.getBlocking();
         if (was_blocking)
-            socket.setBlocking(false);
+            socket_impl.setBlocking(false);
     }
 
     ~ScopedNonBlocking()
     {
+        if (!was_blocking)
+            return;
+
         try
         {
-            if (was_blocking)
-                socket.setBlocking(true);
+#if USE_SILK
+            if (auto * fiber_socket_impl = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(&socket_impl))
+            {
+                fiber_socket_impl->setDontWait(false);
+                return;
+            }
+#endif
+            socket_impl.setBlocking(true);
         }
-        catch (...) /// NOLINT(bugprone-empty-catch)
+        catch (...)
         {
-            /// `setBlocking` throws on a socket that has since been closed; there is nothing to
-            /// restore in that case, and a destructor must not propagate.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
@@ -106,8 +129,10 @@ public:
     ScopedNonBlocking & operator=(const ScopedNonBlocking &) = delete;
 
 private:
-    Poco::Net::SocketImpl & socket;
-    bool was_blocking;
+    Poco::Net::SocketImpl & socket_impl;
+    /// For regular (non-silk) socket: whether it was blocking before.
+    /// For silk socket: whether it was dont-wait before.
+    bool was_blocking = false;
 };
 
 }
