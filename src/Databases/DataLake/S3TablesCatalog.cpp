@@ -332,7 +332,8 @@ void S3TablesCatalog::sendRequest(
     const String & endpoint,
     Poco::JSON::Object::Ptr request_body,
     const String & method,
-    bool ignore_result) const
+    bool ignore_result,
+    std::unordered_set<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
@@ -368,6 +369,7 @@ void S3TablesCatalog::sendRequest(
         .withHeaders(headers)
         .withOutCallback(out_stream_callback)
         .withSkipNotFound(false)
+        .withCustomNonRetryableError(std::move(custom_non_retryable_errors))
         .create(credentials);
 
     String response_str;
