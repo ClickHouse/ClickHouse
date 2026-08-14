@@ -44,8 +44,16 @@ def get_unresolved_review_threads_count(pr=None, repo=None) -> int:
     return sum(1 for thread in threads if not thread["isResolved"])
 
 
-def should_limit_pipeline(unresolved_count, override) -> bool:
-    return unresolved_count > 0 and not override
+def review_threads_gate_bypassed(labels) -> bool:
+    """Whether a label bypasses the unresolved-review-threads gate."""
+    return any(
+        label in labels
+        for label in (Labels.IGNORE_UNRESOLVED_THREADS, Labels.CI_FORCE_ALL)
+    )
+
+
+def should_limit_pipeline(unresolved_count, bypassed) -> bool:
+    return unresolved_count > 0 and not bypassed
 
 
 def merge_gate_verdict(config_limited, unresolved_now, override_now):
@@ -69,7 +77,7 @@ def merge_gate_verdict(config_limited, unresolved_now, override_now):
             f"{unresolved_now} unresolved review thread(s) - the full CI suite was skipped",
         )
     if override_now:
-        return False, f"ignored due to '{Labels.IGNORE_UNRESOLVED_THREADS}' label"
+        return False, "review threads gate bypassed by CI label"
     if unresolved_now > 0:
         return True, f"{unresolved_now} unresolved review thread(s)"
     return False, "all review threads resolved"
@@ -91,7 +99,7 @@ def fetch_thread_state(info):
         strict=True,
     )
     labels = [label["name"] for label in json.loads(output)["labels"]]
-    override = Labels.IGNORE_UNRESOLVED_THREADS in labels
+    override = review_threads_gate_bypassed(labels)
     unresolved_count = get_unresolved_review_threads_count(
         pr=info.pr_number, repo=info.repo_name
     )

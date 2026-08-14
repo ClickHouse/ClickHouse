@@ -181,12 +181,16 @@ jobs:
             # red again; rerun_on_review_threads.yml re-runs it once the
             # threads are resolved.
             if [ "$should_rerun" = "true" ] && [ -n "$run_sha" ]; then
+              failed_workflow_jobs=$(echo "$jobs_raw" | jq -r '
+                .jobs[] | select(.conclusion == "failure") | .name
+              ')
               marker_state=$(gh api "repos/$GH_REPO/commits/$run_sha/statuses" --paginate \
                 --jq '.[] | select(.context == "Review Threads") | .state' | sed -n 1p) \
                 || marker_state=""
-              if [ "$marker_state" = "failure" ] || [ "$marker_state" = "error" ]; then
+              if { [ "$marker_state" = "failure" ] || [ "$marker_state" = "error" ]; } \
+                && [ "$failed_workflow_jobs" = "Finish Workflow" ]; then
                 should_rerun=false
-                echo "  Skipping: the failure is the unresolved-review-threads merge gate."
+                echo "  Skipping: only Finish Workflow failed due to the unresolved-review-threads merge gate."
               fi
             fi
 

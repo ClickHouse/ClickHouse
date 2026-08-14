@@ -20,6 +20,7 @@ decision functions in `review_threads.py` and their integration into
 
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -31,12 +32,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from ci.jobs.scripts.workflow_hooks import filter_job
+from ci.defs.defs import JobNames
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.jobs.scripts.workflow_hooks.review_threads import (
     KV_OVERRIDE,
     KV_UNRESOLVED_COUNT,
     get_unresolved_review_threads_count,
     merge_gate_verdict,
+    review_threads_gate_bypassed,
     should_limit_pipeline,
 )
 from ci.praktika.gh import GH
@@ -90,6 +93,28 @@ def test_should_limit_pipeline():
     assert not should_limit_pipeline(0, True)
 
 
+def test_ci_force_all_bypasses_the_gate():
+    assert review_threads_gate_bypassed([Labels.CI_FORCE_ALL])
+    assert review_threads_gate_bypassed([Labels.IGNORE_UNRESOLVED_THREADS])
+    assert not review_threads_gate_bypassed([])
+    assert not should_limit_pipeline(1, review_threads_gate_bypassed([Labels.CI_FORCE_ALL]))
+    assert not merge_gate_verdict(False, 1, True)[0]
+
+
+def test_review_threads_workflows_preserve_ci_force_all_and_infra_retry_behavior():
+    repository_root = Path(__file__).resolve().parents[2]
+    rerun_workflow = (
+        repository_root / ".github/workflows/rerun_on_review_threads.yml"
+    ).read_text()
+    retry_workflow = (
+        repository_root / ".github/workflows/retry_infra_failures.yml"
+    ).read_text()
+
+    assert "FORCE_ALL_LABEL: ci-force-all" in rerun_workflow
+    assert '[ "$force_all" != "true" ]' in rerun_workflow
+    assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in retry_workflow
+
+
 def test_count_unresolved_threads(monkeypatch):
     threads = [
         {"isResolved": True},
@@ -129,6 +154,12 @@ def test_limited_pipeline_keeps_builds_and_preliminary_jobs(fake_info):
     ):
         skip, reason = filter_job.should_skip_job(job_name)
         assert not skip, f"{job_name}: {reason}"
+
+
+def test_limited_pipeline_skips_build_profile_diff(fake_info):
+    skip, reason = filter_job.should_skip_job(JobNames.BUILD_PROFILE_DIFF)
+    assert skip
+    assert "unresolved review thread" in reason
 
 
 def test_limited_pipeline_adds_single_workflow_note(fake_info):

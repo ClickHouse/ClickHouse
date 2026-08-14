@@ -47,6 +47,20 @@ BUILDS_FOR_TESTS = [
     + JobConfigs.release_build_jobs
 ]
 
+# Keep this in sync with the build jobs configured in
+# ci/workflows/pull_request.py. Unlike a name-based check, this excludes jobs
+# such as `Build profile diff` that are not builds despite their names.
+REVIEW_THREADS_BUILD_JOBS = [
+    j.name
+    for j in JobConfigs.tidy_build_arm_jobs
+    + JobConfigs.build_jobs
+    + JobConfigs.extra_validation_build_jobs
+    + JobConfigs.release_build_jobs_with_examples
+    + JobConfigs.special_build_jobs
+    + JobConfigs.build_llvm_coverage_job
+    + JobConfigs.toolchain_build_jobs
+]
+
 INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
     "Build (amd_asan_ubsan)",
     "Integration tests (amd_asan_ubsan, flaky)",
@@ -226,7 +240,7 @@ def should_skip_job(job_name):
         should_limit_pipeline(
             unresolved_threads, bool(_info_cache.get_kv_data(KV_OVERRIDE))
         )
-        and "build" not in job_name.lower()
+        and job_name not in REVIEW_THREADS_BUILD_JOBS
         and job_name not in PRELIMINARY_JOBS
         and job_name != JobNames.CODE_REVIEW
     ):

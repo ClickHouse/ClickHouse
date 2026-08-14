@@ -58,6 +58,7 @@ jobs:
           # ci/jobs/scripts/workflow_hooks/review_threads.py.
           STATUS_NAME: Review Threads
           OVERRIDE_LABEL: ignore-unresolved-threads
+          FORCE_ALL_LABEL: ci-force-all
           # Safety valve: never grow a single run past this many attempts, so
           # a reconciliation bug cannot re-run one workflow forever.
           MAX_ATTEMPTS: 5
@@ -85,6 +86,8 @@ jobs:
           state=$(echo "$pr_data" | jq -r '.state')
           head_sha=$(echo "$pr_data" | jq -r '.head.sha')
           override=$(echo "$pr_data" | jq -r --arg label "$OVERRIDE_LABEL" \
+            '[.labels[].name] | index($label) != null')
+          force_all=$(echo "$pr_data" | jq -r --arg label "$FORCE_ALL_LABEL" \
             '[.labels[].name] | index($label) != null')
           if [ "$state" != "open" ]; then
             echo "PR #$pr is $state - nothing to do."
@@ -114,7 +117,7 @@ jobs:
             | awk '{s+=$1} END {print s+0}')
 
           desired_blocked=false
-          if [ "$unresolved" -gt 0 ] && [ "$override" != "true" ]; then
+          if [ "$unresolved" -gt 0 ] && [ "$override" != "true" ] && [ "$force_all" != "true" ]; then
             desired_blocked=true
           fi
 
@@ -128,7 +131,7 @@ jobs:
             recorded_blocked=true
           fi
 
-          echo "PR #$pr (head $head_sha): unresolved=$unresolved override=$override" \
+          echo "PR #$pr (head $head_sha): unresolved=$unresolved override=$override force_all=$force_all" \
                "desired_blocked=$desired_blocked recorded=$marker_state"
 
           if [ "$desired_blocked" = "$recorded_blocked" ]; then
