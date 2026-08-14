@@ -619,6 +619,8 @@ TEST(RestCatalog, ValidateBearerTokenRejectsMalformedHeader)
     /// the explicit validation OneLake performs. A token with an embedded CR/LF would otherwise
     /// smuggle a second header into the request.
     expectThrowsCode([&] { validateBearerToken(context, "token\r\nX-Injected: evil"); }, DB::ErrorCodes::BAD_ARGUMENTS);
+    /// A bare CR (no LF) is equally dangerous and must also be rejected.
+    expectThrowsCode([&] { validateBearerToken(context, "token\rX-Injected: evil"); }, DB::ErrorCodes::BAD_ARGUMENTS);
 
     /// A well-formed token is accepted; an empty token sends no header and is a no-op.
     EXPECT_NO_THROW(validateBearerToken(context, "good-token"));
