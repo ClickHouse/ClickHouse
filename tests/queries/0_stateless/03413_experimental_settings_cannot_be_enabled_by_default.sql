@@ -8,6 +8,7 @@ SELECT name, value FROM system.settings WHERE tier = 'Experimental' AND type = '
   'throw_on_unsupported_query_inside_transaction',
   'ai_function_throw_on_error',
   'ai_function_throw_on_quota_exceeded',
+  'allow_experimental_export_merge_tree_part',
 -- turned ON for Altinity Antalya builds specifically
   'allow_experimental_iceberg_read_optimization'
 );

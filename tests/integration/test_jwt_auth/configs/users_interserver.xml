@@ -1,0 +1,15 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <prefer_localhost_replica>0</prefer_localhost_replica>
+        </default>
+    </profiles>
+    <users>
+        <default remove="remove"/>
+        <common_user>
+            <password>qwerty</password>
+            <access_management>1</access_management>
+            <profile>default</profile>
+        </common_user>
+    </users>
+</clickhouse>

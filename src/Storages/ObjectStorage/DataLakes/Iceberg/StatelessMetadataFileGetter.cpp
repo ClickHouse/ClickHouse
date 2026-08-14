@@ -180,9 +180,10 @@ ManifestFileCacheKeys getManifestList(
 
         ManifestFileCacheKeys manifest_file_cache_keys;
 
+        auto dump_metadata = [&]()->String { return manifest_list_deserializer.getMetadataContent(); };
         insertRowToLogTable(
             local_context,
-            manifest_list_deserializer.getMetadataContent(),
+            dump_metadata,
             DB::IcebergMetadataLogLevel::ManifestListMetadata,
             persistent_table_components.table_path,
             filename,
@@ -223,9 +224,10 @@ ManifestFileCacheKeys getManifestList(
             manifest_file_cache_keys.emplace_back(
                 manifest_file_name, static_cast<size_t>(manifest_length), added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type);
 
+            auto dump_row_metadata = [&]()->String { return manifest_list_deserializer.getContent(i); };
             insertRowToLogTable(
                 local_context,
-                manifest_list_deserializer.getContent(i),
+                dump_row_metadata,
                 DB::IcebergMetadataLogLevel::ManifestListEntry,
                 persistent_table_components.table_path,
                 filename,

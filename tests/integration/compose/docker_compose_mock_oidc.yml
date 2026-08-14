@@ -1,0 +1,15 @@
+services:
+  mock-oidc:
+    image: nginx:alpine
+    volumes:
+      - ${MOCK_OIDC_CONFIG_FILE}:/usr/share/nginx/html/.well-known/openid-configuration:ro
+    ports:
+      - "${MOCK_OIDC_EXTERNAL_PORT:-18091}:80"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >
+          wget -qO- http://localhost/.well-known/openid-configuration > /dev/null || exit 1
+      interval: 5s
+      timeout: 3s
+      retries: 15

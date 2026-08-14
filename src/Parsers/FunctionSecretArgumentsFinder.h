@@ -3,6 +3,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string_view>
 #include <vector>
 #include <sys/types.h>
@@ -35,6 +36,21 @@ public:
         virtual ~Arguments() = default;
         virtual size_t size() const = 0;
         virtual std::unique_ptr<Argument> at(size_t n) const = 0;
+        void skipArgument(size_t n) { skipped_indexes.insert(n); }
+        void unskipArguments() { skipped_indexes.clear(); }
+        size_t getRealIndex(size_t n) const
+        {
+            for (auto idx : skipped_indexes)
+            {
+                if (n < idx)
+                    break;
+                ++n;
+            }
+            return n;
+        }
+        size_t skippedSize() const { return skipped_indexes.size(); }
+    private:
+        std::set<size_t> skipped_indexes;
     };
 
     virtual ~AbstractFunction() = default;
@@ -156,6 +172,8 @@ protected:
     void maskXDBCSecretNamedArgument(std::string_view key, size_t start);
 
     void findS3FunctionSecretArguments(bool is_cluster_function);
+    std::string findIcebergStorageType(bool is_cluster_function);
+    void findIcebergFunctionSecretArguments(bool is_cluster_function);
     void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function);
     bool maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0);
     /// Masks the secrets of every URL form (`url`/`urlCluster` table functions, the `URL` table
@@ -182,6 +200,7 @@ protected:
     void findTableEngineSecretArguments();
     void findExternalDistributedTableEngineSecretArguments();
     void findS3TableEngineSecretArguments();
+    void findIcebergTableEngineSecretArguments();
     void findAzureBlobStorageTableEngineSecretArguments();
     void findRedisFunctionSecretArguments();
     void findYTsaurusStorageTableEngineSecretArguments();

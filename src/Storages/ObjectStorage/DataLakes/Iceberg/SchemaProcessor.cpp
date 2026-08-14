@@ -20,6 +20,7 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/StringUtils.h>
 #include <base/scope_guard.h>
+#include <Core/Settings.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -35,6 +36,8 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 
 #include <IO/ReadHelpers.h>
 
@@ -50,6 +53,10 @@ extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
+namespace Setting
+{
+extern const SettingsTimezone iceberg_timezone_for_timestamptz;
+}
 
 namespace
 {
@@ -313,7 +320,7 @@ namespace Iceberg
 
 std::string IcebergSchemaProcessor::default_link{};
 
-void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr)
+void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr, ContextPtr context_)
 {
     std::lock_guard lock(mutex);
 
@@ -347,7 +354,7 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
             auto name = field->getValue<String>(f_name);
             bool required = field->getValue<bool>(f_required);
             current_full_name = name;
-            auto type = getFieldType(field, f_type, required, current_full_name, true);
+            auto type = getFieldType(field, f_type, context_, required, current_full_name, true);
             clickhouse_schema->push_back(NameAndTypePair{name, type});
             clickhouse_types_by_source_ids[{schema_id, field->getValue<Int32>(f_id)}] = NameAndTypePair{current_full_name, type};
             clickhouse_ids_by_source_names[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
@@ -401,7 +408,7 @@ NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 sche
     return fields;
 }
 
-DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, bool allow_geo_parser)
+DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, ContextPtr context_, bool allow_geo_parser)
 {
     /// Parameterized primitive type strings (decimal(P, S), fixed[N], geography(...)) can be
     /// serialized with different inner whitespace across metadata files. Canonicalize by removing
@@ -425,7 +432,10 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
     if (type_name == f_timestamp)
         return std::make_shared<DataTypeDateTime64>(6);
     if (type_name == f_timestamptz)
-        return std::make_shared<DataTypeDateTime64>(6, "UTC");
+    {
+        std::string timezone = context_->getSettingsRef()[Setting::iceberg_timezone_for_timestamptz];
+        return std::make_shared<DataTypeDateTime64>(6, timezone);
+    }
     if (type_name == f_timestamp_ns)
         return std::make_shared<DataTypeDateTime64>(9);
     if (type_name == f_timestamptz_ns)
@@ -466,21 +476,25 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
 }
 
 DataTypePtr
-IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root)
+IcebergSchemaProcessor::getComplexTypeFromObject(
+    const Poco::JSON::Object::Ptr & type,
+    String & current_full_name,
+    ContextPtr context_,
+    bool is_subfield_of_root)
 {
     String type_name = type->getValue<String>(f_type);
     if (type_name == f_list)
     {
         bool element_required = type->getValue<bool>("element-required");
-        auto element_type = getFieldType(type, f_element, element_required);
+        auto element_type = getFieldType(type, f_element, context_, element_required);
         return std::make_shared<DataTypeArray>(element_type);
     }
 
     if (type_name == f_map)
     {
-        auto key_type = getFieldType(type, f_key, true);
+        auto key_type = getFieldType(type, f_key, context_, true);
         auto value_required = type->getValue<bool>("value-required");
-        auto value_type = getFieldType(type, f_value, value_required);
+        auto value_type = getFieldType(type, f_value, context_, value_required);
         return std::make_shared<DataTypeMap>(key_type, value_type);
     }
 
@@ -504,7 +518,7 @@ IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr &
 
                 (current_full_name += ".").append(element_names.back());
                 scope_guard guard([&] { current_full_name.resize(current_full_name.size() - element_names.back().size() - 1); });
-                element_types.push_back(getFieldType(field, f_type, required, current_full_name, true));
+                element_types.push_back(getFieldType(field, f_type, context_, required, current_full_name, true));
                 TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_types_by_source_ids)
                 [{schema_id, field->getValue<Int32>(f_id)}] = NameAndTypePair{current_full_name, element_types.back()};
 
@@ -513,7 +527,7 @@ IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr &
             }
             else
             {
-                element_types.push_back(getFieldType(field, f_type, required));
+                element_types.push_back(getFieldType(field, f_type, context_, required));
             }
         }
 
@@ -524,16 +538,21 @@ IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr &
 }
 
 DataTypePtr IcebergSchemaProcessor::getFieldType(
-    const Poco::JSON::Object::Ptr & field, const String & type_key, bool required, String & current_full_name, bool is_subfield_of_root)
+    const Poco::JSON::Object::Ptr & field,
+    const String & type_key,
+    ContextPtr context_,
+    bool required,
+    String & current_full_name,
+    bool is_subfield_of_root)
 {
     if (field->isObject(type_key))
-        return getComplexTypeFromObject(field->getObject(type_key), current_full_name, is_subfield_of_root);
+        return getComplexTypeFromObject(field->getObject(type_key), current_full_name, context_, is_subfield_of_root);
 
     auto type = field->get(type_key);
     if (type.isString())
     {
         const String & type_name = type.extract<String>();
-        auto data_type = getSimpleType(type_name, allow_geo_parser);
+        auto data_type = getSimpleType(type_name, context_, allow_geo_parser);
         return required || !data_type->canBeInsideNullable() ? data_type : makeNullable(data_type);
     }
 
@@ -568,7 +587,11 @@ bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_typ
 
 // Ids are passed only for error logging purposes
 std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
-    const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema, Int32 old_id, Int32 new_id)
+    const Poco::JSON::Object::Ptr & old_schema,
+    const Poco::JSON::Object::Ptr & new_schema,
+    ContextPtr context_,
+    Int32 old_id,
+    Int32 new_id)
 {
     std::unordered_map<size_t, std::pair<Poco::JSON::Object::Ptr, const ActionsDAG::Node *>> old_schema_entries;
     auto old_schema_fields = old_schema->get(f_fields).extract<Poco::JSON::Array::Ptr>();
@@ -580,7 +603,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         size_t id = field->getValue<size_t>(f_id);
         auto name = field->getValue<String>(f_name);
         bool required = field->getValue<bool>(f_required);
-        old_schema_entries[id] = {field, &dag->addInput(name, getFieldType(field, f_type, required))};
+        old_schema_entries[id] = {field, &dag->addInput(name, getFieldType(field, f_type, context_, required))};
     }
     auto new_schema_fields = new_schema->get(f_fields).extract<Poco::JSON::Array::Ptr>();
     for (size_t i = 0; i != new_schema_fields->size(); ++i)
@@ -589,7 +612,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         size_t id = field->getValue<size_t>(f_id);
         auto name = field->getValue<String>(f_name);
         bool required = field->getValue<bool>(f_required);
-        auto type = getFieldType(field, f_type, required);
+        auto type = getFieldType(field, f_type, context_, required);
         auto old_node_it = old_schema_entries.find(id);
         if (old_node_it != old_schema_entries.end())
         {
@@ -599,7 +622,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                     || field->getObject(f_type)->getValue<std::string>(f_type) == "list"
                     || field->getObject(f_type)->getValue<std::string>(f_type) == "map"))
             {
-                auto old_type = getFieldType(old_json, "type", required);
+                auto old_type = getFieldType(old_json, "type", context_, required);
                 auto transform = std::make_shared<EvolutionFunctionStruct>(std::vector{type}, std::vector{old_type}, old_json, field);
                 old_node = &dag->addFunction(transform, std::vector<const Node *>{old_node}, name);
 
@@ -632,7 +655,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 }
                 else if (allowPrimitiveTypeConversion(old_type, new_type))
                 {
-                    node = &dag->addCast(*old_node, getFieldType(field, f_type, required), name, nullptr);
+                    node = &dag->addCast(*old_node, getFieldType(field, f_type, context_, required), name, nullptr);
                 }
                 outputs.push_back(node);
             }
@@ -658,7 +681,10 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
     return dag;
 }
 
-std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id)
+std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDagByIds(
+    ContextPtr context_,
+    Int32 old_id,
+    Int32 new_id)
 {
     if (old_id == new_id)
         return nullptr;
@@ -677,7 +703,7 @@ std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformatio
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", new_id);
 
     return transform_dags_by_ids[{old_id, new_id}]
-        = getSchemaTransformationDag(old_schema_it->second, new_schema_it->second, old_id, new_id);
+        = getSchemaTransformationDag(old_schema_it->second, new_schema_it->second, context_, old_id, new_id);
 }
 
 Poco::JSON::Object::Ptr IcebergSchemaProcessor::getIcebergTableSchemaById(Int32 id) const

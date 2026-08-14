@@ -6,9 +6,12 @@
 #include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <Common/maskURIPassword.h>
+#include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Core/QualifiedTableName.h>
 #include <base/defines.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <Poco/String.h>
 
 namespace DB
 {
@@ -38,12 +41,13 @@ void FunctionSecretArgumentsFinder::markSecretArgument(size_t index, bool argume
 {
     if (index >= function->arguments->size())
         return;
+    auto real_index = function->arguments->getRealIndex(index);
     chassert(result.replacement.empty()); /// We shouldn't use replacement with masking other arguments
     /// Each argument is masked individually: valid S3 syntax can interleave secrets with non-secret
     /// arguments, which a contiguous span cannot represent without hiding the arguments in between.
     /// A malformed query can mark the same index as both named and positional; the positional form
     /// wins, hiding the argument whole (fail closed).
-    auto [it, inserted] = result.masked_arguments.emplace(index, argument_is_named);
+    auto [it, inserted] = result.masked_arguments.emplace(real_index, argument_is_named);
     if (!inserted)
         it->second &= argument_is_named;
 }
@@ -228,9 +232,17 @@ void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
     {
         findMongoDBSecretArguments();
     }
+    else if (function->name() == "iceberg")
+    {
+        findIcebergFunctionSecretArguments(/* is_cluster_function= */ false);
+    }
+    else if (function ->name() == "icebergCluster")
+    {
+        findIcebergFunctionSecretArguments(/* is_cluster_function= */ true);
+    }
     else if ((function->name() == "s3") || (function->name() == "cosn") || (function->name() == "oss") ||
              (function->name() == "deltaLake") || (function->name() == "deltaLakeS3") || (function->name() == "hudi") ||
-             (function->name() == "iceberg") || (function->name() == "gcs") || (function->name() == "icebergS3") ||
+             (function->name() == "gcs") || (function->name() == "icebergS3") ||
              (function->name() == "paimon") || (function->name() == "paimonS3"))
     {
         /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
@@ -238,7 +250,7 @@ void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
     }
     else if ((function->name() == "s3Cluster") || (function ->name() == "hudiCluster") ||
              (function ->name() == "deltaLakeCluster") || (function ->name() == "deltaLakeS3Cluster") ||
-             (function ->name() == "icebergS3Cluster") || (function ->name() == "icebergCluster") ||
+             (function ->name() == "icebergS3Cluster") ||
              (function ->name() == "paimonCluster") || (function ->name() == "paimonS3Cluster"))
     {
         /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
@@ -485,6 +497,48 @@ void FunctionSecretArgumentsFinder::findS3FunctionSecretArguments(bool is_cluste
     maskS3PositionalSecrets(positional, url_slot, with_structure);
 }
 
+std::string FunctionSecretArgumentsFinder::findIcebergStorageType(bool is_cluster_function)
+{
+    std::string storage_type = "s3";
+
+    size_t count = function->arguments->size();
+    if (!count)
+        return storage_type;
+
+    auto storage_type_idx = findNamedArgument(&storage_type, "storage_type");
+    if (storage_type_idx != -1)
+    {
+        storage_type = Poco::toLower(storage_type);
+        function->arguments->skipArgument(storage_type_idx);
+    }
+    else if (isNamedCollectionName(is_cluster_function ? 1 : 0))
+    {
+        std::string collection_name;
+        if (function->arguments->at(is_cluster_function ? 1 : 0)->tryGetString(&collection_name, true))
+        {
+            NamedCollectionPtr collection = NamedCollectionFactory::instance().tryGet(collection_name);
+            if (collection && collection->has("storage_type"))
+            {
+                storage_type = Poco::toLower(collection->get<std::string>("storage_type"));
+            }
+        }
+    }
+
+    return storage_type;
+}
+
+void FunctionSecretArgumentsFinder::findIcebergFunctionSecretArguments(bool is_cluster_function)
+{
+    auto storage_type = findIcebergStorageType(is_cluster_function);
+
+    if (storage_type == "s3")
+        findS3FunctionSecretArguments(is_cluster_function);
+    else if (storage_type == "azure")
+        findAzureBlobStorageFunctionSecretArguments(is_cluster_function);
+
+    function->arguments->unskipArguments();
+}
+
 void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function)
 {
     /// azureBlobStorageCluster('cluster_name', 'conn_string/storage_account_url', ...) has 'conn_string/storage_account_url' as its second argument.
@@ -552,7 +606,7 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
         if (RE2::Replace(&url_arg, account_key_pattern, "AccountKey=[HIDDEN]\\1"))
         {
             chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
-            result.start = url_arg_idx;
+            result.start = function->arguments->getRealIndex(url_arg_idx);
             result.are_named = argument_is_named;
             result.count = 1;
             result.replacement = url_arg;
@@ -563,7 +617,7 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
         if (RE2::Replace(&url_arg, sas_signature_pattern, "SharedAccessSignature=[HIDDEN]\\1"))
         {
             chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
-            result.start = url_arg_idx;
+            result.start = function->arguments->getRealIndex(url_arg_idx);
             result.are_named = argument_is_named;
             result.count = 1;
             result.replacement = url_arg;
@@ -793,9 +847,13 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
     {
         findMongoDBSecretArguments();
     }
+    else if (engine_name == "Iceberg")
+    {
+        findIcebergTableEngineSecretArguments();
+    }
     else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS") || (engine_name == "GCS")
              || (engine_name == "DeltaLake") || (engine_name == "DeltaLakeS3") || (engine_name == "Hudi")
-             || (engine_name == "Iceberg") || (engine_name == "IcebergS3")
+             || (engine_name == "IcebergS3")
              || (engine_name == "Paimon") || (engine_name == "PaimonS3")
              || (engine_name == "S3Queue"))
     {
@@ -806,7 +864,7 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
     {
         findURLSecretArguments();
     }
-    else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
+    else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue" || engine_name == "IcebergAzure")
     {
         findAzureBlobStorageTableEngineSecretArguments();
     }
@@ -916,6 +974,18 @@ void FunctionSecretArgumentsFinder::findYTsaurusStorageTableEngineSecretArgument
     markSecretArgument(2);
 }
 
+void FunctionSecretArgumentsFinder::findIcebergTableEngineSecretArguments()
+{
+    auto storage_type = findIcebergStorageType(0);
+
+    if (storage_type == "s3")
+        findS3TableEngineSecretArguments();
+    else if (storage_type == "azure")
+        findAzureBlobStorageTableEngineSecretArguments();
+
+    function->arguments->unskipArguments();
+}
+
 void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
 {
     const String & engine_name = function->name();
@@ -932,7 +1002,7 @@ void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
         /// S3('url', 'access_key_id', 'secret_access_key')
         findS3DatabaseSecretArguments();
     }
-    else if (engine_name == "DataLakeCatalog")
+    else if (engine_name == "DataLakeCatalog" || engine_name == "Iceberg")
     {
         findDataLakeCatalogSecretArguments();
     }
