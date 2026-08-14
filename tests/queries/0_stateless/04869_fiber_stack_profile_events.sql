@@ -1,4 +1,4 @@
--- Tags: shard
+-- Tags: shard, no-parallel
 
 -- Fibers are used for asynchronous communication with remote replicas, and a stack is the only thing they consist of,
 -- so it is worth observing how these stacks are allocated and released.
