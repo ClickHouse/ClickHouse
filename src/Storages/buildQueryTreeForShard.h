@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Interpreters/PreparedSets.h>
+
 #include <memory>
 #include <optional>
 
@@ -21,7 +23,7 @@ using ContextPtr = std::shared_ptr<const Context>;
 
 class Block;
 
-QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table);
+QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table, bool ship_in_subqueries = false, const BuiltSetsByHashPtr & built_sets = nullptr);
 
 void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr context);
 

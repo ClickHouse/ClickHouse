@@ -29,6 +29,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool parallel_replicas_ship_prepared_sets;
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsBool parallel_replicas_allow_materialized_views;
@@ -616,7 +617,13 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
     rewriteJoinToGlobalJoin(modified_query_tree, context);
-    modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
+    modified_query_tree = buildQueryTreeForShard(
+        planner_context,
+        modified_query_tree,
+        /*allow_global_join_for_right_table*/ true,
+        context->getSettingsRef()[Setting::parallel_replicas_ship_prepared_sets],
+        context->getBuiltSetsForShipping() ? context->getBuiltSetsForShipping()
+            : (context->hasQueryContext() ? context->getQueryContext()->getBuiltSetsForShipping() : nullptr));
 
     auto [header, new_planner_context] = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
