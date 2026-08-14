@@ -52,6 +52,7 @@ SELECT 1 OR tupleElement((10, 20), exists(SELECT * FROM numbers(0))); -- { serve
 
 SELECT 'Test scalar cardinality and value-dependent arguments fall back to normal analysis';
 SELECT 1 OR ((SELECT number FROM numbers(2)) > 0); -- { serverError INCORRECT_RESULT_OF_SCALAR_SUBQUERY }
+SELECT 1 OR ((SELECT count(*) FROM numbers(2) GROUP BY number) > 0); -- { serverError INCORRECT_RESULT_OF_SCALAR_SUBQUERY }
 SELECT 1 OR tupleElement((10, 20), assumeNotNull((SELECT 2)));
 WITH (SELECT 2) AS idx SELECT 1 OR tupleElement((10, 20), assumeNotNull(idx));
 

@@ -141,11 +141,43 @@ std::optional<bool> getEarlyShortCircuitResultForAndOr(
     return {};
 }
 
+bool isSafeCountScalarSubqueryForEarlyShortCircuit(const QueryNode & query)
+{
+    if (query.hasGroupBy()
+        || query.hasHaving()
+        || query.hasWindow()
+        || query.hasQualify()
+        || query.hasLimitBy())
+        return false;
+
+    const auto & projection = query.getProjection().getNodes();
+    if (projection.size() != 1)
+        return false;
+
+    const auto * function = projection.front()->as<FunctionNode>();
+    if (!function
+        || function->getFunctionName() != "count"
+        || !function->getParameters().getNodes().empty())
+        return false;
+
+    const auto & arguments = function->getArguments().getNodes();
+    if (arguments.empty())
+        return true;
+
+    if (arguments.size() != 1)
+        return false;
+
+    const auto * matcher = arguments.front()->as<MatcherNode>();
+    return matcher && matcher->isUnqualified();
+}
+
 bool hasScopeDependentNodesForEarlyShortCircuit(const QueryTreeNodePtr & node)
 {
     const auto node_type = node->getNodeType();
-    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
-        return false;
+    if (node_type == QueryTreeNodeType::QUERY)
+        return !isSafeCountScalarSubqueryForEarlyShortCircuit(node->as<QueryNode &>());
+    if (node_type == QueryTreeNodeType::UNION)
+        return true;
 
     if (node_type != QueryTreeNodeType::FUNCTION
         && node_type != QueryTreeNodeType::CONSTANT
