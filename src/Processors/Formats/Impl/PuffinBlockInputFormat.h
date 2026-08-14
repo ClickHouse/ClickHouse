@@ -1,10 +1,15 @@
 #pragma once
 
+#include <Columns/ColumnsNumber.h>
 #include <Formats/FormatSettings.h>
 #include <IO/SeekableReadBuffer.h>
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
+
+#include <optional>
+#include <string_view>
+#include <vector>
 
 namespace DB
 {
@@ -29,6 +34,12 @@ struct PuffinFooter
 
 /// Shared with the Iceberg deletion-vector loader (seekable object-storage path).
 std::vector<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekable, size_t file_size);
+
+/// Shared deletion-vector-v1 payload helpers (also used by `PuffinDeletionVectorReader`).
+std::string_view extractDeletionVectorPayload(std::string_view blob);
+std::vector<UInt64> deserializeRoaringPositionBitmap(
+    std::string_view bytes, std::optional<UInt64> expected_cardinality = std::nullopt);
+void deserializeDeletionVectorV1(std::string_view blob, UInt64 expected_cardinality, ColumnUInt64 & positions);
 
 class PuffinMetadataInputFormat : public IInputFormat
 {
