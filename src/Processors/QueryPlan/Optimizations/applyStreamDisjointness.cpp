@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/useDataParallelAggregation.h>
 
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -9,6 +10,8 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -17,9 +20,17 @@ namespace DB::QueryPlanOptimizations
 
 struct StreamDisjointnessProperty
 {
-    const KeyDescription * partition_key = nullptr;
-    /// This is the composition of the pass-through expressions between the storage and the current node.
+    /// The expression whose value determines the stream a row belongs to: the table partition key for
+    /// per-partition reading, or the window `PARTITION BY` columns (as an identity expression) for the
+    /// hash scatter of a window-function sorting. `std::nullopt` when the streams are not known to be
+    /// disjoint.
+    std::optional<ActionsDAG> partition_key_actions;
+    Names partition_key_columns;
+
+    /// This is the composition of the pass-through expressions between the source and the current node.
     std::optional<ActionsDAG> column_actions;
+
+    bool isDisjoint() const { return partition_key_actions.has_value(); }
 };
 
 static void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expression)
@@ -32,8 +43,8 @@ static void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG &
 
 static bool partitionDeterminedByKeys(const StreamDisjointnessProperty & property, const Names & keys)
 {
-    return property.partition_key && property.column_actions
-        && isPartitionKeyFunctionOfKeys(*property.partition_key, *property.column_actions, keys);
+    return property.isDisjoint() && property.column_actions
+        && isPartitionKeyFunctionOfKeys(*property.partition_key_actions, property.partition_key_columns, *property.column_actions, keys);
 }
 
 static StreamDisjointnessProperty applyStreamDisjointness(
@@ -44,7 +55,10 @@ static StreamDisjointnessProperty applyStreamDisjointness(
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
         if (reading->willOutputEachPartitionThroughSeparatePort())
-            return {&reading->getStorageMetadata()->getPartitionKey(), std::nullopt};
+        {
+            const auto & partition_key = reading->getStorageMetadata()->getPartitionKey();
+            return {partition_key.expression->getActionsDAG().clone(), partition_key.column_names, std::nullopt};
+        }
         return {};
     }
 
@@ -57,14 +71,14 @@ static StreamDisjointnessProperty applyStreamDisjointness(
 
     if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
     {
-        if (property.partition_key)
+        if (property.isDisjoint())
             appendExpression(property.column_actions, expression->getExpression());
         return property;
     }
 
     if (const auto * filter = typeid_cast<const FilterStep *>(step))
     {
-        if (property.partition_key)
+        if (property.isDisjoint())
             appendExpression(property.column_actions, filter->getExpression());
         return property;
     }
@@ -73,7 +87,7 @@ static StreamDisjointnessProperty applyStreamDisjointness(
     {
         /// ARRAY JOIN keeps every output row in its input stream and does not change the partition
         /// columns, so disjointness survives.
-        if (property.partition_key && property.column_actions)
+        if (property.isDisjoint() && property.column_actions)
         {
             const auto & cols = array_join->getColumns();
             property.column_actions->removeFromOutputs(NameSet(cols.begin(), cols.end()));
@@ -132,9 +146,57 @@ static StreamDisjointnessProperty applyStreamDisjointness(
         return {};
     }
 
-    /// TODO (nihalzp): A SortingStep with a window-function PARTITION BY scatters rows by those columns
-    /// (ScatterByPartitionTransform / PartitionedFinishSorting), so its output streams are disjoint by the
-    /// PARTITION BY columns. We can consider it a source and propagate here.
+    if (auto * sorting = typeid_cast<SortingStep *>(step))
+    {
+        /// A window-function sorting scatters the input by the hash of the window `PARTITION BY` columns
+        /// so that whole window partitions land in one stream. With disjoint input streams the scatter is
+        /// redundant: every stream already carries whole partitions, and the partitioned sort sorts each
+        /// stream independently without merging them back, keeping each partition contiguous and sorted.
+        /// Sorting reorders rows only within their stream, so the disjointness survives. A merge-join
+        /// sorting also scatters by the sort key (`convertToScatteredFullSort`), but there both join
+        /// sides must be sharded by the same hash, so it is left alone.
+        if (sorting->getType() == SortingStep::Type::Full && sorting->hasPartitions()
+            && !sorting->isSortingForMergeJoin())
+        {
+            Names partition_by_names = sorting->getPartitionByColumnNames();
+
+            if (settings.window_partitions_independently && partitionDeterminedByKeys(property, partition_by_names))
+            {
+                sorting->skipScatterByPartition();
+                return property;
+            }
+
+            /// The scatter runs: rows are distributed by the hash of the `PARTITION BY` columns, so
+            /// every value of that column tuple lands in exactly one output stream. The sorting is
+            /// therefore itself a disjointness source, with the identity over the `PARTITION BY`
+            /// columns as the partitioning expression.
+            ColumnsWithTypeAndName partition_columns;
+            partition_columns.reserve(partition_by_names.size());
+            for (const auto & name : partition_by_names)
+                partition_columns.push_back(step->getInputHeaders().front()->getByName(name));
+
+            return {ActionsDAG(partition_columns), std::move(partition_by_names), std::nullopt};
+        }
+
+        /// Any other sorting merges or reshuffles the streams and is a barrier.
+        return {};
+    }
+
+    if (const auto * window = typeid_cast<const WindowStep *>(step))
+    {
+        /// The window transform keeps every row within its input stream and only appends the window
+        /// function result columns, so disjointness survives. The appended columns are recorded as
+        /// pass-through inputs so that a consumer above can resolve keys that reference them. After the
+        /// last window the pipeline may be resized back to `max_threads`
+        /// (`query_plan_enable_multithreading_after_window_functions`), which mixes the streams.
+        if (window->hasStreamsFanOut())
+            return {};
+
+        if (property.isDisjoint())
+            appendExpression(property.column_actions, ActionsDAG(window->getOutputHeader()->getColumnsWithTypeAndName()));
+        return property;
+    }
+
     return {};
 }
 
