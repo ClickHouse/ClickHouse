@@ -20,13 +20,14 @@ QUERY_STRING="${URL#*\?}"
 # so both limits are derived from the request URL itself.
 FIELDS_LIMIT=$(( $(printf '%s' "${QUERY_STRING}" | tr -cd '&' | wc -c) + 2 ))
 NAME_LIMIT=$(printf '%s' "${QUERY_STRING}" | tr '&' '\n' | sed 's/=.*//' | awk 'length($0) > max { max = length($0) } END { print max }')
+VALUE_LIMIT=$(printf '%s' "${QUERY_STRING}" | tr '&' '\n' | sed 's/^[^=]*=//' | awk 'length($0) > max { max = length($0) } END { print max }')
 # A query parameter is passed as 'param_<name>', so the name limit has to leave room for the prefix.
 if [[ ${NAME_LIMIT} -lt 8 ]]; then
     NAME_LIMIT=8
 fi
 
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${USER_NAME}"
-$CLICKHOUSE_CLIENT -q "CREATE USER ${USER_NAME} IDENTIFIED WITH no_password SETTINGS http_max_fields = ${FIELDS_LIMIT}, http_max_field_name_size = ${NAME_LIMIT}"
+$CLICKHOUSE_CLIENT -q "CREATE USER ${USER_NAME} IDENTIFIED WITH no_password SETTINGS http_max_fields = ${FIELDS_LIMIT}, http_max_field_name_size = ${NAME_LIMIT}, http_max_field_value_size = ${VALUE_LIMIT}"
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.* TO ${USER_NAME}"
 
 PADDING=$(printf 'a%.0s' $(seq 1 $(( NAME_LIMIT - 6 ))))
@@ -44,5 +45,11 @@ ${CLICKHOUSE_CURL} -sS "${URL}&${PARAM_TOO_LONG}=v" 2>&1 | grep -o 'Field name t
 # The URL above carries 'http_max_fields - 1' parameters, so one more parameter is still accepted,
 # while two more exceed the limit.
 ${CLICKHOUSE_CURL} -sS "${URL}&${PARAM_A}=v&${PARAM_B}=v" 2>&1 | grep -o 'Too many form fields' | head -n1
+
+# Authentication and named-session selectors are consumed before the user's settings are available,
+# so they stay bounded by the server defaults. A selector longer than this user's value limit must
+# not fail later after the named session has already been acquired.
+SESSION_ID=$(printf 's%.0s' $(seq 1 $(( VALUE_LIMIT + 1 ))))
+${CLICKHOUSE_CURL} -sS "${URL}&session_id=${SESSION_ID}&close_session=1"
 
 $CLICKHOUSE_CLIENT -q "DROP USER ${USER_NAME}"
