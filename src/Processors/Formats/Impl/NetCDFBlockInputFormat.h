@@ -49,9 +49,9 @@ struct NetCDFTableLayout
         /// The axes of the variable, one per use of a dimension, without the dimension that holds
         /// the length of the strings.
         std::vector<size_t> axis_ids;
-        /// The value that is read as NULL, in the representation of the file. Empty for a column
-        /// that is not Nullable.
-        String null_value;
+        /// The values that are read as NULL, in the representation of the file. Empty for a
+        /// column that is not Nullable.
+        std::vector<String> null_values;
     };
 
     /// The dimension behind every axis. The first `header.dimensions.size()` axes are the first

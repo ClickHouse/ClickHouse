@@ -90,6 +90,31 @@ DataTypePtr getDataType(NetCDFType type)
     return nullptr;
 }
 
+/// The `unsigned` attribute of the netCDF conventions changes the interpretation of the bits of
+/// the three signed integer types which classic NetCDF has. Its value is a `char` string, normally
+/// `true`.
+bool hasUnsignedAttribute(const NetCDFVariable & variable)
+{
+    const auto * attribute = variable.tryGetAttribute("_Unsigned");
+    return attribute && attribute->type == NetCDFType::Char && attribute->data == "true";
+}
+
+DataTypePtr getDataType(const NetCDFVariable & variable)
+{
+    if (hasUnsignedAttribute(variable))
+    {
+        switch (variable.type)
+        {
+            case NetCDFType::Byte: return std::make_shared<DataTypeUInt8>();
+            case NetCDFType::Short: return std::make_shared<DataTypeUInt16>();
+            case NetCDFType::Int: return std::make_shared<DataTypeUInt32>();
+            default: break;
+        }
+    }
+
+    return getDataType(variable.type);
+}
+
 /// Puts the axes in an order that agrees with the order of the axes of every variable, so that a
 /// variable that uses all of them is stored in exactly the order the rows are produced. Among the
 /// axes that are not ordered relative to each other, the one whose dimension is declared first in
@@ -321,7 +346,7 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
         column.has_string_length_dimension = has_string_length_dimension[i];
         column.element_size = column.is_string ? string_lengths[i] : netCDFTypeSize(variable.type);
         column.axis_ids = variable_axes[i];
-        column.type = getDataType(variable.type);
+        column.type = getDataType(variable);
 
         column.num_elements = 1;
         for (size_t axis_id : column.axis_ids)
@@ -334,12 +359,13 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
             for (std::string_view attribute_name : {"_FillValue", "missing_value"})
             {
                 const auto * attribute = variable.tryGetAttribute(attribute_name);
-                if (attribute && attribute->type == variable.type && attribute->num_elements == 1
-                    && attribute->data.size() == column.element_size)
+                if (attribute && attribute->type == variable.type && attribute->num_elements != 0
+                    && attribute->data.size() == attribute->num_elements * column.element_size)
                 {
-                    column.null_value = attribute->data;
+                    for (size_t value_index = 0; value_index < attribute->num_elements; ++value_index)
+                        column.null_values.emplace_back(
+                            attribute->data.data() + value_index * column.element_size, column.element_size);
                     column.type = makeNullable(column.type);
-                    break;
                 }
             }
         }
@@ -600,7 +626,7 @@ namespace
 {
 
 template <typename T>
-void insertNumbers(IColumn & column, const char * data, UInt64 first_element, const PaddedPODArray<UInt64> & indexes, const String & null_value)
+void insertNumbers(IColumn & column, const char * data, UInt64 first_element, const PaddedPODArray<UInt64> & indexes, const std::vector<String> & null_values)
 {
     ColumnVector<T> * values = nullptr;
     NullMap * null_map = nullptr;
@@ -631,8 +657,11 @@ void insertNumbers(IColumn & column, const char * data, UInt64 first_element, co
         transformEndianness<std::endian::native, std::endian::big>(value);
         data_to[old_size + i] = value;
 
-        if (null_map && 0 == memcmp(from, null_value.data(), sizeof(T)))
+        if (null_map && std::ranges::any_of(null_values, [&](const String & null_value)
+            { return 0 == memcmp(from, null_value.data(), sizeof(T)); }))
+        {
             (*null_map)[old_size + i] = 1;
+        }
     }
 }
 
@@ -675,34 +704,43 @@ void NetCDFBlockInputFormat::fillColumn(const ColumnState & state, IColumn & col
     switch (description.variable->type)
     {
         case NetCDFType::Byte:
-            insertNumbers<Int8>(column, data, state.buffer_first_element, indexes, description.null_value);
+            if (hasUnsignedAttribute(*description.variable))
+                insertNumbers<UInt8>(column, data, state.buffer_first_element, indexes, description.null_values);
+            else
+                insertNumbers<Int8>(column, data, state.buffer_first_element, indexes, description.null_values);
             return;
         case NetCDFType::Short:
-            insertNumbers<Int16>(column, data, state.buffer_first_element, indexes, description.null_value);
+            if (hasUnsignedAttribute(*description.variable))
+                insertNumbers<UInt16>(column, data, state.buffer_first_element, indexes, description.null_values);
+            else
+                insertNumbers<Int16>(column, data, state.buffer_first_element, indexes, description.null_values);
             return;
         case NetCDFType::Int:
-            insertNumbers<Int32>(column, data, state.buffer_first_element, indexes, description.null_value);
+            if (hasUnsignedAttribute(*description.variable))
+                insertNumbers<UInt32>(column, data, state.buffer_first_element, indexes, description.null_values);
+            else
+                insertNumbers<Int32>(column, data, state.buffer_first_element, indexes, description.null_values);
             return;
         case NetCDFType::Float:
-            insertNumbers<Float32>(column, data, state.buffer_first_element, indexes, description.null_value);
+            insertNumbers<Float32>(column, data, state.buffer_first_element, indexes, description.null_values);
             return;
         case NetCDFType::Double:
-            insertNumbers<Float64>(column, data, state.buffer_first_element, indexes, description.null_value);
+            insertNumbers<Float64>(column, data, state.buffer_first_element, indexes, description.null_values);
             return;
         case NetCDFType::UByte:
-            insertNumbers<UInt8>(column, data, state.buffer_first_element, indexes, description.null_value);
+            insertNumbers<UInt8>(column, data, state.buffer_first_element, indexes, description.null_values);
             return;
         case NetCDFType::UShort:
-            insertNumbers<UInt16>(column, data, state.buffer_first_element, indexes, description.null_value);
+            insertNumbers<UInt16>(column, data, state.buffer_first_element, indexes, description.null_values);
             return;
         case NetCDFType::UInt:
-            insertNumbers<UInt32>(column, data, state.buffer_first_element, indexes, description.null_value);
+            insertNumbers<UInt32>(column, data, state.buffer_first_element, indexes, description.null_values);
             return;
         case NetCDFType::Int64:
-            insertNumbers<Int64>(column, data, state.buffer_first_element, indexes, description.null_value);
+            insertNumbers<Int64>(column, data, state.buffer_first_element, indexes, description.null_values);
             return;
         case NetCDFType::UInt64:
-            insertNumbers<UInt64>(column, data, state.buffer_first_element, indexes, description.null_value);
+            insertNumbers<UInt64>(column, data, state.buffer_first_element, indexes, description.null_values);
             return;
         case NetCDFType::Char:
             break;
