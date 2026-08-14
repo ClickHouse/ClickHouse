@@ -427,6 +427,8 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
     WhichDataType to(to_type_index);
     bool can_apply_accurate_cast = (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
         && (which.isInt() || which.isUInt() || which.isFloat());
+    can_apply_accurate_cast |= (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
+        && which.isTime64() && (to.isTime() || to.isDateTime());
     can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
     if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
@@ -472,7 +474,7 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
             using LeftDataType = typename Types::LeftType;
             using RightDataType = typename Types::RightType;
 
-            if constexpr (IsDataTypeNumber<LeftDataType>)
+            if constexpr (IsDataTypeNumber<LeftDataType> || std::is_same_v<LeftDataType, DataTypeTime64>)
             {
                 if constexpr (IsDataTypeDateOrDateTimeOrTime<RightDataType>)
                 {

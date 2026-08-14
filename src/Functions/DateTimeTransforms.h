@@ -2696,7 +2696,23 @@ struct Transformer
                 {
                     using FromValueType = typename FromTypeVector::value_type;
                     bool is_valid_input = false;
-                    if constexpr (std::is_same_v<ToType, DataTypeTime>)
+                    if constexpr (std::is_same_v<FromType, DataTypeTime64>)
+                    {
+                        const Int64 scale_multiplier = transform.getScaleMultiplier();
+                        const Int64 value = vec_from[i].value;
+
+                        /// `Time64` is a scaled integer. An accurate conversion to a whole-second type
+                        /// must not discard a fractional part before applying the target range check.
+                        if (value % scale_multiplier == 0)
+                        {
+                            const Int64 seconds = value / scale_multiplier;
+                            if constexpr (std::is_same_v<ToType, DataTypeTime>)
+                                is_valid_input = seconds >= -MAX_TIME_TIMESTAMP && seconds <= MAX_TIME_TIMESTAMP;
+                            else
+                                is_valid_input = seconds >= 0 && seconds <= static_cast<Int64>(0xFFFFFFFFL);
+                        }
+                    }
+                    else if constexpr (std::is_same_v<ToType, DataTypeTime>)
                     {
                         /// `Time` is a signed count of seconds of a clock reading within
                         /// `[-MAX_TIME_TIMESTAMP, MAX_TIME_TIMESTAMP]`, so it cannot share the unsigned `DateTime`
