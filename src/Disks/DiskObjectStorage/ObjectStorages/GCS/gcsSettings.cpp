@@ -177,6 +177,11 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     result.google_adc_client_secret = config.getString(config_prefix + ".google_adc_client_secret", "");
     result.google_adc_refresh_token = config.getString(config_prefix + ".google_adc_refresh_token", "");
 
+    if (!result.google_adc_refresh_token.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The native GCS disk does not support `google_adc_*` refresh-token credentials because the access token cannot be refreshed "
+            "for its long-lived client. Use Application Default Credentials or a service-account key instead");
+
     result.headers = parseGCSHeaders(config, config_prefix);
     result.connect_timeout_ms = config.getUInt64(config_prefix + ".connect_timeout_ms", DEFAULT_GCS_CONNECT_TIMEOUT_MS);
     result.request_timeout_ms = config.getUInt64(config_prefix + ".request_timeout_ms", DEFAULT_GCS_REQUEST_TIMEOUT_MS);

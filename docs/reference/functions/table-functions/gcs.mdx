@@ -46,7 +46,7 @@ In native mode credentials are resolved via the Google-native mechanisms rather 
 
 - **Application Default Credentials** (the default when no credentials are given): `GOOGLE_APPLICATION_CREDENTIALS`, the GCE/GKE metadata server, or the `gcloud` SDK configuration.
 - **`NOSIGN`** — anonymous access (public buckets and the GCS emulator).
-- **Application Default Credentials** and **`NOSIGN`** are the authentication modes supported by the SQL surface. Service-account keys and the `google_adc_*` refresh-token flow are supported only by server-configured GCS disks.
+- **Application Default Credentials** and **`NOSIGN`** are the authentication modes supported by the SQL surface. Service-account keys are supported by server-configured GCS disks.
 
 Positional HMAC `access_key_id`/`secret_access_key` arguments only apply to the default S3-compatibility path; leave `use_native_gcs` unset (the default) to keep using them.
 
