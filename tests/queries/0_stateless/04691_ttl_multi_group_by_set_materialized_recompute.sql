@@ -81,6 +81,24 @@ SELECT '---';
 
 DROP TABLE ttl_multi_group_by;
 
+-- H1b: a downstream MATERIALIZED column that reads BOTH an ephemeral-tainted column and a rewritten
+-- regular source directly is recomputed from the columns that exist on disk, so it still equals its
+-- own expression over them. Only the ephemeral hop (m1) stays stale; both are warned. Asserting the
+-- expression identity rather than the literal value is what distinguishes this from a downstream
+-- column left at its pre-SET value, which would satisfy neither side of the identity.
+CREATE TABLE ttl_multi_group_by (k UInt32, ts DateTime, x UInt32, eph String EPHEMERAL 'E', m1 String MATERIALIZED concat(toString(x), eph), m2 String MATERIALIZED concat(m1, '-', toString(x)), payload UInt64)
+ENGINE = MergeTree ORDER BY k
+TTL ts + toIntervalDay(1) GROUP BY k SET x = max(x), payload = sum(payload)
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO ttl_multi_group_by (k, ts, x, eph, payload) VALUES (1, '2020-01-01', 5, 'a', 10), (1, '2020-01-02', 9, 'b', 20);
+OPTIMIZE TABLE ttl_multi_group_by FINAL;
+
+SELECT k, x, payload, (m2 = concat(m1, '-', toString(x))) AS m2_matches_stored_inputs FROM ttl_multi_group_by ORDER BY k;
+SELECT '---';
+
+DROP TABLE ttl_multi_group_by;
+
 -- H2: a not-yet-expired earlier GROUP BY TTL must NOT force a later one off the streaming fast path.
 -- TTL1 GROUP BY k SET ts (rewrites ts, a column TTL2's key could derive from) expires 40 years out, so
 -- it does NOT fire in this merge; TTL2 GROUP BY k SET payload fires now. Because TTL1 does not fire, its
