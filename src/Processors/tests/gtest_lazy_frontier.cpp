@@ -160,7 +160,7 @@ TEST(LazyFrontier, CarriesANonDeterministicValue)
     ASSERT_TRUE(random_in_merged != nullptr);
     EXPECT_TRUE(frontier.carried.contains(random_in_merged));
     EXPECT_FALSE(frontier.recomputed_after_merge.contains(random_in_merged));
-    EXPECT_FALSE(frontier.recomputed_per_source[0].contains(random_in_merged));
+    EXPECT_FALSE(frontier.recomputed_under_mask[0].contains(random_in_merged));
 
     /// Nothing was left eager for want of a placement.
     EXPECT_TRUE(frontier.eager_outputs.empty());
@@ -191,4 +191,34 @@ TEST(LazyFrontier, KeepsEverythingEagerWithoutALazySource)
     /// Every column but the sort key stayed eager; that one is carried across the LIMIT as always.
     EXPECT_EQ(frontier.eager_outputs, std::vector<size_t>({1, 2}));
     EXPECT_EQ(frontier.carried, NodeSet{merged->getOutputs()[0]});
+}
+
+/// A value nothing below the LIMIT used is computed above it for the first time, so even a
+/// non-deterministic one needs no column of its own.
+TEST(LazyFrontier, ComputesAnUnusedNonDeterministicValueLate)
+{
+    tryRegisterFunctions();
+    const Block header{column("a"), column("b"), column("heavy")};
+
+    TestPlan plan;
+    auto & source = plan.addSource(header);
+
+    ActionsDAG dag(header.getColumnsWithTypeAndName());
+    const auto * a = dag.getOutputs()[0];
+    const auto * heavy = dag.getOutputs()[2];
+    const auto & random = addFunction(dag, "rand64", {});  /// NOLINT
+    dag.getOutputs() = {a, &dag.addAlias(random, "r"), heavy};
+
+    auto & expression = plan.addStep(std::make_unique<ExpressionStep>(source.step->getOutputHeader(), std::move(dag)), source);
+
+    const auto merged = buildMergedPlanDAG(expression);
+    ASSERT_TRUE(merged.has_value());
+
+    const auto frontier = chooseLazyFrontier(*merged, {outputPosition(*merged, "a")}, {true});
+
+    const auto * random_in_merged = findNodeContaining(*merged, "rand64");
+    ASSERT_TRUE(random_in_merged != nullptr);
+    EXPECT_TRUE(frontier.recomputed_after_merge.contains(random_in_merged));
+    EXPECT_FALSE(frontier.carried.contains(random_in_merged));
+    EXPECT_TRUE(frontier.eager_outputs.empty());
 }

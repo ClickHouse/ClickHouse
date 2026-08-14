@@ -25,7 +25,7 @@ std::optional<size_t> MergedPlanDAG::getDenseSource(const ActionsDAG::Node * nod
     return *node_sources.begin();
 }
 
-std::optional<size_t> MergedPlanDAG::getSourceToRecomputeOn(const ActionsDAG::Node * node) const
+std::optional<size_t> MergedPlanDAG::getMaskingSource(const ActionsDAG::Node * node) const
 {
     const auto dense_source = getDenseSource(node);
     if (dense_source && sources[*dense_source].may_be_stuffed)
