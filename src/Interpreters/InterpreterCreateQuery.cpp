@@ -2016,7 +2016,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// `AS INSERT`/`AND INSERT` populate from `VALUES`/`FORMAT` data instead of a `SELECT`; that data is
     /// only available here when it was embedded in the query text (`create.insert_data`). Clients such as
     /// `clickhouse-client` strip it from the query text and stream it afterwards over the native protocol,
-    /// exactly like a plain `INSERT`, so the interpreter never sees it. 
+    /// exactly like a plain `INSERT`, so the interpreter never sees it.
     bool insert_fill_available_synchronously = create.select != nullptr
         || (create.insert_data && create.insert_data_end && create.insert_data <= create.insert_data_end);
     if (create.isCreateQueryWithImmediateInsertSelect()
