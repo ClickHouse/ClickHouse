@@ -34,6 +34,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/addTypeConversionToAST.h>

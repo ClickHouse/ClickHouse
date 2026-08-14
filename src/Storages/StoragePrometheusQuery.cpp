@@ -9,6 +9,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>

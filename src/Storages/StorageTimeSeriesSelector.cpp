@@ -10,6 +10,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>

@@ -1,6 +1,7 @@
 #include <Core/Field.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/tests/gtest_global_context.h>

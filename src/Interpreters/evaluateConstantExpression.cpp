@@ -9,6 +9,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Core/Block.h>
+#include <Core/ConstantValue.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>

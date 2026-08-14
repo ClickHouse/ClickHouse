@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertColumnToType.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/System/StorageSystemPrimes.h>

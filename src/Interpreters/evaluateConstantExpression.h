@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Block_fwd.h>
-#include <Core/ConstantValue.h>
 #include <Core/Field.h>
 #include <Columns/IColumn_fwd.h>
 #include <Interpreters/ActionsDAG.h>
@@ -17,6 +16,10 @@ namespace DB
 
 class ExpressionActions;
 class IDataType;
+/// Forward-declared on purpose: this header is included very widely, and its declarations only *name*
+/// `ConstantValue` (the alias + the function return types). Pulling in `Core/ConstantValue.h` here
+/// would drag `ColumnConst.h`/`IDataType.h` into every includer. Callers that use the value include it.
+class ConstantValue;
 
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 

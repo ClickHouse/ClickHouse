@@ -59,6 +59,7 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/convertColumnToType.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/misc.h>

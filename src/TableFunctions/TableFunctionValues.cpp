@@ -17,6 +17,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <Interpreters/convertColumnToType.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <TableFunctions/registerTableFunctions.h>
