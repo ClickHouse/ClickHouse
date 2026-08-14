@@ -382,7 +382,6 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::catalog_credential].value,
                 unity_auth_scope,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
-                settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 Context::getGlobalContextInstance());
             break;
         }

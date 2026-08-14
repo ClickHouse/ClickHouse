@@ -23,14 +23,12 @@ class UnifiedUnityCatalog final : public ICatalog, private DB::WithContext
 {
 public:
     /// catalog_credential_ is either a bearer token or "client_id:client_secret".
-    /// oauth_server_use_request_body_ is almost always false. It exists for backwards compatibility.
     UnifiedUnityCatalog(
         const std::string & catalog_,
         const std::string & base_url_,
         const std::string & catalog_credential_,
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
-        bool oauth_server_use_request_body_,
         DB::ContextPtr context_);
 
     ~UnifiedUnityCatalog() override;
@@ -68,7 +66,6 @@ private:
     std::string client_secret;
     std::string auth_scope;
     std::string oauth_server_uri;
-    bool oauth_server_use_request_body = false;
     bool use_oauth = false;
     mutable std::optional<std::string> bearer_token;
     mutable std::chrono::system_clock::time_point token_expires_at{};

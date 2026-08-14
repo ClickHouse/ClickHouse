@@ -66,7 +66,6 @@ UnifiedUnityCatalog::UnifiedUnityCatalog(
     const std::string & catalog_credential_,
     const std::string & auth_scope_,
     const std::string & oauth_server_uri_,
-    bool oauth_server_use_request_body_,
     DB::ContextPtr context_)
     : ICatalog(catalog_)
     , DB::WithContext(context_)
@@ -75,7 +74,6 @@ UnifiedUnityCatalog::UnifiedUnityCatalog(
     , log(getLogger("UnifiedUnityCatalog(" + catalog_ + ")"))
     , auth_scope(auth_scope_)
     , oauth_server_uri(oauth_server_uri_)
-    , oauth_server_use_request_body(oauth_server_use_request_body_)
 {
     auto colon_pos = catalog_credential_.find(':');
     if (colon_pos != std::string::npos)
@@ -109,14 +107,25 @@ std::string UnifiedUnityCatalog::retrieveAccessToken() const
         effective_oauth_uri = base.getScheme() + "://" + base.getHost() + "/oidc/v1/token";
     }
 
-    out_stream_callback = [&](std::ostream & os)
-    {
-        os << fmt::format(
-            "grant_type=client_credentials&scope={}&client_id={}&client_secret={}",
-            auth_scope, client_id, client_secret);
-    };
-
     url = Poco::URI(effective_oauth_uri);
+
+    /// The parameters always go into the request body, as RFC 6749 requires.
+    /// The `oauth_server_use_request_body` setting is not honored here: `false` exists only for
+    /// backwards compatibility with a pre-#79998 bug, and this catalog is newer than the fix.
+    String encoded_auth_scope;
+    String encoded_client_id;
+    String encoded_client_secret;
+    Poco::URI::encode(auth_scope, auth_scope, encoded_auth_scope);
+    Poco::URI::encode(client_id, client_id, encoded_client_id);
+    Poco::URI::encode(client_secret, client_secret, encoded_client_secret);
+
+    String body = fmt::format(
+        "grant_type=client_credentials&scope={}&client_id={}&client_secret={}",
+        encoded_auth_scope, encoded_client_id, encoded_client_secret);
+    out_stream_callback = [body = std::move(body)](std::ostream & os)
+    {
+        os << body;
+    };
 
     const auto & context = getContext();
     auto wb = DB::BuilderRWBufferFromHTTP(url)
@@ -472,7 +481,7 @@ std::shared_ptr<RestCatalog> UnifiedUnityCatalog::getIcebergRestCatalog() const
         /* auth_scope= */ "",
         rest_auth_header,
         oauth_server_uri,
-        oauth_server_use_request_body,
+        /* oauth_server_use_request_body= */ true,
         getContext());
 
     return iceberg_rest_catalog;
