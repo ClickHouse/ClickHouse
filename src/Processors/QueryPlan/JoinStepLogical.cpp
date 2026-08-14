@@ -1215,9 +1215,10 @@ bool JoinStepLogical::inputsCanBeReadInJoinKeyOrder(const QueryPlan::Node & node
 
     /// Collect the equality key pairs the same way `addJoinPredicatesToTableJoin` will during
     /// physicalization, in the same order (the merge-join sort description is the keys in clause order).
-    /// The raw operand names are used - without the type-cast / null-safe `tuple` wrapping the
-    /// physicalization may add; such wrapped keys are almost never readable in table order anyway, and a
-    /// too-optimistic answer only costs a full sort (see `joinInputCanBeReadInJoinKeyOrder`). An `ASOF`
+    /// The raw operand names are used - without the type-cast wrapping the physicalization may add; such
+    /// wrapped keys are almost never readable in table order anyway, and a too-optimistic answer only costs
+    /// a full sort (see `joinInputCanBeReadInJoinKeyOrder`). The null-safe `tuple` wrapping is different:
+    /// it applies to every nullable `<=>` key, so those joins are excluded below outright. An `ASOF`
     /// inequality key is appended last in the clause, so leaving it out keeps the probed prefix valid.
     ///
     /// Anything that is not such a two-sided key predicate makes the join unsupported by the merge
@@ -1235,6 +1236,16 @@ bool JoinStepLogical::inputsCanBeReadInJoinKeyOrder(const QueryPlan::Node & node
         const bool is_asof_inequality
             = join_operator.strictness == JoinStrictness::Asof && operatorToAsofInequality(predicate_op).has_value();
         if (!is_equality && !is_asof_inequality)
+            return false;
+        /// A null-safe equality over nullable operands is not a plain ordered-key proof: physicalization
+        /// wraps both of its keys into `tuple(...)` (see `addJoinPredicatesToTableJoin`), and the merge join
+        /// is then sorted by the wrapped names. The read-in-order matcher understands only exact matches and
+        /// monotonic wrappers, and `tuple` is neither, so such a join would always pay a full pre-join sort.
+        /// Declare it ineligible so that it falls through to the next entry of `join_algorithm` instead.
+        /// The common-type conversion that runs before the wrapping can only add nullability, never remove
+        /// it, so it is enough to look at one operand here.
+        if (predicate_op == JoinConditionOperator::NullSafeEquals
+            && (isNullableOrLowCardinalityNullable(lhs.getType()) || isNullableOrLowCardinalityNullable(rhs.getType())))
             return false;
         if (lhs.fromRight() && rhs.fromLeft())
             std::swap(lhs, rhs);
