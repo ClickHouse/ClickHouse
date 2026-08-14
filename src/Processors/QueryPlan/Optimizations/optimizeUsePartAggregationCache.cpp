@@ -1,22 +1,22 @@
 #include <Processors/QueryPlan/Optimizations/optimizeUsePartAggregationCache.h>
 
-#include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Interpreters/Cache/PartAggregationCache.h>
 #include <Interpreters/Cache/PartAggregationCachePopulator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/StorageSnapshot.h>
-#include <Storages/ColumnsDescription.h>
-#include <Common/SipHash.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sources/PartAggregationCacheSource.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageSnapshot.h>
+#include <Common/SipHash.h>
 
 #include <Core/Settings.h>
 
@@ -25,13 +25,13 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_part_aggregation_cache;
-    extern const SettingsBool enable_reads_from_part_aggregation_cache;
-    extern const SettingsBool enable_writes_to_part_aggregation_cache;
-    extern const SettingsUInt64 max_rows_to_read;
-    extern const SettingsUInt64 max_bytes_to_read;
-    extern const SettingsUInt64 max_rows_to_read_leaf;
-    extern const SettingsUInt64 max_bytes_to_read_leaf;
+extern const SettingsBool allow_experimental_part_aggregation_cache;
+extern const SettingsBool enable_reads_from_part_aggregation_cache;
+extern const SettingsBool enable_writes_to_part_aggregation_cache;
+extern const SettingsUInt64 max_rows_to_read;
+extern const SettingsUInt64 max_bytes_to_read;
+extern const SettingsUInt64 max_rows_to_read_leaf;
+extern const SettingsUInt64 max_bytes_to_read_leaf;
 }
 
 namespace QueryPlanOptimizations
@@ -69,8 +69,10 @@ static std::vector<IntermediateStepAction> collectIntermediateActions(QueryPlan:
         if (auto * expr = typeid_cast<ExpressionStep *>(step))
             actions.push_back({std::make_shared<ExpressionActions>(expr->getExpression().clone()), {}, false});
         else if (auto * filter = typeid_cast<FilterStep *>(step))
-            actions.push_back({std::make_shared<ExpressionActions>(filter->getExpression().clone()),
-                filter->getFilterColumnName(), filter->removesFilterColumn()});
+            actions.push_back(
+                {std::make_shared<ExpressionActions>(filter->getExpression().clone()),
+                 filter->getFilterColumnName(),
+                 filter->removesFilterColumn()});
 
         if (current->children.size() != 1)
             break;
@@ -81,10 +83,7 @@ static std::vector<IntermediateStepAction> collectIntermediateActions(QueryPlan:
     return actions;
 }
 
-void optimizeUsePartAggregationCache(
-    QueryPlan::Node & node,
-    QueryPlan::Nodes & nodes,
-    bool is_explain)
+void optimizeUsePartAggregationCache(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool is_explain)
 {
     /// `EXPLAIN` is intended to perform only static planning. This optimization can call
     /// `populatePartAggregationCache`, which reads part data and mutates the global cache while
@@ -163,8 +162,8 @@ void optimizeUsePartAggregationCache(
     /// `GROUP BY` over a part with more rows than `max_rows_to_read` would silently return a cached
     /// aggregate instead of throwing or honoring `read_overflow_mode`. Skip the optimization when any
     /// read limit is active (fail-closed).
-    if (settings[Setting::max_rows_to_read] || settings[Setting::max_bytes_to_read]
-        || settings[Setting::max_rows_to_read_leaf] || settings[Setting::max_bytes_to_read_leaf])
+    if (settings[Setting::max_rows_to_read] || settings[Setting::max_bytes_to_read] || settings[Setting::max_rows_to_read_leaf]
+        || settings[Setting::max_bytes_to_read_leaf])
         return;
 
     /// Row-level security filters are not part of the cache key and are not applied by the
@@ -194,8 +193,7 @@ void optimizeUsePartAggregationCache(
     /// cases (fail-closed).
     auto mutations_snapshot = reading->getMutationsSnapshot();
     if (mutations_snapshot
-        && (mutations_snapshot->hasLightweightDeletedMask()
-            || mutations_snapshot->hasAlterMutations()
+        && (mutations_snapshot->hasLightweightDeletedMask() || mutations_snapshot->hasAlterMutations()
             || mutations_snapshot->hasMetadataMutations()))
         return;
 
@@ -241,21 +239,28 @@ void optimizeUsePartAggregationCache(
     if (prewhere)
     {
         filter_dag_for_hash = &prewhere->prewhere_actions;
-        intermediate_actions.insert(intermediate_actions.begin(), IntermediateStepAction{
-            std::make_shared<ExpressionActions>(prewhere->prewhere_actions.clone()),
-            prewhere->prewhere_column_name,
-            prewhere->remove_prewhere_column});
+        intermediate_actions.insert(
+            intermediate_actions.begin(),
+            IntermediateStepAction{
+                std::make_shared<ExpressionActions>(prewhere->prewhere_actions.clone()),
+                prewhere->prewhere_column_name,
+                prewhere->remove_prewhere_column});
     }
 
-    /// Skip when any key/filter expression is non-deterministic across queries (e.g. `rand`,
-    /// `now`, `nowInBlock`, `rowNumberInAllBlocks`). The cache hashes only the function graph,
-    /// not per-execution values, so the first execution's states would be cached and incorrectly
-    /// reused by every later execution that hashes to the same key. `hasNonDeterministic` uses
-    /// `IFunction::isDeterministic` (deterministic across queries), which is the notion the
-    /// cross-query cache requires.
+    /// Skip when any key/filter expression is non-deterministic or stateful across queries (e.g.
+    /// `rand`, `now`, `nowInBlock`, `rowNumberInAllBlocks`, `aiEmbed`). The cache hashes only the
+    /// function graph, not per-execution values or external state, so the first execution's states
+    /// would be cached and incorrectly reused by every later execution that hashes to the same key.
+    /// `hasNonDeterministic` uses `IFunction::isDeterministic` (deterministic across queries), but
+    /// some deterministic functions are still stateful because they have side effects or depend on
+    /// external state. Both properties must therefore be rejected for this cross-query cache.
     for (const auto & action : intermediate_actions)
-        if (action.actions->getActionsDAG().hasNonDeterministic())
+        if (action.actions->getActionsDAG().hasNonDeterministic() || action.actions->getActionsDAG().hasStatefulFunctions())
             return;
+
+    const auto & source_filter_dag = reading->getFilterActionsDAG();
+    if (source_filter_dag && (source_filter_dag->hasNonDeterministic() || source_filter_dag->hasStatefulFunctions()))
+        return;
 
     /// The populator reads each part's data directly from storage with the set of columns required
     /// to feed the aggregator: the GROUP BY keys, the aggregate arguments, and the input columns of
@@ -268,10 +273,7 @@ void optimizeUsePartAggregationCache(
     {
         const auto & storage_snapshot = reading->getStorageSnapshot();
         auto column_is_readable = [&](const String & name)
-        {
-            return storage_snapshot->tryGetColumn(
-                GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), name).has_value();
-        };
+        { return storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), name).has_value(); };
 
         bool all_readable = true;
         for (const auto & key : params.keys)
@@ -307,8 +309,8 @@ void optimizeUsePartAggregationCache(
     /// keeps the same `{table_id, part_name}`, cannot reuse a cached state built for the old type.
     const auto & aggregator_input_header = *aggregating->getInputHeaders().front();
 
-    IASTHash query_hash = PartAggregationCache::calculateQueryHash(
-        aggregator_input_header, params.keys, params.aggregates, filter_dag_for_hash);
+    IASTHash query_hash
+        = PartAggregationCache::calculateQueryHash(aggregator_input_header, params.keys, params.aggregates, filter_dag_for_hash);
 
     /// Include the full intermediate ExpressionStep/FilterStep action DAGs in the hash.
     /// Hashing only output names is not enough: two filters can share output column
@@ -341,7 +343,6 @@ void optimizeUsePartAggregationCache(
             extra_hash.update(action.remove_filter_column);
         }
 
-        const auto & source_filter_dag = reading->getFilterActionsDAG();
         extra_hash.update(source_filter_dag != nullptr);
         if (source_filter_dag)
             source_filter_dag->updateHash(extra_hash);
@@ -382,7 +383,11 @@ void optimizeUsePartAggregationCache(
     if (enable_writes && !uncached_parts.empty())
     {
         populatePartAggregationCache(
-            cache, query_hash, table_id, uncached_parts, params,
+            cache,
+            query_hash,
+            table_id,
+            uncached_parts,
+            params,
             aggregator_input_header,
             reading->getMergeTreeData(),
             reading->getStorageSnapshot(),
@@ -412,11 +417,9 @@ void optimizeUsePartAggregationCache(
     /// diverge when intermediate `ExpressionStep`s compute GROUP BY keys not present
     /// on the read step (e.g. `toYear(date) AS y`).
     auto intermediate_header = std::make_shared<Block>(
-        Aggregator::Params::getHeader(
-            aggregator_input_header, params.only_merge, params.keys, params.aggregates, /* final = */ false));
+        Aggregator::Params::getHeader(aggregator_input_header, params.only_merge, params.keys, params.aggregates, /* final = */ false));
 
-    Pipe cached_pipe(std::make_shared<PartAggregationCacheSource>(
-        *intermediate_header, std::move(cached_entries)));
+    Pipe cached_pipe(std::make_shared<PartAggregationCacheSource>(*intermediate_header, std::move(cached_entries)));
 
     if (uncached_parts.empty())
     {
