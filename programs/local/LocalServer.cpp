@@ -480,7 +480,8 @@ DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPt
     /// Using a hardcoded `"default"` here means a non-default `default_database`
     /// (e.g. `--default_database=mydb`) silently loses data on restart because
     /// the lookup misses the previous run's symlink and a fresh UUID is picked.
-    fs::path existing_path_symlink = fs::weakly_canonical(context->getPath()) / DatabaseCatalog::getMetadataDirPath(name_);
+    const fs::path context_path = pathFromString(context->getPath());
+    fs::path existing_path_symlink = fs::weakly_canonical(context_path) / DatabaseCatalog::getMetadataDirPath(name_);
     if (FS::isSymlinkNoThrow(existing_path_symlink))
     {
         auto symlink_path = FS::readSymlink(existing_path_symlink);
@@ -492,7 +493,7 @@ DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPt
     else
         default_database_uuid = UUIDHelpers::generateV4();
 
-    fs::path default_database_metadata_path = fs::weakly_canonical(context->getPath()) /
+    fs::path default_database_metadata_path = fs::weakly_canonical(context_path) /
         DatabaseCatalog::getStoreDirPath(default_database_uuid);
 
     overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, pathToGenericString(default_database_metadata_path), default_database_uuid, context));

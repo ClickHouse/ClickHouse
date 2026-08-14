@@ -1831,12 +1831,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         chassert(!ddl_guard);
 
-        fs::path user_files = fs::path(getContext()->getUserFilesPath()).lexically_normal();
-        fs::path root_path = fs::path(getContext()->getPath()).lexically_normal();
+        fs::path user_files = pathFromString(getContext()->getUserFilesPath()).lexically_normal();
+        fs::path root_path = pathFromString(getContext()->getPath()).lexically_normal();
+        fs::path attach_from_path = pathFromString(create.attach_from_path);
 
         if (!getContext()->isDDLOrOnClusterInternal())
         {
-            fs::path data_path = fs::path(create.attach_from_path).lexically_normal();
+            fs::path data_path = attach_from_path.lexically_normal();
             if (data_path.is_relative())
                 data_path = (user_files / data_path).lexically_normal();
             if (!fileOrSymlinkPathStartsWith(pathToGenericString(data_path), pathToGenericString(user_files)))
@@ -1848,7 +1849,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         }
         else
         {
-            fs::path data_path = (root_path / create.attach_from_path).lexically_normal();
+            fs::path data_path = (root_path / attach_from_path).lexically_normal();
             if (!fileOrSymlinkPathStartsWith(pathToGenericString(data_path), pathToGenericString(user_files)))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", pathToGenericString(data_path), pathToGenericString(user_files));

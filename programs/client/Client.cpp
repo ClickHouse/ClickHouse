@@ -348,11 +348,11 @@ void Client::initialize(Poco::Util::Application & self)
 
     /// Set path for format schema files
     if (config().has("format_schema_path"))
-        client_context->setFormatSchemaPath(pathToGenericString(fs::weakly_canonical(config().getString("format_schema_path"))));
+        client_context->setFormatSchemaPath(pathToGenericString(fs::weakly_canonical(pathFromString(config().getString("format_schema_path")))));
 
     /// Set the path for google proto files
     if (config().has("google_protos_path"))
-        client_context->setGoogleProtosPath(pathToGenericString(fs::weakly_canonical(config().getString("google_protos_path"))));
+        client_context->setGoogleProtosPath(pathToGenericString(fs::weakly_canonical(pathFromString(config().getString("google_protos_path")))));
 
     /// Use <server_client_version_message/> unless --server-client-version-message is specified
     if (!config().has("no-server-client-version-message") && !config().getBool("server_client_version_message", true))
