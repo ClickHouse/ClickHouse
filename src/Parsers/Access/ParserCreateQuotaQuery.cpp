@@ -1,5 +1,6 @@
 #include <Common/StringUtils.h>
 #include <IO/ReadHelpers.h>
+#include <Access/Common/QuotaValueFromText.h>
 #include <Access/IAccessStorage.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
@@ -12,8 +13,12 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseIntervalKind.h>
+#include <base/arithmeticOverflow.h>
 #include <base/range.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+
+#include <cmath>
+#include <optional>
 
 
 namespace DB
@@ -151,22 +156,110 @@ namespace
     T fieldToNumber(const Field & f)
     {
         if (f.getType() == Field::Types::String)
-            return static_cast<T>(parseWithSizeSuffix<QuotaValue>(trim(f.safeGet<std::string>(), isWhitespaceASCII)));
+            /// Parse with overflow checking so that a quoted out-of-range value (e.g. MAX queries = '1e20' or
+            /// '18446744073709551616') throws instead of silently wrapping around before the range checks below.
+            return static_cast<T>(parseWithSizeSuffix<QuotaValue, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(trim(f.safeGet<std::string>(), isWhitespaceASCII)));
         return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }
 
     bool parseMaxValue(IParserBase::Pos & pos, Expected & expected, QuotaType quota_type, QuotaValue & max_value)
     {
+        IParserBase::Pos literal_pos = pos;
         ASTPtr ast;
         if (!ParserNumber{}.parse(pos, ast, expected) && !ParserStringLiteral{}.parse(pos, ast, expected))
             return false;
 
+        /// ParserNumber consumes an optional sign token before the number token. A leading minus is
+        /// rejected by the token rather than by the parsed value, because ParserNumber normalizes the
+        /// integer spellings of a negative zero (e.g. -0, -0x0) to an unsigned zero, which the value
+        /// checks below cannot tell apart from 0 - while the users.xml path rejects the same text.
+        /// Every other negative value is rejected anyway (see the checks below), so no valid input
+        /// starts with a minus.
+        if (literal_pos->type == TokenType::Minus)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value is out of range");
+        if (literal_pos->type == TokenType::Plus)
+            ++literal_pos;
+        /// ParserNumber strips '_' digit separators from the token before conversion; do the same
+        /// so that e.g. 1_5e-1 is analyzed as 15e-1 and not dismissed as an unknown literal form.
+        std::string literal_text(literal_pos->begin, literal_pos->size());
+        std::erase(literal_text, '_');
+
         const Field & max_field = ast->as<ASTLiteral &>().value;
         const auto & type_info = QuotaTypeInfo::get(quota_type);
         if (type_info.output_denominator == 1)
-            max_value = fieldToNumber<QuotaValue>(max_field);
+        {
+            /// Reject negative literals explicitly: FieldVisitorConvertToNumber wraps a negative signed
+            /// integer around instead of throwing (e.g. MAX queries = -1 would become 18446744073709551615).
+            /// A negative float is checked by the sign bit rather than a `< 0` comparison: a tiny negative
+            /// literal (e.g. MAX queries = -1e-400) underflows to -0.0, which compares equal to zero.
+            bool is_negative = (max_field.getType() == Field::Types::Int64 && max_field.safeGet<Int64>() < 0)
+                || (max_field.getType() == Field::Types::Int128 && max_field.safeGet<Int128>() < 0)
+                || (max_field.getType() == Field::Types::Int256 && max_field.safeGet<Int256>() < 0)
+                || (max_field.getType() == Field::Types::Float64 && std::signbit(max_field.safeGet<Float64>()));
+            if (is_negative)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value is out of range");
+            /// A literal in the floating-point form is analyzed as text rather than by its Float64 value,
+            /// which ParserNumber has already rounded to the nearest double. First, reject a fractional
+            /// literal: FieldVisitorConvertToNumber would silently truncate it (e.g. MAX queries = 1.5
+            /// would become 1 and round-trip differently), while the users.xml path rejects the same
+            /// input; the fractional part is invisible in the value above 2^53 (e.g. 9007199254740992.5
+            /// is rounded to 9007199254740992.0). Second, take the value of an integral literal from the
+            /// text, because rounding changes an integer above 2^53 (e.g. MAX queries = 9007199254740993.0
+            /// would be stored as 9007199254740992). A literal of an unknown form (e.g. inf, nan) or a
+            /// value not fitting into QuotaValue is left to the range check inside FieldVisitorConvertToNumber.
+            std::optional<QuotaValue> exact_value;
+            if (max_field.getType() == Field::Types::Float64)
+            {
+                if (auto parts = splitNumericLiteral(literal_text))
+                {
+                    if (!isIntegralScaledNumericLiteral(*parts, type_info.output_denominator))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value must be an integer");
+                    exact_value = exactScaledValueOfNumericLiteral(*parts, type_info.output_denominator);
+                }
+            }
+            max_value = exact_value ? *exact_value : fieldToNumber<QuotaValue>(max_field);
+        }
         else
-            max_value = type_info.scaleToValue(fieldToNumber<double>(max_field));
+        {
+            if (max_field.getType() == Field::Types::String)
+            {
+                /// A quoted string is parsed as an integer with an optional size suffix, so the scaled
+                /// value is computed with integer arithmetic: the double product loses low bits above
+                /// 2^53 (e.g. MAX execution_time = '18446744073' would be stored as the rounded
+                /// 18446744072999999488 nanoseconds and would not round-trip through SHOW CREATE QUOTA).
+                QuotaValue unscaled_value = fieldToNumber<QuotaValue>(max_field);
+                if (common::mulOverflow(unscaled_value, type_info.output_denominator, max_value))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value is out of range");
+                return true;
+            }
+            /// Reject a negative value by the sign bit before scaling: a tiny negative literal
+            /// (e.g. MAX execution_time = -1e-400) underflows to -0.0, which compares equal to zero.
+            double value = fieldToNumber<double>(max_field);
+            if (std::signbit(value))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value is out of range");
+            /// Take the scaled value from the literal text when it can be computed exactly: the Float64
+            /// above has already been rounded to the nearest double, which loses the low bits of a value
+            /// near the top of the range and can push it out of the range altogether (the scaled value of
+            /// MAX execution_time = 18446744073.709551615 is exactly QuotaValue max, but the rounded
+            /// product is 2^64). A literal of an unknown form (e.g. inf) or a scaled value that does not
+            /// fit is left to the range check on the product below. A scaled value below a whole
+            /// nanosecond is truncated, as the cast of the product below truncates it.
+            if (auto parts = splitNumericLiteral(literal_text))
+            {
+                if (auto exact_value = exactScaledValueOfNumericLiteral(*parts, type_info.output_denominator))
+                {
+                    max_value = *exact_value;
+                    return true;
+                }
+            }
+            /// Bound the scaled value to the QuotaValue (UInt64) range before the cast: an out-of-range or
+            /// non-finite product (e.g. MAX execution_time = 1e19) makes static_cast<QuotaValue> undefined behavior.
+            double scaled_value = value * static_cast<double>(type_info.output_denominator);
+            static constexpr double uint64_max_plus_one_as_double = 18446744073709551616.0; /// 2^64, first double above UInt64 max
+            if (!std::isfinite(scaled_value) || scaled_value >= uint64_max_plus_one_as_double)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value is out of range");
+            max_value = static_cast<QuotaValue>(scaled_value);
+        }
         return true;
     }
 
