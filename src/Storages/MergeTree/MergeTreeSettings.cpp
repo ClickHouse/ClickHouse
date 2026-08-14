@@ -486,7 +486,7 @@ partitions, and if there are enough free resources in the pool, it starts
 background merges. Merges occur until the total size of the source parts is
 larger than `max_bytes_to_merge_at_max_space_in_pool`.
 
-Merges initiated by [OPTIMIZE FINAL](/sql-reference/statements/optimize)
+Merges initiated by [OPTIMIZE FINAL](/reference/statements/optimize)
 ignore `max_bytes_to_merge_at_max_space_in_pool` (only the free disk space
 is taken into account).
 )", 0) \
@@ -640,10 +640,10 @@ OPTIMIZE FINAL query.
 )", 0) \
     DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
     Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
-    or [during INSERTs](/reference/settings/session-settings/materialize#materialize_statistics_on_insert))", 0) \
+    or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert))", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
 When enabled, merges build and store skip indices for new parts.
-Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index)
+Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index)
 or [during INSERTs](/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert).
 
 See also [exclude_materialize_skip_indexes_on_merge](#exclude_materialize_skip_indexes_on_merge) for more fine-grained control.
@@ -653,7 +653,7 @@ Excludes provided comma delimited list of skip indexes from being built and stor
 [materialize_skip_indexes_on_merge](#materialize_skip_indexes_on_merge) is false.
 
 The excluded skip indexes will still be built and stored by an explicit
-[MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index) query or during INSERTs depending on
+[MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index) query or during INSERTs depending on
 the [materialize_skip_indexes_on_insert](/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert)
 session setting.
 
@@ -819,7 +819,7 @@ background merges of this table. If not specified (empty string), then
 server setting `merge_workload` is used instead.
 
 **See Also**
-- [Workload Scheduling](/operations/workload-scheduling.md)
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
     DECLARE(String, mutation_workload, "", R"(
 Used to regulate how resources are utilized and shared between mutations and
@@ -828,11 +828,21 @@ background mutations of this table. If not specified (empty string), then
 server setting `mutation_workload` is used instead.
 
 **See Also**
-- [Workload Scheduling](/operations/workload-scheduling.md)
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
     DECLARE(Milliseconds, background_task_preferred_step_execution_time_ms, 50, R"(
 Target time to execution of one step of merge or mutation. Can be exceeded if
 one step takes longer time
+)", 0) \
+    DECLARE(Bool, merge_use_batch_sorting_queue, false, R"(
+Use the batch sorting queue to reduce per-row queue overhead when merging sorted streams.
+
+Only applies to merges that do not change rows, i.e. plain `MergeTree`
+(`Ordinary` merge mode). It has no effect on engines with merge-time
+semantics such as `ReplacingMergeTree`, `CollapsingMergeTree`,
+`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`,
+`GraphiteMergeTree` and `VersionedCollapsingMergeTree`, which keep using the
+default queue regardless of this setting.
 )", 0) \
     DECLARE(Bool, enforce_index_structure_match_on_partition_manipulation, false, R"(
 If this setting is enabled for destination table of a partition manipulation
@@ -915,7 +925,7 @@ Possible values:
 - Any positive integer.
 
 To achieve maximum performance of `SELECT` queries, it is necessary to
-minimize the number of parts processed, see [Merge Tree](/development/architecture#merge-tree).
+minimize the number of parts processed, see [Merge Tree](/resources/develop-contribute/introduction/architecture#merge-tree).
 
 Prior to version 23.6 this setting was set to 300. You can set a higher
 different value, it will reduce the probability of the `Too many parts`
@@ -1042,7 +1052,7 @@ compressability of the newly inserted table part.
 Only has an effect for ordinary MergeTree-engine tables. Does nothing for
 specialized MergeTree engine tables (e.g. CollapsingMergeTree).
 
-MergeTree tables are (optionally) compressed using [compression codecs](/sql-reference/statements/create/table#column_compression_codec).
+MergeTree tables are (optionally) compressed using [compression codecs](/reference/statements/create/table#column_compression_codec).
 Generic compression codecs such as LZ4 and ZSTD achieve maximum compression
 rates if the data exposes patterns. Long runs of the same value typically
 compress very well.
@@ -1309,6 +1319,32 @@ from other replicas.
 Possible values:
 - true, false
 )", 0) \
+    DECLARE(Bool, always_fetch_mutated_part, false, R"(
+If true, this replica never executes `MUTATE_PART` replication log entries
+(regular mutations such as `ALTER TABLE ... UPDATE/DELETE`) and always
+downloads the resulting mutated parts from other replicas.
+
+At least one replica must have this setting disabled; otherwise mutations
+cannot finish.
+
+This setting does not affect patch parts created by lightweight updates:
+they are still applied locally when parts are merged. Enable
+`always_fetch_merged_part` as well to also offload merges (including the
+application of patch parts) to other replicas.
+
+Because this replica does not execute mutations, and mutation failure
+status is local to each replica, a synchronous wait on this replica
+cannot observe mutation failures that happen on the replicas executing
+the mutation. Therefore synchronous mutations (`mutations_sync` = 1
+or 2) and synchronous `ALTER` queries that mutate data
+(`alter_sync` = 1 or 2) are rejected on such a replica with a
+`SUPPORT_IS_DISABLED` error instead of a wait that would hang if the
+mutation fails. Use `mutations_sync` = 0 (`alter_sync` = 0), or issue
+these queries on a replica that executes mutations.
+
+Possible values:
+- true, false
+)", 0) \
     DECLARE(UInt64, number_of_partitions_to_consider_for_merge, 10, R"(
 Only available in ClickHouse Cloud. Up to top N partitions which we will
 consider for merge. Partitions picked in a random weighted way where weight
@@ -1388,7 +1424,7 @@ disabled, the data part is removed. Activate this setting if you want to
 analyze such parts later.
 
 The setting is applicable to `MergeTree` tables with enabled
-[data replication](/engines/table-engines/mergetree-family/replacingmergetree).
+[data replication](/reference/engines/table-engines/mergetree-family/replacingmergetree).
 
 Possible values:
 
@@ -1423,7 +1459,7 @@ new nodes.
 )", 0) \
     DECLARE(UInt64, max_replicated_sends_network_bandwidth, 0, R"(
 Limits the maximum speed of data exchange over the network in bytes per
-second for [replicated](/engines/table-engines/mergetree-family/replacingmergetree)
+second for [replicated](/reference/engines/table-engines/mergetree-family/replacingmergetree)
 sends. This setting is applied to a particular table, unlike the
 [`max_replicated_sends_network_bandwidth_for_server`](/reference/settings/server-settings/settings/max-replicated#max_replicated_sends_network_bandwidth_for_server)
 setting, which is applied to the server.
@@ -1732,7 +1768,7 @@ The amount of memory currently spent on these values is reported by the
 and per part in `system.parts.index_granularity_bytes_in_memory`.
 
 The setting is applied only to parts written after it was changed. Use
-[ALTER TABLE ... REWRITE PARTS](/sql-reference/statements/alter/partition#rewrite-parts)
+[ALTER TABLE ... REWRITE PARTS](/reference/statements/alter/partition#rewrite-parts)
 to apply it to existing parts. `Compact` parts always use adaptive granularity.
 )", 0) \
     DECLARE(Bool, enable_index_granularity_compression, true, R"(
@@ -1881,7 +1917,7 @@ not be less than the value of the
     DECLARE(Bool, check_sample_column_is_correct, true, R"(
 Enables the check at table creation, that the data type of a column for s
 ampling or sampling expression is correct. The data type must be one of unsigned
-[integer types](/sql-reference/data-types/int-uint): `UInt8`, `UInt16`,
+[integer types](/reference/data-types/int-uint): `UInt8`, `UInt16`,
 `UInt32`, `UInt64`.
 
 Possible values:
@@ -2054,7 +2090,12 @@ Maximum time between runs of merge coordinator thread
 Time changing factor for delay of coordinator thread
 )", 0) \
     DECLARE(MergeCoordinatorDistributionAlgorithm, shared_merge_tree_merge_coordinator_distribution_algorithm, MergeCoordinatorDistributionAlgorithm::SAINTE_LAGUE, R"(
-What algorithm will be used by merge coordinator thread to distribute merges between replicas
+The algorithm used by the merge coordinator thread to distribute merges between replicas.
+
+Possible values:
+
+- `water_filling`
+- `sainte_lague`
 )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
 Timeout that merge worker thread will use if it is needed to update it's state after immediate action
@@ -2140,7 +2181,7 @@ The candidates are the table's default codec (see the `default_compression_codec
 Only integer-like types are currently adaptive.
 The smallest output wins. Compression is therefore never worse than the default, and incompressible blocks are stored raw.
 A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
-Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/sql-reference/table-functions/mergeTreeCodecBlockCounts) table function.
+Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions) table function.
 )", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
 Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
@@ -2308,7 +2349,7 @@ The setting can always be toggled back with `ALTER TABLE ... MODIFY SETTING tabl
 )", 0) \
     DECLARE(Bool, materialize_projections_on_insert, true, R"(
 When enabled, INSERTs create new parts with projections.
-Otherwise, they can be created by explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection)
+Otherwise, they can be created by explicit [MATERIALIZE PROJECTION](/reference/statements/alter/projection#materialize-projection)
 or during merges with [materialize_projections_on_merge](/reference/settings/merge-tree-settings/materialize-projections#materialize_projections_on_merge).
 )", 0) \
     DECLARE(Bool, materialize_projections_on_merge, false, R"(
@@ -2316,7 +2357,7 @@ When enabled, a merge rebuilds a projection that is missing from all of its sour
 inserted with `materialize_projections_on_insert = 0`), so the merged part has the projection.
 
 Merges still only combine parts that share the same set of projections. To backfill a projection to all existing parts,
-use an explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection). Projections
+use an explicit [MATERIALIZE PROJECTION](/reference/statements/alter/projection#materialize-projection). Projections
 are also created during INSERTs with [materialize_projections_on_insert](/reference/settings/merge-tree-settings/materialize-projections#materialize_projections_on_insert).
 )", 0) \
 
