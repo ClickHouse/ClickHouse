@@ -504,7 +504,16 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
     /// TODO: add tests for azure, local storage types.
 
     auto catalog = getCatalog();
-    switch (catalog->getCatalogType())
+    auto catalog_type = catalog->getCatalogType();
+
+    /// The unified catalog serves both formats. Iceberg tables need the same configurations as an
+    /// Iceberg REST catalog, Delta tables the same as a Unity catalog, so route each table to that arm.
+    if (catalog_type == DatabaseDataLakeCatalogType::UNITY_CATALOG)
+        catalog_type = table_format == DataLake::DataLakeTableFormat::ICEBERG
+            ? DatabaseDataLakeCatalogType::ICEBERG_REST
+            : DatabaseDataLakeCatalogType::UNITY;
+
+    switch (catalog_type)
     {
         case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
         {
@@ -669,36 +678,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
             }
         }
         case DatabaseDataLakeCatalogType::UNITY_CATALOG:
-        {
-            bool use_iceberg = (table_format == DataLake::DataLakeTableFormat::ICEBERG);
-            switch (type)
-            {
-#if USE_AWS_S3
-                case DB::DatabaseDataLakeStorageType::S3:
-                {
-                    if (use_iceberg)
-                        return std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
-                    return std::make_shared<StorageS3DeltaLakeConfiguration>(storage_settings);
-                }
-#endif
-                case DB::DatabaseDataLakeStorageType::Local:
-                {
-                    if (use_iceberg)
-                        return std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
-                    return std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
-                }
-                case DB::DatabaseDataLakeStorageType::Other:
-                {
-                    if (use_iceberg)
-                        return std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
-                    return std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
-                }
-                default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Server does not contain support for storage type {} for Unified Unity catalog",
-                                    type);
-            }
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unified Unity catalog was not routed to a per-format catalog type");
         case DatabaseDataLakeCatalogType::NONE:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unspecified catalog type");
     }
