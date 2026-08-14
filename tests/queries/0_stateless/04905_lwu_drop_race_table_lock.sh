@@ -2,6 +2,8 @@
 # Tags: no-fasttest, no-replicated-database, no-shared-merge-tree
 # Tag no-replicated-database: the test needs its own Memory database, which a Replicated database
 #   run cannot host, and DROP must reach the synchronous exclusive-lock path.
+# Tag no-shared-merge-tree: SharedMergeTree does not honor
+#   sleep_before_commit_local_part_in_replicated_table_ms, which this test uses as its window.
 
 set -e
 
@@ -31,28 +33,67 @@ function setup_table()
     " < /dev/null
 }
 
-# The sink sleeps right before it commits the patch part, so a DROP issued a few seconds into the
-# update lands in the window between the part rename and the commit.
+# The DROP must land between the patch-part rename and the commit, so it waits for the sink to
+# announce its pre-commit pause for this arm's query id. An arm that never reaches that window says
+# so rather than reporting success. The poll pins enable_parallel_replicas: system.text_log has to
+# be read on this server, not on a cluster of hosts that never logged the message.
 function race_with_drop()
 {
-    ${CLICKHOUSE_CLIENT} "$@" < /dev/null 2>/dev/null &
+    local arm=$1
+    shift
+    local qid="${CLICKHOUSE_DATABASE_1}_${arm}"
+
+    ${CLICKHOUSE_CLIENT} --query_id "$qid" "$@" < /dev/null > /dev/null 2>&1 &
     local updater=$!
 
-    sleep 3
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.t SYNC" < /dev/null 2>/dev/null || true
+    local observed=0
+    local seen
+    for _ in $(seq 1 300); do
+        seen=$(${CLICKHOUSE_CLIENT} --query "
+            SYSTEM FLUSH LOGS text_log;
+            SELECT count() FROM system.text_log
+            WHERE query_id = '$qid' AND event_date >= yesterday()
+              AND message LIKE '%committing part patch-%'
+              AND message LIKE '%triggered sleep_before_commit_local_part_in_replicated_table_ms%'
+            SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0" < /dev/null 2>/dev/null) || seen=""
+        case "$seen" in
+            '' | *[!0-9]*) seen=0 ;;
+        esac
+        if [ "$seen" -gt 0 ]; then
+            observed=1
+            break
+        fi
+        # The updater has exited, so the window can no longer be entered.
+        kill -0 "$updater" 2>/dev/null || break
+        sleep 0.2
+    done
 
-    wait $updater 2>/dev/null || true
+    local drop=skipped
+    if [ "$observed" -eq 1 ]; then
+        if ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.t SYNC" < /dev/null > /dev/null 2>&1; then
+            drop=ok
+        else
+            drop=failed
+        fi
+    fi
+
+    local update=ok
+    wait "$updater" 2>/dev/null || update=failed
+
+    if [ "$observed" -eq 1 ]; then
+        echo "$arm: update=$update drop=$drop"
+    else
+        echo "$arm: commit window never observed"
+    fi
 }
 
 setup_table update
-race_with_drop --enable_lightweight_update 1 \
+race_with_drop update --enable_lightweight_update 1 \
     --query "UPDATE ${CLICKHOUSE_DATABASE_1}.t SET c2 = 'xx' WHERE id = 1"
-${CLICKHOUSE_CLIENT} --query "SELECT 'update survived'" < /dev/null
 
 setup_table alter
-race_with_drop --enable_lightweight_update 1 --alter_update_mode 'lightweight_force' \
+race_with_drop alter --enable_lightweight_update 1 --alter_update_mode 'lightweight_force' \
     --query "ALTER TABLE ${CLICKHOUSE_DATABASE_1}.t UPDATE c2 = 'xx' WHERE id = 1"
-${CLICKHOUSE_CLIENT} --query "SELECT 'alter survived'" < /dev/null
 
 # An Alias table resolves a different storage, so the update has to hold the target's lock as well.
 setup_table alias
@@ -60,8 +101,7 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_alias_table_engine 1 --query "
     DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.a SYNC;
     CREATE TABLE ${CLICKHOUSE_DATABASE_1}.a ENGINE = Alias('${CLICKHOUSE_DATABASE_1}', 't');
 " < /dev/null
-race_with_drop --allow_experimental_alias_table_engine 1 --enable_lightweight_update 1 \
+race_with_drop alias --allow_experimental_alias_table_engine 1 --enable_lightweight_update 1 \
     --query "UPDATE ${CLICKHOUSE_DATABASE_1}.a SET c2 = 'xx' WHERE id = 1"
-${CLICKHOUSE_CLIENT} --query "SELECT 'alias survived'" < /dev/null
 
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLICKHOUSE_DATABASE_1}" < /dev/null
