@@ -84,14 +84,6 @@ void DataTypeArray::forEachChild(const ChildCallback & callback) const
     nested->forEachChild(callback);
 }
 
-DataTypePtr DataTypeArray::doTransformChildren(const ChildTransform & transform) const
-{
-    auto new_nested = transform(nested)->transformChildren(transform);
-    if (new_nested.get() == nested.get())
-        return shared_from_this();
-    return std::make_shared<DataTypeArray>(new_nested);
-}
-
 std::unique_ptr<ISerialization::SubstreamData> DataTypeArray::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {
     auto nested_type = assert_cast<const DataTypeArray &>(*data.type).nested;
@@ -167,7 +159,7 @@ SELECT [1, 2] AS x, toTypeName(x)
 
 ## Working with Data Types {#working-with-data-types}
 
-When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [Nullable](/sql-reference/data-types/nullable) or literal [NULL](/reference/settings/formats/input-format#input_format_null_as_default) values, the type of an array element also becomes [Nullable](/reference/data-types/nullable).
+When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [Nullable](/reference/data-types/nullable) or literal [NULL](/reference/settings/formats/input-format#input_format_null_as_default) values, the type of an array element also becomes [Nullable](/reference/data-types/nullable).
 
 If ClickHouse couldn't determine the data type, it generates an exception. For instance, this happens when trying to create an array with strings and numbers simultaneously (`SELECT array(1, 'a')`).
 

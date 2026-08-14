@@ -108,14 +108,6 @@ void DataTypeNullable::forEachChild(const ChildCallback & callback) const
     nested_data_type->forEachChild(callback);
 }
 
-DataTypePtr DataTypeNullable::doTransformChildren(const ChildTransform & transform) const
-{
-    auto new_nested = transform(nested_data_type)->transformChildren(transform);
-    if (new_nested.get() == nested_data_type.get())
-        return shared_from_this();
-    return std::make_shared<DataTypeNullable>(new_nested);
-}
-
 
 std::unique_ptr<ISerialization::SubstreamData> DataTypeNullable::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {

@@ -336,32 +336,6 @@ void IDataType::setCustomization(DataTypeCustomDescPtr custom_desc_) const
         custom_serialization = std::move(custom_desc_->serialization);
 }
 
-DataTypeCustomDescPtr IDataType::cloneCustomization() const
-{
-    if (!custom_name && !custom_serialization)
-        return nullptr;
-
-    return std::make_unique<DataTypeCustomDesc>(custom_name, custom_serialization);
-}
-
-DataTypePtr IDataType::transformChildren(const ChildTransform & transform) const
-{
-    DataTypePtr result = doTransformChildren(transform);
-    if (result.get() == this)
-        return result;
-
-    /// Carry customization over; the custom name is transformed too so one that embeds child types
-    /// (e.g. Nested) stays in sync.
-    if (auto customization = cloneCustomization())
-    {
-        if (custom_name)
-            customization->name = custom_name->transformChildren(*result);
-        result->setCustomization(std::move(customization));
-    }
-
-    return result;
-}
-
 MutableSerializationInfoPtr IDataType::createSerializationInfo(const SerializationInfoSettings & settings) const
 {
     return std::make_shared<SerializationInfo>(ISerialization::KindStack{ISerialization::Kind::DEFAULT}, settings);

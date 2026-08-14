@@ -180,15 +180,6 @@ void DataTypeMap::forEachChild(const DB::IDataType::ChildCallback & callback) co
     value_type->forEachChild(callback);
 }
 
-DataTypePtr DataTypeMap::doTransformChildren(const ChildTransform & transform) const
-{
-    auto new_key_type = transform(key_type)->transformChildren(transform);
-    auto new_value_type = transform(value_type)->transformChildren(transform);
-    if (new_key_type.get() == key_type.get() && new_value_type.get() == value_type.get())
-        return shared_from_this();
-    return std::make_shared<DataTypeMap>(new_key_type, new_value_type);
-}
-
 /// Resolves a dynamic subcolumn like `map['key']` by parsing the key from the subcolumn name,
 /// creating a `SerializationMapKeyValue` that knows how to read only the relevant bucket,
 /// and optionally pre-extracting the values from an existing column.
@@ -298,7 +289,7 @@ SELECT m['key2'] FROM tab;
 ```
 
 If the requested key `k` is not contained in the map, `m[k]` returns the value type's default value, e.g. `0` for integer types and `''` for string types.
-To check whether a key exists in a map, you can use function [mapContains](/sql-reference/functions/tuple-map-functions#mapContainsKey).
+To check whether a key exists in a map, you can use function [mapContains](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey).
 
 ```sql title="Query"
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE=Memory;
@@ -315,7 +306,7 @@ SELECT m['key1'] FROM tab;
 
 ## Converting Tuple to Map {#converting-tuple-to-map}
 
-Values of type `Tuple()` can be cast to values of type `Map()` using function [CAST](/sql-reference/functions/type-conversion-functions#CAST):
+Values of type `Tuple()` can be cast to values of type `Map()` using function [CAST](/reference/functions/regular-functions/type-conversion-functions#CAST):
 
 **Example**
 
@@ -445,7 +436,7 @@ If bucketed `Map` serialization does not fit your use case, there are two altern
 
 #### Using the JSON Data Type {#using-the-json-data-type}
 
-The [JSON](/sql-reference/data-types/newjson) data type stores each frequent path as a separate dynamic subcolumn. Paths that exceed the `max_dynamic_paths` limit go into a [shared data structure](/sql-reference/data-types/newjson#shared-data-structure), which can use `advanced` serialization for optimized single-path reads. See the [blog post](https://clickhouse.com/blog/json-data-type-gets-even-better) for a detailed overview of the `advanced` serialization.
+The [JSON](/reference/data-types/newjson) data type stores each frequent path as a separate dynamic subcolumn. Paths that exceed the `max_dynamic_paths` limit go into a [shared data structure](/reference/data-types/newjson#shared-data-structure), which can use `advanced` serialization for optimized single-path reads. See the [blog post](https://clickhouse.com/blog/json-data-type-gets-even-better) for a detailed overview of the `advanced` serialization.
 
 | Aspect             | `Map` with buckets                                                                             | `JSON`                                                                                                                                                           |
 |--------------------|------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -486,8 +477,8 @@ Manual sharding is beneficial when vertical merges are important for reducing me
 
 **See Also**
 
-- [map()](/sql-reference/functions/tuple-map-functions#map) function
-- [CAST()](/sql-reference/functions/type-conversion-functions#CAST) function
+- [map()](/reference/functions/regular-functions/tuple-map-functions#map) function
+- [CAST()](/reference/functions/regular-functions/type-conversion-functions#CAST) function
 - [-Map combinator for Map datatype](/reference/functions/aggregate-functions/combinators#-map)
 
 ## Related content {#related-content}

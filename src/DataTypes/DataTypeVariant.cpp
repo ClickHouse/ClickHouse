@@ -229,13 +229,6 @@ void DataTypeVariant::forEachChild(const DB::IDataType::ChildCallback & callback
     }
 }
 
-DataTypePtr DataTypeVariant::doTransformChildren(const ChildTransform &) const
-{
-    /// A variant is addressed by its name, so replacing one with a differently named type would move
-    /// the data away from its discriminator.
-    return shared_from_this();
-}
-
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())

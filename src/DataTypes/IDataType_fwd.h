@@ -1,6 +1,5 @@
 #pragma once
 
-#include <functional>
 #include <memory>
 #include <vector>
 
@@ -12,9 +11,6 @@ namespace DB
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
-
-/// Child-type replacement used by IDataType::transformChildren.
-using ChildTransform = std::function<DataTypePtr(const DataTypePtr &)>;
 
 struct DataTypeWithConstInfo
 {

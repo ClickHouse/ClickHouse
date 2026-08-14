@@ -19,9 +19,7 @@ namespace DB
 struct DataTypeCustomDesc;
 using DataTypeCustomDescPtr = std::unique_ptr<DataTypeCustomDesc>;
 class IDataTypeCustomName;
-/// Shared rather than unique so that a data type can be copied together with its
-/// customization - see DataTypeAggregateFunction::cloneWithVersion.
-using DataTypeCustomNamePtr = std::shared_ptr<const IDataTypeCustomName>;
+using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
 
 class ReadBuffer;
 class WriteBuffer;
@@ -121,11 +119,6 @@ public:
     /// Call callback for each nested type recursively.
     using ChildCallback = std::function<void(const IDataType &)>;
     virtual void forEachChild(const ChildCallback &) const {}
-
-    /// Mutable counterpart of forEachChild: a copy with transform applied to every descendant,
-    /// rebuilding containers and preserving customization; returns *this when nothing changed. Like
-    /// forEachChild, transform is not applied to this node itself - apply it to the root yourself.
-    DataTypePtr transformChildren(const ChildTransform & transform) const;
 
     Names getSubcolumnNames() const;
 
@@ -359,15 +352,7 @@ public:
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
 
-    /// Returns this type's customization, shared with it, so that it can be attached to a copy of
-    /// the type. Returns nullptr when there is nothing to carry over.
-    DataTypeCustomDescPtr cloneCustomization() const;
-
 protected:
-    /// Recursive rebuild for transformChildren (which carries customization over). Overrides mirror
-    /// forEachChild: apply transform to each child and recurse. Default is a leaf.
-    virtual DataTypePtr doTransformChildren(const ChildTransform &) const { return shared_from_this(); }
-
     static std::unique_ptr<SubstreamData> getSubcolumnData(
         std::string_view subcolumn_name,
         const SubstreamData & data,

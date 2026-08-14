@@ -166,14 +166,6 @@ void DataTypeLowCardinality::forEachChild(const ChildCallback & callback) const
     dictionary_type->forEachChild(callback);
 }
 
-DataTypePtr DataTypeLowCardinality::doTransformChildren(const ChildTransform & transform) const
-{
-    auto new_dictionary_type = transform(dictionary_type)->transformChildren(transform);
-    if (new_dictionary_type.get() == dictionary_type.get())
-        return shared_from_this();
-    return std::make_shared<DataTypeLowCardinality>(new_dictionary_type);
-}
-
 
 static DataTypePtr create(const ASTPtr & arguments)
 {

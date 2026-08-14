@@ -44,7 +44,6 @@ public:
     MutableColumnPtr createColumn() const override;
 
     void forEachChild(const ChildCallback & callback) const override;
-    DataTypePtr doTransformChildren(const ChildTransform & transform) const override;
 
     Field getDefault() const override;
 

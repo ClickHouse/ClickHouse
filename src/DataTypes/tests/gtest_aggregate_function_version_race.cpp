@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <Common/Exception.h>
 #include <Common/tests/gtest_global_register.h>
 
 #include <atomic>
@@ -265,27 +266,55 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderNullableIsAssigne
     ASSERT_EQ(asAgg(source_tuple->getElements()[0]).getVersion(), 1u);
 }
 
-GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderVariantIsNotAssigned)
+/// A `Variant` alternative is a normal nested type: it is announced with its own name, so the
+/// version has to be assigned there too. The rebuild must keep the original order - the default
+/// `DataTypeVariant` constructor sorts alternatives by name, and a spelled-out version changes the
+/// name, so sorting again would permute the discriminators of an existing column.
+GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderVariantKeepsDiscriminatorOrder)
 {
     tryRegisterAggregateFunctions();
 
+    /// `String` sorts after `AggregateFunction(...)`, so the declared order is not the sorted one.
     DataTypePtr variant = DataTypeFactory::instance().get(
         "Variant(String, AggregateFunction(sumMap, Array(UInt64), Array(UInt64)))");
+    const auto & source_variants = typeid_cast<const DataTypeVariant &>(*variant).getVariants();
 
     DataTypePtr assigned = variant;
     setVersionToAggregateFunctions(assigned, /*if_empty=*/true, /*revision=*/std::nullopt);
 
-    ASSERT_EQ(assigned.get(), variant.get());
+    ASSERT_NE(assigned.get(), variant.get());
+    const auto & assigned_variants = typeid_cast<const DataTypeVariant &>(*assigned).getVariants();
+    ASSERT_EQ(assigned_variants.size(), source_variants.size());
 
-    for (const auto & nested : typeid_cast<const DataTypeVariant &>(*assigned).getVariants())
-    {
-        if (const auto * agg = typeid_cast<const DataTypeAggregateFunction *>(nested.get()))
-            ASSERT_EQ(agg->getVersion(), 1u);
-    }
+    /// Same discriminators: the aggregate function alternative is still the second one, now at
+    /// version 0, and the `String` one is untouched.
+    ASSERT_EQ(assigned_variants[0]->getName(), source_variants[0]->getName());
+    ASSERT_EQ(asAgg(assigned_variants[1]).getVersion(), 0u);
+
+    /// The shared source type is untouched.
+    ASSERT_EQ(asAgg(source_variants[1]).getVersion(), 1u);
 }
 
-/// JSON typed paths are covered too (the old walk did not descend into them).
-GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderJSONTypedPathIsAssigned)
+/// Two alternatives that differ only in a spelled-out version would become the same type once both
+/// are re-versioned. There is no way to announce that on the wire, so it has to be an error rather
+/// than a silent no-op that announces versions the payload is not written with.
+GTEST_TEST(DataTypeAggregateFunctionVersion, VariantAlternativesCollapsingIsAnError)
+{
+    tryRegisterAggregateFunctions();
+
+    DataTypePtr variant = DataTypeFactory::instance().get(
+        "Variant(AggregateFunction(sumMap, Array(UInt64), Array(UInt64)), "
+        "AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))");
+
+    DataTypePtr assigned = variant;
+    ASSERT_THROW(
+        setVersionToAggregateFunctions(assigned, /*if_empty=*/false, /*revision=*/std::nullopt), DB::Exception);
+}
+
+/// A state nested in a `JSON` column keeps the version spelled in its own type name: `JSON` (like
+/// `Dynamic`) announces its nested types through the binary type encoding, which has no version
+/// field, so a revision-derived version could never reach the reader.
+GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderJSONTypedPathIsNotAssigned)
 {
     tryRegisterAggregateFunctions();
 
@@ -295,16 +324,10 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderJSONTypedPathIsAs
     DataTypePtr assigned = json;
     setVersionToAggregateFunctions(assigned, /*if_empty=*/true, /*revision=*/std::nullopt);
 
-    ASSERT_NE(assigned.get(), json.get());
-    const auto * assigned_object = typeid_cast<const DataTypeObject *>(assigned.get());
-    ASSERT_NE(assigned_object, nullptr);
-
-    auto it = assigned_object->getTypedPaths().find("x");
-    ASSERT_NE(it, assigned_object->getTypedPaths().end());
-    ASSERT_EQ(asAgg(it->second).getVersion(), 0u);
+    ASSERT_EQ(assigned.get(), json.get());
 
     const auto & source_paths = typeid_cast<const DataTypeObject &>(*json).getTypedPaths();
-    ASSERT_EQ(asAgg(source_paths.at("x")).getVersion(), 1u); // source untouched
+    ASSERT_EQ(asAgg(source_paths.at("x")).getVersion(), 1u);
 }
 
 /// Concurrent setVersionToAggregateFunctions calls over the SAME shared type object.

@@ -34,6 +34,10 @@ public:
 
     size_t getVersion() const;
 
+    /// The version exactly as it was set (parsed from AST or assigned), without collapsing
+    /// std::nullopt to the function's default. Empty means "no explicit version".
+    std::optional<size_t> getVersionIfExplicit() const { return version; }
+
     String getFunctionName() const;
     AggregateFunctionPtr getFunction() const { return function; }
 
@@ -73,22 +77,27 @@ public:
 
     bool isVersioned() const;
 
-    /// The explicitly assigned version, if any. Empty means "not set": `getVersion` then
-    /// falls back to the function's default (latest) version. Version is set only at
-    /// construction (parsed from AST, decoded from binary, or via `setVersionToAggregateFunctions`).
-    std::optional<size_t> getVersionIfExplicit() const { return version; }
-
-    /// Returns a copy of this type with the given version baked in via the constructor.
-    /// Used to carry a serialization version without mutating the (shared) type object.
-    DataTypePtr cloneWithVersion(size_t version_) const;
+    /// The version is set once, at construction: parsed from AST, decoded from the binary type
+    /// encoding, or chosen by `setVersionToAggregateFunctions`, which replaces the type rather than
+    /// modifying it. There is deliberately no setter: a type object is typically shared - notably
+    /// with the table metadata a block was read from - so pinning a version in place would be
+    /// visible to everyone else holding the same type, and racy against them reading it.
+    ///
+    /// Whether the version was pinned explicitly, as opposed to falling back to the default one.
+    bool hasExplicitVersion() const { return version.has_value(); }
 };
 
-/// Assigns a serialization version to every nested DataTypeAggregateFunction in `type`, except inside
-/// a Variant (see DataTypeVariant::doTransformChildren). Replaces each versioned leaf rather than
-/// mutating it, because `type` is shared across concurrent queries.
-///
-/// `if_empty` keeps an already-explicit version; `revision` picks the version (nullopt forces 0).
+/// Pins the state version of every versioned aggregate function nested in `type` to the one that
+/// corresponds to `revision`, or to 0 if no revision is given. With `if_empty`, a version that is
+/// already pinned explicitly is kept. The nested types are replaced rather than modified in place,
+/// because a type object is typically shared - notably with the table metadata a block was read from.
 void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision = std::nullopt);
+
+/// For a freshly declared column type (`CREATE TABLE`): pins the state version the current server
+/// revision maps to, but only where that version is newer than the default the function would fall
+/// back to anyway, and never over an explicitly spelled version. The pin makes the version part of
+/// the persisted type name, so the column keeps its layout when a newer server changes the default.
+void pinCurrentStateVersionToAggregateFunctions(DataTypePtr & type);
 
 /// Checks type of any nested type is DataTypeAggregateFunction.
 bool hasAggregateFunctionType(const DataTypePtr & type);

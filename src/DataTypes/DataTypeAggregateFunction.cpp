@@ -2,6 +2,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <Columns/ColumnAggregateFunction.h>
+#include <Core/ProtocolDefines.h>
 
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
@@ -9,9 +10,10 @@
 
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
-#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/transformTypesRecursively.h>
 #include <Common/FieldVisitorToCastedLiteral.h>
 #include <Parsers/parseFieldFromCastedLiteral.h>
 #include <IO/ReadBufferFromString.h>
@@ -84,21 +86,6 @@ DataTypePtr DataTypeAggregateFunction::getReturnTypeToPredict() const
 bool DataTypeAggregateFunction::isVersioned() const
 {
     return function->isVersioned();
-}
-
-DataTypePtr DataTypeAggregateFunction::cloneWithVersion(size_t version_) const
-{
-    auto result = std::make_shared<DataTypeAggregateFunction>(function, argument_types, parameters, version_);
-
-    /// The customization has to be carried over, not recreated: `SimpleAggregateFunction(f, T)` is
-    /// stored as `T` plus a `DataTypeCustomSimpleAggregateFunction` name, and code as central as the
-    /// AggregatingMergeTree and SummingMergeTree merge algorithms recognises such a column by
-    /// dynamic_cast on that very name object. Dropping it would silently turn the column into a
-    /// plain `AggregateFunction` one.
-    if (auto customization = cloneCustomization())
-        result->setCustomization(std::move(customization));
-
-    return result;
 }
 
 String DataTypeAggregateFunction::getNameImpl(bool with_version) const
@@ -345,35 +332,83 @@ static DataTypePtr create(const ASTPtr & arguments)
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
 }
 
-namespace
+/// `choose_version` returns the version to pin on a versioned aggregate function type, or nothing
+/// to leave the type untouched.
+static void setVersionToAggregateFunctionsImpl(
+    DataTypePtr & type, bool if_empty, const std::function<std::optional<size_t>(const AggregateFunctionPtr &)> & choose_version)
 {
+    auto callback = [&choose_version, if_empty](DataTypePtr & column_type)
+    {
+        const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
+        if (!aggregate_function_type || !aggregate_function_type->isVersioned())
+            return;
 
-/// Replaces a versioned aggregate function with a copy carrying the version, leaving anything else as is.
-DataTypePtr assignVersionToAggregateFunction(const DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
-{
-    const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(type.get());
-    if (!aggregate_function_type || !aggregate_function_type->isVersioned())
-        return type;
+        if (if_empty && aggregate_function_type->hasExplicitVersion())
+            return;
 
-    /// Keep an already-explicit version when if_empty is requested.
-    if (if_empty && aggregate_function_type->getVersionIfExplicit())
-        return type;
+        const auto function = aggregate_function_type->getFunction();
+        const std::optional<size_t> chosen_version = choose_version(function);
+        if (!chosen_version)
+            return;
+        const size_t new_version = *chosen_version;
 
-    const size_t version = revision ? aggregate_function_type->getFunction()->getVersionFromRevision(*revision) : 0;
-    if (aggregate_function_type->getVersionIfExplicit() == version)
-        return type;
+        if (aggregate_function_type->hasExplicitVersion() && aggregate_function_type->getVersion() == new_version)
+            return;
 
-    return aggregate_function_type->cloneWithVersion(version);
-}
+        auto new_type = std::make_shared<DataTypeAggregateFunction>(
+            function, aggregate_function_type->getArgumentsDataTypes(), aggregate_function_type->getParameters(), new_version);
 
+        /// A custom name is part of the observable type and must survive the replacement. The only
+        /// custom name an `AggregateFunction` type can carry is `SimpleAggregateFunction` over an
+        /// `AggregateFunction` argument.
+        if (column_type->hasCustomName())
+        {
+            const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(column_type->getCustomName());
+            if (!simple)
+                return;
+
+            /// The custom name keeps its own copy of the argument types, and for
+            /// `SimpleAggregateFunction` over an `AggregateFunction` that argument is the state type
+            /// itself - both the printed name and the binary type encoding come from it. It has to be
+            /// given the same version as the storage type, otherwise the announced type and the payload
+            /// disagree: a downgraded state would still be announced as the newer version and the
+            /// receiver would read one version too many out of it.
+            DataTypes new_argument_types = simple->getArgumentsDataTypes();
+            for (auto & argument_type : new_argument_types)
+                setVersionToAggregateFunctionsImpl(argument_type, if_empty, choose_version);
+
+            new_type->setCustomization(std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomSimpleAggregateFunction>(
+                simple->getFunction(), new_argument_types, simple->getParameters())));
+        }
+
+        column_type = new_type;
+    };
+
+    callOnNestedSimpleTypes(type, callback);
 }
 
 void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
 {
-    auto transform = [&](const DataTypePtr & child) { return assignVersionToAggregateFunction(child, if_empty, revision); };
-    /// Mirrors forEachChild usage: apply to the root, then recurse into every descendant.
-    type = transform(type);
-    type = type->transformChildren(transform);
+    setVersionToAggregateFunctionsImpl(type, if_empty, [revision](const AggregateFunctionPtr & function)
+    {
+        return std::optional<size_t>(revision ? function->getVersionFromRevision(*revision) : 0);
+    });
+}
+
+void pinCurrentStateVersionToAggregateFunctions(DataTypePtr & type)
+{
+    setVersionToAggregateFunctionsImpl(type, /* if_empty= */ true, [](const AggregateFunctionPtr & function) -> std::optional<size_t>
+    {
+        /// Pin only a version that is newer than the default the function would fall back to anyway:
+        /// a function whose default version already covers the current revision keeps persisting the
+        /// unpinned type it always had, and a combinator that does not map revisions to versions
+        /// (`getVersionFromRevision` returning 0 while the default is higher) must not have its
+        /// storage format downgraded by the pin.
+        const size_t current_version = function->getVersionFromRevision(DBMS_TCP_PROTOCOL_VERSION);
+        if (current_version > function->getDefaultVersion())
+            return current_version;
+        return std::nullopt;
+    });
 }
 
 
@@ -383,17 +418,17 @@ void registerDataTypeAggregateFunction(DataTypeFactory & factory)
             .description = R"DOCS_MD(
 ## Description {#description}
 
-All [Aggregate functions](/sql-reference/aggregate-functions) in ClickHouse have
+All [Aggregate functions](/reference/functions/aggregate-functions) in ClickHouse have
 an implementation-specific intermediate state that can be serialized to an
 `AggregateFunction` data type and stored in a table. This is usually done by
 means of a [materialized view](/reference/statements/create/view).
 
-There are two aggregate function [combinators](/sql-reference/aggregate-functions/combinators)
+There are two aggregate function [combinators](/reference/functions/aggregate-functions/combinators)
 commonly used with the `AggregateFunction` type:
 
-- The [`-State`](/sql-reference/aggregate-functions/combinators#-state) aggregate function combinator, which when appended to an aggregate
+- The [`-State`](/reference/functions/aggregate-functions/combinators#-state) aggregate function combinator, which when appended to an aggregate
 function name, produces `AggregateFunction` intermediate states.
-- The [`-Merge`](/sql-reference/aggregate-functions/combinators#-merge) aggregate
+- The [`-Merge`](/reference/functions/aggregate-functions/combinators#-merge) aggregate
 function combinator, which is used to get the final result of an aggregation
 from the intermediate states.
 
@@ -426,7 +461,7 @@ CREATE TABLE t
 
 To insert data into a table with columns of type `AggregateFunction`, you can
 use `INSERT SELECT` with aggregate functions and the
-[`-State`](/sql-reference/aggregate-functions/combinators#-state) aggregate
+[`-State`](/reference/functions/aggregate-functions/combinators#-state) aggregate
 function combinator.
 
 For example, to insert into columns of type `AggregateFunction(uniq, UInt64)` and
@@ -459,7 +494,7 @@ query, then this dump can be loaded back using the `INSERT` query.
 
 When selecting data from `AggregatingMergeTree` table, use the `GROUP BY` clause
 and the same aggregate functions as for when you inserted the data, but use the
-[`-Merge`](/sql-reference/aggregate-functions/combinators#-merge) combinator.
+[`-Merge`](/reference/functions/aggregate-functions/combinators#-merge) combinator.
 
 An aggregate function with the `-Merge` combinator appended to it takes a set of
 states, combines them, and returns the result of the complete data aggregation.
@@ -479,9 +514,9 @@ See [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/agg
 ## Related Content {#related-content}
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
-- [MergeState](/sql-reference/aggregate-functions/combinators#-mergestate)
+- [MergeState](/reference/functions/aggregate-functions/combinators#-mergestate)
 combinator.
-- [State](/sql-reference/aggregate-functions/combinators#-state) combinator.
+- [State](/reference/functions/aggregate-functions/combinators#-state) combinator.
 )DOCS_MD",
             .syntax = "AggregateFunction(name, types...)",
             .examples = {},

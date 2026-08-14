@@ -448,26 +448,6 @@ void DataTypeTuple::forEachChild(const ChildCallback & callback) const
     }
 }
 
-DataTypePtr DataTypeTuple::doTransformChildren(const ChildTransform & transform) const
-{
-    DataTypes new_elems;
-    new_elems.reserve(elems.size());
-    bool changed = false;
-    for (const auto & elem : elems)
-    {
-        auto new_elem = transform(elem)->transformChildren(transform);
-        changed |= new_elem.get() != elem.get();
-        new_elems.push_back(std::move(new_elem));
-    }
-
-    if (!changed)
-        return shared_from_this();
-
-    return has_explicit_names
-        ? std::make_shared<DataTypeTuple>(new_elems, names)
-        : std::make_shared<DataTypeTuple>(new_elems);
-}
-
 void DataTypeTuple::updateHashImpl(SipHash & hash) const
 {
     hash.update(elems.size());
@@ -518,9 +498,9 @@ void registerDataTypeTuple(DataTypeFactory & factory)
 {
     factory.registerDataType("Tuple", create, DataTypeFactory::Case::Sensitive, Documentation{
             .description = R"DOCS_MD(
-A tuple of elements, each having an individual [type](/sql-reference/data-types). Tuple must contain at least one element.
+A tuple of elements, each having an individual [type](/reference/data-types). Tuple must contain at least one element.
 
-Tuples are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](/reference/statements/in) and [Higher order functions](/sql-reference/functions/overview#higher-order-functions).
+Tuples are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](/reference/statements/in) and [Higher order functions](/reference/functions/regular-functions/overview#higher-order-functions).
 
 Tuples can be the result of a query. In this case, for text formats other than JSON, values are comma-separated in `()`. In JSON formats, tuples are output as arrays (in `[]`).
 
