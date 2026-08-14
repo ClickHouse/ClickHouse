@@ -86,7 +86,7 @@ static std::string escapeForXMLText(const std::string & s)
     /// exact original bytes across the reparse. Any '\r' remaining in `escaped` is a genuine carriage
     /// return from the input: the escaping above only emits the entities `&lt; &amp; &gt; &quot; &apos;`
     /// and copies every other byte verbatim.
-    if (escaped.find('\r') == std::string::npos)
+    if (!escaped.contains('\r'))
         return escaped;
 
     std::string result;
