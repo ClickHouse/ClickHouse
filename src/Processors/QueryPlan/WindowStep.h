@@ -78,8 +78,6 @@ public:
 
     bool isStreamingMode() const { return streaming_mode_; }
 
-    const std::vector<WindowFunctionDescription> & getWindowFunctions() const { return window_functions; }
-
     QueryPlanStepPtr clone() const override;
 
 private:
