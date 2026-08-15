@@ -15,13 +15,19 @@
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageSnapshot.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <map>
 #include <optional>
 
@@ -129,14 +135,14 @@ struct CandidateMatch
     String subcolumn_path;
 };
 
-/// Match `getSubcolumn(column, 'constant_path')` where the column comes from a query or union node.
+/// Match a function that can be expressed as reading a subcolumn where the column comes from a query or union node.
 std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
 {
-    if (function_node.getFunctionName() != "getSubcolumn" || !function_node.isResolved())
+    if (!function_node.isResolved())
         return {};
 
     auto & function_arguments = function_node.getArguments().getNodes();
-    if (function_arguments.size() != 2)
+    if (function_arguments.empty())
         return {};
 
     auto * column_node = function_arguments[0]->as<ColumnNode>();
@@ -153,15 +159,84 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
     if (!column_source || !isQueryOrUnionNode(column_source))
         return {};
 
-    const auto * constant_node = function_arguments[1]->as<ConstantNode>();
-    if (!constant_node)
+    String subcolumn_path;
+    const auto & function_name = function_node.getFunctionName();
+
+    if (function_name == "getSubcolumn")
+    {
+        if (function_arguments.size() != 2)
+            return {};
+
+        const auto * constant_node = function_arguments[1]->as<ConstantNode>();
+        if (!constant_node)
+            return {};
+
+        auto constant_value = constant_node->getValue();
+        if (constant_value.getType() != Field::Types::String)
+            return {};
+
+        subcolumn_path = constant_value.safeGet<String>();
+    }
+    else if (function_name == "mapKeys" && function_arguments.size() == 1 && column_node->getColumnType()->getTypeId() == TypeIndex::Map)
+    {
+        const auto & map_type = assert_cast<const DataTypeMap &>(*column_node->getColumnType());
+        if (!function_node.getResultType()->equals(*std::make_shared<DataTypeArray>(map_type.getKeyType())))
+            return {};
+
+        subcolumn_path = "keys";
+    }
+    else if (function_name == "mapValues" && function_arguments.size() == 1 && column_node->getColumnType()->getTypeId() == TypeIndex::Map)
+    {
+        const auto & map_type = assert_cast<const DataTypeMap &>(*column_node->getColumnType());
+        if (!function_node.getResultType()->equals(*std::make_shared<DataTypeArray>(map_type.getValueType())))
+            return {};
+
+        subcolumn_path = "values";
+    }
+    else if (function_name == "isNull" && function_arguments.size() == 1 && column_node->getColumnType()->getTypeId() == TypeIndex::Nullable)
+    {
+        const auto & nullable_type = assert_cast<const DataTypeNullable &>(*column_node->getColumnType());
+        if (nullable_type.getNestedType()->hasSubcolumn("null")
+            || !function_node.getResultType()->equals(*std::make_shared<DataTypeUInt8>()))
+            return {};
+
+        subcolumn_path = "null";
+    }
+    else if (function_name == "tupleElement" && function_arguments.size() == 2 && column_node->getColumnType()->getTypeId() == TypeIndex::Tuple)
+    {
+        const auto * constant_node = function_arguments[1]->as<ConstantNode>();
+        if (!constant_node)
+            return {};
+
+        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*column_node->getColumnType());
+        const auto & element_names = tuple_type.getElementNames();
+        const auto & element_types = tuple_type.getElements();
+        const auto & value = constant_node->getValue();
+        std::optional<size_t> position;
+
+        if (value.getType() == Field::Types::String)
+            position = tuple_type.tryGetPositionByName(value.safeGet<String>());
+        else if (value.getType() == Field::Types::UInt64)
+        {
+            auto index = value.safeGet<UInt64>();
+            if (index != 0 && index <= element_types.size())
+                position = index - 1;
+        }
+        else if (value.getType() == Field::Types::Int64)
+        {
+            auto index = value.safeGet<Int64>();
+            if (index != 0 && std::abs(index) <= static_cast<Int64>(element_types.size()))
+                position = index > 0 ? index - 1 : static_cast<Int64>(element_types.size()) + index;
+        }
+
+        if (!position || !function_node.getResultType()->equals(*element_types[*position]))
+            return {};
+
+        subcolumn_path = element_names[*position];
+    }
+    else
         return {};
 
-    auto constant_value = constant_node->getValue();
-    if (constant_value.getType() != Field::Types::String)
-        return {};
-
-    auto subcolumn_path = constant_value.safeGet<String>();
     if (subcolumn_path.empty())
         return {};
 

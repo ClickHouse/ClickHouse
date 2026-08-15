@@ -1,0 +1,15 @@
+tupleElement
+Output: tup.a
+Output: tup.a
+1
+2
+mapKeys
+Output: m.keys
+Output: m.keys
+['a','b']
+['c']
+isNull
+Output: n.null
+Output: n.null
+0
+1
