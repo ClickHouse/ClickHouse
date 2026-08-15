@@ -48,6 +48,36 @@ TEST(QueryPlanExecutionLimits, ClonePreservesLimitsAndResources)
     EXPECT_EQ(source.getInterpretersContexts().size(), 1u);
 }
 
+TEST(QueryPlanExecutionLimits, CloneSubtreePreservesSourceLimitsAndResources)
+{
+    auto source = makeSourcePlan();
+    source.setMaxThreads(4);
+    source.setConcurrencyControl(true);
+    source.addInterpreterContext(Context::createCopy(getContext().context));
+
+    auto subtree = QueryPlan::cloneSubtree(source.getRootNode(), source);
+
+    EXPECT_EQ(subtree.getMaxThreads(), 4u);
+    EXPECT_TRUE(subtree.getConcurrencyControl());
+    EXPECT_EQ(subtree.getInterpretersContexts().size(), 1u);
+    EXPECT_EQ(source.getInterpretersContexts().size(), 1u);
+}
+
+TEST(QueryPlanExecutionLimits, ReplaceNodeWithPlanMergesConcurrencyControl)
+{
+    auto destination = makeSourcePlan();
+    destination.setMaxThreads(2);
+
+    auto replacement = makeSourcePlan();
+    replacement.setMaxThreads(4);
+    replacement.setConcurrencyControl(true);
+
+    destination.replaceNodeWithPlan(destination.getRootNode(), std::move(replacement));
+
+    EXPECT_EQ(destination.getMaxThreads(), 4u);
+    EXPECT_TRUE(destination.getConcurrencyControl());
+}
+
 TEST(QueryPlanExecutionLimits, ExtractSubplanPreservesLimitsAndResources)
 {
     auto source = makeSourcePlan();
