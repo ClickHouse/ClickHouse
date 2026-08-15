@@ -277,8 +277,8 @@ void StorageTimeSeries::dropInnerTableIfAny(bool sync, ContextPtr local_context)
         {
             if (auto inner_table_id = tryGetTargetTableID(target_kind, local_context))
             {
-                /// DDLGuards must be locked in order of increasing table name, and the guard for this table
-                /// is already held here, so the inner one may be taken only if this name sorts first.
+                /// DDLGuards must be locked in order of increasing table name, so the inner guard
+                /// may be requested only when this table's name sorts first.
                 bool may_lock_ddl_guard = getStorageID().getQualifiedName() < inner_table_id.getQualifiedName();
                 InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id,
                                                     sync, /* ignore_sync_setting= */ true, may_lock_ddl_guard);

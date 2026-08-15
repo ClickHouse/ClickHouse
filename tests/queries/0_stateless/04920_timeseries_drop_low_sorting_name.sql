@@ -1,7 +1,7 @@
--- Tags: no-fasttest
--- no-fasttest: the TimeSeries engine is not built in the fast-test image.
-
 SET allow_experimental_time_series_table = 1;
+-- The stress runner sets ignore_drop_queries_probability=0.2, which rewrites a DROP of a table
+-- that keeps no data on disk into a TRUNCATE; TRUNCATE does not drop inner tables.
+SET ignore_drop_queries_probability = 0;
 
 -- A TimeSeries whose own name sorts below its inner tables' names used to self-deadlock on the
 -- DDL guard, so this hung instead of returning.
