@@ -455,9 +455,18 @@ void NamedCollectionFactory::removeDependencies(const StorageID & table_id)
 
     if (table_id.hasUUID())
     {
-        /// Remove by UUID - this is the most reliable method for Atomic databases
+        /// UUID reuse is possible after a failed CREATE, so it is not sufficient by itself.
         auto & idx = dependencies.get<TableUUID>();
-        idx.erase(table_id.uuid);
+        auto range = idx.equal_range(table_id.uuid);
+        std::vector<decltype(range.first)> to_erase;
+        for (auto it = range.first; it != range.second; ++it)
+        {
+            if (it->table_id.database_name == table_id.database_name && it->table_id.table_name == table_id.table_name)
+                to_erase.push_back(it);
+        }
+
+        for (auto it : to_erase)
+            idx.erase(it);
     }
     else
     {
@@ -563,9 +572,18 @@ void NamedCollectionFactory::rekeyDependencies(const StorageID & from_table_id, 
     {
         auto & uuid_idx = dependencies.get<TableUUID>();
         auto range = uuid_idx.equal_range(from_table_id.uuid);
+        std::vector<decltype(range.first)> to_erase;
         for (auto it = range.first; it != range.second; ++it)
-            collection_names.push_back(it->collection_name);
-        uuid_idx.erase(range.first, range.second);
+        {
+            if (it->table_id.database_name == from_table_id.database_name && it->table_id.table_name == from_table_id.table_name)
+            {
+                collection_names.push_back(it->collection_name);
+                to_erase.push_back(it);
+            }
+        }
+
+        for (auto it : to_erase)
+            uuid_idx.erase(it);
     }
     else
     {
@@ -616,9 +634,18 @@ void NamedCollectionFactory::markDependenciesDetached(const StorageID & table_id
     {
         auto & idx = dependencies.get<TableUUID>();
         auto range = idx.equal_range(table_id.uuid);
+        std::vector<decltype(range.first)> to_erase;
         for (auto it = range.first; it != range.second; ++it)
-            collection_names.push_back(it->collection_name);
-        idx.erase(range.first, range.second);
+        {
+            if (it->table_id.database_name == table_id.database_name && it->table_id.table_name == table_id.table_name)
+            {
+                collection_names.push_back(it->collection_name);
+                to_erase.push_back(it);
+            }
+        }
+
+        for (auto it : to_erase)
+            idx.erase(it);
     }
     else
     {

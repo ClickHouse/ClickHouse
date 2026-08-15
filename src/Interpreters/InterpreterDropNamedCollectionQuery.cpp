@@ -52,7 +52,9 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
             dependent_names.reserve(dependents.size());
             for (const auto & dep : dependents)
             {
-                if (DatabaseCatalog::instance().isTableExist(dep, current_context))
+                const auto table = DatabaseCatalog::instance().tryGetTable(
+                    StorageID{dep.database_name, dep.table_name}, current_context);
+                if (table && (!dep.hasUUID() || table->getStorageID().uuid == dep.uuid))
                 {
                     dependent_names.push_back(dep.getFullTableName());
                     continue;
@@ -71,7 +73,9 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
                 if (!dep.database_name.empty())
                 {
                     auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(dep.database_name, dep.table_name, nullptr);
-                    if (DatabaseCatalog::instance().isTableExist(dep, current_context))
+                    const auto updated_table = DatabaseCatalog::instance().tryGetTable(
+                        StorageID{dep.database_name, dep.table_name}, current_context);
+                    if (updated_table && (!dep.hasUUID() || updated_table->getStorageID().uuid == dep.uuid))
                     {
                         dependent_names.push_back(dep.getFullTableName());
                         continue;

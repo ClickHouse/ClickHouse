@@ -128,9 +128,14 @@ YTsaurusStorageConfiguration StorageYTsaurus::processNamedCollectionResult(
     return configuration;
 }
 
-YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context, const StorageID * table_id)
+YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(
+    ASTs engine_args,
+    const YTsaurusSettings & settings,
+    ContextPtr context,
+    const StorageID * table_id,
+    String * used_named_collection_name)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id, used_named_collection_name))
     {
         return StorageYTsaurus::processNamedCollectionResult(*named_collection, settings);
     }
