@@ -478,7 +478,6 @@ clickhouse-client
                  It is omitted by default because some models reject this parameter. -->
             <!-- <temperature>0.0</temperature> -->
             <max_tokens>4096</max_tokens>
-            <timeout_seconds>30</timeout_seconds>
 
             <!-- Maximum model steps (tool-calling rounds) per question -->
             <max_steps>24</max_steps>
@@ -512,7 +511,6 @@ clickhouse-client
       # because some models reject this parameter.
       # temperature: 0.0    # Controls randomness (0.0 = deterministic)
       max_tokens: 4096      # Maximum response length per model call
-      timeout_seconds: 30   # Request timeout
       max_steps: 24         # Maximum model steps (tool-calling rounds) per question
 
       # Optional: custom system prompt
@@ -566,7 +564,6 @@ ai:
 <Accordion title="Behavior">
 - `enable_schema_access` - Let the assistant explore database schemas (default: `true`).
 - `max_steps` - Maximum number of model steps (tool-calling rounds) per question (default: `24`).
-- `timeout_seconds` - Request timeout in seconds (default: `30`).
 - `temperature` - Controls randomness, 0.0 = deterministic, 1.0 = creative. Omitted by default and only sent to the model when explicitly set, because some models reject this parameter.
 - `max_tokens` - Maximum response length in tokens per model call (default: `4096`).
 - `system_prompt` - Custom instructions for the assistant (optional).

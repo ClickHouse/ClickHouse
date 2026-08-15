@@ -89,7 +89,8 @@ bool AIServerFunctionTransport::isAvailable(const ScalarQueryExecutor & executor
     {
         auto result = executor(
             "SELECT (SELECT count() FROM system.functions WHERE name = 'aiGenerate') > 0"
-            " AND (SELECT count() FROM system.settings WHERE name = 'ai_function_text_default_credentials' AND value != '') > 0",
+            " AND (SELECT count() FROM system.settings WHERE name = 'ai_function_text_default_credentials' AND value != '') > 0"
+            " AND (SELECT count() FROM system.settings WHERE name = 'allow_experimental_ai_functions' AND value = '1') > 0",
             {});
         return trim(result, [](char c) { return isWhitespaceASCII(c); }) == "1";
     }

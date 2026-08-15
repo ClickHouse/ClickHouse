@@ -110,8 +110,12 @@ void checkNoProtectedSettingChanges(const IAST & ast)
         /// `SETTINGS max_execution_time = DEFAULT` lands in `default_settings`, not `changes`,
         /// and resets the limit after the sandbox has tightened it.
         for (const auto & name : set_query->default_settings)
+        {
             if (isProtectedSetting(name))
                 reject(name);
+            if (isFormatSchemaSetting(name))
+                reject_format_schema(name);
+        }
     }
 
     for (const auto & child : ast.children)

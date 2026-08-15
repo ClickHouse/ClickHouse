@@ -100,9 +100,6 @@ AIConfiguration AIClientFactory::loadConfiguration(const Poco::Util::AbstractCon
     if (config.has("ai.max_tokens"))
         ai_config.max_tokens = config.getUInt64("ai.max_tokens");
 
-    if (config.has("ai.timeout_seconds"))
-        ai_config.timeout_seconds = config.getUInt64("ai.timeout_seconds");
-
     if (config.has("ai.max_steps"))
         ai_config.max_steps = config.getUInt64("ai.max_steps");
 

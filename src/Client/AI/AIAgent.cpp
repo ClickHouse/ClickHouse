@@ -80,7 +80,7 @@ AIAgent::AIAgent(
     bool use_colors)
     : config(config_)
     , transport(std::move(transport_))
-    , tools(buildAIAgentToolSet(hooks, config_.enable_schema_access))
+    , tools(buildAIAgentToolSet(hooks, config_.enable_schema_access, config_.enable_query_log_access))
     , query_context(std::move(query_context_))
     , display(output_stream, use_colors)
 {

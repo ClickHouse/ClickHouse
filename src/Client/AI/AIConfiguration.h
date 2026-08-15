@@ -30,9 +30,6 @@ struct AIConfiguration
     /// Maximum tokens to generate per model call
     size_t max_tokens = 4096;
 
-    /// Request timeout in seconds
-    size_t timeout_seconds = 30;
-
     /// Custom system prompt (optional)
     std::string system_prompt;
 
@@ -41,6 +38,9 @@ struct AIConfiguration
 
     /// Enable schema access - allows AI to query database/table information
     bool enable_schema_access = true;
+
+    /// Enable query-log access when assistant queries can be identified reliably
+    bool enable_query_log_access = true;
 };
 
 }

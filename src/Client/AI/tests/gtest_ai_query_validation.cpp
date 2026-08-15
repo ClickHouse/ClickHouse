@@ -194,6 +194,7 @@ TEST(AIQueryValidation, RejectsFormatSchemaSettings)
     EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS format_schema_source = 'string'"));
     EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS format_schema_message_name = 'Message'"));
     EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS output_format_schema = 'x.proto'"));
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS format_schema = DEFAULT"));
 }
 
 #endif

@@ -3906,6 +3906,10 @@ void ClientBase::initAIAgent()
     if (!transport)
         return;
 
+    /// In a `readonly` session the server rejects the `log_comment` marker for internal
+    /// queries. Without that marker, `read_query_log` could feed the assistant's own schema
+    /// and documentation probes back as if the user had run them, so do not expose the tool.
+    ai_config.enable_query_log_access = client_context->getSettingsRef()[Setting::readonly] != 1;
     ai_agent = std::make_unique<AIAgent>(ai_config, std::move(transport), hooks, ai_query_context, output_stream, stdout_is_a_tty);
 }
 
@@ -4044,7 +4048,7 @@ String ClientBase::executeScalarQueryForAI(const String & query, const NameToNam
 
 void ClientBase::echoQueryForAI(const String & query)
 {
-    String text = query;
+    String text = AIAgentDisplay::sanitizeForTerminal(query);
 #if USE_REPLXX
     if (highlight_queries && stdout_is_a_tty)
         text = highlighted(text, *client_context, rainbow_parentheses);
@@ -4117,6 +4121,14 @@ String ClientBase::runQueryForAI(const String & query, bool readonly)
     /// result, and it can fall back to the run_query tool with the user's confirmation.
     if (readonly)
     {
+        /// Format-schema settings are interpreted after AST validation. Clear every carrier of
+        /// schema content and force the safe source so inherited session state cannot execute
+        /// a query or write a cached schema file through a `FORMAT` clause.
+        client_context->setSetting("format_schema_source", String("file"));
+        client_context->setSetting("format_schema", String{});
+        client_context->setSetting("format_schema_message_name", String{});
+        client_context->setSetting("output_format_schema", String{});
+
         static constexpr UInt64 max_execution_time_limit = 30;
         static constexpr UInt64 max_memory_usage_limit = 10'000'000'000;
 

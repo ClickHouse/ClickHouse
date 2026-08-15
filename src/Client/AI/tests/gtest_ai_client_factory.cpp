@@ -183,12 +183,10 @@ TEST(AIClientFactory, MalformedConfigurationValues)
     
     // Test with valid values
     config->setInt("ai.max_tokens", 1000);
-    config->setInt("ai.timeout_seconds", 0); // Zero is accepted
     
     EXPECT_NO_THROW({
         ai_config = AIClientFactory::loadConfiguration(*config);
     });
-    EXPECT_EQ(0, ai_config.timeout_seconds);
 }
 
 /// Temperature must be left unset unless explicitly configured, so that it is

@@ -47,6 +47,7 @@ struct AIAgentHooks
 /// - read-only query execution without confirmation, under restrictive limits;
 /// - arbitrary query execution with the user's confirmation.
 /// When `enable_schema_access` is false, the internal schema exploration tools are omitted.
-ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks, bool enable_schema_access);
+/// When `enable_query_log_access` is false, `read_query_log` is omitted.
+ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks, bool enable_schema_access, bool enable_query_log_access);
 
 }
