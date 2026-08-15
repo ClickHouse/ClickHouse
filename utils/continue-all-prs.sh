@@ -64,9 +64,9 @@ set -euo pipefail
 #   --effort LEVEL        Reasoning effort for each worker; default: medium.
 #                         Passed as `--effort` to `claude` and as the
 #                         `model_reasoning_effort` setting to `codex`.
-#   --api-key KEY         Use a custom API key for `claude` workers (exported as
-#                         ANTHROPIC_API_KEY). `codex` workers use their configured
-#                         login and reject this option. NOTE: visible in `ps`
+#   --api-key KEY         Use a custom API key for the workers (exported as
+#                         ANTHROPIC_API_KEY or OPENAI_API_KEY according to
+#                         --agent). NOTE: visible in `ps`
 #                         while running; prefer --api-key-file.
 #   --api-key-file FILE   Read the custom API key from FILE (not shown
 #                         in `ps`). Default: whatever API key or login the
@@ -140,6 +140,7 @@ MODEL=""               # model passed to the selected agent (empty -> its config
 SHOW_STATUS=1          # show the persistent bottom status bar (TTY only; --no-status disables)
 API_KEY=""             # custom provider API key for worker processes (--api-key)
 API_KEY_FILE=""        # ...or read it from this file (safer: not visible in `ps`)
+API_KEY_PROVIDED=0      # whether either custom-key option was supplied
 
 # PR selection modes (combinable). If none are given, all are enabled.
 MODE_MINE=0       # PRs I authored
@@ -166,8 +167,8 @@ while [[ $# -gt 0 ]]; do
         --model)          MODEL="$2"; shift 2 ;;
         --effort)         EFFORT="$2"; shift 2 ;;
         --no-status)      SHOW_STATUS=0; shift ;;
-        --api-key)        API_KEY="$2"; shift 2 ;;
-        --api-key-file)   API_KEY_FILE="$2"; shift 2 ;;
+        --api-key)        API_KEY="$2"; API_KEY_PROVIDED=1; shift 2 ;;
+        --api-key-file)   API_KEY_FILE="$2"; API_KEY_PROVIDED=1; shift 2 ;;
         --once)           ONCE=1; shift ;;
         --skip-submodules) SKIP_SUBMODULES=1; shift ;;
         --color)          COLOR_WHEN="$2"; shift 2 ;;
@@ -198,20 +199,19 @@ if (( ! MODE_ANY )); then
     MODE_MINE=1; MODE_ASSIGNED=1; MODE_RELATED=1
 fi
 
-# Custom API key for `claude` worker processes. The Codex CLI reads credentials
-# from `CODEX_HOME/auth.json`, so exporting `OPENAI_API_KEY` would not select the
-# requested account and must not silently fall back to an ambient Codex login.
+# Custom API key for worker processes. `codex` uses `OPENAI_API_KEY` in preference
+# to its configured login, allowing a worker pool to use the requested account.
 # Prefer --api-key-file: an inline --api-key is visible in `ps`.
 if [[ -n "$API_KEY_FILE" ]]; then
     [[ -r "$API_KEY_FILE" ]] || { echo "${S}Error: --api-key-file not readable: $API_KEY_FILE${R}" >&2; exit 1; }
     API_KEY="$(tr -d ' \t\r\n' < "$API_KEY_FILE")"
 fi
-if [[ -n "$API_KEY" ]]; then
+if (( API_KEY_PROVIDED )); then
+    [[ -n "$API_KEY" ]] || { echo "${S}Error: --api-key must not be empty${R}" >&2; exit 1; }
     if [[ "$AGENT" == "claude" ]]; then
         export ANTHROPIC_API_KEY="$API_KEY"
     else
-        echo "${S}Error: --api-key and --api-key-file are not supported with --agent codex; configure Codex login first${R}" >&2
-        exit 1
+        export OPENAI_API_KEY="$API_KEY"
     fi
     CUSTOM_KEY=1
 else
