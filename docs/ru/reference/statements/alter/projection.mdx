@@ -234,6 +234,57 @@ WHERE _part_starting_offset + _part_offset IN (
 SETTINGS enable_shared_storage_snapshot_in_query = 1
 ```
 
+<div id="example-projection-with-where">
+  ### Пример проекции с предложением WHERE
+</div>
+
+Проекции могут включать предложение `WHERE`, чтобы хранить только подмножество строк. Это полезно, когда запросы часто используют известный предикат фильтрации — проекция материализует только подходящие строки, уменьшая объём хранимых данных и повышая производительность запросов.
+
+Создание таблицы и добавление отфильтрованной проекции:
+
+```sql
+CREATE TABLE events
+(
+    `event_type` String,
+    `time` DateTime,
+    `message` String
+)
+ENGINE = MergeTree()
+ORDER BY time;
+
+ALTER TABLE events ADD PROJECTION proj_pageview (
+    SELECT event_type, time, message
+    WHERE event_type = 'pageview'
+    ORDER BY time
+);
+
+ALTER TABLE events MATERIALIZE PROJECTION proj_pageview;
+```
+
+Вставка данных:
+
+```sql
+INSERT INTO events VALUES
+    ('pageview', '2024-01-01', 'homepage'),
+    ('click', '2024-01-02', 'button'),
+    ('pageview', '2024-01-03', 'about');
+```
+
+Когда `WHERE`-предложение запроса **подразумевает** `WHERE`-предложение проекции (то есть каждое условие в фильтре проекции также присутствует в фильтре запроса), оптимизатор может автоматически использовать проекцию, если сочтёт это целесообразным:
+
+```sql
+-- This query implies the projection's WHERE, so the projection may be used:
+SELECT time, message FROM events WHERE event_type = 'pageview';
+
+-- A stricter query also implies the projection's WHERE:
+SELECT time, message FROM events WHERE event_type = 'pageview' AND time > '2024-01-01';
+
+-- This query does NOT imply the projection, so the base table is scanned:
+SELECT time, message FROM events WHERE event_type = 'click';
+```
+
+Проверка импликации консервативна — она использует точное сопоставление конъюнктов в канонической форме выражения. Из-за этого она может пропустить некоторые допустимые возможности оптимизации (например, импликации для диапазонов), но никогда не приведёт к неверным результатам.
+
 <div id="manipulating-projections">
   ## Управление проекциями
 </div>
@@ -244,11 +295,19 @@ SETTINGS enable_shared_storage_snapshot_in_query = 1
   ### ADD PROJECTION
 </div>
 
-Используйте приведённый ниже оператор, чтобы добавить описание проекции в метаданные таблицы:
+Используйте оператор ниже, чтобы добавить описание проекции к метаданным таблицы:
 
 ```sql
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+-- Normal projection (supports WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+
+-- Aggregate projection (supports WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
 ```
+
+<Note>
+  Когда проекция задаёт предложение `WHERE`, материализуются только строки, соответствующие предикату. Оптимизатор может использовать такую проекцию, если `WHERE` в запросе логически следует из `WHERE` проекции и эта проекция выгодна для плана запроса. Это относится и к обычным, и к агрегатным проекциям.
+</Note>
 
 <div id="with-settings">
   #### Конструкция `WITH SETTINGS`

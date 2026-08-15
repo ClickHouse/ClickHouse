@@ -26,9 +26,7 @@ Hydra의 작동 방식에 대한 개념적인 설명은 [Hydra Compute Separatio
 * Helm 레지스트리 및 `onprem-clickhouse-cluster` 차트에 대한 액세스 권한
 
 <Steps>
-  <Step>
-    ## 1. 부모 클러스터 식별
-
+  <Step title="1. 부모 클러스터 식별" id="1-identify-the-parent-cluster">
     하위 인스턴스를 생성하기 전에 부모 클러스터의 **이름**과 **네임스페이스**를 확인하십시오. 부모는 반드시 실행 중 상태여야 합니다. 부모가 중지됨, 종료됨 또는 유휴 상태이면 하위 인스턴스를 프로비저닝할 수 없습니다.
 
     이름이 `default-xx-01`인 클러스터의 기본값은 다음과 같습니다:
@@ -39,9 +37,7 @@ Hydra의 작동 방식에 대한 개념적인 설명은 [Hydra Compute Separatio
     | 네임스페이스  | `ns-default-xx-01` |
   </Step>
 
-  <Step>
-    ## 2. 하위 인스턴스 생성
-
+  <Step title="2. 하위 인스턴스 생성" id="2-create-a-child-instance">
     <Warning>
       각 ClickHouseCluster 인스턴스는 반드시 고유한 네임스페이스에 있어야 합니다. 하위 인스턴스를 부모와 동일한 네임스페이스에 배포하지 마십시오. ClickHouse Operator는 네임스페이스당 하나의 ClickHouseCluster가 있다고 가정하므로, 이 규칙을 위반하면 클러스터 상태가 저하됩니다.
     </Warning>
@@ -68,9 +64,7 @@ Hydra의 작동 방식에 대한 개념적인 설명은 [Hydra Compute Separatio
     * 자체 Kubernetes Service endpoint를 노출합니다
   </Step>
 
-  <Step>
-    ## 3. 읽기 전용 자식 생성(선택 사항)
-
+  <Step title="3. 읽기 전용 하위 인스턴스 생성(선택 사항)" id="3-create-a-read-only-child-optional">
     데이터를 쿼리할 수는 있지만 쓸 수 없는 하위 인스턴스를 생성하려면 `isReadonly` 플래그를 추가하십시오:
 
     ```bash
@@ -89,9 +83,7 @@ Hydra의 작동 방식에 대한 개념적인 설명은 [Hydra Compute Separatio
     읽기 전용 하위 인스턴스는 쓰기 권한이 필요 없는 보고, 대시보드 또는 analytics 워크로드에 적합합니다.
   </Step>
 
-  <Step>
-    ## 4. 하위 인스턴스 확인
-
+  <Step title="4. 하위 인스턴스 확인" id="4-verify-the-child-instance">
     하위 인스턴스를 배포한 후 실행 중인지 확인하십시오:
 
     ```bash

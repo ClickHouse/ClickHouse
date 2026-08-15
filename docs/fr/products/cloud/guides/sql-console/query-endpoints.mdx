@@ -29,23 +29,21 @@ Vous pouvez suivre ce guide pour [créer une clé API](/fr/products/cloud/featur
 </Info>
 
 <Steps>
-  <Step>
-    ### Créer une requête enregistrée
+  <Step title="Créer une requête enregistrée" id="creating-a-saved-query">
+    Si vous avez une requête enregistrée, vous pouvez ignorer cette étape.
 
-    Si vous avez déjà une requête enregistrée, vous pouvez ignorer cette étape.
-
-    Ouvrez un nouvel onglet de requête. À des fins de démonstration, nous utiliserons le [jeu de données YouTube](/fr/get-started/sample-datasets/youtube-dislikes), qui contient environ 4,5 milliards d’enregistrements.
-    Suivez les étapes de la section [&quot;Create table&quot;](/fr/get-started/sample-datasets/youtube-dislikes#create-the-table) pour créer la table sur votre service Cloud et y insérer des données.
+    Ouvrez un nouvel onglet de requête. À des fins de démonstration, nous utiliserons le [jeu de données YouTube](/fr/get-started/sample-datasets/youtube-dislikes), qui contient environ 4,5 milliards d’enregistrements.
+    Suivez les étapes de la section [&quot;Create table&quot;](/fr/get-started/sample-datasets/youtube-dislikes#create-the-table) pour créer la table sur votre service Cloud et insérer des données.
 
     <Tip>
       **Limiter le nombre de lignes avec `LIMIT`**
 
-      Le tutoriel sur le jeu de données d’exemple insère un volume important de données — 4,65 milliards de lignes — ce qui peut prendre un certain temps.
-      Pour ce guide, nous recommandons d’utiliser la clause `LIMIT` afin d’insérer un plus petit volume de données,
-      par exemple 10 millions de lignes.
+      Le tutoriel sur le jeu de données d’exemple insère un volume important de données — 4,65 milliards de lignes — ce qui peut prendre un certain temps.
+      Pour les besoins de ce guide, nous recommandons d’utiliser la clause `LIMIT` afin d’insérer un plus petit volume de données,
+      par exemple 10 millions de lignes.
     </Tip>
 
-    À titre d’exemple, nous allons renvoyer les 10 comptes ayant publié des vidéos avec la moyenne de vues par vidéo la plus élevée pour un paramètre `year` saisi par l’utilisateur.
+    À titre d’exemple, nous renverrons les 10 uploaders ayant la moyenne de vues par vidéo la plus élevée pour un paramètre `year` saisi par l’utilisateur.
 
     ```sql highlight={11}
     WITH sum(view_count) AS view_sum,
@@ -64,63 +62,57 @@ Vous pouvez suivre ce guide pour [créer une clé API](/fr/products/cloud/featur
       LIMIT 10
     ```
 
-    Notez que cette requête contient un paramètre (`year`), mis en évidence dans l’extrait ci-dessus.
-    Vous pouvez spécifier des paramètres de requête à l’aide de `{ }` avec le type du paramètre.
+    Notez que cette requête contient un paramètre (`year`) mis en évidence dans l’extrait ci‑dessus.
+    Vous pouvez spécifier des paramètres de requête en utilisant `{ }` avec le type du paramètre.
     L’éditeur de requêtes de la console SQL détecte automatiquement les expressions de paramètres de requête ClickHouse et fournit un champ de saisie pour chaque paramètre.
 
-    Exécutons rapidement cette requête pour vérifier qu’elle fonctionne en spécifiant l’année `2010` dans la zone de saisie des variables de requête située à droite de l’éditeur SQL :
+    Exécutons rapidement cette requête pour vérifier qu’elle fonctionne en spécifiant l’année `2010` dans la zone de saisie des variables de requête située à droite de l’éditeur SQL :
 
-    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="Tester la requête d’exemple" />
+    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="Tester la requête d'exemple" />
 
-    Ensuite, enregistrez la requête :
+    Ensuite, enregistrez la requête :
 
-    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="Enregistrer la requête d’exemple" />
+    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="Enregistrer la requête d'exemple" />
 
-    Vous trouverez plus d’informations sur les requêtes enregistrées dans la section [&quot;Saving a query&quot;](/fr/products/cloud/features/sql-console-features/sql-console#saving-a-query).
+    Plus de documentation sur les requêtes enregistrées se trouve dans la section [&quot;Saving a query&quot;](/fr/products/cloud/features/sql-console-features/sql-console#saving-a-query).
   </Step>
 
-  <Step>
-    ### Configuration de l’endpoint d’API de requête
+  <Step title="Configuration du Query API Endpoint" id="configuring-the-query-api-endpoint">
+    Les Query API Endpoints peuvent être configurés directement depuis la vue de requête en cliquant sur le bouton **Share** et en sélectionnant `API Endpoint`.
+    Il vous sera demandé de préciser quelles clés API doivent pouvoir accéder à l’endpoint :
 
-    Les endpoints d’API de requête peuvent être configurés directement depuis la vue de requête en cliquant sur le bouton **Share**, puis en sélectionnant `API Endpoint`.
-    Il vous sera demandé de préciser quelles clés API doivent pouvoir accéder à l’endpoint :
+    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="Configurer l’endpoint de requête" />
 
-    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="Configurer le point de terminaison de requête" />
-
-    Après avoir sélectionné une clé API, il vous sera demandé de :
+    Après avoir sélectionné une clé API, il vous sera demandé de :
 
     * Sélectionner le rôle de base de données qui sera utilisé pour exécuter la requête (`Full access`, `Read only` ou `Create a custom role`)
     * Spécifier les domaines autorisés pour le partage de ressources entre origines (CORS)
 
-    Après avoir sélectionné ces options, l’endpoint d’API de requête sera automatiquement provisionné.
+    Après avoir sélectionné ces options, le Query API Endpoint sera automatiquement provisionné.
 
-    Un exemple de commande `curl` s’affichera afin que vous puissiez envoyer une requête de test :
+    Un exemple de commande `curl` s’affichera afin que vous puissiez envoyer une requête de test :
 
-    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="Commande curl du point de terminaison" />
+    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="Commande curl de l’endpoint" />
 
-    La commande `curl` affichée dans l’interface est reproduite ci-dessous pour plus de commodité :
+    La commande `curl` affichée dans l’interface est donnée ci‑dessous pour plus de commodité :
 
     ```bash
     curl -H "Content-Type: application/json" -s --user '<key_id>:<key_secret>' '<API-endpoint>?format=JSONEachRow&param_year=<value>'
     ```
   </Step>
 
-  <Step>
-    ### Paramètres de l’API de requête
-
-    Les paramètres d’une requête peuvent être spécifiés avec la syntaxe `{parameter_name: type}`. Ces paramètres seront automatiquement détectés et l’exemple de payload de requête contiendra un objet `queryVariables` vous permettant de transmettre ces paramètres.
+  <Step title="Paramètres de l’API de requête" id="query-api-parameters">
+    Les paramètres d’une requête peuvent être spécifiés avec la syntaxe `{parameter_name: type}`. Ces paramètres seront automatiquement détectés et l’exemple de payload de requête contiendra un objet `queryVariables` via lequel vous pourrez transmettre ces paramètres.
   </Step>
 
-  <Step>
-    ### Test et monitoring
+  <Step title="Test et monitoring" id="testing-and-monitoring">
+    Une fois un Query API Endpoint créé, vous pouvez tester son fonctionnement en utilisant `curl` ou tout autre client HTTP :
 
-    Une fois un endpoint d’API de requête créé, vous pouvez vérifier son fonctionnement à l’aide de `curl` ou de tout autre client HTTP :
+    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="endpoint curl test" />
 
-    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="test curl du point de terminaison" />
+    Après avoir envoyé votre première requête, un nouveau bouton devrait apparaître immédiatement à droite du bouton **Share**. En cliquant dessus, vous ouvrirez un panneau latéral contenant des données de monitoring sur la requête :
 
-    Après l’envoi de votre première requête, un nouveau bouton devrait apparaître immédiatement à droite du bouton **Share**. En cliquant dessus, vous ouvrirez un panneau latéral contenant des données de monitoring sur la requête :
-
-    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="Monitoring du point de terminaison" />
+    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="Endpoint monitoring" />
   </Step>
 </Steps>
 

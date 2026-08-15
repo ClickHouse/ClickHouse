@@ -414,7 +414,7 @@ DuplicatePosts: [('2017-04-11 12:18:37.260',3922739),('2017-04-11 12:18:37.260',
 * **أدوات خارجية** - استخدام أدوات مثل [dbt](https://www.getdbt.com/) و[Airflow](https://airflow.apache.org/) لجدولة التحويل بشكل دوري. ويضمن [تكامل ClickHouse مع dbt](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/index) تنفيذ ذلك ذريًا، مع إنشاء إصدار جديد من الجدول الهدف ثم تبديله ذريًا مع الإصدار الذي يستقبل الاستعلامات (عبر الأمر [EXCHANGE](/ar/reference/statements/exchange)).
 
 <div id="streaming">
-  ### التدفّق
+  ### التدفق
 </div>
 
-قد ترغب أيضًا في تنفيذ ذلك خارج ClickHouse، قبل الإدراج، باستخدام تقنيات التدفّق مثل [Apache Flink](/ar/integrations/connectors/data-ingestion/apache-flink). أو يمكن استخدام [العروض المادية](/ar/concepts/features/materialized-views/cascading-materialized-views) التزايدية لتنفيذ هذه العملية عند إدراج البيانات.
+قد ترغب، بدلاً من ذلك، في تنفيذ ذلك خارج ClickHouse قبل الإدراج، باستخدام تقنيات التدفق مثل [Apache Flink](/ar/integrations/connectors/data-ingestion/apache-flink). أو يمكن استخدام [العروض المادية](/ar/concepts/features/materialized-views/cascading-materialized-views) التزايدية لتنفيذ هذه العملية أثناء إدراج البيانات.

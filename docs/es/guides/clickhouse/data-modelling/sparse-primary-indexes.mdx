@@ -311,7 +311,7 @@ Las filas insertadas se almacenan en disco en orden lexicográfico (ascendente) 
   ClickHouse permite insertar varias filas con valores idénticos en las columnas de la clave primaria. En este caso (véanse la fila 1 y la fila 2 en el diagrama de abajo), el orden final lo determina la clave de ordenación especificada y, por tanto, el valor de la columna `EventTime`.
 </Note>
 
-ClickHouse es un <a href="/es/get-started/about/distinctive-features#true-column-oriented-dbms" target="_blank">sistema de gestión de bases de datos orientado a columnas</a>. Como se muestra en el diagrama de abajo,
+ClickHouse es un <a href="/es/get-started/about/distinctive-features#true-column-oriented-database-management-system" target="_blank">sistema de gestión de bases de datos orientado a columnas</a>. Como se muestra en el diagrama de abajo
 
 * para la representación en disco, hay un único archivo de datos (*.bin) por columna de la tabla donde todos los valores de esa columna se almacenan en formato <a href="/es/get-started/about/distinctive-features#data-compression" target="_blank">comprimido</a>, y
 * las 8,87 millones de filas se almacenan en disco en orden lexicográfico ascendente según las columnas de la clave primaria (y las columnas adicionales de la clave de ordenación), es decir, en este caso
@@ -326,7 +326,7 @@ ClickHouse es un <a href="/es/get-started/about/distinctive-features#true-column
 <Note>
   * Como la clave primaria define el orden lexicográfico de las filas en disco, una tabla solo puede tener una clave primaria.
 
-  * Numeramos las filas empezando por 0 para mantener la coherencia con el esquema interno de numeración de filas de ClickHouse, que también se utiliza en los mensajes de logging.
+  * Numeramos las filas empezando por 0 para mantener la coherencia con el esquema interno de numeración de filas de ClickHouse, que también se utiliza en los mensajes de registro.
 </Note>
 
 <div id="data-is-organized-into-granules-for-parallel-data-processing">
@@ -372,7 +372,7 @@ El índice primario se crea a partir de los gránulos que se muestran en el diag
 
 El diagrama de abajo muestra que el índice almacena los valores de las columnas de la clave primaria (los valores marcados en naranja en el diagrama anterior) de la primera fila de cada gránulo.
 O, dicho de otro modo: el índice primario almacena los valores de las columnas de la clave primaria de cada fila 8192 de la tabla (según el orden físico de las filas definido por las columnas de la clave primaria).
-Por ejemplo:
+Por ejemplo
 
 * la primera entrada del índice (&#39;mark 0&#39; en el diagrama de abajo) almacena los valores de las columnas clave de la primera fila del gránulo 0 del diagrama anterior,
 * la segunda entrada del índice (&#39;mark 1&#39; en el diagrama de abajo) almacena los valores de las columnas clave de la primera fila del gránulo 1 del diagrama anterior, y así sucesivamente.
@@ -384,73 +384,88 @@ En total, el índice tiene 1083 entradas para nuestra tabla con 8,87 millones de
 <Image img="/images/guides/best-practices/sparse-primary-indexes-03b.webp" size="lg" alt="Índices primarios dispersos 03b" />
 
 <Note>
-  * En las tablas con [granularidad adaptativa del índice](/es/resources/changelogs/oss/2019#experimental-features-1), también se almacena en el índice primario una marca adicional &quot;final&quot; que registra los valores de las columnas de la clave primaria de la última fila de la tabla. Pero, como hemos desactivado la granularidad adaptativa del índice (para simplificar las explicaciones de esta guía y hacer reproducibles los diagramas y los resultados), el índice de nuestra tabla de ejemplo no incluye esa marca final.
+  * En las tablas con [granularidad adaptativa del índice](/es/resources/changelogs/oss/2019#experimental-features-1), también se almacena en el índice primario una marca adicional &quot;final&quot; que registra los valores de las columnas de la clave primaria de la última fila de la tabla, pero como hemos desactivado la granularidad adaptativa del índice (para simplificar las explicaciones de esta guía y hacer reproducibles los diagramas y los resultados), el índice de nuestra tabla de ejemplo no incluye esa marca final.
 
   * El archivo del índice primario se carga por completo en la memoria principal. Si el archivo es más grande que el espacio de memoria libre disponible, ClickHouse generará un error.
 </Note>
 
 <Accordion title="Inspección del contenido del índice primario">
-  <p>
-    En un clúster de ClickHouse autogestionado, podemos usar la <a href="/es/reference/functions/table-functions/file" target="_blank">función de tabla file</a> para inspeccionar el contenido del índice primario de nuestra tabla de ejemplo.
+  En un clúster de ClickHouse autogestionado, podemos usar la [función de tabla file](/es/reference/functions/table-functions/file) para inspeccionar el contenido del índice primario de nuestra tabla de ejemplo.
 
-    Para ello, primero debemos copiar el archivo del índice primario al <a href="/es/reference/settings/server-settings/settings#user_files_path" target="_blank">user&#95;files&#95;path</a> de un nodo del clúster en ejecución:
+  Para ello, primero tenemos que copiar el archivo del índice primario en el [user&#95;files&#95;path](/es/reference/settings/server-settings/settings#user_files_path) de un nodo del clúster en ejecución:
 
-    <ul>
-      <li>Paso 1: Obtener la ruta de la parte que contiene el archivo del índice primario</li>
-      `SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1`
+  **Paso 1: Obtener la ruta de la parte que contiene el archivo del índice primario**
 
-      devuelve `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` en la máquina de prueba.
+  ```sql
+  SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
+  ```
 
-      <li>Paso 2: Obtener user&#95;files&#95;path</li>
-      El <a href="https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505" target="_blank">user&#95;files&#95;path predeterminado</a> en Linux es
-      `/var/lib/clickhouse/user_files/`
+  devuelve `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` en la máquina de prueba.
 
-      y en Linux puedes comprobar si se ha cambiado: `$ grep user_files_path /etc/clickhouse-server/config.xml`
+  **Paso 2: Obtener user&#95;files&#95;path**
 
-      En la máquina de prueba, la ruta es `/Users/tomschreiber/Clickhouse/user_files/`
+  El [user&#95;files&#95;path predeterminado](https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505) en Linux es `/var/lib/clickhouse/user_files/`
 
-      <li>Paso 3: Copiar el archivo del índice primario en user&#95;files&#95;path</li>
+  y en Linux puedes comprobar si se ha cambiado: `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-      `cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx`
-    </ul>
+  En la máquina de prueba, la ruta es `/Users/tomschreiber/Clickhouse/user_files/`
 
-    <br />
+  **Paso 3: Copiar el archivo del índice primario en user&#95;files&#95;path**
 
-    Ahora podemos inspeccionar el contenido del índice primario mediante SQL:
+  ```bash
+  cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
+  ```
 
-    <ul>
-      <li>Obtener el número de entradas</li>
-      `SELECT count( )<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');`
-      devuelve `1083`
+  Ahora podemos inspeccionar el contenido del índice primario mediante SQL:
 
-      <li>Obtener las dos primeras marcas del índice</li>
-      `SELECT UserID, URL<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 0, 2;`
+  **Obtener la cantidad de entradas**
 
-      devuelve
+  ```sql
+  SELECT count()
+  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');
+  ```
 
-      `240923, http://showtopics.html%3...<br/>
-                  4073710, http://mk.ru&pos=3_0`
+  devuelve `1083`
 
-      <li>Obtener la última marca del índice</li>
-      `SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 1082, 1;`
-      devuelve
-      `4292714039 │ http://sosyal-mansetleri...`
-    </ul>
+  **Obtener las dos primeras marcas del índice**
 
-    <br />
+  ```sql
+  SELECT UserID, URL
+  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
+  LIMIT 0, 2;
+  ```
 
-    Esto coincide exactamente con nuestro diagrama del contenido del índice primario de nuestra tabla de ejemplo:
-  </p>
+  devuelve
+
+  ```response
+  240923, http://showtopics.html%3...
+  4073710, http://mk.ru&pos=3_0
+  ```
+
+  **Obtener la última marca del índice**
+
+  ```sql
+  SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
+  LIMIT 1082, 1;
+  ```
+
+  devuelve
+
+  ```response
+  4292714039 │ http://sosyal-mansetleri...
+  ```
+
+  Esto coincide exactamente con nuestro diagrama del contenido del índice primario para nuestra tabla de ejemplo:
 </Accordion>
 
 Las entradas de la clave primaria se denominan marcas del índice porque cada entrada del índice marca el inicio de un rango de datos específico. En concreto, para la tabla de ejemplo:
 
 * Marcas del índice de UserID:
 
-  Los valores `UserID` almacenados en el índice primario están ordenados de forma ascendente.<br />
-  Por lo tanto, la &quot;marca 1&quot; del diagrama anterior indica que los valores `UserID` de todas las filas de la tabla del gránulo 1, y de todos los gránulos siguientes, serán necesariamente mayores o iguales que 4.073.710.
+  Los valores `UserID` almacenados en el índice primario están ordenados en orden ascendente.<br />
+  Por tanto, la &quot;marca 1&quot; del diagrama anterior indica que los valores `UserID` de todas las filas de la tabla del gránulo 1, y de todos los gránulos siguientes, son necesariamente mayores o iguales que 4.073.710.
 
-[Como veremos más adelante](#the-primary-index-is-used-for-selecting-granules), este orden global permite a ClickHouse <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">usar un algoritmo de búsqueda binaria</a> sobre las marcas del índice de la primera columna clave cuando una consulta filtra por la primera columna de la clave primaria.
+[Como veremos más adelante](#the-primary-index-is-used-for-selecting-granules), este orden global permite a ClickHouse <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">usar un algoritmo de búsqueda binaria</a> sobre las marcas del índice para la primera columna clave cuando una consulta filtra por la primera columna de la clave primaria.
 
 * Marcas del índice de URL:
 
@@ -602,9 +617,9 @@ El siguiente diagrama muestra los tres archivos de marcas `UserID.mrk`, `URL.mrk
 
 <Image img="/images/guides/best-practices/sparse-primary-indexes-05.webp" size="lg" alt="Índices primarios dispersos 05" />
 
-Ya hemos explicado que el índice primario es un archivo Array plano sin comprimir (`primary.idx`) que contiene marcas de índice numeradas a partir de 0.
+Ya hemos explicado que el índice primario es un archivo de matriz plana sin comprimir (primary.idx) que contiene marcas de índice numeradas a partir de 0.
 
-Del mismo modo, un archivo de marcas también es un archivo Array plano sin comprimir (`*.mrk`) que contiene marcas numeradas a partir de 0.
+Del mismo modo, un archivo de marcas también es un archivo de matriz plana sin comprimir (*.mrk) que contiene marcas numeradas a partir de 0.
 
 Una vez que ClickHouse ha identificado y seleccionado la marca de índice de un gránulo que podría contener filas coincidentes para una consulta, se puede realizar una búsqueda posicional en Array en los archivos de marcas para obtener las ubicaciones físicas del gránulo.
 
@@ -959,7 +974,7 @@ Processed 319.49 thousand rows,
 
 Ahora, en lugar de [hacer casi un escaneo completo de la tabla](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#efficient-filtering-on-secondary-key-columns), ClickHouse ejecutó esa consulta de forma mucho más eficiente.
 
-Con el índice primario de la [tabla original](#a-table-with-a-primary-key), donde UserID era la primera columna de la clave y URL la segunda, ClickHouse utilizó una [búsqueda de exclusión genérica](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) sobre las marcas de índice para ejecutar esa consulta, y eso no era muy eficaz debido a la cardinalidad alta y similar de UserID y URL.
+Con el índice primario de la [tabla original](#a-table-with-a-primary-key), donde UserID era la primera columna de la clave y URL la segunda, ClickHouse utilizó una [búsqueda por exclusión genérica](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) sobre las marcas de índice para ejecutar esa consulta, y eso no era muy eficaz debido a la cardinalidad alta y similar de UserID y URL.
 
 Con URL como primera columna del índice primario, ClickHouse ahora realiza una <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">búsqueda binaria</a> sobre las marcas de índice.
 La traza correspondiente en el archivo de registro del servidor de ClickHouse lo confirma:

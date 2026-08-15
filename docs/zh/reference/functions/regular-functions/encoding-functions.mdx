@@ -36,7 +36,7 @@ bech32Decode(address[, 'raw'])
 **参数**
 
 * `address` — 要解码的 Bech32 字符串。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring)
-* `mode` — 可选。传入 `'raw'` 可在解码时不将第一个字节剥离为 witness 版本。对于非 SegWit 地址 (例如 Cosmos SDK) ，请使用此选项。[`String`](/zh/reference/data-types/string)
+* `mode` — 可选。传入 `'raw'` 可在解码时不将第一个字节剥离为见证版本。对于非 SegWit 地址 (例如 Cosmos SDK) ，请使用此选项。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -100,7 +100,7 @@ bech32Encode(hrp, data[, witver | 'bech32' | 'bech32m'])
 **默认 Bech32m**
 
 ```sql title=Query
--- 当未提供见证版本时，默认值为 1，即使用更新后的 Bech32m 算法。
+-- When no witness version is supplied, the default is 1, the updated Bech32m algorithm.
 SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
 ```
 
@@ -111,7 +111,7 @@ bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq
 **Bech32 算法**
 
 ```sql title=Query
--- 见证版本为 0 将生成不同的地址字符串。
+-- A witness version of 0 will result in a different address string.
 SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
 ```
 
@@ -122,8 +122,8 @@ bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z
 **自定义 HRP**
 
 ```sql title=Query
--- 虽然 'bc'（主网）和 'tb'（测试网）是 SegWit 地址格式中唯一允许的 hrp 值，
--- 但 Bech32 允许任何满足上述要求的 hrp。
+-- While 'bc' (Mainnet) and 'tb' (Testnet) are the only allowed hrp values for the
+-- SegWit address format, Bech32 allows any hrp that satisfies the above requirements.
 SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 10)
 ```
 
@@ -134,8 +134,8 @@ abcdefg1w508d6qejxtdg4y5r3zarvary0c5xw7k9rp8r4
 **Cosmos SDK 地址 (BIP173，不含见证版本)&#x20;**
 
 ```sql title=Query
--- 使用 'bech32' Variant 对原始数据进行编码，不附加见证版本字节，
--- 兼容 Cosmos SDK、Injective、Osmosis 及其他非 SegWit 链。
+-- Using 'bech32' variant encodes raw data without a witness version byte,
+-- compatible with Cosmos SDK, Injective, Osmosis, and other non-SegWit chains.
 SELECT bech32Encode('inj', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 'bech32')
 ```
 

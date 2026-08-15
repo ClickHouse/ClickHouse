@@ -58,17 +58,17 @@ A continuación, asumimos un colector de agente sencillo que envía sus eventos 
   ### Recopilación de logs
 </div>
 
-La principal ventaja de usar un colector es que permite a sus servicios descargar los datos rápidamente y dejar en manos del Collector el procesamiento adicional, como reintentos, procesamiento por lotes, cifrado o incluso filtrado de datos sensibles.
+La principal ventaja de usar un colector es que permite a sus servicios descargar los datos rápidamente y dejar en manos del colector el procesamiento adicional, como reintentos, procesamiento por lotes, cifrado o incluso filtrado de datos sensibles.
 
-El Collector utiliza los términos [receiver](https://opentelemetry.io/docs/collector/configuration/#receivers), [processor](https://opentelemetry.io/docs/collector/configuration/#processors) y [exporter](https://opentelemetry.io/docs/collector/configuration/#exporters) para sus tres etapas principales de procesamiento. Los receivers se utilizan para recopilar datos y pueden basarse en pull o en push. Los processors permiten realizar transformaciones y enriquecer los mensajes. Los exporters se encargan de enviar los datos a un servicio de destino. Aunque, en teoría, este servicio podría ser otro colector, para la explicación inicial que sigue asumimos que todos los datos se envían directamente a ClickHouse.
+El colector utiliza los términos [receiver](https://opentelemetry.io/docs/collector/configuration/#receivers), [procesador](https://opentelemetry.io/docs/collector/configuration/#processors) y [exportador](https://opentelemetry.io/docs/collector/configuration/#exporters) para sus tres etapas principales de procesamiento. Los receivers se utilizan para recopilar datos y pueden basarse en pull o en push. Los procesadores permiten realizar transformaciones y enriquecer los mensajes. Los exportadores se encargan de enviar los datos a un servicio de destino. Aunque, en teoría, este servicio podría ser otro colector, para la explicación inicial que sigue asumimos que todos los datos se envían directamente a ClickHouse.
 
 <Image img="/images/use-cases/observability/observability-3.webp" alt="Recopilación de logs" size="md" />
 
-Recomendamos a los usuarios familiarizarse con el conjunto completo de receivers, processors y exporters.
+Recomendamos a los usuarios familiarizarse con el conjunto completo de receivers, procesadores y exportadores.
 
 El colector ofrece dos receivers principales para recopilar logs:
 
-**Mediante OTLP** - En este caso, los logs se envían (push) directamente al colector desde los SDK de OpenTelemetry a través del protocolo OTLP. La [demo de OpenTelemetry](https://opentelemetry.io/docs/demo/) emplea este enfoque, en el que los exporters OTLP de cada lenguaje suponen un endpoint de colector local. En este caso, el colector debe configurarse con el receiver OTLP; consulte la [demo anterior para ver un ejemplo de configuración](https://github.com/ClickHouse/opentelemetry-demo/blob/main/src/otelcollector/otelcol-config.yml#L5-L12). La ventaja de este enfoque es que los datos de logs incluirán automáticamente Trace IDs, lo que permitirá a los usuarios identificar después los traces de un log concreto y viceversa.
+**Mediante OTLP** - En este caso, los logs se envían (push) directamente al colector desde los SDK de OpenTelemetry a través del protocolo OTLP. La [demo de OpenTelemetry](https://opentelemetry.io/docs/demo/) emplea este enfoque, en el que los exportadores OTLP de cada lenguaje suponen un endpoint de colector local. En este caso, el colector debe configurarse con el receiver OTLP; consulte la [demo anterior para ver un ejemplo de configuración](https://github.com/ClickHouse/opentelemetry-demo/blob/main/src/otelcollector/otelcol-config.yml#L5-L12). La ventaja de este enfoque es que los datos de logs incluirán automáticamente Trace IDs, lo que permitirá a los usuarios identificar después los traces de un log concreto y viceversa.
 
 <Image img="/images/use-cases/observability/observability-4.webp" alt="Recopilación de logs mediante otlp" size="md" />
 
@@ -78,7 +78,7 @@ Este enfoque requiere que los usuarios instrumenten su código con el [SDK del l
 
 <Image img="/images/use-cases/observability/observability-5.webp" alt="File log receiver" size="md" />
 
-**La mayoría de las implementaciones usarán una combinación de los receivers anteriores. Recomendamos a los usuarios leer la [documentación del collector](https://opentelemetry.io/docs/collector/) y familiarizarse con los conceptos básicos, así como con [la estructura de configuración](https://opentelemetry.io/docs/collector/configuration/) y los [métodos de instalación](https://opentelemetry.io/docs/collector/installation/).**
+**La mayoría de las implementaciones usarán una combinación de los receivers anteriores. Recomendamos a los usuarios leer la [documentación del colector](https://opentelemetry.io/docs/collector/) y familiarizarse con los conceptos básicos, así como con [la estructura de configuración](https://opentelemetry.io/docs/collector/configuration/) y los [métodos de instalación](https://opentelemetry.io/docs/collector/installation/).**
 
 <Info>
   **Consejo: `otelbin.io`**
@@ -694,11 +694,11 @@ Debe considerar migrar a una arquitectura basada en gateway una vez que el núme
   ### Escalado con gateways
 </div>
 
-Los OTel collectors pueden implementarse como instancias gateway para abordar las limitaciones anteriores. Estas proporcionan un servicio independiente, normalmente por centro de datos o por región. Reciben eventos de las aplicaciones (o de otros collectors en el rol de agent) a través de un único endpoint de OTLP. Normalmente, se implementa un conjunto de instancias gateway, con un balanceador de carga predeterminado para distribuir la carga entre ellas.
+Los OTel collectors pueden implementarse como instancias gateway para abordar las limitaciones anteriores. Estas proporcionan un servicio independiente, normalmente por centro de datos o por región. Reciben eventos de las aplicaciones (o de otros collectors en el rol de agente) a través de un único endpoint de OTLP. Normalmente, se implementa un conjunto de instancias gateway, con un balanceador de carga predeterminado para distribuir la carga entre ellas.
 
 <Image img="/images/use-cases/observability/observability-8.webp" alt="Escalado con gateways" size="md" />
 
-El objetivo de esta arquitectura es descargar de los agents el procesamiento con uso intensivo de cómputo, minimizando así el consumo de recursos. Estos gateways pueden realizar tareas de transformación que, de otro modo, tendrían que ejecutar los agents. Además, al agregar eventos de muchos agents, los gateways pueden garantizar el envío de batches grandes a ClickHouse, lo que permite una inserción eficiente. Estos collectors gateway pueden escalarse fácilmente a medida que se añaden más agents y aumenta el throughput de eventos. A continuación, se muestra una configuración de gateway de ejemplo, junto con una configuración de agent asociada que consume el archivo de log estructurado del ejemplo. Observe el uso de OTLP para la comunicación entre el agent y el gateway.
+El objetivo de esta arquitectura es descargar de los agentes el procesamiento con uso intensivo de cómputo, minimizando así el consumo de recursos. Estos gateways pueden realizar tareas de transformación que, de otro modo, tendrían que ejecutar los agentes. Además, al agregar eventos de muchos agentes, los gateways pueden garantizar el envío de batches grandes a ClickHouse, lo que permite una inserción eficiente. Estos collectors gateway pueden escalarse fácilmente a medida que se añaden más agentes y aumenta el throughput de eventos. A continuación, se muestra una configuración de gateway de ejemplo, junto con una configuración de agente asociada que consume el archivo de log estructurado del ejemplo. Observe el uso de OTLP para la comunicación entre el agente y el gateway.
 
 [clickhouse-agent-config.yaml](https://www.otelbin.io/#config=receivers%3A*N_filelog%3A*N___include%3A*N_____-_%2Fopt%2Fdata%2Flogs%2Faccess-structured.log*N___start*_at%3A_beginning*N___operators%3A*N_____-_type%3A_json*_parser*N_______timestamp%3A*N_________parse*_from%3A_attributes.time*_local*N_________layout%3A_*%22*.Y-*.m-*.d_*.H%3A*.M%3A*.S*%22*N*Nprocessors%3A*N_batch%3A*N___timeout%3A_5s*N___send*_batch*_size%3A_10000*N*Nexporters%3A*N_otlp%3A*N___endpoint%3A_localhost%3A4317*N___tls%3A*N_____insecure%3A_true_*H_Set_to_false_if_you_are_using_a_secure_connection*N*Nservice%3A*N_telemetry%3A*N___metrics%3A*N_____address%3A_0.0.0.0%3A9888_*H_Modified_as_2_collectors_running_on_same_host*N_pipelines%3A*N___logs%3A*N_____receivers%3A_%5Bfilelog%5D*N_____processors%3A_%5Bbatch%5D*N_____exporters%3A_%5Botlp%5D%7E\&distro=otelcol-contrib%7E\&distroVersion=v0.103.1%7E)
 
@@ -721,11 +721,11 @@ exporters:
   otlp:
     endpoint: localhost:4317
     tls:
-      insecure: true # Establezca en false si está usando una conexión segura
+      insecure: true # Set to false if you are using a secure connection
 service:
   telemetry:
     metrics:
-      address: 0.0.0.0:9888 # Modificado porque hay 2 collectors ejecutándose en el mismo host
+      address: 0.0.0.0:9888 # Modified as 2 collectors running on same host
   pipelines:
     logs:
       receivers: [filelog]

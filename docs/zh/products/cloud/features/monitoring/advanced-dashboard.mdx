@@ -126,11 +126,11 @@ ClickHouse Cloud 使用对象存储 (S3 类型) 来存储数据。监控该
 
 如[最佳实践文档](/zh/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous)中所述，如果能够以同步方式执行，建议始终将数据批量插入 ClickHouse。
 
-批量插入采用合理的批次大小，可以减少摄取期间创建的 parts 数量，
+采用合理批次大小的批量插入，可以减少摄取期间创建的 parts 数量，
 从而提高磁盘写入效率并减少合并
 操作。
 
-用于识别插入未优化问题的关键指标是 **Inserted Rows/sec** 和
+用于识别插入未充分优化问题的关键指标是 **Inserted Rows/sec** 和
 **Max Parts for Partition**
 
 <Image img="/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp" size="lg" alt="非批量插入" />
