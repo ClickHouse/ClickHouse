@@ -561,9 +561,9 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
 
     const auto function_name = node.function_base->getName();
     ActionsDAGLineageKind kind{};
-    if (function_name == "materialize" && node.children.size() == 1)
+    if ((function_name == "materialize" || function_name == "toNullable") && node.children.size() == 1)
         kind = ActionsDAGLineageKind::ValuePreserving;
-    else if (function_name == "_CAST" || function_name == "CAST" || function_name == "toNullable")
+    else if (function_name == "_CAST" || function_name == "CAST")
         kind = ActionsDAGLineageKind::DistinctValuesBound;
     else if (node.children.size() == 1 && node.function_base->isDeterministic())
         kind = ActionsDAGLineageKind::DistinctValuesBound;

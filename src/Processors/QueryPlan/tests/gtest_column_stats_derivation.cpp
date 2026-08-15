@@ -306,6 +306,7 @@ TEST(ColumnStatsDerivation, LineageDistinguishesIdentityFromDistinctValueBounds)
     const auto & alias = dag.addAlias(input, "alias");
     dag.addOrReplaceInOutputs(alias);
     addOutputFunction(dag, "materialize", {&input}, "materialized");
+    addOutputFunction(dag, "toNullable", {&input}, "nullable");
     addOutputFunction(dag, "abs", {&input}, "magnitude");
     const auto & casted = dag.addCast(input, std::make_shared<DataTypeUInt8>(), "narrowed", getContext().context);
     dag.addOrReplaceInOutputs(casted);
@@ -323,6 +324,7 @@ TEST(ColumnStatsDerivation, LineageDistinguishesIdentityFromDistinctValueBounds)
 
     EXPECT_EQ(kind_for("alias"), ActionsDAGLineageKind::Identity);
     EXPECT_EQ(kind_for("materialized"), ActionsDAGLineageKind::ValuePreserving);
+    EXPECT_EQ(kind_for("nullable"), ActionsDAGLineageKind::ValuePreserving);
     EXPECT_EQ(kind_for("magnitude"), ActionsDAGLineageKind::DistinctValuesBound);
     EXPECT_EQ(kind_for("narrowed"), ActionsDAGLineageKind::DistinctValuesBound);
     EXPECT_FALSE(kind_for("doubled"));
