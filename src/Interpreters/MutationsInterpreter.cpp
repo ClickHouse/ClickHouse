@@ -194,7 +194,8 @@ void addColumnsRequiredForDefaultConversions(
         {
             /// Default expressions can read a subcolumn. The conversion is applied to its
             /// physical owner, so follow the same subcolumn-to-owner dependency as the read path.
-            auto storage_column = columns_desc.tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), dependency);
+            auto storage_column = columns_desc.tryGetColumn(
+                GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), dependency);
             const String & dependency_in_storage = storage_column && storage_column->isSubcolumn()
                 ? storage_column->getNameInStorage()
                 : dependency;
