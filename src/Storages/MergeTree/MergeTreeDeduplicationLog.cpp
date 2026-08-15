@@ -12,6 +12,8 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
+#include <algorithm>
+
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
@@ -334,22 +336,18 @@ void MergeTreeDeduplicationLog::applyRecords(
         }
     }
 
-    /// Recompute each log's two counts from the records just read. The raw
+    /// Recompute each log's counts from the records just read. The raw
     /// `entries_count` counts every record: it drives rotation and compaction, so a
     /// log full of rolled-back pairs still rotates once it reaches the raw threshold
     /// instead of growing without bound. The `effective_entries_count` counts only
-    /// the records that survive cancel-pair elimination: `dropOutdatedLogs` sums it
-    /// from the newest log backwards to decide which older logs are redundant, and a
-    /// cancelled pair contributes nothing to the reconstructed map, so counting its
-    /// raw records there would let a failed multi-block operation inflate the sums
-    /// and wrongly drop an older log that still holds live block ids - after which a
-    /// restart forgets those committed blocks. Splitting the two keeps retention in
-    /// step with what a replay reconstructs while rotation stays bounded by the
-    /// physical log size.
+    /// the records that survive cancel-pair elimination. It measures rollback
+    /// garbage for compaction, while retention below tracks the ADD records that
+    /// actually supply the final in-memory map.
     for (auto & log : existing_logs)
     {
         log.second.entries_count = 0;
         log.second.effective_entries_count = 0;
+        log.second.live_entries_count = 0;
     }
     for (size_t i = 0; i < records.size(); ++i)
     {
@@ -359,8 +357,10 @@ void MergeTreeDeduplicationLog::applyRecords(
             ++description.effective_entries_count;
     }
 
-    /// Now replay the surviving records exactly as they happened live: ADD inserts
-    /// (evicting the oldest entry when the map is full), DROP erases.
+    /// Now replay the surviving records exactly as they happened live. Track the log
+    /// that supplied every currently live ADD: retention must preserve those files,
+    /// whereas a surviving DROP is only historical context and must not consume a
+    /// deduplication-window slot.
     for (size_t i = 0; i < records.size(); ++i)
     {
         if (cancelled[i])
@@ -368,9 +368,31 @@ void MergeTreeDeduplicationLog::applyRecords(
 
         const auto & record = records[i];
         if (record.operation == MergeTreeDeduplicationOp::DROP)
+        {
+            auto source_it = block_id_log_numbers.find(record.block_id);
+            if (source_it != block_id_log_numbers.end())
+            {
+                --existing_logs.at(source_it->second).live_entries_count;
+                block_id_log_numbers.erase(source_it);
+            }
             deduplication_map.erase(record.block_id);
+        }
         else
-            deduplication_map.insert(record.block_id, MergeTreePartInfo::fromPartName(record.part_name, format_version));
+        {
+            if (deduplication_map.insertWithoutEviction(record.block_id, MergeTreePartInfo::fromPartName(record.part_name, format_version)))
+            {
+                const size_t log_number = record_log_numbers[i];
+                block_id_log_numbers.emplace(record.block_id, log_number);
+                ++existing_logs.at(log_number).live_entries_count;
+                deduplication_map.trimToMaxSize([&](const std::string & block_id, const auto &)
+                {
+                    auto source_it = block_id_log_numbers.find(block_id);
+                    chassert(source_it != block_id_log_numbers.end());
+                    --existing_logs.at(source_it->second).live_entries_count;
+                    block_id_log_numbers.erase(source_it);
+                });
+            }
+        }
     }
 }
 
@@ -498,38 +520,23 @@ void MergeTreeDeduplicationLog::rotate()
 
 void MergeTreeDeduplicationLog::dropOutdatedLogs()
 {
-    size_t current_sum = 0;
-    size_t remove_from_value = 0;
-    /// Go from end to the beginning
-    for (auto itr = existing_logs.rbegin(); itr != existing_logs.rend(); ++itr)
+    /// Retain every file from the oldest live ADD onwards. A surviving DROP is not a
+    /// live entry: counting it as one can discard an older file that contains a block
+    /// ID which the newer DROP does not replace, so a restart forgets that block ID.
+    auto first_needed = std::find_if(existing_logs.begin(), existing_logs.end(), [] (const auto & log)
     {
-        if (current_sum > deduplication_window)
-        {
-            /// We have more logs than required, all older files (including current) can be dropped
-            remove_from_value = itr->first;
-            break;
-        }
+        return log.second.live_entries_count != 0;
+    });
 
-        auto & description = itr->second;
-        /// Retention is decided by the effective (surviving-record) coverage, not the
-        /// raw record count: the cancelled pairs of a rolled-back operation reconstruct
-        /// nothing on replay, so counting them here could drop an older log that still
-        /// holds committed block ids. Rotation, in contrast, uses the raw count.
-        current_sum += description.effective_entries_count;
-    }
+    /// If the final map is empty, no older state is needed. Keep the newest file for
+    /// the live writer rather than deleting the file it will append to next.
+    if (first_needed == existing_logs.end())
+        first_needed = std::prev(existing_logs.end());
 
-    /// If we found some logs to drop
-    if (remove_from_value != 0)
+    for (auto itr = existing_logs.begin(); itr != first_needed;)
     {
-        /// Go from the beginning to the end and drop all outdated logs
-        for (auto itr = existing_logs.begin(); itr != existing_logs.end();)
-        {
-            size_t number = itr->first;
-            disk->removeFile(itr->second.path);
-            itr = existing_logs.erase(itr);
-            if (remove_from_value == number)
-                break;
-        }
+        disk->removeFile(itr->second.path);
+        itr = existing_logs.erase(itr);
     }
 
 }
@@ -652,9 +659,9 @@ bool MergeTreeDeduplicationLog::compact()
         /// the old writer and files are still live, so a failure here changes nothing.
         new_writer = disk->writeFile(
             writer_path, DBMS_DEFAULT_BUFFER_SIZE, reopen_snapshot ? WriteMode::Append : WriteMode::Rewrite);
-        existing_logs.emplace(snapshot_log_number, MergeTreeDeduplicationLogNameDescription{snapshot_path, snapshot_size, snapshot_size});
+        existing_logs.emplace(snapshot_log_number, MergeTreeDeduplicationLogNameDescription{snapshot_path, snapshot_size, snapshot_size, snapshot_size});
         if (!reopen_snapshot)
-            existing_logs.emplace(writer_log_number, MergeTreeDeduplicationLogNameDescription{writer_path, 0, 0});
+            existing_logs.emplace(writer_log_number, MergeTreeDeduplicationLogNameDescription{writer_path, 0, 0, 0});
     }
     catch (...)
     {
@@ -736,6 +743,8 @@ bool MergeTreeDeduplicationLog::compact()
     }
 
     current_log_number = writer_log_number;
+    for (const auto & node : deduplication_map)
+        block_id_log_numbers.at(node.key) = snapshot_log_number;
     current_writer = std::move(new_writer);
 
     /// The compaction is complete. Unless some old file could not be neutralized - in
@@ -939,6 +948,7 @@ void MergeTreeDeduplicationLog::discardHistoryAfterUnfinishedCompaction()
         {
             it->second.entries_count = 0;
             it->second.effective_entries_count = 0;
+            it->second.live_entries_count = 0;
             ++it;
         }
         else
@@ -951,6 +961,7 @@ void MergeTreeDeduplicationLog::discardHistoryAfterUnfinishedCompaction()
     /// rotation indexes `existing_logs` by `current_log_number`, which may have just
     /// been erased.
     current_log_number = existing_logs.empty() ? 0 : existing_logs.rbegin()->first;
+    block_id_log_numbers.clear();
 
     if (!clearCompactionMarker())
         throw Exception(
@@ -1097,6 +1108,7 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         {
             deduplication_map.insertWithoutEviction(block_id, part_info);
             ++published;
+            block_id_log_numbers.emplace(block_id, add_log_number);
         }
 
         for (const auto & block_id : block_ids)
@@ -1123,7 +1135,10 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         /// throw, and because the entries were inserted without eviction it restores
         /// the map exactly - it never drops an unrelated, still-active block ID.
         for (size_t i = 0; i < published; ++i)
+        {
             deduplication_map.erase(block_ids[i]);
+            block_id_log_numbers.erase(block_ids[i]);
+        }
 
         /// Best effort: write compensating records for the block IDs that were
         /// durably written above, so that replaying the log on server startup does
@@ -1209,7 +1224,16 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     /// pops the oldest entries, so - unlike a plain insert, which allocates - it
     /// cannot throw here, where the durably recorded insert could no longer be rolled
     /// back.
-    deduplication_map.trimToMaxSize();
+    for (const auto & block_id : block_ids)
+        ++existing_logs.at(block_id_log_numbers.at(block_id)).live_entries_count;
+
+    deduplication_map.trimToMaxSize([&](const std::string & block_id, const auto &)
+    {
+        auto source_it = block_id_log_numbers.find(block_id);
+        chassert(source_it != block_id_log_numbers.end());
+        --existing_logs.at(source_it->second).live_entries_count;
+        block_id_log_numbers.erase(source_it);
+    });
 
     /// Reclaim the record pairs left behind by any rolled-back operations once enough
     /// of them have piled up (best effort, never throws), so a burst of transient
@@ -1361,7 +1385,13 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
 
     /// Everything is durable now; erase the dropped block ids from the map.
     for (const auto & block_id : block_ids)
+    {
+        auto source_it = block_id_log_numbers.find(block_id);
+        chassert(source_it != block_id_log_numbers.end());
+        --existing_logs.at(source_it->second).live_entries_count;
+        block_id_log_numbers.erase(source_it);
         deduplication_map.erase(block_id);
+    }
 
     /// Reclaim the record pairs left behind by any rolled-back operations once enough
     /// of them have piled up (best effort, never throws).
@@ -1384,7 +1414,17 @@ void MergeTreeDeduplicationLog::unpublishFailedPart(const MergeTreePartInfo & pa
         /// all-or-nothing with the on-disk records: the part never became active, so
         /// unpublishing its block ids can at worst let a retry through as a visible
         /// duplicate, while leaving them published drops the retry's data silently.
-        const size_t erased = deduplication_map.eraseIf([&](const MergeTreePartInfo & info) { return part_info.contains(info); });
+        const size_t erased = deduplication_map.eraseIf([&](const std::string & block_id, const MergeTreePartInfo & info)
+        {
+            if (!part_info.contains(info))
+                return false;
+
+            auto source_it = block_id_log_numbers.find(block_id);
+            chassert(source_it != block_id_log_numbers.end());
+            --existing_logs.at(source_it->second).live_entries_count;
+            block_id_log_numbers.erase(source_it);
+            return true;
+        });
 
         if (erased == 0)
             return;
@@ -1456,7 +1496,13 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
             discardHistoryAfterUnfinishedCompaction();
     }
 
-    deduplication_map.setMaxSize(deduplication_window);
+    deduplication_map.setMaxSize(deduplication_window, [&](const std::string & block_id, const auto &)
+    {
+        auto source_it = block_id_log_numbers.find(block_id);
+        chassert(source_it != block_id_log_numbers.end());
+        --existing_logs.at(source_it->second).live_entries_count;
+        block_id_log_numbers.erase(source_it);
+    });
     rotateAndDropIfNeeded();
 
     /// Can happen in case we have unfinished log

@@ -1043,6 +1043,52 @@ TEST(MergeTreeDeduplicationLog, RotationSyncFailureRetainsCommittedLogsAfterTwoR
     std::filesystem::remove_all(work_dir);
 }
 
+/// Regression test: retention must be based on the ADD records that reconstruct the
+/// final map, not on every surviving record. A DROP in a newer log removes its own
+/// block ID but does not replace an older live ADD, so counting that DROP as a window
+/// slot can remove the only log that still contains the older block ID.
+TEST(MergeTreeDeduplicationLog, RetentionKeepsOlderLiveAddAcrossNewerDrops)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_retention_live_adds/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        auto disk = std::make_shared<DiskLocal>("local", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        /// log1: ADD block1, ADD block2, DROP block2, ADD block3.
+        log.addPart({"block1"}, part("all_1_1_0"));
+        log.addPart({"block2"}, part("all_2_2_0"));
+        log.dropPart(part("all_2_2_0"));
+        log.addPart({"block3"}, part("all_3_3_0"));
+
+        /// log2: DROP block3, ADD block4, DROP block4, ADD block5.
+        log.dropPart(part("all_3_3_0"));
+        log.addPart({"block4"}, part("all_4_4_0"));
+        log.dropPart(part("all_4_4_0"));
+        log.addPart({"block5"}, part("all_5_5_0"));
+        log.shutdown();
+    }
+
+    {
+        auto disk = std::make_shared<DiskLocal>("local", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        /// block1 is supplied by log1 while block5 is supplied by log2. Both must
+        /// survive replay after the rotation that follows log2.
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_6_6_0")).empty());
+        EXPECT_FALSE(log.addPart({"block5"}, part("all_7_7_0")).empty());
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
 /// Regression test: log rotation and compaction must be driven by the RAW number
 /// of records physically written to a file, not by how many survive rollback-pair
 /// elimination. A rolled-back operation writes records - its ADD/DROP records and

@@ -28,13 +28,15 @@ struct MergeTreeDeduplicationLogNameDescription
     size_t entries_count{};
 
     /// Number of records that survive rollback-pair elimination - i.e. the records
-    /// a replay would actually apply to the in-memory map. Drives retention
-    /// (`dropOutdatedLogs`): the cancelled pairs of a rolled-back operation
-    /// contribute nothing, so they are not counted as consumed deduplication-window
-    /// slots and cannot drop an older log that still holds committed block ids. The
-    /// gap between this and `entries_count`, summed over all files, is the amount of
-    /// unreclaimable rollback garbage that triggers `compact`.
+    /// a replay would actually apply to the in-memory map. The gap between this and
+    /// `entries_count`, summed over all files, is the amount of unreclaimable
+    /// rollback garbage that triggers `compact`.
     size_t effective_entries_count{};
+
+    /// Number of live block IDs whose latest ADD record is in this log. Drives
+    /// retention (`dropOutdatedLogs`): a surviving DROP does not contribute to the
+    /// reconstructed map, so it must not make an older ADD-only log look redundant.
+    size_t live_entries_count{};
 };
 
 /// Simple string-key HashTable with fixed size based on STL containers.
@@ -80,26 +82,39 @@ public:
         return queue.size();
     }
 
-    void setMaxSize(size_t max_size_)
+    template <typename Callback>
+    void setMaxSize(size_t max_size_, Callback && on_evict)
     {
         max_size = max_size_;
-        trimToMaxSize();
+        trimToMaxSize(std::forward<Callback>(on_evict));
+    }
+
+    void setMaxSize(size_t max_size_)
+    {
+        setMaxSize(max_size_, [] (const std::string &, const V &) {});
     }
 
     /// Evict the oldest entries (in FIFO insertion order) until the size is within
     /// the limit. Only pops entries, so it never allocates and never throws: a caller
     /// that has already made a change durable relies on this to enforce the window
     /// without a failure that could no longer be rolled back.
-    void trimToMaxSize() noexcept
+    template <typename Callback>
+    void trimToMaxSize(Callback && on_evict) noexcept
     {
         while (size() > max_size)
         {
+            on_evict(queue.front().key, queue.front().value);
             map.erase(queue.front().key);
             queue.pop_front();
         }
     }
 
-    /// Erase every entry whose value satisfies the predicate, keeping the insertion
+    void trimToMaxSize() noexcept
+    {
+        trimToMaxSize([] (const std::string &, const V &) {});
+    }
+
+    /// Erase every entry whose key and value satisfy the predicate, keeping the insertion
     /// order of the rest. Only erases, so it never allocates and never throws - which
     /// is what makes it usable on a failure path that must not be able to fail itself
     /// (see MergeTreeDeduplicationLog::unpublishFailedPart, where collecting the keys
@@ -111,7 +126,7 @@ public:
         size_t erased = 0;
         for (auto it = queue.begin(); it != queue.end();)
         {
-            if (predicate(it->value))
+            if (predicate(it->key, it->value))
             {
                 map.erase(it->key);
                 it = queue.erase(it);
@@ -267,6 +282,11 @@ private:
 
     /// In memory hash-table
     LimitedOrderedHashMap<MergeTreePartInfo> deduplication_map;
+
+    /// Log file containing the ADD record that currently publishes each block ID.
+    /// It lets retention keep exactly the prefix of history required to reconstruct
+    /// the live deduplication map.
+    std::unordered_map<std::string, size_t> block_id_log_numbers;
 
     /// Writer to the current log file
     std::unique_ptr<WriteBufferFromFileBase> current_writer;
