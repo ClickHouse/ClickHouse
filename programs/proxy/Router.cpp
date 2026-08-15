@@ -70,7 +70,11 @@ bool Router::runHook(const String & command, const char * kind, const RouteAttri
         /// The hook is an external blocking process: leave the cooperative scheduler while waiting for it.
         silk::FiberScheduler::ThreadModeScope thread_mode;
 
-        auto process = ShellCommand::execute(line);
+        ShellCommand::Config config(line);
+        /// Hooks do not consume their output. Let it inherit the proxy's standard streams
+        /// instead of creating unread pipes that can block a verbose hook on write(2).
+        config.pipe_stdin_only = true;
+        auto process = ShellCommand::execute(config);
         int exit_code = process->tryWait();
         if (exit_code != 0)
         {
@@ -119,9 +123,27 @@ void Router::runFirstSeenHook(const String & command, const char * kind, const S
 
 BackendPoolPtr Router::poolForDynamicBackend(const BackendConfig & backend_config)
 {
-    const String key = fmt::format("{}:{}:{}:{}:{}:{}:{}:{}",
-        backend_config.host, backend_config.tcp_port, backend_config.http_port, backend_config.mysql_port,
-        backend_config.postgresql_port, backend_config.ssh_port, backend_config.raw_port, backend_config.secure);
+    /// Dynamic pools may only be shared by configurations with identical behavior.
+    /// Length-prefix strings so that delimiters in names, hosts, or credentials cannot alias.
+    String key;
+    const auto append = [&key](const auto & value)
+    {
+        const String text = fmt::format("{}", value);
+        fmt::format_to(std::back_inserter(key), "{}:{}", text.size(), text);
+    };
+
+    append(backend_config.name);
+    append(backend_config.host);
+    append(backend_config.tcp_port);
+    append(backend_config.http_port);
+    append(backend_config.mysql_port);
+    append(backend_config.postgresql_port);
+    append(backend_config.ssh_port);
+    append(backend_config.raw_port);
+    append(backend_config.secure);
+    append(backend_config.weight);
+    append(backend_config.monitor_user);
+    append(backend_config.monitor_password);
 
     std::lock_guard lock(dynamic_mutex);
     auto it = dynamic_pools.find(key);
