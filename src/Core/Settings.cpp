@@ -4334,6 +4334,14 @@ The maximum total number of bytes buffered by the repartitioning stage of [aggre
 
 The limit is enforced at block granularity: it is checked against measured sizes when a block is admitted into the buffer and re-checked after the block is split into per-shard chunks (a block's size cannot be known before it is read, and the split can grow it), so the buffered bytes can transiently exceed the limit by up to one block's post-split footprint per scatter transform before the query fails. It is a guardrail against unbounded read-ahead, not an exact memory cap; the memory used by the query is still limited by [max_memory_usage](#max_memory_usage).
 )", 0) \
+    DECLARE(Bool, enable_adaptive_aggregator, true, R"(
+Enables the adaptive `GROUP BY` algorithm: every thread aggregates into its local hash table until it reaches `adaptive_aggregator_freeze_threshold` keys, then the table freezes, so that rows of already-seen (frequent) keys keep updating it in place, while new (rare) keys are routed by their hash into per-bucket backlogs and aggregated exactly once, inside the bucket-parallel merge. Frequent keys stay in small cache-resident tables, and rare keys are stored and processed once instead of once per thread.
+
+The external aggregation settings (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`) are honored: past the threshold the backlogs are drained early into the shared table, and if that is not enough to get back under it, the shared table spills to disk through the ordinary external aggregation.
+)", 0) \
+    DECLARE(UInt64, adaptive_aggregator_freeze_threshold, 16384, R"(
+The number of keys at which the adaptive aggregator freezes a thread's local hash table (see `enable_adaptive_aggregator`). Smaller values keep the frozen tables cache-resident, larger values let them absorb more of the frequent keys. 0 freezes the tables at the first opportunity, which makes the algorithm behave similarly to the sharded aggregator (`enable_sharding_aggregator`): every key is routed by its hash and aggregated by a single owner, just deferred to the merge phase instead of exchanged between threads during the scan.
+)", 0) \
     DECLARE(Bool, enable_sharding_aggregator, false, R"(
 Enables sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase.
 
