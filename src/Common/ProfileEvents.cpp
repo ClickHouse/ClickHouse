@@ -1536,6 +1536,8 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageListObjectsCacheMisses, "Number of times object storage list objects operation miss the cache.", ValueType::Number) \
     M(ObjectStorageListObjectsCacheExactMatchHits, "Number of times object storage list objects operation hit the cache with an exact match.", ValueType::Number) \
     M(ObjectStorageListObjectsCachePrefixMatchHits, "Number of times object storage list objects operation miss the cache using prefix matching.", ValueType::Number) \
+    M(DataLakeRestCatalogCredentialsVended, "Number of table metadata requests to REST catalog asking to vend storage credentials.", ValueType::Number) \
+    M(DataLakeRestCatalogCredentialsCacheHits, "Number of table metadata requests to REST catalog reusing cached storage credentials.", ValueType::Number) \
     \
     M(DataLakeRestCatalogLoadConfig, "Number of 'load config' requests to Iceberg REST catalog.", ValueType::Number) \
     M(DataLakeRestCatalogLoadConfigMicroseconds, "Total time of 'load config' requests to Iceberg REST catalog.", ValueType::Microseconds) \

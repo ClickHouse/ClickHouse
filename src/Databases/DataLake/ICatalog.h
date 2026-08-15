@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 #include <optional>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
@@ -221,6 +222,8 @@ public:
     {
         return std::nullopt;
     }
+
+    virtual void setVendedCredentialsCacheTTL(std::chrono::seconds /*ttl*/) {}
 
 protected:
     /// Name of the warehouse,
