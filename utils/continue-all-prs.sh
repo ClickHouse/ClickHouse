@@ -197,7 +197,7 @@ MAIN_REPO="$(git rev-parse --show-toplevel)"
 # worker. The hook is applied through command-scope environment configuration,
 # so it also covers branches checked out in linked worktrees without changing
 # the user's repository configuration.
-PUSH_HOOKS_DIR="${BASH_SOURCE[0]%/*}/continue-all-prs-hooks"
+PUSH_HOOKS_DIR="$(cd "$MAIN_REPO/utils/continue-all-prs-hooks" && pwd -P)"
 [[ -x "$PUSH_HOOKS_DIR/pre-push" ]] \
     || { echo "${S}Error: missing executable pre-push hook: $PUSH_HOOKS_DIR/pre-push${R}" >&2; exit 1; }
 GIT_CONFIG_SLOT="${GIT_CONFIG_COUNT:-0}"
