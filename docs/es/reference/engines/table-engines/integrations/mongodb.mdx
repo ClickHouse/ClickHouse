@@ -138,7 +138,7 @@ SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea4
 
 Solo se admiten consultas con expresiones simples (por ejemplo, `WHERE field = <constant> ORDER BY field2 LIMIT <constant>`).
 Estas expresiones se traducen al lenguaje de consulta de MongoDB y se ejecutan en el servidor.
-Puede desactivar todas estas restricciones con [mongodb&#95;throw&#95;on&#95;unsupported&#95;query](/es/reference/settings/session-settings#mongodb_throw_on_unsupported_query).
+Puede desactivar todas estas restricciones con [mongodb&#95;throw&#95;on&#95;unsupported&#95;query](/es/reference/settings/session-settings/other#mongodb_throw_on_unsupported_query).
 En ese caso, ClickHouse intenta convertir la consulta en la medida de lo posible, pero esto puede provocar un escaneo completo de la tabla y que el procesamiento se realice del lado de ClickHouse.
 
 <Note>
