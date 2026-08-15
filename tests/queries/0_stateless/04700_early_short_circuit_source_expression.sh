@@ -22,6 +22,18 @@ else
     echo "syntax_source_failed"
 fi
 
+header_output=$($CLICKHOUSE_CLIENT -q "
+    SELECT 1 OR ((SELECT count(*) FROM t_04700_early_short_circuit_source) > 0)
+    SETTINGS enable_function_early_short_circuit = 1
+    FORMAT TSVWithNames
+")
+
+if grep -qF '__early_short_circuit_scalar' <<< "$header_output"; then
+    echo "header_placeholder_failed"
+else
+    echo "header_projection_name_ok"
+fi
+
 secret_output=$($CLICKHOUSE_CLIENT -q "
     EXPLAIN QUERY TREE
     SELECT 1 OR notEmpty(concat('SEKRIT_KEY_12345', encrypt('aes-128-ecb', 'x', 'SEKRIT_KEY_12345')))

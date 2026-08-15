@@ -416,7 +416,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         /// A non-constant placeholder preserves the real type. Functions that require the actual
         /// constant value will reject it, causing the optimization to fall back to normal analysis.
         node = std::make_shared<ColumnNode>(
-            NameAndTypePair{"__early_short_circuit_scalar", scalar_type},
+            NameAndTypePair{"_subquery_" + std::to_string(subquery_counter - 1), scalar_type},
             TableExpressionNodeWeakPtr{});
         return;
     }

@@ -204,7 +204,7 @@ bool hasUnsafeFunctionForEarlyShortCircuit(
 bool containsEarlyShortCircuitScalarPlaceholder(const QueryTreeNodePtr & node)
 {
     if (const auto * column = node->as<ColumnNode>();
-        column && column->getColumnName() == "__early_short_circuit_scalar")
+        column && column->getColumnName().starts_with("_subquery_"))
         return true;
 
     if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
