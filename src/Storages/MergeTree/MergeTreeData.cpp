@@ -6123,7 +6123,15 @@ void MergeTreeData::checkLossyRecompressionIsPossible(const String & column_name
                     && (required_column_desc->default_desc.kind == ColumnDefaultKind::Ephemeral
                         || required_column_desc->default_desc.kind == ColumnDefaultKind::Alias)
                     && required_column_desc->default_desc.expression)
-                    expressions_to_analyze.push_back(required_column_desc->default_desc.expression);
+                {
+                    auto helper_expression = required_column_desc->default_desc.expression->clone();
+                    if (required_column.size() > owning_column->size())
+                        helper_expression = makeASTFunction(
+                            "getSubcolumn",
+                            std::move(helper_expression),
+                            make_intrusive<ASTLiteral>(required_column.substr(owning_column->size() + 1)));
+                    expressions_to_analyze.push_back(std::move(helper_expression));
+                }
                 else
                     required_columns.push_back(required_column);
             }
