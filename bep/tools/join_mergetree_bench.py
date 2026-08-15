@@ -153,7 +153,6 @@ class BenchmarkPoint:
 class Measurements:
     median_us: int | float
     min_us: int
-    representative_run: int
     events: dict[str, int]
 
 
@@ -175,25 +174,6 @@ def canonical_decimal(value: decimal.Decimal) -> str:
     if result in ("", "-0"):
         return "0"
     return result
-
-
-def int_hash64(value: int) -> int:
-    """Reproduce the SQL function `intHash64` for a `UInt64` input."""
-    value = (value ^ 0x4CF2D2BAAE6DA887) & UINT64_MAX
-    value ^= value >> 33
-    value = (value * 0xFF51AFD7ED558CCD) & UINT64_MAX
-    value ^= value >> 33
-    value = (value * 0xC4CEB9FE1A85EC53) & UINT64_MAX
-    value ^= value >> 33
-    return value
-
-
-def mix_seed(base: int, cycle_or_occurrence: int, card_bucket: int) -> int:
-    return (
-        base
-        ^ ((cycle_or_occurrence * OCCURRENCE_MIX) & UINT64_MAX)
-        ^ ((card_bucket * BUCKET_MIX) & UINT64_MAX)
-    ) & UINT64_MAX
 
 
 def mix_seed_sql(base: int, cycle_or_occurrence: str, card_bucket: str) -> str:
@@ -278,16 +258,6 @@ def round_hit_count(probe_rows: int, hit_rate: decimal.Decimal) -> int:
     return quotient + int(remainder * 2 >= denominator)
 
 
-def validate_cardinality_domain(cardinalities: Sequence[int]) -> None:
-    """Keep build selectors below the disjoint miss preimage domain."""
-    for cardinality in cardinalities:
-        if cardinality <= 0 or cardinality >= MISS_DOMAIN_BIT:
-            raise ValueError(
-                f"cardinality {cardinality} must be positive and less than "
-                f"{MISS_DOMAIN_BIT}"
-            )
-
-
 def validate_probe_domain(probe_rows: int) -> None:
     """Ensure a selected probe count remains in the generated row domain."""
     if probe_rows <= 0:
@@ -360,10 +330,6 @@ def validate_load_capacity(metadata: LoadedMetadata, *, free_bytes: int) -> int:
             f"space ({free_bytes} bytes)"
         )
     return raw_bytes
-
-
-def check_capacity(metadata: LoadedMetadata, *, free_bytes: int) -> int:
-    return validate_load_capacity(metadata, free_bytes=free_bytes)
 
 
 def _filesystem_free_bytes(path: str) -> int:
@@ -987,10 +953,6 @@ def _probe_predicate(point: BenchmarkPoint) -> str:
     return f"{first} OR {second}"
 
 
-def probe_selection_predicate(point: BenchmarkPoint) -> str:
-    return _probe_predicate(point)
-
-
 def _probe_subquery(
     point: BenchmarkPoint, payload_columns: int | None = None
 ) -> str:
@@ -1243,7 +1205,6 @@ def summarize_measurements(runs: Sequence[dict[str, int]]) -> Measurements:
     return Measurements(
         median_us=median_us,
         min_us=min(elapsed),
-        representative_run=representative,
         events=dict(runs[representative]),
     )
 

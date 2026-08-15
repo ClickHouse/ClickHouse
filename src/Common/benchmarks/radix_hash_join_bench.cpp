@@ -26,7 +26,7 @@ double eventSeconds(ProfileEvents::Event e)
 }
 
 RadixHashJoinBench::RadixHashJoinBench(
-    WorkerPool & pool_, const Block & left_header_, const Block & right_header_, size_t /*p_star_*/, size_t f_max_)
+    WorkerPool & pool_, const Block & left_header_, const Block & right_header_, size_t f_max_)
     : pool(pool_)
     , left_header(left_header_)
     , right_header(std::make_shared<const Block>(right_header_))

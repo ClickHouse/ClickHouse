@@ -1075,7 +1075,6 @@ struct ModelInputs
     size_t llc = 0;
     size_t w_b = 16;
     size_t w_p = 16;
-    double hit_rate = 1.0;
     size_t max_partitions = 16384;
     size_t threads = 1;
 
@@ -1176,8 +1175,8 @@ Prediction predict(const ModelInputs & m, double n_b, double n_p, double distinc
     /// htBytesForDistinct (the same label function the sweeps record points with) applied to
     /// the per-partition key count; htBytesForDistinctReserved above is used ONLY for the
     /// physical L2-fit test above - the two must not be unified, since the sweep curves are
-    /// labeled by htBytesForDistinct even though the underlying tables are reserve()'d (see
-    /// the "Do NOT change the curve x-labels" note at the RP kernels' reserve_num fix).
+    /// labeled by htBytesForDistinct even though the underlying tables are reserve()'d to
+    /// `distinct` (see the reserve_num comments in runBuildKernelRP/runProbeKernelRP).
     const double per_part_label = static_cast<double>(htBytesForDistinct(std::max<size_t>(1, d / p_star)));
     p.rp_build_sec = n_b * m.build_rp.at(per_part_label) * 1e-9;
     p.rp_probe_sec = n_p * m.probe_rp.at(per_part_label) * 1e-9;
@@ -1446,7 +1445,7 @@ void runSingleJoin(const Config & cfg, WorkerPool & pool, const CacheInfo & cach
     {
         if (!cfg.run_rphj)
             return std::nullopt;
-        RadixHashJoinBench bench(pool, left_header, right_header, p_star, f_max);
+        RadixHashJoinBench bench(pool, left_header, right_header, f_max);
         auto stats = driveJoin(bench, build_blocks, probe_blocks, cfg.verify);
         detail = bench.phaseBreakdown();
         return stats;
@@ -1556,7 +1555,7 @@ void runBepWaveSweep(const Config & cfg, WorkerPool & pool, const CacheInfo & ca
             np_build_sec * 1e3, np_probe_sec * 1e3, np_probe_sec * 1e9 / static_cast<double>(n_p));
     }
 
-    RadixHashJoinBench rp(pool, left_header, right_header, p_star, f_max);
+    RadixHashJoinBench rp(pool, left_header, right_header, f_max);
     Stopwatch build_watch;
     rp.build(build_blocks);
     const double rp_build_sec = build_watch.elapsedSeconds();
@@ -1686,7 +1685,7 @@ void runValidation(const Config & cfg, WorkerPool & pool, const ModelInputs & mo
             {
                 if (!cfg.run_rphj)
                     return std::nullopt;
-                RadixHashJoinBench bench(pool, left_header, right_header, p_star, model.f_max);
+                RadixHashJoinBench bench(pool, left_header, right_header, model.f_max);
                 auto stats = driveJoin(bench, build_blocks, probe_blocks, cfg.verify);
                 detail = bench.phaseBreakdown();
                 return stats;
@@ -1955,7 +1954,6 @@ int main(int argc, char ** argv)
     model.llc = cache.llc;
     model.w_b = cfg.buildRowWidth();
     model.w_p = cfg.probeRowWidth();
-    model.hit_rate = cfg.hit_rate;
     model.max_partitions = cfg.max_partitions;
     model.threads = cfg.threads;
 

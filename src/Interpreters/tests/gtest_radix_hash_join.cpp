@@ -130,8 +130,6 @@ struct LaneBOutcome
     JoinResultPtr result;
     Block first_block;
     bool first_is_last = false;
-    size_t abandoned_rows = 0;
-    JoinedRows abandoned_tuples;
 };
 
 }
@@ -223,11 +221,12 @@ TEST(RadixHashJoin, ConcurrentJoiningQuantumDoesNotWaitForPreviousWave)
             auto r = result_b->next();
             if (abandoned.load())
             {
-                /// Old-code path: this thread acquired the wave admission, so finish the result here.
-                outcome.abandoned_rows += r.block.rows();
-                accumulateRows(r.block, outcome.abandoned_tuples);
+                /// Old-code path: this thread acquired the wave admission, so finish and discard the
+                /// result here, on its own thread, since it owns a lock acquired on that thread.
+                JoinedRows ignored;
+                accumulateRows(r.block, ignored);
                 if (!r.is_last)
-                    outcome.abandoned_rows += drainResult(*result_b, outcome.abandoned_tuples);
+                    drainResult(*result_b, ignored);
                 return outcome;
             }
             outcome.result = std::move(result_b);
@@ -523,7 +522,7 @@ struct WaveHarness
         join->runPostBuildPhase();
     }
 
-    Block makeProbe(size_t rows, UInt64 first_id, std::vector<UInt64> * keys_out = nullptr)
+    Block makeProbe(size_t rows, UInt64 first_id)
     {
         std::vector<UInt64> keys(rows);
         std::vector<UInt64> ids(rows);
@@ -535,8 +534,6 @@ struct WaveHarness
                 if (keys[i] == build_keys[j])
                     expected.emplace(keys[i], ids[i], build_keys[j], build_ids[j]);
         }
-        if (keys_out)
-            *keys_out = keys;
         return twoColumnBlock("k", "probe_id", keys, ids);
     }
 

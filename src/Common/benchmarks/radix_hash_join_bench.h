@@ -28,7 +28,7 @@ class RadixHashJoinBench : public IJoinBench
 public:
     /// Production derives `p_star` from the actual build side and uses `f_max` as the per-pass
     /// fanout cap, matching the model's pass plan.
-    RadixHashJoinBench(WorkerPool & pool_, const Block & left_header_, const Block & right_header_, size_t p_star_, size_t f_max_);
+    RadixHashJoinBench(WorkerPool & pool_, const Block & left_header_, const Block & right_header_, size_t f_max_);
     ~RadixHashJoinBench() override;
 
     std::string name() const override { return "RadixHashJoin"; }
