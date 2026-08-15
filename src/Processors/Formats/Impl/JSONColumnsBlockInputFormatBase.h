@@ -100,7 +100,7 @@ public:
     /// The columnar JSON formats read whatever columns are present and fill the columns missing from the
     /// input with defaults (see `JSONColumnsBlockInputFormatBase::read`), so the number of columns in the
     /// data need not match the destination.
-    bool allowVariableNumberOfColumns() const override { return true; }
+    bool allowVariableNumberOfColumns() const override { return column_names_read_from_data; }
 
     bool readsTypedJSONValueTokens() const override { return true; }
 

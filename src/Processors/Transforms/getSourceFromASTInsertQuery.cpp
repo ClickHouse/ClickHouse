@@ -205,6 +205,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_reads_quoted_text_values = false;
     bool format_maps_columns_by_name = false;
     bool format_honors_column_name_matching_mode = false;
+    bool format_uses_case_insensitive_column_matching = false;
     bool format_reads_numeric_into_ipv4 = false;
     bool format_reads_numeric_into_bool = true;
     bool format_reads_bool_word_into_numeric = true;
@@ -240,6 +241,7 @@ String getInsertDataSchemaMismatchDescription(
         format_reads_quoted_text_values = schema_reader->readsQuotedTextValues();
         format_maps_columns_by_name = schema_reader->mapsColumnsByName();
         format_honors_column_name_matching_mode = schema_reader->honorsColumnNameMatchingMode();
+        format_uses_case_insensitive_column_matching = schema_reader->usesCaseInsensitiveColumnMatching();
         format_reads_numeric_into_ipv4 = schema_reader->readsNumericValueIntoIPv4Column();
         format_reads_numeric_into_bool = schema_reader->readsNumericValueIntoBoolColumn();
         format_reads_bool_word_into_numeric = schema_reader->readsBoolWordIntoNumericColumn();
@@ -735,6 +737,9 @@ String getInsertDataSchemaMismatchDescription(
 
             if (inferred_from_array_token)
             {
+                if (expected_map && format_settings.json.read_map_as_array_of_tuples)
+                    return true;
+
                 if (expected_array)
                 {
                     const auto & expected_element = expected_array->getNestedType();
@@ -789,6 +794,12 @@ String getInsertDataSchemaMismatchDescription(
 
             if (inferred_from_object_token)
             {
+                if (expected_map && format_settings.json.read_map_as_array_of_tuples)
+                    return false;
+
+                if (expected_tuple && expected_tuple->hasExplicitNames() && !format_settings.json.read_named_tuples_as_objects)
+                    return false;
+
                 /// The object keys are string tokens that the `Map` key type parses with its JSON text
                 /// deserializer (`SerializationMap::deserializeTextJSONImpl` reads every key with the
                 /// key serialization). When the object was inferred as a named `Tuple`, its element
@@ -874,6 +885,12 @@ String getInsertDataSchemaMismatchDescription(
                 if (which_expected.isObject())
                     return true;
             }
+
+            /// `SerializationJSON` accepts only an object token. Do this before the generic scalar
+            /// compatibility rules below, which otherwise treat scalar JSON values as compatible with
+            /// the `Object` type index.
+            if (which_expected.isObject())
+                return false;
         }
 
         /// Checked after the structured-token rule below, which mirrors the parser more closely for the
@@ -993,9 +1010,12 @@ String getInsertDataSchemaMismatchDescription(
         /// reported by the schema reader.
         std::vector<DataTypePtr> expected_types;
         expected_types.reserve(expected.size());
-        CaseAwareBlockNameMap expected_by_name(
-            format_honors_column_name_matching_mode ? format_settings.input_format_column_matching_case_sensitivity
-                                                    : FormatSettings::InputFormatColumnMatchingCaseSensitivity::MATCH_CASE);
+        const auto matching_case_sensitivity = format_uses_case_insensitive_column_matching
+            ? FormatSettings::InputFormatColumnMatchingCaseSensitivity::IGNORE_CASE
+            : format_honors_column_name_matching_mode
+                ? format_settings.input_format_column_matching_case_sensitivity
+                : FormatSettings::InputFormatColumnMatchingCaseSensitivity::MATCH_CASE;
+        CaseAwareBlockNameMap expected_by_name(matching_case_sensitivity);
         expected_by_name.setSize(expected.size());
         for (const auto & column : expected)
         {

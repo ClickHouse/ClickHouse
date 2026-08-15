@@ -1,0 +1,8 @@
+-- JSONEachRow, object is invalid for Map when arrays of tuples are enabled
+explanation present
+-- JSONEachRow, object is invalid for a named Tuple when object reading is disabled
+explanation present
+-- JSONEachRow, scalar is invalid for JSON
+explanation present
+-- JSONCompactColumns, an extra positional column is a mismatch
+explanation present

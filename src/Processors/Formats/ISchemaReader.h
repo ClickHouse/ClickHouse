@@ -141,6 +141,10 @@ public:
     /// parser detects (an unknown-field error), and the reverse would invent one.
     virtual bool honorsColumnNameMatchingMode() const { return false; }
 
+    /// True when the parser matches input column names case-insensitively through a
+    /// format-specific setting rather than `input_format_column_name_matching_mode`.
+    virtual bool usesCaseInsensitiveColumnMatching() const { return false; }
+
     /// True when the parser accepts a bare numeric value into an `IPv4` destination column. Most formats
     /// require a (quoted) string for `IPv4` — the text / JSON deserializers reject a number — but the
     /// binary formats that store typed values read an integer straight into the `UInt32`-backed `IPv4`

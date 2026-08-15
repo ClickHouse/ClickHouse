@@ -114,6 +114,8 @@ public:
     /// The data carries named columns that the parser maps onto the destination by name.
     bool mapsColumnsByName() const override { return true; }
 
+    bool usesCaseInsensitiveColumnMatching() const override { return read_options.format.parquet.case_insensitive_column_matching; }
+
 private:
     void initializeIfNeeded();
 
