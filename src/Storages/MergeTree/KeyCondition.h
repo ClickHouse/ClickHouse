@@ -785,9 +785,20 @@ private:
             PreparedValue right;
             RangeRef range;
 
-            /// Whether `range` was built for this atom at all. An atom whose key column has no known
-            /// type has no prepared range, and the reference-based analysis has to treat it as unknown.
+            /// Whether `range` was built for this atom at all. An atom whose constant has no exact
+            /// representation as a value of the key column's type has no prepared range, and is
+            /// analysed with `Field` values instead.
             bool valid = false;
+
+            /// Whether the values this atom is compared against can be NaN, i.e. whether the type of
+            /// the analysed key column (after the atom's function chain) is a floating point one.
+            /// Resolving that from the type costs more than the comparison itself, so it is decided
+            /// once here rather than per compared boundary.
+            bool can_be_nan = false;
+
+            /// Whether the atom's key column is a `UInt64`, the only type a space-filling curve can
+            /// produce. Decided here for the same reason as `can_be_nan`.
+            bool key_is_uint64 = false;
         };
 
         std::vector<PreparedRange> ranges;

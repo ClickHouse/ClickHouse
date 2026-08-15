@@ -4779,7 +4779,15 @@ void KeyCondition::rebuildPreparedRangeForRefs()
         const auto & element = rpn[i];
         auto & dst = prepared.ranges[i];
 
-        if (element.function == RPNElement::FUNCTION_IN_RANGE || element.function == RPNElement::FUNCTION_NOT_IN_RANGE
+        if (element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
+        {
+            const size_t key_column = element.getKeyColumn();
+            if (key_column >= key_data_types.size())
+                continue;
+
+            dst.key_is_uint64 = WhichDataType(*removeNullable(recursiveRemoveLowCardinality(key_data_types[key_column]))).isUInt64();
+        }
+        else if (element.function == RPNElement::FUNCTION_IN_RANGE || element.function == RPNElement::FUNCTION_NOT_IN_RANGE
             || element.function == RPNElement::FUNCTION_IS_NULL || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
         {
             const size_t key_column = element.getKeyColumn();
@@ -4803,6 +4811,8 @@ void KeyCondition::rebuildPreparedRangeForRefs()
             dst.range.left_included = element.range.left_included;
             dst.range.right_included = element.range.right_included;
             dst.valid = true;
+            /// `range_type` is already `LowCardinality`-stripped.
+            dst.can_be_nan = isFloat(removeNullable(range_type));
         }
     }
 }
@@ -5545,12 +5555,13 @@ static Range rangeFromRangeRef(const RangeRef & range)
     return Range(fieldFromValueRef(range.left), range.left_included, fieldFromValueRef(range.right), range.right_included);
 }
 
-static bool isNaNValueRef(const ColumnValueRef & ref, const DataTypePtr & type)
+/// Whether the value the reference points at is a NaN. Only a floating point value can be, and that
+/// is decided by the caller from the type once per atom (`PreparedRange::can_be_nan`), because
+/// resolving it from the type costs more than the comparison itself. The column may wrap the value
+/// in `Nullable` or `LowCardinality`, both of which read through to it.
+static bool isNaNValueRef(const ColumnValueRef & ref)
 {
     if (!ref.isNormal() || !ref.column || ref.isNullAt())
-        return false;
-
-    if (!isFloat(removeNullable(recursiveRemoveLowCardinality(type))))
         return false;
 
     return std::isnan(ref.column->getFloat64(ref.row));
@@ -5746,12 +5757,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
                         intersects = element_range.intersectsRange(key_range);
                         contains = element_range.containsRange(key_range);
 
-                        /// After the chain, the boundaries reference the chain's result column, so it is
-                        /// its type that says whether a value can be a NaN.
-                        const DataTypePtr & range_type = element.monotonic_functions_chain.empty()
-                            ? sparse_data_types[sparse_pos]
-                            : element.monotonic_functions_chain.back()->getResultType();
-
                         /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
                         /// In ClickHouse sort order, NaN has a defined position (after +inf), so range-based
                         /// analysis may incorrectly include NaN values.
@@ -5759,12 +5764,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
                         ///   so no comparison condition can be true.
                         /// - If only right bound is NaN: the range extends into NaN territory,
                         ///   so it cannot be fully contained (NaN values don't satisfy the condition).
-                        if (unlikely(isNaNValueRef(key_range.left, range_type)))
+                        if (unlikely(prepared.ranges[element_idx].can_be_nan && isNaNValueRef(key_range.left)))
                         {
                             intersects = false;
                             contains = false;
                         }
-                        else if (unlikely(isNaNValueRef(key_range.right, range_type)))
+                        else if (unlikely(prepared.ranges[element_idx].can_be_nan && isNaNValueRef(key_range.right)))
                         {
                             contains = false;
                         }
@@ -5821,8 +5826,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             {
                 /// The only possible result type of a space filling curve is UInt64.
                 /// We also only check bounded ranges.
-                const auto & type_without_null = removeNullable(recursiveRemoveLowCardinality(sparse_data_types[sparse_pos]));
-                if (WhichDataType(*type_without_null).isUInt64())
+                if (prepared.ranges[element_idx].key_is_uint64)
                     bounds = shrinkUInt64RangeRefToIncluded(sparse_hyperrectangle[sparse_pos]);
             }
 
