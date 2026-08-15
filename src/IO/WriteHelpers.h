@@ -1241,33 +1241,23 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
     chassert(scale <= max_digits);
     chassert(fractional_length <= max_digits);
-
-    T value = x;
-    UInt32 digits_to_write = scale;
-
-    if (fixed_fractional_length && fractional_length < scale)
-    {
-        T new_value = static_cast<T>(value / DecimalUtils::scaleMultiplier<Int256>(scale - fractional_length - 1));
-        auto round_carry = new_value % 10;
-        value = new_value / 10;
-        if (round_carry >= 5)
-            value += 1;
-        digits_to_write = fractional_length;
-    }
+    /// Rounding to a narrower field is the caller's job, because a carry out of the fractional part
+    /// belongs to the whole part, which has already been written by then.
+    chassert(!fixed_fractional_length || fractional_length >= scale);
 
     char buf[max_digits];
     if constexpr (sizeof(T) <= sizeof(UInt64))
-        writeFixedDigits(static_cast<UInt64>(value), digits_to_write, buf);
+        writeFixedDigits(static_cast<UInt64>(x), scale, buf);
     else if constexpr (sizeof(T) <= sizeof(UInt128))
-        writeFixedDigits(static_cast<UInt128>(value), digits_to_write, buf);
+        writeFixedDigits(static_cast<UInt128>(x), scale, buf);
     else
-        writeFixedDigits(static_cast<UInt256>(value), digits_to_write, buf);
+        writeFixedDigits(static_cast<UInt256>(x), scale, buf);
 
     size_t length = 0;
     if (fixed_fractional_length)
     {
-        if (fractional_length > digits_to_write)
-            memset(buf + digits_to_write, '0', fractional_length - digits_to_write);
+        if (fractional_length > scale)
+            memset(buf + scale, '0', fractional_length - scale);
         length = fractional_length;
     }
     else if (trailing_zeros)
@@ -1290,7 +1280,32 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
                bool fixed_fractional_length = false, UInt32 fractional_length = 0,
                bool force_decimal_point = false)
 {
-    T part = DecimalUtils::getWholePart(x, scale);
+    /// A fixed fractional length narrower than the scale rounds the value away from zero. Round the whole value
+    /// before it is split, so that a carry out of the fractional part reaches the whole part: rounding the
+    /// fractional part alone turns 9.995 into 9.00 instead of 10.00.
+    Decimal<T> rounded = x;
+    UInt32 rounded_scale = scale;
+
+    if (fixed_fractional_length && fractional_length < scale)
+    {
+        /// Round half away from zero. The dropped digits reach half of the dropped field exactly when the first
+        /// of them is at least five, so this is the same rounding the fractional part alone used to do, and it
+        /// takes one division rather than two - which matters, because a division of a `wide::integer` is slow.
+        const T half = DecimalUtils::scaleMultiplier<T>(scale - fractional_length - 1) * 5;
+        const T divisor = half * 2;
+
+        T value = x.value / divisor;
+        const T dropped = x.value - value * divisor;
+        if (dropped >= half)
+            ++value;
+        else if (dropped <= -half)
+            --value;
+
+        rounded = Decimal<T>(value);
+        rounded_scale = fractional_length;
+    }
+
+    T part = DecimalUtils::getWholePart(rounded, rounded_scale);
 
     if (x.value < 0 && part == 0)
     {
@@ -1302,13 +1317,13 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
     bool fractional_written = false;
     if (scale || (fixed_fractional_length && fractional_length > 0))
     {
-        part = DecimalUtils::getFractionalPart(x, scale);
+        part = DecimalUtils::getFractionalPart(rounded, rounded_scale);
         if (part || trailing_zeros)
         {
             if (part < 0)
                 part *= T(-1);
 
-            writeDecimalFractional(part, scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
+            writeDecimalFractional(part, rounded_scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             fractional_written = true;
         }
     }
