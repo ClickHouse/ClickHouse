@@ -860,8 +860,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         const bool inline_view = view
             && (options.only_analyze
                 || !StorageView::isSecurityBarrier(*metadata_snapshot, context)
-                || (!row_policy_filter || row_policy_filter->isAlwaysTrue())
-                    && !StorageView::canHideRows(metadata_snapshot->getSelectQuery().inner_query, context));
+                || ((!row_policy_filter || row_policy_filter->isAlwaysTrue())
+                    && !StorageView::canHideRows(metadata_snapshot->getSelectQuery().inner_query, context)));
 
         if (view)
             query_info.is_parameterized_view = view->isParameterizedView();
