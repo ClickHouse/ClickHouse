@@ -1,6 +1,6 @@
 -- basic
 c	Tuple(a UInt8, s String)	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), \'Hello\')
-id	UInt8		
+id	UInt8
 1	(0,'Hello')
 -- nested tuple
 Tuple(a UInt8, t Tuple(x String, y UInt8))	tuple(defaultValueOfTypeName(\'UInt8\'), tuple(\'q\', defaultValueOfTypeName(\'UInt8\')))
