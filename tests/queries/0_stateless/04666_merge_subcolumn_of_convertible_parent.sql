@@ -365,6 +365,39 @@ SETTINGS optimize_functions_to_subcolumns = 1, query_plan_merge_expressions = 0;
 
 DROP ROW POLICY t_merge_sub_rpd_p ON t_merge_sub_rpd_str;
 
+-- A `Distributed` child reaches the row policy on the shard, not on the initiator: the shard is
+-- sent the derived expression as text and applies its own policy to the local table. The policy
+-- must still hide the unconvertible row, so these agree with the local-child arms above.
+DROP TABLE IF EXISTS t_merge_sub_rpr_good;
+DROP TABLE IF EXISTS t_merge_sub_rpr_str;
+DROP TABLE IF EXISTS t_merge_sub_rpr_dist;
+DROP TABLE IF EXISTS t_merge_sub_rpr;
+
+CREATE TABLE t_merge_sub_rpr_good (arr Array(UInt8), ok UInt8) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_merge_sub_rpr_str  (arr String, ok UInt8)       ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_merge_sub_rpr_good VALUES ([1, 2], 1);
+INSERT INTO t_merge_sub_rpr_str  VALUES ('[4,5,6]', 1), ('not-an-array', 0);
+CREATE TABLE t_merge_sub_rpr_dist (arr String, ok UInt8)
+    ENGINE = Distributed('test_shard_localhost', currentDatabase(), 't_merge_sub_rpr_str');
+CREATE TABLE t_merge_sub_rpr (arr Array(UInt8), ok UInt8)
+    ENGINE = Merge(currentDatabase(), '^t_merge_sub_rpr_(good|dist)$');
+
+SELECT 'an unconvertible parent value behind a distributed child throws without the policy';
+SELECT sum(arr.size0) FROM t_merge_sub_rpr
+SETTINGS query_plan_merge_expressions = 0; -- { serverError CANNOT_READ_ARRAY_FROM_TEXT }
+
+CREATE ROW POLICY t_merge_sub_rpr_p ON t_merge_sub_rpr_str USING ok = 1 AS PERMISSIVE TO ALL;
+
+SELECT 'row policy on a distributed child hides an unconvertible parent value';
+SELECT sum(arr.size0) FROM t_merge_sub_rpr
+SETTINGS query_plan_merge_expressions = 0;
+
+SELECT 'row policy on a distributed child plus a WHERE on the derived subcolumn';
+SELECT count() FROM t_merge_sub_rpr WHERE arr.size0 = 3
+SETTINGS short_circuit_function_evaluation = 'disable', optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, allow_reorder_prewhere_conditions = 0;
+
+DROP ROW POLICY t_merge_sub_rpr_p ON t_merge_sub_rpr_str;
+
 -- Must not regress: child parent types that already expose the subcolumn keep working and must
 -- not be routed through the derivation. These are the common real-world schema evolutions.
 DROP TABLE IF EXISTS t_merge_sub_u64;

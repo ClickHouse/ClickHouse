@@ -72,6 +72,11 @@ row policy hides an unconvertible default parent value, subcolumns off
 5	5
 row policy hides an unconvertible default parent value, subcolumns on
 5
+an unconvertible parent value behind a distributed child throws without the policy
+row policy on a distributed child hides an unconvertible parent value
+5
+row policy on a distributed child plus a WHERE on the derived subcolumn
+1
 wider element type child
 6	6
 nullable element type child
