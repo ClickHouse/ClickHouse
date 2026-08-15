@@ -270,6 +270,23 @@ SERVER_DIR="$TMP_PATH/server"
 mkdir -p "$SERVER_DIR/config.d"
 cp "$SQLANCER_DIR"/.claude/clickhouse-config/*.xml "$SERVER_DIR/config.d/"
 
+# Fuzzing means ~2% of statements fail on purpose, and ClickHouse logs every one
+# of them at error level *with a full stack trace* - measured 10 MB of stderr per
+# 20 minutes (~150 MB over a 5h run) of pure noise. There is no switch for the
+# trace alone (it is baked into the message by `Exception::getStackTraceString`),
+# so raise the level instead. `fatal` keeps exactly what this job looks at: the
+# `<Fatal>` lines of a crash, and sanitizer reports, which the runtime writes
+# straight to stderr and not through the logger. Set SQLANCER_SERVER_LOG_LEVEL to
+# `warning` for a debugging run. The `zz_` prefix sorts this last in config.d so
+# it overrides the provider's own `log_level.xml`.
+cat > "$SERVER_DIR/config.d/zz_ci_log_level.xml" <<XML
+<clickhouse>
+    <logger>
+        <level>${SQLANCER_SERVER_LOG_LEVEL:-fatal}</level>
+    </logger>
+</clickhouse>
+XML
+
 echo "=== Starting ClickHouse server ==="
 ( cd "$SERVER_DIR" && exec "$CLICKHOUSE_BIN" server -P "$PID_FILE" ) 1>"$OUTPUT_PATH/clickhouse-server.log" 2>"$OUTPUT_PATH/clickhouse-server.log.err" &
 for _ in $(seq 1 60); do if [[ $(wget -q 'localhost:8123' -O- 2>/dev/null) == 'Ok.' ]]; then break ; else sleep 1; fi ; done
@@ -333,6 +350,34 @@ fi
 
 echo "=== Running SQLancer for ${TIMEOUT}s with $NUM_THREADS threads ==="
 echo "(console shows one progress line per ~5 min; full output goes to sqlancer.out)"
+
+# Finding-flood watchdog. One dominant bug can produce hundreds of reproducers -
+# every one of them also kills its worker and orphans a database, which
+# eventually drags the server down - so the rest of the budget is spent
+# re-finding the same thing. Stop once the run has surfaced enough DISTINCT
+# failures to fill a triage session; everything found so far is kept and
+# reported.
+MAX_DISTINCT_FAILURES="${SQLANCER_MAX_DISTINCT_FAILURES:-50}"
+ABORT_FLAG="$OUTPUT_PATH/aborted-on-finding-flood"
+watch_finding_flood() {
+    local counts distinct
+    while sleep 60; do
+        pgrep -f 'target/sqlancer-.*\.jar' > /dev/null || return 0
+        counts="$(python3 "$REPO_DIR/ci/jobs/scripts/sqlancer_failures.py" \
+            --logs-dir "$SQLANCER_DIR/logs/clickhouse" --out-dir "$FAILURES_PATH" --dry-run 2>/dev/null || true)"
+        distinct="$(printf '%s' "$counts" | cut -f2)"
+        case "$distinct" in ''|*[!0-9]*) continue ;; esac
+        if [ "$distinct" -ge "$MAX_DISTINCT_FAILURES" ]; then
+            echo "$distinct" > "$ABORT_FLAG"
+            echo "=== Stopping SQLancer: $distinct distinct failures reached (cap $MAX_DISTINCT_FAILURES) ==="
+            pkill -f 'target/sqlancer-.*\.jar' || true
+            return 0
+        fi
+    done
+}
+watch_finding_flood &
+FLOOD_WATCHDOG_PID=$!
+
 JAVA_EXIT=0
 # Everything sqlancer prints is kept in `$OUTPUT_FILE`; the console gets only the
 # start-up chatter and one progress line per ~5 min (sqlancer prints one every
@@ -352,6 +397,7 @@ java -jar target/sqlancer-*.jar \
     { other++; if (other <= 100) { print; fflush() } }
 ' || JAVA_EXIT=${PIPESTATUS[0]}
 
+kill "$FLOOD_WATCHDOG_PID" 2>/dev/null || true
 echo "=== SQLancer finished (exit code $JAVA_EXIT) ==="
 
 # ---------------------------------------------------------------------------
@@ -394,8 +440,13 @@ else
     SUBRESULTS_FRAGMENT="$FAILURES_PATH/subresults.json"
 fi
 echo "$FAILURE_SUMMARY"
+if [ -f "$ABORT_FLAG" ]; then
+    add_test_result "SQLancer stopped early" FAIL \
+        "stopped after $(cat "$ABORT_FLAG") distinct failures (cap $MAX_DISTINCT_FAILURES) - the remaining budget would only have re-found them"
+    FAILURE_SUMMARY="$FAILURE_SUMMARY; stopped early at the distinct-failure cap"
+fi
 if [ "$FAILURE_COUNT" -gt 0 ] && [ -f "$FAILURES_PATH/analysis.txt" ]; then
-    ATTACHED_FILES_ARRAY+=("$FAILURES_PATH/analysis.txt")
+    ATTACHED_FILES_ARRAY+=("$FAILURES_PATH/analysis.txt" "$FAILURES_PATH/findings.json")
     sed -n '/^x[0-9]/,/^Per-finding index/{/^Per-finding index/!p}' "$FAILURES_PATH/analysis.txt" | head -n 60
 fi
 
@@ -464,7 +515,7 @@ fi
 # Guard against a silently broken run: with `--print-progress-summary true`
 # sqlancer always prints the statistics block when it stops.
 QUERY_STATS="$(awk '/Overall execution statistics/,0' "$OUTPUT_FILE" | grep -m1 'queries' | tr -s ' ' | sed -e 's/^ //' -e 's/ $//' || true)"
-if [ -z "$QUERY_STATS" ]; then
+if [ -z "$QUERY_STATS" ] && [ ! -f "$ABORT_FLAG" ]; then
     add_test_result "SQLancer statistics" ERROR "SQLancer produced no execution statistics" "$OUTPUT_FILE"
     echo " - no execution statistics in the fuzzer output"
 fi
@@ -474,7 +525,7 @@ fi
 # OOM kill shows up. Not when findings explain the non-zero exit: sqlancer exits
 # with its error code whenever a worker died on an assertion, and the analysis
 # above already says what happened.
-if [ -z "$QUERY_STATS" ] || { [ "$JAVA_EXIT" -ne 0 ] && [ "$FAILURE_COUNT" -eq 0 ]; }; then
+if [ ! -f "$ABORT_FLAG" ] && { [ -z "$QUERY_STATS" ] || { [ "$JAVA_EXIT" -ne 0 ] && [ "$FAILURE_COUNT" -eq 0 ]; }; }; then
     echo "=== last 30 lines of sqlancer.out ==="
     tail -n 30 "$OUTPUT_FILE" || true
 fi
@@ -496,6 +547,17 @@ if [ -n "$BUILD_WARNING" ]; then
     RESULT_INFO="$RESULT_INFO; WARNING: $BUILD_WARNING"
 fi
 echo "=== Summary: $OVERALL_STATUS - $RESULT_INFO ==="
+
+# Alert on NEW findings only: `sqlancer_notify.py` diffs this run's fingerprints
+# against the ones CIDB has already seen for this job and posts to Slack when
+# something is new. A no-op without SLACK_WEBHOOK_CORE_QA in the environment, and
+# never fatal - a notification problem must not change the job's verdict.
+if [ -f "$FAILURES_PATH/findings.json" ]; then
+    python3 "$REPO_DIR/ci/jobs/scripts/sqlancer_notify.py" \
+        --findings "$FAILURES_PATH/findings.json" \
+        --job-name "$JOB_NAME" \
+        --info "$RESULT_INFO" || echo "WARNING: new-finding notification failed"
+fi
 
 # ---------------------------------------------------------------------------
 # Teardown

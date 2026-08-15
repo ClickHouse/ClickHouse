@@ -28,10 +28,21 @@ different bugs.
 Outputs:
   <out-dir>/<databaseN>.log     one reproducer per finding (gzipped above 10 MB)
   <out-dir>/analysis.txt        human-readable analysis, attached to the report
+  <out-dir>/findings.json       the same data as JSON: one entry per distinct
+                                failure with its occurrences, for tooling (the
+                                Slack notifier diffs it against CIDB history)
   <out-dir>/subresults.json     report rows: one per distinct failure, with that
                                 failure's reproducer logs attached, as a JSON
                                 fragment (comma-separated objects, no brackets)
-  stdout                        "<findings>\t<families>\t<one-line summary>"
+  stdout                        "<findings>\t<distinct failures>\t<summary>"
+
+Report row names are the fingerprint WITHOUT the occurrence count, because
+praktika turns every row into a CIDB row keyed by that name (`CIDB.json_data_generator`):
+a stable name is what makes "when did this failure first appear" answerable
+across nightlies. The count lives in the row info.
+
+`--dry-run` only counts (no files written, no copies) - used by the job script to
+poll for a finding flood while the fuzzer is still running.
 """
 
 import argparse
@@ -153,6 +164,11 @@ def family_title(members):
     return " / ".join(parts)
 
 
+def fingerprint_key(members):
+    """Stable identity of a distinct failure - the CIDB test name."""
+    return family_title(members)
+
+
 def family_label(members):
     """Short `oracle/error` label for the one-line summary."""
     example = members[0]
@@ -177,12 +193,16 @@ def main():
     parser.add_argument("--logs-dir", required=True, help="sqlancer logs/<dbms> directory")
     parser.add_argument("--out-dir", required=True, help="where to put per-finding logs and the analysis")
     parser.add_argument("--max-files", type=int, default=50, help="cap on attached reproducer logs")
-    parser.add_argument("--max-per-family", type=int, default=10, help="cap on attached logs per family")
+    parser.add_argument("--max-per-family", type=int, default=10, help="cap on attached logs per distinct failure")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="only count findings and distinct failures; write nothing (used while the fuzzer runs)",
+    )
     args = parser.parse_args()
 
     logs_dir = Path(args.logs_dir)
     out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
 
     reproducers = []
     if logs_dir.is_dir():
@@ -191,15 +211,27 @@ def main():
                 continue
             reproducers.append(path)
 
-    findings = []
-    for path in reproducers:
-        findings.append(parse_reproducer(path))
+    findings = [parse_reproducer(path) for path in reproducers]
 
     families = {}
     for finding in findings:
         families.setdefault(finding["fingerprint"], []).append(finding)
-    # Loudest family first - that is the one worth triaging.
+    # Loudest first - that is the one worth triaging.
     ordered = sorted(families.values(), key=lambda members: (-len(members), family_title(members)))
+
+    if findings:
+        top = ", ".join(family_label(members) for members in ordered[:5])
+        if len(ordered) > 5:
+            top += ", ..."
+        summary = f"{len(findings)} finding(s) in {len(ordered)} distinct failure(s): {top}"
+    else:
+        summary = "no findings"
+
+    if args.dry_run:
+        print(f"{len(findings)}\t{len(ordered)}\t{summary}")
+        return
+
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     attached = 0
     for members in ordered:
@@ -241,6 +273,31 @@ def main():
         for finding in findings:
             print(f"{finding['database']}\t{finding['kind']}\t{finding['oracle']}\t{finding['head']}", file=f)
 
+    # Machine-readable twin of analysis.txt: consumed by the Slack notifier and
+    # available as an artifact for any cross-run tooling.
+    findings_json = {
+        "findings": len(findings),
+        "distinct_failures": len(ordered),
+        "summary": summary,
+        "failures": [
+            {
+                "fingerprint": fingerprint_key(members),
+                "count": len(members),
+                "oracle": members[0]["oracle"],
+                "kind": members[0]["kind"],
+                "code": members[0]["code"],
+                "error_name": members[0]["error_name"],
+                "frame": members[0]["frame"],
+                "message_shapes": message_shapes(members),
+                "example_head": members[0]["head"],
+                "databases": [m["database"] for m in members],
+                "logs": [m["file"] for m in members if m["file"]],
+            }
+            for members in ordered
+        ],
+    }
+    (out_dir / "findings.json").write_text(json.dumps(findings_json, indent=1), encoding="utf-8")
+
     # One flat row per distinct failure, with its reproducer logs attached.
     # Deliberately NOT nested per finding: the workflow report keeps only failed
     # *leaves* of a job result (`Result._flat_failed_leaves`), so a parent row
@@ -249,13 +306,13 @@ def main():
     rows = []
     for members in ordered:
         files = [m["file"] for m in members[: args.max_per_family] if m["file"]]
-        info = "; ".join(message_shapes(members, limit=2))
-        info += f" | {len(members)} occurrence(s): {' '.join(m['database'] for m in members)}"
+        info = f"x{len(members)} | " + "; ".join(message_shapes(members, limit=2))
+        info += f" | occurrences: {' '.join(m['database'] for m in members)}"
         if len(members) > len(files):
             info += f" ({len(files)} log(s) attached)"
         rows.append(
             {
-                "name": f"{family_title(members)} (x{len(members)})",
+                "name": fingerprint_key(members),
                 "status": "FAIL",
                 "files": files,
                 "info": info,
@@ -264,22 +321,16 @@ def main():
         )
 
     if findings:
-        top = ", ".join(family_label(members) for members in ordered[:5])
-        if len(ordered) > 5:
-            top += ", ..."
-        summary = f"{len(findings)} finding(s) in {len(ordered)} distinct failure(s): {top}"
         rows.insert(
             0,
             {
                 "name": "Failure analysis",
                 "status": "FAIL",
-                "files": [str(analysis)],
+                "files": [str(analysis), str(out_dir / "findings.json")],
                 "info": summary,
                 "results": [],
             },
         )
-    else:
-        summary = "no findings"
 
     fragment = out_dir / "subresults.json"
     fragment.write_text(",\n".join(json.dumps(row) for row in rows), encoding="utf-8")
