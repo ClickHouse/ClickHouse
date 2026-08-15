@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# Tag no-fasttest: the Flatbuffers format requires the flatbuffers/arrow contrib, which is not built in the fast test.
+# Tag no-fasttest: the FlexBuffers format requires the flatbuffers/arrow contrib, which is not built in the fast test.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# There is no Flatbuffers input format to round-trip through, so we verify the output in two ways:
+# There is no FlexBuffers input format to round-trip through, so we verify the output in two ways:
 #  * value-level checks decode the produced FlexBuffers blob and compare the recovered values with
 #    the selected ones (this proves the row layout and the type mappings, not just that some
 #    non-empty blob was produced), and
@@ -88,7 +88,7 @@ nonempty_output()
 # String and FixedString are serialized as Blob by default (they are arbitrary byte sequences,
 # while FlexBuffers String is UTF-8 text); this opt-in setting maps them to FlexBuffers String.
 # The value-level blocks below pin the String mapping, so they enable it explicitly.
-STRING_AS_STRING="--output_format_flatbuffers_string_as_string=1"
+STRING_AS_STRING="--output_format_flexbuffers_string_as_string=1"
 
 # Value-level check: a single row covering scalars, String, Array, Nullable (NULL) and a
 # blob-backed wide integer is decoded back and its values are compared with the selected ones.
@@ -101,10 +101,10 @@ SELECT
     [10, 20, 30]::Array(UInt32) AS arr,
     NULL::Nullable(UInt32) AS n,
     123::Int128 AS big
-FORMAT Flatbuffers" | python3 -c "$DECODER"
+FORMAT FlexBuffers" | python3 -c "$DECODER"
 
 # Value-level check: several rows keep their own per-row values in order.
-$CLICKHOUSE_LOCAL $STRING_AS_STRING -q "SELECT number AS n, toString(number) AS s FROM numbers(3) FORMAT Flatbuffers" | python3 -c "$DECODER"
+$CLICKHOUSE_LOCAL $STRING_AS_STRING -q "SELECT number AS n, toString(number) AS s FROM numbers(3) FORMAT FlexBuffers" | python3 -c "$DECODER"
 
 # Value-level check: FixedString and UUID map to String, and wide integers are serialized as
 # little-endian Blobs. 256 makes the byte order observable (0x00 0x01 ... in little-endian).
@@ -113,7 +113,7 @@ SELECT
     'abcd'::FixedString(4) AS fs,
     toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid,
     256::Int128 AS le
-FORMAT Flatbuffers" | python3 -c "$DECODER"
+FORMAT FlexBuffers" | python3 -c "$DECODER"
 
 # Value-level check for the remaining non-trivial mapping branches. A single row lets the decoded
 # values be compared directly, proving each mapping (not just that some non-empty blob is produced):
@@ -143,7 +143,7 @@ SELECT
     (7, 'k')::Tuple(UInt32, String) AS tup,
     NULL::Nullable(UInt32) AS nullable,
     toLowCardinality('lc') AS lc
-FORMAT Flatbuffers" | python3 -c "$DECODER"
+FORMAT FlexBuffers" | python3 -c "$DECODER"
 
 # Value-level check: wide integers and large decimals are serialized as little-endian Blobs, and
 # enums map to their underlying Int. 42 -> 0x2a as the first (lowest) byte; 42.42 with scale 2 has
@@ -153,7 +153,7 @@ SELECT
     42::Int128 AS i128, 42::UInt128 AS u128, 42::Int256 AS i256, 42::UInt256 AS u256,
     '42.42'::Decimal128(2) AS dec128, '42.42'::Decimal256(2) AS dec256,
     'a'::Enum8('a' = 1) AS e8, 'b'::Enum16('b' = 2) AS e16
-FORMAT Flatbuffers" | python3 -c "$DECODER"
+FORMAT FlexBuffers" | python3 -c "$DECODER"
 
 # Regression check for the default String / FixedString mapping: ClickHouse strings are arbitrary
 # byte sequences, so by default they are serialized as Blob, which represents invalid UTF-8
@@ -166,37 +166,37 @@ SELECT
     unhex('ff')::String AS invalid_utf8,
     unhex('610062')::String AS embedded_nul,
     toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
-FORMAT Flatbuffers" | python3 -c "$DECODER"
+FORMAT FlexBuffers" | python3 -c "$DECODER"
 
 # The same embedded NUL byte also survives the opt-in String mapping (FlexBuffers strings are
 # length-prefixed): the decoded length pins that the value is not truncated at the NUL.
-$CLICKHOUSE_LOCAL $STRING_AS_STRING -q "SELECT unhex('610062')::String AS embedded_nul FORMAT Flatbuffers" \
+$CLICKHOUSE_LOCAL $STRING_AS_STRING -q "SELECT unhex('610062')::String AS embedded_nul FORMAT FlexBuffers" \
     | python3 -c "$DECODER" | python3 -c "import sys; print('len=%d' % (len(sys.stdin.buffer.read().splitlines()[0]) - len('[str:]')))"
 
 # An empty result set still produces a valid (non-empty) FlexBuffers root that decodes to zero rows.
-$CLICKHOUSE_LOCAL -q "SELECT 1 AS x WHERE 0 FORMAT Flatbuffers" | nonempty_output
-echo "rows=$($CLICKHOUSE_LOCAL -q "SELECT 1 AS x WHERE 0 FORMAT Flatbuffers" | python3 -c "$DECODER" | wc -l)"
+$CLICKHOUSE_LOCAL -q "SELECT 1 AS x WHERE 0 FORMAT FlexBuffers" | nonempty_output
+echo "rows=$($CLICKHOUSE_LOCAL -q "SELECT 1 AS x WHERE 0 FORMAT FlexBuffers" | python3 -c "$DECODER" | wc -l)"
 
 # Serialization is deterministic: the same query yields byte-identical output.
-out1=$($CLICKHOUSE_LOCAL -q "SELECT number, toString(number) FROM numbers(5) FORMAT Flatbuffers" | md5sum)
-out2=$($CLICKHOUSE_LOCAL -q "SELECT number, toString(number) FROM numbers(5) FORMAT Flatbuffers" | md5sum)
+out1=$($CLICKHOUSE_LOCAL -q "SELECT number, toString(number) FROM numbers(5) FORMAT FlexBuffers" | md5sum)
+out2=$($CLICKHOUSE_LOCAL -q "SELECT number, toString(number) FROM numbers(5) FORMAT FlexBuffers" | md5sum)
 [ "$out1" = "$out2" ] && echo 1 || echo 0
 
 # Unsupported types are rejected with a clear error.
-$CLICKHOUSE_LOCAL -q "SELECT map('k', 1) AS m FORMAT Flatbuffers" 2>&1 >/dev/null | grep -o -F "is not supported for Flatbuffers output format" | head -n 1
+$CLICKHOUSE_LOCAL -q "SELECT map('k', 1) AS m FORMAT FlexBuffers" 2>&1 >/dev/null | grep -o -F "is not supported for FlexBuffers output format" | head -n 1
 
 # The output type contract is validated from the header before any rows are written. In particular,
 # an unsupported leaf hidden behind NULL, an empty Array, or a zero-row result must not bypass the
 # rejection merely because value serialization never descends to it.
-$CLICKHOUSE_LOCAL --enable_nullable_tuple_type=1 -q "SELECT CAST(NULL AS Nullable(Tuple(Map(String, UInt8)))) FORMAT Flatbuffers" 2>&1 >/dev/null | grep -o -F "is not supported for Flatbuffers output format" | head -n 1
-$CLICKHOUSE_LOCAL -q "SELECT CAST([], 'Array(Map(String, UInt8))') FORMAT Flatbuffers" 2>&1 >/dev/null | grep -o -F "is not supported for Flatbuffers output format" | head -n 1
-$CLICKHOUSE_LOCAL -q "SELECT map('k', 1) WHERE 0 FORMAT Flatbuffers" 2>&1 >/dev/null | grep -o -F "is not supported for Flatbuffers output format" | head -n 1
+$CLICKHOUSE_LOCAL --enable_nullable_tuple_type=1 -q "SELECT CAST(NULL AS Nullable(Tuple(Map(String, UInt8)))) FORMAT FlexBuffers" 2>&1 >/dev/null | grep -o -F "is not supported for FlexBuffers output format" | head -n 1
+$CLICKHOUSE_LOCAL -q "SELECT CAST([], 'Array(Map(String, UInt8))') FORMAT FlexBuffers" 2>&1 >/dev/null | grep -o -F "is not supported for FlexBuffers output format" | head -n 1
+$CLICKHOUSE_LOCAL -q "SELECT map('k', 1) WHERE 0 FORMAT FlexBuffers" 2>&1 >/dev/null | grep -o -F "is not supported for FlexBuffers output format" | head -n 1
 
 # The format writes a single FlexBuffers root for the whole result, so appending a second root to
 # an existing file would corrupt it. The format is marked as not supporting appends, and an insert
 # into a non-empty file target is rejected instead of silently concatenating a second root.
 WORK_DIR="${CLICKHOUSE_TMP:?}/04490_${CLICKHOUSE_DATABASE:?}"
 mkdir -p "${WORK_DIR}"
-$CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('${WORK_DIR}/no_append.fb', 'Flatbuffers', 'x UInt8') SELECT 1"
-$CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('${WORK_DIR}/no_append.fb', 'Flatbuffers', 'x UInt8') SELECT 2" 2>&1 >/dev/null | grep -o -F "CANNOT_APPEND_TO_FILE" | head -n 1
+$CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('${WORK_DIR}/no_append.fb', 'FlexBuffers', 'x UInt8') SELECT 1"
+$CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('${WORK_DIR}/no_append.fb', 'FlexBuffers', 'x UInt8') SELECT 2" 2>&1 >/dev/null | grep -o -F "CANNOT_APPEND_TO_FILE" | head -n 1
 rm -rf "${WORK_DIR}"

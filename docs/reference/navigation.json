@@ -821,7 +821,7 @@
           ]
         },
         "reference/formats/DWARF",
-        "reference/formats/Flatbuffers",
+        "reference/formats/FlexBuffers",
         "reference/formats/Form",
         "reference/formats/GeoJSON",
         "reference/formats/Hash",

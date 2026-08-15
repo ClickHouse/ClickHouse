@@ -201,7 +201,7 @@
     "output_format_binary_encode_types_in_binary_format": "/reference/settings/formats/output-format",
     "output_format_binary_write_json_as_string": "/reference/settings/formats/output-format",
     "output_format_bson_string_as_string": "/reference/settings/formats/output-format",
-    "output_format_flatbuffers_string_as_string": "/reference/settings/formats/output-format",
+    "output_format_flexbuffers_string_as_string": "/reference/settings/formats/output-format",
     "output_format_compression_level": "/reference/settings/formats/output-format",
     "output_format_compression_zstd_window_log": "/reference/settings/formats/output-format",
     "output_format_csv_crlf_end_of_line": "/reference/settings/formats/output-format",

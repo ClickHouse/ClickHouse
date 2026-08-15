@@ -91,7 +91,7 @@ void assertTypeIsSupported(const DataTypePtr & data_type)
         case TypeIndex::UUID:
             return;
         default:
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for Flatbuffers output format", data_type->getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for FlexBuffers output format", data_type->getName());
     }
 }
 
@@ -99,7 +99,7 @@ void assertTypeIsSupported(const DataTypePtr & data_type)
 
 FlatbuffersRowOutputFormat::FlatbuffersRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_)
-    , string_as_string(format_settings_.flatbuffers.output_string_as_string)
+    , string_as_string(format_settings_.flexbuffers.output_string_as_string)
 {
     for (const auto & column : *header_)
         assertTypeIsSupported(column.type);
@@ -144,7 +144,7 @@ void FlatbuffersRowOutputFormat::serializeStringOrBlob(std::string_view value)
 {
     /// ClickHouse String / FixedString values are arbitrary byte sequences: they may contain invalid
     /// UTF-8 and embedded zero bytes, which the UTF-8-only FlexBuffers String carrier cannot represent
-    /// faithfully. Serialize them as Blob by default; `output_format_flatbuffers_string_as_string`
+    /// faithfully. Serialize them as Blob by default; `output_format_flexbuffers_string_as_string`
     /// opts into FlexBuffers String, writing the bytes verbatim.
     if (string_as_string)
         serializeString(value);
@@ -349,13 +349,13 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, const Da
             break;
     }
 
-    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for Flatbuffers output format", data_type->getName());
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for FlexBuffers output format", data_type->getName());
 }
 
 void registerOutputFormatFlatbuffers(FormatFactory & factory);
 void registerOutputFormatFlatbuffers(FormatFactory & factory)
 {
-    factory.registerOutputFormat("Flatbuffers", [](
+    factory.registerOutputFormat("FlexBuffers", [](
             WriteBuffer & buf,
             const Block & sample,
             const FormatSettings & settings,
@@ -364,11 +364,11 @@ void registerOutputFormatFlatbuffers(FormatFactory & factory)
         return std::make_shared<FlatbuffersRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });
 
-    factory.markOutputFormatNotTTYFriendly("Flatbuffers");
-    factory.markFormatHasNoAppendSupport("Flatbuffers");
-    factory.setContentType("Flatbuffers", "application/octet-stream");
+    factory.markOutputFormatNotTTYFriendly("FlexBuffers");
+    factory.markFormatHasNoAppendSupport("FlexBuffers");
+    factory.setContentType("FlexBuffers", "application/octet-stream");
 
-    factory.setDocumentation("Flatbuffers", Documentation{
+    factory.setDocumentation("FlexBuffers", Documentation{
         .description = R"DOCS_MD(
 | Input | Output | Alias |
 |-------|--------|-------|
@@ -376,7 +376,7 @@ void registerOutputFormatFlatbuffers(FormatFactory & factory)
 
 ## Description {#description}
 
-The `Flatbuffers` format serializes the result set as a single schema-less
+The `FlexBuffers` format serializes the result set as a single schema-less
 [FlexBuffers](https://flatbuffers.dev/flexbuffers.html) value (part of the FlatBuffers project).
 Note that this is a schema-less FlexBuffers payload, not a schema-based FlatBuffers buffer.
 
@@ -417,7 +417,7 @@ are written as little-endian byte sequences, so the output is identical on every
 ClickHouse `String` and `FixedString` values are arbitrary byte sequences that may contain invalid
 UTF-8 and embedded zero bytes, while FlexBuffers `String` values are expected to be valid UTF-8
 text, so these columns are serialized as `Blob` by default. Set
-[`output_format_flatbuffers_string_as_string`](/reference/settings/formats/output-format#output_format_flatbuffers_string_as_string)
+[`output_format_flexbuffers_string_as_string`](/reference/settings/formats/output-format#output_format_flexbuffers_string_as_string)
 to serialize them as FlexBuffers `String` instead; the bytes are written verbatim, so it is the
 user's responsibility to ensure they are valid UTF-8. `UUID` is always serialized as its
 canonical text form, which is plain ASCII.
@@ -425,16 +425,16 @@ canonical text form, which is plain ASCII.
 ## Example usage {#example-usage}
 
 ```bash
-$ clickhouse-client --query="SELECT number, toString(number) FROM numbers(10) FORMAT Flatbuffers" > tmp.fb;
+$ clickhouse-client --query="SELECT number, toString(number) FROM numbers(10) FORMAT FlexBuffers" > tmp.fb;
 ```
 
 ## Format settings {#format-settings}
 
 | Setting                                                                                                                                       | Description                                                                              | Default |
 |-----------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------|---------|
-| [`output_format_flatbuffers_string_as_string`](/reference/settings/formats/output-format#output_format_flatbuffers_string_as_string) | serialize `String`/`FixedString` columns as FlexBuffers String instead of the default Blob. | `false` |
+| [`output_format_flexbuffers_string_as_string`](/reference/settings/formats/output-format#output_format_flexbuffers_string_as_string) | serialize `String`/`FixedString` columns as FlexBuffers String instead of the default Blob. | `false` |
 )DOCS_MD",
-        .examples = {{"Export to a file", "SELECT number, toString(number) FROM numbers(10) FORMAT Flatbuffers", ""}},
+        .examples = {{"Export to a file", "SELECT number, toString(number) FROM numbers(10) FORMAT FlexBuffers", ""}},
         .introduced_in = {26, 8},
         .related = {"MsgPack", "RowBinary", "Native"},
     });

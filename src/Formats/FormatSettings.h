@@ -625,7 +625,7 @@ struct FormatSettings
     struct
     {
         bool output_string_as_string = false;
-    } flatbuffers{};
+    } flexbuffers{};
 
     struct
     {

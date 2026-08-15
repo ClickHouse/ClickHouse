@@ -13,7 +13,7 @@ namespace DB
 
 struct FormatSettings;
 
-/** Serializes the result set as a single schema-less Flatbuffers (FlexBuffers) value.
+/** Serializes the result set as a single schema-less FlexBuffers value.
   *
   * The root value is a vector of rows; every row is a vector of column values in the order
   * of the header. The whole result is accumulated in memory and flushed once at the end,
@@ -40,7 +40,7 @@ private:
     void serializeString(std::string_view value);
 
     /// Serialize a String / FixedString value: as Blob by default (ClickHouse strings are arbitrary
-    /// byte sequences), as FlexBuffers String when `output_format_flatbuffers_string_as_string` is set.
+    /// byte sequences), as FlexBuffers String when `output_format_flexbuffers_string_as_string` is set.
     void serializeStringOrBlob(std::string_view value);
 
     /// Serialize a wide numeric value (Int128/UInt128/Int256/UInt256/Decimal128/Decimal256) as a
@@ -55,7 +55,7 @@ private:
 
     /// ClickHouse String / FixedString values are arbitrary byte sequences (possibly invalid UTF-8,
     /// possibly with embedded zero bytes), while FlexBuffers String is UTF-8 text, so by default
-    /// they are serialized as Blob; `output_format_flatbuffers_string_as_string` opts into String.
+    /// they are serialized as Blob; `output_format_flexbuffers_string_as_string` opts into String.
     bool string_as_string = false;
 };
 
