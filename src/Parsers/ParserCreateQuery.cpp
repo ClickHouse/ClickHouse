@@ -1727,10 +1727,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                     ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'ENGINE'");
 
             if (s_populate.ignore(pos, expected))
-                throw Exception(
-                    ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'POPULATE'");
-
-            if (s_empty.ignore(pos, expected))
+                is_populate = true;
+            else if (s_empty.ignore(pos, expected))
             {
                 if (!refresh_strategy)
                     throw Exception(
@@ -1759,10 +1757,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         else
         {
             if (s_populate.ignore(pos, expected))
-                throw Exception(
-                    ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'POPULATE'");
-
-            if (s_empty.ignore(pos, expected))
+                is_populate = true;
+            else if (s_empty.ignore(pos, expected))
             {
                 if (!refresh_strategy)
                     throw Exception(
@@ -1776,6 +1772,14 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     try_parse_populate_or_empty();
     auto comment = parseComment(pos, expected);
     try_parse_populate_or_empty();
+
+    /// The first refresh of a refreshable materialized view already fills it with data, so 'POPULATE'
+    /// would load the initial data twice (declare 'EMPTY' to skip the initial refresh instead).
+    if (is_populate && refresh_strategy)
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "When creating a refreshable materialized view you can't declare 'POPULATE': "
+            "the first refresh fills the view (declare 'EMPTY' to skip it)");
 
     /// AS SELECT ...
     if (!s_as.ignore(pos, expected))
