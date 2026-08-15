@@ -2624,6 +2624,9 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 
         for (auto & column : loaded_columns)
             setVersionToAggregateFunctions(column.type, true);
+
+        if (!info.isPatch())
+            attachQuantizeSerializations(loaded_columns, getMetadataSnapshot()->getColumns());
     }
     else
     {
