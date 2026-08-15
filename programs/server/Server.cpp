@@ -3804,50 +3804,6 @@ std::optional<String> getEffectiveDefaultSessionUser(const Poco::Util::AbstractC
     }
 }
 
-/// Whether a single `rule` of an `http_handlers`-style section consults the default session
-/// user at runtime. Mirrors the dispatch in `createHandlersFactoryFromConfig`: a handler with
-/// a fixed user (`handler.user`) authenticates as that user regardless of the request, and
-/// non-authenticating handlers (`static`, UI pages, redirects, metrics exposition, ...) never
-/// authenticate at all, so neither consults the setting.
-bool httpRuleConsumesDefaultSessionUser(const Poco::Util::AbstractConfiguration & config, const std::string & rule_prefix)
-{
-    const std::string handler_type = config.getString(rule_prefix + ".handler.type", "");
-    if (handler_type == "dynamic_query_handler" || handler_type == "predefined_query_handler")
-        return !config.has(rule_prefix + ".handler.user");
-    if (handler_type == "webterminal")
-        return true;
-    if (handler_type.starts_with("prometheus"))
-    {
-        /// Only the time-series protocols (`write`/`read`/`query`/`api_v1`) authenticate;
-        /// plain metrics exposition does not (see `parseHandlerType`).
-        if (handler_type == "prometheus" || handler_type == "prometheus_metrics" || handler_type == "prometheus_expose_metrics")
-            return false;
-        return !config.has(rule_prefix + ".handler.user");
-    }
-    return false;
-}
-
-/// Whether any handler of an `http` endpoint's handlers section consults the default session user.
-bool httpHandlersConsumeDefaultSessionUser(const Poco::Util::AbstractConfiguration & config, const std::string & handlers_key)
-{
-    /// Without a handlers section the default handler set is served, which includes
-    /// the default query handler and the web terminal — both consult the setting.
-    if (!config.has(handlers_key))
-        return true;
-
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(handlers_key, keys);
-    for (const auto & key : keys)
-    {
-        /// `defaults` expands to the default handler set (see above).
-        if (key == "defaults")
-            return true;
-        if (key.starts_with("rule") && httpRuleConsumesDefaultSessionUser(config, handlers_key + "." + key))
-            return true;
-    }
-    return false;
-}
-
 /// Resolve the `http_handlers`-style section a composable `http` endpoint serves: the
 /// `handlers` key of the module carrying `type = http`, found by walking the `impl` chain
 /// (mirrors `buildProtocolStackFromConfig`). Returns an empty optional when the chain does
@@ -4512,8 +4468,8 @@ void Server::updateServers(
                 /// user, so that a `default_session_user` change does not restart listeners that
                 /// ignore it: keeper-metrics-only `prometheus` listeners serve metrics without
                 /// authentication (`KeeperPrometheusHandler-factory` only exposes `MetricsImpl`),
-                /// and `http`/`prometheus` endpoints whose configured handler set consists only
-                /// of fixed-user and non-authenticating handlers never consult the setting either.
+                /// and `prometheus` endpoints whose configured handler set consists only of
+                /// fixed-user and non-authenticating handlers never consult the setting either.
                 bool consumes_default_session_user = false;
 
                 std::string conf_name = protocol;
@@ -4538,9 +4494,12 @@ void Server::updateServers(
                             /// the reload would miss a switch between two sections that are themselves
                             /// unchanged.
                             previous_handlers_key = resolveHTTPHandlersKey(previous_config, protocol).value_or(handlers_key);
-                            consumes_default_session_user = consumes_default_session_user
-                                || httpHandlersConsumeDefaultSessionUser(config, handlers_key)
-                                || httpHandlersConsumeDefaultSessionUser(previous_config, previous_handlers_key);
+                            /// `SQLDefinedHTTPHandlerFactory` is appended to every HTTP handler
+                            /// factory. It caches the endpoint override, while the SQL handler
+                            /// registry itself is read on every request, so an SQL-defined handler
+                            /// can start consuming the setting after the listener was created even
+                            /// when all XML handlers have fixed users.
+                            consumes_default_session_user = true;
                             break;
                         }
                         if (type == "tcp" || type == "mysql" || type == "postgres")

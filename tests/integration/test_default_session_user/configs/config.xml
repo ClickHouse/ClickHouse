@@ -42,9 +42,9 @@
         <defaults/>
     </http_handlers_fixed_user>
 
-    <!-- A handlers section consisting only of a fixed-user rule (no `defaults`): no handler
-         behind it ever consults `default_session_user`, so changing the endpoint's override
-         must not restart the listener on `SYSTEM RELOAD CONFIG`. -->
+    <!-- A handlers section consisting only of a fixed-user rule (no `defaults`). SQL-defined
+         handlers can still be added to this endpoint, so changing its `default_session_user`
+         must restart the listener on `SYSTEM RELOAD CONFIG`. -->
     <http_handlers_fixed_user_only>
         <rule>
             <url>/fixed</url>
