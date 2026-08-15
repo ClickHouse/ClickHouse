@@ -39,6 +39,13 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
+    /// The count of distinct `__grouping_set` values this specialization can observe. The
+    /// distributed-plan rewrite uses it to precompute the result for every set index.
+    virtual UInt64 getNumberOfGroupingSets() const { return 1; }
+
+    const ColumnNumbers & getArgumentsIndexes() const { return arguments_indexes; }
+    bool getForceCompatibility() const { return force_compatibility; }
+
     bool useDefaultImplementationForNulls() const override { return false; }
 
     bool isSuitableForConstantFolding() const override { return false; }
@@ -124,6 +131,8 @@ public:
 
     String getName() const override { return "groupingForRollup"; }
 
+    UInt64 getNumberOfGroupingSets() const override { return aggregation_keys_number + 1; }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return FunctionGroupingBase::executeImpl(arguments, input_rows_count,
@@ -153,6 +162,8 @@ public:
     {}
 
     String getName() const override { return "groupingForCube"; }
+
+    UInt64 getNumberOfGroupingSets() const override { return ONE << aggregation_keys_number; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -184,6 +195,8 @@ public:
     }
 
     String getName() const override { return "groupingForGroupingSets"; }
+
+    UInt64 getNumberOfGroupingSets() const override { return grouping_sets.size(); }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
