@@ -79,23 +79,29 @@ namespace
     /// The exact bit pattern of a Prometheus stale marker, kept in sync with `isPrometheusStaleMarker`
     /// in PrometheusRemoteWriteProtocol.cpp, which flags such samples at ingest.
     constexpr UInt64 PROMETHEUS_STALE_MARKER_BITS = 0x7FF0000000000002ULL;
+    constexpr UInt64 QUIET_NAN_BITS = 0x7FF8000000000000ULL;
 
-    /// reinterpretAsFloat64(if(is_stale_marker, <marker bits>, reinterpretAsUInt64(toFloat64(value))))
+    /// reinterpretAsFloat64(multiIf(is_stale_marker, <marker bits>, <value bits> = <marker bits>, <quiet NaN bits>, <value bits>))
     ///
     /// Re-emits the exact marker payload for a row flagged in `is_stale_marker` instead of the stored `value`:
     /// a `Float32` "samples" table lost that payload at insert, and a plain NaN is a real datapoint to a reader.
     ASTPtr buildValueExpression()
     {
+        auto value_bits = makeASTFunction(
+            "reinterpretAsUInt64", makeASTFunction("toFloat64", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
+
         /// Assembled in `UInt64` space to keep the marker out of a literal: a NaN literal formats as `nan`.
+        /// An unflagged row carrying the reserved payload becomes a plain NaN, so the flag stays the only
+        /// thing that makes a reader see a stale marker, as on the PromQL paths.
         return makeASTFunction(
             "reinterpretAsFloat64",
             makeASTFunction(
-                "if",
+                "multiIf",
                 make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::IsStaleMarker),
                 make_intrusive<ASTLiteral>(PROMETHEUS_STALE_MARKER_BITS),
-                makeASTFunction(
-                    "reinterpretAsUInt64",
-                    makeASTFunction("toFloat64", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)))));
+                makeASTFunction("equals", value_bits->clone(), make_intrusive<ASTLiteral>(PROMETHEUS_STALE_MARKER_BITS)),
+                make_intrusive<ASTLiteral>(QUIET_NAN_BITS),
+                value_bits));
     }
 
     /// The function builds a SELECT query for reading time series:
