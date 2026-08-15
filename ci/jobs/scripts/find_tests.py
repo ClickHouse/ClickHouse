@@ -1823,10 +1823,14 @@ class Targeting:
             info=info,
         )
 
-    def get_previously_failed_tests_with_info(self):
+    def get_previously_failed_tests_with_info(self, strict=False):
         try:
             tests = self.get_previously_failed_tests()
         except Exception as e:
+            if strict:
+                raise RuntimeError(
+                    "Failed to get previously failed tests required for test selection"
+                ) from e
             print(
                 f"WARNING: Failed to get previously failed tests (best effort): {e}",
                 file=sys.stderr,
@@ -2228,7 +2232,9 @@ class Targeting:
             add_tests(changed_tests)
             results.append(result)
 
-        previously_failed_tests, result = self.get_previously_failed_tests_with_info()
+        previously_failed_tests, result = self.get_previously_failed_tests_with_info(
+            strict=include_changed_tests
+        )
         add_tests(previously_failed_tests)
         results.append(result)
 

@@ -19,6 +19,8 @@ import runpy
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -83,6 +85,23 @@ def test_flavor_filter_keeps_unresolved_tests(monkeypatch):
 
     assert filter_selected_tests_by_flavor(tests, keep_sequential=False) == tests
     assert filter_selected_tests_by_flavor(tests, keep_sequential=True) == tests
+
+
+def test_selected_tests_fail_when_previous_failure_lookup_fails(monkeypatch):
+    targeter = Targeting.__new__(Targeting)
+    targeter.job_type = Targeting.STATELESS_JOB_TYPE
+
+    monkeypatch.setattr(
+        targeter, "get_changed_or_new_tests_with_info", lambda: ([], None)
+    )
+
+    def raise_cidb_error():
+        raise ConnectionError("CIDB unavailable")
+
+    monkeypatch.setattr(targeter, "get_previously_failed_tests", raise_cidb_error)
+
+    with pytest.raises(RuntimeError, match="previously failed tests"):
+        targeter.get_all_relevant_tests_with_info(include_changed_tests=True)
 
 
 _NO_TESTS_OUTPUT = (
