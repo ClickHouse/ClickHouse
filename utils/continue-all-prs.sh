@@ -64,9 +64,9 @@ set -euo pipefail
 #   --effort LEVEL        Reasoning effort for each worker; default: medium.
 #                         Passed as `--effort` to `claude` and as the
 #                         `model_reasoning_effort` setting to `codex`.
-#   --api-key KEY         Use a custom API key for the workers (exported as
-#                         ANTHROPIC_API_KEY or OPENAI_API_KEY according to
-#                         --agent). NOTE: visible in `ps`
+#   --api-key KEY         Use a custom API key for the workers. `claude` reads
+#                         `ANTHROPIC_API_KEY`; `codex` logs into a worker-local
+#                         `CODEX_HOME`. NOTE: visible in `ps`
 #                         while running; prefer --api-key-file.
 #   --api-key-file FILE   Read the custom API key from FILE (not shown
 #                         in `ps`). Default: whatever API key or login the
@@ -199,8 +199,9 @@ if (( ! MODE_ANY )); then
     MODE_MINE=1; MODE_ASSIGNED=1; MODE_RELATED=1
 fi
 
-# Custom API key for worker processes. `codex` uses `OPENAI_API_KEY` in preference
-# to its configured login, allowing a worker pool to use the requested account.
+# Custom API key for worker processes. `claude` reads its key from the environment.
+# `codex` is logged in with the key in a worker-local `CODEX_HOME` before it starts,
+# so it cannot inherit or overwrite an ambient Codex login.
 # Prefer --api-key-file: an inline --api-key is visible in `ps`.
 if [[ -n "$API_KEY_FILE" ]]; then
     [[ -r "$API_KEY_FILE" ]] || { echo "${S}Error: --api-key-file not readable: $API_KEY_FILE${R}" >&2; exit 1; }
@@ -210,8 +211,6 @@ if (( API_KEY_PROVIDED )); then
     [[ -n "$API_KEY" ]] || { echo "${S}Error: --api-key must not be empty${R}" >&2; exit 1; }
     if [[ "$AGENT" == "claude" ]]; then
         export ANTHROPIC_API_KEY="$API_KEY"
-    else
-        export OPENAI_API_KEY="$API_KEY"
     fi
     CUSTOM_KEY=1
 else
@@ -700,7 +699,8 @@ run_continue_pr()
 {
     local wt="$1" number="$2" log="$3"
     local url="https://github.com/$REPO/pull/$number"
-    local sid deadline iter ec now remaining build_steer prompt usage
+    local sid deadline iter ec now remaining build_steer prompt usage codex_home
+    local -a codex_env
     local u_i u_o u_ci u_co u_cost
     local -a model_args
     sid=""
@@ -718,6 +718,23 @@ run_continue_pr()
     : > "$log"
     iter=0
     ec=0
+
+    # Codex API-key authentication is configured state, not an environment
+    # variable consumed by `codex exec`. Keep that state private to this worker
+    # and remove it after the run, so a requested key cannot fall back to or
+    # modify the caller's ambient Codex login.
+    codex_home=""
+    codex_env=()
+    if [[ "$AGENT" == "codex" && "$CUSTOM_KEY" == 1 ]]; then
+        codex_home="$wt/tmp/continue-all-prs/codex-home"
+        codex_env=("CODEX_HOME=$codex_home")
+        mkdir -p "$codex_home"
+        rm -f "$codex_home/auth.json"
+        if ! printf '%s\n' "$API_KEY" | CODEX_HOME="$codex_home" codex login --with-api-key >> "$log" 2>&1; then
+            rm -f "$codex_home/auth.json"
+            return 1
+        fi
+    fi
 
     while :; do
         iter=$(( iter + 1 ))
@@ -756,7 +773,7 @@ run_continue_pr()
                 prompt="/continue-pr-auto $url
 
 ${STEER_PROMPT} ${build_steer}"
-                ( cd "$wt" && timeout "$remaining" codex exec \
+                ( cd "$wt" && timeout "$remaining" env "${codex_env[@]}" codex exec \
                     --dangerously-bypass-approvals-and-sandbox --json \
                     --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
                     --output-last-message "$log.last" - <<< "$prompt" \
@@ -767,7 +784,7 @@ ${STEER_PROMPT} ${build_steer}"
                     ec=1
                 fi
             else
-                ( cd "$wt" && timeout "$remaining" codex exec resume \
+                ( cd "$wt" && timeout "$remaining" env "${codex_env[@]}" codex exec resume \
                     --dangerously-bypass-approvals-and-sandbox --json \
                     --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
                     --output-last-message "$log.last" "$sid" - <<< "$NUDGE_PROMPT" \
@@ -810,6 +827,7 @@ ${STEER_PROMPT} ${build_steer}"
         (( ec != 0 )) && break
     done
 
+    [[ -z "$codex_home" ]] || rm -f "$codex_home/auth.json"
     return "$ec"
 }
 
