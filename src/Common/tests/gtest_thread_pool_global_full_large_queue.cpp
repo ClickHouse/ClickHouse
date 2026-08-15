@@ -63,6 +63,19 @@ TEST(ThreadPool, GlobalFullLargeQueue)
         while (started != capacity)
             ;
 
+        /// Direct permanent threads use the same fail-fast mode as the production startup workers.
+        /// They must not be silently queued behind the never-returning jobs above.
+        bool direct_thread_threw = false;
+        try
+        {
+            ThreadFromGlobalPool direct_thread(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [] {});
+        }
+        catch (const DB::Exception &)
+        {
+            direct_thread_threw = true;
+        }
+        EXPECT_TRUE(direct_thread_threw) << "a direct permanent thread with no free global-pool worker must throw";
+
         /// There is no thread left for a new one and there never will be while the jobs above run, so
         /// this has to fail instead of waiting for a thread that is never going to be free.
         std::optional<ThreadPool> another_pool(
