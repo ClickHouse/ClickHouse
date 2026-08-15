@@ -149,7 +149,7 @@ SELECT toTypeName(doc.customer_id) AS type FROM t1;
 └─────────┘
 ```
 
-フィールドの実際のデータ型を確認するには、`dynamicType` 関数を使います。同じフィールド名でも、行によってデータ型が異なる場合がある点に注意してください。
+フィールドの基になるデータ型を確認するには、`dynamicType` 関数を使います。同じフィールド名でも、行によってデータ型が異なる場合がある点に注意してください。
 
 ```sql title="Query"
 SELECT dynamicType(doc.customer_id) AS type FROM t1;
@@ -161,7 +161,7 @@ SELECT dynamicType(doc.customer_id) AS type FROM t1;
 └───────┘
 ```
 
-[通常の関数](/ja/reference/functions/regular-functions/regular-functions-index)は、通常のカラムと同様に Dynamic 型でも使用できます。
+[通常の関数](/ja/reference/functions/regular-functions/overview)は、通常のカラムと同様に Dynamic 型でも使用できます。
 
 **例 1: 日付のパース**
 
