@@ -1,0 +1,94 @@
+<test>
+    <!--
+        Compare GROUP BY over 64-, 128-, and 256-bit integer keys, with and
+        without LowCardinality encoding. Using the same values and row order
+        for all six columns separates the effects of key width and dictionary
+        encoding.
+
+        This is intentionally an aggregation-only benchmark: the source data
+        is materialized so that dictionary construction, ARRAY JOIN, and
+        sorting do not obscure aggregation key construction.
+
+        The cardinality matches the motivating query. After every key has been
+        inserted once, randomized source rows make dictionary indexes
+        nonsequential. A single dictionary for the final part makes the wide
+        key arrays larger than the last-level cache on the performance-test
+        hosts.
+    -->
+
+    <settings>
+        <allow_suspicious_low_cardinality_types>1</allow_suspicious_low_cardinality_types>
+        <low_cardinality_max_dictionary_size>1000000000</low_cardinality_max_dictionary_size>
+        <low_cardinality_use_single_dictionary_for_part>1</low_cardinality_use_single_dictionary_for_part>
+        <max_memory_usage>20G</max_memory_usage>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>key</name>
+            <values>
+                <value>stack_lc_uint64</value>
+                <value>stack_uint64</value>
+                <value>stack_lc_uint128</value>
+                <value>stack_uint128</value>
+                <value>stack_lc_uint256</value>
+                <value>stack_uint256</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>DROP TABLE IF EXISTS group_by_integer_key_width</create_query>
+    <create_query>
+        CREATE TABLE group_by_integer_key_width
+        (
+            stack_lc_uint64 LowCardinality(UInt64),
+            stack_uint64 UInt64,
+            stack_lc_uint128 LowCardinality(UInt128),
+            stack_uint128 UInt128,
+            stack_lc_uint256 LowCardinality(UInt256),
+            stack_uint256 UInt256,
+            value UInt64
+        )
+        ENGINE = MergeTree
+        ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO group_by_integer_key_width
+        SELECT
+            stack_number AS stack_lc_uint64,
+            stack_number AS stack_uint64,
+            bitOr(
+                bitShiftLeft(toUInt128(cityHash64(stack_number)), 64),
+                toUInt128(stack_number)) AS stack_lc_uint128,
+            stack_lc_uint128 AS stack_uint128,
+            bitOr(
+                bitShiftLeft(toUInt256(cityHash64(stack_number + 1)), 192),
+                bitOr(
+                    bitShiftLeft(toUInt256(cityHash64(stack_number + 2)), 128),
+                    toUInt256(stack_lc_uint128))) AS stack_lc_uint256,
+            stack_lc_uint256 AS stack_uint256,
+            toUInt64(1) AS value
+        FROM
+        (
+            SELECT
+                if(number &lt; 2426588, number, intHash64(number) % 2426588) AS stack_number
+            FROM numbers(25000000)
+        )
+        SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 1048576
+    </fill_query>
+
+    <fill_query>OPTIMIZE TABLE group_by_integer_key_width FINAL</fill_query>
+
+    <query>
+        SELECT {key}, sum(value)
+        FROM group_by_integer_key_width
+        GROUP BY {key}
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            max_block_size = 65536
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS group_by_integer_key_width</drop_query>
+</test>
