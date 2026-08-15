@@ -74,14 +74,14 @@ String summarizeToolResult(const ai::ToolResult & result)
 AIAgent::AIAgent(
     const AIConfiguration & config_,
     std::unique_ptr<IAIAgentTransport> transport_,
-    const AIAgentHooks & hooks,
+    const AIAgentHooks & hooks_,
     std::shared_ptr<QueryContextBuffer> query_context_,
     std::ostream & output_stream,
     bool use_colors)
     : config(config_)
     , transport(std::move(transport_))
-    , hooks(hooks)
-    , tools(buildAIAgentToolSet(this->hooks, config_.enable_schema_access, config_.enable_query_log_access))
+    , hooks(hooks_)
+    , tools(buildAIAgentToolSet(hooks, config_.enable_schema_access, config_.enable_query_log_access))
     , query_context(std::move(query_context_))
     , display(output_stream, use_colors)
 {

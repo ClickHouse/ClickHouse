@@ -21,7 +21,7 @@ public:
     AIAgent(
         const AIConfiguration & config_,
         std::unique_ptr<IAIAgentTransport> transport_,
-        const AIAgentHooks & hooks,
+        const AIAgentHooks & hooks_,
         std::shared_ptr<QueryContextBuffer> query_context_,
         std::ostream & output_stream,
         bool use_colors);
