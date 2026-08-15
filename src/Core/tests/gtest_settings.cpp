@@ -9,6 +9,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <limits>
+
 namespace
 {
 using namespace DB;
@@ -175,4 +177,47 @@ GTEST_TEST(QueryParameters, DuplicateNameOnTheWireLastOccurrenceWins)
     ReadBufferFromString in(out.str());
     NameToNameMap parameters = readQueryParameters(in);
     ASSERT_EQ(parameters.at("x"), "2");
+}
+
+GTEST_TEST(SettingFieldTimespan, ValueAlwaysFitsInt64Microseconds)
+{
+    constexpr Int64 max_ms = std::numeric_limits<Int64>::max() / 1000;
+    constexpr Int64 max_s = std::numeric_limits<Int64>::max() / 1000000;
+
+    /// Values whose microseconds fit Int64 are stored exactly.
+    ASSERT_EQ(SettingFieldMilliseconds(UInt64(0)).totalMicroseconds(), 0);
+    ASSERT_EQ(SettingFieldMilliseconds(UInt64(5000)).totalMicroseconds(), 5000000);
+    ASSERT_EQ(SettingFieldSeconds(UInt64(300)).totalMicroseconds(), 300000000);
+    ASSERT_EQ(SettingFieldMilliseconds(UInt64(max_ms)).totalMilliseconds(), max_ms);
+    ASSERT_EQ(SettingFieldSeconds(UInt64(max_s)).totalSeconds(), max_s);
+
+    /// Larger values are rejected instead of wrapping mod 2^64. Before the check, UInt64 max
+    /// wrapped to -1 ms, 2^61 to exactly 0 ms and 2^61 + 1 to exactly 1 ms.
+    ASSERT_THROW(SettingFieldMilliseconds(UInt64(max_ms) + 1), DB::Exception);
+    ASSERT_THROW(SettingFieldMilliseconds{std::numeric_limits<UInt64>::max()}, DB::Exception);
+    ASSERT_THROW(SettingFieldMilliseconds(UInt64(1) << 61), DB::Exception);
+    ASSERT_THROW(SettingFieldMilliseconds((UInt64(1) << 61) + 1), DB::Exception);
+    ASSERT_THROW(SettingFieldSeconds{std::numeric_limits<UInt64>::max()}, DB::Exception);
+
+    /// Every integer producer funnels into the same check: Field (SET and profiles) and the
+    /// native-protocol binary form.
+    SettingFieldMilliseconds assigned;
+    ASSERT_THROW(assigned = std::numeric_limits<UInt64>::max(), DB::Exception);
+    ASSERT_THROW(SettingFieldMilliseconds(Field(UInt64(1) << 61)), DB::Exception);
+
+    /// The largest accepted value survives a string round-trip exactly.
+    SettingFieldMilliseconds largest{UInt64(max_ms)};
+    SettingFieldMilliseconds reparsed;
+    reparsed.parseFromString(largest.toString());
+    ASSERT_EQ(reparsed.totalMicroseconds(), largest.totalMicroseconds());
+}
+
+GTEST_TEST(SettingFieldTimespan, SecondsParseFromStringChecksTheRange)
+{
+    SettingFieldSeconds seconds;
+    seconds.parseFromString("300");
+    ASSERT_EQ(seconds.totalSeconds(), 300);
+
+    /// A value that does not fit Int64 microseconds is rejected, the same as through Field.
+    ASSERT_THROW(seconds.parseFromString("1e30"), DB::Exception);
 }
