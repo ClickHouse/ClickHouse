@@ -801,15 +801,25 @@ discard_untrusted_triage_changes()
     git -C "$wt" clean -fd >> "$log"
 }
 
-prepare_triage_push_guard()
+prepare_triage_credential_guard()
 {
-    local wt="$1" hooks_dir
+    local wt="$1"
 
-    hooks_dir=$(git -C "$wt" rev-parse --git-path continue-pr-triage-hooks)
-    mkdir -p "$hooks_dir"
-    printf '%s\n' '#!/usr/bin/env bash' 'echo "Triage model must not push; the orchestrator pushes only a validated clean merge." >&2' 'exit 1' > "$hooks_dir/pre-push"
-    chmod +x "$hooks_dir/pre-push"
-    printf '%s' "$hooks_dir"
+    # A hook is not a security boundary: `git push --no-verify` bypasses it.
+    # Disable all Git credential helpers in the worktree-local configuration
+    # instead. The triage worker can still fetch public data and make a clean
+    # merge, but cannot authenticate a push. Keep the original configuration
+    # snapshot from `prepare_triage_worktree` and restore it before handing the
+    # worktree to the coding worker or making the orchestrator's validated push.
+    git -C "$wt" config --local --unset-all credential.helper 2>/dev/null || true
+    git -C "$wt" config --local --add credential.helper ''
+}
+
+restore_triage_config()
+{
+    local wt="$1" config_snapshot="$2"
+
+    cp "$config_snapshot" "$(git -C "$wt" rev-parse --git-path config)"
 }
 
 # Run /continue-pr-auto in a worktree, resuming the same session until the worker
@@ -824,10 +834,10 @@ run_continue_pr()
     local wt="$1" number="$2" log="$3"
     local url="https://github.com/$REPO/pull/$number"
     local sid deadline iter phase_iter ec now remaining build_steer prompt usage codex_home
-    local phase active_model system_prompt turn_prompt handoff triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable triage_config_checksum triage_config_snapshot triage_hooks_dir
+    local phase active_model system_prompt turn_prompt handoff triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable triage_config_checksum triage_config_snapshot triage_common_git_dir triage_agent_home
     local -a codex_env
     local u_i u_o u_ci u_co u_cost triage_cost coding_cost
-    local -a model_args triage_git_args
+    local -a model_args triage_git_args triage_sandbox_args
     sid=""
     phase="coding"
     [[ -n "$TRIAGE_MODEL" ]] && phase="triage"
@@ -837,12 +847,12 @@ run_continue_pr()
     triage_head_ref=""
     triage_push_url=""
     triage_pushable=0
-    triage_hooks_dir=""
     if [[ "$phase" == "triage" ]]; then
         local triage_metadata
         triage_metadata=$(prepare_triage_worktree "$wt" "$number") || return 1
         IFS=$'\t' read -r triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable triage_config_checksum triage_config_snapshot <<< "$triage_metadata"
-        triage_hooks_dir=$(prepare_triage_push_guard "$wt")
+        prepare_triage_credential_guard "$wt" || return 1
+        triage_config_checksum=$(sha256sum "$(git -C "$wt" rev-parse --git-path config)" | awk '{ print $1 }') || return 1
     fi
     # Steer the worker to a persistent, ccache-backed build directory in this
     # worktree so rebuilds are incremental instead of cold each pass.
@@ -874,6 +884,30 @@ run_continue_pr()
         }
     fi
 
+    if [[ "$phase" == "triage" ]]; then
+        triage_common_git_dir=$(git -C "$wt" rev-parse --git-common-dir) || return 1
+        # Keep the triage model's agent credentials available, but hide every
+        # GitHub and SSH credential source from its mount namespace. Together
+        # with the empty worktree-local credential helper this prevents even
+        # `git push --no-verify` or an explicit URL from authenticating. The
+        # coding model runs outside this sandbox after triage hands off.
+        triage_sandbox_args=(
+            bwrap
+            --ro-bind / /
+            --bind "$wt" "$wt"
+            --bind "$triage_common_git_dir" "$triage_common_git_dir"
+            --tmpfs "$HOME/.config/gh"
+            --tmpfs "$HOME/.ssh"
+        )
+        [[ ! -e "$HOME/.netrc" ]] || triage_sandbox_args+=(--ro-bind /dev/null "$HOME/.netrc")
+        if [[ "$AGENT" == "codex" ]]; then
+            triage_agent_home="${CODEX_HOME:-$HOME/.codex}"
+            [[ ! -d "$triage_agent_home" ]] || triage_sandbox_args+=(--bind "$triage_agent_home" "$triage_agent_home")
+        fi
+    else
+        triage_sandbox_args=()
+    fi
+
     while :; do
         iter=$(( iter + 1 ))
         phase_iter=$(( phase_iter + 1 ))
@@ -895,7 +929,7 @@ run_continue_pr()
         [[ -n "$active_model" ]] && model_args=(--model "$active_model")
         triage_git_args=()
         if [[ "$phase" == "triage" ]]; then
-            triage_git_args=(env "GIT_CONFIG_COUNT=1" "GIT_CONFIG_KEY_0=core.hooksPath" "GIT_CONFIG_VALUE_0=$triage_hooks_dir")
+            triage_git_args=(env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_PAT -u SSH_AUTH_SOCK)
         fi
 
         echo "===== turn $iter ($phase model ${active_model:-default}, session ${sid:-pending}, ${remaining}s budget left) =====" >> "$log"
@@ -910,12 +944,12 @@ run_continue_pr()
                     prompt+=$'\n\nThe triage model handed off this task. Validate its diagnosis, then complete the work:\n'
                     prompt+="$handoff"
                 fi
-                ( cd "$wt" && "${triage_git_args[@]}" timeout "$remaining" claude --dangerously-skip-permissions --print \
+                ( cd "$wt" && "${triage_sandbox_args[@]}" "${triage_git_args[@]}" timeout "$remaining" claude --dangerously-skip-permissions --print \
                     --output-format json --effort "$EFFORT" "${model_args[@]}" \
                     --session-id "$sid" --append-system-prompt "$system_prompt" \
                     "$prompt"</dev/null ) > "$log.json" 2>"$log.err" || ec=$?
             else
-                ( cd "$wt" && "${triage_git_args[@]}" timeout "$remaining" claude --dangerously-skip-permissions --print \
+                ( cd "$wt" && "${triage_sandbox_args[@]}" "${triage_git_args[@]}" timeout "$remaining" claude --dangerously-skip-permissions --print \
                     --output-format json --effort "$EFFORT" "${model_args[@]}" \
                     --resume "$sid" --append-system-prompt "$system_prompt" \
                     "$turn_prompt"</dev/null ) > "$log.json" 2>"$log.err" || ec=$?
@@ -943,7 +977,7 @@ ${system_prompt}"
                     prompt+=$'\n\nThe triage model handed off this task. Validate its diagnosis, then complete the work:\n'
                     prompt+="$handoff"
                 fi
-                ( cd "$wt" && "${triage_git_args[@]}" env "${codex_env[@]}" timeout "$remaining" codex exec \
+                ( cd "$wt" && "${triage_sandbox_args[@]}" "${triage_git_args[@]}" env "${codex_env[@]}" timeout "$remaining" codex exec \
                     --dangerously-bypass-approvals-and-sandbox --json \
                     --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
                     --output-last-message "$log.last" - <<< "$prompt" \
@@ -954,7 +988,7 @@ ${system_prompt}"
                     ec=1
                 fi
             else
-                ( cd "$wt" && "${triage_git_args[@]}" env "${codex_env[@]}" timeout "$remaining" codex exec resume \
+                ( cd "$wt" && "${triage_sandbox_args[@]}" "${triage_git_args[@]}" env "${codex_env[@]}" timeout "$remaining" codex exec resume \
                     --dangerously-bypass-approvals-and-sandbox --json \
                     --config "model_reasoning_effort=$EFFORT" "${model_args[@]}" \
                     --output-last-message "$log.last" "$sid" - <<< "$turn_prompt" \
@@ -995,6 +1029,8 @@ ${system_prompt}"
             handoff=$(cat "$log.last")
             if ! triage_state_is_safe "$wt" "$triage_start_head" "$triage_base_head" "$triage_config_checksum"; then
                 discard_untrusted_triage_changes "$wt" "$triage_start_head" "$triage_config_snapshot" "$log"
+            else
+                restore_triage_config "$wt" "$triage_config_snapshot" || return 1
             fi
             echo "===== handoff from $TRIAGE_MODEL to $MODEL =====" >> "$log"
             phase="coding"
@@ -1010,13 +1046,19 @@ ${system_prompt}"
         # turn and time limits instead of discarding its completed work.
         if grep -qE "^${DONE_MARKER}[[:space:]]*$" "$log.last"; then
             if [[ "$phase" != "triage" ]] || triage_state_is_safe "$wt" "$triage_start_head" "$triage_base_head" "$triage_config_checksum"; then
-                if [[ "$phase" == "triage" && "$triage_pushable" != "1" ]]; then
-                    handoff=$(cat "$log.last")
-                    echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL because the PR head is not pushable =====" >> "$log"
-                    phase="coding"
-                    phase_iter=0
-                    sid=""
-                    continue
+                if [[ "$phase" == "triage" ]]; then
+                    restore_triage_config "$wt" "$triage_config_snapshot" || return 1
+                    if [[ "$triage_pushable" != "1" ]]; then
+                        if [[ "$triage_start_head" != "$(git -C "$wt" rev-parse HEAD)" ]]; then
+                            handoff=$(cat "$log.last")
+                            echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL because the validated merge cannot be pushed =====" >> "$log"
+                            phase="coding"
+                            phase_iter=0
+                            sid=""
+                            continue
+                        fi
+                        break
+                    fi
                 fi
                 if [[ "$phase" == "triage" ]] && ! git -C "$wt" push "$triage_push_url" "HEAD:refs/heads/$triage_head_ref" >> "$log" 2>&1; then
                     handoff=$(cat "$log.last")
