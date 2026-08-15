@@ -33,9 +33,9 @@ CREATE TABLE t_pr_merge_top_k (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
 
 INSERT INTO t_pr_merge_top_k SELECT number % 1000, number FROM numbers(100000);
 
--- Top-K must annotate only the partial aggregations (the local branch and the
--- fragment shipped to the replicas), never the MergingAggregated above them:
--- exactly two Top-K lines, and none directly after the merge step.
+-- The late top-K optimization pass sees only the initiator's merge step after
+-- the parallel-replicas rewrite. It must not annotate that merge step, because
+-- the top-K heap runs only during partial aggregation on the replicas.
 SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM
 (
     EXPLAIN actions = 1

@@ -1,6 +1,4 @@
 MergingAggregated (merge)
-Top-K: limit=5, columns=1, directions=[1]
-Top-K: limit=5, columns=1, directions=[1]
 0	100
 1	100
 2	100
