@@ -26,21 +26,26 @@ SELECT 'count()', count() FROM pr_rp SETTINGS optimize_trivial_count_query = 0;
 SELECT 'max(y)', max(y) FROM pr_rp;
 
 -- The arms above hold whenever the policy is applied, however the read reached the replicas, so they
--- would still pass if no remote replica ever received a plan. A replica reports the marks it read
--- only for a read it was assigned, so a non-initial query reporting any is one that got a read task.
+-- would still pass if no remote replica ever received a plan. A replica logs this message only where
+-- it built a runnable plan out of a received one, so its presence means a remote replica, not the
+-- initiator, ran a deserialized plan.
 -- A replica runs against its own default database, so its rows are reached through the initiator's
 -- row, which does carry this database.
 SELECT 'route', max(y) FROM pr_rp SETTINGS log_comment = '04908_pr_route';
-SYSTEM FLUSH LOGS query_log;
-SELECT 'remote replicas got read tasks', count() > 0 FROM system.query_log
-WHERE type = 'QueryFinish' AND NOT is_initial_query
-  AND ProfileEvents['ParallelReplicasReadMarks'] > 0
-  AND initial_query_id IN
+SYSTEM FLUSH LOGS query_log, text_log;
+SELECT 'remote replicas got the plan', count() > 0 FROM system.text_log
+WHERE event_date >= yesterday() AND logger_name = 'TCPHandler' AND message = 'Received query plan'
+  AND query_id IN
   (
       SELECT query_id FROM system.query_log
-      WHERE current_database = currentDatabase() AND log_comment = '04908_pr_route'
-        AND type = 'QueryFinish' AND is_initial_query
-  );
+      WHERE type = 'QueryFinish' AND NOT is_initial_query AND initial_query_id IN
+      (
+          SELECT query_id FROM system.query_log
+          WHERE current_database = currentDatabase() AND log_comment = '04908_pr_route'
+            AND type = 'QueryFinish' AND is_initial_query
+      )
+  )
+SETTINGS max_rows_to_read = 0;
 
 DROP ROW POLICY pr_rp_policy ON pr_rp;
 SELECT 'no policy', count() FROM pr_rp SETTINGS optimize_trivial_count_query = 0;

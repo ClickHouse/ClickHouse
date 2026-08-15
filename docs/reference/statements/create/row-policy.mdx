@@ -147,7 +147,7 @@ any other table in mydb would have only `b=1` policy applied for the user.
 
 ## Distributed and remote-backed tables {#distributed-and-remote-backed-tables}
 
-A row policy filters rows where the table data is actually read. A table that delegates reading to remote servers, such as a [Distributed](/reference/engines/table-engines/special/distributed) table or a wrapper over one (for example, a materialized view with a `Distributed` target), only ships the query text to the remote servers and cannot apply the policy filter to the remote read. To keep the filter from being silently dropped, queries to such a table by users the policy applies to are rejected with an `ILLEGAL_PREWHERE` error.
+A row policy filters rows where the table data is actually read. A table that delegates reading to remote servers, such as a [Distributed](/reference/engines/table-engines/special/distributed) table or a wrapper over one (for example, a materialized view with a `Distributed` target), sends the read to those servers as query text or as an already-built read plan, and in neither form can it apply its own policy filter to the remote read. To keep the filter from being silently dropped, queries to such a table by users the policy applies to are rejected with an `ILLEGAL_PREWHERE` error.
 
 Instead, define the policy on the underlying local tables on each remote server; it is applied there when the shipped query reads them:
 
