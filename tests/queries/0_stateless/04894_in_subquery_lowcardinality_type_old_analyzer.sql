@@ -19,7 +19,7 @@ SELECT tuple(*) AS t FROM (SELECT s, s IN (SELECT 'a') AS f FROM t_in_lc_type) O
 SELECT count() FROM t_in_lc_type WHERE s IN (SELECT 'a');
 SELECT count() FROM t_in_lc_type WHERE s NOT IN (SELECT 'a');
 
-SELECT '-- new analyzer';
+SELECT '-- the analyzer';
 SET enable_analyzer = 1;
 
 SELECT DISTINCT toTypeName(s IN ('a')) AS literal_set, toTypeName(s IN (SELECT 'a')) AS subquery_set FROM t_in_lc_type;
