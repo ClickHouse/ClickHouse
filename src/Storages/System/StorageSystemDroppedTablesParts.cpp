@@ -11,6 +11,8 @@
 #include <Storages/System/StorageSystemDroppedTablesParts.h>
 #include <Storages/VirtualColumnUtils.h>
 
+#include <thread>
+
 
 namespace DB
 {
