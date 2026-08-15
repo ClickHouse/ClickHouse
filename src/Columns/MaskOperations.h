@@ -19,8 +19,8 @@ struct FunctionExecutionProfile;
 
 struct MaskInfo
 {
-    bool has_ones;
-    bool has_zeros;
+    bool has_ones = false;
+    bool has_zeros = false;
     size_t ones_count = 0;
 };
 
