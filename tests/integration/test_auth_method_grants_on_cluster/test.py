@@ -82,3 +82,21 @@ def test_alter_user_on_cluster_binds_initiator_database(started_cluster):
     assert_grants_on_all_nodes("u_alter", "['','SELECT ON db1.t1']")
 
     node1.query("DROP USER u_alter ON CLUSTER cluster")
+
+
+def test_interserver_secret_does_not_apply_authentication_method_grants(started_cluster):
+    node1.query("DROP USER IF EXISTS u_interserver ON CLUSTER cluster")
+    node1.query(
+        "CREATE USER u_interserver ON CLUSTER cluster "
+        "IDENTIFIED WITH sha256_password BY 'full_password', "
+        "sha256_password BY 'limited_password' GRANTS (SELECT ON system.users)"
+    )
+    node1.query("GRANT SELECT ON *.* TO u_interserver ON CLUSTER cluster")
+
+    assert node1.query(
+        "SELECT count() FROM cluster('cluster', system.one)",
+        user="u_interserver",
+        password="full_password",
+    ) == "2\n"
+
+    node1.query("DROP USER u_interserver ON CLUSTER cluster")
