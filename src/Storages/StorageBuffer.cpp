@@ -574,12 +574,18 @@ void StorageBuffer::read(
         if (query_info.row_level_filter)
         {
             ExpressionActionsSettings actions_settings(local_context);
+            const bool expression_per_stream = actions_settings.enable_adaptive_short_circuit_lazy_execution;
             auto actions = ExpressionActions::create(query_info.row_level_filter->actions.clone(), actions_settings);
+            bool is_first_stream = true;
             pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
             {
+                auto stream_actions = actions;
+                if (expression_per_stream && !std::exchange(is_first_stream, false))
+                    stream_actions = ExpressionActions::create(query_info.row_level_filter->actions.clone(), actions_settings);
+
                 return std::make_shared<FilterTransform>(
                         header,
-                        actions,
+                        std::move(stream_actions),
                         query_info.row_level_filter->column_name,
                         query_info.row_level_filter->do_remove_column);
             });
@@ -588,12 +594,18 @@ void StorageBuffer::read(
         if (query_info.prewhere_info)
         {
             ExpressionActionsSettings actions_settings(local_context);
+            const bool expression_per_stream = actions_settings.enable_adaptive_short_circuit_lazy_execution;
             auto actions = ExpressionActions::create(query_info.prewhere_info->prewhere_actions.clone(), actions_settings);
+            bool is_first_stream = true;
             pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
             {
+                auto stream_actions = actions;
+                if (expression_per_stream && !std::exchange(is_first_stream, false))
+                    stream_actions = ExpressionActions::create(query_info.prewhere_info->prewhere_actions.clone(), actions_settings);
+
                 return std::make_shared<FilterTransform>(
                         header,
-                        actions,
+                        std::move(stream_actions),
                         query_info.prewhere_info->prewhere_column_name,
                         query_info.prewhere_info->remove_prewhere_column);
             });

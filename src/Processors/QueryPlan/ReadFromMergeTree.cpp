@@ -5002,17 +5002,24 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     }
 
     /// apply row policy after FINAL if needed (must be applied before prewhere)
-    auto add_deferred_filter = [&pipe](ActionsDAG filter_dag, const String & column_name, bool remove_column)
+    auto add_deferred_filter = [&pipe, context](ActionsDAG filter_dag, const String & column_name, bool remove_column)
     {
         NameSet input_names;
         for (const auto * input : filter_dag.getInputs())
             input_names.insert(input->result_name);
         restoreDAGInputs(filter_dag, input_names);
 
-        auto actions = std::make_shared<ExpressionActions>(std::move(filter_dag));
+        ExpressionActionsSettings actions_settings(context);
+        const bool expression_per_stream = actions_settings.enable_adaptive_short_circuit_lazy_execution;
+        auto actions = ExpressionActions::create(expression_per_stream ? filter_dag.clone() : std::move(filter_dag), actions_settings);
+        bool is_first_stream = true;
         pipe.addSimpleTransform([&, actions](const SharedHeader & header)
         {
-            return std::make_shared<FilterTransform>(header, actions, column_name, remove_column);
+            auto stream_actions = actions;
+            if (expression_per_stream && !std::exchange(is_first_stream, false))
+                stream_actions = ExpressionActions::create(filter_dag.clone(), actions_settings);
+
+            return std::make_shared<FilterTransform>(header, std::move(stream_actions), column_name, remove_column);
         });
     };
 
