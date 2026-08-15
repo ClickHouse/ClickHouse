@@ -351,6 +351,12 @@ struct ThreadFromGlobalPoolState
     Poco::Event event;
 };
 
+enum class ThreadFromGlobalPoolScheduleMode : bool
+{
+    Queue,
+    FailIfNoWorker,
+};
+
 /// Worker entry point implementing ThreadFromGlobalPoolImpl's constructor body.
 /// Lives in the .cpp so that ThreadStatus, scope_guard and friends do not leak via this header.
 void startThreadFromGlobalPool(
@@ -359,7 +365,8 @@ void startThreadFromGlobalPool(
     UInt64 global_profiler_real_time_period_ns,
     UInt64 global_profiler_cpu_time_period_ns,
     bool global_trace_collector_allowed,
-    bool propagate_opentelemetry_context);
+    bool propagate_opentelemetry_context,
+    ThreadFromGlobalPoolScheduleMode schedule_mode);
 
 
 /** Looks like std::thread but allocates threads in GlobalThreadPool.
@@ -376,6 +383,12 @@ public:
 
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPoolImpl(Function && func, Args &&... args)
+        : ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolScheduleMode::Queue, std::forward<Function>(func), std::forward<Args>(args)...)
+    {
+    }
+
+    template <typename Function, typename... Args>
+    explicit ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolScheduleMode schedule_mode, Function && func, Args &&... args)
         : state(std::make_shared<ThreadFromGlobalPoolState>())
     {
         startThreadFromGlobalPool(
@@ -388,7 +401,8 @@ public:
             GlobalThreadPool::instance().global_profiler_real_time_period_ns,
             GlobalThreadPool::instance().global_profiler_cpu_time_period_ns,
             global_trace_collector_allowed,
-            propagate_opentelemetry_context);
+            propagate_opentelemetry_context,
+            schedule_mode);
     }
 
     ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolImpl && rhs) noexcept

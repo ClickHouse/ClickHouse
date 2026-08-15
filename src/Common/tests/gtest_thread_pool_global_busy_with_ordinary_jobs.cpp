@@ -90,3 +90,54 @@ TEST(ThreadPool, GlobalBusyWithOrdinaryJobs)
     global_pool.setMaxFreeThreads(1000);
     global_pool.setQueueSize(10000);
 }
+
+TEST(ThreadPool, GlobalThreadCanWaitBehindOrdinaryJobs)
+{
+    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
+
+    static constexpr size_t capacity = 5;
+
+    global_pool.setMaxThreads(capacity);
+    global_pool.setMaxFreeThreads(1);
+    global_pool.setQueueSize(1000);
+    global_pool.wait();
+
+    std::atomic<size_t> started = 0;
+    std::atomic<size_t> finished = 0;
+    std::atomic<bool> release = false;
+    std::atomic<bool> thread_ran = false;
+
+    auto occupy_thread = [&]
+    {
+        ++started;
+        while (!release.load())
+        {
+        }
+        ++finished;
+    };
+
+    for (size_t i = 0; i < capacity; ++i)
+    {
+        global_pool.scheduleOrThrow(occupy_thread);
+    }
+
+    while (started != capacity)
+    {
+    }
+
+    ThreadFromGlobalPool thread([&] { thread_ran = true; });
+    EXPECT_FALSE(thread_ran);
+
+    release = true;
+    while (finished != capacity)
+    {
+    }
+
+    thread.join();
+    EXPECT_TRUE(thread_ran);
+
+    global_pool.wait();
+    global_pool.setMaxThreads(10000);
+    global_pool.setMaxFreeThreads(1000);
+    global_pool.setQueueSize(10000);
+}

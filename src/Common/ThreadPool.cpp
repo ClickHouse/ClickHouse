@@ -927,7 +927,14 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImp
 {
     Stopwatch watch2;
 
-    thread = Thread(&ThreadFromThreadPool::worker, this);
+    if constexpr (std::is_same_v<Thread, GlobalThreadType>)
+    {
+        thread = Thread(&ThreadFromThreadPool::worker, this);
+    }
+    else
+    {
+        thread = Thread(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, &ThreadFromThreadPool::worker, this);
+    }
 
     ProfileEvents::increment(
         std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolThreadCreationMicroseconds : ProfileEvents::LocalThreadPoolThreadCreationMicroseconds,
@@ -1330,14 +1337,13 @@ void startThreadFromGlobalPool(
     UInt64 global_profiler_real_time_period_ns,
     UInt64 global_profiler_cpu_time_period_ns,
     bool global_trace_collector_allowed,
-    bool propagate_opentelemetry_context)
+    bool propagate_opentelemetry_context,
+    ThreadFromGlobalPoolScheduleMode schedule_mode)
 {
     /// NOTE:
-    /// - If scheduleThreadOrThrow throws, the ThreadFromGlobalPoolImpl destructor won't be called.
+    /// - If scheduling throws, the ThreadFromGlobalPoolImpl destructor won't be called.
     /// - `this` cannot be passed in the lambda since after detach() it is no longer valid.
-    /// The job runs for the whole lifetime of the thread it represents, so it must get a worker slot
-    /// of its own rather than be queued behind other threads that never return.
-    GlobalThreadPool::instance().scheduleThreadOrThrow(
+    auto job =
         [my_state = std::move(state),
          my_func = std::move(func),
          global_profiler_real_time_period_ns,
@@ -1362,9 +1368,16 @@ void startThreadFromGlobalPool(
                 thread_status.initGlobalProfiler(global_profiler_real_time_period_ns, global_profiler_cpu_time_period_ns);
 
             function();
-        },
-        {},
-        propagate_opentelemetry_context);
+        };
+
+    if (schedule_mode == ThreadFromGlobalPoolScheduleMode::FailIfNoWorker)
+    {
+        GlobalThreadPool::instance().scheduleThreadOrThrow(std::move(job), {}, propagate_opentelemetry_context);
+    }
+    else
+    {
+        GlobalThreadPool::instance().scheduleOrThrow(std::move(job), {}, 0, propagate_opentelemetry_context);
+    }
 }
 
 CannotAllocateThreadFaultInjector & CannotAllocateThreadFaultInjector::instance()
