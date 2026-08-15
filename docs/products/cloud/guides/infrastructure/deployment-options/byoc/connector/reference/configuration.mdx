@@ -234,7 +234,7 @@ The session gateway for [support sessions](/products/cloud/guides/infrastructure
 | `clctl.gateway.enabled` | `false` | Serve the session gateway inside the troubleshooter. |
 | `clctl.gateway.listenAddr` | `":8443"` | Pod-local listen address. |
 | `clctl.gateway.port` | `8443` | Container port exposed through the troubleshooter Service and Ingress; matches `listenAddr`'s port. |
-| `clctl.gateway.audience` | `clicklink-clctl` | Audience claim required on operator tokens; must match what operators pass (or derive) as `--gateway-audience`. |
+| `clctl.gateway.audience` | `clicklink-clctl` | Audience claim required on operator tokens. The session client defaults to the same value, so the two only need coordinating when you change this. |
 | `clctl.gateway.requiredHostedDomain` | `""` | Optional hosted-domain claim the gateway requires, rejecting tokens from outside your workspace before the allowlist lookup. |
 | `clctl.gateway.allowedOperators` | `[]` (closed) | Operator email allowlist, rendered into a ConfigMap; rotation is a values change plus `helm upgrade`. |
 | `clctl.gateway.jwksUri` | `""` | JWKS endpoint override for non-Google identity providers; empty uses Google's. |
