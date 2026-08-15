@@ -1895,6 +1895,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
+    std::vector<std::pair<String, String>> renames;
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
@@ -2352,6 +2353,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (renamed_column)
             {
                 renameColumnInStoredExpressions(all_columns, command.column_name, command.rename_to);
+                renames.emplace_back(command.column_name, command.rename_to);
                 revalidate_stored_defaults = true;
             }
         }

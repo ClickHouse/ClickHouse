@@ -1215,7 +1215,6 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
 
             {
-            {
                 /// An index may be defined over a persistent virtual column (e.g. the implicit
                 /// minmax index created by add_minmax_index_for_block_{number,offset}_column over
                 /// _block_number/_block_offset). Freshly inserted 0-level parts do not materialize
