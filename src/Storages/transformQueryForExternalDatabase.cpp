@@ -191,8 +191,6 @@ bool fieldHasNonFiniteFloatingPointValue(const Field & field)
     {
         case Field::Types::Float64:
             return !std::isfinite(field.safeGet<Float64>());
-        case Field::Types::Float32:
-            return !std::isfinite(field.safeGet<Float32>());
         case Field::Types::Tuple:
             for (const auto & element : field.safeGet<Tuple>())
                 if (fieldHasNonFiniteFloatingPointValue(element))
