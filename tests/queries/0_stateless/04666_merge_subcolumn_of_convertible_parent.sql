@@ -1,3 +1,4 @@
+-- Tags: no-fasttest, use-rocksdb
 -- A subcolumn read through a `Merge` table must agree with the parent column that same table
 -- returns for the row. `Buffer` and `StorageView` carry the same wrapper defect and are
 -- deliberately NOT covered here: each needs a different mechanism and ships separately.
