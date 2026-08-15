@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
+#include <Core/Joins.h>
 #include <Common/Exception.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool_fwd.h>
@@ -645,6 +646,10 @@ protected:
     /// field and does not propagate through settings copies (e.g. getSQLSecurityOverriddenContext),
     /// so view-inner queries on the same node are unaffected.
     bool positional_arguments_already_resolved = false;
+    /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
+    /// purpose: only Interpreter may turn it on, but it must reach every join of the
+    /// query, including joins in nested plans, which EXPLAIN also prints.
+    JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
 
     /// Defined out of line: a definition in the header gives every shared object its own copy.
     static ContextPtr global_context_instance;
@@ -1857,6 +1862,9 @@ public:
 
     bool isPositionalArgumentsAlreadyResolved() const { return positional_arguments_already_resolved; }
     void setPositionalArgumentsAlreadyResolved(bool value) { positional_arguments_already_resolved = value; }
+
+    JoinAnalyzeMode getJoinAnalyzeMode() const { return join_analyze_mode; }
+    void setJoinAnalyzeMode(JoinAnalyzeMode value) { join_analyze_mode = value; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
 
