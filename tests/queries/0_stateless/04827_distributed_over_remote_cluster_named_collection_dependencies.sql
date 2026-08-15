@@ -5,7 +5,8 @@
 -- under another run.
 
 -- The first argument of `remote` / `remoteSecure` accepts a named collection in addition to an inline
--- address pattern. When the resolved collection points back to this server, a persisted target reads
+-- address pattern. When the resolved collection points back to this server, a persisted `Distributed`
+-- target reads
 -- the underlying table locally, so it must record a referential
 -- dependency on it - without one, `DROP` / `RENAME` of that table would be allowed under
 -- `check_referential_table_dependencies = 1` even though the persisted table then fails at read time.
