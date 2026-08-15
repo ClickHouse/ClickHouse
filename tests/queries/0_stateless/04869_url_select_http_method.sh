@@ -25,6 +25,7 @@ TAG_ENGINE="${CLICKHOUSE_DATABASE}_62352_engine"
 TAG_INFER="${CLICKHOUSE_DATABASE}_62352_infer"
 TAG_CACHE="${CLICKHOUSE_DATABASE}_62352_cache"
 TAG_CACHEKEY="${CLICKHOUSE_DATABASE}_62352_cachekey"
+TAG_CLUSTER="${CLICKHOUSE_DATABASE}_62352_cluster"
 # Named collections are server-global: derive unique-per-run names to survive the
 # flaky check running this test repeatedly and concurrently.
 NC_MAIN="nc_${CLICKHOUSE_DATABASE}_62352"
@@ -167,6 +168,11 @@ CACHE_OPT="--schema_inference_use_cache_for_url=1 --schema_inference_cache_requi
 $CLICKHOUSE_CLIENT $SETTINGS_OPT $CACHE_OPT -q "SELECT * FROM url('${CACHE_URL}', 'TSVWithNamesAndTypes')"
 $CLICKHOUSE_CLIENT $SETTINGS_OPT $CACHE_OPT -q "SELECT * FROM url('${CACHE_URL}', 'TSVWithNamesAndTypes', http_method='POST')"
 $CLICKHOUSE_CLIENT -q "SELECT countDistinct(source), countIf(source LIKE 'POST:%') FROM system.schema_inference_cache WHERE storage = 'URL' AND source LIKE '%${TAG_CACHEKEY}%'"
+
+# 15. urlCluster carries the method to the cluster paths: the initiator's schema inference and
+#     the worker's read both go out as POST. The row count depends on task distribution, so only
+#     the wire method is asserted (below).
+$CLICKHOUSE_CLIENT $SETTINGS_OPT --schema_inference_use_cache_for_url=0 -q "SELECT sum(x) FROM urlCluster('test_cluster_two_shards_localhost', '${CLICKHOUSE_URL}&query=SELECT+10+AS+x+FORMAT+TSVWithNamesAndTypes&log_comment=${TAG_CLUSTER}', 'TSVWithNamesAndTypes', http_method='POST')" > /dev/null
 
 # Verify the methods that were actually used, per tag.
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"

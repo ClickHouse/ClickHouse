@@ -31,6 +31,7 @@ ACCESS_DENIED
 2	1
 62352_aliascap	[2]
 62352_cache	[2]
+62352_cluster	[2]
 62352_engine	[2]
 62352_get	[1]
 62352_infer	[2]
