@@ -1,3 +1,5 @@
+-- the experimental database engine must be enabled explicitly
+1
 -- database engine
 Cluster
 -- SHOW CREATE DATABASE prints the engine with the cluster name
