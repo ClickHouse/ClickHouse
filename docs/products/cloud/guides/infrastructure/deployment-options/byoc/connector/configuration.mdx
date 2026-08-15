@@ -17,14 +17,16 @@ The connector has one configuration surface per install target.
 `clicklink clctl init` stages a values overlay named `clicklink-values.yaml` in the working directory and deploys the `clicklink-connector` chart with it. The overlay is the durable record of your deployment: re-running `init` keeps it unless you pass `--force`, so your edits survive re-runs and recovery. Edit the overlay, then apply it:
 
 ```bash
-CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
-helm upgrade --install clicklink-connector clicklink-connector \
+CHART_VERSION="$(helm get metadata clicklink-connector -n "${CONNECTOR_NAMESPACE}" | awk '/^VERSION:/{print $2}')"
+helm upgrade clicklink-connector clicklink-connector \
   --repo https://releases.clicklink.clickhouse.com/charts \
-  --version "${CLICKLINK_VERSION#v}" \
+  --version "${CHART_VERSION}" \
   --namespace "${CONNECTOR_NAMESPACE}" \
   -f clicklink-values.yaml
 ```
+
+The block reapplies your edited values at the chart version already installed, so a configuration change never doubles as an unplanned upgrade; moving to a new version is a deliberate step covered in [operations](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/operations). On a mirrored install, swap `--repo` for your mirror as described in [private mirrors](#private-mirrors).
 </Tab>
 <Tab title="Linux VM">
 `clicklink clctl init` writes `/etc/clicklink/config.yaml`. Re-running `init` keeps an existing config unless you pass `--force`, so the file is safe to edit by hand. After editing, restart the daemons and verify:

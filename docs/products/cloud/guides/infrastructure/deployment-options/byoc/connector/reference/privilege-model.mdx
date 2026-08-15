@@ -80,7 +80,7 @@ GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
 
 The `system.user_directories` grant on both users exists for one diagnostic: `clicklink clctl preflight` runs with the connector's own credentials and checks how the instance stores its ClickHouse users (replicated or local). The table holds user-storage configuration metadata, not user data, and neither the scrape set nor the session table allowlist includes it, so no scrape or session output path reads it; without the grant, that one preflight check reports itself skipped and everything else proceeds.
 
-There are no write, DDL, or administrative grants of any kind. When a second connector deployment shares an instance, its users carry a suffix (`pcm_scraper_<suffix>`) with the same grant sets.
+Beyond per-table `SELECT`, the one system-level grant is the scraper's `SYSTEM FLUSH LOGS`: it forces the `*_log` system tables to persist buffered entries to disk so scrapes see current data, and does nothing else; ClickHouse only honors it for log tables even though it only accepts the grant at the global scope. There are no `INSERT`, DDL, user-management, settings, or process-control grants. When a second connector deployment shares an instance, its users carry a suffix (`pcm_scraper_<suffix>`) with the same grant sets.
 
 ### Kubernetes RBAC {#kubernetes-rbac}
 
@@ -96,7 +96,7 @@ The chart creates namespace-scoped Roles only; there is no ClusterRole or Cluste
 
 ## What the connector cannot do {#what-the-connector-cannot-do}
 
-- **No writes to ClickHouse.** The grants above contain no `INSERT`, no DDL, and no administrative privileges. The connector cannot modify data, schemas, users, or settings.
+- **No writes to ClickHouse data or state.** The grants above contain no `INSERT`, no DDL, and no user-management, settings, or process-control privileges; the single system-class grant, the scraper's `SYSTEM FLUSH LOGS`, only makes log tables persist what they already buffer. The connector cannot modify data, schemas, users, or settings.
 - **No exec.** The RBAC contains no `pods/exec`; the connector cannot run commands in your pods.
 - **No delete, no patch.** The only write verb in the entire RBAC is the exact-name `update` on the connector's own mTLS Secret.
 - **No cluster scope.** Every Role is bound in a namespace; the connector cannot list or read resources outside the namespaces you granted.

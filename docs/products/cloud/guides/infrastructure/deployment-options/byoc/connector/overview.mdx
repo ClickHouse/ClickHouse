@@ -38,7 +38,7 @@ From then on, the scraper periodically reads the allowlisted system tables and s
 ## Requirements at a glance {#requirements-at-a-glance}
 
 - **A deployment target.** Any conformant Kubernetes cluster (installed with the Helm chart) or any systemd Linux host, amd64 or arm64.
-- **Outbound network access on port 443** to your connector endpoint and its enrollment endpoint, plus `releases.clicklink.clickhouse.com` and ECR Public at install time.
+- **Outbound network access on port 443** to your connector endpoint and its enrollment endpoint, plus `releases.clicklink.clickhouse.com` and ECR Public at install time. This is the standard path; air-gapped and mirrored alternatives exist for every step, see [onboarding](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/onboarding).
 - **A reachable ClickHouse native listener.** The connector talks to each cluster over the native protocol; on Kubernetes it auto-detects secure (9440) or plaintext (9000).
 - **An enrollment token.** ClickHouse provides your connector endpoint and a single-use enrollment token during onboarding.
 - **ClickHouse admin access during setup.** Initial provisioning creates the connector's read-only users. An admin password, when one is set, is prompted once and never stored.
