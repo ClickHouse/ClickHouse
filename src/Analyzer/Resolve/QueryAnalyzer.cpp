@@ -862,7 +862,7 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
 
             const bool has_sample_clause = table_expression_modifiers->hasSampleSizeRatio();
             const bool supports_native_sampling = storage->supportsSampling();
-            const bool supports_bernoulli_sampling = storage->isMergeTree()
+            const bool supports_bernoulli_sampling = storage->supportsBernoulliSampling()
                 && scope.context->getSettingsRef()[Setting::allow_experimental_bernoulli_sample];
 
             if (has_sample_clause && !supports_native_sampling && !supports_bernoulli_sampling)

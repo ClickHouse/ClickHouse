@@ -187,6 +187,19 @@ SELECT count() FROM t_bernoulli_alias SAMPLE 0.1 SETTINGS bernoulli_sample_seed 
 DROP TABLE t_bernoulli_alias;
 DROP TABLE t_bernoulli_alias_target;
 
+SELECT 'bernoulli through lazy table proxy';
+-- A re-attached table from a database with `lazy_load_tables = 1` is a `StorageTableProxy`.
+-- It must delegate the Bernoulli capability to the nested `MergeTree`, rather than losing
+-- `SAMPLE` just because the wrapper itself is not a MergeTree engine.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_bernoulli_lazy (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_bernoulli_lazy SELECT number FROM numbers(100000);
+DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_bernoulli_lazy SAMPLE 0.1 SETTINGS bernoulli_sample_seed = 42;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
 SELECT 'prewhere with bernoulli';
 SELECT count() FROM t_bernoulli SAMPLE 0.1 PREWHERE x >= 50000 SETTINGS bernoulli_sample_seed = 42;
 

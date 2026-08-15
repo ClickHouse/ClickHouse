@@ -120,6 +120,12 @@ public:
             return destination->supportsSampling();
         return true;
     }
+    bool supportsBernoulliSampling() const override
+    {
+        if (auto destination = getDestinationTable())
+            return destination->supportsBernoulliSampling();
+        return false;
+    }
     bool supportsPrewhere() const override;
     /// read() hands the built PREWHERE to the destination (converting declared-type differences
     /// with a prefix), so a column must exist there and be allowed by the destination's own

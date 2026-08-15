@@ -904,9 +904,9 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 sampling_requested = query_info.table_expression_modifiers->hasSampleSizeRatio();
 
             /// If sampling requested, then check that table supports it.
-            /// Bernoulli sampling works on any MergeTree table even without a SAMPLE BY key.
+            /// Bernoulli sampling works on any storage that delegates to a MergeTree table without a SAMPLE BY key.
             if (sampling_requested && !storage->supportsSampling()
-                && !(storage->isMergeTree() && modified_context->getSettingsRef()[Setting::allow_experimental_bernoulli_sample]))
+                && !(storage->supportsBernoulliSampling() && modified_context->getSettingsRef()[Setting::allow_experimental_bernoulli_sample]))
                 throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table {} doesn't support sampling", storage->getStorageID().getNameForLogs());
 
             Aliases aliases;

@@ -51,6 +51,8 @@ bernoulli with merge table
 9913
 bernoulli through alias to merge tree
 9913
+bernoulli through lazy table proxy
+9913
 prewhere with bernoulli
 4955
 sample by key dominates the experimental flag
