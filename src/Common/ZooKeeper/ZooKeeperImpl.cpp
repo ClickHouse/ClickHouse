@@ -519,8 +519,8 @@ ZooKeeper::ZooKeeper(
 
     try
     {
-        send_thread = ThreadFromGlobalPool([this] { sendThread(); });
-        receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
+        send_thread = ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { sendThread(); });
+        receive_thread = ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { receiveThread(); });
 
         initFeatureFlags();
         keeper_feature_flags.logFlags(log, DB::LogsLevel::debug);
