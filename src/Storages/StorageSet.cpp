@@ -52,9 +52,15 @@ public:
     String getName() const override { return "SetOrJoinSink"; }
     void consume(Chunk & chunk) override;
     void onFinish() override;
+    void onException(std::exception_ptr exception) override;
 
 private:
     void cancelBuffers() noexcept;
+
+    /// Cancel the buffers and remove the staged file. Only `onFinish` promotes it into the
+    /// table directory, so a staged file left behind by a failed `INSERT` would never be read
+    /// again (`restore` scans `path`, not `path/tmp`) and would keep its blobs alive forever.
+    void discardStagedBackup() noexcept;
 
     StorageSetOrJoinBase & table;
     StorageMetadataPtr metadata_snapshot;
@@ -90,7 +96,7 @@ SetOrJoinSink::SetOrJoinSink(
 SetOrJoinSink::~SetOrJoinSink()
 {
     if (isCancelled())
-        cancelBuffers();
+        discardStagedBackup();
 }
 
 void SetOrJoinSink::cancelBuffers() noexcept
@@ -99,6 +105,41 @@ void SetOrJoinSink::cancelBuffers() noexcept
         compressed_backup_buf->cancel();
     if (backup_buf)
         backup_buf->cancel();
+}
+
+void SetOrJoinSink::discardStagedBackup() noexcept
+{
+    if (!backup_buf)
+        return;
+
+    cancelBuffers();
+
+    /// The buffers are cancelled above, so nothing writes to the file after this point. Cancelling
+    /// leaves nothing behind on object storage (the metadata file is created on finalize), but a
+    /// local disk keeps whatever was flushed, so remove the file explicitly in both cases.
+    try
+    {
+        table.disk->removeFileIfExists(fs::path(backup_tmp_path) / backup_file_name);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            getLogger("SetOrJoinSink"),
+            fmt::format(
+                "Cannot remove the staged backup file {} of table {} on disk {}",
+                fs::path(backup_tmp_path) / backup_file_name,
+                table.getStorageID().getNameForLogs(),
+                table.disk->getName()));
+    }
+
+    backup_stream.reset();
+    compressed_backup_buf.reset();
+    backup_buf.reset();
+}
+
+void SetOrJoinSink::onException(std::exception_ptr)
+{
+    discardStagedBackup();
 }
 
 
