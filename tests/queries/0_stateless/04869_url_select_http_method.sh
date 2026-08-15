@@ -24,6 +24,7 @@ TAG_PUT_READ="${CLICKHOUSE_DATABASE}_62352_put_read"
 TAG_ENGINE="${CLICKHOUSE_DATABASE}_62352_engine"
 TAG_INFER="${CLICKHOUSE_DATABASE}_62352_infer"
 TAG_CACHE="${CLICKHOUSE_DATABASE}_62352_cache"
+TAG_CACHEKEY="${CLICKHOUSE_DATABASE}_62352_cachekey"
 # Named collections are server-global: derive unique-per-run names to survive the
 # flaky check running this test repeatedly and concurrently.
 NC_MAIN="nc_${CLICKHOUSE_DATABASE}_62352"
@@ -157,6 +158,15 @@ $CLICKHOUSE_CLIENT -q "DETACH TABLE url_roundtrip_62352"
 $CLICKHOUSE_CLIENT -q "ATTACH TABLE url_roundtrip_62352"
 $CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE url_roundtrip_62352" | grep -c "http_method"
 $CLICKHOUSE_CLIENT -q "DROP TABLE url_roundtrip_62352"
+
+# 14. The schema-cache key includes the effective read method. Checked with the
+#     modification-time requirement disabled, i.e. on the path where entries are actually
+#     reused: the same URL must still keep separate entries for GET and POST.
+CACHE_URL="${CLICKHOUSE_URL}&query=SELECT+9+AS+x+FORMAT+TSVWithNamesAndTypes&log_comment=${TAG_CACHEKEY}"
+CACHE_OPT="--schema_inference_use_cache_for_url=1 --schema_inference_cache_require_modification_time_for_url=0"
+$CLICKHOUSE_CLIENT $SETTINGS_OPT $CACHE_OPT -q "SELECT * FROM url('${CACHE_URL}', 'TSVWithNamesAndTypes')"
+$CLICKHOUSE_CLIENT $SETTINGS_OPT $CACHE_OPT -q "SELECT * FROM url('${CACHE_URL}', 'TSVWithNamesAndTypes', http_method='POST')"
+$CLICKHOUSE_CLIENT -q "SELECT countDistinct(source), countIf(source LIKE 'POST:%') FROM system.schema_inference_cache WHERE storage = 'URL' AND source LIKE '%${TAG_CACHEKEY}%'"
 
 # Verify the methods that were actually used, per tag.
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
