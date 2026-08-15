@@ -2204,6 +2204,7 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         ctx->new_data_part.get(),
         ctx->compression_codec,
         ++projection_block_num,
+        /*use_selected_codec=*/ ctx->source_part->default_codec_is_approximate,
         ctx->context);
 
     tmp_part->finalize();

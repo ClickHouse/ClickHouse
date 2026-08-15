@@ -1114,7 +1114,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     CompressionCodecPtr compression_codec,
     MergeTreeIndices indices,
     bool merge_is_needed,
-    bool try_adaptive_codec)
+    bool try_adaptive_codec,
+    bool use_selected_codec)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     const auto & metadata_snapshot = projection.metadata;
@@ -1223,7 +1224,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     /// post-flip part whose real default is `LZ4` but which recovers as `ZSTD(1)` would have its
     /// projection permanently relabelled after one rebuild. Nothing of the parent is reused for the
     /// projection data, so in that case choose the codec independently, exactly as a fresh write does.
-    if (parent_part->default_codec_is_approximate && compression_codec == parent_part->default_codec)
+    if (parent_part->default_codec_is_approximate && !use_selected_codec)
     {
         /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected here, matching the
         /// insert path; `expected_size` is the same upper bound used for the part format above.
@@ -1305,6 +1306,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     IMergeTreeDataPart * parent_part,
     CompressionCodecPtr compression_codec,
     size_t block_num,
+    bool use_selected_codec,
     ContextPtr context)
 {
     const auto & table_settings = data.getSettings();
@@ -1326,7 +1328,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         std::move(compression_codec),
         std::move(indices),
         /*merge_is_needed=*/ true,
-        /*try_adaptive_codec=*/ true);
+        /*try_adaptive_codec=*/ true,
+        use_selected_codec);
 
     new_part->part->temp_projection_block_number = block_num;
     return new_part;

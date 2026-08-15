@@ -841,8 +841,14 @@ def test_default_codec_approximate_when_recovered_from_column_data(start_cluster
     data_path = node5.query(
         "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='approximate_default_codec'"
     ).strip()
+    # Removing `checksums.txt` makes the loader regenerate it. Recovery must still inspect the
+    # default-coded column first: the regenerated file has no write-time codec provenance.
     node5.exec_in_container(
-        ["rm", f"{data_path}detached/{part_name}/default_compression_codec.txt"]
+        [
+            "rm",
+            f"{data_path}detached/{part_name}/default_compression_codec.txt",
+            f"{data_path}detached/{part_name}/checksums.txt",
+        ]
     )
 
     node5.query(f"ALTER TABLE approximate_default_codec ATTACH PART '{part_name}'")
@@ -936,6 +942,10 @@ def test_default_codec_provenance_survives_column_only_mutation(start_cluster):
     """
     )
 
+    node5.query(
+        "ALTER TABLE codec_provenance_mutation ADD PROJECTION by_data (SELECT key, data ORDER BY data)"
+    )
+
     # The recompression TTL is due for the row inserted below, so hold TTL merges back until the setup
     # is complete. This blocker does not affect mutations.
     node5.query("SYSTEM STOP TTL MERGES codec_provenance_mutation")
@@ -1004,6 +1014,17 @@ def test_default_codec_provenance_survives_column_only_mutation(start_cluster):
             ]
         ).strip()
         == "absent"
+    )
+
+    # A projection rebuilt by the column-only mutation must use the writer's exact recompression
+    # codec, rather than treating pointer identity with the approximate parent estimate as a signal
+    # to choose a fresh codec independently.
+    assert (
+        node5.query(
+            "SELECT default_compression_codec FROM system.projection_parts WHERE database='default' "
+            "AND table='codec_provenance_mutation' AND name='by_data' AND active AND rows > 0"
+        ).strip()
+        == "ZSTD(1)"
     )
 
     # Reloading recovers a part-wide estimate again rather than converting the codec chosen for

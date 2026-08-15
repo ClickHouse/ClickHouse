@@ -1953,7 +1953,7 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
             /// no column proves the codec either, determine whether this is a legacy part from
             /// `checksums.txt`. A post-change part with an unusable codec file has no authoritative
             /// fallback and must not be silently relabelled with an unrelated codec.
-            default_codec = detectDefaultCompressionCodec(detectDefaultCompressionCodecFromChecksums());
+            default_codec = detectDefaultCompressionCodec([&] { return detectDefaultCompressionCodecFromChecksums(); });
             return;
         }
 
@@ -1969,7 +1969,7 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
             /// Same recovery as the malformed-content branch above and the missing-file branch
             /// below. A post-change part with no column proof must fail closed rather than report
             /// an unrelated default codec.
-            default_codec = detectDefaultCompressionCodec(detectDefaultCompressionCodecFromChecksums());
+            default_codec = detectDefaultCompressionCodec([&] { return detectDefaultCompressionCodecFromChecksums(); });
         }
     }
     else
@@ -1978,7 +1978,7 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         /// (every column has an explicit `CODEC`), only a legacy pre-change part can be recovered
         /// safely. A post-change part must contain this file; otherwise its actual default is no
         /// longer recorded on disk, so fail closed instead of reporting a guess.
-        default_codec = detectDefaultCompressionCodec(detectDefaultCompressionCodecFromChecksums());
+        default_codec = detectDefaultCompressionCodec([&] { return detectDefaultCompressionCodecFromChecksums(); });
     }
 }
 
@@ -2120,7 +2120,7 @@ void IMergeTreeDataPart::removeMetadataVersion()
     getDataPartStorage().removeFileIfExists(METADATA_VERSION_FILE_NAME);
 }
 
-CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const CompressionCodecPtr & fallback_codec) const
+CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const std::function<CompressionCodecPtr()> & get_fallback_codec) const
 {
     /// Consult the metadata that actually describes this part's columns: for a projection part the
     /// table's columns say nothing about the projection's columns (which can be expressions such as
@@ -2179,7 +2179,10 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const Comp
         {
             /// It was compressed with default codec and it's not empty.
             auto column_size = getColumnSize(part_column.name);
-            if (column_size.data_compressed != 0 && is_default_coded(part_column.name))
+            /// Compact parts account all column data in the shared `data.bin`, so their per-column
+            /// compressed sizes are always zero. After verifying above that every stored column is
+            /// default-coded, its nonempty shared file proves the codec independently of those sizes.
+            if ((column_size.data_compressed != 0 || getType() == MergeTreeDataPartType::Compact) && is_default_coded(part_column.name))
             {
                 String path_to_data_file;
                 getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
@@ -2251,7 +2254,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const Comp
 
     if (!result)
     {
-        result = fallback_codec;
+        result = get_fallback_codec();
         default_codec_is_approximate = true;
     }
 

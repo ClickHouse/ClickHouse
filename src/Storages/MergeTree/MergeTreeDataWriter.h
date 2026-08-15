@@ -129,6 +129,7 @@ public:
         IMergeTreeDataPart * parent_part,
         CompressionCodecPtr compression_codec,
         size_t block_num,
+        bool use_selected_codec,
         ContextPtr context);
 
     static Block mergeBlock(
@@ -158,7 +159,8 @@ private:
         CompressionCodecPtr compression_codec,
         MergeTreeIndices indices,
         bool merge_is_needed,
-        bool try_adaptive_codec);
+        bool try_adaptive_codec,
+        bool use_selected_codec = false);
 
     MergeTreeData & data;
     LoggerPtr log;

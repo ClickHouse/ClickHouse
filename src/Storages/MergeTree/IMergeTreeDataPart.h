@@ -961,8 +961,8 @@ private:
     void writeMetadata(const String & filename, const WriteSettings & settings, Writer && writer);
 
     /// Find a column that was compressed with the default codec and return that codec.
-    /// If no such column exists (every column has an explicit CODEC), returns `fallback_codec`.
-    CompressionCodecPtr detectDefaultCompressionCodec(const CompressionCodecPtr & fallback_codec) const;
+    /// If no such column exists (every column has an explicit `CODEC`), invokes `get_fallback_codec`.
+    CompressionCodecPtr detectDefaultCompressionCodec(const std::function<CompressionCodecPtr()> & get_fallback_codec) const;
 
     /// Recover the default codec of a part whose `default_compression_codec.txt` file is unusable
     /// (missing or malformed) and no column proves the codec, by reading the codec of `checksums.txt`
