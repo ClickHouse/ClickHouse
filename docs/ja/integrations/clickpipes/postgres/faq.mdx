@@ -86,20 +86,7 @@ ALTER TABLE your_table_name REPLICA IDENTITY FULL;
   ### パブリック IP を持たない、またはプライベートネットワーク内にある Postgres データベースに接続できますか？
 </div>
 
-はい。ClickPipes for Postgres では、プライベートネットワーク内のデータベースに接続するための方法を 2 つ用意しています。
-
-1. **SSH トンネリング**
-   * ほとんどのユースケースに適しています
-   * セットアップ手順は[こちら](/ja/integrations/clickpipes/postgres/index#adding-your-source-postgres-database-connection)をご覧ください
-   * すべてのリージョンで利用できます
-
-2. **AWS PrivateLink**
-   * 次の 3 つの AWS リージョンで利用できます。
-     * us-east-1
-     * us-east-2
-     * eu-central-1
-   * 詳しいセットアップ手順については、[PrivateLink ドキュメント](/ja/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)をご覧ください
-   * PrivateLink を利用できないリージョンでは、SSH トンネリングを使用してください
+はい。パブリックインターネットに公開されていないデータソースに ClickPipes が接続する方法については、[ClickPipes ネットワーキング](/ja/integrations/clickpipes/networking)をご覧ください。
 
 <div id="how-do-you-handle-updates-and-deletes">
   ### UPDATE と DELETE はどのように処理されますか？
