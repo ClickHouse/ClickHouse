@@ -81,13 +81,17 @@ void forceAnonymousS3DiskConfigAtPrefix(Poco::Util::AbstractConfiguration & conf
 /// anonymous when loading from existing metadata (see `s3_load_table_anonymously_if_credentials_restricted`).
 void validateResolvedS3DiskCredentials(Poco::Util::AbstractConfiguration & config, ContextPtr context, bool is_loading_from_existing_metadata, const DynamicS3DiskCredentialInfo & info);
 
-/// The native GCS analogue of `validateResolvedS3DiskCredentials`: re-apply the GCS credential restrictions
-/// after `include` is resolved, so an `include` cannot inject a `gcs` backend with `service_account_key_file`
-/// (a server-side file read), server-managed credential fields, or Application Default Credentials past the
-/// pre-resolution AST checks. The former two checks are unconditional; the ADC check follows
-/// `s3_allow_server_credentials_in_user_queries` and throws `ACCESS_DENIED` (fail-closed) when restricted.
+/// Resolve the native GCS backend after `include`, `from_env`, and `from_zk` are processed. This enforces the
+/// experimental feature gate on the actual backend, then re-applies GCS credential restrictions after `include`
+/// so it cannot inject a `gcs` backend with `service_account_key_file` (a server-side file read),
+/// server-managed credential fields, or authentication headers past the pre-resolution AST checks. The former
+/// checks are unconditional; the ADC and header checks follow `s3_allow_server_credentials_in_user_queries`
+/// and throw `ACCESS_DENIED` (fail-closed) when restricted.
 void validateResolvedGCSDiskCredentials(
-    const Poco::Util::AbstractConfiguration & config, ContextPtr context, const DynamicS3DiskCredentialInfo & info);
+    const Poco::Util::AbstractConfiguration & config,
+    ContextPtr context,
+    bool is_loading_from_existing_metadata,
+    const DynamicS3DiskCredentialInfo & info);
 
 /*
  * A reverse function.
