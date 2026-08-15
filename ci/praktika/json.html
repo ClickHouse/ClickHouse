@@ -2675,13 +2675,12 @@
                     // For single-level results, check json0 status
                     shouldContinue = ["running", "pending"].includes((runtimeCache?.json0?.status || '').toLowerCase());
                 } else if (nameParams?.length === 2) {
-                    // For two-level results, check json1 status (or json0 if json1 is null)
-                    if (runtimeCache?.json1) {
-                        shouldContinue = ["running", "pending"].includes((runtimeCache?.json1?.status || '').toLowerCase());
-                    } else {
-                        // If json1 is null, we might still be loading, so continue
-                        shouldContinue = true;
-                    }
+                    // For two-level results, check the status of the node actually rendered
+                    const target = runtimeCache?.json1 || getTargetResults(nameParams);
+                    // An unresolved target means nothing is loaded yet, so keep polling.
+                    shouldContinue = target
+                        ? ["running", "pending"].includes((target.status || '').toLowerCase())
+                        : true;
                 }
 
                 if (!shouldContinue) {
