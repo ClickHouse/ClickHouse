@@ -155,13 +155,21 @@ static std::pair<size_t, size_t> estimateRepeatedCompressedColumnSize(const Colu
     };
 
     const auto [one_copy_sample_bytes, one_copy_compressed_bytes] = serialize_copies(1);
+    const size_t estimated_one_copy_bytes = limit == column_to_write->size()
+        ? one_copy_sample_bytes
+        : static_cast<size_t>(
+              static_cast<double>(one_copy_sample_bytes) * static_cast<double>(column_to_write->size()) / static_cast<double>(limit));
 
     static constexpr size_t max_repeated_sample_bytes = 1024 * 1024;
     const size_t measured_repetitions
         = std::min(repetitions, std::max<size_t>(1, max_repeated_sample_bytes / std::max<size_t>(one_copy_sample_bytes, 1)));
 
     size_t compressed_bytes = one_copy_compressed_bytes;
-    if (measured_repetitions == 1)
+    /// A truncated sample can fit in LZ4's 64 KiB match window even when a materialized copy cannot.
+    /// Measuring repeated samples in that shape would falsely carry their cross-copy compression over to
+    /// the actual output, so retain the one-copy ratio instead.
+    static constexpr size_t lz4_match_window = 64 * 1024;
+    if (estimated_one_copy_bytes > lz4_match_window || measured_repetitions == 1)
     {
         /// A single copy already exhausts the measurement budget. Do not serialize another giant
         /// payload merely to estimate its marginal compressed size; conservatively assume that the

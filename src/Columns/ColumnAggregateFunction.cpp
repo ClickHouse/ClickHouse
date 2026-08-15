@@ -562,6 +562,10 @@ ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledState
     /// size of the compressed data that reached the underlying buffer.
     const size_t one_copy_sample_bytes = compressed_buf.count();
     const size_t one_copy_compressed_bytes = null_buf.count();
+    const size_t estimated_one_copy_bytes = serialized_states == rows
+        ? one_copy_sample_bytes
+        : static_cast<size_t>(
+              static_cast<double>(one_copy_sample_bytes) * static_cast<double>(rows) / static_cast<double>(serialized_states));
 
     res.sample_bytes = one_copy_sample_bytes * repetitions;
     res.bytes = serialized_states == rows
@@ -571,46 +575,57 @@ ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledState
     res.bytes *= repetitions;
 
     size_t compressed = one_copy_compressed_bytes;
+    /// LZ4 cannot reference data farther than 64 KiB back. A truncated sample may fit in that window even
+    /// though one materialized copy does not; measuring repetitions of such a sample would then invent
+    /// cross-copy compression that the actual output cannot have. Keep the one-copy ratio in that case.
+    static constexpr size_t lz4_match_window = 64 * 1024;
     if (repetitions > 1)
     {
-        /// The wire repeats the same serialized payload, and identical copies compress to almost nothing
-        /// while they fit the codec's match window - and not at all once a copy outgrows it - so the
-        /// repetitions have to be measured, not scaled: scaling the one-copy figure would pin the repeated
-        /// payload's compression ratio to one copy's. Serialize the same sample enough times to observe
-        /// the marginal cost of one more copy, and extrapolate the remaining copies from it.
-        static constexpr size_t max_repeated_sample_bytes = 1024 * 1024;
-        const size_t measured_repetitions = std::min(
-            repetitions, std::max<size_t>(1, max_repeated_sample_bytes / std::max<size_t>(one_copy_sample_bytes, 1)));
-
-        if (measured_repetitions == 1)
+        if (estimated_one_copy_bytes > lz4_match_window)
         {
-            /// A single copy already exhausts the measurement budget. Do not serialize another giant
-            /// state merely to estimate its marginal compressed size; conservatively assume that the
-            /// remaining copies do not compress against it.
             compressed = one_copy_compressed_bytes * repetitions;
         }
         else
         {
-            NullWriteBuffer repeated_null_buf;
-            CompressedWriteBuffer repeated_compressed_buf(repeated_null_buf);
-            for (size_t repetition = 0; repetition < measured_repetitions; ++repetition)
-                for (size_t i = 0; i < rows; i += period)
-                    func->serialize(data[i], repeated_compressed_buf, version);
-            repeated_compressed_buf.finalize();
-            const size_t measured_compressed_bytes = repeated_null_buf.count();
+            /// The wire repeats the same serialized payload, and identical copies compress to almost nothing
+            /// while they fit the codec's match window - and not at all once a copy outgrows it - so the
+            /// repetitions have to be measured, not scaled: scaling the one-copy figure would pin the repeated
+            /// payload's compression ratio to one copy's. Serialize the same sample enough times to observe
+            /// the marginal cost of one more copy and extrapolate the remaining copies from it.
+            static constexpr size_t max_repeated_sample_bytes = 1024 * 1024;
+            const size_t measured_repetitions = std::min(
+                repetitions, std::max<size_t>(1, max_repeated_sample_bytes / std::max<size_t>(one_copy_sample_bytes, 1)));
 
-            if (measured_repetitions == repetitions)
-                compressed = measured_compressed_bytes;
+            if (measured_repetitions == 1)
+            {
+                /// A single copy already exhausts the measurement budget. Do not serialize another giant
+                /// state merely to estimate its marginal compressed size; conservatively assume that the
+                /// remaining copies do not compress against it.
+                compressed = one_copy_compressed_bytes * repetitions;
+            }
             else
             {
-                /// The per-block framing of both measurements cancels out in the difference, so the marginal
-                /// figure is the copies' own compressed size.
-                const double marginal_compressed_bytes_per_copy = measured_compressed_bytes > one_copy_compressed_bytes
-                    ? static_cast<double>(measured_compressed_bytes - one_copy_compressed_bytes)
-                        / static_cast<double>(measured_repetitions - 1)
-                    : 0.0;
-                compressed = one_copy_compressed_bytes
-                    + static_cast<size_t>(marginal_compressed_bytes_per_copy * static_cast<double>(repetitions - 1));
+                NullWriteBuffer repeated_null_buf;
+                CompressedWriteBuffer repeated_compressed_buf(repeated_null_buf);
+                for (size_t repetition = 0; repetition < measured_repetitions; ++repetition)
+                    for (size_t i = 0; i < rows; i += period)
+                        func->serialize(data[i], repeated_compressed_buf, version);
+                repeated_compressed_buf.finalize();
+                const size_t measured_compressed_bytes = repeated_null_buf.count();
+
+                if (measured_repetitions == repetitions)
+                    compressed = measured_compressed_bytes;
+                else
+                {
+                    /// The per-block framing of both measurements cancels out in the difference, so the marginal
+                    /// figure is the copies' own compressed size.
+                    const double marginal_compressed_bytes_per_copy = measured_compressed_bytes > one_copy_compressed_bytes
+                        ? static_cast<double>(measured_compressed_bytes - one_copy_compressed_bytes)
+                            / static_cast<double>(measured_repetitions - 1)
+                        : 0.0;
+                    compressed = one_copy_compressed_bytes
+                        + static_cast<size_t>(marginal_compressed_bytes_per_copy * static_cast<double>(repetitions - 1));
+                }
             }
         }
     }

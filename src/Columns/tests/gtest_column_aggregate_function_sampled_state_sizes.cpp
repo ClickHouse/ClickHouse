@@ -145,6 +145,27 @@ ColumnAggregateFunction::MutablePtr createDistinctGroupArrayColumn(size_t elemen
     return column;
 }
 
+ColumnAggregateFunction::MutablePtr createDistinctGroupArrayRows(size_t rows, size_t elements_per_row)
+{
+    AggregateFunctionProperties properties;
+    auto function = AggregateFunctionFactory::instance().get(
+        "groupArray", NullsAction::EMPTY, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{}, properties);
+
+    auto column = ColumnAggregateFunction::create(function);
+    auto values = ColumnUInt64::create();
+    for (size_t i = 0; i < elements_per_row; ++i)
+        values->insert(UInt64(i) * 0x9E3779B97F4A7C15ULL);
+    const IColumn * arguments[1] = {values.get()};
+
+    for (size_t row = 0; row < rows; ++row)
+    {
+        column->insertDefault();
+        for (size_t i = 0; i < elements_per_row; ++i)
+            column->getAggregateFunction()->add(column->getData()[row], arguments, i, &column->createOrGetArena());
+    }
+    return column;
+}
+
 }
 
 /// `NativeWriter::writeData` materializes a constant column, so a state-bearing `ColumnConst` puts its
@@ -198,6 +219,24 @@ TEST(ColumnAggregateFunctionSampledStateSizes, RepeatedGiantPayloadStaysIncompre
     EXPECT_EQ(repeated.sample_bytes, one_copy.sample_bytes * repetitions);
     EXPECT_GE(repeated.compressed_bytes * 2, repeated.sample_bytes);
     EXPECT_LE(repeated.compressed_bytes, repeated.sample_bytes);
+}
+
+/// A truncated sample can fall inside LZ4's match window even though one materialized copy does not.
+/// Its repetitions must not provide an optimistic cross-copy compression ratio for the full payload.
+TEST(ColumnAggregateFunctionSampledStateSizes, RepeatedTruncatedPayloadDoesNotCompressAcrossCopies)
+{
+    tryRegisterAggregateFunctions();
+
+    auto column = createDistinctGroupArrayRows(/*rows=*/128, /*elements_per_row=*/128);
+    const auto one_copy = column->sampledStateSizes(/*max_states_to_serialize=*/1);
+    ASSERT_LT(one_copy.sample_bytes, 64 * 1024u);
+    ASSERT_GT(one_copy.bytes, 64 * 1024u);
+
+    constexpr size_t repetitions = 32;
+    const auto repeated = column->sampledStateSizes(/*max_states_to_serialize=*/1, repetitions);
+
+    EXPECT_EQ(repeated.sample_bytes, one_copy.sample_bytes * repetitions);
+    EXPECT_EQ(repeated.compressed_bytes, one_copy.compressed_bytes * repetitions);
 }
 
 TEST(ColumnAggregateFunctionSampledStateSizes, EmptyColumn)
