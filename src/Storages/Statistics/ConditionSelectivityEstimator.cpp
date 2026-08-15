@@ -18,6 +18,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/UTF8Helpers.h>
@@ -462,6 +463,19 @@ bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & dat
     for (const auto & data_part : data_parts)
     {
         if (parts_names[idx++] != data_part->name)
+            return true;
+    }
+    return false;
+}
+
+bool ConditionSelectivityEstimator::isStale(const RangesInDataParts & parts) const
+{
+    if (parts.size() != parts_names.size())
+        return true;
+    size_t idx = 0;
+    for (const auto & part : parts)
+    {
+        if (parts_names[idx++] != part.data_part->name)
             return true;
     }
     return false;
