@@ -135,4 +135,3 @@ SELECT if(explain like '%ReadType: InReverseOrder%', 'Error: ' || explain, 'Ok')
 SELECT x, y FROM t_reverse_final FINAL ORDER BY x DESC;
 
 DROP TABLE t_reverse_final;
-
