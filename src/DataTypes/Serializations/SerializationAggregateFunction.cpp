@@ -744,6 +744,17 @@ void SerializationAggregateFunction::deserializeTextCSV(IColumn & column, ReadBu
         return;
     }
 
+    if (useLegacyNullableValueParsing(function, settings))
+    {
+        /// Released `CSV` parsing unwrapped the complete field before parsing a single `Nullable` argument
+        /// with its CSV serialization. Preserve its handling of a quoted CSV null representation such as
+        /// `"\\N"`, which otherwise reaches `SerializationNullable::deserializeTextCSV` with the quotes.
+        String s;
+        readCSV(s, istr, settings.csv);
+        deserializeFromSingleNullableArgumentLegacyValue(column, s, settings, function);
+        return;
+    }
+
     auto method = DESERIALIZE_METHOD(deserializeTextCSV);
     deserializeFromValues<method>(column, istr, settings, function);
 }
