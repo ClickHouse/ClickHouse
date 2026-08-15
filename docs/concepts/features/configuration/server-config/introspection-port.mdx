@@ -47,7 +47,7 @@ The stack must end in a `tcp` layer, because the semantics below are implemented
 
 ## Behavior {#behavior}
 
-- Only diagnostic queries are accepted: `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `EXISTS`, `KILL QUERY`, `SYSTEM`, `SET` and `USE`. Anything that creates, changes or removes state is rejected with `QUERY_IS_PROHIBITED`, because the port is open while the server state is either not fully constructed or being torn down.
+- Accepted queries are `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `EXISTS`, `KILL QUERY`, `SYSTEM`, `SET` and `USE`. Everything else, including DDL and data-modifying queries, is rejected with `QUERY_IS_PROHIBITED`, because the port is open while the server state is either not fully constructed or being torn down.
 - `SYSTEM RELOAD CONFIG` and `SYSTEM RELOAD USERS` are rejected with `QUERY_IS_PROHIBITED` until the server is completely started, because reloading the configuration during startup may break the initialization order.
 - Queries on these ports bypass `max_concurrent_queries` and the workload scheduler, like `SHOW PROCESSLIST` does.
 - Connections are served by a dedicated thread pool, so exhaustion of the regular connection pool does not affect these ports. The pool is sized by `max_connections`.
