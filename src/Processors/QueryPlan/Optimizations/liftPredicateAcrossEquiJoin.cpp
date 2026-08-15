@@ -38,6 +38,8 @@ const QueryPlan::Node * walkDown(const QueryPlan::Node * node, Predicate && pred
     return nullptr;
 }
 
+std::string resolveToFilterInput(const QueryPlan::Node * node, std::string name);
+
 const FilterStep * findFilterBelow(const QueryPlan::Node * node)
 {
     const auto * found = walkDown(node, [](const auto * n)
@@ -80,7 +82,8 @@ bool atomCanUseTargetPrimaryKey(
         if (child->type != ActionsDAG::ActionType::INPUT)
             continue;
         const auto it = substitution.find(child->result_name);
-        if (it == substitution.end() || !primary_key_columns.contains(it->second.name))
+        if (it == substitution.end()
+            || !primary_key_columns.contains(resolveToFilterInput(target_root, it->second.name)))
             return false;
     }
     return true;
