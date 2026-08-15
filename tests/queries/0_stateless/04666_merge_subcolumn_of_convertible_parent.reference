@@ -72,6 +72,8 @@ row policy hides an unconvertible default parent value, subcolumns off
 5	5
 row policy hides an unconvertible default parent value, subcolumns on
 5
+the distributed child is planned as a remote read
+1
 an unconvertible parent value behind a distributed child throws without the policy
 row policy on a distributed child hides an unconvertible parent value
 5
