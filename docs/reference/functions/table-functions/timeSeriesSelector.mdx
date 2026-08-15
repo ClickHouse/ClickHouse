@@ -28,11 +28,10 @@ timeSeriesSelector('time_series_table', 'instant_query', min_time, max_time)
 
 ## Returned value {#returned-value}
 
-The function returns four columns:
+The function returns three columns:
 - `id` - Contains the identifiers of time series matching the specified selector.
 - `timestamp` - Contains timestamps.
 - `value` - Contains values.
-- `is_stale_marker` - Whether this sample is a Prometheus staleness marker.
 
 There is no specific order for returned data.
 
