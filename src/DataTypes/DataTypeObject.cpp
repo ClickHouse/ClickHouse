@@ -983,14 +983,18 @@ DataTypePtr DataTypeObject::getTypeOfNestedObjects(const String & path_prefix_fr
         if (path.size() > path_prefix_from_root.size() && path.starts_with(path_prefix_from_root))
             nested_paths_to_skip.insert(path.substr(path_prefix_from_root.size()));
 
-    if (shared_data_path_rules.empty() && nested_typed_paths.empty() && nested_paths_to_skip.empty())
+    /// Unlike literal SKIP paths, a SKIP REGEXP pattern isn't tied to one specific prefix -- it's
+    /// evaluated against the reconstructed root-relative path the same way SHARED REGEXP is (see
+    /// ObjectJSONNode::shouldSkipPath in JSONExtractTree.cpp), so it carries through unchanged
+    /// rather than being filtered/stripped by prefix membership.
+    if (shared_data_path_rules.empty() && nested_typed_paths.empty() && nested_paths_to_skip.empty() && path_regexps_to_skip.empty())
         return getTypeOfNestedObjects();
 
     return std::make_shared<DataTypeObject>(
         schema_format,
         std::move(nested_typed_paths),
         std::move(nested_paths_to_skip),
-        std::vector<String>{},
+        path_regexps_to_skip,
         max_dynamic_paths / NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR,
         max_dynamic_types / NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR,
         shared_data_path_rules,

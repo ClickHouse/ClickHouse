@@ -2239,17 +2239,38 @@ private:
                 return true;
         }
 
-        for (const auto & regexp : path_regexps_to_skip)
+        if (!path_regexps_to_skip.empty())
         {
-            if (insert_settings.use_partial_match_to_skip_paths_by_regexp)
+            /// SKIP REGEXP patterns are written against the complete, root-relative path, the same
+            /// convention SHARED REGEXP uses -- reconstruct it the same way
+            /// ColumnObject::shouldForceSharedData does before matching, so a pattern like
+            /// '^arr[.]skip$' still applies to "skip" inside a nested object dynamically inferred
+            /// at "arr" (see getDynamicNodeForPath), not just to a literal top-level "arr.skip".
+            const auto & prefix = assert_cast<const DataTypeObject &>(*object_type).getSharedDataPathPrefix();
+            String root_relative_path;
+            if (prefix.empty())
             {
-                if (re2::RE2::PartialMatch(path, regexp))
-                    return true;
+                root_relative_path = path;
             }
             else
             {
-                if (re2::RE2::FullMatch(path, regexp))
-                    return true;
+                root_relative_path.reserve(prefix.size() + path.size());
+                root_relative_path.append(prefix);
+                root_relative_path.append(path);
+            }
+
+            for (const auto & regexp : path_regexps_to_skip)
+            {
+                if (insert_settings.use_partial_match_to_skip_paths_by_regexp)
+                {
+                    if (re2::RE2::PartialMatch(root_relative_path, regexp))
+                        return true;
+                }
+                else
+                {
+                    if (re2::RE2::FullMatch(root_relative_path, regexp))
+                        return true;
+                }
             }
         }
 
