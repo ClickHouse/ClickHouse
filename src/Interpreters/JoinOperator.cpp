@@ -135,8 +135,9 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool join_runtime_filter_from_fixed_hash_table;
 }
 
-JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_)
-    : join_analyze_mode(join_analyze_mode_)
+JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_, bool temporary_storage_available_)
+    : temporary_storage_available(temporary_storage_available_)
+    , join_analyze_mode(join_analyze_mode_)
 {
     join_algorithms = query_settings[Setting::join_algorithm];
 
@@ -373,6 +374,7 @@ bool JoinSettings::canSpillToTemporaryFiles(const JoinOperator & join_operator) 
         /// The raw settings are tested rather than the effective threshold so the answer does not depend on
         /// the local memory limits of whoever asks.
         if (external_join_threshold_is_set
+            && temporary_storage_available
             && spilling_hash_join_is_possible
             && joinAlgorithmAlwaysBuildsSomeJoin(algorithm))
             return true;

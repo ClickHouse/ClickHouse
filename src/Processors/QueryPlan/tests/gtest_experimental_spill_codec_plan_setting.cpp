@@ -164,6 +164,14 @@ TEST(ExperimentalSpillCodecPlanSetting, JoinEmitsItOnlyForASpillingJoin)
     EXPECT_TRUE(spilling_hash.canSpillToTemporaryFiles(keyed_inner.join_operator));
     EXPECT_TRUE(joinCarriesSetting(spilling_hash, keyed_inner.join_operator));
 
+    /// A hash-family algorithm stays in memory when the query has no temporary storage, even with
+    /// an external-join threshold. Therefore it neither resolves `temporary_files_codec` nor needs
+    /// to send the experimental-codec opt-in to a rolling-upgrade peer.
+    auto spilling_hash_without_temporary_storage = spilling_hash;
+    spilling_hash_without_temporary_storage.temporary_storage_available = false;
+    EXPECT_FALSE(spilling_hash_without_temporary_storage.canSpillToTemporaryFiles(keyed_inner.join_operator));
+    EXPECT_FALSE(joinCarriesSetting(spilling_hash_without_temporary_storage, keyed_inner.join_operator));
+
     auto ratio_hash = makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH});
     ratio_hash.max_bytes_ratio_before_external_join = 0.5;
     EXPECT_TRUE(joinCarriesSetting(ratio_hash, keyed_inner.join_operator));

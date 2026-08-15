@@ -155,6 +155,10 @@ struct JoinSettings
     UInt64 max_rows_in_set_to_optimize_join;
     String temporary_files_codec;
     bool allow_experimental_codecs = false;
+    /// Whether this query can create temporary on-disk storage. Hash joins silently remain
+    /// in memory when it is unavailable, so their external-join threshold cannot reach
+    /// `temporary_files_codec` in that case.
+    bool temporary_storage_available = true;
     UInt64 temporary_files_buffer_size;
 
     /* Hash/Parallel hash join settings */
@@ -178,7 +182,10 @@ struct JoinSettings
     /// Which statistics the join must collect for EXPLAIN ANALYZE
     JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
 
-    explicit JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_ = JoinAnalyzeMode::None);
+    explicit JoinSettings(
+        const Settings & query_settings,
+        JoinAnalyzeMode join_analyze_mode_ = JoinAnalyzeMode::None,
+        bool temporary_storage_available_ = true);
     explicit JoinSettings(const QueryPlanSerializationSettings & settings);
 
     void updatePlanSettings(QueryPlanSerializationSettings & settings, const JoinOperator & join_operator) const;
@@ -199,6 +206,8 @@ struct JoinSettings
     /// first-buildable-wins order, so a spill-capable algorithm listed after one that always builds an
     /// in-memory join does not count either. Conservative: where the answer cannot be decided exactly it
     /// errs towards true, since under-reporting would make a shard reject the codec at its first spill.
+    /// The external-join threshold can only reach a spilling hash join when temporary storage is available;
+    /// otherwise the hash-family algorithms silently stay in memory.
     bool canSpillToTemporaryFiles(const JoinOperator & join_operator) const;
 
     /// Whether `chooseJoinAlgorithm`'s first-buildable-wins walk over the `join_algorithm` list always
