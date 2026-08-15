@@ -71,6 +71,14 @@ SELECT 'nobulk_granules_to_nullable', trimLeft(explain)
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_113234 WHERE t % toNullable(19) = 16)
 WHERE explain LIKE '%Granules: %/%';
 
+SELECT 'nobulk_granules_null_if', trimLeft(explain)
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_113234 WHERE t % nullIf(19, 0) = 16)
+WHERE explain LIKE '%Granules: %/%';
+
+SELECT 'nobulk_granules_subquery', trimLeft(explain)
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_113234 WHERE t % (SELECT 19) = 16)
+WHERE explain LIKE '%Granules: %/%';
+
 SELECT 'nobulk_plain', count() FROM t_113234 WHERE t % 19 = 16;
 SELECT 'nobulk_to_nullable', count() FROM t_113234 WHERE t % toNullable(19) = 16;
 SELECT 'nobulk_null_if', count() FROM t_113234 WHERE t % nullIf(19, 0) = 16;
