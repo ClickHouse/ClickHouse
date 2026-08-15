@@ -30,11 +30,9 @@ namespace Setting
 namespace DB::QueryPlanOptimizations
 {
 
-/// True when the read is already ordered by a prefix of `sort_column_name`, either from the base
-/// table's sorting key or from a sorting projection that the second-pass chooser would select.
-/// Runs before that chooser, so every candidate gate below must match the one the chooser applies,
-/// and selection that stays uncertain here must return false: a false positive drops dynamic
-/// filtering from a read that still hits the base table.
+/// True when the read is already ordered by a prefix of `sort_column_name`, from the base table's
+/// sorting key or from a sorting projection the second-pass chooser would select. Runs before that
+/// chooser, so each gate below mirrors one of its gates and an uncertain case must return false.
 static bool readWouldBeInOrderForColumn(
     const ReadFromMergeTree & read_step, const String & sort_column_name, bool optimize_projection, bool has_query_filter)
 {
