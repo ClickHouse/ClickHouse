@@ -307,15 +307,37 @@ private:
                     return;
 
                 fs::path child_path = fs::absolute(child.path()).lexically_normal();
+                bool unresolved_symlink_inside_user_files = false;
 
                 if (path_info->need_check && !weaklyCanonicalPathStartsWith(child_path.string(), path_info->user_files_absolute_path_string))
                 {
-                    LOG_DEBUG(getLogger("StorageFilesystem"), "Path {} is not inside user_files {}",
-                        child_path.string(), path_info->user_files_absolute_path_string);
-                    continue;
+                    /// Keep an in-root symlink that cannot be resolved (for example, a symlink cycle)
+                    /// visible in the listing, but never traverse into it. A successfully resolved symlink
+                    /// outside `user_files` is still rejected by `weaklyCanonicalPathStartsWith`.
+                    std::error_code canonical_ec;
+                    fs::weakly_canonical(child_path, canonical_ec);
+
+                    std::error_code symlink_ec;
+                    unresolved_symlink_inside_user_files = canonical_ec
+                        && child.is_symlink(symlink_ec)
+                        && !symlink_ec
+                        && fileOrSymlinkPathStartsWith(child_path.string(), path_info->user_files_absolute_path_string);
+
+                    if (unresolved_symlink_inside_user_files)
+                    {
+                        LOG_DEBUG(getLogger("StorageFilesystem"),
+                            "Cannot resolve symlink {}: {}, not traversing",
+                            child_path.string(), canonical_ec.message());
+                    }
+                    else
+                    {
+                        LOG_DEBUG(getLogger("StorageFilesystem"), "Path {} is not inside user_files {}",
+                            child_path.string(), path_info->user_files_absolute_path_string);
+                        continue;
+                    }
                 }
 
-                bool expand = true;
+                bool expand = !unresolved_symlink_inside_user_files;
                 if (child.is_directory(ec) && child.is_symlink(ec))
                 {
                     std::error_code canon_ec;
