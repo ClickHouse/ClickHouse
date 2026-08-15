@@ -248,7 +248,7 @@ SELECT * FROM error_log LIMIT 5
 └─────────────────────┴─────────┴─────────────┴──────────────────────────────┴──────────┘
 ```
 
-デフォルトでは、一致しない行があると ClickHouse はエラーを返します。代わりに一致しない行をスキップするには、[format&#95;regexp&#95;skip&#95;unmatched](/ja/reference/settings/formats#format_regexp_skip_unmatched) オプションを有効にしてください。
+デフォルトでは、一致しない行があると ClickHouse はエラーを返します。代わりに一致しない行をスキップするには、[format&#95;regexp&#95;skip&#95;unmatched](/ja/reference/settings/formats/format-regexp#format_regexp_skip_unmatched) オプションを有効にしてください。
 
 ```sql
 SET format_regexp_skip_unmatched = 1;
