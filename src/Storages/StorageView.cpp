@@ -685,7 +685,7 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
     }
     catch (...)
     {
-        /// If a dependency cannot be inspected, cached data must not be reused.
+        /// Ok to fail closed: if a dependency cannot be inspected, cached data must not be reused.
         return {};
     }
 }
