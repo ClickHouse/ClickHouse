@@ -580,28 +580,38 @@ ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledState
         /// the marginal cost of one more copy, and extrapolate the remaining copies from it.
         static constexpr size_t max_repeated_sample_bytes = 1024 * 1024;
         const size_t measured_repetitions = std::min(
-            repetitions, std::max<size_t>(2, max_repeated_sample_bytes / std::max<size_t>(one_copy_sample_bytes, 1)));
+            repetitions, std::max<size_t>(1, max_repeated_sample_bytes / std::max<size_t>(one_copy_sample_bytes, 1)));
 
-        NullWriteBuffer repeated_null_buf;
-        CompressedWriteBuffer repeated_compressed_buf(repeated_null_buf);
-        for (size_t repetition = 0; repetition < measured_repetitions; ++repetition)
-            for (size_t i = 0; i < rows; i += period)
-                func->serialize(data[i], repeated_compressed_buf, version);
-        repeated_compressed_buf.finalize();
-        const size_t measured_compressed_bytes = repeated_null_buf.count();
-
-        if (measured_repetitions == repetitions)
-            compressed = measured_compressed_bytes;
+        if (measured_repetitions == 1)
+        {
+            /// A single copy already exhausts the measurement budget. Do not serialize another giant
+            /// state merely to estimate its marginal compressed size; conservatively assume that the
+            /// remaining copies do not compress against it.
+            compressed = one_copy_compressed_bytes * repetitions;
+        }
         else
         {
-            /// The per-block framing of both measurements cancels out in the difference, so the marginal
-            /// figure is the copies' own compressed size.
-            const double marginal_compressed_bytes_per_copy = measured_compressed_bytes > one_copy_compressed_bytes
-                ? static_cast<double>(measured_compressed_bytes - one_copy_compressed_bytes)
-                    / static_cast<double>(measured_repetitions - 1)
-                : 0.0;
-            compressed = one_copy_compressed_bytes
-                + static_cast<size_t>(marginal_compressed_bytes_per_copy * static_cast<double>(repetitions - 1));
+            NullWriteBuffer repeated_null_buf;
+            CompressedWriteBuffer repeated_compressed_buf(repeated_null_buf);
+            for (size_t repetition = 0; repetition < measured_repetitions; ++repetition)
+                for (size_t i = 0; i < rows; i += period)
+                    func->serialize(data[i], repeated_compressed_buf, version);
+            repeated_compressed_buf.finalize();
+            const size_t measured_compressed_bytes = repeated_null_buf.count();
+
+            if (measured_repetitions == repetitions)
+                compressed = measured_compressed_bytes;
+            else
+            {
+                /// The per-block framing of both measurements cancels out in the difference, so the marginal
+                /// figure is the copies' own compressed size.
+                const double marginal_compressed_bytes_per_copy = measured_compressed_bytes > one_copy_compressed_bytes
+                    ? static_cast<double>(measured_compressed_bytes - one_copy_compressed_bytes)
+                        / static_cast<double>(measured_repetitions - 1)
+                    : 0.0;
+                compressed = one_copy_compressed_bytes
+                    + static_cast<size_t>(marginal_compressed_bytes_per_copy * static_cast<double>(repetitions - 1));
+            }
         }
     }
 

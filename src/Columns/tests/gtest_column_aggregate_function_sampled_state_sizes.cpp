@@ -184,13 +184,13 @@ TEST(ColumnAggregateFunctionSampledStateSizes, RepeatedGiantPayloadStaysIncompre
 {
     tryRegisterAggregateFunctions();
 
-    /// One copy is ~800 KiB of distinct values - beyond LZ4's 64 KiB match window, so even identical
-    /// copies do not compress. It also exceeds half the measuring budget, so 512 repetitions are
-    /// extrapolated from a measured prefix.
-    auto column = createDistinctGroupArrayColumn(/*elements=*/100000);
+    /// One copy is over the 1 MiB measuring budget and beyond LZ4's 64 KiB match window, so even identical
+    /// copies do not compress. The repeated estimate must therefore use the one-copy conservative fallback
+    /// without serializing a second full copy merely to measure a marginal cost.
+    auto column = createDistinctGroupArrayColumn(/*elements=*/150000);
 
     const auto one_copy = column->sampledStateSizes(/*max_states_to_serialize=*/1);
-    ASSERT_GT(one_copy.sample_bytes, 500000u);
+    ASSERT_GT(one_copy.sample_bytes, 1024 * 1024u);
 
     constexpr size_t repetitions = 512;
     const auto repeated = column->sampledStateSizes(/*max_states_to_serialize=*/1, repetitions);
