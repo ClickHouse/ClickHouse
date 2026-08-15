@@ -32,8 +32,9 @@ namespace DB::QueryPlanOptimizations
 
 /// True when the read is already ordered by a prefix of `sort_column_name`, either from the base
 /// table's sorting key or from a sorting projection that the second-pass chooser would select.
-/// Runs before that chooser, so it must return false whenever selection is uncertain: a false
-/// positive drops dynamic filtering from a read that still hits the base table.
+/// Runs before that chooser, so every candidate gate below must match the one the chooser applies,
+/// and selection that stays uncertain here must return false: a false positive drops dynamic
+/// filtering from a read that still hits the base table.
 static bool readWouldBeInOrderForColumn(
     const ReadFromMergeTree & read_step, const String & sort_column_name, bool optimize_projection, bool has_query_filter)
 {
@@ -54,14 +55,19 @@ static bool readWouldBeInOrderForColumn(
     const auto & preferred_projection_name
         = read_step.getContext()->getSettingsRef()[Setting::preferred_optimize_projection_name].value;
 
+    /// The pin narrows the candidate set only when it names an existing normal projection;
+    /// otherwise every normal projection stays a candidate.
+    const bool pin_narrows_candidates = !preferred_projection_name.empty()
+        && metadata->projections.has(preferred_projection_name)
+        && metadata->projections.get(preferred_projection_name).type == ProjectionDescription::Type::Normal;
+
     const auto & read_columns = read_step.getAllColumnNames();
     for (const auto & projection : metadata->projections)
     {
         if (projection.type != ProjectionDescription::Type::Normal)
             continue;
 
-        /// If a preferred projection is pinned, the chooser only ever considers that one.
-        if (!preferred_projection_name.empty() && projection.name != preferred_projection_name)
+        if (pin_narrows_candidates && projection.name != preferred_projection_name)
             continue;
 
         const auto & proj_sorting_key = projection.metadata->getSortingKey();
@@ -77,7 +83,21 @@ static bool readWouldBeInOrderForColumn(
             read_columns,
             [&](const String & column) { return projection.sample_block.findByName(column) != nullptr; });
 
-        if (stores_all_read_columns)
+        if (!stores_all_read_columns)
+            continue;
+
+        /// A declared projection with no usable part on any read part is dropped by the chooser,
+        /// so the read stays on the base table and is not in order.
+        const bool has_usable_projection_part = std::ranges::any_of(
+            read_step.getParts(),
+            [&](const auto & part_with_ranges)
+            {
+                const auto & created = part_with_ranges.data_part->getProjectionParts();
+                auto it = created.find(projection.name);
+                return it != created.end() && !it->second->is_broken;
+            });
+
+        if (has_usable_projection_part)
             return true;
     }
 

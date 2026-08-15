@@ -87,5 +87,60 @@ FROM (
 )
 WHERE explain ILIKE '%__topKFilter%';
 
+-- A pin naming no existing projection does not narrow the candidate set, so the matching
+-- projection is still selected and serves the read in-order: dynamic filtering must be disabled
+-- (expected 0), and the projection must really be the one serving the read (expected 1, 1).
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_proj_rio ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100, preferred_optimize_projection_name = 'does_not_exist'
+)
+WHERE explain ILIKE '%__topKFilter%';
+
+SELECT count() > 0 AS unpinned_uses_p_score
+FROM (
+    EXPLAIN projections = 1
+    SELECT id, cityHash64(payload) FROM t_topk_proj_rio ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100, preferred_optimize_projection_name = 'does_not_exist'
+)
+WHERE explain ILIKE '%p_score%';
+
+SELECT count() > 0 AS unpinned_in_order
+FROM (
+    EXPLAIN projections = 1
+    SELECT id, cityHash64(payload) FROM t_topk_proj_rio ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100, preferred_optimize_projection_name = 'does_not_exist'
+)
+WHERE explain ILIKE '%InOrder%';
+
+-- A declared but never materialized projection has no parts, so the chooser drops it and the read
+-- stays on the base table: dynamic filtering must still apply (expected 1) and the read must not
+-- be in order (expected 0).
+DROP TABLE IF EXISTS t_topk_unmat;
+CREATE TABLE t_topk_unmat (id UInt64, k UInt64, score UInt64, payload String CODEC(NONE))
+ENGINE = MergeTree ORDER BY (k, id)
+SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
+INSERT INTO t_topk_unmat SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(32768);
+OPTIMIZE TABLE t_topk_unmat FINAL;
+ALTER TABLE t_topk_unmat ADD PROJECTION p_score (SELECT id, k, score, payload ORDER BY (score, id));
+
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_unmat ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%__topKFilter%';
+
+SELECT count() > 0 AS unmaterialized_in_order
+FROM (
+    EXPLAIN projections = 1
+    SELECT id, cityHash64(payload) FROM t_topk_unmat ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%InOrder%';
+
 DROP TABLE t_topk_proj_rio;
 DROP TABLE t_topk_noproj;
+DROP TABLE t_topk_unmat;
