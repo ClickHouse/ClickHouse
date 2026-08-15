@@ -198,6 +198,9 @@ void KeeperStateMachine::preprocessUncommittedLogEntries(uint64_t start_idx, uin
 
     start_idx = std::min(start_idx, end_idx);
     auto entries = log_store->log_entries(start_idx, end_idx);
+    if (!entries)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Log entries [{}, {}) unavailable due to concurrent truncation or compaction", start_idx, end_idx);
 
     if (entries->size() != end_idx - std::min(start_idx, end_idx))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of log entries returned by log store: start_idx={}, end_idx={}, count={}", start_idx, end_idx, entries->size());
