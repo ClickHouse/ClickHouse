@@ -3699,6 +3699,12 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
     if (command.type == MutationCommand::APPLY_DELETED_MASK && !part->hasLightweightDelete())
         return true;
 
+    /// A part created before an ADD COLUMN has no stream to recompress. In particular, do not
+    /// send a compact part through the whole-part rewrite: that would unnecessarily re-serialize
+    /// every other stored column with its current codec.
+    if (command.type == MutationCommand::Type::RECOMPRESS_COLUMN && !part->getColumnsDescription().has(command.column_name))
+        return true;
+
     if (canSkipConversionToNullable(part, metadata_snapshot, command))
         return true;
 
