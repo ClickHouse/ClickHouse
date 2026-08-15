@@ -2340,7 +2340,8 @@ def test_structure_only_restores_access_entities_and_udfs():
     1. structure_only=true alone does NOT restore access entities, UDFs, or table data (backward compat).
     2. structure_only=true with restore_access_entities=true, restore_functions=true restores
        access entities and UDFs, but not table data.
-    3. structure_only=true with restore_table_data=true restores table data but not access/UDFs."""
+    3. structure_only=true with restore_table_data=true restores table data but not access/UDFs.
+    4. Explicit false values override the default to omit the selected categories."""
     instance.query("CREATE DATABASE test")
     instance.query(
         "CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY x"
@@ -2400,6 +2401,44 @@ def test_structure_only_restores_access_entities_and_udfs():
 
     assert instance.query("EXISTS test.table") == "1\n"
     assert instance.query("SELECT count() FROM test.table") == "0\n"
+    assert instance.query("SELECT count() FROM system.users WHERE name = 'u1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.roles WHERE name = 'r1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.settings_profiles WHERE name = 'prof1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.row_policies WHERE short_name = 'rowpol1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.quotas WHERE name = 'q1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.functions WHERE name = 'linear_equation'") == "0\n"
+
+    instance.query("DROP DATABASE test")
+
+    # Phase 4: explicit false overrides the default and skips table data only.
+    instance.query(
+        f"RESTORE ALL FROM {backup_name}" f" SETTINGS restore_table_data='false'"
+    )
+
+    assert instance.query("EXISTS test.table") == "1\n"
+    assert instance.query("SELECT count() FROM test.table") == "0\n"
+    assert (
+        instance.query("SHOW CREATE USER u1")
+        == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS custom_a = 1\n"
+    )
+    assert instance.query("SELECT linear_equation(2, 3, 1)") == "7\n"
+
+    instance.query("DROP FUNCTION linear_equation")
+    instance.query("DROP ROW POLICY rowpol1 ON test.table")
+    instance.query("DROP DATABASE test")
+    instance.query("DROP USER u1")
+    instance.query("DROP ROLE r1")
+    instance.query("DROP SETTINGS PROFILE prof1")
+    instance.query("DROP QUOTA q1")
+
+    # Phase 5: explicit false skips access entities and UDFs while preserving table data.
+    instance.query(
+        f"RESTORE ALL FROM {backup_name}"
+        f" SETTINGS restore_access_entities='false', restore_functions='false'"
+    )
+
+    assert instance.query("EXISTS test.table") == "1\n"
+    assert instance.query("SELECT count() FROM test.table") == "100\n"
     assert instance.query("SELECT count() FROM system.users WHERE name = 'u1'") == "0\n"
     assert instance.query("SELECT count() FROM system.roles WHERE name = 'r1'") == "0\n"
     assert instance.query("SELECT count() FROM system.settings_profiles WHERE name = 'prof1'") == "0\n"
