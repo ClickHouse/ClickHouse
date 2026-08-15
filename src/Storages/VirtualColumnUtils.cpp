@@ -368,7 +368,8 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
 
     for (const auto & column : hive_columns)
     {
-        block.insert({column.type->createColumn(), column.type, column.name});
+        if (!block.has(column.name))
+            block.insert({column.type->createColumn(), column.type, column.name});
     }
 
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
@@ -398,7 +399,8 @@ ColumnPtr getFilterByPathAndFileIndexes(
 
     for (const auto & column : hive_columns)
     {
-        block.insert({column.type->createColumn(), column.type, column.name});
+        if (!block.has(column.name))
+            block.insert({column.type->createColumn(), column.type, column.name});
     }
 
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
