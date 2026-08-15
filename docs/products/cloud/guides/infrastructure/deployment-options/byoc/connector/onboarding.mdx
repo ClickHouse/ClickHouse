@@ -178,11 +178,13 @@ The running connector holds its own copy of the credentials, so nothing operatio
 
 ## Air-gapped and mirrored installs {#air-gapped-and-mirrored-installs}
 
-If your environment cannot reach the enrollment endpoint, ClickHouse can provide the enrollment bundle directly; run `clicklink clctl init --handoff <bundle-file>` in place of `--enroll` and the rest of the flow is identical.
+Two independent pieces can move out of band, depending on what your environment can reach.
+
+**Bundle delivery.** If you prefer not to redeem a token online, ClickHouse can provide the enrollment bundle directly during onboarding; run `clicklink clctl init --handoff <bundle-file>` in place of `--enroll`. `--handoff` replaces only the token redemption: certificate signing still happens over the enrollment endpoint, so use it alone when that endpoint is reachable from where you run `init`.
+
+**Out-of-band certificate signing.** When the enrollment endpoint is unreachable from where you run `init`, add `--no-auto-sign`: `init` stages everything and writes `clicklink.csr`. Send the CSR to ClickHouse through your account team, then complete the install with the returned certificate and chain: `clicklink clctl init --signed-cert client.crt --chain ca-chain.crt` (on Kubernetes, the staged run prints the full completion command including `--target helm`). Only the CSR travels; the private key never leaves your environment.
 
 On Kubernetes, `--chart` accepts a chart name resolved through `--chart-repo`, an `oci://` reference, a direct URL, or a local archive or directory, and `--chart-version` defaults to the CLI's own version so the binary and chart move together. To serve images from your own registry, mirror the container image and set `image.repository` in the values overlay. If your egress path presents a private CA to the connector, pass `--api-private-ca` so the API endpoint is verified against the CA chain from the enrollment bundle instead of the system trust store.
-
-A manual CSR signing path also exists via `--no-auto-sign`; see the [CLI reference](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/reference/cli).
 
 ## If something fails {#if-something-fails}
 
