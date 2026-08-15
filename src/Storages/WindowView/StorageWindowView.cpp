@@ -522,7 +522,7 @@ void StorageWindowView::alter(
 
     shutdown(false);
 
-    auto inner_query = initInnerQuery(new_select_query->as<ASTSelectQuery &>(), local_context);
+    auto inner_query = initInnerQuery(new_select_query->as<ASTSelectQuery &>(), local_context, true);
 
     output_header.clear();
 
@@ -1319,7 +1319,16 @@ StorageWindowView::StorageWindowView(
     /// Extract information about watermark, lateness.
     eventTimeParser(query);
 
-    auto inner_query = initInnerQuery(query.select->list_of_selects->children.at(0)->as<ASTSelectQuery &>(), context_);
+    const bool validate_intervals = mode < LoadingStrictnessLevel::ATTACH;
+    auto inner_query = initInnerQuery(query.select->list_of_selects->children.at(0)->as<ASTSelectQuery &>(), context_, validate_intervals);
+
+    if (validate_intervals)
+    {
+        if (is_watermark_bounded)
+            checkIntervalAdvancesTime(watermark_kind, watermark_num_units, *time_zone);
+        if (allowed_lateness)
+            checkIntervalAdvancesTime(lateness_kind, lateness_num_units, *time_zone);
+    }
 
     if (auto * inner_storage = query.getTargetInnerEngine(ViewTarget::Inner))
         inner_table_engine = inner_storage->clone();
@@ -1369,7 +1378,7 @@ StorageWindowView::StorageWindowView(
     fire_task->deactivate();
 }
 
-ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr context_)
+ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr context_, bool validate_intervals)
 {
     select_query = query.clone();
     output_header.clear();
@@ -1388,7 +1397,7 @@ ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr contex
     select_table_id = StorageID(select_database_name, select_table_name);
 
     /// Extract all info from query; substitute Function_tumble and Function_hop with Function_windowID.
-    auto inner_query = innerQueryParser(query);
+    auto inner_query = innerQueryParser(query, validate_intervals);
 
     /// Parse mergeable query
     mergeable_query = inner_query->clone();
@@ -1411,7 +1420,7 @@ ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr contex
     return inner_query;
 }
 
-ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
+ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query, bool validate_intervals)
 {
     if (!query.groupBy())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "GROUP BY query is required for {}", getName());
@@ -1478,10 +1487,13 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
     else
         time_zone = &DateLUT::serverTimezoneInstance();
 
-    checkIntervalAdvancesTime(window_kind, window_num_units, *time_zone);
-    checkIntervalAdvancesTime(slide_kind, slide_num_units, *time_zone);
-    if (!is_tumble)
-        checkIntervalAdvancesTime(window_kind, slice_num_units, *time_zone);
+    if (validate_intervals)
+    {
+        checkIntervalAdvancesTime(window_kind, window_num_units, *time_zone);
+        checkIntervalAdvancesTime(slide_kind, slide_num_units, *time_zone);
+        if (!is_tumble)
+            checkIntervalAdvancesTime(window_kind, slice_num_units, *time_zone);
+    }
 
     return result;
 }

@@ -24,6 +24,13 @@ CREATE WINDOW VIEW 04892_wv ENGINE = Memory WATERMARK = STRICTLY_ASCENDING
 CREATE WINDOW VIEW 04892_wv ENGINE = Memory
     AS SELECT count(v) AS c, hop(now(), toIntervalDay(1), toIntervalDay(2147483648), 'UTC') AS w FROM 04892_src GROUP BY w; -- { serverError BAD_ARGUMENTS }
 
+-- Watermark and lateness intervals have the same requirement as window intervals.
+CREATE WINDOW VIEW 04892_wv ENGINE = Memory WATERMARK = INTERVAL 2147483648 DAY
+    AS SELECT count(v) AS c, tumble(ts, toIntervalHour(1), 'UTC') AS w FROM 04892_src GROUP BY w; -- { serverError BAD_ARGUMENTS }
+
+CREATE WINDOW VIEW 04892_wv ENGINE = Memory ALLOWED_LATENESS INTERVAL 2147483648 DAY
+    AS SELECT count(v) AS c, tumble(now(), toIntervalHour(1), 'UTC') AS w FROM 04892_src GROUP BY w; -- { serverError BAD_ARGUMENTS }
+
 -- A sane window is unaffected.
 CREATE WINDOW VIEW 04892_wv ENGINE = Memory WATERMARK = STRICTLY_ASCENDING
     AS SELECT count(v) AS c, tumble(ts, toIntervalHour(1), 'UTC') AS w FROM 04892_src GROUP BY w;
