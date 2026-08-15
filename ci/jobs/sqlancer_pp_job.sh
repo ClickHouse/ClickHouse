@@ -21,6 +21,7 @@ set -exu
 # (it calls `datetime.utcfromtimestamp(start_time)`, which fails on `None`).
 JOB_START_TIME=$(date +%s)
 
+REPO_DIR=$(readlink -f .)
 TMP_PATH=$(readlink -f ./ci/tmp/)
 OUTPUT_PATH="$TMP_PATH/sqlancer_pp_output"
 PID_FILE="$TMP_PATH/clickhouse-server.pid"
@@ -52,6 +53,43 @@ NORMALIZED_JOB_NAME="$(printf '%s\n' "$JOB_META" | sed -n 2p)"
 RESULT_FILE="$TMP_PATH/result_${NORMALIZED_JOB_NAME}.json"
 
 mkdir -p "$OUTPUT_PATH"
+
+# Properly JSON-escape a string, outputting only the inner content so callers can
+# embed it in "...". A failing SQLancer++ query legitimately contains backslashes
+# and quotes; hand-rolled escaping produced result files that `json.loads`
+# rejected, and praktika then dropped the whole job result.
+json_escape() {
+    printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1], end="")'
+}
+
+# Praktika learns what happened only from the result file, and `set -e` can abort
+# the startup path below (missing jar, CREATE USER failing, server never coming
+# up) long before the real result is written - which lands the job on the generic
+# "no Result provided" error with none of the logs attached. Write a fallback on
+# any exit until the real result replaces it.
+RESULT_WRITTEN=0
+write_fallback_result() {
+    [ "$RESULT_WRITTEN" = "1" ] && return 0
+    local files_json="" f
+    for f in "$OUTPUT_PATH"/*.out "$OUTPUT_PATH"/*.err "$OUTPUT_PATH"/clickhouse-server.log*; do
+        [ -f "$f" ] || continue
+        case "$files_json" in *"\"$f\""*) continue ;; esac
+        [ -n "$files_json" ] && files_json+=", "
+        files_json+="\"$f\""
+    done
+    {
+        printf '{\n'
+        printf '  "name": "%s",\n' "$(json_escape "$JOB_NAME")"
+        printf '  "status": "ERROR",\n'
+        printf '  "start_time": %d,\n' "$JOB_START_TIME"
+        printf '  "duration": %d,\n' "$(( $(date +%s) - JOB_START_TIME ))"
+        printf '  "results": [],\n'
+        printf '  "files": [%s],\n' "$files_json"
+        printf '  "info": "SQLancer++ job terminated before running the oracles"\n'
+        printf '}\n'
+    } > "$RESULT_FILE"
+}
+trap write_fallback_result EXIT
 
 if [[ -f "$CLICKHOUSE_BIN" ]]; then
     echo "$CLICKHOUSE_BIN exists"
@@ -170,7 +208,8 @@ for ORACLE in "${ORACLES[@]}"; do
     else
         info="exit=${exit_code}"
         if [[ -n "$assertion_error" ]]; then
-            cleaned="$(printf '%s' "$assertion_error" | tr '\n' ' ' | sed 's/"/\\"/g' | cut -c1-500)"
+            # Collapse to one line only; JSON escaping happens at write time.
+            cleaned="$(printf '%s' "$assertion_error" | tr '\n' ' ' | cut -c1-500)"
             info="${info}; ${cleaned}"
         fi
         TEST_RESULTS+=("${ORACLE},FAIL,${info}")
@@ -180,6 +219,20 @@ for ORACLE in "${ORACLES[@]}"; do
 done
 
 ATTACHED_FILES_ARRAY+=("$OUTPUT_PATH/clickhouse-server.log" "$OUTPUT_PATH/clickhouse-server.log.err")
+
+# A sanitizer report or a `<Fatal>` message is a finding even when no oracle
+# asserted - which is the whole point of the arm_asan_ubsan variant. Scanned
+# before the server is stopped, so shutdown-time leak reports do not count.
+# shellcheck source=./scripts/sqlancer_server_errors.sh
+. "$REPO_DIR/ci/jobs/scripts/sqlancer_server_errors.sh"
+SERVER_ERROR_REPORT="$OUTPUT_PATH/server-fatal.log"
+if server_error_line="$(scan_server_errors \
+        "$OUTPUT_PATH/clickhouse-server.log" "$OUTPUT_PATH/clickhouse-server.log.err" "$SERVER_ERROR_REPORT")"; then
+    echo "Server log finding: $server_error_line"
+    TEST_RESULTS+=("Sanitizer assert or Fatal messages in server logs,FAIL,$server_error_line")
+    TEST_RESULT_FILES+=("$SERVER_ERROR_REPORT")
+    OVERALL_STATUS="FAIL"
+fi
 
 # On failure, attach the per-database reproducer logs as an artifact. With
 # `--log-each-select true` SQLancer++ writes every statement of each generated
@@ -212,7 +265,7 @@ fi
             row_files_json+="\"$f\""
         done
         printf '    {"name": "%s", "status": "%s", "files": [%s], "info": "%s"}' \
-            "$test_name" "$status" "$row_files_json" "$info"
+            "$(json_escape "$test_name")" "$status" "$row_files_json" "$(json_escape "$info")"
         if [ "$i" -lt $((${#TEST_RESULTS[@]} - 1)) ]; then
             printf ',\n'
         else
@@ -239,6 +292,7 @@ fi
     printf '  "info": ""\n'
     printf '}\n'
 } > "$RESULT_FILE"
+RESULT_WRITTEN=1
 
 ls "$OUTPUT_PATH"
 pkill clickhouse || true

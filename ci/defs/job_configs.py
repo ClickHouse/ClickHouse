@@ -1595,6 +1595,7 @@ class JobConfigs:
                 "./ci/jobs/sqlancer_job.sh",
                 "./ci/jobs/scripts/sqlancer_failures.py",
                 "./ci/jobs/scripts/sqlancer_notify.py",
+                "./ci/jobs/scripts/sqlancer_server_errors.sh",
                 "./ci/docker/sqlancer-test",
             ],
         ),
@@ -1620,6 +1621,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/sqlancer_pp_job.sh",
+                "./ci/jobs/scripts/sqlancer_server_errors.sh",
                 "./ci/docker/sqlancer-test",
             ],
         ),

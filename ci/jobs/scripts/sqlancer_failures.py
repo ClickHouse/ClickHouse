@@ -233,21 +233,35 @@ def main():
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    for finding in findings:
+        finding["file"] = ""
+
+    def attach(member):
+        source = logs_dir / f"{member['database']}.log"
+        target = out_dir / f"{member['database']}.log"
+        shutil.copyfile(source, target)
+        if target.stat().st_size > COMPRESS_ABOVE_BYTES:
+            with target.open("rb") as raw, gzip.open(f"{target}.gz", "wb") as packed:
+                shutil.copyfileobj(raw, packed)
+            target.unlink()
+            target = Path(f"{target}.gz")
+        member["file"] = str(target)
+
+    # Give every distinct failure one reproducer before spending the rest of the
+    # budget on the loud ones. Straight loudest-first spending would let a single
+    # 200-occurrence family eat the whole cap and leave the rare failures - the
+    # interesting ones - as rows with no log to open.
     attached = 0
     for members in ordered:
-        for member in members:
-            member["file"] = ""
+        if attached >= args.max_files:
+            break
+        attach(members[0])
+        attached += 1
+    for members in ordered:
+        for member in members[1 : args.max_per_family]:
             if attached >= args.max_files:
-                continue
-            source = logs_dir / f"{member['database']}.log"
-            target = out_dir / f"{member['database']}.log"
-            shutil.copyfile(source, target)
-            if target.stat().st_size > COMPRESS_ABOVE_BYTES:
-                with target.open("rb") as raw, gzip.open(f"{target}.gz", "wb") as packed:
-                    shutil.copyfileobj(raw, packed)
-                target.unlink()
-                target = Path(f"{target}.gz")
-            member["file"] = str(target)
+                break
+            attach(member)
             attached += 1
 
     analysis = out_dir / "analysis.txt"
@@ -305,7 +319,7 @@ def main():
     # here - would disappear from the report.
     rows = []
     for members in ordered:
-        files = [m["file"] for m in members[: args.max_per_family] if m["file"]]
+        files = [m["file"] for m in members if m["file"]]
         info = f"x{len(members)} | " + "; ".join(message_shapes(members, limit=2))
         info += f" | occurrences: {' '.join(m['database'] for m in members)}"
         if len(members) > len(files):

@@ -220,6 +220,11 @@ MAVEN_REPO=/sqlancer/.m2
 # the world-writable /sqlancer tree so git and maven have somewhere to scribble.
 export HOME=/sqlancer
 
+# Exit code says what went wrong, because the two cases mean different things:
+#   1 - the clone did not happen (network, GitHub) - transient, not our problem
+#   2 - `main` was fetched but does not build - a real regression in the repo we
+#       are supposed to be fuzzing, and the reason the run below is not testing
+#       what this job promises
 build_sqlancer() {
     local ref="$1" dest="$2"
     rm -rf "$dest"
@@ -229,18 +234,28 @@ build_sqlancer() {
         mvn --no-transfer-progress -B package \
             -Dmaven.test.skip=true -Djacoco.skip=true \
             -Dmaven.repo.local="$MAVEN_REPO"
-    ) > "$SQLANCER_BUILD_LOG" 2>&1 || return 1
-    compgen -G "$dest/target/sqlancer-*.jar" > /dev/null || return 1
+    ) > "$SQLANCER_BUILD_LOG" 2>&1 || return 2
+    compgen -G "$dest/target/sqlancer-*.jar" > /dev/null || return 2
 }
 
 SQLANCER_DIR="$SQLANCER_BAKED_DIR"
 BUILD_WARNING=""
 echo "=== Building sqlancer from $SQLANCER_REPO @ $SQLANCER_REF ==="
-if [ "${SQLANCER_BUILD_AT_RUNTIME:-1}" = "1" ] && build_sqlancer "$SQLANCER_REF" "$SQLANCER_RUN_DIR"; then
-    SQLANCER_DIR="$SQLANCER_RUN_DIR"
-else
-    BUILD_WARNING="failed to build $SQLANCER_REF at runtime, fell back to the image's build"
-    echo "WARNING: $BUILD_WARNING; see $SQLANCER_BUILD_LOG" >&2
+if [ "${SQLANCER_BUILD_AT_RUNTIME:-1}" = "1" ]; then
+    BUILD_RC=0
+    build_sqlancer "$SQLANCER_REF" "$SQLANCER_RUN_DIR" || BUILD_RC=$?
+    if [ "$BUILD_RC" = "0" ]; then
+        SQLANCER_DIR="$SQLANCER_RUN_DIR"
+    elif [ "$BUILD_RC" = "1" ]; then
+        BUILD_WARNING="could not fetch $SQLANCER_REF (network?), fell back to the image's build"
+        echo "WARNING: $BUILD_WARNING" >&2
+    else
+        BUILD_WARNING="$SQLANCER_REF does not build, fell back to the image's build - this run does NOT test current $SQLANCER_REF"
+        echo "ERROR: $BUILD_WARNING; see $SQLANCER_BUILD_LOG" >&2
+        # Fuzz on with the baked build - some coverage beats none - but fail the
+        # job: a broken `main` is exactly what this job must not hide.
+        add_test_result "sqlancer $SQLANCER_REF build" ERROR "$BUILD_WARNING" "$SQLANCER_BUILD_LOG"
+    fi
 fi
 if [ -f "$SQLANCER_BUILD_LOG" ]; then
     ATTACHED_FILES_ARRAY+=("$SQLANCER_BUILD_LOG")
@@ -450,43 +465,17 @@ if [ "$FAILURE_COUNT" -gt 0 ] && [ -f "$FAILURES_PATH/analysis.txt" ]; then
     sed -n '/^x[0-9]/,/^Per-finding index/{/^Per-finding index/!p}' "$FAILURES_PATH/analysis.txt" | head -n 60
 fi
 
-# Sanitizer reports and `<Fatal>` messages: this job runs an ASan+UBSan build, so
-# either is a finding on its own even when no oracle noticed anything. Checked
-# before the server is stopped, so a leak report emitted during shutdown does not
-# turn every run red. The filtered-out lines are ASan's own boilerplate, same list
-# as `ci/jobs/scripts/clickhouse_proc.py`.
-SANITIZER_PATTERN='(ERROR|SUMMARY): (Address|Leak|Memory|Thread|UndefinedBehavior)Sanitizer|runtime error:'
-
-collect_server_errors() {
-    local report="$FAILURES_PATH/server-fatal.log" sanitizer_hits fatal_hits first_hit
-    # Report from the first sanitizer line to the end of the log so the whole
-    # stack trace comes along, minus ASan's own boilerplate (same ignore list as
-    # `ci/jobs/scripts/clickhouse_proc.py`).
-    first_hit="$(grep -n -aE "$SANITIZER_PATTERN" "$OUTPUT_PATH/clickhouse-server.log.err" 2>/dev/null | head -1 | cut -d: -f1 || true)"
-    sanitizer_hits=""
-    if [ -n "$first_hit" ]; then
-        sanitizer_hits="$(sed -n "${first_hit},\$p" "$OUTPUT_PATH/clickhouse-server.log.err" \
-            | grep -av "ASan doesn't fully support makecontext/swapcontext functions" \
-            | grep -av "ASan is ignoring requested __asan_handle_no_return" \
-            | grep -av "False positive error reports may follow" \
-            | grep -av "For details see https://github.com/google/sanitizers" \
-            | head -n 200 || true)"
-    fi
-    fatal_hits="$(grep -a '<Fatal>' "$OUTPUT_PATH/clickhouse-server.log" "$OUTPUT_PATH/clickhouse-server.log.err" 2>/dev/null | head -n 50 || true)"
-    [ -n "$sanitizer_hits$fatal_hits" ] || return 0
-    : > "$report"
-    if [ -n "$sanitizer_hits" ]; then
-        printf '%s\n' "=== sanitizer report ===" "$sanitizer_hits" >> "$report"
-    fi
-    if [ -n "$fatal_hits" ]; then
-        printf '%s\n' "=== <Fatal> messages ===" "$fatal_hits" >> "$report"
-    fi
-    local first_line
-    first_line="$(sed -n '2p' "$report" | cut -c1-400)"
-    add_test_result "Sanitizer assert or Fatal messages in server logs" FAIL "$first_line" "$report"
-    echo " - server log finding: $first_line"
-}
-collect_server_errors
+# Sanitizer reports and `<Fatal>` messages are a finding on their own, even when
+# no oracle noticed anything. Shared with the SQLancer++ job, which runs against
+# the same builds.
+# shellcheck source=./scripts/sqlancer_server_errors.sh
+. "$REPO_DIR/ci/jobs/scripts/sqlancer_server_errors.sh"
+SERVER_ERROR_REPORT="$FAILURES_PATH/server-fatal.log"
+if server_error_line="$(scan_server_errors \
+        "$OUTPUT_PATH/clickhouse-server.log" "$OUTPUT_PATH/clickhouse-server.log.err" "$SERVER_ERROR_REPORT")"; then
+    add_test_result "Sanitizer assert or Fatal messages in server logs" FAIL "$server_error_line" "$SERVER_ERROR_REPORT"
+    echo " - server log finding: $server_error_line"
+fi
 
 if [[ $(wget -q 'localhost:8123' -O- 2>/dev/null) != 'Ok.' ]]; then
     add_test_result "Server is alive after the run" FAIL "Server died during the SQLancer run"

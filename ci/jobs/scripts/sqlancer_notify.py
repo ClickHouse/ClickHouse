@@ -163,8 +163,12 @@ def main():
         seen = known_fingerprints(args.job_name)
         print(f"CI DB knows {len(seen)} fingerprint(s) for [{args.job_name}] from the last {HISTORY_DAYS} days")
     except Exception as e:  # noqa: BLE001 - never fail the job over a query
-        print(f"WARNING: could not read failure history from CI DB ({e}); treating every failure as new")
-        seen = set()
+        # Fail closed. Without the history every known failure looks new, and one
+        # play.clickhouse.com blip would post the whole backlog to the channel -
+        # which is how an alert channel gets muted for good. The findings are in
+        # the job report either way.
+        print(f"WARNING: could not read failure history from CI DB ({e}) - skipping the alert")
+        return
 
     new_failures = [f for f in failures if f["fingerprint"] not in seen]
     for failure in failures:
