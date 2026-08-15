@@ -853,12 +853,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// `only_analyze` needs no such protection and keeps inlining: the plan it builds reads
         /// from `ReadNothingStep`, so no expression of the outer query is ever evaluated on a row.
         /// This is what `EXPLAIN SYNTAX` is built with, and it is the form it has always printed.
-        /// A view that provably hides no rows also keeps inlining — there is nothing below it for
-        /// a merged predicate to observe.
+        /// A view that provably hides no rows and has no effective row policy also keeps inlining
+        /// — there is nothing below it for a merged predicate to observe.
         const bool inline_view = view
             && (options.only_analyze
                 || !StorageView::isSecurityBarrier(*metadata_snapshot, context)
-                || !StorageView::canHideRows(metadata_snapshot->getSelectQuery().inner_query, context));
+                || (!row_policy_filter || row_policy_filter->isAlwaysTrue())
+                    && !StorageView::canHideRows(metadata_snapshot->getSelectQuery().inner_query, context));
 
         if (view)
             query_info.is_parameterized_view = view->isParameterizedView();
