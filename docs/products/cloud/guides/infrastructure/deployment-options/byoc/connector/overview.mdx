@@ -42,6 +42,7 @@ From then on, the scraper periodically reads the allowlisted system tables and s
 - **A reachable ClickHouse native listener.** The connector talks to each cluster over the native protocol; on Kubernetes it auto-detects secure (9440) or plaintext (9000).
 - **An enrollment token.** ClickHouse provides your connector endpoint and a single-use enrollment token during onboarding.
 - **ClickHouse admin access during setup.** Initial provisioning creates the connector's read-only users. An admin password, when one is set, is prompted once and never stored.
+- **Admin access to a Kubernetes API server during provisioning**, on both install targets: access bundles are anchored to Kubernetes ServiceAccounts. See [onboarding](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/onboarding).
 
 See [onboarding](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/onboarding) for the full walkthrough of both install targets.
 
