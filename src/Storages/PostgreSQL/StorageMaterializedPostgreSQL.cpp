@@ -1015,7 +1015,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         /// For the table engine the user declares the column types explicitly, so this setting cannot
         /// affect anything (it would be a silent no-op). It is only meaningful for the database engine,
         /// where the nested table structure is derived from PostgreSQL.
-        if (args.mode <= LoadingStrictnessLevel::CREATE
+        if (is_fresh_table_definition
             && (*postgresql_replication_settings)[MaterializedPostgreSQLSetting::materialized_postgresql_use_extended_date_and_time_types].isChanged())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Setting `materialized_postgresql_use_extended_date_and_time_types` is not applicable to the "

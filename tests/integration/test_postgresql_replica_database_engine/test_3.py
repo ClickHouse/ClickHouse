@@ -1267,6 +1267,25 @@ def test_use_extended_date_and_time_types_setting_table_engine_rejected(started_
     ), error
 
 
+def test_attach_table_with_extended_date_and_time_types_setting_rejected(started_cluster):
+    # A full-definition ATTACH is fresh user input, just like CREATE. It must not
+    # persist a table-engine setting that would be silently ignored.
+    table = "test_date_types_table_engine_attach"
+    error = instance.query_and_get_error(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        ATTACH TABLE {table} (key Int32, d Date)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_use_extended_date_and_time_types = 0
+        """
+    )
+    assert (
+        "materialized_postgresql_use_extended_date_and_time_types" in error
+        and "table engine" in error
+    ), error
+
+
 def test_use_extended_date_and_time_types_setting_alter_database_rejected(started_cluster):
     # The setting only controls the column types chosen by type inference when the nested tables
     # are created. The already created nested tables keep their fixed column types, so changing it
