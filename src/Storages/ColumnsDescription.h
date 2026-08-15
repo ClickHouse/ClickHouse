@@ -329,6 +329,9 @@ struct DefaultExpressionsInfo
     NameSet insert_time_default_columns;
 };
 
+/// Restore the Quantized(...) subcolumns on columns parsed from a part's columns.txt.
+void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDescription & metadata);
+
 void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info);
 
 ASTPtr cloneAndExpandColumnDefaultExpression(const ColumnDefault & column_default, const ColumnsDescription & columns);
