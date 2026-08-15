@@ -1006,6 +1006,42 @@ async function main() {
             res.clause && res.clause.name === 'JSONCompactColumns', res);
     }
 
+    /// Contract 7: `Run all` must not dispatch a later write after a prior statement reports an
+    /// in-band framed failure. Drive the real `postMulti` grouping loop; the transport boundary is
+    /// replaced only with the already-decoded result returned by `postImpl`, as a stream harness
+    /// cannot make a browser `Response` from this minimal DOM fake.
+    {
+        const page = await bootPage(js);
+        const res = JSON.parse(await page.run(`(async () => {
+            const tab = makeTab('Run all', 'SELECT fail; INSERT later');
+            tab.reqNum = 1;
+            tab.panel = document.createElement('div');
+            tab.resultEl = document.createElement('div');
+            tab.resultEl.clear = () => {};
+            tab.panel.appendChild(tab.resultEl);
+            tabs.push(tab);
+            activeTabId = tab.id;
+            const calls = [];
+            const savedPostImpl = postImpl;
+            postImpl = async (_tab, _req, query) => {
+                calls.push(query);
+                return { format: '', reply: '', response_ok: false, is_error: true,
+                    is_table: false, is_raw: false, is_chart: false, is_image: false,
+                    is_base64: false, is_truncated: false, framing_kind: '' };
+            };
+            await postMulti(tab, 1, [
+                { query: 'SELECT fail', is_select: true, queryStart: 0 },
+                { query: 'INSERT later', is_select: false, queryStart: 13 },
+            ], {}, tab.query, { url: 'http://example.test', user: '', password: '' }, true, '');
+            postImpl = savedPostImpl;
+            return JSON.stringify({ calls, failed: tab.failed, phase: tab.progressPhase });
+        })()`));
+        check('run-all-framed-failure', 'a failed first statement prevents a later write from being sent',
+            res.calls.length === 1 && res.calls[0] === 'SELECT fail', res);
+        check('run-all-framed-failure', 'the tab retains the failed state',
+            res.failed && res.phase === 'error', res);
+    }
+
     if (failures === 0) {
         console.log('All scenarios passed');
         process.exit(0);
