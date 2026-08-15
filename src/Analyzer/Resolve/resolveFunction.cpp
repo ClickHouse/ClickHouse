@@ -187,7 +187,8 @@ bool isSafeCountScalarSubqueryForEarlyShortCircuit(const QueryNode & query)
 {
     const auto & join_tree = query.getJoinTreeNode();
     if (!join_tree
-        || join_tree->getNodeType() != QueryTreeNodeType::TABLE
+        || (join_tree->getNodeType() != QueryTreeNodeType::TABLE
+            && join_tree->getNodeType() != QueryTreeNodeType::IDENTIFIER)
         || hasNestedQueryOrUnion(query)
         || query.hasWith()
         || query.hasPrewhere()
