@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 
 #include <Core/Block.h>
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -61,6 +64,23 @@ TEST(QueryPlanExecutionLimits, CloneSubtreePreservesSourceLimitsAndResources)
     EXPECT_TRUE(subtree.getConcurrencyControl());
     EXPECT_EQ(subtree.getInterpretersContexts().size(), 1u);
     EXPECT_EQ(source.getInterpretersContexts().size(), 1u);
+}
+
+TEST(QueryPlanExecutionLimits, SerializationPreservesLimits)
+{
+    auto source = makeSourcePlan();
+    source.setMaxThreads(4);
+    source.setConcurrencyControl(true);
+
+    WriteBufferFromOwnString out;
+    source.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
+    ReadBufferFromString in(out.str());
+    auto deserialized = QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0);
+    auto restored = QueryPlan::makeSets(std::move(deserialized), getContext().context);
+
+    EXPECT_EQ(restored.getMaxThreads(), 4u);
+    EXPECT_TRUE(restored.getConcurrencyControl());
 }
 
 TEST(QueryPlanExecutionLimits, ReplaceNodeWithPlanMergesConcurrencyControl)

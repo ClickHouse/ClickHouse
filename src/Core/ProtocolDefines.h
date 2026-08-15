@@ -84,7 +84,10 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// and merge-sorts its input streams instead of an unordered `resize(1)` when set. Both steps check the
 /// version in their serialize and deserialize, since an older peer would misparse the stream, not merely
 /// reject an unknown step name as with version 4.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 6;
+/// Version 7 serializes the plan-level `max_threads` and `concurrency_control` fields. They are not
+/// properties of individual steps, so a remote plan fragment would otherwise execute with its default
+/// execution limits after deserialization.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 7;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a

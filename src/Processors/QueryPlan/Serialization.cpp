@@ -26,6 +26,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS = 7;
+
 static void serializeHeader(const Block & header, WriteBuffer & out)
 {
     /// Write only names and types.
@@ -93,6 +95,12 @@ void QueryPlan::serializeForDistributedTask(WriteBuffer & out, size_t max_suppor
 void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) const
 {
     checkInitialized();
+
+    if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS)
+    {
+        writeVarUInt(max_threads, out);
+        writeBinary(concurrency_control, out);
+    }
 
     SerializedSetsRegistry registry;
 
@@ -206,6 +214,12 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
     std::stack<Frame> stack;
 
     QueryPlan plan;
+    if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS)
+    {
+        readVarUInt(plan.max_threads, in);
+        readBinary(plan.concurrency_control, in);
+    }
+
     stack.push(Frame{.to_fill = plan.root});
 
     while (!stack.empty())
