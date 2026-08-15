@@ -150,6 +150,7 @@ pres arr	1
 pres f64	1
 pres tup	1
 pres tdyn	1
+pres jsub	1
 pres off varlen	0
 pres off master	0
 skipidx f64	0

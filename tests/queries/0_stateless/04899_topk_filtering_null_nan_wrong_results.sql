@@ -343,6 +343,9 @@ SELECT 'pres arr', count() > 0 FROM (EXPLAIN actions = 1 SELECT v FROM d_arr ORD
 SELECT 'pres f64', count() > 0 FROM (EXPLAIN actions = 1 SELECT v FROM d_f64 ORDER BY v ASC NULLS FIRST LIMIT 1) WHERE explain LIKE '%__topKFilter%';
 SELECT 'pres tup', count() > 0 FROM (EXPLAIN actions = 1 SELECT v FROM s_tf ORDER BY v ASC NULLS LAST, id DESC LIMIT 3) WHERE explain LIKE '%__topKFilter%';
 SELECT 'pres tdyn', count() > 0 FROM (EXPLAIN actions = 1 SELECT v FROM s_tdyn ORDER BY v ASC NULLS LAST, id DESC LIMIT 3) WHERE explain LIKE '%__topKFilter%';
+-- A dotted sort column reaches the filter only through the alias branch that resolves it to the
+-- storage column name; an unresolved name returns before any filter is installed.
+SELECT 'pres jsub', count() > 0 FROM (EXPLAIN actions = 1 SELECT v.f FROM d_json ORDER BY v.f ASC NULLS FIRST LIMIT 1) WHERE explain LIKE '%__topKFilter%';
 SELECT 'pres off varlen', count() FROM (EXPLAIN actions = 1 SELECT v FROM d_arr ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering_for_variable_length_types = 0) WHERE explain LIKE '%__topKFilter%';
 SELECT 'pres off master', count() FROM (EXPLAIN actions = 1 SELECT v FROM d_f64 ORDER BY v ASC NULLS FIRST LIMIT 1 SETTINGS use_top_k_dynamic_filtering = 0) WHERE explain LIKE '%__topKFilter%';
 
