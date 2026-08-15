@@ -251,6 +251,19 @@ StorageMergeTree::StorageMergeTree(
 
     if ((*getSettings())[MergeTreeSetting::leader_election])
     {
+        /// A read-only table returns from `startup` before the lease task is created. Allowing
+        /// this combination would let a later `ALTER ... MODIFY SETTING table_readonly = 0`
+        /// turn the table into a writer without any leadership fence. Supporting that lifecycle
+        /// requires starting and managing the election task for read-only tables too; reject it
+        /// until then rather than silently weakening the single-writer guarantee.
+        if ((*getSettings())[MergeTreeSetting::table_readonly])
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The `table_readonly` and `leader_election` settings cannot be enabled together: "
+                "a read-only table does not start the leader-election task, so making it writable "
+                "later would bypass the leadership fence.");
+        }
+
         /// Leader election relies on conditional writes (`If-Match` / `If-None-Match`) on object
         /// storage to implement the lease protocol. Only `S3` and `Azure` backends support these
         /// operations. Other remote backends (`HDFS`, `Web`) and local disks do not.

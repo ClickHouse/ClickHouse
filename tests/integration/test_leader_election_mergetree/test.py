@@ -912,6 +912,38 @@ def test_replicated_mergetree_rejects_leader_election(started_cluster):
     )
 
 
+def test_readonly_table_rejects_leader_election(started_cluster):
+    """
+    Regression: a `table_readonly` table skips `StorageMergeTree::startup`, which is where the
+    leader-election task is created. Allowing it to be attached would let a later setting change
+    turn it into a writer without a lease, so reject the unsafe configuration at CREATE.
+    """
+    ensure_node_up(node1)
+    table = "test_readonly_leader_election_rejected"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} (x UInt64)
+            ENGINE = MergeTree ORDER BY x
+            SETTINGS {TABLE_SETTINGS}, table_readonly = 1
+            """
+        )
+    except Exception as e:
+        msg = str(e)
+        assert "table_readonly" in msg and "leader_election" in msg, (
+            f"Expected rejection mentioning both settings, got: {msg}"
+        )
+        return
+    finally:
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
+    raise AssertionError(
+        "MergeTree with table_readonly=1 and leader_election=1 should have been rejected at CREATE"
+    )
+
+
 def test_commit_rejected_on_stale_leadership_epoch(started_cluster):
     """
     Regression for the commit-time epoch fence (`assertWritableLeaderAtEpoch`): a write must not
