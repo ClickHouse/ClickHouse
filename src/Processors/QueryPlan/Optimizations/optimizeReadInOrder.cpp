@@ -265,7 +265,12 @@ bool joinKeepsLeftSideLimit(const IJoin * join_ptr)
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
-void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit)
+void buildSortingDAG(
+    const QueryPlan::Node & node,
+    std::optional<ActionsDAG> & dag,
+    FixedColumns & fixed_columns,
+    size_t & limit,
+    size_t * query_limit = nullptr)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
@@ -301,18 +306,26 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
     if (const auto * join_step = typeid_cast<const JoinStep *>(step))
     {
         if (!joinKeepsLeftSideLimit(join_step->getJoin().get()))
+        {
             limit = 0;
+            if (query_limit)
+                *query_limit = 0;
+        }
     }
     else if (const auto * filled_join_step = typeid_cast<const FilledJoinStep *>(step))
     {
         if (!joinKeepsLeftSideLimit(filled_join_step->getJoin().get()))
+        {
             limit = 0;
+            if (query_limit)
+                *query_limit = 0;
+        }
     }
 
     if (node.children.empty())
         return;
 
-    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit);
+    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit, query_limit);
 
     if (typeid_cast<const DistinctStep *>(step))
     {
@@ -1198,15 +1211,14 @@ InputOrderInfoPtr buildInputOrderInfo(
 
     const auto & description = sorting.getSortDescription();
     size_t limit = sorting.getLimit();
-    /// Capture the SQL query's LIMIT value before `buildSortingDAG` zeroes it out for queries with
-    /// filter/join/array-join (the limit can't be pushed past a filter, but the read step still
-    /// benefits from knowing a LIMIT exists at the query level — both for sizing the first read
-    /// task and for the PK-selectivity guard).
-    const size_t query_limit = limit;
+    /// A SQL `LIMIT` remains useful for the first read task and the PK-selectivity guard even
+    /// when a filter prevents pushing it to the read step. A non-limit-preserving join is
+    /// different: it can discard left rows, so the output limit does not bound the read.
+    size_t query_limit = limit;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    buildSortingDAG(node, dag, fixed_columns, limit, &query_limit);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
