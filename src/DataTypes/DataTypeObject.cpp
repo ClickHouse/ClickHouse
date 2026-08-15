@@ -1144,6 +1144,22 @@ bool typesEqualIgnoringJSONSharedDataPathPolicy(const IDataType * from, const ID
     return true;
 }
 
+/// Returns the index of the sole JSON-shaped element, or nullopt if zero or more than one element
+/// is JSON-shaped -- otherwise there's no single element to unambiguously attribute a policy to.
+std::optional<size_t> findUniqueJSONShapedElement(const DataTypes & elements)
+{
+    std::optional<size_t> found;
+    for (size_t i = 0; i != elements.size(); ++i)
+    {
+        if (!containsJSONObjectType(*elements[i]))
+            continue;
+        if (found)
+            return std::nullopt;
+        found = i;
+    }
+    return found;
+}
+
 DataTypePtr applyJSONSharedDataPathPolicyImpl(const DataTypePtr & type, const DataTypePtr & policy_source_type, bool merge_rules)
 {
     /// A target/source pair can differ by exactly a Nullable wrapper when the provenance came from
@@ -1182,25 +1198,36 @@ DataTypePtr applyJSONSharedDataPathPolicyImpl(const DataTypePtr & type, const Da
         source_array && !typeid_cast<const DataTypeArray *>(type.get()))
         return applyJSONSharedDataPathPolicyImpl(type, source_array->getNestedType(), merge_rules);
 
-    /// A single-element tuple (e.g. `tuple(j)`) has the same one-to-one relationship to its source
-    /// as Array does; a tuple with more than one element has no single source column this policy
-    /// could unambiguously belong to, so it's left alone.
+    /// A tuple where exactly one element is JSON-shaped (e.g. `tuple(j)`, `tuple(j, 1)`) has an
+    /// unambiguous source; zero or 2+ JSON-shaped elements leaves no single element to target.
     if (const auto * target_tuple = typeid_cast<const DataTypeTuple *>(type.get());
-        target_tuple && target_tuple->getElements().size() == 1 && !typeid_cast<const DataTypeTuple *>(policy_source_type.get()))
+        target_tuple && !typeid_cast<const DataTypeTuple *>(policy_source_type.get()))
     {
-        auto nested = applyJSONSharedDataPathPolicyImpl(target_tuple->getElements().front(), policy_source_type, merge_rules);
-        if (nested == target_tuple->getElements().front())
+        auto index = findUniqueJSONShapedElement(target_tuple->getElements());
+        if (!index)
             return type;
+
+        DataTypes elements = target_tuple->getElements();
+        auto nested = applyJSONSharedDataPathPolicyImpl(elements[*index], policy_source_type, merge_rules);
+        if (nested == elements[*index])
+            return type;
+
+        elements[*index] = std::move(nested);
         if (target_tuple->hasExplicitNames())
-            return std::make_shared<DataTypeTuple>(DataTypes{std::move(nested)}, target_tuple->getElementNames());
-        return std::make_shared<DataTypeTuple>(DataTypes{std::move(nested)});
+            return std::make_shared<DataTypeTuple>(std::move(elements), target_tuple->getElementNames());
+        return std::make_shared<DataTypeTuple>(std::move(elements));
     }
 
-    /// Source-side mirror of the tuple case above, e.g. `tupleElement(t, 1)` over a single-element
-    /// `t`: still an unambiguous one-to-one relationship, just with the wrapper on the other side.
+    /// Source-side mirror of the tuple case above, e.g. `tupleElement(t, 2)` over `t Tuple(UInt8,
+    /// JSON(...))`: same unambiguous-element rule, just with the wrapper on the source side.
     if (const auto * source_tuple = typeid_cast<const DataTypeTuple *>(policy_source_type.get());
-        source_tuple && source_tuple->getElements().size() == 1 && !typeid_cast<const DataTypeTuple *>(type.get()))
-        return applyJSONSharedDataPathPolicyImpl(type, source_tuple->getElements().front(), merge_rules);
+        source_tuple && !typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        auto index = findUniqueJSONShapedElement(source_tuple->getElements());
+        if (!index)
+            return type;
+        return applyJSONSharedDataPathPolicyImpl(type, source_tuple->getElements()[*index], merge_rules);
+    }
 
     /// `map('k', j)`, `map(j, 1)`, or `map(j, j)`: DataTypeMap::isValidKeyType permits a JSON key
     /// (it only excludes Nullable), so the JSON value isn't necessarily in just one side -- apply
