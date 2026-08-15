@@ -4,7 +4,6 @@ import string
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -447,21 +446,13 @@ def test_default_codec_for_compact_parts(start_cluster):
     node4.query("DROP TABLE compact_parts_table SYNC")
 
 
-def test_default_codec_recovered_from_checksums_when_codec_file_missing(start_cluster):
+def test_missing_codec_file_fails_closed_for_modern_part(start_cluster):
     # A part can be missing `default_compression_codec.txt` because it is genuinely legacy (that file
     # was introduced long ago) or because a modern part lost it, for example during
     # detach/copy/restore. When every column has an explicit CODEC, no column proves the default
     # codec, so `IMergeTreeDataPart::detectDefaultCompressionCodec` cannot read it from a column
-    # `.bin` and must recover it. It recovers the codec from `checksums.txt`, whose modern format is
-    # compressed with the default codec effective when the part was written, so a legacy `LZ4` part
-    # is not upgraded to the new `ZSTD(3)` default and, just as importantly, a modern part that only
-    # lost its codec file is not silently downgraded to `LZ4` (which would also propagate through the
-    # projection codec inheritance in `MergeTask` / `MutateTask`).
-    #
-    # Here the part is written and then merged under the new `ZSTD(3)` default, so its `checksums.txt`
-    # is a ZSTD frame; after we drop the codec file from the merged part the recovered default must
-    # stay a ZSTD codec (the frame does not store the level, so it comes back as `ZSTD(1)`) rather
-    # than falling back to `LZ4`.
+    # `.bin` and cannot recover it. `checksums.txt` records the built-in codec rather than the part
+    # default, so a modern part that lost its mandatory codec file must fail closed.
     node4.query(
         """
     CREATE TABLE no_codec_file (
@@ -490,36 +481,16 @@ def test_default_codec_recovered_from_checksums_when_codec_file_missing(start_cl
         ["rm", f"{data_path}detached/{part_name}/default_compression_codec.txt"]
     )
 
-    node4.query(f"ALTER TABLE no_codec_file ATTACH PART '{part_name}'")
-
-    assert node4.query("SELECT COUNT() FROM no_codec_file") == "2\n"
-
-    # Recovered from the ZSTD-compressed `checksums.txt`; must not be silently downgraded to `LZ4`.
-    assert (
-        node4.query(
-            "SELECT default_compression_codec FROM system.parts "
-            "WHERE database='default' AND table='no_codec_file' AND active"
-        ).strip()
-        == "ZSTD(1)"
-    )
+    with pytest.raises(Exception, match="Cannot recover the default compression codec"):
+        node4.query(f"ALTER TABLE no_codec_file ATTACH PART '{part_name}'")
 
     node4.query("DROP TABLE no_codec_file SYNC")
 
 
-def test_default_codec_recovered_from_checksums_when_codec_file_malformed(start_cluster):
+def test_malformed_codec_file_fails_closed_for_modern_part(start_cluster):
     # A `default_compression_codec.txt` file can be present but unparseable (corrupted or truncated,
-    # for example after an interrupted detach/copy/restore). Just like the missing-file case above,
-    # when every column has an explicit CODEC no column proves the default codec, so
-    # `IMergeTreeDataPart::loadDefaultCompressionCodec` must recover it from `checksums.txt` rather
-    # than fall back to the current global default (`getDefaultCodec()`, which is a fixed `ZSTD(3)`):
-    # the write-time codec family from the checksums frame is authoritative, while the current global
-    # default can be a different family and would wrongly propagate through the projection codec
-    # inheritance in `MergeTask` / `MutateTask`.
-    #
-    # The part is written and merged under the new `ZSTD(3)` default, so its `checksums.txt` is a ZSTD
-    # frame. After we truncate the codec file to an empty (unparseable) file, the recovered default
-    # must be the frame's `ZSTD(1)` (the frame does not store the level) - not the `ZSTD(3)` that the
-    # raw global-default fallback would have produced.
+    # for example after an interrupted detach/copy/restore). When every column has an explicit
+    # `CODEC`, no data records the part default and a modern `checksums.txt` cannot reconstruct it.
     node4.query(
         """
     CREATE TABLE malformed_codec_file (
@@ -548,37 +519,17 @@ def test_default_codec_recovered_from_checksums_when_codec_file_malformed(start_
         ["cp", "/dev/null", f"{data_path}detached/{part_name}/default_compression_codec.txt"]
     )
 
-    node4.query(f"ALTER TABLE malformed_codec_file ATTACH PART '{part_name}'")
-
-    assert node4.query("SELECT COUNT() FROM malformed_codec_file") == "2\n"
-
-    # Recovered from the ZSTD-compressed `checksums.txt`; must not fall back to the raw `ZSTD(3)`
-    # global default (nor be downgraded to `LZ4`).
-    assert (
-        node4.query(
-            "SELECT default_compression_codec FROM system.parts "
-            "WHERE database='default' AND table='malformed_codec_file' AND active"
-        ).strip()
-        == "ZSTD(1)"
-    )
+    with pytest.raises(Exception, match="Cannot recover the default compression codec"):
+        node4.query(f"ALTER TABLE malformed_codec_file ATTACH PART '{part_name}'")
 
     node4.query("DROP TABLE malformed_codec_file SYNC")
 
 
-def test_default_codec_not_recovered_from_regenerated_checksums(start_cluster):
+def test_missing_codec_and_checksums_files_fail_closed(start_cluster):
     # A part can lose *both* `default_compression_codec.txt` and `checksums.txt` (for example after a
     # partial detach/copy/restore that dropped metadata files). On such a part every column here has an
-    # explicit CODEC, so no column proves the default codec and the recovery has nothing on disk that
-    # records it.
-    #
-    # `loadColumnsChecksumsIndexes` runs `loadChecksums` before `loadDefaultCompressionCodec`. With
-    # `checksums.txt` missing, `loadChecksums` regenerates it immediately, compressing it with the
-    # *current* built-in default codec (`ZSTD(3)`), which has nothing to do with the codec the part was
-    # written with. If `detectDefaultCompressionCodecFromChecksums` then read that freshly regenerated
-    # frame it would infer the current default family (`ZSTD(1)`) and mislabel a legacy `LZ4` part as
-    # ZSTD - the very provenance the recovery is meant to preserve. The regenerated frame must not be
-    # trusted: with no genuine `checksums.txt` on disk the recovery must infer `LZ4`, exactly as for a
-    # part that never had a `checksums.txt` at all.
+    # explicit `CODEC`, so no column proves the default codec. A regenerated `checksums.txt` is not
+    # provenance, so attachment must fail rather than choose an arbitrary default.
     node4.query(
         """
     CREATE TABLE no_codec_no_checksums (
@@ -614,20 +565,8 @@ def test_default_codec_not_recovered_from_regenerated_checksums(start_cluster):
         ["rm", f"{data_path}detached/{part_name}/checksums.txt"]
     )
 
-    node4.query(f"ALTER TABLE no_codec_no_checksums ATTACH PART '{part_name}'")
-
-    assert node4.query("SELECT COUNT() FROM no_codec_no_checksums") == "2\n"
-
-    # `checksums.txt` was regenerated with the current `ZSTD(3)` default during ATTACH, but that frame
-    # is not write-time provenance, so the recovery must fall back to `LZ4` rather than read `ZSTD(1)`
-    # out of the regenerated frame.
-    assert (
-        node4.query(
-            "SELECT default_compression_codec FROM system.parts "
-            "WHERE database='default' AND table='no_codec_no_checksums' AND active"
-        ).strip()
-        == "LZ4"
-    )
+    with pytest.raises(Exception, match="Cannot recover the default compression codec"):
+        node4.query(f"ALTER TABLE no_codec_no_checksums ATTACH PART '{part_name}'")
 
     node4.query("DROP TABLE no_codec_no_checksums SYNC")
 
@@ -808,18 +747,16 @@ def test_default_codec_recovered_from_lz4hc_part(start_cluster):
     node4.query("DROP TABLE lz4hc_default_codec SYNC")
 
 
-def test_default_codec_not_misattributed_in_compact_part(start_cluster):
+def test_mixed_codec_compact_part_fails_closed_without_codec_file(start_cluster):
     # In a Compact part all columns share a single `data.bin`, and the recovery reads that file's
     # *first* frame, which belongs to whichever column was written first - not necessarily to the
     # column being inspected. With mixed codecs the frame cannot be attributed to a column, so the
-    # column-proven recovery must be skipped in favor of the `checksums.txt` fallback.
+    # column-proven recovery must be skipped.
     #
     # On `node5` the default codec is pinned to `ZSTD(3)` for parts of any size, so the no-codec
     # `data` column is a `ZSTD` frame, while the first column `key` carries an explicit `LZ4` codec
-    # and owns the first frame of the shared `data.bin`. Before the fix the recovery attributed that
-    # `LZ4` frame to `data` and confidently relabeled the part's default as `LZ4`; the correct result
-    # is the `ZSTD(1)` family guess from the `checksums.txt` fallback (`checksums.txt` is written
-    # with the built-in `ZSTD(3)` default, and the frame stores the method byte only).
+    # and owns the first frame of the shared `data.bin`. The modern `checksums.txt` frame records the
+    # built-in codec rather than the selected part default, so a missing codec file must fail closed.
     node5.query(
         """
     CREATE TABLE mixed_codec_compact_part (
@@ -852,18 +789,8 @@ def test_default_codec_not_misattributed_in_compact_part(start_cluster):
         ["rm", f"{data_path}detached/{part_name}/default_compression_codec.txt"]
     )
 
-    node5.query(f"ALTER TABLE mixed_codec_compact_part ATTACH PART '{part_name}'")
-
-    assert node5.query("SELECT COUNT() FROM mixed_codec_compact_part") == "2\n"
-
-    # The `checksums.txt` family guess, not the `key` column's `LZ4` frame.
-    assert (
-        node5.query(
-            "SELECT default_compression_codec FROM system.parts "
-            "WHERE database='default' AND table='mixed_codec_compact_part' AND active"
-        ).strip()
-        == "ZSTD(1)"
-    )
+    with pytest.raises(Exception, match="Cannot recover the default compression codec"):
+        node5.query(f"ALTER TABLE mixed_codec_compact_part ATTACH PART '{part_name}'")
 
     node5.query("DROP TABLE mixed_codec_compact_part SYNC")
 
@@ -936,15 +863,10 @@ def test_default_codec_approximate_when_recovered_from_column_data(start_cluster
     node5.query("DROP TABLE approximate_default_codec SYNC")
 
 
-def test_default_codec_recovery_fenced_after_codec_alter(start_cluster):
-    # `detectDefaultCompressionCodec` proves the part's default codec from the `.bin` frame of a
-    # default-coded column, but it looks the codec declarations up in the *current* table metadata.
-    # When column codecs were altered after the part was written, the current declarations do not
-    # describe the part: a column that was explicitly coded at write time becomes "default-coded"
-    # after `ALTER TABLE ... MODIFY COLUMN ... REMOVE CODEC`, and its frame would then be read as
-    # proof of the part's default. The recovery must therefore distrust the column proof whenever
-    # the part records a metadata version different from the current one (`ReplicatedMergeTree`
-    # increments it on `ALTER`) and take the approximate `checksums.txt` fallback instead.
+def test_missing_codec_file_fails_closed_for_modern_part_after_codec_alter(start_cluster):
+    # `checksums.txt` records the built-in codec, not the part default. After an ALTER, the current
+    # column metadata cannot prove the old part default either. For a modern part whose mandatory
+    # codec file was removed, `ATTACH PART` must fail rather than report a false default codec.
     node1.query(
         """
     CREATE TABLE codec_alter_fence (
@@ -984,21 +906,8 @@ def test_default_codec_recovery_fenced_after_codec_alter(start_cluster):
     # default-coded, while in the part it is an explicitly-coded `LZ4` column.
     node1.query("ALTER TABLE codec_alter_fence MODIFY COLUMN data REMOVE CODEC")
 
-    node1.query(f"ALTER TABLE codec_alter_fence ATTACH PART '{part_name}'")
-
-    assert node1.query("SELECT COUNT() FROM codec_alter_fence") == "1\n"
-
-    # Without the metadata-version fence the recovery would read the `data` column's `LZ4` frame as
-    # proof of the part's default and report `LZ4`. With the fence it must fall back to
-    # `checksums.txt`, whose frame is compressed with the built-in write-time default - `ZSTD(3)`,
-    # recovered without the level as `ZSTD(1)` - the same family as the real `ZSTD(10)` default.
-    assert (
-        node1.query(
-            "SELECT default_compression_codec FROM system.parts "
-            "WHERE database='default' AND table='codec_alter_fence' AND active"
-        ).strip()
-        == "ZSTD(1)"
-    )
+    with pytest.raises(Exception, match="Cannot recover the default compression codec"):
+        node1.query(f"ALTER TABLE codec_alter_fence ATTACH PART '{part_name}'")
 
     node1.query("DROP TABLE codec_alter_fence SYNC")
 
