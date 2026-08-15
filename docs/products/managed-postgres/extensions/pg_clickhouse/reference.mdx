@@ -875,7 +875,7 @@ should be mapped to the PostgreSQL [TEXT], but when using binary data, map it
 to [BYTEA]. Example:
 
 ```sql
--- Create clickHouse table with String columns.
+-- Create ClickHouse table with String columns.
 SELECT clickhouse_raw_query($$
     CREATE TABLE bytes (
         c1 Int8, c2 String, c3 String

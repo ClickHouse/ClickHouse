@@ -665,7 +665,7 @@ def main():
                 break
         else:
             raise FileNotFoundError(
-                "Clickhouse binary not found in any of the paths: "
+                "ClickHouse binary not found in any of the paths: "
                 + ", ".join(paths_to_check)
                 + ". You can also specify path to binary via --path argument"
             )
