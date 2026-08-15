@@ -1895,12 +1895,18 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
         /// SQL UDF expansion can introduce unqualified table names into expressions such as
-        /// constraints. Qualify them before persisting the metadata, because it can later be
-        /// attached with a different current database.
+        /// constraints and views. Qualify them before persisting the metadata, because it can
+        /// later be attached or executed with a different current database.
         if (create.columns_list)
         {
             AddDefaultDatabaseVisitor visitor(getContext(), current_database);
             visitor.visit(*create.columns_list);
+        }
+
+        if (create.select && create.isView())
+        {
+            AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+            visitor.visit(*create.select);
         }
     }
 

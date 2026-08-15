@@ -34,9 +34,11 @@ DROP TABLE t_constraint_in_user;
 
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.source (id UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.source VALUES (1);
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE FUNCTION constraint_udf_dependency_f AS () -> (SELECT max(id) + 1000 FROM source);
 CREATE TABLE user (x UInt64, CONSTRAINT c CHECK x < constraint_udf_dependency_f()) ENGINE = MergeTree ORDER BY tuple();
+CREATE VIEW udf_view AS SELECT constraint_udf_dependency_f();
 
 SELECT loading_dependencies_table FROM system.tables WHERE database = currentDatabase() AND name = 'user';
 
@@ -45,9 +47,11 @@ DROP TABLE source; -- { serverError HAVE_DEPENDENT_OBJECTS }
 DETACH TABLE user;
 USE default;
 ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.user;
+SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.udf_view;
 
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 DROP TABLE user;
+DROP VIEW udf_view;
 DROP FUNCTION constraint_udf_dependency_f;
 USE default;
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
