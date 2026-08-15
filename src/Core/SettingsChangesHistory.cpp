@@ -73,7 +73,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_function_max_api_calls_per_query", 0, 1000, "Bound outbound AI function HTTP calls per query by default (previously 0 - unlimited)."},
             {"join_runtime_filter_min_probe_rows", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."},
             {"obfuscate_seed", "", "", "New setting: seed string for the obfuscate table function."},
-            {"obfuscate_markov_order", 5, 5, "New setting: Markov model order for the obfuscate table function."},
+            {"obfuscate_markov_order", 5, 5, "New setting: maximum context-buffer size for the obfuscate table function's legacy Markov model."},
             {"obfuscate_markov_frequency_cutoff", 5, 5, "New setting: frequency cutoff for the obfuscate table function's Markov model."},
             {"obfuscate_markov_num_buckets_cutoff", 0, 0, "New setting: number-of-buckets cutoff for the obfuscate table function's Markov model."},
             {"obfuscate_markov_frequency_add", 0, 0, "New setting: constant added to every frequency count in the obfuscate table function's Markov model."},

@@ -2138,6 +2138,12 @@ static bool shouldUseQueryCacheForSubquery(
             if (change.name == "use_query_cache")
                 return change.value.safeGet<bool>();
         }
+
+        for (const auto & setting_name : query_node.getDefaultSettings())
+        {
+            if (setting_name == "use_query_cache")
+                return query_node.getContext()->getSettingsRef()[Setting::use_query_cache];
+        }
     }
 
     /// `query_cache_for_subqueries` enables the Planner-level (`is_subquery = true`) cache

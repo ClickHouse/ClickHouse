@@ -4952,28 +4952,12 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     /// the query context, and switching to the QueryNode's own context copy could change
     /// non-settings state (e.g. isDistributed) and break table function execution
     /// (for example, causing s3 to create a remote StorageObjectStorageCluster).
-    /// A subquery customizes its settings context when it has either `SETTINGS x = value` changes (recorded
-    /// on the `QueryNode`) or `SETTINGS x = DEFAULT` resets. The latter are parsed into
-    /// `ASTSetQuery::default_settings`, are not stored on the `QueryNode`, and so are invisible to
-    /// `hasSettingsChanges()` even though `QueryTreeBuilder` applies them to the node's context. Detect them
-    /// from the original AST so that a `DEFAULT` reset that is the only inner setting still takes effect for
-    /// the table function (otherwise it would execute with the outer/session settings instead).
+    /// A subquery customizes its settings context when it has either `SETTINGS x = value` changes or
+    /// `SETTINGS x = DEFAULT` resets. Both are persisted on the `QueryNode`, so the context follows the
+    /// query tree through cloning and conversion back to AST for distributed execution.
     auto subquery_customizes_settings = [](const QueryNode & query_node) -> bool
     {
-        if (query_node.hasSettingsChanges())
-            return true;
-
-        const auto & original_ast = query_node.getOriginalAST();
-        if (!original_ast)
-            return false;
-        const auto * select_query = original_ast->as<ASTSelectQuery>();
-        if (!select_query)
-            return false;
-        const auto settings_ast = select_query->settings();
-        if (!settings_ast)
-            return false;
-        const auto * set_query = settings_ast->as<ASTSetQuery>();
-        return set_query && !set_query->default_settings.empty();
+        return query_node.hasSettingsChanges();
     };
 
     ContextPtr execution_context = scope_context->getQueryContext();

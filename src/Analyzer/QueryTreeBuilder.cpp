@@ -274,6 +274,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     auto updated_context = Context::createCopy(context);
     auto select_settings = select_query_typed.settings();
     SettingsChanges settings_changes;
+    std::vector<String> default_settings;
 
     /// We are going to remove settings LIMIT and OFFSET and
     /// further replace them with corresponding expression nodes
@@ -326,6 +327,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         /// handled by `InterpreterSetQuery`.
         if (!set_query.default_settings.empty())
         {
+            default_settings = set_query.default_settings;
             updated_context->resetSettingsToDefaultValue(set_query.default_settings);
 
             /// `limit` and `offset` were saved into the local variables above (from the inherited
@@ -344,7 +346,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
 
     const auto enable_order_by_all = updated_context->getSettingsRef()[Setting::enable_order_by_all];
 
-    auto current_query_tree = std::make_shared<QueryNode>(std::move(updated_context), std::move(settings_changes));
+    auto current_query_tree = std::make_shared<QueryNode>(std::move(updated_context), std::move(settings_changes), std::move(default_settings));
 
     current_query_tree->setIsSubquery(is_subquery);
     current_query_tree->setIsCTE(!cte_data.cte_name.empty());

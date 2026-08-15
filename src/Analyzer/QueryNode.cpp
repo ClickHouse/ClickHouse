@@ -39,10 +39,11 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
+QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_, std::vector<String> default_settings_)
     : ITableExpressionNode(children_size)
     , context(std::move(context_))
     , settings_changes(std::move(settings_changes_))
+    , default_settings(std::move(default_settings_))
 {
     children[with_child_index] = std::make_shared<ListNode>();
     children[projection_child_index] = std::make_shared<ListNode>();
@@ -342,6 +343,8 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
         for (const auto & change : settings_changes)
             buffer << fmt::format(" {}={}", change.name, fieldToString(change.value));
+        for (const auto & setting_name : default_settings)
+            buffer << fmt::format(" {}=DEFAULT", setting_name);
     }
 }
 
@@ -362,7 +365,8 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_order_by_all == rhs_typed.is_order_by_all &&
         is_limit_by_all == rhs_typed.is_limit_by_all &&
         projection_columns == rhs_typed.projection_columns &&
-        settings_changes == rhs_typed.settings_changes;
+        settings_changes == rhs_typed.settings_changes &&
+        default_settings == rhs_typed.default_settings;
 }
 
 void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) const
@@ -421,6 +425,13 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         state.update(setting_change_value_dump.size());
         state.update(setting_change_value_dump);
     }
+
+    state.update(default_settings.size());
+    for (const auto & setting_name : default_settings)
+    {
+        state.update(setting_name.size());
+        state.update(setting_name);
+    }
 }
 
 QueryTreeNodePtr QueryNode::cloneImpl() const
@@ -443,6 +454,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
     result_query_node->settings_changes = settings_changes;
+    result_query_node->default_settings = default_settings;
     result_query_node->projection_aliases_to_override = projection_aliases_to_override;
 
     return result_query_node;
@@ -567,6 +579,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     {
         auto settings_query = make_intrusive<ASTSetQuery>();
         settings_query->changes = settings_changes;
+        settings_query->default_settings = default_settings;
         settings_query->is_standalone = false;
         select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_query));
     }
