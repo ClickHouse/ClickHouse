@@ -137,7 +137,7 @@ INNER JOIN (SELECT 2 AS `a.x`) ON true;
 -- not require the subquery alias in that mode.
 WITH 1 AS x SELECT x FROM numbers(1), (SELECT 2 AS x) SETTINGS prefer_column_name_to_alias = 1;
 
-WITH CAST(tuple(1), 'Tuple(x UInt8)') AS n
+WITH tuple(x = 1) AS n
 SELECT `n.x` FROM numbers(1), (SELECT 2 AS `n.x`); -- { serverError ALIAS_REQUIRED }
 
 -- An `ARRAY JOIN` expression that is neither aliased nor a plain identifier (here a `COLUMNS(...)` matcher)
