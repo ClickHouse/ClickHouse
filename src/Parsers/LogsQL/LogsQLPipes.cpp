@@ -746,12 +746,13 @@ void LogsQLParser::applySortWithExtras(
     std::optional<UInt64> sort_limit,
     std::optional<UInt64> sort_offset)
 {
-    /// Aggregation and projection layers are wrapped into a subquery: sorting by an output field
-    /// which shadows a source column (e.g. the bucketed `_time` of `stats by (_time:1d)`)
-    /// is unambiguous only across a subquery boundary.
+    /// Aggregation layers are wrapped into a subquery: sorting by an output field which shadows
+    /// a source column (e.g. the bucketed `_time` of `stats by (_time:1d)`) is unambiguous only
+    /// across a subquery boundary. A plain projection does not need wrapping: ClickHouse permits
+    /// sorting by a source field that is not part of the final projection.
     wrapLayerIf(layer,
         !layer.order_by.empty() || layer.order_by_all || layer.limit.has_value() || layer.offset.has_value()
-        || layer.has_aggregation || layer.has_projection);
+        || layer.has_aggregation);
 
     auto make_order_elements = [&]
     {
@@ -1973,10 +1974,11 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
                         {
                             return makeASTFunction("toInt128", make_intrusive<ASTLiteral>(field));
                         };
-                        /// Buckets use the same per-row Float64 parsing as numeric stats
-                        /// functions. A non-numeric LogsQL field becomes NULL, which is an
-                        /// explicit separate group instead of attempting arithmetic on text.
-                        ASTPtr value = numericValueExpr(name);
+                        /// Integral buckets retain the exact integer representation of typed
+                        /// columns and integer-valued field strings. A non-numeric LogsQL field
+                        /// becomes NULL, which is an explicit separate group instead of
+                        /// attempting arithmetic on text.
+                        ASTPtr value = makeASTFunction("accurateCastOrNull", columnExpr(name), makeStringLiteral("Int128"));
                         if (offset_value)
                             value = makeASTFunction("minus", value, make_int128(*offset_value));
                         key = makeASTFunction("minus", value,
