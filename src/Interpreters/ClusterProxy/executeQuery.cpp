@@ -931,6 +931,13 @@ private:
             if (!visited_storages.insert(storage.get()).second)
                 return;
 
+            /// A catalog `Merge` wrapper has no replication status of its own, but it still has
+            /// to exist for a replica to plan the shipped fragment. Check every such wrapper,
+            /// including non-designated sibling leaves, as a soft miss alongside its children.
+            /// A `merge` table function has no catalog object to check.
+            if (const auto * table_node = table_expression ? table_expression->as<TableNode>() : nullptr)
+                tables.insert(table_node->getStorageID().getQualifiedName());
+
             auto child_tables = merge_storage->getReplicatedChildTableNames(context);
             tables.insert(child_tables.begin(), child_tables.end());
             return;
