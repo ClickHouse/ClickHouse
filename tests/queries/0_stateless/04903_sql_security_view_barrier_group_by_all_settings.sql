@@ -17,7 +17,7 @@ SELECT count() FROM security_barrier_group_by_all_04903 WHERE number = 0;
 
 -- If the view is inlined, the predicate is evaluated before the query-local
 -- limit and `throwIf` observes the row that the view hides.
-SELECT number FROM security_barrier_settings_04903 WHERE throwIf(number = 2, 'LEAKED');
+SELECT number FROM security_barrier_settings_04903 WHERE NOT throwIf(number = 2, 'LEAKED');
 
 DROP VIEW security_barrier_group_by_all_04903;
 DROP VIEW security_barrier_settings_04903;
