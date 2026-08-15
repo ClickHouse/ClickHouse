@@ -36,6 +36,7 @@ REVIEW_THREADS_STATUS_NAME = "Review Threads"
 
 KV_UNRESOLVED_COUNT = "unresolved_review_threads"
 KV_OVERRIDE = "unresolved_review_threads_override"
+KV_FORCE_ALL = "unresolved_review_threads_force_all"
 # This is written by the workflow filter after it has made the actual
 # limited/full decision. The config pre-hook cannot determine this by itself:
 # `ci-force-all` bypasses workflow filters altogether.
@@ -85,7 +86,7 @@ def merge_gate_verdict(config_limited, unresolved_now, override_now):
 
 
 def fetch_thread_state(info):
-    """(unresolved_count, override) from the live GitHub state. Raises on API failure.
+    """(unresolved_count, override, force_all) from live GitHub state.
 
     The labels are fetched fresh instead of using `info.pr_labels`: the event
     payload is stale on job re-runs (see the same pattern in `trusted.py`), and
@@ -101,10 +102,11 @@ def fetch_thread_state(info):
     )
     labels = [label["name"] for label in json.loads(output)["labels"]]
     override = review_threads_gate_bypassed(labels)
+    force_all = Labels.CI_FORCE_ALL in labels
     unresolved_count = get_unresolved_review_threads_count(
         pr=info.pr_number, repo=info.repo_name
     )
-    return unresolved_count, override
+    return unresolved_count, override, force_all
 
 
 if __name__ == "__main__":
@@ -114,7 +116,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     try:
-        unresolved_count, override = fetch_thread_state(info)
+        unresolved_count, override, force_all = fetch_thread_state(info)
     except Exception as e:
         # Fail toward more testing: without the thread state the full suite
         # runs as before. The merge gate in can_be_merged.py re-checks at
@@ -126,12 +128,16 @@ if __name__ == "__main__":
 
     info.store_kv_data(KV_UNRESOLVED_COUNT, unresolved_count)
     info.store_kv_data(KV_OVERRIDE, override)
+    # All later config decisions must use this live value. `info.pr_labels`
+    # comes from the original workflow event and is stale on GitHub reruns.
+    info.store_kv_data(KV_FORCE_ALL, force_all)
     print(
         f"Unresolved review threads: {unresolved_count}, "
-        f"'{Labels.IGNORE_UNRESOLVED_THREADS}' label: {override}"
+        f"'{Labels.IGNORE_UNRESOLVED_THREADS}' label: {override}, "
+        f"'{Labels.CI_FORCE_ALL}' label: {force_all}"
     )
 
-    if should_limit_pipeline(unresolved_count, override) and Labels.CI_FORCE_ALL not in info.pr_labels:
+    if should_limit_pipeline(unresolved_count, override) and not force_all:
         # Immediate feedback on the PR; can_be_merged.py posts the final
         # verdict at finish time.
         GH.post_commit_status(

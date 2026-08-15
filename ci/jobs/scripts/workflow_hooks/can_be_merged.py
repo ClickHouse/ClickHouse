@@ -48,7 +48,7 @@ def check_review_threads():
         return True
 
     config_limited = bool(info.get_kv_data(KV_PIPELINE_LIMITED))
-    unresolved_now, override_now = fetch_thread_state(info)
+    unresolved_now, override_now, _ = fetch_thread_state(info)
     blocked, description = merge_gate_verdict(
         config_limited, unresolved_now, override_now
     )

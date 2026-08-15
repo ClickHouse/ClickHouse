@@ -35,9 +35,11 @@ from ci.jobs.scripts.workflow_hooks import filter_job
 from ci.defs.defs import JobNames
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.jobs.scripts.workflow_hooks.review_threads import (
+    KV_FORCE_ALL,
     KV_OVERRIDE,
     KV_PIPELINE_LIMITED,
     KV_UNRESOLVED_COUNT,
+    fetch_thread_state,
     get_unresolved_review_threads_count,
     merge_gate_verdict,
     review_threads_gate_bypassed,
@@ -55,6 +57,7 @@ class FakeInfo:
         self.pr_labels = labels or []
         self.pr_body = ""
         self.pr_number = 12345
+        self.repo_name = "ClickHouse/ClickHouse"
         self.notes = []
 
     def get_kv_data(self, key=None):
@@ -118,6 +121,8 @@ def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
     assert 'pr_data=$(api_with_retries "repos/$GH_REPO/pulls/$pr")' in rerun_workflow
     assert "unresolved=$(api_with_retries graphql --paginate" in rerun_workflow
     assert 'runs=$(api_with_retries "repos/$GH_REPO/actions/runs?' in rerun_workflow
+    assert 'pipeline_limited=false' in rerun_workflow
+    assert 'Refreshed the review-threads merge gate without rerunning full CI.' in rerun_workflow
     assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in retry_workflow
 
 
@@ -131,6 +136,21 @@ def test_count_unresolved_threads(monkeypatch):
         GH, "list_pr_review_threads", lambda pr=None, repo=None: threads
     )
     assert get_unresolved_review_threads_count(pr=1, repo="a/b") == 2
+
+
+def test_fetch_thread_state_uses_live_force_all_label_on_rerun(monkeypatch):
+    """A rerun keeps the original event labels, so this must query GitHub."""
+    info = FakeInfo(labels=[])
+    monkeypatch.setattr(
+        GH,
+        "get_output_with_retries",
+        lambda *args, **kwargs: '{"labels": [{"name": "ci-force-all"}]}',
+    )
+    monkeypatch.setattr(
+        GH, "list_pr_review_threads", lambda **kwargs: [{"isResolved": False}]
+    )
+
+    assert fetch_thread_state(info) == (1, False, True)
 
 
 # --- should_skip_job integration ---
@@ -250,10 +270,12 @@ def test_forced_full_pipeline_is_not_recorded_as_limited():
             KV_UNRESOLVED_COUNT: 3,
             KV_OVERRIDE: False,
             KV_PIPELINE_LIMITED: False,
+            KV_FORCE_ALL: True,
         },
         labels=[Labels.CI_FORCE_ALL],
     )
     assert not info.get_kv_data(KV_PIPELINE_LIMITED)
+    assert info.get_kv_data(KV_FORCE_ALL)
     assert not merge_gate_verdict(info.get_kv_data(KV_PIPELINE_LIMITED), 0, False)[0]
 
 

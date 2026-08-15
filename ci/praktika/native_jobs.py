@@ -720,9 +720,14 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     if results[-1].is_ok() and workflow.workflow_filter_hooks:
         sw_ = Utils.Stopwatch()
         try:
-            pr_labels = Info().pr_labels
+            force_all_kv = Info().get_kv_data("unresolved_review_threads_force_all")
+            force_all = (
+                Settings.CI_FORCE_ALL_LABEL in Info().pr_labels
+                if force_all_kv is None
+                else bool(force_all_kv)
+            )
             review_threads_pipeline_limited = False
-            if Settings.CI_FORCE_ALL_LABEL in pr_labels:
+            if force_all:
                 print(
                     f"NOTE: Workflow filter hooks bypassed (label '{Settings.CI_FORCE_ALL_LABEL}')"
                 )
@@ -772,8 +777,13 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         print("Filter not affected jobs")
 
         def check_affected_jobs():
-            pr_labels = Info().pr_labels
-            if Settings.CI_FORCE_ALL_LABEL in pr_labels:
+            force_all_kv = Info().get_kv_data("unresolved_review_threads_force_all")
+            force_all = (
+                Settings.CI_FORCE_ALL_LABEL in Info().pr_labels
+                if force_all_kv is None
+                else bool(force_all_kv)
+            )
+            if force_all:
                 print(
                     f"NOTE: Job filtering by changed files is bypassed (label '{Settings.CI_FORCE_ALL_LABEL}')"
                 )
@@ -809,8 +819,13 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         stop_watch = Utils.Stopwatch()
         info = ""
         try:
-            pr_labels = Info().pr_labels
-            skip_lookup = Settings.CI_FORCE_ALL_LABEL in pr_labels
+            force_all_kv = Info().get_kv_data("unresolved_review_threads_force_all")
+            force_all = (
+                Settings.CI_FORCE_ALL_LABEL in Info().pr_labels
+                if force_all_kv is None
+                else bool(force_all_kv)
+            )
+            skip_lookup = force_all
             if not skip_lookup:
                 # Fail loud on missing S3 read access. Otherwise CacheRunnerHooks
                 # silently treats every fetch as a cache miss, hiding the real

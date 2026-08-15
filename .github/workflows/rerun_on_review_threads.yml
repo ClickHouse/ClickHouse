@@ -131,20 +131,47 @@ jobs:
           fi
 
           # --- Recorded verdict: the latest gate commit status on the head ---
-          marker_states=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses" --paginate \
-            --jq ".[] | select(.context == \"$STATUS_NAME\") | .state")
-          marker_state=$(printf '%s\n' "$marker_states" | sed -n 1p)
-          marker_state=${marker_state:-none}
+          # A failing marker has two distinct meanings: a limited pipeline
+          # must be replayed after threads resolve, whereas a forced full
+          # pipeline only needs its merge-gate status refreshed.
+          marker=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses?per_page=100" \
+            --jq "[.[] | select(.context == \"$STATUS_NAME\")] | first // {}")
+          marker_state=$(echo "$marker" | jq -r '.state // "none"')
+          marker_description=$(echo "$marker" | jq -r '.description // ""')
+          pipeline_limited=false
+          if [[ "$marker_description" == *"full CI suite was skipped"* ]] \
+             || [[ "$marker_description" == *"full CI suite will be re-run"* ]]; then
+            pipeline_limited=true
+          fi
           recorded_blocked=false
           if [ "$marker_state" = "failure" ] || [ "$marker_state" = "error" ]; then
             recorded_blocked=true
           fi
 
           echo "PR #$pr (head $head_sha): unresolved=$unresolved override=$override" \
-               "desired_blocked=$desired_blocked recorded=$marker_state"
+               "desired_blocked=$desired_blocked recorded=$marker_state pipeline_limited=$pipeline_limited"
 
           if [ "$desired_blocked" = "$recorded_blocked" ]; then
             echo "The recorded verdict matches the live state - nothing to do."
+            exit 0
+          fi
+
+          if [ "$pipeline_limited" != "true" ]; then
+            # A full pipeline already ran. Refresh only its gate status;
+            # rerunning would be wasteful (and `ci-force-all` skips cache
+            # lookup, so it would execute the full suite again).
+            if [ "$desired_blocked" = "true" ]; then
+              state=failure
+              description="$unresolved unresolved review thread(s)"
+            else
+              state=success
+              description="all review threads resolved"
+            fi
+            gh api --method POST "repos/$GH_REPO/statuses/$head_sha" \
+              -f state="$state" -f context="$STATUS_NAME" \
+              -f description="$description" \
+              -f target_url="https://github.com/$GH_REPO/pull/$pr"
+            echo "Refreshed the review-threads merge gate without rerunning full CI."
             exit 0
           fi
 
