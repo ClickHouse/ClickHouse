@@ -321,3 +321,54 @@ def test_sort_order_through_merge_table(started_cluster_iceberg_no_spark):
         .split("\n")
     )
     assert result == list(sorted(result))
+
+
+def test_top_k_through_join_does_not_defer_for_merge_object_storage(started_cluster_iceberg_no_spark):
+    # `topKThroughJoin` must retain its `Sort + Limit` pushdown when the preserved
+    # input is a `Merge` table with an object-storage child. The actual
+    # `ReadFromMerge::requestReadingInOrder` rejects that child, so deferring to
+    # the read-in-order pass would otherwise leave the query with neither plan.
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
+
+    schema = Schema(
+        NestedField(field_id=1, name="key", field_type=LongType(), required=False),
+        NestedField(field_id=2, name="payload", field_type=StringType(), required=False),
+    )
+    table = create_table(
+        catalog,
+        root_namespace,
+        "test_top_k_merge",
+        schema,
+        PartitionSpec(),
+        SortOrder(SortField(source_id=1, transform=IdentityTransform())),
+    )
+    table.append(pa.Table.from_pylist([{"key": key, "payload": str(key)} for key in range(100)]))
+
+    create_clickhouse_iceberg_database(
+        started_cluster_iceberg_no_spark, instance, CATALOG_NAME
+    )
+    merge_source = f"merge('{CATALOG_NAME}', '^{root_namespace}\\\\.test_top_k_merge$')"
+
+    instance.query("DROP TABLE IF EXISTS top_k_merge_object_storage_right")
+    instance.query(
+        "CREATE TABLE top_k_merge_object_storage_right (key Int64, value String) "
+        "ENGINE = MergeTree ORDER BY key"
+    )
+    instance.query("INSERT INTO top_k_merge_object_storage_right VALUES (0, 'zero')")
+
+    plan = instance.query(
+        f"EXPLAIN actions = 0 SELECT left.key, right.value FROM {merge_source} AS left "
+        "LEFT JOIN top_k_merge_object_storage_right AS right ON right.key = left.key "
+        "ORDER BY left.key LIMIT 3 "
+        "SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1, "
+        "query_plan_read_in_order_through_join = 1, query_plan_top_k_through_join = 1, "
+        "query_plan_join_swap_table = 0, query_plan_max_limit_for_top_k_optimization = 0, "
+        "enable_parallel_replicas = 0, max_bytes_before_external_join = 0, "
+        "max_bytes_ratio_before_external_join = 0"
+    )
+    assert plan.count("Sorting") >= 2
+    assert plan.count("Limit") >= 2
+
+    instance.query("DROP TABLE top_k_merge_object_storage_right")

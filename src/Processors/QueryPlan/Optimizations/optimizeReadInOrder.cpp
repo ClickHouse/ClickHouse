@@ -1743,12 +1743,10 @@ bool wouldReadInOrderBeUseful(
         if (!order_info.input_order)
             return false;
 
-        /// Mirror `ReadFromMerge::requestReadingInOrder`: it rejects reverse order with
-        /// `FINAL` up front, and then forwards the request to every child `ReadFromMergeTree`,
-        /// where the only rejection is again reverse order with `FINAL` - and the children
-        /// inherit `FINAL` from this same query.
-        return order_info.input_order->direction == 1
-            || !InterpreterSelectQuery::isQueryWithFinal(merge->getQueryInfo());
+        /// The probe must cover the same child-reader rejection path as the eventual request.
+        /// In particular, an object storage child fails closed because its pipeline does not yet
+        /// preserve the declared file order.
+        return merge->canReadInOrder(order_info.input_order->direction);
     }
     if (auto * object_storage_step = typeid_cast<ReadFromObjectStorageStep *>(reading_node->step.get()))
     {

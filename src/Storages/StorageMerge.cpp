@@ -1999,6 +1999,41 @@ const ReadFromMerge::StorageListWithLocks & ReadFromMerge::getSelectedTables()
     return selected_tables;
 }
 
+bool ReadFromMerge::canReadInOrder(int direction)
+{
+    filterTablesAndCreateChildrenPlans();
+
+    if (direction != 1 && InterpreterSelectQuery::isQueryWithFinal(query_info))
+        return false;
+
+    auto can_read_in_order = [direction](ReadFromMergeTree & read_from_merge_tree)
+    {
+        return direction == 1 || !read_from_merge_tree.isQueryWithFinal();
+    };
+
+    auto can_read_in_order_nested = [direction](ReadFromMerge & nested_read_from_merge)
+    {
+        return nested_read_from_merge.canReadInOrder(direction);
+    };
+
+    /// The object storage reader cannot preserve order when it is reached through a `Merge`
+    /// table. Keep this in sync with `requestReadingInOrder` below.
+    auto can_read_in_order_object_storage = [](ReadFromObjectStorageStep &)
+    {
+        return false;
+    };
+
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized() && !recursivelyApplyToReadingSteps(
+                child_plan.plan.getRootNode(),
+                can_read_in_order,
+                can_read_in_order_nested,
+                can_read_in_order_object_storage))
+            return false;
+
+    return true;
+}
+
 bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit)
 {
     filterTablesAndCreateChildrenPlans();
