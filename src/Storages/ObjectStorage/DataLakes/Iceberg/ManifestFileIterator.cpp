@@ -4,8 +4,11 @@
 #if USE_AVRO
 
 #include <compare>
+#include <limits>
 #include <optional>
 #include <unordered_set>
+
+#include <base/arithmeticOverflow.h>
 
 #include <Interpreters/IcebergMetadataLog.h>
 
@@ -61,19 +64,33 @@ namespace
             /// using the minimum number of bytes for the value
             /// Our decimal binary representation is little endian
             /// so we cannot reuse our default code for parsing it.
-            int64_t unscaled_value = 0;
+            ///
+            /// Only `Decimal32` and `Decimal64` become a bound below, and both fit into `Int64`.
+            /// Anything wider is rejected here, before the decoding: neither its unscaled value nor
+            /// its scaler (10^scale, which leaves `Int64` at scale 19) is representable.
+            const auto * decimal32_type = DB::checkDecimal<DB::Decimal32>(*non_nullable_type);
+            const auto * decimal64_type = DB::checkDecimal<DB::Decimal64>(*non_nullable_type);
+            if (!decimal32_type && !decimal64_type)
+                return std::nullopt;
 
-            // Convert from big-endian to signed int
+            /// A bound wider than its own type is malformed, and the value it spells is out of range
+            /// for that type, so there is no bound to return.
+            const size_t max_bytes = decimal32_type ? sizeof(Int32) : sizeof(Int64);
+            if (str.empty() || str.size() > max_bytes)
+                return std::nullopt;
+
+            /// Convert from big-endian two's complement. The accumulation is unsigned so that the
+            /// shifts stay defined, and the sign extension is skipped for a value that already fills
+            /// all 64 bits, where the shift width would leave the type.
+            UInt64 bits = 0;
             for (const auto byte : str)
-                unscaled_value = (unscaled_value << 8) | static_cast<uint8_t>(byte);
+                bits = (bits << 8) | static_cast<UInt8>(byte);
 
             /// Add sign
-            if (str[0] & 0x80)
-            {
-                int64_t sign_extension = -1;
-                sign_extension <<= (str.size() * 8);
-                unscaled_value |= sign_extension;
-            }
+            if ((str[0] & 0x80) && str.size() < sizeof(UInt64))
+                bits |= ~UInt64(0) << (str.size() * 8);
+
+            Int64 unscaled_value = static_cast<Int64>(bits);
 
             /// NOTE: It's very weird, but Decimal values for lower bound and upper bound
             /// are stored rounded, without fractional part. What is more strange
@@ -92,27 +109,26 @@ namespace
             /// but at least it doesn't lead to incorrect results.
             if (int32_t scale = DB::getDecimalScale(*non_nullable_type))
             {
-                int64_t scaler = lower_bound ? -10 : 10;
+                /// The scale of a `Decimal32` is at most 9 and of a `Decimal64` at most 18, so the
+                /// scaler itself fits; the bound it widens comes from the manifest and is not checked
+                /// against the declared precision, so the sum can still leave the type.
+                Int64 scaler = lower_bound ? -10 : 10;
                 while (--scale)
                     scaler *= 10;
 
-                unscaled_value += scaler;
+                if (common::addOverflow(unscaled_value, scaler, unscaled_value))
+                    return std::nullopt;
             }
 
-            if (const auto * decimal_type = DB::checkDecimal<DB::Decimal32>(*non_nullable_type))
+            if (decimal32_type)
             {
-                DB::DecimalField<DB::Decimal32> result(static_cast<Int32>(unscaled_value), decimal_type->getScale());
-                return result;
+                if (unscaled_value < std::numeric_limits<Int32>::min() || unscaled_value > std::numeric_limits<Int32>::max())
+                    return std::nullopt;
+
+                return DB::DecimalField<DB::Decimal32>(static_cast<Int32>(unscaled_value), decimal32_type->getScale());
             }
-            if (const auto * decimal_type = DB::checkDecimal<DB::Decimal64>(*non_nullable_type))
-            {
-                DB::DecimalField<DB::Decimal64> result(unscaled_value, decimal_type->getScale());
-                return result;
-            }
-            else
-            {
-                return std::nullopt;
-            }
+
+            return DB::DecimalField<DB::Decimal64>(unscaled_value, decimal64_type->getScale());
         }
         else if (non_nullable_type->getTypeId() == DB::TypeIndex::Variant)
         {
