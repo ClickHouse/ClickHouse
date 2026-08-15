@@ -100,7 +100,7 @@ The chart creates namespace-scoped Roles only; there is no ClusterRole or Cluste
 - **No exec.** The RBAC contains no `pods/exec`; the connector cannot run commands in your pods.
 - **No delete, no patch.** The only write verb in the entire RBAC is the exact-name `update` on the connector's own mTLS Secret.
 - **No cluster scope.** Every Role is bound in a namespace; the connector cannot list or read resources outside the namespaces you granted.
-- **Nothing inbound.** ClickHouse Cloud never opens a connection into your environment. The only command path is the troubleshooter's outbound WebSocket, and the troubleshooter refuses every command unless a support session you enabled is active. Even during a session, commands are limited to the table allowlist, with `query_log` and `text_log` denied by the validator regardless of configuration.
+- **Nothing inbound.** ClickHouse Cloud never opens a connection into your environment. The only command path is the troubleshooter's outbound WebSocket, and the troubleshooter refuses every command unless a support session you enabled is active. Even during a session, the scope is bounded on both sides: ClickHouse queries are limited to the table allowlist, with `query_log` and `text_log` denied by the validator regardless of configuration, and Kubernetes access is separately limited to the read-only views and pod logs the namespace-scoped Roles grant.
 
 ## What requires your action {#what-requires-your-action}
 
