@@ -215,7 +215,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
         PrewhereExprStep row_level_filter_step
         {
             .type = PrewhereExprStep::Filter,
-            .actions = std::make_shared<ExpressionActions>(row_level_filter->actions.clone(), actions_settings),
+            .actions = ExpressionActions::create(row_level_filter->actions.clone(), actions_settings),
             .filter_column_name = row_level_filter->column_name,
             .remove_filter_column = row_level_filter->do_remove_column,
             .need_filter = true,
@@ -234,7 +234,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     {
         auto index_read_step = std::make_shared<PrewhereExprStep>();
         index_read_step->type = PrewhereExprStep::None;
-        index_read_step->actions = std::make_shared<ExpressionActions>(ActionsDAG(index_task.columns), actions_settings);
+        index_read_step->actions = ExpressionActions::create(ActionsDAG(index_task.columns), actions_settings);
         prewhere_actions.steps.emplace_back(std::move(index_read_step));
     }
 
@@ -244,7 +244,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
         PrewhereExprStep prewhere_step
         {
             .type = PrewhereExprStep::Filter,
-            .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions.clone(), actions_settings),
+            .actions = ExpressionActions::create(prewhere_info->prewhere_actions.clone(), actions_settings),
             .filter_column_name = prewhere_info->prewhere_column_name,
             .remove_filter_column = prewhere_info->remove_prewhere_column,
             .need_filter = prewhere_info->need_filter,
