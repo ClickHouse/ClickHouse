@@ -29,7 +29,7 @@ Exactly one of the three entry points is required; they are mutually exclusive.
 | `--target <shape>` | Deployment shape: `systemd` (default; bootstrap the VM you are on) or `helm` (stage the `clicklink-connector` chart from a workstation with a kubeconfig). |
 | `--instance <spec>` | ClickHouse instance as comma-separated `key=value` pairs (`name`, `host`, `port`, `secure`, `database`, `namespace`, `cluster`); repeatable. Skips the interactive instance prompts. |
 | `--operators <emails>` | Comma-separated operator emails allowed to open support sessions; enables the session gateway and skips the prompt. |
-| `--no-gateway` | Disables support sessions (the troubleshooter gateway); skips the prompt. |
+| `--no-gateway` | Disables the session gateway (no OIDC-managed sessions); skips the prompt. On a VM, root on the host can still manage sessions through the local session file. |
 | `--force` | Overwrites an existing config or overlay and regenerates the client key; also acknowledges superseding an unexpired auto-signed certificate. The cluster UUID is preserved even under `--force`. |
 | `--skip-provision` | Stage only: skips per-role ClickHouse access provisioning (and, on the systemd target, the unit enable and verify). Run `clicklink clctl {scraper,troubleshoot} access provision` separately. |
 | `--ch-user-suffix <suffix>` | Optional suffix for the provisioned ClickHouse usernames (`pcm_scraper` becomes `pcm_scraper_<suffix>`), so a second connector deployment can share an instance without colliding on the first one's users. |

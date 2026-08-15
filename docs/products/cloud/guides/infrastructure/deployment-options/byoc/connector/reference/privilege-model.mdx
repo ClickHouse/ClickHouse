@@ -114,7 +114,7 @@ The chart creates namespace-scoped Roles only; there is no ClusterRole or Cluste
 - **Deployment identity.** The mTLS client certificate's common name is your org ID, with a single DNS name bound to your endpoint host, so every API connection is attributable to your org. Renewal is automatic and in-daemon; no operator handles the key material.
 - **Request integrity.** Every API request additionally carries an HMAC-SHA256 signature (`Authorization: HMAC-SHA256 AccessKey=..., Signature=..., Timestamp=...`) computed over the method, path, timestamp, and body hash, using the key pair issued at enrollment.
 - **Operator identity.** Gateway calls are attributed to the email attested by the operator's OIDC ID token, verified against your identity provider's JWKS; a self-reported name is never trusted where a token is available.
-- **Audit trail.** Every gateway call and every troubleshoot command, accepted or blocked, is appended to the NDJSON audit log with that attested email. Read it with `clicklink clctl troubleshoot audit tail`; see the [CLI reference](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/reference/cli).
+- **Audit trail.** Every gateway call and every troubleshoot command, accepted or blocked, is appended to the NDJSON audit log: gateway entries with the attested operator email, VM local session changes with the invoking host user, and session commands with the org identity carried on the authenticated channel. Read it with `clicklink clctl troubleshoot audit tail`; see the [CLI reference](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/reference/cli).
 
 ## Data minimization defaults {#data-minimization-defaults}
 

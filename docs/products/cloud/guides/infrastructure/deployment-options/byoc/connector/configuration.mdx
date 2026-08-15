@@ -132,7 +132,7 @@ The same `access provision` commands with `--force` rotate an instance's ClickHo
 
 ## Operator allowlist {#operator-allowlist}
 
-Support sessions are gated by an allowlist of operator email addresses: every request to the session gateway must carry a short-lived OIDC ID token whose attested email is on the list. An empty allowlist is closed, so nobody can open a session. See [support sessions](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/support-sessions) for the full trust model.
+Gateway-managed sessions are gated by an allowlist of operator email addresses: every request to the session gateway must carry a short-lived OIDC ID token whose attested email is on the list. An empty allowlist closes the gateway, so nobody can open a session through it. On a VM, root on the host can additionally manage sessions directly through the local session file; the allowlist governs the gateway path only. See [support sessions](/products/cloud/guides/infrastructure/deployment-options/byoc/connector/support-sessions) for the full trust model.
 
 <Tabs>
 <Tab title="Kubernetes">

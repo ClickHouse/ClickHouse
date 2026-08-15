@@ -99,7 +99,7 @@ The troubleshooter's RBAC contains no `exec`, `delete`, or `patch` permission, s
 
 ## Audit log {#audit-log}
 
-Every gateway call and every command executed during a session is appended to `/var/log/clicklink/troubleshoot-audit.log` as one JSON object per line (NDJSON). The `submitted_by` field is the email attested by the validated token, not a client-supplied value. A session-enable entry looks like this:
+Every gateway call and every command executed during a session is appended to `/var/log/clicklink/troubleshoot-audit.log` as one JSON object per line (NDJSON). The `submitted_by` field records the identity behind each entry, and what that is depends on how the entry originated: gateway calls carry the email attested by the validated token, never a client-supplied value; session changes made locally on a VM record the invoking host user; and commands executed during a session record the org identity carried on the authenticated command channel. A gateway session-enable entry looks like this:
 
 ```json
 {
