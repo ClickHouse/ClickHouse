@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database, no-shared-merge-tree
+# Tags: no-fasttest, no-parallel, no-replicated-database, no-shared-merge-tree
+# Tag no-fasttest: relies on a failpoint (libfiu).
+# Tag no-parallel: the test waits on a server-global pauseable failpoint, so a concurrent copy's
+#   sink could satisfy this copy's wait and this copy's resume could release that sink.
+#   FailPointInjection::{enable,disable}FailPoint take only a name, so it cannot be scoped.
 # Tag no-replicated-database: the test needs its own Memory database, which a Replicated database
 #   run cannot host, and DROP must reach the synchronous exclusive-lock path.
-# Tag no-shared-merge-tree: SharedMergeTree does not honor
-#   sleep_before_commit_local_part_in_replicated_table_ms, which this test uses as its window.
+# Tag no-shared-merge-tree: the failpoint this test parks on is in the ReplicatedMergeTree sink,
+#   which a SharedMergeTree table does not go through.
 
 set -e
 
@@ -11,20 +15,28 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+FP=rmt_pause_before_commit_local_part
+
+# The failpoint is server-global, so leaving it enabled would park the sink of every later test.
+# This has to survive the test failing or being killed part-way through.
+function cleanup()
+{
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FP}" < /dev/null 2>/dev/null || true
+}
+trap cleanup EXIT
+
 # A Memory database has no UUID, so DROP takes the table's exclusive lock and removes the data
 # inline instead of deferring it to the background cleanup an Atomic database uses.
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE_1}" < /dev/null
 ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLICKHOUSE_DATABASE_1} ENGINE = Memory" < /dev/null
 
-# Length of the pre-commit pause the drop has to land inside.
-WINDOW_MS=10000
+${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FP}" < /dev/null 2>/dev/null || true
 
 # Every DROP the test's logic depends on pins ignore_drop_queries_probability: the stress runner
 # injects 0.2 and clickhouse-client --fake-drop (upgrade check) injects 1, and for a storage that
 # keeps data on disk the injection returns success without dropping anything.
 function setup_table()
 {
-    local window=${2:-$WINDOW_MS}
     ${CLICKHOUSE_CLIENT} --query "
         DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.t SYNC SETTINGS ignore_drop_queries_probability = 0;
 
@@ -34,123 +46,111 @@ function setup_table()
         SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
 
         INSERT INTO ${CLICKHOUSE_DATABASE_1}.t SELECT number, 'a' FROM numbers(2);
-
-        ALTER TABLE ${CLICKHOUSE_DATABASE_1}.t
-            MODIFY SETTING sleep_before_commit_local_part_in_replicated_table_ms = ${window};
     " < /dev/null
 }
 
-# The DROP must land between the patch-part rename and the commit, so it waits for the sink to
-# announce its pre-commit pause for this arm's query id. An arm that never reaches that window says
-# so rather than reporting success. The poll pins enable_parallel_replicas: system.text_log has to
-# be read on this server, not on a cluster of hosts that never logged the message.
-#
-# Returns 1 without printing when the window closed before the drop reached it: the drop then never
-# contends, so its outcome carries no information about the lock and the caller has to try again.
-function race_with_drop_once()
-{
-    local arm=$1
-    local window_ms=$2
-    shift 2
-    # Unique per invocation: a run reusing this server must not match an earlier run's row.
-    local qid="${CLICKHOUSE_DATABASE_1}_${arm}_${RANDOM}${RANDOM}"
-
-    ${CLICKHOUSE_CLIENT} --query_id "$qid" "$@" < /dev/null > /dev/null 2>&1 &
-    local updater=$!
-
-    local observed=0
-    local seen
-    for _ in $(seq 1 150); do
-        seen=$(${CLICKHOUSE_CLIENT} --query "
-            SYSTEM FLUSH LOGS text_log;
-            SELECT count() FROM system.text_log
-            WHERE query_id = '$qid' AND event_date >= yesterday()
-              AND message LIKE '%committing part patch-%'
-              AND message LIKE '%triggered sleep_before_commit_local_part_in_replicated_table_ms%'
-            SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0" < /dev/null 2>/dev/null) || seen=""
-        case "$seen" in
-            '' | *[!0-9]*) seen=0 ;;
-        esac
-        if [ "$seen" -gt 0 ]; then
-            observed=1
-            break
-        fi
-        # The updater has exited, so the window can no longer be entered.
-        kill -0 "$updater" 2>/dev/null || break
-        sleep 0.5
-    done
-
-    local drop=skipped
-    if [ "$observed" -eq 1 ]; then
-        local drop_qid="${qid}_drop"
-        if ${CLICKHOUSE_CLIENT} --query_id "$drop_qid" --query "
-            DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.t SYNC
-            SETTINGS ignore_drop_queries_probability = 0" < /dev/null > /dev/null 2>&1; then
-            drop=ok
-            # A drop that reported success without removing the table took no lock and proved
-            # nothing, so it is reported as its own outcome instead of counting as a win.
-            if [ "$(${CLICKHOUSE_CLIENT} --query "
-                EXISTS ${CLICKHOUSE_DATABASE_1}.t
-                SETTINGS enable_parallel_replicas = 0" < /dev/null 2>/dev/null)" != 0 ]; then
-                drop=ignored
-            fi
-        else
-            drop=failed
-        fi
-        # Blocking on the table lock is the property under test. A drop that overlapped the pause
-        # waits for the rest of it, so the wait is a large fraction of the window; the timer is
-        # started before the lock is taken and reads in whole milliseconds, so an uncontended drop
-        # can report a few from scheduling alone but never anything on that scale.
-        if [ "$drop" = ok ]; then
-            local waited
-            waited=$(${CLICKHOUSE_CLIENT} --query "
-                SYSTEM FLUSH LOGS query_log;
-                SELECT ProfileEvents['RWLockWritersWaitMilliseconds'] FROM system.query_log
-                WHERE query_id = '$drop_qid' AND type = 'QueryFinish' AND event_date >= yesterday()
-                  AND current_database = currentDatabase()
-                ORDER BY event_time_microseconds DESC LIMIT 1
-                SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0" < /dev/null 2>/dev/null) || waited=""
-            case "$waited" in
-                '' | *[!0-9]*) waited=-1 ;;
-            esac
-            if [ "$waited" -lt 0 ]; then
-                drop="lock wait unreadable"
-            elif [ "$waited" -lt $((window_ms / 10)) ]; then
-                wait "$updater" 2>/dev/null || true
-                return 1
-            fi
-        fi
-    fi
-
-    local update=ok
-    wait "$updater" 2>/dev/null || update=failed
-
-    if [ "$observed" -eq 1 ]; then
-        echo "$arm: update=$update drop=$drop"
-    else
-        echo "$arm: commit window never observed"
-    fi
-}
-
-# Each retry installs a longer window, since a retry means observing the pause outran the last one.
-# Running out of attempts is printed rather than ignored, so a server on which the drop can never be
-# made to contend still fails.
+# The DROP has to land between the patch-part rename and the commit. The sink parks there and stays
+# parked until this function resumes it, so the window is held open instead of being a timed one the
+# drop could miss.
 function race_with_drop()
 {
     local arm=$1
     shift
-    local attempt
-    local window=$WINDOW_MS
-    for attempt in 1 2; do
-        if [ "$attempt" -ne 1 ]; then
-            window=$((window * 3))
-            setup_table "$arm" "$window"
+    local qid="${CLICKHOUSE_DATABASE_1}_${arm}_${RANDOM}${RANDOM}"
+    local drop_qid="${qid}_drop"
+
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT ${FP}" < /dev/null
+
+    # Everything below reads the armed state as evidence, so an arm that is not actually armed would
+    # make the rest of the checks vacuous rather than failing.
+    if [ "$(${CLICKHOUSE_CLIENT} --query "
+        SELECT enabled FROM system.fail_points WHERE name = '${FP}'
+        SETTINGS enable_parallel_replicas = 0" < /dev/null 2>/dev/null)" != 1 ]; then
+        echo "$arm: the commit hook was not armed"
+        return
+    fi
+
+    ${CLICKHOUSE_CLIENT} --query_id "$qid" "$@" < /dev/null > /dev/null 2>&1 &
+    local updater=$!
+
+    # Returns once the sink has parked, so the update still holds the lock it took for the pipeline.
+    # An update that never reaches the hook would otherwise wait here forever.
+    # shellcheck disable=SC2086 # CLICKHOUSE_CLIENT carries arguments and must word-split
+    if ! timeout 60 ${CLICKHOUSE_CLIENT} --query "SYSTEM WAIT FAILPOINT ${FP} PAUSE" < /dev/null; then
+        ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FP}" < /dev/null 2>/dev/null || true
+        wait "$updater" 2>/dev/null || true
+        echo "$arm: the sink never reached the commit hook"
+        return
+    fi
+
+    # The wait above returns at once when nothing is parked, so it does not by itself establish that
+    # the sink reached the hook. The failpoint is one-shot, so it reports itself disabled only after
+    # something fired it.
+    if [ "$(${CLICKHOUSE_CLIENT} --query "
+        SELECT enabled FROM system.fail_points WHERE name = '${FP}'
+        SETTINGS enable_parallel_replicas = 0" < /dev/null 2>/dev/null)" != 0 ]; then
+        ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FP}" < /dev/null 2>/dev/null || true
+        wait "$updater" 2>/dev/null || true
+        echo "$arm: the sink never parked at the commit hook"
+        return
+    fi
+
+    ${CLICKHOUSE_CLIENT} --query_id "$drop_qid" --query "
+        DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.t SYNC
+        SETTINGS ignore_drop_queries_probability = 0" < /dev/null > /dev/null 2>&1 &
+    local dropper=$!
+
+    # The drop has to be blocked on the table lock before the sink is released, otherwise it could
+    # take the lock after the commit already released it and never contend at all. The counter is
+    # raised on the way in, before the lock implementation decides whether the lock is free, so a
+    # single sample would also match a drop that is about to take it uncontended. What distinguishes
+    # a blocked drop is that it stays that way: the sink holds the lock until the resume below, so
+    # the count cannot fall back while the drop is still running.
+    local queued=0
+    local stable=0
+    local waiting
+    for _ in $(seq 1 600); do
+        waiting=$(${CLICKHOUSE_CLIENT} --query "
+            SELECT value FROM system.metrics WHERE metric = 'RWLockWaitingWriters'
+            SETTINGS enable_parallel_replicas = 0" < /dev/null 2>/dev/null) || waiting=""
+        case "$waiting" in
+            '' | *[!0-9]*) waiting=0 ;;
+        esac
+        if [ "$waiting" -gt 0 ]; then
+            stable=$((stable + 1))
+            if [ "$stable" -ge 3 ]; then
+                queued=1
+                break
+            fi
+        else
+            stable=0
         fi
-        if race_with_drop_once "$arm" "$window" "$@"; then
-            return 0
-        fi
+        # The drop is gone: it completed without ever being seen waiting, so it never contended.
+        kill -0 "$dropper" 2>/dev/null || break
+        sleep 0.1
     done
-    echo "$arm: drop never overlapped the commit window"
+
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FP}" < /dev/null
+
+    local update=ok
+    wait "$updater" 2>/dev/null || update=failed
+
+    local drop=ok
+    wait "$dropper" 2>/dev/null || drop=failed
+
+    if [ "$queued" -eq 0 ]; then
+        echo "$arm: the drop was never seen waiting for the table lock"
+        return
+    fi
+
+    # A drop that reported success without removing the table took no lock and proved nothing.
+    if [ "$drop" = ok ] && [ "$(${CLICKHOUSE_CLIENT} --query "
+        EXISTS ${CLICKHOUSE_DATABASE_1}.t
+        SETTINGS enable_parallel_replicas = 0" < /dev/null 2>/dev/null)" != 0 ]; then
+        drop=ignored
+    fi
+
+    echo "$arm: update=$update drop=$drop"
 }
 
 setup_table update
