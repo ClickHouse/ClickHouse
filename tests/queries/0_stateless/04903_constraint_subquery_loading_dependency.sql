@@ -6,6 +6,7 @@ DROP TABLE IF EXISTS t_constraint_dep_source;
 DROP TABLE IF EXISTS t_constraint_dep_user;
 DROP TABLE IF EXISTS t_constraint_in_source;
 DROP TABLE IF EXISTS t_constraint_in_user;
+DROP DATABASE IF EXISTS constraint_udf_dependency;
 
 CREATE TABLE t_constraint_dep_source (id UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_constraint_dep_user (x UInt64, CONSTRAINT c CHECK x < (SELECT max(id) + 1000 FROM t_constraint_dep_source)) ENGINE = MergeTree ORDER BY tuple();
@@ -27,3 +28,21 @@ DROP TABLE t_constraint_in_source;
 DROP TABLE t_constraint_dep_user;
 DROP TABLE t_constraint_dep_source;
 DROP TABLE t_constraint_in_user;
+
+-- SQL UDF expansion happens after database qualification. The subquery introduced by the UDF still
+-- has to use the CREATE query's current database when collecting loading dependencies.
+
+CREATE DATABASE constraint_udf_dependency;
+CREATE TABLE constraint_udf_dependency.source (id UInt64) ENGINE = MergeTree ORDER BY tuple();
+USE constraint_udf_dependency;
+CREATE FUNCTION constraint_udf_dependency_f AS () -> (SELECT max(id) + 1000 FROM source);
+CREATE TABLE user (x UInt64, CONSTRAINT c CHECK x < constraint_udf_dependency_f()) ENGINE = MergeTree ORDER BY tuple();
+
+SELECT loading_dependencies_table FROM system.tables WHERE database = currentDatabase() AND name = 'user';
+
+DROP TABLE source; -- { serverError HAVE_DEPENDENT_OBJECTS }
+
+DROP TABLE user;
+DROP FUNCTION constraint_udf_dependency_f;
+USE default;
+DROP DATABASE constraint_udf_dependency;
