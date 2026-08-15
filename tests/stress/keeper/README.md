@@ -13,7 +13,7 @@ Apache ZooKeeper, or RaftKeeper backends), optionally with fault injection.
   `timelimit` (from `--duration`). Request mix, setup tree, and value sizes come from
   the workload YAML.
 - **Backends:** `default` (NuRaft log store), `lsmt` (Keeper with on-disk node storage,
-  `use_new_storage` with `storage_memory_only` turned off), `zookeeper` (Apache ZooKeeper),
+  `use_lsmt_storage` with `storage_memory_only` turned off), `zookeeper` (Apache ZooKeeper),
   `raftkeeper` (JDRaftKeeper).
 
 **Example patched config sent to keeper-bench** (`[keeper][bench][config patched]` in logs):
@@ -178,7 +178,7 @@ To add a read-heavy or write-heavy variant:
 
 > **Note:** RocksDB storage support has been removed from Keeper, so the `rocks` backend is no
 > longer available. The RocksDB results recorded here and in the tables below are kept for
-> historical reference only. A replacement storage backend (`use_new_storage`) is coming soon, and
+> historical reference only. A replacement storage backend (`use_lsmt_storage`) is coming soon, and
 > this README will be updated with new benchmark results once it lands.
 
 Early no-fault results at two concurrency levels (3-node cluster, `prod-mix` workload):
@@ -206,7 +206,7 @@ below for 15-minute results across all 10 scenarios and 3 backends.
 
 > **Note:** The RocksDB (`rocks`) columns below are historical. RocksDB storage support has been
 > removed from Keeper; the `rocks` backend is no longer available. A replacement is coming soon
-> (`use_new_storage`), and this section will be refreshed with new benchmark results once it lands.
+> (`use_lsmt_storage`), and this section will be refreshed with new benchmark results once it lands.
 
 All results at 640 concurrency, 3-node cluster, 15-minute runs.
 

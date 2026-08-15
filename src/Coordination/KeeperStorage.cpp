@@ -64,7 +64,7 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 log_slow_cpu_threshold_ms;
     extern const CoordinationSettingsBool check_node_acl_on_remove;
-    extern const CoordinationSettingsBool use_new_storage;
+    extern const CoordinationSettingsBool use_lsmt_storage;
 }
 
 namespace ErrorCodes
@@ -273,7 +273,7 @@ KeeperStorage::KeeperStorage(
 std::shared_ptr<KeeperStorage> KeeperStorage::create(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes)
 {
     std::shared_ptr<KeeperStorage> res;
-    if (keeper_context_->getCoordinationSettings()[CoordinationSetting::use_new_storage])
+    if (keeper_context_->getCoordinationSettings()[CoordinationSetting::use_lsmt_storage])
         res = std::make_shared<KeeperLSMTStorage>(tick_time_ms, superdigest_, keeper_context_);
     else
         res = std::make_shared<KeeperMemoryStorage>(tick_time_ms, superdigest_, keeper_context_);

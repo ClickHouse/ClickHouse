@@ -322,9 +322,7 @@ bool KeeperLSMTNodesStorage::visitUncommittedRecursive(std::string_view root_pat
         queue.push_back(root_node_path);
     }
 
-    bool ok = true;
-
-    while (!queue.empty() && ok)
+    while (!queue.empty())
     {
         NodePathWithHash node_path = queue.front();
         queue.pop_front();
@@ -345,14 +343,13 @@ bool KeeperLSMTNodesStorage::visitUncommittedRecursive(std::string_view root_pat
             ++nodes_visited;
             if (nodes_visited > limit || !check_node(child.node.path.str(), std::move(child)))
             {
-                ok = false;
-                break;
+                return false;
             }
             queue.push_back(child_path);
         }
     }
 
-    return ok;
+    return true;
 }
 
 void KeeperLSMTNodesStorage::prepareImpl(std::string_view path, UncommittedNodeRef && node, KeeperStagingTransaction & staging, ACLId old_acl_id, int64_t ephemeral_owner, bool has_ttl, bool is_container)

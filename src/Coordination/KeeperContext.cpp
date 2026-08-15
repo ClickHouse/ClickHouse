@@ -36,7 +36,7 @@ extern const int LOGICAL_ERROR;
 
 namespace CoordinationSetting
 {
-    extern const CoordinationSettingsBool use_new_storage;
+    extern const CoordinationSettingsBool use_lsmt_storage;
     extern const CoordinationSettingsBool storage_memory_only;
     extern const CoordinationSettingsUInt64 write_snapshot_version;
     extern const CoordinationSettingsMilliseconds ttl_gc_period_ms;
@@ -216,7 +216,7 @@ void KeeperContext::initializeDisks(const Poco::Util::AbstractConfiguration & co
 void KeeperContext::initializeDataDisk(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
 {
     const auto & coordination_settings = getCoordinationSettings();
-    if (coordination_settings[CoordinationSetting::use_new_storage]
+    if (coordination_settings[CoordinationSetting::use_lsmt_storage]
         && !coordination_settings[CoordinationSetting::storage_memory_only])
     {
         data_storage = getDataPathFromConfig(config_elem, config);

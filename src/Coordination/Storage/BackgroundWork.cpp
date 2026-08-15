@@ -267,7 +267,7 @@ void BackgroundWork::flushThread()
 
                 while (!flushed_files.empty())
                 {
-                    const uint32_t seqno = flushed_files.begin()->first;
+                    const auto [seqno, run] = *flushed_files.begin();
                     chassert(!storage->immutable_memtables.empty());
                     chassert(seqno >= storage->immutable_memtables[0]->file_seqno);
                     if (seqno != storage->immutable_memtables[0]->file_seqno)
@@ -276,10 +276,10 @@ void BackgroundWork::flushThread()
                     /// The run becomes visible to readers only now; until this point its files stay
                     /// self-deleting, so a shutdown or snapshot install that destroys BackgroundWork
                     /// while the run sits in the reorder buffer doesn't leak the files on disk.
-                    for (const SortedFilePtr & file : flushed_files.begin()->second->files)
+                    for (const SortedFilePtr & file : run->files)
                         file->delete_when_destroyed = false;
 
-                    storage->sorted_runs.push_back(flushed_files.begin()->second);
+                    storage->sorted_runs.push_back(run);
                     storage->immutable_memtables.erase(storage->immutable_memtables.begin());
                     flushed_files.erase(flushed_files.begin());
                     flushes_in_progress.erase(seqno);

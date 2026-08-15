@@ -1,12 +1,14 @@
 #pragma once
 
 #include <Coordination/KeeperNodesStorage.h>
-#include <Coordination/KeeperContext.h>
 #include <Coordination/Storage/StorageState.h>
 #include <Coordination/Storage/Node.h>
 
 namespace DB
 {
+
+class KeeperContext;
+using KeeperContextPtr = std::shared_ptr<KeeperContext>;
 
 struct KeeperLSMTNodesStorage final : public KeeperNodesStorage
 {

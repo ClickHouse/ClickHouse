@@ -65,7 +65,7 @@ public:
     void setStateFileDisk(DiskPtr disk);
 
     /// Disk for the on-disk node storage. Initialized only if coordination setting
-    /// `use_new_storage` is enabled and `storage_memory_only` is disabled; throws otherwise.
+    /// `use_lsmt_storage` is enabled and `storage_memory_only` is disabled; throws otherwise.
     DiskPtr getDataDisk() const;
     void setDataDisk(DiskPtr disk);
 

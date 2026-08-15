@@ -7,14 +7,14 @@
 
 namespace DB::CoordinationSetting
 {
-    extern const CoordinationSettingsBool use_new_storage;
+    extern const CoordinationSettingsBool use_lsmt_storage;
 }
 
 DB::KeeperContextPtr makeKeeperContext(bool use_lsmt_storage, std::shared_ptr<DB::CoordinationSettings> settings)
 {
     if (!settings)
         settings = std::make_shared<DB::CoordinationSettings>();
-    (*settings)[DB::CoordinationSetting::use_new_storage] = use_lsmt_storage;
+    (*settings)[DB::CoordinationSetting::use_lsmt_storage] = use_lsmt_storage;
     /// Intentionally minimal: callers add setLocalLogsPreprocessed/disks/digest as they need them.
     return std::make_shared<DB::KeeperContext>(true, settings);
 }

@@ -232,7 +232,7 @@ def _coord_settings_xml(lsmt_backend, overrides_xml=None):
     # `storage_memory_only` defaults to true, so it has to be turned off explicitly: otherwise this
     # backend would exercise only the in-memory LSMT, not the file flush/merge/recovery path.
     lsmt = (
-        "<use_new_storage>1</use_new_storage><storage_memory_only>0</storage_memory_only>"
+        "<use_lsmt_storage>1</use_lsmt_storage><storage_memory_only>0</storage_memory_only>"
         if lsmt_backend
         else ""
     )
@@ -312,8 +312,8 @@ def _normalize_backend(backend):
 
 def _build_feature_flags(feature_flags):
     ff = feature_flags
-    # Do not allow use_new_storage under <feature_flags>; it belongs to coordination_settings
-    ff.pop("use_new_storage", None)
+    # Do not allow use_lsmt_storage under <feature_flags>; it belongs to coordination_settings
+    ff.pop("use_lsmt_storage", None)
 
     ff.setdefault("check_not_exists", "1")
     ff.setdefault("create_if_not_exists", "1")
@@ -564,19 +564,19 @@ class ClusterBuilder:
 
     def cleanup(self, clean_artifacts=True):
         """Clean up cluster and associated files.
-        
+
         Args:
             clean_artifacts: If True, also remove instance directories and config directories
         """
         if not self.cluster:
             return
-        
+
         try:
             # Shutdown cluster (stops containers, removes networks, etc.)
             self.cluster.shutdown()
         except Exception:
             pass
-        
+
         if clean_artifacts:
             try:
                 if self.conf_dir and self.conf_dir.exists():
