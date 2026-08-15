@@ -199,11 +199,15 @@ public:
 
     /// Whether an insert into `storage` may create a part in a `ReplicatedMergeTree` table: the storage
     /// is one (directly or behind a `MaterializedView` / proxy target chain), or it forwards the write
-    /// through a nested `INSERT` whose destination graph is not visible here (an `Alias`, a
-    /// `Distributed` shard, a `Buffer` flush, a `WindowView` inner table) - in which case the probe
-    /// fails closed (returns true), like it does when a target cannot be resolved or the chain is too
-    /// deep.
-    static bool storageMayWriteToReplicatedTable(const StoragePtr & storage, size_t depth = 0);
+    /// through a nested `INSERT` whose destination graph is not visible here (a `Distributed` shard, a
+    /// `Buffer` flush, a `WindowView` inner table) - in which case the probe fails closed (returns true),
+    /// like it does when a target cannot be resolved or the chain is too deep. An `Alias` target is known
+    /// locally, so the probe follows it and its hidden dependent-view graph precisely.
+    bool storageMayWriteToReplicatedTable(const StoragePtr & storage, size_t depth = 0) const;
+
+    /// Whether a dependent-view graph hidden behind an `Alias` may write to a `ReplicatedMergeTree`.
+    /// It fails closed when a view or its target cannot be resolved.
+    bool dependentViewMayWriteToReplicatedTable(const StoragePtr & storage, size_t depth = 0) const;
 
     /// Whether the physical write target behind `storage` is hidden from this builder: the write is
     /// forwarded through a nested `INSERT` (an `Alias`, a `Distributed` shard, a `Buffer` flush, a

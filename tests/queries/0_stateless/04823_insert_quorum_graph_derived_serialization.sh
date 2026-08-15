@@ -25,6 +25,8 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_mv_plain"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_mv_a"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_mv_b"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_plain"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_plain_alias"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_plain_alias_target"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_plain_viewed"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_source"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS quorum_graph_target_a_1"
@@ -38,6 +40,13 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE quorum_graph_plain (x UInt32) ENGINE = Merge
 # keeps the write fan-out: four sinks.
 $CLICKHOUSE_CLIENT $QUORUM_SETTINGS -q \
     "EXPLAIN PIPELINE INSERT INTO quorum_graph_plain SELECT number FROM numbers(4)" | grep -c "MergeTreeSink"
+
+# An `Alias` over the same non-replicated target must keep the fan-out too. Its target and hidden
+# dependent-view graph are resolved before deciding whether the quorum profile requires serialization.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE quorum_graph_plain_alias_target (x UInt32) ENGINE = MergeTree ORDER BY x"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE quorum_graph_plain_alias ENGINE = Alias('quorum_graph_plain_alias_target')"
+$CLICKHOUSE_CLIENT $QUORUM_SETTINGS -q \
+    "EXPLAIN PIPELINE INSERT INTO quorum_graph_plain_alias SELECT number FROM numbers(4)" | grep -c "AliasSink"
 
 # The same plain destination with a dependent materialized view targeting a ReplicatedMergeTree
 # table does produce quorum parts - through the view - so the fan-out drops to a single stream:
@@ -73,6 +82,8 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_mv_a"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_mv_b"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_source"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_plain"
+$CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_plain_alias"
+$CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_plain_alias_target"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_target_a_1"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_target_a_2"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_graph_target_b_1"

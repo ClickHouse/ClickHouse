@@ -1102,7 +1102,7 @@ bool InsertDependenciesBuilder::isSequentialQuorumInsert(const Settings & settin
 }
 
 
-bool InsertDependenciesBuilder::storageMayWriteToReplicatedTable(const StoragePtr & storage, size_t depth)
+bool InsertDependenciesBuilder::storageMayWriteToReplicatedTable(const StoragePtr & storage, size_t depth) const
 {
     if (depth > max_insert_forwarding_depth)
         return true;
@@ -1120,8 +1120,18 @@ bool InsertDependenciesBuilder::storageMayWriteToReplicatedTable(const StoragePt
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
         return storageMayWriteToReplicatedTable(proxy->getNested(), depth + 1);
 
+    /// Unlike the other forwarding storages, an `Alias` has a locally resolvable target. Its nested
+    /// `INSERT` expands the target's dependent-view graph only at execution time, so inspect that
+    /// hidden graph here. This keeps the fan-out for `Alias` -> plain `MergeTree` while still
+    /// serializing a quorum write that reaches a replicated target through an alias or its views.
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    {
+        auto target = alias->tryGetTargetTable();
+        return !target || storageMayWriteToReplicatedTable(target, depth + 1)
+            || dependentViewMayWriteToReplicatedTable(target, depth + 1);
+    }
+
     /// A forwarding storage runs a nested `INSERT` whose destination graph is not visible here: an
-    /// `Alias` hides its target's dependent views behind the nested `INSERT` each `AliasSink` runs, a
     /// `Distributed` writes to remote shards whose tables are not cheaply known here, a `Buffer`
     /// flushes to a destination that can forward further, a `WindowView` opens fresh sinks of its
     /// inner table inside `writeIntoWindowView`, and a `TimeSeries` opens nested `INSERT`s into its
@@ -1131,6 +1141,31 @@ bool InsertDependenciesBuilder::storageMayWriteToReplicatedTable(const StoragePt
         return true;
 
     /// A concrete local non-replicated target: its writes are not quorum writes.
+    return false;
+}
+
+
+bool InsertDependenciesBuilder::dependentViewMayWriteToReplicatedTable(const StoragePtr & storage, size_t depth) const
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(storage->getStorageID()))
+    {
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, init_context);
+        if (!view)
+            return true;
+
+        const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
+        if (!materialized_view)
+            return true;
+
+        auto target = materialized_view->tryGetTargetTable();
+        if (!target || storageMayWriteToReplicatedTable(target, depth + 1)
+            || dependentViewMayWriteToReplicatedTable(target, depth + 1))
+            return true;
+    }
+
     return false;
 }
 
