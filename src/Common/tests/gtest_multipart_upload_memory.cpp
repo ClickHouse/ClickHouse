@@ -261,11 +261,15 @@ TEST(MultipartUploadMemory, UnlimitedInflightPartsHaveNoCeiling)
     const auto memory = getMultipartUploadMemory(settings, 0);
 
     EXPECT_EQ(memory.ceiling, MultipartUploadMemory::UNLIMITED);
+    EXPECT_EQ(
+        getMultipartUploadMemoryCeilingForWrittenBytes(memory, 200ULL * 1024 * 1024 * 1024),
+        MultipartUploadMemory::UNLIMITED);
 
     BufferAllocationPolicy::Settings strict_settings;
     strict_settings.strict_size = 64 * 1024 * 1024;
     const auto strict_memory = getMultipartUploadMemory(strict_settings, 0);
     EXPECT_EQ(strict_memory.ceiling, MultipartUploadMemory::UNLIMITED);
+    EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(strict_memory, 1), MultipartUploadMemory::UNLIMITED);
 }
 
 TEST(MultipartUploadMemory, WithoutParallelPartUploadTheCeilingIsTwoBuffers)

@@ -160,6 +160,13 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
     if (memory.ceiling == 0 || bytes_written == 0)
         return memory.ceiling;
 
+    /// An unlimited in-flight-part setting has no finite bound, regardless of which buffer tiers this
+    /// amount of output can reach. In particular, do not turn it into one reachable buffer by calculating
+    /// max_inflight_parts + 1 below: TaskTracker::waitTilInflightShrink does not constrain the number of
+    /// detached buffers when this setting is zero.
+    if (memory.ceiling == MultipartUploadMemory::UNLIMITED)
+        return MultipartUploadMemory::UNLIMITED;
+
     const auto & settings = memory.allocation_settings;
     UInt64 largest_reachable_buffer = settings.strict_size;
     if (settings.strict_size == 0)
