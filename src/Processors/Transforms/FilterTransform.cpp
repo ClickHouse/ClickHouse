@@ -32,6 +32,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char filter_transform_pause[];
+    extern const char query_condition_cache_part_switch_pause[];
 }
 
 namespace ErrorCodes
@@ -387,7 +388,7 @@ void FilterTransform::doTransform(Chunk & chunk)
 
 void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info)
 {
-    if (!query_condition_cache)
+    if (!query_condition_cache || isCancelled())
         return;
 
     if (!mark_ranges_info)
@@ -422,6 +423,11 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
 
         if (buffered_mark_ranges_info->table_uuid != mark_ranges_info->table_uuid || buffered_mark_ranges_info->part_name != mark_ranges_info->part_name)
         {
+            FailPointInjection::pauseFailPoint(FailPoints::query_condition_cache_part_switch_pause);
+
+            if (isCancelled())
+                return;
+
             query_condition_cache->write(
                 buffered_mark_ranges_info->table_uuid,
                 buffered_mark_ranges_info->part_name,
