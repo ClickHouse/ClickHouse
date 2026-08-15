@@ -84,11 +84,14 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// and merge-sorts its input streams instead of an unordered `resize(1)` when set. Both steps check the
 /// version in their serialize and deserialize, since an older peer would misparse the stream, not merely
 /// reject an unknown step name as with version 4.
-/// Version 7 adds the distributed-plan payloads: the bounded-sort limit on `SortingStep`, the
+/// Version 7 registers the `enable_adaptive_aggregator` and `adaptive_aggregator_freeze_threshold` plan
+/// settings. As with version 5, an older peer rejects the unknown names, so they are written only towards a
+/// peer at this version or above; a peer below it has no adaptive aggregation to drive anyway.
+/// Version 8 adds the distributed-plan payloads: the bounded-sort limit on `SortingStep`, the
 /// narrowing flag on `UnionStep`, the bucketed-read task parameter name on `ReadFromMergeTree`,
-/// and the in-order aggregation payload on `AggregatingStep`. They carry no per-field version
-/// gates; an older binary rejects the whole stream by its leading version.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 7;
+/// and the in-order aggregation payload on `AggregatingStep`. Only the sort limit has a
+/// per-field version gate; the rest rely on the whole stream being rejected by its leading version.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 8;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -101,6 +104,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP
 /// plan setting name. Gates writing it in `AggregatingStep::serializeSettings` /
 /// `MergingAggregatedStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRING_KEYS_SETTING = 5;
+/// First query-plan serialization version that knows the `enable_adaptive_aggregator` and
+/// `adaptive_aggregator_freeze_threshold` plan setting names. Gates writing them in
+/// `AggregatingStep::serializeSettings`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR = 7;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;

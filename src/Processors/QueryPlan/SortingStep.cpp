@@ -704,7 +704,7 @@ void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, U
 }
 
 static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING = 6;
-static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORT_LIMIT = 7;
+static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORT_LIMIT = 8;
 
 void SortingStep::serialize(Serialization & ctx) const
 {
