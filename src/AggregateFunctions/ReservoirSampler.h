@@ -160,6 +160,32 @@ public:
             return static_cast<double>(samples[left_index]) * left_coef + static_cast<double>(samples[right_index]) * right_coef;
     }
 
+    template <typename U = T>
+    U quantileInterpolatedDecimal64(double level)
+        requires (DB::is_decimal<U> && sizeof(typename U::NativeType) <= sizeof(Int64))
+    {
+        if (samples.empty())
+            return {};
+
+        sortIfNeeded();
+
+        const double index = std::max(0., std::min(static_cast<double>(samples.size() - 1), level * static_cast<double>(samples.size() - 1)));
+
+        const size_t left_index = static_cast<size_t>(index);
+        const size_t right_index = left_index + 1;
+        if (right_index == samples.size())
+            return samples[left_index];
+
+        /// `long double` preserves every Int64 value and avoids converting the result through Float64,
+        /// which can round values close to Int64 limits outside the representable range.
+        const long double left_coef = static_cast<long double>(right_index) - index;
+        const long double right_coef = index - static_cast<long double>(left_index);
+        const long double result = static_cast<long double>(samples[left_index].value) * left_coef
+            + static_cast<long double>(samples[right_index].value) * right_coef;
+
+        return U(static_cast<typename U::NativeType>(result));
+    }
+
     void merge(const ReservoirSampler<T, OnEmpty> & b)
     {
         if (sample_count != b.sample_count)

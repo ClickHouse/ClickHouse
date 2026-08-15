@@ -1,5 +1,5 @@
 -- Float64 cannot represent Int64 values immediately below 2^63. Interpolating DateTime64
--- values near that boundary must saturate before converting the result back to Int64.
+-- values near that boundary must preserve the exact samples without converting through Float64.
 SELECT quantile(x)
 FROM
 (

@@ -92,7 +92,10 @@ struct QuantileReservoirSampler
         if (data.empty())
             return {};
 
-        return convertInterpolatedResult<Value>(data.quantileInterpolated(level));
+        if constexpr (is_decimal<Value> && sizeof(typename Value::NativeType) <= sizeof(Int64))
+            return data.quantileInterpolatedDecimal64(level);
+        else
+            return convertInterpolatedResult<Value>(data.quantileInterpolated(level));
     }
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
@@ -109,7 +112,10 @@ struct QuantileReservoirSampler
             }
             else
             {
-                result[indices[i]] = convertInterpolatedResult<Value>(data.quantileInterpolated(levels[indices[i]]));
+                if constexpr (is_decimal<Value> && sizeof(typename Value::NativeType) <= sizeof(Int64))
+                    result[indices[i]] = data.quantileInterpolatedDecimal64(levels[indices[i]]);
+                else
+                    result[indices[i]] = convertInterpolatedResult<Value>(data.quantileInterpolated(levels[indices[i]]));
             }
         }
     }
