@@ -745,7 +745,33 @@ String getInsertDataSchemaMismatchDescription(
             if (inferred_from_array_token)
             {
                 if (expected_map && format_settings.json.read_map_as_array_of_tuples)
-                    return true;
+                {
+                    /// A `Map` in this mode is an array of exactly two-element tuples. Do not
+                    /// accept an arbitrary array merely because it has the right outer token:
+                    /// `SerializationMap` delegates to the nested `Array(Tuple(key, value))`
+                    /// serializer, which still validates both the tuple arity and its key/value
+                    /// types.
+                    if (!inferred_array)
+                        return false;
+
+                    const auto * inferred_pair = typeid_cast<const DataTypeTuple *>(inferred_array->getNestedType().get());
+                    if (!inferred_pair || inferred_pair->getElements().size() != 2)
+                        return false;
+
+                    const auto & inferred_pair_elements = inferred_pair->getElements();
+                    return types_are_compatible(
+                               inferred_pair_elements[0],
+                               expected_map->getKeyType(),
+                               nested_evidence(
+                                   nested_evidence(evidence, {SampledValueStep::Kind::ArrayElements}),
+                                   {SampledValueStep::Kind::TupleElement, 0}))
+                        && types_are_compatible(
+                               inferred_pair_elements[1],
+                               expected_map->getValueType(),
+                               nested_evidence(
+                                   nested_evidence(evidence, {SampledValueStep::Kind::ArrayElements}),
+                                   {SampledValueStep::Kind::TupleElement, 1}));
+                }
 
                 if (expected_array)
                 {
@@ -774,15 +800,12 @@ String getInsertDataSchemaMismatchDescription(
                 {
                     const auto & expected_elements = expected_tuple->getElements();
                     if (inferred_array)
-                        return std::ranges::all_of(
-                            expected_elements,
-                            [&](const auto & element)
-                            {
-                                return types_are_compatible(
-                                    inferred_array->getNestedType(),
-                                    element,
-                                    nested_evidence(evidence, {SampledValueStep::Kind::ArrayElements}));
-                            });
+                        /// Schema inference loses the arity of a homogeneous JSON array by
+                        /// representing it as `Array(...)`. The tuple parser does not: it requires
+                        /// exactly one value per destination element. Without sampled arity, treat
+                        /// this as a mismatch rather than assuming that every array has the right
+                        /// length and hiding a genuine tuple-shape error.
+                        return false;
 
                     /// The parser requires exactly as many elements in the token as the destination
                     /// `Tuple` has, and an inferred unnamed `Tuple` preserves the element count.
