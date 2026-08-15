@@ -320,10 +320,10 @@ TEST(PlayDetectExplicitFormat, RealFormatClause)
     expectFormat("SELECT * FROM system.numbers LIMIT 1 FORMAT JSONCompactColumns", "JSONCompactColumns");
     /// Case-insensitive keyword.
     expectFormat("select 1 format PrettyCompact", "PrettyCompact");
-    /// An `INSERT ... FORMAT` clause is a real clause too.
-    expectFormat("INSERT INTO t FORMAT CSV", "CSV");
-    /// A format name that is also a SQL keyword (`Values`) is still returned.
-    expectFormat("INSERT INTO t FORMAT Values", "Values");
+    /// `INSERT ... FORMAT` starts inline input data, not an output format clause.
+    expectFormat("INSERT INTO t FORMAT CSV", std::nullopt);
+    /// The input format may itself be a SQL keyword.
+    expectFormat("INSERT INTO t FORMAT Values", std::nullopt);
     /// A trailing `;` still ends the clause.
     expectFormat("SELECT 1 FORMAT JSON;", "JSON");
     /// The `SETTINGS` clause may follow the `FORMAT` clause.
