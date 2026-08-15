@@ -1971,6 +1971,27 @@ def test_reject_zero_min_upload_part_size(cluster):
     azure_query(node, "DROP TABLE test_reject_zero_min_upload")
 
 
+def test_reject_strict_upload_part_size_above_max(cluster):
+    node = cluster.instances["node"]
+    azure_query(
+        node,
+        f"CREATE TABLE test_reject_strict_upload_part_size (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" 'cont', 'test_reject_strict_upload_part_size.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
+    )
+
+    error = node.query_and_get_error(
+        "INSERT INTO test_reject_strict_upload_part_size VALUES (1, 'a')",
+        settings={
+            "azure_max_upload_part_size": 100,
+            "azure_strict_upload_part_size": 101,
+        },
+    )
+    assert "INVALID_SETTING_VALUE" in error, error
+    assert "azure_strict_upload_part_size" in error, error
+
+    azure_query(node, "DROP TABLE test_reject_strict_upload_part_size")
+
+
 def test_max_blocks_in_multipart_upload_is_enforced(cluster):
     # azure_max_blocks_in_multipart_upload must be honored by the blob multipart writer:
     # a write that needs more blocks than allowed fails instead of silently exceeding the limit.
