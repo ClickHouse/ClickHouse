@@ -2589,13 +2589,12 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
                         function_name, collection_identifier->name());
 
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "'{}' is not a named collection{} on this server, so the database of the '{}' target cannot be "
+                                "'{}' is not a named collection on this server, so the database of the '{}' target cannot be "
                                 "bound to the current database of this CREATE: a collection defined only on the shards may store "
                                 "an empty database, which is resolved against the current database of the session that reads the "
                                 "table. Define the collection on this server, or name the database explicitly with a "
                                 "'database = ...' argument.",
                                 collection_identifier->name(),
-                                identifier_can_only_name_a_collection ? "" : "",
                                 function_name);
             }
 

@@ -9,10 +9,10 @@ CREATE NAMED COLLECTION nc_04903_distributed_target AS addresses_expr = '127.0.0
 CREATE TABLE src_04903 (n UInt64) ENGINE = MergeTree ORDER BY n;
 CREATE TABLE dist_04903 ENGINE = Distributed(test_shard_localhost, remote(nc_04903_distributed_target));
 
-DROP NAMED COLLECTION nc_04903_distributed_target; -- { serverError HAVE_DEPENDENT_OBJECTS }
+DROP NAMED COLLECTION nc_04903_distributed_target; -- { serverError NAMED_COLLECTION_IS_USED }
 DETACH TABLE dist_04903;
 ATTACH TABLE dist_04903;
-DROP NAMED COLLECTION nc_04903_distributed_target; -- { serverError HAVE_DEPENDENT_OBJECTS }
+DROP NAMED COLLECTION nc_04903_distributed_target; -- { serverError NAMED_COLLECTION_IS_USED }
 
 DROP TABLE dist_04903;
 DROP NAMED COLLECTION nc_04903_distributed_target;
