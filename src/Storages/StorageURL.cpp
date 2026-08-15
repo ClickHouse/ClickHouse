@@ -82,6 +82,7 @@ namespace FailPoints
 {
     extern const char storage_url_pause_before_empty_file_probe[];
     extern const char storage_url_pause_between_metadata_probes[];
+    extern const char storage_url_pause_before_input_format_initialization[];
     extern const char storage_url_pause_after_pull[];
     extern const char storage_url_pause_before_handling_interrupted_read_error[];
 }
@@ -489,6 +490,12 @@ StorageURLSource::StorageURLSource(
         }
         else
         {
+            /// `getInput` may construct a `ParallelReadBuffer`, whose workers start range GETs
+            /// immediately. Do not construct it after a cancellation.
+            FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_input_format_initialization);
+            if (cancellation->isCancelled())
+                return false;
+
             // TODO: Pass max_parsing_threads and max_download_threads adjusted for num_streams.
             input_format = FormatFactory::instance().getInput(
                 format,
