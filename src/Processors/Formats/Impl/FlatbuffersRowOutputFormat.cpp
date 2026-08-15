@@ -373,6 +373,16 @@ This format is only available when ClickHouse is built with the `flatbuffers` co
 A `Nullable` value that is not `NULL` is serialized as its underlying value. Other types (for
 example `Map`) are not supported and raise an exception.
 
+Temporal values use their raw integer representations: `Date` and `Date32` are the unsigned and
+signed day number since `1970-01-01`, respectively; `DateTime` is the Unix timestamp in seconds;
+and `DateTime64` is the signed number of `10^-scale` second ticks since the Unix epoch. The
+`DateTime` timezone and the `DateTime64` scale and timezone are not embedded in the FlexBuffers
+value, so consumers must obtain them from the ClickHouse column type.
+
+`Decimal32` and `Decimal64` are signed unscaled integers. `Decimal128` and `Decimal256` are
+little-endian blobs containing their signed unscaled integer. Decimal scale is not embedded in the
+FlexBuffers value, so consumers must obtain it from the ClickHouse column type.
+
 The wide numeric types serialized as `Blob` (`(U)Int128`, `(U)Int256`, `Decimal128`, `Decimal256`)
 are written as little-endian byte sequences, so the output is identical on every architecture.
 `IPv6` is written as its 16-byte network-order representation.
