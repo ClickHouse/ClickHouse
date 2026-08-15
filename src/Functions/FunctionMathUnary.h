@@ -42,7 +42,7 @@ private:
 
     String getSignatureString() const override
     {
-        /// Float32/Float64 keep their precision unless always_returns_float64; other Number types, including BFloat16, become Float64.
+        /// `Float32`/`Float64` keep their precision unless `always_returns_float64`; other `Number` types, including `BFloat16`, become `Float64`.
         if constexpr (Impl::always_returns_float64)
             return "(Number) -> Float64";
         else
