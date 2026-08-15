@@ -1,4 +1,5 @@
 #include <Parsers/ASTShowColumnsQuery.h>
+#include <Common/SipHash.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTLiteral.h>
