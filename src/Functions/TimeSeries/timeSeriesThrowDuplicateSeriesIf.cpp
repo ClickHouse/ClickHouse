@@ -194,22 +194,20 @@ CREATE TABLE test(tags Array(Tuple(String, String))) engine=Memory;
 
 INSERT INTO test VALUES ([('__name__', 'up')]);
 
-SELECT timeSeriesTagsToGroup(tags) AS group
+SELECT timeSeriesThrowDuplicateSeriesIf(count() > 1, timeSeriesTagsToGroup(tags))
 FROM test
-GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;
+GROUP BY timeSeriesTagsToGroup(tags);
         )",
-        "",
+        "0",
     },
     {
         "Two series with the same tags",
         R"(
 INSERT INTO test VALUES ([('__name__', 'up')]);
 
-SELECT timeSeriesTagsToGroup(tags) AS group
+SELECT timeSeriesThrowDuplicateSeriesIf(count() > 1, timeSeriesTagsToGroup(tags))
 FROM test
-GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;
+GROUP BY timeSeriesTagsToGroup(tags);
         )",
         R"(
 Received exception:
