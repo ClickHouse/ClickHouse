@@ -2320,12 +2320,16 @@ void Planner::buildPlanForQueryNode()
                 continue;
 
             const auto & modifiers = table_node->getTableExpressionModifiers();
-            if (modifiers.has_value() && modifiers->hasFinal())
+            /// A follower must keep the setting on for its own read-side `STREAM` refusal to fire.
+            if (modifiers.has_value()
+                && (modifiers->hasFinal()
+                    || (modifiers->hasStream() && query_context->canUseParallelReplicasOnInitiator())))
             {
+                const auto * modifier = modifiers->hasFinal() ? "FINAL" : "STREAM";
                 if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "{} modifier is not supported with parallel replicas", modifier);
 
-                LOG_DEBUG(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
+                LOG_DEBUG(log, "{} modifier is not supported with parallel replicas. Query will be executed without using them.", modifier);
                 auto & mutable_context = planner_context->getMutableQueryContext();
                 mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                 break;
