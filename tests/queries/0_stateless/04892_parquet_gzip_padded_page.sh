@@ -20,6 +20,7 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 
 DATA_FILE="${WORK_DIR}/plain.parquet"
 PADDED_FILE="${WORK_DIR}/padded.parquet"
+OVERFLOW_FILE="${WORK_DIR}/overflow.parquet"
 
 # One fully dictionary-encoded `gzip`-compressed string column in a single row group. Checksums, the
 # page index and the bloom filter are disabled so that the only offsets to fix up after the padding
@@ -34,10 +35,10 @@ ${CLICKHOUSE_LOCAL} --query="
         engine_file_truncate_on_insert = 1, max_block_size = 1000000;
 "
 
-python3 - "${DATA_FILE}" "${PADDED_FILE}" <<'PYEOF'
-import struct, sys
+python3 - "${DATA_FILE}" "${PADDED_FILE}" "${OVERFLOW_FILE}" <<'PYEOF'
+import gzip, struct, sys
 
-src, dst = sys.argv[1], sys.argv[2]
+src, padded_dst, overflow_dst = sys.argv[1], sys.argv[2], sys.argv[3]
 PADDING = 4096
 
 # --- minimal Thrift compact protocol walker (records the byte range of every scalar integer field) ---
@@ -127,32 +128,41 @@ assert page_end + compressed_page_size == data_page_offset, \
 assert 1_100_000 <= uncompressed_page_size <= 1_300_000, \
     f"unexpected dictionary page payload size: {uncompressed_page_size}"
 
-new_size_bytes = encode_varint(zigzag_encode(compressed_page_size + PADDING))
-# The dictionary page grows by the padding plus whatever the re-encoded size field added to the
-# header, which moves the first data page and grows the chunk by the same amount. The reader's
-# `data_pages_bytes` (`total_compressed_size - (data_page_offset - dictionary_page_offset)`) and
-# `dictionary_page_offset` itself are unchanged.
-grow = PADDING + len(new_size_bytes) - (page[(3,)][1] - page[(3,)][0])
+def make_file(dst, suffix):
+    new_size_bytes = encode_varint(zigzag_encode(compressed_page_size + len(suffix)))
+    # The dictionary page grows by the suffix plus whatever the re-encoded size field added to the
+    # header, which moves the first data page and grows the chunk by the same amount. The reader's
+    # `data_pages_bytes` (`total_compressed_size - (data_page_offset - dictionary_page_offset)`) and
+    # `dictionary_page_offset` itself are unchanged.
+    grow = len(suffix) + len(new_size_bytes) - (page[(3,)][1] - page[(3,)][0])
 
-new_footer = splice(buf[footer_start:], [
-    (meta[CM + (7,)][0] - footer_start, meta[CM + (7,)][1] - footer_start,
-     encode_varint(zigzag_encode(total_compressed + grow))),
-    (meta[CM + (9,)][0] - footer_start, meta[CM + (9,)][1] - footer_start,
-     encode_varint(zigzag_encode(data_page_offset + grow))),
-])
+    new_footer = splice(buf[footer_start:], [
+        (meta[CM + (7,)][0] - footer_start, meta[CM + (7,)][1] - footer_start,
+         encode_varint(zigzag_encode(total_compressed + grow))),
+        (meta[CM + (9,)][0] - footer_start, meta[CM + (9,)][1] - footer_start,
+         encode_varint(zigzag_encode(data_page_offset + grow))),
+    ])
 
-out = (
-    splice(buf[:data_page_offset], [(page[(3,)][0], page[(3,)][1], new_size_bytes)])
-    + b"\0" * PADDING
-    + buf[data_page_offset:footer_start]
-    + new_footer
-    + struct.pack("<I", len(new_footer))
-    + b"PAR1"
-)
-open(dst, "wb").write(out)
+    out = (
+        splice(buf[:data_page_offset], [(page[(3,)][0], page[(3,)][1], new_size_bytes)])
+        + suffix
+        + buf[data_page_offset:footer_start]
+        + new_footer
+        + struct.pack("<I", len(new_footer))
+        + b"PAR1"
+    )
+    open(dst, "wb").write(out)
+
+make_file(padded_dst, b"\0" * PADDING)
+# A second gzip member must not be treated as page padding after the first member filled the
+# declared output exactly: it expands past the page header and must be rejected.
+make_file(overflow_dst, gzip.compress(b"overflow"))
 PYEOF
 
 echo "the padded file reads back exactly like the original"
 ${CLICKHOUSE_LOCAL} --query="
     select (select (groupBitXor(cityHash64(s)), count()) from file('${DATA_FILE}', Parquet))
          = (select (groupBitXor(cityHash64(s)), count()) from file('${PADDED_FILE}', Parquet))"
+
+echo "a second gzip member beyond the declared output is rejected"
+${CLICKHOUSE_LOCAL} --query="select count() from file('${OVERFLOW_FILE}', Parquet)" 2>&1 | grep -c 'Compressed page uncompresses to more than the declared'

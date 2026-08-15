@@ -184,9 +184,13 @@ static void decompressGzip(const char * data, size_t compressed_size, size_t unc
         if (rc == Z_STREAM_END)
         {
             /// The trailer of this member is verified. If the page produced everything it promised,
-            /// whatever is left in it is padding and is not our business.
+            /// only a suffix that cannot start another gzip member is padding.
             if (zstr.next_out == zlib_out_begin + uncompressed_size)
-                return;
+            {
+                const size_t remaining = in_end - zstr.next_in;
+                if (remaining < 2 || zstr.next_in[0] != 0x1f || zstr.next_in[1] != 0x8b)
+                    return;
+            }
             if (zstr.next_out == zlib_out_end)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Compressed page uncompresses to more than the declared {} bytes", uncompressed_size);
