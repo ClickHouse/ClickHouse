@@ -50,7 +50,8 @@ function setup_table()
 function race_with_drop_once()
 {
     local arm=$1
-    shift
+    local window_ms=$2
+    shift 2
     # Unique per invocation: a run reusing this server must not match an earlier run's row.
     local qid="${CLICKHOUSE_DATABASE_1}_${arm}_${RANDOM}${RANDOM}"
 
@@ -96,9 +97,10 @@ function race_with_drop_once()
         else
             drop=failed
         fi
-        # Blocking on the table lock is the property under test. The counter advances only while the
-        # request sleeps on the lock, so it is zero for an uncontended drop however long the
-        # statement itself ran.
+        # Blocking on the table lock is the property under test. A drop that overlapped the pause
+        # waits for the rest of it, so the wait is a large fraction of the window; the timer is
+        # started before the lock is taken and reads in whole milliseconds, so an uncontended drop
+        # can report a few from scheduling alone but never anything on that scale.
         if [ "$drop" = ok ]; then
             local waited
             waited=$(${CLICKHOUSE_CLIENT} --query "
@@ -111,12 +113,11 @@ function race_with_drop_once()
             case "$waited" in
                 '' | *[!0-9]*) waited=-1 ;;
             esac
-            if [ "$waited" -eq 0 ]; then
-                wait "$updater" 2>/dev/null || true
-                return 1
-            fi
             if [ "$waited" -lt 0 ]; then
                 drop="lock wait unreadable"
+            elif [ "$waited" -lt $((window_ms / 10)) ]; then
+                wait "$updater" 2>/dev/null || true
+                return 1
             fi
         fi
     fi
@@ -145,7 +146,7 @@ function race_with_drop()
             window=$((window * 3))
             setup_table "$arm" "$window"
         fi
-        if race_with_drop_once "$arm" "$@"; then
+        if race_with_drop_once "$arm" "$window" "$@"; then
             return 0
         fi
     done
