@@ -6,6 +6,11 @@
 --- LEFT ANTI: not supported by the merge algorithm, hash with a runtime filter ---
       Algorithm: HashJoin
           BuildRuntimeFilter (Build runtime join filter on __table2.id)
+--- Earlier `default` and `auto` win before `sorted_merge`, with a runtime filter ---
+      Algorithm: HashJoin
+          BuildRuntimeFilter (Build runtime join filter on __table2.id)
+      Algorithm: HashJoin
+          BuildRuntimeFilter (Build runtime join filter on __table2.id)
 --- Results are the same as with plain `hash` ---
 1000
 1000

@@ -47,6 +47,22 @@ EXPLAIN actions = 1
 SELECT count() FROM smj_rf_left AS l LEFT ANTI JOIN smj_rf_right AS r ON l.id = r.id
 ) WHERE explain LIKE '%Algorithm: %Join%' OR explain LIKE '%RuntimeFilter%';
 
+SELECT '--- Earlier `default` and `auto` win before `sorted_merge`, with a runtime filter ---';
+
+SET join_algorithm = 'default,sorted_merge,hash';
+
+SELECT * FROM (
+EXPLAIN actions = 1
+SELECT count() FROM smj_rf_left AS l INNER JOIN smj_rf_right AS r ON l.id = r.id
+) WHERE explain LIKE '%Algorithm: %Join%' OR explain LIKE '%RuntimeFilter%';
+
+SET join_algorithm = 'auto,sorted_merge,hash';
+
+SELECT * FROM (
+EXPLAIN actions = 1
+SELECT count() FROM smj_rf_left AS l INNER JOIN smj_rf_right AS r ON l.id = r.id
+) WHERE explain LIKE '%Algorithm: %Join%' OR explain LIKE '%RuntimeFilter%';
+
 SELECT '--- Results are the same as with plain `hash` ---';
 
 SELECT count() FROM smj_rf_left AS l INNER JOIN smj_rf_right AS r ON l.id = r.id;
