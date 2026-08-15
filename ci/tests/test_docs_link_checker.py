@@ -44,6 +44,41 @@ def test_settings_explorer_links_are_materialized_for_lychee(tmp_path):
     assert "https://clickhouse.com/docs/reference/settings" not in materialized
 
 
+def test_routed_settings_explorer_links_are_materialized_for_locale(tmp_path):
+    docs_root = tmp_path / "docs"
+    output = tmp_path / "output"
+    output.mkdir()
+    component = (
+        docs_root
+        / "snippets/ar/components/SessionSettingsExplorer/SessionSettingsExplorer.jsx"
+    )
+    component.parent.mkdir(parents=True)
+    component.write_text(
+        'const entries = [{"name":"example_setting",'
+        '"path":"/example#example_setting"}];\n'
+        '<a href={`https://clickhouse.com/docs${baseRoute}'
+        '${item.value.path}`}>example_setting</a>\n',
+        encoding="utf-8",
+    )
+    overview = docs_root / "ar/reference/settings/session-settings.mdx"
+    overview.parent.mkdir(parents=True)
+    overview.write_text(
+        '<SessionSettingsExplorer '
+        'href="/ar/reference/settings/session-settings" />\n',
+        encoding="utf-8",
+    )
+
+    output_name, errors = lychee_check.write_settings_explorer_links(
+        docs_root, output, locales=("ar",))
+
+    assert errors == 0
+    materialized = (output / output_name).read_text(encoding="utf-8")
+    assert (
+        "](/ar/reference/settings/session-settings/example#example_setting)"
+        in materialized
+    )
+
+
 def test_settings_explorer_links_require_an_absolute_production_url(
         tmp_path, capsys):
     docs_root = tmp_path / "docs"
