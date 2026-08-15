@@ -1,18 +1,18 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Core/Names.h>
 #include <Parsers/NullsAction.h>
 #include <Common/FunctionDocumentation.h>
 #include <Common/IFactoryWithAliases.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Core/Names.h>
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <optional>
 
 
 namespace DB
@@ -45,12 +45,19 @@ struct AggregateFunctionWithProperties
 
     AggregateFunctionWithProperties() = default;
     AggregateFunctionWithProperties(const AggregateFunctionWithProperties &) = default;
-    AggregateFunctionWithProperties & operator = (const AggregateFunctionWithProperties &) = default;
+    AggregateFunctionWithProperties & operator=(const AggregateFunctionWithProperties &) = default;
 
     template <typename Creator>
-    requires (!std::is_same_v<Creator, AggregateFunctionWithProperties>)
-    AggregateFunctionWithProperties(Creator creator_, FunctionDocumentation documentation_, AggregateFunctionProperties properties_ = {}, AggregateFunctionCreator window_creator_ = {}) /// NOLINT
-        : creator(std::forward<Creator>(creator_)), window_creator(std::move(window_creator_)), documentation(std::move(documentation_)), properties(std::move(properties_))
+    requires(!std::is_same_v<Creator, AggregateFunctionWithProperties>)
+    AggregateFunctionWithProperties(
+        Creator creator_,
+        FunctionDocumentation documentation_,
+        AggregateFunctionProperties properties_ = {},
+        AggregateFunctionCreator window_creator_ = {}) /// NOLINT
+        : creator(std::forward<Creator>(creator_))
+        , window_creator(std::move(window_creator_))
+        , documentation(std::move(documentation_))
+        , properties(std::move(properties_))
     {
     }
 };
@@ -65,10 +72,7 @@ public:
 
     /// Register a function by its name.
     /// No locking, you must register all functions before usage of get.
-    void registerFunction(
-        const String & name,
-        Value creator,
-        Case case_sensitiveness = Case::Sensitive);
+    void registerFunction(const String & name, Value creator, Case case_sensitiveness = Case::Sensitive);
 
     /// Register how to transform from one aggregate function to other based on NullsAction
     /// Registers them both ways:
@@ -91,6 +95,9 @@ public:
     /// a state), rather than being resolved for a fresh aggregation over user data. Such a type has already been
     /// validated when it was declared and its layout is fixed, so resolving it must not depend on the current value
     /// of query settings - see `allow_lossy_numeric_supertype` in `tryGetVariantAdapter`.
+    ///
+    /// `settings` supplies the settings for a fresh aggregation when the caller has a context but no current query
+    /// context, as during TTL metadata construction or a background merge. It is ignored for declared state types.
     AggregateFunctionPtr
     get(const String & name,
         NullsAction action,
@@ -99,7 +106,8 @@ public:
         AggregateFunctionProperties & out_properties,
         AggregateFunctionStateVariant state_variant = AggregateFunctionStateVariant::Aggregation,
         bool from_declared_state_type = false,
-        bool from_declared_simple_aggregate_function = false) const;
+        bool from_declared_simple_aggregate_function = false,
+        const Settings * settings = nullptr) const;
 
     /// Get properties if the aggregate function exists.
     std::optional<AggregateFunctionProperties> tryGetProperties(String name, NullsAction action) const;
@@ -126,7 +134,8 @@ private:
         bool has_null_arguments,
         AggregateFunctionStateVariant state_variant,
         bool apply_variant_adapter_to_nested,
-        bool allow_skipping_variant_nulls = true) const;
+        bool allow_skipping_variant_nulls = true,
+        const Settings * settings = nullptr) const;
 
     /// Resolve the function applying only the LowCardinality/Nullable/combinator handling, without the
     /// Variant fallback. `types_without_low_cardinality` must already have LowCardinality removed.
@@ -144,7 +153,8 @@ private:
         AggregateFunctionProperties & out_properties,
         AggregateFunctionStateVariant state_variant,
         bool apply_variant_adapter_to_nested,
-        bool allow_skipping_variant_nulls = true) const;
+        bool allow_skipping_variant_nulls = true,
+        const Settings * settings = nullptr) const;
 
     /// Try to wrap the function in AggregateFunctionVariantAdapter so it can be applied to Variant arguments by
     /// aggregating over the least common supertype of the variants. Returns nullptr if that is not possible.
@@ -155,7 +165,8 @@ private:
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
         AggregateFunctionStateVariant state_variant,
-        bool from_declared_state_type) const;
+        bool from_declared_state_type,
+        const Settings * settings) const;
 
     /// Position of the `-ArgMin` / `-ArgMax` combinator comparison key in the top-level argument list, if the function
     /// has such a combinator (nullopt otherwise). That key is compared exactly, so it must never be adapted through the
@@ -176,7 +187,8 @@ private:
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
         AggregateFunctionStateVariant state_variant,
-        bool allow_skipping_variant_nulls = true) const;
+        bool allow_skipping_variant_nulls = true,
+        const Settings * settings = nullptr) const;
 
     using AggregateFunctions = std::unordered_map<String, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     using ActionMap = NameToNameMap;
@@ -202,7 +214,6 @@ private:
     const AggregateFunctions & getCaseInsensitiveMap() const override { return case_insensitive_aggregate_functions; }
 
     String getFactoryName() const override { return "AggregateFunctionFactory"; }
-
 };
 
 struct AggregateUtils

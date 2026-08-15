@@ -15,22 +15,22 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool compile_aggregate_expressions;
-    extern const SettingsBool empty_result_for_aggregation_by_empty_set;
-    extern const SettingsBool enable_software_prefetch_in_aggregation;
-    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
-    extern const SettingsNonZeroUInt64 max_block_size;
-    extern const SettingsUInt64 max_bytes_before_external_group_by;
-    extern const SettingsDouble max_bytes_ratio_before_external_group_by;
-    extern const SettingsUInt64 max_rows_to_group_by;
-    extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
-    extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
-    extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
-    extern const SettingsBool optimize_group_by_constant_keys;
-    extern const SettingsBool enable_packed_string_keys_in_aggregation;
-    extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
-    extern const SettingsBool serialize_string_in_memory_with_zero_byte;
+extern const SettingsBool compile_aggregate_expressions;
+extern const SettingsBool empty_result_for_aggregation_by_empty_set;
+extern const SettingsBool enable_software_prefetch_in_aggregation;
+extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
+extern const SettingsNonZeroUInt64 max_block_size;
+extern const SettingsUInt64 max_bytes_before_external_group_by;
+extern const SettingsDouble max_bytes_ratio_before_external_group_by;
+extern const SettingsUInt64 max_rows_to_group_by;
+extern const SettingsMaxThreads max_threads;
+extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
+extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
+extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
+extern const SettingsBool optimize_group_by_constant_keys;
+extern const SettingsBool enable_packed_string_keys_in_aggregation;
+extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
+extern const SettingsBool serialize_string_in_memory_with_zero_byte;
 }
 
 namespace
@@ -42,18 +42,29 @@ bool isCoveredByGroupByOrSet(const TTLDescription & description, const std::stri
         || std::ranges::contains(description.set_parts | std::views::transform(&TTLAggregateDescription::column_name), column_name);
 }
 
-std::pair<AggregateDescription, TTLAggregateDescription> prepareAnyAggregate(const ColumnWithTypeAndName & column, const ContextPtr & context)
+std::pair<AggregateDescription, TTLAggregateDescription>
+prepareAnyAggregate(const ColumnWithTypeAndName & column, const ContextPtr & context)
 {
     AggregateDescription aggregate;
     aggregate.column_name = column.name;
     aggregate.argument_names = {column.name};
     AggregateFunctionProperties properties;
-    aggregate.function = AggregateFunctionFactory::instance().get("any", NullsAction::EMPTY, {column.type}, {}, properties);
+    aggregate.function = AggregateFunctionFactory::instance().get(
+        "any",
+        NullsAction::EMPTY,
+        {column.type},
+        {},
+        properties,
+        AggregateFunctionStateVariant::Aggregation,
+        false,
+        false,
+        &context->getSettingsRef());
 
     TTLAggregateDescription set_part;
     set_part.column_name = column.name;
     set_part.expression_result_column_name = column.name;
-    set_part.expression = std::make_shared<ExpressionActions>(ActionsDAG(NamesAndTypesList{{column.name, aggregate.function->getResultType()}}), ExpressionActionsSettings(context));
+    set_part.expression = std::make_shared<ExpressionActions>(
+        ActionsDAG(NamesAndTypesList{{column.name, aggregate.function->getResultType()}}), ExpressionActionsSettings(context));
 
     return {std::move(aggregate), std::move(set_part)};
 }
@@ -84,7 +95,12 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
     bool force_,
     const Block & header_,
     const MergeTreeData & storage_)
-    : ITTLAlgorithm(ttl_expressions_, addImplicitlyAggregatedColumns(description_, header_, storage_.getContext()), old_ttl_info_, current_time_, force_)
+    : ITTLAlgorithm(
+          ttl_expressions_,
+          addImplicitlyAggregatedColumns(description_, header_, storage_.getContext()),
+          old_ttl_info_,
+          current_time_,
+          force_)
     , header(header_)
 {
     current_key_value.resize(description.group_by_keys.size());
@@ -132,7 +148,6 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
 
 void TTLAggregationAlgorithm::execute(Block & block)
 {
-
     bool some_rows_were_aggregated = false;
     MutableColumns result_columns = header.cloneEmptyColumns();
 
@@ -236,7 +251,8 @@ void TTLAggregationAlgorithm::execute(Block & block)
     if (some_rows_were_aggregated)
     {
         auto ttl_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
-        auto where_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
+        auto where_column_after_aggregation
+            = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
         for (size_t i = 0; i < block.rows(); ++i)
         {
             bool where_filter_passed = !where_column_after_aggregation || where_column_after_aggregation->getBool(i);
@@ -258,9 +274,7 @@ void TTLAggregationAlgorithm::calculateAggregates(const MutableColumns & aggrega
     }
 
     aggregator->executeOnBlock(
-        aggregate_chunk, /* row_begin= */ 0, length,
-        aggregation_result, key_columns, columns_for_aggregator, no_more_keys);
-
+        aggregate_chunk, /* row_begin= */ 0, length, aggregation_result, key_columns, columns_for_aggregator, no_more_keys);
 }
 
 void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns)
@@ -288,8 +302,8 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
                     if (!column_with_type.type->lowCardinality())
                     {
                         auto nested_type = recursiveRemoveLowCardinality(result_column_type);
-                        column_with_type.column = recursiveLowCardinalityTypeConversion(
-                            column_with_type.column, nested_type, result_column_type);
+                        column_with_type.column
+                            = recursiveLowCardinalityTypeConversion(column_with_type.column, nested_type, result_column_type);
                         column_with_type.type = result_column_type;
                     }
                 }
