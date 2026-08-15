@@ -30,27 +30,10 @@ namespace Setting
 namespace DB::QueryPlanOptimizations
 {
 
-/// Decide whether the read served by `read_step` would already produce rows in an order
-/// whose prefix is `sort_column_name`, making a TopK dynamic prewhere filter redundant.
-///
-/// Two sources of order are considered:
-///   1. The base table's sorting key starts with `sort_column_name`.
-///   2. A normal (sorting) projection whose ORDER BY starts with `sort_column_name` and which
-///      stores every column the query reads is available; when projections and read-in-order
-///      are enabled such a projection is selected to serve the read in the second plan pass.
-///
-/// Case 2 is predictive: this optimization runs in the first plan pass, before the projection
-/// chooser (`optimizeUseNormalProjections`) runs in the second pass. The chooser applies extra
-/// gates before it actually selects a projection, so the predictor here mirrors the ones that
-/// can be evaluated from metadata alone and stays conservative (returns false when unsure) so
-/// it never disables dynamic filtering for a read that still hits the base table:
-///   - `preferred_optimize_projection_name`: if set, only that projection is considered.
-///   - projection `WHERE`: a partial projection is only chosen when the query filter implies its
-///     WHERE; that implication is not known here, so partial projections are not trusted.
-///   - read-cost comparison (`sum_marks <= parent_reading_marks`): a projection can be rejected
-///     as more expensive than the base read only when a query filter can prune the base table
-///     cheaper. Without a query filter the sorting projection is not rejected on cost, so the
-///     predictor only trusts case 2 when there is no filter below the sort.
+/// True when the read is already ordered by a prefix of `sort_column_name`, either from the base
+/// table's sorting key or from a sorting projection that the second-pass chooser would select.
+/// Runs before that chooser, so it must return false whenever selection is uncertain: a false
+/// positive drops dynamic filtering from a read that still hits the base table.
 static bool readWouldBeInOrderForColumn(
     const ReadFromMergeTree & read_step, const String & sort_column_name, bool optimize_projection, bool has_query_filter)
 {
@@ -64,9 +47,7 @@ static bool readWouldBeInOrderForColumn(
     if (!optimize_projection)
         return false;
 
-    /// With a query filter the chooser may keep the cheaper filtered base-table read and reject
-    /// the projection on cost (or need a WHERE-implication we cannot check here). Do not predict
-    /// in-order in that case; leaving dynamic filtering on for a base-table read is the safe side.
+    /// A filter lets the chooser reject the projection on cost, so selection is not predictable here.
     if (has_query_filter)
         return false;
 
@@ -87,9 +68,7 @@ static bool readWouldBeInOrderForColumn(
         if (proj_sorting_key.column_names.empty() || proj_sorting_key.column_names[0] != sort_column_name)
             continue;
 
-        /// A projection with its own WHERE stores only a subset of rows; the chooser would need
-        /// the query filter to imply that WHERE (unknowable here). Since there is no query filter
-        /// at this point, such a projection cannot serve the full read in-order.
+        /// A projection with its own WHERE stores a subset of rows, so it cannot serve the full read.
         if (projection.where_clause_ast)
             continue;
 
@@ -272,19 +251,8 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         && !isVariant(sort_column.type)
         && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
 
-    /// When read-in-order optimization is enabled and the sort column is a prefix
-    /// of the read's sorted order, the engine will read data in sorted order.
-    /// TopK dynamic filtering is counterproductive in this case: once the threshold
-    /// is established, the prewhere rejects all subsequent rows (they are beyond
-    /// the threshold in sorted order), preventing the LIMIT from triggering early
-    /// pipeline cancellation, and causing a full table scan instead.
-    ///
-    /// The read may end up in-order either because the sort column is a prefix of the
-    /// base table's sorting key, or because a sorting projection whose ORDER BY starts
-    /// with the sort column is selected to serve the read. This optimization runs in the
-    /// first plan pass, before projection selection and read-in-order (both second pass),
-    /// so the guard is predictive: it disables dynamic filtering whenever the base table
-    /// OR a usable sorting projection would make the read in-order for the ORDER BY prefix.
+    /// On an already-sorted read the prewhere rejects every row past the threshold, so the LIMIT
+    /// never cancels the pipeline early and the whole table is scanned.
     if (use_dynamic_filtering && settings.read_in_order
         && readWouldBeInOrderForColumn(*read_from_mergetree_step, sort_column_name, settings.optimize_projection, where_clause))
         use_dynamic_filtering = false;
