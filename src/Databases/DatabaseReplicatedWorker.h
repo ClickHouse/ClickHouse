@@ -2,6 +2,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/QualifiedTableName.h>
+#include <Core/Names.h>
 
 namespace DB
 {
@@ -85,6 +86,11 @@ private:
     // We only update after processing a batch of queries to avoid sending too many requests to Keeper.
     // Because each update calls `getClusterImpl`, which sends a request to Keeper.
     bool need_update_cached_cluster{false};
+
+    /// Names of removed `WINDOW VIEW`s found in the retained DDL queue. Their
+    /// subsequent DDLs must be ignored as well because the views cannot be
+    /// created after the upgrade.
+    NameSet removed_window_views;
 };
 
 }

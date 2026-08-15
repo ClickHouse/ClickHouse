@@ -58,29 +58,82 @@ namespace FailPoints
 namespace
 {
 
-bool isRemovedWindowViewQuery(const String & query)
+using Tokens = std::vector<Token>;
+
+Tokens getSignificantTokens(const String & query)
 {
     Lexer lexer(query.data(), query.data() + query.size());
-
-    auto next_significant_token = [&lexer]
+    Tokens tokens;
+    while (true)
     {
         Token token = lexer.nextToken();
-        while (!token.isSignificant())
-            token = lexer.nextToken();
+        if (token.isSignificant())
+            tokens.emplace_back(token);
+        if (token.isEnd())
+            return tokens;
+    }
+}
 
-        return token;
-    };
+bool isKeyword(const Token & token, std::string_view keyword)
+{
+    return token.type == TokenType::BareWord
+        && equalsCaseInsensitive(std::string_view(token.begin, token.size()), keyword);
+}
 
-    auto is_keyword = [](const Token & token, std::string_view keyword)
+bool isIdentifier(const Token & token)
+{
+    return token.type == TokenType::BareWord || token.type == TokenType::QuotedIdentifier;
+}
+
+std::optional<String> getTableName(const Tokens & tokens, size_t pos)
+{
+    if (pos >= tokens.size() || !isIdentifier(tokens[pos]))
+        return {};
+
+    String name(tokens[pos].begin, tokens[pos].size());
+    if (pos + 2 < tokens.size() && tokens[pos + 1].type == TokenType::Dot && isIdentifier(tokens[pos + 2]))
     {
-        return token.type == TokenType::BareWord
-            && equalsCaseInsensitive(std::string_view(token.begin, token.size()), keyword);
-    };
+        name += '.';
+        name.append(tokens[pos + 2].begin, tokens[pos + 2].size());
+    }
 
-    const Token first_token = next_significant_token();
-    return (is_keyword(first_token, "CREATE") || is_keyword(first_token, "ATTACH"))
-        && is_keyword(next_significant_token(), "WINDOW")
-        && is_keyword(next_significant_token(), "VIEW");
+    return name;
+}
+
+std::optional<String> getRemovedWindowViewName(const Tokens & tokens)
+{
+    if (tokens.size() < 5
+        || (!isKeyword(tokens[0], "CREATE") && !isKeyword(tokens[0], "ATTACH"))
+        || !isKeyword(tokens[1], "WINDOW")
+        || !isKeyword(tokens[2], "VIEW"))
+        return {};
+
+    return getTableName(tokens, 3);
+}
+
+std::optional<String> getWindowViewFollowupName(const Tokens & tokens)
+{
+    if (tokens.empty()
+        || (!isKeyword(tokens[0], "ALTER")
+            && !isKeyword(tokens[0], "DROP")
+            && !isKeyword(tokens[0], "DETACH")
+            && !isKeyword(tokens[0], "TRUNCATE")
+            && !isKeyword(tokens[0], "OPTIMIZE")
+            && !isKeyword(tokens[0], "CHECK")
+            && !isKeyword(tokens[0], "RENAME")))
+        return {};
+
+    size_t pos = 1;
+    while (pos < tokens.size() && !isKeyword(tokens[pos], "TABLE"))
+        ++pos;
+    if (pos == tokens.size())
+        return {};
+
+    ++pos;
+    while (pos < tokens.size() && (isKeyword(tokens[pos], "IF") || isKeyword(tokens[pos], "EXISTS") || isKeyword(tokens[pos], "TEMPORARY") || isKeyword(tokens[pos], "PERMANENTLY")))
+        ++pos;
+
+    return getTableName(tokens, pos);
 }
 
 }
@@ -750,10 +803,19 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     /// A committed entry can be retained after `WINDOW VIEW` was removed. It must not keep a
     /// replica from catching up, because the obsolete view cannot exist after the upgrade.
-    if (isRemovedWindowViewQuery(task->entry.query))
+    const auto tokens = getSignificantTokens(task->entry.query);
+    if (const auto window_view_name = getRemovedWindowViewName(tokens))
     {
-        LOG_WARNING(log, "Skip removed WINDOW VIEW DDL {}", entry_name);
-        out_reason = fmt::format("Entry {} creates an obsolete WINDOW VIEW", entry_name);
+        removed_window_views.insert(*window_view_name);
+        LOG_WARNING(log, "Skip removed WINDOW VIEW DDL {} for {}", entry_name, *window_view_name);
+        out_reason = fmt::format("Entry {} creates an obsolete WINDOW VIEW {}", entry_name, *window_view_name);
+        return {};
+    }
+
+    if (const auto table_name = getWindowViewFollowupName(tokens); table_name && removed_window_views.contains(*table_name))
+    {
+        LOG_WARNING(log, "Skip DDL {} for removed WINDOW VIEW {}", entry_name, *table_name);
+        out_reason = fmt::format("Entry {} modifies an obsolete WINDOW VIEW {}", entry_name, *table_name);
         return {};
     }
 

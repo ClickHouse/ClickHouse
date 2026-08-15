@@ -1769,6 +1769,53 @@ def test_lag_after_recovery(started_cluster):
     )
 
 
+def test_skip_legacy_window_view_ddl_chain(started_cluster):
+    database = "skip_legacy_window_view_ddl_chain"
+    zookeeper_path = f"/clickhouse/databases/{database}"
+
+    main_node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+    dummy_node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+    main_node.query(
+        f"CREATE DATABASE {database} ENGINE = Replicated('{zookeeper_path}', 'shard1', 'replica1')"
+    )
+    dummy_node.query(
+        f"CREATE DATABASE {database} ENGINE = Replicated('{zookeeper_path}', 'shard1', 'replica2')"
+    )
+
+    dummy_node.query("SYSTEM ENABLE FAILPOINT database_replicated_stop_entry_execution")
+    try:
+        settings = {"distributed_ddl_task_timeout": 0}
+        main_node.query(
+            f"CREATE TABLE {database}.wv (n UInt8) ENGINE = Memory",
+            settings=settings,
+        )
+
+        zk = started_cluster.get_kazoo_client("zoo1")
+        for entry in zk.get_children(f"{zookeeper_path}/log"):
+            entry_path = f"{zookeeper_path}/log/{entry}"
+            data = zk.get(entry_path)[0]
+            create_query = f"CREATE TABLE {database}.wv".encode()
+            if create_query in data:
+                zk.set(entry_path, data.replace(create_query, f"CREATE WINDOW VIEW {database}.wv".encode()))
+                break
+        else:
+            raise AssertionError("Could not find the CREATE TABLE DDL entry")
+
+        main_node.query(
+            f"ALTER TABLE {database}.wv MODIFY COMMENT 'obsolete'",
+            settings=settings,
+        )
+        main_node.query(f"DROP TABLE {database}.wv", settings=settings)
+    finally:
+        dummy_node.query("SYSTEM DISABLE FAILPOINT database_replicated_stop_entry_execution")
+
+    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+    assert dummy_node.query(f"SELECT count() FROM system.tables WHERE database = '{database}'") == "0\n"
+
+    main_node.query(f"DROP DATABASE {database} SYNC")
+    dummy_node.query(f"DROP DATABASE {database} SYNC")
+
+
 def test_sync_database_replica_strict(started_cluster):
     # Differential test for SYSTEM SYNC DATABASE REPLICA ... STRICT.
     #
