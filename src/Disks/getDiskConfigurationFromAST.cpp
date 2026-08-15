@@ -304,6 +304,17 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             "the backend type is supplied indirectly). Provide the credential as a literal value, or configure "
             "the disk in the server configuration instead.");
 
+    /// Match the table-function/engine restriction for a dynamic native GCS disk. Without an explicit
+    /// native credential or `NOSIGN`, the client falls back to ADC and can borrow the server identity.
+    const bool has_explicit_gcs_adc = has_google_adc_client_id && has_google_adc_client_secret && has_google_adc_refresh_token;
+    const bool has_explicit_gcs_credentials = has_gcs_service_account_key || has_gcs_access_token || has_explicit_gcs_adc || has_no_sign_request;
+    if (maybe_gcs_disk && !for_system_database && context->shouldRestrictUserQueryS3Credentials() && !has_explicit_gcs_credentials)
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "A dynamic native GCS disk created from user SQL may not use Application Default Credentials because "
+            "they can resolve the server's identity. Provide `service_account_key`, `access_token`, a complete "
+            "`google_adc_*` triple, or `no_sign_request`, or enable `s3_allow_server_credentials_in_user_queries`");
+
     /// A user-created S3 disk must not resolve the server's own credentials. Indirection (`from_env`/`from_zk`
     /// on the type or auth fields, or an `include`) is treated as potentially-S3 unless the backend is an
     /// explicit literal non-S3 type. `type = object_storage` is a wrapper: non-S3 only with a literal non-S3

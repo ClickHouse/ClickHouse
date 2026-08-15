@@ -119,6 +119,8 @@ private:
     {
         std::shared_ptr<google::cloud::storage::Client> client;
         GCSObjectStorageSettings settings;
+        /// Only non-disk GCS storages depend on this session-scoped security mode.
+        bool restricts_server_credentials = false;
     };
 
     using ClientWithSettingsPtr = MultiVersion<ClientWithSettings>::Version;

@@ -204,6 +204,8 @@ bool ReadBufferFromGCS::nextImpl()
     total_bytes_read += bytes_read;
     total_read_microseconds += elapsed_microseconds;
 
+    rlock.unlock(bytes_read);
+
     if (read_settings.remote_throttler)
         read_settings.remote_throttler->throttle(bytes_read);
 

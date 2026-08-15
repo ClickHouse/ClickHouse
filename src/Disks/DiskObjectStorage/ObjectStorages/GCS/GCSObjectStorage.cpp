@@ -1,5 +1,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/GCSObjectStorage.h>
 
+#include <Interpreters/Context.h>
+
 #if USE_GOOGLE_CLOUD
 
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/GCSCommon.h>
@@ -412,7 +414,22 @@ void GCSObjectStorage::applyNewSettings(
     /// under `config_prefix`. Without this guard `loadFromConfig` would read a non-existent
     /// `<config_prefix>.endpoint` key (for the table function it is `gcs..endpoint`) and throw.
     if (!config.has(config_prefix + ".endpoint"))
+    {
+        /// Unlike a configured disk, the table engine/table function has no config section to reload.
+        /// Its cached client must nevertheless be rebuilt when the accessing session changes the
+        /// server-credentials restriction, otherwise an earlier unrestricted session can leak ADC
+        /// access to a later restricted one.
+        auto current = getClientWithSettings();
+        const bool restricts_now = context->shouldRestrictUserQueryS3Credentials();
+        if (current->restricts_server_credentials != restricts_now || options.force_client_rebuild)
+        {
+            checkGCSCredentialsAllowedInUserQuery(current->settings, context);
+            auto new_client = getGCSClient(current->settings, context);
+            client_with_settings.set(std::make_unique<const ClientWithSettings>(
+                ClientWithSettings{std::move(new_client), current->settings, restricts_now}));
+        }
         return;
+    }
 
     auto new_settings = GCSObjectStorageSettings::loadFromConfig(config, config_prefix, context);
 
@@ -430,7 +447,7 @@ void GCSObjectStorage::applyNewSettings(
         new_client = getClient();
 
     client_with_settings.set(std::make_unique<const ClientWithSettings>(
-        ClientWithSettings{std::move(new_client), std::move(new_settings)}));
+        ClientWithSettings{std::move(new_client), std::move(new_settings), false}));
 }
 
 ObjectStorageKeyGeneratorPtr GCSObjectStorage::createKeyGenerator() const

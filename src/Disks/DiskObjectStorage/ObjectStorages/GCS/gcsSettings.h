@@ -128,6 +128,11 @@ enum class GCSCredentialSource
 /// the mode that wins) go through it, so the two cannot disagree.
 GCSCredentialSource chooseGCSCredentialSource(const GCSObjectStorageSettings & settings);
 
+/// Reject server-managed Application Default Credentials for a native GCS client reached from a
+/// restricted user query. Native GCS deliberately shares the existing S3 restriction setting: both
+/// credential sources can resolve the identity of the server process rather than one supplied by SQL.
+void checkGCSCredentialsAllowedInUserQuery(const GCSObjectStorageSettings & settings, const ContextPtr & context);
+
 /// If a `google_adc_*` refresh-token triple is set, and an access token is what the configuration
 /// actually authenticates with, exchange the triple for an access token via IO/GCPOAuth. No-op
 /// otherwise. Shared by the disk and table-function paths.

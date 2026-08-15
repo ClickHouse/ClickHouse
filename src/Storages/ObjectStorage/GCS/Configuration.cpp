@@ -122,6 +122,7 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
     gcs_settings.request_timeout_ms = auth[S3AuthSetting::request_timeout_ms];
 
     resolveGCSCredentialsToken(gcs_settings, context);
+    checkGCSCredentialsAllowedInUserQuery(gcs_settings, context);
 
     auto client = getGCSClient(gcs_settings, context);
     const auto description = url.endpoint;

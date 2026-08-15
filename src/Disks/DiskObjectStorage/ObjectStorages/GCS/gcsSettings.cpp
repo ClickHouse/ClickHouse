@@ -34,6 +34,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int INVALID_CONFIG_PARAMETER;
 }
@@ -243,6 +244,17 @@ GCSCredentialSource chooseGCSCredentialSource(const GCSObjectStorageSettings & s
     if (!settings.access_token.empty())
         return GCSCredentialSource::AccessToken;
     return GCSCredentialSource::ApplicationDefault;
+}
+
+void checkGCSCredentialsAllowedInUserQuery(const GCSObjectStorageSettings & settings, const ContextPtr & context)
+{
+    if (chooseGCSCredentialSource(settings) == GCSCredentialSource::ApplicationDefault
+        && context->shouldRestrictUserQueryS3Credentials())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Native GCS access from a user query may not use Application Default Credentials because they can "
+            "resolve the server's identity. Provide explicit native GCS credentials or `NOSIGN`, or enable "
+            "`s3_allow_server_credentials_in_user_queries`");
 }
 
 void resolveGCSCredentialsToken(GCSObjectStorageSettings & settings, const ContextPtr & context)
