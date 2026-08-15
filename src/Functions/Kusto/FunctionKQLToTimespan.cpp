@@ -2,6 +2,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -55,6 +56,8 @@ public:
     {
         const DataTypePtr & type = arguments[0];
         const DataTypePtr nested = removeNullable(type);
+        if (isNothing(nested))
+            return makeNullable(std::make_shared<DataTypeInterval>(IntervalKind::Kind::Nanosecond));
         if (isInterval(nested))
             return type;
         if (isNumber(nested))
@@ -71,11 +74,13 @@ public:
             type->getName());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & argument = arguments[0];
 
         const DataTypePtr nested = removeNullable(argument.type);
+        if (isNothing(nested))
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
         if (isInterval(nested))
             return argument.column;
 
