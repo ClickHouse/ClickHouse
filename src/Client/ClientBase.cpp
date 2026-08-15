@@ -1509,7 +1509,7 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
 
 void ClientBase::pinOutboundDialectForJSONDialect(const String & outbound_query)
 {
-    if (current_query_is_set_escape)
+    if (current_query_is_set_escape && !current_query_parsed_as_json_dialect)
     {
         /// The client parsed this SQL `SET` escape with `ParserQuery` while the session used
         /// another dialect. Make the server parse the same SQL before the setting takes effect.
@@ -2840,7 +2840,8 @@ void ClientBase::processParsedSingleQuery(
         /// in-query `SET` (which may change `dialect`/`enable_json_ast_dialect`). The outbound
         /// transport dialect is pinned to match the outbound text in `pinOutboundDialectForJSONDialect`.
         current_query_parsed_as_json_dialect = client_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
-        current_query_is_set_escape = client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse
+        current_query_is_set_escape = !current_query_parsed_as_json_dialect
+            && client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse
             && parsed_query->as<ASTSetQuery>();
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
         connection->setFormatSettings(getFormatSettings(client_context));

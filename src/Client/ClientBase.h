@@ -160,8 +160,9 @@ protected:
     /// In `clickhouse_json` dialect the client parses JSON locally and then sends a query string that the
     /// server re-parses using the session `dialect`. Pin the outbound `dialect` (and the experimental
     /// gate) to match the form of `outbound_query` actually being sent — JSON body vs. SQL produced by a
-    /// client-side AST rewrite — so the server parses it the same way the client did. No-op outside
-    /// `clickhouse_json`. The change is temporary (the caller restores the saved settings after the query).
+    /// client-side AST rewrite — so the server parses it the same way the client did. A plain SQL `SET`
+    /// escape from another dialect is handled separately. The change is temporary (the caller restores
+    /// the saved settings after the query).
     void pinOutboundDialectForJSONDialect(const String & outbound_query);
 
     /// Settings to transmit to the server: a copy of the client settings with `compatibility`-derived values
