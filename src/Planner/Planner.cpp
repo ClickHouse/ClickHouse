@@ -2120,12 +2120,12 @@ void Planner::buildPlanForUnionNode()
 /// per-replica or per-internal entries that the outer query already manages or that bypass the
 /// safety gate `executeQuery` applies via `Context::setCanUseQueryResultCache`.
 ///
-/// Also never use the cache in a logical plan: such a plan is not executed here, it is serialized and
-/// shipped to another node (parallel replicas with `serialize_query_plan = 1`, see
-/// `createRemotePlanForParallelReplicas`). The cache steps hold node-local state - a
-/// `QueryResultCacheWriter` or the cached chunks themselves - which has no serialized representation,
-/// so planting them into a logical plan would fail the plan serialization outright. The cache is
-/// populated and read by the plan the initiator executes itself.
+/// Also never use the cache in plans that are serialized for remote execution: logical plans are
+/// shipped to another node by parallel replicas with `serialize_query_plan = 1` (see
+/// `createRemotePlanForParallelReplicas`), and `make_distributed_plan` serializes every distributed
+/// plan fragment. The cache steps hold node-local state - a `QueryResultCacheWriter` or the cached
+/// chunks themselves - which has no serialized representation. The cache is populated and read by
+/// the plan the initiator executes itself.
 static bool shouldUseQueryCacheForSubquery(
     const QueryNode & query_node,
     bool outer_can_use_cache,
@@ -2139,7 +2139,7 @@ static bool shouldUseQueryCacheForSubquery(
         || query_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         return false;
 
-    if (select_query_options.build_logical_plan)
+    if (select_query_options.build_logical_plan || settings[Setting::make_distributed_plan])
         return false;
 
     const bool is_subquery = select_query_options.is_subquery;
