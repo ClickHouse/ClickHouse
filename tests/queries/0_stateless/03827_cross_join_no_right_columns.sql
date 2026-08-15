@@ -48,11 +48,12 @@ INSERT INTO t2_big SELECT number + 1, toString(number) FROM numbers(100000);
 -- t1_big, which no longer covers a zero-column right side spanning several blocks.
 SELECT countIf(explain ILIKE '%#1 Empty header%') = 1 FROM (
     EXPLAIN input_headers = 1 SELECT count() FROM t1_big, t2_big PREWHERE a > 0 AND b != ''
-    SETTINGS query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false'
+    SETTINGS query_plan_remove_unused_columns = 1,
+             query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false'
 );
 
 SELECT count() FROM t1_big, t2_big PREWHERE a > 0 AND b != ''
-SETTINGS max_block_size = 1000, max_threads = 1,
+SETTINGS max_block_size = 1000, max_threads = 1, query_plan_remove_unused_columns = 1,
          query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false';
 
 -- A zero-column right block is never spilled: a temporary stream would serialize `Block::rows` == 0
@@ -60,7 +61,7 @@ SETTINGS max_block_size = 1000, max_threads = 1,
 -- rows are accounted for in memory instead, so a row limit below the size of the right side is
 -- reported. Spilling such a block instead returns 15000 rather than raising the limit.
 SELECT count() FROM t1_big, t2_big PREWHERE a > 0 AND b != ''
-SETTINGS max_rows_in_join = 5000, max_block_size = 1000, max_threads = 1,
+SETTINGS max_rows_in_join = 5000, max_block_size = 1000, max_threads = 1, query_plan_remove_unused_columns = 1,
          query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false'; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
 DROP TABLE t1_big;
