@@ -321,7 +321,7 @@ private:
     {
         if (const auto * float64_column = typeid_cast<const ColumnVector<Float64> *>(&column))
             return float64_column->getData()[index];
-        return typeid_cast<const ColumnVector<Float32> &>(column).getData()[index];
+        return static_cast<Float64>(typeid_cast<const ColumnVector<Float32> &>(column).getData()[index]);
     }
 
     /// The 3rd argument must be the same array in every row: it is captured from the first row and later rows are
