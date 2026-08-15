@@ -13,6 +13,7 @@ doc_type: 'reference'
 다양한 [Geo 데이터 타입](/ko/reference/data-types/geo)에서 WKT(Well Known Text) 기하학 객체를 반환합니다. 지원되는 WKT 객체는 다음과 같습니다.
 
 * POINT
+* MULTIPOINT
 * POLYGON
 * MULTIPOLYGON
 * LINESTRING
@@ -29,6 +30,7 @@ WKT(geo_data)
 `geo_data`는 다음 [Geo 데이터 타입](/ko/reference/data-types/geo) 또는 그 기반이 되는 기본 타입 중 하나일 수 있습니다:
 
 * [Point](/ko/reference/data-types/geo#point)
+* [MultiPoint](/ko/reference/data-types/geo#multipoint)
 * [Ring](/ko/reference/data-types/geo#ring)
 * [Polygon](/ko/reference/data-types/geo#polygon)
 * [MultiPolygon](/ko/reference/data-types/geo#multipolygon)
@@ -38,6 +40,7 @@ WKT(geo_data)
 **반환 값**
 
 * Point의 경우 WKT 기하 객체 `POINT`가 반환됩니다.
+* MultiPoint의 경우 WKT 기하 객체 `MULTIPOINT`가 반환됩니다.
 * Polygon의 경우 WKT 기하 객체 `POLYGON`이 반환됩니다.
 * MultiPolygon의 경우 WKT 기하 객체 `MULTIPOLYGON`이 반환됩니다.
 * LineString의 경우 WKT 기하 객체 `LINESTRING`이 반환됩니다.
@@ -253,6 +256,44 @@ SELECT readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6)
 
 ```response
 [[(1,1),(2,2),(3,3)],[(4,4),(5,5),(6,6)]]
+```
+
+<div id="readwktmultipoint">
+  ## readWKTMultiPoint
+</div>
+
+MultiPoint 지오메트리의 Well-Known Text(WKT) 표현을 파싱하여 ClickHouse 내부 포맷으로 반환합니다.
+
+<div id="syntax">
+  ### 구문
+</div>
+
+```sql
+readWKTMultiPoint(wkt_string)
+```
+
+<div id="arguments">
+  ### 인수
+</div>
+
+* `wkt_string`: MultiPoint 지오메트리를 나타내는 입력 WKT 문자열입니다.
+
+<div id="returned-value">
+  ### 반환 값
+</div>
+
+이 함수는 MultiPoint 지오메트리의 ClickHouse 내부 표현을 반환합니다.
+
+<div id="example">
+  ### 예시
+</div>
+
+```sql
+SELECT readWKTMultiPoint('MULTIPOINT (1 1, 2 2, 3 3)');
+```
+
+```response
+[(1,1),(2,2),(3,3)]
 ```
 
 <div id="readwktring">
@@ -500,6 +541,44 @@ SELECT readWKBMultiLineString(unhex('0105000000020000000102000000030000000000000
 </div>
 
 UInt8, false의 경우 0, true의 경우 1
+
+<div id="readwkbmultipoint">
+  ## readWKBMultiPoint
+</div>
+
+MultiPoint 지오메트리의 Well-Known Binary(WKB) 표현을 파싱하여 ClickHouse 내부 포맷으로 반환합니다.
+
+<div id="syntax">
+  ### 구문
+</div>
+
+```sql
+readWKBMultiPoint(wkb_string)
+```
+
+<div id="arguments">
+  ### 인수
+</div>
+
+* `wkb_string`: MultiPoint 지오메트리를 나타내는 입력 WKB 문자열입니다.
+
+<div id="returned-value">
+  ### 반환 값
+</div>
+
+이 함수는 MultiPoint 지오메트리의 ClickHouse 내부 표현을 반환합니다.
+
+<div id="example">
+  ### 예시
+</div>
+
+```sql
+SELECT readWKBMultiPoint(unhex('0104000000020000000101000000000000000000f03f000000000000f03f010100000000000000000000400000000000000040'));
+```
+
+```response
+[(1,1),(2,2)]
+```
 
 <div id="polygonsdistancespherical">
   ## polygonsDistanceSpherical
@@ -779,7 +858,7 @@ UInt8, false이면 0, true이면 1
 
 [`polygonsIntersectCartesian`](#polygonsintersectcartesian)와 달리, 공통
 [`Geometry`](/ko/reference/data-types/geo#geometry) 타입을 포함한 모든 기하 데이터 타입
-(`Point`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`)을 허용하며, 두 인수의 타입은 서로 달라도 됩니다.
+(`Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`)을 허용하며, 두 인수의 타입은 서로 달라도 됩니다.
 
 좌표는 데카르트 좌표계를 사용합니다.
 
@@ -811,10 +890,10 @@ UInt8, false의 경우 0, true의 경우 1
   ## geometryIntersectSpherical
 </div>
 
-두 기하 도형이 교차하여 공통 Point, 선 또는 영역을 하나라도 공유하면 true를 반환합니다.
+두 지오메트리가 교차하여 공통 Point, 선 또는 영역을 하나라도 공유하면 true를 반환합니다.
 
 [`polygonsIntersectSpherical`](#polygonsintersectspherical)와 달리 모든 기하 데이터 타입
-(`Point`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`)을 허용하며, 공통
+(`Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`)을 허용하며, 공통
 [`Geometry`](/ko/reference/data-types/geo#geometry) 타입도 포함합니다. 또한 두 인수는 서로 다른 타입일 수 있습니다.
 
 좌표는 이상적인 구 위에 있는 것으로 해석됩니다.
