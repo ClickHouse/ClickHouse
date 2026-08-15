@@ -18,6 +18,7 @@ SHOW TABLES FROM information_schema;
 
 ```text
 ┌─name────────────────────┐
+│ COLLATIONS              │
 │ COLUMNS                 │
 │ KEY_COLUMN_USAGE        │
 │ REFERENTIAL_CONSTRAINTS │
@@ -38,6 +39,7 @@ SHOW TABLES FROM information_schema;
 `INFORMATION_SCHEMA` contiene las siguientes vistas:
 
 * [COLUMNS](#columns)
+* [COLLATIONS](#collations)
 * [KEY&#95;COLUMN&#95;USAGE](#key_column_usage)
 * [REFERENTIAL&#95;CONSTRAINTS](#referential_constraints)
 * [SCHEMATA](#schemata)
@@ -380,3 +382,19 @@ Columnas:
 </div>
 
 Proporciona información sobre los índices de la tabla. Actualmente devuelve un resultado vacío (sin filas), lo justo para ofrecer compatibilidad con herramientas de terceros como Tableau Online.
+
+<div id="collations">
+  ## COLLATIONS
+</div>
+
+Proporciona información sobre las intercalaciones disponibles. Contiene las intercalaciones de [system.collations](/es/reference/system-tables/collations), además de dos filas para la compatibilidad con MySQL: `utf8mb4_0900_ai_ci` — la intercalación que el protocolo MySQL anuncia durante el handshake, en `SCHEMATA.DEFAULT_COLLATION_NAME` y en `TABLES.TABLE_COLLATION` — y `binary` — la seudointercalación que el protocolo MySQL asigna a las columnas numéricas y a otras columnas que no son de tipo String en los metadatos del conjunto de resultados—, para que un client compatible con MySQL que siga las intercalaciones anunciadas hasta esta vista pueda encontrarlas.
+
+Columnas:
+
+* `collation_name` ([String](/es/reference/data-types/string)) — El nombre de la intercalación.
+* `character_set_name` ([Nullable](/es/reference/data-types/nullable)([String](/es/reference/data-types/string))) — El juego de caracteres asociado (`utf8mb4` para `utf8mb4_0900_ai_ci`, `binary` para `binary`; de lo contrario, `NULL`). Se proporciona para la compatibilidad con MySQL.
+* `id` ([Nullable](/es/reference/data-types/nullable)([UInt64](/es/reference/data-types/int-uint))) — El ID de la intercalación de MySQL (`255` para `utf8mb4_0900_ai_ci`, `63` para `binary`; de lo contrario, `NULL`). Se proporciona para la compatibilidad con MySQL.
+* `is_default` ([Nullable](/es/reference/data-types/nullable)([String](/es/reference/data-types/string))) — Indica si la intercalación es la predeterminada de su juego de caracteres (`Yes` para ambas filas de compatibilidad con MySQL; de lo contrario, `NULL`). Se proporciona para la compatibilidad con MySQL.
+* `is_compiled` ([Nullable](/es/reference/data-types/nullable)([String](/es/reference/data-types/string))) — Indica si la intercalación está compilada en el server (`Yes` para ambas filas de compatibilidad con MySQL; de lo contrario, `NULL`). Se proporciona para la compatibilidad con MySQL.
+* `sortlen` ([Nullable](/es/reference/data-types/nullable)([UInt64](/es/reference/data-types/int-uint))) — La longitud mínima de ordenación (`0` para `utf8mb4_0900_ai_ci`, `1` para `binary`; de lo contrario, `NULL`). Se proporciona para la compatibilidad con MySQL.
+* `pad_attribute` ([Nullable](/es/reference/data-types/nullable)([String](/es/reference/data-types/string))) — El atributo de relleno, `NO PAD` o `PAD SPACE` (`NO PAD` para ambas filas de compatibilidad con MySQL; de lo contrario, `NULL`). Se proporciona para la compatibilidad con MySQL.
