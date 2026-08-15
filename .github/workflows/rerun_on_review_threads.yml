@@ -33,7 +33,7 @@ permissions:
   actions: write
   contents: read
   pull-requests: read
-  statuses: read
+  statuses: write
 
 concurrency:
   group: rerun-on-review-threads-${{ github.event.pull_request.number || github.event.workflow_run.head_sha || github.run_id }}
@@ -57,6 +57,9 @@ jobs:
           # Keep in sync with REVIEW_THREADS_STATUS_NAME in
           # ci/jobs/scripts/workflow_hooks/review_threads.py.
           STATUS_NAME: Review Threads
+          # Keep in sync with READY_FOR_MERGE_CUSTOM_STATUS_NAME in
+          # ci/settings/settings.py.
+          MERGEABLE_CHECK_STATUS_NAME: Mergeable Check
           OVERRIDE_LABEL: ignore-unresolved-threads
           # Safety valve: never grow a single run past this many attempts, so
           # a reconciliation bug cannot re-run one workflow forever.
@@ -171,7 +174,11 @@ jobs:
               -f state="$state" -f context="$STATUS_NAME" \
               -f description="$description" \
               -f target_url="https://github.com/$GH_REPO/pull/$pr"
-            echo "Refreshed the review-threads merge gate without rerunning full CI."
+            gh api --method POST "repos/$GH_REPO/statuses/$head_sha" \
+              -f state="$state" -f context="$MERGEABLE_CHECK_STATUS_NAME" \
+              -f description="$description" \
+              -f target_url="https://github.com/$GH_REPO/pull/$pr"
+            echo "Refreshed the review-thread and mergeable-check statuses without rerunning full CI."
             exit 0
           fi
 

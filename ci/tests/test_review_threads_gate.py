@@ -122,7 +122,7 @@ def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
     assert "unresolved=$(api_with_retries graphql --paginate" in rerun_workflow
     assert 'runs=$(api_with_retries "repos/$GH_REPO/actions/runs?' in rerun_workflow
     assert 'pipeline_limited=false' in rerun_workflow
-    assert 'Refreshed the review-threads merge gate without rerunning full CI.' in rerun_workflow
+    assert 'Refreshed the review-thread and mergeable-check statuses without rerunning full CI.' in rerun_workflow
     assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in retry_workflow
 
 
