@@ -420,65 +420,6 @@ namespace
             return false;
         }
 
-        static void collectNestedSelectQueries(const ASTPtr & node, ASTs & nested_selects, bool collect_referenced_with_subqueries);
-
-        static void collectReferencedWithSubqueries(const ASTPtr & select_node, const ASTSelectQuery & select, ASTs & nested_selects)
-        {
-            auto with = select.with();
-            if (!with)
-                return;
-
-            std::map<String, ASTPtr> with_subqueries;
-            for (const auto & child : with->children)
-            {
-                if (const auto * with_element = child->as<ASTWithElement>())
-                    with_subqueries.emplace(with_element->name, with_element->subquery);
-            }
-
-            if (with_subqueries.empty())
-                return;
-
-            std::set<String> referenced_with_subqueries;
-            auto collect_references = [&](const ASTPtr & scope_node)
-            {
-                const auto * scope_select = scope_node->as<ASTSelectQuery>();
-                /// With `enable_global_with_statement = 0`, an enclosing WITH clause does not apply to a
-                /// nested SELECT. Its references must not make the enclosing CTE look evaluated.
-                std::function<void(const ASTPtr &)> visit = [&](const ASTPtr & current)
-                {
-                    if (current != scope_node && current->as<ASTSelectQuery>())
-                        return;
-
-                    if (const auto * table_expression = current->as<ASTTableExpression>())
-                    {
-                        if (const auto * table_identifier = typeid_cast<const ASTTableIdentifier *>(table_expression->database_and_table_name.get()))
-                        {
-                            const auto & table_id = table_identifier->getTableId();
-                            if (table_id.database_name.empty() && with_subqueries.contains(table_id.table_name))
-                                referenced_with_subqueries.emplace(table_id.table_name);
-                        }
-                    }
-
-                    for (const auto & child : current->children)
-                    {
-                        if (!scope_select || child != scope_select->with())
-                            visit(child);
-                    }
-                };
-                visit(scope_node);
-            };
-
-            collect_references(select_node);
-            for (auto it = referenced_with_subqueries.begin(); it != referenced_with_subqueries.end(); ++it)
-            {
-                const auto * subquery = with_subqueries.at(*it)->as<ASTSubquery>();
-                if (subquery && !subquery->children.empty())
-                    collect_references(subquery->children.front());
-            }
-            for (const auto & name : referenced_with_subqueries)
-                collectNestedSelectQueries(with_subqueries.at(name), nested_selects, true);
-        }
-
         static void collectNestedSelectQueries(const ASTPtr & node, ASTs & nested_selects, bool collect_referenced_with_subqueries)
         {
             for (const auto & child : node->children)
@@ -489,7 +430,54 @@ namespace
                 if (const auto * select = node->as<ASTSelectQuery>(); select && child == select->with())
                 {
                     if (collect_referenced_with_subqueries)
-                        collectReferencedWithSubqueries(node, *select, nested_selects);
+                    {
+                        std::map<String, ASTPtr> with_subqueries;
+                        for (const auto & with_child : child->children)
+                        {
+                            if (const auto * with_element = with_child->as<ASTWithElement>())
+                                with_subqueries.emplace(with_element->name, with_element->subquery);
+                        }
+
+                        std::set<String> referenced_with_subqueries;
+                        auto collect_references = [&](const ASTPtr & scope_node)
+                        {
+                            const auto * scope_select = scope_node->as<ASTSelectQuery>();
+                            /// With `enable_global_with_statement = 0`, an enclosing WITH clause does not apply to a
+                            /// nested SELECT. Its references must not make the enclosing CTE look evaluated.
+                            std::function<void(const ASTPtr &)> visit = [&](const ASTPtr & current)
+                            {
+                                if (current != scope_node && current->as<ASTSelectQuery>())
+                                    return;
+
+                                if (const auto * table_expression = current->as<ASTTableExpression>())
+                                {
+                                    if (const auto * table_identifier = typeid_cast<const ASTTableIdentifier *>(table_expression->database_and_table_name.get()))
+                                    {
+                                        const auto & table_id = table_identifier->getTableId();
+                                        if (table_id.database_name.empty() && with_subqueries.contains(table_id.table_name))
+                                            referenced_with_subqueries.emplace(table_id.table_name);
+                                    }
+                                }
+
+                                for (const auto & current_child : current->children)
+                                {
+                                    if (!scope_select || current_child != scope_select->with())
+                                        visit(current_child);
+                                }
+                            };
+                            visit(scope_node);
+                        };
+
+                        collect_references(node);
+                        for (const auto & name : referenced_with_subqueries)
+                        {
+                            const auto * subquery = with_subqueries.at(name)->as<ASTSubquery>();
+                            if (subquery && !subquery->children.empty())
+                                collect_references(subquery->children.front());
+                        }
+                        for (const auto & name : referenced_with_subqueries)
+                            collectNestedSelectQueries(with_subqueries.at(name), nested_selects, true);
+                    }
                     continue;
                 }
 
