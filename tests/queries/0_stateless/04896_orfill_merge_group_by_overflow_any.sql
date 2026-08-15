@@ -7,6 +7,8 @@
 -- over the test runner's client-level randomization. force_optimize_projection_name keeps each
 -- arm on the aggregate-projection merge path, and the exact surviving-row counts below hold only
 -- while both hold, so an arm that stops covering the null place fails instead of passing.
+-- One row per granule keeps a projection's mark count independent of how wide its aggregate
+-- states serialize, and the OrNull arm names p preferred because p2 answers it over fewer columns.
 -- Each oracle counts NULL as a mismatch, because sum() skips NULL rows and a bare s != k
 -- therefore stays 0 when a surviving row comes back NULL instead of its aggregate.
 -- Merges stay stopped so the three parts below reach the SELECT separately: one projection
@@ -18,7 +20,7 @@ DROP TABLE IF EXISTS t_orfill;
 CREATE TABLE t_orfill (k UInt64, k2 UInt64, v UInt64,
     PROJECTION p (SELECT k, sumOrNull(v), sumOrDefault(v), sumTupleOrNull(tuple(v)), sumOrNullTuple(tuple(v)) GROUP BY k),
     PROJECTION p2 (SELECT k, k2, sumOrNull(v) GROUP BY k, k2))
-ENGINE = MergeTree ORDER BY tuple();
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
 
 SYSTEM STOP MERGES t_orfill;
 
@@ -34,7 +36,7 @@ SELECT 'overflow any OrNull';
 SELECT count(), sum(s IS NULL OR s != k) FROM (SELECT k, sumOrNull(v) AS s FROM t_orfill GROUP BY k)
 SETTINGS optimize_use_projections = 1, max_threads = 1, optimize_aggregation_in_order = 0,
     max_rows_to_group_by = 10, group_by_overflow_mode = 'any',
-    force_optimize_projection_name = 'p';
+    preferred_optimize_projection_name = 'p', force_optimize_projection_name = 'p';
 
 SELECT 'overflow any OrDefault';
 SELECT count(), sum(s IS NULL OR s != k) FROM (SELECT k, sumOrDefault(v) AS s FROM t_orfill GROUP BY k)
