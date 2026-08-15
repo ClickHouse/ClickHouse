@@ -209,7 +209,7 @@ size_t MergeTreeBackgroundExecutor<Queue>::tryReserveTaskSlots(size_t desired)
 }
 
 template <class Queue>
-size_t MergeTreeBackgroundExecutor<Queue>::reserveTaskSlots(size_t desired)
+size_t MergeTreeBackgroundExecutor<Queue>::reserveTaskSlots(size_t desired) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     if (desired == 0)
         return 0;

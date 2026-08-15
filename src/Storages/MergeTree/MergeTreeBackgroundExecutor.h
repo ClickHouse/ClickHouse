@@ -344,7 +344,9 @@ public:
     /// Like `tryReserveTaskSlots`, but waits until at least one slot becomes available. This is
     /// intended for foreground operations that must not execute an unaccounted task when the
     /// executor is saturated. Returns zero only when the executor is shutting down.
-    size_t reserveTaskSlots(size_t desired);
+    /// Thread-safety analysis does not understand `std::unique_lock` used with
+    /// `std::condition_variable::wait` in this method.
+    size_t reserveTaskSlots(size_t desired) TSA_NO_THREAD_SAFETY_ANALYSIS;
     void releaseTaskSlots(size_t count) noexcept;
 
     void removeTasksCorrespondingToStorage(StorageID id);
@@ -374,7 +376,7 @@ private:
     boost::circular_buffer<TaskRuntimeDataPtr> active TSA_GUARDED_BY(mutex);
     mutable std::mutex mutex;
     std::condition_variable has_tasks TSA_GUARDED_BY(mutex);
-    std::condition_variable task_slots_available TSA_GUARDED_BY(mutex);
+    std::condition_variable task_slots_available;
     bool shutdown TSA_GUARDED_BY(mutex) = false;
     std::unique_ptr<ThreadPool> pool;
     LoggerPtr log = getLogger("MergeTreeBackgroundExecutor");
