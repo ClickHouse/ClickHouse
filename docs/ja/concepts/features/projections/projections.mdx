@@ -271,7 +271,7 @@ ALTER TABLE uk.uk_price_paid_with_projections
 SETTINGS mutations_sync = 1
 ```
 
-[`mutations_sync`](/ja/reference/settings/session-settings#mutations_sync) 設定は、
+[`mutations_sync`](/ja/reference/settings/session-settings/mutations#mutations_sync) 設定は、
 同期実行を強制するために使用されます。
 
 PROJECTION `prj_gby_county` を作成してデータを投入します。これは追加の (非表示の) テーブルであり、
@@ -405,10 +405,10 @@ INSERT INTO uk.uk_price_paid_with_projections_v2 SELECT * FROM uk.uk_price_paid;
 ```
 
 <div id="build-projection">
-  #### プロジェクションを作成する
+  #### PROJECTIONを作成する
 </div>
 
-`toYear(date)`、`district`、`town` の各次元で集計プロジェクションを作成しましょう。
+`toYear(date)`、`district`、`town` の各次元で集計PROJECTIONを作成しましょう。
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections_v2
@@ -428,7 +428,7 @@ ALTER TABLE uk.uk_price_paid_with_projections_v2
     )
 ```
 
-既存のデータについてプロジェクションを作成します。 (これをマテリアライズしない場合、プロジェクションが作成されるのは新たに挿入されたデータのみです) :
+既存のデータについてPROJECTIONを作成します。 (これをマテリアライズしない場合、PROJECTIONが作成されるのは新たに挿入されたデータのみです) :
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections_v2
@@ -436,7 +436,7 @@ ALTER TABLE uk.uk_price_paid_with_projections_v2
 SETTINGS mutations_sync = 1
 ```
 
-以下のクエリでは、プロジェクションありの場合となしの場合で、パフォーマンスを比較します。プロジェクションの使用を無効にするには、デフォルトで有効になっている設定 [`optimize_use_projections`](/ja/reference/settings/session-settings#optimize_use_projections) を使用します。
+以下のクエリでは、PROJECTIONありの場合となしの場合で、パフォーマンスを比較します。PROJECTIONの使用を無効にするには、デフォルトで有効になっている設定 [`optimize_use_projections`](/ja/reference/settings/session-settings/optimize-use#optimize_use_projections) を使用します。
 
 <div id="average-price-projections">
   #### クエリ 1. 年ごとの平均価格
