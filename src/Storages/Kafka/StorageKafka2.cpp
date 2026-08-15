@@ -395,9 +395,10 @@ void StorageKafka2::activateAndReschedule()
 
 void StorageKafka2::assertActive() const
 {
-    // TODO(antaljanosbenjamin): change LOGICAL_ERROR to something sensible
+    /// The table becomes inactive at any moment when the Keeper session expires and `partialShutdown` runs,
+    /// racing with direct reads and MV streaming, so this is an expected runtime condition, not a logical error.
     if (!is_active)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table is not active (replica path: {})", replica_path);
+        throw Exception(ErrorCodes::ABORTED, "Table is not active (replica path: {})", replica_path);
 }
 
 
