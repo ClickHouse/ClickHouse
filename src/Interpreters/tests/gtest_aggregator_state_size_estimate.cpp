@@ -9,9 +9,11 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Aggregator.h>
 #include <Common/assert_cast.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
 using namespace DB;
@@ -155,6 +157,43 @@ TEST(AggregatorStateSizeEstimate, MergePathUsesExplicitStateVersion)
     const auto estimate = aggregator.estimateSizeOfCompressedState(*variants, /*bucket=*/-1);
     EXPECT_EQ(estimate.sample_bytes, expected_v0_bytes);
     EXPECT_EQ(estimate.bytes, expected_v0_bytes);
+}
+
+TEST(AggregatorStateSizeEstimate, BitmapFunctionPreservesExplicitStateVersion)
+{
+    tryRegisterAggregateFunctions();
+    tryRegisterFunctions();
+
+    DataTypes argument_types = {std::make_shared<DataTypeUInt8>()};
+    AggregateFunctionProperties properties;
+    auto aggregate_function = AggregateFunctionFactory::instance().get("groupBitmap", NullsAction::EMPTY, argument_types, {}, properties);
+    auto state_type_v0 = std::make_shared<DataTypeAggregateFunction>(aggregate_function, argument_types, Array{}, /*version=*/0);
+
+    auto bitmap = state_type_v0->createColumn();
+    auto & bitmap_column = assert_cast<ColumnAggregateFunction &>(*bitmap);
+    auto values = ColumnUInt8::create();
+    values->insert(1);
+    values->insert(2);
+    const IColumn * arguments[] = {values.get()};
+    bitmap_column.insertDefault();
+    aggregate_function->add(bitmap_column.getData()[0], arguments, 0, &bitmap_column.createOrGetArena());
+    bitmap_column.insertDefault();
+    aggregate_function->add(bitmap_column.getData()[1], arguments, 1, &bitmap_column.createOrGetArena());
+
+    ColumnsWithTypeAndName function_arguments;
+    function_arguments.emplace_back(bitmap->getPtr(), state_type_v0, "lhs");
+    auto rhs = bitmap->cloneResized(2);
+    function_arguments.emplace_back(rhs->getPtr(), state_type_v0, "rhs");
+    auto resolver = FunctionFactory::instance().get("bitmapAnd", getContext().context);
+    auto function = resolver->build(function_arguments);
+    auto result = function->execute(function_arguments, function->getResultType(), /*input_rows_count=*/2, /*dry_run=*/false);
+
+    const auto & result_column = assert_cast<const ColumnAggregateFunction &>(*result);
+    const auto & input_column = assert_cast<const ColumnAggregateFunction &>(*bitmap);
+    const auto version_0_size = serializedStateSize(*aggregate_function, input_column.getData()[0], /*version=*/0);
+    const auto default_version_size = serializedStateSize(*aggregate_function, input_column.getData()[0], std::nullopt);
+    ASSERT_NE(version_0_size, default_version_size);
+    EXPECT_EQ(result_column.getDataAt(0).size(), version_0_size);
 }
 
 TEST(AggregatorStateSizeEstimate, SampleSpansTheWholeHashTable)
