@@ -123,6 +123,22 @@
             <profile>default</profile>
             <quota>default</quota>
         </fixed_write_user>
+        <reload_fixed_only_before>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </reload_fixed_only_before>
+        <reload_fixed_only_after>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </reload_fixed_only_after>
         <reload_effective_before>
             <password></password>
             <networks>
