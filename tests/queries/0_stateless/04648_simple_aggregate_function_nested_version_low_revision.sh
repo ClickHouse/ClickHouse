@@ -17,10 +17,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DECL="SimpleAggregateFunction(anyLast, AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2))))"
 VALUE="sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)])"
 
-# The same leaf declared *versionless* and placed under a `Tuple`. A declaration that pins no version keeps
-# whatever version the storage type carries, so the announced spelling here follows the pinned version at
-# every revision rather than the below-threshold rule the explicit-`0` arm above pins. Keeping both arms is
-# what separates the two: the direct arm moves with the threshold, this one does not.
+# The same leaf declared *versionless* and placed under a `Tuple`, which pins the composite case. Here the
+# token is announced at every revision, including the two below the threshold: a customized wrapper whose
+# custom name cannot be rebuilt is left unreplaced (`transformTypesRecursively.cpp`), so the leaf never
+# reaches the suppression above. That is the behaviour of the version walker rather than of this writer,
+# and it is recorded here to keep it visible: the direct arm above moves with the threshold, this one
+# does not, so a change to either walker or writer shows up as a diff in exactly one of them.
 TUPLE_DECL="SimpleAggregateFunction(anyLast, Tuple(AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))"
 TUPLE_VALUE="tuple(sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)]))"
 
