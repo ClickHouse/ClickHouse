@@ -41,6 +41,41 @@ $CLICKHOUSE_CLIENT -q "
 " 2>&1 | grep -m1 -oF 'Trying to ALTER DROP sign (s) column'
 
 $CLICKHOUSE_CLIENT -q "
+    ALTER TABLE sign_column CLEAR COLUMN s;
+" 2>&1 | grep -m1 -oF 'Trying to ALTER DROP sign (s) column'
+
+# A special column of the engine is named by its role even when it is a key column as well,
+# and even when the partition is malformed
+
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS sign_in_key;
+    CREATE TABLE sign_in_key (a UInt64, s Int8) ENGINE = CollapsingMergeTree(s) ORDER BY (a, s);
+    ALTER TABLE sign_in_key DROP COLUMN s;
+" 2>&1 | grep -m1 -oF 'Trying to ALTER DROP sign (s) column'
+
+$CLICKHOUSE_CLIENT -q "
+    ALTER TABLE sign_in_key CLEAR COLUMN s;
+" 2>&1 | grep -m1 -oF 'Trying to ALTER DROP sign (s) column'
+
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS sign_partition;
+    CREATE TABLE sign_partition (a UInt64, s Int8, p UInt64) ENGINE = CollapsingMergeTree(s) PARTITION BY p ORDER BY a;
+    ALTER TABLE sign_partition CLEAR COLUMN s IN PARTITION 'nonsense';
+" 2>&1 | grep -m1 -oF 'Trying to ALTER DROP sign (s) column'
+
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS version_column;
+    CREATE TABLE version_column (a UInt64, v UInt64) ENGINE = ReplacingMergeTree(v) ORDER BY (a, v);
+    ALTER TABLE version_column CLEAR COLUMN v;
+" 2>&1 | grep -m1 -oF 'Trying to ALTER DROP version (v) column'
+
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS is_deleted_column;
+    CREATE TABLE is_deleted_column (a UInt64, v UInt64, d UInt8) ENGINE = ReplacingMergeTree(v, d) ORDER BY (a, d);
+    ALTER TABLE is_deleted_column CLEAR COLUMN d;
+" 2>&1 | grep -m1 -oF 'Trying to ALTER DROP is_deleted (d) column'
+
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS table_ttl;
     CREATE TABLE table_ttl (d Date, a UInt64) ENGINE = MergeTree ORDER BY a TTL d + INTERVAL 1 DAY;
     ALTER TABLE table_ttl DROP COLUMN d;

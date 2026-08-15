@@ -5161,6 +5161,19 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         const char * verb = command.clear ? "CLEAR" : "DROP";
 
+        /// A special column of the engine is named by its role, which explains the refusal better than
+        /// "a part of key expression". It has to be checked here as well, because such a column may also
+        /// be used in a key, and then the key check below would answer first with the less precise reason.
+        /// For the commands this loop does not handle the same check runs in the per-command loop below.
+        if (command.column_name == merging_params.version_column)
+            checkSpecialColumn("version", command);
+        else if (command.column_name == merging_params.is_deleted_column)
+            checkSpecialColumn("is_deleted", command);
+        else if (command.column_name == merging_params.sign_column)
+            checkSpecialColumn("sign", command);
+        else if (std::ranges::contains(merging_params.columns_to_sum, command.column_name))
+            checkSpecialColumn("columns to sum", command, /* allow_clear = */ true);
+
         if (columns_in_keys.contains(command.column_name))
         {
             throw Exception(
