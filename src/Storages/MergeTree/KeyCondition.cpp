@@ -4725,31 +4725,6 @@ void KeyCondition::rebuildPreparedRangeForRefs()
     const auto type_uint32 = std::make_shared<DataTypeUInt32>();
     const auto type_int32 = std::make_shared<DataTypeInt32>();
 
-    auto is_negative_numeric_field = [](const FieldRef & value) -> bool
-    {
-        switch (value.getType())
-        {
-            case Field::Types::Int64:
-                return value.safeGet<Int64>() < 0;
-            case Field::Types::Int128:
-                return value.safeGet<Int128>() < 0;
-            case Field::Types::Int256:
-                return value.safeGet<Int256>() < 0;
-            case Field::Types::Float64:
-                return value.safeGet<Float64>() < 0;
-            case Field::Types::Decimal32:
-                return value.safeGet<DecimalField<Decimal32>>().getValue().value < 0;
-            case Field::Types::Decimal64:
-                return value.safeGet<DecimalField<Decimal64>>().getValue().value < 0;
-            case Field::Types::Decimal128:
-                return value.safeGet<DecimalField<Decimal128>>().getValue().value < 0;
-            case Field::Types::Decimal256:
-                return value.safeGet<DecimalField<Decimal256>>().getValue().value < 0;
-            default:
-                return false;
-        }
-    };
-
     auto try_convert_field_to_range_type = [&](const FieldRef & value, const DataTypePtr & type) -> Field
     {
         DataTypePtr conversion_type = recursiveRemoveLowCardinality(type);
@@ -4768,7 +4743,11 @@ void KeyCondition::rebuildPreparedRangeForRefs()
         return tryConvertFieldToType(value, *conversion_type);
     };
 
-    auto make_prepared_value = [&](const FieldRef & value, const DataTypePtr & type) -> PreparedRangeForRefs::PreparedValue
+    /// A value that cannot be represented exactly as a value of the key column's type has no
+    /// reference representation: a reference can only be compared against a column of its own type.
+    /// Such an atom is left unprepared and analysed with `Field` values instead of guessing a bound,
+    /// which would widen the range and break the `can_be_false` half of the result.
+    auto make_prepared_value = [&](const FieldRef & value, const DataTypePtr & type) -> std::optional<PreparedRangeForRefs::PreparedValue>
     {
         PreparedRangeForRefs::PreparedValue out;
 
@@ -4785,10 +4764,7 @@ void KeyCondition::rebuildPreparedRangeForRefs()
 
         Field converted = try_convert_field_to_range_type(value, type);
         if (converted.isNull())
-        {
-            out.ref = is_negative_numeric_field(value) ? ColumnValueRef::negativeInfinity() : ColumnValueRef::positiveInfinity();
-            return out;
-        }
+            return {};
 
         auto col = type->createColumn();
         col->insert(converted);
@@ -4815,8 +4791,13 @@ void KeyCondition::rebuildPreparedRangeForRefs()
             /// by the caller, and a comparison of two columns requires both to be of the same kind.
             const DataTypePtr range_type = recursiveRemoveLowCardinality(getRangeTypeForRPNElement(element, key_data_types[key_column]));
 
-            dst.left = make_prepared_value(element.range.left, range_type);
-            dst.right = make_prepared_value(element.range.right, range_type);
+            auto left = make_prepared_value(element.range.left, range_type);
+            auto right = make_prepared_value(element.range.right, range_type);
+            if (!left || !right)
+                continue;
+
+            dst.left = std::move(*left);
+            dst.right = std::move(*right);
             dst.range.left = dst.left.ref;
             dst.range.right = dst.right.ref;
             dst.range.left_included = element.range.left_included;
@@ -5540,6 +5521,30 @@ static bool functionIsIntegerCastPreservingFieldRepresentation(
 /// Only a floating point value can be a NaN, and the type is what tells whether the referenced
 /// column holds one: the column may wrap it in `Nullable` or `LowCardinality`, both of which read
 /// through to the value.
+/// Materialize a reference back into a `Field`. Needed for the atoms whose constant has no exact
+/// representation as a value of the key column's type (e.g. a `DateTime64` constant compared against
+/// a `DateTime` key): a reference can only be compared against a column of its own type, so such an
+/// atom is analysed with `Field` values, exactly as it is without the reference representation.
+static Field fieldFromValueRef(const ColumnValueRef & ref)
+{
+    if (ref.isNegativeInfinity())
+        return NEGATIVE_INFINITY;
+    if (ref.isPositiveInfinity() || !ref.column)
+        return POSITIVE_INFINITY;
+
+    Field field;
+    ref.column->get(ref.row, field);
+    /// NULL_LAST, as when the boundary is built.
+    if (field.isNull())
+        return POSITIVE_INFINITY;
+    return field;
+}
+
+static Range rangeFromRangeRef(const RangeRef & range)
+{
+    return Range(fieldFromValueRef(range.left), range.left_included, fieldFromValueRef(range.right), range.right_included);
+}
+
 static bool isNaNValueRef(const ColumnValueRef & ref, const DataTypePtr & type)
 {
     if (!ref.isNormal() || !ref.column || ref.isNullAt())
@@ -5729,39 +5734,60 @@ BoolMask KeyCondition::checkInHyperrectangle(
                         key_range = *new_range;
                 }
 
-                if (chain_applied && !prepared.ranges[element_idx].valid)
+                if (chain_applied)
                 {
-                    /// No prepared range for this atom - nothing can be inferred.
-                    rpn_stack.emplace_back(true, true);
-                }
-                else if (chain_applied)
-                {
-                    const RangeRef & element_range = prepared.ranges[element_idx].range;
+                    bool intersects;
+                    bool contains;
 
-                    /// After the chain, the boundaries reference the chain's result column, so it is
-                    /// its type that says whether a value can be a NaN.
-                    const DataTypePtr & range_type = element.monotonic_functions_chain.empty()
-                        ? sparse_data_types[sparse_pos]
-                        : element.monotonic_functions_chain.back()->getResultType();
-
-                    bool intersects = element_range.intersectsRange(key_range);
-                    bool contains = element_range.containsRange(key_range);
-
-                    /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
-                    /// In ClickHouse sort order, NaN has a defined position (after +inf), so range-based
-                    /// analysis may incorrectly include NaN values.
-                    /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
-                    ///   so no comparison condition can be true.
-                    /// - If only right bound is NaN: the range extends into NaN territory,
-                    ///   so it cannot be fully contained (NaN values don't satisfy the condition).
-                    if (unlikely(isNaNValueRef(key_range.left, range_type)))
+                    if (prepared.ranges[element_idx].valid)
                     {
-                        intersects = false;
-                        contains = false;
+                        const RangeRef & element_range = prepared.ranges[element_idx].range;
+
+                        intersects = element_range.intersectsRange(key_range);
+                        contains = element_range.containsRange(key_range);
+
+                        /// After the chain, the boundaries reference the chain's result column, so it is
+                        /// its type that says whether a value can be a NaN.
+                        const DataTypePtr & range_type = element.monotonic_functions_chain.empty()
+                            ? sparse_data_types[sparse_pos]
+                            : element.monotonic_functions_chain.back()->getResultType();
+
+                        /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
+                        /// In ClickHouse sort order, NaN has a defined position (after +inf), so range-based
+                        /// analysis may incorrectly include NaN values.
+                        /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
+                        ///   so no comparison condition can be true.
+                        /// - If only right bound is NaN: the range extends into NaN territory,
+                        ///   so it cannot be fully contained (NaN values don't satisfy the condition).
+                        if (unlikely(isNaNValueRef(key_range.left, range_type)))
+                        {
+                            intersects = false;
+                            contains = false;
+                        }
+                        else if (unlikely(isNaNValueRef(key_range.right, range_type)))
+                        {
+                            contains = false;
+                        }
                     }
-                    else if (unlikely(isNaNValueRef(key_range.right, range_type)))
+                    else
                     {
-                        contains = false;
+                        /// The atom's constant has no exact representation as a value of this key
+                        /// column's type, so it cannot be compared against the column. Analyse this
+                        /// atom with `Field` values, which compare accurately across types.
+                        const Range materialized_key_range = rangeFromRangeRef(key_range);
+
+                        intersects = element.range.intersectsRange(materialized_key_range);
+                        contains = element.range.containsRange(materialized_key_range);
+
+                        if (unlikely(materialized_key_range.left.isNaN()))
+                        {
+                            intersects = false;
+                            contains = false;
+                        }
+                        else if (unlikely(materialized_key_range.right.isNaN()))
+                        {
+                            contains = false;
+                        }
                     }
 
                     rpn_stack.emplace_back(intersects, !contains);
@@ -5972,18 +5998,26 @@ BoolMask KeyCondition::checkInHyperrectangle(
             {
                 rpn_stack.emplace_back(true, true);
             }
-            else if (!prepared.ranges[element_idx].valid)
-            {
-                rpn_stack.emplace_back(true, true);
-            }
             else
             {
                 const RangeRef & key_range = sparse_hyperrectangle[sparse_pos];
-                const RangeRef & element_range = prepared.ranges[element_idx].range;
 
                 /// No need to apply monotonic functions as nulls are kept.
-                bool intersects = element_range.intersectsRange(key_range);
-                bool contains = element_range.containsRange(key_range);
+                bool intersects;
+                bool contains;
+
+                if (prepared.ranges[element_idx].valid)
+                {
+                    const RangeRef & element_range = prepared.ranges[element_idx].range;
+                    intersects = element_range.intersectsRange(key_range);
+                    contains = element_range.containsRange(key_range);
+                }
+                else
+                {
+                    const Range materialized_key_range = rangeFromRangeRef(key_range);
+                    intersects = element.range.intersectsRange(materialized_key_range);
+                    contains = element.range.containsRange(materialized_key_range);
+                }
 
                 rpn_stack.emplace_back(intersects, !contains);
                 if (element.relaxed)
