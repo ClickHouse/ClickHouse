@@ -352,19 +352,20 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
         for (size_t axis_id : column.axis_ids)
             column.num_elements *= header.dimensions[layout.axis_dimensions[axis_id]].length;
 
-        /// A variable can declare the value that marks the data that is missing. There is no such
-        /// convention for strings, where the padding of a shorter string plays that role.
-        if (settings.netcdf.fill_value_as_null && !column.is_string)
+        /// A variable can declare the value that marks the data that is missing. A `char`
+        /// attribute holds one or more character sentinels, while a `char` variable is exposed as
+        /// strings after its trailing padding has been removed.
+        if (settings.netcdf.fill_value_as_null)
         {
             for (std::string_view attribute_name : {"_FillValue", "missing_value"})
             {
                 const auto * attribute = variable.tryGetAttribute(attribute_name);
                 if (attribute && attribute->type == variable.type && attribute->num_elements != 0
-                    && attribute->data.size() == attribute->num_elements * column.element_size)
+                    && attribute->data.size() == attribute->num_elements * netCDFTypeSize(variable.type))
                 {
                     for (size_t value_index = 0; value_index < attribute->num_elements; ++value_index)
                         column.null_values.emplace_back(
-                            attribute->data.data() + value_index * column.element_size, column.element_size);
+                            attribute->data.data() + value_index * netCDFTypeSize(variable.type), netCDFTypeSize(variable.type));
                     column.type = makeNullable(column.type);
                 }
             }
@@ -683,7 +684,15 @@ void NetCDFBlockInputFormat::fillColumn(const ColumnState & state, IColumn & col
 
     if (description.is_string)
     {
-        auto & string_column = assert_cast<ColumnString &>(column);
+        auto * string_column = typeid_cast<ColumnString *>(&column);
+        PaddedPODArray<UInt8> * null_map = nullptr;
+        if (!string_column)
+        {
+            auto & nullable_column = assert_cast<ColumnNullable &>(column);
+            string_column = &assert_cast<ColumnString &>(nullable_column.getNestedColumn());
+            null_map = &nullable_column.getNullMapData();
+        }
+
         for (UInt64 index : indexes)
         {
             const char * from = data + (index - state.buffer_first_element) * description.element_size;
@@ -696,7 +705,13 @@ void NetCDFBlockInputFormat::fillColumn(const ColumnState & state, IColumn & col
                 while (length != 0 && from[length - 1] == '\0')
                     --length;
 
-            string_column.insertData(from, length);
+            string_column->insertData(from, length);
+
+            if (null_map)
+            {
+                null_map->push_back(std::ranges::any_of(description.null_values, [&](const String & null_value)
+                    { return length == null_value.size() && 0 == memcmp(from, null_value.data(), length); }));
+            }
         }
         return;
     }

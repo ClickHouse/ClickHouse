@@ -1,10 +1,13 @@
 --- an unsigned classic variable is read as an unsigned type
 unsigned_short	UInt16
 value	Int32
+quality_control	String
 1
 2
 65535
---- every missing_value sentinel is read as NULL
+--- numeric and char missing-value sentinels are read as NULL
 unsigned_short	UInt16
 value	Nullable(Int32)
+quality_control	Nullable(String)
 2	7
+2	O
