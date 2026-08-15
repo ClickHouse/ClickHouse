@@ -1091,7 +1091,6 @@ def _finish_workflow(workflow, job_name):
                     f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
                 )
                 result.status = Result.Status.ERROR
-                # The only copy of the reason for a job that uploaded no report.
                 result.add_error(ResultInfo.NOT_FINALIZED)
                 # dump workflow result after update - to have an updated result in post
                 workflow_result.dump()

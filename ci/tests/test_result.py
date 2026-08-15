@@ -7,10 +7,10 @@ and the event feed. Think twice before adding one — and update all mapping
 tables (GH._STATUS_TO_GH, CIDB._STATUS_TO_CIDB) and these tests.
 """
 
-import dataclasses
 import json
 import os
 import sys
+import types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
@@ -225,24 +225,84 @@ def test_create_from_omits_child_info_by_default():
     assert r.info == ""
 
 
-# --- add_error on a sub-result must survive the workflow report round trip ---
-# A job that loses its runner never uploads its own result_<job>.json, so the only
-# copy of the reason is the one _finish_workflow writes onto the sub-result inside
-# the workflow report. json.html resolves that node out of the workflow report and
-# renders ext["errors"], so the entry has to survive serialization.
+def test_unfinished_job_carries_its_own_error_in_the_workflow_report(
+    tmp_path, monkeypatch
+):
+    """A job that never uploaded a report gets the reason on its own node.
 
-def test_add_error_on_sub_result_survives_workflow_serialization():
-    name = "AST fuzzer (amd_debug, targeted)"
-    child = Result(name, Result.Status.ERROR)
-    healthy = Result("AST fuzzer (amd_debug)", Result.Status.OK)
-    workflow = Result("PR", Result.Status.ERROR, results=[healthy, child])
+    The workflow report is the only place such a job appears, and json.html
+    renders each node's ext["errors"], so the entry must reach the uploaded
+    file - not merely the in-memory object.
+    """
+    import ci.praktika.native_jobs as native_jobs
+    from ci.praktika.settings import Settings
 
-    child.add_error(ResultInfo.NOT_FINALIZED)
+    dead = "AST fuzzer (amd_debug, targeted)"
+    healthy = "AST fuzzer (amd_debug)"
+    workflow_result = Result(
+        "PR",
+        Result.Status.RUNNING,
+        results=[
+            Result(dead, Result.Status.RUNNING, start_time=1.0),
+            Result(healthy, Result.Status.OK, start_time=1.0, duration=5.0),
+        ],
+    )
 
-    restored = Result.from_dict(json.loads(json.dumps(dataclasses.asdict(workflow))))
-    by_name = {r.name: r for r in restored.results}
-    assert by_name[name].ext["errors"] == [
-        {"message": ResultInfo.NOT_FINALIZED, "from": name}
+    # Result.dump() writes into Settings.TEMP_DIR.
+    monkeypatch.setattr(Settings, "TEMP_DIR", str(tmp_path))
+    # Absent status file -> no GitHub verdict for the job -> the error branch.
+    monkeypatch.setattr(Settings, "WORKFLOW_STATUS_FILE", str(tmp_path / "absent.json"))
+
+    workflow_errors = []
+
+    class Env:
+        PR_BODY = ""
+
+        def get_needs_statuses(self):
+            return {}
+
+        def add_workflow_error(self, message, source=""):
+            workflow_errors.append((message, source))
+
+    uploads = []
+
+    class ResultS3:
+        @classmethod
+        def copy_result_from_s3_with_version(cls, _path):
+            return 7
+
+        @classmethod
+        def copy_result_to_s3_with_version(cls, result, version, no_strict=False):
+            result.dump()
+            with open(result.file_name(), "r", encoding="utf8") as f:
+                uploads.append(json.load(f))
+            return True
+
+    class Workflow:
+        name = "PR"
+        post_hooks = []
+        enable_merge_ready_status = False
+        enable_open_issues_check = False
+
+        def get_job(self, _name):
+            return types.SimpleNamespace(allow_failure=False)
+
+    monkeypatch.setattr(
+        native_jobs, "_Environment", types.SimpleNamespace(get=lambda: Env())
+    )
+    monkeypatch.setattr(native_jobs, "_ResultS3", ResultS3)
+    monkeypatch.setattr(
+        Result, "from_fs", classmethod(lambda cls, name: workflow_result)
+    )
+
+    native_jobs._finish_workflow(Workflow(), "Finish Workflow")
+
+    assert len(uploads) == 1, "the workflow report must be re-uploaded"
+    nodes = {node["name"]: node for node in uploads[0]["results"]}
+    assert nodes[dead]["status"] == Result.Status.ERROR
+    assert nodes[dead]["ext"]["errors"] == [
+        {"message": ResultInfo.NOT_FINALIZED, "from": dead}
     ]
-    # Only the failed job is annotated.
-    assert "errors" not in by_name["AST fuzzer (amd_debug)"].ext
+    assert "errors" not in nodes[healthy]["ext"]
+    # The workflow node keeps the summary attribution.
+    assert workflow_errors == [(ResultInfo.NOT_FINALIZED, dead)]

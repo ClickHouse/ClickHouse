@@ -2545,9 +2545,9 @@
         const results = await Promise.all(fetchTasks);
 
         if (nameParams.length > 1) {
-            const { data, updated, status } = results[0]; // First request result
-            // A null json1 is supported: getTargetResults then resolves the node from task0.
-            if (status !== 403 && updated) {
+            const { data, updated } = results[0]; // First request result
+            // A missing per-job report is not a missing report.
+            if (updated) {
                 runtimeCache.json1 = data;
                 hasNewData = true;
             }
