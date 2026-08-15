@@ -1,15 +1,13 @@
-Allows to run simple ClickHouse stress test in Docker from debian packages.
+Allows to run a simple ClickHouse stress test in Docker from a `clickhouse`
+binary artifact.
 Actually it runs multiple copies of clickhouse-test (functional tests).
 This allows to find problems like failed assertions and memory safety issues.
 
 Usage:
 ```
 $ ls $HOME/someclickhouse
-clickhouse-client_18.14.9_all.deb clickhouse-common-static_18.14.9_amd64.deb clickhouse-server_18.14.9_all.deb
+clickhouse
 $ docker run --volume=$HOME/someclickhouse:/package_folder --volume=$HOME/test_output:/test_output clickhouse/stress-test
-Selecting previously unselected package clickhouse-common-static.
-(Reading database ... 14442 files and directories currently installed.)
-...
 Start clickhouse-server service: Path to data directory in /etc/clickhouse-server/config.xml: /var/lib/clickhouse/
 DONE
 2018-10-22 13:40:35,744 Will wait functests to finish
