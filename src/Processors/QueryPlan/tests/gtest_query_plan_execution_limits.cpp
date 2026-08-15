@@ -83,6 +83,15 @@ TEST(QueryPlanExecutionLimits, SerializationPreservesLimits)
     EXPECT_TRUE(restored.getConcurrencyControl());
 }
 
+TEST(QueryPlanExecutionLimits, SerializationRejectsOlderPeerWhenLimitsAreSet)
+{
+    auto source = makeSourcePlan();
+    source.setMaxThreads(4);
+
+    WriteBufferFromOwnString out;
+    EXPECT_THROW(source.serialize(out, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS - 1), Exception);
+}
+
 TEST(QueryPlanExecutionLimits, ReplaceNodeWithPlanMergesConcurrencyControl)
 {
     auto destination = makeSourcePlan();
