@@ -593,13 +593,20 @@ declare -a WORKER_PIDS=()
 stop_workers()
 {
     local roots own_pgid entry pid pgid
-    local -a targets active_workers
-    local -A target_groups=()
+    local -a targets
+    local -a active_workers=() live_jobs=()
+    local -A target_groups=() worker_pid_set=()
 
     # `WORKER_PIDS` retains exited child PIDs until `wait` completes. Resolve
     # roots through the shell's live job table so a recycled PID can never be
     # mistaken for a worker and signalled during interrupt handling.
-    mapfile -t active_workers < <(jobs -pr)
+    for pid in "${WORKER_PIDS[@]}"; do
+        worker_pid_set["$pid"]=1
+    done
+    mapfile -t live_jobs < <(jobs -pr)
+    for pid in "${live_jobs[@]}"; do
+        [[ -n "${worker_pid_set[$pid]:-}" ]] && active_workers+=("$pid")
+    done
     (( ${#active_workers[@]} )) || return 0
     roots="${active_workers[*]}"
     own_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ' || true)
