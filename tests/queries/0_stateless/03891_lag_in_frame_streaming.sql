@@ -24,7 +24,8 @@ SELECT
     map('k1', toString(number % 5)) AS Attributes
 FROM numbers(0, 100000);
 
-SET max_threads = 4, optimize_read_in_order = 1;
+-- This optimization currently uses the legacy read-in-order path.
+SET max_threads = 4, optimize_read_in_order = 1, query_plan_read_in_order = 0, allow_experimental_analyzer = 0;
 
 -- Without the optimization, no StreamingLag in the pipeline.
 SELECT countIf(explain LIKE '%StreamingLag%')
