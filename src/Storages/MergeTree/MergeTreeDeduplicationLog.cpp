@@ -1495,6 +1495,12 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
         /// can be retried - while the disk does not let the stale files be neutralized.
         prepareToWrite();
 
+        /// `prepareToWrite` makes an unfenced divergence durable, but it does not
+        /// rewrite history that was already fenced. This setting change can be the
+        /// first successful operation after the disk recovers, so retry the snapshot
+        /// now rather than leaving the marker armed until a later add or drop.
+        compactIfNeeded();
+
         /// While deduplication was disabled, the unfinished-compaction marker of a failed
         /// compaction was deliberately left alone: load skips both the history replay and
         /// the marker with a window of zero, keeping the marker for the next load with
@@ -1551,7 +1557,7 @@ void MergeTreeDeduplicationLog::shutdown()
     /// least persist the marker that makes the next load discard the suspect history.
     /// In particular this cannot wait for prepareToWrite, because no later write is
     /// required before a clean server stop; the zero-window path has no writes at all.
-    if (history_fence_pending)
+    if (history_diverged || history_fence_pending)
         fenceOffDivergedHistory();
 
     stopped = true;

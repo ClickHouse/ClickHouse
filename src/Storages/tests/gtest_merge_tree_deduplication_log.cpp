@@ -2746,6 +2746,53 @@ TEST(MergeTreeDeduplicationLog, RecoveredDivergedHistoryIsRewritten)
     std::filesystem::remove_all(work_dir);
 }
 
+/// A history-discard marker can already be durable when the disk recovers. The first
+/// successful path may then be a setting change or a clean shutdown rather than a new
+/// part write; both must rewrite the authoritative live map and clear the marker.
+TEST(MergeTreeDeduplicationLog, RecoveredFencedHistoryIsRewrittenWithoutPartWrite)
+{
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    for (const bool change_setting : {false, true})
+    {
+        const std::string work_dir = "tmp/gtest_dedup_log_fenced_recovery_" + std::to_string(change_setting) + "/";
+        std::filesystem::remove_all(work_dir);
+        std::filesystem::create_directories(work_dir);
+
+        const std::string marker_path = work_dir + "dedup_logs/deduplication_log_0.txt";
+        {
+            auto disk = std::make_shared<DiskFailingRotationSyncAndLogFlushes>(
+                "faulty", work_dir, /*fail_on_sync=*/ 1, /*fail_from_flush=*/ 5);
+            MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+            log.load();
+
+            EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0")).empty());
+            EXPECT_ANY_THROW(log.addPart({"block2", "block3", "block4"}, part("all_2_2_0")));
+            EXPECT_TRUE(std::filesystem::exists(marker_path) && std::filesystem::file_size(marker_path) > 0);
+
+            disk->fail_from_flush = std::numeric_limits<size_t>::max();
+            if (change_setting)
+                log.setDeduplicationWindowSize(2);
+            log.shutdown();
+            EXPECT_FALSE(std::filesystem::exists(marker_path));
+        }
+
+        {
+            auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+            MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+            log.load();
+
+            /// The committed id must still deduplicate, while the rolled-back id is retryable.
+            EXPECT_FALSE(log.addPart({"block1"}, part("all_9_9_0")).empty());
+            EXPECT_TRUE(log.addPart({"block3"}, part("all_3_3_0")).empty());
+            log.shutdown();
+        }
+
+        std::filesystem::remove_all(work_dir);
+    }
+}
+
 /// Regression test: if the diverged history can be neither rewritten nor fenced off -
 /// the marker cannot be written at all - the log must fail every later operation closed
 /// instead of accepting records it knows the next start would misinterpret. Operations
