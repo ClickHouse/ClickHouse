@@ -2397,6 +2397,63 @@ TEST(MergeTreeDeduplicationLog, ReenablingDeduplicationAfterUnfinishedCompaction
     std::filesystem::remove_all(work_dir);
 }
 
+/// Regression test: when compaction has already produced a consistent snapshot but
+/// its marker or stale-file cleanup remains pending only in process memory, a clean
+/// shutdown after the disk recovers must retry that cleanup. Otherwise the next load
+/// sees the still-active marker and discards the valid snapshot, forgetting committed
+/// block ids and accepting their retries as visible duplicates.
+TEST(MergeTreeDeduplicationLog, ShutdownNeutralizesRecoveredPendingCompactionCleanup)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_shutdown_pending_cleanup/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        auto disk = std::make_shared<DiskThrowingFromNthSync>("faulty", work_dir, /*fail_from_sync=*/ 1);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        log.addPart({"block1"}, part("all_1_1_0"));
+        for (int i = 2; i <= 8; ++i)
+        {
+            const std::string suffix = std::to_string(i) + "_" + std::to_string(i) + "_0";
+            EXPECT_ANY_THROW(log.addPart({"block" + std::to_string(i)}, part("all_" + suffix)));
+        }
+
+        log.shutdown();
+    }
+
+    {
+        /// `load` compacts successfully, but stale pre-snapshot files cannot yet be
+        /// removed or neutralized. A failed write records the pending cleanup state.
+        auto disk = std::make_shared<DiskFailingExistingFileCleanup>("no-cleanup", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+        EXPECT_ANY_THROW(log.addPart({"block9"}, part("all_9_9_0")));
+
+        /// No later write enters `prepareToWrite`; shutdown is the final chance to
+        /// preserve the precise recovery state before it becomes unavailable.
+        disk->broken = false;
+        log.shutdown();
+    }
+
+    {
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        /// The valid snapshot was retained across the clean restart.
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_10_10_0")).empty());
+        EXPECT_TRUE(log.addPart({"block2"}, part("all_11_11_0")).empty());
+        log.shutdown();
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
 /// Regression test: re-enabling deduplication in the SAME process that had the failed
 /// compaction must not clear the unfinished-compaction marker while a stale file is
 /// still on disk. After a failed cleanup, compact tracks the stale files only in the

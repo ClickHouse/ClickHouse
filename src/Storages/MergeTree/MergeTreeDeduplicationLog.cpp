@@ -1560,6 +1560,25 @@ void MergeTreeDeduplicationLog::shutdown()
     if (history_diverged || history_fence_pending)
         fenceOffDivergedHistory();
 
+    /// A failed compaction can leave the history consistent while only the
+    /// process-local cleanup of its marker or stale files is pending. If the disk
+    /// recovered after the last operation, retry that non-writing recovery barrier
+    /// before losing this precise knowledge at shutdown. Otherwise the active
+    /// marker makes the next load discard the already-consistent history.
+    if (compaction_marker_pending_clear || !orphan_logs_pending_neutralization.empty())
+    {
+        try
+        {
+            prepareToWrite();
+        }
+        catch (...)
+        {
+            /// The marker remains active while cleanup is still impossible, which
+            /// makes the next load take the safe discard path.
+            tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot finish deduplication log compaction cleanup during shutdown");
+        }
+    }
+
     stopped = true;
     if (current_writer)
     {
