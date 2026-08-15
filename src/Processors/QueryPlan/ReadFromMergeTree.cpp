@@ -2573,8 +2573,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool find_exact_ranges) const
 {
+    const auto parts_to_read = getParts();
     analyzed_result_ptr = selectRangesToRead(
-        getParts(),
+        parts_to_read,
         mutations_snapshot,
         vector_search_parameters,
         top_k_filter_info,
@@ -3200,6 +3201,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     AnalysisResult result;
     RangesInDataParts res_parts;
     const auto & settings = context_->getSettingsRef();
+    result.row_limits_were_checked = check_row_limits
+        && !query_info_.input_order_info
+        && ((settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
+            || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]));
 
     size_t total_parts = parts.size();
 
@@ -3908,6 +3913,15 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
 
         query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
     }
+
+    /// A normal projection can run range analysis before `requestReadingInOrder` and cache a
+    /// projection-filtered result with row limits enabled. Once read-in-order is accepted, redo
+    /// that analysis with `input_order_info` set so `max_rows_to_read` and
+    /// `max_rows_to_read_leaf` follow the read-in-order semantics. `selectRangesToRead` keeps
+    /// the cached `parts_with_ranges` as its input, preserving the projection optimizer's
+    /// filtering while replacing only the analysis result.
+    if (analyzed_result_ptr && analyzed_result_ptr->row_limits_were_checked)
+        selectRangesToRead();
 
     query_task_size_limit = query_limit ? query_limit : read_limit;
     reader_settings.read_in_order = true;

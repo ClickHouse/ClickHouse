@@ -172,6 +172,7 @@ public:
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
         bool has_exact_ranges = false;
+        bool row_limits_were_checked = false;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -193,6 +194,7 @@ public:
             , total_marks_pk(other.total_marks_pk)
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
+            , row_limits_were_checked(other.row_limits_were_checked)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -213,6 +215,7 @@ public:
             , total_marks_pk(other.total_marks_pk)
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
+            , row_limits_were_checked(other.row_limits_were_checked)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
