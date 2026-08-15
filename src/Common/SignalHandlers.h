@@ -138,11 +138,14 @@ struct HandledSignals
 
     /// `additional_masked_signals` are blocked while `handler` runs (added to `sa_mask`) but the
     /// handler is not registered for them.
+    /// `use_alt_stack` requests `SA_ONSTACK`: required for any handler that must still run after the
+    /// faulting thread's stack is exhausted.
     void addSignalHandler(
         const std::vector<int> & signals,
         signal_function handler,
         bool register_signal,
-        const std::vector<int> & additional_masked_signals = {});
+        const std::vector<int> & additional_masked_signals = {},
+        bool use_alt_stack = false);
 
     void reset(bool close_pipe = true);
 
