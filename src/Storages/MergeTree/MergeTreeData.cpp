@@ -10724,8 +10724,9 @@ void MergeTreeData::Transaction::undoPublishedRenames()
     /// is aborted, so nothing of it may stay visible under a persistent name: otherwise the
     /// next leader would load parts of a DDL that failed. The temporary names are process-scoped
     /// under `leader_election` (`getPostfixForTempPartName`), so restoring them cannot collide
-    /// with the new leader's own work. Best effort: a failure here is logged, not propagated, so
-    /// that the original rejection reaches the client.
+    /// with the new leader's own work. A rollback failure is a command failure too: swallowing it
+    /// would claim the command was rejected while leaving a persistent part for the next leader.
+    std::exception_ptr first_exception;
     for (auto it = published_parts_pending_commit.rbegin(); it != published_parts_pending_commit.rend(); ++it)
     {
         try
@@ -10736,8 +10737,15 @@ void MergeTreeData::Transaction::undoPublishedRenames()
         catch (...)
         {
             tryLogCurrentException(data.log, "Cannot rename part " + it->first->name + " back to " + it->second);
+
+            if (!first_exception)
+                first_exception = std::current_exception();
         }
     }
+
+    if (first_exception)
+        std::rethrow_exception(first_exception);
+
     published_parts_pending_commit.clear();
 }
 
