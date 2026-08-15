@@ -4384,6 +4384,34 @@ def test_histogram_fraction():
     finally:
         node.query("DROP TABLE prometheus_u64 SYNC")
 
+    # Prometheus clamps the complete interpolated rank even when cumulative bucket
+    # counts are not monotonic.
+    node.query(
+        "CREATE TABLE prometheus_non_monotonic "
+        "(time_series Array(Tuple(DateTime64(3), UInt64))) ENGINE=TimeSeries"
+    )
+    try:
+        for le, value in [("1", 200), ("2", 50), ("+Inf", 100)]:
+            node.query(
+                "INSERT INTO prometheus_non_monotonic (metric_name, tags, time_series) VALUES "
+                f"('non_monotonic_bucket', {{'le': '{le}'}}, "
+                f"[(toDateTime64(300, 3), {value})])"
+            )
+
+        for query, expected in (
+            ("histogram_fraction(0, 0.75, non_monotonic_bucket)", "1"),
+            ("histogram_fraction(0.5, 0.75, non_monotonic_bucket)", "0"),
+        ):
+            assert tsv_close_to(
+                node.query(
+                    "SELECT * FROM prometheusQuery("
+                    f"prometheus_non_monotonic, '{query}', 300)"
+                ),
+                [["[]", "1970-01-01 00:05:00.000", expected]],
+            )
+    finally:
+        node.query("DROP TABLE prometheus_non_monotonic SYNC")
+
 
 def test_label_manipulation_functions():
     # Add a new label using a regex capture from an existing label.
