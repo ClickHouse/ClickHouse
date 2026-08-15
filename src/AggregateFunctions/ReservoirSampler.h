@@ -178,8 +178,8 @@ public:
 
         /// `long double` preserves every Int64 value and avoids converting the result through Float64,
         /// which can round values close to Int64 limits outside the representable range.
-        const long double left_coef = static_cast<long double>(right_index) - index;
-        const long double right_coef = index - static_cast<long double>(left_index);
+        const long double left_coef = static_cast<long double>(right_index) - static_cast<long double>(index);
+        const long double right_coef = static_cast<long double>(index) - static_cast<long double>(left_index);
         const long double result = static_cast<long double>(samples[left_index].value) * left_coef
             + static_cast<long double>(samples[right_index].value) * right_coef;
 

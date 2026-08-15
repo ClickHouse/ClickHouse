@@ -92,8 +92,13 @@ struct QuantileReservoirSampler
         if (data.empty())
             return {};
 
-        if constexpr (is_decimal<Value> && sizeof(typename Value::NativeType) <= sizeof(Int64))
-            return data.quantileInterpolatedDecimal64(level);
+        if constexpr (is_decimal<Value>)
+        {
+            if constexpr (sizeof(typename Value::NativeType) <= sizeof(Int64))
+                return data.quantileInterpolatedDecimal64(level);
+            else
+                return convertInterpolatedResult<Value>(data.quantileInterpolated(level));
+        }
         else
             return convertInterpolatedResult<Value>(data.quantileInterpolated(level));
     }
@@ -112,8 +117,13 @@ struct QuantileReservoirSampler
             }
             else
             {
-                if constexpr (is_decimal<Value> && sizeof(typename Value::NativeType) <= sizeof(Int64))
-                    result[indices[i]] = data.quantileInterpolatedDecimal64(levels[indices[i]]);
+                if constexpr (is_decimal<Value>)
+                {
+                    if constexpr (sizeof(typename Value::NativeType) <= sizeof(Int64))
+                        result[indices[i]] = data.quantileInterpolatedDecimal64(levels[indices[i]]);
+                    else
+                        result[indices[i]] = convertInterpolatedResult<Value>(data.quantileInterpolated(levels[indices[i]]));
+                }
                 else
                     result[indices[i]] = convertInterpolatedResult<Value>(data.quantileInterpolated(levels[indices[i]]));
             }
