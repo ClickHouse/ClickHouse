@@ -854,22 +854,27 @@ ${system_prompt}"
         # Codex reports a session ID, resume that session within the existing
         # turn and time limits instead of discarding its completed work.
         grep -qE "^${DONE_MARKER}[[:space:]]*$" "$log.last" && break
+        # If triage used its continuation allowance without an explicit marker,
+        # escalate to the coding model rather than misclassifying the PR as
+        # handled. A killed Codex session can also take this handoff path on
+        # its last permitted triage turn; otherwise the next iteration would
+        # reach the cap before resetting its nonzero exit code.
+        if [[ "$phase" == "triage" ]] && (( phase_iter == MAX_CONTINUE )); then
+            if (( ec == 0 )) || { [[ "$AGENT" == "codex" && -n "$sid" ]] && (( ec == 137 )); }; then
+                handoff=$(cat "$log.last")
+                echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL after $MAX_CONTINUE turns =====" >> "$log"
+                phase="coding"
+                phase_iter=0
+                sid=""
+                continue
+            fi
+        fi
+
         if [[ "$AGENT" == "codex" && -n "$sid" ]] && (( ec == 137 )); then
             echo "Codex was killed; resuming session $sid on the next turn." >> "$log"
             continue
         fi
         (( ec != 0 )) && break
-
-        # If triage used its continuation allowance without an explicit marker,
-        # escalate to the coding model rather than misclassifying the PR as
-        # handled. Its last report still provides useful handoff context.
-        if [[ "$phase" == "triage" ]] && (( phase_iter == MAX_CONTINUE )); then
-            handoff=$(cat "$log.last")
-            echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL after $MAX_CONTINUE turns =====" >> "$log"
-            phase="coding"
-            phase_iter=0
-            sid=""
-        fi
     done
 
     return "$ec"
