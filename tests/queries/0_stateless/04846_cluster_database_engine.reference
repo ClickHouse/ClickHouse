@@ -29,6 +29,8 @@ s	String
 1
 -- the cluster name may come from a macro, like in the Distributed table engine
 4
+-- SHOW CREATE TABLE cannot serialize a cluster name that is expanded on every access
+1
 -- a multi-shard database reads from every shard and accepts INSERT queries by default
 8
 5

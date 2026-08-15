@@ -116,6 +116,24 @@ ASTPtr DatabaseCluster::getCreateTableQueryImpl(const String & table_name, Conte
         return nullptr;
     }
 
+    /// A `Cluster` database expands macros on every access, whereas `StorageDistributed` expands
+    /// its cluster name once when the recreated table is constructed. Serializing the original
+    /// macro expression would therefore freeze a later configuration change, and serializing its
+    /// current expansion would lose the per-access behavior. Neither is an equivalent definition.
+    if (getContext()->getMacros()->expand(cluster_name) != cluster_name)
+    {
+        if (throw_on_error)
+            throw Exception(
+                ErrorCodes::THERE_IS_NO_QUERY,
+                "Table {}.{} belongs to a `Cluster` database whose cluster name {} contains macros that are expanded on every access, "
+                "but a `Distributed` table expands them only when it is created, so there is no equivalent re-executable CREATE query for "
+                "it",
+                backQuoteIfNeed(remote_database),
+                backQuoteIfNeed(table_name),
+                backQuoteIfNeed(cluster_name));
+        return nullptr;
+    }
+
     auto table_storage_define = database_engine_define->clone();
     {
         ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();

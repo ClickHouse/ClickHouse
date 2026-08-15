@@ -46,6 +46,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CLUSTER_DOESNT_EXIST;
     extern const int INFINITE_LOOP;
     extern const int NO_REMOTE_SHARD_AVAILABLE;
     extern const int NOT_IMPLEMENTED;
@@ -404,15 +405,18 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
                     return tables;
                 }
             }
-            catch (const NetException &)
+            catch (const Exception & e)
             {
-                /// The local database is itself another `Remote` database, and the failure came from its
-                /// own remote target, not from this one: an answer of the local replica of this shard is
-                /// simply not available, exactly as if the replica itself were down. Fall through to the
-                /// same-shard remote replicas below instead of turning one bad intermediate proxy into a
-                /// failure of the whole database. The hidden-vs-missing distinction above is a property
-                /// of the answering replica, and the answering replica is now a remote one.
-                if (!underlying_remote || !clusters.remote_only_cluster)
+                /// The local database is itself another `Remote` database. A network failure of its
+                /// remote target, or a `Cluster` database whose named cluster has temporarily disappeared
+                /// from the configuration, means that the local answer is simply not available, exactly
+                /// as if the replica itself were down. Fall through to the same-shard remote replicas
+                /// below instead of turning one bad intermediate proxy into a failure of the whole
+                /// database. The hidden-vs-missing distinction above is a property of the answering
+                /// replica, and the answering replica is now a remote one.
+                const bool unavailable_intermediate_proxy = dynamic_cast<const NetException *>(&e)
+                    || e.code() == ErrorCodes::CLUSTER_DOESNT_EXIST;
+                if (!underlying_remote || !clusters.remote_only_cluster || !unavailable_intermediate_proxy)
                     throw;
                 LOG_DEBUG(
                     log,
@@ -551,16 +555,19 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(
                     return {};
                 }
             }
-            catch (const NetException &)
+            catch (const Exception & e)
             {
-                /// The local database is itself another `Remote` database, and the failure came from its
-                /// own remote target, not from this one: an answer of the local replica of this shard is
-                /// simply not available, exactly as if the replica itself were down. Fall through to the
-                /// same-shard remote replicas below instead of turning one bad intermediate proxy into a
-                /// failure of the whole database (`fetchTablesList` does the same for the listing). The
-                /// hidden-vs-missing distinction above is a property of the answering replica, and the
-                /// answering replica is now a remote one.
-                if (!local_database_is_remote || !clusters.remote_only_cluster)
+                /// The local database is itself another `Remote` database. A network failure of its
+                /// remote target, or a `Cluster` database whose named cluster has temporarily disappeared
+                /// from the configuration, means that the local answer is simply not available, exactly
+                /// as if the replica itself were down. Fall through to the same-shard remote replicas
+                /// below instead of turning one bad intermediate proxy into a failure of the whole
+                /// database (`fetchTablesList` does the same for the listing). The hidden-vs-missing
+                /// distinction above is a property of the answering replica, and the answering replica
+                /// is now a remote one.
+                const bool unavailable_intermediate_proxy = dynamic_cast<const NetException *>(&e)
+                    || e.code() == ErrorCodes::CLUSTER_DOESNT_EXIST;
+                if (!local_database_is_remote || !clusters.remote_only_cluster || !unavailable_intermediate_proxy)
                     throw;
                 LOG_DEBUG(
                     log,

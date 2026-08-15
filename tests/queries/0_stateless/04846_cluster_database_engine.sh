@@ -61,6 +61,8 @@ ${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${CLUSTER_DB}.no_such_table" 2>&1 | 
 echo '-- the cluster name may come from a macro, like in the Distributed table engine'
 ${CLICKHOUSE_CLIENT} --allow_experimental_database_cluster=1 --query "CREATE DATABASE ${CLUSTER_DB}_macro ENGINE = Cluster('{default_cluster_macro}', '${CLICKHOUSE_DATABASE}')"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${CLUSTER_DB}_macro.t"
+echo '-- SHOW CREATE TABLE cannot serialize a cluster name that is expanded on every access'
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE ${CLUSTER_DB}_macro.t" 2>&1 | grep -c -m1 "THERE_IS_NO_QUERY"
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLUSTER_DB}_macro"
 
 echo '-- a multi-shard database reads from every shard and accepts INSERT queries by default'

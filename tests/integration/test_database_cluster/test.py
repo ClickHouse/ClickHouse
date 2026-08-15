@@ -148,6 +148,46 @@ def test_replica_fallback(started_cluster):
     node2.query("DROP DATABASE fb_src")
 
 
+def test_nested_cluster_missing_from_config_uses_remote_replica(started_cluster):
+    # The outer proxy first resolves `chain_inner` locally. Once that intermediate `Cluster`
+    # database loses its named cluster, it must treat the local answer as unavailable and use the
+    # other replica of its shard, rather than leaking `CLUSTER_DOESNT_EXIST` from node1.
+    for node, value in ((node1, 1), (node2, 2)):
+        node.query("CREATE DATABASE chain_src")
+        node.query("CREATE TABLE chain_src.t (x UInt64) ENGINE = MergeTree ORDER BY x")
+        node.query(f"INSERT INTO chain_src.t VALUES ({value})")
+
+    create_cluster_database(
+        node1, "CREATE DATABASE chain_inner ENGINE = Cluster('reloadable', 'chain_src')"
+    )
+    create_cluster_database(
+        node2,
+        "CREATE DATABASE chain_inner ENGINE = Cluster('one_shard_two_replicas', 'chain_src')",
+    )
+    create_cluster_database(
+        node1,
+        "CREATE DATABASE chain_outer ENGINE = Cluster('one_shard_two_replicas', 'chain_inner')",
+    )
+
+    try:
+        node1.replace_config(
+            RELOADABLE_CLUSTER_CONFIG_PATH, "<clickhouse></clickhouse>\n"
+        )
+        node1.query("SYSTEM RELOAD CONFIG")
+
+        assert node1.query("SHOW TABLES FROM chain_outer") == "t\n"
+        assert node1.query("EXISTS TABLE chain_outer.t") == "1\n"
+        assert node1.query("SELECT sum(x) FROM chain_outer.t") == "3\n"
+    finally:
+        node1.replace_config(RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_ONE_SHARD)
+        node1.query("SYSTEM RELOAD CONFIG")
+        node1.query("DROP DATABASE IF EXISTS chain_outer")
+        node1.query("DROP DATABASE IF EXISTS chain_inner")
+        node2.query("DROP DATABASE IF EXISTS chain_inner")
+        for node in (node1, node2):
+            node.query("DROP DATABASE IF EXISTS chain_src")
+
+
 def test_interserver_secret_cluster(started_cluster):
     # A cluster with an inter-server secret: the connections authenticate with the secret and run
     # under the initial user. The database exists only on node2, so this also checks that the
