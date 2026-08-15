@@ -1699,7 +1699,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         const size_t page_size = list_object_keys_size ? list_object_keys_size : object_storage->getListObjectsDefaultPageSize();
 
         if (parallelism > 1
-            && !key_with_globs.path.contains("**")
+            && !globPathHasRecursiveWildcard(key_with_globs.path)
             && !globSelectorSpansPathComponents(key_with_globs.path))
         {
             listing_start_prefix = chooseDelimitedListingStartPrefix(

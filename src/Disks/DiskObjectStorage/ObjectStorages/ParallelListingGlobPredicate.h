@@ -15,6 +15,12 @@ namespace DB
 /// wildcard "**".
 bool globSelectorSpansPathComponents(const std::string & glob_path);
 
+/// Returns true when `glob_path` contains a recursive wildcard: a `**` path component immediately
+/// followed by '/'. This mirrors `makeRegexpPatternFromGlobs`: `**` adjacent to other characters, a
+/// run of three or more stars, and a final `**` component keep the ordinary single-component wildcard
+/// semantics and can be pruned by `makeShouldDescendPredicate`.
+bool globPathHasRecursiveWildcard(const std::string & glob_path);
+
 /// Builds the predicate used by the parallel listing walk (`ObjectStorageParallelListingIterator`) to
 /// decide whether a discovered "directory" (a common prefix, always ending with '/') can possibly
 /// contain — or itself be — a key matching `glob_path`, so that whole non-matching subtrees are pruned

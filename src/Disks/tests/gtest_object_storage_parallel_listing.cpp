@@ -882,6 +882,20 @@ TEST(ObjectStorageParallelListing, CrossComponentSelectorStaysOnSerialIterator)
     EXPECT_TRUE(should_descend("root/a/b/very/deep/"));
 }
 
+TEST(ObjectStorageParallelListing, DetectsOnlyRecursiveGlobstarSegments)
+{
+    /// `makeRegexpPatternFromGlobs` gives cross-directory semantics only to a `**/` path segment.
+    /// Other adjacent-star forms remain component-local and must keep the parallel delimiter walk.
+    EXPECT_TRUE(globPathHasRecursiveWildcard("**/data.csv"));
+    EXPECT_TRUE(globPathHasRecursiveWildcard("root/**/data.csv"));
+    EXPECT_TRUE(globPathHasRecursiveWildcard("root/**/"));
+
+    EXPECT_FALSE(globPathHasRecursiveWildcard("root/foo**bar/data.csv"));
+    EXPECT_FALSE(globPathHasRecursiveWildcard("root/**"));
+    EXPECT_FALSE(globPathHasRecursiveWildcard("root/***/data.csv"));
+    EXPECT_FALSE(globPathHasRecursiveWildcard("root/*/data.csv"));
+}
+
 TEST(ObjectStorageParallelListing, DirectoryBucketStartsWalkFromPathBoundary)
 {
     /// S3 Express / directory buckets accept a `Delimiter` only when the `Prefix` is the bucket root or ends
