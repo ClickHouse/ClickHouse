@@ -51,7 +51,7 @@ void ChildrenSet2::insertCombine(std::string_view name, NodeAction action, DB::A
 
 void MemtableChildrenSet::insertCombine(std::string_view name, NodeAction action, DB::Arena & arena, bool strict)
 {
-    switch (getMode())
+    switch (mode)
     {
         case Mode::Empty:
         {
@@ -95,7 +95,7 @@ void MemtableChildrenSet::insertCombine(std::string_view name, NodeAction action
 
 MemtableChildrenSet::ConstIterator MemtableChildrenSet::iterate() const
 {
-    switch (getMode())
+    switch (mode)
     {
         case Mode::Empty:
             return {.mode = Mode::Empty, .entry = {}};
