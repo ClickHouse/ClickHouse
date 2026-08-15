@@ -139,30 +139,47 @@ inline bool buildPolygon(const Array & array, Polygon<CartesianPoint> & out_poly
 /// structural parse failures (a ring that can't even be assembled, a WKB payload that doesn't
 /// parse) remain unconditional, since those aren't validity checks and would fail at evaluation
 /// time regardless of `require_valid`.
-static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc, bool require_valid = true)
+/// `allow_point_tuple` mirrors `IFunctionBase::treatsConstTupleAsPoint(arg_index)` for the
+/// specific argument this field came from: true only for `pointInPolygon`'s own first (point)
+/// argument, see the `Tuple` branch below.
+static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc, bool require_valid = true, bool allow_point_tuple = false)
 {
     using namespace GeoBboxDetail;
     const auto type = field.getType();
 
-    /// A `Tuple` constant is opaque to bbox extraction, deliberately including the
+    /// A `Tuple` constant is opaque to bbox extraction by default, deliberately including the
     /// two-element case that would otherwise look like a `Point` domain type's own
-    /// (Float64, Float64) contract: none of the three builtins that currently set
+    /// (Float64, Float64) contract: of the three builtins that currently set
     /// `isSpatialPredicate()` (`pointInPolygon`, `polygonsIntersectCartesian`,
-    /// `polygonsWithinCartesian`) accept a bare `Point` as a constant geometry argument --
-    /// each unconditionally rejects one with `ILLEGAL_TYPE_OF_ARGUMENT` at evaluation time,
-    /// including when it arrives via a `Geometry`/`Variant`-typed constant (e.g.
-    /// `polygonsIntersectCartesian(poly, readWKT('POINT(0 0)'))`) rather than a raw literal,
-    /// since a raw literal would already be caught by argument type-checking before ever
-    /// reaching this code. Trusting a bbox derived from such a point would let pruning
-    /// discard every granule and silently hide the exception the predicate is guaranteed to
-    /// raise once evaluated on real data -- so, like a wider tuple (e.g. a
-    /// `isSpatialPredicate()` WASM UDF's constant `Tuple(Float64, Float64, Float64, Float64)`
-    /// bbox/rect argument with entirely different semantics), fail the extraction instead so
-    /// pruning is disabled for it; a future predicate that genuinely wants a constant `Point`
-    /// argument to contribute a bbox needs its own dedicated, predicate-specific handling
-    /// rather than this generic, shape-only guess.
+    /// `polygonsWithinCartesian`), only `pointInPolygon`'s own first argument accepts a bare
+    /// `Point` -- every other argument of all three unconditionally rejects one with
+    /// `ILLEGAL_TYPE_OF_ARGUMENT` at evaluation time, including when it arrives via a
+    /// `Geometry`/`Variant`-typed constant (e.g. `polygonsIntersectCartesian(poly,
+    /// readWKT('POINT(0 0)'))`) rather than a raw literal, since a raw literal would already be
+    /// caught by argument type-checking before ever reaching this code. Trusting a bbox derived
+    /// from such a point would let pruning discard every granule and silently hide the exception
+    /// the predicate is guaranteed to raise once evaluated on real data -- so, like a wider tuple
+    /// (e.g. a `isSpatialPredicate()` WASM UDF's constant `Tuple(Float64, Float64, Float64,
+    /// Float64)` bbox/rect argument with entirely different semantics), fail the extraction
+    /// instead so pruning is disabled for it, UNLESS the caller has confirmed (via
+    /// `allow_point_tuple`, derived from `treatsConstTupleAsPoint`) that this specific argument
+    /// position of this specific predicate genuinely treats a lone point as meaningful: then it
+    /// contributes a zero-area bbox at that single coordinate, since `pointInPolygon` can only be
+    /// true for rows whose polygon bbox contains that exact point.
     if (type == Field::Types::Tuple)
-        return false;
+    {
+        if (!allow_point_tuple)
+            return false;
+        const auto & tuple = field.safeGet<Tuple>();
+        if (tuple.size() < 2)
+            return false;
+        auto x = fieldToDouble(tuple[0]);
+        auto y = fieldToDouble(tuple[1]);
+        if (!x.has_value() || !y.has_value())
+            return false;
+        acc.add(*x, *y);
+        return acc.found;
+    }
 
     /// Array — recurse into each element.
     if (type == Field::Types::Array)
@@ -460,7 +477,14 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     bool has_extra_non_constant = false;
     bool any_extraction_failed = false;
     bool any_kind_rejected = false;
-    std::vector<Field> const_fields;
+    /// Paired with the argument position it came from, needed by `treatsConstTupleAsPoint` below
+    /// to tell `pointInPolygon`'s own point argument apart from its polygon-component arguments.
+    struct ConstGeoField
+    {
+        size_t arg_index;
+        Field field;
+    };
+    std::vector<ConstGeoField> const_fields;
     /// Whether evaluating this predicate actually runs a topology check on its constant geometry
     /// argument(s) at all (e.g. `pointInPolygon`'s `validate_polygons` setting) -- see
     /// extractBboxFromFieldValue's `require_valid` parameter.
@@ -522,14 +546,18 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
         /// This must fail closed like a structural extraction failure below, not be silently
         /// dropped as "not geometry-shaped": a predicate that genuinely doesn't know whether it
         /// accepts a given kind (e.g. a WASM UDF) never reaches here, since
-        /// `rejectsConstGeometryKind` defaults to false for it.
-        if (const auto kind_name = constGeoKindName(*child); !kind_name.empty() && node.function_base->rejectsConstGeometryKind(kind_name))
+        /// `rejectsConstGeometryKind` defaults to false for it. Uses the position-aware
+        /// `rejectsColumnGeometryKind` (not `rejectsConstGeometryKind` directly), for the same
+        /// reason as the column check above: `pointInPolygon`'s first argument legitimately
+        /// accepts an explicitly `Point`-typed constant, exactly as it does an explicitly
+        /// `Point`-typed column.
+        if (const auto kind_name = constGeoKindName(*child); !kind_name.empty() && node.function_base->rejectsColumnGeometryKind(kind_name, this_arg_index))
         {
             any_kind_rejected = true;
             continue;
         }
 
-        const_fields.push_back(std::move(field));
+        const_fields.push_back({this_arg_index, std::move(field)});
     }
 
     /// A constant geometry argument that fails to extract, or is explicitly typed as a kind this
@@ -570,10 +598,11 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     if (const_fields.size() > 1 && !node.function_base->hasMultiArgConstGeometryBboxConvention())
     {
         bool multiple_geometry_fields = false;
-        for (const auto & field : const_fields)
+        for (const auto & entry : const_fields)
         {
             BboxAccumulator field_acc;
-            bool extracted = extractBboxFromFieldValue(field, field_acc, require_valid);
+            bool extracted = extractBboxFromFieldValue(
+                entry.field, field_acc, require_valid, node.function_base->treatsConstTupleAsPoint(entry.arg_index));
             if (!field_acc.valid)
                 return NodeBboxStatus::Failed;
             if (extracted)
@@ -608,7 +637,8 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     else if (const_fields.size() == 1)
     {
         BboxAccumulator acc;
-        bool extracted = extractBboxFromFieldValue(const_fields[0], acc, require_valid);
+        bool extracted = extractBboxFromFieldValue(
+            const_fields[0].field, acc, require_valid, node.function_base->treatsConstTupleAsPoint(const_fields[0].arg_index));
         if (!acc.valid)
             return NodeBboxStatus::Failed;
         if (!extracted)
@@ -628,8 +658,8 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     {
         std::vector<const Field *> field_ptrs;
         field_ptrs.reserve(const_fields.size());
-        for (const auto & f : const_fields)
-            field_ptrs.push_back(&f);
+        for (const auto & entry : const_fields)
+            field_ptrs.push_back(&entry.field);
         if (!node.function_base->tryGetMultiArgConstGeometryBbox(field_ptrs, xmin, ymin, xmax, ymax))
             return NodeBboxStatus::Failed;
     }

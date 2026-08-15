@@ -239,30 +239,46 @@ public:
       */
     virtual bool requiresValidConstGeometry() const { return true; }
 
-    /** For a function where `isSpatialPredicate()` is true: is a constant geometry argument
-      * explicitly typed as `kind_name` (e.g. "Point", "LineString", "MultiPoint",
-      * "MultiLineString" -- one of the `Geometry`/`Variant` alternative names, read from the
-      * argument's actual `DataType`/discriminator, never guessed from its flattened `Field`
-      * shape) guaranteed to make this predicate raise `ILLEGAL_TYPE_OF_ARGUMENT` on evaluation,
-      * regardless of which argument position it appears in? Used to fail bbox-disjoint pruning
-      * closed for such an argument instead of silently treating it as "no info" and letting an
-      * unrelated conjunct's bbox hide the exception. Default: false (unknown -- e.g. a WASM UDF's
-      * `is_spatial_predicate` contract says nothing about which named kinds it accepts).
+    /** For a function where `isSpatialPredicate()` is true: is a geometry argument explicitly
+      * typed as `kind_name` (e.g. "Point", "LineString", "MultiPoint", "MultiLineString" -- one
+      * of the `Geometry`/`Variant` alternative names, read from the argument's actual
+      * `DataType`/discriminator, never guessed from its flattened `Field` shape) guaranteed to
+      * make this predicate raise `ILLEGAL_TYPE_OF_ARGUMENT` on evaluation, AT EVERY ARGUMENT
+      * POSITION? This is the position-independent default that `rejectsColumnGeometryKind` below
+      * falls back to; predicates whose rejection decision actually depends on argument position
+      * (e.g. `pointInPolygon`, whose first argument legitimately accepts `Point`) must override
+      * `rejectsColumnGeometryKind` instead, since BOTH a constant and a column argument consult
+      * it (see `Common/GeoBbox.h`'s `extractSpatialPredicateNodeBbox`) -- this method alone is
+      * only consulted for positions that method doesn't override. Used to fail bbox-disjoint
+      * pruning closed for such an argument instead of silently treating it as "no info" and
+      * letting an unrelated conjunct's bbox hide the exception. Default: false (unknown -- e.g. a
+      * WASM UDF's `is_spatial_predicate` contract says nothing about which named kinds it accepts).
       */
     virtual bool rejectsConstGeometryKind(std::string_view /*kind_name*/) const { return false; }
 
-    /** Like `rejectsConstGeometryKind`, but for a non-constant (column) argument at a specific
-      * `arg_index`. Unlike a constant argument -- for which failing closed on a rejected kind in
-      * ANY position is always safe, since a lone constant conveys no useful bbox information
-      * anyway (see `rejectsConstGeometryKind`'s doc) -- a column can legitimately appear at a
-      * position this predicate's signature specifically allows despite superficially matching a
-      * kind name rejected elsewhere in the same call: `pointInPolygon`'s first argument (the
-      * point itself) legitimately accepts `Point`, even though `rejectsConstGeometryKind("Point")`
-      * is true (correctly, for its other, polygon-component arguments). Default: same decision as
-      * `rejectsConstGeometryKind`, correct for every predicate that rejects a kind the same way
-      * regardless of argument position (e.g. `polygonsIntersectCartesian`/`polygonsWithinCartesian`).
+    /** Like `rejectsConstGeometryKind`, but position-aware, at a specific `arg_index`, and
+      * consulted for BOTH a constant and a non-constant (column) argument at that position (see
+      * `Common/GeoBbox.h`'s `extractSpatialPredicateNodeBbox`) -- a lone constant can convey
+      * useful pruning information too (see `treatsConstTupleAsPoint` below), so a kind rejected
+      * only at some positions must not be failed closed for a constant at an accepted position
+      * either. `pointInPolygon`'s first argument (the point itself) legitimately accepts `Point`,
+      * whether given as a column or as a constant, even though `rejectsConstGeometryKind("Point")`
+      * is true (correctly, for its other, polygon-component arguments/positions). Default: same
+      * decision as `rejectsConstGeometryKind`, correct for every predicate that rejects a kind the
+      * same way regardless of argument position (e.g. `polygonsIntersectCartesian`/
+      * `polygonsWithinCartesian`).
       */
     virtual bool rejectsColumnGeometryKind(std::string_view kind_name, size_t /*arg_index*/) const { return rejectsConstGeometryKind(kind_name); }
+
+    /** For a function where `isSpatialPredicate()` is true: does a constant argument at
+      * `arg_index`, when it has the generic `(Float64, Float64)` `Tuple` shape that
+      * `extractBboxFromFieldValue` (`Common/GeoBbox.h`) otherwise treats as opaque -- since none
+      * of `pointInPolygon`'s own polygon-component arguments, nor `polygonsIntersectCartesian`'s/
+      * `polygonsWithinCartesian`'s arguments, accept a bare `Point` there -- represent a single
+      * point this predicate can derive a zero-area bbox from directly? Only `pointInPolygon`'s
+      * first (point) argument does. Default: false.
+      */
+    virtual bool treatsConstTupleAsPoint(size_t /*arg_index*/) const { return false; }
 
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
@@ -487,6 +503,9 @@ public:
 
     /// See IFunctionBase::rejectsColumnGeometryKind.
     virtual bool rejectsColumnGeometryKind(std::string_view kind_name, size_t /*arg_index*/) const { return rejectsConstGeometryKind(kind_name); }
+
+    /// See IFunctionBase::treatsConstTupleAsPoint.
+    virtual bool treatsConstTupleAsPoint(size_t /*arg_index*/) const { return false; }
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
@@ -716,6 +735,9 @@ public:
 
     /// See IFunctionBase::rejectsColumnGeometryKind.
     virtual bool rejectsColumnGeometryKind(std::string_view kind_name, size_t /*arg_index*/) const { return rejectsConstGeometryKind(kind_name); }
+
+    /// See IFunctionBase::treatsConstTupleAsPoint.
+    virtual bool treatsConstTupleAsPoint(size_t /*arg_index*/) const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }

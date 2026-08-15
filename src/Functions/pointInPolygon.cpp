@@ -247,31 +247,39 @@ public:
     /// Every constant argument besides the point itself is a polygon component (shell/hole, or
     /// one `MultiPolygon` component) and only ever accepts `Ring`/`Polygon`/`MultiPolygon` --
     /// see the documented argument types above. A `Point`/`LineString`/`MultiPoint`/
-    /// `MultiLineString` constant is rejected by `callOnGeometryDataType`'s dispatch on the
-    /// argument's actual type regardless of which argument position it appears in (bbox
-    /// extraction has no notion of argument position), including a constant `Point` in the first
-    /// (point) position: that position is legitimate for `pointInPolygon`, but nothing here can
-    /// derive pruning information from a lone point anyway, so treating it the same as the other
-    /// three -- fail closed rather than silently skip -- is always safe (only ever forgoes an
-    /// optimization, never affects query correctness), and keeps this predicate consistent with
-    /// `polygonsIntersectCartesian`/`polygonsWithinCartesian` below.
+    /// `MultiLineString` argument in any polygon-component position (any position other than the
+    /// first) is rejected by `callOnGeometryDataType`'s dispatch on the argument's actual type,
+    /// so failing bbox-pruning closed there -- rather than silently skipping it -- is always safe
+    /// (only ever forgoes an optimization, never affects query correctness) and keeps this
+    /// predicate consistent with `polygonsIntersectCartesian`/`polygonsWithinCartesian` below.
+    /// This is the position-independent fallback that `rejectsColumnGeometryKind` below actually
+    /// consults (`GeoBbox.h`'s `extractSpatialPredicateNodeBbox` calls it for both column AND
+    /// constant arguments, see `rejectsColumnGeometryKind`'s own comment); it is never queried
+    /// directly for the first (point) argument, since that override always answers `false` there.
     bool rejectsConstGeometryKind(std::string_view kind_name) const override
     {
         return kind_name == "Point" || kind_name == "LineString" || kind_name == "MultiLineString" || kind_name == "MultiPoint";
     }
 
-    /// Unlike a constant argument (`rejectsConstGeometryKind` above fails closed for a constant
-    /// `Point` in ANY position, since no bbox info could be derived from a lone point anyway), a
-    /// `Point`-typed COLUMN in the first (point) argument position is `pointInPolygon`'s single
-    /// most common, entirely legitimate usage -- failing closed there would only forgo pruning,
-    /// never affect correctness, but would silently disable it for the predicate's primary use
-    /// case. Every other argument position keeps the same rejected kinds as the constant case.
+    /// A `Point` (whether a constant or a COLUMN) in the first (point) argument position is
+    /// `pointInPolygon`'s single most common, entirely legitimate usage, so unlike every other
+    /// argument position it must never fail bbox-pruning closed there. A constant point in that
+    /// position also carries real pruning information -- see `treatsConstTupleAsPoint` below --
+    /// so, unlike the polygon-component positions, this is not merely "harmless to skip".
     bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override
     {
         if (arg_index == 0)
             return false;
         return rejectsConstGeometryKind(kind_name);
     }
+
+    /// The first argument is the point being tested; a constant there (`WHERE
+    /// pointInPolygon((0.5, 0.5), poly)` with `poly` indexed) is common and, unlike the polygon
+    /// arguments, has a well-defined single-point bbox: `(x, y, x, y)`. `extractBboxFromFieldValue`
+    /// (`Common/GeoBbox.h`) otherwise treats a raw `(Float64, Float64)` Tuple field as opaque,
+    /// since no other spatial predicate's argument accepts a bare point there; this override tells
+    /// it to derive a zero-area bbox from the first argument's constant instead of giving up.
+    bool treatsConstTupleAsPoint(size_t arg_index) const override { return arg_index == 0; }
 
     /// pointInPolygon(point, arg1, arg2, ...) is the only spatial predicate with a documented
     /// convention for combining more than one constant geometry argument -- see below.
