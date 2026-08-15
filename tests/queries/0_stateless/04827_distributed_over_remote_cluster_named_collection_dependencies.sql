@@ -23,7 +23,6 @@ CREATE NAMED COLLECTION nc_04827_nonlocal AS addresses_expr = '127.0.0.2', datab
 CREATE TABLE dep_src (n UInt64) ENGINE = MergeTree ORDER BY n;
 INSERT INTO dep_src VALUES (1), (2), (3);
 
-CREATE TABLE dist_cluster_name ENGINE = Distributed(test_shard_localhost, remote(test_shard_localhost, currentDatabase(), 'dep_src'));
 CREATE TABLE dist_nc ENGINE = Distributed(test_shard_localhost, remote(nc_04827_local));
 CREATE TABLE dist_nc_table_override ENGINE = Distributed(test_shard_localhost, remote(nc_04827_local, table = 'dep_src'));
 CREATE TABLE dist_nc_nonlocal ENGINE = Distributed(test_shard_localhost, remote(nc_04827_nonlocal));
@@ -34,8 +33,6 @@ SELECT sum(n) FROM dist_nc;
 -- Dropping the dependent tables one by one shows each of them holds its own referential dependency on
 -- `dep_src`; once only the non-local one is left, the drop is allowed.
 SET check_referential_table_dependencies = 1;
-DROP TABLE dep_src; -- { serverError HAVE_DEPENDENT_OBJECTS }
-DROP TABLE dist_cluster_name;
 DROP TABLE dep_src; -- { serverError HAVE_DEPENDENT_OBJECTS }
 DROP TABLE dist_nc;
 DROP TABLE dep_src; -- { serverError HAVE_DEPENDENT_OBJECTS }

@@ -306,10 +306,13 @@ void SelectStreamFactory::createForShardImpl(
             /// (`registerStorageDistributed` -> `getStructureOfRemoteTable`). So probe - and materialize - a copy.
             ASTPtr local_table_func_ptr = table_func_ptr->clone();
 
-            TableFunctionPtr table_function_ptr;
+            /// `get` invokes `parseArguments`, where arbitrary expressions in a user-provided
+            /// target can be evaluated. In particular, a scalar subquery can report
+            /// `UNKNOWN_TABLE` before the table function has attempted to resolve its backing
+            /// object. Do not turn such definition errors into an absent local replica.
+            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(local_table_func_ptr, context);
             try
             {
-                table_function_ptr = TableFunctionFactory::instance().get(local_table_func_ptr, context);
                 table_function_ptr->getActualTableStructureWithAccess(context, /*is_insert_query=*/false);
             }
             catch (const Exception & e)

@@ -2557,9 +2557,8 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
         }
 
         /// If the first argument is an identifier naming an existing collection, the call is the
-        /// named-collection form of `remote` / `remoteSecure` (the cluster functions do not accept one,
-        /// and for `remote` an identifier that names no collection is a configured cluster name whose
-        /// target defaults to the fixed `system.one` placeholder). Resolve the collection and freeze an
+        /// named-collection form of `remote` / `remoteSecure` (the cluster functions do not accept one).
+        /// Resolve the collection and freeze an
         /// empty stored database by appending a literal `database = ...` override.
         /// A collection that is not defined on this server cannot be resolved here, so a database stored
         /// in it can neither be read nor frozen: the shards that do have the collection would resolve an
@@ -2569,10 +2568,9 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
         /// / `db = ...` override (bound above) makes the target well defined again.
         /// `identifier_can_only_name_a_collection` tells the two spellings apart: with a `key = value`
         /// override present no positional signature matches, so the identifier must be a collection
-        /// (`parseRemoteFunctionArguments` reports a missing one itself); in the single-argument form the
-        /// identifier is a configured cluster name when no collection has that name, and then the target
-        /// is the fixed `system.one` placeholder, which does not depend on the session - so a name that
-        /// resolves to a cluster here is accepted as is.
+        /// (`parseRemoteFunctionArguments` reports a missing one itself). A configured-cluster identifier
+        /// is rejected for a persistent target: named collections take precedence over clusters during
+        /// parsing, so another node could reinterpret the stored definition.
         auto bind_database_stored_in_named_collection = [&](bool identifier_can_only_name_a_collection)
         {
             if (function_name != "remote" && function_name != "remoteSecure")
@@ -2585,7 +2583,10 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
             if (!collection)
             {
                 if (!identifier_can_only_name_a_collection && local_context->tryGetCluster(collection_identifier->name()))
-                    return;
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot persist '{}' with configured cluster '{}' as its first argument: another node can reinterpret this "
+                        "identifier as a named collection. Use a literal addresses expression or a named collection instead.",
+                        function_name, collection_identifier->name());
 
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "'{}' is not a named collection{} on this server, so the database of the '{}' target cannot be "
@@ -2624,7 +2625,10 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
         ASTPtr & database_arg = args.at(*database_arg_index);
         if (const auto * argument_function = database_arg->as<ASTFunction>();
             argument_function && TableFunctionFactory::instance().isTableFunctionName(argument_function->name))
+        {
+            bind_database_stored_in_named_collection(/* identifier_can_only_name_a_collection= */ false);
             return;
+        }
 
         if (const auto * argument_function = database_arg->as<ASTFunction>();
             argument_function && argument_function->name == "equals")
@@ -2671,6 +2675,11 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
             return;
         }
 
+        /// A bare identifier in the first argument is ambiguous for every positional `remote` signature,
+        /// not just `remote(identifier)`: a named collection with that name takes precedence over a configured
+        /// cluster while parsing on each shard. Reject the cluster spelling before persisting such metadata.
+        bind_database_stored_in_named_collection(/* identifier_can_only_name_a_collection= */ false);
+
         ASTPtr evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(database_arg, local_context);
         const auto * literal = evaluated->as<ASTLiteral>();
         if (!literal || literal->value.getType() != Field::Types::String)
@@ -2697,6 +2706,28 @@ void bindTableFunctionTargetsToCurrentDatabase(const ASTPtr & ast, const Context
 
     for (const auto & child : ast->children)
         bindTableFunctionTargetsToCurrentDatabase(child, local_context);
+}
+
+/// A table function normally exists only for the duration of a query, so its `remote(named_collection, ...)`
+/// form deliberately does not retain a named-collection dependency. A `Distributed` engine persists its target
+/// in table metadata, however. Register each named collection used by that target when the storage is created
+/// and when metadata is loaded, matching the persistent `Remote` / `RemoteSecure` engines.
+void addNamedCollectionDependenciesForTableFunctionTarget(const ASTPtr & ast, const StorageID & table_id)
+{
+    if (const auto * function = ast->as<ASTFunction>(); function && (function->name == "remote" || function->name == "remoteSecure"))
+    {
+        const auto * arguments = function->arguments ? function->arguments->as<ASTExpressionList>() : nullptr;
+        const auto * collection_identifier = arguments && !arguments->children.empty() ? arguments->children.front()->as<ASTIdentifier>() : nullptr;
+        if (collection_identifier)
+        {
+            NamedCollectionFactory::instance().loadIfNot();
+            if (NamedCollectionFactory::instance().tryGet(collection_identifier->name()))
+                NamedCollectionFactory::instance().addDependency(collection_identifier->name(), table_id);
+        }
+    }
+
+    for (const auto & child : ast->children)
+        addNamedCollectionDependenciesForTableFunctionTarget(child, table_id);
 }
 
 }
@@ -3016,6 +3047,9 @@ void registerStorageDistributed(StorageFactory & factory)
                 local_context,
                 /* table_func_ptr = */ nullptr);
         }
+
+        if (remote_table_function_ptr)
+            addNamedCollectionDependenciesForTableFunctionTarget(remote_table_function_ptr, args.table_id);
 
         return std::make_shared<StorageDistributed>(
             args.table_id,

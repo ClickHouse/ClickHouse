@@ -39,9 +39,11 @@ SHOW CREATE TABLE dist_nc_unknown_with_database;
 
 -- A single identifier that names a configured cluster is not the named-collection form: the target is
 -- then the fixed `system.one` placeholder, which does not depend on the current database.
+-- A configured-cluster identifier is ambiguous in persisted `remote` metadata: another node can define a
+-- named collection with the same name and then reparse it as a different target. Use `cluster(...)` for the
+-- unambiguous cluster form in a query, or a literal address/named collection in persistent metadata.
 CREATE TABLE dist_cluster_name (dummy UInt8)
-    ENGINE = Distributed(test_cluster_multiple_nodes_all_unavailable, remote(test_shard_localhost));
-SHOW CREATE TABLE dist_cluster_name;
+    ENGINE = Distributed(test_cluster_multiple_nodes_all_unavailable, remote(test_shard_localhost)); -- { serverError BAD_ARGUMENTS }
 
 -- A collection this server does have is still resolved and its empty stored database still frozen.
 CREATE TABLE bind_src (n UInt64) ENGINE = MergeTree ORDER BY n;
