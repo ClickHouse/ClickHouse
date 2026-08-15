@@ -1,0 +1,3 @@
+the cancellation was delivered before the next buffer was created
+the query succeeded
+the next failover request was not started after the cancellation

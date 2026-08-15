@@ -82,6 +82,7 @@ namespace FailPoints
 {
     extern const char storage_url_pause_before_empty_file_probe[];
     extern const char storage_url_pause_between_metadata_probes[];
+    extern const char storage_url_pause_before_read_buffer_creation[];
     extern const char storage_url_pause_before_input_format_initialization[];
     extern const char storage_url_pause_after_pull[];
     extern const char storage_url_pause_before_handling_interrupted_read_error[];
@@ -833,6 +834,13 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
         try
         {
+            /// When initialization is not delayed, the buffer constructor starts the first request.
+            /// Check once more immediately before construction, so a cancellation that lands after
+            /// the loop-top check cannot start a request for this failover option.
+            FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_read_buffer_creation);
+            if (stop_if_cancelled())
+                return {};
+
             auto res = BuilderRWBufferFromHTTP(request_uri)
                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                            .withMethod(http_method)
