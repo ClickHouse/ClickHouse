@@ -8,7 +8,7 @@ DROP TABLE IF EXISTS lift_rf_orders;
 DROP TABLE IF EXISTS lift_rf_lineitem;
 DROP TABLE IF EXISTS lift_rf_customer;
 
-CREATE TABLE lift_rf_orders   (orderkey UInt64, custkey UInt64, payload String) ENGINE = MergeTree ORDER BY orderkey;
+CREATE TABLE lift_rf_orders   (orderkey UInt64, custkey UInt64, payload String) ENGINE = MergeTree ORDER BY custkey;
 CREATE TABLE lift_rf_lineitem (orderkey UInt64, custkey UInt64, payload String) ENGINE = MergeTree ORDER BY orderkey;
 CREATE TABLE lift_rf_customer (custkey UInt64, name String) ENGINE = MergeTree ORDER BY custkey;
 

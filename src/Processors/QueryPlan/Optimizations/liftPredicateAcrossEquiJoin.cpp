@@ -56,6 +56,36 @@ bool targetReachesIndexedSource(const QueryPlan::Node * node)
     }) != nullptr;
 }
 
+/// A lifted predicate is useful only when every substituted key that it uses belongs to the
+/// target's primary key. This avoids adding a full-scan target filter for joins on columns that
+/// are unrelated to `ORDER BY`. Secondary-index propagation can be added independently once it
+/// can use the same per-part applicability analysis as `ReadFromMergeTree`.
+bool atomCanUseTargetPrimaryKey(
+    const QueryPlan::Node * target_root,
+    const ActionsDAG::Node * atom,
+    const SubstitutionMap & substitution)
+{
+    const auto * read = walkDown(target_root, [](const auto * n)
+    {
+        return typeid_cast<const ReadFromMergeTree *>(n->step.get()) != nullptr;
+    });
+    const auto * mt = read ? typeid_cast<const ReadFromMergeTree *>(read->step.get()) : nullptr;
+    if (!mt)
+        return false;
+
+    const auto & primary_key = mt->getStorageMetadata()->getPrimaryKey().column_names;
+    NameSet primary_key_columns(primary_key.begin(), primary_key.end());
+    for (const auto * child : atom->children)
+    {
+        if (child->type != ActionsDAG::ActionType::INPUT)
+            continue;
+        const auto it = substitution.find(child->result_name);
+        if (it == substitution.end() || !primary_key_columns.contains(it->second.name))
+            return false;
+    }
+    return true;
+}
+
 /// result_names of conjunct atoms already present in target filter, for dedup against lift candidates
 std::unordered_set<std::string> collectTargetAtoms(const QueryPlan::Node * target_root)
 {
@@ -156,7 +186,7 @@ size_t tryLiftSide(
     ActionsDAG::NodeRawConstPtrs liftable;
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter_root))
     {
-        if (atomSafelySubstitutable(atom, filter_level_sub))
+        if (atomSafelySubstitutable(atom, filter_level_sub) && atomCanUseTargetPrimaryKey(target_root, atom, filter_level_sub))
             liftable.push_back(atom);
     }
     if (liftable.empty())
