@@ -46,39 +46,49 @@ ASTPtr makeIdentifier(const String & name)
     return make_intrusive<ASTIdentifier>(name);
 }
 
-/// The constant value of a parsed expression, when it has one that is known at parse time:
-/// a plain literal, or `negate` over one - the form a negative number parses to, since the
-/// lexer has no signed numbers. Used where a construct takes constants rather than
-/// expressions, such as the elements of a `dynamic([...])` literal.
+bool isLiteralWrapper(const String & name)
+{
+    static const std::set<String> literal_wrappers{
+        "negate", "CAST", "accurateCastOrNull", "toIntervalNanosecond", "kqlToTimespan", "parseDateTime64BestEffortOrNull", "toUUIDOrNull"};
+    return literal_wrappers.contains(name);
+}
+
+/// The constant value of a parsed expression, when it has one that is known at parse time.
+/// Typed literal wrappers keep their literal argument as a `Field`, because a dynamic array
+/// has no independent type annotation for its elements.
 std::optional<Field> tryFoldConstant(const ASTPtr & node)
 {
     if (const auto * literal = node->as<ASTLiteral>())
         return literal->value;
 
     const auto * function = node->as<ASTFunction>();
-    if (!function || function->name != "negate" || function->arguments->children.size() != 1)
+    if (!function || !isLiteralWrapper(function->name) || function->arguments->children.empty())
         return {};
 
     std::optional<Field> operand = tryFoldConstant(function->arguments->children[0]);
     if (!operand)
         return {};
 
+    if (function->name != "negate")
+    {
+        for (size_t i = 1; i < function->arguments->children.size(); ++i)
+            if (!tryFoldConstant(function->arguments->children[i]))
+                return {};
+        return operand;
+    }
+
     switch (operand->getType())
     {
-        case Field::Types::Int64:
-            return Field(-operand->safeGet<Int64>());
-        case Field::Types::UInt64:
-        {
+        case Field::Types::Int64: return Field(-operand->safeGet<Int64>());
+        case Field::Types::UInt64: {
             /// Only hexadecimal literals parse as `UInt64`; the decimal ones are `Int64`.
             const UInt64 value = operand->safeGet<UInt64>();
             if (value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
                 return {};
             return Field(-static_cast<Int64>(value));
         }
-        case Field::Types::Float64:
-            return Field(-operand->safeGet<Float64>());
-        default:
-            return {};
+        case Field::Types::Float64: return Field(-operand->safeGet<Float64>());
+        default: return {};
     }
 }
 
@@ -95,10 +105,7 @@ bool isLiteralExpression(const ASTPtr & node)
     if (!function)
         return false;
 
-    static const std::set<String> literal_wrappers{
-        "negate", "CAST", "accurateCastOrNull", "toIntervalNanosecond", "kqlToTimespan",
-        "parseDateTime64BestEffortOrNull", "toUUIDOrNull"};
-    if (!literal_wrappers.contains(function->name))
+    if (!isLiteralWrapper(function->name))
         return false;
 
     for (const auto & child : function->arguments->children)
@@ -144,11 +151,9 @@ const std::map<String, KQLOperatorKind> & pipelineOperatorNames()
 const std::set<String> & unsupportedOperatorNames()
 {
     static const std::set<String> names{
-        "consume", "evaluate", "externaldata", "facet", "find", "fork",
-        "getschema", "invoke", "lookup", "make-series", "materialize",
-        "mv-apply", "parse", "parse-kv", "parse-where", "partition",
-        "reduce", "sample", "sample-distinct", "scan", "search",
-        "serialize", "top-hitters", "top-nested",
+        "consume", "evaluate",    "externaldata",    "facet",    "find",   "fork",      "getschema",   "invoke",
+        "lookup",  "make-series", "materialize",     "mv-apply", "parse",  "parse-kv",  "parse-where", "partition",
+        "reduce",  "sample",      "sample-distinct", "scan",     "search", "serialize", "top-hitters", "top-nested",
     };
     return names;
 }
@@ -198,7 +203,8 @@ const std::map<String, String> & kqlTypeToClickHouseType()
 
 }
 
-KQLParser::DepthGuard::DepthGuard(KQLParser & parser_, const char * what) : parser(parser_)
+KQLParser::DepthGuard::DepthGuard(KQLParser & parser_, const char * what)
+    : parser(parser_)
 {
     ++parser.depth;
     if (parser.depth > parser.max_depth)
@@ -213,7 +219,9 @@ KQLParser::DepthGuard::DepthGuard(KQLParser & parser_, const char * what) : pars
 }
 
 KQLParser::KQLParser(const char * query_begin_, std::vector<KQLToken> tokens_, size_t max_depth_)
-    : query_begin(query_begin_), tokens(std::move(tokens_)), max_depth(max_depth_)
+    : query_begin(query_begin_)
+    , tokens(std::move(tokens_))
+    , max_depth(max_depth_)
 {
 }
 
@@ -360,8 +368,7 @@ KQLTabularExpressionPtr KQLParser::parseQuery()
 bool KQLParser::atFunctionDefinition() const
 {
     size_t probe = index;
-    if (probe < tokens.size() && tokens[probe].type == KQLTokenType::BareWord
-        && Poco::toLower(String(tokens[probe].text())) == "view")
+    if (probe < tokens.size() && tokens[probe].type == KQLTokenType::BareWord && Poco::toLower(String(tokens[probe].text())) == "view")
         ++probe;
 
     if (probe >= tokens.size() || tokens[probe].type != KQLTokenType::OpeningRoundBracket)
@@ -441,9 +448,7 @@ void KQLParser::parseFunctionDefinition(const String & name)
                 }
                 else if (seen_default)
                 {
-                    failAt(
-                        parameter_token,
-                        fmt::format("parameter '{}' has no default but follows one that does", parameter.name));
+                    failAt(parameter_token, fmt::format("parameter '{}' has no default but follows one that does", parameter.name));
                 }
             }
 
@@ -520,22 +525,16 @@ size_t KQLParser::statementEnd(size_t position, size_t end) const
         {
             case KQLTokenType::OpeningRoundBracket:
             case KQLTokenType::OpeningSquareBracket:
-            case KQLTokenType::OpeningCurlyBrace:
-                ++nesting;
-                break;
+            case KQLTokenType::OpeningCurlyBrace: ++nesting; break;
             case KQLTokenType::ClosingRoundBracket:
             case KQLTokenType::ClosingSquareBracket:
-            case KQLTokenType::ClosingCurlyBrace:
-                --nesting;
-                break;
+            case KQLTokenType::ClosingCurlyBrace: --nesting; break;
             case KQLTokenType::Semicolon:
                 if (nesting <= 0)
                     return position;
                 break;
-            case KQLTokenType::EndOfStream:
-                return position;
-            default:
-                break;
+            case KQLTokenType::EndOfStream: return position;
+            default: break;
         }
     }
     return end;
@@ -550,19 +549,15 @@ size_t KQLParser::closingBracket(size_t position) const
         {
             case KQLTokenType::OpeningRoundBracket:
             case KQLTokenType::OpeningSquareBracket:
-            case KQLTokenType::OpeningCurlyBrace:
-                ++nesting;
-                break;
+            case KQLTokenType::OpeningCurlyBrace: ++nesting; break;
             case KQLTokenType::ClosingRoundBracket:
             case KQLTokenType::ClosingSquareBracket:
             case KQLTokenType::ClosingCurlyBrace:
                 if (--nesting == 0)
                     return position;
                 break;
-            case KQLTokenType::EndOfStream:
-                return tokens.size();
-            default:
-                break;
+            case KQLTokenType::EndOfStream: return tokens.size();
+            default: break;
         }
     }
     return tokens.size();
@@ -671,9 +666,7 @@ bool KQLParser::expressionLooksTabular(
             {
                 case KQLTokenType::OpeningRoundBracket:
                 case KQLTokenType::OpeningSquareBracket:
-                case KQLTokenType::OpeningCurlyBrace:
-                    ++nesting;
-                    break;
+                case KQLTokenType::OpeningCurlyBrace: ++nesting; break;
                 case KQLTokenType::ClosingRoundBracket:
                 case KQLTokenType::ClosingSquareBracket:
                 case KQLTokenType::ClosingCurlyBrace:
@@ -681,8 +674,7 @@ bool KQLParser::expressionLooksTabular(
                     if (nesting == 0)
                         return position;
                     break;
-                default:
-                    break;
+                default: break;
             }
         }
         return end;
@@ -709,20 +701,15 @@ bool KQLParser::expressionLooksTabular(
         {
             case KQLTokenType::OpeningRoundBracket:
             case KQLTokenType::OpeningSquareBracket:
-            case KQLTokenType::OpeningCurlyBrace:
-                ++nesting;
-                break;
+            case KQLTokenType::OpeningCurlyBrace: ++nesting; break;
             case KQLTokenType::ClosingRoundBracket:
             case KQLTokenType::ClosingSquareBracket:
-            case KQLTokenType::ClosingCurlyBrace:
-                --nesting;
-                break;
+            case KQLTokenType::ClosingCurlyBrace: --nesting; break;
             case KQLTokenType::Pipe:
                 if (nesting == 0)
                     return true;
                 break;
-            default:
-                break;
+            default: break;
         }
     }
 
@@ -762,8 +749,7 @@ bool KQLParser::expressionLooksTabular(
         if (position < end && tokens[position].type == KQLTokenType::BareWord)
             return position + 1;
         if (position + 2 < end && tokens[position].type == KQLTokenType::OpeningSquareBracket
-            && tokens[position + 1].type == KQLTokenType::StringLiteral
-            && tokens[position + 2].type == KQLTokenType::ClosingSquareBracket)
+            && tokens[position + 1].type == KQLTokenType::StringLiteral && tokens[position + 2].type == KQLTokenType::ClosingSquareBracket)
             return position + 3;
         return position;
     };
@@ -1098,8 +1084,7 @@ KQLSourcePtr KQLParser::parseDataTableSource()
 
     const size_t width = source->column_names.size();
     if (source->values.size() % width != 0)
-        fail(fmt::format(
-            "datatable has {} columns but {} values, which is not a whole number of rows", width, source->values.size()));
+        fail(fmt::format("datatable has {} columns but {} values, which is not a whole number of rows", width, source->values.size()));
 
     return source;
 }
@@ -1553,11 +1538,31 @@ bool producesBoolean(const ASTPtr & node)
 
     static const std::set<String> boolean_functions{
         /// Comparison and the connectives.
-        "equals", "notEquals", "less", "lessOrEquals", "greater", "greaterOrEquals",
-        "and", "or", "not", "in", "notIn", "match", "startsWith", "endsWith",
+        "equals",
+        "notEquals",
+        "less",
+        "lessOrEquals",
+        "greater",
+        "greaterOrEquals",
+        "and",
+        "or",
+        "not",
+        "in",
+        "notIn",
+        "match",
+        "startsWith",
+        "endsWith",
         /// The KQL predicates that are documented as returning `bool`.
-        "isNull", "isNotNull", "isNaN", "isInfinite", "isFinite", "has", "empty", "notEmpty",
-        "isIPAddressInRange", "isValidUTF8"};
+        "isNull",
+        "isNotNull",
+        "isNaN",
+        "isInfinite",
+        "isFinite",
+        "has",
+        "empty",
+        "notEmpty",
+        "isIPAddressInRange",
+        "isValidUTF8"};
     return boolean_functions.contains(function->name);
 }
 }
@@ -1738,11 +1743,9 @@ ASTPtr KQLParser::parsePrimary()
 
     switch (token.type)
     {
-        case KQLTokenType::Error:
-            fail("invalid token");
+        case KQLTokenType::Error: fail("invalid token");
 
-        case KQLTokenType::Number:
-        {
+        case KQLTokenType::Number: {
             const std::string_view text = token.text();
             ++index;
             if (text.size() > 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X'))
@@ -1765,8 +1768,7 @@ ASTPtr KQLParser::parsePrimary()
             return makeLiteral(value);
         }
 
-        case KQLTokenType::StringLiteral:
-        {
+        case KQLTokenType::StringLiteral: {
             /// The whole point of the rewrite: user text becomes a literal *node*. There is
             /// no representation in which it could be read back as SQL syntax.
             String value = token.inner;
@@ -1774,8 +1776,7 @@ ASTPtr KQLParser::parsePrimary()
             return makeLiteral(std::move(value));
         }
 
-        case KQLTokenType::Timespan:
-        {
+        case KQLTokenType::Timespan: {
             const Int64 ticks = token.timespan_ticks;
             ++index;
             /// A KQL timespan becomes a ClickHouse `Interval` in nanoseconds: the tick is
@@ -1787,38 +1788,36 @@ ASTPtr KQLParser::parsePrimary()
             return makeASTFunction("toIntervalNanosecond", makeLiteral(ticks * 100));
         }
 
-        case KQLTokenType::DateTimeLiteral:
-        {
+        case KQLTokenType::DateTimeLiteral: {
             String text = token.inner;
             ++index;
             if (Poco::toLower(text) == "null")
                 return makeASTFunction("CAST", makeLiteral(Field()), makeLiteral(String("Nullable(DateTime64(7, 'UTC'))")));
-            return makeASTFunction("parseDateTime64BestEffortOrNull", makeLiteral(std::move(text)), makeLiteral(static_cast<UInt64>(7)), makeLiteral(String("UTC")));
+            return makeASTFunction(
+                "parseDateTime64BestEffortOrNull",
+                makeLiteral(std::move(text)),
+                makeLiteral(static_cast<UInt64>(7)),
+                makeLiteral(String("UTC")));
         }
 
-        case KQLTokenType::GuidLiteral:
-        {
+        case KQLTokenType::GuidLiteral: {
             String text = token.inner;
             ++index;
             return makeASTFunction("toUUIDOrNull", makeLiteral(std::move(text)));
         }
 
-        case KQLTokenType::OpeningRoundBracket:
-            return parseParenthesizedOrInList();
+        case KQLTokenType::OpeningRoundBracket: return parseParenthesizedOrInList();
 
-        case KQLTokenType::OpeningSquareBracket:
-        {
+        case KQLTokenType::OpeningSquareBracket: {
             /// `['column name']` - a quoted column reference.
             if (lookahead().type == KQLTokenType::StringLiteral && lookahead(2).type == KQLTokenType::ClosingSquareBracket)
                 return makeIdentifier(expectIdentifierName());
             fail("expected a quoted column name");
         }
 
-        case KQLTokenType::BareWord:
-            break;
+        case KQLTokenType::BareWord: break;
 
-        default:
-            fail("expected an expression");
+        default: fail("expected an expression");
     }
 
     const String word(token.text());
@@ -1953,12 +1952,26 @@ std::optional<Int64> timespanTicksFromNumber(std::string_view number_text, std::
 
 ASTPtr KQLParser::tryParseTypedLiteral(const String & name)
 {
-    enum class Kind : uint8_t { Boolean, Integer, Real, Decimal, Timespan, Text };
+    enum class Kind : uint8_t
+    {
+        Boolean,
+        Integer,
+        Real,
+        Decimal,
+        Timespan,
+        Text
+    };
 
     static const std::map<String, Kind> kinds{
-        {"bool", Kind::Boolean},   {"boolean", Kind::Boolean}, {"int", Kind::Integer},
-        {"long", Kind::Integer},   {"real", Kind::Real},       {"double", Kind::Real},
-        {"decimal", Kind::Decimal}, {"timespan", Kind::Timespan}, {"time", Kind::Timespan},
+        {"bool", Kind::Boolean},
+        {"boolean", Kind::Boolean},
+        {"int", Kind::Integer},
+        {"long", Kind::Integer},
+        {"real", Kind::Real},
+        {"double", Kind::Real},
+        {"decimal", Kind::Decimal},
+        {"timespan", Kind::Timespan},
+        {"time", Kind::Timespan},
         {"string", Kind::Text},
     };
 
@@ -1975,8 +1988,7 @@ ASTPtr KQLParser::tryParseTypedLiteral(const String & name)
     const auto bad = [&](const String & what) -> ASTPtr
     {
         const size_t offset = name_token.begin >= query_begin ? static_cast<size_t>(name_token.begin - query_begin) : 0;
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "KQL literal {}(...) at position {} {}", name, offset + 1, what);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "KQL literal {}(...) at position {} {}", name, offset + 1, what);
     };
 
     bool negative = false;
@@ -2000,9 +2012,12 @@ ASTPtr KQLParser::tryParseTypedLiteral(const String & name)
         {
             ++index;
             static const std::map<Kind, const char *> null_types{
-                {Kind::Boolean, "Nullable(Bool)"},       {Kind::Integer, "Nullable(Int64)"},
-                {Kind::Real, "Nullable(Float64)"},       {Kind::Decimal, "Nullable(Decimal128(20))"},
-                {Kind::Timespan, "Nullable(IntervalNanosecond)"}, {Kind::Text, "Nullable(String)"},
+                {Kind::Boolean, "Nullable(Bool)"},
+                {Kind::Integer, "Nullable(Int64)"},
+                {Kind::Real, "Nullable(Float64)"},
+                {Kind::Decimal, "Nullable(Decimal128(20))"},
+                {Kind::Timespan, "Nullable(IntervalNanosecond)"},
+                {Kind::Text, "Nullable(String)"},
             };
             value = makeASTFunction("CAST", makeLiteral(Field()), makeLiteral(String(null_types.at(kind))));
         }
@@ -2014,8 +2029,7 @@ ASTPtr KQLParser::tryParseTypedLiteral(const String & name)
         else if (kind == Kind::Real && (word == "nan" || word == "inf" || word == "infinity"))
         {
             ++index;
-            const double magnitude = word == "nan" ? std::numeric_limits<double>::quiet_NaN()
-                                                   : std::numeric_limits<double>::infinity();
+            const double magnitude = word == "nan" ? std::numeric_limits<double>::quiet_NaN() : std::numeric_limits<double>::infinity();
             value = makeLiteral(negative && word != "nan" ? -magnitude : magnitude);
             negative = false;
         }
@@ -2124,18 +2138,14 @@ ASTPtr KQLParser::tryParseTypedLiteral(const String & name)
     /// Give the value the type the constructor names, so `int(1)` and `long(1)` differ.
     switch (kind)
     {
-        case Kind::Boolean:
-            return makeASTFunction("accurateCastOrNull", value, makeLiteral(String("Bool")));
+        case Kind::Boolean: return makeASTFunction("accurateCastOrNull", value, makeLiteral(String("Bool")));
         case Kind::Integer:
             return name == "int" ? ASTPtr(makeASTFunction("accurateCastOrNull", value, makeLiteral(String("Int32"))))
                                  : ASTPtr(makeASTFunction("accurateCastOrNull", value, makeLiteral(String("Int64"))));
-        case Kind::Real:
-            return makeASTFunction("accurateCastOrNull", value, makeLiteral(String("Float64")));
-        case Kind::Decimal:
-            return makeASTFunction("accurateCastOrNull", value, makeLiteral(String("Decimal128(20)")));
+        case Kind::Real: return makeASTFunction("accurateCastOrNull", value, makeLiteral(String("Float64")));
+        case Kind::Decimal: return makeASTFunction("accurateCastOrNull", value, makeLiteral(String("Decimal128(20)")));
         case Kind::Timespan:
-        case Kind::Text:
-            return value;
+        case Kind::Text: return value;
     }
     return value;
 }
@@ -2179,8 +2189,7 @@ ASTPtr KQLParser::tryParseWordOperator(const ASTPtr & left)
         op = op.substr(1);
     }
 
-    const auto finish = [&](ASTPtr predicate) -> ASTPtr
-    { return negated ? ASTPtr(makeASTFunction("not", predicate)) : predicate; };
+    const auto finish = [&](ASTPtr predicate) -> ASTPtr { return negated ? ASTPtr(makeASTFunction("not", predicate)) : predicate; };
 
     /// `between (low .. high)`
     if (op == "between")
@@ -2191,8 +2200,8 @@ ASTPtr KQLParser::tryParseWordOperator(const ASTPtr & left)
         expect(KQLTokenType::DotDot);
         ASTPtr high = parseAdditive();
         expect(KQLTokenType::ClosingRoundBracket);
-        return finish(makeASTFunction(
-            "and", makeASTFunction("greaterOrEquals", left, low), makeASTFunction("lessOrEquals", left->clone(), high)));
+        return finish(
+            makeASTFunction("and", makeASTFunction("greaterOrEquals", left, low), makeASTFunction("lessOrEquals", left->clone(), high)));
     }
 
     /// `in (a, b, c)` and its case-insensitive form `in~`.
@@ -2208,8 +2217,7 @@ ASTPtr KQLParser::tryParseWordOperator(const ASTPtr & left)
         /// `let` right-hand sides decides, over the tokens up to the closing ')' - except
         /// that a lone name bound to nothing reads as a column here (`x in (y)`), not as a
         /// physical table: a `let`-bound tabular name or a `db.table` form is still a table.
-        if (expressionLooksTabular(
-                index, closingBracket(index), scopeTabularNames(), scopeScalarNames(), /*unknown_name_is_table=*/false))
+        if (expressionLooksTabular(index, closingBracket(index), scopeTabularNames(), scopeScalarNames(), /*unknown_name_is_table=*/false))
         {
             /// There is no case-insensitive `IN`, and the spelled-out disjunction the list
             /// form uses needs the values at hand, which a subquery's are not.
@@ -2284,8 +2292,18 @@ ASTPtr KQLParser::tryParseWordOperator(const ASTPtr & left)
     /// match Kusto's, never a LIKE pattern - `contains '50%'` must not match '50x'.
     {
         static const std::set<String> string_operators{
-            "contains", "contains_cs", "startswith", "startswith_cs", "endswith", "endswith_cs",
-            "has", "has_cs", "hasprefix", "hasprefix_cs", "hassuffix", "hassuffix_cs"};
+            "contains",
+            "contains_cs",
+            "startswith",
+            "startswith_cs",
+            "endswith",
+            "endswith_cs",
+            "has",
+            "has_cs",
+            "hasprefix",
+            "hasprefix_cs",
+            "hassuffix",
+            "hassuffix_cs"};
 
         if (string_operators.contains(op))
         {

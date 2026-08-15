@@ -1,5 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -30,24 +31,30 @@ class FunctionKQLMultiply final : public IFunction, WithContext
 public:
     static constexpr auto name = "kqlMultiply";
 
-    explicit FunctionKQLMultiply(ContextPtr context_) : WithContext(context_) { }
+    explicit FunctionKQLMultiply(ContextPtr context_)
+        : WithContext(context_)
+    {
+    }
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionKQLMultiply>(std::move(context_)); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const DataTypePtr & left = arguments[0].type;
         const DataTypePtr & right = arguments[1].type;
+        const DataTypePtr left_nested = removeNullable(left);
+        const DataTypePtr right_nested = removeNullable(right);
 
-        if (isInterval(left) || isInterval(right))
+        if (isInterval(left_nested) || isInterval(right_nested))
         {
-            const DataTypePtr & interval = isInterval(left) ? left : right;
-            const DataTypePtr & scale = isInterval(left) ? right : left;
+            const DataTypePtr & interval = isInterval(left_nested) ? left_nested : right_nested;
+            const DataTypePtr & scale = isInterval(left_nested) ? right_nested : left_nested;
             if (!isNumber(scale))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -55,7 +62,7 @@ public:
                     getName(),
                     left->getName(),
                     right->getName());
-            return interval;
+            return left->isNullable() || right->isNullable() ? makeNullable(interval) : interval;
         }
 
         return FunctionFactory::instance().get("multiply", getContext())->build(arguments)->getResultType();
@@ -63,8 +70,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const bool left_is_interval = isInterval(arguments[0].type);
-        if (!left_is_interval && !isInterval(arguments[1].type))
+        const bool left_is_interval = isInterval(removeNullable(arguments[0].type));
+        if (!left_is_interval && !isInterval(removeNullable(arguments[1].type)))
         {
             auto multiply = FunctionFactory::instance().get("multiply", getContext())->build(arguments);
             return multiply->execute(arguments, multiply->getResultType(), input_rows_count, /*dry_run=*/false);
@@ -74,14 +81,16 @@ public:
         const ColumnWithTypeAndName & scale = arguments[left_is_interval ? 1 : 0];
 
         /// The interval's column already is its count as `Int64`; only the type says otherwise.
-        ColumnsWithTypeAndName multiply_arguments{{interval.column, std::make_shared<DataTypeInt64>(), ""}, scale};
+        const DataTypePtr ticks
+            = interval.type->isNullable() ? makeNullable(std::make_shared<DataTypeInt64>()) : std::make_shared<DataTypeInt64>();
+        ColumnsWithTypeAndName multiply_arguments{{interval.column, ticks, ""}, scale};
         auto multiply = FunctionFactory::instance().get("multiply", getContext())->build(multiply_arguments);
         const ColumnWithTypeAndName product{
             multiply->execute(multiply_arguments, multiply->getResultType(), input_rows_count, /*dry_run=*/false),
             multiply->getResultType(),
             ""};
 
-        const auto kind = assert_cast<const DataTypeInterval &>(*interval.type).getKind();
+        const auto kind = assert_cast<const DataTypeInterval &>(*removeNullable(interval.type)).getKind();
         ColumnsWithTypeAndName conversion_arguments{product};
         auto to_interval
             = FunctionFactory::instance().get(kind.toNameOfFunctionToIntervalDataType(), getContext())->build(conversion_arguments);

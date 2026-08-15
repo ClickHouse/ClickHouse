@@ -38,23 +38,31 @@ class FunctionKQLToTimespan final : public IFunction, WithContext
 public:
     static constexpr auto name = "kqlToTimespan";
 
-    explicit FunctionKQLToTimespan(ContextPtr context_) : WithContext(context_) { }
+    explicit FunctionKQLToTimespan(ContextPtr context_)
+        : WithContext(context_)
+    {
+    }
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionKQLToTimespan>(std::move(context_)); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const DataTypePtr & type = arguments[0];
-        if (isInterval(type))
+        const DataTypePtr nested = removeNullable(type);
+        if (isInterval(nested))
             return type;
-        if (isNumber(type))
-            return std::make_shared<DataTypeInterval>(IntervalKind::Kind::Nanosecond);
-        if (isStringOrFixedString(type))
+        if (isNumber(nested))
+        {
+            const DataTypePtr result = std::make_shared<DataTypeInterval>(IntervalKind::Kind::Nanosecond);
+            return type->isNullable() ? makeNullable(result) : result;
+        }
+        if (isStringOrFixedString(nested))
             return makeNullable(std::make_shared<DataTypeInterval>(IntervalKind::Kind::Nanosecond));
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -67,10 +75,11 @@ public:
     {
         const ColumnWithTypeAndName & argument = arguments[0];
 
-        if (isInterval(argument.type))
+        const DataTypePtr nested = removeNullable(argument.type);
+        if (isInterval(nested))
             return argument.column;
 
-        if (isNumber(argument.type))
+        if (isNumber(nested))
         {
             /// Days to nanoseconds, delegated so every numeric type divides out the same way.
             const DataTypePtr constant_type = std::make_shared<DataTypeInt64>();
@@ -89,11 +98,27 @@ public:
             return to_interval->execute(conversion_arguments, to_interval->getResultType(), input_rows_count, /*dry_run=*/false);
         }
 
+        ColumnPtr full = argument.column->convertToFullColumnIfConst();
+        const IColumn * source = full.get();
+        const NullMap * source_nulls = nullptr;
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(source))
+        {
+            source_nulls = &nullable->getNullMapData();
+            source = &nullable->getNestedColumn();
+        }
+
         auto values = ColumnInt64::create(input_rows_count);
         auto null_map = ColumnUInt8::create(input_rows_count);
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view text = argument.column->getDataAt(i);
+            if (source_nulls && (*source_nulls)[i])
+            {
+                values->getData()[i] = 0;
+                null_map->getData()[i] = 1;
+                continue;
+            }
+
+            std::string_view text = source->getDataAt(i);
             /// A `FixedString` pads with zero bytes, which are not part of the value.
             while (!text.empty() && text.back() == '\0')
                 text.remove_suffix(1);
@@ -124,8 +149,7 @@ directly from SQL.
         .arguments = {{"x", "A timespan, a number of days, or a string spelling a timespan."}},
         .returned_value = {"The value as an interval of nanoseconds; `NULL` for a string that does not spell a timespan."},
         .examples
-        = {{"string", "SELECT kqlToTimespan('0.00:01:00')", "60000000000"},
-           {"days", "SELECT kqlToTimespan(2)", "172800000000000"}},
+        = {{"string", "SELECT kqlToTimespan('0.00:01:00')", "60000000000"}, {"days", "SELECT kqlToTimespan(2)", "172800000000000"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::TypeConversion,
     };
