@@ -811,11 +811,11 @@ static void predicateOperandsToCommonType(
         }
     };
 
-    if (planning_context.is_prebuilt_hash_join)
+    if (planning_context.is_storage_join)
     {
-        /// Under the subtype fallback the check above guarantees that the storage key is the subtype
-        /// modulo the `LowCardinality` and `Nullable` wrappers, which the prebuilt hash table serves
-        /// without conversion, so the storage key must not be rewritten at all.
+        /// A storage JOIN keeps the key declared by its storage. Under the subtype fallback the check
+        /// above guarantees that a prebuilt hash table uses the subtype modulo the `LowCardinality`
+        /// and `Nullable` wrappers, so its key must not be rewritten at all.
         if (!cast_to_subtype && !right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
             cast_right_node();
     }
