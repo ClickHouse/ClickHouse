@@ -4,8 +4,10 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
+#include <Common/SharedLockGuard.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
@@ -181,17 +183,47 @@ String StorageObjectStorageConfiguration::computeSchemaHash(const ColumnsDescrip
     return getSipHash128AsHexString(hash);
 }
 
+StorageObjectStorageConfiguration::Paths StorageObjectStorageConfiguration::getPaths() const
+{
+    SharedLockGuard lock(paths_mutex);
+    return getPathsImpl();
+}
+
+void StorageObjectStorageConfiguration::setPaths(const Paths & paths)
+{
+    std::lock_guard lock(paths_mutex);
+    setPathsImpl(paths);
+}
+
+StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::allocatePathForWrite(
+    const IObjectStorage & object_storage,
+    const StorageObjectStorageQuerySettings & settings)
+{
+    std::lock_guard allocation_lock(path_allocation_mutex);
+
+    auto paths = getPaths();
+    /// The probes below are remote requests, so `paths_mutex` must not be held across them.
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(object_storage, *this, settings, paths.front().path, paths.size()))
+    {
+        paths.push_back({*new_key});
+        setPaths(paths);
+    }
+    return paths.back();
+}
+
 void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)
 {
     schema_hash = hash;
     boost::replace_all(read_path.path, SCHEMA_HASH_WILDCARD, schema_hash);
 
-    if (getPaths().size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one path when setting schema hash, got {}", getPaths().size());
+    /// Called from the storage constructor, before the configuration is shared with any query,
+    /// so the unlocked internals are used directly.
+    if (getPathsImpl().size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one path when setting schema hash, got {}", getPathsImpl().size());
     auto path = getRawPath();
     boost::replace_all(path.path, SCHEMA_HASH_WILDCARD, schema_hash);
     setRawPath(path);
-    setPaths({path});
+    setPathsImpl({path});
 }
 
 void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
