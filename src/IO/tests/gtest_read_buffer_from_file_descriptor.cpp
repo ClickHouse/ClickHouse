@@ -1,8 +1,13 @@
 #include <gtest/gtest.h>
 
+#include <array>
+#include <fcntl.h>
+#include <unistd.h>
+
 #include <base/types.h>
 #include <Common/filesystemHelpers.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <IO/SynchronousReader.h>
@@ -84,3 +89,35 @@ TEST(AsynchronousReadBufferFromFileDescriptor, RewindResetsBufferState)
     readStringUntilEOF(line2, buf);
     ASSERT_EQ(line, line2);
 }
+
+#if defined(OS_LINUX)
+TEST(WriteBufferFromFileDescriptor, PreservesUnwrittenDataAfterInterruption)
+{
+    std::array<int, 2> pipe_fds;
+    ASSERT_EQ(0, ::pipe(pipe_fds.data()));
+
+    /// One complete PIPE_BUF write succeeds, then the pipe is full and the interruption hook
+    /// makes nextImpl() give control back to the caller before the remaining data is written.
+    ASSERT_EQ(4096, ::fcntl(pipe_fds[1], F_SETPIPE_SZ, 4096));
+
+    const String data(8192, 'x');
+    bool interrupted = false;
+    WriteBufferFromFileDescriptor out(pipe_fds[1], data.size());
+    out.setCancellationHook([] { return false; }, [&] { return interrupted; });
+    writeString(data, out);
+
+    interrupted = true;
+    out.next();
+
+    String result(data.size(), '\0');
+    ASSERT_EQ(4096, ::read(pipe_fds[0], result.data(), 4096));
+
+    interrupted = false;
+    out.finalize();
+    ASSERT_EQ(4096, ::read(pipe_fds[0], result.data() + 4096, 4096));
+    EXPECT_EQ(data, result);
+
+    ASSERT_EQ(0, ::close(pipe_fds[0]));
+    ASSERT_EQ(0, ::close(pipe_fds[1]));
+}
+#endif

@@ -1,6 +1,7 @@
 #include <unistd.h>
 #include <cerrno>
 #include <climits>
+#include <cstring>
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/socket.h>
@@ -171,6 +172,12 @@ void WriteBufferFromFileDescriptor::nextImpl()
     const int write_fd = (responsive_writes && nonblocking_write_fd >= 0) ? nonblocking_write_fd : fd;
 
     size_t bytes_written = 0;
+    const auto preserve_unwritten_data = [&]
+    {
+        const size_t bytes_left = offset() - bytes_written;
+        std::memmove(working_buffer.begin(), working_buffer.begin() + bytes_written, bytes_left);
+        nextimpl_working_buffer_offset = bytes_left;
+    };
     while (bytes_written != offset())
     {
         size_t bytes_to_write = offset() - bytes_written;
@@ -199,7 +206,13 @@ void WriteBufferFromFileDescriptor::nextImpl()
                 /// server. A sink that does accept data is never abandoned here, so output is only
                 /// dropped where it could not be delivered anyway.
                 if (interrupted())
+                {
+                    /// Returning normally from nextImpl() makes WriteBuffer::next() consider the
+                    /// whole buffer flushed. Keep the suffix that did not reach the sink so the
+                    /// partial result remains valid once the sink can drain again.
+                    preserve_unwritten_data();
                     return;
+                }
                 continue;
             }
 
@@ -235,7 +248,11 @@ void WriteBufferFromFileDescriptor::nextImpl()
         if (responsive_writes && -1 == res && (errno == EAGAIN || errno == EWOULDBLOCK))
         {
             if (interrupted())
+            {
+                /// See the matching poll-timeout path above.
+                preserve_unwritten_data();
                 return;
+            }
             continue;
         }
 
