@@ -50,7 +50,7 @@ Para ver ejemplos detallados, consulte nuestra [guía sobre cómo trabajar con J
   ### ¿Puedo conectar bases de datos de MongoDB que no tienen una IP pública o están en redes privadas?
 </div>
 
-Ofrecemos compatibilidad con AWS PrivateLink para conectar bases de datos de MongoDB que no tienen una IP pública o están en redes privadas. Actualmente, Azure Private Link y GCP Private Service Connect no son compatibles.
+Sí. Consulta [las opciones de red de ClickPipes](/es/integrations/clickpipes/networking) para conocer las formas en que ClickPipes puede acceder a una fuente de datos que no está expuesta a Internet público.
 
 <div id="what-happens-if-i-delete-a-database-table-from-my-mongodb-database">
   ### ¿Qué ocurre si elimino una base de datos/tabla de mi base de datos de MongoDB?
@@ -102,10 +102,10 @@ Sí, MongoDB ClickPipe es compatible con Amazon DocumentDB 5.0. Consulta la [gu�
 
 PrivateLink es compatible con clústeres de MongoDB (y DocumentDB) solo en AWS.
 
-Ten en cuenta que, a diferencia de una base de datos relacional de un solo nodo, el cliente de MongoDB necesita que el descubrimiento del conjunto de réplicas se complete correctamente para respetar la `ReadPreference` configurada. Para ello, debes configurar PrivateLink con todos los nodos del clúster, de modo que el cliente de MongoDB pueda establecer correctamente la conexión al conjunto de réplicas y redirigirse a otro nodo si el nodo conectado deja de estar disponible.
+Ten en cuenta que, a diferencia de una base de datos relacional de un solo nodo, el cliente de MongoDB necesita que el descubrimiento del Replica Set se complete correctamente para respetar la `ReadPreference` configurada. Para ello, debes configurar PrivateLink con todos los nodos del clúster, de modo que el cliente de MongoDB pueda establecer correctamente la conexión al Replica Set y redirigirse a otro nodo si el nodo conectado deja de estar disponible.
 
-Si prefieres conectarte a un solo nodo del clúster, puedes omitir el descubrimiento del conjunto de réplicas especificando `/?directConnection=true` en la cadena de conexión durante la configuración de ClickPipes. En este caso, la configuración de PrivateLink será similar a la de una base de datos relacional de un solo nodo y es la opción más sencilla para usar PrivateLink.
+Si prefieres conectarte a un solo nodo del clúster, puedes omitir el descubrimiento del Replica Set especificando `/?directConnection=true` en la cadena de conexión durante la configuración de ClickPipes. En este caso, la configuración de PrivateLink será similar a la de una base de datos relacional de un solo nodo y es la opción más sencilla para usar PrivateLink.
 
-Para la conexión al conjunto de réplicas, puedes configurar PrivateLink para MongoDB con VPC Resource o VPC Endpoint Service. Si optas por VPC Resource, tendrás que crear una configuración de recurso `GROUP`, además de una configuración de recurso `CHILD` para cada nodo del clúster. Si optas por VPC Endpoint Service, tendrás que crear un Endpoint Service independiente (y un NLB independiente) para cada nodo del clúster.
+Para la conexión al Replica Set, puedes configurar PrivateLink para MongoDB con VPC Resource o VPC Endpoint Service. Si optas por VPC Resource, tendrás que crear una configuración de recurso `GROUP`, además de una configuración de recurso `CHILD` para cada nodo del clúster. Si optas por VPC Endpoint Service, tendrás que crear un Endpoint Service independiente (y un NLB independiente) para cada nodo del clúster.
 
-Consulta la documentación de [AWS PrivateLink for ClickPipes](/es/integrations/clickpipes/aws-privatelink) para obtener más información. Ponte en contacto con el soporte de ClickHouse si necesitas ayuda.
+Consulta la documentación de [AWS PrivateLink for ClickPipes](/es/integrations/clickpipes/networking/aws-privatelink) para obtener más información. Ponte en contacto con el soporte de ClickHouse si necesitas ayuda.
