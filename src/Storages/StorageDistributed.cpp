@@ -2429,6 +2429,12 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
         dictionary_name_arg = evaluateConstantExpressionOrIdentifierAsLiteral(dictionary_name_arg, local_context);
         String dictionary_name = checkAndGetLiteralArgument<String>(dictionary_name_arg, "dictionary_name");
         auto qualified_dictionary_name = local_context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, local_context);
+        if (qualified_dictionary_name.database.empty()
+            && !local_context->getExternalDictionariesLoader().hasDictionary(dictionary_name, local_context))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot persist an unqualified dictionary target '{}': it is not available on the server that executes CREATE, "
+                "so its database cannot be bound. Define the dictionary locally or qualify its name explicitly.",
+                dictionary_name);
         dictionary_name_arg = make_intrusive<ASTLiteral>(qualified_dictionary_name.getFullName());
     }
     else if (function_name == "timeSeriesSamples" || function_name == "timeSeriesData"
@@ -2613,11 +2619,15 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
 
         if (!database_arg_index)
         {
-            /// remote(nc): the single-argument named-collection form, with the whole target stored in the
-            /// collection. There is no override to bind, but an empty database stored in the collection is
-            /// session-dependent all the same. A configured-cluster interpretation is rejected above because
-            /// it would be ambiguous after the persisted target is reparsed on another node.
-            bind_database_stored_in_named_collection(/* identifier_can_only_name_a_collection= */ false);
+            /// The single-argument identifier form can mean a named collection on the creator but a configured
+            /// cluster on another node. There is no unambiguous serialized spelling for that collection form;
+            /// require an explicit named-collection override instead, which makes every parser interpret it as
+            /// a collection.
+            if (const auto * collection_identifier = first_arg_index ? args.at(*first_arg_index)->as<ASTIdentifier>() : nullptr)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot persist '{}' with single identifier argument '{}': it can be interpreted as either a named collection "
+                    "or a configured cluster on another node. Add an explicit named-collection argument such as 'table = ...'.",
+                    function_name, collection_identifier->name());
             return;
         }
 

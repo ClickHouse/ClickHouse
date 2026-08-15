@@ -45,10 +45,13 @@ SHOW CREATE TABLE dist_nc_unknown_with_database;
 CREATE TABLE dist_cluster_name (dummy UInt8)
     ENGINE = Distributed(test_cluster_multiple_nodes_all_unavailable, remote(test_shard_localhost)); -- { serverError BAD_ARGUMENTS }
 
--- A collection this server does have is still resolved and its empty stored database still frozen.
+-- The single-identifier form is ambiguous in persisted metadata even when the creator has the collection:
+-- another node can interpret it as a configured cluster. An explicit override makes the collection form
+-- unambiguous, and its empty stored database is still frozen.
 CREATE TABLE bind_src (n UInt64) ENGINE = MergeTree ORDER BY n;
 INSERT INTO bind_src VALUES (1), (2), (3);
-CREATE TABLE dist_nc_local ENGINE = Distributed(test_shard_localhost, remote(nc_04837_local));
+CREATE TABLE dist_nc_local_ambiguous (n UInt64) ENGINE = Distributed(test_shard_localhost, remote(nc_04837_local)); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE dist_nc_local ENGINE = Distributed(test_shard_localhost, remote(nc_04837_local, table = 'bind_src'));
 SHOW CREATE TABLE dist_nc_local;
 SELECT sum(n) FROM dist_nc_local;
 
