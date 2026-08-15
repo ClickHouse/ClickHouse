@@ -43,7 +43,10 @@
 #include <Common/quoteString.h>
 
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Poco/String.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
@@ -1125,6 +1128,38 @@ DataTypePtr mergeJSONSharedDataPathRulesFromPatchParts(
 /// depending on the projection. Collect every identifier referenced anywhere in each SELECT item
 /// (covers both outcomes, plus multi-column expressions like `if(cond, j, k)`) so the fallback
 /// below can still find the right physical column either way.
+/// Like IAST::collectIdentifierNames, but skips if()/multiIf() condition arguments: a condition
+/// only selects a branch, so an identifier used only there must not donate its own provenance.
+static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNameSet & names)
+{
+    if (const auto * identifier = node.as<ASTIdentifier>())
+    {
+        names.insert(identifier->name());
+        return;
+    }
+
+    if (const auto * function = node.as<ASTFunction>(); function && function->arguments)
+    {
+        const auto & args = function->arguments->children;
+        if (Poco::toLower(function->name) == "if" && args.size() == 3)
+        {
+            collectValueCarryingIdentifierNames(*args[1], names);
+            collectValueCarryingIdentifierNames(*args[2], names);
+            return;
+        }
+        if (function->name == "multiIf" && args.size() >= 3)
+        {
+            for (size_t i = 0; i < args.size(); ++i)
+                if (!(i % 2 == 0 && i != args.size() - 1))
+                    collectValueCarryingIdentifierNames(*args[i], names);
+            return;
+        }
+    }
+
+    for (const auto & child : node.children)
+        collectValueCarryingIdentifierNames(*child, names);
+}
+
 static std::unordered_map<String, std::vector<String>> getProjectionOutputToSourceIdentifiers(const ProjectionDescription & projection)
 {
     std::unordered_map<String, std::vector<String>> output_to_sources;
@@ -1135,7 +1170,7 @@ static std::unordered_map<String, std::vector<String>> getProjectionOutputToSour
     for (const auto & child : select_query->select()->children)
     {
         IdentifierNameSet names;
-        child->collectIdentifierNames(names);
+        collectValueCarryingIdentifierNames(*child, names);
         if (!names.empty())
             output_to_sources.emplace(child->getAliasOrColumnName(), std::vector<String>(names.begin(), names.end()));
     }
