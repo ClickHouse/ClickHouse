@@ -5,6 +5,8 @@ import argparse
 import logging
 import os
 import random
+import shlex
+import shutil
 import signal
 import subprocess
 import time
@@ -13,6 +15,9 @@ from multiprocessing import cpu_count
 from pathlib import Path
 from subprocess import PIPE, STDOUT, Popen, call, check_output
 from typing import List, Optional
+
+# Failpoint that delays every background mutation by a bounded random amount.
+MUTATION_DELAY_FAILPOINT = "mutate_task_random_sleep_in_prepare"
 
 
 class ServerDied(Exception):
@@ -391,20 +396,94 @@ def install_thread_pool_fault_injection() -> None:
 
     logging.info("Installing thread-pool fault-injection config: %s -> %s", src, dst)
     subprocess.run(["ln", "-sf", src, dst], check=True)
-    call_with_retry(make_query_command("SYSTEM RELOAD CONFIG"), timeout=30, retry_count=5)
+    if not call_with_retry(make_query_command("SYSTEM RELOAD CONFIG"), timeout=30, retry_count=5):
+        # Fail-close before the verify query: a stale non-zero probability left
+        # over from an earlier reload would otherwise mask the reload failure.
+        raise RuntimeError(
+            "SYSTEM RELOAD CONFIG failed after all retries; "
+            "cannot activate thread-pool fault injection"
+        )
 
-    # Fail-close: `call_with_retry` is silent on persistent failure, so verify
-    # the injector probability is actually non-zero after reload.
+    # The reload succeeded, but still verify the injector probability is
+    # actually non-zero. The verify query gets the same retry treatment as the
+    # reload itself: right after `SYSTEM RELOAD CONFIG` a debug server under
+    # ThreadFuzzer can be slow enough to exceed the client's 15 s
+    # `receive_timeout`, and a single timeout here must not kill the whole
+    # stress job.
     verify_query = make_query_command(
         "SELECT value FROM system.server_settings "
         "WHERE name = 'cannot_allocate_thread_fault_injection_probability'"
     )
-    value = check_output(verify_query, shell=True, timeout=30, text=True).strip()
+    retry_count = 5
+    value = ""
+    for i in range(retry_count):
+        try:
+            value = check_output(verify_query, shell=True, timeout=30, text=True).strip()
+            break
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            if i + 1 == retry_count:
+                raise
+            logging.info("Verify query failed (%s), retrying", str(e))
+            time.sleep(i)
     if not value or float(value) <= 0:
         raise RuntimeError(
             f"cannot_allocate_thread_fault_injection_probability is {value!r} after reload"
         )
     logging.info("Thread-pool fault injection active: probability=%s", value)
+
+
+def enable_mutation_delay_failpoint() -> None:
+    """Enable `mutate_task_random_sleep_in_prepare`, so tests that `ALTER` without waiting
+    routinely read parts the mutation has not rewritten yet. Reads over such parts resolve
+    columns with the part's own (older) type, a state that mutations normally close too
+    quickly to test (see #113925).
+    Fail-close on persistent failure or if the failpoint is still off afterwards."""
+    call_with_retry(
+        make_query_command(f"SYSTEM ENABLE FAILPOINT {MUTATION_DELAY_FAILPOINT}")
+    )
+
+    # Fail-close: `call_with_retry` is silent when all its retries fail, so verify that the
+    # failpoint really became active instead of silently losing the coverage.
+    verify_query = make_query_command(
+        f"SELECT enabled FROM system.fail_points WHERE name = '{MUTATION_DELAY_FAILPOINT}'"
+    )
+    enabled = check_output(verify_query, shell=True, timeout=30, text=True).strip()
+    if enabled != "1":
+        raise RuntimeError(
+            f"Failpoint {MUTATION_DELAY_FAILPOINT} is not enabled after "
+            f"SYSTEM ENABLE FAILPOINT: system.fail_points.enabled is {enabled!r}"
+        )
+    logging.info("Mutation-delay failpoint active: %s", MUTATION_DELAY_FAILPOINT)
+
+
+def disable_mutation_delay_failpoint() -> None:
+    """Disable `mutate_task_random_sleep_in_prepare` before the hung check, so the
+    mutations still pending drain at full speed. Fail-close, mirroring
+    `enable_mutation_delay_failpoint`: verify through `system.fail_points` that the
+    failpoint is really off instead of trusting best-effort `call_with_retry`. Binaries
+    that do not register the failpoint at all (e.g. the old binary in upgrade check,
+    where `SYSTEM DISABLE FAILPOINT` would throw on the unknown name) are skipped."""
+    probe_query = make_query_command(
+        f"SELECT enabled FROM system.fail_points WHERE name = '{MUTATION_DELAY_FAILPOINT}'"
+    )
+    registered = check_output(probe_query, shell=True, timeout=30, text=True).strip()
+    if not registered:
+        logging.info(
+            "Failpoint %s is not registered by this binary, nothing to disable",
+            MUTATION_DELAY_FAILPOINT,
+        )
+        return
+    call_with_retry(
+        make_query_command(f"SYSTEM DISABLE FAILPOINT {MUTATION_DELAY_FAILPOINT}")
+    )
+    enabled = check_output(probe_query, shell=True, timeout=30, text=True).strip()
+    if enabled != "0":
+        raise RuntimeError(
+            f"Failpoint {MUTATION_DELAY_FAILPOINT} is still enabled after "
+            f"SYSTEM DISABLE FAILPOINT: system.fail_points.enabled is {enabled!r}; "
+            "the hung check would run with mutations still delayed"
+        )
+    logging.info("Mutation-delay failpoint disabled: %s", MUTATION_DELAY_FAILPOINT)
 
 
 def run_func_test(
@@ -488,6 +567,10 @@ def run_func_test(
     if not upgrade_check:
         install_thread_pool_fault_injection()
 
+        # Delay every background mutation by a bounded random amount.
+        # Not in upgrade check: the old binary may not know the failpoint.
+        enable_mutation_delay_failpoint()
+
     # Start the query killer after smoke check completes, before actual stress test
     if query_killer is not None:
         query_killer.start()
@@ -525,7 +608,10 @@ def compress_stress_logs(output_path: Path, files_prefix: str) -> None:
 
 def call_with_retry(
     query: str, timeout: int | float = 30, retry_count: int = 5
-) -> None:
+) -> bool:
+    """Return whether the command eventually succeeded, so that callers which
+    must not proceed after a persistent failure can fail close instead of
+    silently continuing."""
     logging.info("Running command: %s", str(query))
     for i in range(retry_count):
         try:
@@ -538,7 +624,8 @@ def call_with_retry(
             logging.info("Command returned %s, retrying", str(code))
             time.sleep(i)
         else:
-            break
+            return True
+    return False
 
 
 def execute_bash(full_command, timeout=120):
@@ -568,7 +655,8 @@ def make_query_command(query: str) -> str:
     return (
         f'clickhouse client -q "{query}" --receive_timeout=15 --max_untracked_memory=1Gi '
         "--memory_profiler_step=1Gi --max_memory_usage_for_user=0 --max_memory_usage_in_client=1000000000 "
-        "--enable-progress-table-toggle=0"
+        "--enable-progress-table-toggle=0 "
+        "--ast_fuzzer_runs=0",
     )
 
 
@@ -600,6 +688,10 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
     call_with_retry(make_query_command("SYSTEM STOP THREAD FUZZER"))
+    # Stop delaying mutations, so the ones still pending drain at full speed. Fail-close:
+    # the hung check must not run with the delay still armed, and a binary that does not
+    # register the failpoint (e.g. the old binary in upgrade check) is skipped.
+    disable_mutation_delay_failpoint()
     # Some tests execute SYSTEM STOP MERGES or similar queries.
     # It may cause some ALTERs to hang.
     # Possibly we should fix tests and forbid to use such queries without specifying table.
@@ -735,15 +827,17 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main():
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-    args = parse_args()
+def collect_stacktrace_dumps(output_folder: Path) -> None:
+    # stdout keeps only a trimmed preview of the server stacktrace dumps;
+    # the full dumps are written to the working directory.
+    for stacktrace_log in ("sql_stacktraces.log", "c_stacktraces.log"):
+        path = Path.cwd() / stacktrace_log
+        if path.exists():
+            # Not rename: source and destination are different mounts.
+            shutil.move(path, output_folder / stacktrace_log)
 
-    if args.drop_databases and not args.hung_check:
-        raise argparse.ArgumentTypeError(
-            "--drop-databases only used in hung check (--hung-check)"
-        )
 
+def run_stress_test(args: argparse.Namespace) -> None:
     call_with_retry(make_query_command("SELECT 1"), timeout=0.5, retry_count=20)
 
     # Create random query/client killer unless disabled or in upgrade check mode
@@ -822,11 +916,49 @@ def main():
             )
             hung_check_log = args.output_folder / "hung_check.log"  # type: Path
             with Popen(["/usr/bin/tee", hung_check_log], stdin=PIPE) as tee:
-                res = call(
-                    cmd, shell=True, stdout=tee.stdin, stderr=STDOUT, timeout=600
-                )
-                if tee.stdin is not None:
-                    tee.stdin.close()
+                try:
+                    # Own session, so that on timeout the whole process
+                    # tree can be killed at once; otherwise survivors keep
+                    # appending to the dumps while they are collected.
+                    with Popen(
+                        cmd,
+                        shell=True,
+                        stdout=tee.stdin,
+                        stderr=STDOUT,
+                        start_new_session=True,
+                    ) as hung_check:
+                        try:
+                            res = hung_check.wait(timeout=600)
+                        except subprocess.TimeoutExpired:
+                            os.killpg(hung_check.pid, signal.SIGKILL)
+                            # The test runner starts each test in its own
+                            # session, out of reach of the killpg above,
+                            # but records the pgid in a file for exactly
+                            # this situation. The test command may carry
+                            # options (e.g. in the upgrade check), while
+                            # cleanup needs only the executable.
+                            test_runner = shlex.split(args.test_cmd)[0]
+                            call([test_runner, "--cleanup"], timeout=60)
+                            raise
+                finally:
+                    if tee.stdin is not None:
+                        tee.stdin.close()
+                    try:
+                        # EOF on the pipe means every process that
+                        # inherited it as stdout/stderr has exited: the
+                        # barrier that keeps the collection of the dumps
+                        # from racing a live writer.
+                        tee.wait(timeout=60)
+                    except subprocess.TimeoutExpired:
+                        # A writer survived both kills, e.g. a process
+                        # in uninterruptible sleep dies only once its
+                        # kernel wait completes. Give up on the barrier:
+                        # a dump with a torn tail beats losing it to the
+                        # job timeout.
+                        logging.warning(
+                            "Some hung check process survived the kill"
+                        )
+                        tee.kill()
             if res != 0 and have_long_running_queries:
                 logging.info("Hung check failed with exit code %d", res)
 
@@ -890,6 +1022,24 @@ def main():
                 logging.info("No queries hung")
 
     logging.info("Stress test finished")
+
+
+def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    args = parse_args()
+
+    if args.drop_databases and not args.hung_check:
+        raise argparse.ArgumentTypeError(
+            "--drop-databases only used in hung check (--hung-check)"
+        )
+
+    try:
+        run_stress_test(args)
+    finally:
+        # Any exit path can leave dumps behind: the upgrade check runs
+        # without the hung check, and the test run can raise before the
+        # hung check is reached.
+        collect_stacktrace_dumps(args.output_folder)
 
 
 if __name__ == "__main__":
