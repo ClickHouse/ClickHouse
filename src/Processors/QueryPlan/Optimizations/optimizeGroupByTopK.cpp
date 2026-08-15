@@ -197,7 +197,6 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
             .key_columns = num_key_columns,
             .load_factor = 1.5,
             .observation_rows = synthetic_sort ? 0 : settings.top_k_optimization_observation_rows,
-            .synthetic_sort = synthetic_sort,
         });
 
     return 0;
