@@ -400,8 +400,9 @@ void applyPatchesToBlockRaw(
             {
                 /// COW-safe in-place update: clone when the column is shared instead of mutating
                 /// a column still referenced by another owner via `assumeMutableRef`.
-                result_column.column = IColumn::mutate(std::move(result_column.column));
-                result_column.column->updateInplaceFrom(patch);
+                auto mutable_column = IColumn::mutate(std::move(result_column.column));
+                mutable_column->updateInplaceFrom(patch);
+                result_column.column = std::move(mutable_column);
             }
             else
                 result_column.column = result_column.column->updateFrom(patch);
@@ -437,8 +438,9 @@ void applyPatchesToBlockCombined(
         {
             /// COW-safe in-place update: clone when the column is shared instead of mutating
             /// a column still referenced by another owner via `assumeMutableRef`.
-            result_column.column = IColumn::mutate(std::move(result_column.column));
-            result_column.column->updateInplaceFrom(multi_patch);
+            auto mutable_column = IColumn::mutate(std::move(result_column.column));
+            mutable_column->updateInplaceFrom(multi_patch);
+            result_column.column = std::move(mutable_column);
         }
         else
             result_column.column = result_column.column->updateFrom(multi_patch);
