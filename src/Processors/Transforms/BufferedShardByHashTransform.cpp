@@ -314,7 +314,8 @@ void BufferedShardByHashTransform::reclaimAllPortResidentChunks()
 
 bool BufferedShardByHashTransform::isOverBudget()
 {
-    if (budget->total_buffered_bytes.load(std::memory_order_relaxed) <= static_cast<Int64>(max_buffered_bytes))
+    auto total_buffered_bytes = budget->total_buffered_bytes.load(std::memory_order_relaxed);
+    if (total_buffered_bytes <= 0 || static_cast<UInt64>(total_buffered_bytes) <= max_buffered_bytes)
         return false;
 
     /// Over the cap according to a reading that can include chunks the downstream merges have already pulled out
@@ -323,7 +324,8 @@ bool BufferedShardByHashTransform::isOverBudget()
     /// really resident.
     std::lock_guard lock(budget->mutex);
     reclaimAllPortResidentChunks();
-    return budget->total_buffered_bytes.load(std::memory_order_relaxed) > static_cast<Int64>(max_buffered_bytes);
+    total_buffered_bytes = budget->total_buffered_bytes.load(std::memory_order_relaxed);
+    return total_buffered_bytes > 0 && static_cast<UInt64>(total_buffered_bytes) > max_buffered_bytes;
 }
 
 void BufferedShardByHashTransform::chargePendingInput()

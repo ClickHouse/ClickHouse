@@ -37,4 +37,12 @@ SELECT
   = (SELECT groupBitXor(cityHash64(k, s)) FROM (SELECT k, sum(v) s FROM t_aio_shuffle_budget GROUP BY k)
         SETTINGS optimize_aggregation_in_order = 0, max_threads = 8);
 
+-- The setting is UInt64, so values above Int64::max must remain a generous budget instead of wrapping negative.
+SELECT
+    (SELECT groupBitXor(cityHash64(k, s)) FROM (SELECT k, sum(v) s FROM t_aio_shuffle_budget GROUP BY k)
+        SETTINGS optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1, max_threads = 8,
+                 aggregation_in_order_shuffle_max_buffered_bytes = 9223372036854775808)
+  = (SELECT groupBitXor(cityHash64(k, s)) FROM (SELECT k, sum(v) s FROM t_aio_shuffle_budget GROUP BY k)
+        SETTINGS optimize_aggregation_in_order = 0, max_threads = 8);
+
 DROP TABLE t_aio_shuffle_budget;
