@@ -8,7 +8,7 @@
 
 DROP TABLE IF EXISTS t_remote_in_04891;
 
-CREATE TABLE t_remote_in_04891 (id UInt64, u UInt64)
+CREATE TABLE t_remote_in_04891 (id UInt64)
 ENGINE = MergeTree
 ORDER BY id;
 
@@ -17,17 +17,17 @@ SYSTEM STOP MERGES t_remote_in_04891;
 SET enable_analyzer = 1;
 SET use_index_for_in_with_subqueries = 1;
 
-INSERT INTO t_remote_in_04891 SELECT number, number FROM numbers(500);
-INSERT INTO t_remote_in_04891 SELECT number + 500, number + 500 FROM numbers(500);
-INSERT INTO t_remote_in_04891 SELECT number + 1000, number + 1000 FROM numbers(500);
-INSERT INTO t_remote_in_04891 SELECT number + 1500, number + 1500 FROM numbers(500);
-INSERT INTO t_remote_in_04891 SELECT number + 2000, number + 2000 FROM numbers(500);
+INSERT INTO t_remote_in_04891 SELECT number FROM numbers(500);
+INSERT INTO t_remote_in_04891 SELECT number + 500 FROM numbers(500);
+INSERT INTO t_remote_in_04891 SELECT number + 1000 FROM numbers(500);
+INSERT INTO t_remote_in_04891 SELECT number + 1500 FROM numbers(500);
+INSERT INTO t_remote_in_04891 SELECT number + 2000 FROM numbers(500);
 
 SELECT count()
 FROM t_remote_in_04891
-WHERE u IN
+WHERE id IN
 (
-    SELECT u
+    SELECT id
     FROM clusterAllReplicas('test_unavailable_shard', currentDatabase(), 't_remote_in_04891')
     WHERE (id % 4) = 2
 )
