@@ -26,21 +26,21 @@ FROM (EXPLAIN indexes = 1 SELECT count() FROM t_113234 WHERE t % 19 = 16);
 
 -- Pruning must be unchanged, not merely correct: an atom that falls back to `UNKNOWN_FIELD` leaves
 -- every granule unpruned and still counts 5 rows, so assert the counts match the plain expression.
-SELECT 'granules_plain', trimLeft(explain)
+SELECT 'granules_plain', extract(explain, 'Granules: [0-9]+/[0-9]+')
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_113234 WHERE t % 19 = 16)
 WHERE explain LIKE '%Granules: %/%';
 
-SELECT 'granules_to_nullable', trimLeft(explain)
+SELECT 'granules_to_nullable', extract(explain, 'Granules: [0-9]+/[0-9]+')
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_113234 WHERE t % toNullable(19) = 16)
 WHERE explain LIKE '%Granules: %/%';
 
 -- `nullIf(19, 0)` folds to a constant before index analysis, so it renders as `modulo(t, 19)` and
 -- matches the key column. Assert that, since the shape reads as if the `nullIf` node survived.
-SELECT 'granules_null_if', trimLeft(explain)
+SELECT 'granules_null_if', extract(explain, 'Granules: [0-9]+/[0-9]+')
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_113234 WHERE t % nullIf(19, 0) = 16)
 WHERE explain LIKE '%Granules: %/%';
 
-SELECT 'granules_subquery', trimLeft(explain)
+SELECT 'granules_subquery', extract(explain, 'Granules: [0-9]+/[0-9]+')
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_113234 WHERE t % (SELECT 19) = 16)
 WHERE explain LIKE '%Granules: %/%';
 
@@ -63,19 +63,19 @@ SET secondary_indices_enable_bulk_filtering = 0;
 SELECT 'nobulk_index_used', countIf(explain LIKE '%Name: t_set%') > 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_113234 WHERE t % 19 = 16);
 
-SELECT 'nobulk_granules_plain', trimLeft(explain)
+SELECT 'nobulk_granules_plain', extract(explain, 'Granules: [0-9]+/[0-9]+')
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_113234 WHERE t % 19 = 16)
 WHERE explain LIKE '%Granules: %/%';
 
-SELECT 'nobulk_granules_to_nullable', trimLeft(explain)
+SELECT 'nobulk_granules_to_nullable', extract(explain, 'Granules: [0-9]+/[0-9]+')
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_113234 WHERE t % toNullable(19) = 16)
 WHERE explain LIKE '%Granules: %/%';
 
-SELECT 'nobulk_granules_null_if', trimLeft(explain)
+SELECT 'nobulk_granules_null_if', extract(explain, 'Granules: [0-9]+/[0-9]+')
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_113234 WHERE t % nullIf(19, 0) = 16)
 WHERE explain LIKE '%Granules: %/%';
 
-SELECT 'nobulk_granules_subquery', trimLeft(explain)
+SELECT 'nobulk_granules_subquery', extract(explain, 'Granules: [0-9]+/[0-9]+')
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_113234 WHERE t % (SELECT 19) = 16)
 WHERE explain LIKE '%Granules: %/%';
 
