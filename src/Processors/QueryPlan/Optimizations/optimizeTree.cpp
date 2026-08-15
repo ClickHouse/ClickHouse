@@ -92,6 +92,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
         optimization_settings.read_in_order_through_join,
+        optimization_settings.read_in_order_through_spilling_join,
         optimization_settings.join_swap_table,
         optimization_settings.enable_group_by_top_k_optimization,
         optimization_settings.top_k_optimization_load_factor,
@@ -218,6 +219,7 @@ void optimizeTreeSecondPass(
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
         optimization_settings.read_in_order_through_join,
+        optimization_settings.read_in_order_through_spilling_join,
         optimization_settings.join_swap_table,
         optimization_settings.enable_group_by_top_k_optimization,
         optimization_settings.top_k_optimization_load_factor,
@@ -419,6 +421,9 @@ void optimizeTreeSecondPass(
                     if (auto applied_projection = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings))
                         applied_projection_names.insert(*applied_projection);
 
+                if (optimization_settings.query_plan_optimize_count_from_text_index)
+                    optimizeTrivialCountFromTextIndex(*frame.node, nodes, optimization_settings);
+
                 if (optimization_settings.aggregation_in_order)
                     optimizeAggregationInOrder(stack, nodes, optimization_settings);
             }
@@ -528,6 +533,8 @@ void optimizeTreeSecondPass(
                 const QueryPlanOptimizationSettings subquery_optimization_settings(local_context);
                 local_optimization_settings.read_in_order = subquery_optimization_settings.read_in_order;
                 local_optimization_settings.read_in_order_through_join = subquery_optimization_settings.read_in_order_through_join;
+                local_optimization_settings.read_in_order_through_spilling_join
+                    = subquery_optimization_settings.read_in_order_through_spilling_join;
                 local_optimization_settings.aggregation_in_order = subquery_optimization_settings.aggregation_in_order;
                 local_optimization_settings.distinct_in_order = subquery_optimization_settings.distinct_in_order;
                 local_optimization_settings.reuse_storage_ordering_for_window_functions
@@ -560,8 +567,13 @@ void optimizeTreeSecondPass(
         optimizeExchanges(root, optimization_settings);
 
     /// Force set-operation branches to expose full columns so they agree after a fragment is serialized
-    /// and constness is re-derived per step.
-    if (optimization_settings.make_distributed_plan)
+    /// and constness is re-derived per step. A plan with no exchanges is never split into serialized
+    /// fragments (`convertToDistributed` keeps it as a single stage executed in this process), so it
+    /// must keep its constants: e.g. a child plan of `ReadFromMerge` is united into the parent pipeline
+    /// in-process, and materializing the constants of a `Union` inside one child (such as a `Buffer`
+    /// table reading its destination table and its buffers) while a sibling child keeps them const
+    /// breaks the equal-headers invariant across the children of `ReadFromMerge`.
+    if (optimization_settings.make_distributed_plan && planContainsLogicalExchange(root))
         materializeConstantsForSetOperationBranches(root, nodes);
 
     /// Vector search first pass optimization sets up everything for vector index usage.
