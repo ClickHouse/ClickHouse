@@ -1777,6 +1777,24 @@ size_t RadixHashJoin::getTotalByteCount() const
     return state->build_bytes.load(std::memory_order_relaxed);
 }
 
+StepAnalysisReport RadixHashJoin::getAnalysisReport() const
+{
+    /// No per-leaf matched-rows tracking yet (unlike HashJoin/ConcurrentHashJoin), so this only
+    /// reports what's already tracked for other purposes: the build-side row/byte totals.
+    StepAnalysisReport report;
+
+    MetricList right_metrics;
+    right_metrics.emplace_back(MetricKey::Rows, getTotalRowCount());
+    report.push_back({MetricGroupKey::Right, std::move(right_metrics)});
+
+    MetricList hash_table_metrics;
+    hash_table_metrics.emplace_back(MetricKey::UniqueKeys, getTotalRowCount());
+    hash_table_metrics.emplace_back(MetricKey::Memory, getTotalByteCount());
+    report.push_back({MetricGroupKey::HashTable, std::move(hash_table_metrics)});
+
+    return report;
+}
+
 bool RadixHashJoin::alwaysReturnsEmptySet() const
 {
     return state->post_build_done.load(std::memory_order_acquire) && state->build_rows.load(std::memory_order_relaxed) == 0;

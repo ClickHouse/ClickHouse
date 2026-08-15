@@ -95,6 +95,7 @@ public:
 
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
+    StepAnalysisReport getAnalysisReport() const override;
     bool alwaysReturnsEmptySet() const override;
 
     IBlocksStreamPtr getNonJoinedBlocks(
