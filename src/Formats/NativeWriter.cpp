@@ -42,20 +42,11 @@ namespace ErrorCodes
 namespace
 {
 
-/// `SimpleAggregateFunction(f, T)` is stored as the storage type `T` plus a custom name that caches its
-/// OWN copy of `T`. `setVersionToAggregateFunctions` assigns the transport-negotiated serialization
-/// version to the storage (live) type only, so the cached name keeps advertising the version it was
-/// parsed with while the payload is written at the live one. Render the header from both trees at once:
-/// syntax from the cached side (it alone remembers spellings like `Nested(...)`, since installing a
-/// customization replaces any the storage type had), versions from the live side.
-/// Returns nullopt when nothing below `cached` needs a version correction, so unrelated types keep
-/// going through `getName()` verbatim.
-/// `inside_simple_aggregate_function` is set once a `SimpleAggregateFunction` customization has been
-/// entered. Only there must a version-0 leaf be printed EXPLICITLY: the reader re-derives that leaf from
-/// the printed name, so an omitted 0 comes back as the default. Outside one the reader derives it from the
-/// revision, so omitting a 0 this writer assigned is correct; a 0 the DECLARATION carried is separate.
-/// `emit_version_token` is false for a peer that predates versioning: it cannot parse a version token at
-/// all, so the leaf keeps the versionless spelling while the syntax half of the rendering still applies.
+/// Renders a type name taking syntax from `cached` and aggregate-function versions from `live`. Only
+/// `cached` remembers spellings such as `Nested(...)`; only `live` carries the negotiated versions.
+/// Returns nullopt when no version below `cached` needs correcting, leaving the caller on `getName()`.
+/// `inside_simple_aggregate_function`: a version-0 leaf must be printed explicitly there, since the alias
+/// rebuilds it by parsing the name back. `emit_version_token`: false for a peer with no version grammar.
 std::optional<String> renderTypeNameWithLiveVersions(
     const DataTypePtr & cached, const DataTypePtr & live, bool inside_simple_aggregate_function, bool emit_version_token);
 
@@ -170,10 +161,8 @@ std::optional<String> renderTypeNameWithLiveVersions(
 
         const size_t live_version = live_agg->getVersion();
         size_t advertised_version = cached_agg->getVersion();
-        /// Inside a `SimpleAggregateFunction` the reader re-derives this leaf by PARSING the printed name,
-        /// and version 0 is never printed, so an omitted version comes back as the function's default,
-        /// which is the whole failure. Outside one the reader derives it from the peer revision, so a 0 here
-        /// was never negotiated and announcing one would invent a value (an EXPLICIT 0 is a separate case).
+        /// Under the alias a reader re-derives this leaf by parsing the printed name, where an omitted
+        /// version reads as the default. Outside one it derives the version from the revision instead.
         if (inside_simple_aggregate_function && advertised_version == 0)
             advertised_version = cached_agg->getFunction()->getDefaultVersion();
         if (advertised_version == live_version)
@@ -184,11 +173,8 @@ std::optional<String> renderTypeNameWithLiveVersions(
         /// (clang-tidy) rejects returning a `const` local because constness prevents the move.
         String without_version = cached_agg->getNameWithoutVersion();
 
-        /// A peer below the versioning threshold has no grammar for the version token at all: its type
-        /// parser rejects a leading literal, so announcing one would make the whole header unparseable.
-        /// The versionless spelling is what such a peer writes and expects. It must still be produced
-        /// here rather than by returning nullopt, because a sibling under the same `Tuple`/`Nested` may
-        /// need the syntax half of the rendering.
+        /// Such a peer's type parser rejects a leading literal, so the leaf keeps the versionless
+        /// spelling. Still rendered rather than nullopt: a sibling may need the syntax half.
         if (!emit_version_token)
             return without_version;
 
@@ -444,18 +430,14 @@ size_t NativeWriter::write(const Block & block)
         bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
         setVersionToAggregateFunctions(column.type, /* if_empty= */ client_revision == 0, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
 
-        /// Whether the announced type string may carry an `AggregateFunction(<version>, ...)` token. Same
-        /// shape as the `LowCardinality` check above, and for the same reason. The leading
-        /// `client_revision &&` keeps revision `0` out of the compatibility branch: that is the local
-        /// persister, which re-parses the string it just printed and so needs the explicit version. A
-        /// non-zero revision below the threshold is a real peer that predates versioning entirely.
+        /// Whether the announced type string may carry an `AggregateFunction(<version>, ...)` token. The
+        /// leading `client_revision &&` keeps revision `0` out of the branch: only a non-zero revision
+        /// below the threshold is a peer that cannot parse the token.
         const bool emit_version_token
             = !(client_revision && client_revision < DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING);
 
-        /// One rendering shared by both the stream header below and the index header at the end of the
-        /// loop: two independent renderings are how the stale-version defect stays half-fixed. Memoized
-        /// rather than computed up front so a binary-encoded header without an index, which needs no
-        /// textual name at all, keeps paying nothing for one.
+        /// One rendering shared by the stream header and the index header, so the two cannot disagree.
+        /// Lazy: a binary-encoded header without an index needs no textual name at all.
         std::optional<String> rendered_type_name;
         auto renderTypeName = [&]() -> const String &
         {

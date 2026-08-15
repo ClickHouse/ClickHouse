@@ -4,10 +4,15 @@
 
 -- { echo }
 
--- A `SimpleAggregateFunction` whose value type contains a versioned `AggregateFunction` used to advertise a
--- stale version in the `Native` type header while writing the payload at the negotiated one, so the writer
--- could not read back its own output. `Decimal32` values are essential: `sumMap` v1 promotes them to
--- `Decimal128`, so v0 and v1 differ in width and the mismatch is observable.
+-- A `SimpleAggregateFunction` whose value type contains a versioned `AggregateFunction` can advertise a
+-- version in the `Native` type header that the payload was not written at, so the writer cannot read back
+-- its own output. `Decimal32` values are essential: `sumMap` v1 promotes them to `Decimal128`, so v0 and v1
+-- differ in width and the mismatch is observable rather than byte-compatible.
+--
+-- The regression arms are the ones declaring an explicit `AggregateFunction(0, ...)`: a declaration that
+-- pins no version is stored with the function's default spelled out, so its header and payload agree on
+-- their own. The remaining wrapper, engine and parameter cases are round-trip coverage for the header
+-- renderer, not assertions that fail without it.
 
 DROP TABLE IF EXISTS sl_saf;
 DROP TABLE IF EXISTS sl_tuple_value;
