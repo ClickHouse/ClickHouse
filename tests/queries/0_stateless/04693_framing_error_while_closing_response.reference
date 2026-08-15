@@ -1,0 +1,7 @@
+--- streaming: a failure while closing the response truncates it
+the client observes an aborted connection: OK
+the partial success stream was received: OK
+nothing appended after the failure: OK
+--- buffered: a failure while closing the response truncates it
+the client observes an aborted connection: OK
+nothing appended after the failure: OK
