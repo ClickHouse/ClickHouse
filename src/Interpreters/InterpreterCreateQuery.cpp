@@ -1110,7 +1110,12 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     {
         const auto validation_settings = DataTypeValidationSettings::forRuntimeTypeNames(settings);
         for (const auto & [name, type_name] : analyzeReceiveQueryParamsWithType(create.select))
+        {
+            /// Identifier is a query-parameter kind, not a data type.
+            if (type_name == "Identifier")
+                continue;
             validateDataType(DataTypeFactory::instance().get(type_name), validation_settings);
+        }
     }
 
     /// If it's not attach and not materialized view to existing table,

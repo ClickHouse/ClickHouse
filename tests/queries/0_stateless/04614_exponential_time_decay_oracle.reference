@@ -13,5 +13,6 @@ vector addition oracle completed
 1	1	1	1	1	1
 SimpleAggregateFunction(exponentialTimeDecayedSum, ExponentialTimeDecayingFloat64(0.1))	1	1	1
 1	1
+identifier parameter preserved
 1	1
 1	1

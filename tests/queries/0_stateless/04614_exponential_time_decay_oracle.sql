@@ -454,6 +454,17 @@ SET allow_experimental_time_decay_aggregate_functions = 0;
 SET enable_analyzer = 0;
 CREATE VIEW time_decay_parameterized_view_gate AS
 SELECT tupleElement({value:ExponentialTimeDecayingFloat64(10)}, 1); -- { serverError ILLEGAL_COLUMN }
+
+-- Identifier parameters are query syntax, not data types, and must remain valid.
+DROP TABLE IF EXISTS time_decay_identifier_source;
+DROP VIEW IF EXISTS time_decay_identifier_parameter;
+CREATE TABLE time_decay_identifier_source (value UInt8) ENGINE = Memory;
+CREATE VIEW time_decay_identifier_parameter (value UInt8) AS
+SELECT value FROM {database:Identifier}.time_decay_identifier_source;
+SELECT 'identifier parameter preserved';
+DROP VIEW time_decay_identifier_parameter;
+DROP TABLE time_decay_identifier_source;
+
 SET allow_experimental_time_decay_aggregate_functions = 1;
 
 -- The implicit empty value is an identity even for genuine negative timestamps.
