@@ -75,7 +75,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_function_allow_insecure_endpoint", true, false, "AI functions now reject insecure (http) endpoints to remote hosts by default."},
             {"ai_function_max_api_calls_per_query", 0, 1000, "Bound outbound AI function HTTP calls per query by default (previously 0 - unlimited)."},
             {"join_runtime_filter_min_probe_rows", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."},
-            {"use_columns_cache", false, true, "New setting to enable columns cache for MergeTree tables, on by default"},
+            {"use_columns_cache", false, false, "New experimental setting to enable columns cache for MergeTree tables, disabled by default."},
             {"enable_reads_from_columns_cache", true, true, "New setting to control reading from columns cache"},
             {"enable_writes_to_columns_cache", true, true, "New setting to control writing to columns cache"},
             {"columns_cache_max_estimated_compressed_bytes_to_write_to_cache", 0, 0, "New setting: cap on the estimated compressed bytes a query reads to permit columns cache writes (0 = half of columns_cache_size)."},
