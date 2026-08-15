@@ -90,8 +90,11 @@ std::vector<Tok> tokenizeSignificant(const std::string & query)
         if (token.isEnd())
             break;
         if (token.isSignificant())
-            tokens.push_back({token.type, std::string(token.begin, token.end),
-                static_cast<size_t>(token.begin - base), static_cast<size_t>(token.end - base)});
+            tokens.push_back(
+                {token.type,
+                 std::string(token.begin, token.end),
+                 static_cast<size_t>(token.begin - base),
+                 static_cast<size_t>(token.end - base)});
     }
     return tokens;
 }
@@ -107,15 +110,13 @@ struct FormatClause
 /// Mirror of `OPENING_BRACKETS` / `CLOSING_BRACKETS` in play.html.
 bool isOpeningBracket(DB::TokenType type)
 {
-    return type == DB::TokenType::OpeningRoundBracket
-        || type == DB::TokenType::OpeningSquareBracket
+    return type == DB::TokenType::OpeningRoundBracket || type == DB::TokenType::OpeningSquareBracket
         || type == DB::TokenType::OpeningCurlyBrace;
 }
 
 bool isClosingBracket(DB::TokenType type)
 {
-    return type == DB::TokenType::ClosingRoundBracket
-        || type == DB::TokenType::ClosingSquareBracket
+    return type == DB::TokenType::ClosingRoundBracket || type == DB::TokenType::ClosingSquareBracket
         || type == DB::TokenType::ClosingCurlyBrace;
 }
 
@@ -125,12 +126,11 @@ bool isClosingBracket(DB::TokenType type)
 bool isOperandExpectingKeyword(const std::string & lower)
 {
     static const std::vector<std::string> keywords = {
-        "select", "from", "where", "prewhere", "having", "by", "and", "or", "not", "as", "on",
-        "using", "in", "when", "then", "else", "case", "distinct", "all", "any", "some", "join",
-        "union", "intersect", "except", "with", "settings", "limit", "offset", "top", "interval",
-        "like", "ilike", "between", "is", "over", "global", "array", "to", "if", "mod", "div",
-        "cross", "inner", "outer", "left", "right", "full", "asof", "semi", "anti", "paste",
-        "apply", "lateral", "sample", "into", "values",
+        "select", "from",  "where",    "prewhere", "having", "by",       "and",      "or",    "not",    "as",      "on",    "using",
+        "in",     "when",  "then",     "else",     "case",   "distinct", "all",      "any",   "some",   "join",    "union", "intersect",
+        "except", "with",  "settings", "limit",    "offset", "top",      "interval", "like",  "ilike",  "between", "is",    "over",
+        "global", "array", "to",       "if",       "mod",    "div",      "cross",    "inner", "outer",  "left",    "right", "full",
+        "asof",   "semi",  "anti",     "paste",    "apply",  "lateral",  "sample",   "into",  "values",
     };
     return std::find(keywords.begin(), keywords.end(), lower) != keywords.end();
 }
@@ -143,9 +143,8 @@ bool endsExpression(const Tok * tok)
 {
     if (!tok)
         return false;
-    if (tok->type == DB::TokenType::Number || tok->type == DB::TokenType::StringLiteral
-        || tok->type == DB::TokenType::QuotedIdentifier || tok->type == DB::TokenType::Asterisk
-        || isClosingBracket(tok->type))
+    if (tok->type == DB::TokenType::Number || tok->type == DB::TokenType::StringLiteral || tok->type == DB::TokenType::QuotedIdentifier
+        || tok->type == DB::TokenType::Asterisk || isClosingBracket(tok->type))
         return true;
     return tok->type == DB::TokenType::BareWord && !isOperandExpectingKeyword(toLower(tok->text));
 }
@@ -167,15 +166,21 @@ std::vector<Tok> fallbackTokenizeSignificant(const std::string & query)
 }
 
 /// Mirror of `tokensBeforeInlineInsertPayload` in play.html. `ParserInsertQuery` treats bytes after
-/// `INSERT ... FORMAT <input format>` as rows, so SQL-looking payload must not reach this walker.
+/// `INSERT ... FORMAT <input format>` as rows, including `INSERT ... SELECT input(...) FORMAT ...`,
+/// so SQL-looking payload must not reach this walker.
 std::vector<Tok> tokensBeforeInlineInsertPayload(const std::vector<Tok> & tokens)
 {
     int depth = 0;
     bool saw_insert = false;
     bool saw_statement_keyword = false;
+    bool saw_select_source = false;
+    bool select_reads_inline_data = false;
     for (size_t i = 0; i < tokens.size(); ++i)
     {
         const Tok & t = tokens[i];
+        if (saw_select_source && t.type == DB::TokenType::BareWord && toLower(t.text) == "input" && i + 1 < tokens.size()
+            && tokens[i + 1].type == DB::TokenType::OpeningRoundBracket)
+            select_reads_inline_data = true;
         if (isOpeningBracket(t.type))
         {
             ++depth;
@@ -200,10 +205,17 @@ std::vector<Tok> tokensBeforeInlineInsertPayload(const std::vector<Tok> & tokens
             continue;
         }
         if (lower == "select" || lower == "with" || lower == "from")
-            return tokens;
+        {
+            saw_select_source = true;
+            continue;
+        }
         if (lower == "format" && i + 1 < tokens.size()
             && (tokens[i + 1].type == DB::TokenType::BareWord || tokens[i + 1].type == DB::TokenType::QuotedIdentifier))
+        {
+            if (saw_select_source && !select_reads_inline_data)
+                return tokens;
             return {tokens.begin(), tokens.begin() + i};
+        }
     }
     return tokens;
 }
@@ -229,17 +241,15 @@ std::optional<FormatClause> detectExplicitFormatClause(const std::vector<Tok> & 
             if (depth > 0)
                 --depth;
         }
-        else if (depth == 0
-            && t.type == DB::TokenType::BareWord
-            && toLower(t.text) == "format"
+        else if (
+            depth == 0 && t.type == DB::TokenType::BareWord && toLower(t.text) == "format"
             && (tokens[i + 1].type == DB::TokenType::BareWord || tokens[i + 1].type == DB::TokenType::QuotedIdentifier)
             && endsExpression(i > 0 ? &tokens[i - 1] : nullptr))
         {
             /// A real `FORMAT` clause is the last clause of the statement: only `;` or a trailing
             /// `SETTINGS` list may follow the format name.
             const bool has_after = i + 2 < tokens.size();
-            if (!has_after
-                || tokens[i + 2].type == DB::TokenType::Semicolon
+            if (!has_after || tokens[i + 2].type == DB::TokenType::Semicolon
                 || (tokens[i + 2].type == DB::TokenType::BareWord && toLower(tokens[i + 2].text) == "settings"))
             {
                 /// The server parses the format name with an identifier parser, so a backquoted
@@ -351,10 +361,7 @@ TEST(PlayDetectExplicitFormat, NoLexerFallbackRunsTheSameWalk)
     /// runs the SAME walk over `fallbackTokenize`'s tokens (`expectFormat` / `expectStrip` above
     /// exercise every corpus case through it); these are the reported false positives, pinned
     /// explicitly.
-    const auto fallback_name = [](const std::string & query)
-    {
-        return detectExplicitFormat(fallbackTokenizeSignificant(query));
-    };
+    const auto fallback_name = [](const std::string & query) { return detectExplicitFormat(fallbackTokenizeSignificant(query)); };
     EXPECT_EQ(fallback_name("WITH 1 AS format SELECT format JSONCompactColumns SETTINGS max_threads = 1"), std::nullopt);
     EXPECT_EQ(fallback_name("SELECT 1 -- FORMAT JSON"), std::nullopt);
     EXPECT_EQ(fallback_name("SELECT 1 /* FORMAT JSONCompactColumns */"), std::nullopt);
@@ -389,7 +396,8 @@ TEST(PlayDetectExplicitFormat, AliasedIdentifierBeforeSettingsIsNotAFormatClause
     /// follows `SELECT`, where an expression is expected, so the server parses `JSONCompactColumns`
     /// as its alias, not as an output format.
     expectFormat("WITH 1 AS format SELECT format JSONCompactColumns SETTINGS max_threads = 1", std::nullopt);
-    expectStrip("WITH 1 AS format SELECT format JSONCompactColumns SETTINGS max_threads = 1",
+    expectStrip(
+        "WITH 1 AS format SELECT format JSONCompactColumns SETTINGS max_threads = 1",
         "WITH 1 AS format SELECT format JSONCompactColumns SETTINGS max_threads = 1");
     /// The same shape with a real trailing clause (after a complete expression) is still detected.
     expectFormat("WITH 1 AS x SELECT x FORMAT JSONCompactColumns SETTINGS max_threads = 1", "JSONCompactColumns");
@@ -414,8 +422,15 @@ TEST(PlayDetectExplicitFormat, InlineInsertPayloadIsNotSql)
 {
     /// A `FORMAT`-looking row after the input format is payload, not an output clause.
     expectFormat("INSERT INTO FUNCTION null('line String') FORMAT LineAsString\nFORMAT JSONCompactColumns", std::nullopt);
-    expectStrip("INSERT INTO FUNCTION null('line String') FORMAT LineAsString\nFORMAT JSONCompactColumns",
+    expectStrip(
+        "INSERT INTO FUNCTION null('line String') FORMAT LineAsString\nFORMAT JSONCompactColumns",
         "INSERT INTO FUNCTION null('line String') FORMAT LineAsString\nFORMAT JSONCompactColumns");
+    expectFormat(
+        "INSERT INTO FUNCTION null('line String') SELECT * FROM input('line String') FORMAT LineAsString\nFORMAT JSONCompactColumns",
+        std::nullopt);
+    expectStrip(
+        "INSERT INTO FUNCTION null('line String') SELECT * FROM input('line String') FORMAT LineAsString\nFORMAT JSONCompactColumns",
+        "INSERT INTO FUNCTION null('line String') SELECT * FROM input('line String') FORMAT LineAsString\nFORMAT JSONCompactColumns");
 }
 
 TEST(PlayDetectExplicitFormat, RealClauseWinsOverStringMention)
@@ -442,7 +457,8 @@ TEST(PlayDetectExplicitFormat, StripLeavesOrdinarySqlUnchanged)
     /// only text or ordinary SQL, downloading a different query than the one that ran. The span-based
     /// strip leaves such queries untouched (there is no real `FORMAT` clause to remove).
     expectStrip("SELECT 'FORMAT TSV' AS s", "SELECT 'FORMAT TSV' AS s");
-    expectStrip("SELECT format JSONCompactColumns FROM values('format UInt8', (1))",
+    expectStrip(
+        "SELECT format JSONCompactColumns FROM values('format UInt8', (1))",
         "SELECT format JSONCompactColumns FROM values('format UInt8', (1))");
     expectStrip("SELECT 1", "SELECT 1");
 }

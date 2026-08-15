@@ -94,15 +94,13 @@ std::vector<Tok> tokenizeSignificant(const std::string & query)
 /// Mirror of `OPENING_BRACKETS` / `CLOSING_BRACKETS` in play.html.
 bool isOpeningBracket(DB::TokenType type)
 {
-    return type == DB::TokenType::OpeningRoundBracket
-        || type == DB::TokenType::OpeningSquareBracket
+    return type == DB::TokenType::OpeningRoundBracket || type == DB::TokenType::OpeningSquareBracket
         || type == DB::TokenType::OpeningCurlyBrace;
 }
 
 bool isClosingBracket(DB::TokenType type)
 {
-    return type == DB::TokenType::ClosingRoundBracket
-        || type == DB::TokenType::ClosingSquareBracket
+    return type == DB::TokenType::ClosingRoundBracket || type == DB::TokenType::ClosingSquareBracket
         || type == DB::TokenType::ClosingCurlyBrace;
 }
 
@@ -136,15 +134,21 @@ std::optional<std::string> settingName(const Tok & tok)
 }
 
 /// Mirror of `tokensBeforeInlineInsertPayload` in play.html. `ParserInsertQuery` treats bytes after
-/// `INSERT ... FORMAT <input format>` as rows, so SQL-looking payload must not reach this walker.
+/// `INSERT ... FORMAT <input format>` as rows, including `INSERT ... SELECT input(...) FORMAT ...`,
+/// so SQL-looking payload must not reach this walker.
 std::vector<Tok> tokensBeforeInlineInsertPayload(const std::vector<Tok> & tokens)
 {
     int depth = 0;
     bool saw_insert = false;
     bool saw_statement_keyword = false;
+    bool saw_select_source = false;
+    bool select_reads_inline_data = false;
     for (size_t i = 0; i < tokens.size(); ++i)
     {
         const Tok & t = tokens[i];
+        if (saw_select_source && t.type == DB::TokenType::BareWord && toLower(t.text) == "input" && i + 1 < tokens.size()
+            && tokens[i + 1].type == DB::TokenType::OpeningRoundBracket)
+            select_reads_inline_data = true;
         if (isOpeningBracket(t.type))
         {
             ++depth;
@@ -169,10 +173,17 @@ std::vector<Tok> tokensBeforeInlineInsertPayload(const std::vector<Tok> & tokens
             continue;
         }
         if (lower == "select" || lower == "with" || lower == "from")
-            return tokens;
+        {
+            saw_select_source = true;
+            continue;
+        }
         if (lower == "format" && i + 1 < tokens.size()
             && (tokens[i + 1].type == DB::TokenType::BareWord || tokens[i + 1].type == DB::TokenType::QuotedIdentifier))
+        {
+            if (saw_select_source && !select_reads_inline_data)
+                return tokens;
             return {tokens.begin(), tokens.begin() + i};
+        }
     }
     return tokens;
 }
@@ -220,9 +231,7 @@ FramingSetting detectFramingSetting(const std::vector<Tok> & all_tokens)
             /// ENDS where a settings list can end - see `list_ends_properly` below. A column merely
             /// named `settings` in the query body stays out of the walk either way: it is followed by
             /// a `,` right away, by an implicit alias, or its "list" runs into a `FROM`.
-            if ((is_settings || is_set)
-                && i + 2 < tokens.size()
-                && settingName(tokens[i + 1]).has_value()
+            if ((is_settings || is_set) && i + 2 < tokens.size() && settingName(tokens[i + 1]).has_value()
                 && (tokens[i + 2].type == DB::TokenType::Equals || tokens[i + 2].type == DB::TokenType::Comma))
             {
                 /// Walk the settings list itself - `name = value` pairs (or bare `name` shorthand
@@ -267,8 +276,7 @@ FramingSetting detectFramingSetting(const std::vector<Tok> & all_tokens)
                     j += 2;
                     /// A numeric value may carry a sign (`SETTINGS priority = -1`), which the lexer
                     /// reports as a separate token.
-                    if (j + 1 < tokens.size()
-                        && (tokens[j].type == DB::TokenType::Minus || tokens[j].type == DB::TokenType::Plus)
+                    if (j + 1 < tokens.size() && (tokens[j].type == DB::TokenType::Minus || tokens[j].type == DB::TokenType::Plus)
                         && tokens[j + 1].type == DB::TokenType::Number)
                         ++j;
                     if (j >= tokens.size())
@@ -324,8 +332,7 @@ FramingSetting detectFramingSetting(const std::vector<Tok> & all_tokens)
                 /// clauses that may follow a settings list. Anything else means the keyword was an
                 /// ordinary identifier after all, so the walk is rolled back and this occurrence
                 /// contributes nothing.
-                const bool list_ends_properly = j >= tokens.size()
-                    || tokens[j].type == DB::TokenType::Semicolon
+                const bool list_ends_properly = j >= tokens.size() || tokens[j].type == DB::TokenType::Semicolon
                     || tokens[j].type == DB::TokenType::OpeningRoundBracket
                     || (tokens[j].type == DB::TokenType::BareWord && settingsListFollowers().contains(toLower(tokens[j].text)));
                 if (opened_by_shorthand && !list_ends_properly)
@@ -459,7 +466,8 @@ TEST(PlayDetectFramingSetting, ColumnNamedSettingsDoesNotOpenAContext)
     /// comparison after it is not mistaken for a real `framing_output_format` setting.
     expectFraming(
         "SELECT settings, framing_output_format = 'None' FROM values('settings UInt8, framing_output_format String', (1, 'None'))",
-        false, false);
+        false,
+        false);
     /// An aliased column named `settings` does not open a context either (`settings x` is not
     /// `name = value`).
     expectFraming("SELECT settings x, framing_output_format = 'None' FROM t", false, false);
@@ -511,11 +519,11 @@ TEST(PlayDetectFramingSetting, DuplicateAssignmentsLastWins)
     /// Three assignments: still the last one wins.
     expectFraming(
         "SELECT 1 SETTINGS framing_output_format = 'None', framing_output_format = 'EventStream', framing_output_format = 'None'",
-        false, true);
+        false,
+        true);
     /// Other settings interleaved between the duplicates do not change the outcome.
     expectFraming(
-        "SELECT 1 SETTINGS framing_output_format = 'None', max_threads = 1, framing_output_format = 'JSONEachPacketString'",
-        true, false);
+        "SELECT 1 SETTINGS framing_output_format = 'None', max_threads = 1, framing_output_format = 'JSONEachPacketString'", true, false);
     /// A standalone `SET` is refused as a session-level change regardless of later assignments.
     expectFraming("SET framing_output_format = 'None', framing_output_format = 'EventStream'", false, false, true);
 }
@@ -541,17 +549,11 @@ TEST(PlayDetectFramingSetting, NonLiteralValuesAreConservativelyDisabling)
     expectFraming("SELECT 1 SETTINGS max_threads = 1, framing_output_format = {fmt:String}", false, true);
     /// The placeholder is consumed by the walk as a whole (`{name:Type}` spans several tokens), so
     /// the list grammar continues after it: a later duplicate assignment still wins...
-    expectFraming(
-        "SELECT 1 SETTINGS framing_output_format = {fmt:String}, framing_output_format = 'EventStream'",
-        true, false);
-    expectFraming(
-        "SELECT 1 SETTINGS framing_output_format = 'EventStream', framing_output_format = DEFAULT",
-        false, true);
+    expectFraming("SELECT 1 SETTINGS framing_output_format = {fmt:String}, framing_output_format = 'EventStream'", true, false);
+    expectFraming("SELECT 1 SETTINGS framing_output_format = 'EventStream', framing_output_format = DEFAULT", false, true);
     /// ...and a placeholder value of an UNRELATED setting does not end the walk before a later
     /// `framing_output_format` entry in the same list.
-    expectFraming(
-        "SELECT 1 SETTINGS max_threads = {t:UInt8}, framing_output_format = 'JSONEachPacketString'",
-        true, false);
+    expectFraming("SELECT 1 SETTINGS max_threads = {t:UInt8}, framing_output_format = 'JSONEachPacketString'", true, false);
     /// A placeholder in the query body (not in a settings context) is not a setting.
     expectFraming("SELECT {fmt:String}", false, false);
     /// A standalone `SET` is still refused as a session-level change, whatever the value form.
@@ -566,25 +568,25 @@ TEST(PlayDetectFramingSetting, ShorthandSettingsInTheListAreConsumed)
     /// context on a leading `name = value` pair skipped such a list entirely, and the page then added
     /// its own framing instead of honoring - or refusing - the query's own `framing_output_format`.
     expectFraming("SELECT 1 SETTINGS optimize_move_to_prewhere, framing_output_format = 'None'", false, true);
-    expectFraming(
-        "SELECT 1 SETTINGS optimize_move_to_prewhere, framing_output_format = 'JSONEachPacketString'",
-        true, false);
+    expectFraming("SELECT 1 SETTINGS optimize_move_to_prewhere, framing_output_format = 'JSONEachPacketString'", true, false);
     /// Several shorthand entries in a row, and one after the framing assignment.
-    expectFraming(
-        "SELECT 1 SETTINGS optimize_move_to_prewhere, allow_experimental_analyzer, framing_output_format = 'None'",
-        false, true);
-    expectFraming(
-        "SELECT 1 SETTINGS framing_output_format = 'None', optimize_move_to_prewhere",
-        false, true);
-    expectFraming(
-        "SELECT 1 SETTINGS optimize_move_to_prewhere, framing_output_format = 'None' FORMAT TSV",
-        false, true);
+    expectFraming("SELECT 1 SETTINGS optimize_move_to_prewhere, allow_experimental_analyzer, framing_output_format = 'None'", false, true);
+    expectFraming("SELECT 1 SETTINGS framing_output_format = 'None', optimize_move_to_prewhere", false, true);
+    expectFraming("SELECT 1 SETTINGS optimize_move_to_prewhere, framing_output_format = 'None' FORMAT TSV", false, true);
     expectFraming("SELECT 1 SETTINGS optimize_move_to_prewhere, framing_output_format = 'None';", false, true);
     /// `ParserInsertQuery` accepts several select-start forms after an insert settings list.
-    expectFraming("INSERT INTO FUNCTION null('x UInt8') SETTINGS optimize_move_to_prewhere, framing_output_format = 'None' SELECT 1", false, true);
-    expectFraming("INSERT INTO FUNCTION null('x UInt8') SETTINGS optimize_move_to_prewhere, framing_output_format = 'None' WITH 1 AS x SELECT x", false, true);
-    expectFraming("INSERT INTO FUNCTION null('x UInt8') SETTINGS optimize_move_to_prewhere, framing_output_format = 'None' FROM numbers(1)", false, true);
-    expectFraming("INSERT INTO FUNCTION null('x UInt8') SETTINGS optimize_move_to_prewhere, framing_output_format = 'None' (SELECT 1)", false, true);
+    expectFraming(
+        "INSERT INTO FUNCTION null('x UInt8') SETTINGS optimize_move_to_prewhere, framing_output_format = 'None' SELECT 1", false, true);
+    expectFraming(
+        "INSERT INTO FUNCTION null('x UInt8') SETTINGS optimize_move_to_prewhere, framing_output_format = 'None' WITH 1 AS x SELECT x",
+        false,
+        true);
+    expectFraming(
+        "INSERT INTO FUNCTION null('x UInt8') SETTINGS optimize_move_to_prewhere, framing_output_format = 'None' FROM numbers(1)",
+        false,
+        true);
+    expectFraming(
+        "INSERT INTO FUNCTION null('x UInt8') SETTINGS optimize_move_to_prewhere, framing_output_format = 'None' (SELECT 1)", false, true);
     /// A standalone `SET` with a leading shorthand entry is still a session-level change.
     expectFraming("SET optimize_move_to_prewhere, framing_output_format = 'JSONEachPacketString'", false, false, true);
     /// The shorthand form of `framing_output_format` itself is rejected by the server (it is a
@@ -598,6 +600,11 @@ TEST(PlayDetectFramingSetting, InlineInsertPayloadIsNotSql)
 {
     /// The line after an inline `INSERT ... FORMAT` is data, not a query-level settings clause.
     expectFraming("INSERT INTO FUNCTION null('line String') FORMAT LineAsString\nSETTINGS framing_output_format = 'None'", false, false);
+    expectFraming(
+        "INSERT INTO FUNCTION null('line String') SELECT * FROM input('line String') FORMAT LineAsString\nSETTINGS framing_output_format = "
+        "'None'",
+        false,
+        false);
 }
 
 TEST(PlayDetectFramingSetting, ShorthandOpenedListMustEndLikeASettingsList)
@@ -623,10 +630,7 @@ TEST(PlayDetectFramingSetting, NoLexerFallbackRunsTheSameWalk)
     /// clause and refused a valid `SELECT` as if it had disabled framing. The fallback now runs the
     /// SAME walk over `fallbackTokenize`'s tokens (`expectFraming` above exercises every corpus
     /// case through it); these are the reported false positives, pinned explicitly.
-    const auto fallback = [](const std::string & query)
-    {
-        return detectFramingSetting(fallbackTokenizeSignificant(query));
-    };
+    const auto fallback = [](const std::string & query) { return detectFramingSetting(fallbackTokenizeSignificant(query)); };
     const FramingSetting body_comparison = fallback("SELECT settings x, framing_output_format = 'None' FROM t");
     EXPECT_FALSE(body_comparison.user_framing);
     EXPECT_FALSE(body_comparison.user_disables_framing);
@@ -649,9 +653,7 @@ TEST(PlayDetectFramingSetting, LargeQueryIsTokenizedWithoutALimit)
     /// helper above. A padding comment keeps the query valid while pushing the clause past 64 KiB.
     const std::string padding(70000, 'x');
     expectFraming("SELECT 1 /* " + padding + " */ SETTINGS framing_output_format = 'None'", false, true);
-    expectFraming(
-        "SELECT 1 /* " + padding + " */ SETTINGS framing_output_format = 'JSONEachPacketString'",
-        true, false);
+    expectFraming("SELECT 1 /* " + padding + " */ SETTINGS framing_output_format = 'JSONEachPacketString'", true, false);
     /// A long list of real settings pushes the framing entry past the old cap as well.
     std::string long_list = "SELECT 1 SETTINGS ";
     for (size_t i = 0; i < 3000; ++i)

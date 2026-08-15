@@ -13580,15 +13580,27 @@ async function tokenizeWithFallback(text)
 }
 
 /// `ParserInsertQuery` treats everything after `INSERT ... FORMAT <input format>` as inline input
-/// data. Stop the request-shaping walks at that boundary: a row may legitimately begin with SQL
-/// words such as `SETTINGS` or `FORMAT`, but it is not part of the statement grammar.
+/// data, including an `INSERT ... SELECT input(...) FORMAT ...`. Stop the request-shaping walks at
+/// that boundary: a row may legitimately begin with SQL words such as `SETTINGS` or `FORMAT`, but
+/// it is not part of the statement grammar.
 function tokensBeforeInlineInsertPayload(tokens)
 {
     let depth = 0;
     let saw_insert = false;
     let saw_statement_keyword = false;
+    let saw_select_source = false;
+    let select_reads_inline_data = false;
     for (let i = 0; i < tokens.length; ++i) {
         const t = tokens[i];
+        /// Mirror `selectReadsInlineDataViaInputFunction` in `ParserInsertQuery`: recognize an
+        /// `input` call at any bracket depth before filtering top-level statement syntax below.
+        if (saw_select_source
+            && t.type === TT.BareWord
+            && t.token.toLowerCase() === 'input'
+            && tokens[i + 1]
+            && tokens[i + 1].type === TT.OpeningRoundBracket) {
+            select_reads_inline_data = true;
+        }
         if (OPENING_BRACKETS.has(t.type)) {
             ++depth;
             continue;
@@ -13606,12 +13618,16 @@ function tokensBeforeInlineInsertPayload(tokens)
             if (!saw_insert) return tokens;
             continue;
         }
-        /// `SELECT`, `WITH`, and `FROM` start the query source of an `INSERT ... SELECT`, whose
-        /// `FORMAT` clauses are SQL rather than inline rows.
-        if (lower === 'select' || lower === 'with' || lower === 'from') return tokens;
+        /// `SELECT`, `WITH`, and `FROM` start the query source of an `INSERT ... SELECT`. Its
+        /// `FORMAT` clauses are SQL unless that source reads inline rows with `input`.
+        if (lower === 'select' || lower === 'with' || lower === 'from') {
+            saw_select_source = true;
+            continue;
+        }
         if (lower === 'format'
             && tokens[i + 1]
             && (tokens[i + 1].type === TT.BareWord || tokens[i + 1].type === TT.QuotedIdentifier)) {
+            if (saw_select_source && !select_reads_inline_data) return tokens;
             return tokens.slice(0, i);
         }
     }
