@@ -5735,24 +5735,26 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     /// Get the view's inner query AST.
     const auto & storage_snapshot = table_node->getStorageSnapshot();
 
-    /// A view whose inner query runs as somebody else must not be inlined: inlining puts the
-    /// invoker's expressions into the same query as the view's own filtering, and the analyzer is
-    /// then free to merge them, so an expression written by the invoker would decide about rows
-    /// the view does not expose. Reading the view through `StorageView::read` instead builds a
-    /// subplan whose filtering steps are marked with `IQueryPlanStep::isSecurityBarrier`.
-    /// A view that provably hides no rows keeps being inlined — there is nothing below it for a
-    /// merged predicate to observe.
-    if (StorageView::isSecurityBarrier(*storage_snapshot->metadata, scope.context)
-        && StorageView::canHideRows(storage_snapshot->metadata->getSelectQuery().inner_query, scope.context))
-        return;
-
-    auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);
-
     /// Check for row policies on the view itself.
     auto storage_id = storage->getStorageID();
     auto row_policy_filter = scope.context->getRowPolicyFilter(
         storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
     bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
+
+    /// A view whose inner query runs as somebody else must not be inlined: inlining puts the
+    /// invoker's expressions into the same query as the view's own filtering, and the analyzer is
+    /// then free to merge them, so an expression written by the invoker would decide about rows
+    /// the view does not expose. A row policy attached to the view is just as much part of what
+    /// the invoker may observe as a filter in the stored query. Reading the view through
+    /// `StorageView::read` instead builds a subplan whose filtering steps are marked with
+    /// `IQueryPlanStep::isSecurityBarrier`.
+    /// A view that provably hides no rows and has no effective row policy keeps being inlined —
+    /// there is nothing below it for a merged predicate to observe.
+    if (StorageView::isSecurityBarrier(*storage_snapshot->metadata, scope.context)
+        && (has_row_policy || StorageView::canHideRows(storage_snapshot->metadata->getSelectQuery().inner_query, scope.context)))
+        return;
+
+    auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);
 
     /// Build the query tree from the view's inner query AST.
     ASTPtr view_ast = storage_snapshot->metadata->getSelectQuery().inner_query->clone();

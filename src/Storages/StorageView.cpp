@@ -645,8 +645,12 @@ void StorageView::readImpl(
     /// The decision looks at the view's definition and not at `current_inner_query`: with
     /// `enable_analyzer = 0` the latter is the rewritten query, into which the outer predicate
     /// has already been pushed, and the invoker's own predicate is not something to protect.
+    auto storage_id = getStorageID();
+    auto row_policy_filter = context->getRowPolicyFilter(
+        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    const bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
     const bool hides_rows = security_barrier
-        && canHideRows(storage_snapshot->metadata->getSelectQuery().inner_query, context);
+        && (has_row_policy || canHideRows(storage_snapshot->metadata->getSelectQuery().inner_query, context));
     const ActionsDAG * post_filter = hides_rows ? nullptr : query_info.filter_actions_dag.get();
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
