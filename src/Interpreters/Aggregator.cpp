@@ -2145,20 +2145,15 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     /// The root is the worst kept candidate, so a new cell only pays the heap when it beats it.
     const auto worse_first = [&](const Candidate & a, const Candidate & b) { return better(a.value, b.value); };
 
-    /// The byte size a key contributes to its materialized key columns: string keys mirror
-    /// `ColumnString` (the characters plus one offset), fixed-size keys their column widths, and
-    /// a serialized multi-key blob stands in for the per-column sizes it carries. The selection
-    /// scan visits every cell anyway, so the whole bucket's key bytes come out of the same pass
-    /// for the dataflow-statistics accounting of what a full materialization would produce.
-    const auto key_byte_size = [](const TableKey & key) -> UInt64
-    {
-        if constexpr (std::is_same_v<TableKey, std::string_view>)
-            return key.size() + sizeof(IColumn::Offset);
-        else if constexpr (std::is_same_v<TableKey, PackedStringRef>)
-            return static_cast<std::string_view>(key).size() + sizeof(IColumn::Offset);
-        else
-            return sizeof(TableKey);
-    };
+    /// Account for the full output using the same conversion as the final result. A serialized
+    /// multi-key table stores a length-prefixed arena blob, whose size is not the size of the
+    /// materialized key columns (in particular, every String key has an offset column).
+    auto key_size_columns = prepareOutputBlockColumns(
+        params, aggregate_functions, key_types, aggregate_state_types, pools_for_output, /*final=*/true, /*rows=*/1);
+    auto key_size_shuffled_key_sizes = method.shuffleKeyColumns(key_size_columns.raw_key_columns, key_sizes);
+    const auto & key_size_key_sizes = key_size_shuffled_key_sizes ? *key_size_shuffled_key_sizes : key_sizes;
+    IColumn::SerializationSettings key_size_serialization_settings{
+        .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
     UInt64 key_bytes = 0;
 
     std::vector<Candidate> top;
@@ -2166,7 +2161,13 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     data.forEachValue(
         [&](const auto & key, auto & mapped)
         {
-            key_bytes += key_byte_size(key);
+            method.insertKeyIntoColumns(
+                key, key_size_columns.raw_key_columns, key_size_key_sizes, &key_size_serialization_settings);
+            for (auto * column : key_size_columns.raw_key_columns)
+            {
+                key_bytes += column->byteSizeAt(column->size() - 1);
+                column->popBack(1);
+            }
             const UInt64 value = count_of(mapped);
             if (top.size() < params.bucket_top_k)
             {

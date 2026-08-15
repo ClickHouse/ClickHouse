@@ -1,12 +1,13 @@
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/HashTable/TwoLevelStringHashMap.h>
 
+#include <Columns/ColumnString.h>
+
 #include <gtest/gtest.h>
 
 #include <memory>
 #include <string>
 #include <string_view>
-#include <vector>
 
 using namespace DB;
 
@@ -17,20 +18,24 @@ namespace
 /// from 1 to 30 (m1: 1-8 bytes, m2: 9-16, m3: 17-24, ms: 25+), keys whose trailing zero byte
 /// forces them into the long-string submap regardless of length, and a key with an embedded
 /// (non-trailing) zero byte, which stays in its fixed-size class.
-std::vector<std::string> testKeys()
+ColumnString::MutablePtr testKeys()
 {
-    std::vector<std::string> keys;
-    keys.emplace_back();
+    auto keys = ColumnString::create();
+    keys->insertDefault();
     for (size_t len = 1; len <= 30; ++len)
     {
         std::string key(len, ' ');
         for (size_t i = 0; i < len; ++i)
             key[i] = static_cast<char>('a' + (len + i) % 26);
-        keys.push_back(std::move(key));
+        keys->insertData(key.data(), key.size());
     }
     for (size_t len : {3, 8, 16, 24})
-        keys.push_back(std::string(len - 1, 'z') + '\0');
-    keys.push_back(std::string("a\0b", 3));
+    {
+        std::string key(len - 1, 'z');
+        key += '\0';
+        keys->insertData(key.data(), key.size());
+    }
+    keys->insertData("a\0b", 3);
     return keys;
 }
 
@@ -45,19 +50,19 @@ TEST(StringHashTableSuppliedHash, FindWithCanonicalHash)
     Map map;
 
     const auto keys = testKeys();
-    for (size_t i = 0; i < keys.size(); ++i)
+    for (size_t i = 0; i < keys->size(); ++i)
     {
         Map::LookupResult it;
         bool inserted = false;
-        map.emplace(std::string_view(keys[i]), it, inserted);
+        map.emplace(keys->getDataAt(i), it, inserted);
         ASSERT_TRUE(inserted);
         it->getMapped() = i;
     }
-    ASSERT_EQ(map.size(), keys.size());
+    ASSERT_EQ(map.size(), keys->size());
 
-    for (size_t i = 0; i < keys.size(); ++i)
+    for (size_t i = 0; i < keys->size(); ++i)
     {
-        const std::string_view key = keys[i];
+        const std::string_view key = keys->getDataAt(i);
         const size_t hash = map.hash(key);
 
         map.prefetch(key, hash);
@@ -77,20 +82,20 @@ TEST(StringHashTableSuppliedHash, EmplaceWithSuppliedHash)
     Map map;
 
     const auto keys = testKeys();
-    for (size_t i = 0; i < keys.size(); ++i)
+    for (size_t i = 0; i < keys->size(); ++i)
     {
-        const std::string_view key = keys[i];
+        const std::string_view key = keys->getDataAt(i);
         Map::LookupResult it;
         bool inserted = false;
         map.emplace(key, it, inserted, map.hash(key));
         ASSERT_TRUE(inserted) << "key size " << key.size();
         it->getMapped() = i;
     }
-    ASSERT_EQ(map.size(), keys.size());
+    ASSERT_EQ(map.size(), keys->size());
 
-    for (size_t i = 0; i < keys.size(); ++i)
+    for (size_t i = 0; i < keys->size(); ++i)
     {
-        const std::string_view key = keys[i];
+        const std::string_view key = keys->getDataAt(i);
 
         auto found = map.find(key);
         ASSERT_NE(found, nullptr) << "key size " << key.size();
@@ -119,18 +124,18 @@ TEST(StringHashTableSuppliedHash, TwoLevelBucketRouting)
     auto & map = *map_holder;
 
     const auto keys = testKeys();
-    for (size_t i = 0; i < keys.size(); ++i)
+    for (size_t i = 0; i < keys->size(); ++i)
     {
         Map::LookupResult it;
         bool inserted = false;
-        map.emplace(std::string_view(keys[i]), it, inserted);
+        map.emplace(keys->getDataAt(i), it, inserted);
         ASSERT_TRUE(inserted);
         it->getMapped() = i;
     }
 
-    for (size_t i = 0; i < keys.size(); ++i)
+    for (size_t i = 0; i < keys->size(); ++i)
     {
-        const std::string_view key = keys[i];
+        const std::string_view key = keys->getDataAt(i);
         const size_t hash = map.hash(key);
 
         auto found = map.find(key, hash);
@@ -155,9 +160,9 @@ TEST(StringHashTableSuppliedHash, TwoLevelEmplaceWithSuppliedHash)
     auto & map = *map_holder;
 
     const auto keys = testKeys();
-    for (size_t i = 0; i < keys.size(); ++i)
+    for (size_t i = 0; i < keys->size(); ++i)
     {
-        const std::string_view key = keys[i];
+        const std::string_view key = keys->getDataAt(i);
         Map::LookupResult it;
         bool inserted = false;
         map.emplace(key, it, inserted, map.hash(key));
@@ -165,9 +170,9 @@ TEST(StringHashTableSuppliedHash, TwoLevelEmplaceWithSuppliedHash)
         it->getMapped() = i;
     }
 
-    for (size_t i = 0; i < keys.size(); ++i)
+    for (size_t i = 0; i < keys->size(); ++i)
     {
-        const std::string_view key = keys[i];
+        const std::string_view key = keys->getDataAt(i);
         auto found = map.impls[Map::getBucketFromHash(map.hash(key))].find(key);
         ASSERT_NE(found, nullptr) << "key size " << key.size();
         ASSERT_EQ(found->getMapped(), i) << "key size " << key.size();
@@ -186,9 +191,9 @@ TEST(StringHashTableSuppliedHash, LongStringClassification)
 
     const auto keys = testKeys();
     size_t long_keys = 0;
-    for (size_t i = 0; i < keys.size(); ++i)
+    for (size_t i = 0; i < keys->size(); ++i)
     {
-        const std::string_view key = keys[i];
+        const std::string_view key = keys->getDataAt(i);
         if (Map::usesStringViewSubmap(key))
         {
             ++long_keys;
@@ -204,10 +209,10 @@ TEST(StringHashTableSuppliedHash, LongStringClassification)
     /// Lengths 25..30 plus the four trailing-zero keys; the embedded-zero key stays fixed-size.
     ASSERT_EQ(long_keys, 10);
 
-    for (size_t i = 0; i < keys.size(); ++i)
+    for (size_t i = 0; i < keys->size(); ++i)
     {
-        auto found = map.find(std::string_view(keys[i]));
-        ASSERT_NE(found, nullptr) << "key size " << keys[i].size();
+        auto found = map.find(keys->getDataAt(i));
+        ASSERT_NE(found, nullptr) << "key size " << keys->getDataAt(i).size();
         ASSERT_EQ(found->getMapped(), i);
     }
 }
