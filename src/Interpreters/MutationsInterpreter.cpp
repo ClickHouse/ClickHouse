@@ -192,8 +192,14 @@ void addColumnsRequiredForDefaultConversions(
         auto syntax_result = TreeRewriter(context).analyze(default_expression, source_columns);
         for (const auto & dependency : syntax_result->requiredSourceColumns())
         {
-            if (required_columns_set.emplace(dependency).second)
-                required_columns.push_back(dependency);
+            /// Default expressions can read a subcolumn. The conversion is applied to its
+            /// physical owner, so follow the same subcolumn-to-owner dependency as the read path.
+            auto storage_column = columns_desc.tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), dependency);
+            const String & dependency_in_storage = storage_column && storage_column->isSubcolumn()
+                ? storage_column->getNameInStorage()
+                : dependency;
+            if (required_columns_set.emplace(dependency_in_storage).second)
+                required_columns.push_back(dependency_in_storage);
         }
     }
 }
