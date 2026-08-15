@@ -4013,6 +4013,7 @@ void ReadFromMergeTree::copyReadInOrderContractFrom(const ReadFromMergeTree & so
 {
     has_outer_limit = source.has_outer_limit;
     prefer_multiple_streams = source.prefer_multiple_streams;
+    output_each_partition_through_separate_port = source.output_each_partition_through_separate_port;
     enable_vertical_final = source.enable_vertical_final;
     query_task_size_limit = source.query_task_size_limit;
     virtual_row_conversion = source.virtual_row_conversion;
