@@ -95,7 +95,14 @@ public:
     /// object at that path can still correctly evaluate the rules against its own root-relative
     /// paths instead of losing the policy or evaluating it unprefixed. Also projects typed paths
     /// and literal SKIP paths declared under that prefix, stripped to be relative to the nested
-    /// type's own root, so they keep taking precedence over SHARED REGEXP as documented.
+    /// type's own root, so they keep taking precedence over SHARED REGEXP as documented. SKIP
+    /// REGEXP patterns propagate unchanged for the same root-relative evaluation, but only get a
+    /// non-empty prefix to evaluate against when this object also has at least one SHARED REGEXP
+    /// rule -- the constructor rejects a non-empty prefix otherwise. An object with SKIP REGEXP
+    /// and no SHARED REGEXP rules at all still propagates its regexps here, but the nested type's
+    /// prefix stays empty, so they fall back to matching the nested type's own bare local paths
+    /// instead of the intended root-relative ones. This mirrors a pre-existing, equally-scoped
+    /// limitation of buildSubObjectTypeAndSerialization for the explicit `^`-subcolumn accessor.
     DataTypePtr getTypeOfNestedObjects(const String & path_prefix_from_root) const;
     DataTypePtr getDynamicType() const;
 
