@@ -13,6 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int TOO_MANY_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -163,7 +164,13 @@ public:
 
     String getName() const override { return "groupingForCube"; }
 
-    UInt64 getNumberOfGroupingSets() const override { return ONE << aggregation_keys_number; }
+    UInt64 getNumberOfGroupingSets() const override
+    {
+        if (aggregation_keys_number >= 8 * sizeof(UInt64))
+            throw Exception(ErrorCodes::TOO_MANY_COLUMNS,
+                "Too many keys ({}) are used for CUBE, the maximum is {}.", aggregation_keys_number, 8 * sizeof(UInt64) - 1);
+        return ONE << aggregation_keys_number;
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {

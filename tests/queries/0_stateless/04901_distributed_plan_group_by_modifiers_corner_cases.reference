@@ -86,4 +86,5 @@ k2	0	913500	3
 	1	2749500	1
 -- grouping over a wide cube: bit arithmetic, no per-set lookup table
 8191	4095	0	1
+-- grouping over a cube with 64 keys is rejected at planning, same as at execution
 -- WITH TOTALS and extremes stay fail-closed

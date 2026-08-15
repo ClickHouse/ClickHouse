@@ -61,6 +61,19 @@ SELECT count(), sum(g), min(g), max(g) FROM
     WITH CUBE
 );
 
+SELECT '-- grouping over a cube with 64 keys is rejected at planning, same as at execution';
+EXPLAIN SELECT grouping(v % 2), count() FROM t_corner
+GROUP BY
+    v % 2, v % 3, v % 4, v % 5, v % 6, v % 7, v % 8, v % 9,
+    v % 10, v % 11, v % 12, v % 13, v % 14, v % 15, v % 16, v % 17,
+    v % 18, v % 19, v % 20, v % 21, v % 22, v % 23, v % 24, v % 25,
+    v % 26, v % 27, v % 28, v % 29, v % 30, v % 31, v % 32, v % 33,
+    v % 34, v % 35, v % 36, v % 37, v % 38, v % 39, v % 40, v % 41,
+    v % 42, v % 43, v % 44, v % 45, v % 46, v % 47, v % 48, v % 49,
+    v % 50, v % 51, v % 52, v % 53, v % 54, v % 55, v % 56, v % 57,
+    v % 58, v % 59, v % 60, v % 61, v % 62, v % 63, v % 64, v % 65
+WITH CUBE; -- { serverError TOO_MANY_COLUMNS }
+
 SELECT '-- WITH TOTALS and extremes stay fail-closed';
 SELECT k1, sum(v) FROM t_corner GROUP BY k1 WITH TOTALS; -- { serverError SUPPORT_IS_DISABLED }
 SELECT k1, sum(v) FROM t_corner GROUP BY k1 WITH ROLLUP WITH TOTALS; -- { serverError SUPPORT_IS_DISABLED }
