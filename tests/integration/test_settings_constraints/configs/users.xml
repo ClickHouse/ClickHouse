@@ -16,9 +16,6 @@
                     <max>200000</max>
                     <disallowed>5000</disallowed>
                 </merge_tree_max_parts_in_total>
-                <merge_tree_enable_block_number_column>
-                    <const/>
-                </merge_tree_enable_block_number_column>
                <force_index_by_date>
                    <readonly/>
                </force_index_by_date>
@@ -35,35 +32,6 @@
         <no_dll_profile>
             <allow_ddl>0</allow_ddl>
         </no_dll_profile>
-
-        <!-- Same constraint as <merge_tree_enable_block_number_column> above, but declared
-             via the alias name. Used to exercise the reverse direction (constraint on alias,
-             query via canonical) of MergeTreeSettings alias resolution. -->
-        <alias_constraint_profile>
-            <constraints>
-                <merge_tree_allow_experimental_block_number_column>
-                    <const/>
-                </merge_tree_allow_experimental_block_number_column>
-            </constraints>
-        </alias_constraint_profile>
-
-        <!-- Empty profile used as the system-wide default_profile (see configs/no_default_constraints.xml).
-             SQL-created users without an explicit profile fall back to this one, so the role test below
-             starts from a base profile with no merge_tree constraints and the constraint reaches the
-             user only via the granted role. -->
-        <empty_profile>
-        </empty_profile>
-
-        <!-- A clamp target (min) that also appears in disallowed_values. Used to verify that the
-             disallowed check sees the post-clamp value rather than the pre-clamp value. -->
-        <overlap_constraint_profile>
-            <constraints>
-                <max_memory_usage>
-                    <min>5000000000</min>
-                    <disallowed>5000000000</disallowed>
-                </max_memory_usage>
-            </constraints>
-        </overlap_constraint_profile>
     </profiles>
 
     <users>
@@ -91,22 +59,6 @@
             <profile>no_dll_profile</profile>
             <quota>default</quota>
         </no_dll_user>
-        <alias_constraint_user>
-            <password></password>
-            <networks incl="networks" replace="replace">
-                <ip>::/0</ip>
-            </networks>
-            <profile>alias_constraint_profile</profile>
-            <quota>default</quota>
-        </alias_constraint_user>
-        <overlap_constraint_user>
-            <password></password>
-            <networks incl="networks" replace="replace">
-                <ip>::/0</ip>
-            </networks>
-            <profile>overlap_constraint_profile</profile>
-            <quota>default</quota>
-        </overlap_constraint_user>
     </users>
 
     <quotas>

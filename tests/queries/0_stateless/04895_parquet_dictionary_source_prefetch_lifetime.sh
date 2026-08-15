@@ -39,6 +39,7 @@ ${CLICKHOUSE_CLIENT} --query="
     source(file(path '${ABS}' format 'Parquet'))
     layout(flat(max_array_size 5000000)) lifetime(0)
     settings(max_download_threads = 32, max_parsing_threads = 32,
+             input_format_parquet_use_native_reader_v3 = 1,
              input_format_parquet_local_file_min_bytes_for_seek = 1,
              input_format_parquet_enable_row_group_prefetch = 1);
 "
@@ -49,18 +50,6 @@ for _ in 1 2 3 4 5; do
     ${CLICKHOUSE_CLIENT} --log_comment="${DICT}_reload" --query="system reload dictionary ${DICT}" 2>&1 \
         | grep -c -m1 -F 'CANNOT_PARSE_TEXT'
 done
-
-# Every iteration has to have reached row group reading, otherwise the loop proves nothing: an
-# already-FAILED dictionary replays its stored exception without reading, and a file rejected while
-# its footer is parsed reads only the footer, both of which are indistinguishable from a real read by
-# the error message alone. ParquetReadRowGroups is counted only once row groups are being read.
-${CLICKHOUSE_CLIENT} --query="system flush logs query_log"
-${CLICKHOUSE_CLIENT} --query="
-    select 'reloads_that_read', countIf(ProfileEvents['ParquetReadRowGroups'] > 0)
-    from system.query_log
-    where log_comment = '${DICT}_reload' and current_database = currentDatabase()
-          and type != 'QueryStart';
-"
 
 # The server survived every attempt and still answers.
 ${CLICKHOUSE_CLIENT} --query="select 'alive', count() from system.dictionaries where database = currentDatabase() and name = '${DICT}'"

@@ -11,7 +11,7 @@ FROM numbers(3)
 UNION ALL
 SELECT rand64() AS x;
 
-SYSTEM WAIT VIEW 03221_rmv;
+SELECT sleep(2);
 
 SELECT read_rows, total_rows, progress FROM system.view_refreshes WHERE database = currentDatabase() and view = '03221_rmv';
 

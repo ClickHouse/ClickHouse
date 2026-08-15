@@ -6,10 +6,12 @@
 #include <AggregateFunctions/QuantilesCommon.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
-#include <Core/ProtocolDefines.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
 
@@ -31,19 +33,6 @@ template <typename> class QuantileTiming;
 template <typename> class QuantileGK;
 template <typename> class QuantileDD;
 
-/** Latest serialization version of a quantile data structure, or 0 for the ones that never changed
-  * their state format. A data structure opts in by declaring `static constexpr size_t state_version`,
-  * and then takes the version as the second argument of `serialize` and `deserialize`.
-  */
-template <typename Data>
-constexpr size_t quantileStateVersion()
-{
-    if constexpr (requires { Data::state_version; })
-        return Data::state_version;
-    else
-        return 0;
-}
-
 /** Generic aggregate function for calculation of quantiles.
   * It depends on quantile calculation data structure. Look at Quantile*.h for various implementations.
   */
@@ -55,8 +44,10 @@ template <
     typename Data,
     /// Structure with static member "name", containing the name of the aggregate function.
     typename Name,
-    /// Type of the second argument. If there is no second argument, this should be void.
-    typename SecondArgumentType,
+    /// If true, the function accepts the second argument
+    /// (in can be "weight" to calculate quantiles or "determinator" that is used instead of PRNG).
+    /// Second argument is always obtained through 'getUInt' method.
+    bool has_second_arg,
     /// If non-void, the function will return float of specified type with possibly interpolated results and NaN if there was no values.
     /// Otherwise it will return Value type and default value if there was no values.
     /// As an example, the function cannot return floats, if the SQL type of argument is Date or DateTime.
@@ -67,14 +58,13 @@ template <
     /// If the first parameter (before level) is accuracy.
     bool has_accuracy_parameter>
 class AggregateFunctionQuantile final
-    : public IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, SecondArgumentType, FloatReturnType, returns_many, has_accuracy_parameter>>
+    : public IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many, has_accuracy_parameter>>
 {
 private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
 
-    static constexpr bool returns_float = !std::is_same_v<FloatReturnType, void>;
+    static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
     static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDD<Value>>;
-    static constexpr size_t state_version = quantileStateVersion<Data>();
     static_assert(!is_decimal<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
@@ -92,7 +82,7 @@ private:
 
 public:
     AggregateFunctionQuantile(const DataTypes & argument_types_, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, SecondArgumentType, FloatReturnType, returns_many, has_accuracy_parameter>>(
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many, has_accuracy_parameter>>(
             argument_types_, params, createResultType(argument_types_))
         , levels(has_accuracy_parameter && !params.empty() ? Array(params.begin() + 1, params.end()) : params, returns_many)
         , level(levels.levels[0])
@@ -101,23 +91,13 @@ public:
         if (!returns_many && levels.size() > 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires one level parameter or less", getName());
 
-        if constexpr (std::is_same_v<SecondArgumentType, UInt64>)
+        if constexpr (has_second_arg)
         {
             assertBinary(Name::name, argument_types_);
             if (!isUInt(argument_types_[1]))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Second argument (weight) for function {} must be unsigned integer, but it has type {}",
-                    Name::name,
-                    argument_types_[1]->getName());
-        }
-        else if constexpr (std::is_same_v<SecondArgumentType, Float64>)
-        {
-            assertBinary(Name::name, argument_types_);
-            if (!isFloat(argument_types_[1]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Second argument for function {} must be float, but it has type {}",
                     Name::name,
                     argument_types_[1]->getName());
         }
@@ -245,72 +225,25 @@ public:
 #   pragma clang diagnostic pop
         }
 
-        if constexpr (std::is_same_v<SecondArgumentType, UInt64>)
+        if constexpr (has_second_arg)
             this->data(place).add(value, columns[1]->getUInt(row_num));
-        else if constexpr (std::is_same_v<SecondArgumentType, Float64>)
-            this->data(place).add(value, columns[1]->getFloat64(row_num));
         else
             this->data(place).add(value);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
 
-    bool isVersioned() const override { return state_version > 0; }
-
-    /// The default version - the one used when the type carries no explicit version - must stay 0.
-    /// Unversioned `AggregateFunction(quantileDeterministic, ...)` types already exist in persisted
-    /// data written before the version was introduced: in the `columns.txt` of old parts, in old
-    /// `Native` files, and in the type lists and shared-variant values of old `Dynamic` columns.
-    /// None of these media record a default version, so the writer and the reader of an unversioned
-    /// type can only agree on the layout if it never changes: an unversioned type has to keep the
-    /// byte layout that unversioned data always had. The new version applies only where it is
-    /// spelled out explicitly - in the type name (`AggregateFunction(1, ...)`) and in the version
-    /// field of the binary type encoding - or derived from the negotiated revision on the `Native`
-    /// wire. To that end `getStateType` below returns the explicitly versioned type, so every fresh
-    /// state (a `-State` query result, an inferred `CREATE TABLE ... AS SELECT` column, a value
-    /// entering a `Dynamic` column) carries the version with it on every medium, while a fresh
-    /// `CREATE TABLE` with a spelled-out unversioned column type gets the version pinned at DDL time.
-    size_t getDefaultVersion() const override { return 0; }
-
-    /// The state type spells the version out, so that the type name and the payload stay consistent
-    /// on every medium the state can travel through - including the generic formats, which serialize
-    /// query results with the state type as-is (only the `Native` wire re-derives versions from the
-    /// negotiated revision).
-    DataTypePtr getStateType() const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        if constexpr (state_version > 0)
-            return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, this->parameters, state_version);
-        else
-            return IAggregateFunction::getStateType();
+        this->data(place).serialize(buf);
     }
 
-    size_t getVersionFromRevision(size_t revision) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        if constexpr (state_version >= 1)
-        {
-            if (revision >= DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE)
-                return 1;
-        }
-        return 0;
-    }
-
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
-    {
-        if constexpr (state_version > 0)
-            this->data(place).serialize(buf, version.value_or(getDefaultVersion()));
-        else
-            this->data(place).serialize(buf);
-    }
-
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
-    {
-        if constexpr (state_version > 0)
-            this->data(place).deserialize(buf, version.value_or(getDefaultVersion()));
-        else
-            this->data(place).deserialize(buf);
+        this->data(place).deserialize(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -404,8 +337,5 @@ struct NameQuantilesGK { static constexpr auto name = "quantilesGK"; };
 
 struct NameQuantileDD { static constexpr auto name = "quantileDD"; };
 struct NameQuantilesDD { static constexpr auto name = "quantilesDD"; };
-
-struct NameQuantilePrometheusHistogram { static constexpr auto name = "quantilePrometheusHistogram"; };
-struct NameQuantilesPrometheusHistogram { static constexpr auto name = "quantilesPrometheusHistogram"; };
 
 }

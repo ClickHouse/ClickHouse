@@ -19,7 +19,7 @@ Float64 lgamma_wrapper(Float64 arg)
     if (arg < 0 && arg == std::floor(arg))
         return std::numeric_limits<Float64>::quiet_NaN();
 
-    int signp = 0;
+    int signp;
     return lgamma_r(arg, &signp);
 }
 
@@ -41,7 +41,7 @@ Returns the logarithm of the gamma function.
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT lgamma(5);", "3.1780538303479458"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionLGamma>(documentation);
 }

@@ -3,8 +3,6 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
-namespace Poco::JSON { class Object; }
-
 namespace DB
 {
 
@@ -26,20 +24,17 @@ public:
 
     ASTPtr clone() const override
     {
-        auto clone = make_intrusive<ASTKillQueryQuery>(*this);
-        clone->children.clear();
-
+        auto clone = std::make_shared<ASTKillQueryQuery>(*this);
         if (where_expression)
-            clone->set(clone->where_expression, where_expression->clone());
-
-        cloneOutputOptions(*clone);
+        {
+            clone->where_expression = where_expression->clone();
+            clone->children = {clone->where_expression};
+        }
 
         return clone;
     }
 
     String getID(char) const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 

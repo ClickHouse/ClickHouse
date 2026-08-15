@@ -1,3 +1,0 @@
-<clickhouse>    
-    <iceberg_metadata_log remove="remove"/>
-</clickhouse>

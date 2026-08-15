@@ -42,12 +42,6 @@ rect.zoom-panel {
     background: rgba(0, 0, 0, 0.8);
     color: #fff;
     border-radius: 2px;
-    pointer-events: none !important;
-    user-select: text;
-}
-
-.d3-tip.pinned {
-    pointer-events: auto !important;
 }
 
 .d3-tip table {
@@ -79,17 +73,11 @@ rect.zoom-panel {
     stroke-dasharray:0;
 }
 
-.bar {
-    stroke-width: 1px;
-    stroke: rgba(0, 0, 0, 0.3);
-}
-
 .bar-u {
     opacity: 0.2;
 }
 
-.bar:hover,
-.bar[data-pinned] {
+.bar:hover {
     stroke-width: 1px;
     stroke: black;
 }

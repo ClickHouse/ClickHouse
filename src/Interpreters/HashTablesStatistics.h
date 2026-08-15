@@ -80,8 +80,6 @@ public:
     std::optional<DB::HashTablesCacheStatistics> getCacheStats() const;
 
 private:
-    /// Creates the cache on the first call that is configured to keep entries. Returns `nullptr`
-    /// for a caller with `max_entries_for_hash_table_stats == 0`, which must not fix the capacity.
     CachePtr getHashTableStatsCache(const Params & params);
 
     mutable std::mutex mutex;

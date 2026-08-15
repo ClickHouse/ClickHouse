@@ -5,7 +5,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <Storages/Kafka/Kafka_fwd.h>
-#include <Storages/IStreamingStorage.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadPool_fwd.h>
@@ -21,8 +20,6 @@
 namespace DB
 {
 
-namespace AWSMSKIAMAuth { struct OAuthBearerTokenRefreshContext; }
-
 struct KafkaSettings;
 class ReadFromStorageKafka;
 class ThreadStatus;
@@ -36,7 +33,7 @@ using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageKafka final : public IStreamingStorage, WithContext
+class StorageKafka final : public IStorage, WithContext
 {
     using KafkaInterceptors = KafkaInterceptors<StorageKafka>;
     friend KafkaInterceptors;
@@ -54,14 +51,10 @@ public:
 
     std::string getName() const override { return Kafka::TABLE_ENGINE_NAME; }
 
-    bool isMessageQueue() const override { return true; }
-
     bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
-
-    void renameInMemory(const StorageID & new_table_id) override;
 
     void read(
         QueryPlan & query_plan,
@@ -98,20 +91,10 @@ public:
 
     SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), consumers};  }
 
-    bool supportsColumnsWithDynamicStructure() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
 
     const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
-
-    /// Returns the existing OAuth context, or installs `candidate` if none exists yet. Thread-safe.
-    std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext>
-    ensureOAuthContext(std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> candidate)
-    {
-        std::lock_guard lock(oauth_context_mutex);
-        if (!oauth_context)
-            oauth_context = std::move(candidate);
-        return oauth_context;
-    }
 
 private:
     friend class ReadFromStorageKafka;
@@ -131,8 +114,7 @@ private:
     const bool intermediate_commit;
     const SettingsChanges settings_adjustments;
 
-    mutable std::mutex oauth_context_mutex;
-    std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> oauth_context TSA_GUARDED_BY(oauth_context_mutex);
+    std::atomic<bool> mv_attached = false;
 
     std::vector<KafkaConsumerPtr> consumers;
 
@@ -145,7 +127,6 @@ private:
     {
         BackgroundSchedulePoolTaskHolder holder;
         std::atomic<bool> stream_cancelled {false};
-        UInt64 last_seen_refresh_epoch = 0;
         explicit TaskContext(BackgroundSchedulePoolTaskHolder&& task_) : holder(std::move(task_))
         {
         }
@@ -171,16 +152,15 @@ private:
     /// If named_collection is specified.
     String collection_name;
 
-    void scheduleStreamingTasksImpl() override;
+    std::atomic<bool> shutdown_called = false;
 
     void threadFunc(size_t idx);
 
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
-    size_t getSchemaRegistrySkipBytes() const;
 
-    bool streamToViews(UInt64 cycle_epoch);
+    bool streamToViews();
 
     void cleanConsumersByTTL();
     void cleanConsumers();

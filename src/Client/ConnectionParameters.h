@@ -5,10 +5,6 @@
 #include <Core/Protocol.h>
 #include <IO/ConnectionTimeouts.h>
 
-#include <Poco/Net/SocketAddress.h>
-#include <Poco/Net/StreamSocket.h>
-
-#include <optional>
 #include <string>
 
 namespace Poco::Util
@@ -18,9 +14,6 @@ class AbstractConfiguration;
 
 namespace DB
 {
-
-class JWTProvider;
-
 struct ConnectionParameters
 {
     String host;
@@ -33,22 +26,10 @@ struct ConnectionParameters
     std::string quota_key;
     SSHKey ssh_private_key;
     std::string jwt;
-#if USE_JWT_CPP && USE_SSL
-    std::shared_ptr<JWTProvider> jwt_provider;
-#endif
     Protocol::Secure security = Protocol::Secure::Disable;
-    std::string tls_sni_override;
     std::string bind_host;
     Protocol::Compression compression = Protocol::Compression::Enable;
     ConnectionTimeouts timeouts;
-
-    /// The address of `host` that is already known to accept connections on `port`, if any.
-    /// It is tried first, so that the addresses that do not answer do not delay the connection.
-    std::optional<Poco::Net::SocketAddress> preferred_address;
-
-    /// A connection to `preferred_address` that has already been established, to be taken over by the
-    /// `Connection` instead of opening a second one to the same endpoint (see `Connection::setAdoptedSocket`).
-    std::optional<Poco::Net::StreamSocket> adopted_socket;
 
     using Database = StrongTypedef<String, struct DatabaseTag>;
     using Host = StrongTypedef<String, struct HostTag>;

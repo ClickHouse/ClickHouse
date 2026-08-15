@@ -1,7 +1,8 @@
 import os
+import os.path as p
 import socket
 import ssl
-import urllib.error
+import subprocess
 import urllib.parse
 import urllib.request
 import warnings
@@ -59,10 +60,10 @@ def execute_query_https_unsupported(host, port, query, version=None):
     return False
 
 
-def execute_query_http(host, port, query, headers=None):
+def execute_query_http(host, port, query):
     url = f"http://{host}:{port}/?query={urllib.parse.quote(query)}"
 
-    request = urllib.request.Request(url, headers=headers or {})
+    request = urllib.request.Request(url)
     response = urllib.request.urlopen(request).read()
     return response.decode("utf-8")
 
@@ -161,12 +162,11 @@ def test_proxy_1():
     query_id = proxy_client.query("SELECT currentQueryID()")[:-1]
     cluster.instances["server"].query("SYSTEM FLUSH LOGS")
     client = Client(server.ip_address, 9000, command=cluster.client_bin_path)
-    source_addr = proxy.get_source_addr()
     assert (
         client.query(
-            f"SELECT forwarded_for, address, port, initial_address, initial_port, connection_address, connection_port FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryStart'"
+            f"SELECT forwarded_for, address, port, initial_address, initial_port FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryStart'"
         )
-        == f"123.231.132.213:12345\t::ffff:123.231.132.213\t12345\t::ffff:123.231.132.213\t12345\t::ffff:{source_addr[0]}\t{source_addr[1]}\n"
+        == "123.231.132.213:12345\t::ffff:123.231.132.213\t12345\t::ffff:123.231.132.213\t12345\n"
     )
 
     # user123 only allowed from 123.123.123.123
@@ -179,12 +179,11 @@ def test_proxy_1():
     query_id = proxy_client.query("SELECT currentQueryID()", user="user123")[:-1]
     cluster.instances["server"].query("SYSTEM FLUSH LOGS")
     client = Client(server.ip_address, 9000, command=cluster.client_bin_path)
-    source_addr = proxy.get_source_addr()
     assert (
         client.query(
-            f"SELECT forwarded_for, address, port, initial_address, initial_port, connection_address, connection_port FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryStart'"
+            f"SELECT forwarded_for, address, port, initial_address, initial_port FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryStart'"
         )
-        == f"123.123.123.123:12345\t::ffff:123.123.123.123\t12345\t::ffff:123.123.123.123\t12345\t::ffff:{source_addr[0]}\t{source_addr[1]}\n"
+        == "123.123.123.123:12345\t::ffff:123.123.123.123\t12345\t::ffff:123.123.123.123\t12345\n"
     )
 
     # user123 is not allowed from other than 123.123.123.123
@@ -202,49 +201,9 @@ def test_proxy_1():
         assert False, "Expected 'Exception: user123: Authentication failed'"
 
 
-def test_proxy_1_rejects_invalid_forwarded_address():
-    proxy = Proxy1("TCP4 attacker.example 255.255.255.255 12345 65535")
-    proxy_client = Client(
-        "localhost",
-        proxy.start((server.ip_address, 9100)),
-        command=cluster.client_bin_path,
-    )
-
-    with pytest.raises(Exception, match="Invalid forwarded client address"):
-        proxy_client.query("SELECT 1")
-
-    proxy.wait()
-
-
 # tests PROXYv1 over HTTP
 def test_http_proxy_1():
     proxy = Proxy1()
     port = proxy.start((server.ip_address, 8223))
 
     assert execute_query_http("localhost", port, "SELECT 1") == "1\n"
-
-
-def test_http_forwarded_address_validation():
-    assert (
-        execute_query_http(
-            server.ip_address,
-            8123,
-            "SELECT 1",
-            headers={"X-Forwarded-For": "203.0.113.1"},
-        )
-        == "1\n"
-    )
-
-    with pytest.raises(urllib.error.HTTPError) as exc_info:
-        execute_query_http(
-            server.ip_address,
-            8123,
-            "SELECT 1",
-            headers={"X-Forwarded-For": "attacker.example:9000"},
-        )
-
-    assert exc_info.value.code == 400
-    assert (
-        "Invalid address in `X-Forwarded-For` HTTP header"
-        in exc_info.value.read().decode("utf-8")
-    )

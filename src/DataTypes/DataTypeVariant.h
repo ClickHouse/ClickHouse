@@ -17,8 +17,6 @@ namespace DB
   * The order of nested types doesn't matter: Variant(T1, T2) = Variant(T2, T1).
   * To have global order of nested types we sort variants by type names on Variant creation.
   * The index of a variant in a sorted list is called global variant discriminator.
-  * The only exception is a Variant created with FixedDiscriminatorOrder (see below), which keeps
-  * the given order so that persisted discriminators stay stable when new variants are appended.
   */
 class DataTypeVariant final : public IDataType
 {
@@ -29,13 +27,6 @@ public:
     static constexpr bool is_parametric = true;
 
     explicit DataTypeVariant(const DataTypes & variants_);
-
-    /// A tag for the constructor below.
-    struct FixedDiscriminatorOrder {};
-
-    /// Creates a Variant with the variants in exactly the given order, without the canonical sorting.
-    /// Used to maintain backward compatibility for variant discriminators.
-    DataTypeVariant(const DataTypes & variants_, FixedDiscriminatorOrder);
 
     TypeIndex getTypeId() const override { return TypeIndex::Variant; }
     const char * getFamilyName() const override { return "Variant"; }
@@ -54,8 +45,8 @@ public:
     bool isComparable() const override { return true; }
     bool haveSubtypes() const override { return true; }
     bool textCanContainOnlyValidUTF8() const override;
-    bool hasDynamicStructure() const override;
     bool haveMaximumSizeOfValue() const override;
+    bool hasDynamicSubcolumnsDeprecated() const override;
     size_t getMaximumSizeOfValueInMemory() const override;
 
     void updateHashImpl(SipHash & hash) const override;
@@ -71,7 +62,7 @@ public:
 private:
     std::string doGetName() const override;
     std::string doGetPrettyName(size_t indent) const override;
-    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
+    SerializationPtr doGetDefaultSerialization() const override;
 };
 
 /// Check if conversion from from_type to to_type is Variant extension

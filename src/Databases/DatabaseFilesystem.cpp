@@ -1,7 +1,6 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseFilesystem.h>
 
-#include <Common/Logger.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
@@ -32,6 +31,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int PATH_ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
@@ -67,13 +67,15 @@ std::string DatabaseFilesystem::getTablePath(const std::string & table_name) con
     return table_path.lexically_normal().string();
 }
 
-StoragePtr DatabaseFilesystem::addTable(const std::string & table_name, StoragePtr table_storage) const
+void DatabaseFilesystem::addTable(const std::string & table_name, StoragePtr table_storage) const
 {
     std::lock_guard lock(mutex);
-    /// `emplace` keeps the existing entry if the key is already there, so `first->second` is the storage
-    /// a concurrent call for the same name inserted first. Nothing that locks `mutex` again may be called
-    /// here: it is the non-recursive base `IDatabase::mutex`, shared with `getDatabaseName`.
-    return loaded_tables.emplace(table_name, table_storage).first->second;
+    auto [_, inserted] = loaded_tables.emplace(table_name, table_storage);
+    if (!inserted)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Table with name `{}` already exists in database `{}` (engine {})",
+            table_name, getDatabaseName(), getEngineName());
 }
 
 bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, ContextPtr context_, bool throw_on_error) const
@@ -149,7 +151,7 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
     if (!checkTableFilePath(table_path, context_, throw_on_error))
         return {};
 
-    auto ast_function_ptr = makeASTFunction("file", make_intrusive<ASTLiteral>(table_path));
+    auto ast_function_ptr = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path));
 
     auto table_function = TableFunctionFactory::instance().get(ast_function_ptr, context_);
     if (!table_function)
@@ -158,7 +160,7 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
     /// TableFunctionFile throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(ast_function_ptr, context_, name);
     if (table_storage)
-        return addTable(name, table_storage);
+        addTable(name, table_storage);
 
     return table_storage;
 }
@@ -184,19 +186,19 @@ bool DatabaseFilesystem::empty() const
     return loaded_tables.empty();
 }
 
-ASTPtr DatabaseFilesystem::getCreateDatabaseQueryImpl() const
+ASTPtr DatabaseFilesystem::getCreateDatabaseQuery() const
 {
     const auto & settings = getContext()->getSettingsRef();
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem('{}')", backQuoteIfNeed(database_name), path);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem('{}')", backQuoteIfNeed(getDatabaseName()), path);
 
     ParserCreateQuery parser;
     ASTPtr ast
         = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-    if (!comment.empty())
+    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
     }
 
     return ast;
@@ -238,7 +240,6 @@ DatabaseTablesIteratorPtr DatabaseFilesystem::getTablesIterator(ContextPtr, cons
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
-void registerDatabaseFilesystem(DatabaseFactory & factory);
 void registerDatabaseFilesystem(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -261,13 +262,6 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context);
     };
-    factory.registerDatabase("Filesystem", create_fn, {
-        .supports_arguments = true,
-        .is_external = true,
-        .source_access_type = AccessTypeObjects::Source::FILE,
-    }, Documentation{
-        .description = "A read-only database that exposes files in a directory on the local filesystem as tables, queryable by their path.",
-        .syntax = "ENGINE = Filesystem([path])",
-        .related = {"S3", "HDFS"}});
+    factory.registerDatabase("Filesystem", create_fn, {.supports_arguments = true});
 }
 }

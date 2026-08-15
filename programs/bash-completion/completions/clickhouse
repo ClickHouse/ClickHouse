@@ -13,7 +13,7 @@ function _complete_for_clickhouse_entrypoint_bin()
     _clickhouse_bin_exist "$cmd" || return 0
 
     COMPREPLY=()
-    _clickhouse_get_comp_words_by_ref cur prev cword words
+    _get_comp_words_by_ref cur prev cword words
 
     local util="$cur"
     # complete utils, until it will be finished

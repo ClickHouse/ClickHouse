@@ -1,0 +1,6 @@
+FIX ISSUE #69143
+a
+b
+EXPLAIN SYNTAX OF UDF
+SELECT ((4 + 2) + 1 AS y, y + 2)
+SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)

@@ -15,12 +15,8 @@ private:
     String name;
     SubstreamType substream_type;
 
-    SerializationNamed(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_);
-
 public:
-    static UInt128 getHash(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_);
-    static SerializationPtr create(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_);
-    size_t allocatedBytes() const override;
+    SerializationNamed(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_);
 
     const String & getElementName() const { return name; }
 
@@ -73,13 +69,11 @@ private:
         ColumnPtr create(const ColumnPtr & prev) const override { return prev; }
         SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override
         {
-            return SerializationNamed::create(prev, name, substream_type);
+            return std::make_shared<SerializationNamed>(prev, name, substream_type);
         }
     };
 
     void addToPath(SubstreamPath & path) const;
 };
-
-SerializationPtr removeNamedSerialization(const SerializationPtr & serialization);
 
 }

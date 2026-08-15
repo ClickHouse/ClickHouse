@@ -12,8 +12,7 @@ ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_shared/', '1')
 ORDER BY id
 SETTINGS
     enable_block_number_column = true,
-    enable_block_offset_column = true,
-    remove_unused_patch_parts = false;
+    enable_block_offset_column = true;
 
 INSERT INTO t_shared SELECT number, number, number FROM numbers(20);
 INSERT INTO t_shared SELECT number, number, number FROM numbers(100, 10);
@@ -37,11 +36,11 @@ ALTER TABLE t_shared APPLY PATCHES SETTINGS mutations_sync = 2;
 SELECT * FROM t_shared ORDER BY id;
 SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' ORDER BY name;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT ProfileEvents['ReadTasksWithAppliedPatches']
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query = 'SELECT * FROM t_shared ORDER BY id;' AND type = 'QueryFinish'
+WHERE current_database = currentDatabase() AND query = 'SELECT * FROM t_shared ORDER BY id;' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_shared SYNC;

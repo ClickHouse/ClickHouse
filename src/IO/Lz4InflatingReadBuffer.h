@@ -25,9 +25,15 @@ public:
 private:
     bool nextImpl() override;
 
-    LZ4F_dctx* dctx{};
+    LZ4F_dctx* dctx;
 
-    bool in_eof = false;
+    void * in_data;
+    void * out_data;
+
+    size_t in_available;
+    size_t out_available;
+
+    bool eof_flag = false;
 };
 
 }

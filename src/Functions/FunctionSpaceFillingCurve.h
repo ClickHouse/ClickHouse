@@ -2,8 +2,8 @@
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionHelpers.h>
 
 
@@ -35,41 +35,6 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    /// Range-mask `Tuple` accessor for the expanded mode of `mortonEncode` / `hilbertEncode`.
-    /// `is_const` selects between reading row 0 for every row or reading row `row_idx`.
-    struct RangeMask
-    {
-        const ColumnTuple * tuple = nullptr;
-        bool is_const = false;
-
-        UInt64 read(size_t col_idx, size_t row_idx) const
-        {
-            return tuple->getColumn(col_idx).getUInt(is_const ? 0 : row_idx);
-        }
-
-        size_t tupleSize() const { return tuple->tupleSize(); }
-
-        explicit operator bool() const { return tuple != nullptr; }
-    };
-
-    static RangeMask extractRangeMask(const ColumnsWithTypeAndName & arguments)
-    {
-        if (arguments.empty())
-            return {};
-        const auto * const_col = typeid_cast<const ColumnConst *>(arguments[0].column.get());
-        if (const_col)
-        {
-            const auto * tuple = typeid_cast<const ColumnTuple *>(const_col->getDataColumnPtr().get());
-            if (tuple)
-                return RangeMask{tuple, true};
-            return {};
-        }
-        const auto * tuple = typeid_cast<const ColumnTuple *>(arguments[0].column.get());
-        if (tuple)
-            return RangeMask{tuple, false};
-        return {};
-    }
-
     DataTypePtr getReturnTypeImpl(const DB::DataTypes & arguments) const override
     {
         size_t vector_start_index = 0;
@@ -82,10 +47,6 @@ public:
             vector_start_index = 1;
             const auto * type_tuple = typeid_cast<const DataTypeTuple *>(arguments[0].get());
             auto tuple_size = type_tuple->getElements().size();
-            if (tuple_size == 0)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Empty tuple is not allowed for function {}",
-                                getName());
             if (tuple_size != (arguments.size() - 1))
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                                 "Illegal argument {} for function {}, tuple size should be equal to number of UInt arguments",
