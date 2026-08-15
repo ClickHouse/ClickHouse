@@ -469,7 +469,7 @@ SETTINGS
     vertical_merge_algorithm_min_bytes_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     max_bytes_to_merge_at_max_space_in_pool = 1,
-    enable_block_number_column = 1;
+    enable_block_offset_column = 1;
 
 INSERT INTO t_nested_patch_part VALUES (1, [10,20]);
 INSERT INTO t_nested_patch_part VALUES (2, [30,40]);
