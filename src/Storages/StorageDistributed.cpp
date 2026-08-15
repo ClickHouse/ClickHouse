@@ -1675,6 +1675,33 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
     return storage_policy;
 }
 
+/// Returns the path of a pending async INSERT block under `path`, or an empty string if there is
+/// none. The queue keeps one directory per replica with the blocks (`N.bin`) inside, next to the
+/// `tmp` and `broken` subdirectories, so any `.bin` file below a subdirectory is queued data.
+/// Everything here is best-effort: a path a version without the queue never wrote to is expected
+/// not to resolve to a directory at all.
+static std::string findPendingQueueBlock(const std::string & path)
+{
+    std::error_code ec;
+    if (!fs::is_directory(path, ec))
+        return {};
+
+    for (fs::directory_iterator replica(path, ec), replicas_end; !ec && replica != replicas_end; replica.increment(ec))
+    {
+        if (!replica->is_directory(ec))
+            continue;
+
+        for (fs::recursive_directory_iterator block(replica->path(), ec), blocks_end; !ec && block != blocks_end;
+             block.increment(ec))
+        {
+            if (block->is_regular_file(ec) && block->path().extension() == ".bin")
+                return block->path().string();
+        }
+    }
+
+    return {};
+}
+
 void StorageDistributed::initializeDirectoryQueuesForDisk(const DiskPtr & disk)
 {
     /// A `CREATE` of such a table is rejected in the constructor; an existing table is attached
@@ -1683,6 +1710,25 @@ void StorageDistributed::initializeDirectoryQueuesForDisk(const DiskPtr & disk)
     /// `DistributedSink` when they try to enqueue.
     if (!disk->hasLocalFilesystemDirectoryNamespace())
     {
+        /// Except when a version that still created the queue on such a disk (its `getPath()` can
+        /// be a real host directory, as for a `plain`/`plain_rewritable` disk over local object
+        /// storage) already spooled blocks there. Attaching without the queue would abandon them:
+        /// nothing sends them, `TRUNCATE` only drains the queues this function creates, and
+        /// `DROP`/`RENAME` go through `IDisk`, which resolves that raw path in another namespace.
+        /// Fail closed and let the operator decide what to do with the data.
+        const std::string legacy_path(disk->getPath() + relative_data_path);
+        if (const auto pending_block = findPendingQueueBlock(legacy_path); !pending_block.empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Disk '{}' does not keep its directory structure on the host filesystem, so table {} cannot have a local "
+                "insert queue, but '{}' still holds a pending async INSERT block written by an earlier version. Attaching "
+                "the table would abandon that data: it would neither be sent nor removed by TRUNCATE, DROP or RENAME. "
+                "Flush the queue with the previous version, or move '{}' away, and attach the table again",
+                disk->getName(),
+                getStorageID().getNameForLogs(),
+                pending_block,
+                legacy_path);
+
         LOG_WARNING(
             log,
             "Disk '{}' does not keep its directory structure on the host filesystem and cannot back a `Distributed` table's local insert queue. "

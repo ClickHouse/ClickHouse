@@ -225,3 +225,59 @@ def test_distributed_on_borrow_from_cache_disk_can_be_renamed(started_cluster):
     assert node.query("SELECT count() FROM ordinary_borrow_rename.dist_renamed").strip() == "2"
 
     node.query("DROP DATABASE ordinary_borrow_rename SYNC")
+
+
+def test_distributed_attach_with_legacy_queue_directory_is_rejected(started_cluster):
+    # An existing table on a disk without a host-filesystem directory namespace attaches without its
+    # local insert queue (see the attach test above). A version that still created the queue on such
+    # a disk could have spooled blocks into it with raw `std::filesystem` calls -- its `getPath()` is
+    # a real host directory for a `plain_rewritable` disk over local object storage. Attaching
+    # silently would abandon them: nothing sends them, `TRUNCATE` only drains the queues built at
+    # attach time, and `DROP` / `RENAME` resolve the `IDisk` namespace instead of that raw path. The
+    # attach must fail and leave the data untouched.
+    node.query("DROP DATABASE IF EXISTS ordinary_legacy_queue SYNC")
+    node.query(
+        "CREATE DATABASE ordinary_legacy_queue ENGINE = Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
+    node.query(
+        "CREATE TABLE ordinary_legacy_queue.underlying (key UInt64) ENGINE = MergeTree ORDER BY key"
+    )
+
+    disk_path = node.query(
+        "SELECT path FROM system.disks WHERE name = 'plain_rewritable_local_disk'"
+    ).strip()
+    queue_path = f"{disk_path}data/ordinary_legacy_queue/dist_legacy_queue/shard1_replica1"
+    node.exec_in_container(
+        ["bash", "-c", f"mkdir -p '{queue_path}' && echo -n block > '{queue_path}/1.bin'"]
+    )
+
+    error = node.query_and_get_error(
+        """
+        ATTACH TABLE ordinary_legacy_queue.dist_legacy_queue (key UInt64)
+        ENGINE = Distributed(test_cluster, 'ordinary_legacy_queue', 'underlying', rand(), 'plain_rewritable_local_policy')
+        """
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "pending async INSERT block written by an earlier version" in error
+
+    # The block is still there: failing the attach must not be a disguised way of dropping it.
+    assert (
+        node.exec_in_container(["bash", "-c", f"cat '{queue_path}/1.bin'"]).strip()
+        == "block"
+    )
+
+    # With the queue drained by hand the same table attaches, so the guard is about pending data
+    # rather than about the directory existing.
+    node.exec_in_container(["bash", "-c", f"rm '{queue_path}/1.bin'"])
+    node.query(
+        """
+        ATTACH TABLE ordinary_legacy_queue.dist_legacy_queue (key UInt64)
+        ENGINE = Distributed(test_cluster, 'ordinary_legacy_queue', 'underlying', rand(), 'plain_rewritable_local_policy')
+        """
+    )
+    assert (
+        node.query("EXISTS TABLE ordinary_legacy_queue.dist_legacy_queue").strip() == "1"
+    )
+
+    node.query("DROP DATABASE ordinary_legacy_queue SYNC")
