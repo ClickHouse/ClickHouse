@@ -49,7 +49,7 @@ CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE 
 ```
 
 <Note>
-  [show&#95;table&#95;uuid&#95;in&#95;table&#95;create&#95;query&#95;if&#95;not&#95;nil](/ko/reference/settings/session-settings#show_table_uuid_in_table_create_query_if_not_nil) 설정을 사용하면 `SHOW CREATE` 쿼리에서 UUID를 표시할 수 있습니다.
+  [show&#95;table&#95;uuid&#95;in&#95;table&#95;create&#95;query&#95;if&#95;not&#95;nil](/ko/reference/settings/session-settings/show#show_table_uuid_in_table_create_query_if_not_nil) 설정을 사용하면 `SHOW CREATE` 쿼리에서 UUID를 표시할 수 있습니다.
 </Note>
 
 <div id="rename-table">
@@ -62,8 +62,8 @@ CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE 
   ### DROP/DETACH TABLE
 </div>
 
-`DROP TABLE`를 사용해도 데이터는 삭제되지 않습니다. `Atomic` engine은 메타데이터를 `/clickhouse_path/metadata_dropped/`로 이동하여 테이블을 삭제된 것으로 표시하고 백그라운드 스레드에 알립니다. 최종적으로 테이블 데이터가 삭제되기 전까지의 지연 시간은 [`database_atomic_delay_before_drop_table_sec`](/ko/reference/settings/server-settings/settings#database_atomic_delay_before_drop_table_sec) 설정으로 지정됩니다.
-`SYNC` 수정자를 사용하여 동기 모드를 지정할 수 있습니다. 이를 위해 [`database_atomic_wait_for_drop_and_detach_synchronously`](/ko/reference/settings/session-settings#database_atomic_wait_for_drop_and_detach_synchronously) 설정을 사용하십시오. 이 경우 `DROP`은 테이블을 사용 중인 실행 중의 `SELECT`, `INSERT` 및 기타 쿼리가 완료될 때까지 기다립니다. 테이블은 더 이상 사용되지 않을 때 제거됩니다.
+`DROP TABLE`를 사용해도 데이터는 삭제되지 않습니다. `Atomic` 엔진은 메타데이터를 `/clickhouse_path/metadata_dropped/`로 이동하여 테이블을 삭제된 것으로 표시하고 백그라운드 스레드에 알립니다. 최종적으로 테이블 데이터가 삭제되기 전까지의 지연 시간은 [`database_atomic_delay_before_drop_table_sec`](/ko/reference/settings/server-settings/settings/other#database_atomic_delay_before_drop_table_sec) 설정으로 지정됩니다.
+`SYNC` 수정자를 사용하여 동기 모드를 지정할 수 있습니다. 이를 위해 [`database_atomic_wait_for_drop_and_detach_synchronously`](/ko/reference/settings/session-settings/database#database_atomic_wait_for_drop_and_detach_synchronously) 설정을 사용하십시오. 이 경우 `DROP`은 테이블을 사용 중인 실행 중의 `SELECT`, `INSERT` 및 기타 쿼리가 완료될 때까지 기다립니다. 테이블은 더 이상 사용되지 않을 때 제거됩니다.
 
 <div id="exchange-tables">
   ### EXCHANGE TABLES/사전
@@ -85,7 +85,7 @@ EXCHANGE TABLES new_table AND old_table;
   ### Atomic 데이터베이스의 ReplicatedMergeTree
 </div>
 
-[`ReplicatedMergeTree`](/ko/reference/engines/table-engines/mergetree-family/replication) 테이블에서는 ZooKeeper의 경로와 레플리카 이름에 대한 엔진 매개변수를 지정하지 않는 것을 권장합니다. 이 경우 구성 매개변수 [`default_replica_path`](/ko/reference/settings/server-settings/settings#default_replica_path)와 [`default_replica_name`](/ko/reference/settings/server-settings/settings#default_replica_name)이 사용됩니다. 엔진 매개변수를 명시적으로 지정하려면 `{uuid}` 매크로를 사용하는 것을 권장합니다. 이렇게 하면 ZooKeeper에서 각 테이블마다 고유한 경로가 자동으로 생성됩니다.
+[`ReplicatedMergeTree`](/ko/reference/engines/table-engines/mergetree-family/replication) 테이블에서는 ZooKeeper의 경로와 레플리카 이름에 대한 엔진 매개변수를 지정하지 않는 것을 권장합니다. 이 경우 구성 매개변수 [`default_replica_path`](/ko/reference/settings/server-settings/settings/default-replica#default_replica_path)와 [`default_replica_name`](/ko/reference/settings/server-settings/settings/default-replica#default_replica_name)이 사용됩니다. 엔진 매개변수를 명시적으로 지정하려면 `{uuid}` 매크로를 사용하는 것을 권장합니다. 이렇게 하면 ZooKeeper에서 각 테이블마다 고유한 경로가 자동으로 생성됩니다.
 
 <div id="metadata-disk">
   ### 메타데이터 디스크
