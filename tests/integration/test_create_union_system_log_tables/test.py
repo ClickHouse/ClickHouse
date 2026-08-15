@@ -153,6 +153,23 @@ def test_stable_across_restarts(start_cluster):
 
 
 def test_stable_with_type_shaping_settings(start_cluster):
+    # `flatten_nested` materially changes an explicit `Nested` declaration when a
+    # `CREATE TABLE ... AS <table function>` statement is normalized.
+    node3.query("DROP TABLE IF EXISTS nested_source SYNC")
+    node3.query("DROP TABLE IF EXISTS nested_as_table_function SYNC")
+    node3.query(
+        "CREATE TABLE nested_source (n Nested(a UInt8)) ENGINE = Memory",
+        settings={"flatten_nested": 0},
+    )
+    node3.query(
+        "CREATE TABLE nested_as_table_function (n Nested(a UInt8)) AS "
+        "merge('default', '^nested_source$')",
+        settings={"flatten_nested": 0},
+    )
+    assert "n Nested(a UInt8)" in node3.query(
+        "SHOW CREATE TABLE nested_as_table_function FORMAT TSVRaw"
+    )
+
     node3.query("SYSTEM FLUSH LOGS query_log")
     uuid_before = node3.query(
         "SELECT uuid FROM system.tables WHERE database = 'system' AND name = 'all_query_log'"
