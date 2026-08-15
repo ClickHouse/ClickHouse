@@ -6,6 +6,7 @@
 
 #include <functional>
 #include <optional>
+#include <unordered_set>
 
 namespace DB
 {
@@ -54,6 +55,8 @@ private:
         std::optional<UInt64> offset;
         bool has_aggregation = false;
         bool has_projection = false;
+        /// Numeric bucket keys represented as strings to preserve an exact Int128 value.
+        std::unordered_set<String> numeric_bucket_fields;
 
         /// Set by the join pipe.
         ASTPtr join_subquery;                /// ASTSelectWithUnionQuery of the right side.

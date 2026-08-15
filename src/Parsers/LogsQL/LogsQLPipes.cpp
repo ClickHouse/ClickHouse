@@ -637,6 +637,8 @@ std::vector<LogsQLParser::SortField> LogsQLParser::parseSortFields()
 ASTPtr LogsQLParser::sortKeyExpr(const Layer & layer, const String & field_name) const
 {
     String name = columnName(field_name);
+    if (layer.numeric_bucket_fields.contains(name))
+        return numericValueExpr(field_name);
     for (const auto & entry : layer.select)
     {
         if (entry->tryGetAlias() == name)
@@ -752,7 +754,7 @@ void LogsQLParser::applySortWithExtras(
     /// sorting by a source field that is not part of the final projection.
     wrapLayerIf(layer,
         !layer.order_by.empty() || layer.order_by_all || layer.limit.has_value() || layer.offset.has_value()
-        || layer.has_aggregation || layer.has_projection);
+        || layer.has_aggregation);
 
     auto make_order_elements = [&]
     {
@@ -2006,6 +2008,7 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
                         /// key. LogsQL field values are textual, so use their canonical textual
                         /// form for the bucket key; this also preserves Int128 precision.
                         key = makeASTFunction("toString", makeASTFunction("if", makeASTFunction("isNotNull", integer_value), integer_key, decimal_key));
+                        layer.numeric_bucket_fields.insert(columnName(name));
                     }
                     else
                     {
@@ -2911,8 +2914,10 @@ ASTPtr LogsQLParser::buildSelectWithUnion(Layer & layer) const
 void LogsQLParser::wrapLayer(Layer & layer) const
 {
     ASTPtr inner = buildSelectWithUnion(layer);
-    layer = Layer{};
-    layer.source_subquery = inner;
+    Layer outer;
+    outer.source_subquery = inner;
+    outer.numeric_bucket_fields = std::move(layer.numeric_bucket_fields);
+    layer = std::move(outer);
 }
 
 void LogsQLParser::wrapLayerIf(Layer & layer, bool condition) const
