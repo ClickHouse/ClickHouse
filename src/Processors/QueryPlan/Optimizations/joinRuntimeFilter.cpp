@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Interpreters/MergeJoin.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -273,7 +274,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
             || algorithm == JoinAlgorithm::AUTO
             || algorithm == JoinAlgorithm::FULL_SORTING_MERGE
-            || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
+            || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE
+            || (algorithm == JoinAlgorithm::PARTIAL_MERGE
+                && MergeJoin::isSupported(join_operator.kind, join_operator.strictness)))
             break;
 
         if ((algorithm == JoinAlgorithm::SORTED_MERGE || algorithm == JoinAlgorithm::PARALLEL_SORTED_MERGE)

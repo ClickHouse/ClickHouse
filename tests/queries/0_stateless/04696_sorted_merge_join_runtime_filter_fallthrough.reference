@@ -11,6 +11,9 @@
           BuildRuntimeFilter (Build runtime join filter on __table2.id)
       Algorithm: HashJoin
           BuildRuntimeFilter (Build runtime join filter on __table2.id)
+--- Earlier `partial_merge` wins before `sorted_merge`, with a runtime filter ---
+      Algorithm: PartialMergeJoin
+          BuildRuntimeFilter (Build runtime join filter on __table2.id)
 --- Results are the same as with plain `hash` ---
 1000
 1000
