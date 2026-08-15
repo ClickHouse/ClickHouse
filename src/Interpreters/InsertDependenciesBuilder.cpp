@@ -973,9 +973,6 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StorageP
     /// directly - nothing is hidden.
     return false;
 }
-
-
-
 bool InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(const StoragePtr & storage, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)
