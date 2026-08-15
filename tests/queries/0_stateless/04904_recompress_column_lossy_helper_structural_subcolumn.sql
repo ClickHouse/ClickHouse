@@ -13,9 +13,9 @@ CREATE TABLE t_recompress_lossy_helper_size0
 (
     key UInt64,
     arr Array(Float64) CODEC(SZ3('ALGO_INTERP', 'ABS', 0.01)),
-    a Array(Float64) ALIAS arr,
-    e Array(Float64) EPHEMERAL a,
-    size UInt64 MATERIALIZED e.size0
+    a UInt64 ALIAS getSubcolumn(arr, 'size0'),
+    e UInt64 EPHEMERAL a,
+    size UInt64 MATERIALIZED e
 )
 ENGINE = MergeTree ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
@@ -33,9 +33,9 @@ CREATE TABLE t_recompress_lossy_helper_null
 (
     key UInt64,
     x Nullable(Float64) CODEC(SZ3('ALGO_INTERP', 'ABS', 0.01)),
-    a Nullable(Float64) ALIAS x,
-    e Nullable(Float64) EPHEMERAL a,
-    is_null UInt8 MATERIALIZED e.null
+    a UInt8 ALIAS getSubcolumn(x, 'null'),
+    e UInt8 EPHEMERAL a,
+    is_null UInt8 MATERIALIZED e
 )
 ENGINE = MergeTree ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
