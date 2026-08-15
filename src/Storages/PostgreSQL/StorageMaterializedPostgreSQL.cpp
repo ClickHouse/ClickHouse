@@ -300,6 +300,14 @@ void StorageMaterializedPostgreSQL::shutdown(bool is_drop)
 
 void StorageMaterializedPostgreSQL::checkTableCanBeDetached() const
 {
+    /// A plain MaterializedPostgreSQL database rejects a non-permanent DETACH in its database-level
+    /// method too, but this check must happen first. Otherwise `InterpreterDropQuery` shuts the nested
+    /// table down before that method rejects the query, leaving the wrapper mounted but not replicating.
+    if (is_materialized_postgresql_database)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "DETACH TABLE is not supported for a MaterializedPostgreSQL database. "
+            "Use DETACH TABLE ... PERMANENTLY to remove the table from replication");
+
     /// In a coordinated MaterializedPostgreSQL database, dynamically adding/removing a table mutates the
     /// shared publication and only takes effect on one replica, so it is refused on every replica (see
     /// `DatabaseMaterializedPostgreSQL::attachTable` / `detachTablePermanently`). Refuse here, before

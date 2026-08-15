@@ -455,6 +455,30 @@ def test_attach_detach_table_is_rejected_in_coordinated_mode(started_cluster):
     check_tables_are_synchronized(instance2, "test_table")
 
 
+def test_plain_detach_table_is_a_no_op_rejection(started_cluster):
+    # The database-level `detachTable` rejects a plain DETACH too. The storage-level guard must do so
+    # before `InterpreterDropQuery` calls `flushAndShutdown`, otherwise the rejected statement leaves
+    # the nested table mounted with its background tasks permanently stopped.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        settings=["materialized_postgresql_tables_list = 'test_table'"],
+    )
+    check_tables_are_synchronized(instance, "test_table")
+
+    error = instance.query_and_get_error("DETACH TABLE test_database.test_table")
+    assert "Use DETACH TABLE ... PERMANENTLY" in error
+
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(instance, "test_table")
+
+
 def test_drop_keeps_shared_state_until_last_replica(started_cluster):
     pg_manager.create_postgres_table("test_table")
     instance.query(
