@@ -114,13 +114,15 @@ SELECT a FROM numbers(1), (SELECT 2 AS not_a) ARRAY JOIN [30] AS a;
 -- ... and the restriction can still be disabled entirely.
 SELECT a FROM numbers(1), (SELECT 2 AS a) ARRAY JOIN [30] AS a SETTINGS joined_subquery_requires_alias = 0;
 
+-- An `ARRAY JOIN` alias of an unnamed tuple does not bind the dotted identifier `a.x`, so these
+-- subquery outputs do not collide with it and remain reachable without a table-expression alias.
 SELECT `a.x`
 FROM (SELECT [tuple(1)] AS arr) ARRAY JOIN arr AS a
-INNER JOIN (SELECT 2 AS `a.x`) ON true; -- { serverError ALIAS_REQUIRED }
+INNER JOIN (SELECT 2 AS `a.x`) ON true;
 
 SELECT `a.x`
 FROM (SELECT [tuple(1)] AS arr) ARRAY JOIN [tuple(30)] AS a
-INNER JOIN (SELECT 2 AS `a.x`) ON true; -- { serverError ALIAS_REQUIRED }
+INNER JOIN (SELECT 2 AS `a.x`) ON true;
 
 -- With `prefer_column_name_to_alias = 1` the shadowing goes the other way: the bare identifier binds to
 -- the join-tree column and the scope alias does not make it unreachable, so a scope-alias collision does
