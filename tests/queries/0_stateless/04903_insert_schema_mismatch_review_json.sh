@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: `Parquet`, `Arrow` and `ORC` are not available in the fast-test build.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -29,3 +31,17 @@ printf 'CREATE TABLE t (j JSON, n UInt8) ENGINE = Memory; INSERT INTO t FORMAT J
 echo "-- JSONCompactColumns, an extra positional column is a mismatch"
 printf 'CREATE TABLE t (a UInt8, b UInt8) ENGINE = Memory; INSERT INTO t FORMAT JSONCompactColumns [[1],[2],["x"]]\n' \
     | $CLICKHOUSE_LOCAL 2>&1 | check
+
+for format in Parquet Arrow ORC; do
+    data_file="$CLICKHOUSE_TMP/data_04903_${format}"
+    setting="input_format_${format,,}_case_insensitive_column_matching"
+    $CLICKHOUSE_LOCAL -q "SELECT 'not_a_number' AS A FORMAT $format" > "$data_file"
+
+    echo "-- $format, case-insensitive source name still attributes a type mismatch"
+    {
+        echo "CREATE TABLE t (a UInt8) ENGINE = Memory; INSERT INTO t SETTINGS $setting = 1 FORMAT $format"
+        cat "$data_file"
+    } | $CLICKHOUSE_LOCAL 2>&1 | check
+
+    rm -f "$data_file"
+done

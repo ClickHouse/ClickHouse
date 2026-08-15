@@ -6,3 +6,9 @@ explanation present
 explanation present
 -- JSONCompactColumns, an extra positional column is a mismatch
 explanation present
+-- Parquet, case-insensitive source name still attributes a type mismatch
+explanation present
+-- Arrow, case-insensitive source name still attributes a type mismatch
+explanation present
+-- ORC, case-insensitive source name still attributes a type mismatch
+explanation present
