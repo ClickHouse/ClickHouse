@@ -17,7 +17,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/Lexer.h>
+#include <Parsers/ParserQuery.h>
 #include <Parsers/QueryParameterVisitor.h>
+#include <Parsers/parseQuery.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandler.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
@@ -1315,7 +1317,15 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     /// Remove leading and trailing whitespace that may come from XML formatting in the config file.
     /// This prevents whitespace from being interpreted as data for binary formats like MsgPack.
     boost::algorithm::trim(predefined_query);
-    NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
+
+    /// The stored query is server-owned and can be accepted with parser limits higher than the defaults.
+    /// Parse it without parser depth or backtrack limits while discovering its query parameters, just as it
+    /// is parsed when the handler serves a request.
+    const char * query_begin = predefined_query.data();
+    const char * query_end = query_begin + predefined_query.size();
+    ParserQuery parser(query_end);
+    auto query_ast = parseQuery(parser, query_begin, query_end, "predefined query handler", 0, 0, 0);
+    NameSet analyze_receive_params = analyzeReceiveQueryParams(query_ast);
 
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
 
