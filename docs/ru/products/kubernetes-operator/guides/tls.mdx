@@ -291,7 +291,7 @@ spec:
 
 Слияние выполняется по каждому ключу: заменяются только те значения, которые вы задаёте, а сгенерированные ключи, которые вы
 не указываете (пути к сертификатам, конфигурация CA), сохраняются. Доступные параметры см. в
-[настройках сервера `openSSL`](/ru/reference/settings/server-settings/settings#openssl),
+[настройках сервера `openSSL`](/ru/reference/settings/server-settings/settings/other#openssl),
 а сведения о том, как объединяется `extraConfig`, — в разделе
 [Configuration → Встроенная дополнительная конфигурация](/ru/products/kubernetes-operator/guides/configuration#embedded-extra-configuration).
 
@@ -325,7 +325,7 @@ kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
   ## См. также
 </div>
 
-* [Конфигурация → Конфигурация TLS/SSL](/ru/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — справочник полей
+* [Конфигурация → TLS/SSL configuration](/ru/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — справочник полей
 * [Конфигурация → `additionalPorts`](/ru/products/kubernetes-operator/guides/configuration#additional-ports) — зарезервированные порты
-* [Справочник по API → ClusterTLSSpec](/ru/products/kubernetes-operator/reference/api-reference#clustertlsspec)
-* [настройки сервера `openSSL`](/ru/reference/settings/server-settings/settings#openssl) — параметры TLS, которые можно переопределить через `extraConfig`
+* [API Reference → ClusterTLSSpec](/ru/products/kubernetes-operator/reference/api-reference#clustertlsspec)
+* [настройки сервера `openSSL`](/ru/reference/settings/server-settings/settings/other#openssl) — параметры TLS, которые можно переопределить через `extraConfig`
