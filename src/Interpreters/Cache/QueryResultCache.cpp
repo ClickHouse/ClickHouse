@@ -1,6 +1,7 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 
 
+#include <Access/Common/AccessRightsElement.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
