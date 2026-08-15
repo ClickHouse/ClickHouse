@@ -507,11 +507,75 @@ def test_bulk_delete_executes_every_spec(started_cluster):
     collection.drop()
     collection.insert_many([{"id": 1}, {"id": 2}, {"id": 3}])
 
-    collection.bulk_write(
+    result = collection.bulk_write(
         [pymongo.DeleteMany({"id": 1}), pymongo.DeleteMany({"id": 2})]
     )
 
+    assert result.deleted_count == 2
     assert collection.estimated_document_count() == 1
+
+
+def test_mutation_replies_report_the_matched_rows(started_cluster):
+    """An acknowledged update or delete identifies the rows matched by its filter, even though
+    ClickHouse applies the mutation asynchronously."""
+    node = cluster.instances["node"]
+    client = make_client()
+    collection = client["db"]["mutation_reply_counts"]
+
+    collection.drop()
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.mutation_reply_counts (id Int64, value Int64) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    collection.insert_many([{"id": 1, "value": 1}, {"id": 2, "value": 2}])
+
+    result = collection.update_many({"id": {"$gte": 1}}, {"$inc": {"value": 1}})
+    assert result.matched_count == 2
+    assert result.modified_count is None
+    assert wait_for(lambda: collection.find_one({"id": 1})["value"] == 2)
+
+    result = collection.delete_many({"id": {"$gte": 1}})
+    assert result.deleted_count == 2
+    assert wait_for(lambda: collection.estimated_document_count() == 0)
+
+
+def test_ordered_bulk_mutation_reports_the_successful_prefix(started_cluster):
+    """A failure in a later bulk spec leaves the preceding mutation acknowledged rather than
+    turning the whole command into a retry-unsafe error."""
+    node = cluster.instances["node"]
+    client = make_client()
+    collection = client["db"]["ordered_bulk_mutation_prefix"]
+
+    collection.drop()
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.ordered_bulk_mutation_prefix (id Int64, value Int64) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    collection.insert_many([{"id": 1, "value": 1}, {"id": 2, "value": 2}])
+
+    with pytest.raises(pymongo.errors.BulkWriteError) as error:
+        collection.bulk_write(
+            [
+                pymongo.UpdateMany({"id": 1}, {"$inc": {"value": 1}}),
+                pymongo.UpdateMany({"id": 2}, {"$set": {"unknown_column": 1}}),
+            ]
+        )
+    assert error.value.details["nMatched"] == 1
+    assert error.value.details["writeErrors"][0]["index"] == 1
+    assert wait_for(lambda: collection.find_one({"id": 1})["value"] == 2)
+
+    with pytest.raises(pymongo.errors.BulkWriteError) as error:
+        collection.bulk_write(
+            [
+                pymongo.DeleteMany({"id": 1}),
+                pymongo.DeleteMany({"unknown_column": 1}),
+            ]
+        )
+    assert error.value.details["nRemoved"] == 1
+    assert error.value.details["writeErrors"][0]["index"] == 1
+    assert wait_for(lambda: collection.estimated_document_count() == 1)
 
 
 def test_update_one_and_upsert_are_rejected(started_cluster):

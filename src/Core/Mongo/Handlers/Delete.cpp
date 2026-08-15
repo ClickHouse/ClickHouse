@@ -22,80 +22,143 @@ extern const int BAD_ARGUMENTS;
 namespace DB::MongoProtocol
 {
 
+namespace
+{
+
+bool isOrderedDelete(const Document & command)
+{
+    auto json = command.getRapidJSONRepresentation();
+    auto ordered = json.FindMember("ordered");
+    if (ordered == json.MemberEnd())
+        return true;
+    if (!ordered->value.IsBool())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'ordered' option of a 'delete' command must be a boolean");
+    return ordered->value.GetBool();
+}
+
+void appendCount(bson_t * document, const char * name, Int64 count)
+{
+    if (count <= INT32_MAX)
+        BSON_APPEND_INT32(document, name, static_cast<Int32>(count));
+    else
+        BSON_APPEND_INT64(document, name, count);
+}
+
+}
+
 std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
     if (documents.size() < 2 || documents[1].documents.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'delete' command does not contain any filter");
 
     auto collection = getCollectionRef(documents[0].documents[0], "delete");
+    const bool ordered = isOrderedDelete(documents[0].documents[0]);
 
     /// The 'delete' command carries one or more delete specs, each with its own 'q' filter
     /// and 'limit'. Execute every spec; 'limit: 1' (deleteOne) cannot be expressed as a
     /// ClickHouse mutation over an unordered table, so it is rejected instead of being
     /// silently widened into deleteMany.
-    /// Every spec is translated first, and only then executed: a malformed filter has to be an
-    /// error whether the collection exists or not.
-    std::vector<String> sql_queries;
-    for (const auto & delete_spec : documents[1].documents)
-    {
-        String serialized_filter;
-        {
-            auto json_representation = delete_spec.getRapidJSONRepresentation();
-            auto filter_it = json_representation.FindMember("q");
-            if (filter_it == json_representation.MemberEnd())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'delete' command does not contain the 'q' filter");
-
-            auto limit_it = json_representation.FindMember("limit");
-            if (limit_it != json_representation.MemberEnd()
-                && !(limit_it->value.IsNumber() && limit_it->value.GetDouble() == 0))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The 'delete' command supports only 'limit: 0' (deleteMany); deleting a limited number of documents is not supported");
-
-            rapidjson::StringBuffer buffer;
-            rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-            filter_it->value.Accept(writer);
-            serialized_filter = buffer.GetString();
-        }
-        serialized_filter = modifyFilter(serialized_filter);
-
-        auto mongo_dialect_query = fmt::format("db.{}.deleteMany({})", collection.collection, serialized_filter);
-
-        const auto max_query_size = mongo_dialect_query.size();
-        auto parser = Mongo::ParserMongoQuery(max_query_size, 10000, 10000);
-        auto ast = Mongo::parseMongoQuery(
-            parser,
-            mongo_dialect_query.data(),
-            mongo_dialect_query.data() + mongo_dialect_query.size(),
-            "",
-            max_query_size,
-            10000,
-            10000,
-            collection.database);
-
-        /// A collection of documents addresses its fields as the paths of the document column.
-        adaptQueryToCollectionShape(ast, collection, executor);
-
-        String sql_query;
-        {
-            WriteBufferFromString sql_buffer(sql_query);
-            ast->format(sql_buffer, IAST::FormatSettings(true));
-        }
-
-        sql_queries.push_back(std::move(sql_query));
-    }
-
-    /// A delete from a collection that does not exist matches no document, which Mongo reports as
-    /// a delete of zero documents rather than an error.
-    if (objectExists(executor, "TABLE", collection.getQualifiedName()))
-    {
-        for (const auto & sql_query : sql_queries)
-            executor->execute(sql_query);
-    }
-
+    /// Each spec is translated before it is run, so a malformed filter is still an error for a
+    /// collection that does not exist.
+    Int64 deleted = 0;
     bson_t * bson_doc = bson_new();
+    bson_t write_errors;
+    bool has_write_errors = false;
+    size_t error_count = 0;
+    for (size_t delete_index = 0; delete_index < documents[1].documents.size(); ++delete_index)
+    {
+        try
+        {
+            const auto & delete_spec = documents[1].documents[delete_index];
+            String serialized_filter;
+            {
+                auto json_representation = delete_spec.getRapidJSONRepresentation();
+                auto filter_it = json_representation.FindMember("q");
+                if (filter_it == json_representation.MemberEnd())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'delete' command does not contain the 'q' filter");
 
-    BSON_APPEND_INT32(bson_doc, "n", 0);
+                auto limit_it = json_representation.FindMember("limit");
+                if (limit_it != json_representation.MemberEnd() && !(limit_it->value.IsNumber() && limit_it->value.GetDouble() == 0))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The 'delete' command supports only 'limit: 0' (deleteMany); deleting a limited number of documents is not "
+                        "supported");
+
+                rapidjson::StringBuffer buffer;
+                rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+                filter_it->value.Accept(writer);
+                serialized_filter = buffer.GetString();
+            }
+            serialized_filter = modifyFilter(serialized_filter);
+
+            auto mongo_dialect_query = fmt::format("db.{}.deleteMany({})", collection.collection, serialized_filter);
+
+            const auto max_query_size = mongo_dialect_query.size();
+            auto parser = Mongo::ParserMongoQuery(max_query_size, 10000, 10000);
+            auto ast = Mongo::parseMongoQuery(
+                parser,
+                mongo_dialect_query.data(),
+                mongo_dialect_query.data() + mongo_dialect_query.size(),
+                "",
+                max_query_size,
+                10000,
+                10000,
+                collection.database);
+
+            /// A collection of documents addresses its fields as the paths of the document column.
+            adaptQueryToCollectionShape(ast, collection, executor);
+
+            String sql_query;
+            {
+                WriteBufferFromString sql_buffer(sql_query);
+                ast->format(sql_buffer, IAST::FormatSettings(true));
+            }
+
+            /// A delete from a collection that does not exist matches no document, which Mongo reports as
+            /// a delete of zero documents rather than an error.
+            if (objectExists(executor, "TABLE", collection.getQualifiedName()))
+            {
+                auto count_query = fmt::format("db.{}.find({})", collection.collection, serialized_filter);
+                auto count_parser = Mongo::ParserMongoQuery(count_query.size(), 10000, 10000);
+                auto count_ast = Mongo::parseMongoQuery(
+                    count_parser,
+                    count_query.data(),
+                    count_query.data() + count_query.size(),
+                    "",
+                    count_query.size(),
+                    10000,
+                    10000,
+                    collection.database);
+                adaptQueryToCollectionShape(count_ast, collection, executor);
+                String sql_count_query;
+                WriteBufferFromString count_buffer(sql_count_query);
+                count_ast->format(count_buffer, IAST::FormatSettings(true));
+                deleted += std::stoll(executor->execute(fmt::format("SELECT count() FROM ({}) FORMAT TSV", sql_count_query)));
+                executor->execute(sql_query);
+            }
+        }
+        catch (const Exception & e)
+        {
+            if (!has_write_errors)
+            {
+                bson_append_array_begin(bson_doc, "writeErrors", -1, &write_errors);
+                has_write_errors = true;
+            }
+            bson_t write_error;
+            const auto error_key = std::to_string(error_count++);
+            bson_append_document_begin(&write_errors, error_key.data(), static_cast<int>(error_key.size()), &write_error);
+            BSON_APPEND_INT32(&write_error, "index", static_cast<Int32>(delete_index));
+            BSON_APPEND_INT32(&write_error, "code", e.code());
+            BSON_APPEND_UTF8(&write_error, "errmsg", e.message().c_str());
+            bson_append_document_end(&write_errors, &write_error);
+            if (ordered)
+                break;
+        }
+    }
+
+    if (has_write_errors)
+        bson_append_array_end(bson_doc, &write_errors);
+    appendCount(bson_doc, "n", deleted);
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
     std::vector<Document> result;

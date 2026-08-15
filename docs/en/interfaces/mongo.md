@@ -209,7 +209,7 @@ db.users.insertOne({"name" : "a", "age" : 20});
 db.users.insertMany([{"name" : "a", "age" : 20}, {"name" : "b", "age" : 30}]);
 ```
 
-An `insertOne` or `insertMany` writes into an existing table: the fields of the documents name its columns, and a subdocument writes the `a.b` columns its leaves name. A top level `_id` is dropped, the way the wire protocol drops the object id a driver adds. Every document of one `insertMany` must consist of the same fields, because the rows of one `INSERT` share a column list.
+An `insertOne` or `insertMany` writes into an existing table: the fields of the documents name its columns, and a subdocument writes the `a.b` columns its leaves name. A top level `_id` is kept when the table has an `_id` column; otherwise it is dropped. The dialect does not write document collections created by the MongoDB wire endpoint. Every document of one `insertMany` must consist of the same fields, because the rows of one `INSERT` share a column list.
 
 An embedded document that is a value rather than a set of paths - an element of an array, or the document `$push` and `$addToSet` append - is written as a `JSON` value, so an `Array(JSON)` column, which is what the wire protocol infers for an array of documents, is written the same way through either surface. An Extended JSON wrapper nested inside such a document becomes the value it wraps, as it does on the wire path, so a `{"$date": ...}` there is stored as the date it names rather than as a `JSON` object with a `$`-named field.
 
