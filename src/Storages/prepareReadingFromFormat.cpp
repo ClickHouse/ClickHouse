@@ -532,6 +532,15 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
         return columns_to_keep.contains(name) || columns_to_keep.contains(to_storage_name(name));
     };
 
+    /// A filter can keep one subcolumn on the main pass while a sibling is still deferred. Keep
+    /// the query-level set above for splitting `source_header`, but also retain the physical
+    /// parent in `format_header`: formats such as Parquet read JSON and dynamic subcolumns through
+    /// their parent column.
+    NameSet columns_to_keep_in_format_header;
+    for (const auto & column : info.requested_columns)
+        if (columns_to_keep.contains(column.name))
+            columns_to_keep_in_format_header.insert(column.getNameInStorage());
+
     NameSet names_in_default_expressions;
     std::vector<String> names_to_visit;
     auto seed_defaulted_column = [&](const String & name)
@@ -659,7 +668,9 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
     for (const auto & column : info.format_header)
     {
         const bool needed_by_lazy = lazy_names.contains(column.name) || lazy_format_names.contains(column.name);
-        const bool needed_by_main = main_format_names.contains(column.name) || columns_to_keep.contains(column.name);
+        const bool needed_by_main = main_format_names.contains(column.name)
+            || columns_to_keep.contains(column.name)
+            || columns_to_keep_in_format_header.contains(column.name);
         if (!needed_by_lazy || needed_by_main)
             main_format_header.insert(column);
     }

@@ -14,6 +14,11 @@ Lazily read columns: s
 3	6
 -- aggregates over the policy-filtered table
 900	9000	4500	9
+-- a row-policy subcolumn keeps its JSON parent in the main pass
+1
+3
+5
+Lazily read columns: j.user.age
 -- query_plan_optimize_lazy_materialization_for_file = 0
 -- the row policy input is pinned to the main pass (only s is lazy)
 1	val_1
@@ -29,3 +34,7 @@ Lazily read columns: s
 3	6
 -- aggregates over the policy-filtered table
 900	9000	4500	9
+-- a row-policy subcolumn keeps its JSON parent in the main pass
+1
+3
+5

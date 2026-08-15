@@ -55,6 +55,25 @@ SELECT '-- aggregates over the policy-filtered table';
 SELECT count(), sum(d), sum(a), uniqExact(a) FROM t_lazy_row_policy;
 DROP ROW POLICY policy_04891 ON t_lazy_row_policy;
 DROP TABLE t_lazy_row_policy;
+
+INSERT INTO FUNCTION file('${DATA_DIR}/row_policy_subcolumn.parquet', Parquet)
+SELECT
+    number AS k,
+    CAST(concat('{\"user\":{\"name\":\"u', toString(number % 2), '\",\"age\":', toString(number), '}}'), 'JSON') AS j
+FROM numbers(10)
+SETTINGS engine_file_truncate_on_insert = 1;
+CREATE TABLE t_lazy_row_policy_subcolumn
+(
+    k UInt64,
+    j JSON
+)
+ENGINE = File(Parquet, '${DATA_DIR}/row_policy_subcolumn.parquet');
+CREATE ROW POLICY policy_04891_subcolumn ON t_lazy_row_policy_subcolumn USING j.user.name != 'u0' TO ALL;
+SELECT '-- a row-policy subcolumn keeps its JSON parent in the main pass';
+SELECT j.user.age FROM t_lazy_row_policy_subcolumn ORDER BY k LIMIT 3;
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT j.user.age FROM t_lazy_row_policy_subcolumn ORDER BY k LIMIT 3) WHERE explain LIKE '%Lazily read columns%';
+DROP ROW POLICY policy_04891_subcolumn ON t_lazy_row_policy_subcolumn;
+DROP TABLE t_lazy_row_policy_subcolumn;
 "
 
 # `enable_analyzer` is pinned because lazy materialization requires the analyzer
