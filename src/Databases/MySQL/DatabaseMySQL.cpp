@@ -724,7 +724,7 @@ SETTINGS enable_compression = 1;
 
 ## TLS/SSL {#tls-ssl}
 
-The credentials of an encrypted connection to MySQL are passed as [named collection](/operations/named-collections.md) keys (or as key-value arguments):
+The credentials of an encrypted connection to MySQL are passed as [named collection](/concepts/features/configuration/server-config/named-collections) keys (or as key-value arguments):
 
 | Parameter | Description |
 |-----------|-------------|

@@ -22,18 +22,18 @@ integration:
   ClickPipes использует выделенную архитектуру и Kafka Consumer API для чтения данных из указанного топика, а затем вставляет эти данные в таблицу ClickHouse в выбранном сервисе ClickHouse Cloud.
 </Accordion>
 
-<Accordion title="В чем разница между ClickPipes и ClickHouse Kafka Table Engine?">
+<Accordion title="В чем разница между ClickPipes и движком таблицы Kafka?">
   Движок таблицы Kafka — это встроенная возможность ClickHouse, реализующая «pull-модель», при которой сервер ClickHouse сам подключается к Kafka, получает события и затем записывает их локально.
 
   ClickPipes — это отдельный облачный сервис, работающий независимо от сервиса ClickHouse. Он подключается к Kafka (или другим источникам данных) и отправляет события в связанный сервис ClickHouse Cloud. Такая разделённая архитектура обеспечивает более высокую операционную гибкость, чёткое разграничение ответственности, масштабируемую ингестию, устойчивую обработку сбоев, расширяемость и многое другое.
 </Accordion>
 
 <Accordion title="Каковы требования для использования ClickPipes for Kafka?">
-  Чтобы использовать ClickPipes for Kafka, вам потребуется работающий брокер Kafka и сервис ClickHouse Cloud с включённым ClickPipes. Также необходимо убедиться, что ClickHouse Cloud может получить доступ к вашему брокеру Kafka. Для этого можно разрешить удалённые подключения на стороне Kafka и добавить [исходящие IP-адреса ClickHouse Cloud](/ru/products/cloud/guides/data-sources/cloud-endpoints-api) в белый список в конфигурации Kafka. Либо можно использовать [AWS PrivateLink](/ru/integrations/clickpipes/aws-privatelink), чтобы подключить ClickPipes for Kafka к вашим брокерам Kafka.
+  Чтобы использовать ClickPipes for Kafka, вам потребуется работающий брокер Kafka и сервис ClickHouse Cloud с включённым ClickPipes. Также необходимо убедиться, что ClickHouse Cloud может получить доступ к вашему брокеру Kafka. Для этого можно разрешить удалённые подключения на стороне Kafka и добавить [исходящие IP-адреса ClickHouse Cloud](/ru/products/cloud/guides/data-sources/cloud-endpoints-api) в белый список в конфигурации Kafka. Либо можно использовать [AWS PrivateLink](/ru/integrations/clickpipes/networking/aws-privatelink), чтобы подключить ClickPipes for Kafka к вашим брокерам Kafka.
 </Accordion>
 
 <Accordion title="Поддерживает ли ClickPipes for Kafka AWS PrivateLink?">
-  AWS PrivateLink поддерживается. Подробнее о настройке см. в [документации](/ru/integrations/clickpipes/aws-privatelink).
+  AWS PrivateLink поддерживается. Подробнее о настройке см. в [документации](/ru/integrations/clickpipes/networking/aws-privatelink).
 </Accordion>
 
 <Accordion title="Можно ли использовать ClickPipes for Kafka для записи данных в топик Kafka?">
@@ -63,7 +63,7 @@ integration:
 </Accordion>
 
 <Accordion title="Работает ли Azure Schema Registry с ClickPipes?">
-  Нет. ClickPipes поддерживает только реестры схем, API-совместимые с Confluent Schema Registry, а Azure Schema Registry к ним не относится. Если вам нужна поддержка этого реестра схем, [свяжитесь с нашей командой](https://clickhouse.com/company/contact?loc=clickpipes).
+  Нет. ClickPipes поддерживает реестры, совместимые с Confluent, и AWS Glue Schema Registry, но не Azure Schema Registry. Актуальную матрицу поддержки см. в разделе [Реестры схем для Kafka ClickPipe](/ru/integrations/clickpipes/kafka/schema-registries). Если вам нужна поддержка Azure Schema Registry, [свяжитесь с нашей командой](https://clickhouse.com/company/contact?loc=clickpipes).
 </Accordion>
 
 <Accordion title="Какие разрешения нужны моей политике для чтения из Azure Event Hubs?">
@@ -79,7 +79,7 @@ integration:
 </Accordion>
 
 <Accordion title="Актуальны ли ClickPipes IPs для Azure Event Hubs?">
-  Да. Чтобы ограничить трафик к вашему экземпляру Event Hubs, добавьте [задокументированные статические NAT IPs](/ru/integrations/clickpipes/home#list-of-static-ips) в .
+  Да. Чтобы ограничить трафик к вашему экземпляру Event Hubs, добавьте [задокументированные статические NAT IPs](/ru/integrations/clickpipes/networking/static-ips) в правила IP-брандмауэра для пространства имен Event Hubs.
 </Accordion>
 
 <Accordion title="Строка подключения должна быть для Event Hub или для пространства имен Event Hub?">
