@@ -60,11 +60,11 @@ ActionsDAG * tryGetStepActions(IQueryPlanStep * step)
 /// Names of the input columns some output of `actions` depends on. An input nothing depends on is
 /// tolerated by `ActionsDAG::updateHeader` and by `ExpressionActions::execute` when the column is
 /// missing from the block, so it does not keep the column alive.
-NameSet collectInputsNeededByOutputs(const ActionsDAG & actions)
+NameSet collectInputsNeededByNode(const ActionsDAG::Node * root)
 {
     NameSet names;
     std::unordered_set<const ActionsDAG::Node *> visited;
-    ActionsDAG::NodeRawConstPtrs stack(actions.getOutputs().begin(), actions.getOutputs().end());
+    ActionsDAG::NodeRawConstPtrs stack{root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -76,6 +76,18 @@ NameSet collectInputsNeededByOutputs(const ActionsDAG & actions)
             names.insert(node->result_name);
 
         stack.insert(stack.end(), node->children.begin(), node->children.end());
+    }
+
+    return names;
+}
+
+NameSet collectInputsNeededByOutputs(const ActionsDAG & actions)
+{
+    NameSet names;
+    for (const auto * output : actions.getOutputs())
+    {
+        auto output_inputs = collectInputsNeededByNode(output);
+        names.insert(output_inputs.begin(), output_inputs.end());
     }
 
     return names;
@@ -387,6 +399,15 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
 
     ActionsDAG * child_actions = tryGetStepActions(child_node->step.get());
     const NameSet child_inputs_in_use = child_actions ? collectInputsNeededByOutputs(*child_actions) : NameSet{};
+    const auto * child_filter = typeid_cast<const FilterStep *>(child_node->step.get());
+    NameSet child_filter_inputs;
+    if (child_filter)
+    {
+        const auto * filter_column = child_actions->tryFindInOutputs(child_filter->getFilterColumnName());
+        if (!filter_column)
+            return 0;
+        child_filter_inputs = collectInputsNeededByNode(filter_column);
+    }
 
     std::unordered_set<const ActionsDAG::Node *> functions_to_split;
     std::vector<PushedFunction> pushed_functions;
@@ -417,6 +438,12 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
         }
 
         if (columns_pinned_by_child.contains(name_below))
+            continue;
+
+        /// A filter must itself read the argument. Otherwise the function is evaluated before a
+        /// potentially selective filter, adding CPU work while only saving the copied values of
+        /// the wide column from rows that survive the filter.
+        if (child_filter && !child_filter_inputs.contains(name_below))
             continue;
 
         const auto * column_below = child_input_header.findByName(name_below);

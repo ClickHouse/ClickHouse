@@ -47,8 +47,8 @@ FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT lengthUTF8(s) FROM volume_reducing_function_push_down WHERE notEmpty(s)
     SETTINGS query_plan_push_down_volume_reducing_functions = 0);
 
-SELECT 'plan: filter not reading the argument — pushdown applied';
-SELECT countIf(explain LIKE '%[volume-reducing functions]%') > 0
+SELECT 'plan: filter not reading the argument — not pushed';
+SELECT countIf(explain LIKE '%[volume-reducing functions]%')
 FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT lengthUTF8(s) FROM volume_reducing_function_push_down WHERE id > 0
     SETTINGS query_plan_push_down_volume_reducing_functions = 1);
@@ -118,21 +118,6 @@ SELECT
     SELECT countIf(explain LIKE '%s String%')
     FROM (EXPLAIN header = 1, description = 0, actions = 0, compact = 0, pretty = 0
         SELECT lengthUTF8(s) FROM volume_reducing_function_push_down ORDER BY id
-        SETTINGS query_plan_push_down_volume_reducing_functions = 0, query_plan_remove_unused_columns = 0)
-);
-
-SELECT 'plan: wide column removed from the filter';
-SELECT
-(
-    SELECT countIf(explain LIKE '%s String%')
-    FROM (EXPLAIN header = 1, description = 0, actions = 0, compact = 0, pretty = 0
-        SELECT lengthUTF8(s) FROM volume_reducing_function_push_down WHERE id > 0
-        SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_remove_unused_columns = 0)
-) <
-(
-    SELECT countIf(explain LIKE '%s String%')
-    FROM (EXPLAIN header = 1, description = 0, actions = 0, compact = 0, pretty = 0
-        SELECT lengthUTF8(s) FROM volume_reducing_function_push_down WHERE id > 0
         SETTINGS query_plan_push_down_volume_reducing_functions = 0, query_plan_remove_unused_columns = 0)
 );
 
