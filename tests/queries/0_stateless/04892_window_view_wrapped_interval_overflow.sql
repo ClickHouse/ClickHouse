@@ -17,6 +17,10 @@ CREATE TABLE 04892_src (ts DateTime('UTC'), v UInt64) ENGINE = Memory;
 CREATE WINDOW VIEW 04892_wv ENGINE = Memory
     AS SELECT count(v) AS c, tumble(now(), toIntervalDay(2147483648), 'UTC') AS w FROM 04892_src GROUP BY w; -- { serverError BAD_ARGUMENTS }
 
+-- Intervals that wrap to a different `UInt32` value are rejected as well.
+CREATE WINDOW VIEW 04892_wv ENGINE = Memory
+    AS SELECT count(v) AS c, tumble(now(), toIntervalDay(2147483647), 'UTC') AS w FROM 04892_src GROUP BY w; -- { serverError BAD_ARGUMENTS }
+
 CREATE WINDOW VIEW 04892_wv ENGINE = Memory WATERMARK = STRICTLY_ASCENDING
     AS SELECT count(v) AS c, tumble(ts, toIntervalDay(2147483648), 'UTC') AS w FROM 04892_src GROUP BY w; -- { serverError BAD_ARGUMENTS }
 

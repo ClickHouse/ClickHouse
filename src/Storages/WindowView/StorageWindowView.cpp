@@ -351,10 +351,53 @@ namespace
         return res;
     }
 
-    /// Rejects a window definition whose interval cannot move the time at all, so that such a window
-    /// view fails at creation instead of breaking later, when its bounds are advanced.
+    /// Rejects a window definition whose interval cannot be represented by `DateTime32`, so that
+    /// a window view fails at creation instead of breaking later, when its bounds are advanced.
     void checkIntervalAdvancesTime(IntervalKind::Kind kind, Int64 num_units, const DateLUTImpl & time_zone)
     {
+        constexpr UInt32 max_datetime32 = std::numeric_limits<UInt32>::max();
+        constexpr UInt32 max_day_num = max_datetime32 / 86400;
+
+        UInt32 max_num_units = max_day_num;
+        switch (kind)
+        {
+            case IntervalKind::Kind::Second:
+                max_num_units = max_datetime32;
+                break;
+            case IntervalKind::Kind::Minute:
+                max_num_units = max_datetime32 / 60;
+                break;
+            case IntervalKind::Kind::Hour:
+                max_num_units = max_datetime32 / 3600;
+                break;
+            case IntervalKind::Kind::Day:
+                break;
+            case IntervalKind::Kind::Week:
+            case IntervalKind::Kind::Month:
+            case IntervalKind::Kind::Quarter:
+            case IntervalKind::Kind::Year:
+                /// Calendar intervals need an additional check below because their duration varies.
+                break;
+            case IntervalKind::Kind::Nanosecond:
+            case IntervalKind::Kind::Microsecond:
+            case IntervalKind::Kind::Millisecond:
+                break;
+        }
+
+        if (num_units > max_num_units)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Time overflow in the window view: interval {} {} is outside the representable DateTime32 range",
+                num_units,
+                IntervalKind(kind).toString());
+
+        if (kind > IntervalKind::Kind::Day && addTime(0, kind, num_units, time_zone) > max_day_num)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Time overflow in the window view: interval {} {} is outside the representable DateTime32 range",
+                num_units,
+                IntervalKind(kind).toString());
+
         addTimeStrictly(0, kind, num_units, time_zone);
     }
 
