@@ -12,6 +12,8 @@
 
 #include <fmt/format.h>
 
+#include <iterator>
+
 
 namespace DB::Proxy
 {
