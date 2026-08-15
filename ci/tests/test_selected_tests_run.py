@@ -15,7 +15,9 @@ Covered here:
 """
 
 import os
+import runpy
 import sys
+from types import SimpleNamespace
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -24,6 +26,11 @@ from ci.jobs.functional_tests import filter_selected_tests_by_flavor
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.praktika.result import Result
+
+_clickhouse_test = os.path.join(
+    os.path.dirname(__file__), "../..", "tests", "clickhouse-test"
+)
+_TestSuite = runpy.run_path(_clickhouse_test)["TestSuite"]
 
 
 def test_selected_test_name_resolves_to_source_file():
@@ -117,6 +124,30 @@ def test_generic_no_tests_banner_does_not_hide_runner_failure(tmp_path):
     output = "ERROR: Process Worker 1 was killed with exit code -9\nNo tests were run.\n"
     result = _process(tmp_path, output, 1, allow_no_tests=True)
     assert result.status == Result.Status.FAIL
+
+
+def test_unmatched_explicit_selector_is_not_filtered_out(tmp_path):
+    (tmp_path / "00001_existing.sql").touch()
+    suite = _TestSuite.__new__(_TestSuite)
+    suite.args = SimpleNamespace(test=["99999_no_such_test"])
+    suite.suite_path = str(tmp_path)
+    suite.render_test_template = lambda _env, _path, name: name
+    suite.has_explicit_test_match = False
+
+    assert list(suite.get_selected_tests(lambda _name: True)) == []
+    assert not suite.has_explicit_test_match
+
+
+def test_matching_explicit_selector_is_recorded_before_flavor_filter(tmp_path):
+    (tmp_path / "00001_existing.sql").touch()
+    suite = _TestSuite.__new__(_TestSuite)
+    suite.args = SimpleNamespace(test=["00001_existing"])
+    suite.suite_path = str(tmp_path)
+    suite.render_test_template = lambda _env, _path, name: name
+    suite.has_explicit_test_match = False
+
+    assert list(suite.get_selected_tests(lambda _name: False)) == []
+    assert suite.has_explicit_test_match
 
 
 def test_pr_workflow_runs_no_full_suite_sanitizer_functional_tests():
