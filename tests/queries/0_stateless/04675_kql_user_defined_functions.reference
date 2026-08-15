@@ -39,6 +39,6 @@
 -- view marks a parameterless function; it is accepted and changes nothing here --
 7
 -- a tabular function joins and unions like any other source --
-1	x	y
+1	x	1	y
 1
 1

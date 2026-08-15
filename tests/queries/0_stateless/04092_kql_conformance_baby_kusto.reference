@@ -205,7 +205,7 @@ nan
 5
 2
 -- BuiltIns_bin_DateTime --
-2022-03-02 23:00:00.000000000
+2022-03-02 23:00:00.0000000
 -- BuiltIns_bin_Narrowing --
 -- BuiltIns_geo_distance_2points_Scalar --
 -- BuiltIns_geo_distance_2points_Columnar --
