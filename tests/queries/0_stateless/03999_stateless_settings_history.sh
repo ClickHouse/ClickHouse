@@ -52,11 +52,12 @@ $CLICKHOUSE_LOCAL --query "
         -- The sampling query profiler is unavailable under MemorySanitizer because its signal
         -- handler can interrupt the sanitizer while it is reporting an error. Its defaults are
         -- therefore zero only in that build; this is a build capability difference, not a
-        -- compatibility change.
+        -- compatibility change. Detect the capability from the defaults because the relevant
+        -- compile-time macro is not exposed by the build-options table.
         memory_sanitizer_divergent_settings AS
         (
             SELECT arrayJoin(if(
-                (SELECT value FROM system.build_options WHERE name = 'MEMORY_SANITIZER') = '1',
+                (SELECT default FROM system.settings WHERE name = 'query_profiler_real_time_period_ns') = '0',
                 ['query_profiler_real_time_period_ns', 'query_profiler_cpu_time_period_ns'],
                 emptyArrayString()
             )) AS name
