@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/parseGlobs.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
