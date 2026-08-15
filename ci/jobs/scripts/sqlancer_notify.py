@@ -27,8 +27,15 @@ import urllib.request
 from pathlib import Path
 
 # The job runs with the sqlancer checkout as its working directory, so the repo
-# root has to come from this file's location, not from `.`.
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+# root has to come from this file's location, not from `.`. Praktika then reads
+# its own context from RELATIVE `./ci/tmp` paths (`Settings.TEMP_DIR`,
+# `_Environment.get`), so the process also has to sit in the repo root - from
+# anywhere else `Info()` silently degrades and the run looks like the scheduled
+# master stream with no report links.
+ORIGINAL_CWD = Path.cwd()
+REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT))
+os.chdir(REPO_ROOT)
 
 SLACK_WEBHOOK_ENV = "SLACK_WEBHOOK_CORE_QA"
 HISTORY_DAYS = 30
@@ -180,7 +187,9 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="print the message instead of posting it")
     args = parser.parse_args()
 
-    findings = json.loads(open(args.findings, encoding="utf-8").read())
+    # Resolved against the caller's directory, since this process chdir'd away.
+    findings_path = ORIGINAL_CWD / args.findings
+    findings = json.loads(findings_path.read_text(encoding="utf-8"))
     failures = findings.get("failures") or []
     if args.extra_failure:
         # A sanitizer report or a `<Fatal>` message is a finding with no oracle
