@@ -146,8 +146,11 @@ kubectl delete secret -n "${CONNECTOR_NAMESPACE}" \
   clicklink-connector-troubleshooter-access-<instance>
 kubectl delete serviceaccount -n "${CONNECTOR_NAMESPACE}" \
   pcm-scraper-<instance> pcm-troubleshooter-<instance>
-kubectl delete serviceaccount,role,rolebinding -n <clickhouse-namespace> \
-  pcm-scraper pcm-troubleshooter
+# Repeat for every ClickHouse namespace that holds a provisioned instance.
+for ns in <clickhouse-namespace-1> <clickhouse-namespace-2>; do
+  kubectl delete serviceaccount,role,rolebinding -n "${ns}" \
+    pcm-scraper pcm-troubleshooter
+done
 ```
 
 ### ClickHouse users {#uninstall-clickhouse-users}
