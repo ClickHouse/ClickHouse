@@ -104,7 +104,10 @@ SQLQueryPiece applyFunctionPredictLinear(
             /// A scalar grid is always exactly one row with one Array column (see e.g. fromFunctionTime.cpp),
             /// so it can be registered and referenced the same way as SINGLE_SCALAR above, no JOIN needed.
             context.subqueries.emplace_back(context.subqueries.size(), std::move(scalar_argument.select_query), SQLSubqueryType::SCALAR);
-            predict_offset_ast = make_intrusive<ASTIdentifier>(context.subqueries.back().name);
+            /// The grid is Array(context.scalar_data_type), which can be Array(Float32); the aggregate's
+            /// 3rd argument always expects Array(Float64), so normalize it here regardless of table type.
+            predict_offset_ast = makeASTFunction(
+                "CAST", make_intrusive<ASTIdentifier>(context.subqueries.back().name), make_intrusive<ASTLiteral>("Array(Float64)"));
             break;
 
         default:

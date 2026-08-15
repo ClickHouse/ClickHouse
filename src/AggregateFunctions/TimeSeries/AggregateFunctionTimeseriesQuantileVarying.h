@@ -105,6 +105,12 @@ public:
             data(place)->grid_phis = data(rhs)->grid_phis;
             data(place)->grid_phis_captured = true;
         }
+        else if (data(place)->grid_phis_captured && data(rhs)->grid_phis_captured
+            && data(place)->grid_phis != data(rhs)->grid_phis)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "timeSeriesQuantileVaryingToGrid: phis (3rd argument) must be the same array for every row");
+        }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -278,22 +284,33 @@ private:
         return staleness_cutoff <= static_cast<Int128>(static_cast<Int64>(grid_point));
     }
 
+    /// Captures the 3rd argument on the first row, then validates every later row matches it (public SQL
+    /// aggregates can't otherwise enforce that).
     void captureGridPhisOnce(AggregateDataPtr __restrict place, const IColumn * phis_column, size_t row_num) const
     {
-        if (data(place)->grid_phis_captured)
-            return;
-
         const auto & arr = typeid_cast<const ColumnArray &>(*phis_column);
         const auto & offsets = arr.getOffsets();
         const auto begin = row_num == 0 ? 0 : offsets[row_num - 1];
         const auto end = offsets[row_num];
         const auto & values = typeid_cast<const ColumnVector<Float64> &>(arr.getData()).getData();
 
-        auto & grid_phis = data(place)->grid_phis;
-        grid_phis.reserve(end - begin);
-        for (auto i = begin; i < end; ++i)
-            grid_phis.push_back(values[i]);
-        data(place)->grid_phis_captured = true;
+        if (!data(place)->grid_phis_captured)
+        {
+            auto & grid_phis = data(place)->grid_phis;
+            grid_phis.reserve(end - begin);
+            for (auto i = begin; i < end; ++i)
+                grid_phis.push_back(values[i]);
+            data(place)->grid_phis_captured = true;
+            return;
+        }
+
+        const auto & grid_phis = data(place)->grid_phis;
+        bool matches = grid_phis.size() == end - begin;
+        for (auto i = begin; matches && i < end; ++i)
+            matches = values[i] == grid_phis[i - begin];
+        if (!matches)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "timeSeriesQuantileVaryingToGrid: phis (3rd argument) must be the same array for every row");
     }
 
     const bool array_arguments{};

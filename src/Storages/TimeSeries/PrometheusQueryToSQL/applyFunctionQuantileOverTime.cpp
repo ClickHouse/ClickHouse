@@ -356,15 +356,20 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     ASTPtr quantile_grid;
     if (varying_phi)
     {
+        /// The grid is Array(context.scalar_data_type), which can be Array(Float32); the aggregate's 3rd
+        /// argument always expects Array(Float64), so normalize it here regardless of table type.
+        auto castVaryingPhi = [&]
+        {
+            return makeASTFunction(
+                "CAST", make_intrusive<ASTIdentifier>(varying_phi_subquery_name), make_intrusive<ASTLiteral>("Array(Float64)"));
+        };
         quantile_grid = addParametersToAggregateFunction(
-            makeASTFunction(std::string{ch_function_name_varying}, std::move(timestamps), std::move(values),
-                make_intrusive<ASTIdentifier>(varying_phi_subquery_name)),
+            makeASTFunction(std::string{ch_function_name_varying}, std::move(timestamps), std::move(values), castVaryingPhi()),
             timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
             timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
             timeSeriesDurationToAST(step, context.timestamp_data_type),
             timeSeriesDurationToAST(window, context.timestamp_data_type));
-        builder.select_list.push_back(wrapWithVaryingPhiEdgeCases(
-            std::move(quantile_grid), make_intrusive<ASTIdentifier>(varying_phi_subquery_name), context));
+        builder.select_list.push_back(wrapWithVaryingPhiEdgeCases(std::move(quantile_grid), castVaryingPhi(), context));
     }
     else
     {

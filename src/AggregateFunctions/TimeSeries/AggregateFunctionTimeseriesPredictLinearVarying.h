@@ -110,6 +110,12 @@ public:
             data(place)->grid_offsets = data(rhs)->grid_offsets;
             data(place)->grid_offsets_captured = true;
         }
+        else if (data(place)->grid_offsets_captured && data(rhs)->grid_offsets_captured
+            && data(place)->grid_offsets != data(rhs)->grid_offsets)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "timeSeriesPredictLinearVaryingToGrid: predict_offsets (3rd argument) must be the same array for every row");
+        }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -293,25 +299,34 @@ private:
         return staleness_cutoff <= static_cast<Int128>(static_cast<Int64>(grid_point));
     }
 
-    /// Captured once (3rd argument is the same for every row). Values arrive in seconds (PromQL units);
-    /// scaled here to internal timestamp units, matching the constant-offset registration's pre-multiply.
+    /// Captures the 3rd argument on the first row, then validates every later row matches it (public SQL
+    /// aggregates can't otherwise enforce that). Values arrive in seconds; scaled here to internal units.
     void captureGridOffsetsOnce(AggregateDataPtr __restrict place, const IColumn * offsets_column, size_t row_num) const
     {
-        if (data(place)->grid_offsets_captured)
-            return;
-
         const auto & arr = typeid_cast<const ColumnArray &>(*offsets_column);
         const auto & offsets = arr.getOffsets();
         const auto begin = row_num == 0 ? 0 : offsets[row_num - 1];
         const auto end = offsets[row_num];
         const auto & values = typeid_cast<const ColumnVector<Float64> &>(arr.getData()).getData();
-
         const auto scale = static_cast<Float64>(timestamp_scale_multiplier);
-        auto & grid_offsets = data(place)->grid_offsets;
-        grid_offsets.reserve(end - begin);
-        for (auto i = begin; i < end; ++i)
-            grid_offsets.push_back(values[i] * scale);
-        data(place)->grid_offsets_captured = true;
+
+        if (!data(place)->grid_offsets_captured)
+        {
+            auto & grid_offsets = data(place)->grid_offsets;
+            grid_offsets.reserve(end - begin);
+            for (auto i = begin; i < end; ++i)
+                grid_offsets.push_back(values[i] * scale);
+            data(place)->grid_offsets_captured = true;
+            return;
+        }
+
+        const auto & grid_offsets = data(place)->grid_offsets;
+        bool matches = grid_offsets.size() == end - begin;
+        for (auto i = begin; matches && i < end; ++i)
+            matches = values[i] * scale == grid_offsets[i - begin];
+        if (!matches)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "timeSeriesPredictLinearVaryingToGrid: predict_offsets (3rd argument) must be the same array for every row");
     }
 
     const bool array_arguments{};
