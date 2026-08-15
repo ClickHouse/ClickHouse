@@ -466,6 +466,10 @@ DROP VIEW time_decay_identifier_parameter;
 DROP TABLE time_decay_identifier_source;
 
 SET allow_experimental_time_decay_aggregate_functions = 1;
+CREATE VIEW time_decay_parameterized_view_gate AS
+SELECT tupleElement({value:ExponentialTimeDecayingFloat64(10)}, 1);
+SELECT 'typed parameter preserved';
+DROP VIEW time_decay_parameterized_view_gate;
 
 -- The implicit empty value is an identity even for genuine negative timestamps.
 DROP TABLE IF EXISTS time_decay_default_identity;

@@ -931,7 +931,20 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (create.select)
     {
         if (create.isParameterizedView())
+        {
+            if (!create.attach)
+            {
+                const auto validation_settings = DataTypeValidationSettings::forRuntimeTypeNames(getContext()->getSettingsRef());
+                for (const auto & [name, type_name] : analyzeReceiveQueryParamsWithType(create.select))
+                {
+                    /// Identifier is a query-parameter kind, not a data type.
+                    if (type_name == "Identifier")
+                        continue;
+                    validateDataType(DataTypeFactory::instance().get(type_name), validation_settings);
+                }
+            }
             return properties;
+        }
 
         if (create.aliases_list)
         {
@@ -1102,21 +1115,6 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 
     const auto & settings = getContext()->getSettingsRef();
-
-    /// A parameterized view can carry a user-supplied type which is not visible
-    /// in its output columns. Validate those type names independently of the
-    /// analyzer used to infer the view structure.
-    if (!create.attach && create.isView() && create.select)
-    {
-        const auto validation_settings = DataTypeValidationSettings::forRuntimeTypeNames(settings);
-        for (const auto & [name, type_name] : analyzeReceiveQueryParamsWithType(create.select))
-        {
-            /// Identifier is a query-parameter kind, not a data type.
-            if (type_name == "Identifier")
-                continue;
-            validateDataType(DataTypeFactory::instance().get(type_name), validation_settings);
-        }
-    }
 
     /// If it's not attach and not materialized view to existing table,
     /// we need to validate data types (check for experimental or suspicious types).
