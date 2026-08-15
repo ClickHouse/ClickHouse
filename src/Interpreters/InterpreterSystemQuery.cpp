@@ -2666,6 +2666,9 @@ std::vector<StoragePtr> InterpreterSystemQuery::getAccessibleStreamingStorages()
     std::vector<StoragePtr> result;
     for (const auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
     {
+        if (isReadOnlyOverlayDatabase(elem.second))
+            continue;
+
         const auto & database_name = elem.first;
         for (auto iterator = elem.second->getTablesIterator(ctx); iterator->isValid(); iterator->next())
         {
