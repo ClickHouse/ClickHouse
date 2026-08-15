@@ -514,6 +514,55 @@ static void checkIntervalStepFillCanReachFillTo(const FillColumnDescription & de
     }
 }
 
+/** Numeric filling advances integer values in the shared Int64 carrier. `FieldVisitorSum` deliberately uses
+  * unsigned arithmetic there so an overflow is well-defined, but a wrapped value is no longer monotonic. This can
+  * happen even when both bounds fit the column type: `FROM INT64_MAX - 1 TO INT64_MAX STEP 2` wraps while advancing
+  * the final generated value. With FROM and TO, find that final value exactly and verify that its next step still
+  * advances in the requested direction.
+  */
+static void checkNumericStepFillDoesNotWrap(const FillColumnDescription & descr, int direction)
+{
+    if (descr.step_kind || descr.fill_from.isNull() || descr.fill_to.isNull() || !descr.fill_staleness.isNull())
+        return;
+
+    const auto raw_value = [](const Field & field) -> std::optional<Int64>
+    {
+        if (field.getType() == Field::Types::Int64)
+            return field.safeGet<Int64>();
+        if (field.getType() == Field::Types::Decimal64)
+            return field.safeGet<DecimalField<Decimal64>>().getValue().value;
+        return {};
+    };
+
+    const auto from_raw = raw_value(descr.fill_from);
+    const auto to_raw = raw_value(descr.fill_to);
+    const auto step_raw = raw_value(descr.fill_step);
+    if (!from_raw || !to_raw || !step_raw)
+        return;
+
+    const Int128 span = direction > 0 ? static_cast<Int128>(*to_raw) - *from_raw : static_cast<Int128>(*from_raw) - *to_raw;
+    if (span <= 0)
+        return;
+
+    const Int128 step = *step_raw;
+    const Int128 jumps = (span - 1) / (step > 0 ? step : -step);
+    const Int64 last_raw = static_cast<Int64>(static_cast<Int128>(*from_raw) + jumps * step);
+
+    Field last = descr.fill_from.getType() == Field::Types::Decimal64
+        ? Field(DecimalField<Decimal64>(Decimal64(last_raw), descr.fill_from.safeGet<DecimalField<Decimal64>>().getScale()))
+        : Field(last_raw);
+    Field next = last;
+    descr.step_func(next, 1);
+
+    if (!less(last, next, direction))
+        throw Exception(
+            ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+            "WITH FILL can never reach the TO value {}: starting from the FROM value {}, the numeric step wraps around the Int64 arithmetic carrier at value {}, so filling would generate values past the TO value in the wrong order",
+            applyVisitor(FieldVisitorToString(), descr.fill_to),
+            applyVisitor(FieldVisitorToString(), descr.fill_from),
+            applyVisitor(FieldVisitorToString(), last));
+}
+
 static SortDescription deduplicateSortDescription(const SortDescription & sort_description, const Block & header)
 {
     SortDescription result;
@@ -592,6 +641,7 @@ FillingTransform::FillingTransform(
 
         checkFillBoundsFitColumnType(descr, type, fill_description[i].direction);
         checkIntervalStepFillCanReachFillTo(descr, fill_description[i].direction);
+        checkNumericStepFillDoesNotWrap(descr, fill_description[i].direction);
     }
     logDebug("fill description", dumpSortDescription(fill_description));
 

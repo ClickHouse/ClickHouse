@@ -177,6 +177,13 @@ SELECT d FROM (SELECT toDate('2148-01-01') AS d ORDER BY d ASC WITH FILL FROM to
 -- A sequence that crosses TO before it reaches the boundary of the storage type terminates and is accepted.
 SELECT count(), min(t), max(t) FROM (SELECT toDateTime('2106-01-01 00:00:00', 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime('2106-01-01 00:00:00', 'UTC') TO toDateTime('2106-01-05 00:00:00', 'UTC') STEP INTERVAL 1 DAY);
 
+SELECT 'a numeric step that wraps the Int64 arithmetic carrier is rejected';
+
+-- The arithmetic for all integer fill columns uses an Int64 carrier. Even though both bounds fit an Int64 column,
+-- the final step below wraps from INT64_MAX - 1 to INT64_MIN and would resume generating out-of-order values.
+SELECT x FROM (SELECT toInt64(9223372036854775806) AS x ORDER BY x ASC WITH FILL FROM x TO toInt64(9223372036854775807) STEP 2) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT x FROM (SELECT toInt64(-9223372036854775807) AS x ORDER BY x DESC WITH FILL FROM x TO toInt64(-9223372036854775808) STEP -2) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+
 SELECT 'in-range filling is unchanged';
 
 SELECT groupArray(x) FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH FILL FROM 1 TO 10);
