@@ -27,7 +27,7 @@ The command manually triggers the physical materialization of patch parts create
 Generally, you should not need to use `APPLY PATCHES`
 </Tip>
 
-Patch parts are normally applied automatically during merges when the [`apply_patches_on_merge`](/reference/settings/merge-tree-settings#apply_patches_on_merge) setting is enabled (default). However, you may want to manually trigger patch application in these scenarios:
+Patch parts are normally applied automatically during merges when the [`apply_patches_on_merge`](/reference/settings/merge-tree-settings/other#apply_patches_on_merge) setting is enabled (default). However, you may want to manually trigger patch application in these scenarios:
 
 - To reduce the overhead of applying patches during `SELECT` queries
 - To consolidate multiple patch parts before they accumulate
@@ -63,4 +63,4 @@ WHERE table = 'my_table' AND command LIKE '%APPLY PATCHES%';
 ## See also {#see-also}
 
 - [Lightweight `UPDATE`](/reference/statements/update) - Create patch parts with lightweight updates
-- [`apply_patches_on_merge` setting](/reference/settings/merge-tree-settings#apply_patches_on_merge) - Control automatic patch application during merges
+- [`apply_patches_on_merge` setting](/reference/settings/merge-tree-settings/other#apply_patches_on_merge) - Control automatic patch application during merges

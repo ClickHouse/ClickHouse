@@ -55,6 +55,12 @@ struct Optimization
         bool read_in_order{};
         bool read_in_order_through_join{};
 
+        /// Mirrors `QueryPlanOptimizationSettings::read_in_order_through_spilling_join`.
+        /// `topKThroughJoin` consults it for the same reason as `read_in_order_through_join`:
+        /// a join that may spill only becomes a valid target for the second-pass read-in-order
+        /// when this setting lets it pin itself in memory, so the deferral must follow it.
+        bool read_in_order_through_spilling_join{};
+
         /// Mirrors `QueryPlanOptimizationSettings::join_swap_table`. `std::nullopt` means
         /// "auto" (swap decided by `optimizeJoinLegacy` from per-side row estimations);
         /// `true`/`false` are explicit. `topKThroughJoin` consults it because deferring to
@@ -219,12 +225,14 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeJoinByShards(QueryPlan::Node & root);
+void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_shards);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeLimitForAggregationInOrder(QueryPlan::Node & root);
 void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void pushLimitByIntoSort(QueryPlan::Node & node);
 void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeLimitByPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+void optimizeDistinctPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 bool optimizeVectorSearchWithQuantizedCodes(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings, size_t max_limit_for_lazy_materialization);
@@ -265,6 +273,10 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
 /// A separate tree traverse to apply sorting properties after *InOrder optimizations.
 void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
+/// A separate tree traverse that propagates the stream-disjointness property (no two output streams
+/// carry the same key value).
+void applyStreamDisjointness(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
+
 /// Returns the name of used projection or nullopt if no projection is used.
 std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Node & node,
@@ -275,6 +287,9 @@ std::optional<String> optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
     const QueryPlanOptimizationSettings & optimization_settings);
+
+/// Returns `COUNT()` query directly from the text index posting metadata.
+bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 

@@ -121,9 +121,9 @@ public:
     explicit QueryAnalyzer(bool only_analyze_);
     ~QueryAnalyzer();
 
-    void resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context);
+    void resolve(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
 
-    void resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context);
+    void resolveConstantExpression(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
 
 private:
     /// Utility functions
@@ -180,22 +180,30 @@ private:
 
     /// IN - related functions
 
-    std::pair<QueryTreeNodePtr, ProjectionNames> makeNullSafeHas(QueryTreeNodePtr array_arg, QueryTreeNodePtr element_arg, const ProjectionNames & args_proj, IdentifierResolveScope & scope);
+    QueryTreeNodePtr makeNullSafeHas(QueryTreeNodePtr array_arg, QueryTreeNodePtr element_arg, IdentifierResolveScope & scope);
 
     ProjectionNames buildHasExpression(
         QueryTreeNodePtr & node,
         QueryTreeNodePtr array_arg,
         QueryTreeNodePtr element_arg,
         bool is_not_in,
-        bool transform_null_in,
+        bool compare_nulls,
         const ProjectionNames & arguments_projection_names,
         const ProjectionNames & parameters_projection_names,
         IdentifierResolveScope & scope);
 
-    ProjectionNames handleNullInTuple(const QueryTreeNodes & tuple_args, const std::string & function_name, const ProjectionNames & parameters_projection_names,
-                                        const ProjectionNames & arguments_projection_names, IdentifierResolveScope & scope, QueryTreeNodePtr & node);
+    QueryTreeNodePtr convertTupleToArray(
+        const QueryTreeNodes & tuple_args,
+        const QueryTreeNodePtr & in_first_argument,
+        IdentifierResolveScope & scope,
+        bool expand_single_tuple_value,
+        bool compare_nulls);
 
-    QueryTreeNodePtr convertTupleToArray(const QueryTreeNodes & tuple_args, const QueryTreeNodePtr & in_first_argument, IdentifierResolveScope & scope);
+    QueryTreeNodes getArrayElementsForInTupleArguments(
+        const QueryTreeNodes & tuple_args,
+        const QueryTreeNodePtr & in_first_argument,
+        IdentifierResolveScope & scope,
+        bool expand_single_tuple_value);
 
     QueryTreeNodePtr castNodeToType(const QueryTreeNodePtr & node, const DataTypePtr & target_type, IdentifierResolveScope & scope);
 
@@ -218,7 +226,7 @@ private:
     /// Resolve query tree nodes functions
 
     void qualifyColumnNodesWithProjectionNames(const QueryTreeNodes & column_nodes,
-        const QueryTreeNodePtr & table_expression_node,
+        const TableExpressionNodePtr & table_expression_node,
         const IdentifierResolveScope & scope);
 
     static GetColumnsOptions buildGetColumnsOptions(QueryTreeNodePtr & matcher_node, const ContextPtr & context);
@@ -226,7 +234,7 @@ private:
     using QueryTreeNodesWithNames = std::vector<std::pair<QueryTreeNodePtr, std::string>>;
 
     QueryTreeNodesWithNames getMatchedColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
-        const QueryTreeNodePtr & table_expression_node,
+        const TableExpressionNodePtr & table_expression_node,
         const NamesAndTypes & matched_columns,
         IdentifierResolveScope & scope);
 
@@ -253,9 +261,10 @@ private:
         bool allow_lambda_expression,
         bool allow_table_expression,
         bool ignore_alias = false,
-        bool allow_niladic_functions = true);
+        bool allow_niladic_functions = true,
+        bool is_top_level_projection = false);
 
-    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true);
+    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true, bool is_top_level_projection = false);
 
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 
@@ -273,7 +282,7 @@ private:
 
     void initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 
-    void initializeTableExpressionData(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+    void initializeTableExpressionData(const TableExpressionNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
     void resolveTableFunction(QueryTreeNodePtr & table_function_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, bool nested_table_function);
 
@@ -345,6 +354,10 @@ private:
     /// header), so scalar subqueries in their arguments must be executed for real instead of
     /// being replaced with type-only placeholders. See evaluateScalarSubqueryIfNeeded.
     bool table_function_arguments_in_resolve_process = false;
+
+    /// True while a parameterized view argument value is resolved: a scalar subquery there must
+    /// fold to a literal, not a `__getScalar` reference. See `evaluateScalarSubqueryIfNeeded`.
+    bool parameterized_view_arguments_in_resolve_process = false;
 };
 
 }

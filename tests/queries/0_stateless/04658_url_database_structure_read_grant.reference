@@ -1,0 +1,12 @@
+--- DESCRIBE with only the write source grant must fail
+ACCESS_DENIED
+--- EXPLAIN with only the write source grant must fail
+ACCESS_DENIED
+--- SELECT with only the write source grant must fail
+ACCESS_DENIED
+--- INSERT with only the write source grant must fail
+ACCESS_DENIED
+--- everything works after granting the read source grant
+c1	Nullable(Int64)
+1
+2

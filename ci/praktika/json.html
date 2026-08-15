@@ -1049,16 +1049,41 @@
         const clampedDuration = Math.max(minValue, Math.min(duration, maxValue));
         const durationLeft = ((clampedDuration - minValue) / range) * 100;
 
-        const topLabelBox = document.createElement("div");
-        //topLabelBox.style.fontSize = "10px";
-        topLabelBox.style.marginBottom = "4px";
+        // Percentile rank of this run's duration among recent runs, so the
+        // header can show how it compares (e.g. "faster than 60%").
+        const percentileOf = (d) => {
+            if (d <= values[0]) return keys[0];
+            if (d >= values[values.length - 1]) return keys[keys.length - 1];
+            for (let i = 0; i < values.length - 1; i++) {
+                if (d >= values[i] && d <= values[i + 1]) {
+                    const span = values[i + 1] - values[i] || 1;
+                    return keys[i] + ((d - values[i]) / span) * (keys[i + 1] - keys[i]);
+                }
+            }
+            return keys[keys.length - 1];
+        };
+        const fasterThan = Math.max(0, Math.min(100, Math.round(100 - percentileOf(duration))));
 
-        const currentLabel = document.createElement("div");
-        currentLabel.style.textAlign = "left";
-        currentLabel.textContent = `duration: ${formatDurationMs(duration)}`;
+        // Header matches the storage-usage / host-usage widgets: a plain label,
+        // then the value + comparison on the next line, right-aligned and faded.
+        const infoContainer = document.createElement("div");
+        infoContainer.style.display = "flex";
+        infoContainer.style.flexDirection = "column";
+        infoContainer.style.fontSize = "0.8em";
+        infoContainer.style.marginBottom = "4px";
 
-        topLabelBox.appendChild(currentLabel);
-        chartWrapper.appendChild(topLabelBox);
+        const nameRow = document.createElement("div");
+        nameRow.textContent = "duration";
+
+        const detailsRow = document.createElement("div");
+        detailsRow.style.textAlign = "right";
+        detailsRow.style.fontSize = "0.85em";
+        detailsRow.style.color = "#666";
+        detailsRow.textContent = `${formatDurationMs(duration)} (faster than ${fasterThan}%)`;
+
+        infoContainer.appendChild(nameRow);
+        infoContainer.appendChild(detailsRow);
+        chartWrapper.appendChild(infoContainer);
 
         // --- Bar
         const bar = document.createElement("div");
@@ -1112,6 +1137,334 @@
         }
     }
 
+    // Renders the whole-VM CPU/RAM timeline collected by praktika's
+    // HostMetricsCollector and stored in a job Result's ext.metrics.
+    // Shape: { interval, duration, mem_total_gb, n_raw, peaks: {cpu, mem, mem_gb},
+    //          psi?: {...}, series: { cpu: [[t,avg,peak],...], iowait?: [...], mem: [...] } }
+    function addHostMetricsChart(metrics) {
+        // Require the current schema (with exact `peaks`). Reports produced by
+        // the earlier version lack it and use [t, v] points - skip rather than
+        // degrade, so the chart code only ever handles one shape.
+        if (!metrics || !metrics.series || !metrics.peaks) return;
+        const cpu = metrics.series.cpu || [];
+        // Reports from before iowait was collected simply have no series.
+        const iowait = metrics.series.iowait || [];
+        const mem = metrics.series.mem || [];
+        const disk = metrics.series.disk || [];
+        if (cpu.length < 2 && mem.length < 2 && disk.length < 2) return;
+
+        const statusContainer = document.getElementById("status-container");
+        const wrapper = document.createElement("div");
+        wrapper.className = "status-widget";
+        wrapper.style.position = "relative";
+
+        const CPU_COLOR = "#4e79a7";
+        const IOWAIT_COLOR = "#f28e2b";
+        const MEM_COLOR = "#e15759";
+        const DISK_COLOR = "#59a14f";
+
+        // Series points are [t, avg, peak].
+        const avgOf = (p) => p[1];
+        const peakOf = (p) => p[2];
+        // Exact global peaks (max over every fine sample, never decimated away).
+        const cpuPeak = metrics.peaks.cpu;
+        const iowaitPeak = metrics.peaks.iowait;
+        const memPeak = metrics.peaks.mem;
+        const diskPeak = metrics.peaks.disk;
+        const lastT = (s) => (s.length ? s[s.length - 1][0] : 0);
+        const duration = Math.max(
+            metrics.duration || 0,
+            lastT(cpu), lastT(iowait), lastT(mem), lastT(disk),
+            1
+        );
+
+        const fmtT = (sec) => {
+            sec = Math.round(sec);
+            const h = Math.floor(sec / 3600);
+            const m = Math.floor((sec % 3600) / 60);
+            const s = sec % 60;
+            if (h > 0) return `${h}h${String(m).padStart(2, "0")}m`;
+            if (m > 0) return `${m}m${String(s).padStart(2, "0")}s`;
+            return `${s}s`;
+        };
+
+        // Header: a title, then two columns - the colour-keyed peak legend on
+        // the left and the PSI stall totals on the right. Each entry is its own
+        // nowrap line so nothing wraps in the narrow status panel.
+        const title = document.createElement("div");
+        title.textContent = "host usage";
+        title.style.fontSize = "0.8em";
+        title.style.marginBottom = "2px";
+        wrapper.appendChild(title);
+
+        const cols = document.createElement("div");
+        cols.style.display = "flex";
+        cols.style.justifyContent = "space-between";
+        cols.style.gap = "10px";
+        cols.style.fontSize = "0.75em";
+        cols.style.marginBottom = "4px";
+
+        const mkCol = (align) => {
+            const c = document.createElement("div");
+            c.style.display = "flex";
+            c.style.flexDirection = "column";
+            c.style.whiteSpace = "nowrap";
+            c.style.textAlign = align;
+            return c;
+        };
+        const addRow = (col, html) => {
+            const d = document.createElement("div");
+            d.innerHTML = html;
+            col.appendChild(d);
+        };
+
+        // Left column: peak legend, one metric per line.
+        const legendCol = mkCol("left");
+        addRow(legendCol, `<span style="color:${CPU_COLOR}">■</span> cpu ${cpuPeak.toFixed(0)}% peak`);
+        if (iowait.length && iowaitPeak != null) {
+            addRow(legendCol, `<span style="color:${IOWAIT_COLOR}">■</span> iowait ${iowaitPeak.toFixed(0)}% peak`);
+        }
+        addRow(legendCol, `<span style="color:${MEM_COLOR}">■</span> ram ${memPeak.toFixed(0)}%` +
+            (metrics.mem_total_gb ? ` of ${metrics.mem_total_gb}GB` : ""));
+        if (disk.length) {
+            addRow(legendCol, `<span style="color:${DISK_COLOR}">■</span> disk ${diskPeak.toFixed(0)}%` +
+                (metrics.disk_total_gb ? ` of ${metrics.disk_total_gb}GB` : ""));
+        }
+        cols.appendChild(legendCol);
+
+        // Right column: PSI stall totals (kernel-accumulated over the run, so
+        // they reflect contention even between samples), one per line.
+        if (metrics.psi) {
+            const psi = metrics.psi;
+            const psiCol = mkCol("right");
+            psiCol.style.opacity = "0.7";
+            if (psi.cpu_s != null) addRow(psiCol, `cpu stalled ${psi.cpu_s}s`);
+            if (psi.mem_some_s != null) addRow(psiCol, `mem stalled ${psi.mem_some_s}s`);
+            if (psi.mem_full_s) addRow(psiCol, `mem stalled(all) ${psi.mem_full_s}s`);
+            if (psi.io_some_s != null) addRow(psiCol, `io stalled ${psi.io_some_s}s`);
+            if (psi.io_full_s) addRow(psiCol, `io stalled(all) ${psi.io_full_s}s`);
+            if (psiCol.children.length) cols.appendChild(psiCol);
+        }
+
+        wrapper.appendChild(cols);
+
+        // Responsive SVG (scales to the widget width via viewBox).
+        const W = 320, H = 130, ML = 26, MR = 6, TP = 6, BP = 16;
+        const plotW = W - ML - MR, plotH = H - TP - BP;
+        const svgNS = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(svgNS, "svg");
+        svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+        svg.setAttribute("preserveAspectRatio", "none");
+        svg.style.width = "100%";
+        svg.style.height = `${H}px`;
+        svg.style.display = "block";
+        svg.style.cursor = "crosshair";
+
+        const gridColor =
+            getComputedStyle(document.body).getPropertyValue("--table-border-color").trim() || "#ccc";
+        const textColor =
+            getComputedStyle(document.body).getPropertyValue("--text-color").trim() || "#555";
+
+        const xScale = (t) => ML + (t / duration) * plotW;
+        const yScale = (v) => TP + (1 - Math.max(0, Math.min(100, v)) / 100) * plotH;
+
+        const mkLine = (x1, y1, x2, y2, color, opacity) => {
+            const l = document.createElementNS(svgNS, "line");
+            l.setAttribute("x1", x1); l.setAttribute("y1", y1);
+            l.setAttribute("x2", x2); l.setAttribute("y2", y2);
+            l.setAttribute("stroke", color);
+            if (opacity != null) l.setAttribute("stroke-opacity", opacity);
+            svg.appendChild(l);
+            return l;
+        };
+        const mkText = (x, y, str, anchor) => {
+            const t = document.createElementNS(svgNS, "text");
+            t.setAttribute("x", x); t.setAttribute("y", y);
+            t.setAttribute("font-size", "8");
+            t.setAttribute("fill", textColor);
+            t.setAttribute("text-anchor", anchor || "start");
+            t.textContent = str;
+            svg.appendChild(t);
+        };
+
+        // Horizontal gridlines + y labels at 0/50/100%.
+        [0, 50, 100].forEach((v) => {
+            const y = yScale(v);
+            mkLine(ML, y, W - MR, y, gridColor, 0.5);
+            mkText(ML - 3, y + 3, `${v}`, "end");
+        });
+        // X axis time labels.
+        mkText(ML, H - 4, "0s", "start");
+        mkText(W - MR, H - 4, fmtT(duration), "end");
+
+        const mkPath = (series, color, valueFn, width, opacity) => {
+            if (series.length < 2) return;
+            const d = series
+                .map((p, i) => `${i === 0 ? "M" : "L"}${xScale(p[0]).toFixed(1)} ${yScale(valueFn(p)).toFixed(1)}`)
+                .join(" ");
+            const path = document.createElementNS(svgNS, "path");
+            path.setAttribute("d", d);
+            path.setAttribute("fill", "none");
+            path.setAttribute("stroke", color);
+            path.setAttribute("stroke-width", width);
+            path.setAttribute("stroke-opacity", opacity);
+            path.setAttribute("vector-effect", "non-scaling-stroke");
+            svg.appendChild(path);
+        };
+        // Faint peak envelope behind the solid average line for each metric.
+        mkPath(disk, DISK_COLOR, peakOf, "1", "0.35");
+        mkPath(disk, DISK_COLOR, avgOf, "1.2", "1");
+        mkPath(mem, MEM_COLOR, peakOf, "1", "0.35");
+        mkPath(mem, MEM_COLOR, avgOf, "1.2", "1");
+        mkPath(iowait, IOWAIT_COLOR, peakOf, "1", "0.35");
+        mkPath(iowait, IOWAIT_COLOR, avgOf, "1.2", "1");
+        mkPath(cpu, CPU_COLOR, peakOf, "1", "0.35");
+        mkPath(cpu, CPU_COLOR, avgOf, "1.2", "1");
+
+        // Hover cursor + tooltip.
+        const cursor = mkLine(ML, TP, ML, TP + plotH, textColor, 0);
+        const tip = document.createElement("div");
+        tip.style.position = "absolute";
+        tip.style.pointerEvents = "none";
+        tip.style.padding = "2px 5px";
+        tip.style.font = "11px monospace";
+        tip.style.background = "var(--info-background, rgba(0,0,0,0.8))";
+        tip.style.color = "var(--text-color, #fff)";
+        tip.style.border = `1px solid ${gridColor}`;
+        tip.style.borderRadius = "3px";
+        tip.style.whiteSpace = "nowrap";
+        tip.style.display = "none";
+        tip.style.zIndex = "10";
+        wrapper.appendChild(tip);
+
+        const nearest = (series, t) => {
+            if (!series.length) return null;
+            let best = series[0];
+            for (const p of series) {
+                if (Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p;
+            }
+            return best;
+        };
+
+        activeListeners.add(svg, "mousemove", (e) => {
+            const rect = svg.getBoundingClientRect();
+            // Map pixel x back to viewBox coordinates (svg is width-scaled).
+            const vx = ((e.clientX - rect.left) / rect.width) * W;
+            const t = ((vx - ML) / plotW) * duration;
+            if (t < 0 || t > duration) { cursor.setAttribute("stroke-opacity", 0); tip.style.display = "none"; return; }
+            const cx = xScale(t);
+            cursor.setAttribute("x1", cx); cursor.setAttribute("x2", cx);
+            cursor.setAttribute("stroke-opacity", 0.4);
+            const c = nearest(cpu, t), w = nearest(iowait, t), m = nearest(mem, t), d = nearest(disk, t);
+            const fmtPt = (label, color, p) =>
+                `<span style="color:${color}">${label}</span> ${avgOf(p).toFixed(0)}%` +
+                ` <span style="opacity:0.7">(peak ${peakOf(p).toFixed(0)}%)</span>`;
+            tip.innerHTML =
+                `${fmtT(t)}<br>` +
+                (c ? fmtPt("cpu", CPU_COLOR, c) + "<br>" : "") +
+                (w ? fmtPt("iowait", IOWAIT_COLOR, w) + "<br>" : "") +
+                (m ? fmtPt("ram", MEM_COLOR, m) + (d ? "<br>" : "") : "") +
+                (d ? fmtPt("disk", DISK_COLOR, d) : "");
+            tip.style.display = "block";
+            const left = Math.min(
+                (e.clientX - rect.left) + 8,
+                wrapper.clientWidth - tip.offsetWidth - 4
+            );
+            tip.style.left = `${Math.max(0, left)}px`;
+            tip.style.top = "20px";
+        });
+        activeListeners.add(svg, "mouseleave", () => {
+            cursor.setAttribute("stroke-opacity", 0);
+            tip.style.display = "none";
+        });
+
+        wrapper.appendChild(svg);
+        statusContainer.appendChild(wrapper);
+    }
+
+    // Whole-pipeline utilization KPI, accumulated across qualifying jobs into
+    // the workflow Result (see PipelineUtilization). Only present on the
+    // workflow-level result; values are capacity-time-weighted running sums, so
+    // the percentages are derived here as area / provisioned-resource-seconds.
+    function addPipelineUtilizationWidget(u) {
+        if (!u || !u.cpu_core_s) return;
+        const CPU_COLOR = "#4e79a7";
+        const MEM_COLOR = "#e15759";
+        const DISK_COLOR = "#59a14f";
+        const pct = (area, weight) => (weight ? Math.min(100, area / weight) : 0);
+        const cpuUtil = pct(u.cpu_used_area, u.cpu_core_s);
+        const memUtil = pct(u.mem_used_area, u.mem_gb_s);
+        const diskUtil = pct(u.disk_used_area, u.disk_gb_s);
+        // "some" stalls are wall-clock pressure fractions -> weighted by runtime;
+        // "full" stalls waste every core -> weighted by provisioned core-seconds.
+        const cpuStall = pct(u.cpu_stall_area, u.wall_time_s);
+        const memStall = pct(u.mem_stall_area, u.wall_time_s);
+        const ioStall = pct(u.io_stall_area, u.wall_time_s);
+        const memFull = pct(u.mem_full_area, u.cpu_core_s);
+        const ioFull = pct(u.io_full_area, u.cpu_core_s);
+        // Provisioned capacity-time, in hours (cores/GB * duration).
+        const cpuHours = u.cpu_core_s / 3600;
+        const memHours = u.mem_gb_s / 3600;
+        const diskHours = u.disk_gb_s / 3600;
+
+        const statusContainer = document.getElementById("status-container");
+        const wrapper = document.createElement("div");
+        wrapper.className = "status-widget";
+
+        const title = document.createElement("div");
+        title.style.fontSize = "0.8em";
+        title.textContent = "pipeline utilization";
+        wrapper.appendChild(title);
+
+        // Faded sub-line: job count and provisioned capacity-time.
+        const sub = document.createElement("div");
+        sub.style.fontSize = "0.7em";
+        sub.style.opacity = "0.55";
+        sub.style.marginBottom = "4px";
+        const fmtH = (h) => (h >= 100 ? Math.round(h) : h.toFixed(1));
+        sub.textContent =
+            `${u.jobs} job${u.jobs === 1 ? "" : "s"} · ${fmtH(cpuHours)} cpu-h · ${fmtH(memHours)} GiB-h` +
+            (u.disk_gb_s ? ` · ${fmtH(diskHours)} disk-GiB-h` : "");
+        wrapper.appendChild(sub);
+
+        const cols = document.createElement("div");
+        cols.style.display = "flex";
+        cols.style.justifyContent = "space-between";
+        cols.style.gap = "10px";
+        cols.style.fontSize = "0.75em";
+        const mkCol = (align) => {
+            const c = document.createElement("div");
+            c.style.display = "flex";
+            c.style.flexDirection = "column";
+            c.style.whiteSpace = "nowrap";
+            c.style.textAlign = align;
+            return c;
+        };
+        const addRow = (col, html) => {
+            const d = document.createElement("div");
+            d.innerHTML = html;
+            col.appendChild(d);
+        };
+
+        const utilCol = mkCol("left");
+        addRow(utilCol, `<span style="color:${CPU_COLOR}">■</span> cpu ${cpuUtil.toFixed(0)}%`);
+        addRow(utilCol, `<span style="color:${MEM_COLOR}">■</span> ram ${memUtil.toFixed(0)}%`);
+        if (u.disk_gb_s) {
+            addRow(utilCol, `<span style="color:${DISK_COLOR}">■</span> disk ${diskUtil.toFixed(0)}%`);
+        }
+        cols.appendChild(utilCol);
+
+        const stallCol = mkCol("right");
+        stallCol.style.opacity = "0.7";
+        addRow(stallCol, `cpu stalled ${cpuStall.toFixed(0)}%`);
+        addRow(stallCol, `mem stalled ${memStall.toFixed(0)}%` + (memFull >= 1 ? ` (full ${memFull.toFixed(0)}%)` : ""));
+        addRow(stallCol, `io stalled ${ioStall.toFixed(0)}%` + (ioFull >= 1 ? ` (full ${ioFull.toFixed(0)}%)` : ""));
+        cols.appendChild(stallCol);
+
+        wrapper.appendChild(cols);
+        statusContainer.appendChild(wrapper);
+    }
+
     function addStorageUsageChartToStatus(usage_data) {
         const statusContainer = document.getElementById("status-container");
 
@@ -1160,7 +1513,7 @@
         nameRow.style.textOverflow = "ellipsis";
         nameRow.style.letterSpacing = "-0.02em"; // Slightly condensed letter spacing
         nameRow.id = "storage-usage-name";
-        nameRow.textContent = "uploaded:";
+        nameRow.textContent = "uploaded";
 
         // Second line: XX% ...padding... YYYMB
         const detailsRow = document.createElement("div");
@@ -1247,7 +1600,7 @@
 
         // Show the total uploaded by default
         const showTotalUploaded = () => {
-            updateDisplay("uploaded:", uploadedMB, 100);
+            updateDisplay("uploaded", uploadedMB, 100);
         };
 
         // Show details for specific segment
@@ -1489,7 +1842,7 @@
             nameLine.style.whiteSpace = "normal";
             nameLine.style.overflow = "hidden";
             nameLine.style.maxWidth = "100%";
-            nameLine.style.height = "2.6em"; // Reserve space for 2 lines
+            nameLine.style.height = "3.9em"; // Reserve space for 3 lines
             nameLine.style.lineHeight = "1.3em";
             nameLine.style.textAlign = "left";
             widget.appendChild(nameLine);
@@ -1952,14 +2305,21 @@
         if (runtimeCache.commitLink) createLinkElement(runtimeCache.commitLink, 'Commit', footerRight);
         const runLink = result?.ext?.run_url || runtimeCache.runLink;
         if (runLink) createLinkElement(runLink, 'Run', footerRight);
-        let i = 1;
-        for (const name of nameParams) {
-            if (name === result.name) {
-                break;
+        if (result) {
+            let i = 1;
+            for (const name of nameParams) {
+                if (name === result.name) {
+                    break;
+                }
+                i++;
             }
-            i++;
+            fillInNavigationBar(nameParams.slice(0, i + 1));
+        } else {
+            // The report is missing/expired so there is no result to align to.
+            // Still render the full path as breadcrumbs so the parent layers
+            // remain reachable (e.g. to return to the workflow or PR view).
+            fillInNavigationBar(nameParams);
         }
-        fillInNavigationBar(nameParams.slice(0, i + 1))
     }
 
     function renderNotificationPanels(container, ext, resultName) {
@@ -2079,6 +2439,8 @@
             addTimeTraceWidget(result.results, statusWidget, originalWorkflowDetails);
         }
         addStorageUsageChartToStatus(result.ext?.storage_usage)
+        addPipelineUtilizationWidget(result.ext?.pipeline_utilization)
+        addHostMetricsChart(result.ext?.metrics)
     }
 
     const persistentStorage = {

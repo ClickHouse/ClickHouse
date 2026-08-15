@@ -1,6 +1,7 @@
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/convertColumnToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/System/StorageSystemNumbers.h>
@@ -119,19 +120,19 @@ StoragePtr TableFunctionGenerateSeries<alias_num>::executeImpl(
 template <size_t alias_num>
 UInt64 TableFunctionGenerateSeries<alias_num>::evaluateArgument(ContextPtr context, ASTPtr & argument) const
 {
-    const auto & [field, type] = evaluateConstantExpression(argument, context);
+    const auto [column, type] = evaluateConstantExpressionAsColumn(argument, context);
 
     if (!isNativeNumber(type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} expression, must be numeric type", type->getName());
 
-    Field converted = convertFieldToType(field, DataTypeUInt64());
-    if (converted.isNull())
+    ColumnPtr converted = convertColumnToTypeOrNull(*column, type, std::make_shared<DataTypeUInt64>());
+    if (!converted)
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "The value {} is not representable as UInt64",
-            applyVisitor(FieldVisitorToString(), field));
+            applyVisitor(FieldVisitorToString(), (*column)[0]));
 
-    return converted.safeGet<UInt64>();
+    return converted->getUInt(0);
 }
 
 /// Parse the step argument, detecting whether it's negative.
@@ -140,16 +141,16 @@ UInt64 TableFunctionGenerateSeries<alias_num>::evaluateArgument(ContextPtr conte
 template <size_t alias_num>
 StepWithSign TableFunctionGenerateSeries<alias_num>::parseStep(ContextPtr context, ASTPtr & argument) const
 {
-    const auto & [field, type] = evaluateConstantExpression(argument, context);
+    const auto [column, type] = evaluateConstantExpressionAsColumn(argument, context);
 
     if (!isNativeNumber(type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} expression, must be numeric type", type->getName());
 
     /// Try converting to Int64 first to detect negative values.
-    Field as_signed = convertFieldToType(field, DataTypeInt64());
-    if (!as_signed.isNull())
+    ColumnPtr as_signed = convertColumnToTypeOrNull(*column, type, std::make_shared<DataTypeInt64>());
+    if (as_signed)
     {
-        Int64 step_val = as_signed.safeGet<Int64>();
+        Int64 step_val = as_signed->getInt(0);
         if (step_val == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' requires step to be a non-zero number", getName());
 
@@ -164,14 +165,14 @@ StepWithSign TableFunctionGenerateSeries<alias_num>::parseStep(ContextPtr contex
     }
 
     /// Value too large for Int64 — must be a large positive UInt64.
-    Field as_unsigned = convertFieldToType(field, DataTypeUInt64());
-    if (as_unsigned.isNull())
+    ColumnPtr as_unsigned = convertColumnToTypeOrNull(*column, type, std::make_shared<DataTypeUInt64>());
+    if (!as_unsigned)
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "The value {} is not representable as UInt64",
-            applyVisitor(FieldVisitorToString(), field));
+            applyVisitor(FieldVisitorToString(), (*column)[0]));
 
-    UInt64 abs_step = as_unsigned.safeGet<UInt64>();
+    UInt64 abs_step = as_unsigned->getUInt(0);
     if (abs_step == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' requires step to be a non-zero number", getName());
 

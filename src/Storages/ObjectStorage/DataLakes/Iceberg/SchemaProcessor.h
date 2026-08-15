@@ -21,6 +21,11 @@
 namespace DB::Iceberg
 {
 
+/// Build a ColumnMapper carrying all Iceberg per-path metadata (field ids, string paths, optional
+/// paths) from a schema `fields` array. Single wiring point shared by createColumnMapper and the
+/// MultipleFileWriter INSERT path so no consumer can drift out of sync.
+ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields);
+
 ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object);
 
 /**
@@ -101,6 +106,10 @@ public:
 
     /// Paths whose Iceberg logical type is `string` (not `binary`); both read as DataTypeString.
     static std::unordered_set<String> collectIcebergStringPaths(Poco::JSON::Array::Ptr schema);
+
+    /// Paths whose Iceberg field is `optional` (required=false). A complex container is never
+    /// Nullable in the ClickHouse type, so a writer emitting Iceberg `required` must consult this.
+    static std::unordered_set<String> collectIcebergOptionalPaths(Poco::JSON::Array::Ptr schema);
 
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;
