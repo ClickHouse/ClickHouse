@@ -2274,24 +2274,27 @@ bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
     }
 }
 
-/// Non-blocking probe: does stdin appear to have data right now?
-/// Uses `poll(timeout=0)` to avoid blocking on empty pipes (the root cause of the hang).
-///
-/// This is intentionally best-effort: `poll(timeout=0)` is a point-in-time snapshot,
-/// so data arriving slightly later will be missed. This is acceptable because this
-/// function is only called when `INSERT` already has a primary data source (inline data
-/// or `INFILE`), so missing late-arriving stdin data only affects the unusual case of
-/// providing both inline data and piped stdin simultaneously.
+enum class StdinDataAvailability
+{
+    Data,
+    Empty,
+    Unknown,
+};
+
+/// Non-blocking probe for stdin. An open pipe/socket with neither data nor EOF is
+/// `Unknown`: it can be an intentionally empty inherited stdin or a delayed writer.
+/// Callers that already have another INSERT data source must reject that ambiguous state
+/// rather than silently losing data from the delayed writer.
 ///
 /// Error handling mirrors `isStdinNotEmptyAndValid`: an unreadable stdin (closed fd,
 /// `POLLERR`/`POLLNVAL`) is reported as "no data" rather than failing the INSERT.
 /// Genuine `poll` failures (`ret < 0` after retrying `EINTR`) indicate system-level
 /// problems (`EFAULT`/`EINVAL`/`ENOMEM`) and are surfaced as exceptions instead of
 /// being silently swallowed.
-bool isStdinDataAvailableNonBlocking(ReadBuffer & std_in, int fd)
+StdinDataAvailability getStdinDataAvailabilityNonBlocking(ReadBuffer & std_in, int fd)
 {
     if (std_in.hasPendingData())
-        return true;
+        return StdinDataAvailability::Data;
 
     struct pollfd pfd{};
     pfd.fd = fd;
@@ -2309,12 +2312,25 @@ bool isStdinDataAvailableNonBlocking(ReadBuffer & std_in, int fd)
         throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot poll stdin");
 
     if (ret == 0)
-        return false;
+        return StdinDataAvailability::Unknown;
 
     if (pfd.revents & (POLLERR | POLLNVAL))
-        return false;
+        return StdinDataAvailability::Empty;
 
-    return (pfd.revents & POLLIN) != 0;
+    if (pfd.revents & POLLIN)
+        return StdinDataAvailability::Data;
+
+    if (pfd.revents & POLLHUP)
+        return StdinDataAvailability::Empty;
+
+    return StdinDataAvailability::Unknown;
+}
+
+void throwOnAmbiguousStdin(StdinDataAvailability availability)
+{
+    if (availability == StdinDataAvailability::Unknown)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Processing INSERT with an inlined data source and stdin whose availability cannot be determined is not supported");
 }
 }
 
@@ -2436,17 +2452,21 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!connection->isSendDataNeeded())
         return;
 
-    /// When INSERT already has a primary data source (inline data or INFILE),
-    /// use a non-blocking poll to check whether stdin also has data.
-    /// The blocking read in isStdinNotEmptyAndValid can hang indefinitely when stdin
-    /// is a pipe without data/EOF (stress tests, CI, Docker, --queries-file).
+    /// When INSERT already has a primary data source (inline data or INFILE), use a
+    /// non-blocking poll to check whether stdin also has data. An open pipe without
+    /// data/EOF is ambiguous and must be rejected rather than silently dropping a
+    /// delayed stdin writer.
     /// When there is no other data source, use the blocking check as before.
     bool have_data_in_stdin = false;
     if (!is_interactive && !stdin_is_a_tty)
     {
         if (parsed_insert_query->data || parsed_insert_query->infile)
-            have_data_in_stdin = isStdinDataAvailableNonBlocking(*std_in, stdin_fd)
+        {
+            auto availability = getStdinDataAvailabilityNonBlocking(*std_in, stdin_fd);
+            throwOnAmbiguousStdin(availability);
+            have_data_in_stdin = availability == StdinDataAvailability::Data
                 && isStdinNotEmptyAndValid(*std_in);
+        }
         else
             have_data_in_stdin = isStdinNotEmptyAndValid(*std_in);
     }
@@ -2933,10 +2953,11 @@ void ClientBase::processParsedSingleQuery(
 
         if (is_async_insert_with_inlined_data)
         {
-            /// Use non-blocking poll to check stdin — the blocking read in
-            /// isStdinNotEmptyAndValid hangs when stdin is an empty pipe (CI, Docker).
-            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty
-                && isStdinDataAvailableNonBlocking(*std_in, stdin_fd)
+            auto availability = !is_interactive && !stdin_is_a_tty
+                ? getStdinDataAvailabilityNonBlocking(*std_in, stdin_fd)
+                : StdinDataAvailability::Empty;
+            throwOnAmbiguousStdin(availability);
+            bool have_data_in_stdin = availability == StdinDataAvailability::Data
                 && isStdinNotEmptyAndValid(*std_in);
             bool have_external_data = have_data_in_stdin || insert->infile;
 
@@ -2947,10 +2968,11 @@ void ClientBase::processParsedSingleQuery(
 
         if (is_inline_insert_data)
         {
-            /// Use non-blocking poll to check stdin — the blocking read in
-            /// `isStdinNotEmptyAndValid` hangs when stdin is an empty pipe (CI, Docker).
-            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty
-                && isStdinDataAvailableNonBlocking(*std_in, stdin_fd)
+            auto availability = !is_interactive && !stdin_is_a_tty
+                ? getStdinDataAvailabilityNonBlocking(*std_in, stdin_fd)
+                : StdinDataAvailability::Empty;
+            throwOnAmbiguousStdin(availability);
+            bool have_data_in_stdin = availability == StdinDataAvailability::Data
                 && isStdinNotEmptyAndValid(*std_in);
             bool have_external_data = have_data_in_stdin || insert->infile;
 
