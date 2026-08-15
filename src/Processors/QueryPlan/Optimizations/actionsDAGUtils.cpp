@@ -560,7 +560,7 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
         return {};
 
     const auto function_name = node.function_base->getName();
-    ActionsDAGLineageKind kind;
+    ActionsDAGLineageKind kind{};
     if (function_name == "materialize" && node.children.size() == 1)
         kind = ActionsDAGLineageKind::ValuePreserving;
     else if (function_name == "_CAST" || function_name == "CAST" || function_name == "toNullable")
@@ -622,15 +622,13 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
                 const auto & child = traced.at(node->children[0]);
                 if (child)
                 {
-                    ActionsDAGLineageKind kind;
+                    ActionsDAGLineageKind kind = ActionsDAGLineageKind::Identity;
                     if (hop->kind == ActionsDAGLineageKind::DistinctValuesBound
                         || child->kind == ActionsDAGLineageKind::DistinctValuesBound)
                         kind = ActionsDAGLineageKind::DistinctValuesBound;
                     else if (hop->kind == ActionsDAGLineageKind::ValuePreserving
                         || child->kind == ActionsDAGLineageKind::ValuePreserving)
                         kind = ActionsDAGLineageKind::ValuePreserving;
-                    else
-                        kind = ActionsDAGLineageKind::Identity;
                     result = ActionsDAGInputLineage{child->input_position, kind, child->ndv_delta + hop->ndv_delta};
                 }
             }
