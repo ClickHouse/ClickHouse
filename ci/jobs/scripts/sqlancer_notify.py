@@ -61,11 +61,31 @@ def http_post(url, data, headers=None, timeout=TIMEOUT_SEC):
         return response.status, response.read().decode("utf-8", "replace")
 
 
+def current_stream():
+    """(pull_request_number, head_ref) of this run, as CI DB records them."""
+    if Info is not None:
+        try:
+            info = Info()
+            return int(info.pr_number or 0), (info.git_branch or "master")
+        except Exception as e:  # noqa: BLE001
+            print(f"WARNING: could not read the current branch ({e}); assuming the scheduled master stream")
+    return 0, "master"
+
+
 def known_fingerprints(job_name):
-    """Fingerprints this job has already reported, from CI DB (read-only endpoint)."""
+    """Fingerprints this job has already reported, from CI DB (read-only endpoint).
+
+    Scoped to this run's own stream. The workflow is `workflow_dispatch`-able on
+    any ref, so a throwaway validation run would otherwise share the seen-set with
+    the scheduled master nightlies and suppress the first real master alert for a
+    failure it happened to reproduce first.
+    """
+    pr_number, head_ref = current_stream()
     query = (
         f"SELECT DISTINCT test_name FROM {CI_DB_NAME}.{CI_DB_TABLE} "
         f"WHERE check_name = {sql_string(job_name)} "
+        f"AND pull_request_number = {pr_number} "
+        f"AND head_ref = {sql_string(head_ref)} "
         f"AND check_start_time > now() - INTERVAL {HISTORY_DAYS} DAY "
         f"AND test_name != ''"
     )
@@ -180,7 +200,11 @@ def main():
 
     try:
         seen = known_fingerprints(args.job_name)
-        print(f"CI DB knows {len(seen)} fingerprint(s) for [{args.job_name}] from the last {HISTORY_DAYS} days")
+        pr_number, head_ref = current_stream()
+        print(
+            f"CI DB knows {len(seen)} fingerprint(s) for [{args.job_name}] on "
+            f"[{head_ref}, PR {pr_number}] from the last {HISTORY_DAYS} days"
+        )
     except Exception as e:  # noqa: BLE001 - never fail the job over a query
         # Fail closed. Without the history every known failure looks new, and one
         # play.clickhouse.com blip would post the whole backlog to the channel -

@@ -220,21 +220,31 @@ MAVEN_REPO=/sqlancer/.m2
 # the world-writable /sqlancer tree so git and maven have somewhere to scribble.
 export HOME=/sqlancer
 
-# Exit code says what went wrong, because the two cases mean different things:
-#   1 - the clone did not happen (network, GitHub) - transient, not our problem
-#   2 - `main` was fetched but does not build - a real regression in the repo we
-#       are supposed to be fuzzing, and the reason the run below is not testing
-#       what this job promises
+# Exit code says what went wrong, because the cases mean different things:
+#   1 - nothing was built for a reason outside this repository: the clone failed,
+#       or maven could not reach/resolve its dependencies. Transient - warn and
+#       fall back.
+#   2 - `main` was fetched and maven ran, but the code does not compile or no jar
+#       came out. A real regression in the repository this job exists to fuzz, and
+#       the reason the run below is not testing what the job promises.
+# Maven reports both through a failed `package`, so the log decides. The patterns
+# are maven's own transport/resolution wording; anything else counts as broken code.
+MAVEN_TRANSIENT_PATTERN='Could not resolve dependencies|Could not transfer artifact|Failed to read artifact descriptor|Non-resolvable|could not be resolved|Connection (timed out|reset)|Read timed out|Connect to .* failed|status code: 5[0-9][0-9]|Unknown host|Network is unreachable'
 build_sqlancer() {
     local ref="$1" dest="$2"
     rm -rf "$dest"
     git clone --quiet --depth 1 --branch "$ref" "$SQLANCER_REPO" "$dest" || return 1
-    (
+    if ! (
         cd "$dest" &&
         mvn --no-transfer-progress -B package \
             -Dmaven.test.skip=true -Djacoco.skip=true \
             -Dmaven.repo.local="$MAVEN_REPO"
-    ) > "$SQLANCER_BUILD_LOG" 2>&1 || return 2
+    ) > "$SQLANCER_BUILD_LOG" 2>&1; then
+        if grep -qE "$MAVEN_TRANSIENT_PATTERN" "$SQLANCER_BUILD_LOG"; then
+            return 1
+        fi
+        return 2
+    fi
     compgen -G "$dest/target/sqlancer-*.jar" > /dev/null || return 2
 }
 
@@ -247,7 +257,7 @@ if [ "${SQLANCER_BUILD_AT_RUNTIME:-1}" = "1" ]; then
     if [ "$BUILD_RC" = "0" ]; then
         SQLANCER_DIR="$SQLANCER_RUN_DIR"
     elif [ "$BUILD_RC" = "1" ]; then
-        BUILD_WARNING="could not fetch $SQLANCER_REF (network?), fell back to the image's build"
+        BUILD_WARNING="could not fetch or resolve dependencies for $SQLANCER_REF (network?), fell back to the image's build"
         echo "WARNING: $BUILD_WARNING" >&2
     else
         BUILD_WARNING="$SQLANCER_REF does not build, fell back to the image's build - this run does NOT test current $SQLANCER_REF"
