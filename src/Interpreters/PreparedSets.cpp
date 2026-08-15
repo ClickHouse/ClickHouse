@@ -600,12 +600,14 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         creating_set->setStepDescription("Create set for subquery");
         plan_to_complete.addStep(std::move(creating_set));
 
+        return speculative_set;
     };
 
+    SetPtr speculative_set;
     if (source_preserved)
     {
         /// Non-destructive path.
-        build_into_temporary_set(*plan, prepared_sets_cache);
+        speculative_set = build_into_temporary_set(*plan, prepared_sets_cache);
     }
     else
     {
@@ -669,6 +671,24 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 
     if (!run_plan(*plan))
         return nullptr;
+
+    /// The cache is shared with the deferred runtime build, which builds through the canonical
+    /// `set_and_key->set` and never calls `Set::fillSetElements`. A cache hit can therefore hand this
+    /// task a created set with no explicit elements, which every index-analysis caller rejects through
+    /// `hasExplicitSetElements`, silently disabling primary-key pruning. `source` is intact on this path,
+    /// so rebuild locally without consulting or seeding the cache again.
+    ///
+    /// A set that exceeded `use_index_for_in_with_subqueries_max_values` drops its explicit elements while
+    /// being filled. Rebuilding it would have the same result, so retain that set.
+    if (speculative_set && tmp_set_and_key->set != speculative_set && !tmp_set_and_key->set->hasExplicitSetElements()
+        && !(set_and_key->set->max_elements_to_fill
+             && set_and_key->set->max_elements_to_fill < tmp_set_and_key->set->getTotalRowCount()))
+    {
+        auto local_plan = std::make_unique<QueryPlan>(source->clone());
+        build_into_temporary_set(*local_plan, /*cache=*/ nullptr);
+        if (!run_plan(*local_plan))
+            return nullptr;
+    }
 
     /// In-place build succeeded. On the non-destructive path, publish the fully-created temporary set into
     /// the canonical `set_and_key`; the deferred build is then skipped (it checks `isCreated()` / `get()`),
