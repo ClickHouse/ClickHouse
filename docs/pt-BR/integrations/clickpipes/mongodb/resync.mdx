@@ -25,14 +25,10 @@ O Resync envolve as seguintes operações, nesta ordem:
 
 Todas as configurações do ClickPipe original são mantidas no ClickPipe de resync. As estatísticas do ClickPipe original são limpas na UI.
 
-<div id="use-cases-mongodb-resync">
-  ### Casos de uso para Resync de um ClickPipe
-</div>
-
-Aqui estão alguns cenários:
-
-1. Talvez você precise fazer alterações significativas de schema nas tabelas de origem que invalidem o ClickPipe existente e exijam que ele seja reiniciado. Você pode simplesmente clicar em Resync após fazer as alterações.
-2. No caso específico do ClickHouse, talvez você tenha precisado alterar a chave `ORDER BY` nas tabelas de destino. Você pode usar o Resync para repopular os dados na nova tabela com a chave de ordenação correta.
+<Note>
+  Você pode fazer o resync várias vezes; no entanto, leve em consideração a carga no banco de dados de origem ao fazer o resync,
+  pois a carga inicial com threads paralelas é executada todas as vezes.
+</Note>
 
 <div id="guide-mongodb-resync">
   ### Guia de Resync do ClickPipe

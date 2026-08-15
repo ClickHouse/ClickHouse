@@ -178,10 +178,12 @@ public:
 NamedCollection::NamedCollection(
     ImplPtr pimpl_,
     const std::string & collection_name_,
-    const bool is_mutable_)
+    const bool is_mutable_,
+    const SourceId source_id_)
     : pimpl(std::move(pimpl_))
     , collection_name(collection_name_)
     , is_mutable(is_mutable_)
+    , source_id(source_id_)
 {
 }
 
@@ -265,13 +267,22 @@ bool NamedCollection::isOverridable(const Key & key, bool default_value) const
 void NamedCollection::markQueryOverridden(const Key & key)
 {
     std::lock_guard lock(mutex);
-    query_overridden_keys.insert(key);
+    if (query_overridden_keys.insert(key).second && pimpl->has(key))
+        values_before_query_override.emplace(key, pimpl->get<String>(key));
 }
 
 bool NamedCollection::isQueryOverridden(const Key & key) const
 {
     std::lock_guard lock(mutex);
     return query_overridden_keys.contains(key);
+}
+
+std::optional<String> NamedCollection::getValueBeforeQueryOverride(const Key & key) const
+{
+    std::lock_guard lock(mutex);
+    if (auto it = values_before_query_override.find(key); it != values_before_query_override.end())
+        return it->second;
+    return std::nullopt;
 }
 
 template <bool Locked> void NamedCollection::remove(const Key & key)
@@ -298,7 +309,7 @@ MutableNamedCollectionPtr NamedCollection::duplicate() const
     std::lock_guard lock(mutex);
     auto impl = pimpl->createCopy(collection_name);
     return std::unique_ptr<NamedCollection>(
-        new NamedCollection(std::move(impl), collection_name, true));
+        new NamedCollection(std::move(impl), collection_name, true, source_id));
 }
 
 NamedCollection::Keys NamedCollection::getKeys(ssize_t depth, const std::string & prefix) const
@@ -347,7 +358,8 @@ NamedCollectionFromConfig::NamedCollectionFromConfig(
     const std::string & collection_name_,
     const std::string & collection_path_,
     const Keys & keys_)
-    : NamedCollection(Impl::create(config_, collection_name_, collection_path_, keys_), collection_name_, /* is_mutable */ false)
+    : NamedCollection(
+        Impl::create(config_, collection_name_, collection_path_, keys_), collection_name_, /* is_mutable */ false, SourceId::CONFIG)
 {
 }
 
@@ -368,14 +380,14 @@ MutableNamedCollectionPtr NamedCollectionFromSQL::create(const ASTCreateNamedCol
 }
 
 NamedCollectionFromSQL::NamedCollectionFromSQL(const ASTCreateNamedCollectionQuery & query_)
-    : NamedCollection(nullptr, query_.collection_name, true)
+    : NamedCollection(nullptr, query_.collection_name, true, SourceId::SQL)
     , create_query_ptr(query_.clone()->as<ASTCreateNamedCollectionQuery &>())
 {
     const auto config = NamedCollectionConfiguration::createConfiguration(collection_name, create_query_ptr.changes, create_query_ptr.overridability);
 
     std::set<std::string, std::less<>> keys;
-    for (const auto & [name, _] : create_query_ptr.changes)
-        keys.insert(name);
+    for (const auto & change : create_query_ptr.changes)
+        keys.insert(change.name);
 
     pimpl = Impl::create(*config, collection_name, "", keys);
 }
@@ -401,7 +413,7 @@ void NamedCollectionFromSQL::update(const ASTAlterNamedCollectionQuery & alter_q
     std::lock_guard lock(mutex);
 
     std::unordered_map<std::string, Field> result_changes_map;
-    for (const auto & [name, value] : alter_query.changes)
+    for (const auto & [name, value, _] : alter_query.changes)
     {
         auto [it, inserted] = result_changes_map.emplace(name, value);
         if (!inserted)
@@ -413,7 +425,7 @@ void NamedCollectionFromSQL::update(const ASTAlterNamedCollectionQuery & alter_q
         }
     }
 
-    for (const auto & [name, value] : create_query_ptr.changes)
+    for (const auto & [name, value, _] : create_query_ptr.changes)
         result_changes_map.emplace(name, value);
 
     std::unordered_map<std::string, bool> result_overridability_map;
@@ -451,7 +463,7 @@ void NamedCollectionFromSQL::update(const ASTAlterNamedCollectionQuery & alter_q
             collection_name);
 
     chassert(create_query_ptr.collection_name == alter_query.collection_name);
-    for (const auto & [name, value] : alter_query.changes)
+    for (const auto & [name, value, _] : alter_query.changes)
     {
         auto it_override = alter_query.overridability.find(name);
         if (it_override != alter_query.overridability.end())

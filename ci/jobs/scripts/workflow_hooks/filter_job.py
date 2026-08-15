@@ -33,8 +33,6 @@ DO_NOT_TEST_JOBS = [
 PRELIMINARY_JOBS = [
     JobNames.STYLE_CHECK,
     JobNames.FAST_TEST,
-    "Build (amd_tidy)",
-    "Build (arm_tidy)",
 ]
 
 BUILDS_FOR_TESTS = [
@@ -96,7 +94,88 @@ def _has_build_digest_changes(changed_files):
     return False
 
 
+# Files whose content directly drives the LLVM coverage pipeline's own
+# behaviour (test-shard execution, profdata merging, report/diff generation,
+# and this job-filtering logic itself) - as opposed to files that merely add
+# or edit a test case. `_has_build_digest_changes` only tracks whether the
+# *compiled binary* can change, so a PR that only touches one of these would
+# otherwise be auto-skipped as "tests-only" and could never exercise the
+# coverage-specific code it just modified.
+_COVERAGE_PIPELINE_PATHS = (
+    "ci/jobs/llvm_coverage_job.py",
+    "ci/jobs/functional_tests.py",
+    "ci/jobs/integration_test_job.py",
+    "ci/jobs/unit_tests_job.py",
+    # LLVM_COVERAGE_SKIP_PREFIXES here decides which integration suites land in
+    # amd_llvm_coverage vs excluded_from_llvm (integration_test_job.py:433-462).
+    "ci/jobs/scripts/integration_tests_configs.py",
+    "ci/jobs/scripts/merge_llvm_coverage.sh",
+    "ci/jobs/scripts/generate_diff_coverage_report.sh",
+    "ci/jobs/scripts/print_uncovered_code.py",
+    "ci/jobs/scripts/dedup_lcov_instantiations.py",
+    "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
+    "ci/jobs/scripts/workflow_hooks/filter_job.py",
+    "ci/defs/job_configs.py",
+    "ci/defs/defs.py",
+    "tests/clickhouse-test",
+    "tests/config/",
+)
+
+
+def _has_coverage_pipeline_changes(changed_files):
+    """True if any changed file could alter how the coverage pipeline itself
+    behaves, independent of whether the compiled binary changed. See
+    `_COVERAGE_PIPELINE_PATHS`.
+    """
+    for f in changed_files:
+        p = f.removeprefix(".").removeprefix("/")
+        if any(p.startswith(path) for path in _COVERAGE_PIPELINE_PATHS):
+            return True
+    return False
+
+
 _info_cache = None
+_pipeline_note_labels = set()
+
+_PIPELINE_NOTES = {
+    Labels.CI_BUILD: "Label `ci-build` runs build jobs and preliminary checks only.",
+    Labels.DO_NOT_TEST: (
+        "Label `do not test` runs only `STYLE_CHECK`, `DOCKER_BUILDS_ARM`, and "
+        "`DOCKER_BUILDS_AMD`."
+    ),
+    Labels.NO_FAST_TESTS: (
+        "Label `no-fast-tests` skips only `STYLE_CHECK` and `FAST_TEST`; merge is "
+        "still allowed because the merge queue runs those checks."
+    ),
+    Labels.CI_INTEGRATION_FLAKY: (
+        "Label `ci-integration-test-flaky` runs the integration flaky-check jobs only."
+    ),
+    Labels.CI_FUNCTIONAL_FLAKY: (
+        "Label `ci-functional-test-flaky` runs the stateless flaky-check jobs only."
+    ),
+    Labels.CI_INTEGRATION: (
+        "Label `ci-integration-test` runs integration test jobs only."
+    ),
+    Labels.CI_FUNCTIONAL: (
+        "Label `ci-functional-test` runs stateless and stateful test jobs only."
+    ),
+    Labels.CI_PERFORMANCE: (
+        "Label `ci-performance` runs performance jobs only."
+    ),
+    Labels.CI_NO_COVERAGE: (
+        "Label `ci-no-coverage` skips coverage jobs and the `LLVM Coverage` merge job."
+    ),
+}
+
+
+def _add_pipeline_note(label):
+    if _info_cache is None or label in _pipeline_note_labels:
+        return
+    message = _PIPELINE_NOTES.get(label)
+    if not message:
+        return
+    _pipeline_note_labels.add(label)
+    _info_cache.add_workflow_note(message)
 
 # Labels that mark a PR as a bug fix (set by the `pr_labels_and_category.py`
 # pre-hook from the changelog category). Gating Bugfix Validation on labels
@@ -107,63 +186,6 @@ _BUGFIX_LABELS = (Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX)
 
 def _is_bugfix_pr():
     return any(lb in _info_cache.pr_labels for lb in _BUGFIX_LABELS)
-
-
-def _classify_changed_tests(changed_files):
-    """Return (stateless, integration, unit, binary_unchanged).
-
-    binary_unchanged is True only when every changed path is non-binary
-    (tests/, ci/, docs/, top-level metadata). If any source/cmake/contrib
-    file changed the binary is potentially different.
-    """
-    NON_BINARY_TOP = frozenset({
-        "README.md", "LICENSE", "CHANGELOG.md", "CONTRIBUTING.md",
-        "NOTICE", "AUTHORS", "CODE_OF_CONDUCT.md", "SECURITY.md",
-        ".gitignore", ".gitattributes", ".editorconfig",
-        ".dockerignore", ".clang-format", ".clang-tidy",
-    })
-
-    def _non_binary(p):
-        p = p.removeprefix(".").removeprefix("/")
-        return (
-            p.startswith("tests/")
-            or p.startswith("ci/")
-            or p.startswith(".github/")
-            or p.startswith("docs/")
-            or (p.startswith("src/") and "/tests/" in p)
-            or ("/" not in p and p in NON_BINARY_TOP)
-        )
-
-    stateless = any(
-        f.removeprefix(".").removeprefix("/").startswith("tests/queries/")
-        for f in changed_files
-    )
-    integration = any(
-        f.removeprefix(".").removeprefix("/").startswith("tests/integration/test_")
-        for f in changed_files
-    )
-    unit = any(
-        f.removeprefix(".").removeprefix("/").startswith("src/")
-        and "/tests/" in f
-        for f in changed_files
-    )
-    binary_unchanged = bool(changed_files) and all(_non_binary(f) for f in changed_files)
-
-    # Do not classify as single-type if any changed path is inside a test-type
-    # directory but is NOT a runnable test definition (e.g. tests/integration/helpers/,
-    # tests/integration/runner, or tests/integration/conftest.py). Such paths are
-    # binary-safe but affect test behaviour across types — skipping integration
-    # coverage because helpers/ changed alongside one stateless test is wrong.
-    def _is_integration_infra(p):
-        p = p.removeprefix(".").removeprefix("/")
-        return p.startswith("tests/integration/") and not p.startswith("tests/integration/test_")
-
-    if integration or any(_is_integration_infra(f) for f in changed_files):
-        # Treat any integration-directory change (helper, runner, conftest, …) as
-        # an integration change so integration coverage is never skipped.
-        integration = integration or any(_is_integration_infra(f) for f in changed_files)
-
-    return stateless, integration, unit, binary_unchanged
 
 
 def should_skip_job(job_name):
@@ -186,6 +208,9 @@ def should_skip_job(job_name):
         print("WARNING: no changed files found for PR - do not filter jobs")
         return False, ""
 
+    if job_name == JobNames.BUILD_PROFILE_DIFF and only_docs(changed_files):
+        return True, "Skipped, only documentation changed"
+
     # Run Keeper Stress jobs only when there are changes in src/Coordination,
     # tests/stress/keeper, or ci/jobs/keeper_stress_job.py
     if job_name == KEEPER_STRESS_PR_NAME:
@@ -201,12 +226,15 @@ def should_skip_job(job_name):
         and "build" not in job_name.lower()
         and job_name not in PRELIMINARY_JOBS
     ):
+        _add_pipeline_note(Labels.CI_BUILD)
         return True, f"Skipped, labeled with '{Labels.CI_BUILD}'"
 
     if Labels.DO_NOT_TEST in _info_cache.pr_labels and job_name not in DO_NOT_TEST_JOBS:
+        _add_pipeline_note(Labels.DO_NOT_TEST)
         return True, f"Skipped, labeled with '{Labels.DO_NOT_TEST}'"
 
     if Labels.NO_FAST_TESTS in _info_cache.pr_labels and job_name in PRELIMINARY_JOBS:
+        _add_pipeline_note(Labels.NO_FAST_TESTS)
         return True, f"Skipped, labeled with '{Labels.NO_FAST_TESTS}'"
 
     if (
@@ -220,6 +248,7 @@ def should_skip_job(job_name):
         Labels.CI_INTEGRATION_FLAKY in _info_cache.pr_labels
         and job_name not in INTEGRATION_TEST_FLAKY_CHECK_JOBS
     ):
+        _add_pipeline_note(Labels.CI_INTEGRATION_FLAKY)
         return (
             True,
             f"Skipped, labeled with '{Labels.CI_INTEGRATION_FLAKY}' - run integration test flaky check job only",
@@ -229,6 +258,7 @@ def should_skip_job(job_name):
         Labels.CI_FUNCTIONAL_FLAKY in _info_cache.pr_labels
         and job_name not in FUNCTIONAL_TEST_FLAKY_CHECK_JOBS
     ):
+        _add_pipeline_note(Labels.CI_FUNCTIONAL_FLAKY)
         return (
             True,
             f"Skipped, labeled with '{Labels.CI_FUNCTIONAL_FLAKY}' - run stateless test jobs only",
@@ -238,6 +268,7 @@ def should_skip_job(job_name):
         job_name.startswith(JobNames.INTEGRATION)
         or job_name in BUILDS_FOR_TESTS
     ):
+        _add_pipeline_note(Labels.CI_INTEGRATION)
         return (
             True,
             f"Skipped, labeled with '{Labels.CI_INTEGRATION}' - run integration test jobs only",
@@ -249,6 +280,7 @@ def should_skip_job(job_name):
         or job_name in BUILDS_FOR_TESTS
         or "functional" in job_name.lower()  # Bugfix validation (functional tests)
     ):
+        _add_pipeline_note(Labels.CI_FUNCTIONAL)
         return (
             True,
             f"Skipped, labeled with '{Labels.CI_FUNCTIONAL}' - run stateless test jobs only",
@@ -264,6 +296,7 @@ def should_skip_job(job_name):
             JobNames.DOCKER_BUILDS_AMD,
         )
     ):
+        _add_pipeline_note(Labels.CI_PERFORMANCE)
         return (
             True,
             "Skipped, labeled with 'ci-performance' - run performance jobs only",
@@ -271,12 +304,32 @@ def should_skip_job(job_name):
 
     # Skip the whole coverage family together: the coverage build, the amd_llvm_coverage test shards, the excluded_from_llvm jobs
     # (they only run the tests the coverage shards skip, so they are pointless without them), and the final "LLVM Coverage" merge job.
-    if Labels.CI_NO_COVERAGE in _info_cache.pr_labels and (
+    #
+    # This also fires automatically, without the label, whenever a PR has no build-digest-affecting
+    # changes (i.e. it only touches tests/docs/CI scripts) AND does not touch the coverage pipeline's
+    # own code (`_has_coverage_pipeline_changes`) - a PR fixing a bug in llvm_coverage_job.py, this
+    # hook, or the coverage-relevant parts of functional_tests.py/integration_test_job.py must still
+    # be able to run the jobs it changed, even though it changes no compiled-binary path. Coverage
+    # numbers only move when the compiled binary changes, so an ordinary tests-only PR would produce
+    # coverage identical to master - running any part of the family just burns CI time on profdata that
+    # the (also-skipped) merge job would never consume. Master itself is unaffected (pr_number gate):
+    # its coverage runs must always publish a complete llvm_coverage.info for later PRs to compare against.
+    if (
         "llvm_coverage" in job_name
         or "excluded_from_llvm" in job_name
         or job_name == JobNames.LLVM_COVERAGE
+    ) and (
+        Labels.CI_NO_COVERAGE in _info_cache.pr_labels
+        or (
+            _info_cache.pr_number > 0
+            and not _has_build_digest_changes(_info_cache.get_changed_files() or [])
+            and not _has_coverage_pipeline_changes(_info_cache.get_changed_files() or [])
+        )
     ):
-        return True, f"Skipped, labeled with '{Labels.CI_NO_COVERAGE}'"
+        if Labels.CI_NO_COVERAGE in _info_cache.pr_labels:
+            _add_pipeline_note(Labels.CI_NO_COVERAGE)
+            return True, f"Skipped, labeled with '{Labels.CI_NO_COVERAGE}'"
+        return True, "Skipped: no build-affecting changes; coverage would be identical to master"
 
     if not _is_bugfix_pr() and "Bugfix" in job_name:
         # Don't skip if the corresponding test job file was changed
@@ -298,25 +351,13 @@ def should_skip_job(job_name):
             return True, "Skipped, not a bug-fix PR"
 
     if "flaky" in job_name.lower():
-        from ci.jobs.scripts.find_tests import Targeting
-
-        targeter = Targeting(info=_info_cache)
-        # _info_cache.job_name is the hook runner job, not the flaky check job.
-        # Set job_type explicitly from the job_name argument so CIDB queries use
-        # the correct check_name prefix (e.g. 'Stateless%' instead of None).
-        if "stateless" in job_name.lower():
-            targeter.job_type = Targeting.STATELESS_JOB_TYPE
-        elif "integration" in job_name.lower():
-            targeter.job_type = Targeting.INTEGRATION_JOB_TYPE
         changed_files = _info_cache.get_changed_files()
         if "stateless" in job_name.lower():
-            changed_tests = targeter.get_changed_tests()
-            try:
-                previously_failed = targeter.get_previously_failed_tests()
-            except Exception as e:
-                print(f"Warning: failed to fetch previously-failed tests: {e}")
-                previously_failed = []
-            if not changed_tests and not previously_failed:
+            from ci.jobs.scripts.find_tests import Targeting
+
+            # Mirrors the in-job selection in `functional_tests.py`. Runs inside
+            # `Config Workflow`, so it must issue no CIDB query.
+            if not Targeting(info=_info_cache).get_changed_tests():
                 return True, "Skipped, no tests to run"
         if "integration" in job_name.lower() and not has_new_integration_tests(
             changed_files
@@ -360,57 +401,10 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped, not labeled with 'pr-performance'"
 
-    # --- Coverage sub-job skipping based on changed test type (PR only) ---
-    # When only one class of tests changed and the binary is unchanged, skip
-    # the coverage sub-jobs for the other test types. The llvm_coverage_job
-    # (final merge) supplements the missing profdata from master.
-    # Only applies to PRs: master coverage runs must always publish a complete
-    # llvm_coverage.info. If master skipped IT/unit, the published baseline
-    # would be partial, and later PRs comparing against it would see a huge
-    # artificial "newly covered" spike from all the lines missing in the baseline.
-    # Only skip when the binary is provably unchanged; any source/cmake change
-    # keeps all coverage jobs active.
-    _is_coverage_ft  = "amd_llvm_coverage" in job_name and JobNames.STATELESS in job_name
-    _is_coverage_it  = "amd_llvm_coverage" in job_name and JobNames.INTEGRATION in job_name
-    _is_coverage_ut  = "amd_llvm_coverage" in job_name and JobNames.UNITTEST in job_name
-    if (_is_coverage_ft or _is_coverage_it or _is_coverage_ut) and _info_cache.pr_number > 0:
-        cf = _info_cache.get_changed_files() or []
-        _sl, _it, _ut, _bin_unch = _classify_changed_tests(cf)
-        if _bin_unch and (_sl or _it or _ut):
-            # Only one type changed — skip the other two.
-            if _sl and not _it and not _ut:
-                if _is_coverage_it:
-                    return True, "Skipped: only stateless tests changed, integration coverage not needed"
-                if _is_coverage_ut:
-                    return True, "Skipped: only stateless tests changed, unit coverage not needed"
-            elif _it and not _sl and not _ut:
-                if _is_coverage_ft:
-                    return True, "Skipped: only integration tests changed, stateless coverage not needed"
-                if _is_coverage_ut:
-                    return True, "Skipped: only integration tests changed, unit coverage not needed"
-            elif _ut and not _sl and not _it:
-                if _is_coverage_ft:
-                    return True, "Skipped: only unit tests changed, stateless coverage not needed"
-                if _is_coverage_it:
-                    return True, "Skipped: only unit tests changed, integration coverage not needed"
-
-    # Run the LLVM Coverage merge/report job only when the build itself may have
-    # changed. Coverage numbers only move when the compiled binary changes; a
-    # PR that only touches tests/docs/CI scripts would produce a merge report
-    # identical to master, so skip it. PR-only, for the same reason as the
-    # coverage sub-job skipping above: master coverage runs must always
-    # publish a complete baseline.
-    if (
-        job_name == JobNames.LLVM_COVERAGE
-        and _info_cache.pr_number > 0
-        and not _has_build_digest_changes(_info_cache.get_changed_files() or [])
-    ):
-        return True, "No build-affecting changes"
-
     # If only CI scripts changed (no product code), run a minimal set of tests
     # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.
-    # Individual coverage test jobs run normally; the LLVM merge/report job is
-    # already skipped above whenever the build is unaffected.
+    # The whole coverage family is already skipped above whenever the build is
+    # unaffected, so this only narrows down the plain (non-coverage) test jobs.
     if changed_files and all(
         f.startswith("ci/") and f.endswith(".py") for f in changed_files
     ):

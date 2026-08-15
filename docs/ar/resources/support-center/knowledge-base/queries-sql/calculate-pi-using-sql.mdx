@@ -1,22 +1,18 @@
 ---
-title: لنحسب pi باستخدام SQL
-description: إنه يوم باي! لنحسب pi باستخدام ClickHouse SQL
+title: لنحسب π باستخدام SQL
+description: إنه يوم π! لنحسب π باستخدام ClickHouse SQL
 date: 2023-03-14
 tags: ['حالات الاستخدام']
-keywords: ['حساب pi', 'SQL']
+keywords: ['حساب π', 'SQL']
 ---
 
-{frontMatter.description}
-
-{/* truncate */}
-
 <div id="its-pi-day-lets-calculate-pi-using-sql">
-  ## إنه يوم باي! لنحسب باي باستخدام SQL
+  ## إنه يوم باي! لنحسب قيمة باي باستخدام SQL
 </div>
 
-عيد Pi سعيد! خطر لنا أن يكون من الممتع حساب pi باستخدام استعلامات SQL في ClickHouse. إليك ما توصّلنا إليه حتى الآن...
+عيد Pi سعيد! راودتنا فكرة أن يكون من الممتع حساب pi باستخدام استعلامات SQL في ClickHouse. إليك ما توصّلنا إليه حتى الآن...
 
-1. يستخدم هذا المثال دالة الجدول `numbers_mt` في ClickHouse لإرجاع مليار صف، ولا يستغرق سوى 40 ملّي ثانية لحساب النتيجة:
+1. يستخدم هذا المثال table function ‏`numbers_mt` في ClickHouse لإرجاع مليار صف، ولا يستغرق تنفيذ العملية الحسابية سوى 40 مللي ثانية:
 
 ```sql
 SELECT 4 * sum(if(number % 2, -1, 1) / ((number * 2) + 1)) AS pi
@@ -29,7 +25,7 @@ FROM numbers_mt(1000000000.)
 1 row in set. Elapsed: 0.432 sec. Processed 1.00 billion rows, 8.00 GB (2.32 billion rows/s., 18.53 GB/s.)
 ```
 
-2. يعالج المثال التالي أيضًا مليار رقم، ولكن ليس بهذه السرعة:
+2. يعالج المثال التالي أيضًا 1B رقمًا، لكن بوتيرة أبطأ:
 
 ```sql
 SELECT 3 + (4 * sum(if((number % 2) = 0, if((number % 4) = 0, -1 / ((number * (number + 1)) * (number + 2)), 1 / ((number * (number + 1)) * (number + 2))), 0))) AS pi
@@ -42,7 +38,7 @@ FROM numbers_mt(2, 10000000000)
 1 row in set. Elapsed: 9.825 sec. Processed 10.00 billion rows, 80.00 GB (1.02 billion rows/s., 8.14 GB/s.)
 ```
 
-3. هذا بلا شك خيارنا المفضل في ClickHouse (وهو الأدق!):
+3. هذا بالطبع هو المفضل لدينا في ClickHouse (وهو الأدق أيضًا!):
 
 ```sql
 SELECT pi()
@@ -54,7 +50,7 @@ SELECT pi()
 1 row in set. Elapsed: 0.008 sec.
 ```
 
-4. يبدو أن أحدهم كان يعرف حساب المثلثات جيدًا في هذه المسألة:
+4. يبدو أن صاحب هذا كان يعرف حساب المثلثات جيدًا:
 
 ```sql
 SELECT 2 * asin(1) AS pi
@@ -66,7 +62,7 @@ SELECT 2 * asin(1) AS pi
 1 row in set. Elapsed: 0.005 sec.
 ```
 
-5. إليك واجهة برمجة تطبيقات مفيدة تتيح لك تحديد عدد الأرقام التي تريدها:
+5. إليك واجهة برمجة تطبيقات عملية تتيح لك تحديد عدد الخانات التي تريدها:
 
 ```sql
 SELECT *
@@ -79,7 +75,7 @@ FROM url('https://api.pi.delivery/v1/pi?start=0&numberOfDigits=100', 'JSONEachRo
 1 row in set. Elapsed: 0.556 sec.
 ```
 
-6. هذا ذكي - إذ يستخدم دوال المسافة في ClickHouse:
+6. هذه الطريقة ذكية  - إذ تستخدم دوال المسافة في ClickHouse:
 
 ```sql
 WITH random_points AS
@@ -97,7 +93,7 @@ FROM random_points
 1 row in set. Elapsed: 4.742 sec. Processed 1.00 billion rows, 8.00 GB (210.88 million rows/s., 1.69 GB/s.)
 ```
 
-7. إذا كنت فيزيائيًا، فسيعجبك هذا:
+7. إذا كنتَ فيزيائيًا، فستكتفي بهذا:
 
 ```sql
 SELECT 22 / 7
@@ -107,7 +103,7 @@ SELECT 22 / 7
 └───────────────────┘
 ```
 
-8. طريقة غير مباشرة أخرى (اقترحها Alexey Milovidov) دقيقة حتى 7 منازل عشرية - وهي سريعة:
+8. طريقة غير مباشرة أخرى (هذه من Alexey Milovidov) دقيقة حتى 7 منازل عشرية، وهي سريعة:
 
 ```sql
 WITH
@@ -124,5 +120,5 @@ FROM numbers_mt(1000000000.)
 ```
 
 <Note>
-  إذا كان لديك المزيد، فسنكون سعداء بمساهمتك بها. شكرًا!
+  إذا كان لديك المزيد، يسعدنا أن تساهم بها. شكرًا لك!
 </Note>

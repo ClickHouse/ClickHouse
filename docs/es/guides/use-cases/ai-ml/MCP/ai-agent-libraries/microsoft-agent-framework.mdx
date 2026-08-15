@@ -28,9 +28,7 @@ En esta guía aprenderás a crear un agente de IA con [Microsoft Agent framework
 Puedes realizar los siguientes pasos desde el REPL de Python o mediante un script.
 
 <Steps>
-  <Step>
-    ## Instalar bibliotecas
-
+  <Step title="Instalar bibliotecas" id="install-libraries">
     Instala la biblioteca de Microsoft Agent Framework ejecutando los siguientes comandos:
 
     ```python
@@ -40,9 +38,7 @@ Puedes realizar los siguientes pasos desde el REPL de Python o mediante un scrip
     ```
   </Step>
 
-  <Step>
-    ## Configurar credenciales
-
+  <Step title="Configurar credenciales" id="setup-credentials">
     A continuación, tendrás que proporcionar tu clave de API de OpenAI:
 
     ```python
@@ -67,9 +63,7 @@ Puedes realizar los siguientes pasos desde el REPL de Python o mediante un scrip
     ```
   </Step>
 
-  <Step>
-    ## Inicializa el servidor MCP y el agente del framework de Microsoft Agent
-
+  <Step title="Inicializa el servidor MCP y el agente del framework de Microsoft Agent" id="initialize-mcp-and-agent">
     Ahora configura el ClickHouse MCP server para que apunte al Playground de SQL de ClickHouse
     y también inicializa nuestro agente y hazle una pregunta:
 
@@ -109,44 +103,44 @@ Puedes realizar los siguientes pasos desde el REPL de Python o mediante un scrip
     La salida de este script se muestra a continuación:
 
     ```response title="Response"
-    Usuario: Cuéntame sobre los precios de la vivienda en el Reino Unido durante los últimos cinco años
-    Analicé los registros mensuales de precios de venta en el Reino Unido en la tabla uk.uk_price_paid_simple_partitioned para los últimos cinco años (toStartOfMonth(date), de oct. 2020 → ago. 2025). Resumen y puntos clave:
+    User: Tell me about UK property prices over the last five years
+    I looked at monthly UK sold-price records in the uk.uk_price_paid_simple_partitioned table for the last five years (toStartOfMonth(date), from Oct 2020 → Aug 2025). Summary and key points:
 
-    Qué medí
-    - Métricas: precio mediano mensual, precio medio y número de transacciones (registros de precios pagados).
-    - Período cubierto: meses desde 2020-10-01 hasta 2025-08-01 (últimos cinco años desde hoy).
+    What I measured
+    - Metrics: monthly median price, mean price, and transaction count (price paid records).
+    - Period covered: months starting 2020-10-01 through 2025-08-01 (last five years from today).
 
-    Conclusiones generales
-    - El precio mediano subió de £255.000 (2020-10) a £294.500 (2025-08) — un incremento de aproximadamente +15,4% en cinco años.
-      - Tasa de crecimiento anual compuesta (CAGR) equivalente para la mediana ≈ +2,9% anual.
-    - El precio medio cayó ligeramente de aproximadamente £376.538 (2020-10) a £364.653 (2025-08) — un descenso de ≈ −3,2% en cinco años.
-      - CAGR del precio medio ≈ −0,6% anual.
-    - La divergencia (mediana al alza, media ligeramente a la baja) sugiere cambios en la composición de las transacciones (menos ventas de alto valor u otros efectos composicionales), ya que la media es sensible a los valores atípicos mientras que la mediana no lo es.
+    High-level findings
+    - Median price rose from £255,000 (2020-10) to £294,500 (2025-08) — an increase of about +15.4% over five years.
+      - Equivalent compound annual growth rate (CAGR) for the median ≈ +2.9% per year.
+    - Mean price fell slightly from about £376,538 (2020-10) to £364,653 (2025-08) — a decline of ≈ −3.2% over five years.
+      - Mean-price CAGR ≈ −0.6% per year.
+    - The divergence (median up, mean slightly down) suggests changes in the mix of transactions (fewer very-high-value sales or other compositional effects), since the mean is sensitive to outliers while the median is not.
 
-    Patrones y eventos destacados en los datos
-    - Fuertes subidas en 2020–2021 (visibles tanto en la mediana como en la media), coherentes con el repunte del mercado impulsado por la demanda pospandemia y las exenciones del impuesto de timbre observadas en ese período.
-    - Picos en los precios medios hacia mediados de 2022 (valores medios ~£440k), seguidos de una moderación general durante 2022–2023 y una estabilización en torno a 2023–2024.
-    - Algunos meses muestran gran volatilidad o recuentos inusuales (p. ej., junio de 2021 registró recuentos de transacciones muy elevados; marzo de 2025 muestra una mediana alta, pero abril–mayo de 2025 presentan recuentos más bajos). Los meses más recientes (mediados de 2025) tienen recuentos de transacciones mucho menores en la tabla — esto suele indicar que los datos de los meses más recientes están incompletos, por lo que las cifras mensuales recientes deben interpretarse con cautela.
+    Notable patterns and events in the data
+    - Strong rises in 2020–2021 (visible in both median and mean), consistent with the post‑pandemic / stamp‑duty / demand-driven market surge seen in that period.
+    - Peaks in mean prices around mid‑2022 (mean values ~£440k), then a general softening through 2022–2023 and stabilisation around 2023–2024.
+    - Some months show large volatility or unusual counts (e.g., June 2021 and June 2021 had very high transaction counts; March 2025 shows a high median but April–May 2025 show lower counts). Recent months (mid‑2025) have much lower transaction counts in the table — this often indicates incomplete reporting for the most recent months and means recent monthly figures should be treated cautiously.
 
-    Puntos de datos de ejemplo (de la consulta)
-    - 2020-10: mediana £255.000, media £376.538, transacciones 89.125
-    - 2022-08: pico de la media ~£441.209 (mediana ~£295.000)
-    - 2025-03: mediana ~£314.750 (una de las medianas más altas)
-    - 2025-08: mediana £294.500, media £364.653, transacciones 18.815 (recuento bajo — probablemente incompleto)
+    Example datapoints (from the query)
+    - 2020-10: median £255,000, mean £376,538, transactions 89,125
+    - 2022-08: mean peak ~£441,209 (median ~£295,000)
+    - 2025-03: median ~£314,750 (one of the highest medians)
+    - 2025-08: median £294,500, mean £364,653, transactions 18,815 (low count — likely incomplete)
 
-    Advertencias
-    - Estos son precios de transacción (conjunto de datos Price Paid) — los «valores» reales de las viviendas pueden diferir.
-    - La media es sensible a la composición y a los valores atípicos. Los cambios en los tipos de propiedades vendidas (p. ej., combinación de pisos frente a casas unifamiliares, combinación regional) afectarán de forma distinta a la media y a la mediana.
-    - Los meses más recientes pueden estar incompletos; los meses con recuentos de transacciones inusualmente bajos deben tratarse con cautela.
-    - Se trata de un agregado nacional — las diferencias regionales pueden ser sustanciales.
+    Caveats
+    - These are transaction prices (Price Paid dataset) — actual house “values” may differ.
+    - Mean is sensitive to composition and outliers. Changes in the types of properties sold (e.g., mix of flats vs detached houses, regional mix) will affect mean and median differently.
+    - Recent months can be incomplete; months with unusually low transaction counts should be treated with caution.
+    - This is a national aggregate — regional differences can be substantial.
 
-    Si lo desea, puedo:
-    - Generar un gráfico de la mediana y la media a lo largo del tiempo.
-    - Comparar año a año o calcular la CAGR para un mes de inicio/fin diferente.
-    - Desglosar el análisis por región/condado/localidad, tipo de propiedad (piso, adosado, pareado, unifamiliar) o por rangos de precio.
-    - Mostrar una tabla de las regiones con mayor/menor crecimiento de precios en los últimos 5 años.
+    If you want I can:
+    - Produce a chart of median and mean over time.
+    - Compare year-on-year or compute CAGR for a different start/end month.
+    - Break the analysis down by region/county/town, property type (flat, terraced, semi, detached), or by price bands.
+    - Show a table of top/bottom regions for price growth over the last 5 years.
 
-    ¿Qué análisis adicional le gustaría?
+    Which follow-up would you like?
 
     ```
   </Step>

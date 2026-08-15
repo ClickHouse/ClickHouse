@@ -9,6 +9,7 @@ import grpc
 import lz4.frame
 import pytest
 import pytz
+import snappy
 
 from helpers.cluster import ClickHouseCluster
 
@@ -719,6 +720,33 @@ def test_compressed_external_table():
         b"4\tDaniel\n"
         b"5\tEthan\n"
     )
+
+
+def test_compressed_external_table_snappy_framed():
+    # A per-table `snappy_mode = 'framed'` in `external_table.settings()` must be honored when
+    # decompressing the external table data. The server default is `basic` (Hadoop-block snappy),
+    # so the framing-format payload below only decodes if the per-table setting is applied before
+    # the decompression buffer is wrapped.
+    columns = [
+        clickhouse_grpc_pb2.NameAndType(name="UserID", type="UInt64"),
+        clickhouse_grpc_pb2.NameAndType(name="UserName", type="String"),
+    ]
+    data = snappy.StreamCompressor().add_chunk(b"1\tAlex\n2\tBen\n3\tCarl\n")
+    ext = clickhouse_grpc_pb2.ExternalTable(
+        name="ext_snappy",
+        columns=columns,
+        data=data,
+        format="TabSeparated",
+        compression_type="snappy",
+        settings={"snappy_mode": "framed"},
+    )
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    query_info = clickhouse_grpc_pb2.QueryInfo(
+        query="SELECT * FROM ext_snappy ORDER BY UserID",
+        external_tables=[ext],
+    )
+    result = stub.ExecuteQuery(query_info)
+    assert result.output == b"1\tAlex\n2\tBen\n3\tCarl\n"
 
 
 def test_transport_compression():

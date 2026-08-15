@@ -12,7 +12,7 @@ exclude_path = [
   # Legacy Docusaurus content, pending removal
   "^\\./en/",
   "^\\./changelogs/",
-  "^\\./_description_templates/",
+  "^\\./_templates/",
   "^\\./_includes/",
   "^\\./_migration/",
   # Site source assets (redirects.json, favicon, logos, customization JS) that
@@ -73,4 +73,14 @@ exclude = [
   # `file:test.db?param1=value1&param2=value2`) that lychee reads as file:// URLs.
   # `test.db` is only ever an example database name, never a real link target.
   "test\\.db",
+  # Concrete placeholder filenames listed to explain S3 wildcard expansion.
+  # Keep the patterns narrow so real objects under these prefixes are checked.
+  "clickhouse-public-datasets\\.s3\\.amazonaws\\.com/my-bucket/(?:some|another)_folder/some_file_[1-3]\\.csv$",
+  "clickhouse-public-datasets\\.s3\\.amazonaws\\.com/my-test-bucket-768/(?:some|another)_prefix/some_file_[1-4]\\.csv$",
+  # Local and placeholder hosts used in setup instructions and connection
+  # examples. They are not expected to resolve from the link checker.
+  "^https?://localhost(?::[0-9]+)?(?:/|$)",
+  "^https?://hostname(?::[0-9]+)?(?:/|$)",
+  "^https?://proxy(?::[0-9]+)?(?:/|$)",
+  "^https://abc\\.def\\.clickhouse\\.cloud(?:/|$)",
 ]

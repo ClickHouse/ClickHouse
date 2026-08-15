@@ -585,7 +585,8 @@ SELECT
 
 Introduzido em: v1.1.0
 
-Remove o parâmetro `name` de uma URL, se ele estiver presente.
+Remove a primeira ocorrência de `name=value` de cada parâmetro solicitado de uma URL.
+Somente são correspondidos parâmetros escritos como `name=`, portanto, um parâmetro de flag sem valor permanece intacto; por exemplo, `cutURLParameter('http://bigmir.net/?a&c=d', 'a')` retorna a URL inalterada.
 Esta função não codifica nem decodifica caracteres nos nomes dos parâmetros; por exemplo, `Client ID` e `Client%20ID` são tratados como nomes de parâmetros diferentes.
 
 **Sintaxe**
@@ -601,7 +602,7 @@ cutURLParameter(url, name)
 
 **Valor retornado**
 
-URL com o parâmetro `name` removido. [`String`](/pt-BR/reference/data-types/string)
+URL com a primeira ocorrência de `name=value` de cada parâmetro solicitado removida. [`String`](/pt-BR/reference/data-types/string)
 
 **Exemplos**
 
@@ -1069,9 +1070,9 @@ SELECT extractURLParameters('http://example.com/?param1=value1&param2=value2');
 
 Introduzido em: v1.1.0
 
-Retorna o &quot;primeiro subdomínio significativo&quot;.
+Retorna o &quot;subdomínio significativo&quot;.
 
-O primeiro subdomínio significativo é um domínio de segundo nível se for &#39;com&#39;, &#39;net&#39;, &#39;org&#39; ou &#39;co&#39;.
+O subdomínio significativo é um domínio de segundo nível se for &#39;com&#39;, &#39;net&#39;, &#39;org&#39; ou &#39;co&#39;.
 Caso contrário, é um domínio de terceiro nível.
 
 Por exemplo, firstSignificantSubdomain(&#39;https://news.clickhouse.com/&#39;) = &#39;clickhouse&#39;, firstSignificantSubdomain (&#39;https://news.clickhouse.com.tr/&#39;) = &#39;clickhouse&#39;.
@@ -1096,9 +1097,6 @@ firstSignificantSubdomain(url)
 
 ```sql title=Query
 SELECT firstSignificantSubdomain('https://news.clickhouse.com/')
-```
-
-```response title=Response
 ```
 
 <div id="firstSignificantSubdomainCustomRFC">
@@ -1199,7 +1197,7 @@ firstSignificantSubdomainRFC(url)
 
 Introduzido em: v1.1.0
 
-Retorna o identificador do fragmento sem o símbolo hash inicial.
+Retorna o identificador de fragmento sem o símbolo hash inicial.
 
 **Sintaxe**
 
@@ -1213,14 +1211,14 @@ fragment(url)
 
 **Valor retornado**
 
-Retorna o identificador do fragmento sem o símbolo `hash` inicial. [`String`](/pt-BR/reference/data-types/string)
+Retorna o identificador de fragmento sem o símbolo `hash` inicial. [`String`](/pt-BR/reference/data-types/string)
 
 **Exemplos**
 
 **Exemplo de uso**
 
 ```sql title=Query
-SELECT fragment('https://clickhouse.com/docs/getting-started/quick-start/cloud#1-create-a-clickhouse-service');
+SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-clickhouse-service');
 ```
 
 ```response title=Response
@@ -1271,7 +1269,7 @@ SELECT netloc('http://paul@www.example.com:80/');
 
 Introduzido em: v1.1.0
 
-Retorna o caminho de uma URL sem a query string.
+Retorna o caminho de uma URL sem a string de consulta.
 
 **Sintaxe**
 
@@ -1285,14 +1283,14 @@ path(url)
 
 **Valor retornado**
 
-Retorna o caminho da URL, sem a query string. [`String`](/pt-BR/reference/data-types/string)
+Retorna o caminho da URL, sem a string de consulta. [`String`](/pt-BR/reference/data-types/string)
 
 **Exemplos**
 
 **Exemplo de uso**
 
 ```sql title=Query
-SELECT path('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value');
+SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value');
 ```
 
 ```response title=Response
@@ -1321,14 +1319,14 @@ pathFull(url)
 
 **Valor retornado**
 
-Retorna o caminho da URL, incluindo a query string e o fragmento. [`String`](/pt-BR/reference/data-types/string)
+Retorna o caminho da URL, incluindo a string de consulta e o fragmento. [`String`](/pt-BR/reference/data-types/string)
 
 **Exemplos**
 
 **Exemplo de uso**
 
 ```sql title=Query
-SELECT pathFull('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value#section');
+SELECT pathFull('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value#section');
 ```
 
 ```response title=Response

@@ -29,6 +29,10 @@ ClickHouse 处理的数据通常存储在运行 ClickHouse server 的机器的�
 [`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 和 [`Log`](/zh/reference/engines/table-engines/log-family/log)
 家族的表引擎可分别通过类型为 `s3`、`azure_blob_storage`、`hdfs` (不支持) 的磁盘，将数据存储到 `S3`、`AzureBlobStorage`、`HDFS` (不支持) 中。
 
+<Note>
+  `s3` 磁盘类型也可用于兼容 S3 的对象存储提供商，例如 Alibaba Cloud Object Storage Service。请将 `endpoint` 配置为该提供商兼容 S3 的端点，并留意该提供商特有的兼容性要求。
+</Note>
+
 磁盘配置需要：
 
 1. 一个 `type` 配置项，其值必须是 `s3`、`azure_blob_storage`、`hdfs` (不支持) 、`local_blob_storage`、`web` 之一。
@@ -1094,7 +1098,7 @@ SETTINGS storage_policy='web';
 | `remote_fs_read_backoff_threashold` | 读取远程磁盘数据时的最大等待时间    | `10000` 秒 |
 | `remote_fs_read_backoff_max_tries`  | 使用退避机制读取时的最大重试次数    | `5`       |
 
-如果查询因异常 `DB:Exception Unreachable URL` 失败，你可以尝试调整以下设置：[http&#95;connection&#95;timeout](/zh/reference/settings/session-settings#http_connection_timeout)、[http&#95;receive&#95;timeout](/zh/reference/settings/session-settings#http_receive_timeout)、[keep&#95;alive&#95;timeout](/zh/reference/settings/server-settings/settings#keep_alive_timeout)。
+如果查询因异常 `DB:Exception Unreachable URL` 失败，你可以尝试调整以下设置：[http&#95;connection&#95;timeout](/zh/reference/settings/session-settings/http#http_connection_timeout)、[http&#95;receive&#95;timeout](/zh/reference/settings/session-settings/http#http_receive_timeout)、[keep&#95;alive&#95;timeout](/zh/reference/settings/server-settings/settings/other#keep_alive_timeout)。
 
 要获取用于上传的文件，请运行：
 `clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (可通过查询 `SELECT data_paths FROM system.tables WHERE name = 'table_name'` 找到 `--metadata-path`) 。
