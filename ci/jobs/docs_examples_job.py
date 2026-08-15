@@ -147,6 +147,17 @@ def write_html_report(outcomes, stale, info):
         f.write("</pre></body></html>\n")
 
 
+def report_info(outcomes, stale):
+    """Summarize the runner's verdicts, which determine whether the job passed."""
+    counts = {}
+    for outcome in outcomes:
+        verdict = outcome["verdict"]
+        counts[verdict] = counts.get(verdict, 0) + 1
+    if stale:
+        counts["stale"] = len(stale)
+    return ", ".join(f"{verdict}: {count}" for verdict, count in sorted(counts.items()))
+
+
 def main():
     stop_watch = Utils.Stopwatch()
     results = []
@@ -184,12 +195,7 @@ def main():
             report = json.load(f)
         outcomes = report["examples"]
         stale = report["stale"]
-        counts = {}
-        for outcome in outcomes:
-            counts[outcome["status"]] = counts.get(outcome["status"], 0) + 1
-        if stale:
-            counts["stale"] = len(stale)
-        info = ", ".join(f"{status}: {count}" for status, count in sorted(counts.items()))
+        info = report_info(outcomes, stale)
         write_html_report(outcomes, stale, info)
 
     files = [path for path in (REPORT_HTML, REPORT, RUNNER_LOG, server.log_file) if os.path.isfile(path)]
