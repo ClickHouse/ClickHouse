@@ -40,6 +40,7 @@ def test_finds_only_publishable_pages_missing_from_navigation(tmp_path):
 
     for page in (
         "index.mdx",
+        "search.mdx",
         "section/landing.mdx",
         "section/listed.md",
         "section/nested/index.mdx",

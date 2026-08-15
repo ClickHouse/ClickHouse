@@ -59,8 +59,7 @@
         "tabs": [
           {
             "pages": [
-              "index",
-              "search"
+              "index"
             ],
             "tab": "Home"
           },
