@@ -24,10 +24,9 @@ files); this client driver runs only ``CLIENT_CHECKS`` -- the checks a consuming
 repo can act on for the slice it owns (validation, including the snippet-import
 policy in scoped mode, and internal links).
 Redirects, external links, and the locale checks are aggregator-global and are
-left to the aggregator job. Navigation completeness remains in the client set:
-the replaced slice owns its pages and navigation entries. With ``--scoped``,
-``mint validate`` is replaced by ``scoped_validate.mjs`` over the replaced
-folders plus every out-of-scope file that imports into them.
+left to the aggregator job. With ``--scoped``, ``mint validate`` is replaced by
+``scoped_validate.mjs`` over the replaced folders plus every out-of-scope file
+that imports into them.
 
 A check can be any shell command, including ``python3 <script>``. Checks run
 from the docs root, so a Python check script committed at
@@ -93,7 +92,6 @@ DEFAULT_CHECKS = [
 # aggregator-global concerns a client cannot fix.
 CLIENT_CHECKS = [
     SNIPPET_IMPORTS_CHECK,
-    NAVIGATION_CHECK,
     VALIDATE_CHECK,
     INTERNAL_LINKS_CHECK,
 ]
@@ -115,7 +113,7 @@ def scoped_validate_check(scopes):
 def client_checks(scoped, scopes):
     """Select the full or scoped validator plus client-owned link checks."""
     if scoped:
-        return [NAVIGATION_CHECK, scoped_validate_check(scopes), INTERNAL_LINKS_CHECK]
+        return [scoped_validate_check(scopes), INTERNAL_LINKS_CHECK]
     return list(CLIENT_CHECKS)
 
 # Locale-only checks, kept out of DEFAULT_CHECKS: the Praktika job runs them only

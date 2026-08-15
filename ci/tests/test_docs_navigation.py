@@ -60,9 +60,9 @@ def test_finds_only_publishable_pages_missing_from_navigation(tmp_path):
     ] == ["section/orphan.mdx"]
 
 
-def test_navigation_check_runs_for_aggregator_and_client_docs():
+def test_navigation_check_runs_only_for_aggregator_docs():
     assert mintlify_docs_check.NAVIGATION_CHECK in mintlify_docs_check.DEFAULT_CHECKS
-    assert mintlify_docs_check.NAVIGATION_CHECK in mintlify_docs_check.CLIENT_CHECKS
-    assert mintlify_docs_check.client_checks(True, ["example"])[0] == (
-        mintlify_docs_check.NAVIGATION_CHECK
+    assert mintlify_docs_check.NAVIGATION_CHECK not in mintlify_docs_check.CLIENT_CHECKS
+    assert mintlify_docs_check.NAVIGATION_CHECK not in mintlify_docs_check.client_checks(
+        True, ["example"]
     )
