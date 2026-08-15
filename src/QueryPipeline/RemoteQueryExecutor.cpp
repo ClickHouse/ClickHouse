@@ -373,7 +373,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
       * all connections, then read and skip the remaining packets to make sure
       * these connections did not remain hanging in the out-of-sync state.
       */
-    if (established || (isQueryPending() && connections))
+    if (established || ((isQueryPending() || drain_was_skipped) && connections))
     {
         /// May also throw (so as cancel() above)
         try
@@ -1140,14 +1140,21 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
 
     was_cancelled = true;
 
+    /// A parallel-replicas follower that has not announced yet is still planning, and the only packet
+    /// it owes us is the announcement itself - which is worthless once we are cancelling, because it
+    /// exists to let the coordinator assign ranges we are no longer going to assign. Waiting for it
+    /// means waiting out that replica's whole planning phase (measured at ~290 ms on TPC-H q22 at
+    /// sf=100). Replicas that already announced are drained as before: they may be mid-block.
+    ///
+    /// Only for a query that reads with parallel replicas. `announcement_received` can only ever be set
+    /// by `processMergeTreeInitialReadAnnouncement`, so without this guard every ordinary distributed
+    /// query - which never announces - would skip the drain too, including on the normal completion path
+    /// through `finish()`, and hand a connection back to the pool part-way through a packet.
+    const bool skip_drain = extension && extension->parallel_reading_coordinator && !announcement_received;
+
     if (read_context)
     {
-        /// A replica that has not announced yet is still planning, and the only packet it owes us is
-        /// the announcement itself - which is worthless once we are cancelling, because it exists to
-        /// let the coordinator assign ranges we are no longer going to assign. Waiting for it means
-        /// waiting out that replica's whole planning phase (measured at ~290 ms on TPC-H q22 at
-        /// sf=100). Replicas that already announced are drained as before: they may be mid-block.
-        if (!announcement_received)
+        if (skip_drain)
             read_context->skipDrainOnCancel();
 
         read_context->cancel();
@@ -1161,6 +1168,12 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
         connections->sendCancel();
         LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);
     }
+
+    /// Skipping the drain leaves the socket part-way through a packet, so it must never go back to the
+    /// pool. The destructor only disconnects while the query is still pending, and `finish()` marks it
+    /// finished right after calling this - so record it and disconnect there unconditionally.
+    if (skip_drain)
+        drain_was_skipped = true;
 }
 
 bool RemoteQueryExecutor::isQueryPending() const
