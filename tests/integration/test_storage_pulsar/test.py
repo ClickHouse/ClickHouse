@@ -106,6 +106,12 @@ def test_experimental_gate(pulsar_cluster):
     )
     assert "SUPPORT_IS_DISABLED" in error
 
+    full_attach = pulsar_table("test.pulsar_reader_full_attach", "gate_topic", "gate_group").replace(
+        "CREATE TABLE", "ATTACH TABLE", 1
+    )
+    error = instance.query_and_get_error(full_attach, settings={"allow_experimental_pulsar_storage_engine": 0})
+    assert "SUPPORT_IS_DISABLED" in error
+
 
 def test_direct_select_requires_setting(pulsar_cluster):
     instance.query("CREATE DATABASE IF NOT EXISTS test")
@@ -526,6 +532,21 @@ def test_batch_size_zero_rejected(pulsar_cluster):
             )
         )
         assert "BAD_ARGUMENTS" in error
+
+
+def test_batch_size_above_int_max_rejected(pulsar_cluster):
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    for setting in ("pulsar_max_block_size", "pulsar_poll_max_batch_size"):
+        error = instance.query_and_get_error(
+            pulsar_table(
+                "test.pulsar_reader",
+                "large_batch_topic",
+                "large_batch_group",
+                extra_settings=f", {setting} = 2147483648",
+            )
+        )
+        assert "BAD_ARGUMENTS" in error
+        assert setting in error
 
 
 def test_http_service_url_rejected(pulsar_cluster):

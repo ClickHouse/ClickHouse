@@ -8,6 +8,7 @@
 #include <pulsar/Client.h>
 #include <Poco/Semaphore.h>
 
+#include <atomic>
 #include <mutex>
 
 namespace DB
@@ -22,6 +23,7 @@ class ReadFromStoragePulsar;
 class StoragePulsar final : public IStreamingStorage, WithContext
 {
     friend class ReadFromStoragePulsar;
+    friend class PulsarSource;
 
 public:
     StoragePulsar(
@@ -100,6 +102,11 @@ private:
     /// `init_task` keeps recreating the missing ones until the pool is complete again.
     size_t created_consumers = 0;
     Poco::Semaphore semaphore;
+    /// Coordinates direct SELECTs with materialized-view streaming. Both counters are
+    /// changed while `consumers_mutex` is held, so a view attached after a direct
+    /// read starts waits for that read instead of consuming concurrently.
+    std::atomic<size_t> active_mv_streamers{0};
+    std::atomic<size_t> active_direct_readers{0};
     BackgroundSchedulePool::TaskHolder streamer;
     BackgroundSchedulePool::TaskHolder init_task;
 

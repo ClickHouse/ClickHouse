@@ -29,7 +29,8 @@ PulsarSource::PulsarSource(
     LoggerPtr log_,
     UInt64 max_execution_time_,
     bool commit_in_suffix_,
-    std::optional<UInt64> cancel_epoch_)
+    std::optional<UInt64> cancel_epoch_,
+    bool direct_reader_)
     : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns_)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -40,6 +41,7 @@ PulsarSource::PulsarSource(
     , max_execution_time(max_execution_time_)
     , handle_error_mode(storage.getStreamingHandleErrorMode())
     , commit_in_suffix(commit_in_suffix_)
+    , direct_reader(direct_reader_)
     , cancel_epoch(cancel_epoch_.value_or(storage_.currentCancelEpoch()))
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
@@ -62,6 +64,9 @@ PulsarSource::~PulsarSource()
         /// instead of being returned to the pool, so the error does not poison later reads.
         storage.returnConsumer(consumer);
     }
+
+    if (direct_reader)
+        storage.active_direct_readers.fetch_sub(1);
 }
 
 Chunk PulsarSource::generate()

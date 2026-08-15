@@ -35,6 +35,7 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
+#include <limits>
 
 namespace DB
 {
@@ -105,22 +106,18 @@ private:
         if (pulsar_storage.shutdown_called.load())
             throw Exception(ErrorCodes::ABORTED, "Table is detached");
 
-        /// Check the dependencies directly instead of a flag set by the background task: the flag would be
-        /// clear between the streaming cycles, letting a direct SELECT compete with (and, with
-        /// `pulsar_commit_on_select = 1`, acknowledge messages behind) the attached views.
-        if (!DatabaseCatalog::instance().getDependentViews(pulsar_storage.getStorageID()).empty())
-            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StoragePulsar with attached materialized views");
-
-        /// The consumer pool may be incomplete: after ATTACH with the broker unreachable, or after
-        /// a poisoned consumer was dropped, `init_task` is still recreating the missing consumers.
-        /// Reading from an empty pool would return an empty result set, making a broker outage
-        /// indistinguishable from an empty topic, so reject the read instead. Fan out only over
-        /// the live consumers: a source for a missing slot would just wait `pulsar_max_wait_ms`
-        /// for a consumer that cannot appear.
+        /// Atomically reject materialized views and register direct readers. A view that is
+        /// attached after this point will see `active_direct_readers` in `streaming` and wait
+        /// until this SELECT is complete, so it cannot lose acknowledged messages to this read.
         size_t live_consumers = 0;
         {
             std::lock_guard lock{pulsar_storage.consumers_mutex};
+            if (!DatabaseCatalog::instance().getDependentViews(pulsar_storage.getStorageID()).empty()
+                || pulsar_storage.active_mv_streamers.load() > 0)
+                throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StoragePulsar with attached materialized views");
+
             live_consumers = pulsar_storage.created_consumers;
+            pulsar_storage.active_direct_readers.fetch_add(live_consumers);
         }
         if (live_consumers == 0)
             throw Exception(
@@ -128,6 +125,13 @@ private:
                 "Pulsar consumers setup is not finished (0 out of {} consumers created), retrying in the background. "
                 "Connection to the broker might not be established yet",
                 pulsar_storage.num_consumers);
+
+        size_t sources_created = 0;
+        SCOPE_EXIT(
+        {
+            if (sources_created < live_consumers)
+                pulsar_storage.active_direct_readers.fetch_sub(live_consumers - sources_created);
+        });
 
         /// Use all live consumers at once, otherwise SELECT may not read messages from all partitions.
         Pipes pipes;
@@ -144,7 +148,10 @@ private:
                 1,
                 pulsar_storage.log,
                 0,
-                (*pulsar_storage.pulsar_settings)[PulsarSetting::pulsar_commit_on_select].value));
+                (*pulsar_storage.pulsar_settings)[PulsarSetting::pulsar_commit_on_select].value,
+                {},
+                true));
+            ++sources_created;
 
         return Pipe::unitePipes(std::move(pipes));
     }
@@ -566,34 +573,53 @@ void StoragePulsar::scheduleStreamingTasksImpl()
 
 void StoragePulsar::streaming()
 {
+    bool incremented_mv_streamers = false;
     try
     {
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
         const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
+        const UInt64 refresh_epoch = last_seen_refresh_epoch;
         const bool deps_ready = num_views == 0 || checkDependencies(table_id);
         const bool run_cycle = deps_ready && stream_control.claimCycle(last_seen_refresh_epoch);
 
         if (num_views && run_cycle)
         {
-            auto start_time = std::chrono::steady_clock::now();
-
-            while (!shutdown_called.load())
             {
-                if (!checkDependencies(table_id))
-                    break;
+                std::lock_guard lock{consumers_mutex};
+                if (active_direct_readers.load() > 0)
+                {
+                    LOG_DEBUG(log, "Direct readers are active, skipping Pulsar MV streaming this round");
+                    last_seen_refresh_epoch = refresh_epoch;
+                }
+                else
+                {
+                    active_mv_streamers.fetch_add(1);
+                    incremented_mv_streamers = true;
+                }
+            }
 
-                if (streamToViews(cycle_epoch))
-                    break;
+            if (incremented_mv_streamers)
+            {
+                auto start_time = std::chrono::steady_clock::now();
 
-                if (stream_control.isBlocked() || stream_control.isCancelRequested(cycle_epoch))
-                    break;
+                while (!shutdown_called.load())
+                {
+                    if (!checkDependencies(table_id))
+                        break;
 
-                auto ts = std::chrono::steady_clock::now();
-                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
-                if (duration.count() > PULSAR_MAX_THREAD_WORK_DURATION_MS)
-                    break;
+                    if (streamToViews(cycle_epoch))
+                        break;
+
+                    if (stream_control.isBlocked() || stream_control.isCancelRequested(cycle_epoch))
+                        break;
+
+                    auto ts = std::chrono::steady_clock::now();
+                    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
+                    if (duration.count() > PULSAR_MAX_THREAD_WORK_DURATION_MS)
+                        break;
+                }
             }
         }
     }
@@ -601,6 +627,9 @@ void StoragePulsar::streaming()
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
+
+    if (incremented_mv_streamers)
+        active_mv_streamers.fetch_sub(1);
 
     // Wait for attached views
     if (!shutdown_called.load())
@@ -730,9 +759,13 @@ void registerStoragePulsar(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
-        /// The check applies only to CREATE: existing tables must load on server startup
-        /// and stay attachable regardless of the current value of the setting.
-        if (args.mode <= LoadingStrictnessLevel::CREATE
+        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+
+        /// Existing tables must load on server startup and short ATTACH must keep working
+        /// regardless of the current value of the setting. A full ATTACH supplies a new
+        /// engine definition and is therefore gated exactly like CREATE.
+        if (is_fresh_definition
             && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_pulsar_storage_engine])
         {
             throw Exception(
@@ -782,8 +815,6 @@ void registerStoragePulsar(StorageFactory & factory)
         /// way as `kafka_num_consumers`. The limit depends on the local CPU count, so a definition
         /// read back from metadata may have been accepted on a bigger server. Validate only
         /// a freshly introduced one, so existing tables stay loadable.
-        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
-            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
         const auto max_consumers = std::max<UInt64>(getNumberOfCPUCoresToUse(), 16);
         if (is_fresh_definition && (*pulsar_settings)[PulsarSetting::pulsar_num_consumers].value > max_consumers)
             throw Exception(
@@ -803,6 +834,13 @@ void registerStoragePulsar(StorageFactory & factory)
         if ((*pulsar_settings)[PulsarSetting::pulsar_poll_max_batch_size].changed
             && (*pulsar_settings)[PulsarSetting::pulsar_poll_max_batch_size].value < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting `pulsar_poll_max_batch_size` must be at least 1");
+
+        constexpr auto max_pulsar_batch_size = static_cast<UInt64>(std::numeric_limits<int>::max());
+        if ((*pulsar_settings)[PulsarSetting::pulsar_max_block_size].value > max_pulsar_batch_size)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting `pulsar_max_block_size` must not exceed {}", max_pulsar_batch_size);
+
+        if ((*pulsar_settings)[PulsarSetting::pulsar_poll_max_batch_size].value > max_pulsar_batch_size)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting `pulsar_poll_max_batch_size` must not exceed {}", max_pulsar_batch_size);
 
         /// `MessageQueueSink` advances the row only inside the per-message loop, so a zero limit
         /// would make an `INSERT` into a row-based format spin without ever consuming a row.

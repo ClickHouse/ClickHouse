@@ -20,7 +20,8 @@ public:
         LoggerPtr log_,
         UInt64 max_execution_time_,
         bool commit_in_suffix_ = false,
-        std::optional<UInt64> cancel_epoch_ = {});
+        std::optional<UInt64> cancel_epoch_ = {},
+        bool direct_reader_ = false);
 
     ~PulsarSource() override;
 
@@ -46,6 +47,7 @@ private:
     UInt64 max_execution_time;
     StreamingHandleErrorMode handle_error_mode;
     bool commit_in_suffix;
+    const bool direct_reader;
     /// SYSTEM STOP/CANCEL STREAMING advances the epoch; the source snapshots it at creation
     /// and stops polling (requesting redelivery) once it moves.
     const UInt64 cancel_epoch;
