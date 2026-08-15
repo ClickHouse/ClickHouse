@@ -1,6 +1,7 @@
 #include <DataTypes/transformTypesRecursively.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -224,6 +225,22 @@ DataTypePtr replaceNestedSimpleTypes(const DataTypePtr & type, const std::functi
                 if (const auto * new_tuple = typeid_cast<const DataTypeTuple *>(new_nested.get()))
                     replacement->setCustomization(std::make_unique<DataTypeCustomDesc>(
                         std::make_unique<DataTypeNestedCustomName>(new_tuple->getElements(), new_tuple->getElementNames())));
+            }
+
+            /// `SimpleAggregateFunction` keeps a separate copy of its argument types in its custom
+            /// name. Rebuild that copy too: otherwise a replacement below the Array would either
+            /// discard the custom name or announce an aggregate-state version different from the
+            /// payload written for an older peer.
+            if (const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName()))
+            {
+                DataTypes new_argument_types = simple->getArgumentsDataTypes();
+                for (auto & argument_type : new_argument_types)
+                    if (auto new_argument_type = replaceNestedSimpleTypes(argument_type, callback))
+                        argument_type = new_argument_type;
+
+                replacement->setCustomization(std::make_unique<DataTypeCustomDesc>(
+                    std::make_unique<DataTypeCustomSimpleAggregateFunction>(
+                        simple->getFunction(), new_argument_types, simple->getParameters())));
             }
         }
     }

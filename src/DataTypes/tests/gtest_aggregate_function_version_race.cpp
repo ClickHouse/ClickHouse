@@ -213,12 +213,9 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafPreservesSimpleAggrega
 
 /// The custom name does not have to sit on the versioned leaf itself: in
 /// `SimpleAggregateFunction(anyLast, Array(AggregateFunction(...)))` it sits on the Array, while the
-/// leaf that would be replaced is one level below. A rebuilt Array cannot carry that name faithfully
-/// (only the leaf replacement knows how to rebuild it), so the type is left exactly as it was rather
-/// than replaced with one that lies about its name - the announced type and the payload still agree,
-/// and the column stays recognisable as a simple-aggregate one by the AggregatingMergeTree and
-/// SummingMergeTree merge algorithms.
-GTEST_TEST(DataTypeAggregateFunctionVersion, CustomNameOnWrapperKeepsTheTypeAsItIs)
+/// leaf that is replaced is one level below. Both the Array and the custom name's copy of its argument
+/// type must be rebuilt, so the type name agrees with the payload sent to an older peer.
+GTEST_TEST(DataTypeAggregateFunctionVersion, CustomNameOnWrapperIsRebuilt)
 {
     tryRegisterAggregateFunctions();
 
@@ -230,9 +227,10 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, CustomNameOnWrapperKeepsTheTypeAsIt
     DataTypePtr assigned = simple;
     setVersionToAggregateFunctions(assigned, /*if_empty=*/false, /*revision=*/std::nullopt);
 
-    ASSERT_EQ(assigned.get(), simple.get());
+    ASSERT_NE(assigned.get(), simple.get());
     ASSERT_NE(dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(assigned->getCustomName()), nullptr);
-    ASSERT_EQ(assigned->getName(), name_before);
+    ASSERT_EQ(assigned->getName(), "SimpleAggregateFunction(anyLast, Array(AggregateFunction(sumMap, Array(UInt64), Array(UInt64))))");
+    ASSERT_NE(assigned->getName(), name_before);
 
     /// The shared source type is untouched.
     ASSERT_EQ(simple->getName(), name_before);
