@@ -32,7 +32,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
@@ -73,7 +72,6 @@
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionLog.h>
-#include <Interpreters/checkValuelessSettingChanges.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/QueryMetadataCache.h>
@@ -1252,9 +1250,6 @@ static BlockIO executeQueryImpl(
 
     String query;
     String query_for_logging;
-    /// Set when the AST was deserialized from the JSON dialect rather than built by a parser, so
-    /// parser-impossible shapes that are only checked at interpretation have to be re-validated.
-    bool ast_from_json = false;
     UInt64 normalized_query_hash = 0;
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
 
@@ -1348,7 +1343,6 @@ static BlockIO executeQueryImpl(
                     settings[Setting::max_ast_depth],
                     settings[Setting::max_ast_elements]);
                 checkASTSizeLimits(*out_ast, settings);
-                ast_from_json = true;
             }
         }
         else
@@ -1607,13 +1601,6 @@ static BlockIO executeQueryImpl(
 
         if (out_ast)
         {
-            /// The JSON dialect can pair the `shorthand` flag of a setting change with a value the
-            /// valueless form cannot carry; reject that for the whole tree before any consumer of
-            /// raw `SettingsChanges` executes such a change. Deliberately after `query_for_logging`
-            /// is prepared, so the exception is logged with the AST masked.
-            if (ast_from_json)
-                checkValuelessSettingChanges(*out_ast);
-
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
