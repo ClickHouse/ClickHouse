@@ -419,6 +419,12 @@ namespace
         {
             for (const auto & child : node->children)
             {
+                /// `ApplyWithSubqueryVisitor` substitutes each referenced `WITH` subquery into its use site,
+                /// but leaves unused definitions in the `WITH` list. The latter are never evaluated, so do
+                /// not perform an access check for them.
+                if (const auto * select = node->as<ASTSelectQuery>(); select && child == select->with())
+                    continue;
+
                 if (child->as<ASTSelectQuery>())
                     nested_selects.push_back(child);
                 collectNestedSelectQueries(child, nested_selects);
