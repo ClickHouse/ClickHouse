@@ -33,7 +33,7 @@ SELECT 'Without parallel replicas:';
 SELECT arraySort(groupArray(trim(explain))) FROM (
     EXPLAIN actions = 1
     SELECT events.Time, events.Id, payloads.Payload
-    FROM events LEFT JOIN payloads ON events.Id = payloads.Id
+    FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
     ORDER BY events.Time
     LIMIT 3
 ) WHERE explain LIKE '%ReadType%';
@@ -48,7 +48,7 @@ SELECT 'With parallel replicas, sorting through JOIN:';
 SELECT arraySort(groupArray(trim(explain))) FROM (
     EXPLAIN actions = 1
     SELECT events.Time, events.Id, payloads.Payload
-    FROM events LEFT JOIN payloads ON events.Id = payloads.Id
+    FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
     ORDER BY events.Time
     LIMIT 3
 ) WHERE explain LIKE '%ReadType%';
@@ -57,7 +57,7 @@ SELECT 'With parallel replicas, aggregation through JOIN:';
 SELECT arraySort(groupArray(trim(explain))) FROM (
     EXPLAIN actions = 1
     SELECT toStartOfHour(events.Time) AS t, count()
-    FROM events LEFT JOIN payloads ON events.Id = payloads.Id
+    FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
     GROUP BY t
     ORDER BY t
     LIMIT 3
@@ -67,7 +67,7 @@ SELECT 'With parallel replicas, distinct through JOIN:';
 SELECT arraySort(groupArray(trim(explain))) FROM (
     EXPLAIN actions = 1
     SELECT DISTINCT events.Time
-    FROM events LEFT JOIN payloads ON events.Id = payloads.Id
+    FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
     ORDER BY events.Time
     LIMIT 3
 ) WHERE explain LIKE '%ReadType%';
@@ -76,21 +76,21 @@ SELECT arraySort(groupArray(trim(explain))) FROM (
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 SELECT events.Time, events.Id, payloads.Payload
-FROM events LEFT JOIN payloads ON events.Id = payloads.Id
+FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
 ORDER BY events.Time LIMIT 3
 FORMAT Null;
 
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 SELECT toStartOfHour(events.Time) AS t, count()
-FROM events LEFT JOIN payloads ON events.Id = payloads.Id
+FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
 GROUP BY t ORDER BY t LIMIT 3
 FORMAT Null;
 
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 SELECT DISTINCT events.Time
-FROM events LEFT JOIN payloads ON events.Id = payloads.Id
+FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
 ORDER BY events.Time LIMIT 3
 FORMAT Null;
 
