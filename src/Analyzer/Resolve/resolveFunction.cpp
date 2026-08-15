@@ -160,10 +160,28 @@ bool hasNestedQueryOrUnion(const IQueryTreeNode & node)
     return false;
 }
 
-bool hasUnsafeFunctionForEarlyShortCircuit(const QueryTreeNodePtr & node, const ContextPtr & context)
+bool isFunctionAliasInScope(const String & name, const IdentifierResolveScope & scope)
+{
+    for (const auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+    {
+        if (current_scope->aliases.alias_name_to_lambda_node.contains(name)
+            || current_scope->global_with_aliases.alias_name_to_lambda_node.contains(name))
+            return true;
+    }
+
+    return false;
+}
+
+bool hasUnsafeFunctionForEarlyShortCircuit(
+    const QueryTreeNodePtr & node,
+    const ContextPtr & context,
+    const IdentifierResolveScope & scope)
 {
     if (const auto * function = node->as<FunctionNode>())
     {
+        if (isFunctionAliasInScope(function->getFunctionName(), scope))
+            return true;
+
         auto resolver = FunctionFactory::instance().tryGet(function->getFunctionName(), context);
         if (!resolver)
         {
@@ -177,7 +195,7 @@ bool hasUnsafeFunctionForEarlyShortCircuit(const QueryTreeNodePtr & node, const 
     }
 
     for (const auto & child : node->getChildren())
-        if (child && hasUnsafeFunctionForEarlyShortCircuit(child, context))
+        if (child && hasUnsafeFunctionForEarlyShortCircuit(child, context, scope))
             return true;
 
     return false;
@@ -759,7 +777,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto short_circuit_result = getEarlyShortCircuitResultForAndOr(node, function_name);
         if (short_circuit_result
             && !hasScopeDependentNodesForEarlyShortCircuit(node)
-            && !hasUnsafeFunctionForEarlyShortCircuit(node, scope.context))
+            && !hasUnsafeFunctionForEarlyShortCircuit(node, scope.context, scope))
         {
             /// Resolve a clone in type-only mode. Scalar subqueries are analyzed but not executed,
             /// which gives the logical expression its real Nullable/Bool result type. It also
@@ -818,7 +836,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 auto result_type = node_for_type_inference->getResultType();
                 auto result_column = result_type->createColumnConst(1, static_cast<UInt8>(*short_circuit_result));
                 ConstantValue constant_value{ std::move(result_column), std::move(result_type) };
-                node = std::make_shared<ConstantNode>(std::move(constant_value), node, true /*is_deterministic*/);
+                node = std::make_shared<ConstantNode>(
+                    std::move(constant_value), std::move(node_for_type_inference), true /*is_deterministic*/);
                 subquery_counter = type_inference_analyzer.subquery_counter;
                 return type_inference_projection_names;
             }
