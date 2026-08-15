@@ -169,7 +169,8 @@ It exits `0` when every check passes and `2` on any failure, printing the failin
 The enrollment bundle `handoff.yaml` (written with mode `0600` in the working directory) exists so that re-runs and recovery during the install never need a second token. It contains the connector's API secret in plaintext, so once the install has verified, delete it:
 
 ```bash
-rm handoff.yaml
+rm handoff.yaml        # workstation (Kubernetes installs)
+sudo rm handoff.yaml   # VM host (init ran as root, so the file is root-owned)
 ```
 
 The running connector holds its own copy of the credentials, so nothing operational depends on the file: upgrades and configuration changes never need it, and if you later need `init` again, request a fresh enrollment token from your ClickHouse account team and run `init --enroll --force`.
@@ -182,7 +183,7 @@ Two independent pieces can move out of band, depending on what your environment 
 
 **Bundle delivery.** If you prefer not to redeem a token online, ClickHouse can provide the enrollment bundle directly during onboarding; run `clicklink clctl init --handoff <bundle-file>` in place of `--enroll`. `--handoff` replaces only the token redemption: certificate signing still happens over the enrollment endpoint, so use it alone when that endpoint is reachable from where you run `init`.
 
-**Out-of-band certificate signing.** When the enrollment endpoint is unreachable from where you run `init`, add `--no-auto-sign`: `init` stages everything and writes `clicklink.csr`. Send the CSR to ClickHouse through your account team, then complete the install with the returned certificate and chain: `clicklink clctl init --signed-cert client.crt --chain ca-chain.crt` (on Kubernetes, the staged run prints the full completion command including `--target helm`). Only the CSR travels; the private key never leaves your environment.
+**Out-of-band certificate signing.** When the enrollment endpoint is unreachable from where you run `init`, add `--no-auto-sign`: `init` stages everything and writes `clicklink.csr`. Send the CSR to ClickHouse through your account team, then complete the install with the returned certificate and chain: `sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt` on a VM, or the full completion command the staged run prints on Kubernetes (including `--target helm`). Only the CSR travels; the private key never leaves your environment.
 
 On Kubernetes, `--chart` accepts a chart name resolved through `--chart-repo`, an `oci://` reference, a direct URL, or a local archive or directory, and `--chart-version` defaults to the CLI's own version so the binary and chart move together. To serve images from your own registry, mirror the container image and set `image.repository` in the values overlay. If your egress path presents a private CA to the connector, pass `--api-private-ca` so the API endpoint is verified against the CA chain from the enrollment bundle instead of the system trust store.
 
