@@ -1,4 +1,5 @@
--- Tags: long
+-- Tags: long, no-asan, no-tsan, no-msan, no-ubsan, no-debug
+-- The test is too heavy for our instrumented and debug builds
 
 DROP TABLE IF EXISTS test_long_chain;
 CREATE TABLE test_long_chain (
