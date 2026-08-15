@@ -10,8 +10,8 @@
 -- privileges, and during authentication the credentials are sent to `nats_url`, which comes from
 -- the same query. A path taken from SQL would let anyone who can define a `NATS` source probe the
 -- local filesystem and exfiltrate files the server can read to a NATS server they control. So the
--- path is accepted only from a named collection defined in the server configuration file, or as
--- `nats.credential_file` in the server configuration itself; every SQL spelling is rejected, and
+-- path is accepted only from a named collection defined in the server configuration file, with a
+-- destination that is not overridden by SQL; every SQL path spelling is rejected, and
 -- the inline `nats_credentials` setting is the SQL way to provide the same credentials.
 -- The tables never connect to a NATS server: `127.0.0.1:1` (used by the `nats_config_credentials`
 -- collection from the test server configuration as well) refuses the connection immediately,
@@ -46,6 +46,14 @@ DROP NAMED COLLECTION 04891_nats_sql_collection;
 -- A named collection defined in the server configuration file is operator-controlled,
 -- so a path stored there is accepted: the validation passes and the connection attempt fails.
 CREATE TABLE nats_file_in_config_collection (key UInt64) ENGINE = NATS(nats_config_credentials); -- { serverError CANNOT_CONNECT_NATS }
+
+-- The trusted credential file must stay paired with the trusted destination. Both query spellings
+-- for overriding the destination are rejected before the server attempts to connect.
+CREATE TABLE nats_file_with_url_override (key UInt64)
+ENGINE = NATS(nats_config_credentials, nats_url = 'nats://attacker:4222'); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE nats_file_with_server_list_override (key UInt64) ENGINE = NATS(nats_config_credentials)
+SETTINGS nats_server_list = 'nats://attacker:4222'; -- { serverError BAD_ARGUMENTS }
 
 -- But an override of the path on top of the configuration-defined collection comes from SQL again.
 CREATE TABLE nats_file_over_config_collection (key UInt64)
