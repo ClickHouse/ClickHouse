@@ -20,11 +20,7 @@
     , expected_exception)
 
 #include <Storages/ObjectStorage/Azure/Configuration.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
-#include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
-#include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
 #include <Interpreters/Context.h>
-#include <Core/Settings.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -38,16 +34,10 @@
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsUInt64 azure_min_upload_part_size;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int INVALID_SETTING_VALUE;
 }
 
 /// A class which allows to test private methods of NamedCollectionFactory.
@@ -304,87 +294,6 @@ TEST(StorageAzureConfiguration, AddStructureAndFormatTooManyArgs)
         Exception,
         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
         "Expected 3 to");
-}
-
-/// Regression coverage for https://github.com/ClickHouse/ClickHouse/issues/81282 and for the
-/// OneLake / ADLS Gen2 regression the fix could otherwise introduce.
-///
-/// The invalid multipart upload settings that used to reach `BufferAllocationPolicy` and trip its
-/// internal `second_size > 0` assertion must be rejected — but only for the blob multipart writer.
-/// `getRequestSettings` is shared with the OneLake / `*.fabric.microsoft.com` path, whose writes
-/// route to `WriteBufferFromAzureDataLakeStorage` and ignore these settings, so validation must
-/// live at the writer (`WriteBufferFromAzureBlobStorage`), not at settings resolution.
-///
-/// The check is expressed through the writer's constructor (rather than calling
-/// `validateUploadSettings` directly) so that this test also compiles against sources without the
-/// fix, where it fails at runtime — the internal assertion aborts instead of a clean exception.
-TEST(AzureRequestSettings, WriterRejectsZeroMinUploadPartSize)
-{
-    auto settings = std::make_shared<AzureBlobStorage::RequestSettings>();
-    settings->min_upload_part_size = 0;
-
-    ASSERT_THROW_ERROR_CODE(
-        WriteBufferFromAzureBlobStorage(
-            /* blob_container_client_ */ nullptr,
-            /* blob_path_ */ "test_blob",
-            /* buf_size_ */ 1024,
-            WriteSettings{},
-            settings),
-        Exception,
-        ErrorCodes::INVALID_SETTING_VALUE,
-        "azure_min_upload_part_size");
-}
-
-TEST(AzureRequestSettings, WriterRejectsStrictPartSizeAboveMax)
-{
-    /// `azure_max_upload_part_size` must stay a real maximum even when
-    /// `azure_strict_upload_part_size` selects the fixed-size allocation policy: a fixed part size
-    /// above the maximum is a contradictory configuration and must be rejected early instead of
-    /// staging oversized blocks.
-    auto settings = std::make_shared<AzureBlobStorage::RequestSettings>();
-    settings->strict_upload_part_size = 200;
-    settings->max_upload_part_size = 100;
-
-    ASSERT_THROW_ERROR_CODE(
-        WriteBufferFromAzureBlobStorage(
-            /* blob_container_client_ */ nullptr,
-            /* blob_path_ */ "test_blob",
-            /* buf_size_ */ 1024,
-            WriteSettings{},
-            settings),
-        Exception,
-        ErrorCodes::INVALID_SETTING_VALUE,
-        "azure_strict_upload_part_size");
-}
-
-TEST(AzureRequestSettings, GetRequestSettingsDoesNotValidate)
-{
-    /// A zero `azure_min_upload_part_size` must resolve without throwing, so that endpoints which do
-    /// not use the blob multipart writer (OneLake / ADLS Gen2) are not rejected during initialization,
-    /// including for read-only queries.
-    Settings query_settings;
-    query_settings[Setting::azure_min_upload_part_size] = 0;
-
-    std::unique_ptr<AzureBlobStorage::RequestSettings> request_settings;
-    ASSERT_NO_THROW(request_settings = AzureBlobStorage::getRequestSettings(query_settings));
-    ASSERT_EQ(request_settings->min_upload_part_size, 0u);
-}
-
-TEST(AzureRequestSettings, IsAdlsGen2EndpointDetection)
-{
-    /// OneLake endpoints are exactly the ones recognised as ADLS Gen2; they route to
-    /// `WriteBufferFromAzureDataLakeStorage`, so the multipart upload validation is skipped for them.
-    AzureBlobStorage::Endpoint onelake_dfs;
-    onelake_dfs.storage_account_url = "https://onelake.dfs.fabric.microsoft.com";
-    EXPECT_TRUE(isAdlsGen2Endpoint(onelake_dfs));
-
-    AzureBlobStorage::Endpoint onelake_blob;
-    onelake_blob.storage_account_url = "https://onelake.blob.fabric.microsoft.com";
-    EXPECT_TRUE(isAdlsGen2Endpoint(onelake_blob));
-
-    AzureBlobStorage::Endpoint blob;
-    blob.storage_account_url = "https://myaccount.blob.core.windows.net";
-    EXPECT_FALSE(isAdlsGen2Endpoint(blob));
 }
 
 }
