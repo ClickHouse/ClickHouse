@@ -244,7 +244,7 @@ TEST(DataTypeObjectSharedRegexp, MergeLooksThroughSingleElementTupleMismatchOnTa
 
 TEST(DataTypeObjectSharedRegexp, MergeLooksThroughMapValueMismatchOnTargetSide)
 {
-    /// `map('k', j)`: the JSON value only ever lives in the value type.
+    /// `map('k', j)`: the JSON value lives in the value type here.
     const auto rule_bearing = makeJSONType({{"^tag_", MatchMode::Partial}});
 
     const auto merged = mergeJSONSharedDataPathRules(
@@ -252,6 +252,19 @@ TEST(DataTypeObjectSharedRegexp, MergeLooksThroughMapValueMismatchOnTargetSide)
     const auto * result_map = typeid_cast<const DataTypeMap *>(merged.get());
     ASSERT_TRUE(result_map);
     EXPECT_EQ(asJSON(result_map->getValueType()).getSharedDataPathRules().size(), 1);
+}
+
+TEST(DataTypeObjectSharedRegexp, MergeLooksThroughMapKeyMismatchOnTargetSide)
+{
+    /// `map(j, 1)`: DataTypeMap::isValidKeyType permits a JSON key (it only excludes Nullable), so
+    /// the JSON value can live in the key type instead of the value type.
+    const auto rule_bearing = makeJSONType({{"^tag_", MatchMode::Partial}});
+
+    const auto merged = mergeJSONSharedDataPathRules(
+        std::make_shared<DataTypeMap>(makeJSONType({}), std::make_shared<DataTypeString>()), rule_bearing);
+    const auto * result_map = typeid_cast<const DataTypeMap *>(merged.get());
+    ASSERT_TRUE(result_map);
+    EXPECT_EQ(asJSON(result_map->getKeyType()).getSharedDataPathRules().size(), 1);
 }
 
 TEST(DataTypeObjectSharedRegexp, MergeLooksThroughArrayMismatchOnSourceSide)
@@ -282,11 +295,22 @@ TEST(DataTypeObjectSharedRegexp, MergeLooksThroughSingleElementTupleMismatchOnSo
 
 TEST(DataTypeObjectSharedRegexp, MergeLooksThroughMapValueMismatchOnSourceSide)
 {
-    /// Source-side mirror: the JSON value can only have come from the map's value type.
+    /// Source-side mirror: the JSON value came from the map's value type here.
     const auto rule_bearing = makeJSONType({{"^tag_", MatchMode::Partial}});
 
     const auto merged = mergeJSONSharedDataPathRules(
         makeJSONType({}), std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), rule_bearing));
+    EXPECT_EQ(asJSON(merged).getSharedDataPathRules().size(), 1);
+}
+
+TEST(DataTypeObjectSharedRegexp, MergeLooksThroughMapKeyMismatchOnSourceSide)
+{
+    /// Source-side mirror of the key case: `mapKeys(m)[1]` over `m Map(JSON(...), UInt8)` resolves
+    /// its own bare type against a source column whose JSON lives in the map's key type.
+    const auto rule_bearing = makeJSONType({{"^tag_", MatchMode::Partial}});
+
+    const auto merged = mergeJSONSharedDataPathRules(
+        makeJSONType({}), std::make_shared<DataTypeMap>(rule_bearing, std::make_shared<DataTypeString>()));
     EXPECT_EQ(asJSON(merged).getSharedDataPathRules().size(), 1);
 }
 
