@@ -39,7 +39,7 @@ public:
     using Base = IAggregateFunctionHelper<AggregateFunctionTimeseriesQuantileVarying>;
     using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType>;
 
-    static String getName() { return "timeSeriesQuantileVaryingToGrid"; }
+    String getName() const override { return "timeSeriesQuantileVaryingToGrid"; }
 
     bool shouldPrintParametersWithTypes() const override { return true; }
 

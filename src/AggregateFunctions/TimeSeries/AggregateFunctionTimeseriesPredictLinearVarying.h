@@ -43,7 +43,7 @@ public:
     using RegressionTraits = AggregateFunctionTimeseriesLinearRegressionTraits<TimestampType, IntervalType, ValueType, /*is_predict=*/true>;
     using Summary = typename RegressionTraits::Summary;
 
-    static String getName() { return "timeSeriesPredictLinearVaryingToGrid"; }
+    String getName() const override { return "timeSeriesPredictLinearVaryingToGrid"; }
 
     bool shouldPrintParametersWithTypes() const override { return true; }
 
