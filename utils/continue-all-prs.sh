@@ -719,9 +719,46 @@ triage_state_is_safe()
 
     read -r first_parent second_parent extra_parent < <(git -C "$wt" show -s --format='%P' HEAD)
     [[ "$first_parent" == "$start_head" && "$second_parent" == "$base_head" && -z "$extra_parent" ]] || return 1
-    expected_tree=$(git -C "$wt" merge-tree --write-tree "$start_head" "$base_head") || return 1
+    # `--write-tree` was added after Git 2.34, which is still used by the
+    # automation image.  The non-writing form produces the same resulting
+    # tree object for a clean merge and works with that version too.
+    expected_tree=$(git -C "$wt" merge-tree "$start_head" "$base_head" | awk 'NR == 1 { print $1; exit }') || return 1
+    [[ "$expected_tree" =~ ^[0-9a-f]{40,64}$ ]] || return 1
     actual_tree=$(git -C "$wt" rev-parse "$head^{tree}") || return 1
     [[ "$actual_tree" == "$expected_tree" ]]
+}
+
+# Check out the actual PR head before triage begins, and return the data needed
+# to validate and push a mechanical base merge.  A detached checkout avoids
+# reserving one shared local branch when multiple workers process the same PR.
+prepare_triage_worktree()
+{
+    local wt="$1" number="$2"
+    local meta base_ref head_ref head_repo_url head_owner author cross_repo maintainer_can_modify
+    local remote pushable=0
+
+    meta=$(gh pr view "$number" --repo "$REPO" \
+        --json baseRefName,headRefName,headRepository,headRepositoryOwner,author,isCrossRepository,maintainerCanModify \
+        --jq '[.baseRefName, .headRefName, (.headRepository.url // ""), (.headRepositoryOwner.login // ""), (.author.login // ""), (.isCrossRepository | tostring), (.maintainerCanModify | tostring)] | @tsv') || return 1
+    IFS=$'\t' read -r base_ref head_ref head_repo_url head_owner author cross_repo maintainer_can_modify <<< "$meta"
+    [[ -n "$base_ref" && -n "$head_ref" && -n "$head_repo_url" ]] || return 1
+
+    remote="origin"
+    if [[ "$cross_repo" == "true" ]]; then
+        remote="pr-${head_owner}"
+        git -C "$wt" remote add "$remote" "$head_repo_url" 2>/dev/null || git -C "$wt" remote set-url "$remote" "$head_repo_url"
+        if [[ "$head_owner" == "$GH_USER" || "$author" == "$GH_USER" || "$maintainer_can_modify" == "true" ]]; then
+            pushable=1
+        fi
+    else
+        pushable=1
+    fi
+
+    git -C "$wt" fetch -q "$remote" "$head_ref" || return 1
+    git -C "$wt" checkout --detach -q "$remote/$head_ref" || return 1
+    git -C "$wt" fetch -q origin "$base_ref" || return 1
+
+    printf '%s\t%s\t%s\t%s\t%s\n' "$(git -C "$wt" rev-parse HEAD)" "$(git -C "$wt" rev-parse "origin/$base_ref")" "$head_ref" "$remote" "$pushable"
 }
 
 discard_untrusted_triage_changes()
@@ -756,7 +793,7 @@ run_continue_pr()
     local wt="$1" number="$2" log="$3"
     local url="https://github.com/$REPO/pull/$number"
     local sid deadline iter phase_iter ec now remaining build_steer prompt usage
-    local phase active_model system_prompt turn_prompt handoff triage_start_head triage_base_head triage_head_ref triage_hooks_dir
+    local phase active_model system_prompt turn_prompt handoff triage_start_head triage_base_head triage_head_ref triage_push_remote triage_pushable triage_hooks_dir
     local u_i u_o u_ci u_co u_cost
     local -a model_args triage_git_args
     sid=""
@@ -766,13 +803,13 @@ run_continue_pr()
     triage_start_head=""
     triage_base_head=""
     triage_head_ref=""
+    triage_push_remote=""
+    triage_pushable=0
     triage_hooks_dir=""
     if [[ "$phase" == "triage" ]]; then
-        triage_start_head=$(git -C "$wt" rev-parse HEAD)
-        local base_ref
-        read -r base_ref triage_head_ref < <(gh pr view "$number" --repo "$REPO" --json baseRefName,headRefName --jq '[.baseRefName, .headRefName] | @tsv')
-        git -C "$wt" fetch -q origin "$base_ref"
-        triage_base_head=$(git -C "$wt" rev-parse "origin/$base_ref")
+        local triage_metadata
+        triage_metadata=$(prepare_triage_worktree "$wt" "$number") || return 1
+        IFS=$'\t' read -r triage_start_head triage_base_head triage_head_ref triage_push_remote triage_pushable <<< "$triage_metadata"
         triage_hooks_dir=$(prepare_triage_push_guard "$wt")
     fi
     # Steer the worker to a persistent, ccache-backed build directory in this
@@ -914,7 +951,15 @@ ${system_prompt}"
         # turn and time limits instead of discarding its completed work.
         if grep -qE "^${DONE_MARKER}[[:space:]]*$" "$log.last"; then
             if [[ "$phase" != "triage" ]] || triage_state_is_safe "$wt" "$triage_start_head" "$triage_base_head"; then
-                if [[ "$phase" == "triage" ]] && ! git -C "$wt" push origin "HEAD:refs/heads/$triage_head_ref" >> "$log" 2>&1; then
+                if [[ "$phase" == "triage" && "$triage_pushable" != "1" ]]; then
+                    handoff=$(cat "$log.last")
+                    echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL because the PR head is not pushable =====" >> "$log"
+                    phase="coding"
+                    phase_iter=0
+                    sid=""
+                    continue
+                fi
+                if [[ "$phase" == "triage" ]] && ! git -C "$wt" push "$triage_push_remote" "HEAD:refs/heads/$triage_head_ref" >> "$log" 2>&1; then
                     handoff=$(cat "$log.last")
                     echo "===== automatic handoff from $TRIAGE_MODEL to $MODEL after the validated triage update could not be pushed =====" >> "$log"
                     phase="coding"
