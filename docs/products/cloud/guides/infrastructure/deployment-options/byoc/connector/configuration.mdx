@@ -18,10 +18,11 @@ The connector has one configuration surface per install target.
 
 ```bash
 CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
 helm upgrade --install clicklink-connector clicklink-connector \
   --repo https://releases.clicklink.clickhouse.com/charts \
   --version "${CLICKLINK_VERSION#v}" \
-  --namespace <connector-namespace> \
+  --namespace "${CONNECTOR_NAMESPACE}" \
   -f clicklink-values.yaml
 ```
 </Tab>
@@ -72,12 +73,13 @@ networkPolicy:
 Provision read-only access for each component from your workstation:
 
 ```bash
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
 clicklink clctl scraper access provision --target helm \
-  --target-namespace <connector-namespace> \
+  --target-namespace "${CONNECTOR_NAMESPACE}" \
   --instance analytics --instance-namespace clickhouse \
   --server <kubernetes-api-server-url>
 clicklink clctl troubleshoot access provision --target helm \
-  --target-namespace <connector-namespace> \
+  --target-namespace "${CONNECTOR_NAMESPACE}" \
   --instance analytics --instance-namespace clickhouse \
   --server <kubernetes-api-server-url>
 ```

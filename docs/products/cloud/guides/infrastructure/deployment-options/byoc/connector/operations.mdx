@@ -15,10 +15,11 @@ This page covers day-2 operation of the BYOC connector on both install targets. 
 Upgrade the Helm release from the public chart repository, reusing the values overlay that `init` staged:
 
 ```bash
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
 helm upgrade --install clicklink-connector clicklink-connector \
   --repo https://releases.clicklink.clickhouse.com/charts \
   --version <version> \
-  -n <connector-namespace> \
+  -n "${CONNECTOR_NAMESPACE}" \
   -f clicklink-values.yaml
 ```
 
@@ -68,7 +69,8 @@ To inspect the current expiry:
 sudo openssl x509 -in /etc/clicklink/tls/client.crt -noout -enddate
 
 # Kubernetes
-kubectl get secret clicklink-mtls -n <connector-namespace> -o jsonpath='{.data.tls\.crt}' \
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+kubectl get secret clicklink-mtls -n "${CONNECTOR_NAMESPACE}" -o jsonpath='{.data.tls\.crt}' \
   | base64 -d | openssl x509 -noout -enddate
 ```
 
@@ -117,14 +119,15 @@ sudo ./uninstall.sh --purge
 ### Kubernetes {#uninstall-kubernetes}
 
 ```bash
-helm uninstall clicklink-connector -n <connector-namespace>
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+helm uninstall clicklink-connector -n "${CONNECTOR_NAMESPACE}"
 ```
 
 The Secrets that `init` created are not chart-owned and survive the uninstall. Delete them explicitly, including the per-instance access Secrets for every instance you configured:
 
 ```bash
-kubectl delete secret clicklink-hmac clicklink-mtls -n <connector-namespace>
-kubectl delete secret -n <connector-namespace> \
+kubectl delete secret clicklink-hmac clicklink-mtls -n "${CONNECTOR_NAMESPACE}"
+kubectl delete secret -n "${CONNECTOR_NAMESPACE}" \
   clicklink-connector-scraper-access-<instance> \
   clicklink-connector-troubleshooter-access-<instance>
 ```

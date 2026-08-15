@@ -78,6 +78,8 @@ GRANT SELECT ON `system`.`users` TO `pcm_troubleshooter`;
 GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
 ```
 
+The `system.user_directories` grant on both users exists for one diagnostic: `clicklink clctl preflight` runs with the connector's own credentials and checks how the instance stores its ClickHouse users (replicated or local). The table holds user-storage configuration metadata, not user data, and neither the scrape set nor the session table allowlist includes it, so no scrape or session output path reads it; without the grant, that one preflight check reports itself skipped and everything else proceeds.
+
 There are no write, DDL, or administrative grants of any kind. When a second connector deployment shares an instance, its users carry a suffix (`pcm_scraper_<suffix>`) with the same grant sets.
 
 ### Kubernetes RBAC {#kubernetes-rbac}

@@ -15,7 +15,7 @@ This page takes you from an enrollment token to a healthy, verified connector. T
 For every install:
 
 - **Your connector endpoint and enrollment token**, provided by ClickHouse during onboarding (see Step 1).
-- **Egress on port 443** to `https://<subdomain>.<connector-domain>` and `https://<subdomain>.enroll.<connector-domain>`, plus `releases.clicklink.clickhouse.com` and Amazon ECR Public at install time.
+- **Egress on port 443** to `https://<subdomain>.<connector-domain>` and `https://<subdomain>.enroll.<connector-domain>`, plus `releases.clicklink.clickhouse.com` and Amazon ECR Public at install time. This applies to the standard enrollment path; when any of these are unreachable, every artifact and step has an out-of-band alternative, see [air-gapped and mirrored installs](#air-gapped-and-mirrored-installs).
 - **A reachable ClickHouse native listener** from where the connector runs: secure (9440) or plaintext (9000), auto-detected on Kubernetes.
 - **ClickHouse admin access for provisioning**: a passwordless `default` user, a password (prompted, or supplied with `--ch-admin-password-stdin`), or an operator-managed instance, where provisioning switches to CR injection and needs no password.
 - **cosign** wherever you download release artifacts, to verify signatures.
@@ -150,7 +150,8 @@ Paste the enrollment token at the hidden prompt. The command redeems the token (
 To confirm by hand on Kubernetes:
 
 ```bash
-kubectl get pods -n <connector-namespace>
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+kubectl get pods -n "${CONNECTOR_NAMESPACE}"
 ```
 
 All connector pods should be `Running` and ready.

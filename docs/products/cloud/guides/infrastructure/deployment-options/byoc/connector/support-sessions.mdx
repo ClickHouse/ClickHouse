@@ -31,7 +31,8 @@ You choose your session posture, including the operator allowlist, during `click
 The gateway listens on port 8443 of the troubleshooter pod. If you have cluster access, reach it over a port-forward; the tunnel rides the Kubernetes API server's TLS:
 
 ```bash
-kubectl -n clicklink port-forward statefulset/clicklink-connector-troubleshooter 8443:8443
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+kubectl -n "${CONNECTOR_NAMESPACE}" port-forward statefulset/clicklink-connector-troubleshooter 8443:8443
 ```
 
 Then, in another terminal, enable a session:
@@ -118,10 +119,12 @@ Every gateway call and every command executed during a session is appended to `/
 
 Session lifecycle entries use the `clctl.session.enable`, `clctl.session.disable`, and `clctl.session.status` command types, with the enable `--reason` recorded as `command_text`; commands run during a session are logged with the same schema. `status` distinguishes successful calls from `unauthorized`, `forbidden`, and `rate_limited` attempts, so denied access shows up in the log too.
 
-On a VM, read the file directly. On Kubernetes the container image has no shell, so read it through the CLI:
+On a VM, read the file directly with `clicklink clctl troubleshoot audit tail`. On Kubernetes the log lives inside the troubleshooter pod, and the container image has no shell, so invoke the binary's own reader through `kubectl exec`:
 
 ```bash
-clicklink clctl troubleshoot audit tail
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+kubectl -n "${CONNECTOR_NAMESPACE}" exec statefulset/clicklink-connector-troubleshooter -- \
+  /clicklink clctl troubleshoot audit tail
 ```
 
 The log is a plain file inside your environment; ship it to your own SIEM like any other host or container log.
