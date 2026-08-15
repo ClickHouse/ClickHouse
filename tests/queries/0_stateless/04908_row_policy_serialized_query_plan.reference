@@ -11,6 +11,10 @@ distinct sqp=1	1
 distinct sqp=1	2
 distinct sqp=1	3
 distinct sqp=1	4
+route sqp=1	5
+route sqp=0	5
+route shipped as plan	1
+route shipped as text	0
 subq policy local	[0,3,6,9]
 subq policy sqp=1	[0,3,6,9]
 subq policy sqp=0	[0,3,6,9]

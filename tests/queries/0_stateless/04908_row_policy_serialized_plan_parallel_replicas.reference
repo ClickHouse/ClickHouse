@@ -1,4 +1,6 @@
 sum(x)	499999500000
 count()	1000000
 max(y)	999999
+route	999999
+remote replicas got read tasks	1
 no policy	2000000

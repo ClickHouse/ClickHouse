@@ -35,6 +35,24 @@ SELECT 'prewhere sqp=1', count() FROM rp_dist PREWHERE x > 1 SETTINGS serialize_
 
 SELECT 'distinct sqp=1', y FROM rp_dist GROUP BY y ORDER BY y SETTINGS serialize_query_plan = 1;
 
+-- Every arm above asserts values the text-shipping path produces too, so none of them would notice
+-- a read that stopped being shipped as a plan. The initiator records a used row policy only where it
+-- resolved one itself, which is what building the plan for shipping makes it do; when it ships text
+-- the policy is resolved on the executing node instead and no policy is recorded here.
+SELECT 'route sqp=1', count() FROM rp_dist
+SETTINGS serialize_query_plan = 1, optimize_trivial_count_query = 0, log_comment = '04908_route_sqp1';
+SELECT 'route sqp=0', count() FROM rp_dist
+SETTINGS serialize_query_plan = 0, optimize_trivial_count_query = 0, log_comment = '04908_route_sqp0';
+SYSTEM FLUSH LOGS query_log;
+SELECT 'route shipped as plan', length(used_row_policies) > 0 FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '04908_route_sqp1'
+  AND type = 'QueryFinish' AND is_initial_query
+ORDER BY event_time_microseconds DESC LIMIT 1;
+SELECT 'route shipped as text', length(used_row_policies) > 0 FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '04908_route_sqp0'
+  AND type = 'QueryFinish' AND is_initial_query
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
 -- A policy on the Distributed table itself cannot be pushed into a remote read: still refused.
 DROP ROW POLICY IF EXISTS rp_dist_policy ON rp_dist;
 CREATE ROW POLICY rp_dist_policy ON rp_dist FOR SELECT USING y < 5 TO ALL;
