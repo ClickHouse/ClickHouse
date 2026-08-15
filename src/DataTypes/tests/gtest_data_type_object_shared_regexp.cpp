@@ -403,5 +403,64 @@ TEST(DataTypeObjectSharedRegexp, GetTypeOfNestedObjectsWithNoRulesDoesNotSetAPre
     EXPECT_TRUE(nested_typed_paths.contains("forced"));
 }
 
+TEST(DataTypeObjectSharedRegexp, GetTypeOfNestedObjectsPropagatesRegexpSkipPathsUnchanged)
+{
+    /// JSON(SKIP REGEXP '^arr[.]skip$', SHARED REGEXP '^arr[.]forced$'): unlike typed paths and
+    /// literal SKIP entries (which are declared relative to one specific prefix and so get
+    /// filtered/re-rooted onto the nested object), a SKIP REGEXP pattern is matched against the
+    /// reconstructed root-relative path the same way SHARED REGEXP is (see
+    /// ObjectJSONNode::shouldSkipPath in JSONExtractTree.cpp), so it must carry through to the
+    /// inferred nested object completely unchanged rather than being filtered by prefix membership.
+    const auto root = std::make_shared<DataTypeObject>(
+        DataTypeObject::SchemaFormat::JSON,
+        std::unordered_map<String, DataTypePtr>{},
+        std::unordered_set<String>{},
+        std::vector<String>{"^arr[.]skip$"},
+        DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS,
+        DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES,
+        std::vector<JSONPathRegexpRule>{{"^arr[.]forced$", MatchMode::Full}});
+    const auto & root_object = asJSON(root);
+    ASSERT_EQ(root_object.getPathRegexpsToSkip().size(), 1);
+
+    const auto for_arr = root_object.getTypeOfNestedObjects("arr.");
+    const auto & for_arr_object = asJSON(for_arr);
+
+    ASSERT_EQ(for_arr_object.getPathRegexpsToSkip().size(), 1);
+    EXPECT_EQ(for_arr_object.getPathRegexpsToSkip().front(), "^arr[.]skip$");
+    EXPECT_EQ(for_arr_object.getSharedDataPathPrefix(), "arr.");
+}
+
+TEST(DataTypeObjectSharedRegexp, GetTypeOfNestedObjectsWithOnlyRegexpSkipAndNoRulesKeepsRegexpsButNoPrefix)
+{
+    /// JSON(SKIP REGEXP '^arr[.]skip$') with no SHARED REGEXP rules at all: the constructor still
+    /// rejects a non-empty shared_regexp_path_prefix without at least one rule (see
+    /// GetTypeOfNestedObjectsWithNoRulesDoesNotSetAPrefix above), so the inferred nested object's
+    /// prefix stays empty even though its path_regexps_to_skip is non-empty. This is a real, narrow,
+    /// known gap: with the prefix empty, ObjectJSONNode::shouldSkipPath matches the regexp against
+    /// the element's bare local path instead of the intended root-relative one, so a pattern written
+    /// for the full path (e.g. '^arr[.]skip$') will generally fail to match "skip" alone. Regexp SKIP
+    /// combined with at least one SHARED REGEXP rule on the same object (the shape this fix targets,
+    /// and the only shape that gives the prefix a non-empty value) is unaffected -- see
+    /// GetTypeOfNestedObjectsPropagatesRegexpSkipPathsUnchanged above.
+    const auto root = std::make_shared<DataTypeObject>(
+        DataTypeObject::SchemaFormat::JSON,
+        std::unordered_map<String, DataTypePtr>{},
+        std::unordered_set<String>{},
+        std::vector<String>{"^arr[.]skip$"},
+        DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS,
+        DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES,
+        std::vector<JSONPathRegexpRule>{});
+    const auto & root_object = asJSON(root);
+    ASSERT_TRUE(root_object.getSharedDataPathRules().empty());
+    ASSERT_EQ(root_object.getPathRegexpsToSkip().size(), 1);
+
+    DataTypePtr for_arr;
+    EXPECT_NO_THROW(for_arr = root_object.getTypeOfNestedObjects("arr."));
+    const auto & for_arr_object = asJSON(for_arr);
+    EXPECT_TRUE(for_arr_object.getSharedDataPathPrefix().empty());
+    ASSERT_EQ(for_arr_object.getPathRegexpsToSkip().size(), 1);
+    EXPECT_EQ(for_arr_object.getPathRegexpsToSkip().front(), "^arr[.]skip$");
+}
+
 }
 }
