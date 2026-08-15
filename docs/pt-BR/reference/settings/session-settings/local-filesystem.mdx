@@ -20,6 +20,8 @@ Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Método de leitura de dados do sistema de arquivos local; um de: read, pread, mmap, io&#95;uring, pread&#95;threadpool.
 
+O método &#39;pread&#95;threadpool&#39; delega uma leitura a um pool de threads, a menos que os dados já estejam no cache de páginas, o que é verificado com a chamada de sistema `preadv2` e a flag `RWF_NOWAIT`. Essa verificação requer o Linux 5.11 ou mais recente, e a chamada de sistema não deve ser rejeitada por um perfil `seccomp` de um runtime de contêiner. Na inicialização, é verificado se a chamada de sistema pode ser usada e, caso não possa, o valor padrão dessa configuração é alterado para &#39;pread&#39;, pois delegar cada leitura a um pool de threads, incluindo as leituras atendidas pelo cache de páginas, é custoso; o motivo é informado no log do servidor. Um perfil `seccomp` é detectado apenas se rejeitar a chamada de sistema com um código de erro, como fazem os runtimes de contêiner; um perfil que encerra o processo não pode ser detectado. Um valor definido explicitamente, na configuração ou com `SET`, não é alterado.
+
 O método &#39;io&#95;uring&#39; é experimental e não funciona com Log, TinyLog, StripeLog, File, Set e Join, nem com outras tabelas com arquivos aos quais é possível acrescentar dados, na presença de leituras e gravações concorrentes.
 Se você ler vários artigos sobre &#39;io&#95;uring&#39; na internet, não se deixe impressionar por eles. Não é um método melhor para leitura de arquivos, exceto no caso de uma grande quantidade de pequenas solicitações de E/S, o que não ocorre no ClickHouse. Não há motivo para habilitar &#39;io&#95;uring&#39;.
 
