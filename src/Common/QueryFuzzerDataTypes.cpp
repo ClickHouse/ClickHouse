@@ -68,7 +68,7 @@ const std::unordered_set<String> & QueryFuzzer::geoAliasNames()
 static DataTypePtr makeTypeAllowedInsideVariant(const DataTypePtr & type)
 {
     if (isNullableOrLowCardinalityNullable(type))
-        return removeNullableOrLowCardinalityNullable(type);
+        return makeTypeAllowedInsideVariant(removeNullableOrLowCardinalityNullable(type));
 
     const auto type_id = type->getTypeId();
     if (type_id == TypeIndex::Variant || type_id == TypeIndex::Dynamic)
