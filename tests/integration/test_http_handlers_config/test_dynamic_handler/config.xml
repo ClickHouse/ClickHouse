@@ -49,5 +49,13 @@
                 <user>without_password</user>
             </handler>
         </rule>
+        <rule>
+            <methods>GET,POST,PUT,DELETE</methods>
+            <url>/test_dynamic_handler_put_delete</url>
+            <handler>
+                <type>dynamic_query_handler</type>
+                <query_param_name>get_dynamic_handler_query</query_param_name>
+            </handler>
+        </rule>
     </http_handlers>
 </clickhouse>
