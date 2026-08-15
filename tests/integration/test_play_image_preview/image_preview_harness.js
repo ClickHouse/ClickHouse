@@ -1003,7 +1003,7 @@ async function main() {
         check('fallback-tokenizer', 'identifier uses of format do not become a FORMAT clause',
             res.identifier === null, res);
         check('fallback-tokenizer', 'a real FORMAT clause is still detected without WASM',
-            res.clause && res.clause.format === 'JSONCompactColumns', res);
+            res.clause && res.clause.name === 'JSONCompactColumns', res);
     }
 
     if (failures === 0) {
