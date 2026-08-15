@@ -394,12 +394,12 @@ size_t MaterializedPostgreSQLConsumer::readTupleData(
             case 'u': /// TOAST value && unchanged at the same time. Actual value is not sent.
             {
                 /// A replica identity column that arrives as an unchanged TOAST value leaves the
-                /// row unidentifiable: its value is neither in this message nor derivable from
-                /// anything else in it, so neither this row nor the previous version of it can be
-                /// addressed by key. Inserting a default value would corrupt the key silently and
-                /// make the lookup below read some unrelated row, so refuse the message instead.
+                /// row unidentifiable unless an old key tuple was supplied. Inserting a default
+                /// value would otherwise corrupt the key silently and make the lookup below read
+                /// some unrelated row, so refuse the message instead.
                 if (std::find(buffer.key_column_indices.begin(), buffer.key_column_indices.end(), static_cast<size_t>(column_idx))
-                    != buffer.key_column_indices.end())
+                        != buffer.key_column_indices.end()
+                    && !key_source_row_idx)
                 {
                     discard_row = true;
                     throw Exception(

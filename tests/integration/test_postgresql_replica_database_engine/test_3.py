@@ -357,6 +357,58 @@ def test_toast_in_replica_identity(started_cluster):
     pg_manager.drop_materialized_db()
 
 
+def test_toast_in_changed_composite_replica_identity(started_cluster):
+    table = "test_toast_in_changed_composite_replica_identity"
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        '''CREATE TABLE "{}" (id integer, toast_key text, other text, PRIMARY KEY (id, toast_key))''',
+    )
+    pg_manager.execute(
+        f"ALTER TABLE {table} ALTER COLUMN toast_key SET STORAGE EXTERNAL"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+
+    pg_manager.execute(
+        f"INSERT INTO {table} (id, toast_key, other) "
+        "VALUES (1, repeat('k', 2500), 'initial')"
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+
+    # Changing one primary-key component sends the old `K` tuple. Its toasted
+    # component is available there, even though the new tuple marks it `u`.
+    pg_manager.execute(
+        f"UPDATE {table} SET id = 2, other = 'updated' WHERE id = 1"
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(
+            f"SELECT id, length(toast_key), other FROM test_database.{table}"
+        )
+        == "2\\t2500\\tupdated\\n"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
 def test_replica_consumer(started_cluster):
     table = "test_replica_consumer"
     pg_manager_instance2.restart()
