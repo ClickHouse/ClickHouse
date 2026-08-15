@@ -219,6 +219,16 @@ $CLICKHOUSE_CLIENT -n -q "
     CREATE HYPOTHETICAL INDEX auto_minmax_index_x ON t_hypo_auto (b) TYPE minmax GRANULARITY 1;
 " 2>&1 | grep -m1 -o 'reserved index name'
 
+echo "--- CREATE TABLE rejects reserved auto_minmax_index_ name with the default setting ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_auto_create;
+    CREATE TABLE t_hypo_auto_create
+    (
+        a UInt64,
+        INDEX auto_minmax_index_a a TYPE minmax GRANULARITY 1
+    ) ENGINE = MergeTree ORDER BY tuple();
+" 2>&1 | grep -m1 -o 'reserved index name'
+
 echo "--- CREATE rejects unknown index type ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_bad;
