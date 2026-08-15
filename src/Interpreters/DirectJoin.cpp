@@ -180,7 +180,7 @@ JoinResultPtr DirectKeyValueJoin::joinBlock(Block block)
         /// the number of matched left rows is `total - zeros`. Holds for both one-to-one stores (one
         /// row per key) and the one-to-many MergeTree entity (matched keys are all-ones, a miss is a
         /// single zero).
-        const size_t total = key_col.column->size();
+        const size_t total = key_columns.front().column->size();
         const size_t matched = total - (null_map.size() - countBytesInFilter(null_map));
         left_rows_total.fetch_add(total, std::memory_order_relaxed);
         left_rows_matched.fetch_add(matched, std::memory_order_relaxed);
