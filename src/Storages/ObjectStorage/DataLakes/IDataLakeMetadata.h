@@ -15,6 +15,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/IStorage.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/MutationCommands.h>
@@ -126,6 +127,9 @@ public:
 
     virtual bool operator==(const IDataLakeMetadata & other) const = 0;
 
+    /// Returns the full table location URI (e.g. `s3a://bucket/prefix/table/`)
+    virtual std::string getTableLocation() const { return {}; }
+
     /// Return iterator to `data files`.
     using FileProgressCallback = std::function<void(FileProgress)>;
     virtual ObjectIterator iterate(
@@ -221,7 +225,7 @@ public:
         throwNotImplemented("import");
     }
 
-    virtual void commitExportPartitionTransaction(
+    virtual IStorage::ExportPartitionCommitInfo commitExportPartitionTransaction(
         std::shared_ptr<DataLake::ICatalog> /* catalog */,
         const StorageID & /* table_id */,
         const String & /* transaction_id */,

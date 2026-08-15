@@ -109,13 +109,15 @@ WriteBufferFromAzureDataLakeStorage::WriteBufferFromAzureDataLakeStorage(
     const WriteSettings & write_settings_,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
     const String & container_for_logging_,
-    BlobStorageLogWriterPtr blob_log_)
+    BlobStorageLogWriterPtr blob_log_,
+    FileClientRefreshCallback credentials_refresh_callback_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , log(getLogger("WriteBufferFromAzureDataLakeStorage"))
     , file_client(makeAdlsGen2FileClient(endpoint_, auth_method_, blob_client_options_, blob_path_))
     , blob_path(blob_path_)
     , write_settings(write_settings_)
     , max_unexpected_write_error_retries(settings_->max_unexpected_write_error_retries)
+    , credentials_refresh_callback(std::move(credentials_refresh_callback_))
     , container_for_logging(container_for_logging_)
     , blob_log(std::move(blob_log_))
 {
@@ -131,6 +133,21 @@ WriteBufferFromAzureDataLakeStorage::~WriteBufferFromAzureDataLakeStorage()
     {
         LOG_INFO(log, "WriteBufferFromAzureDataLakeStorage is not finalized in destructor. File `{}` may not be written to ADLS Gen2.", blob_path);
     }
+}
+
+bool WriteBufferFromAzureDataLakeStorage::tryRefreshCredentials(const Azure::Core::RequestFailedException & e)
+{
+    if (credentials_refreshed || !credentials_refresh_callback || !isAzureAccessTokenExpiredError(e))
+        return false;
+
+    auto new_file_client = credentials_refresh_callback();
+    if (!new_file_client)
+        return false;
+
+    file_client = std::move(*new_file_client);
+    credentials_refreshed = true;
+    LOG_DEBUG(log, "Refreshed Azure credentials for `{}` after an authentication failure", blob_path);
+    return true;
 }
 
 void WriteBufferFromAzureDataLakeStorage::runWithRetries(
@@ -167,6 +184,13 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
+            /// Credentials are refreshed at most once, so the retry after it costs no attempt.
+            if (tryRefreshCredentials(e))
+            {
+                --attempt;
+                continue;
+            }
+
             const bool retryable = isRetryableAzureException(e, write_settings.is_initial_access_check);
             if (!retryable || attempt >= max_unexpected_write_error_retries)
             {

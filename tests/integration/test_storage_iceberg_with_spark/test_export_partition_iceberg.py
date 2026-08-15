@@ -712,6 +712,19 @@ def test_idempotency_after_commit_crash(export_cluster):
     count = int(node.query(f"SELECT count() FROM {iceberg}").strip())
     assert count == 3, f"Expected 3 rows (no duplicates), got {count}"
 
+    # The already-committed early-exit in commitExportPartitionTransaction surfaces
+    # a sentinel note in committed_metadata_file (the original committer's paths
+    # are not recoverable from inside the call). The sentinel makes the situation
+    # visible in system.replicated_partition_exports rather than leaving the
+    # commit_info columns empty.
+    committed_metadata_file = node.query(
+        f"SELECT committed_metadata_file FROM system.replicated_partition_exports "
+        f"WHERE source_table = '{source}' AND partition_id = '{pid}'"
+    ).strip()
+    assert committed_metadata_file == "<committed in a previous run, paths unavailable>", (
+        f"Expected already-committed sentinel after idempotent retry, got: {committed_metadata_file!r}"
+    )
+
 
 # ---------------------------------------------------------------------------
 # Replicated tests — IcebergS3, no catalog

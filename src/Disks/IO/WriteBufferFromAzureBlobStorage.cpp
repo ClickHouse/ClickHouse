@@ -60,7 +60,8 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
     const String & container_for_logging_,
     BlobStorageLogWriterPtr blob_log_,
-    ThreadPoolCallbackRunnerUnsafe<void> schedule_)
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_,
+    AzureBlobStorage::ContainerClientRefreshCallback credentials_refresh_callback_)
     : WriteBufferFromFileBase(std::min(buf_size_, static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE)), nullptr, 0)
     , log(getLogger("WriteBufferFromAzureBlobStorage"))
     , buffer_allocation_policy(createBufferAllocationPolicy(*settings_))
@@ -69,6 +70,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     , blob_path(blob_path_)
     , write_settings(write_settings_)
     , blob_container_client(blob_container_client_)
+    , credentials_refresh_callback(std::move(credentials_refresh_callback_))
     , task_tracker(
           std::make_unique<TaskTracker>(
               std::move(schedule_),
@@ -112,20 +114,59 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
     task_tracker->safeWaitAll();
 }
 
-void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void(size_t)> func, size_t num_tries, size_t cost)
+WriteBufferFromAzureBlobStorage::AzureClientPtr WriteBufferFromAzureBlobStorage::getClient() const
+{
+    std::lock_guard lock(client_mutex);
+    return blob_container_client;
+}
+
+bool WriteBufferFromAzureBlobStorage::tryRefreshCredentials(
+    const Azure::Core::RequestFailedException & e, const AzureClientPtr & used_client)
+{
+    if (!credentials_refresh_callback || !isAzureAccessTokenExpiredError(e))
+        return false;
+
+    std::lock_guard lock(client_mutex);
+
+    /// Another part upload already refreshed the credentials while this attempt was in flight.
+    if (blob_container_client != used_client)
+        return true;
+
+    if (credentials_refreshed)
+        return false;
+
+    auto new_client = credentials_refresh_callback();
+    if (!new_client)
+        return false;
+
+    blob_container_client = std::move(new_client);
+    credentials_refreshed = true;
+    LOG_DEBUG(log, "Refreshed Azure credentials for blob `{}` after an authentication failure", blob_path);
+    return true;
+}
+
+void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void(size_t, const AzureClientPtr &)> func, size_t num_tries, size_t cost)
 {
     size_t sleep_time_with_backoff_milliseconds = 100;
     for (size_t i = 0; i < num_tries; ++i)
     {
+        auto client_ptr = getClient();
         try
         {
             ResourceGuard rlock(ResourceGuard::Metrics::getIOWrite(), write_settings.io_scheduling.write_resource_link, cost); // Note that zero-cost requests are ignored
-            func(i);
+            func(i, client_ptr);
             rlock.unlock(cost);
             break;
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
+            /// Credentials are refreshed at most once, so the retry after it costs no attempt.
+            if (tryRefreshCredentials(e, client_ptr))
+            {
+                --i;
+                continue;
+            }
+
             if (i == num_tries - 1 || !isRetryableAzureException(e, /* may_be_provisioning_access */ write_settings.is_initial_access_check))
                 throw;
 
@@ -166,10 +207,8 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
     if (block_ids.empty())
     {
         ProfileEvents::increment(ProfileEvents::AzureUpload);
-        if (blob_container_client->IsClientForDisk())
+        if (getClient()->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureUpload);
-
-        auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
 
         /// If there is only one block and size is less than or equal to max_single_part_upload_size
         /// then we use single part upload instead of multi part upload
@@ -185,7 +224,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             try
             {
                 execWithRetry(
-                    [&](size_t retry_attempt)
+                    [&](size_t retry_attempt, const AzureClientPtr & client_ptr)
                     {
                         Azure::Storage::Blobs::UploadBlockBlobOptions options;
 
@@ -195,7 +234,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
                         if (!write_settings.object_storage_write_if_match.empty())
                             options.AccessConditions.IfMatch = Azure::ETag(write_settings.object_storage_write_if_match);
 
-                        block_blob_client.Upload(
+                        client_ptr->GetBlockBlobClient(blob_path).Upload(
                             memory_stream,
                             options,
                             azure_context.WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), retry_attempt));
@@ -248,7 +287,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             try
             {
                 execWithRetry(
-                    [&](size_t retry_attempt)
+                    [&](size_t retry_attempt, const AzureClientPtr & client_ptr)
                     {
                         Azure::Storage::Blobs::UploadBlockBlobOptions options;
 
@@ -258,7 +297,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
                         if (!write_settings.object_storage_write_if_match.empty())
                             options.AccessConditions.IfMatch = Azure::ETag(write_settings.object_storage_write_if_match);
 
-                        block_blob_client.Upload(
+                        client_ptr->GetBlockBlobClient(blob_path).Upload(
                             memory_stream,
                             options,
                             azure_context.WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), retry_attempt));
@@ -317,9 +356,8 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
 
     if (!block_ids.empty())
     {
-        auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
         ProfileEvents::increment(ProfileEvents::AzureCommitBlockList);
-        if (blob_container_client->IsClientForDisk())
+        if (getClient()->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureCommitBlockList);
 
         Stopwatch watch;
@@ -328,7 +366,7 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
         try
         {
             execWithRetry(
-                [&](size_t retry_attetmpt)
+                [&](size_t retry_attetmpt, const AzureClientPtr & client_ptr)
                 {
                     Azure::Storage::Blobs::CommitBlockListOptions options;
 
@@ -339,7 +377,7 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
                         options.AccessConditions.IfMatch = Azure::ETag(write_settings.object_storage_write_if_match);
 
 
-                    block_blob_client.CommitBlockList(
+                    client_ptr->GetBlockBlobClient(blob_path).CommitBlockList(
                         block_ids,
                         options,
                         azure_context.WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), retry_attetmpt));
@@ -382,7 +420,7 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
     {
         try
         {
-            auto blob_client = blob_container_client->GetBlobClient(blob_path);
+            auto blob_client = getClient()->GetBlobClient(blob_path);
             blob_client.GetProperties();
         }
         catch (const Azure::Storage::StorageException & e)
@@ -505,10 +543,9 @@ void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage:
     {
         auto & data_size = std::get<1>(*worker_data).data_size;
         auto & data_block_id = std::get<0>(*worker_data);
-        auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
 
         ProfileEvents::increment(ProfileEvents::AzureStageBlock);
-        if (blob_container_client->IsClientForDisk())
+        if (getClient()->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureStageBlock);
 
         Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(std::get<1>(*worker_data).memory.data()), data_size);
@@ -519,9 +556,9 @@ void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage:
         try
         {
             execWithRetry(
-                [&](size_t retry_attempt)
+                [&](size_t retry_attempt, const AzureClientPtr & client_ptr)
                 {
-                    block_blob_client.StageBlock(
+                    client_ptr->GetBlockBlobClient(blob_path).StageBlock(
                         data_block_id,
                         memory_stream,
                         Azure::Storage::Blobs::StageBlockOptions{},

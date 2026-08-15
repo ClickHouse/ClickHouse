@@ -167,6 +167,42 @@ def test_export_partition_to_iceberg(cluster):
     )
 
 
+def _destination_paths_has_sync_failed_marker(node, source_table, dest_table, partition_id):
+    """True when destination_file_paths contains the Keeper sync-failed marker value."""
+    result = node.query(
+        f"SELECT has(arrayFlatten(mapValues(destination_file_paths)), '<failed to read from zk>')"
+        f" FROM system.replicated_partition_exports"
+        f" WHERE source_table = '{source_table}'"
+        f"   AND destination_table = '{dest_table}'"
+        f"   AND partition_id = '{partition_id}'"
+    ).strip()
+    return result == "1"
+
+
+def wait_for_destination_paths_sync_failed_marker(
+    node, source_table, dest_table, partition_id, expect_marker, timeout=90, poll_interval=0.5
+):
+    """Wait until destination_file_paths does/does not contain the sync-failed marker.
+
+    The in-memory mirror refreshes on the manifest-updater poll (~30s), so the
+    default timeout allows at least one full cycle plus headroom.
+    """
+    start_time = time.time()
+    last = None
+    while time.time() - start_time < timeout:
+        last = _destination_paths_has_sync_failed_marker(
+            node, source_table, dest_table, partition_id
+        )
+        if last == expect_marker:
+            return
+        time.sleep(poll_interval)
+
+    raise TimeoutError(
+        f"destination_file_paths sync-failed marker did not become {expect_marker}"
+        f" within {timeout}s (last={last})"
+    )
+
+
 def test_export_two_partitions_to_iceberg(cluster):
     """
     Export two partitions in a single ALTER TABLE statement and verify that both
@@ -989,8 +1025,9 @@ def test_post_publish_exception_preserves_snapshot(cluster):
     post-publish region (after both the metadata file is written and
     `published = true` is set). With the fix in place:
       - the commit stays durable (snapshot is readable, manifests are intact);
-      - the export is marked COMPLETED because the idempotency check on retry
-        detects that the transaction is already committed and returns success;
+      - the export is marked COMPLETED because the outer `catch (...)` sees
+        `published == true` and returns the populated commit info with the real
+        paths produced by this attempt (no retry needed);
       - all exported rows are visible through the Iceberg table.
     """
     node = cluster.instances["replica1"]
@@ -1019,6 +1056,28 @@ def test_post_publish_exception_preserves_snapshot(cluster):
     ).strip()
     assert result == "1\t2020\n2\t2020\n3\t2020", (
         f"Unexpected data after post-publish exception recovery:\n{result}"
+    )
+
+    # After a post-publish exception the catch handler with published==true returns
+    # the populated commit info (real metadata / manifest list / manifest file paths).
+    # ExportPartitionUtils::commit persists it to the commit_info znode, so the system
+    # table should show a real metadata path here, not the already-committed sentinel.
+    committed_metadata_file = node.query(
+        f"""
+        SELECT committed_metadata_file FROM system.replicated_partition_exports
+        WHERE source_table = '{mt_table}'
+          AND destination_table = '{iceberg_table}'
+          AND partition_id = '2020'
+        """
+    ).strip()
+    assert committed_metadata_file, (
+        "committed_metadata_file should be populated after a successful post-publish-catch return"
+    )
+    assert not committed_metadata_file.startswith("<"), (
+        f"committed_metadata_file should be a real metadata path, got the already-committed sentinel: {committed_metadata_file!r}"
+    )
+    assert committed_metadata_file.endswith(".metadata.json"), (
+        f"Expected a *.metadata.json path in committed_metadata_file, got: {committed_metadata_file!r}"
     )
 
 

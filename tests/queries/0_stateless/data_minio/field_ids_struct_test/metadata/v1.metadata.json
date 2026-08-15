@@ -1,7 +1,7 @@
 {
   "format-version" : 2,
   "table-uuid" : "149ecc15-7afc-4311-86b3-3a4c8d4ec08e",
-  "location" : "s3a://test/field_ids_struct_test/metadata/field_ids_struct_test",
+  "location" : "s3a://test/field_ids_struct_test",
   "last-sequence-number" : 1,
   "last-updated-ms" : 1753959190403,
   "last-column-id" : 6,
@@ -84,7 +84,7 @@
       "total-position-deletes" : "0",
       "total-equality-deletes" : "0"
     },
-    "manifest-list" : "s3a://test/field_ids_struct_test/metadata/field_ids_struct_test/metadata/snap-2512638186869817292-1-ec467367-15a4-4610-8ea8-cf76797afb03.avro",
+    "manifest-list" : "s3a://test/field_ids_struct_test/metadata/snap-2512638186869817292-1-ec467367-15a4-4610-8ea8-cf76797afb03.avro",
     "schema-id" : 0
   } ],
   "statistics" : [ ],

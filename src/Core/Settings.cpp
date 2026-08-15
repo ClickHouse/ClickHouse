@@ -642,6 +642,9 @@ Use multiple threads for azure multipart upload.
     DECLARE(Bool, s3_throw_on_zero_files_match, false, R"(
 Throw an error, when ListObjects request cannot match any files
 )", 0) \
+    DECLARE(Bool, object_storage_propagate_credentials_to_other_storages, false, R"(
+Reuse base-storage credentials for a secondary object storage. For `S3`, credentials are reused when the endpoint matches; when this setting is enabled, they are also reused across different endpoints, including less secure connections (for example, from `https` to plain `http`). For `Azure`, reads stay within the base account.
+)", 0) \
     DECLARE(Bool, hdfs_throw_on_zero_files_match, false, R"(
 Throw an error if matched zero files according to glob expansion rules.
 
@@ -8062,10 +8065,14 @@ To survive a long transient outage (e.g. object storage downtime), raise `export
     DECLARE(UInt64, export_merge_tree_partition_retry_max_backoff_seconds, 300, R"(
 Maximum delay (in seconds) between retries of a failed part export in an export partition task. Caps the exponential growth controlled by `export_merge_tree_partition_retry_initial_backoff_seconds`.
 )", 0) \
-    DECLARE(UInt64, export_merge_tree_partition_task_timeout_seconds, 3600, R"(
+    DECLARE(UInt64, export_merge_tree_partition_task_timeout_seconds, 86400, R"(
 Maximum wall-clock duration (in seconds) an export partition task is allowed to remain in the PENDING state before it is auto-killed by the background cleanup loop.
 The timeout is measured from the manifest's create_time. Set to 0 to disable the timeout.
 When the timeout is exceeded the task transitions to KILLED (same terminal state as `KILL QUERY ... EXPORT PARTITION`), and `last_exception` is populated with a timeout reason.
+
+IMPORTANT: In case the storage is managed by a 3rd party application that cleans up old manifest files, it is important that the TTL of such files are greater than the timeout of export partition tasks.
+If it is not configured in such a way, it is possible to accidentally duplicate data in the extremely rare case a ClickHouse node is the only node working on a given export task, commits the data to Iceberg, crashes before marking the task as done and only boots up after the manifest cleanup has deleted the commit manifest.
+In such scenario, ClickHouse would attempt to commit those files again producing duplicates. 
 
 Notes:
 - Enforcement is best-effort: actual kill latency is bounded by one manifest-updater poll cycle (~30s) plus ZooKeeper watch propagation.
