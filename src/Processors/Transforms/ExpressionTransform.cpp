@@ -32,7 +32,7 @@ void ExpressionTransform::transform(Chunk & chunk)
     if (updater)
     {
         auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
-        expression->execute(block, num_rows, false, false, [this]() { return isCancelled(); });
+        expression->execute(block, num_rows, false, false, &getCancellationFlag());
         chunk.setColumns(block.getColumns(), num_rows);
         updater->recordOutputChunk(chunk, block);
         return;
@@ -40,7 +40,7 @@ void ExpressionTransform::transform(Chunk & chunk)
 
     /// Fast path: run positionally against the fixed input header, avoiding per-chunk Block name-index work.
     auto columns = expression->executeOnColumns(
-        chunk.detachColumns(), getInputPort().getHeader(), input_positions, num_rows, false, [this]() { return isCancelled(); });
+        chunk.detachColumns(), getInputPort().getHeader(), input_positions, num_rows, false, &getCancellationFlag());
 
     chunk.setColumns(std::move(columns), num_rows);
 }
@@ -67,7 +67,7 @@ void ConvertingTransform::onConsume(Chunk chunk)
     size_t num_rows = chunk.getNumRows();
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
-    expression->execute(block, num_rows, false, false, [this]() { return isCancelled(); });
+    expression->execute(block, num_rows, false, false, &getCancellationFlag());
 
     chunk.setColumns(block.getColumns(), num_rows);
     cur_chunk = std::move(chunk);

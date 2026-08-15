@@ -2,8 +2,8 @@
 # Tags: no-fasttest, no-parallel, no-sanitizers-lsan, long
 # Test that KILL QUERY with use_query_condition_cache does not seed the QueryConditionCache.
 # Uses a MergeTree table (produces MarkRangesInfo for the cache) and the
-# query_condition_cache_part_switch_pause failpoint to stop the query while it is
-# switching the buffered cache entry from one part to the next.
+# query_condition_cache_final_flush_pause failpoint to stop the query immediately
+# before it flushes the final buffered entry.
 # Verifies:
 #   1. Cache count is unchanged after a cancelled query.
 #   2. Cache count grows after a successful query with the same filter.
@@ -17,41 +17,40 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 query_id="kill_query_filter_cache_${CLICKHOUSE_DATABASE}_$RANDOM"
 output_file="${CLICKHOUSE_TMP}/kill_query_filter_cache_${CLICKHOUSE_DATABASE}.out"
 
-trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT query_condition_cache_part_switch_pause" 2>/dev/null; ${CLICKHOUSE_CLIENT} -q "SYSTEM START MERGES 04614_t" 2>/dev/null; ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS 04614_t" 2>/dev/null' EXIT
+trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT query_condition_cache_final_flush_pause" 2>/dev/null; ${CLICKHOUSE_CLIENT} -q "SYSTEM START MERGES 04614_t" 2>/dev/null; ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS 04614_t" 2>/dev/null' EXIT
 
 # Create a MergeTree table (produces MarkRangesInfo, needed by QueryConditionCache)
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS 04614_t"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE 04614_t (t UInt64, v UInt64) ENGINE = MergeTree ORDER BY t"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM STOP MERGES 04614_t"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO 04614_t SELECT number, number FROM numbers(1000000)"
-${CLICKHOUSE_CLIENT} -q "INSERT INTO 04614_t SELECT number + 1000000, number + 1000000 FROM numbers(1000000)"
 
 # Record cache baseline before any query uses use_query_condition_cache
 cache_before=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.query_condition_cache")
 
-# Enable the part-switch failpoint before starting the query.
-${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT query_condition_cache_part_switch_pause"
+# Enable the final-flush failpoint before starting the query.
+${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT query_condition_cache_final_flush_pause"
 
-# Start a filter query with use_query_condition_cache=1 that will pause while flushing
-# the buffered cache entry for the first part. WHERE v > 1999999 rejects all rows.
+# Start a filter query with use_query_condition_cache=1 that will pause immediately
+# before flushing its final buffered cache entry. WHERE v > 999999 rejects all rows.
 # The client is timeout-bounded: if a regression makes the killed query never observe the
 # cancellation, the test must fail here instead of hanging the whole check in `wait`.
 timeout 60 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
     SELECT count()
     FROM 04614_t
-    WHERE v > 1999999
+    WHERE v > 999999
     FORMAT Null
     SETTINGS use_query_condition_cache = 1, use_statistics_for_part_pruning = 0, max_block_size=100000, max_threads=1, max_rows_to_read=0
 " >"$output_file" 2>&1 &
 
-# Wait for the cross-part cache-write failpoint to be hit.
+# Wait for the final cache-flush failpoint to be hit.
 # Bound the wait: if the query never reaches the failpoint (a plan-shape or control-flow
 # regression), fail explicitly instead of hanging the whole check. Kill the stuck query (async —
 # a SYNC kill of a query that never reached the pause site could hang again) and exit without
 # waiting for the background job.
-if ! timeout 60 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT query_condition_cache_part_switch_pause PAUSE"
+if ! timeout 60 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT query_condition_cache_final_flush_pause PAUSE"
 then
-    echo "FAIL: timed out waiting for the query_condition_cache_part_switch_pause failpoint"
+    echo "FAIL: timed out waiting for the query_condition_cache_final_flush_pause failpoint"
     ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
     exit 1
 fi
@@ -59,8 +58,8 @@ fi
 # Kill the query (ASYNC) — onCancel cancels functions and sets isCancelled
 ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
 
-# Disable failpoint — query sees isCancelled() and returns without writing the first part to cache.
-${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT query_condition_cache_part_switch_pause"
+# Disable failpoint — query sees isCancelled() and returns without writing the final entry to cache.
+${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT query_condition_cache_final_flush_pause"
 
 wait
 
@@ -71,11 +70,11 @@ grep -qF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not can
 cache_after=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.query_condition_cache")
 [[ "$cache_after" == "$cache_before" ]] || { echo "FAIL: cache count changed after cancelled query (before=$cache_before, after=$cache_after)"; exit 1; }
 
-# Now run the same query successfully — it should populate cache entries for both parts.
+# Now run the same query successfully — it should populate a cache entry.
 ${CLICKHOUSE_CLIENT} -q "
     SELECT count()
     FROM 04614_t
-    WHERE v > 1999999
+    WHERE v > 999999
     FORMAT Null
     SETTINGS use_query_condition_cache = 1, use_statistics_for_part_pruning = 0, max_block_size=100000, max_threads=1, max_rows_to_read=0
 "

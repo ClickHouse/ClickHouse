@@ -327,6 +327,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(filter_transform_before_expression_pause) \
     PAUSEABLE_ONCE(filter_transform_pause) \
     PAUSEABLE_ONCE(query_condition_cache_part_switch_pause) \
+    PAUSEABLE_ONCE(query_condition_cache_final_flush_pause) \
     PAUSEABLE_ONCE(filter_sorted_stream_by_range_pause) \
     PAUSEABLE_ONCE(filter_sorted_stream_by_range_fallback_pause) \
     PAUSEABLE_ONCE(totals_having_transform_before_expression_pause) \

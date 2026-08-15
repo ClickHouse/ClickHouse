@@ -227,7 +227,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
             return;
         }
 
-        expression->execute(finalized_block, num_rows, false, false, [this]() { return isCancelled(); });
+        expression->execute(finalized_block, num_rows, false, false, &getCancellationFlag());
 
         FailPointInjection::pauseFailPoint(FailPoints::totals_having_transform_pause);
 
@@ -381,7 +381,7 @@ void TotalsHavingTransform::prepareTotals()
             return;
         }
 
-        expression->execute(block, num_rows, false, false, [this]() { return isCancelled(); });
+        expression->execute(block, num_rows, false, false, &getCancellationFlag());
 
         FailPointInjection::pauseFailPoint(FailPoints::totals_having_transform_totals_pause);
 

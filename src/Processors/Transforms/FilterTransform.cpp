@@ -34,6 +34,7 @@ namespace FailPoints
     extern const char filter_transform_before_expression_pause[];
     extern const char filter_transform_pause[];
     extern const char query_condition_cache_part_switch_pause[];
+    extern const char query_condition_cache_final_flush_pause[];
 }
 
 namespace ErrorCodes
@@ -254,7 +255,7 @@ void FilterTransform::doTransform(Chunk & chunk)
         }
 
         if (expression)
-            expression->execute(block, num_rows_before_filtration, false, false, [this]() { return isCancelled(); });
+            expression->execute(block, num_rows_before_filtration, false, false, &getCancellationFlag());
 
         FailPointInjection::pauseFailPoint(FailPoints::filter_transform_pause);
 
@@ -405,6 +406,11 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
         /// FilterTransform has finished, we need to flush to the query result cache.
 
         if (!buffered_mark_ranges_info)
+            return;
+
+        FailPointInjection::pauseFailPoint(FailPoints::query_condition_cache_final_flush_pause);
+
+        if (isCancelled())
             return;
 
         query_condition_cache->write(
