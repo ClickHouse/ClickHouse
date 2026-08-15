@@ -477,6 +477,22 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
             }
         }
 
+        /// Row-level filters are executed by ReadFromMergeTree and are not represented by a separate
+        /// plan node. Their ActionsDAG still updates the read header, so retain the vector column when
+        /// a row policy consumes it.
+        if (optimize_plan)
+        {
+            if (const auto & row_level_filter = read_from_mergetree_step->getRowLevelFilter())
+            {
+                const ActionsDAG & row_level_filter_expression = row_level_filter->actions;
+                if (const auto * search_column_input = findSearchColumnInput(row_level_filter_expression, search_column))
+                {
+                    if (anyOutputConsumesInput(row_level_filter_expression, search_column_input, nullptr))
+                        optimize_plan = false;
+                }
+            }
+        }
+
         if (optimize_plan)
         {
             auto analyzed_result = read_from_mergetree_step->getAnalyzedResult();
