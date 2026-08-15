@@ -829,8 +829,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
             if (top_level_has_variant && allow_skipping_variant_nulls && !out_properties.is_window_function)
             {
-                const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
-                if (!settings || (*settings)[Setting::aggregate_functions_skip_variant_nulls])
+                const Settings * query_settings = query_context ? &query_context->getSettingsRef() : nullptr;
+                if (!query_settings || (*query_settings)[Setting::aggregate_functions_skip_variant_nulls])
                     combined_function = std::make_shared<AggregateFunctionVariantNull>(combined_function, argument_types, parameters);
             }
         }
