@@ -56,6 +56,8 @@ auto constructWithReserveIfPossible(size_t size_hint)
 
 void AggregatedDataVariants::init(Type type_, std::optional<size_t> size_hint)
 {
+    /// `init` also reinitializes a table after an external-aggregation flush, so preserve
+    /// whether the heap rejected anything before the old method is replaced.
     top_k_heap_ever_rejected = topKHeapEverRejected();
 
     switch (type_)

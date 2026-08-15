@@ -641,8 +641,7 @@ private:
     };
 
     template <typename Method>
-    void trimHeapAndPruneHashTable(
-        Method & method, Arena & pool, std::vector<DestroyedState> * destroyed_states, size_t current_row) const;
+    void trimHeapAndPruneHashTable(Method & method, std::vector<DestroyedState> * destroyed_states, size_t current_row) const;
 
     void initAdaptiveSession(AggregatedDataVariants & local_result, AdaptiveAggregationSession & shared) const;
 

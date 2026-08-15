@@ -92,7 +92,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     };
 
     static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
-    using EmplaceResult = columns_hashing_impl::EmplaceResultImpl<Mapped>;
+    using EmplaceResult = typename Base::EmplaceResult;
     using FindResult = columns_hashing_impl::FindResultImpl<Mapped>;
 
     static constexpr bool has_cheap_key_calculation = Base::has_cheap_key_calculation;
@@ -263,6 +263,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         }
 
         auto key_holder = getKeyHolder(row_, pool);
+        auto key = keyHolderGetKey(key_holder);
 
         bool inserted = false;
         typename Data::LookupResult it;
@@ -281,7 +282,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
                 new (&mapped) Mapped();
             }
             mapped_cache[row] = mapped;
-            return EmplaceResult(mapped, mapped_cache[row], inserted);
+            return EmplaceResult(mapped, mapped_cache[row], inserted, std::move(key));
         }
         else
             return EmplaceResult(inserted);

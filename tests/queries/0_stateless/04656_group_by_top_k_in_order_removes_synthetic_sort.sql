@@ -1,8 +1,7 @@
 -- For `GROUP BY ... LIMIT` without `ORDER BY` the top-K optimization synthesizes
--- a `SortingStep` that exists only to make the heap's pruning valid.  When
--- in-order aggregation later supersedes the heap it drops `top_k`, and that
--- synthesized sort has to go with it: leaving it behind blocks the LIMIT's early
--- termination, making the plan slower than the one without the optimization.
+-- a `SortingStep` that exists only to make the heap's pruning valid.  The top-K
+-- pass runs after in-order aggregation selection, so it must skip the already
+-- ordered aggregation instead of adding a heap and synthesized sort.
 
 SET max_rows_to_group_by = 0;
 -- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.
@@ -34,9 +33,8 @@ SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM
 )
 WHERE explain LIKE '%Sorting%' OR explain LIKE '%Top-K%';
 
--- With in-order aggregation on, the heap is superseded: no Top-K annotation and,
--- crucially, no leftover sort.  Before the sort was removed alongside the heap
--- this printed a `Sorting (Sorting for GROUP BY top-K)` line with no owner.
+-- With in-order aggregation on, the late top-K pass skips the aggregation: no
+-- Top-K annotation and, crucially, no synthetic sort.
 SELECT 'in_order_on';
 SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM
 (

@@ -713,3 +713,45 @@ def test_parallel_replicas_no_order_by(start_cluster, max_parallel_replicas):
         f"enable_group_by_top_k_optimization changed the parallel-replicas result.\n"
         f"  off:\n{off}\n  on:\n{on}\n"
     )
+
+
+@pytest.mark.parametrize("parallel_replicas_local_plan", [0, 1])
+def test_parallel_replicas_no_order_by_serialize_query_plan(
+    start_cluster, parallel_replicas_local_plan
+):
+    """A serialized parallel-replica fragment cannot carry the top-K heap.
+
+    The no-ORDER-BY optimization must therefore add neither a stale `Top-K`
+    annotation nor its synthetic full sort to the outer merge plan, regardless
+    of whether the initiator also executes a local fragment.
+    """
+    table = "t_pr"
+    _create_replicated_shards(table)
+    inner = f"SELECT k, sum(v) AS s FROM {table} GROUP BY k LIMIT 100"
+    settings_base = {
+        "enable_parallel_replicas": 2,
+        "max_parallel_replicas": 2,
+        "cluster_for_parallel_replicas": "one_shard_two_replicas",
+        "serialize_query_plan": 1,
+        "parallel_replicas_local_plan": parallel_replicas_local_plan,
+    }
+
+    plan = node1.query(
+        f"EXPLAIN actions = 1 {inner}",
+        settings=dict(settings_base, enable_group_by_top_k_optimization=1),
+    )
+    assert "Top-K:" not in plan, plan
+    assert "Sorting for GROUP BY top-K" not in plan, plan
+
+    outer = f"SELECT sum(k), sum(s), count() FROM ({inner})"
+    off = node1.query(
+        outer, settings=dict(settings_base, enable_group_by_top_k_optimization=0)
+    )
+    on = node1.query(
+        outer, settings=dict(settings_base, enable_group_by_top_k_optimization=1)
+    )
+    assert off == on, (
+        "serialized parallel replicas changed the no-ORDER-BY result.\n"
+        f"  parallel_replicas_local_plan={parallel_replicas_local_plan}\n"
+        f"  off:\n{off}\n  on:\n{on}\n"
+    )

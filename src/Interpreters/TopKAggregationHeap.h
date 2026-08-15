@@ -23,6 +23,7 @@ namespace DB
   * `next_trim_size` (~1.5x capacity).  Boundary ties are never evicted, so a
   * tie-set can grow the heap; past `tie_overflow_limit` the heap freezes.
   */
+template <typename Key>
 struct TopKAggregationHeap
 {
     MutableColumnPtr heap_column;
@@ -96,7 +97,7 @@ struct TopKAggregationHeap
             return false;
 
         if (profitability_window && observed_rows >= profitability_window
-            && skipped_rows == 0 && evicted_keys == 0
+            && static_cast<Float64>(skipped_rows) / static_cast<Float64>(observed_rows) < 0.1 && evicted_keys == 0
             && heap_indices.size() >= capacity)
             return true;
 
@@ -108,6 +109,7 @@ struct TopKAggregationHeap
         frozen = true;
         heap_column = nullptr;
         heap_indices = {};
+        hash_table_keys = {};
         skip_bitmap = {};
         trim_filter = {};
         trim_old_to_new = {};
@@ -144,7 +146,9 @@ struct TopKAggregationHeap
         return skip_bitmap.data();
     }
 
-    void push(const ColumnRawPtrs & source_columns, size_t source_row)
+    void push(const ColumnRawPtrs & source_columns, size_t source_row) { push(source_columns, source_row, Key{}); }
+
+    void push(const ColumnRawPtrs & source_columns, size_t source_row, const Key & hash_table_key)
     {
         size_t new_idx = 0;
 
@@ -164,6 +168,7 @@ struct TopKAggregationHeap
             new_idx = heap_column->size();
             heap_column->insertFrom(*source_columns[0], source_row);
         }
+        hash_table_keys.push_back(hash_table_key);
         heap_indices.push_back(new_idx);
 
         std::push_heap(heap_indices.begin(), heap_indices.end(), HeapComparator{this});
@@ -253,11 +258,25 @@ struct TopKAggregationHeap
         heap_column->filter(trim_filter);
         compactDictionaries();
 
+        std::vector<Key> compacted_hash_table_keys;
+        compacted_hash_table_keys.reserve(heap_indices.size());
+        for (size_t i = 0; i < col_size; ++i)
+            if (trim_filter[i])
+                compacted_hash_table_keys.push_back(std::move(hash_table_keys[i]));
+        hash_table_keys = std::move(compacted_hash_table_keys);
+
         for (auto & idx : heap_indices)
             idx = trim_old_to_new[idx];
 
         return evicted_count;
     }
+
+    size_t trimAndCompact()
+    {
+        return trimAndCompact([](size_t) { });
+    }
+
+    const Key & hashTableKeyAt(size_t heap_row) const { return hash_table_keys[heap_row]; }
 
 private:
     static constexpr size_t max_preallocated_rows = 1ULL << 20;
@@ -349,6 +368,8 @@ private:
         heap_column->reserve(reserve_hint);
         heap_indices.clear();
         heap_indices.reserve(reserve_hint);
+        hash_table_keys.clear();
+        hash_table_keys.reserve(reserve_hint);
         findLowCardinalityColumns();
         initNumericSkipFn();
     }
@@ -381,6 +402,8 @@ private:
 
         heap_indices.clear();
         heap_indices.reserve(reserve_hint);
+        hash_table_keys.clear();
+        hash_table_keys.reserve(reserve_hint);
         findLowCardinalityColumns();
         should_skip_numeric_fn = nullptr;
         numeric_cmp_fn = nullptr;
@@ -514,6 +537,7 @@ private:
     }
 
     std::vector<size_t> heap_indices;
+    std::vector<Key> hash_table_keys;
     size_t capacity = 0;
     size_t next_trim_size = 0;
     size_t tie_overflow_limit = 0;

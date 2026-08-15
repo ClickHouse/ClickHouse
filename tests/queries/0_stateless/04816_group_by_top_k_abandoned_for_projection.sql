@@ -1,6 +1,6 @@
--- An aggregation answered from an aggregate projection must not keep the top-K
--- state: see `abandonGroupByTopKForProjections`.  The plan must lose the `Top-K`
--- annotation and, for the no-`ORDER BY` shape, the sort synthesized for the heap.
+-- An aggregation answered from an aggregate projection must not get top-K
+-- state. The top-K pass runs after projection selection and skips merge-only
+-- and `AggregatingProjection` steps.
 
 SET max_rows_to_group_by = 0;
 -- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.

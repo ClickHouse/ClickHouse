@@ -1832,10 +1832,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     }
 }
 
-void optimizeAggregationInOrder(const Stack & stack, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
+void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    QueryPlan::Node & node = *stack.back().node;
-
     if (node.children.size() != 1)
         return;
 
@@ -1863,18 +1861,6 @@ void optimizeAggregationInOrder(const Stack & stack, QueryPlan::Nodes &, const Q
         for (const auto & key : aggregating->getParams().keys)
             if (used_keys.emplace(key).second)
                 group_by_sort_description.push_back(SortColumnDescription(std::string(key)));
-
-        const auto & params = aggregating->getParams();
-        if (params.top_k && params.top_k->synthetic_sort)
-        {
-            if (stack.size() < 3)
-                return;
-
-            QueryPlan::Node * sort_node = stack[stack.size() - 2].node;
-            QueryPlan::Node * parent_of_sort = stack[stack.size() - 3].node;
-            if (!removeSyntheticTopKSort(&node, sort_node, parent_of_sort))
-                return;
-        }
 
         aggregating->applyOrder(std::move(order_info.sort_description), std::move(group_by_sort_description));
     }

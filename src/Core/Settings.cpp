@@ -1958,7 +1958,7 @@ Possible values:
 - 1 — Enabled.
 )", 0) \
     DECLARE(Bool, enable_group_by_top_k_optimization, true, R"(
-Enable TopK filtering optimization during aggregation in `GROUP BY keys ORDER BY <prefix of keys> LIMIT N` queries, and in `GROUP BY keys LIMIT N` queries without `ORDER BY` (any `N` groups are a valid result there, so a sort over all keys is synthesized).
+Enable TopK filtering optimization during aggregation in `GROUP BY keys ORDER BY <prefix of keys> LIMIT K` queries, and in `GROUP BY keys LIMIT K` queries without `ORDER BY` (any `K` groups are a valid result there, so a sort over all keys is synthesized).
 
 When enabled, the aggregator maintains a bounded heap of the top `N` keys seen so far and skips inserting new rows into the hash table when their grouping key cannot make it into the final result. This avoids aggregating rows that would be discarded by the subsequent `ORDER BY ... LIMIT`, and when the heap ranks the full `GROUP BY` key it also prunes evicted groups out of the intermediate hash table, bounding its size by the `LIMIT` instead of the number of distinct keys. When the `ORDER BY` covers only a proper prefix of the `GROUP BY` keys, the ranking cannot identify a full group, so only row skipping applies: the hash table keeps every admitted group and can still grow with the cardinality of the remaining key columns.
 
@@ -1971,17 +1971,12 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE(Float, group_by_top_k_optimization_load_factor, 1.5, R"(
-For `enable_group_by_top_k_optimization`: how far past the query's `LIMIT` the top-K heap may grow before it is trimmed back, as a multiple of the limit. The same factor bounds the hash table (it is pruned to the heap's size) and gates the optimization off when recorded size statistics show the query produces at most `LIMIT * load_factor` groups.
-
-Larger values trim less often at the cost of a bigger heap and a weaker skip boundary. The minimum is 1. Analogous to the `load_factor` parameter of the `topK` aggregate function.
-)", EXPERIMENTAL) \
     DECLARE(UInt64, group_by_top_k_optimization_observation_rows, 65536, R"(
-For `enable_group_by_top_k_optimization`: the number of rows each aggregation stream observes before declaring a full top-K heap that never skipped a row or evicted a key pure overhead and freezing it. A frozen heap means aggregation continues as if the optimization were disabled.
+For `enable_group_by_top_k_optimization`: the number of rows each aggregation stream observes before freezing a full top-K heap that evicted no keys and skipped less than 10% of input rows. A frozen heap means aggregation continues as if the optimization were disabled.
 
 The effective window is at least twice the heap's reserved size, so a heap always gets a chance to fill before being judged. `0` disables this freeze (the heap still freezes when a boundary tie-set overgrows it).
 
-This has no effect on `GROUP BY keys LIMIT N` queries without `ORDER BY`, where the freeze is always disabled: that shape's plan contains a synthesized sort that only pays off while the heap bounds the hash table, so freezing the heap would leave a plan slower than the un-optimized one.
+This has no effect on `GROUP BY keys LIMIT K` queries without `ORDER BY`, where the freeze is always disabled: that shape's plan contains a synthesized sort that only pays off while the heap bounds the hash table, so freezing the heap would leave a plan slower than the un-optimized one.
 )", EXPERIMENTAL) \
     DECLARE(Bool, use_top_k_dynamic_filtering_for_variable_length_types, false, R"(
 Allow `use_top_k_dynamic_filtering` to apply when the sort column has a variable-length data type (e.g. `String`, `Array`, `Map`, `Tuple` containing variable-length elements).
@@ -1997,7 +1992,7 @@ Possible values:
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_top_k_optimization, 1000, R"(Control maximum limit value that allows to evaluate query plan for TopK optimization by using minmax skip index and dynamic threshold filtering. If zero, there is no limit.
 
-The same cap also gates [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization): a `GROUP BY` heap bounded by a limit larger than the number of distinct keys can never skip a row, so it is pure overhead.
+The same cap also gates [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization), because the memory and CPU cost of its heap grows with the requested `LIMIT`.
 )", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
 If INSERTs build and store skip indexes. If disabled, skip indexes will only be built and stored [during merges](/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) or by explicit [MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index).

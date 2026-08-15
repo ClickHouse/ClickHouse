@@ -266,7 +266,6 @@ public:
 
             /// Replace original aggregation step with MergingAggregated step
             aggregator_params.only_merge = true; /// Merge partial aggregation results
-            aggregator_params.top_k.reset(); /// The heap prunes in the replicas' partial aggregation; the merge path ignores it
             /// Merging the results of the replicas is the same as merging the results of the shards of a
             /// `Distributed` table, so it obeys the same setting. Note that this is not only about the memory:
             /// the ordinary merging transform returns the two-level buckets in an arbitrary order, which the

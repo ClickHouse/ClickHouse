@@ -123,7 +123,6 @@ namespace Setting
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_group_by_top_k_optimization;
-    extern const SettingsFloat group_by_top_k_optimization_load_factor;
     extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool extremes;
@@ -713,7 +712,7 @@ void applyTopKPushdownToPartialAggregation(
     const QueryAnalysisResult & query_analysis_result,
     const Settings & settings)
 {
-    if (!settings[Setting::enable_group_by_top_k_optimization] || !settings[Setting::query_plan_enable_optimizations])
+    if (!settings[Setting::enable_group_by_top_k_optimization])
         return;
 
     /// The distributed planner splits aggregation itself; see the matching gate
@@ -757,8 +756,7 @@ void applyTopKPushdownToPartialAggregation(
     /// An arrayJoin in the projection (or ORDER BY expressions) changes row
     /// multiplicity after the aggregation: a group can expand to zero rows, so
     /// the smallest N groups no longer guarantee N result rows and pruning
-    /// loses groups the limit still needs.  `partial_sorting_limit` only
-    /// covers the ARRAY JOIN clause in the join tree, not the function.
+    /// loses groups the limit still needs.
     const auto & projection_actions = expression_analysis_result.getProjection().projection_actions;
     if (projection_actions && projection_actions->dag.hasArrayJoin())
         return;
@@ -797,14 +795,15 @@ void applyTopKPushdownToPartialAggregation(
         nulls_directions.push_back(sort_description[i].nulls_direction);
     }
 
-    aggregating_step.applyTopKOptimization(Aggregator::Params::TopKParams{
-        .keys = limit,
-        .directions = std::move(directions),
-        .nulls_directions = std::move(nulls_directions),
-        .key_columns = sort_description.size(),
-        .load_factor = std::max(1.0, static_cast<Float64>(settings[Setting::group_by_top_k_optimization_load_factor].value)),
-        .observation_rows = settings[Setting::group_by_top_k_optimization_observation_rows],
-    });
+    aggregating_step.applyTopKOptimization(
+        Aggregator::Params::TopKParams{
+            .keys = limit,
+            .directions = std::move(directions),
+            .nulls_directions = std::move(nulls_directions),
+            .key_columns = sort_description.size(),
+            .load_factor = 1.5,
+            .observation_rows = settings[Setting::group_by_top_k_optimization_observation_rows],
+        });
 }
 
 void addAggregationStep(QueryPlan & query_plan,

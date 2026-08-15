@@ -95,8 +95,8 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.read_in_order_through_spilling_join,
         optimization_settings.join_swap_table,
         optimization_settings.enable_group_by_top_k_optimization,
-        optimization_settings.top_k_optimization_load_factor,
         optimization_settings.top_k_optimization_observation_rows,
+        optimization_settings.is_explain,
         optimization_settings.max_block_size,
         optimization_settings.parallel_replicas_filter_pushdown,
         optimization_settings.make_distributed_plan,
@@ -222,8 +222,8 @@ void optimizeTreeSecondPass(
         optimization_settings.read_in_order_through_spilling_join,
         optimization_settings.join_swap_table,
         optimization_settings.enable_group_by_top_k_optimization,
-        optimization_settings.top_k_optimization_load_factor,
         optimization_settings.top_k_optimization_observation_rows,
+        optimization_settings.is_explain,
         optimization_settings.max_block_size,
         optimization_settings.parallel_replicas_filter_pushdown,
         optimization_settings.make_distributed_plan,
@@ -278,8 +278,6 @@ void optimizeTreeSecondPass(
     /// Join steps avoid this for exactly the same reason by computing their key before the filter is
     /// added. The plan here is already deterministic (post first pass and subplan materialization).
     setAggregationHashTableCacheKeys(optimization_settings, root);
-
-    abandonUnprofitableGroupByTopK(optimization_settings, root);
 
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
@@ -425,7 +423,7 @@ void optimizeTreeSecondPass(
                     optimizeTrivialCountFromTextIndex(*frame.node, nodes, optimization_settings);
 
                 if (optimization_settings.aggregation_in_order)
-                    optimizeAggregationInOrder(stack, nodes, optimization_settings);
+                    optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
             }
 
             /// Traverse all children first.
@@ -464,9 +462,6 @@ void optimizeTreeSecondPass(
 
         stack.pop_back();
     }
-
-    if (optimization_settings.optimize_projection)
-        abandonGroupByTopKForProjections(root);
 
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
@@ -766,6 +761,14 @@ void optimizeTreeSecondPass(
         optimizeParallelFullSortingMergeJoin(root, optimization_settings.max_threads);
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
+
+    /// Run after every optimization that can rewrite aggregation, sorting, projections,
+    /// distributed fragments, or parallel replicas. This placement makes the pass a pure
+    /// admission check: no later optimization needs to retract the heap or its synthetic sort.
+    if (optimization_settings.enable_group_by_top_k_optimization)
+    {
+        traverseQueryPlan(stack, root, [&](auto & frame_node) { tryOptimizeGroupByTopK(&frame_node, nodes, extra_settings); });
+    }
 }
 
 void addStepsToBuildSets(

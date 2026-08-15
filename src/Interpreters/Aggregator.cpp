@@ -50,8 +50,9 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
 
-#include <base/wide_integer_to_string.h>
 #include <base/types.h>
+#include <base/wide_integer_to_string.h>
+#include <fmt/ranges.h>
 
 
 namespace ProfileEvents
@@ -590,18 +591,8 @@ void Aggregator::Params::explain(ExplainFormatSettings & settings) const
     }
 
     if (top_k)
-    {
-        out << prefix << "Top-K: limit=" << top_k->keys
-            << ", columns=" << top_k->key_columns
-            << ", directions=[";
-        for (size_t i = 0; i < top_k->directions.size(); ++i)
-        {
-            if (i > 0)
-                out << ',';
-            out << top_k->directions[i];
-        }
-        out << "]\n";
-    }
+        out << fmt::format(
+            "{}Top-K: limit={}, columns={}, directions=[{}]\n", prefix, top_k->keys, top_k->key_columns, fmt::join(top_k->directions, ","));
 }
 
 void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
@@ -1110,8 +1101,7 @@ void Aggregator::executeImpl(
             params.top_k->load_factor,
             params.top_k->observation_rows);
 
-    auto call = [&]<bool prefetch_v, bool top_k_v>(
-        bool no_more_keys_arg, bool use_compiled_functions)
+    auto execute = [&]<bool prefetch_v, bool top_k_v>(bool no_more_keys_arg, bool use_compiled_functions)
     {
         executeImplBatch<prefetch_v, top_k_v>(
             method, state, key_columns, aggregates_pool, row_begin, row_end,
@@ -1135,22 +1125,22 @@ void Aggregator::executeImpl(
             if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
             {
                 if (prefetch)
-                    call.template operator()<true, top_k_v>(false, true);
+                    execute.template operator()<true, top_k_v>(false, true);
                 else
-                    call.template operator()<false, top_k_v>(false, true);
+                    execute.template operator()<false, top_k_v>(false, true);
             }
             else
 #endif
             {
                 if (prefetch)
-                    call.template operator()<true, top_k_v>(false, false);
+                    execute.template operator()<true, top_k_v>(false, false);
                 else
-                    call.template operator()<false, top_k_v>(false, false);
+                    execute.template operator()<false, top_k_v>(false, false);
             }
         }
         else
         {
-            call.template operator()<false, top_k_v>(true, false);
+            execute.template operator()<false, top_k_v>(true, false);
         }
     };
 
@@ -1161,19 +1151,19 @@ void Aggregator::executeImpl(
 }
 
 template <typename Method>
-void NO_INLINE Aggregator::trimHeapAndPruneHashTable(
-    Method & method, Arena & pool, std::vector<DestroyedState> * destroyed_states, size_t current_row) const
+void NO_INLINE
+Aggregator::trimHeapAndPruneHashTable(Method & method, std::vector<DestroyedState> * destroyed_states, size_t current_row) const
 {
     using DataType = typename Method::Data;
     using KeyType = typename Method::Key;
 
     if constexpr (!requires(DataType d, KeyType k) { d.erase(k); })
     {
-        ProfileEvents::increment(ProfileEvents::AggregationTopKKeysEvicted, method.top_k_heap.trimAndCompact([](size_t) {}));
+        ProfileEvents::increment(ProfileEvents::AggregationTopKKeysEvicted, method.top_k_heap.trimAndCompact());
     }
     else if (method.top_k_heap.is_prefix_mode)
     {
-        ProfileEvents::increment(ProfileEvents::AggregationTopKKeysEvicted, method.top_k_heap.trimAndCompact([](size_t) {}));
+        ProfileEvents::increment(ProfileEvents::AggregationTopKKeysEvicted, method.top_k_heap.trimAndCompact());
     }
     else
     {
@@ -1187,18 +1177,6 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(
             for (size_t j = 0; j < aggregate_functions.size(); ++j)
                 aggregate_functions[j]->destroy(mapped + offsets_of_aggregate_states[j]);
         };
-
-        ColumnRawPtrs heap_columns;
-        if (method.top_k_heap.is_composite)
-        {
-            const auto & tuple = assert_cast<const ColumnTuple &>(*method.top_k_heap.heap_column);
-            for (size_t i = 0; i < tuple.tupleSize(); ++i)
-                heap_columns.push_back(&tuple.getColumn(i));
-        }
-        else
-            heap_columns.push_back(method.top_k_heap.heap_column.get());
-
-        std::optional<typename Method::StateNoCache> trim_state;
 
         const size_t evicted_count = method.top_k_heap.trimAndCompact([&](size_t evicted)
         {
@@ -1217,11 +1195,7 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(
                 }
             }
 
-            if (!trim_state)
-                trim_state.emplace(heap_columns, key_sizes, aggregation_state_cache);
-
-            auto key_holder = trim_state->getKeyHolder(evicted, pool);
-            const auto & key = keyHolderGetKey(key_holder);
+            const auto & key = method.top_k_heap.hashTableKeyAt(evicted);
 
             if (destroyed_states)
             {
@@ -1231,7 +1205,6 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(
             }
 
             method.data.erase(key);
-            keyHolderDiscardKey(key_holder);
         });
         ProfileEvents::increment(ProfileEvents::AggregationTopKKeysEvicted, evicted_count);
         ProfileEvents::increment(ProfileEvents::AggregationTopKKeysPruned, evicted_count);
@@ -1502,9 +1475,8 @@ void NO_INLINE Aggregator::executeImplBatch(
 
                 if constexpr (top_k)
                 {
-                    if (skip_bitmap
-                        ? bool(skip_bitmap[i])
-                        : (method.top_k_heap.size() >= params.top_k->keys && heap_should_skip(i)))
+                    if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
+                                    : (method.top_k_heap.size() >= params.top_k->keys && heap_should_skip(i)))
                     {
                         ++top_k_rows_skipped;
                         continue;
@@ -1516,7 +1488,12 @@ void NO_INLINE Aggregator::executeImplBatch(
                 if constexpr (top_k)
                 {
                     if (emplace_result.isInserted())
-                        method.top_k_heap.push(heap_key_cols, i);
+                    {
+                        if (state.isNullAt(i))
+                            method.top_k_heap.push(heap_key_cols, i);
+                        else
+                            method.top_k_heap.push(heap_key_cols, i, emplace_result.getKey());
+                    }
                 }
 
                 if (emplace_result.isInserted())
@@ -1528,7 +1505,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 {
                     if (method.top_k_heap.needsTrim())
                     {
-                        trimHeapAndPruneHashTable(method, *aggregates_pool, nullptr, i);
+                        trimHeapAndPruneHashTable(method, nullptr, i);
                         skip_bitmap = nullptr;
                         state.resetCache();
                     }
@@ -1632,7 +1609,12 @@ void NO_INLINE Aggregator::executeImplBatch(
             if constexpr (top_k)
             {
                 if (emplace_result.isInserted())
-                    method.top_k_heap.push(heap_key_cols, i);
+                {
+                    if (state.isNullAt(i))
+                        method.top_k_heap.push(heap_key_cols, i);
+                    else
+                        method.top_k_heap.push(heap_key_cols, i, emplace_result.getKey());
+                }
             }
 
             /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
@@ -1664,15 +1646,13 @@ void NO_INLINE Aggregator::executeImplBatch(
             {
                 if (method.top_k_heap.needsTrim())
                 {
-                    trimHeapAndPruneHashTable(method, *aggregates_pool, &destroyed_states, i);
-
+                    trimHeapAndPruneHashTable(method, &destroyed_states, i);
                     skip_bitmap = nullptr;
                     state.resetCache();
                 }
             }
 
-            if constexpr (!top_k)
-                chassert(aggregate_data != nullptr);
+            chassert(aggregate_data != nullptr);
             places[i] = aggregate_data;
         }
 

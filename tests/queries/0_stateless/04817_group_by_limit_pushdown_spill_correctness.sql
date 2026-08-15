@@ -26,7 +26,6 @@ SET optimize_trivial_group_by_limit_query = 0;
 -- CI randomizes these; pin them so the heap engages and the spill is the only
 -- thing under test.
 SET query_plan_max_limit_for_top_k_optimization = 0;
-SET group_by_top_k_optimization_load_factor = 1.5;
 SET group_by_top_k_optimization_observation_rows = 65536;
 SET max_rows_to_group_by = 0;
 SET max_threads = 4;

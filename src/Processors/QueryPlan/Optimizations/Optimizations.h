@@ -69,8 +69,8 @@ struct Optimization
         std::optional<bool> join_swap_table;
 
         bool enable_group_by_top_k_optimization{};
-        Float64 top_k_optimization_load_factor{};
         UInt64 top_k_optimization_observation_rows{};
+        bool is_explain{};
 
         size_t max_block_size{};
 
@@ -196,7 +196,9 @@ inline const auto & getOptimizations()
         /// Run first, before splitFilter/pushDownFilter/mergeFilterIntoJoinCondition, so the
         /// constant-false ON condition is still intact on the JoinStepLogical (those passes would
         /// otherwise lower it into a CROSS + Filter on one input and hide it from this optimization).
-        {tryShortCircuitConstantFalseJoin, "shortCircuitConstantFalseJoin", &QueryPlanOptimizationSettings::short_circuit_constant_false_join},
+        {tryShortCircuitConstantFalseJoin,
+         "shortCircuitConstantFalseJoin",
+         &QueryPlanOptimizationSettings::short_circuit_constant_false_join},
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {tryPushBucketTopKIntoAggregation, "aggregationBucketTopK", &QueryPlanOptimizationSettings::aggregation_bucket_top_k},
@@ -206,16 +208,19 @@ inline const auto & getOptimizations()
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryConvertOuterJoinToInnerJoin, "convertOuterJoinToInnerJoin", &QueryPlanOptimizationSettings::convert_outer_join_to_inner_join},
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::execute_functions_after_sorting},
-        {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::reuse_storage_ordering_for_window_functions},
+        {tryReuseStorageOrderingForWindowFunctions,
+         "reuseStorageOrderingForWindowFunctions",
+         &QueryPlanOptimizationSettings::reuse_storage_ordering_for_window_functions},
         {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::lift_up_union},
         {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct},
         {tryUseVectorSearchWithVectorIndexFirstPass, "useVectorSearch", &QueryPlanOptimizationSettings::try_use_vector_search},
         {tryConvertJoinToIn, "convertJoinToIn", &QueryPlanOptimizationSettings::convert_join_to_in},
         {tryMergeFilterIntoJoinCondition, "mergeFilterIntoJoinCondition", &QueryPlanOptimizationSettings::merge_filter_into_join_condition},
-        {tryConvertAnyJoinToSemiOrAntiJoin, "convertAnyJoinToSemiOrAntiJoin", &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join},
+        {tryConvertAnyJoinToSemiOrAntiJoin,
+         "convertAnyJoinToSemiOrAntiJoin",
+         &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join},
         {tryRemoveUnusedColumns, "removeUnusedColumns", &QueryPlanOptimizationSettings::remove_unused_columns},
         {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
-        {tryOptimizeGroupByTopK, "tryOptimizeGroupByTopK", &QueryPlanOptimizationSettings::enable_group_by_top_k_optimization},
         {tryTopKThroughJoin, "topKThroughJoin", &QueryPlanOptimizationSettings::top_k_through_join},
     }};
 
@@ -235,7 +240,7 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true);
-void optimizeAggregationInOrder(const Stack & stack, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization);
 void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
@@ -264,17 +269,6 @@ std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(
 /// the query plan (the node's bottom-up hash from calculateHashTableCacheKeys), instead of from the
 /// AST. Mirrors how join steps get their keys. No-op unless collect_hash_table_stats_during_aggregation.
 void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
-
-void abandonUnprofitableGroupByTopK(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
-
-/// Aggregate-projection rewriting runs after the top-K optimization and either makes the
-/// `AggregatingStep` merge-only (all parts have the projection) or replaces it with an
-/// `AggregatingProjectionStep` (only some do).  Merging of aggregation states bypasses the heap, so
-/// leaving `top_k` on such a step only disables hash-table size hints and keeps a stale `Top-K` in
-/// `EXPLAIN`.  Abandon it, together with the sort synthesized for the heap.
-void abandonGroupByTopKForProjections(QueryPlan::Node & root);
-
-bool removeSyntheticTopKSort(QueryPlan::Node * aggregating_node, QueryPlan::Node * sort_node, QueryPlan::Node * parent_of_sort);
 
 /// Populates two maps in lock-step:
 ///   raw_hashes[N]  = bottom-up hash of the sub-plan rooted at N, independent of N's parent.
