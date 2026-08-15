@@ -2461,20 +2461,23 @@ void Planner::buildPlanForQueryNode()
             /// kept keys would be undercounted again — one level up, across nodes instead of
             /// across threads. On the shards of distributed queries and on the replicas of
             /// parallel-replicas reading, `isSecondStage` is false, so the cutoff stays off there.
+            Settings query_settings = settings;
+            query_settings.applyChanges(query_node.getSettingsChanges());
+
             std::optional<UInt64> trivial_group_by_limit;
-            if (!settings[Setting::make_distributed_plan]
+            if (!query_settings[Setting::make_distributed_plan]
                 && query_processing_info.isFirstStage() && query_processing_info.isSecondStage()
                 && hasAggregateFunctionNodes(query_node.getProjectionNode()))
             {
-                trivial_group_by_limit = getTrivialGroupByLimit(query_node, settings);
+                trivial_group_by_limit = getTrivialGroupByLimit(query_node, query_settings);
 
                 /// Respect a user-set tighter `max_rows_to_group_by`. Equality is safe only with
                 /// the approximate ANY-mode semantics; otherwise forcing ANY below would replace
                 /// the user's `throw` or `break` contract.
-                const UInt64 user_max_rows = settings[Setting::max_rows_to_group_by];
+                const UInt64 user_max_rows = query_settings[Setting::max_rows_to_group_by];
                 if (trivial_group_by_limit && user_max_rows != 0
                     && (user_max_rows < *trivial_group_by_limit
-                        || (user_max_rows == *trivial_group_by_limit && settings[Setting::group_by_overflow_mode] != OverflowMode::ANY)))
+                        || (user_max_rows == *trivial_group_by_limit && query_settings[Setting::group_by_overflow_mode] != OverflowMode::ANY)))
                     trivial_group_by_limit.reset();
             }
 
