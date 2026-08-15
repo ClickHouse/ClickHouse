@@ -332,6 +332,14 @@ TEST(TreeHashCompleteness, MemberOnlyClausesAreSignificant)
     EXPECT_NE(hashOf("OPTIMIZE TABLE t DEDUPLICATE"), hashOf("OPTIMIZE TABLE t DEDUPLICATE BY a"));
     EXPECT_NE(hashOf("OPTIMIZE TABLE t DEDUPLICATE BY a"), hashOf("OPTIMIZE TABLE t DEDUPLICATE BY b"));
 
+    for (const std::string query : {
+             "CHECK TABLE t PARTITION 1",
+             "OPTIMIZE TABLE t PARTITION 1",
+             "OPTIMIZE TABLE t DRY RUN PARTS 'p1'",
+             "OPTIMIZE TABLE t DEDUPLICATE BY a",
+         })
+        EXPECT_EQ(hashOfJSONRoundTrip(query), hashOf(query)) << query;
+
     /// Every one of them is printed, so it survives a format+parse round trip and a clone.
     for (const std::string query : {
              "CHECK TABLE t PARTITION 1",
