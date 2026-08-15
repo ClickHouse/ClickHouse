@@ -1771,6 +1771,12 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                 /// key salted with the TopK plan parameters, while a deterministic user PREWHERE on a
                 /// TopK-stamped read keeps writing plain entries shared with non-TopK queries.
                 const bool apply_top_k_salt = top_k_filter_info && !VirtualColumnUtils::isDeterministic(outputs);
+                /// The dynamic `TopK` threshold is computed after row policies are applied, but these
+                /// `PREWHERE` cache entries are shared across users. The write path already avoids
+                /// recording row-policy-filtered marks; also avoid reusing marks recorded by an
+                /// unrestricted user before a restrictive policy gets a chance to filter rows.
+                if (apply_top_k_salt && select_query_info.row_level_filter)
+                    break;
                 auto stats = drop_mark_ranges(outputs, apply_top_k_salt);
                 LOG_DEBUG(log,
                         "Query condition cache has dropped {}/{} granules for PREWHERE condition {}.",

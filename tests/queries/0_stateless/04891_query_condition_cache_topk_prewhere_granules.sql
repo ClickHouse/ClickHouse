@@ -78,6 +78,22 @@ SELECT k FROM tab WHERE w = 0 ORDER BY k ASC LIMIT 5;
 SELECT '--- Different WHERE must not reuse the PREWHERE granule decisions';
 SELECT k FROM tab WHERE w = 1 ORDER BY k ASC LIMIT 5;
 
+-- `PREWHERE` `TopK` entries are shared by all users. Prime them as an unrestricted user,
+-- then verify a restrictive row policy cannot reuse the cached decisions before it
+-- hides the first chunk: the policy user's smallest visible keys are in later granules.
+SYSTEM CLEAR QUERY CONDITION CACHE;
+SELECT '--- Row policy must not reuse unrestricted PREWHERE granule decisions: prime';
+SELECT k FROM tab ORDER BY k ASC LIMIT 5;
+DROP USER IF EXISTS user_04891;
+CREATE USER user_04891;
+GRANT SELECT ON tab TO user_04891;
+DROP ROW POLICY IF EXISTS policy_04891 ON tab;
+CREATE ROW POLICY policy_04891 ON tab FOR SELECT USING w = 1 TO user_04891;
+SELECT '--- Row policy must not reuse unrestricted PREWHERE granule decisions';
+EXECUTE AS user_04891 SELECT k FROM tab ORDER BY k ASC LIMIT 5;
+DROP ROW POLICY policy_04891 ON tab;
+DROP USER user_04891;
+
 -- The opposite sort direction needs the rows with the *largest* `k`, which live
 -- exclusively in granules the ASC plan just recorded as skippable (every row outside
 -- the first chunk has `k >= 8192`). The `__topKFilter(k)` PREWHERE condition of both
