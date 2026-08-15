@@ -177,7 +177,7 @@ public:
         if (right_coef == 0)
             return samples[left_index];
 
-        UInt64 right_coef_bits;
+        UInt64 right_coef_bits{};
         std::memcpy(&right_coef_bits, &right_coef, sizeof(right_coef_bits));
 
         const UInt64 exponent = (right_coef_bits >> 52) & 0x7FF;
@@ -185,7 +185,7 @@ public:
 
         using boost::multiprecision::cpp_int;
         cpp_int numerator;
-        UInt64 denominator_shift;
+        UInt64 denominator_shift{};
         if (exponent == 0)
         {
             numerator = mantissa;
@@ -250,7 +250,7 @@ private:
                 value >>= 64;
             }
 
-            NativeType result;
+            NativeType result{};
             std::memcpy(&result, limbs.data(), sizeof(result));
             return result;
         }
