@@ -292,6 +292,21 @@ git push origin "$HEAD_BRANCH"
 git push "$REMOTE_NAME" "$HEAD_BRANCH"
 ```
 
+Before every commit and push, run this safety gate. It is a hard stop and overrides the general requirement to push:
+
+1. Record the remote PR-head OID immediately after the initial fetch. Preserve that commit as an ancestor: only add commits on top of the existing PR history. Never rebase, reset the branch onto another commit, amend published commits, delete the remote branch, use a `+` refspec, or pass `--force`, `--force-with-lease`, or `--no-verify` to `git push`.
+2. Stage only explicit paths with `git add <path>`. Never use `git add -A`, `git add .`, or `git commit -a` in this workflow. Before committing, inspect both `git diff --cached --name-status` and `git diff --cached --stat`. Every staged path must be explained by the requested fix or by a specific conflict resolution. Unstage unexpected paths and do not commit when the scope is unclear.
+3. Before pushing, fetch the remote PR branch again and require its current tip to be an ancestor of local `HEAD`:
+   ```bash
+   git fetch "$PUSH_REMOTE" "$HEAD_BRANCH"
+   REMOTE_HEAD=$(git rev-parse "$PUSH_REMOTE/$HEAD_BRANCH")
+   git merge-base --is-ancestor "$REMOTE_HEAD" HEAD
+   ```
+   If the check is nonzero, merge the remote branch normally or stop and report the lineage problem. Never replace its history.
+4. Inspect the complete proposed PR diff with `git diff --name-status "origin/$BASE_BRANCH"...HEAD` and `git diff --stat "origin/$BASE_BRANCH"...HEAD`. Compare it with the PR diff recorded immediately after checkout. Account explicitly for every added path and every removed path. A sudden broad expansion, contraction, unrelated subtree change, mass deletion, or single-parent fix commit containing base-branch churn indicates a wrong checkout, stale-tree snapshot, contaminated worktree, or lost history; do not push it. If scope cannot be proven from the PR intent and work performed in this session, stop and report the exact diff anomaly.
+
+The automation installs a `pre-push` hook that rejects non-fast-forward updates and branch deletion. Do not bypass it. A hook rejection is a safety failure to report, not an obstacle to work around.
+
 Always push once you have committed conflict resolutions or fixes — pushing is mandatory and must never be deferred or gated on a question. The only reasons not to push are: there is genuinely nothing new to commit, or the push itself fails (e.g. no permission on a fork), in which case report the error.
 
 Report the result and provide the PR URL.
