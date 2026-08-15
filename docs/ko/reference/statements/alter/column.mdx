@@ -37,10 +37,10 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 </div>
 
 ```sql
-ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
 ```
 
-지정된 `name`, `type`, [`codec`](/ko/reference/statements/create/table#column_compression_codec), `default_expr`를 사용해 테이블에 새 컬럼을 추가합니다([기본 표현식](/ko/reference/statements/create/table#default_values) 섹션 참조).
+지정된 `name`, `type`, [`codec`](/ko/reference/statements/create/table/codec), `default_expr`를 사용해 테이블에 새 컬럼을 추가합니다([기본 표현식](/ko/reference/statements/create/table#default_values) 섹션 참조). 유형 뒤에 오는 수정자는 임의의 순서로 작성할 수 있으며, 각각 최대 한 번만 사용할 수 있습니다. [컬럼 설명](/ko/reference/statements/create/table#with-explicit-schema)을 참조하십시오.
 
 `IF NOT EXISTS` 절이 포함되어 있으면 해당 컬럼이 이미 존재하더라도 쿼리는 오류를 반환하지 않습니다. `AFTER name_after`(다른 컬럼의 이름)를 지정하면 테이블 컬럼 목록에서 지정한 컬럼 다음에 새 컬럼이 추가됩니다. 테이블의 맨 앞에 컬럼을 추가하려면 `FIRST` 절을 사용하십시오. 그렇지 않으면 컬럼은 테이블의 끝에 추가됩니다. 일련의 작업에서는 `name_after`에 이전 작업 중 하나에서 추가된 컬럼의 이름을 지정할 수 있습니다.
 
@@ -154,12 +154,14 @@ ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used fo
 
 ```sql
 MODIFY COLUMN [IF EXISTS] name
-    [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ALTER COLUMN [IF EXISTS] name
-    TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    TYPE [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ```
+
+유형 뒤에 오는 수정자는 임의의 순서로 작성할 수 있으며, 각각 최대 한 번만 사용할 수 있습니다. [컬럼 설명](/ko/reference/statements/create/table#with-explicit-schema)을 참조하십시오.
 
 이 쿼리는 `name` 컬럼의 다음 속성을 변경합니다:
 
@@ -175,7 +177,7 @@ ALTER COLUMN [IF EXISTS] name
 
 * Enum/Enum8/Enum16 타입의 Enum 값
 
-컬럼 압축 코덱 변경 예시는 [컬럼 압축 코덱](/ko/reference/statements/create/table#column_compression_codec)을 참조하십시오.
+컬럼 압축 코덱 변경 예시는 [컬럼 압축 코덱](/ko/reference/statements/create/table/codec)을 참조하십시오.
 
 컬럼 TTL 변경 예시는 [컬럼 TTL](/ko/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl)을 참조하십시오.
 
@@ -377,9 +379,20 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 └───────────────────────┴───────────────────────────────────────────────────────┘
 ```
 
+<Note>
+  `MATERIALIZE COLUMN`은 항상 **컬럼 값**을 재작성합니다. [데이터 스키핑 인덱스](/ko/reference/statements/alter/skipping-index)(텍스트 인덱스 포함)도 다시 빌드되는지는 파트 레이아웃과 인덱스 저장 방식에 따라 달라집니다.
+
+  * **wide + full-storage**를 동시에 사용하는 파트에서는 컬럼만 재작성할 때 **독립형** 스키핑 인덱스 파일(및 텍스트 인덱스)이 자동으로 다시 빌드되지 **않습니다**. 인덱스가 의존하는 기반 컬럼 데이터를 변경한 후 해당 인덱스 파일을 갱신해야 한다면 [`ALTER TABLE ... MATERIALIZE INDEX`](/ko/reference/statements/alter/skipping-index#materialize-index)를 실행하십시오.
+  * **예외:** `skp_idx.packed`에 패킹된 일반 스킵 인덱스(기본 [`packed_skip_index_max_bytes`](/ko/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes)보다 작은 스킵 인덱스 서브스트림, 전문 검색 인덱스는 이 방식으로 패킹되지 않음)는 wide + full-storage 파트에서도 강제로 재계산됩니다.
+  * **wide + full-storage가 아닌 모든 파트**(**compact + full**, **compact + packed**, **wide + packed** 포함)에서는 뮤테이션이 전체 파트 재작성 경로를 거치며, 해당 파트에 이미 존재하는 보조 인덱스를 강제로 재계산합니다. 작은 파트는 기본적으로 full 파트 스토리지를 사용하면서도 대체로 compact이므로, 이 분기는 최근 삽입에서 일반적으로 적용됩니다.
+
+  별도로, `ADD INDEX`는 메타데이터만 업데이트합니다. 즉, 기존 파트에서 새 인덱스(텍스트 인덱스 포함)를 즉시 구체화하지 **않습니다**. 기존 파트의 인덱스는 명시적으로 [`MATERIALIZE INDEX`](/ko/reference/statements/alter/skipping-index#materialize-index)를 실행하거나, [`materialize_skip_indexes_on_merge`](/ko/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge)가 활성화되어 있고 인덱스가 [`exclude_materialize_skip_indexes_on_merge`](/ko/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge)에 나열되지 않은 경우 이후 머지 과정에서 구체화됩니다. 머지 설정을 기다리지 않고 인덱스를 빌드해야 한다면 명시적으로 `MATERIALIZE INDEX`를 실행하는 것이 확실한 방법입니다.
+</Note>
+
 **관련 항목**
 
 * [MATERIALIZED](/ko/reference/statements/create/view#materialized-view).
+* [MATERIALIZE INDEX](/ko/reference/statements/alter/skipping-index#materialize-index).
 
 <div id="limitations">
   ## 제한 사항
