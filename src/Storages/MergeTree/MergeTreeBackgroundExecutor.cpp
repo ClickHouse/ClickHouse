@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 
 #include <algorithm>
+#include <chrono>
 #include <optional>
 
 #include <Common/ThreadPool.h>
@@ -221,14 +222,19 @@ size_t MergeTreeBackgroundExecutor<Queue>::reserveTaskSlots(size_t desired) TSA_
         return std::min(static_cast<Int64>(max_tasks_count.load()), static_cast<Int64>(threads_count));
     };
 
-    task_slots_available.wait(lock, [this, &value, &get_limit] TSA_REQUIRES(mutex)
+    /// This is called by foreground `OPTIMIZE FINAL`, so do not wait indefinitely without
+    /// observing query cancellation. `wait_for` also handles a notification caused by a
+    /// configuration change or executor shutdown without delaying it by the polling interval.
+    while (!shutdown && value.load() >= get_limit())
     {
-        return shutdown || value.load() < get_limit();
-    });
+        task_slots_available.wait_for(lock, std::chrono::milliseconds(100));
+        CurrentThread::checkIfNotCancelled();
+    }
 
     if (shutdown)
         return 0;
 
+    CurrentThread::checkIfNotCancelled();
     const size_t granted = std::min(desired, static_cast<size_t>(get_limit() - value.load()));
     value.fetch_add(static_cast<Int64>(granted));
     return granted;
