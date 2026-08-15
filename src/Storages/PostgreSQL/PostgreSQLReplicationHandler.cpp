@@ -357,6 +357,16 @@ namespace
                 "when the shared replication slot and publication are removed",
                 expanded_replica_name);
     }
+
+    /// The keeper path is the root below which every coordinated replica creates its
+    /// leader-election, registration and nested-table nodes. An empty expansion would
+    /// make all of those paths relative to the Keeper root.
+    void assertValidCoordinationKeeperPath(const String & expanded_keeper_path)
+    {
+        if (expanded_keeper_path.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "materialized_postgresql_keeper_path must not expand to an empty path in coordinated mode");
+    }
 }
 
 void validateMaterializedPostgreSQLCoordinationSettings(
@@ -460,6 +470,7 @@ void validateMaterializedPostgreSQLCoordinationSettings(
             info.table_id.uuid = clickhouse_uuid;
             expanded_keeper_path = macros->expand(raw_keeper_path, info);
         }
+        assertValidCoordinationKeeperPath(expanded_keeper_path);
         {
             const String raw_replica_name = settings[MaterializedPostgreSQLSetting::materialized_postgresql_replica_name];
             Macros::MacroExpansionInfo info;
@@ -689,6 +700,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
                 Macros::MacroExpansionInfo info;
                 info.table_id = macro_table_id;
                 coordination_keeper_path = macros->expand(raw_keeper_path, info);
+                assertValidCoordinationKeeperPath(coordination_keeper_path);
             }
             {
                 Macros::MacroExpansionInfo info;

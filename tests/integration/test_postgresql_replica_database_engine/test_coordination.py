@@ -27,7 +27,13 @@ instance = cluster.add_instance(
     # tests that change a macro in the configuration and restart the server. `replica` itself must not be
     # changed: some CI configurations put the database metadata on a remote disk whose endpoint contains
     # {replica}, so renaming it would relocate (and thereby lose) all databases of the instance.
-    macros={"shard": "1", "replica": "coord_instance1", "coord_replica": "coord_instance1"},
+    macros={
+        "shard": "1",
+        "replica": "coord_instance1",
+        "coord_replica": "coord_instance1",
+        # Used to verify that a configured macro expanding to an empty value cannot select the Keeper root.
+        "coord_path": "",
+    },
 )
 
 instance2 = cluster.add_instance(
@@ -1779,6 +1785,21 @@ def test_bad_macro_in_coordination_settings_is_rejected_at_create(started_cluste
     assert "no_such_macro" in error
 
     assert "test_bad_macro" not in instance.query("SHOW DATABASES").split()
+
+
+def test_keeper_path_rejects_an_empty_config_macro(started_cluster):
+    # A configured macro can legally expand to an empty string. In a coordinated setup that must still be
+    # rejected at CREATE time: otherwise the handler would form /leader, /replicas and nested-table paths at
+    # the Keeper root, causing unrelated misconfigured databases to share one coordination namespace.
+    error = instance.query_and_get_error(
+        f"CREATE DATABASE test_empty_keeper_path "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}') "
+        f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
+        f"materialized_postgresql_keeper_path = '{{coord_path}}'"
+    )
+    assert "must not expand to an empty path" in error
+    assert "test_empty_keeper_path" not in instance.query("SHOW DATABASES").split()
 
 
 def test_duplicate_replica_name_is_rejected(started_cluster):
