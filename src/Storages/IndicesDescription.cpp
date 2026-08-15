@@ -1,6 +1,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Planner/AnalyzeExpression.h>
 #include <Storages/IndicesDescription.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -110,7 +111,10 @@ IndexDescription IndexDescription::getIndexFromAST(
     bool escape_filenames,
     ContextPtr context)
 {
-    const auto * index_definition = definition_ast->as<ASTIndexDeclaration>();
+    ASTPtr expanded_definition_ast = definition_ast->clone();
+    UserDefinedSQLFunctionVisitor::visit(expanded_definition_ast, context);
+
+    const auto * index_definition = expanded_definition_ast->as<ASTIndexDeclaration>();
     if (!index_definition)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create skip index from non ASTIndexDeclaration AST");
 
@@ -128,7 +132,7 @@ IndexDescription IndexDescription::getIndexFromAST(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index GRANULARITY must be a positive integer");
 
     IndexDescription result;
-    result.definition_ast = index_definition->clone();
+    result.definition_ast = expanded_definition_ast;
     result.name = index_definition->name;
     result.type = Poco::toLower(index_type->name);
     result.granularity = index_definition->granularity;

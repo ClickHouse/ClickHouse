@@ -44,9 +44,11 @@ namespace
 /// and scalar subqueries nested under functions (`CHECK equals((SELECT 1), 1)`) are
 /// rejected.  The single allowed exception is a direct subquery on the set side of an
 /// `IN`-family operator (`x IN (SELECT ...)`): it becomes a "not-ready set" built lazily
-/// at insert time (see `getExpressions`), which matches the legacy behaviour.  A subquery
-/// hidden inside the set side (`x IN (1, (SELECT 1))`) is not a not-ready set and is
-/// rejected like any other nested scalar subquery.
+/// at insert time (see `getExpressions`), which matches the legacy behaviour. A table name
+/// on the set side (`x IN table`) is forbidden because it also produces a not-ready set,
+/// but without a SELECT pipeline to materialize it. A subquery hidden inside the set side
+/// (`x IN (1, (SELECT 1))`) is not a not-ready set and is rejected like any other nested
+/// scalar subquery.
 bool containsForbiddenSubquery(const ASTPtr & ast)
 {
     if (ast->as<ASTSubquery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
@@ -67,7 +69,8 @@ bool containsForbiddenSubquery(const ASTPtr & ast)
             /// shape must still be validated: a scalar subquery nested in a tuple or
             /// list (`x IN (1, (SELECT 1))`) would otherwise run on every insert.
             const auto & set_side = arguments.back();
-            if (!set_side->as<ASTSubquery>() && containsForbiddenSubquery(set_side))
+            if (set_side->as<ASTIdentifier>() || set_side->as<ASTTableIdentifier>()
+                || (!set_side->as<ASTSubquery>() && containsForbiddenSubquery(set_side)))
                 return true;
         }
         return false;
@@ -91,7 +94,7 @@ void checkExpressionDoesntContainSubqueries(const ASTPtr & expr, const ContextPt
     UserDefinedSQLFunctionVisitor::visit(expanded_expr, context);
     if (containsForbiddenSubquery(expanded_expr))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Subqueries are not allowed in CHECK constraints, except a direct subquery on the right-hand side of an IN operator");
+            "Subqueries and table names are not allowed in CHECK constraints, except a direct subquery on the right-hand side of an IN operator");
 }
 
 }
