@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/ASTSampleRatio.h>
+#include <Parsers/IAST.h>
 
 #include <Core/Streaming/CursorTree.h>
 #include <Core/Streaming/Settings.h>
@@ -10,6 +11,9 @@ namespace DB
 
 class ReadBuffer;
 class WriteBuffer;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /** Modifiers that can be used for table, table function and subquery in JOIN TREE.
   *
@@ -97,6 +101,9 @@ private:
 
 void serializeRational(TableExpressionModifiers::Rational val, WriteBuffer & out);
 TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in);
+
+/// Returns metadata extended according to table expression modifiers.
+StorageMetadataPtr extendMetadataWithModifiers(const StorageMetadataPtr & metadata, const TableExpressionModifiers & modifiers);
 
 inline bool operator==(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)
 {

@@ -23,7 +23,10 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
     /// Checks if the types of the specified arguments are valid for a one-argument aggregation operator.
-    void checkArgumentTypes(const PQT::AggregationOperator * operator_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    void checkArgumentTypes(
+        const PrometheusQueryTree::AggregationOperator * operator_node,
+        const std::vector<SQLQueryPiece> & arguments,
+        const ConverterContext & context)
     {
         const auto & operator_name = operator_node->operator_name;
 
@@ -143,7 +146,7 @@ bool isOneArgumentAggregationOperator(std::string_view operator_name)
 
 
 SQLQueryPiece applyOneArgumentAggregationOperator(
-    const PQT::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     const auto & operator_name = operator_node->operator_name;
     const auto * impl_info = getImplInfo(operator_name);
