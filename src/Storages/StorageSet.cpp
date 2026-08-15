@@ -21,6 +21,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <filesystem>
 #include <optional>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -57,9 +58,8 @@ public:
 private:
     void cancelBuffers() noexcept;
 
-    /// Cancel the buffers and remove the staged file. Only `onFinish` promotes it into the
-    /// table directory, so a staged file left behind by a failed `INSERT` would never be read
-    /// again (`restore` scans `path`, not `path/tmp`) and would keep its blobs alive forever.
+    /// Cancel the buffers and remove the staged or promoted file. A failed `INSERT` must not
+    /// leave data that would be restored after a restart.
     void discardStagedBackup() noexcept;
 
     StorageSetOrJoinBase & table;
@@ -70,6 +70,8 @@ private:
     std::unique_ptr<WriteBufferFromFileBase> backup_buf;
     std::optional<CompressedWriteBuffer> compressed_backup_buf;
     std::optional<NativeWriter> backup_stream;
+    std::vector<Block> staged_blocks;
+    bool backup_promoted = false;
     bool persistent;
 };
 
@@ -119,7 +121,8 @@ void SetOrJoinSink::discardStagedBackup() noexcept
     /// local disk keeps whatever was flushed, so remove the file explicitly in both cases.
     try
     {
-        table.disk->removeFileIfExists(fs::path(backup_tmp_path) / backup_file_name);
+        const auto backup_file_path = fs::path(backup_promoted ? backup_path : backup_tmp_path) / backup_file_name;
+        table.disk->removeFileIfExists(backup_file_path);
     }
     catch (...)
     {
@@ -127,7 +130,7 @@ void SetOrJoinSink::discardStagedBackup() noexcept
             getLogger("SetOrJoinSink"),
             fmt::format(
                 "Cannot remove the staged backup file {} of table {} on disk {}",
-                fs::path(backup_tmp_path) / backup_file_name,
+                fs::path(backup_promoted ? backup_path : backup_tmp_path) / backup_file_name,
                 table.getStorageID().getNameForLogs(),
                 table.disk->getName()));
     }
@@ -147,10 +150,9 @@ void SetOrJoinSink::consume(Chunk & chunk)
 {
     Block block = getHeader().cloneWithColumns(chunk.getColumns());
 
-    /// Stage the block in the temporary backup file before mutating the in-memory state: if the
-    /// disk rejects the write (for example, a `borrow_from_cache` disk whose cache is not
-    /// registered is read-only), the failed `INSERT` must not leave the rows visible in memory.
-    /// The temporary file itself is discarded unless the whole insert finishes successfully.
+    /// Stage the blocks in a temporary backup file and keep them out of the live state until the
+    /// whole file has been finalized and promoted. A late I/O failure must not make a failed
+    /// `INSERT` visible in a persistent `Set` or `Join` table.
     if (persistent)
     {
         if (!backup_buf)
@@ -160,6 +162,8 @@ void SetOrJoinSink::consume(Chunk & chunk)
             backup_stream.emplace(*compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));
         }
         backup_stream->write(block);
+        staged_blocks.emplace_back(std::move(block));
+        return;
     }
 
     table.insertBlock(block, getContext());
@@ -167,7 +171,6 @@ void SetOrJoinSink::consume(Chunk & chunk)
 
 void SetOrJoinSink::onFinish()
 {
-    table.finishInsert();
     if (backup_buf)
     {
         backup_stream->flush();
@@ -175,7 +178,13 @@ void SetOrJoinSink::onFinish()
         backup_buf->finalize();
 
         table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
+        backup_promoted = true;
+
+        for (const auto & block : staged_blocks)
+            table.insertBlock(block, getContext());
     }
+
+    table.finishInsert();
 }
 
 
