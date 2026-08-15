@@ -1,0 +1,5 @@
+dup_on_eq_hash	1
+dup_off_eq_hash	1
+dup_on_eq_off	1
+uniq_on_eq_hash	1
+uniq_on_eq_off	1
