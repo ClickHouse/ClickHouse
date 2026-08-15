@@ -746,7 +746,8 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     ContextPtr local_context,
     bool commit_once_processed,
     bool is_direct_select,
-    size_t max_processed_files_override)
+    size_t max_processed_files_override,
+    std::atomic_bool * iterator_consumed)
 {
     CommitSettings commit_settings_copy;
     AfterProcessingSettings after_processing_settings_copy;
@@ -786,7 +787,8 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         is_direct_select,
         add_deduplication_info,
         is_deduplication_v2,
-        *this);
+        *this,
+        iterator_consumed);
 }
 
 size_t StorageObjectStorageQueue::getDependencies() const
@@ -815,7 +817,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
     /// Whether this cycle actually consumed from the file iterator; only then may the reschedule
     /// interval be capped by a pending foreign-processing recheck (see below).
-    bool consumed_this_cycle = false;
+    std::atomic_bool consumed_this_cycle = false;
 
     if (deps_ready && !stream_control.claimCycle(streaming_task_refresh_epochs.at(streaming_tasks_index)))
     {
@@ -855,9 +857,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
                 files_metadata->registerActive(storage_id);
-                consumed_this_cycle = true;
-
-                if (streamToViews(streaming_tasks_index, cycle_epoch))
+                if (streamToViews(streaming_tasks_index, cycle_epoch, consumed_this_cycle))
                 {
                     /// Reset the reschedule interval.
                     std::lock_guard lock(mutex);
@@ -929,7 +929,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
     }
 }
 
-bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch)
+bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch, std::atomic_bool & iterator_consumed)
 {
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
@@ -1041,7 +1041,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                 queue_context,
                 /*commit_once_processed=*/false,
                 /*is_direct_select=*/false,
-                effective_max_files);
+                effective_max_files,
+                &iterator_consumed);
 
             pipes.emplace_back(source);
             sources.emplace_back(source);

@@ -1343,7 +1343,8 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     bool is_direct_select_,
     bool add_deduplication_info_,
     bool is_deduplication_v2_,
-    IStreamingStorage & streaming_storage_)
+    IStreamingStorage & streaming_storage_,
+    std::atomic_bool * iterator_consumed_)
     : ISource(std::make_shared<const Block>(read_from_format_info_.source_header))
     , WithContext(context_)
     , name(std::move(name_))
@@ -1370,6 +1371,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , cancel_epoch(streaming_storage_.currentCancelEpoch())
     , add_deduplication_info(add_deduplication_info_)
     , is_deduplication_v2(is_deduplication_v2_)
+    , iterator_consumed(iterator_consumed_)
     , log(log_)
 {
     if (commit_once_processed)
@@ -1526,6 +1528,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 parser_shared_resources,
                 nullptr,
                 /* need_only_count */ false);
+
+            if (iterator_consumed)
+                iterator_consumed->store(true, std::memory_order_relaxed);
 
             if (!reader)
             {

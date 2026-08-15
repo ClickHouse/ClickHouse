@@ -248,7 +248,8 @@ public:
         bool is_direct_select_,
         bool add_deduplication_info_,
         bool is_deduplication_v2_,
-        IStreamingStorage & streaming_storage_);
+        IStreamingStorage & streaming_storage_,
+        std::atomic_bool * iterator_consumed_);
 
     static Block getHeader(Block sample_block, const NamesAndTypes & requested_virtual_columns);
 
@@ -327,6 +328,7 @@ private:
     const bool add_deduplication_info;
     /// Effective dedup: gates whether shutdown can abort mid-file.
     const bool is_deduplication_v2;
+    std::atomic_bool * const iterator_consumed;
     time_t transaction_start_time;
 
     LoggerPtr log;
