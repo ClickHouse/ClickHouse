@@ -303,6 +303,10 @@ SELECT department, max(revenue) FROM sales GROUP BY department ORDER BY departme
 SELECT greatest(a, b) FROM values('a Int32, b Int32', (1, 2), (5, 3));
         )",
         R"(
+┌─greatest(a, b)─┐
+│              2 │
+│              5 │
+└────────────────┘
         )"
     }
     };
