@@ -1657,18 +1657,18 @@ static void finalizeMutatedPart(
     }
 
     /// `default_compression_codec.txt` records the part's own default codec as a fact:
-    /// `loadDefaultCompressionCodec` trusts it verbatim on every later load. On this path the codec is
-    /// inherited from the source part, and when the source's own codec could only be recovered
-    /// approximately (see `IMergeTreeDataPart::default_codec_is_approximate`) it is a guess, not a fact -
-    /// most columns are hardlinked here, so their data keeps whatever, possibly different, codec they
-    /// were written with. Writing the guess out would launder it into authoritative metadata: the next
-    /// load would consider the rewritten part exact and let a wrong guess suppress a due `RECOMPRESS`
-    /// TTL again (see `buildRecompressTTLInfo`), one generation after the flag prevented exactly that.
+    /// `loadDefaultCompressionCodec` trusts it verbatim on every later load. When the source's own codec
+    /// could only be recovered approximately (see `IMergeTreeDataPart::default_codec_is_approximate`),
+    /// the mutated part still has no authoritative part-wide codec: most columns are hardlinked and
+    /// keep whatever, possibly different, codec they were written with. This remains true even when a
+    /// current table or `RECOMPRESS` policy chose an exact codec for the columns that this mutation
+    /// rewrote. Writing any value out would launder partial information into authoritative metadata:
+    /// the next load could let it suppress a due `RECOMPRESS` TTL for the untouched columns.
     /// Leave the file out instead - its absence is how "this part's default codec is not recorded" is
     /// already spelled on disk, and it is tolerated wherever the file is read or transferred
     /// (`getFileNamesWithoutChecksums`, `DataPartsExchange`) - so the recovery, and the approximate flag
     /// with it, runs again on every load of every descendant.
-    const bool codec_is_approximate = source_part->default_codec_is_approximate && codec == source_part->default_codec;
+    const bool codec_is_approximate = source_part->default_codec_is_approximate;
     if (!codec_is_approximate)
     {
         auto out_comp = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
@@ -3073,9 +3073,9 @@ private:
         /// `default_compression_codec.txt` is missing has only an approximate recovered codec.
         /// Reusing that estimate here would make it a real write-path decision for the rewritten
         /// columns. Choose the codec from the current table and TTL policy instead, as the
-        /// full-rewrite mutation path does. The resulting codec is a fact about the new writes,
-        /// even though other columns are hardlinked from the source part.
-        bool codec_is_approximate = ctx->source_part->default_codec_is_approximate;
+        /// full-rewrite mutation path does. The part-wide codec remains approximate because the
+        /// other columns are hardlinked from the source part.
+        const bool codec_is_approximate = ctx->source_part->default_codec_is_approximate;
         bool is_explicit_recompression;
         if (codec_is_approximate)
         {
@@ -3083,7 +3083,6 @@ private:
                 ctx->metadata_snapshot, ctx->source_part->getBytesOnDisk(), ctx->source_part->ttl_infos, ctx->time_of_mutation);
             ctx->compression_codec = std::move(part_compression_codec.codec);
             is_explicit_recompression = part_compression_codec.is_explicit_recompression;
-            codec_is_approximate = false;
         }
         else
         {
@@ -3092,9 +3091,9 @@ private:
                 ctx->metadata_snapshot->getRecompressionTTLs(), ctx->source_part->ttl_infos.recompression_ttl, ctx->time_of_mutation);
         }
 
-        /// Record the chosen codec on the part so that its projections merged by the sub-merge in
-        /// `MergeTask` (see the projection branch there) inherit the same codec. This remains
-        /// approximate only when the source value was reused unchanged.
+        /// Record the chosen writer codec so that projections merged by the sub-merge in `MergeTask`
+        /// (see the projection branch there) use the same codec. Its provenance remains approximate
+        /// whenever the source part-wide value was approximate.
         ctx->new_data_part->default_codec = ctx->compression_codec;
         ctx->new_data_part->default_codec_is_approximate = codec_is_approximate;
 

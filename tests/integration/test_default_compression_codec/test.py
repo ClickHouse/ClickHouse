@@ -915,8 +915,8 @@ def test_missing_codec_file_fails_closed_for_modern_part_after_codec_alter(start
 def test_default_codec_provenance_survives_column_only_mutation(start_cluster):
     # A part whose default codec could only be recovered approximately must not reuse that guess to
     # encode columns rewritten by a column-only mutation. The writer chooses the current table / TTL
-    # policy independently, so the result is an exact codec for the newly written columns and may be
-    # recorded in the descendant's `default_compression_codec.txt`.
+    # policy independently. Because the other columns are hardlinked, the descendant still has no
+    # authoritative part-wide codec and must not record one in `default_compression_codec.txt`.
     #
     # `node5` pins `ZSTD(3)` for parts of any size, and the recovery reconstructs the codec from the
     # column frame's method byte, which does not store the level - so the guess is `ZSTD(1)`, exactly
@@ -993,8 +993,8 @@ def test_default_codec_provenance_survives_column_only_mutation(start_cluster):
     assert mutated_part_name != part_name
 
     # The writer must choose the due `RECOMPRESS` TTL codec instead of reusing the recovered
-    # `ZSTD(1)` estimate merely because it happens to match it. This codec is selected by the
-    # current policy, so it is safe to persist as authoritative metadata.
+    # `ZSTD(1)` estimate merely because it happens to match it. It cannot persist that codec as
+    # authoritative metadata, because the untouched columns are still hardlinked with `ZSTD(3)`.
     assert (
         node5.exec_in_container(
             [
@@ -1003,17 +1003,21 @@ def test_default_codec_provenance_survives_column_only_mutation(start_cluster):
                 f"test -e {data_path}{mutated_part_name}/default_compression_codec.txt && echo present || echo absent",
             ]
         ).strip()
-        == "present"
+        == "absent"
     )
 
-    # Reloading preserves the selected, exact codec rather than converting the recovered estimate
-    # into metadata.
+    # Reloading recovers a part-wide estimate again rather than converting the codec chosen for
+    # `extra` into metadata for the untouched columns.
     node5.query("DETACH TABLE codec_provenance_mutation")
     node5.query("ATTACH TABLE codec_provenance_mutation")
 
     assert node5.query("SELECT extra FROM codec_provenance_mutation").strip() == "2"
 
-    # The descendant records the codec selected by the current due `RECOMPRESS` TTL exactly.
+    # The due TTL must still be considered after the reload. Its full rewrite materializes every
+    # default-coded column with `ZSTD(1)`, after which that codec becomes exact part-wide metadata.
+    node5.query("SYSTEM START TTL MERGES codec_provenance_mutation")
+    node5.query("OPTIMIZE TABLE codec_provenance_mutation FINAL")
+
     assert (
         node5.query(
             "SELECT default_compression_codec FROM system.parts "
