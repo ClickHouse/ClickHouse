@@ -1,7 +1,6 @@
 #include <Processors/QueryPlan/CubeStep.h>
 
 #include <Columns/ColumnConst.h>
-#include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -32,6 +31,8 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int SUPPORT_IS_DISABLED;
 }
+
+constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_CUBE_STEP = 7;
 
 static ITransformingStep::Traits getTraits()
 {
@@ -131,12 +132,12 @@ void CubeStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt
 void CubeStep::serialize(Serialization & ctx) const
 {
     /// A "Cube" step is only registered under `QueryPlanStepRegistry` since query-plan serialization
-    /// version 7; an older worker does not know the step name and would throw on it. Throw here rather
+    /// version 7; an older peer does not know the step name and would throw on it. Throw here rather
     /// than send bytes the other side cannot read.
     if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_CUBE_STEP)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan: serializing a CubeStep requires query plan serialization "
-            "version >= {}; all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_CUBE_STEP);
+            "Serializing a CubeStep requires query plan serialization version >= {}; "
+            "the receiving server is too old for it", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_CUBE_STEP);
 
     UInt8 flags = 0;
     if (final)
@@ -163,8 +164,9 @@ QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
     /// written below this version, since a peer that old cannot have written one.
     if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_CUBE_STEP)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan: deserializing a CubeStep requires query plan serialization "
-            "version >= {}; all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_CUBE_STEP);
+            "Deserializing a CubeStep requires query plan serialization version >= {}, "
+            "but the plan was written with version {}",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_CUBE_STEP, ctx.version);
 
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "CubeStep must have one input stream");
