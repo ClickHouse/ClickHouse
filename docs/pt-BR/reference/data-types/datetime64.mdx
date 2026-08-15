@@ -46,14 +46,14 @@ ENGINE = MergeTree;
 ```
 
 ```sql
--- Analisar DateTime
--- - a partir de um inteiro interpretado como o número de milissegundos (devido à precisão 3) desde 1970-01-01,
--- - a partir de um decimal interpretado como o número de segundos antes da parte decimal, e com base na precisão após o separador decimal,
--- - a partir de uma string.
+-- Parse DateTime64
+-- - from an integer interpreted as the number of seconds since 1970-01-01 (like DateTime),
+-- - from a decimal interpreted as the number of seconds, the fractional part giving sub-second precision,
+-- - from a string.
 
 INSERT INTO dt64
 VALUES
-(1546300800123, 1),
+(1546300800, 1),
 (1546300800.123, 2),
 ('2019-01-01 00:00:00', 3);
 
@@ -62,13 +62,13 @@ SELECT * FROM dt64;
 
 ```text
 ┌───────────────timestamp─┬─event_id─┐
-│ 2019-01-01 03:00:00.123 │        1 │
+│ 2019-01-01 03:00:00.000 │        1 │
 │ 2019-01-01 03:00:00.123 │        2 │
 │ 2019-01-01 00:00:00.000 │        3 │
 └─────────────────────────┴──────────┘
 ```
 
-* Ao inserir um datetime como inteiro, ele é tratado como um Unix Timestamp (UTC) com a escala adequada. `1546300800000` (com precisão 3) representa `'2019-01-01 00:00:00'` UTC. No entanto, como a coluna `timestamp` tem o fuso horário `Asia/Istanbul` (UTC+3) especificado, ao ser exibido como string o valor será mostrado como `'2019-01-01 03:00:00'`. Ao inserir um datetime como decimal, ele é tratado de forma semelhante a um inteiro, exceto pelo fato de que o valor antes do separador decimal é o Unix Timestamp até os segundos, inclusive, e o valor após o separador decimal é tratado como a precisão.
+* Ao inserir um datetime como número, ele é tratado como um Unix Timestamp (UTC) em segundos, como `DateTime`. `1546300800` representa `'2019-01-01 00:00:00'` UTC. No entanto, como a coluna `timestamp` tem o fuso horário `Asia/Istanbul` (UTC+3) especificado, ao ser exibido como string, o valor será mostrado como `'2019-01-01 03:00:00'`. Inserir um número com uma parte fracionária funciona da mesma forma: a parte antes do separador decimal é o Unix Timestamp em segundos, e a parte após ele fornece precisão de frações de segundo de acordo com a precisão da coluna. (Antes da versão 26.8, um inteiro simples sem aspas nos caminhos de entrada `JSON` e `Values`/`Quoted` — este último abrangendo todos os formatos que analisam campos com a regra de escape `Quoted`: `Values`, `MySQLDump` e `Template`/`CustomSeparated`/`Regexp` configurados com escape de campo `Quoted` — era interpretado como o valor bruto subjacente na precisão da coluna; portanto, `1546300800000` com precisão 3 significava `'2019-01-01 00:00:00'`. Para restaurar o comportamento anterior nesses caminhos, defina `input_format_read_datetime_number_as_raw_value = 1` (ou `SET compatibility = '26.7'`); isso também afeta a função `JSONExtract` e o tipo de dados `JSON`. A configuração de compatibilidade rege apenas um inteiro simples: no formato `Values`, um número fracionário, que o parser de streaming legado rejeita, recorre à avaliação de expressão SQL e é lido como segundos — da mesma forma que nas versões anteriores a 26.8. Em `JSONExtract` e no tipo de dados `JSON`, um valor fracionário é analisado por meio de `Float64`; portanto, um timestamp com mais dígitos do que `Float64` consegue preservar pode ser arredondado para o valor adjacente, diferentemente dos formatos de entrada baseados em linhas, que analisam o texto original exatamente. Os formatos de entrada de texto separados por tabulação, CSV e outros formatos de texto com escape não são regidos por essa configuração e mantêm sua interpretação atual de um número sem aspas: um valor grande é lido como ticks.)
 * Ao inserir um valor em string como datetime, ele é tratado como estando no fuso horário da coluna. `'2019-01-01 00:00:00'` será tratado como estando no fuso horário `Asia/Istanbul` e armazenado como `1546290000000`.
 
 2. Filtragem por valores `DateTime64`
@@ -96,9 +96,10 @@ SELECT * FROM dt64 WHERE timestamp = toDateTime64(1546300800.123, 3);
 └─────────────────────────┴──────────┘
 ```
 
-Diferentemente de `insert`, a função `toDateTime64` tratará todos os valores como a variante decimal, portanto a precisão deve ser informada após o separador decimal.
+Assim como ao inserir um número, a função `toDateTime64` trata um argumento numérico como um número de segundos, portanto, a
+precisão de subsegundos deve ser informada após o separador decimal.
 
-3. Obtendo um fuso horário para um valor do tipo `DateTime64`:
+3. Obtendo o fuso horário de um valor do tipo `DateTime64`:
 
 ```sql
 SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS x;
@@ -131,10 +132,10 @@ FROM dt64;
 
 * [Funções de conversão de tipos](/pt-BR/reference/functions/regular-functions/type-conversion-functions)
 * [Funções para trabalhar com datas e horas](/pt-BR/reference/functions/regular-functions/date-time-functions)
-* [A configuração `date_time_input_format`](/pt-BR/reference/settings/formats#date_time_input_format)
-* [A configuração `date_time_output_format`](/pt-BR/reference/settings/formats#date_time_output_format)
-* [O parâmetro `timezone` da configuração do servidor](/pt-BR/reference/settings/server-settings/settings#timezone)
-* [A configuração `session_timezone`](/pt-BR/reference/settings/session-settings#session_timezone)
+* [A configuração `date_time_input_format`](/pt-BR/reference/settings/formats/date-time#date_time_input_format)
+* [A configuração `date_time_output_format`](/pt-BR/reference/settings/formats/date-time#date_time_output_format)
+* [O parâmetro `timezone` da configuração do servidor](/pt-BR/reference/settings/server-settings/settings/other#timezone)
+* [A configuração `session_timezone`](/pt-BR/reference/settings/session-settings/other#session_timezone)
 * [Operadores para trabalhar com datas e horas](/pt-BR/reference/operators/index#operators-for-working-with-dates-and-times)
 * [Tipo de dado `Date`](/pt-BR/reference/data-types/date)
 * [Tipo de dado `DateTime`](/pt-BR/reference/data-types/datetime)
