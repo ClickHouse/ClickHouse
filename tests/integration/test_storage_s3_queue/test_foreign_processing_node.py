@@ -889,7 +889,10 @@ def test_ordered_failed_node_takes_precedence_over_processed_pointer(started_clu
             f"{keeper_path}/failed/{failed_node}",
             foreign_node_metadata(failed_file, exception="Failed by another processor", retries=100),
         )
-        zk.set(f"{keeper_path}/processed", foreign_node_metadata(later_processed_file, exception="", retries=0))
+        zk.create(
+            f"{keeper_path}/processed",
+            foreign_node_metadata(later_processed_file, exception="", retries=0),
+        )
 
         create_mv(node, table_name, dst_table_name)
 
