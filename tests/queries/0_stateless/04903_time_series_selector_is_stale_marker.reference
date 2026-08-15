@@ -1,0 +1,17 @@
+-- is_stale_marker leaves the generated storage query
+101	1970-01-01 00:01:40.000	1	0
+101	1970-01-01 00:03:20.000	nan	1
+101	1970-01-01 00:05:00.000	3	0
+-- the declared four columns and their types
+id	timestamp	value	is_stale_marker
+UInt64	DateTime64(3)	Float64	UInt8
+101	1970-01-01 00:01:40.000	1	0
+101	1970-01-01 00:03:20.000	nan	1
+101	1970-01-01 00:05:00.000	3	0
+-- filtering out the stale markers (what every _over_time function does)
+1970-01-01 00:01:40.000	1
+1970-01-01 00:05:00.000	3
+-- keeping only the stale markers
+1970-01-01 00:03:20.000	nan
+-- the column can be aggregated without being selected
+3	1

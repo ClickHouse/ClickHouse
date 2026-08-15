@@ -27,7 +27,8 @@ CREATE TABLE samples_table
 (
     id UInt64,
     timestamp DateTime64(3),
-    value Float64
+    value Float64,
+    is_stale_marker UInt8
 ) ENGINE = MergeTree() ORDER BY (id, timestamp);
 
 CREATE TABLE prometheus ENGINE = TimeSeries

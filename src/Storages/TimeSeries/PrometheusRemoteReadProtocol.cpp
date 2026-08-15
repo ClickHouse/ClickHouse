@@ -97,6 +97,8 @@ namespace
 
             select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Tags);
 
+            /// RemoteRead returns the stored `value` as is, so on a `Float32` "samples" table a Prometheus
+            /// stale marker comes back as an ordinary NaN: its payload is lost when narrowing at insert.
             select_list_exp->children.push_back(makeASTFunction(
                 "timeSeriesGroupArray",
                 make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),

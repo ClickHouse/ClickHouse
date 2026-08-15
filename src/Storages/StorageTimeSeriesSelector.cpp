@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -442,7 +443,8 @@ namespace
     /// Makes the final select query by wrapping the select query from the data table into an outer
     /// SELECT which casts the columns to the data types expected by this storage:
     ///
-    /// SELECT _CAST(id, 'UInt64') AS id, _CAST(timestamp, 'DateTime64(3)') AS timestamp, _CAST(value, 'Float64') AS value
+    /// SELECT _CAST(id, 'UInt64') AS id, _CAST(timestamp, 'DateTime64(3)') AS timestamp,
+    ///        _CAST(value, 'Float64') AS value, _CAST(is_stale_marker, 'UInt8') AS is_stale_marker
     /// FROM (select_query_from_data_table)
     ///
     /// The inner query reads the samples table columns as is (see makeSelectQueryFromDataTable()),
@@ -460,7 +462,8 @@ namespace
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
-        /// SELECT _CAST(id, 'UInt64') AS id, _CAST(timestamp, 'DateTime64(3)') AS timestamp, _CAST(value, 'Float64') AS value
+        /// SELECT _CAST(id, 'UInt64') AS id, _CAST(timestamp, 'DateTime64(3)') AS timestamp,
+        ///        _CAST(value, 'Float64') AS value, _CAST(is_stale_marker, 'UInt8') AS is_stale_marker
         {
             auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
@@ -478,6 +481,14 @@ namespace
             select_list.push_back(makeASTFunction(
                 "_CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value), make_intrusive<ASTLiteral>(scalar_data_type->getName())));
             select_list.back()->setAlias(TimeSeriesColumnNames::Value);
+
+            /// The type declared for this column by TableFunctionTimeSeriesSelector, which the samples
+            /// table is validated against too (see normalizeTimeSeriesDefinition.cpp).
+            select_list.push_back(makeASTFunction(
+                "_CAST",
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::IsStaleMarker),
+                make_intrusive<ASTLiteral>(std::make_shared<DataTypeUInt8>()->getName())));
+            select_list.back()->setAlias(TimeSeriesColumnNames::IsStaleMarker);
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
