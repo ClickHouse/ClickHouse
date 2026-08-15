@@ -320,7 +320,7 @@ Kafka エンジンテーブルはいったん削除し、新しい設定で再�
 Kafka は、しばしばデータの「投げ込み先」として使われます。その結果、トピック内で複数のメッセージ形式が混在したり、フィールド名に一貫性がなくなったりします。こうした状況は避け、Kafka に書き込む前にメッセージが整形式かつ一貫したものになるよう、Kafka Streams や ksqlDB などの Kafka の機能を活用してください。これらの方法が使えない場合でも、ClickHouse には対処に役立つ機能がいくつかあります。
 
 * メッセージのフィールドは文字列として扱います。必要に応じて、materialized view ステートメント内で関数を使ってクレンジングや CAST を行えます。これは本番向けの解決策ではありませんが、一度限りのインジェストには役立つ場合があります。
-* トピックから JSON を読み込み、JSONEachRow フォーマットを使用している場合は、設定 [`input_format_skip_unknown_fields`](/ja/reference/settings/formats#input_format_skip_unknown_fields) を使用してください。データの書き込み時、デフォルトでは、入力データにターゲットテーブルに存在しないカラムが含まれていると、ClickHouse は例外をスローします。ただし、このオプションを有効にすると、こうした余分なカラムは無視されます。これも本番レベルの解決策ではなく、他の利用者を混乱させる可能性があります。
+* トピックから JSON を読み込み、JSONEachRow フォーマットを使用している場合は、設定 [`input_format_skip_unknown_fields`](/ja/reference/settings/formats/input-format#input_format_skip_unknown_fields) を使用してください。データの書き込み時、デフォルトでは、入力データにターゲットテーブルに存在しないカラムが含まれていると、ClickHouse は例外をスローします。ただし、このオプションを有効にすると、こうした余分なカラムは無視されます。これも本番レベルの解決策ではなく、他の利用者を混乱させる可能性があります。
 * 設定 `kafka_skip_broken_messages` の利用も検討してください。これを使うには、不正な形式のメッセージに対するブロックごとの許容度を、`kafka_max_block_size` を踏まえてユーザーが指定する必要があります。この許容度を超えた場合 (絶対メッセージ数で判定) 、通常どおり例外が発生し、それ以外のメッセージはスキップされます。
 
 <div id="delivery-semantics-and-challenges-with-duplicates">
@@ -333,7 +333,7 @@ Kafka テーブルエンジン は少なくとも 1 回の配信セマンティ�
   ##### クォーラムベースのインサート
 </div>
 
-ClickHouse でより高い配信保証が必要な場合は、[クォーラムベースのインサート](/ja/reference/settings/session-settings#insert_quorum) が必要になることがあります。これは materialized view やターゲットテーブルには設定できませんが、ユーザープロファイルには設定できます。たとえば次のようになります。
+ClickHouse でより高い配信保証が必要な場合は、[クォーラムベースのインサート](/ja/reference/settings/session-settings/insert-quorum#insert_quorum) が必要になることがあります。これは materialized view やターゲットテーブルには設定できませんが、ユーザープロファイルには設定できます。たとえば次のようになります。
 
 ```xml
 <profiles>
@@ -501,11 +501,11 @@ Kafkaのコンシューマグループを使うことで、複数のClickHouse�
 
 Kafka Engine テーブルのスループットを向上させる際は、次の点を考慮してください。
 
-* パフォーマンスは、メッセージサイズ、フォーマット、ターゲットテーブルの types によって異なります。単一のテーブルエンジンで 10 万行/秒は十分に達成可能な水準です。デフォルトでは、メッセージは `kafka_max_block_size` パラメーターで制御されるブロック単位で読み取られます。これはデフォルトで [max&#95;insert&#95;block&#95;size](/ja/reference/settings/session-settings#max_insert_block_size) に設定されており、既定値は 1,048,576 です。メッセージが極端に大きい場合を除き、この値はほぼ常に増やすべきです。500k ～ 1M 程度の値も珍しくありません。スループットへの影響をテストして評価してください。
-* テーブルエンジンのコンシューマー数は `kafka_num_consumers` で増やせます。ただし、デフォルトでは `kafka_thread_per_consumer` を既定値の `1` から変更しない限り、インサートは単一スレッドで直列化されます。フラッシュが並列に実行されるよう、これを `1` に設定してください。なお、N 個のコンシューマーを持つ Kafka engine テーブル (`kafka_thread_per_consumer=1`) を作成することは、それぞれに materialized view があり、`kafka_thread_per_consumer=0` が設定された N 個の Kafka engine を作成するのと論理的に等価です。
+* パフォーマンスは、メッセージサイズ、フォーマット、ターゲットテーブルの types によって異なります。単一のテーブルエンジンで 10 万行/秒は十分に達成可能な水準です。デフォルトでは、メッセージは `kafka_max_block_size` パラメーターで制御されるブロック単位で読み取られます。これはデフォルトで [max&#95;insert&#95;block&#95;size](/ja/reference/settings/session-settings/max-insert#max_insert_block_size) に設定されており、既定値は 1,048,576 です。メッセージが極端に大きい場合を除き、この値はほぼ常に増やすべきです。500k ～ 1M 程度の値も珍しくありません。スループットへの影響をテストして評価してください。
+* テーブルエンジンのコンシューマー数は `kafka_num_consumers` で増やせます。ただし、デフォルトでは `kafka_thread_per_consumer` を既定値の `1` から変更しない限り、インサートは単一スレッドで直列化されます。フラッシュが並列に実行されるよう、これを `1` に設定してください。なお、N 個のコンシューマーを持つ Kafka エンジンのテーブル (`kafka_thread_per_consumer=1`) を作成することは、それぞれに materialized view があり、`kafka_thread_per_consumer=0` が設定された N 個の Kafka engine を作成するのと論理的に等価です。
 * コンシューマー数の増加は無償ではありません。各コンシューマーは独自のバッファーとスレッドを保持するため、サーバーのオーバーヘッドが増えます。まずは可能であればクラスター全体で線形にスケールさせ、コンシューマーによるオーバーヘッドを意識してください。
 * Kafka メッセージのスループットにばらつきがあり、遅延を許容できる場合は、より大きなブロックがフラッシュされるよう `stream_flush_interval_ms` を増やすことを検討してください。
-* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/ja/reference/settings/server-settings/settings#background_message_broker_schedule_pool_size) は、バックグラウンドタスクを実行するスレッド数を設定します。これらのスレッドは Kafka ストリーミングに使用されます。この設定は ClickHouseサーバーの起動時に適用され、ユーザーセッション中に変更することはできません。既定値は 16 です。ログにタイムアウトが見られる場合は、この値を増やすのが適切なことがあります。
+* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/ja/reference/settings/server-settings/settings/background#background_message_broker_schedule_pool_size) は、バックグラウンドタスクを実行するスレッド数を設定します。これらのスレッドは Kafka ストリーミングに使用されます。この設定は ClickHouseサーバーの起動時に適用され、ユーザーセッション中に変更することはできません。既定値は 16 です。ログにタイムアウトが見られる場合は、この値を増やすのが適切なことがあります。
 * Kafka との通信には `librdkafka` ライブラリが使用されており、このライブラリ自体もスレッドを作成します。そのため、多数の Kafka テーブルやコンシューマーがあると、大量のコンテキストスイッチが発生する可能性があります。この負荷はクラスター全体に分散し、可能であればターゲットテーブルのみをレプリケートするか、1 つのテーブルエンジンで複数のトピックを読み取ることを検討してください。値のリストがサポートされています。1 つのテーブルから複数の materialized view を読み取ることができ、それぞれが特定のトピックのデータをフィルタリングできます。
 
 設定の変更は必ずテストしてください。適切にスケールできていることを確認するため、Kafka のコンシューマラグを監視することを推奨します。
@@ -516,9 +516,9 @@ Kafka Engine テーブルのスループットを向上させる際は、次の�
 
 上述の設定に加えて、以下の設定も参考になります。
 
-* [Kafka&#95;max&#95;wait&#95;ms](/ja/reference/settings/session-settings#kafka_max_wait_ms) - 再試行する前に Kafka からメッセージを読み取る際の待機時間 (ミリ秒) です。ユーザープロファイルレベルで設定し、デフォルト値は 5000 です。
+* [kafka&#95;max&#95;wait&#95;ms](/ja/reference/settings/session-settings/kafka#kafka_max_wait_ms) - 再試行する前に Kafka からメッセージを読み取る際の待機時間 (ミリ秒) です。ユーザープロファイルレベルで設定し、デフォルト値は 5000 です。
 
-また、基盤となる librdkafka の[すべての設定 ](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)は、ClickHouse の設定ファイル内の *kafka* 要素にも指定できます。設定名は、ピリオドをアンダースコアに置き換えた XML 要素にする必要があります (例:) 。
+また、基盤となる librdkafka の[すべての設定 ](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)は、ClickHouse の設定ファイル内の *kafka* 要素にも指定できます。設定名は、ピリオドをアンダースコアに置き換えた XML 要素にする必要があります (例) 。
 
 ```xml
 <clickhouse>
