@@ -1027,6 +1027,11 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     ActionsDAG lambda_actions_dag;
     actions_stack.emplace_back(lambda_actions_dag, node);
 
+    /// Declared before the body so an argument's INPUT carries the argument's own type: a table
+    /// column of the same name then only finds that INPUT, never defines it. Unread ones are pruned.
+    for (const auto & lambda_argument : lambda_arguments_names_and_types)
+        actions_stack.back().addInputColumnIfNecessary(lambda_argument.name, lambda_argument.type);
+
     auto [lambda_expression_node_name, levels] = visitImpl(lambda_node.getExpression());
     lambda_actions_dag.getOutputs().push_back(actions_stack.back().getNodeOrThrow(lambda_expression_node_name));
     lambda_actions_dag.removeUnusedActions(Names(1, lambda_expression_node_name));

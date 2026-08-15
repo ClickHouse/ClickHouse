@@ -70,3 +70,75 @@ SELECT 'multi-column: WHERE';
 SELECT * FROM t2 WHERE arrayMap(x -> t2.x + t2.y, [1])[1] > 50;
 
 DROP TABLE t2;
+
+-- The colliding name must resolve to the lambda argument's own type, not the column's.
+-- Above, column and argument are both UInt32, so a mistyped argument node is invisible;
+-- below the types differ and the mismatch surfaces at execution.
+DROP TABLE IF EXISTS t3;
+CREATE TABLE t3 (v UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t3 VALUES (10)(20);
+
+SELECT 'nullable argument, column read first: PREWHERE';
+SELECT v FROM t3 PREWHERE arrayExists(v -> (t3.v != 0) AND (v = 7), [toNullable(toUInt64(7))]) ORDER BY v;
+
+SELECT 'nullable argument, column read first: WHERE';
+SELECT v FROM t3 WHERE arrayExists(v -> (t3.v != 0) AND (v = 7), [toNullable(toUInt64(7))]) ORDER BY v;
+
+-- Both operand orders must agree: the argument's type cannot depend on which is visited first.
+SELECT 'nullable argument, argument read first: PREWHERE';
+SELECT v FROM t3 PREWHERE arrayExists(v -> (v = 7) AND (t3.v != 0), [toNullable(toUInt64(7))]) ORDER BY v;
+
+-- tuple() has no short-circuit evaluation, so this pins the order dependence to analysis.
+SELECT 'nullable argument, tuple body: PREWHERE';
+SELECT v FROM t3 PREWHERE arrayExists(v -> tuple(t3.v != 0, v = 7).2, [toNullable(toUInt64(7))]) ORDER BY v;
+
+SELECT 'nullable argument, arrayMap: PREWHERE';
+SELECT v FROM t3 PREWHERE arrayExists(x -> x, arrayMap(v -> (t3.v != 0) AND (v = 7), [toNullable(toUInt64(7))])) ORDER BY v;
+
+SELECT 'nullable argument, arrayFilter: PREWHERE';
+SELECT v FROM t3 PREWHERE length(arrayFilter(v -> (t3.v != 0) AND (v = 7), [toNullable(toUInt64(7))])) > 0 ORDER BY v;
+
+SELECT 'nullable argument, nested lambda: PREWHERE';
+SELECT v FROM t3 PREWHERE arrayExists(y -> arrayExists(v -> (t3.v != 0) AND (v = 7), [toNullable(toUInt64(7))]), [1]) ORDER BY v;
+
+-- An unread argument must not be captured: a retained INPUT would change the capture arity.
+SELECT 'unread first argument: PREWHERE';
+SELECT v FROM t3 PREWHERE arrayExists((a, b) -> b = 7, [1], [toNullable(toUInt64(7))]) ORDER BY v;
+
+SELECT 'unread second argument: PREWHERE';
+SELECT v FROM t3 PREWHERE arrayExists((a, b) -> a = 7, [toNullable(toUInt64(7))], [1]) ORDER BY v;
+
+-- The body must still read the table column, not the argument that shadows it.
+SELECT 'colliding name resolves per site';
+SELECT arrayMap(v -> assumeNotNull(v) * 100 + t3.v, [toNullable(toUInt64(3))]) FROM t3 ORDER BY v;
+
+DROP TABLE t3;
+
+-- Nullable column with a non-nullable argument: the mismatch direction follows the types,
+-- so the argument takes the wrong type rather than merely losing nullability.
+DROP TABLE IF EXISTS t4;
+CREATE TABLE t4 (v Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t4 VALUES (10)(20);
+
+SELECT 'nullable column, plain argument: PREWHERE';
+SELECT v FROM t4 PREWHERE arrayExists(v -> (t4.v != 0) AND (v = 7), [toUInt64(7)]) ORDER BY v;
+
+DROP TABLE t4;
+
+DROP TABLE IF EXISTS t5;
+CREATE TABLE t5 (s String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t5 VALUES ('a')('b');
+
+SELECT 'String column: PREWHERE';
+SELECT s FROM t5 PREWHERE arrayExists(s -> (t5.s != '') AND (s = 'q'), [toNullable('q')]) ORDER BY s;
+
+DROP TABLE t5;
+
+DROP TABLE IF EXISTS t6;
+CREATE TABLE t6 (s LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t6 VALUES ('a')('b');
+
+SELECT 'LowCardinality(String) column: PREWHERE';
+SELECT s FROM t6 PREWHERE arrayExists(s -> (t6.s != '') AND (s = 'q'), [toNullable('q')]) ORDER BY s;
+
+DROP TABLE t6;

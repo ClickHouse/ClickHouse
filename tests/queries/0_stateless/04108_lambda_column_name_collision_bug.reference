@@ -37,3 +37,42 @@ multi-column: PREWHERE
 multi-column: WHERE
 100	1
 200	2
+nullable argument, column read first: PREWHERE
+10
+20
+nullable argument, column read first: WHERE
+10
+20
+nullable argument, argument read first: PREWHERE
+10
+20
+nullable argument, tuple body: PREWHERE
+10
+20
+nullable argument, arrayMap: PREWHERE
+10
+20
+nullable argument, arrayFilter: PREWHERE
+10
+20
+nullable argument, nested lambda: PREWHERE
+10
+20
+unread first argument: PREWHERE
+10
+20
+unread second argument: PREWHERE
+10
+20
+colliding name resolves per site
+[310]
+[320]
+nullable column, plain argument: PREWHERE
+10
+20
+String column: PREWHERE
+a
+b
+LowCardinality(String) column: PREWHERE
+a
+b
