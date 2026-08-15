@@ -69,6 +69,11 @@ JOB_NAME="$(printf '%s\n' "$JOB_META" | sed -n 1p)"
 NORMALIZED_JOB_NAME="$(printf '%s\n' "$JOB_META" | sed -n 2p)"
 RESULT_FILE="$TMP_PATH/result_${NORMALIZED_JOB_NAME}.json"
 
+# Start from an empty output directory. In CI the workflow wipes `ci/tmp` before
+# every job, but a local `praktika run` reuses it, and a leftover
+# `aborted-on-finding-flood` sentinel or a stale `sqlancer.out` would be read as
+# this run's - and attached to this run's report.
+rm -rf "$OUTPUT_PATH"
 mkdir -p "$OUTPUT_PATH" "$FAILURES_PATH"
 
 # Properly JSON-escape a string using python3, outputting only the inner

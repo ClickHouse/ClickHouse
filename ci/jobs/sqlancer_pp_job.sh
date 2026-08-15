@@ -52,6 +52,9 @@ JOB_NAME="$(printf '%s\n' "$JOB_META" | sed -n 1p)"
 NORMALIZED_JOB_NAME="$(printf '%s\n' "$JOB_META" | sed -n 2p)"
 RESULT_FILE="$TMP_PATH/result_${NORMALIZED_JOB_NAME}.json"
 
+# Same reason as in sqlancer_job.sh: the fallback result attaches whatever is in
+# here, which must not be a previous local run's oracle logs.
+rm -rf "$OUTPUT_PATH"
 mkdir -p "$OUTPUT_PATH"
 
 # Properly JSON-escape a string, outputting only the inner content so callers can
