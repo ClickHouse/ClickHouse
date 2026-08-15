@@ -1214,7 +1214,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 continue;
             }
 
-            if (!source.hasSecondaryIndex(it->name, metadata_snapshot))
+            {
             {
                 /// An index may be defined over a persistent virtual column (e.g. the implicit
                 /// minmax index created by add_minmax_index_for_block_{number,offset}_column over

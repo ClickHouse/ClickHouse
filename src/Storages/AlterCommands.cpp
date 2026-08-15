@@ -2430,7 +2430,17 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         auto capture_violations = collectAliasLambdaCaptureViolationsInStoredExpressions(all_columns);
         if (!capture_violations.empty())
         {
-            auto preexisting_violations = collectAliasLambdaCaptureViolationsInStoredExpressions(metadata->columns);
+            /// Apply the same rename-only transformation to the old schema before comparing it
+            /// with the post-ALTER schema. A renamed host column otherwise changes the map key,
+            /// while renaming an alias changes the diagnostic text, although neither operation
+            /// introduces a new capture.
+            ColumnsDescription preexisting_columns = metadata->columns;
+            for (const auto & [from, to] : renames)
+            {
+                preexisting_columns.rename(from, to);
+                renameColumnInStoredExpressions(preexisting_columns, from, to);
+            }
+            auto preexisting_violations = collectAliasLambdaCaptureViolationsInStoredExpressions(preexisting_columns);
             for (const auto & [violating_column, message] : capture_violations)
             {
                 auto preexisting = preexisting_violations.find(violating_column);
@@ -2661,6 +2671,17 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
             renames.emplace_back(command.column_name, command.rename_to);
     }
 
+    /// Metadata loading deliberately keeps old alias-lambda captures attachable. Do not expand
+    /// such an unchanged legacy expression while looking for matcher-driven rematerialization:
+    /// that probe must not turn an otherwise unrelated ALTER into a validation failure.
+    ColumnsDescription old_columns_after_renames = old_metadata.columns;
+    for (const auto & [from, to] : renames)
+    {
+        old_columns_after_renames.rename(from, to);
+        renameColumnInStoredExpressions(old_columns_after_renames, from, to);
+    }
+    const auto legacy_capture_violations = collectAliasLambdaCaptureViolationsInStoredExpressions(old_columns_after_renames);
+
     /// The columns this ALTER changes explicitly. `MODIFY COLUMN` targets are keyed on their
     /// post-ALTER names: `AlterCommands::validate` rejects renaming and modifying the same column
     /// in a single ALTER, so this currently only maps the names of columns renamed by another
@@ -2732,6 +2753,9 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
         if (modified_new_names.contains(new_name))
             continue;
 
+        if (legacy_capture_violations.contains(new_name))
+            continue;
+
         if (!new_metadata.columns.has(new_name))
             continue;
 
@@ -2778,7 +2802,8 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
         for (const auto & column : new_metadata.columns)
         {
             if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression
-                || changed.contains(column.name) || modified_new_names.contains(column.name))
+                || changed.contains(column.name) || modified_new_names.contains(column.name)
+                || legacy_capture_violations.contains(column.name))
                 continue;
 
             ASTPtr expanded = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, new_metadata.columns, context);

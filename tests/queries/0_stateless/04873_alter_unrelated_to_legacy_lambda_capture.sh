@@ -21,16 +21,17 @@ local_query()
 # `y` is an ordinary column here, so the definition is valid and creatable.
 local_query "CREATE DATABASE db ENGINE = Ordinary"
 local_query "CREATE TABLE db.legacy (x UInt8, arr Array(UInt8), y UInt8, m Array(UInt8) MATERIALIZED arrayMap(x -> y, arr)) ENGINE = MergeTree ORDER BY tuple()"
+local_query "INSERT INTO db.legacy (x, arr, y) VALUES (1, [1], 2)"
 
 # Simulate legacy metadata predating the capture rule: turn `y` into `ALIAS x + 1`, which makes
 # the expansion of `y` inside `arrayMap(x -> y, arr)` a capture the rule would reject at CREATE.
 sed -i "s/\`y\` UInt8/\`y\` UInt8 ALIAS \`x\` + 1/" "${WORK_DIR}/metadata/db/legacy.sql"
 
 # The table still loads, and unrelated ALTERs keep working.
-local_query "ALTER TABLE db.legacy ADD COLUMN z UInt8; ALTER TABLE db.legacy DROP COLUMN z; ALTER TABLE db.legacy RENAME COLUMN arr TO arr2; SELECT 'unrelated ALTERs succeeded'"
+local_query "ALTER TABLE db.legacy RENAME COLUMN m TO m2; ALTER TABLE db.legacy RENAME COLUMN y TO y2; ALTER TABLE db.legacy ADD COLUMN z UInt8; ALTER TABLE db.legacy DROP COLUMN z; ALTER TABLE db.legacy RENAME COLUMN arr TO arr2; SELECT 'unrelated ALTERs succeeded'"
 
 # An ALTER that introduces a new violation is still rejected.
-local_query "ALTER TABLE db.legacy ADD COLUMN m2 Array(UInt8) MATERIALIZED arrayMap(x -> y, arr2)" 2>&1 \
+local_query "ALTER TABLE db.legacy ADD COLUMN m3 Array(UInt8) MATERIALIZED arrayMap(x -> y2, arr2)" 2>&1 \
     | grep -o "BAD_ARGUMENTS" | head -1
 
 rm -rf "${WORK_DIR}"

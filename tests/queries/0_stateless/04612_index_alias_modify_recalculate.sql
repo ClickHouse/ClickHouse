@@ -37,6 +37,29 @@ SELECT count() FROM t_index_alias_realias WHERE x = 0 SETTINGS force_data_skippi
 
 DROP TABLE t_index_alias_realias;
 
+-- A generated MATERIALIZE INDEX command must rebuild an existing index on a full wide part.
+-- Otherwise the mutation hardlinks its stale index file and incorrectly prunes this row.
+DROP TABLE IF EXISTS t_index_alias_wide_part;
+
+CREATE TABLE t_index_alias_wide_part
+(
+    id UInt64,
+    v UInt64,
+    al UInt64 ALIAS v + 0,
+    INDEX idx al TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, alter_column_secondary_index_mode = 'rebuild';
+
+INSERT INTO t_index_alias_wide_part VALUES (1, 5);
+
+ALTER TABLE t_index_alias_wide_part MODIFY COLUMN al UInt64 ALIAS v + 100 SETTINGS alter_sync = 2, mutations_sync = 2;
+
+SELECT count() FROM t_index_alias_wide_part WHERE al = 105 SETTINGS force_data_skipping_indices = 'idx';
+
+DROP TABLE t_index_alias_wide_part;
+
 -- An alias body change must also rebuild indices that reference the alias transitively.
 
 DROP TABLE IF EXISTS t_index_alias_chain;
