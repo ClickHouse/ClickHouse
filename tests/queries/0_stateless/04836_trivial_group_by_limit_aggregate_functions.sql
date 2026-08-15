@@ -24,8 +24,17 @@ SET max_block_size = 1000;
 -- contract; the optimization must not replace it with the approximate `any` mode.
 SELECT toString(number), count() FROM numbers(10) GROUP BY number LIMIT 5 SETTINGS max_rows_to_group_by = 5; -- { serverError TOO_MANY_ROWS }
 
--- UInt64 key, count + sum.
-WITH lim AS (SELECT toUInt64(number % 997) AS k, count() AS c, sum(number) AS s FROM numbers_mt(100000) GROUP BY k LIMIT 10),
+-- Aggregate-free projections keep the existing settings-based path, including external aggregation.
+-- The shared kept-keys cutoff used for aggregate projections disables spilling, so it must not run here.
+SELECT count() FROM
+(
+    SELECT number FROM numbers(100000) GROUP BY number LIMIT 10
+    SETTINGS max_bytes_before_external_group_by = 1
+);
+
+-- UInt64 key, count + sum. The low threshold converts the growing table to two-level
+-- before the cutoff fires, exercising the rebuild that must release that old table.
+WITH lim AS (SELECT toUInt64(number % 997) AS k, count() AS c, sum(number) AS s FROM numbers_mt(100000) GROUP BY k LIMIT 10 SETTINGS group_by_two_level_threshold = 1),
      tru AS (SELECT toUInt64(number % 997) AS k, count() AS c, sum(number) AS s FROM numbers_mt(100000) GROUP BY k)
 SELECT count(), countIf(lim.c != tru.c OR lim.s != tru.s) FROM lim INNER JOIN tru ON lim.k = tru.k;
 

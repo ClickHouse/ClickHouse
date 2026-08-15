@@ -1063,7 +1063,7 @@ void rebuildVariantsToKeptKeys(
 {
     /// After `convertToChunks` the chunks own the states. Reset the table and the arenas so the
     /// old arenas die with the chunks instead of staying referenced for the rest of the query.
-    variants.invalidate();
+    variants.clear();
     variants.aggregates_pools = AggregatedDataVariants::Arenas(1, std::make_shared<Arena>());
     variants.aggregates_pool = variants.aggregates_pools.back().get();
     chassert(!variants.without_key);

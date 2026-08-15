@@ -315,6 +315,16 @@ struct AggregatedDataVariants : private boost::noncopyable
     ~AggregatedDataVariants();
     bool empty() const { return type == Type::EMPTY; }
     void invalidate() { type = Type::EMPTY; }
+    void clear()
+    {
+        without_key = nullptr;
+
+    #define M(NAME, IS_TWO_LEVEL) NAME.reset();
+        APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+
+        type = Type::EMPTY;
+    }
     void init(Type type_, std::optional<size_t> size_hint = std::nullopt);
     /// Number of rows (different keys).
     size_t size() const;
