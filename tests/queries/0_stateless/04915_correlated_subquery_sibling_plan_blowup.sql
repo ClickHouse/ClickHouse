@@ -10,19 +10,40 @@ SET correlated_subqueries_default_join_kind = 'right';
 SET join_algorithm = 'hash';
 
 SET correlated_subqueries_use_in_memory_buffer = 0;
--- One referenced input root serves all eight siblings. Eight roots here means each sibling references
--- the plan grown by its predecessors, which is what made the optimized plan double per sibling.
+-- Unbuffered: one referenced input root serves all eight siblings, so `roots` is 1 and every
+-- sibling shows up as a reference to it.
 SELECT
     countIf(explain LIKE '%CommonSubplan%' AND explain NOT LIKE '%CommonSubplanReference%') AS roots,
     countIf(explain LIKE '%CommonSubplanReference%') AS refs
 FROM (EXPLAIN PLAN optimize = 0 SELECT count() FROM (SELECT number AS x FROM numbers(5)) AS t WHERE ((SELECT max(number) FROM numbers(3) WHERE number < t.x + 0) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 1) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 2) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 3) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 4) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 5) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 6) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 7)) >= 0);
 
--- The optimized plan held 6895 lines and now holds at most 242; randomized join settings move that
--- by up to 48, so the bound is well clear of both.
+-- The same invariant on the projection path, which reaches a different planner caller
+-- (`addExpressionStep`) than the WHERE arm above (`addFilterStep`).
+SELECT
+    countIf(explain LIKE '%CommonSubplan%' AND explain NOT LIKE '%CommonSubplanReference%') AS roots,
+    countIf(explain LIKE '%CommonSubplanReference%') AS refs
+FROM (EXPLAIN PLAN optimize = 0 SELECT (SELECT max(number) FROM numbers(3) WHERE number < t.x + 0) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 1) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 2) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 3) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 4) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 5) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 6) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 7) AS s FROM (SELECT number AS x FROM numbers(5)) AS t);
+
+-- And on the `EXISTS` decorrelation kind, which wires its own decorrelation context.
+SELECT
+    countIf(explain LIKE '%CommonSubplan%' AND explain NOT LIKE '%CommonSubplanReference%') AS roots,
+    countIf(explain LIKE '%CommonSubplanReference%') AS refs
+FROM (EXPLAIN PLAN optimize = 0 SELECT count() FROM (SELECT number AS x FROM numbers(5)) AS t WHERE exists(SELECT 1 FROM numbers(3) WHERE number < t.x + 0) AND exists(SELECT 1 FROM numbers(3) WHERE number < t.x + 1) AND exists(SELECT 1 FROM numbers(3) WHERE number < t.x + 2) AND exists(SELECT 1 FROM numbers(3) WHERE number < t.x + 3) AND exists(SELECT 1 FROM numbers(3) WHERE number < t.x + 4) AND exists(SELECT 1 FROM numbers(3) WHERE number < t.x + 5) AND exists(SELECT 1 FROM numbers(3) WHERE number < t.x + 6) AND exists(SELECT 1 FROM numbers(3) WHERE number < t.x + 7));
+
+-- Plan size grows linearly in the sibling count, not exponentially: doubling the siblings from four
+-- to eight must not double the optimized plan. Measured 226/118 = 1.9 here and 6895/415 = 16.6 when
+-- each sibling references its predecessors' subtree. A ratio bound is immune to the randomized join
+-- settings that shift both counts together.
+SELECT (SELECT count() FROM (EXPLAIN PLAN SELECT count() FROM (SELECT number AS x FROM numbers(5)) AS t WHERE ((SELECT max(number) FROM numbers(3) WHERE number < t.x + 0) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 1) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 2) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 3) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 4) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 5) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 6) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 7)) >= 0))
+     < 4 * (SELECT count() FROM (EXPLAIN PLAN SELECT count() FROM (SELECT number AS x FROM numbers(5)) AS t WHERE ((SELECT max(number) FROM numbers(3) WHERE number < t.x + 0) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 1) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 2) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 3)) >= 0));
+
+-- Coarse blow-up backstop: the optimized plan held 6895 lines and now holds at most 242, the
+-- randomized settings above moving it over a measured 40-line spread (194 to 242).
 SELECT count() < 500 FROM (EXPLAIN PLAN SELECT count() FROM (SELECT number AS x FROM numbers(5)) AS t WHERE ((SELECT max(number) FROM numbers(3) WHERE number < t.x + 0) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 1) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 2) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 3) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 4) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 5) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 6) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 7)) >= 0);
 
 SET correlated_subqueries_use_in_memory_buffer = 1;
--- The buffered path is untouched: it still builds one root per reference.
+-- Buffered: this path is untouched, so it still builds one root per reference (eight of each). The
+-- buffer optimization rewrites the referenced step, which a shared root could not survive.
 SELECT
     countIf(explain LIKE '%CommonSubplan%' AND explain NOT LIKE '%CommonSubplanReference%') AS roots,
     countIf(explain LIKE '%CommonSubplanReference%') AS refs
