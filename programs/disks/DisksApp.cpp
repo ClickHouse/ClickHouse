@@ -4,6 +4,7 @@
 #include <Client/ReplxxLineReader.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
+#include <Common/getUserHomePath.h>
 #include <Common/SignalHandlers.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/filesystemHelpers.h>
@@ -429,10 +430,7 @@ String DisksApp::getCommandLineWithAliases(CommandPtr command) const
 
 void DisksApp::initializeHistoryFile()
 {
-    String home_path;
-    const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
-    if (home_path_cstr)
-        home_path = home_path_cstr;
+    const String home_path = getUserHomePath();
     if (config().has("history-file"))
         history_file = config().getString("history-file");
     else

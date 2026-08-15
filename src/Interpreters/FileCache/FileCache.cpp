@@ -524,20 +524,21 @@ void FileCache::initialize()
 {
     // Prevent initialize() from running twice. This may be caused by two cache disks being created with the same path (see integration/test_filesystem_cache).
     callOnce(initialize_called, [&] {
-        bool need_to_load_metadata = fs::exists(getBasePath());
+        const fs::path base_path = pathFromString(getBasePath());
+        bool need_to_load_metadata = fs::exists(base_path);
         try
         {
             if (!need_to_load_metadata)
-                fs::create_directories(getBasePath());
+                fs::create_directories(base_path);
 
-            auto fs_info = std::filesystem::space(getBasePath());
+            auto fs_info = std::filesystem::space(base_path);
             const size_t size_limit = main_priority->getSizeLimit(cache_state_guard.lock());
             if (fs_info.capacity < size_limit)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "The total capacity of the disk containing cache path {} is less than the specified max_size {} bytes",
                                 getBasePath(), std::to_string(size_limit));
 
-            status_file = make_unique<StatusFile>(pathToGenericString(fs::path(getBasePath()) / "status"), StatusFile::write_full_info);
+            status_file = make_unique<StatusFile>(pathToGenericString(base_path / "status"), StatusFile::write_full_info);
         }
         catch (const std::filesystem::filesystem_error & e)
         {
