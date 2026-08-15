@@ -24,16 +24,16 @@ def name(value):
     data = value.encode()
     return tag(len(data)) + data + b'\x00' * ((4 - len(data) % 4) % 4)
 
-def attribute(name_, type_, values):
-    return name(name_) + tag(type_) + tag(len(values)) + values + b'\x00' * ((4 - len(values) % 4) % 4)
+def attribute(name_, type_, num_elements, values):
+    return name(name_) + tag(type_) + tag(num_elements) + values + b'\x00' * ((4 - len(values) % 4) % 4)
 
 def variable(name_, type_, attributes, begin):
     result = name(name_) + tag(1) + tag(0)
     result += tag(NC_ATTRIBUTE) + tag(len(attributes)) + b''.join(attributes)
     return result + tag(type_) + tag({NC_SHORT: 2, NC_INT: 4}[type_] * 3) + tag(begin)
 
-unsigned = [attribute('_Unsigned', NC_CHAR, b'true')]
-missing = [attribute('missing_value', NC_INT, struct.pack('>ii', -9999, -8888))]
+unsigned = [attribute('_Unsigned', NC_CHAR, 4, b'true')]
+missing = [attribute('missing_value', NC_INT, 2, struct.pack('>ii', -9999, -8888))]
 
 header = b'CDF\x01' + tag(0)
 header += tag(NC_DIMENSION) + tag(1) + name('x') + tag(3) + ABSENT
