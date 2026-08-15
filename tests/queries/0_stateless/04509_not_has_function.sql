@@ -88,6 +88,18 @@ SELECT count() FROM test_not_has_float WHERE NOT has([CAST('nan', 'Float64')], x
 SELECT count() FROM test_not_has_float WHERE NOT has([CAST('nan', 'Float64')], x) SETTINGS use_primary_key = 0;
 DROP TABLE test_not_has_float;
 
+-- The same rule applies when a tuple array element contains a float.
+DROP TABLE IF EXISTS test_not_has_float_tuple;
+CREATE TABLE test_not_has_float_tuple (x Float64, y UInt8) ENGINE = MergeTree
+ORDER BY (x, y)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_not_has_float_tuple VALUES (nan, 1), (1, 1), (2, 1);
+SELECT count() FROM test_not_has_float_tuple WHERE notHas([tuple(CAST('nan', 'Float64'), toUInt8(1))], (x, y));
+SELECT count() FROM test_not_has_float_tuple WHERE notHas([tuple(CAST('nan', 'Float64'), toUInt8(1))], (x, y)) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_not_has_float_tuple WHERE NOT has([tuple(CAST('nan', 'Float64'), toUInt8(1))], (x, y));
+SELECT count() FROM test_not_has_float_tuple WHERE NOT has([tuple(CAST('nan', 'Float64'), toUInt8(1))], (x, y)) SETTINGS use_primary_key = 0;
+DROP TABLE test_not_has_float_tuple;
+
 -- Empty array: `has` matches nothing, `notHas` matches everything.
 SELECT count() FROM test_not_has WHERE has([], x);
 SELECT count() FROM test_not_has WHERE notHas([], x);
