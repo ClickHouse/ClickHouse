@@ -186,6 +186,15 @@ void DistinctTransform::transform(Chunk & chunk)
     if (unlikely(!chunk.hasRows()))
         return;
 
+    /// Another partition can reach a global `DISTINCT` limit while this partition is processing
+    /// only duplicate values. Do not keep reading an unbounded input in that case.
+    if (shared_set_size && shared_set_size->limit_reached.load(std::memory_order_relaxed))
+    {
+        chunk.clear();
+        stopReading();
+        return;
+    }
+
     /// Convert to full column, because SetVariant for sparse column is not implemented.
     removeSpecialColumnRepresentations(chunk);
     convertToFullIfConst(chunk);
@@ -273,7 +282,11 @@ void DistinctTransform::transform(Chunk & chunk)
     /// already in the set): 'break' means return a partial result as if the source data
     /// ran out, not discard it.
     if (!set_size_limits.check(checked_rows, checked_bytes, "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+    {
+        if (shared_set_size)
+            shared_set_size->limit_reached.store(true, std::memory_order_relaxed);
         stopReading();
+    }
 
     if (num_selected == num_rows)
     {

@@ -49,7 +49,8 @@ DistinctStep::DistinctStep(
     const SizeLimits & set_size_limits_,
     UInt64 limit_hint_,
     const Names & columns_,
-    bool pre_distinct_)
+    bool pre_distinct_,
+    bool has_order_sensitive_post_distinct_limit_)
     : ITransformingStep(
             input_header_,
             input_header_,
@@ -58,6 +59,7 @@ DistinctStep::DistinctStep(
     , limit_hint(limit_hint_)
     , columns(columns_)
     , pre_distinct(pre_distinct_)
+    , has_order_sensitive_post_distinct_limit(has_order_sensitive_post_distinct_limit_)
 {
 }
 
@@ -104,7 +106,7 @@ bool DistinctStep::scatterStreamsByHash(QueryPipelineBuilder & pipeline) const
     /// With a limit the transform stops as soon as it has enough values, so the single stream is not the
     /// bottleneck it is otherwise. Keeping it also keeps the values that a `LIMIT` without `ORDER BY`
     /// returns: the first ones in the order the input arrives, rather than an arbitrary subset.
-    if (limit_hint != 0)
+    if (limit_hint != 0 || has_order_sensitive_post_distinct_limit)
         return false;
 
     /// Every input chunk is split across all partitions, so the work the scatter adds grows with their

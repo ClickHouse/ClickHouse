@@ -386,7 +386,8 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
                 limits,
                 0,
                 result_header->getNames(),
-                false);
+                false,
+                settings_limit_offset_needed && !options.settings_limit_offset_done);
 
             query_plan.addStep(std::move(distinct_step));
         }

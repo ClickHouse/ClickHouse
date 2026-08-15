@@ -15,7 +15,9 @@ public:
         UInt64 limit_hint_,
         const Names & columns_,
         /// If is enabled, execute distinct for separate streams, otherwise for merged streams.
-        bool pre_distinct_);
+        bool pre_distinct_,
+        /// A downstream limit consumes the current stream order but cannot be used as `limit_hint`.
+        bool has_order_sensitive_post_distinct_limit_ = false);
 
     String getName() const override { return "Distinct"; }
     const Names & getColumnNames() const { return columns; }
@@ -70,6 +72,7 @@ private:
     UInt64 limit_hint;
     const Names columns;
     bool pre_distinct;
+    bool has_order_sensitive_post_distinct_limit;
     SortDescription distinct_sort_desc;
     bool skip_stream_merging = false;
     bool parallel_distinct = false;

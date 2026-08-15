@@ -62,6 +62,7 @@ struct DistinctSharedSetSize
 {
     std::atomic<UInt64> rows{0};
     std::atomic<UInt64> bytes{0};
+    std::atomic_bool limit_reached{false};
 };
 
 using DistinctSharedSetSizePtr = std::shared_ptr<DistinctSharedSetSize>;
