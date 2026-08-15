@@ -63,6 +63,10 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_time_time64_type 1 --use_legacy_to_tim
     --distributed_ddl_entry_format_version $OLDEST_VERSION --distributed_ddl_output_mode none --multiquery -q "
 CREATE TABLE t_on_cluster_key ON CLUSTER test_shard_localhost (c0 DateTime) ENGINE = MergeTree() ORDER BY toTime(c0);
 SELECT 'on_cluster_oldest_entry', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_key';
+
+-- The same, with the key expression carried by a SQL UDF body.
+CREATE TABLE t_on_cluster_udf_key ON CLUSTER test_shard_localhost (c0 DateTime) ENGINE = MergeTree() ORDER BY ${UDF}(c0);
+SELECT 'on_cluster_oldest_entry_udf', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_udf_key';
 "
 
 ${CLICKHOUSE_CLIENT} --multiquery -q "
@@ -72,5 +76,6 @@ DROP TABLE t_qualified_key;
 DROP TABLE t_replayed_key;
 DROP TABLE t_ttl_key;
 DROP TABLE t_on_cluster_key;
+DROP TABLE t_on_cluster_udf_key;
 DROP FUNCTION ${UDF};
 "

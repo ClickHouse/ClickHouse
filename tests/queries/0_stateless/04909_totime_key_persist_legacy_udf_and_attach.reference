@@ -14,3 +14,4 @@ rows_in_granule	UInt64
 toTimeWithFixedDate(c0)	DateTime
 ttl_group_by	toTimeWithFixedDate(c0)
 on_cluster_oldest_entry	toTimeWithFixedDate(c0)
+on_cluster_oldest_entry_udf	toTimeWithFixedDate(c0)

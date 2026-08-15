@@ -3481,6 +3481,12 @@ BlockIO InterpreterCreateQuery::execute()
 
             /// Entry format versions below `NORMALIZE_CREATE_ON_INITIATOR_VERSION` ship the query text as
             /// written and carry no settings, so each worker would resolve `toTime` with its own default.
+            /// A key expression can reach `toTime` through a SQL UDF body, so substitute those first, in
+            /// the same order `createTable` uses.
+            if (!create.attach_short_syntax && !is_restore_from_backup
+                && getContext()->getSettingsRef()[Setting::use_legacy_to_time]
+                && !UserDefinedSQLFunctionFactory::instance().empty())
+                UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
             replaceLegacyToTimeIfRequested(query_ptr, create, is_restore_from_backup, getContext());
 
             return executeQueryOnCluster(create);
