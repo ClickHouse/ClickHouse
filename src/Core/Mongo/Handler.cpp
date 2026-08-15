@@ -759,21 +759,6 @@ CollectionRef getCollectionRef(const Document & command, const String & command_
             result.database,
             result.collection);
 
-    /// Handlers build a query in the Mongo dialect, where a collection is addressed as
-    /// `<database>.<collection>`. Restricting the names to word characters keeps that text
-    /// unambiguous and makes it impossible for a name to change the meaning of the query.
-    auto validate = [](const String & name)
-    {
-        for (char c : name)
-            if (!isWordCharASCII(c) && c != '-')
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Mongo database and collection names must consist of letters, digits, '_' and '-', got '{}'",
-                    name);
-    };
-    validate(result.database);
-    validate(result.collection);
-
     return result;
 }
 
@@ -811,8 +796,19 @@ std::vector<Document> runMessageRequest(const std::vector<OpMessageSection> & se
     return handler->handle(sections, executor);
 }
 
-std::vector<Document> runQueryRequst(const std::vector<Document> &, std::shared_ptr<QueryExecutor> executor)
+std::vector<Document> runQueryRequst(const std::vector<Document> & documents, std::shared_ptr<QueryExecutor> executor)
 {
+    if (documents.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "An OP_QUERY command must contain exactly one command document");
+
+    const auto keys = documents[0].getDocumentKeys();
+    if (keys.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mongo command document is empty");
+
+    const auto & command = keys[0];
+    if (command != "isMaster" && command != "ismaster" && command != "hello")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command {} is not supported over OP_QUERY", command);
+
     auto handler = IsMasterHandler();
     return handler.handle({}, executor);
 }

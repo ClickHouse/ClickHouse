@@ -306,8 +306,41 @@ std::optional<size_t> MongoQueryKeyNameExtractor::findPosition(const char * begi
     if (size_str < pattern.size() + 1)
         return std::nullopt;
 
+    size_t nesting = 0;
+    char quote = 0;
     for (size_t i = 0; i + pattern.size() < size_str; ++i)
     {
+        const char c = begin[i];
+        if (quote)
+        {
+            if (c == '\\' && i + 1 < size_str)
+            {
+                ++i;
+                continue;
+            }
+            if (c == quote)
+                quote = 0;
+            continue;
+        }
+        if (c == '\'' || c == '\"')
+        {
+            quote = c;
+            continue;
+        }
+        if (c == '(')
+        {
+            ++nesting;
+            continue;
+        }
+        if (c == ')')
+        {
+            if (nesting)
+                --nesting;
+            continue;
+        }
+        if (nesting)
+            continue;
+
         bool match = true;
         for (size_t j = 0; j < pattern.size(); ++j)
         {
@@ -319,11 +352,8 @@ std::optional<size_t> MongoQueryKeyNameExtractor::findPosition(const char * begi
         }
         if (match)
         {
-            if (begin[i + pattern.size()] != '(')
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect query : after {} should be (", pattern);
-            }
-            return i + pattern.size() + 1;
+            if (begin[i + pattern.size()] == '(')
+                return i + pattern.size() + 1;
         }
     }
     return std::nullopt;

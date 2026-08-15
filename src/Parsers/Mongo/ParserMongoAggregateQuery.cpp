@@ -1,5 +1,6 @@
 #include <Parsers/Mongo/ParserMongoAggregateQuery.h>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <string_view>
@@ -108,6 +109,9 @@ public:
     /// The order the documents of the stream are in, which the accumulators of a `$group` that
     /// depend on it are lowered through (see `MongoGroupOrder`).
     MongoGroupOrder order;
+    /// Whether `select_list` preserves every field named by `order`. `$set` starts from `*` and
+    /// has that property unless it replaces a sort key; `$project` and `$group` do not in general.
+    bool select_list_preserves_order_keys = false;
 
     /// True when nothing but a `WHERE` has been collected, so a stage that produces the list of
     /// columns can be folded into the select being built.
@@ -117,7 +121,7 @@ public:
     {
         /// A select that builds documents of its own - a projection, a grouping - does not have to
         /// carry the sort keys into them, so they are no longer fields the next stage can name.
-        if (select_list)
+        if (select_list && !select_list_preserves_order_keys)
             order.keys_in_scope = false;
 
         auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
@@ -134,6 +138,7 @@ public:
         limit = nullptr;
         offset = nullptr;
         array_join = nullptr;
+        select_list_preserves_order_keys = false;
     }
 
     /// Appends the documents of another pipeline to the stream, for `$unionWith`.
@@ -147,6 +152,9 @@ public:
         union_query.union_mode = SelectUnionMode::UNION_ALL;
         union_query.list_of_modes.push_back(SelectUnionMode::UNION_ALL);
         union_query.set_of_modes.insert(SelectUnionMode::UNION_ALL);
+        /// A union appends another stream, so the order established before it no longer describes
+        /// the combined documents. A later order-sensitive `$group` must not reuse that key.
+        order = {};
     }
 
     ASTPtr build() const
@@ -386,6 +394,17 @@ void translateSet(SelectChain & chain, const rapidjson::Value & stage)
     replaced.reserve(fields.size());
     for (const auto & field : fields)
         replaced.push_back(field.name);
+
+    chain.select_list_preserves_order_keys = true;
+    for (const auto & [key, _] : chain.order.keys)
+    {
+        const auto * identifier = key->as<ASTIdentifier>();
+        if (identifier && std::find(replaced.begin(), replaced.end(), identifier->name()) != replaced.end())
+        {
+            chain.select_list_preserves_order_keys = false;
+            break;
+        }
+    }
 
     auto select_list = make_intrusive<ASTExpressionList>();
     select_list->children.push_back(makeAsterisk(replaced));
