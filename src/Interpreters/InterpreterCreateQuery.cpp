@@ -206,7 +206,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_DATABASES;
     extern const int THERE_IS_NO_COLUMN;
     extern const int CANNOT_RESTORE_TABLE;
-    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int FAULT_INJECTED;
 }
 
