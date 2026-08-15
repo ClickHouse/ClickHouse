@@ -832,10 +832,11 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     };
 
     if (glue_chunks
-        && !has_subcolumns
         && port_kind == PortKind::Main
         && (!format_settings.pretty.row_numbers || row_number_width == prev_row_number_width)
-        && max_widths == prev_chunk_max_widths)
+        && max_widths == prev_chunk_max_widths
+        && has_subcolumns == prev_chunk_has_subcolumns
+        && (!has_subcolumns || (column_to_group == prev_column_to_group && group_is_tuple == prev_group_is_tuple)))
     {
         /// Move cursor up to overwrite the footer of the previous chunk:
         if (!rows_end.empty())
@@ -992,6 +993,9 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     }
     total_rows += num_rows;
     prev_chunk_max_widths = std::move(max_widths);
+    prev_column_to_group = std::move(column_to_group);
+    prev_group_is_tuple = std::move(group_is_tuple);
+    prev_chunk_has_subcolumns = has_subcolumns;
 }
 
 

@@ -97,6 +97,9 @@ private:
     /// For mono_block == true only
     Chunk mono_chunk;
     Widths prev_chunk_max_widths;
+    std::vector<size_t> prev_column_to_group;
+    std::vector<UInt8> prev_group_is_tuple;
+    bool prev_chunk_has_subcolumns = false;
     bool had_footer = false;
 
     /// Implements squashing of chunks by time

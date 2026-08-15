@@ -14,6 +14,10 @@ SELECT 'hello' AS x, (1, 'world')::Tuple(a UInt8, b String) AS t FORMAT Vertical
 -- Several rows exercise the row separators.
 SELECT number AS n, (number, toString(number))::Tuple(a UInt64, b String) AS t FROM numbers(3) FORMAT PrettyCompact;
 
+-- Tuple subcolumns preserve the interactive chunk-gluing contract when their layout is unchanged.
+SELECT sleep(0.01) AS s, number AS n, (number, toString(number))::Tuple(a UInt64, b String) AS t
+FROM numbers(4) SETTINGS max_block_size = 1, output_format_pretty_glue_chunks = 1, output_format_pretty_squash_consecutive_ms = 0 FORMAT PrettyCompact;
+
 -- Unnamed tuple: the subcolumns are named by position.
 SELECT (1, 'a', 2.5) AS t FORMAT PrettyCompact;
 
