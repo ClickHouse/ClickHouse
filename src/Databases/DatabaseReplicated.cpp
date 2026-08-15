@@ -960,6 +960,7 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
             zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent),
             zkutil::makeCreateRequest(replica_path + "/log_ptr", "0", zkutil::CreateMode::Persistent),
             zkutil::makeCreateRequest(replica_path + "/digest", "0", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest(replica_path + "/removed_window_views", "", zkutil::CreateMode::Persistent),
             zkutil::makeCreateRequest(replica_path + "/replica_group", replica_group_name, zkutil::CreateMode::Persistent),
 
             /// Previously, this method was not idempotent and max_log_ptr_at_creation could be stored in memory.

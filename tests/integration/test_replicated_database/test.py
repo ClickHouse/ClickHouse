@@ -1776,7 +1776,7 @@ def test_skip_legacy_window_view_ddl_chain(started_cluster):
     main_node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
     dummy_node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
     main_node.query(
-        f"CREATE DATABASE {database} ENGINE = Replicated('{zookeeper_path}', 'shard1', 'replica1')"
+        f"CREATE DATABASE {database} ENGINE = Replicated('{zookeeper_path}', 'shard1', 'replica1') SETTINGS logs_to_keep = 1"
     )
     dummy_node.query(
         f"CREATE DATABASE {database} ENGINE = Replicated('{zookeeper_path}', 'shard1', 'replica2')"
@@ -1811,10 +1811,28 @@ def test_skip_legacy_window_view_ddl_chain(started_cluster):
     )
     dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
 
-    # The first obsolete entry is already skipped. Restart replica2 before its
-    # retained follow-ups so the worker must rebuild the obsolete-name state
-    # from the queue. The mixed rename also verifies that real rename pairs
-    # continue to execute while the obsolete pair is skipped.
+    for i in range(3):
+        main_node.query(
+            f"CREATE TABLE {database}.filler_{i} (n UInt8) ENGINE = Memory",
+            settings=settings,
+        )
+    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+
+    for _ in range(50):
+        if not any(
+            f"CREATE WINDOW VIEW IF NOT EXISTS {database}.wv".encode()
+            in zk.get(f"{zookeeper_path}/log/{entry}")[0]
+            for entry in zk.get_children(f"{zookeeper_path}/log")
+        ):
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError("The skipped WINDOW VIEW DDL entry was not cleaned up")
+
+    # The skipped create was cleaned up, so only the persisted compatibility
+    # state can identify the retained follow-ups after the restart. The mixed
+    # rename also verifies that real rename pairs continue to execute while the
+    # obsolete pair is skipped.
     dummy_node.query("SYSTEM ENABLE FAILPOINT database_replicated_stop_entry_execution")
     main_node.query(
         f"RENAME TABLE {database}.ordinary TO {database}.ordinary_renamed, {database}.wv TO {database}.wv2",

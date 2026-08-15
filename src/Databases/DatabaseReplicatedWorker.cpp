@@ -11,6 +11,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/Lexer.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Common/FailPoint.h>
@@ -247,6 +251,35 @@ String formatRenameWithoutRemovedWindowViews(const std::vector<WindowViewFollowu
     return query;
 }
 
+String serializeRemovedWindowViews(const NameSet & removed_window_views)
+{
+    Strings names(removed_window_views.begin(), removed_window_views.end());
+    std::sort(names.begin(), names.end());
+
+    String result;
+    WriteBufferFromString buffer(result);
+    writeVarUInt(names.size(), buffer);
+    for (const auto & name : names)
+        writeStringBinary(name, buffer);
+    return result;
+}
+
+NameSet deserializeRemovedWindowViews(const String & serialized)
+{
+    ReadBufferFromString buffer(serialized);
+    UInt64 size;
+    readVarUInt(size, buffer);
+
+    NameSet result;
+    for (UInt64 i = 0; i < size; ++i)
+    {
+        String name;
+        readStringBinary(name, buffer);
+        result.insert(std::move(name));
+    }
+    return result;
+}
+
 }
 
 
@@ -439,7 +472,8 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
             std::this_thread::sleep_for(sleep_time);
         });
 
-        zookeeper->set(database->replica_path + "/log_ptr", toString(max_log_ptr));
+        removed_window_views.clear();
+        persistRemovedWindowViews(zookeeper, max_log_ptr);
         initializeLogPointer(DDLTaskBase::getLogEntryName(max_log_ptr));
     }
     else
@@ -921,7 +955,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         if (!dry_run)
         {
             removed_window_views.insert(*window_view_name);
-            zookeeper->set(database->replica_path + "/log_ptr", toString(entry_num));
+            persistRemovedWindowViews(zookeeper, entry_num);
         }
         LOG_WARNING(log, "Skip removed WINDOW VIEW DDL {} for {}", entry_name, *window_view_name);
         out_reason = fmt::format("Entry {} creates an obsolete WINDOW VIEW {}", entry_name, *window_view_name);
@@ -947,7 +981,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         {
             updateRemovedWindowViews(removed_window_views, followups);
             if (!is_rename || !has_non_removed_window_view)
-                zookeeper->set(database->replica_path + "/log_ptr", toString(entry_num));
+                persistRemovedWindowViews(zookeeper, entry_num);
         }
         if (!is_rename || !has_non_removed_window_view)
         {
@@ -1049,6 +1083,10 @@ bool DatabaseReplicatedDDLWorker::checkParentTableExists(const UUID & uuid) cons
 
 void DatabaseReplicatedDDLWorker::restoreRemovedWindowViews(const ZooKeeperPtr & zookeeper, UInt32 log_ptr)
 {
+    const String path = database->replica_path + "/removed_window_views";
+    if (zookeeper->exists(path))
+        removed_window_views = deserializeRemovedWindowViews(zookeeper->get(path));
+
     Strings entries = zookeeper->getChildren(queue_dir);
     std::erase_if(entries, [] (const String & entry_name) { return !startsWith(entry_name, "query-"); });
     std::sort(entries.begin(), entries.end());
@@ -1066,6 +1104,25 @@ void DatabaseReplicatedDDLWorker::restoreRemovedWindowViews(const ZooKeeperPtr &
         else
             updateRemovedWindowViews(removed_window_views, getWindowViewFollowups(tokens));
     }
+
+    persistRemovedWindowViews(zookeeper);
+}
+
+void DatabaseReplicatedDDLWorker::persistRemovedWindowViews(const ZooKeeperPtr & zookeeper, std::optional<UInt32> log_ptr)
+{
+    const String removed_window_views_path = database->replica_path + "/removed_window_views";
+    if (!zookeeper->exists(removed_window_views_path))
+        zookeeper->create(removed_window_views_path, "", zkutil::CreateMode::Persistent);
+
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeSetRequest(removed_window_views_path, serializeRemovedWindowViews(removed_window_views), -1));
+    if (log_ptr)
+        ops.emplace_back(zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(*log_ptr), -1));
+
+    Coordination::Responses responses;
+    const auto code = zookeeper->tryMulti(ops, responses);
+    if (code != Coordination::Error::ZOK)
+        zkutil::KeeperMultiException::check(code, ops, responses);
 }
 
 void DatabaseReplicatedDDLWorker::initializeLogPointer(const String & processed_entry_name)
