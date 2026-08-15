@@ -308,13 +308,6 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     /// native credential or `NOSIGN`, the client falls back to ADC and can borrow the server identity.
     const bool has_explicit_gcs_adc = has_google_adc_client_id && has_google_adc_client_secret && has_google_adc_refresh_token;
     const bool has_explicit_gcs_credentials = has_gcs_service_account_key || has_gcs_access_token || has_explicit_gcs_adc || has_no_sign_request;
-    if (maybe_gcs_disk && !for_system_database && context->shouldRestrictUserQueryS3Credentials() && !has_explicit_gcs_credentials)
-        throw Exception(
-            ErrorCodes::ACCESS_DENIED,
-            "A dynamic native GCS disk created from user SQL may not use Application Default Credentials because "
-            "they can resolve the server's identity. Provide `service_account_key`, `access_token`, a complete "
-            "`google_adc_*` triple, or `no_sign_request`, or enable `s3_allow_server_credentials_in_user_queries`");
-
     /// A user-created S3 disk must not resolve the server's own credentials. Indirection (`from_env`/`from_zk`
     /// on the type or auth fields, or an `include`) is treated as potentially-S3 unless the backend is an
     /// explicit literal non-S3 type. `type = object_storage` is a wrapper: non-S3 only with a literal non-S3
@@ -336,6 +329,9 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     /// Whether the disk relies on server-managed credentials (it would be refused under the restriction).
     const bool relies_on_server_credentials
         = maybe_s3_disk && (type_is_indirect || has_include || has_indirect_auth_field || !ast_has_explicit_credentials);
+    /// Native GCS uses Application Default Credentials when the dynamic disk does not supply an explicit
+    /// credential. This can resolve the server identity just like the S3 credential-provider chain does.
+    const bool gcs_relies_on_server_credentials = maybe_gcs_disk && !has_explicit_gcs_credentials;
 
     /// A disk of a table in the `system` database is server-internal infrastructure (attached by the operator
     /// to ship system tables to S3 with the server's identity), exempt from the user-query restriction when the
@@ -366,9 +362,17 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         info->ast_has_google_adc_refresh_token = has_google_adc_refresh_token;
         /// Persist the opt-in for a fresh create that resolves server credentials and is currently allowed
         /// (the session opted in), so the disk is not re-restricted on reload.
-        info->persist_server_credentials_allowance = !is_loading_from_existing_metadata && relies_on_server_credentials
+        info->persist_server_credentials_allowance = !is_loading_from_existing_metadata
+            && (relies_on_server_credentials || gcs_relies_on_server_credentials)
             && !has_server_credentials_marker && !context->shouldRestrictUserQueryS3Credentials();
     }
+
+    if (gcs_relies_on_server_credentials && context->shouldRestrictUserQueryS3Credentials() && !restriction_exempt)
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "A dynamic native GCS disk created from user SQL may not use Application Default Credentials because "
+            "they can resolve the server's identity. Provide `service_account_key`, `access_token`, a complete "
+            "`google_adc_*` triple, or `no_sign_request`, or enable `s3_allow_server_credentials_in_user_queries`");
 
     if (relies_on_server_credentials && context->shouldRestrictUserQueryS3Credentials() && !restriction_exempt)
     {
