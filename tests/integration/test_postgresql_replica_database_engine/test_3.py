@@ -314,10 +314,16 @@ VALUES (1, (SELECT array_to_string(ARRAY(SELECT chr((100 + round(random() * 25))
 
 def test_toast_in_replica_identity(started_cluster):
     table = "test_toast_in_replica_identity"
+    other_table = "test_toast_in_replica_identity_other"
     pg_manager.create_postgres_table(
         table,
         "",
         """CREATE TABLE "{}" (id text PRIMARY KEY, other text)""",
+    )
+    pg_manager.create_postgres_table(
+        other_table,
+        "",
+        """CREATE TABLE "{}" (id integer PRIMARY KEY, other text)""",
     )
     # `EXTERNAL` disables compression, so the key is stored out of line and an
     # update that leaves it alone sends it as an unchanged TOAST value. The value
@@ -327,7 +333,7 @@ def test_toast_in_replica_identity(started_cluster):
         ip=started_cluster.postgres_ip,
         port=started_cluster.postgres_port,
         settings=[
-            f"materialized_postgresql_tables_list = '{table}'",
+            f"materialized_postgresql_tables_list = '{table},{other_table}'",
             "materialized_postgresql_backoff_min_ms = 100",
             "materialized_postgresql_backoff_max_ms = 100",
         ],
@@ -336,6 +342,7 @@ def test_toast_in_replica_identity(started_cluster):
     pg_manager.execute(
         f"INSERT INTO {table} (id, other) VALUES (repeat('k', 2500), 'initial')"
     )
+    pg_manager.execute(f"INSERT INTO {other_table} VALUES (1, 'initial')")
     check_tables_are_synchronized(
         instance,
         table,
@@ -344,14 +351,23 @@ def test_toast_in_replica_identity(started_cluster):
     )
 
     # The row cannot be identified once its key arrives as an unchanged TOAST
-    # value, so replication must report it instead of writing a defaulted key.
+    # value, so the affected table must be skipped instead of writing a
+    # defaulted key or replaying the same WAL record indefinitely.
     pg_manager.execute(f"UPDATE {table} SET other = 'updated'")
-    # Keep the assertion past a consumer retry: a partially buffered row must
-    # not be flushed after the failed replication attempt.
-    time.sleep(1)
+    pg_manager.execute(f"UPDATE {other_table} SET other = 'updated'")
+    check_tables_are_synchronized(
+        instance,
+        other_table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
     assert (
         instance.query(f"SELECT length(id), other FROM test_database.{table}")
         == "2500\tinitial\n"
+    )
+    assert (
+        instance.query(f"SELECT other FROM test_database.{other_table}")
+        == "updated\n"
     )
 
     pg_manager.drop_materialized_db()

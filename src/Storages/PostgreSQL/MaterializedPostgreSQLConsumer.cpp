@@ -403,7 +403,7 @@ size_t MaterializedPostgreSQLConsumer::readTupleData(
                 {
                     discard_row = true;
                     throw Exception(
-                        ErrorCodes::INCORRECT_DATA,
+                        ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
                         "Column {} of table {} belongs to the replica identity and arrived as an unchanged TOAST value, "
                         "so the row cannot be identified. Use a replica identity over columns that are not stored out of line",
                         buffer.sample_block.getByPosition(column_idx).name,
@@ -811,14 +811,29 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                     case 'N':
                     {
                         /// New row.
-                        readTupleData(
-                            storage_data,
-                            replication_message,
-                            pos,
-                            size,
-                            PostgreSQLQuery::UPDATE,
-                            false,
-                            old_row_idx);
+                        try
+                        {
+                            readTupleData(
+                                storage_data,
+                                replication_message,
+                                pos,
+                                size,
+                                PostgreSQLQuery::UPDATE,
+                                false,
+                                old_row_idx);
+                        }
+                        catch (const Exception & e)
+                        {
+                            if (e.code() != ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR)
+                                throw;
+
+                            tryLogCurrentException(
+                                log,
+                                fmt::format("Table {} is skipped from replication because an UPDATE contains an "
+                                            "unchanged TOAST replica identity value that cannot identify the row",
+                                            table_name));
+                            markTableAsSkipped(relation_id, table_name);
+                        }
                         read_next = false;
                         break;
                     }
