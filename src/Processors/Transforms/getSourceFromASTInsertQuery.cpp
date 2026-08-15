@@ -149,6 +149,50 @@ bool sampledValueHoldsOnlyBoolLiterals(const Field & value, const std::vector<Sa
     }
 }
 
+/// Whether the sampled value reached by `path` is an array with exactly `size` elements. A value that
+/// does not have the expected shape provides no evidence, so it is treated as compatible.
+bool sampledValueIsArrayOfSize(const Field & value, const std::vector<SampledValueStep> & path, size_t depth, size_t size)
+{
+    if (depth == path.size())
+        return value.getType() != Field::Types::Array || value.safeGet<Array>().size() == size;
+
+    const auto & step = path[depth];
+    switch (step.kind)
+    {
+        case SampledValueStep::Kind::ArrayElements:
+        {
+            if (value.getType() != Field::Types::Array)
+                return true;
+            return std::ranges::all_of(
+                value.safeGet<Array>(),
+                [&](const Field & element) { return sampledValueIsArrayOfSize(element, path, depth + 1, size); });
+        }
+        case SampledValueStep::Kind::TupleElement:
+        {
+            if (value.getType() != Field::Types::Tuple)
+                return true;
+            const auto & tuple = value.safeGet<Tuple>();
+            if (step.index >= tuple.size())
+                return true;
+            return sampledValueIsArrayOfSize(tuple[step.index], path, depth + 1, size);
+        }
+        case SampledValueStep::Kind::MapValues:
+        {
+            if (value.getType() != Field::Types::Map)
+                return true;
+            return std::ranges::all_of(
+                value.safeGet<Map>(),
+                [&](const Field & entry)
+                {
+                    if (entry.getType() != Field::Types::Tuple)
+                        return true;
+                    const auto & pair = entry.safeGet<Tuple>();
+                    return pair.size() != 2 || sampledValueIsArrayOfSize(pair[1], path, depth + 1, size);
+                });
+        }
+    }
+}
+
 /// What is known about the actual sampled values behind a type being compared: how the numbers-from-
 /// strings inference pass typed the same value, and where the value sits inside the sampled data.
 /// Carried through the recursion into nested value types so the value-level rules keep working below
@@ -505,6 +549,25 @@ String getInsertDataSchemaMismatchDescription(
         return true;
     };
 
+    /// Schema inference represents a homogeneous JSON array as `Array(T)`, losing its arity, while
+    /// the JSON tuple parser requires one value per destination element. Use the parsed sample to
+    /// recover that arity before reporting a tuple-shape mismatch.
+    auto sampled_values_are_arrays_of_size
+        = [&](size_t column_index, const std::vector<SampledValueStep> & path, size_t size) -> std::optional<bool>
+    {
+        /// Reuse the lazy sample parser above; the boolean result is irrelevant here.
+        static_cast<void>(sampled_values_hold_only_bool_literals(column_index, path));
+
+        if (!sample_rows || column_index >= sample_columns.size())
+            return std::nullopt;
+
+        const auto & column = *sample_columns[column_index];
+        for (size_t row = 0; row < sample_rows; ++row)
+            if (!sampledValueIsArrayOfSize(column[row], path, 0, size))
+                return false;
+        return true;
+    };
+
     /// Compare structurally with a deliberately loose notion of compatibility. Schema inference widens
     /// types on purpose — numbers become broad types such as `Int64` / `UInt64` / `Float64`, and it does
     /// not reconstruct wrappers such as `Nullable`, `LowCardinality` or `Enum` — so comparing type names
@@ -800,12 +863,19 @@ String getInsertDataSchemaMismatchDescription(
                 {
                     const auto & expected_elements = expected_tuple->getElements();
                     if (inferred_array)
+                    {
                         /// Schema inference loses the arity of a homogeneous JSON array by
                         /// representing it as `Array(...)`. The tuple parser does not: it requires
-                        /// exactly one value per destination element. Without sampled arity, treat
-                        /// this as a mismatch rather than assuming that every array has the right
-                        /// length and hiding a genuine tuple-shape error.
-                        return false;
+                        /// exactly one value per destination element. Recover the arity from the
+                        /// parsed sample when possible; without it, stay conservative and avoid a
+                        /// false-positive explanation for an unrelated parsing error.
+                        if (!evidence.column_index)
+                            return true;
+                        if (const auto arrays_have_expected_size
+                            = sampled_values_are_arrays_of_size(*evidence.column_index, evidence.path, expected_elements.size()))
+                            return *arrays_have_expected_size;
+                        return true;
+                    }
 
                     /// The parser requires exactly as many elements in the token as the destination
                     /// `Tuple` has, and an inferred unnamed `Tuple` preserves the element count.
