@@ -27,10 +27,10 @@ doc_type: 'reference'
 
 2 つ以上の値の論理積を計算します。
 
-設定 [`short_circuit_function_evaluation`](/ja/reference/settings/session-settings#short_circuit_function_evaluation) では、短絡評価を使用するかどうかを制御します。
+設定 [`short_circuit_function_evaluation`](/ja/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) では、短絡評価を使用するかどうかを制御します。
 有効にすると、`val_i` は `(val_1 AND val_2 AND ... AND val_{i-1})` が `true` の場合にのみ評価されます。
 
-たとえば、短絡評価を使用すると、クエリ `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)` の実行時に、0 による除算の例外は発生しません。
+たとえば、短絡評価を使用すると、クエリ `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)` の実行時に、ゼロ除算例外は発生しません。
 引数としての 0 は `false` と見なされ、0 以外の値は `true` と見なされます。
 
 **構文**
@@ -122,7 +122,7 @@ SELECT NOT(1);
 
 2 つ以上の値の論理和を計算します。
 
-[`short_circuit_function_evaluation`](/ja/reference/settings/session-settings#short_circuit_function_evaluation) 設定は、短絡評価を使用するかどうかを制御します。
+[`short_circuit_function_evaluation`](/ja/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) 設定は、短絡評価を使用するかどうかを制御します。
 有効な場合、`val_i` は `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))` が `true` の場合にのみ評価されます。
 
 たとえば、短絡評価を使用すると、クエリ `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)` の実行時に、ゼロ除算例外はスローされません。

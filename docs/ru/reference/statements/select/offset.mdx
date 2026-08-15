@@ -9,10 +9,10 @@ doc_type: 'reference'
 `OFFSET` и `FETCH` позволяют получать данные порциями. Они задают блок строк, который нужно получить одним запросом.
 
 ```sql
--- Стиль стандарта SQL:
+-- SQL Standard style:
 [OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}]
 
--- Стиль MySQL/PostgreSQL:
+-- MySQL/PostgreSQL style:
 [LIMIT [n, ]m] [OFFSET offset_row_count]
 ```
 
@@ -52,7 +52,7 @@ SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
 </Note>
 
 <Note>
-  Фактическое смещение также может зависеть от настройки [offset](/ru/reference/settings/session-settings#offset).
+  Фактическое смещение также может зависеть от настройки [offset](/ru/reference/settings/session-settings/other#offset).
 </Note>
 
 <div id="examples">
