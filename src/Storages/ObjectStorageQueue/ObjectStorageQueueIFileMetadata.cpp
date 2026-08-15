@@ -101,10 +101,19 @@ void ObjectStorageQueueIFileMetadata::FileStatus::updateState(State state_)
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessingByAnotherProcessor()
 {
-    /// Same as a local attempt (the data of the previous local attempt is reset,
-    /// `retries` is kept), but the state is remembered as not ours.
-    onProcessing();
-    processing_by_another_processor_since = now();
+    /// Publish the foreign marker before `Processing`: contenders which observe the
+    /// state without acquiring `processing_lock` must not mistake it for our attempt.
+    const auto processing_since = now();
+    processing_by_another_processor_since = processing_since;
+    processing_start_time = processing_since;
+    processing_end_time = {};
+    processed_rows = 0;
+    {
+        std::lock_guard lock(last_exception_mutex);
+        last_exception = {};
+    }
+    /// Keep `retries`, as for a local processing attempt.
+    state = FileStatus::State::Processing;
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onTerminalStateByAnotherProcessor(State state_, const std::string & exception, size_t retries_)
