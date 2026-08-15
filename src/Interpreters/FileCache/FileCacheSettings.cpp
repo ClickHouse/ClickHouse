@@ -187,13 +187,13 @@ void FileCacheSettings::loadFromConfig(
 
     if ((*this)[FileCacheSetting::path].changed)
     {
-        if (fs::path((*this)[FileCacheSetting::path].value).is_relative())
+        if (pathFromString((*this)[FileCacheSetting::path].value).is_relative())
         {
             if (cache_path_prefix_if_relative.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache path prefix for relative paths was not provided");
 
             is_path_relative_in_config = true;
-            (*this)[FileCacheSetting::path] = pathToGenericString(fs::path(cache_path_prefix_if_relative) / (*this)[FileCacheSetting::path].value);
+            (*this)[FileCacheSetting::path] = pathToGenericString(pathFromString(cache_path_prefix_if_relative) / pathFromString((*this)[FileCacheSetting::path].value));
         }
     }
     else
@@ -215,13 +215,13 @@ void FileCacheSettings::loadFromCollection(
         impl->set(key, collection.get<String>(key));
     }
 
-    if (fs::path((*this)[FileCacheSetting::path].value).is_relative())
+    if (pathFromString((*this)[FileCacheSetting::path].value).is_relative())
     {
         if (cache_path_prefix_if_relative.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache path prefix for relative paths was not provided");
 
         is_path_relative_in_config = true;
-        (*this)[FileCacheSetting::path] = pathToGenericString(fs::path(cache_path_prefix_if_relative) / (*this)[FileCacheSetting::path].value);
+        (*this)[FileCacheSetting::path] = pathToGenericString(pathFromString(cache_path_prefix_if_relative) / pathFromString((*this)[FileCacheSetting::path].value));
     }
 
     validate();
@@ -234,7 +234,7 @@ void FileCacheSettings::validate()
     if (!settings[FileCacheSetting::path].changed)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`path` is required parameter of cache configuration");
 
-    if (fs::path((*this)[FileCacheSetting::path].value).is_relative())
+    if (pathFromString((*this)[FileCacheSetting::path].value).is_relative())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`path` was not normalized to absolute: {}", (*this)[FileCacheSetting::path].value);
 
     if (!settings[FileCacheSetting::max_size].changed && !settings[FileCacheSetting::max_size_ratio_to_total_space].changed)

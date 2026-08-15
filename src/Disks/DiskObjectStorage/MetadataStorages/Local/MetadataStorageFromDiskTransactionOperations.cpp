@@ -309,7 +309,7 @@ void RemoveRecursiveOperation::traverseDirectory(const std::string & mid_path)
         /// a Windows file identity (the CRT reports `st_ino` as zero for every file), and a zero
         /// key would make every directory after the first look like a revisit.
         PlatformFileVersion file_version;
-        if (0 != platformFileVersion(pathToString(fs::path(disk.getPath()) / next_to_visit), file_version))
+        if (0 != platformFileVersion(pathToString(pathFromString(disk.getPath()) / pathFromString(next_to_visit)), file_version))
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, next_to_visit, "Cannot stat file {}", next_to_visit);
         const bool is_new_path = visited_file_ids.emplace(file_version.device_id, file_version.file_id).second;
 

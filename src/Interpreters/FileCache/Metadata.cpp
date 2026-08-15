@@ -256,7 +256,7 @@ String CacheMetadata::getFileSegmentPath(
     const OriginInfo & origin,
     std::optional<size_t> size) const
 {
-    return pathToGenericString(fs::path(getKeyPath(key, origin)) / getFileNameForFileSegment(offset, segment_kind, size));
+    return pathToGenericString(pathFromString(getKeyPath(key, origin)) / getFileNameForFileSegment(offset, segment_kind, size));
 }
 
 String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) const
@@ -264,9 +264,9 @@ String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) con
     const auto key_str = key.toString();
     const auto key_type_prefix = getKeyTypePrefix(origin.segment_type);
     if (write_cache_per_user_directory)
-        return pathToGenericString(fs::path(path) / key_type_prefix / fmt::format("{}.{}", origin.user_id, origin.weight.value()) / key_str.substr(0, 3) / key_str);
+        return pathToGenericString(pathFromString(path) / key_type_prefix / fmt::format("{}.{}", origin.user_id, origin.weight.value()) / key_str.substr(0, 3) / key_str);
 
-    return pathToGenericString(fs::path(path) / key_type_prefix / key_str.substr(0, 3) / key_str);
+    return pathToGenericString(pathFromString(path) / key_type_prefix / key_str.substr(0, 3) / key_str);
 }
 
 CacheMetadataGuard::Lock CacheMetadata::MetadataBucket::lock() const
@@ -678,7 +678,7 @@ CacheMetadata::removeEmptyKey(
 
     LOG_TEST(log, "Key {} is removed from metadata", key);
 
-    const fs::path key_directory = getKeyPath(key, *locked_key.getKeyMetadata()->origin);
+    const fs::path key_directory = pathFromString(getKeyPath(key, *locked_key.getKeyMetadata()->origin));
     const fs::path key_prefix_directory = key_directory.parent_path();
 
     try

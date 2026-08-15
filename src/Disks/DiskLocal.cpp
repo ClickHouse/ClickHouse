@@ -513,7 +513,8 @@ void DiskLocal::removeFile(const String & path)
 void DiskLocal::removeFileIfExists(const String & path)
 {
     auto fs_path = absolutePath(path);
-    if (0 != platformUnlink(pathToString(fs_path)))
+    const auto path_string = pathToString(fs_path);
+    if (0 != platformUnlink(path_string))
     {
         if (errno != ENOENT)
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, pathToGenericString(fs_path), "Cannot unlink file {}", fs_path);
@@ -532,7 +533,8 @@ void DiskLocal::removeDirectoryIfExists(const String & path)
     auto fs_path = absolutePath(path);
     if (!existsDirectory(pathToGenericString(fs_path)))
         return;
-    if (0 != platformRmdir(pathToString(fs_path)))
+    const auto path_string = pathToString(fs_path);
+    if (0 != platformRmdir(path_string))
         if (errno != ENOENT)
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, pathToGenericString(fs_path), "Cannot remove directory {}", fs_path);
 }
