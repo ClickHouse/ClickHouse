@@ -1759,7 +1759,7 @@ bool wouldReadInOrderBeUseful(
         /// `ReadFromObjectStorageStep::requestReadingInOrder` is non-mutating (it only checks
         /// whether the configuration guarantees data sorted by the declared sorting key), so
         /// the probe can evaluate the commit-path condition directly.
-        return object_storage_step->requestReadingInOrder();
+        return object_storage_step->requestReadingInOrder(order_info.input_order->direction);
     }
 
     return false;
