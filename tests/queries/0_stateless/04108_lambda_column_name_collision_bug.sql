@@ -142,3 +142,13 @@ SELECT 'LowCardinality(String) column: PREWHERE';
 SELECT s FROM t6 PREWHERE arrayExists(s -> (t6.s != '') AND (s = 'q'), [toNullable('q')]) ORDER BY s;
 
 DROP TABLE t6;
+
+-- An argument name spelled like a generated action name must not displace the body's own node.
+SELECT 'argument named after a generated action name';
+SELECT arrayMap((x, `plus(x, 1_UInt8)`) -> plus(x, 1), [toUInt8(2)], [toUInt16(42)]);
+
+SELECT 'argument named after a generated action name, nested use';
+SELECT arrayMap((x, `plus(x, 1_UInt8)`) -> materialize(plus(x, 1)) + 10, [toUInt8(2)], [toUInt16(42)]);
+
+SELECT 'argument named after a generated action name, analyzer disabled';
+SELECT arrayMap((x, `plus(x, 1_UInt8)`) -> plus(x, 1), [toUInt8(2)], [toUInt16(42)]) SETTINGS enable_analyzer = 0;

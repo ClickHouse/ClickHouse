@@ -76,3 +76,9 @@ b
 LowCardinality(String) column: PREWHERE
 a
 b
+argument named after a generated action name
+[3]
+argument named after a generated action name, nested use
+[13]
+argument named after a generated action name, analyzer disabled
+[3]

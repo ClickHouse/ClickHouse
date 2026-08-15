@@ -734,6 +734,8 @@ private:
 
     NodeNameAndNodeMinLevel visitLambda(const QueryTreeNodePtr & node);
 
+    NameSet collectLambdaArgumentNamesUsedByColumns(const LambdaNode & lambda_node);
+
     NodeNameAndNodeMinLevel makeSetForInFunction(const QueryTreeNodePtr & node);
 
     NodeNameAndNodeMinLevel visitIndexHintFunction(const QueryTreeNodePtr & node);
@@ -1006,6 +1008,40 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     return {constant_node_name, Levels(0)};
 }
 
+NameSet PlannerActionsVisitorImpl::collectLambdaArgumentNamesUsedByColumns(const LambdaNode & lambda_node)
+{
+    const auto & argument_names = lambda_node.getArguments().getNames();
+    NameSet result;
+
+    QueryTreeNodes to_visit{lambda_node.getExpression()};
+    while (!to_visit.empty())
+    {
+        auto current = to_visit.back();
+        to_visit.pop_back();
+
+        if (const auto * column_node = current->as<ColumnNode>())
+        {
+            /// Mirrors visitColumn: a column with a non-constant expression is replaced by that
+            /// expression and never looked up under its own name.
+            bool looked_up_by_name = !column_node->hasExpression() || use_column_identifier_as_action_node_name
+                || column_node->getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT;
+
+            if (looked_up_by_name)
+            {
+                const auto & column_name = column_node->getColumnName();
+                if (std::find(argument_names.begin(), argument_names.end(), column_name) != argument_names.end())
+                    result.insert(column_name);
+            }
+        }
+
+        for (const auto & child : current->getChildren())
+            if (child)
+                to_visit.push_back(child);
+    }
+
+    return result;
+}
+
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitLambda(const QueryTreeNodePtr & node)
 {
     auto & lambda_node = node->as<LambdaNode &>();
@@ -1027,10 +1063,12 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     ActionsDAG lambda_actions_dag;
     actions_stack.emplace_back(lambda_actions_dag, node);
 
-    /// Declared before the body so an argument's INPUT carries the argument's own type: a table
-    /// column of the same name then only finds that INPUT, never defines it. Unread ones are pruned.
+    /// A body column named after an argument resolves to the argument's type, so the argument is
+    /// declared first. Other names stay undeclared: a body node may legitimately carry them.
+    const auto argument_names_read_as_columns = collectLambdaArgumentNamesUsedByColumns(lambda_node);
     for (const auto & lambda_argument : lambda_arguments_names_and_types)
-        actions_stack.back().addInputColumnIfNecessary(lambda_argument.name, lambda_argument.type);
+        if (argument_names_read_as_columns.contains(lambda_argument.name))
+            actions_stack.back().addInputColumnIfNecessary(lambda_argument.name, lambda_argument.type);
 
     auto [lambda_expression_node_name, levels] = visitImpl(lambda_node.getExpression());
     lambda_actions_dag.getOutputs().push_back(actions_stack.back().getNodeOrThrow(lambda_expression_node_name));
