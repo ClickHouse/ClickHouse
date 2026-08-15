@@ -40,6 +40,7 @@ an INTERVAL step that stagnates at the calendar boundary before an in-range TO i
 an INTERVAL step that wraps around the column type before an in-range TO is rejected
 4	2106-01-01 00:00:00	2106-01-04 00:00:00
 a numeric step that wraps the Int64 arithmetic carrier is rejected
+a step that wraps before the next data row is rejected
 in-range filling is unchanged
 [1,2,3,4,5,6,7,8,9]
 [-1,-2,-3,-4,-5,-6,-7]

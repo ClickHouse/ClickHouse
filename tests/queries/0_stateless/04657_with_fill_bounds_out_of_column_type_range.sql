@@ -184,6 +184,12 @@ SELECT 'a numeric step that wraps the Int64 arithmetic carrier is rejected';
 SELECT x FROM (SELECT toInt64(9223372036854775806) AS x ORDER BY x ASC WITH FILL FROM x TO toInt64(9223372036854775807) STEP 2) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT x FROM (SELECT toInt64(-9223372036854775807) AS x ORDER BY x DESC WITH FILL FROM x TO toInt64(-9223372036854775808) STEP -2) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 
+SELECT 'a step that wraps before the next data row is rejected';
+
+-- With no TO, the next original row is the exclusive bound. Check the step at runtime too: the sequence starts
+-- at INT64_MAX - 1, while its first step wraps to INT64_MIN before it can reach the next data row.
+SELECT x FROM (SELECT toInt64(9223372036854775807) AS x ORDER BY x ASC WITH FILL FROM toInt64(9223372036854775806) STEP 2) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+
 SELECT 'in-range filling is unchanged';
 
 SELECT groupArray(x) FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH FILL FROM 1 TO 10);

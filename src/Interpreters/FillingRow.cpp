@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INVALID_WITH_FILL_EXPRESSION;
+}
+
 constexpr static bool debug_logging_enabled = false;
 
 template <class... Args>
@@ -191,6 +196,11 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         Field next_value = row[i];
         fill_column_desc.step_func(next_value, 1);
 
+        if (!less(row[i], next_value, getDirection(i)))
+            throw Exception(
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "WITH FILL step does not advance in the sorting direction");
+
         if (!less(next_value, constraints[i], getDirection(i)))
             continue;
 
@@ -203,6 +213,11 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
 
     auto next_value = row[pos];
     getFillDescription(pos).step_func(next_value, 1);
+
+    if (!less(row[pos], next_value, getDirection(pos)))
+        throw Exception(
+            ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+            "WITH FILL step does not advance in the sorting direction");
 
     if (!next_original_row[pos].isNull() && less(next_original_row[pos], next_value, getDirection(pos)))
         return false;
