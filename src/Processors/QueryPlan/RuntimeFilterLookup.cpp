@@ -578,7 +578,7 @@ ApproximateSetRuntimeFilter & AdaptiveSetRuntimeFilter::switchToApproximateFilte
 }
 
 void AdaptiveSetRuntimeFilter::checkApproximateFilterWorthiness(
-    RuntimeFilterEvaluationState & evaluation_state, const ApproximateSetRuntimeFilter & approximate_filter)
+    RuntimeFilterEvaluationState & evaluation_state, const ApproximateSetRuntimeFilter & approximate_filter) const
 {
     if (!approximate_filter.isWorthUsing(max_ratio_of_set_bits_in_bloom_filter))
         evaluation_state.setFullyDisabled();

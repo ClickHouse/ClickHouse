@@ -199,7 +199,7 @@ TEST(MutexProtected, AccessReadOnlyAcquiresSharedLock)
             a.accessReadOnly<NonBlockingUniqueLock>(
                 [&](const A *) { unique_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             shared_lock_acquired = true;
         }
@@ -209,7 +209,7 @@ TEST(MutexProtected, AccessReadOnlyAcquiresSharedLock)
             a.accessReadOnly<NonBlockingSharedLock>(
                 [&](const A *) { shared_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             shared_lock_acquirable = false;
         }
@@ -239,7 +239,7 @@ TEST(MutexProtected, AccessWriteEnabledAcquiresExclusiveLock)
             a.accessReadOnly<NonBlockingUniqueLock>(
                 [&](const A *) { unique_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             unique_lock_acquired = true;
         }
@@ -249,7 +249,7 @@ TEST(MutexProtected, AccessWriteEnabledAcquiresExclusiveLock)
             a.accessReadOnly<NonBlockingSharedLock>(
                 [&](const A *) { shared_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             shared_lock_acquirable = false;
         }
@@ -281,7 +281,7 @@ TEST(MutexProtected, GetReadOnlyAcquiresSharedLock)
             a.accessReadOnly<NonBlockingUniqueLock>(
                 [&](const A *) { unique_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             shared_lock_acquired = true;
         }
@@ -291,7 +291,7 @@ TEST(MutexProtected, GetReadOnlyAcquiresSharedLock)
             a.accessReadOnly<NonBlockingSharedLock>(
                 [&](const A *) { shared_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             shared_lock_acquirable = false;
         }
@@ -323,7 +323,7 @@ TEST(MutexProtected, GetWriteEnabledAcquiresExclusiveLock)
             a.accessReadOnly<NonBlockingUniqueLock>(
                 [&](const A *) { unique_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             unique_lock_acquired = true;
         }
@@ -333,7 +333,7 @@ TEST(MutexProtected, GetWriteEnabledAcquiresExclusiveLock)
             a.accessReadOnly<NonBlockingSharedLock>(
                 [&](const A *) { shared_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             shared_lock_acquirable = false;
         }
@@ -363,7 +363,7 @@ TEST(MutexProtected, AccessReadOnlyWithNonDefaultLockGuardAcquiresLock)
             a.accessReadOnly<NonBlockingUniqueLock>(
                 [&](const A *) { unique_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             unique_lock_acquired = true;
         }
@@ -373,7 +373,7 @@ TEST(MutexProtected, AccessReadOnlyWithNonDefaultLockGuardAcquiresLock)
             a.accessReadOnly<NonBlockingSharedLock>(
                 [&](const A *) { shared_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             shared_lock_acquirable = false;
         }
@@ -403,7 +403,7 @@ TEST(MutexProtected, AccessWriteEnabledWithNonDefaultLockGuardAcquiresLock)
             a.accessReadOnly<NonBlockingUniqueLock>(
                 [&](const A *) { unique_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             unique_lock_acquired = true;
         }
@@ -413,7 +413,7 @@ TEST(MutexProtected, AccessWriteEnabledWithNonDefaultLockGuardAcquiresLock)
             a.accessReadOnly<NonBlockingSharedLock>(
                 [&](const A *) { shared_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             shared_lock_acquirable = false;
         }
@@ -445,7 +445,7 @@ TEST(MutexProtected, GetReadOnlyWithNonDefaultLockGuardAcquiresLock)
             a.accessReadOnly<NonBlockingUniqueLock>(
                 [&](const A *) { unique_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             unique_lock_acquired = true;
         }
@@ -455,7 +455,7 @@ TEST(MutexProtected, GetReadOnlyWithNonDefaultLockGuardAcquiresLock)
             a.accessReadOnly<NonBlockingSharedLock>(
                 [&](const A *) { shared_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             shared_lock_acquirable = false;
         }
@@ -487,7 +487,7 @@ TEST(MutexProtected, GetWriteEnabledWithNonDefaultLockGuardAcquiresLock)
             a.accessReadOnly<NonBlockingUniqueLock>(
                 [&](const A *) { unique_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             unique_lock_acquired = true;
         }
@@ -497,7 +497,7 @@ TEST(MutexProtected, GetWriteEnabledWithNonDefaultLockGuardAcquiresLock)
             a.accessReadOnly<NonBlockingSharedLock>(
                 [&](const A *) { shared_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             shared_lock_acquirable = false;
         }
@@ -527,7 +527,7 @@ TEST(MutexProtected, AccessWriteEnabledWithStdMutexAcquiresLock)
             a.accessReadOnly<NonBlockingUniqueLock>(
                 [&](const A *) { unique_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             unique_lock_acquired = true;
         }
@@ -537,7 +537,7 @@ TEST(MutexProtected, AccessWriteEnabledWithStdMutexAcquiresLock)
             a.accessReadOnly<NonBlockingUniqueLock>(
                 [&](const A *) { second_unique_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             unique_lock_acquirable = false;
         }
@@ -569,7 +569,7 @@ TEST(MutexProtected, GetWriteEnabledWithStdMutexAcquiresLock)
             a.accessReadOnly<NonBlockingUniqueLock>(
                 [&](const A *) { unique_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             unique_lock_acquired = true;
         }
@@ -579,7 +579,7 @@ TEST(MutexProtected, GetWriteEnabledWithStdMutexAcquiresLock)
             a.accessReadOnly<NonBlockingUniqueLock>(
                 [&](const A *) { second_unique_lock_lambda_evaluated = true; });
         }
-        catch (...)
+        catch (const std::runtime_error &)
         {
             unique_lock_acquirable = false;
         }

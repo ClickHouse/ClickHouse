@@ -2,6 +2,7 @@
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Range.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/Context_fwd.h>
@@ -203,7 +204,7 @@ private:
 
     /// Disables approximate filter if it is likely to have bad selectivity.
     void checkApproximateFilterWorthiness(
-        RuntimeFilterEvaluationState & evaluation_state, const ApproximateSetRuntimeFilter & approximate_filter);
+        RuntimeFilterEvaluationState & evaluation_state, const ApproximateSetRuntimeFilter & approximate_filter) const;
 
     const DataTypePtr filter_column_target_type;
     const UInt64 bloom_filter_hash_functions;
