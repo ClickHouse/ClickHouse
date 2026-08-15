@@ -2163,15 +2163,6 @@ public:
                 && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type)));
     }
 
-    bool isNoExcept() const override
-    {
-        const bool has_except =  IsOperation<Op>::int_div ||
-            IsOperation<Op>::modulo ||
-            IsOperation<Op>::positive_modulo ||
-            IsOperation<Op>::div_floating;
-        return !has_except;
-    }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// Type resolution runs during analysis while the context is alive, but it is also re-invoked from

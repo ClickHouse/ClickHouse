@@ -574,7 +574,7 @@ void StorageBuffer::read(
         if (query_info.row_level_filter)
         {
             ExpressionActionsSettings actions_settings(local_context);
-            auto actions = std::make_shared<ExpressionActions>(query_info.row_level_filter->actions.clone(), actions_settings);
+            auto actions = ExpressionActions::create(query_info.row_level_filter->actions.clone(), actions_settings);
             pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<FilterTransform>(
@@ -588,7 +588,7 @@ void StorageBuffer::read(
         if (query_info.prewhere_info)
         {
             ExpressionActionsSettings actions_settings(local_context);
-            auto actions = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions.clone(), actions_settings);
+            auto actions = ExpressionActions::create(query_info.prewhere_info->prewhere_actions.clone(), actions_settings);
             pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<FilterTransform>(
