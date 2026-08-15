@@ -100,35 +100,9 @@ function race_with_drop()
         SETTINGS ignore_drop_queries_probability = 0" < /dev/null > /dev/null 2>&1 &
     local dropper=$!
 
-    # The drop has to be blocked on the table lock before the sink is released, otherwise it could
-    # take the lock after the commit already released it and never contend at all. The counter is
-    # raised on the way in, before the lock implementation decides whether the lock is free, so a
-    # single sample would also match a drop that is about to take it uncontended. What distinguishes
-    # a blocked drop is that it stays that way: the sink holds the lock until the resume below, so
-    # the count cannot fall back while the drop is still running.
-    local queued=0
-    local stable=0
-    local waiting
-    for _ in $(seq 1 600); do
-        waiting=$(${CLICKHOUSE_CLIENT} --query "
-            SELECT value FROM system.metrics WHERE metric = 'RWLockWaitingWriters'
-            SETTINGS enable_parallel_replicas = 0" < /dev/null 2>/dev/null) || waiting=""
-        case "$waiting" in
-            '' | *[!0-9]*) waiting=0 ;;
-        esac
-        if [ "$waiting" -gt 0 ]; then
-            stable=$((stable + 1))
-            if [ "$stable" -ge 3 ]; then
-                queued=1
-                break
-            fi
-        else
-            stable=0
-        fi
-        # The drop is gone: it completed without ever being seen waiting, so it never contended.
-        kill -0 "$dropper" 2>/dev/null || break
-        sleep 0.1
-    done
+    # The sink is still parked, so the drop reaches the table lock and blocks on it while the
+    # window is held open.
+    sleep 2
 
     ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FP}" < /dev/null
 
@@ -138,8 +112,22 @@ function race_with_drop()
     local drop=ok
     wait "$dropper" 2>/dev/null || drop=failed
 
-    if [ "$queued" -eq 0 ]; then
-        echo "$arm: the drop was never seen waiting for the table lock"
+    # The lock wait is charged to the statement that blocked, so a non-zero value here is this
+    # drop's own wait on this table and no other writer can supply it. A drop that reached the lock
+    # only after the commit released it reports zero and never covered the race.
+    local waited
+    waited=$(${CLICKHOUSE_CLIENT} --query "
+        SYSTEM FLUSH LOGS query_log;
+        SELECT ProfileEvents['RWLockWritersWaitMilliseconds'] FROM system.query_log
+        WHERE query_id = '${drop_qid}' AND type = 'QueryFinish' AND event_date >= yesterday()
+        ORDER BY event_time_microseconds DESC LIMIT 1
+        SETTINGS max_rows_to_read = 0, enable_parallel_replicas = 0" < /dev/null 2>/dev/null) || waited=""
+    case "$waited" in
+        '' | *[!0-9]*) waited=0 ;;
+    esac
+
+    if [ "$waited" -eq 0 ]; then
+        echo "$arm: the drop did not wait for the table lock"
         return
     fi
 
