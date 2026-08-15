@@ -1990,6 +1990,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                     {
                         /// Ok: preserve the exception from receiveResult(). resetOutput() records
                         /// its own output error in client_exception when appropriate.
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
                     }
                     throw;
                 }

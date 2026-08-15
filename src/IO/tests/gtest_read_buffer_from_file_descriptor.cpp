@@ -93,7 +93,7 @@ TEST(AsynchronousReadBufferFromFileDescriptor, RewindResetsBufferState)
 #if defined(OS_LINUX)
 TEST(WriteBufferFromFileDescriptor, PreservesUnwrittenDataAfterInterruption)
 {
-    std::array<int, 2> pipe_fds;
+    std::array<int, 2> pipe_fds{};
     ASSERT_EQ(0, ::pipe(pipe_fds.data()));
 
     /// One complete PIPE_BUF write succeeds, then the pipe is full and the interruption hook
