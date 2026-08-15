@@ -8,7 +8,7 @@ namespace DB
 struct QueryPlanSerializationSettings;
 
 /// Helpers shared by the steps that carry a full (not merge-only) `Aggregator::Params` through
-/// query-plan serialization: `Aggregating` and `Rollup` (and `Cube` once it is serializable).
+/// query-plan serialization: `Aggregating`, `Rollup` and `Cube`.
 /// Step-specific knobs stay with the steps: `max_block_size` (a step field in `Aggregating`),
 /// the stats-collecting settings (only `Aggregating` sends a stats key), and
 /// `enable_packed_string_keys_in_aggregation` (needs per-step old-peer gating).
