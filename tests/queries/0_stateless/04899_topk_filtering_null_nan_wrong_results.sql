@@ -27,7 +27,8 @@ SET use_top_k_dynamic_filtering = 1;
 SET use_top_k_dynamic_filtering_for_variable_length_types = 1;
 SET use_skip_indexes_for_top_k = 1;
 SET use_skip_indexes_on_data_read = 1;
--- A value of 1 installs no filter at LIMIT 1.
+-- The cap rejects a limit above it, so a value of 1 installs no filter in the LIMIT 2 and LIMIT 3
+-- arms.
 SET query_plan_max_limit_for_top_k_optimization = 100;
 -- The plan assertions below scan EXPLAIN text; pin the rendering (default is 'pretty' since 26.7).
 SET explain_query_plan_default = 'legacy';
