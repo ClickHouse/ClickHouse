@@ -357,22 +357,24 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::merge()
     }
     else
     {
-        /// Start (or top up) the read-ahead only once the merge has actually advanced past a
-        /// source: it asks for a source other than the one whose real data it has been
-        /// consuming, or a source was exhausted without data (see `onSourceExhausted`). As
-        /// long as the merge keeps asking the same source for more blocks — the front source
-        /// being resolved from its virtual row, possibly over several blocks — prefetching
-        /// the sources deferred behind it would read parts that a limit satisfied from the
-        /// front source alone never reaches (e.g. a multi-block `ORDER BY pk LIMIT n`
-        /// answered entirely by the first part). Once the merge does move to another source,
-        /// reading ahead is worthwhile and keeps the deferred sources from being read one by
-        /// one.
+        /// Start (or top up) the read-ahead immediately when there is no limit. A full scan
+        /// necessarily reaches every deferred source, so delaying the window until the first
+        /// source is exhausted would serialize its startup. With a limit, start only once the
+        /// merge has actually advanced past a source: it asks for a source other than the one
+        /// whose real data it has been consuming, or a source was exhausted without data (see
+        /// `onSourceExhausted`). As long as the merge keeps asking the same source for more
+        /// blocks — the front source being resolved from its virtual row, possibly over
+        /// several blocks — prefetching the sources deferred behind it would read parts that a
+        /// limit satisfied from the front source alone never reaches (e.g. a multi-block
+        /// `ORDER BY pk LIMIT n` answered entirely by the first part). Once the merge does
+        /// move to another source, reading ahead is worthwhile and keeps the deferred sources
+        /// from being read one by one.
         if (result.required_source >= 0)
         {
             if (last_source_with_real_data >= 0 && result.required_source != last_source_with_real_data)
                 merge_advanced_past_source = true;
 
-            if (merge_advanced_past_source)
+            if (limit == 0 || merge_advanced_past_source)
                 topUpPrefetch();
         }
 
