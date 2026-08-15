@@ -83,11 +83,12 @@ std::vector<Document> CreateHandler::handle(const std::vector<OpMessageSection> 
     try
     {
         executor->execute(fmt::format(
-            "CREATE TABLE {} ({} String, {} JSON) ENGINE = MergeTree ORDER BY {}",
+            "CREATE TABLE {} ({} String, {} JSON) ENGINE = MergeTree ORDER BY {} COMMENT {}",
             collection.getQualifiedName(),
             backQuoteIfNeed(String(Mongo::OBJECT_ID_COLUMN)),
             backQuoteIfNeed(String(Mongo::DOCUMENT_COLUMN)),
-            backQuoteIfNeed(String(Mongo::OBJECT_ID_COLUMN))));
+            backQuoteIfNeed(String(Mongo::OBJECT_ID_COLUMN)),
+            quoteString(String(Mongo::DOCUMENT_COLLECTION_COMMENT))));
     }
     catch (const Exception & e)
     {

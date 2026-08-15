@@ -27,6 +27,10 @@ inline constexpr std::string_view DOCUMENT_COLUMN = "json";
 /// The column that holds the Mongo object id of the document, which is the primary key of the table.
 inline constexpr std::string_view OBJECT_ID_COLUMN = "_id";
 
+/// A table comment marks a collection created by the Mongo endpoint. The column names alone do
+/// not distinguish it from a ClickHouse table that happens to use the same names and types.
+inline constexpr std::string_view DOCUMENT_COLLECTION_COMMENT = "Created by the MongoDB protocol";
+
 /** The name the document that a read returns is selected under. It must not be the name of the
   * document column itself: an alias shadows a column of the same name, so a filter over a field
   * would read the document the projection built rather than the stored one.

@@ -12,8 +12,8 @@ namespace DB::MongoProtocol
   * A collection the Mongo endpoint creates keeps whole documents in one `JSON` column named `json`,
   * with the object id of each of them in an `_id` column, because a Mongo collection has no schema.
   * A table that was created in ClickHouse keeps its own columns, and a field of a query names the
-  * column of the same name there. The two are told apart by the columns of the table, so that both
-  * an application that only ever talks Mongo and one that points at an existing table work.
+  * column of the same name there. The endpoint marks its collections in table metadata, so a
+  * ClickHouse table with otherwise identical columns remains a schemaful table.
   */
 struct CollectionShape
 {

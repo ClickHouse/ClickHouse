@@ -288,11 +288,12 @@ void InsertHandler::createCollection(const CollectionRef & collection, std::shar
       */
     executor->execute(
         fmt::format(
-            "CREATE TABLE IF NOT EXISTS {} ({} String, {} JSON) ENGINE = MergeTree ORDER BY {}",
+            "CREATE TABLE IF NOT EXISTS {} ({} String, {} JSON) ENGINE = MergeTree ORDER BY {} COMMENT {}",
             collection.getQualifiedName(),
             backQuoteIfNeed(String(Mongo::OBJECT_ID_COLUMN)),
             backQuoteIfNeed(String(Mongo::DOCUMENT_COLUMN)),
-            backQuoteIfNeed(String(Mongo::OBJECT_ID_COLUMN))));
+            backQuoteIfNeed(String(Mongo::OBJECT_ID_COLUMN)),
+            quoteString(String(Mongo::DOCUMENT_COLLECTION_COMMENT))));
 }
 
 std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)

@@ -359,6 +359,27 @@ def test_create_collection_rejects_unsupported_options(started_cluster):
     assert "capped" not in db.list_collection_names()
 
 
+def test_schemaful_json_id_shape_is_not_document_collection(started_cluster):
+    """A user table with the document collection's columns stays a schemaful table."""
+    node = cluster.instances["node"]
+    client = make_client()
+    collection = client["db"]["schemaful_json_id"]
+
+    collection.drop()
+    node.query(
+        "CREATE TABLE db.schemaful_json_id (_id String, json JSON) ENGINE = MergeTree ORDER BY _id",
+        password="123",
+    )
+    node.query(
+        'INSERT INTO db.schemaful_json_id FORMAT JSONEachRow\\n{"_id":"external", "json":{"field":1}}',
+        password="123",
+    )
+
+    assert list(collection.find({})) == [{"_id": "external", "json": {"field": 1}}]
+
+    collection.drop()
+
+
 def test_ordered_insert_keeps_the_successful_prefix(started_cluster):
     """A later bad document in an ordered insert reports a write error without rolling back the prefix."""
     node = cluster.instances["node"]

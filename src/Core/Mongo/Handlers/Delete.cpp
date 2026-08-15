@@ -61,13 +61,14 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
 
         auto mongo_dialect_query = fmt::format("db.{}.deleteMany({})", collection.collection, serialized_filter);
 
-        auto parser = Mongo::ParserMongoQuery(10000, 10000, 10000);
+        const auto max_query_size = mongo_dialect_query.size();
+        auto parser = Mongo::ParserMongoQuery(max_query_size, 10000, 10000);
         auto ast = Mongo::parseMongoQuery(
             parser,
             mongo_dialect_query.data(),
             mongo_dialect_query.data() + mongo_dialect_query.size(),
             "",
-            10000,
+            max_query_size,
             10000,
             10000,
             collection.database);
