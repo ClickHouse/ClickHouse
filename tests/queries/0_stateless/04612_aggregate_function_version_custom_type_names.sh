@@ -54,7 +54,7 @@ $CLICKHOUSE_CLIENT --query "
 # work per level: at this depth that is upwards of 2^30 visited leaves, which no timeout allows,
 # while reusing the rebuilt elements stays in the milliseconds.
 
-DEEP="AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))"
+DEEP="AggregateFunction(sumMap, Array(UInt64), Array(UInt64))"
 for _ in {1..30}; do DEEP="Nested(x $DEEP)"; done
 
 $CLICKHOUSE_LOCAL --query "
