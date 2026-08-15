@@ -20,6 +20,14 @@ for engine in "MergeTree" "ReplicatedMergeTree('/clickhouse/tables/{database}/t_
     $CLICKHOUSE_CLIENT -q "INSERT INTO t_mut_prog SELECT number, number FROM numbers(1000)"
     $CLICKHOUSE_CLIENT -q "ALTER TABLE t_mut_prog UPDATE v = v + 1 WHERE 1" --mutations_sync=0
 
+    # For `ReplicatedMergeTree` the entry reaches the in-memory queue that backs `system.mutations`
+    # asynchronously, so wait for it before reading the table.
+    for _ in {1..300}; do
+        mutation_id=$($CLICKHOUSE_CLIENT -q "SELECT mutation_id FROM system.mutations WHERE database = currentDatabase() AND table = 't_mut_prog' ORDER BY mutation_id LIMIT 1")
+        [[ -n "$mutation_id" ]] && break
+        sleep 0.3
+    done
+
     $CLICKHOUSE_CLIENT -q "
         SELECT
             parts_to_do,
@@ -29,7 +37,6 @@ for engine in "MergeTree" "ReplicatedMergeTree('/clickhouse/tables/{database}/t_
         WHERE database = currentDatabase() AND table = 't_mut_prog' AND NOT is_done"
 
     $CLICKHOUSE_CLIENT -q "SYSTEM START MERGES t_mut_prog"
-    mutation_id=$($CLICKHOUSE_CLIENT -q "SELECT mutation_id FROM system.mutations WHERE database = currentDatabase() AND table = 't_mut_prog' ORDER BY mutation_id LIMIT 1")
     wait_for_mutation t_mut_prog "$mutation_id"
 
     $CLICKHOUSE_CLIENT -q "
