@@ -180,7 +180,8 @@ void Chunk::append(const Chunk & chunk, size_t from, size_t length)
     {
         /// Chunks from different parts can use different on-disk serializations.
         /// Keep the generic concatenation boundary representation-independent.
-        mutable_columns[position] = IColumn::mutate(recursiveRemoveNonNativeLowCardinality(mutable_columns[position]));
+        ColumnPtr destination_column = std::move(mutable_columns[position]);
+        mutable_columns[position] = IColumn::mutate(recursiveRemoveNonNativeLowCardinality(destination_column));
         auto column = recursiveRemoveNonNativeLowCardinality(chunk.getColumns()[position]);
         mutable_columns[position]->insertRangeFrom(*column, from, length);
     }
