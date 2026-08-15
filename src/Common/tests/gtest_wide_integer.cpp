@@ -2,8 +2,14 @@
 
 #include <cstdint>
 #include <limits>
+#include <tuple>
 #include <type_traits>
+#include <vector>
 #include <initializer_list>
+
+#include <pcg_random.hpp>
+
+#include <boost/multiprecision/cpp_int.hpp>
 
 #include <Core/Types.h>
 #include <IO/WriteHelpers.h>
@@ -459,4 +465,187 @@ GTEST_TEST(WideInteger, DecimalFormatting)
     Int128 fractional = DecimalUtils::getFractionalPart(x, 2);
 
     EXPECT_EQ(fractional, 40);
+}
+
+
+/// Division is the one operation with a non-trivial algorithm behind it: a single-limb loop for
+/// small divisors and Knuth's Algorithm D for the rest. It is also used during constant evaluation.
+static_assert(UInt256(0) / UInt256(7) == UInt256(0));
+static_assert(UInt256(7) / UInt256(8) == UInt256(0));
+static_assert(UInt256(7) % UInt256(8) == UInt256(7));
+static_assert((UInt256(1) << 200) % UInt256(1000000000000000000ULL) == UInt256(993782792835301376ULL));
+static_assert((UInt256(1) << 200) / UInt256(1000000000000000000ULL) % UInt256(1000000000000000000ULL)
+              == UInt256(92341162602522202ULL));
+/// A divisor of more than one limb, so that Algorithm D itself runs at compile time.
+static_assert((UInt256(1) << 200) % ((UInt256(1) << 70) | UInt256(1)) == UInt256(1152921504606846976ULL));
+static_assert(Int256(-1000000007) / Int256(3) == Int256(-333333335));
+static_assert(Int256(-1000000007) % Int256(3) == Int256(-2));
+
+
+GTEST_TEST(WideInteger, DivisionKnownValues)
+{
+    /// 2^200 divided by 10^18: a single-limb divisor over four limbs.
+    UInt256 two_pow_200 = UInt256(1) << 200;
+    EXPECT_EQ(toString(two_pow_200 / UInt256(1000000000000000000ULL)), "1606938044258990275541962092341162602522202");
+    EXPECT_EQ(toString(two_pow_200 % UInt256(1000000000000000000ULL)), "993782792835301376");
+
+    /// 10^76 / 10^38: both operands are multi-limb, and the division is exact.
+    EXPECT_EQ(toString(parse<UInt256>("10000000000000000000000000000000000000000000000000000000000000000000000000000")
+                       / parse<UInt256>("100000000000000000000000000000000000000")),
+              "100000000000000000000000000000000000000");
+
+    /// (2^256 - 1) / (2^128 + 1) == 2^128 - 1 exactly, the widest divisor there is.
+    EXPECT_EQ(toString(std::numeric_limits<UInt256>::max() / parse<UInt256>("340282366920938463463374607431768211457")),
+              "340282366920938463463374607431768211455");
+    EXPECT_EQ(toString(std::numeric_limits<UInt256>::max() % parse<UInt256>("340282366920938463463374607431768211457")), "0");
+
+    /// A divisor whose leading limb is 1, which needs the largest normalization shift.
+    EXPECT_EQ(toString(parse<UInt256>("10000000000000000000000000000000000000000000000000000000000000000000000000000")
+                       / parse<UInt256>("1361129467683753853853498429727072858169")),
+              "7346839692639296924804603357639035419");
+    EXPECT_EQ(toString(parse<UInt256>("10000000000000000000000000000000000000000000000000000000000000000000000000000")
+                       % parse<UInt256>("1361129467683753853853498429727072858169")),
+              "998009692057903478721155667103445512189");
+
+    /// A divisor whose leading limb is 2^64 - 1, which needs no normalization shift at all.
+    EXPECT_EQ(toString((UInt256(1) << 255) / UInt256(18446744073709551615ULL)),
+              "3138550867693340382088035895064302439792088397984756137984");
+    EXPECT_EQ(toString((UInt256(1) << 255) % UInt256(18446744073709551615ULL)), "9223372036854775808");
+
+    /// Signed division truncates toward zero and the remainder follows the dividend.
+    EXPECT_EQ(toString(parse<Int256>("-1000000000000000000000000000000000000000000000000000000000000") / Int256(7)),
+              "-142857142857142857142857142857142857142857142857142857142857");
+    EXPECT_EQ(toString(parse<Int256>("-1000000000000000000000000000000000000000000000000000000000000") % Int256(7)), "-1");
+
+    EXPECT_EQ(toString(parse<Int128>("148873535527910577765226390751398592640") / Int128(-1000000007)),
+              "-148873534485795836364655536198");
+    EXPECT_EQ(toString(parse<Int128>("-148873535527910577765226390751398592640") / Int128(-1000000007)),
+              "148873534485795836364655536198");
+}
+
+
+namespace
+{
+
+/// A value with a random bit width, so that operands with few significant limbs -- where the
+/// interesting boundaries are -- come up as often as full-width ones.
+template <typename T>
+T randomOfWidth(pcg64 & rng, unsigned bits)
+{
+    if (bits == 0)
+        return T(0);
+
+    T x = 0;
+    for (unsigned i = 0; i < sizeof(T) / sizeof(UInt64); ++i)
+        x = (x << 64) | T(rng());
+    return x >> (sizeof(T) * 8 - bits);
+}
+
+/// The same value as an unbounded integer, so that the expected quotient and remainder can be
+/// computed without anything wrapping around the width of `T`.
+template <typename T>
+boost::multiprecision::cpp_int toExactInteger(const T & num)
+{
+    boost::multiprecision::cpp_int result = 0;
+    for (size_t i = std::size(num.items); i-- > 0;)
+        result = (result << 64) | boost::multiprecision::cpp_int(num.items[i]);
+
+    /// The limbs hold two's complement, so a negative value comes out as its residue modulo 2^Bits.
+    if constexpr (is_signed_v<T>)
+        if (num < T(0))
+            result -= boost::multiprecision::cpp_int(1) << (sizeof(T) * 8);
+
+    return result;
+}
+
+template <typename T>
+void checkDivisionAgainstExactOracle(T a, T b)
+{
+    ASSERT_NE(b, T(0));
+
+    T quotient = a / b;
+    T remainder = a % b;
+
+    /// `cpp_int` division truncates toward zero and its remainder carries the dividend's sign, which
+    /// is exactly what wide integers are expected to do, so the results can be compared directly.
+    const boost::multiprecision::cpp_int exact_a = toExactInteger(a);
+    const boost::multiprecision::cpp_int exact_b = toExactInteger(b);
+
+    ASSERT_EQ(toExactInteger(quotient), exact_a / exact_b) << "a = " << toString(a) << ", b = " << toString(b);
+    ASSERT_EQ(toExactInteger(remainder), exact_a % exact_b) << "a = " << toString(a) << ", b = " << toString(b);
+}
+
+}
+
+
+GTEST_TEST(WideInteger, DivisionRandomValues)
+{
+    /// Fixed seed: a failure here has to be reproducible.
+    pcg64 rng(20260729);
+
+    for (size_t i = 0; i < 20000; ++i)
+    {
+        {
+            unsigned bits_a = rng() % 129;
+            unsigned bits_b = 1 + rng() % 128;
+            UInt128 a = randomOfWidth<UInt128>(rng, bits_a);
+            UInt128 b = randomOfWidth<UInt128>(rng, bits_b);
+            if (b != UInt128(0))
+                checkDivisionAgainstExactOracle(a, b);
+        }
+        {
+            unsigned bits_a = rng() % 257;
+            unsigned bits_b = 1 + rng() % 256;
+            UInt256 a = randomOfWidth<UInt256>(rng, bits_a);
+            UInt256 b = randomOfWidth<UInt256>(rng, bits_b);
+            if (b != UInt256(0))
+                checkDivisionAgainstExactOracle(a, b);
+
+            /// The same bits read as signed, which exercises the sign handling around `divide`.
+            /// `min / -1` is the one combination that overflows, as it does for any signed type.
+            Int256 signed_a = static_cast<Int256>(a);
+            Int256 signed_b = static_cast<Int256>(b);
+            if (signed_b != Int256(0) && !(signed_a == std::numeric_limits<Int256>::min() && signed_b == Int256(-1)))
+                checkDivisionAgainstExactOracle(signed_a, signed_b);
+        }
+    }
+}
+
+
+GTEST_TEST(WideInteger, DivisionEdgeCases)
+{
+    /// Powers of two around every limb boundary, in both roles, plus the neighbours of each: this
+    /// covers dividends shorter than the divisor, divisors of exactly one limb, and every possible
+    /// normalization shift.
+    std::vector<UInt256> values;
+    values.push_back(UInt256(1));
+    values.push_back(UInt256(2));
+    values.push_back(std::numeric_limits<UInt256>::max());
+    for (unsigned bit = 0; bit < 256; ++bit)
+    {
+        UInt256 x = UInt256(1) << bit;
+        values.push_back(x);
+        if (bit > 0)
+        {
+            values.push_back(x - UInt256(1));
+            values.push_back(x + UInt256(1));
+        }
+    }
+    /// Powers of ten are the Decimal scale multipliers, and 10^20 is the smallest that spans
+    /// more than one limb.
+    UInt256 power_of_ten = 1;
+    for (unsigned i = 0; i < 77; ++i)
+    {
+        values.push_back(power_of_ten);
+        power_of_ten *= 10;
+    }
+
+    for (const UInt256 & a : values)
+        for (const UInt256 & b : values)
+            if (b != UInt256(0))
+                checkDivisionAgainstExactOracle(a, b);
+
+    /// Dividing by zero throws rather than doing anything undefined.
+    EXPECT_ANY_THROW(std::ignore = std::numeric_limits<UInt256>::max() / UInt256(0));
+    EXPECT_ANY_THROW(std::ignore = std::numeric_limits<UInt256>::max() % UInt256(0));
 }
