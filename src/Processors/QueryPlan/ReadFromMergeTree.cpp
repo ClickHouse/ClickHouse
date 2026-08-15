@@ -5242,8 +5242,25 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     else
         pipe = spreadMarkRanges(std::move(result.parts_with_ranges), index_build_context, requested_num_streams, result, result_projection);
 
+    auto storage_limits = query_info.storage_limits;
+    if (reader_settings.read_in_order && storage_limits)
+    {
+        /// `requestReadingInOrder` can enable ordered reading after the source step was
+        /// created (for example, after normal projection analysis). `storage_limits` were
+        /// prepared before that decision, so remove row limits just as
+        /// `MergeTreeDataSelectExecutor::getRowLimits` does for an ordered read. Keep byte,
+        /// speed, and time limits intact.
+        auto in_order_storage_limits = std::make_shared<StorageLimitsList>(*storage_limits);
+        for (auto & limits : *in_order_storage_limits)
+        {
+            limits.local_limits.size_limits.max_rows = 0;
+            limits.leaf_limits.max_rows = 0;
+        }
+        storage_limits = std::move(in_order_storage_limits);
+    }
+
     for (const auto & processor : pipe.getProcessors())
-        processor->setStorageLimits(query_info.storage_limits);
+        processor->setStorageLimits(storage_limits);
 
     if (pipe.empty())
     {
