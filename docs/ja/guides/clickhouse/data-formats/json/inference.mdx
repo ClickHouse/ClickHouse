@@ -12,7 +12,7 @@ ClickHouseはJSONデータの構造を自動的に推定できます。これに
   ## 型推論を使用する場合
 </div>
 
-* **構造が一定している** - 型を推論しようとしているデータに、必要なすべてのキーが含まれている場合です。型推論は、データを[最大行数](/ja/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference)または[最大バイト数](/ja/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference)までサンプリングして行われます。サンプル範囲より後のデータに追加のカラムがあっても、それらは無視されるためクエリできません。
+* **構造が一定している** - 型を推論しようとしているデータに、必要なすべてのキーが含まれている場合です。型推論は、データを[最大行数](/ja/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference)または[最大バイト数](/ja/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference)までサンプリングして行われます。サンプル範囲より後のデータに追加のカラムがあっても、それらは無視されるためクエリできません。
 * **型が一定している** - 特定のキーのデータ型には互換性が必要です。つまり、ある型から別の型へ自動的に型変換できる必要があります。
 
 より動的な JSON で、新しいキーが追加され、同じパスに対して複数の型を取りうる場合は、[「半構造化データと動的データの操作」](/ja/guides/clickhouse/data-formats/json/inference#working-with-semi-structured-data)を参照してください。
@@ -100,7 +100,7 @@ SETTINGS describe_compact_output = 1
 <Info>
   **NULL を避ける**
 
-  多くのカラムが Nullable として検出されていることがわかります。[Nullable](/ja/reference/data-types/nullable#storage-features) 型は、どうしても必要な場合を除いて使用しないことを推奨します。Nullable を適用するタイミングの挙動は、[schema&#95;inference&#95;make&#95;columns&#95;nullable](/ja/reference/settings/formats#schema_inference_make_columns_nullable) で制御できます。
+  多くのカラムが Nullable として検出されていることがわかります。[Nullable](/ja/reference/data-types/nullable#storage-features) 型は、どうしても必要な場合を除いて使用しないことを推奨します。Nullable を適用するタイミングの挙動は、[schema&#95;inference&#95;make&#95;columns&#95;nullable](/ja/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable) で制御できます。
 </Info>
 
 ほとんどのカラムは自動的に `String` として検出され、`update_date` カラムは正しく `Date` として検出されています。`versions` カラムはオブジェクトのリストを格納するために `Array(Tuple(created String, version String))` として作成され、`authors_parsed` はネストされた配列を表す `Array(Array(String))` として定義されています。
@@ -108,7 +108,7 @@ SETTINGS describe_compact_output = 1
 <Info>
   **型推論の制御**
 
-  日付および日時の自動検出は、それぞれ設定 [`input_format_try_infer_dates`](/ja/reference/settings/formats#input_format_try_infer_dates) と [`input_format_try_infer_datetimes`](/ja/reference/settings/formats#input_format_try_infer_datetimes) で制御できます (いずれもデフォルトで有効です) 。オブジェクトをタプルとして推論するかどうかは、設定 [`input_format_json_try_infer_named_tuples_from_objects`](/ja/reference/settings/formats#input_format_json_try_infer_named_tuples_from_objects) で制御されます。数値の自動検出など、JSON のスキーマ推論を制御するその他の設定については、[こちら](/ja/concepts/features/interfaces/schema-inference#text-formats) を参照してください。
+  日付および日時の自動検出は、それぞれ設定 [`input_format_try_infer_dates`](/ja/reference/settings/formats/input-format#input_format_try_infer_dates) と [`input_format_try_infer_datetimes`](/ja/reference/settings/formats/input-format#input_format_try_infer_datetimes) で制御できます (いずれもデフォルトで有効です) 。オブジェクトをタプルとして推論するかどうかは、設定 [`input_format_json_try_infer_named_tuples_from_objects`](/ja/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects) で制御されます。数値の自動検出など、JSON のスキーマ推論を制御するその他の設定については、[こちら](/ja/concepts/features/interfaces/schema-inference#text-formats) を参照してください。
 </Info>
 
 <div id="querying-json">
@@ -202,7 +202,7 @@ ENGINE = MergeTree
 ORDER BY update_date
 ```
 
-上記がこのデータの正しいスキーマです。スキーマ推論は、データをサンプリングしながら1行ずつ読み取って行われます。カラムの値はフォーマットに従って抽出され、各値の型を判定するために再帰的なパーサーとヒューリスティクスが使用されます。スキーマ推論でデータから読み取る行数とバイト数の上限は、設定 [`input_format_max_rows_to_read_for_schema_inference`](/ja/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) (デフォルトは25000) と [`input_format_max_bytes_to_read_for_schema_inference`](/ja/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference) (デフォルトは32MB) で制御されます。検出結果が正しくない場合は、[こちら](/ja/reference/settings/formats#schema_inference_make_columns_nullable) に記載されているようにヒントを指定できます。
+上記がこのデータの正しいスキーマです。スキーマ推論は、データをサンプリングしながら1行ずつ読み取って行われます。カラムの値はフォーマットに従って抽出され、各値の型を判定するために再帰的なパーサーとヒューリスティクスが使用されます。スキーマ推論でデータから読み取る行数とバイト数の上限は、設定 [`input_format_max_rows_to_read_for_schema_inference`](/ja/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference) (デフォルトは25000) と [`input_format_max_bytes_to_read_for_schema_inference`](/ja/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference) (デフォルトは32MB) で制御されます。検出結果が正しくない場合は、[こちら](/ja/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable) に記載されているようにヒントを指定できます。
 
 <div id="creating-tables-from-snippets">
   ### スニペットからテーブルを作成する
@@ -303,7 +303,7 @@ FORMAT PrettyJSONEachRow
   ## エラーへの対処
 </div>
 
-不正なデータが含まれることがあります。たとえば、型が合っていない特定のカラムや、フォーマットが不正な JSON オブジェクト などです。このような場合、データによって insert エラーが発生しても一定数の行を無視できるように、設定 [`input_format_allow_errors_num`](/ja/reference/settings/formats#input_format_allow_errors_num) と [`input_format_allow_errors_ratio`](/ja/reference/settings/formats#input_format_allow_errors_ratio) を使用できます。さらに、推論を補助するために [hints](/ja/reference/settings/formats#schema_inference_hints) を指定することもできます。
+不正なデータが含まれることがあります。たとえば、型が合っていない特定のカラムや、フォーマットが不正な JSON オブジェクト などです。このような場合、データによって insert エラーが発生しても一定数の行を無視できるように、設定 [`input_format_allow_errors_num`](/ja/reference/settings/formats/input-format#input_format_allow_errors_num) と [`input_format_allow_errors_ratio`](/ja/reference/settings/formats/input-format#input_format_allow_errors_ratio) を使用できます。さらに、推論を補助するために [ヒント](/ja/reference/settings/formats/schema-inference#schema_inference_hints) を指定することもできます。
 
 <div id="working-with-semi-structured-data">
   ## 半構造化データと動的データの操作
@@ -339,7 +339,7 @@ JSON が非常に動的で、一意なキーが多く、同じキーに複数の
 ```sql
 DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz')
 
--- 結果は省略
+-- result omitted for brevity
 ```
 
 ```response
@@ -390,7 +390,7 @@ SETTINGS describe_compact_output = 1
 <Info>
   **型変換**
 
-  この型変換は、いくつかの設定で制御できます。上記の例は、設定 [`input_format_json_read_numbers_as_strings`](/ja/reference/settings/formats#input_format_json_read_numbers_as_strings) に依存しています。
+  この型変換は、いくつかの設定で制御できます。上記の例は、設定 [`input_format_json_read_numbers_as_strings`](/ja/reference/settings/formats/input-format#input_format_json_read_numbers_as_strings) に依存しています。
 </Info>
 
 ただし、一部の型同士には互換性がありません。次の例を見てみましょう。
