@@ -971,8 +971,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     || metadata.add_minmax_index_for_temporal_columns
                     || metadata.add_minmax_index_for_block_number_column
                     || metadata.add_minmax_index_for_block_offset_column;
+                const bool has_explicit_implicit_index_setting =
+                       (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns].changed
+                    || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns].changed
+                    || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_temporal_columns].changed
+                    || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_block_number_column].changed
+                    || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_block_offset_column].changed;
                 if (using_auto_minmax_index
-                    && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns].changed
+                    && has_explicit_implicit_index_setting
                     && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
                 {
                     if (args.mode <= LoadingStrictnessLevel::CREATE)
