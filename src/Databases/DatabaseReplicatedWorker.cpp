@@ -10,9 +10,11 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Parsers/Lexer.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/StringUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/thread_local_rng.h>
@@ -51,6 +53,30 @@ namespace FailPoints
     extern const char database_replicated_delay_recovery[];
     extern const char database_replicated_delay_entry_execution[];
     extern const char database_replicated_stop_entry_execution[];
+}
+
+namespace
+{
+
+bool isRemovedWindowViewQuery(const String & query)
+{
+    Lexer lexer(query.data(), query.data() + query.size());
+
+    auto next_keyword = [&lexer](std::string_view keyword)
+    {
+        Token token = lexer.nextToken();
+        while (!token.isSignificant())
+            token = lexer.nextToken();
+
+        return token.type == TokenType::BareWord
+            && equalsCaseInsensitive(std::string_view(token.begin, token.size()), keyword);
+    };
+
+    return (next_keyword("CREATE") || next_keyword("ATTACH"))
+        && next_keyword("WINDOW")
+        && next_keyword("VIEW");
+}
+
 }
 
 
@@ -713,6 +739,15 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         /// Some replica is added or removed, let's update cached cluster
         need_update_cached_cluster = true;
         out_reason = fmt::format("Entry {} is a dummy task", entry_name);
+        return {};
+    }
+
+    /// A committed entry can be retained after `WINDOW VIEW` was removed. It must not keep a
+    /// replica from catching up, because the obsolete view cannot exist after the upgrade.
+    if (isRemovedWindowViewQuery(task->entry.query))
+    {
+        LOG_WARNING(log, "Skip removed WINDOW VIEW DDL {}", entry_name);
+        out_reason = fmt::format("Entry {} creates an obsolete WINDOW VIEW", entry_name);
         return {};
     }
 
