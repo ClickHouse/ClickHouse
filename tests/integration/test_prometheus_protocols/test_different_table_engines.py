@@ -1,14 +1,18 @@
 import pytest
 import re
 import requests
+import struct
 
 from helpers.cluster import ClickHouseCluster, QueryRuntimeException
 from helpers.test_tools import TSV, tsv_close_to
 from .prometheus_test_utils import (
+    PROMETHEUS_STALE_NAN,
+    convert_read_request_to_protobuf,
     convert_time_series_to_protobuf,
     execute_query_via_http_api,
     get_response_to_remote_write,
     load_preset,
+    receive_protobuf_from_remote_read,
     send_protobuf_to_remote_write,
 )
 
@@ -294,6 +298,80 @@ def test_float32_scalar():
     create_query = node.query("SHOW CREATE TABLE prometheus")
     assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`value` Float32", create_query)
     assert re.search(r"\bvalue\s+Float32", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
+
+
+# Checks that a Prometheus stale marker survives a RemoteWrite -> RemoteRead round trip on a `Float32`
+# "samples" table, where narrowing at insert already collapsed its exact NaN payload to a quiet NaN.
+# The stale-marker coverage in test_evaluation.py uses the default `Float64` table, in which the payload
+# happens to survive in `value`, so it cannot catch this.
+def test_float32_stale_marker_remote_read():
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries SAMPLES INNER COLUMNS (value Float32)")
+
+    # Real samples, then a stale marker, then the series returns after the gap.
+    send_protobuf_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write",
+        convert_time_series_to_protobuf(
+            [
+                (
+                    {"__name__": "float32_stale"},
+                    {100: 10, 115: 11, 130: 12, 145: PROMETHEUS_STALE_NAN, 300: 20},
+                )
+            ]
+        ),
+    )
+
+    # The marker was stored as a flagged row, and its payload is indeed no longer in `value`.
+    assert node.query(
+        "SELECT count() FROM timeSeriesSamples(prometheus) "
+        "WHERE is_stale_marker AND timestamp = toDateTime64(145, 3)"
+    ) == TSV([["1"]])
+    assert node.query(
+        "SELECT reinterpretAsUInt64(toFloat64(value)) = 0x7FF0000000000002 "
+        "FROM timeSeriesSamples(prometheus) WHERE is_stale_marker"
+    ) == TSV([["0"]])
+
+    # RemoteRead must nevertheless return the exact marker payload for that sample and the stored values for
+    # the others, compared as raw bits because NaNs never compare equal (see PrometheusRemoteReadProtocol.cpp).
+    read_response = receive_protobuf_from_remote_read(
+        node.ip_address,
+        9093,
+        "/read",
+        convert_read_request_to_protobuf("^float32_stale$", 50, 350),
+    )
+    assert len(read_response.results) == 1
+    assert len(read_response.results[0].timeseries) == 1
+    assert [
+        (sample.timestamp, struct.pack("<d", sample.value))
+        for sample in read_response.results[0].timeseries[0].samples
+    ] == [
+        (100000, struct.pack("<d", 10.0)),
+        (115000, struct.pack("<d", 11.0)),
+        (130000, struct.pack("<d", 12.0)),
+        (145000, struct.pack("<d", PROMETHEUS_STALE_NAN)),
+        (300000, struct.pack("<d", 20.0)),
+    ]
+
+    # So the "prometheus_reader" service, which sees this table only through RemoteRead, reports the series
+    # absent from the marker until the next real sample instead of keeping it alive at NaN.
+    def query_reader(query_timestamp):
+        return execute_query_via_http_api(
+            cluster.prometheus_ip["reader"],
+            cluster.prometheus_port["reader"],
+            "/api/v1/query",
+            "float32_stale",
+            query_timestamp,
+        )
+
+    present_at_130 = '{"resultType": "vector", "result": [{"metric": {"__name__": "float32_stale"}, "value": [130, "12"]}]}'
+    present_at_300 = '{"resultType": "vector", "result": [{"metric": {"__name__": "float32_stale"}, "value": [300, "20"]}]}'
+    absent = '{"resultType": "vector", "result": []}'
+
+    assert query_reader(130) == present_at_130
+    assert query_reader(150) == absent
+    assert query_reader(250) == absent
+    assert query_reader(300) == present_at_300
 
 
 # Checks that custom compression codecs can be applied to the `id`, `timestamp`, and `value` columns.
