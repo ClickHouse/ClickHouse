@@ -70,22 +70,54 @@ namespace
     /// The constructor may throw `MEMORY_LIMIT_EXCEEDED` (the throwing path is intentional);
     /// it must be invoked inside the worker's `try` block so the error propagates through
     /// the pipeline like any other job failure.
+    struct SpeculativeMemoryReservationState
+    {
+        Int64 size = 0;
+        MemoryTracker * credited_query_tracker = nullptr;
+        size_t nesting_level = 0;
+    };
+
+    thread_local SpeculativeMemoryReservationState speculative_memory_reservation_state;
+
     struct SpeculativeMemoryReservation
     {
-        Int64 size;
-        MemoryTracker * credited_query_tracker = nullptr;
-
         SpeculativeMemoryReservation()
-            : size(additional_memory_tracking_per_thread.load(std::memory_order_relaxed))
         {
-            if (size > 0)
-                credited_query_tracker = CurrentMemoryTracker::allocGlobal(size);
+            auto & state = speculative_memory_reservation_state;
+
+            if (state.nesting_level)
+            {
+                ++state.nesting_level;
+                return;
+            }
+
+            const Int64 size = additional_memory_tracking_per_thread.load(std::memory_order_relaxed);
+            MemoryTracker * credited_query_tracker = size > 0 ? CurrentMemoryTracker::allocGlobal(size) : nullptr;
+
+            state.size = size;
+            state.credited_query_tracker = credited_query_tracker;
+            state.nesting_level = 1;
         }
 
         ~SpeculativeMemoryReservation()
         {
-            if (size > 0)
-                CurrentMemoryTracker::freeGlobal(size, credited_query_tracker);
+            auto & state = speculative_memory_reservation_state;
+            chassert(state.nesting_level);
+
+            if (--state.nesting_level)
+                return;
+
+            if (state.size > 0)
+                CurrentMemoryTracker::freeGlobal(state.size, state.credited_query_tracker);
+
+            state.size = 0;
+            state.credited_query_tracker = nullptr;
+        }
+
+        bool shouldFlushUntrackedMemory() const
+        {
+            const auto & state = speculative_memory_reservation_state;
+            return state.nesting_level == 1 && state.size > 0;
         }
     };
 }
@@ -293,13 +325,16 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
             return true;
     }
 
-    /// A step-driven executor runs this job on its caller. Keep the reservation scoped to
-    /// that job rather than to the executor object's lifetime: one caller can keep several
-    /// executors alive, but it still has only one untracked-memory buffer. Flush that buffer
-    /// before releasing the reservation, including on an exception, so the server-wide
-    /// tracker never loses both the speculative charge and the caller's deferred allocations.
+    /// A step-driven executor runs this job on its caller. The per-thread guard shares one
+    /// reservation between nested executors on that caller, because they also share one
+    /// untracked-memory buffer. Flush it before releasing the outermost reservation,
+    /// including on an exception, so the server-wide tracker never loses both the
+    /// speculative charge and the caller's deferred allocations.
     SpeculativeMemoryReservation speculative_memory_reservation;
-    SCOPE_EXIT({ CurrentThread::flushUntrackedMemory(); });
+    SCOPE_EXIT({
+        if (speculative_memory_reservation.shouldFlushUntrackedMemory())
+            CurrentThread::flushUntrackedMemory();
+    });
     executeStepImpl(0, WorkloadResources(single_thread_cpu_slot.get(), process_list_element), yield_flag);
 
     if (!tasks.isFinished())

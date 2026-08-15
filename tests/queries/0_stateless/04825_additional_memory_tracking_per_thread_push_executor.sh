@@ -55,3 +55,22 @@ ${CLICKHOUSE_LOCAL} --config-file "$CONFIG_FILE" --query "
     INSERT INTO t SETTINGS max_threads = 1, max_insert_threads = 1 VALUES (1);
     SELECT count() FROM t;
 " < /dev/null
+
+# A materialized CTE runs its inner `PushingPipelineExecutor` from an outer
+# pipeline worker. One 2 GiB reservation fits under this 3 GiB server limit,
+# whereas two reservations on that physical worker do not. The nested executor
+# must therefore reuse the outer reservation.
+cat > "$CONFIG_FILE" <<'EOF'
+<clickhouse>
+    <max_server_memory_usage>3221225472</max_server_memory_usage>
+    <additional_memory_tracking_per_thread>2147483648</additional_memory_tracking_per_thread>
+</clickhouse>
+EOF
+
+${CLICKHOUSE_LOCAL} --config-file "$CONFIG_FILE" --query "
+    WITH cte AS MATERIALIZED (SELECT number FROM numbers(100))
+    SELECT count() FROM cte
+    UNION ALL
+    SELECT count() FROM cte
+    SETTINGS max_threads = 1;
+" < /dev/null
