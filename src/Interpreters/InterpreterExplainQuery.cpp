@@ -439,6 +439,7 @@ namespace
                         }
 
                         std::set<String> referenced_with_subqueries;
+                        std::vector<String> referenced_with_subqueries_to_scan;
                         auto collect_references = [&](const ASTPtr & scope_node)
                         {
                             const auto * scope_select = scope_node->as<ASTSelectQuery>();
@@ -455,7 +456,10 @@ namespace
                                     {
                                         const auto & table_id = table_identifier->getTableId();
                                         if (table_id.database_name.empty() && with_subqueries.contains(table_id.table_name))
-                                            referenced_with_subqueries.emplace(table_id.table_name);
+                                        {
+                                            if (referenced_with_subqueries.emplace(table_id.table_name).second)
+                                                referenced_with_subqueries_to_scan.push_back(table_id.table_name);
+                                        }
                                     }
                                 }
 
@@ -469,8 +473,9 @@ namespace
                         };
 
                         collect_references(node);
-                        for (const auto & name : referenced_with_subqueries)
+                        for (size_t index = 0; index < referenced_with_subqueries_to_scan.size(); ++index)
                         {
+                            const auto & name = referenced_with_subqueries_to_scan[index];
                             const auto * subquery = with_subqueries.at(name)->as<ASTSubquery>();
                             if (subquery && !subquery->children.empty())
                                 collect_references(subquery->children.front());
