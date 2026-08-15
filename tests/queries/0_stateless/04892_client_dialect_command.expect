@@ -104,6 +104,22 @@ expect -- "0"
 expect eof
 file delete $queries_file
 
+# A server-side setting constraint must reject the meta-command without
+# changing the client-side parser or prompt.
+spawn bash -c "source $basedir/../shell_config.sh; TERM=xterm \$CLICKHOUSE_LOCAL --hints 0 --history_file=$history_file --allow_experimental_prql_dialect=1 --readonly=1"
+expect ":) "
+
+send -- "/dialect prql\r"
+expect ":) "
+send -- "/dialect\r"
+expect -- "Current dialect: clickhouse"
+expect -- ":) "
+send -- "SELECT 42\r"
+expect -- "42"
+expect -- ":) "
+send -- "exit\r"
+expect eof
+
 # A custom prompt does not have to contain the {display_name} placeholder:
 # the active dialect is appended to it anyway.
 spawn bash -c "source $basedir/../shell_config.sh; TERM=xterm \$CLICKHOUSE_LOCAL --hints 0 --history_file=$history_file --prompt 'custom-prompt>'"
