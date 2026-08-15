@@ -2282,6 +2282,58 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, DateTimeTransform, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, DateTimeTransform(from_scale));
         }
+        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
+            && std::is_same_v<ToDataType, DataTypeTime64>)
+        {
+            using ToFieldType = typename ToDataType::FieldType;
+            using ColVecFrom = typename FromDataType::ColumnType;
+            using ColVecTo = typename ToDataType::ColumnType;
+
+            const auto * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
+            UInt32 scale = 0;
+            if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
+                || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                scale = additions.scale;
+            else
+                scale = additions;
+
+            auto col_to = ColVecTo::create(0, scale);
+            const auto & vec_from = col_from->getData();
+            auto & vec_to = col_to->getData();
+            vec_to.resize(input_rows_count);
+
+            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+            {
+                auto col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+                auto & vec_null_map_to = col_null_map_to->getData();
+                for (size_t i = 0; i < input_rows_count; ++i)
+                {
+                    ToFieldType result;
+                    if (tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
+                        vec_to[i] = result;
+                    else
+                        vec_null_map_to[i] = true;
+                }
+                return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+            }
+            else if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+            {
+                for (size_t i = 0; i < input_rows_count; ++i)
+                {
+                    ToFieldType result;
+                    if (!tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
+                        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}", static_cast<double>(vec_from[i]), ToDataType::family_name);
+                    vec_to[i] = result;
+                }
+            }
+            else
+            {
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
+            }
+
+            return col_to;
+        }
         /// Conversion of Date or DateTime to DateTime64: add zero sub-second part.
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeDate>
