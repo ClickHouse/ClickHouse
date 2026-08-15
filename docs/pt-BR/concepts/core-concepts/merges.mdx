@@ -22,7 +22,7 @@ O ClickHouse [é rápido](/pt-BR/get-started/about/why-clickhouse-is-so-fast) n�
 
 Isso torna as gravações de dados leves e [altamente eficientes](/pt-BR/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-are-isolated-from-each-other).
 
-Para controlar o número de partes por tabela e implementar o item ② acima, o ClickHouse mescla continuamente ([por partição](/pt-BR/concepts/core-concepts/partitions#per-partition-merges)) partes menores em partes maiores em segundo plano, até que atinjam um tamanho comprimido de aproximadamente [~150 GB](/pt-BR/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool).
+Para controlar o número de partes por tabela e implementar o item ② acima, o ClickHouse mescla continuamente ([por partição](/pt-BR/concepts/core-concepts/partitions#per-partition-merges)) partes menores em partes maiores em segundo plano, até que atinjam um tamanho comprimido de aproximadamente [~150 GB](/pt-BR/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool).
 
 O diagrama a seguir ilustra esse processo de mesclagem em segundo plano:
 
@@ -30,7 +30,7 @@ O diagrama a seguir ilustra esse processo de mesclagem em segundo plano:
 
 <br />
 
-O `nível de mesclagem` de uma parte é incrementado em um a cada nova mesclagem. Um nível de `0` significa que a parte é nova e ainda não foi mesclada. As partes que foram mescladas em partes maiores são marcadas como [inativas](/pt-BR/reference/system-tables/parts) e, por fim, excluídas após um período [configurável](/pt-BR/reference/settings/merge-tree-settings#old_parts_lifetime) (8 minutos por padrão). Com o tempo, isso cria uma **árvore** de partes mescladas. Daí o nome da tabela [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index).
+O `nível de mesclagem` de uma parte é incrementado em um a cada nova mesclagem. Um nível de `0` significa que a parte é nova e ainda não foi mesclada. As partes que foram mescladas em partes maiores são marcadas como [inativas](/pt-BR/reference/system-tables/parts) e, por fim, excluídas após um período [configurável](/pt-BR/reference/settings/merge-tree-settings/other#old_parts_lifetime) (8 minutos por padrão). Com o tempo, isso cria uma **árvore** de partes mescladas. Daí o nome da tabela [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index).
 
 <div id="monitoring-merges">
   ## Monitoramento de mesclagens
@@ -85,7 +85,7 @@ A gravação do dashboard acima mostra todo o processo, desde as inserções ini
   ## Mesclagens concorrentes
 </div>
 
-Um único servidor ClickHouse usa várias [threads de mesclagem](/pt-BR/reference/settings/server-settings/settings#background_pool_size) em segundo plano para executar mesclagens de partes simultaneamente:
+Um único servidor ClickHouse usa várias [threads de mesclagem](/pt-BR/reference/settings/server-settings/settings/background#background_pool_size) em segundo plano para executar mesclagens de partes simultaneamente:
 
 <Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="MESCLAGENS DE PARTES" />
 
@@ -127,7 +127,7 @@ A mesclagem de partes é realizada em várias etapas:
 
 **③ Indexação**: Um novo [índice primário esparso](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) é gerado para os arquivos de coluna mesclados.
 
-**④ Compressão e armazenamento**: Os novos arquivos de coluna e o índice são [comprimidos](/pt-BR/reference/statements/create/table#column_compression_codec) e salvos em um novo [diretório](/pt-BR/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) que representa a parte de dados mesclada.
+**④ Compressão e armazenamento**: Os novos arquivos de coluna e o índice são [comprimidos](/pt-BR/reference/statements/create/table/codec) e salvos em um novo [diretório](/pt-BR/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) que representa a parte de dados mesclada.
 
 Metadados adicionais nas [partes de dados](/pt-BR/concepts/core-concepts/parts), como índices secundários de data skipping, estatísticas de coluna, checksum e índices min-max, também são recriados com base nos arquivos de coluna mesclados. Omitimos esses detalhes para simplificar.
 
