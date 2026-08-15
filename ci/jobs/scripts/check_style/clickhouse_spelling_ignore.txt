@@ -1,5 +1,6 @@
 # Exceptions for the `clickhouse_spelling` check in ci/jobs/check_style.py, which requires the
-# product name to be spelled `ClickHouse` (or `clickhouse` / `CLICKHOUSE`).
+# product name to be spelled `ClickHouse`; it also accepts the conventional token spellings
+# `clickhouse` and `CLICKHOUSE`.
 #
 # One entry per line. A line holding only a path exempts the whole file; a path followed by a
 # literal string exempts only the lines of that file which contain that string. Lines starting

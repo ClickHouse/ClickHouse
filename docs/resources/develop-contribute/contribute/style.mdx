@@ -418,7 +418,7 @@ You can also use an abbreviation if the full name is included next to it in the 
 
 **17.** File names with C++ source code must have the `.cpp` extension. Header files must have the `.h` extension.
 
-**18.** The product name is written `ClickHouse` - one word, with a capital `C` and a capital `H`. Two case variants are accepted: `clickhouse`, for lowercase-only tokens such as package, binary and host names; `ClickHouse` is also accepted in CamelCase identifiers - and `CLICKHOUSE`, for macros and environment variables. Everything else is a misspelling, and the `clickhouse_spelling` style check reports it, in code as well as in comments, messages, documentation and file names.
+**18.** The product name is written `ClickHouse` - one word, with a capital `C` and a capital `H`. The `clickhouse_spelling` style check also accepts the conventional token spellings `clickhouse` and `CLICKHOUSE`; all other variants are misspellings. It checks code, comments, messages, documentation, and file names. Use `clickhouse` for lowercase-only tokens such as package, binary, and host names; use `ClickHouse` in CamelCase identifiers; and use `CLICKHOUSE` for macros and environment variables.
 
     `ClickHouse`, `clickhouse-client`, `CLICKHOUSE_DATABASE`
 

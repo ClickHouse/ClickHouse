@@ -590,9 +590,8 @@ def check_compose_images(files) -> str:
     return "\n".join(violations)
 
 
-# The product name has exactly one spelling: `ClickHouse`. Two case variants are accepted -
-# `clickhouse` for identifiers, package, binary and host names, and `CLICKHOUSE` for macros and
-# environment variables - because a mixed case is unusable in those places.
+# The product name is spelled `ClickHouse`. The checker also accepts the conventional token
+# spellings `clickhouse` and `CLICKHOUSE`, used for example in lower- and uppercase identifiers.
 CLICKHOUSE_CORRECT_SPELLINGS = ("ClickHouse", "clickhouse", "CLICKHOUSE")
 
 # Any rendering of the product name, in any case, with `Click` and `House` optionally separated:
@@ -681,8 +680,9 @@ def _clickhouse_misspellings(text):
 
 
 def check_clickhouse_spelling():
-    """The product name is written `ClickHouse` - one word, capital `C`, capital `H`. Only
-    `clickhouse` and `CLICKHOUSE` are accepted besides it; `Clickhouse`, `clickHouse`,
+    """The product name is written `ClickHouse` - one word, capital `C`, capital `H`. The
+    checker also accepts the conventional token spellings `clickhouse` and `CLICKHOUSE`;
+    `Clickhouse`, `clickHouse`,
     `click_house`, `CLICK_HOUSE`, `click-house` and `Click House` are misspellings.
 
     Every file tracked by git is checked, and so are the file names themselves, except:
