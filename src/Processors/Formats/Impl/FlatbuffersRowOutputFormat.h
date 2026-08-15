@@ -30,7 +30,7 @@ private:
     void writePrefix() override;
     void writeSuffix() override;
     void write(const Columns & columns, size_t row_num) override;
-    void writeField(const IColumn &, const ISerialization &, size_t) override {}
+    void writeField(const IColumn &, const ISerialization &, size_t) override { }
     void serializeField(const IColumn & column, const DataTypePtr & data_type, size_t row_num);
 
     /// flexbuffers::Builder::String reads one byte past the given length (it copies a trailing '\0'

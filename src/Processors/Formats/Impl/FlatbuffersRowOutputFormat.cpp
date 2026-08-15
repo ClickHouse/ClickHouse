@@ -16,19 +16,19 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnLowCardinality.h>
 
 
 namespace DB
@@ -36,7 +36,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -46,12 +46,8 @@ void assertTypeIsSupported(const DataTypePtr & data_type)
 {
     switch (data_type->getTypeId())
     {
-        case TypeIndex::Nullable:
-            assertTypeIsSupported(assert_cast<const DataTypeNullable &>(*data_type).getNestedType());
-            return;
-        case TypeIndex::Array:
-            assertTypeIsSupported(assert_cast<const DataTypeArray &>(*data_type).getNestedType());
-            return;
+        case TypeIndex::Nullable: assertTypeIsSupported(assert_cast<const DataTypeNullable &>(*data_type).getNestedType()); return;
+        case TypeIndex::Array: assertTypeIsSupported(assert_cast<const DataTypeArray &>(*data_type).getNestedType()); return;
         case TypeIndex::Tuple:
             for (const auto & nested_type : assert_cast<const DataTypeTuple &>(*data_type).getElements())
                 assertTypeIsSupported(nested_type);
@@ -88,8 +84,7 @@ void assertTypeIsSupported(const DataTypePtr & data_type)
         case TypeIndex::IPv6:
         case TypeIndex::String:
         case TypeIndex::FixedString:
-        case TypeIndex::UUID:
-            return;
+        case TypeIndex::UUID: return;
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for FlexBuffers output format", data_type->getName());
     }
@@ -166,8 +161,7 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, const Da
 {
     switch (data_type->getTypeId())
     {
-        case TypeIndex::Nullable:
-        {
+        case TypeIndex::Nullable: {
             const ColumnNullable & column_nullable = assert_cast<const ColumnNullable &>(column);
             if (column_nullable.isNullAt(row_num))
                 builder.Null();
@@ -175,143 +169,117 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, const Da
                 serializeField(column_nullable.getNestedColumn(), removeNullable(data_type), row_num);
             return;
         }
-        case TypeIndex::Nothing:
-        {
+        case TypeIndex::Nothing: {
             builder.Null();
             return;
         }
-        case TypeIndex::UInt8:
-        {
+        case TypeIndex::UInt8: {
             builder.UInt(static_cast<uint64_t>(assert_cast<const ColumnUInt8 &>(column).getElement(row_num)));
             return;
         }
         case TypeIndex::Date: [[fallthrough]];
-        case TypeIndex::UInt16:
-        {
+        case TypeIndex::UInt16: {
             builder.UInt(static_cast<uint64_t>(assert_cast<const ColumnUInt16 &>(column).getElement(row_num)));
             return;
         }
         case TypeIndex::DateTime: [[fallthrough]];
-        case TypeIndex::UInt32:
-        {
+        case TypeIndex::UInt32: {
             builder.UInt(static_cast<uint64_t>(assert_cast<const ColumnUInt32 &>(column).getElement(row_num)));
             return;
         }
-        case TypeIndex::UInt64:
-        {
+        case TypeIndex::UInt64: {
             builder.UInt(static_cast<uint64_t>(assert_cast<const ColumnUInt64 &>(column).getElement(row_num)));
             return;
         }
-        case TypeIndex::IPv4:
-        {
+        case TypeIndex::IPv4: {
             builder.UInt(static_cast<uint64_t>(assert_cast<const ColumnIPv4 &>(column).getElement(row_num)));
             return;
         }
-        case TypeIndex::UInt128:
-        {
+        case TypeIndex::UInt128: {
             serializeWideNumberAsBlob<ColumnUInt128>(column, row_num);
             return;
         }
-        case TypeIndex::UInt256:
-        {
+        case TypeIndex::UInt256: {
             serializeWideNumberAsBlob<ColumnUInt256>(column, row_num);
             return;
         }
         case TypeIndex::Enum8: [[fallthrough]];
-        case TypeIndex::Int8:
-        {
+        case TypeIndex::Int8: {
             builder.Int(static_cast<int64_t>(assert_cast<const ColumnInt8 &>(column).getElement(row_num)));
             return;
         }
         case TypeIndex::Enum16: [[fallthrough]];
-        case TypeIndex::Int16:
-        {
+        case TypeIndex::Int16: {
             builder.Int(static_cast<int64_t>(assert_cast<const ColumnInt16 &>(column).getElement(row_num)));
             return;
         }
         case TypeIndex::Date32: [[fallthrough]];
-        case TypeIndex::Int32:
-        {
+        case TypeIndex::Int32: {
             builder.Int(static_cast<int64_t>(assert_cast<const ColumnInt32 &>(column).getElement(row_num)));
             return;
         }
-        case TypeIndex::Int64:
-        {
+        case TypeIndex::Int64: {
             builder.Int(static_cast<int64_t>(assert_cast<const ColumnInt64 &>(column).getElement(row_num)));
             return;
         }
-        case TypeIndex::Int128:
-        {
+        case TypeIndex::Int128: {
             serializeWideNumberAsBlob<ColumnInt128>(column, row_num);
             return;
         }
-        case TypeIndex::Int256:
-        {
+        case TypeIndex::Int256: {
             serializeWideNumberAsBlob<ColumnInt256>(column, row_num);
             return;
         }
-        case TypeIndex::Float32:
-        {
+        case TypeIndex::Float32: {
             builder.Float(assert_cast<const ColumnFloat32 &>(column).getElement(row_num));
             return;
         }
-        case TypeIndex::Float64:
-        {
+        case TypeIndex::Float64: {
             builder.Double(assert_cast<const ColumnFloat64 &>(column).getElement(row_num));
             return;
         }
-        case TypeIndex::DateTime64:
-        {
+        case TypeIndex::DateTime64: {
             builder.Int(static_cast<int64_t>(assert_cast<const DataTypeDateTime64::ColumnType &>(column).getElement(row_num)));
             return;
         }
-        case TypeIndex::Decimal32:
-        {
+        case TypeIndex::Decimal32: {
             builder.Int(static_cast<int64_t>(assert_cast<const ColumnDecimal<Decimal32> &>(column).getElement(row_num)));
             return;
         }
-        case TypeIndex::Decimal64:
-        {
+        case TypeIndex::Decimal64: {
             builder.Int(static_cast<int64_t>(assert_cast<const ColumnDecimal<Decimal64> &>(column).getElement(row_num)));
             return;
         }
-        case TypeIndex::Decimal128:
-        {
+        case TypeIndex::Decimal128: {
             serializeWideNumberAsBlob<ColumnDecimal<Decimal128>>(column, row_num);
             return;
         }
-        case TypeIndex::Decimal256:
-        {
+        case TypeIndex::Decimal256: {
             serializeWideNumberAsBlob<ColumnDecimal<Decimal256>>(column, row_num);
             return;
         }
-        case TypeIndex::IPv6:
-        {
+        case TypeIndex::IPv6: {
             /// IPv6 is stored as a fixed 16-byte value in network byte order, which is already a
             /// well-defined, architecture-independent byte sequence, so it is written verbatim.
             std::string_view data = column.getDataAt(row_num);
             builder.Blob(data.data(), data.size());
             return;
         }
-        case TypeIndex::String:
-        {
+        case TypeIndex::String: {
             serializeStringOrBlob(assert_cast<const ColumnString &>(column).getDataAt(row_num));
             return;
         }
-        case TypeIndex::FixedString:
-        {
+        case TypeIndex::FixedString: {
             serializeStringOrBlob(assert_cast<const ColumnFixedString &>(column).getDataAt(row_num));
             return;
         }
-        case TypeIndex::UUID:
-        {
+        case TypeIndex::UUID: {
             WriteBufferFromOwnString buf;
             writeText(assert_cast<const ColumnUUID &>(column).getElement(row_num), buf);
             serializeString(buf.stringView());
             return;
         }
-        case TypeIndex::Array:
-        {
+        case TypeIndex::Array: {
             auto nested_type = assert_cast<const DataTypeArray &>(*data_type).getNestedType();
             const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
             const IColumn & nested_column = column_array.getData();
@@ -324,8 +292,7 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, const Da
             builder.EndVector(start, /*typed=*/false, /*fixed=*/false);
             return;
         }
-        case TypeIndex::Tuple:
-        {
+        case TypeIndex::Tuple: {
             const auto & tuple_type = assert_cast<const DataTypeTuple &>(*data_type);
             const auto & nested_types = tuple_type.getElements();
             const ColumnTuple & column_tuple = assert_cast<const ColumnTuple &>(column);
@@ -336,8 +303,7 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, const Da
             builder.EndVector(start, /*typed=*/false, /*fixed=*/false);
             return;
         }
-        case TypeIndex::LowCardinality:
-        {
+        case TypeIndex::LowCardinality: {
             const ColumnLowCardinality & column_lc = assert_cast<const ColumnLowCardinality &>(column);
             auto dict_type = assert_cast<const DataTypeLowCardinality &>(*data_type).getDictionaryType();
             auto dict_column = column_lc.getDictionary().getNestedColumn();
@@ -345,8 +311,7 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, const Da
             serializeField(*dict_column, dict_type, index);
             return;
         }
-        default:
-            break;
+        default: break;
     }
 
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for FlexBuffers output format", data_type->getName());
@@ -355,21 +320,19 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, const Da
 void registerOutputFormatFlatbuffers(FormatFactory & factory);
 void registerOutputFormatFlatbuffers(FormatFactory & factory)
 {
-    factory.registerOutputFormat("FlexBuffers", [](
-            WriteBuffer & buf,
-            const Block & sample,
-            const FormatSettings & settings,
-            FormatFilterInfoPtr /*format_filter_info*/)
-    {
-        return std::make_shared<FlatbuffersRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
-    });
+    factory.registerOutputFormat(
+        "FlexBuffers",
+        [](WriteBuffer & buf, const Block & sample, const FormatSettings & settings, FormatFilterInfoPtr /*format_filter_info*/)
+        { return std::make_shared<FlatbuffersRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
 
     factory.markOutputFormatNotTTYFriendly("FlexBuffers");
     factory.markFormatHasNoAppendSupport("FlexBuffers");
     factory.setContentType("FlexBuffers", "application/octet-stream");
 
-    factory.setDocumentation("FlexBuffers", Documentation{
-        .description = R"DOCS_MD(
+    factory.setDocumentation(
+        "FlexBuffers",
+        Documentation{
+            .description = R"DOCS_MD(
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✗     | ✔      |       |
@@ -434,10 +397,10 @@ $ clickhouse-client --query="SELECT number, toString(number) FROM numbers(10) FO
 |-----------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------|---------|
 | [`output_format_flexbuffers_string_as_string`](/reference/settings/formats/output-format#output_format_flexbuffers_string_as_string) | serialize `String`/`FixedString` columns as FlexBuffers String instead of the default Blob. | `false` |
 )DOCS_MD",
-        .examples = {{"Export to a file", "SELECT number, toString(number) FROM numbers(10) FORMAT FlexBuffers", ""}},
-        .introduced_in = {26, 8},
-        .related = {"MsgPack", "RowBinary", "Native"},
-    });
+            .examples = {{"Export to a file", "SELECT number, toString(number) FROM numbers(10) FORMAT FlexBuffers", ""}},
+            .introduced_in = {26, 8},
+            .related = {"MsgPack", "RowBinary", "Native"},
+        });
 }
 
 }
