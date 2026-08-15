@@ -17,11 +17,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DECL="SimpleAggregateFunction(anyLast, AggregateFunction(0, sumMap, Array(UInt64), Array(Decimal32(2))))"
 VALUE="sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)])"
 
-# A *default* (versionless) leaf declaration is what makes the below-threshold branch observable at all.
-# Under the explicit `0` above, the token is suppressed on both sides of that branch, so omitting it changes
-# no byte; with the version left unset a reader derives the function's default (`1` for `sumMap`) from the
-# cached spelling, so the omission is a real change of the announced string. The leaf sits under a `Tuple`,
-# so this arm also pins that a leaf declining to render leaves the whole composite on its stale spelling.
+# The same leaf declared *versionless* and placed under a `Tuple`. A declaration that pins no version keeps
+# whatever version the storage type carries, so the announced spelling here follows the pinned version at
+# every revision rather than the below-threshold rule the explicit-`0` arm above pins. Keeping both arms is
+# what separates the two: the direct arm moves with the threshold, this one does not.
 TUPLE_DECL="SimpleAggregateFunction(anyLast, Tuple(AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))"
 TUPLE_VALUE="tuple(sumMapState([1::UInt64, 2::UInt64], [10.5::Decimal32(2), 20.25::Decimal32(2)]))"
 

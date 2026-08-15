@@ -104,10 +104,11 @@ SELECT sumMapMerge(CAST(tupleElement(tupleElement(v, 'n'), 'x'), 'AggregateFunct
 -- sees the outer `anyLast`, so it is still reachable as the value type.
 CREATE TABLE sl_bitmap_value (k UInt8, v SimpleAggregateFunction(anyLast, AggregateFunction(groupBitmapAnd, AggregateFunction(groupBitmap, UInt64)))) ENGINE = StripeLog;
 INSERT INTO sl_bitmap_value SELECT 1, CAST(s, 'SimpleAggregateFunction(anyLast, AggregateFunction(groupBitmapAnd, AggregateFunction(groupBitmap, UInt64)))') FROM (SELECT groupBitmapAndState(z) AS s FROM (SELECT groupBitmapState(u) AS z FROM (SELECT 42::UInt64 AS u)));
--- The state a version-0 payload carries is a bare bitmap, which is exactly an unversioned
--- `AggregateFunction(groupBitmap)` state, so reinterpreting it that way reads the retained element back
--- and would also catch a payload that survived only because the reader skipped a byte.
-SELECT arraySort(bitmapToArray(CAST(CAST(v AS String) AS AggregateFunction(groupBitmap, UInt64)))) FROM sl_bitmap_value;
+-- Past the `init` byte a version-1 state is exactly an unversioned `AggregateFunction(groupBitmap)`
+-- state, so reinterpreting the remainder that way reads the retained element back. It still catches a
+-- payload written at the other version: a version-0 payload loses its first bitmap byte to the skip and
+-- fails to parse.
+SELECT arraySort(bitmapToArray(CAST(substring(CAST(v AS String), 2) AS AggregateFunction(groupBitmap, UInt64)))) FROM sl_bitmap_value;
 
 -- ... and the `SimpleAggregateFunction` itself may sit inside a container column type.
 CREATE TABLE sl_tuple_column (k UInt8, v Tuple(SimpleAggregateFunction(anyLast, AggregateFunction(sumMap, Array(UInt64), Array(Decimal32(2)))))) ENGINE = StripeLog;
