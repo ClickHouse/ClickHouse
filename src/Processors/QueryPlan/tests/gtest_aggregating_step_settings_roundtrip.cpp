@@ -181,7 +181,7 @@ TEST(AggregatingStepSettingsRoundTrip, SpillSettingsSurviveWithoutInitiatorTempo
     QueryPlanSerializationSettings read;
     read.readBinary(in);
 
-    EXPECT_EQ(read[QueryPlanSerializationSetting::temporary_files_codec], "ZXC");
+    EXPECT_EQ(read[QueryPlanSerializationSetting::temporary_files_codec].value, "ZXC");
     EXPECT_TRUE(read[QueryPlanSerializationSetting::allow_experimental_codecs]);
     EXPECT_EQ(read[QueryPlanSerializationSetting::temporary_files_buffer_size], 123456);
 }
