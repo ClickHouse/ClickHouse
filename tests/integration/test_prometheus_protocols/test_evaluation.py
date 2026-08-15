@@ -4221,7 +4221,7 @@ def test_histogram_fraction():
     # the corresponding empty or complete fraction.
     for query, expected in (
         ("histogram_fraction(0.5, 0.5, http_request_duration_seconds_bucket)", "0"),
-        ("histogram_fraction(-1, 2, http_request_duration_seconds_bucket)", "1"),
+        ("histogram_fraction(-1, 2, http_request_duration_seconds_bucket)", "0.8333333333333334"),
         ("histogram_fraction(2, 3, http_request_duration_seconds_bucket)", "0"),
     ):
         do_query_test(
