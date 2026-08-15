@@ -56,7 +56,6 @@ private:
     Poco::Net::Context::Usage usage [[maybe_unused]];
     int disabled_protocols = 0;
     bool extended_verification = false;
-    bool ignore_extended_query_messages_until_sync = false;
     bool prefer_server_ciphers = false;
     const Poco::Util::LayeredConfiguration & config [[maybe_unused]];
     String prefix [[maybe_unused]];
@@ -73,6 +72,7 @@ private:
     Int32 secret_key = 0;
 
     bool is_query_in_progress = false;
+    bool ignore_extended_query_messages_until_sync = false;
 
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;

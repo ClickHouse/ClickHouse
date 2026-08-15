@@ -1831,8 +1831,7 @@ void PostgreSQLHandler::processDescribeQuery()
 {
     try
     {
-        std::unique_ptr<PostgreSQLProtocol::Messaging::DescribeQuery> query =
-            message_transport->receive<PostgreSQLProtocol::Messaging::DescribeQuery>();
+        message_transport->dropMessage();
 
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Describe is not supported in the PostgreSQL wire protocol");
     }
