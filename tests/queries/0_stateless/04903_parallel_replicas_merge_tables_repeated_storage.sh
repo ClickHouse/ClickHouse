@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+# no-parallel: the failpoint is server-wide and would pause every parallel-replicas query.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -31,7 +33,7 @@ $CLICKHOUSE_CLIENT --query "$QUERY SETTINGS $PR_SETTINGS" 2>&1 | grep -o -m1 "SU
 query_pid=$!
 
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT parallel_replicas_pause_before_sending_queries PAUSE"
-$CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=0 --query "DROP TABLE t_pr_merge_repeated_a"
+$CLICKHOUSE_CLIENT --query "DROP TABLE t_pr_merge_repeated_a"
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT parallel_replicas_pause_before_sending_queries"
 
 wait $query_pid
