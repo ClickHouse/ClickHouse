@@ -7,11 +7,17 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Common/tests/gtest_global_context.h>
 
 using namespace DB;
+
+namespace DB
+{
+void registerReadNothingStep(QueryPlanStepRegistry & registry);
+}
 
 namespace
 {
@@ -22,9 +28,24 @@ SharedHeader makeHeader()
     return std::make_shared<const Block>(Block({ColumnWithTypeAndName(type->createColumn(), type, "k")}));
 }
 
+void tryRegisterReadNothingStep()
+{
+    static struct Register
+    {
+        Register()
+        {
+            registerReadNothingStep(QueryPlanStepRegistry::instance());
+        }
+    } registered;
+}
+
 /// Smallest plan that owns a root node: a single source step.
 QueryPlan makeSourcePlan()
 {
+    /// `registerStep` rejects duplicate names, and other tests in this binary register
+    /// overlapping subsets. Register only the step deserialized in this test file.
+    tryRegisterReadNothingStep();
+
     QueryPlan plan;
     plan.addStep(std::make_unique<ReadNothingStep>(makeHeader()));
     return plan;
