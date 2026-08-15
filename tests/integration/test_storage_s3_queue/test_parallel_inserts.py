@@ -318,9 +318,9 @@ def test_batch_set_processing_failure_does_not_crash(started_cluster):
     conflict_file = f"{files_path}/test_1.csv"
     conflict_node = node.query(f"SELECT sipHash64('{conflict_file}')").strip()
     zk = started_cluster.get_kazoo_client("zoo1")
-    # `create_table` enables persistent processing nodes, so the conflicting node must
-    # be created in the same Keeper directory used by the queue.
-    processing_path = f"{keeper_path}/persistent_processing"
+    # Persistent processing controls the node mode; the queue still creates live nodes
+    # under `processing`, so seed the exact path used by its Keeper multi.
+    processing_path = f"{keeper_path}/processing"
     zk.ensure_path(processing_path)
     zk.create(f"{processing_path}/{conflict_node}", b"conflict")
 
