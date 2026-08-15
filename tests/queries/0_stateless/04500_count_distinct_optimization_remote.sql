@@ -1,6 +1,6 @@
 -- https://github.com/ClickHouse/ClickHouse/pull/81944
 --
--- `count_distinct_optimization` (enabled by default) rewrites `countDistinct(x)` /
+-- `count_distinct_optimization` rewrites `countDistinct(x)` /
 -- `uniqExact(x)` into `count() FROM (SELECT x GROUP BY x)`. This rewrite is wrong for
 -- distributed reads with `distributed_group_by_no_merge = 1`: the inner `GROUP BY` is
 -- completed independently on each shard and is not merged on the initiator, so the outer

@@ -6701,13 +6701,6 @@ Use lazy materialization optimization for reading Parquet files from object stor
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
-    DECLARE(Bool, query_plan_rewrite_order_by_limit, false, R"(
-Use query plan rewrite for optimize order by limit.
-)", 0) \
-    DECLARE(UInt64, query_plan_max_limit_for_rewrite_order_by_limit, 1000000, R"(Control maximum limit value that allows to rewrite query plan for optimize order by limit. If zero, there is no limit.
-)", 0) \
-    DECLARE(UInt64, query_plan_min_columns_to_use_rewrite_order_by_limit, 50, R"(Control minimum columns that allows to rewrite query plan for optimize order by limit.
-)", 0) \
     DECLARE(Bool, query_plan_optimize_lazy_final, false, R"(
 Optimize reading with FINAL from ReplacingMergeTree by building a set of primary keys and using it for index analysis.
 )", 0) \
@@ -7433,7 +7426,7 @@ SELECT * FROM test_table
 └───┘
 ```
 )", 0) \
-    DECLARE(Bool, count_distinct_optimization, true, R"(
+    DECLARE(Bool, count_distinct_optimization, false, R"(
 Rewrite count distinct to subquery of group by
 )", 0) \
     DECLARE(Bool, optimize_inverse_dictionary_lookup, true, R"(

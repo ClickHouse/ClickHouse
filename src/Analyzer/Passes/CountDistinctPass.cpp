@@ -23,7 +23,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool count_distinct_optimization;
-    extern const SettingsBool optimize_distributed_group_by_sharding_key;
     extern const SettingsUInt64 distributed_group_by_no_merge;
 }
 

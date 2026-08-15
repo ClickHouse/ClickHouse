@@ -43,10 +43,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
-            {"count_distinct_optimization", false, true, "Enable `count_distinct_optimization` by default."},
-            {"query_plan_rewrite_order_by_limit", false, false, "A new setting to rewrite `ORDER BY ... LIMIT` queries to use a more efficient plan. Off by default until the rewrite's interaction with read-bytes estimation is resolved and the rejection matrix has committed test coverage."},
-            {"query_plan_max_limit_for_rewrite_order_by_limit", 1000000, 1000000, "A new setting to control the maximum `LIMIT` value that allows to use the rewrite for `ORDER BY ... LIMIT`. Zero disables the limit."},
-            {"query_plan_min_columns_to_use_rewrite_order_by_limit", 50, 50, "A new setting controlling the minimum number of columns required to use the `ORDER BY ... LIMIT` rewrite."},
             {"framing_output_format", "None", "None", "New setting to select a framing format that multiplexes data, totals, extremes, progress, logs, and profile events packets in a single output stream over HTTP."},
             {"output_format_image_time_multiplier_seconds", 1, 1, "New setting controlling the numerator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."},
             {"output_format_image_time_divisor_seconds", 60, 60, "New setting controlling the denominator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."},

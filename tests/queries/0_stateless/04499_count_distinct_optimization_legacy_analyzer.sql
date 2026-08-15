@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/103069
--- `count_distinct_optimization` is now enabled by default. It must not change the
+-- `count_distinct_optimization` must not change the
 -- result of `countDistinct` / `uniqExact` on `Nullable` / `LowCardinality(Nullable)`
 -- columns, which skip `NULL`. This test forces the legacy analyzer (`enable_analyzer = 0`):
 -- the rewrite there is only applied by the analyzer's `CountDistinctPass`, so the legacy
