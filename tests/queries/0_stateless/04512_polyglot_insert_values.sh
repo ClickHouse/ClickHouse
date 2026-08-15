@@ -176,8 +176,12 @@ ${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query=INSERT%20INTO%20t%20VALUES%20(
 echo "--- deferred HTTP 100 Continue without a body still inserts (expect: 139 9) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 
+printf '' | ${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query=INSERT%20INTO%20t%20VALUES%20(15)" "${defer_headers[@]}" -H 'Transfer-Encoding: chunked' --data-binary @-
+echo "--- deferred chunked HTTP 100 Continue without a body still inserts (expect: 154 10) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
 ${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query=INSERT%20INTO%20t%20VALUES%20(15)" "${defer_headers[@]}" -d '(16)' 2>&1 | grep -om1 "NOT_IMPLEMENTED"
-echo "--- deferred HTTP 100 Continue with a body is still rejected (expect: 139 9) ---"
+echo "--- deferred HTTP 100 Continue with a body is still rejected (expect: 154 10) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"

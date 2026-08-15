@@ -1689,6 +1689,21 @@ static BlockIO executeQueryImpl(
             /// (see `send_query_verbatim` in ClientBase). The check uses `getInsertAST` so that an
             /// `EXPLAIN INSERT ... VALUES`, which carries its inline data in the nested `INSERT`, is
             /// guarded as well.
+            bool check_external_data_after_deferred_continue = false;
+            auto checkExternalDataAfterDeferredContinue = [&]
+            {
+                if (!check_external_data_after_deferred_continue)
+                    return;
+
+                check_external_data_after_deferred_continue = false;
+                if (!istr->eof())
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Processing an INSERT query in a foreign SQL dialect together with external data "
+                        "(the HTTP request body) is not supported: the query is transpiled as a whole and "
+                        "must carry all its data inline");
+            };
+
             if (const auto * inline_data_insert = getInsertAST(out_ast); inline_data_insert && inline_data_insert->data
                 && !inline_data_insert->select && istr && hasTranspiledInlineData(*inline_data_insert, context))
             {
@@ -1696,9 +1711,14 @@ static BlockIO executeQueryImpl(
                 /// (that happens later, after the quota checks), so in that case rely on what the client
                 /// announced in the request headers instead of touching the buffer: reading it here would
                 /// wait for a body that the client only sends after receiving the 100 Continue response.
-                /// A deferred `100 Continue` without a body (see `03353_http_100_continue.sh`) is fine and
-                /// keeps working. Without the deferral the buffer is authoritative.
-                const bool has_external_data = http_continue_callback ? flags.http_request_has_body : !istr->eof();
+                /// A chunked request has no header-level emptiness signal, so check it after the quota checks
+                /// send that response. A deferred `100 Continue` without a body (see
+                /// `03353_http_100_continue.sh`) is fine and keeps working. Without the deferral the buffer is
+                /// authoritative.
+                check_external_data_after_deferred_continue = http_continue_callback && flags.http_request_body_is_chunked;
+                const bool has_external_data = http_continue_callback
+                    ? flags.http_request_has_body
+                    : !istr->eof();
                 if (has_external_data)
                     throw Exception(
                         ErrorCodes::NOT_IMPLEMENTED,
@@ -1869,7 +1889,10 @@ static BlockIO executeQueryImpl(
 
             /// Invoke HTTP 100-Continue callback after async insert quota checks are completed
             if (http_continue_callback && !internal)
+            {
                 http_continue_callback();
+                checkExternalDataAfterDeferredContinue();
+            }
 
             auto result = queue->pushQueryWithInlinedData(out_ast, context);
 
@@ -1915,7 +1938,10 @@ static BlockIO executeQueryImpl(
         {
             /// Invoke HTTP 100-Continue callback if it was not invoked yet
             if (http_continue_callback && !internal)
+            {
                 http_continue_callback();
+                checkExternalDataAfterDeferredContinue();
+            }
         }
 
         QueryResultCachePtr query_result_cache = context->getQueryResultCache();
@@ -2055,7 +2081,10 @@ static BlockIO executeQueryImpl(
 
                 /// Invoke HTTP 100-Continue callback after quota checks are completed
                 if (http_continue_callback && !internal)
+                {
                     http_continue_callback();
+                    checkExternalDataAfterDeferredContinue();
+                }
 
                 if (interpreter)
                 {
