@@ -17,6 +17,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
@@ -364,6 +365,15 @@ static bool columnMatchesTypeStructure(const IColumn & column, const IDataType &
     {
         const auto * column_nullable = typeid_cast<const ColumnNullable *>(&column);
         return column_nullable && columnMatchesTypeStructure(column_nullable->getNestedColumn(), *type_nullable->getNestedType());
+    }
+
+    /// `SerializationLowCardinality::enumerateStreams` descends into the dictionary's nested
+    /// column using the type's dictionary type.
+    if (const auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type))
+    {
+        const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column);
+        return column_low_cardinality && columnMatchesTypeStructure(
+            *column_low_cardinality->getDictionary().getNestedColumn(), *type_low_cardinality->getDictionaryType());
     }
 
     if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(&type))
