@@ -31,9 +31,9 @@ SELECT
 FROM (EXPLAIN PLAN optimize = 0 SELECT count() FROM (SELECT number AS x FROM numbers(5)) AS t WHERE exists(SELECT 1 FROM numbers(3) WHERE number < t.x + 0) AND exists(SELECT 1 FROM numbers(3) WHERE number < t.x + 1) AND exists(SELECT 1 FROM numbers(3) WHERE number < t.x + 2) AND exists(SELECT 1 FROM numbers(3) WHERE number < t.x + 3) AND exists(SELECT 1 FROM numbers(3) WHERE number < t.x + 4) AND exists(SELECT 1 FROM numbers(3) WHERE number < t.x + 5) AND exists(SELECT 1 FROM numbers(3) WHERE number < t.x + 6) AND exists(SELECT 1 FROM numbers(3) WHERE number < t.x + 7));
 
 -- Plan size grows linearly in the sibling count, not exponentially: doubling the siblings from four
--- to eight must not double the optimized plan. Measured 226/118 = 1.9 here and 6895/415 = 16.6 when
--- each sibling references its predecessors' subtree. A ratio bound is immune to the randomized join
--- settings that shift both counts together.
+-- to eight must keep the optimized plan below fourfold (measured 226/118 = 1.9), not the 16.6-fold
+-- growth (6895/415) seen when each sibling references its predecessors' subtree. A ratio bound is
+-- immune to the randomized join settings that shift both counts together.
 SELECT (SELECT count() FROM (EXPLAIN PLAN SELECT count() FROM (SELECT number AS x FROM numbers(5)) AS t WHERE ((SELECT max(number) FROM numbers(3) WHERE number < t.x + 0) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 1) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 2) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 3) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 4) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 5) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 6) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 7)) >= 0))
      < 4 * (SELECT count() FROM (EXPLAIN PLAN SELECT count() FROM (SELECT number AS x FROM numbers(5)) AS t WHERE ((SELECT max(number) FROM numbers(3) WHERE number < t.x + 0) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 1) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 2) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 3)) >= 0));
 
@@ -64,3 +64,16 @@ SETTINGS correlated_subqueries_use_in_memory_buffer = 1;
 -- A nested subquery's own SETTINGS does not reach the query context that decides the plan, so the
 -- shared root is not used there; the query still executes normally.
 SELECT c FROM (SELECT count() AS c FROM (SELECT number AS x FROM numbers(5)) AS t WHERE ((SELECT max(number) FROM numbers(3) WHERE number < t.x + 0) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 1) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 2) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 3) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 4) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 5) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 6) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 7)) >= 0 SETTINGS correlated_subqueries_use_in_memory_buffer = 0);
+
+-- A `left` join kind disables the buffer on its own, so the shared root is reached here with
+-- `correlated_subqueries_use_in_memory_buffer` left at its default. One root still serves all eight
+-- siblings, and the swapped join layout must not change the result.
+SELECT
+    countIf(explain LIKE '%CommonSubplan%' AND explain NOT LIKE '%CommonSubplanReference%') AS roots,
+    countIf(explain LIKE '%CommonSubplanReference%') AS refs
+FROM (EXPLAIN PLAN optimize = 0 SELECT count() FROM (SELECT number AS x FROM numbers(5)) AS t WHERE ((SELECT max(number) FROM numbers(3) WHERE number < t.x + 0) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 1) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 2) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 3) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 4) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 5) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 6) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 7)) >= 0)
+SETTINGS correlated_subqueries_default_join_kind = 'left';
+
+SELECT 'left', t.x, ((SELECT max(number) FROM numbers(2) WHERE number < t.x + 0) + (SELECT max(number) FROM numbers(3) WHERE number < t.x + 1) + (SELECT max(number) FROM numbers(4) WHERE number < t.x + 2) + (SELECT max(number) FROM numbers(5) WHERE number < t.x + 3)) AS s
+FROM (SELECT number AS x FROM numbers(4)) AS t ORDER BY t.x
+SETTINGS correlated_subqueries_default_join_kind = 'left';
