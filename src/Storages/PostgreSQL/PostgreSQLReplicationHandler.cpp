@@ -1096,7 +1096,22 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             ? (tables_replicated_by_previous_run && !tables_replicated_by_previous_run->empty())
             : (!is_fresh_definition || hasNestedStorage());
 
-        if (slot_exists && !publication_exists)
+        if (slot_exists && !publication_exists && !has_previously_replicated_data && !user_managed_slot)
+        {
+            /// The initial synchronization created a slot but did not materialize a single table before the
+            /// publication was removed. There is no local data to protect and the slot has no useful position
+            /// to resume from, so recreate both objects and take a fresh snapshot.
+            LOG_INFO(
+                log,
+                "Replication slot {} exists, but publication {} does not and no table has been materialized "
+                "yet. Dropping the leftover replication slot and starting the initial synchronization from "
+                "scratch.",
+                replication_slot, doubleQuoteString(publication_name));
+
+            bootstrap_after_never_synchronized_run = true;
+        }
+        else if (slot_exists && !publication_exists)
+        {
             throw Exception(
                 ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
                 "Cannot start MaterializedPostgreSQL replication on attach: replication slot {} exists, but "
@@ -1111,6 +1126,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 "startup keeps retrying and replication starts automatically once the conflict is resolved, "
                 "without a server restart or a manual re-attach.",
                 replication_slot, doubleQuoteString(publication_name));
+        }
 
         if (!user_managed_slot && !slot_exists && publication_exists && has_previously_replicated_data)
             throw Exception(

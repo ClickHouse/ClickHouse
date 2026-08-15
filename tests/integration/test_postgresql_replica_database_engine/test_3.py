@@ -4881,6 +4881,57 @@ def test_attach_bootstraps_when_slot_and_publication_survive_a_never_synchronize
     pg_manager.drop_materialized_db(mat_db)
 
 
+def test_attach_bootstraps_when_slot_survives_a_never_synchronized_run(
+    started_cluster,
+):
+    # If the first synchronization created both PostgreSQL objects but failed before materializing a table,
+    # dropping the publication while ClickHouse is down must not strand the database. The leftover slot has
+    # no consumed snapshot to resume, and no nested table exists that a fresh snapshot could make stale.
+    table = "never_synchronized_slot_only_table"
+    mat_db = "never_synchronized_slot_only_database"
+    pg_manager.create_postgres_table(
+        table, template=postgres_table_template_without_primary_key
+    )
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(0, 29) AS i")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+
+    wait_for_replication_slot(cursor)
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{table}"))
+
+    instance.stop_clickhouse()
+    cursor.execute(f"DROP PUBLICATION {publications[0]}")
+    cursor.execute(f"ALTER TABLE {table} ADD PRIMARY KEY (key)")
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    # Attach recreates the publication and the leftover slot, then snapshots every existing row.
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+    wait_for_replication_slot(cursor)
+
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 60 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
 def test_legacy_identity_not_adopted_when_nothing_was_replicated_yet(started_cluster):
     # The legacy replication identity is adopted on attach so that an upgraded deployment keeps using the
     # slot and publication it already has, instead of re-snapshotting into its populated nested tables. A
