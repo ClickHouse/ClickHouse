@@ -15,7 +15,8 @@ INSERT INTO t2 VALUES (1, 'x'), (2, 'y');
 SET enable_analyzer = 1;
 -- PREWHERE references all columns from t2, so after PREWHERE pushdown
 -- the right side of the join has zero columns in its header.
-SELECT count() FROM t1, t2 PREWHERE a > 0 AND b != '';
+SELECT count() FROM t1, t2 PREWHERE a > 0 AND b != ''
+SETTINGS query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false';
 
 DROP TABLE t1;
 DROP TABLE t2;
