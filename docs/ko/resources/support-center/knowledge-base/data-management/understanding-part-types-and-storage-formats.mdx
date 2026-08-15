@@ -1,0 +1,184 @@
+---
+title: 파트 유형과 저장 포맷 이해하기
+description: 'ClickHouse의 다양한 파트 유형(Wide vs Compact)과 저장 포맷(Full vs Packed), 그리고 이러한 차이가 성능에 어떤 영향을 미치는지 알아봅니다.'
+date: 2026-02-03
+tags: ['핵심 데이터 개념']
+keywords: ['compact parts', 'wide parts', 'full storage', 'packed storage', 'part types', 'storage formats']
+---
+
+ClickHouse는 파트 내부의 데이터를 구성할 때 서로 독립적인 두 가지 개념을 사용합니다:
+
+* **파트 유형** (Wide vs Compact): 컬럼 데이터가 파트 내부에 저장되는 방식
+* **저장 포맷** (Full vs Packed): 파트 파일이 디스크에 저장되는 방식
+
+<div id="part-types-wide-vs-compact">
+  ## 파트 유형: Wide vs Compact
+</div>
+
+파트 유형은 데이터 파트 내에서 컬럼 데이터가 저장되는 방식을 결정합니다.
+
+| 유형          | 설명                                                                                          | 적합한 용도                |
+| ----------- | ------------------------------------------------------------------------------------------- | --------------------- |
+| **Wide**    | 각 컬럼이 별도의 파일에 저장되며, 각 파일은 자체 [marks file](/ko/concepts/core-concepts/glossary#mark-file)을 가집니다 | 일부 컬럼만 선택하는 쿼리        |
+| **Compact** | 모든 컬럼이 단일 파일에 저장되며, 하나의 [marks file](/ko/concepts/core-concepts/glossary#mark-file)을 사용합니다     | 수집 성능 및 모든 컬럼이 필요한 쿼리 |
+
+<div id="when-each-type-is-used">
+  ### 각 유형이 사용되는 경우
+</div>
+
+파트 유형은 다음 table settings에 따라 결정됩니다.
+
+* [`min_bytes_for_wide_part`](/ko/reference/settings/merge-tree-settings#min_bytes_for_wide_part): 파트가 Wide format을 사용하기 위한 최소 바이트 수
+* [`min_rows_for_wide_part`](/ko/reference/settings/merge-tree-settings#min_rows_for_wide_part): 파트가 Wide format을 사용하기 위한 최소 행 수
+
+데이터 파트의 바이트 수 또는 행 수 중 하나라도 해당 설정값보다 작으면 해당 파트는 `Compact` 포맷으로 저장되며, 그렇지 않으면 `Wide` 포맷을 사용합니다.
+
+<div id="performance-considerations">
+  ### 성능 고려 사항
+</div>
+
+**Compact 파트:**
+
+* 더 나은 수집 성능
+* 쿼리에서 모든 컬럼이 필요할 때 최적
+* 작은 파트에서 더 효율적
+
+**Wide 파트:**
+
+* 컬럼의 부분 집합만 선택하는 쿼리에서 더 효율적
+* 컬럼을 선택적으로 조회하는 대규모 데이터셋에 더 적합
+
+Compact-to-wide 머지는 ClickHouse가 compact-to-wide 변환에 [수직 병합](/ko/concepts/core-concepts/merges#memory-optimized-merges) 알고리즘을 사용하고 compact-to-compact 머지에는 수평 알고리즘을 사용하므로, wide-to-wide 머지보다 느립니다. 크기와 관계없이 Wide 파트를 강제로 사용하려면 `min_bytes_for_wide_part=0`으로 설정할 수 있습니다.
+
+이는 다음과 같은 시나리오에서 유용할 수 있습니다:
+
+1. 컬럼이 많은 테이블(예: 600개 초과)에서 대량 삽입을 수행하는 경우, 이 값을 0으로 설정하면 성능 향상에 도움이 될 수 있습니다
+2. 머지 중 과도한 메모리를 사용하는 `system.metric_log` 및 `system.text_log` 같은 시스템 테이블의 메모리 사용량을 최적화하려는 경우
+3. 삽입량이 많은 테이블을 다루면서 스토리지와 머지 동작을 최적화하려는 경우
+4. 일관된 파트 포맷 동작이 필요하고, 크기 임계값에 따른 포맷 전환 오버헤드를 피하려는 경우
+
+이 값을 0으로 설정하면 특정 성능 특성이 개선될 수 있지만, Wide 파트 포맷으로 인해 S3 스토리지에 대한 GET 요청이 더 많이 발생할 수 있다는 점은 유의해야 합니다.
+
+<div id="limitations">
+  ### 제한 사항
+</div>
+
+컬럼 크기 통계는 compact 파트에서는 계산되지 않으므로 모니터링 및 최적화에 영향을 줄 수 있습니다. `system.parts_columns`를 쿼리하면 compact 파트의 `column_data_compressed_bytes`와 `column_data_uncompressed_bytes`는 `0`으로 표시됩니다. 자세한 내용은 [&quot;wide 또는 compact 파트의 개수와 크기 확인&quot;](/ko/resources/support-center/knowledge-base/troubleshooting/count-parts-by-type)를 참조하십시오.
+
+<div id="storage-formats-full-vs-packed">
+  ## 저장 포맷: Full vs 패킹
+</div>
+
+저장 포맷은 파트의 파일이 디스크에 물리적으로 어떻게 저장되는지를 결정합니다.
+
+| 포맷         | 설명                           | 사용 가능 여부      |
+| ---------- | ---------------------------- | ------------- |
+| **Full**   | 각 파일이 파트 디렉터리에 개별적으로 저장됩니다   | 오픈 소스 및 Cloud |
+| **패킹** | 모든 파일이 하나의 아카이브 파일로 묶여 저장됩니다 | 오픈 소스 및 Cloud |
+
+<div id="full-storage">
+  ### Full 스토리지
+</div>
+
+Full 스토리지에서는 각 파트가 여러 개의 개별 파일로 이루어지며, 각 파일은 디스크에 따로 저장됩니다. 이는 기본 스토리지 포맷입니다.
+
+<div id="packed-storage">
+  ### 패킹 스토리지
+</div>
+
+패킹 스토리지에서는 모든 파트 파일이 하나의 아카이브로 묶입니다. 이렇게 하면 파일 작업 수가 크게 줄어듭니다. 각 요청마다 지연 시간과 비용이 발생하는 S3와 같은 원격 스토리지에서는 이것이 특히 중요합니다.
+
+**패킹 스토리지의 이점:**
+
+* S3/객체 스토리지 API 호출 수 감소
+* 조정 서비스의 메타데이터 부담 감소
+* 더 낮은 스토리지 비용(풀 스토리지는 훨씬 더 비쌀 수 있음)
+* 원격 스토리지의 소규모 파트에서 더 나은 성능
+
+<div id="when-packed-storage-is-used">
+  ### 패킹 스토리지를 사용하는 경우
+</div>
+
+다음 조건 중 **하나라도** 참이면 해당 파트가 패킹 스토리지를 사용합니다.
+
+* 비압축 바이트 수 &lt; [`min_bytes_for_full_part_storage`](/ko/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
+* 행 수 &lt; [`min_rows_for_full_part_storage`](/ko/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
+* 머지 수준 &lt; [`min_level_for_full_part_storage`](/ko/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
+
+패킹 스토리지는 옵트인 방식입니다. 세 가지 설정의 기본값은 모두 `0`이므로, 이들 중 하나의 값을 높이지 않으면 파트는 Full 스토리지를 사용합니다.
+
+<Info>
+  **다운그레이드 호환성**
+
+  파트가 한 번 패킹 스토리지로 기록되면, 패킹 스토리지를 지원하지 않는 ClickHouse 버전에서는 더 이상 이를 읽을 수 없습니다. 따라서 패킹 스토리지를 활성화하면 해당 버전으로 다운그레이드할 수 없게 되므로, 롤백이 필요하지 않을 것이라고 확신할 때만 활성화하십시오.
+</Info>
+
+`min_level_for_full_part_storage` 설정은 객체 스토리지에서 성능과 비용을 모두 최적화하는 데 사용할 수 있으며, 특히 지속적으로 삽입이 발생하는 테이블에서 유용합니다.
+이 설정은 ClickHouse 버전 25.10부터 사용할 수 있으며, `min_level_for_wide_part`와 함께 작동해 파트 스토리지 전략을 전반적으로 제어할 수 있게 합니다.
+
+다음과 같은 사용 사례에서는 기본값(0)에서 변경하는 것을 고려할 수 있습니다.
+
+* 테이블에 데이터가 정기적으로 수집되면 초기 파트는 빠르게 머지되므로, 처음부터 전체 파트 포맷으로 저장하는 것은 비효율적입니다
+* 이 매개변수를 설정하면 삽입 중 비용이 큰 S3 PUT 요청을 줄일 수 있습니다. 예를 들어 한 분석에서는 전체 파트를 생성하는 삽입의 경우 삽입당 평균 31.3회의 PUT 요청이 발생한 반면, 패킹 파트만 생성하는 삽입의 경우 삽입당 평균 2.22회의 PUT 요청만 발생했습니다
+* 패킹 스토리지는 각 컬럼마다 별도의 파일을 만드는 대신 모든 데이터를 하나의 파일에 기록하므로, 특히 컬럼이 많은 테이블에서는 삽입 작업이 더 빨라집니다.
+
+권장 구성:
+
+객체 스토리지 배포에서는 `min_level_for_full_part_storage = 2`로 설정하십시오.
+이렇게 하면 다음이 보장됩니다.
+
+* 수준 0 파트(초기 삽입)는 패킹 스토리지를 사용합니다
+* 수준 1 파트도 계속 패킹 스토리지를 사용합니다
+* 수준 2 이상의 파트만 Full 스토리지 포맷을 사용합니다
+
+<Tip>
+  머지가 충분히 일어나지 않는, 매우 크지만 빈도가 낮은 쓰기를 받는 테이블에는 이 설정을 사용하지 마십시오. 큰 초기 쓰기의 경우 처음부터 전체 파트 스토리지를 사용하는 편이 더 유리할 수 있습니다.
+</Tip>
+
+<div id="combining-part-types-and-storage-formats">
+  ## 파트 유형과 저장 포맷 조합
+</div>
+
+이 두 개념은 서로 독립적이므로 모든 조합을 사용할 수 있습니다:
+
+| 조합               | 사용 사례               |
+| ---------------- | ------------------- |
+| Wide + Full      | 로컬 스토리지의 대형 파트(기본값) |
+| Wide + 패킹    | 객체 스토리지의 대형 파트      |
+| Compact + Full   | 로컬 스토리지의 소형 파트      |
+| Compact + 패킹 | 객체 스토리지의 소형 파트      |
+
+<div id="querying-part-information">
+  ## 파트 정보 조회
+</div>
+
+기존 파트의 유형과 저장소 유형은 [`system.parts`](/ko/reference/system-tables/parts) 테이블에서 확인할 수 있습니다:
+
+```sql
+SELECT
+    part_type,
+    part_storage_type,
+    max(level),
+    count(),
+    formatReadableSize(max(data_uncompressed_bytes)),
+    formatReadableSize(min(data_uncompressed_bytes))
+FROM system.parts
+WHERE (database != 'system') AND active
+GROUP BY
+    1,
+    2
+ORDER BY
+    1 ASC,
+    2 ASC
+```
+
+다음과 비슷한 내용이 표시됩니다:
+
+```response
+   ┌─part_type─┬─part_storage_type─┬─max(level)─┬─count()─┬─formatReadab⋯sed_bytes))─┬─formatReadab⋯sed_bytes))─┐
+1. │ Compact   │ Full              │      12688 │    2456 │ 1023.87 MiB              │ 23.78 MiB                │
+2. │ Compact   │ Packed            │      97383 │   13748 │ 127.77 MiB               │ 1.00 B                   │
+3. │ Wide      │ Full              │       7642 │    2000 │ 1.38 TiB                 │ 30.18 MiB                │
+4. │ Wide      │ Packed            │         10 │     187 │ 110.01 MiB               │ 1.30 KiB                 │
+   └───────────┴───────────────────┴────────────┴─────────┴──────────────────────────┴──────────────────────────┘
+```

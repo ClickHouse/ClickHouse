@@ -7,10 +7,14 @@
 #include <cerrno>
 
 #if USE_SSL
+#include <Common/Exception.h>
 #include <Poco/Net/SecureStreamSocketImpl.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#include <fcntl.h>
+#endif
+
+#if USE_SILK && USE_SSL
+#include <IO/SilkSecureFiberStreamSocketImpl.h>
 #endif
 
 namespace DB
@@ -40,7 +44,7 @@ SocketState getSocketState(int fd)
 
 #if USE_SSL
 
-SocketState getSslSocketState(ssl_st * ssl)
+SocketState getSSLSocketState(ssl_st * ssl)
 {
     /// `SSL_peek` decrypts just enough of the pending records to tell real application data and
     /// harmless post-handshake messages (session tickets, `KeyUpdate`) apart from a `close_notify`.
@@ -78,28 +82,57 @@ namespace
 {
 
 /// Force the socket into non-blocking mode for the duration of a call, restoring the original
-/// flags afterwards, so that `SSL_peek` on an idle pooled connection can never block.
+/// mode afterwards, so that `SSL_peek` on an idle pooled connection can never block.
 class ScopedNonBlocking
 {
 public:
-    explicit ScopedNonBlocking(int fd_) : fd(fd_), flags(::fcntl(fd_, F_GETFL, 0))
+    explicit ScopedNonBlocking(Poco::Net::SocketImpl & socket_impl_)
+        : socket_impl(socket_impl_)
     {
-        if (flags >= 0 && !(flags & O_NONBLOCK))
-            ::fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+#if USE_SILK
+        if (auto * fiber_socket_impl = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(&socket_impl))
+        {
+            was_blocking = !fiber_socket_impl->getDontWait();
+            if (was_blocking)
+                fiber_socket_impl->setDontWait(true);
+            return;
+        }
+#endif
+        was_blocking = socket_impl.getBlocking();
+        if (was_blocking)
+            socket_impl.setBlocking(false);
     }
 
     ~ScopedNonBlocking()
     {
-        if (flags >= 0 && !(flags & O_NONBLOCK))
-            ::fcntl(fd, F_SETFL, flags);
+        if (!was_blocking)
+            return;
+
+        try
+        {
+#if USE_SILK
+            if (auto * fiber_socket_impl = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(&socket_impl))
+            {
+                fiber_socket_impl->setDontWait(false);
+                return;
+            }
+#endif
+            socket_impl.setBlocking(true);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     ScopedNonBlocking(const ScopedNonBlocking &) = delete;
     ScopedNonBlocking & operator=(const ScopedNonBlocking &) = delete;
 
 private:
-    int fd;
-    int flags;
+    Poco::Net::SocketImpl & socket_impl;
+    /// For regular (non-silk) socket: whether it was blocking before.
+    /// For silk socket: whether it was dont-wait before.
+    bool was_blocking = false;
 };
 
 }
@@ -115,8 +148,8 @@ SocketState getSocketState(const Poco::Net::StreamSocket & socket)
         /// performed) has no TLS state to inspect, so fall back to the raw file-descriptor check.
         if (auto * ssl = secure->ssl())
         {
-            ScopedNonBlocking non_blocking(secure->sockfd());
-            return getSslSocketState(ssl);
+            ScopedNonBlocking non_blocking(*secure);
+            return getSSLSocketState(ssl);
         }
     }
 #endif
@@ -135,9 +168,9 @@ bool isSocketPeerClosed(const Poco::Net::StreamSocket & socket)
 
 #if USE_SSL
 
-bool isSslPeerClosed(ssl_st * ssl)
+bool isSSLPeerClosed(ssl_st * ssl)
 {
-    return getSslSocketState(ssl) == SocketState::Closed;
+    return getSSLSocketState(ssl) == SocketState::Closed;
 }
 
 #endif

@@ -25,11 +25,11 @@ ClickPipes is a separate cloud service that runs independently of the ClickHouse
 </Accordion>
 
 <Accordion title="What are the requirements for using ClickPipes for Kafka?">
-In order to use ClickPipes for Kafka, you will need a running Kafka broker and a ClickHouse Cloud service with ClickPipes enabled. You will also need to ensure that ClickHouse Cloud can access your Kafka broker. This can be achieved by allowing remote connection on the Kafka side, whitelisting [ClickHouse Cloud Egress IP addresses](/products/cloud/guides/data-sources/cloud-endpoints-api) in your Kafka setup. Alternatively, you can use [AWS PrivateLink](/integrations/clickpipes/aws-privatelink) to connect ClickPipes for Kafka to your Kafka brokers.
+In order to use ClickPipes for Kafka, you will need a running Kafka broker and a ClickHouse Cloud service with ClickPipes enabled. You will also need to ensure that ClickHouse Cloud can access your Kafka broker. This can be achieved by allowing remote connection on the Kafka side, whitelisting [ClickHouse Cloud Egress IP addresses](/products/cloud/guides/data-sources/cloud-endpoints-api) in your Kafka setup. Alternatively, you can use [AWS PrivateLink](/integrations/clickpipes/networking/aws-privatelink) to connect ClickPipes for Kafka to your Kafka brokers.
 </Accordion>
 
 <Accordion title="Does ClickPipes for Kafka support AWS PrivateLink?">
-AWS PrivateLink is supported. See [the documentation](/integrations/clickpipes/aws-privatelink) for more information on how to set it up.
+AWS PrivateLink is supported. See [the documentation](/integrations/clickpipes/networking/aws-privatelink) for more information on how to set it up.
 </Accordion>
 
 <Accordion title="Can I use ClickPipes for Kafka to write data to a Kafka topic?">
@@ -57,7 +57,7 @@ No. ClickPipes requires the Event Hubs namespace to have the Kafka surface enabl
 </Accordion>
 
 <Accordion title="Does Azure Schema Registry work with ClickPipes?">
-No. ClickPipes only supports schema registries that are API-compatible with the Confluent Schema Registry, which isn't the case for Azure Schema Registry. If you require support for this schema registry, [reach out to our team](https://clickhouse.com/company/contact?loc=clickpipes).
+No. ClickPipes supports Confluent-compatible registries and AWS Glue Schema Registry, but not Azure Schema Registry. See [Schema registries for Kafka ClickPipe](/integrations/clickpipes/kafka/schema-registries) for the current support matrix. If you require Azure Schema Registry support, [reach out to our team](https://clickhouse.com/company/contact?loc=clickpipes).
 </Accordion>
 
 <Accordion title="What permissions does my policy need to consume from Azure Event Hubs?">
@@ -73,7 +73,7 @@ Yes. ClickPipes expects you to include the port number for the Kafka surface, wh
 </Accordion>
 
 <Accordion title="Are ClickPipes IPs still relevant for Azure Event Hubs?">
-Yes. To restrict traffic to your Event Hubs instance, please add the [documented static NAT IPs](/integrations/clickpipes/home#list-of-static-ips) to .
+Yes. To restrict traffic to your Event Hubs instance, please add the [documented static NAT IPs](/integrations/clickpipes/networking/static-ips) to the IP firewall rules for your Event Hubs namespace.
 </Accordion>
 
 <Accordion title="Is the connection string for the Event Hub, or is it for the Event Hub namespace?">

@@ -18,7 +18,7 @@ En esta guía, explorarás algunos de los tipos de `JOIN` más comunes y cómo u
 
 Las instrucciones para crear y cargar las tablas se pueden encontrar [aquí](/es/integrations/connectors/data-ingestion/etl-tools/dbt/guides).
 El conjunto de datos también está disponible en el [playground](https://sql.clickhouse.com?query_id=AACTS8ZBT3G7SSGN8ZJBJY) si no quieres crear y cargar
-las tablas en local.
+las tablas localmente.
 
 Usarás las siguientes cuatro tablas del conjunto de datos de ejemplo:
 
@@ -53,8 +53,8 @@ En las siguientes secciones, escribirás consultas de ejemplo para cada uno de l
   ## INNER JOIN
 </div>
 
-El `INNER JOIN` devuelve, para cada par de filas que coincide en las claves de unión, los valores de las columnas de la fila de la tabla izquierda combinados con los valores de las columnas de la fila de la tabla derecha.
-Si una fila tiene más de una coincidencia, se devuelven todas las coincidencias (es decir, se produce el [producto cartesiano](https://en.wikipedia.org/wiki/Cartesian_product) para las filas con claves de unión coincidentes).
+El `INNER JOIN` devuelve, para cada par de filas que coincide en las claves de join, los valores de las columnas de la fila de la tabla izquierda combinados con los valores de las columnas de la fila de la tabla derecha.
+Si una fila tiene más de una coincidencia, se devuelven todas las coincidencias (es decir, se produce el [producto cartesiano](https://en.wikipedia.org/wiki/Cartesian_product) para las filas con claves de join coincidentes).
 
 <Image img="/images/starter_guides/joins/inner_join.webp" alt="Inner Join" />
 
@@ -146,7 +146,7 @@ LIMIT 10;
   ## CROSS JOIN
 </div>
 
-`CROSS JOIN` genera el producto cartesiano completo de las dos tablas sin tener en cuenta las claves de unión.
+`CROSS JOIN` genera el producto cartesiano completo de las dos tablas sin tener en cuenta las claves de join.
 Cada fila de la tabla izquierda se combina con cada fila de la tabla derecha.
 
 <Image img="/images/starter_guides/joins/cross_join.webp" alt="Cross Join" />
@@ -457,5 +457,5 @@ final_price:        9645
   ## Resumen
 </div>
 
-Esta guía muestra cómo ClickHouse admite todos los tipos estándar de JOIN de SQL, además de JOINs especializados para impulsar las consultas analíticas.
-Consulta la documentación de la sentencia [JOIN](/es/reference/statements/select/join) para obtener más detalles sobre los JOINs.
+Esta guía muestra cómo ClickHouse admite todos los tipos de JOIN estándar de SQL, además de JOIN especializados para potenciar las consultas analíticas.
+Consulte la documentación de la sentencia [JOIN](/es/reference/statements/select/join) para obtener más información sobre JOIN.

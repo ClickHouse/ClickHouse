@@ -24,39 +24,37 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   ## 启用二进制日志保留
 </div>
 
-二进制日志是一组日志文件，用于记录对 MySQL 服务器实例中数据所做的修改。二进制日志文件是进行复制所必需的。以下两个步骤都必须执行：
+二进制日志是一组日志文件，其中包含对 MySQL 服务器实例所做的数据修改信息。复制需要二进制日志文件。必须同时执行以下两个步骤：
 
-<div id="enable-binlog-logging-rds">
-  ### 1. 通过自动备份启用二进制日志
-</div>
+<Steps>
+  <Step title="通过自动备份启用二进制日志记录" id="enable-binlog-logging-rds">
+    MySQL 是否启用二进制日志记录由自动备份功能决定。可以在 AWS Console 中进行设置：
 
-自动备份功能决定是否为 MySQL 启用二进制日志。可在 AWS 控制台中设置：
+    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="在 RDS 中启用自动备份" size="lg" border />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="在 RDS 中启用自动备份" size="lg" border />
+    建议根据复制用例将备份保留策略设置为足够长的时长。
+  </Step>
 
-建议根据复制场景，将备份保留策略设置为较长的时长。
+  <Step title="Binlog 保留时长 (小时)" id="binlog-retention-hours-rds">
+    Amazon RDS for MariaDB 设置 binlog 保留时长的方法有所不同。binlog 保留时长是指包含变更的二进制日志文件会保留多久。如果某些变更在 binlog 文件被删除前尚未被读取，复制将无法继续。binlog 保留时长 (小时) 的默认值为 NULL，表示不会保留二进制日志。
 
-<div id="binlog-retention-hours-rds">
-  ### 2. Binlog 保留时长 (小时)
-</div>
+    要指定某个 DB 实例上二进制日志的保留小时数，请使用 `mysql.rds_set_configuration` 函数，并将 binlog 保留周期设置得足够长，以确保复制能够进行。建议的最短时长为 `24 hours`。
 
-Amazon RDS for MariaDB 设置 binlog 保留时长的方法有所不同。binlog 保留时长是指包含变更的二进制日志文件会保留多久。如果某些变更在 binlog 文件被删除前尚未被读取，复制将无法继续。binlog 保留时长 (小时) 的默认值为 NULL，表示不会保留二进制日志。
-
-要指定某个 DB 实例上二进制日志的保留小时数，请使用 `mysql.rds_set_configuration` 函数，并将 binlog 保留周期设置得足够长，以确保复制能够进行。建议的最短时长为 `24 hours`。
-
-```text
-mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
-```
+    ```text
+    mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
+    ```
+  </Step>
+</Steps>
 
 <div id="binlog-parameter-group-rds">
-  ## 在 参数组 中配置 binlog 设置
+  ## 在参数组中配置 binlog 设置
 </div>
 
-在 RDS 控制台中点击你的 MariaDB 实例，然后进入 `Configurations` 选项卡，即可找到 参数组。
+在 RDS 控制台中点击你的 MariaDB 实例，然后进入 `Configurations` 选项卡，即可找到参数组。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp" alt="在 RDS 中查找参数组的位置" size="lg" border />
 
-点击 参数组 链接后，会进入其详情页面。你会在右上角看到一个 Edit 按钮：
+点击参数组链接后，会进入其详情页面。你会在右上角看到一个 Edit 按钮：
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp" alt="编辑参数组" size="lg" border />
 
@@ -74,12 +72,12 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp" alt="将 Binlog 行镜像设为 FULL" size="lg" border />
 
-接下来，点击右上角的 `Save Changes`。这些更改可能需要重启实例后才会生效。如果你在 RDS 实例的 `Configurations` 选项卡中看到 参数组 链接旁显示 `Pending reboot`，通常就表示需要重启实例。
+接下来，点击右上角的 `Save Changes`。这些更改可能需要重启实例后才会生效。如果你在 RDS 实例的 `Configurations` 选项卡中看到参数组链接旁显示 `Pending reboot`，通常就表示需要重启实例。
 
 <br />
 
 <Tip>
-  如果你使用的是 MariaDB cluster，则上述参数应位于 [DB Cluster](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html) 参数组 中，而不是 DB instance group 中。
+  如果你使用的是 MariaDB cluster，则上述参数应位于 [DB Cluster](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html) parameter group 中，而不是 DB instance group 中。
 </Tip>
 
 <div id="gtid-mode-rds">
@@ -121,14 +119,14 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
   ### 基于 IP 的访问控制
 </div>
 
-如果你想限制对 RDS 实例的访问流量，请将[文档中列出的静态 NAT IP 地址](/zh/integrations/clickpipes/home#list-of-static-ips)添加到 RDS 安全组 (Security Group)  的 `Inbound rules` 中。
+如果你想限制访问 RDS 实例的流量，请将[文档中列出的静态 NAT IP 地址](/zh/integrations/clickpipes/home#list-of-static-ips)添加到 RDS 安全组 (Security Group) 的 `Inbound rules` 中。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="在哪里可以找到 RDS 中的安全组（Security Group）？" size="lg" border />
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="编辑上述安全组（Security Group）的入站规则" size="lg" border />
 
 <div id="private-access-via-aws-privatelink">
-  ### 通过 AWS PrivateLink 进行私有访问
+  ### 通过 AWS PrivateLink 进行私网访问
 </div>
 
-如需通过私有网络连接到您的 RDS 实例，可以使用 AWS PrivateLink。请按照我们的 [ClickPipes AWS PrivateLink 配置指南](/zh/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) 完成连接设置。
+要通过私网连接到您的 RDS 实例，您可以使用 AWS PrivateLink。请按照我们的 [ClickPipes 的 AWS PrivateLink 设置指南](/zh/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) 配置连接。

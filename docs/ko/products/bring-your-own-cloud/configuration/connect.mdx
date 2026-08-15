@@ -11,6 +11,24 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 이 페이지에서는 BYOC에서 ClickHouse 서비스에 연결하는 여러 방법을 설명합니다. 보안 및 네트워킹 요구 사항에 따라 퍼블릭 로드 밸런서, 프라이빗 로드 밸런서 또는 PrivateLink/Private Service Connect 엔드포인트 중에서 선택할 수 있습니다.
 
+<div id="connection-via">
+  ## 콘솔에서 연결 경로 선택하기
+</div>
+
+모든 BYOC 서비스의 연결 세부 정보는 ClickHouse Cloud 콘솔에서 확인할 수 있습니다. 서비스를 열고 **Connect**를 클릭하십시오.
+
+BYOC 서비스의 **Connect** 대화상자에는 **Connection via** 드롭다운이 포함되어 있습니다. 이를 사용해 서비스에 연결하는 방식을 선택하십시오.
+
+* **퍼블릭 로드 밸런서** — 인터넷에 노출된 엔드포인트입니다.
+* **프라이빗 로드 밸런서** — VPC peering 또는 연결된 네트워크를 통해 접근하는 내부 엔드포인트입니다. 인프라에서 [프라이빗 로드 밸런서](#private-load-balancer)가 활성화된 경우에만 표시됩니다.
+* **PrivateLink** (AWS) / **Private Service Connect** (GCP) — 클라우드 제공업체의 프라이빗 엔드포인트 호스트명입니다. [PrivateLink or Private Service Connect](#privatelink-or-private-service-connect)가 활성화된 경우에만 표시됩니다.
+
+경로를 선택하면 대화상자의 모든 연결 예시에서 호스트명이 업데이트됩니다. 여기에는 HTTPS (`curl`) 명령, 네이티브 클라이언트, JDBC, MySQL, 언어별 클라이언트 스니펫(Python, Node.js, Java, Go, C#)이 포함되므로, 호스트명을 수동으로 수정하지 않고도 필요한 정확한 경로에 맞는 바로 사용 가능한 명령을 복사할 수 있습니다.
+
+드롭다운에는 인프라에서 활성화된 경로만 표시되며, 목록은 대화상자를 열 때마다 갱신됩니다. 새로 활성화된 프라이빗 로드 밸런서 또는 PrivateLink 엔드포인트는 **Connect**를 다음에 열면 전파 지연 없이 바로 표시됩니다. 사용할 수 있는 경로가 하나뿐이면 해당 엔드포인트가 선택된 상태로 드롭다운이 비활성화되어 표시됩니다.
+
+<Image img="/images/cloud/reference/byoc-connect-via.png" size="lg" alt="Connection via 드롭다운이 펼쳐진 Connect 대화상자. 퍼블릭 로드 밸런서, 프라이빗 로드 밸런서, PrivateLink 경로가 표시되어 있습니다." background="black" />
+
 <div id="public-load-balancer">
   ## Public Load Balancer
 </div>
@@ -71,12 +89,15 @@ IP 필터링에 대한 자세한 내용은 [IP 액세스 목록 문서](/ko/prod
 
 1. **프라이빗 로드 밸런서 활성화**(아직 활성화되지 않은 경우). 배포에 [프라이빗 로드 밸런서 활성화](/ko/products/bring-your-own-cloud/configuration/configurations#load-balancers)가 필요하면 ClickHouse 지원팀에 문의하십시오.
 2. **네트워크 연결 확인**:
-   * VPC peering: VPC peering 설정을 완료하십시오([Private Networking Setup](/ko/products/bring-your-own-cloud/onboarding/network) 참조).
-   * 기타 프라이빗 네트워크: BYOC VPC에 연결할 수 있도록 라우팅이 구성되어 있는지 확인하십시오.
+   * VPC peering의 경우: VPC peering 설정을 완료하십시오([Private Networking Setup](/ko/products/bring-your-own-cloud/onboarding/network) 참조).
+   * 기타 프라이빗 네트워크의 경우: BYOC VPC에 연결할 수 있도록 라우팅이 구성되어 있는지 확인하십시오.
 3. **프라이빗 엔드포인트 확인**:
    프라이빗 엔드포인트는 ClickHouse Cloud 콘솔에서 해당 서비스의 &quot;Connect&quot; 섹션에서 확인할 수 있습니다. 프라이빗 엔드포인트는 퍼블릭 엔드포인트와 동일한 형식을 따르지만, 서비스 ID 부분에 `-private` 접미사가 추가됩니다. 예시는 다음과 같습니다.
+
    * **퍼블릭 엔드포인트**: `sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
    * **프라이빗 엔드포인트**: `sb9jmrq2ne-private.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
+
+   `-private` 호스트명을 직접 만들기보다는 **Connect** 대화상자의 **Connection via** 드롭다운에서 **Private load balancer**를 선택해 엔드포인트와 미리 준비된 연결 명령을 바로 복사하십시오.
 
 <div id="public-ip-filtering">
   ### IP 필터링
@@ -116,10 +137,12 @@ AWS PrivateLink와 GCP Private Service Connect는 가장 안전한 연결 옵션
 
 PrivateLink 또는 Private Service Connect 설정을 완료하십시오([Private Networking Setup](/ko/products/bring-your-own-cloud/onboarding/network) 참조). 구성이 완료되면 PrivateLink 전용 endpoint 포맷을 사용해 ClickHouse 서비스에 연결할 수 있습니다. PrivateLink endpoint에는 VPC endpoint를 통해 라우팅된다는 것을 나타내는 `vpce` 하위 도메인이 포함됩니다. VPC의 DNS 해상도는 트래픽을 PrivateLink endpoint를 통해 자동으로 라우팅합니다.
 
-PrivateLink endpoint 포맷은 공개 endpoint와 유사하지만, 서비스 하위 도메인과 BYOC 인프라 하위 도메인 사이에 `vpce` 하위 도메인이 포함됩니다. 예시는 다음과 같습니다.
+PrivateLink endpoint 포맷은 퍼블릭 엔드포인트와 유사하지만, 서비스 하위 도메인과 BYOC 인프라 하위 도메인 사이에 `vpce` 하위 도메인이 포함됩니다. 예시는 다음과 같습니다.
 
-* **공개 endpoint**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+* **퍼블릭 엔드포인트**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
 * **PrivateLink endpoint**: `h5ju65kv87.vpce.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+
+endpoint가 설정되고 허용 목록에 추가되면, **Connect** 대화 상자의 **Connection via** 드롭다운에서 **PrivateLink**(또는 GCP에서는 **Private Service Connect**)를 선택하여 프라이빗 엔드포인트 연결 정보를 직접 복사하십시오.
 
 <div id="endpoint-id-allowlist">
   ### Endpoint ID 허용 목록

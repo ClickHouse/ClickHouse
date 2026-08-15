@@ -1,0 +1,60 @@
+---
+description: 'CHECK DATABASE のドキュメント'
+sidebarTitle: 'CHECK DATABASE'
+slug: /sql-reference/statements/check-database
+title: 'CHECK DATABASE ステートメント'
+doc_type: 'reference'
+---
+
+`CHECK DATABASE` クエリは、データベースの健全性を検証します。
+
+主な用途は [`DataLakeCatalog`](/ja/reference/engines/database-engines/datalake) データベースエンジンで、この場合、データベースのバックエンドとなる外部カタログに接続でき、そのテーブル一覧を取得できることを確認します。これは軽量なプローブであり、テーブルデータを読み取ることなく、接続と認証を確認します。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+クエリの基本構文は次のとおりです。
+
+```sql
+CHECK DATABASE database_name
+```
+
+* `database_name`: チェックするデータベースの名前を指定します。
+
+クエリは結果セットを返しません。チェックが成功すると、クエリはどの行も生成せずに完了します。チェックが失敗した場合 (たとえば、カタログにアクセスできない場合や、認証情報が無効になっている場合) 、クエリは失敗内容を示す例外をスローします。
+
+<div id="behavior">
+  ## 動作
+</div>
+
+[`DataLakeCatalog`](/ja/reference/engines/database-engines/datalake) エンジンを使用するデータベースでは、`CHECK DATABASE` は次の動作を行います。
+
+* 外部カタログ (AWS Glue、Databricks Unity、Hive Metastore、または Iceberg REST カタログなど) に接続し、テーブルの一覧を取得します。
+* カタログに到達可能で、認証が有効であれば成功と報告します。
+* カタログにテーブルが含まれている必要はありません。空のカタログであっても、到達可能であれば正常と見なされます。
+
+専用のヘルスチェックを実装していないデータベースエンジンでは、`CHECK DATABASE` は何も実行せずに正常終了します。
+
+`CHECK DATABASE` の実行には、データベースに対する `CHECK` 権限が必要です ([`GRANT`](/ja/reference/statements/grant) を参照) 。
+
+<div id="examples">
+  ## 例
+</div>
+
+`datalake` という名前の `DataLakeCatalog` データベースを確認します:
+
+```sql title="Query"
+CHECK DATABASE datalake;
+```
+
+カタログにアクセスでき、認証情報が有効であれば、クエリは正常に完了し、行は返されません。
+
+カタログにアクセスできない場合は、代わりにクエリで例外が発生します。具体的なメッセージは、カタログの種類と根本原因となる障害 (たとえば、接続エラー、`401 Unauthorized` のような HTTP ステータス、または DNS 名前解決の失敗) によって異なります。
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [`CHECK TABLE`](/ja/reference/statements/check-table)
+* [`DataLakeCatalog`](/ja/reference/engines/database-engines/datalake)

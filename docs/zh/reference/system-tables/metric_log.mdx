@@ -111,7 +111,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在缓存中未命中 Parquet 元数据，因此必须从磁盘读取的次数。
 * `ProfileEvent_ParquetMetadataCacheWeightLost` ([UInt64](/zh/reference/data-types/int-uint)) — 从 Parquet 元数据缓存中被淘汰的近似字节数。
 * `ProfileEvent_IcebergIteratorInitializationMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 同步初始化 Iceberg 数据迭代器所花费的总时间。
-* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 同步初始化 Iceberg 数据迭代器所花费的总时间。
+* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 从状态更新 Iceberg 存储元数据 (buildStorageMetadataFromState) 所花费的总时间。
 * `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/zh/reference/data-types/int-uint)) — Iceberg 迭代器返回的对象信息总数。
 * `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/zh/reference/data-types/int-uint)) — 在按分区和序列号筛选后符合条件的配对中，经 minmax 分析接受的数据文件-位置删除文件对总数。
 * `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/zh/reference/data-types/int-uint)) — 在按分区和序列号筛选后符合条件的配对中，经 minmax 分析接受的数据文件-位置删除文件对总数。
@@ -532,8 +532,6 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
   9. 与 part 格式相关的设置 (如 &#39;enable&#95;mixed&#95;granularity&#95;parts&#39;) 在不同副本上不一致。
      服务器已成功检测到这种情况，并将从副本下载合并后的 part，以强制获得字节级完全一致的结果。
 * `ProfileEvent_DataAfterMutationDiffersFromReplica` ([UInt64](/zh/reference/data-types/int-uint)) — 变更后的数据与其他副本上的数据在字节级别不完全一致的次数。除 &#39;DataAfterMergeDiffersFromReplica&#39; 中所述原因外，也可能是由非确定性变更导致的。
-* `ProfileEvent_PolygonsAddedToPool` ([UInt64](/zh/reference/data-types/int-uint)) — 已添加到 &#39;pointInPolygon&#39; 函数缓存 (pool) 中的多边形数量。
-* `ProfileEvent_PolygonsInPoolAllocatedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 为添加到 &#39;pointInPolygon&#39; 函数缓存 (pool) 中的多边形分配的字节数。
 * `ProfileEvent_NaiveBayesClassifierModelsLoaded` ([UInt64](/zh/reference/data-types/int-uint)) — 已加载的朴素贝叶斯分类器模型数量。
 * `ProfileEvent_NaiveBayesClassifierModelsAllocatedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 为朴素贝叶斯分类器模型分配的字节数。
 * `ProfileEvent_USearchAddCount` ([UInt64](/zh/reference/data-types/int-uint)) — 添加到 usearch 索引中的向量数量。
@@ -1021,10 +1019,10 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_DistrCacheReceivedDataPackets` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。从分布式缓存接收到的 Data 数据包总数
 * `ProfileEvent_DistrCacheReceivedDataPacketsBytes` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。从分布式缓存接收到的 Data 数据包字节总数
 * `ProfileEvent_DistrCacheReceivedOkPackets` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。从分布式缓存接收到的 Ok 数据包总数
-* `ProfileEvent_DistrCacheReceivedErrorPackets` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存客户端事件。从分布式缓存接收到的 Error 数据包总数
-* `ProfileEvent_DistrCacheReceivedCredentialsRefreshPackets` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存客户端事件。从分布式缓存接收到的 RefreshCredentials 数据包总数
-* `ProfileEvent_DistrCacheReceivedStopPackets` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存客户端事件。从分布式缓存接收到的 Stop 数据包总数
-* `ProfileEvent_DistrCacheSentDataPackets` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存客户端事件。发送到分布式缓存的 Data 数据包总数
+* `ProfileEvent_DistrCacheReceivedErrorPackets` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。从分布式缓存接收到的 Error 数据包总数
+* `ProfileEvent_DistrCacheReceivedCredentialsRefreshPackets` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。从分布式缓存接收到的 RefreshCredentials 数据包总数
+* `ProfileEvent_DistrCacheReceivedStopPackets` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。从分布式缓存接收到的 Stop 数据包总数
+* `ProfileEvent_DistrCacheSentDataPackets` ([UInt64](/zh/reference/data-types/int-uint)) — Distributed Cache 客户端事件。发送到分布式缓存的 Data 数据包总数
 * `ProfileEvent_DistrCacheSentDataPacketsBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存客户端事件。发送到分布式缓存的 Data 数据包字节数
 * `ProfileEvent_DistrCacheUnusedPackets` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存客户端事件。从分布式缓存跳过的未使用数据包数量
 * `ProfileEvent_DistrCacheUnusedDataPacketsBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存客户端事件。被忽略的 Data 数据包字节数

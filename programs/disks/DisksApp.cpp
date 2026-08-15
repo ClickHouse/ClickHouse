@@ -560,8 +560,12 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         fatal_channel_ptr->addChannel(fatal_console_channel_ptr);
 
         fatal_log = createLogger("DisksApp", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+        /// Without signals nothing ever writes to the signal pipe, so there is nothing to listen
+        /// for - and the blocking read of that pipe is all the listener thread does.
         signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
         signal_listener_thread.start(*signal_listener);
+#endif
     }
 
     if (config().has("macros"))
@@ -598,8 +602,10 @@ DisksApp::~DisksApp()
 
     try
     {
+#if defined(OS_HAS_SIGNAL_HANDLERS)
         writeSignalIDtoSignalPipe(SignalListener::StopThread);
         signal_listener_thread.join();
+#endif
         HandledSignals::instance().reset();
     }
     catch (...)

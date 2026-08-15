@@ -1,0 +1,86 @@
+{
+  "groups": [
+    {
+      "group": "はじめに",
+      "pages": [
+        "ja/products/managed-postgres/overview",
+        "ja/products/managed-postgres/quickstart"
+      ]
+    },
+    {
+      "group": "機能",
+      "pages": [
+        "ja/products/managed-postgres/connection",
+        "ja/products/managed-postgres/settings",
+        "ja/products/managed-postgres/scaling",
+        "ja/products/managed-postgres/security",
+        "ja/products/managed-postgres/rbac",
+        "ja/products/managed-postgres/local-development",
+        "ja/products/managed-postgres/high-availability",
+        "ja/products/managed-postgres/read-replicas",
+        "ja/products/managed-postgres/backup-and-restore",
+        "ja/products/managed-postgres/extensions",
+        {
+          "group": "pg_clickhouse",
+          "pages": [
+            "ja/products/managed-postgres/extensions/pg_clickhouse/reference",
+            "ja/products/managed-postgres/extensions/pg_clickhouse/tutorial"
+          ],
+          "root": "ja/products/managed-postgres/extensions/pg_clickhouse/introduction"
+        },
+        "ja/products/managed-postgres/upgrades",
+        "ja/products/managed-postgres/openapi",
+        "ja/products/managed-postgres/terraform"
+      ]
+    },
+    {
+      "group": "ベンチマーク",
+      "pages": [
+        "ja/products/managed-postgres/benchmarks"
+      ]
+    },
+    {
+      "group": "料金",
+      "pages": [
+        "ja/products/managed-postgres/pricing"
+      ]
+    },
+    {
+      "group": "ClickHouse Integration",
+      "pages": [
+        "ja/products/managed-postgres/clickhouse-integration"
+      ]
+    },
+    {
+      "group": "移行",
+      "pages": [
+        "ja/products/managed-postgres/migrations/overview",
+        "ja/products/managed-postgres/migrations/pg_dump-pg_restore",
+        "ja/products/managed-postgres/migrations/logical-replication",
+        "ja/products/managed-postgres/migrations/peerdb",
+        "ja/products/managed-postgres/migrations/clickpipes",
+        "ja/products/managed-postgres/migrations/data-validation",
+        "ja/products/managed-postgres/migrations/clickhouse-cloud",
+        "ja/products/managed-postgres/migrations/faq"
+      ]
+    },
+    {
+      "group": "監視",
+      "pages": [
+        "ja/products/managed-postgres/monitoring/overview",
+        "ja/products/managed-postgres/monitoring/dashboard",
+        "ja/products/managed-postgres/monitoring/metrics",
+        "ja/products/managed-postgres/monitoring/prometheus",
+        "ja/products/managed-postgres/monitoring/query-insights"
+      ]
+    },
+    {
+      "group": "よくある質問",
+      "pages": [
+        "ja/products/managed-postgres/faq"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-postgres.svg",
+  "item": "Managed Postgres"
+}

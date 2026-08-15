@@ -1,8 +1,8 @@
 ---
 slug: /use-cases/AI_ML/AIChat
-sidebarTitle: 'ClickHouse Cloud에서 ClickHouse Assistant chat 사용하기'
-title: 'ClickHouse Cloud에서 ClickHouse Assistant chat 사용하기'
-description: 'ClickHouse Cloud 콘솔에서 AI Chat 기능을 활성화하고 사용하는 방법 안내'
+sidebarTitle: 'ClickHouse Cloud에서 ClickHouse Assistant chat 사용'
+title: 'ClickHouse Cloud에서 ClickHouse Assistant chat 사용'
+description: 'ClickHouse Cloud 콘솔에서 AI Chat 기능을 활성화하고 사용하는 가이드'
 keywords: ['AI', 'ClickHouse Cloud', '채팅', 'SQL 콘솔', 'Agent', 'Docs AI']
 show_related_blogs: true
 doc_type: 'guide'
@@ -10,105 +10,83 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-> 이 가이드는 ClickHouse Cloud Console에서 AI Chat 기능을 활성화하고 사용하는 방법을 설명합니다.
+> 이 가이드는 ClickHouse Cloud 콘솔에서 AI Chat 기능을 사용 설정하고 사용하는 방법을 설명합니다.
 
 <Steps>
-  <Step>
-    ## 사전 요구 사항
-
-    1. AI 기능이 활성화된 ClickHouse Cloud 조직에 대한 액세스 권한이 있어야 합니다(사용할 수 없으면 조직 관리자 또는 지원팀에 문의하십시오).
+  <Step title="사전 요구 사항" id="prerequisites">
+    1. AI 기능이 활성화된 ClickHouse Cloud 조직에 대한 액세스 권한이 있어야 합니다(사용할 수 없는 경우 조직 관리자 또는 지원팀에 문의하십시오).
   </Step>
 
-  <Step>
-    ## AI Chat 패널 열기
-
+  <Step title="AI Chat 패널 열기" id="open-panel">
     1. ClickHouse Cloud 서비스로 이동합니다.
-    2. 왼쪽 사이드바에서 &quot;ClickHouse Assistant&quot;라고 표시된 반짝이 아이콘을 클릭합니다.
-    3. (단축키) <kbd>⌘</kbd> + <kbd>&#39;</kbd> (macOS) 또는 <kbd>Ctrl</kbd> + <kbd>&#39;</kbd> (Linux/Windows)를 눌러 패널 열기/닫기를 전환합니다.
+    2. 왼쪽 사이드바에서 “ClickHouse Assistant”라고 표시된 반짝이 아이콘을 클릭합니다.
+    3. (단축키) <kbd>⌘</kbd> + <kbd>&#39;</kbd> (macOS) 또는 <kbd>Ctrl</kbd> + <kbd>&#39;</kbd> (Linux/Windows)를 눌러 패널을 열거나 닫습니다.
 
     <Image img="/images/use-cases/AI_ML/AIChat/1_open_chat.webp" alt="AI Chat 플라이아웃 열기" size="md" />
   </Step>
 
-  <Step>
-    ## 데이터 사용 동의 수락(최초 실행 시)
+  <Step title="데이터 사용 동의 수락(최초 실행 시)" id="consent">
+    1. 처음 사용할 때 데이터 처리 방식과 타사 LLM 서브프로세서에 대한 설명이 포함된 동의 대화상자가 표시됩니다.
+    2. 계속하려면 내용을 검토한 뒤 동의하십시오. 거부하면 패널이 열리지 않습니다.
 
-    1. 처음 사용할 때 데이터 처리 방식과 제3자 LLM 하위 처리업체를 설명하는 동의 대화 상자가 표시됩니다.
-    2. 계속하려면 내용을 검토하고 동의하십시오. 거부하면 패널이 열리지 않습니다.
-
-    <Image img="/images/use-cases/AI_ML/AIChat/2_consent.webp" alt="동의 대화 상자" size="md" />
+    <Image img="/images/use-cases/AI_ML/AIChat/2_consent.webp" alt="동의 대화상자" size="md" />
   </Step>
 
-  <Step>
-    ## 채팅 모드 선택
-
+  <Step title="채팅 모드 선택" id="modes">
     AI Chat는 현재 다음 모드를 지원합니다:
 
-    * **Agent**: 스키마와 메타데이터를 바탕으로 여러 단계에 걸쳐 추론합니다(서비스가 활성 상태여야 합니다).
-    * **Docs AI (Ask)**: 공식 ClickHouse 문서와 모범 사례 참고 자료를 기반으로 한 집중형 질의응답입니다.
+    * **Agent**: schema와 metadata를 기반으로 여러 단계를 거쳐 추론합니다(서비스가 실행 중이어야 함).
+    * **Docs AI (Ask)**: 공식 ClickHouse 문서와 모범 사례 참고 자료를 기반으로 질문에 답합니다.
 
-    전환하려면 플라이아웃 왼쪽 하단의 모드 셀렉터를 사용합니다.
+    전환하려면 플라이아웃 왼쪽 하단의 모드 셀렉터를 사용하십시오.
 
     <Image img="/images/use-cases/AI_ML/AIChat/3_modes.webp" alt="모드 선택" size="sm" />
   </Step>
 
-  <Step>
-    ## 메시지 작성 및 전송
-
-    1. 질문을 입력합니다(예: &quot;사용자별 일일 이벤트를 집계하는 materialized view를 생성해 주세요&quot;).
-    2. 전송하려면 <kbd>Enter</kbd>를 누릅니다(줄바꿈하려면 <kbd>Shift</kbd> + <kbd>Enter</kbd>를 사용).
-    3. 모델이 처리 중일 때는 &quot;Stop&quot;을 클릭하여 중단할 수 있습니다.
+  <Step title="메시지 작성 및 전송" id="compose">
+    1. 질문을 입력합니다(예: “사용자별 일일 이벤트를 집계하는 materialized view 생성”).
+    2. <kbd>Enter</kbd>를 눌러 전송합니다(줄바꿈은 <kbd>Shift</kbd> + <kbd>Enter</kbd>를 사용).
+    3. 모델이 처리 중일 때는 “Stop”을 클릭하여 중단할 수 있습니다.
   </Step>
 
-  <Step>
-    ## &quot;Agent&quot;의 thinking 단계 이해
-
-    Agent 모드에서는 확장 가능한 중간 &quot;thinking&quot; 단계 또는 계획 단계를 볼 수 있습니다. 이를 통해 어시스턴트가 답변을 구성하는 방식을 투명하게 확인할 수 있습니다. 필요에 따라 접거나 펼치십시오.
+  <Step title="“Agent” thinking 단계 이해" id="thinking-steps">
+    Agent 모드에서는 펼쳐서 볼 수 있는 중간 “thinking” 단계 또는 계획 단계를 볼 수 있습니다. 이를 통해 어시스턴트가 답변을 구성하는 과정을 확인할 수 있습니다. 필요에 따라 접거나 펼치십시오.
 
     <Image img="/images/use-cases/AI_ML/AIChat/4_thinking.webp" alt="Thinking 단계" size="md" />
   </Step>
 
-  <Step>
-    ## 새 채팅 시작
-
-    &quot;New Chat&quot; 버튼을 클릭하면 컨텍스트를 지우고 새 세션을 시작할 수 있습니다.
+  <Step title="새 채팅 시작" id="new-chats">
+    “New Chat” 버튼을 클릭하여 기존 맥락을 지우고 새 세션을 시작합니다.
   </Step>
 
-  <Step>
-    ## 채팅 이력 보기
-
-    1. 아래쪽 섹션에 최근 채팅이 표시됩니다.
+  <Step title="채팅 이력 보기" id="history">
+    1. 아래 섹션에 최근 채팅이 표시됩니다.
     2. 이전 채팅을 선택하여 해당 메시지를 불러옵니다.
-    3. 휴지통 아이콘을 사용해 대화를 삭제합니다.
+    3. 휴지통 아이콘을 사용하여 대화를 삭제합니다.
 
     <Image img="/images/use-cases/AI_ML/AIChat/5_history.webp" alt="채팅 이력 목록" size="md" />
   </Step>
 
-  <Step>
-    ## 생성된 SQL 사용
-
-    어시스턴트가 SQL을 반환하면:
+  <Step title="생성된 SQL 작업" id="sql-actions">
+    어시스턴트가 SQL을 반환하면 다음을 수행하십시오:
 
     * 정확성을 검토합니다.
-    * &quot;Open in editor&quot;를 클릭하여 쿼리를 새 SQL 탭에 불러옵니다.
-    * Console에서 수정하고 실행합니다.
+    * “Open in editor”를 클릭하여 쿼리를 새 SQL 탭에 불러옵니다.
+    * 콘솔 내에서 수정하고 실행합니다.
 
     <Image img="/images/use-cases/AI_ML/AIChat/6_result_actions.webp" alt="결과 작업" size="md" />
 
-    <Image img="/images/use-cases/AI_ML/AIChat/7_open_in_editor.webp" alt="생성된 쿼리를 편집기에서 열기" size="md" />
+    <Image img="/images/use-cases/AI_ML/AIChat/7_open_in_editor.webp" alt="생성된 쿼리를 editor에서 열기" size="md" />
   </Step>
 
-  <Step>
-    ## 응답 중지 또는 중단
+  <Step title="응답 중지 또는 중단" id="interrupt">
+    응답이 너무 오래 걸리거나 의도와 다른 방향으로 흘러가는 경우:
 
-    응답이 너무 오래 걸리거나 엉뚱한 방향으로 진행되는 경우:
-
-    1. &quot;Stop&quot; 버튼을 클릭합니다(처리 중에 표시됨).
-    2. 메시지가 중단된 것으로 표시되며, 프롬프트를 다듬어 다시 보낼 수 있습니다.
+    1. “Stop” 버튼을 클릭합니다(처리 중일 때 표시됨).
+    2. 메시지는 중단된 것으로 표시되며, 프롬프트를 다듬어 다시 보낼 수 있습니다.
   </Step>
 
-  <Step>
-    ## 키보드 단축키
-
+  <Step title="키보드 단축키" id="shortcuts">
     | 작업         | 단축키                  |
     | ---------- | -------------------- |
     | AI Chat 열기 | `⌘ + '` / `Ctrl + '` |

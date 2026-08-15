@@ -10,6 +10,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -412,6 +413,14 @@ public:
         }
     };
 
+    /// SQL JSON functions rely on the default Nullable/LowCardinality implementation, but for a
+    /// Dynamic argument that stripping has not happened yet at return-type declaration, so do it here
+    /// (top-level Nullable only, matching what executeImpl receives).
+    static DataTypePtr normalizeDynamicPathArgument(const DataTypePtr & type)
+    {
+        return removeNullable(recursiveRemoveLowCardinality(type));
+    }
+
     /// Build a return type that mirrors the path argument structure,
     /// replacing each String leaf with `leaf_type`.
     static DataTypePtr buildReturnType(const DataTypePtr & path_type, const DataTypePtr & leaf_type)
@@ -555,8 +564,12 @@ public:
 
     static DataTypePtr getReturnTypeForDynamic(const DataTypes & arguments, bool)
     {
-        if (arguments.size() >= 2 && FunctionSQLJSONHelpers::isMultiPathType(arguments[1]))
-            return FunctionSQLJSONHelpers::buildReturnType(arguments[1], std::make_shared<DataTypeUInt8>());
+        if (arguments.size() >= 2)
+        {
+            auto path = FunctionSQLJSONHelpers::normalizeDynamicPathArgument(arguments[1]);
+            if (FunctionSQLJSONHelpers::isMultiPathType(path))
+                return FunctionSQLJSONHelpers::buildReturnType(path, std::make_shared<DataTypeUInt8>());
+        }
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -632,12 +645,16 @@ public:
 
     static DataTypePtr getReturnTypeForDynamic(const DataTypes & arguments, bool function_json_value_return_type_allow_nullable)
     {
-        if (arguments.size() >= 2 && FunctionSQLJSONHelpers::isMultiPathType(arguments[1]))
+        if (arguments.size() >= 2)
         {
-            DataTypePtr leaf_type = std::make_shared<DataTypeString>();
-            if (function_json_value_return_type_allow_nullable)
-                leaf_type = makeNullable(leaf_type);
-            return FunctionSQLJSONHelpers::buildReturnType(arguments[1], leaf_type);
+            auto path = FunctionSQLJSONHelpers::normalizeDynamicPathArgument(arguments[1]);
+            if (FunctionSQLJSONHelpers::isMultiPathType(path))
+            {
+                DataTypePtr leaf_type = std::make_shared<DataTypeString>();
+                if (function_json_value_return_type_allow_nullable)
+                    leaf_type = makeNullable(leaf_type);
+                return FunctionSQLJSONHelpers::buildReturnType(path, leaf_type);
+            }
         }
 
         return std::make_shared<DataTypeString>();
@@ -732,8 +749,12 @@ public:
 
     static DataTypePtr getReturnTypeForDynamic(const DataTypes & arguments, bool)
     {
-        if (arguments.size() >= 2 && FunctionSQLJSONHelpers::isMultiPathType(arguments[1]))
-            return FunctionSQLJSONHelpers::buildReturnType(arguments[1], std::make_shared<DataTypeString>());
+        if (arguments.size() >= 2)
+        {
+            auto path = FunctionSQLJSONHelpers::normalizeDynamicPathArgument(arguments[1]);
+            if (FunctionSQLJSONHelpers::isMultiPathType(path))
+                return FunctionSQLJSONHelpers::buildReturnType(path, std::make_shared<DataTypeString>());
+        }
 
         return std::make_shared<DataTypeString>();
     }

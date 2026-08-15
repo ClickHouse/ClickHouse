@@ -4,13 +4,41 @@ title: 'Visão geral dos guias de implantação'
 description: 'Página inicial da seção de implantação e escalonamento'
 keywords: ['guias de implantação', 'escalonamento', 'implantação de cluster', 'replicação', 'tolerância a falhas']
 doc_type: 'landing-page'
+mode: wide
 ---
 
-Esta seção abrange os seguintes tópicos:
+Esta seção aborda os seguintes tópicos:
 
-| Tópico                                                                                                |
-| ----------------------------------------------------------------------------------------------------- |
-| [Introdução](/pt-BR/guides/oss/deployment-and-scaling/terminology)                                          |
-| [Escalonamento horizontal](/pt-BR/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)            |
-| [Replicação para tolerância a falhas](/pt-BR/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas) |
-| [Implantação de cluster](/pt-BR/guides/oss/deployment-and-scaling/examples/2-shards-2-replicas)             |
+<CardGroup cols={2}>
+  <Card title="Introdução" icon="book-open" href="/pt-BR/guides/oss/deployment-and-scaling/terminology">
+    Terminologia usada para descrever as implantações do ClickHouse.
+  </Card>
+
+  <Card title="Shards e réplicas de tabela" icon="table-cells-large" href="/pt-BR/guides/oss/deployment-and-scaling/shards">
+    Saiba o que são shards e réplicas de tabela e para que são usados.
+  </Card>
+
+  <Card title="Rebalanceamento de dados" icon="scale-balanced" href="/pt-BR/guides/oss/deployment-and-scaling/scaling-clusters">
+    Abordagens para rebalancear dados ao escalar um cluster.
+  </Card>
+
+  <Card title="Separação de armazenamento e computação" icon="hard-drive" href="/pt-BR/guides/oss/deployment-and-scaling/separation-storage-compute">
+    Use o ClickHouse com armazenamento de objetos para separar o armazenamento da computação.
+  </Card>
+
+  <Card title="Descoberta de cluster" icon="magnifying-glass" href="/pt-BR/guides/oss/deployment-and-scaling/cluster-discovery">
+    Permita que os nós sejam descobertos e registrados automaticamente com o ClickHouse Keeper.
+  </Card>
+
+  <Card title="Keeper" icon="key" href="/pt-BR/guides/oss/deployment-and-scaling/keeper/index">
+    Configure o ClickHouse Keeper, o sistema de coordenação para replicação e DDL distribuído.
+  </Card>
+
+  <Card title="Monitoramento" icon="chart-line" href="/pt-BR/guides/oss/deployment-and-scaling/monitoring/monitoring">
+    Monitore o ClickHouse e rastreie-o com OpenTelemetry.
+  </Card>
+
+  <Card title="Exemplos" icon="server" href="/pt-BR/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas">
+    Implantações de exemplo: replicação para tolerância a falhas, expansão horizontal e uma implantação de cluster combinada.
+  </Card>
+</CardGroup>

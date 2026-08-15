@@ -14,6 +14,7 @@
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 #include <Common/setThreadName.h>
+#include <Common/StackTraceServiceSignal.h>
 #include <csignal>
 
 #if defined(OS_DARWIN)
@@ -115,19 +116,17 @@ namespace
         stack_trace.emplace();
 #else
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
-        asynchronous_stack_unwinding = true;
-        if (0 == sigsetjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1))
-        {
-            stack_trace.emplace(signal_context);
-        }
-        else
-        {
+        /// The ucontext StackTrace constructor recovers internally from a fault while unwinding
+        /// (e.g. off a fiber stack) and yields an empty trace in that case.
+        stack_trace.emplace(signal_context);
+        if (stack_trace->getSize() == 0)
             ProfileEvents::incrementSignalSafe(ProfileEvents::QueryProfilerErrors);
-        }
-        asynchronous_stack_unwinding = false;
 #endif
 
-        if (stack_trace)
+        /// Skip empty captures: StackTrace(ucontext) recovers from an unwind fault by returning a
+        /// zero-frame trace (already counted as QueryProfilerErrors above). Sending it would add a
+        /// meaningless empty row to system.trace_log and inflate the sample count.
+        if (stack_trace && stack_trace->getSize() != 0)
             TraceSender::send(trace_type, *stack_trace, {});
 
         ProfileEvents::incrementSignalSafe(ProfileEvents::QueryProfilerRuns);
@@ -146,7 +145,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-#if defined(SIGEV_THREAD_ID)
+#if defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
 Timer::Timer()
     : log(getLogger("Timer"))
 {}
@@ -476,7 +475,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
     [[maybe_unused]] UInt64 thread_id, [[maybe_unused]] int clock_type, [[maybe_unused]] UInt64 period, [[maybe_unused]] int pause_signal_)
     : log(getLogger("QueryProfiler")), pause_signal(pause_signal_)
 {
-#if defined(SIGEV_THREAD_ID) || defined(OS_DARWIN)
+#if defined(QUERY_PROFILER_SUPPORTED)
     /// Under TSan we use frame-pointer-based unwinding (via abseil) which does not
     /// call dl_iterate_phdr in the signal handler, so the PHDR cache is not needed for
     /// stack capture. Symbolization happens later in a normal thread context.
@@ -500,15 +499,16 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
     if (sigaddset(&sa.sa_mask, pause_signal))
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to add signal to mask for query profiler");
 
-#if defined(OS_DARWIN)
-    /// On macOS the Real (SIGUSR1) and CPU (SIGUSR2) profilers and system.stack_trace (SIGVTALRM) all
-    /// share one thread-local stack-unwinding recovery (the asynchronous_stack_unwinding flag +
-    /// sigjmp_buf). Block all of them while a handler runs so they cannot nest and clobber that buffer -
-    /// a corrupted siglongjmp jumps to a garbage address and faults. (On Linux the per-thread POSIX
-    /// timers deliver only to the armed thread and stack_trace uses no shared recovery, so this is not
-    /// needed there.) SIGVTALRM is StorageSystemStackTrace's STACK_TRACE_SERVICE_SIGNAL on macOS.
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// The Real (SIGUSR1) and CPU (SIGUSR2) profilers, system.stack_trace (STACK_TRACE_SERVICE_SIGNAL)
+    /// and the debug SIGTSTP stack dumper all capture through StackTrace(ucontext) and share one
+    /// thread-local stack-unwinding recovery (the asynchronous_stack_unwinding flag + sigjmp_buf in
+    /// StackTrace). Block all of them while a handler runs so none can nest and clobber that buffer - a
+    /// corrupted siglongjmp jumps to a garbage address, and a cleared flag turns the next unwind fault
+    /// back into a fatal crash. SIGTSTP is the only one of these that returns to the interrupted handler;
+    /// the fatal signals do not.
     if (sigaddset(&sa.sa_mask, QueryProfilerReal::PAUSE_SIGNAL) || sigaddset(&sa.sa_mask, QueryProfilerCPU::PAUSE_SIGNAL)
-        || sigaddset(&sa.sa_mask, SIGVTALRM))
+        || sigaddset(&sa.sa_mask, STACK_TRACE_SERVICE_SIGNAL) || sigaddset(&sa.sa_mask, SIGTSTP))
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to add profiler signals to mask for query profiler");
 #endif
 #pragma clang diagnostic pop
@@ -518,7 +518,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
 
     try
     {
-#if defined(SIGEV_THREAD_ID)
+#if defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
         timer.createIfNecessary(thread_id, clock_type, pause_signal);
         timer.set(period);
 #else
@@ -529,7 +529,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
     }
     catch (...)
     {
-#if defined(SIGEV_THREAD_ID)
+#if defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
         timer.cleanup();
 #else
         ProfilerSampler::instance().removeThread(pthread_self(), pause_signal);
@@ -545,7 +545,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
 template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::setPeriod([[maybe_unused]] UInt64 period_)
 {
-#if defined(SIGEV_THREAD_ID)
+#if defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
     timer.set(period_);
 #elif defined(OS_DARWIN)
     ProfilerSampler::instance().setThreadPeriod(pthread_self(), pause_signal, period_);
@@ -570,7 +570,7 @@ QueryProfilerBase<ProfilerImpl>::~QueryProfilerBase()
 template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::cleanup()
 {
-#if defined(SIGEV_THREAD_ID)
+#if defined(SIGEV_THREAD_ID) && defined(OS_HAS_SIGNAL_HANDLERS)
     timer.stop();
     signal_handler_disarmed = true;
 #elif defined(OS_DARWIN)

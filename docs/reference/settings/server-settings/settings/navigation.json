@@ -1,8 +1,8 @@
 {
   "group": "Server Settings",
-  "root": "reference/settings/server-settings/settings",
   "directory": "none",
   "pages": [
+    "reference/settings/server-settings/settings",
     "reference/settings/server-settings/settings/access-control",
     "reference/settings/server-settings/settings/aggregate-function",
     "reference/settings/server-settings/settings/allow",
