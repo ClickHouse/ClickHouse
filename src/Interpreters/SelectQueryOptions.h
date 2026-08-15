@@ -99,6 +99,8 @@ struct SelectQueryOptions
         out.to_stage = QueryProcessingStage::Complete;
         out.is_local_shard_plan = false;
         out.is_local_plan_for_distributed_query = false;
+        /// A subquery names its own tables, so its column list is the user's own and is checked.
+        out.ignore_table_access_check = false;
         ++out.subquery_depth;
         out.is_subquery = true;
         return out;

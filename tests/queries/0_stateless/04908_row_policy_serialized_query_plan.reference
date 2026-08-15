@@ -11,6 +11,9 @@ distinct sqp=1	1
 distinct sqp=1	2
 distinct sqp=1	3
 distinct sqp=1	4
+subq policy local	[0,3,6,9]
+subq policy sqp=1	[0,3,6,9]
+subq policy sqp=0	[0,3,6,9]
 final after=1 sqp=1	1	2
 final after=1 sqp=1	3	3
 final after=1 sqp=0	1	2

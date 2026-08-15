@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Tags: distributed
+# Tags: distributed, no-fasttest
 # A policy on a column the query does not select widens the read past the columns the user asked
 # for. Only a cluster with a <secret> makes the receiving node run as the initial user rather than
-# as the interserver default, so the grants of that user reach the re-planned read at all.
+# as the interserver default, so the grants of that user reach the re-planned read at all. That
+# cluster requires SSL, which the Fast test build does not have, hence no-fasttest.
+# It also has two shards pointing at the same server, so the value arm aggregates per shard: it then
+# asserts the policy alone rather than also depending on how many shards the cluster has.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -32,17 +35,20 @@ CREATE USER ${USER_NONE} IDENTIFIED WITH plaintext_password BY '';
 GRANT SELECT ON ${CLICKHOUSE_DATABASE}.rp_g_dist TO ${USER_NONE};
 "
 
-# Prints the summed value, or just the error name, so that an added grant shows up as a value and
-# a missing one as ACCESS_DENIED.
+# Prints one `shard<n>=<sum>` token per shard, or just the error name once, so that an added grant
+# shows up as a value and a missing one as ACCESS_DENIED. A refusal is reported once per shard and
+# how many shards report it before the query aborts is not deterministic, so deduplicate.
 run_as()
 {
     ${CLICKHOUSE_CLIENT} --user "$1" --password '' \
-        -q "SELECT sum(x) FROM rp_g_dist SETTINGS prefer_localhost_replica = 0, enable_analyzer = 1, serialize_query_plan = $2" 2>&1 \
-        | grep -m1 -oE '^[0-9]+|ACCESS_DENIED'
+        -q "SELECT 'shard' || toString(_shard_num) || '=' || toString(sum(x)) FROM rp_g_dist
+            GROUP BY _shard_num ORDER BY _shard_num
+            SETTINGS prefer_localhost_replica = 0, enable_analyzer = 1, serialize_query_plan = $2" 2>&1 \
+        | grep -oE '^shard[0-9]+=[0-9]+|ACCESS_DENIED' | awk '!seen[$0]++ {printf "%s%s", sep, $0; sep=" "}'
 }
 
 # Granted only the selected column, while the policy reads another one: both settings must return
-# the policy-filtered value. Returning 45 would mean the policy was skipped.
+# the policy-filtered value per shard. Returning 45 per shard would mean the policy was skipped.
 for sqp in 0 1; do
     echo "granted x, policy on y, sqp=${sqp} $(run_as "${USER_X}" "${sqp}")"
 done

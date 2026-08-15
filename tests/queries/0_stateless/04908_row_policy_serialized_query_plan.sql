@@ -44,6 +44,22 @@ DROP ROW POLICY rp_dist_policy ON rp_dist;
 -- Read limits still apply to the re-planned read.
 SELECT count() FROM rp_dist SETTINGS serialize_query_plan = 1, max_rows_to_read = 1; -- { serverError TOO_MANY_ROWS }
 
+-- A policy containing an IN subquery registers a set while its filter is built. The re-planned read
+-- stops at FetchColumns, before the planner would add the step that builds that set, so the set has
+-- to be built here or execution reaches function `in` with a not-ready set.
+-- The subquery reads system.numbers: a policy is stored as text and re-resolved on the executing
+-- node against its own default database, so an unqualified per-test table would not resolve there,
+-- and the database name is not expressible in a .sql test.
+-- rp_leaf_policy also applies (policies conjoin), so drop it to isolate this arm.
+DROP ROW POLICY rp_leaf_policy ON rp_leaf;
+DROP ROW POLICY IF EXISTS rp_sub_policy ON rp_leaf;
+CREATE ROW POLICY rp_sub_policy ON rp_leaf FOR SELECT USING x IN (SELECT number * 3 FROM system.numbers LIMIT 4) TO ALL;
+SELECT 'subq policy local', arraySort(groupArray(x)) FROM rp_leaf;
+SELECT 'subq policy sqp=1', arraySort(groupArray(x)) FROM rp_dist SETTINGS serialize_query_plan = 1;
+SELECT 'subq policy sqp=0', arraySort(groupArray(x)) FROM rp_dist SETTINGS serialize_query_plan = 0;
+DROP ROW POLICY rp_sub_policy ON rp_leaf;
+CREATE ROW POLICY rp_leaf_policy ON rp_leaf FOR SELECT USING y < 5 TO ALL;
+
 -- A policy on a non-sorting-key column interacts with FINAL, so for each value of
 -- apply_row_policy_after_final the serialized read must agree with the non-serialized one.
 CREATE TABLE rp_final (k UInt32, v UInt32, ver UInt32) ENGINE = ReplacingMergeTree(ver) ORDER BY k;
