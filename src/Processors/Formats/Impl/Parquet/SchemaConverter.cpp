@@ -88,7 +88,11 @@ void SchemaConverter::prepareForReading()
             continue;
         size_t idx = col.idx_in_output_block.value();
         if (found_columns.at(idx))
-            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "There are multiple columns with name `{}` in the parquet file", sample_block->getByPosition(idx).name);
+            throw Exception(
+                ErrorCodes::DUPLICATE_COLUMN,
+                "There are multiple columns with name `{}` in the parquet file. Note that a nested element is addressed by "
+                "its flattened path, so it collides with a top-level column that has a dot in its name",
+                sample_block->getByPosition(idx).name);
         found_columns[idx] = true;
 
         for (size_t i = col.primitive_start; i < col.primitive_end; ++i)
