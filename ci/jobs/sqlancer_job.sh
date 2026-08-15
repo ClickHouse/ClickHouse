@@ -484,12 +484,11 @@ SERVER_ERROR_REPORT="$FAILURES_PATH/server-fatal.log"
 SERVER_ERROR_FINGERPRINT=""
 if server_error_line="$(scan_server_errors \
         "$OUTPUT_PATH/clickhouse-server.log" "$OUTPUT_PATH/clickhouse-server.log.err" "$SERVER_ERROR_REPORT")"; then
-    # Name the row after the *shape* of the report (addresses, pids and sizes
-    # stripped) rather than "sanitizer report": that name is the CI DB test name
-    # and the alert fingerprint, so two different sanitizer bugs must not collapse
-    # into one - and the same one must not re-alert every night.
-    SERVER_ERROR_FINGERPRINT="Sanitizer/Fatal: $(printf '%s' "$server_error_line" \
-        | sed -e 's/0x[0-9a-fA-F]*/ADDR/g' -e 's/[0-9][0-9]*/N/g' | cut -c1-160)"
+    # Name the row after the report's identity - kind plus the frame it happened
+    # in - rather than "sanitizer report": that name is the CI DB test name and the
+    # alert fingerprint, so two different sanitizer bugs must not collapse into one
+    # row, and the same one must not re-alert every night.
+    SERVER_ERROR_FINGERPRINT="Sanitizer/Fatal: $(server_error_signature "$SERVER_ERROR_REPORT")"
     add_test_result "$SERVER_ERROR_FINGERPRINT" FAIL "$server_error_line" "$SERVER_ERROR_REPORT"
     echo " - server log finding: $server_error_line"
 fi
