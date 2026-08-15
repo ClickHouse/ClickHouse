@@ -1,3 +1,4 @@
+#include <future>
 #include <thread>
 
 #include <gtest/gtest.h>
@@ -273,6 +274,44 @@ TEST(BorrowedThreadGroupLifetime, AsyncWorkFromBorrowedScopeChargesOwningQueryAc
         EXPECT_FALSE(root_weak.expired())
             << "the async-callback group must keep the owning group it charges alive";
     });
+    t.join();
+}
+
+TEST(BorrowedThreadGroupLifetime, AsyncWorkAfterQueryContextExpiresKeepsUntrackedMemoryLimit)
+{
+    std::thread t(
+        [&]
+        {
+            ThreadStatus ts;
+            auto context = Context::createCopy(getContext().context);
+            context->makeQueryContext();
+            context->setSetting("max_untracked_memory", UInt64(12345));
+
+            auto pool = makeSingleThreadPool();
+            auto root = std::make_shared<ThreadGroup>(context, 0);
+            auto borrowed = ThreadGroup::createForFlushAsyncInsertQueue(context, root);
+
+            std::promise<void> start_callback;
+            auto start = start_callback.get_future().share();
+
+            CurrentThread::attachToGroupIfDetached(borrowed);
+            auto runner = threadPoolCallbackRunnerUnsafe<Int64>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+            auto future = runner(
+                [start]
+                {
+                    start.wait();
+                    return CurrentThread::get().untracked_memory_limit;
+                },
+                Priority{});
+            CurrentThread::detachFromGroupIfNotDetached();
+
+            /// The companion only has a weak context reference; make its callback attach after it expires.
+            context.reset();
+            start_callback.set_value();
+
+            EXPECT_EQ(future.get(), 12345) << "late async work must not inherit a stale pool-thread untracked-memory threshold";
+            pool->wait();
+        });
     t.join();
 }
 

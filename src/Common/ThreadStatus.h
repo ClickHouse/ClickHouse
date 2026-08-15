@@ -124,6 +124,10 @@ public:
     /// trackers (see `ProcessListForUser::lingering_query_groups`).
     bool hasLiveAsyncCallbackCompanions() const;
 
+    /// The per-thread untracked-memory batching threshold captured for an async-callback companion.
+    /// A negative value means this is not a companion group.
+    Int64 getAsyncCallbackUntrackedMemoryLimit() const;
+
     /// The first thread created this thread group
     const UInt64 master_thread_id;
 
@@ -238,6 +242,10 @@ private:
     /// the rest of the chain is held for lifetime only (`performance_counters` are never re-pointed,
     /// but `ProcessList::insert` may re-point `memory_tracker` - see `getAsyncCallbackGroup`).
     size_t companion_counted_groups = 0;
+
+    /// Captured while the query context is still available. A companion may outlive that context,
+    /// but its allocations must retain the query's batching behaviour.
+    Int64 async_callback_untracked_memory_limit = -1;
 
     /// Number of live async-callback companions whose accounting chain includes this group.
     std::atomic<size_t> live_async_callback_companions = 0;

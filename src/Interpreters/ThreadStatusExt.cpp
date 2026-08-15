@@ -140,6 +140,11 @@ bool ThreadGroup::hasLiveAsyncCallbackCompanions() const
     return live_async_callback_companions.load() != 0;
 }
 
+Int64 ThreadGroup::getAsyncCallbackUntrackedMemoryLimit() const
+{
+    return async_callback_untracked_memory_limit;
+}
+
 ThreadGroup::~ThreadGroup()
 {
     /// Only async-callback companions have an accounting chain.
@@ -273,6 +278,24 @@ ThreadGroup::ThreadGroup(
 {
     memory_tracker.setDescription("Async callback (borrowed scope)");
     memory_tracker.setParent(&companion_accounting_chain.front()->memory_tracker);
+
+    /// `query_context` is weak and can expire before this companion is attached on a pool thread.
+    /// Preserve the effective batching threshold now, while settings are still available; otherwise
+    /// sub-threshold allocations could escape the accounting chain retained by this companion.
+    if (auto query_context_ptr = query_context.lock())
+    {
+        const Settings & settings = query_context_ptr->getSettingsRef();
+        async_callback_untracked_memory_limit = settings[Setting::max_untracked_memory];
+        if (settings[Setting::memory_profiler_step]
+            && settings[Setting::memory_profiler_step] < static_cast<UInt64>(async_callback_untracked_memory_limit))
+            async_callback_untracked_memory_limit = settings[Setting::memory_profiler_step];
+    }
+    else
+    {
+        /// No settings can be recovered safely; flush every allocation rather than leaving a stale
+        /// pool-thread threshold in effect.
+        async_callback_untracked_memory_limit = 0;
+    }
 
     /// While this companion lives, none of the groups it charges may be considered gone: their user
     /// trackers must keep the query's limits (see `ProcessListForUser::lingering_query_groups`).
@@ -544,6 +567,11 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 
         applyGlobalSettings();
         applyQuerySettings();
+
+        /// Async companions can outlive their query context, in which case applyQuerySettings()
+        /// cannot refresh this pool thread's batching threshold.
+        if (const Int64 limit = thread_group->getAsyncCallbackUntrackedMemoryLimit(); limit >= 0)
+            untracked_memory_limit = limit;
 
         fiu_do_on(FailPoints::attach_to_group_failure,
         {
