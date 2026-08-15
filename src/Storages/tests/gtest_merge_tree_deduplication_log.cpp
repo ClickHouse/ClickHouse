@@ -2534,12 +2534,15 @@ TEST(MergeTreeDeduplicationLog, TruncatedNewestLogIsNotAppendedTo)
     }
 
     {
-        /// The load stops at the fragment and keeps the readable prefix. The still small
-        /// prefix does not trigger a rotation, so without the fix the truncated file is
-        /// reopened for append and this insert lands behind the fragment.
+        /// A load with deduplication disabled deliberately does not inspect log
+        /// contents, so it cannot know that the newest file is truncated. Re-enabling
+        /// must rotate rather than reopen that file for append; otherwise this insert
+        /// lands behind the fragment.
         auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
-        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 0, format_version, disk);
         log.load();
+
+        log.setDeduplicationWindowSize(2);
 
         EXPECT_TRUE(log.addPart({"block3"}, part("all_3_3_0")).empty());
         log.shutdown();

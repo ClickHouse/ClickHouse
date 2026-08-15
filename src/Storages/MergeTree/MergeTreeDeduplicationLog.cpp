@@ -695,7 +695,11 @@ bool MergeTreeDeduplicationLog::compact()
         /// pending the marker must stay active: it is what makes a restart discard the
         /// suspect history instead of replaying it. Clearing it is then tied to
         /// draining the pending set in prepareToWrite.
-        if (orphan_logs_pending_neutralization.empty())
+        /// A diverged history is fenced by this marker, independently of the
+        /// compaction attempt that just failed. Do not clear that fence merely
+        /// because this attempt's temporary files were cleaned up: only a successful
+        /// snapshot of the live state can make the persisted history trustworthy.
+        if (!history_diverged && orphan_logs_pending_neutralization.empty())
             clearCompactionMarker();
         return false;
     }
@@ -849,7 +853,12 @@ bool MergeTreeDeduplicationLog::markUnfinishedCompaction()
     /// marker reads as active - a restart would discard the history. The compaction is
     /// not going to start, so there is nothing to protect: clear it (or, if that fails
     /// too, keep failing operations closed until a retry clears it in prepareToWrite).
-    clearCompactionMarker();
+    /// `history_diverged` means this marker was already armed by a rollback whose
+    /// compensating records could not be persisted. A failed retry compaction must
+    /// preserve it until a successful compaction rewrites the history from the live
+    /// state; otherwise the next restart would replay the abandoned records.
+    if (!history_diverged)
+        clearCompactionMarker();
     return false;
 }
 
@@ -1096,6 +1105,7 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     /// cannot throw at a point where the insert could no longer be rolled back.
     size_t published = 0;
     size_t written = 0;
+    bool live_entries_counted = false;
     /// All ADD records below go to the log that is current right now: no rotation
     /// happens until the rotateAndDropIfNeeded() after the loop. Remember it so the
     /// rollback can undo their retention count even if that rotation (or a failed
@@ -1126,6 +1136,15 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
             ++existing_logs[current_log_number].effective_entries_count;
             ++written;
         }
+
+        /// `rotateAndDropIfNeeded` can remove log files. Mark this log as live before
+        /// that call, otherwise a forced rotation on a disk without append support
+        /// sees no live entries yet and drops the file which the newly published block
+        /// ids still reference.
+        for (size_t i = 0; i < published; ++i)
+            ++existing_logs.at(add_log_number).live_entries_count;
+        live_entries_counted = true;
+
         /// Rotate and drop old logs if needed
         rotateAndDropIfNeeded();
     }
@@ -1136,6 +1155,8 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         /// the map exactly - it never drops an unrelated, still-active block ID.
         for (size_t i = 0; i < published; ++i)
         {
+            if (live_entries_counted)
+                --existing_logs.at(add_log_number).live_entries_count;
             deduplication_map.erase(block_ids[i]);
             block_id_log_numbers.erase(block_ids[i]);
         }
@@ -1224,9 +1245,6 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     /// pops the oldest entries, so - unlike a plain insert, which allocates - it
     /// cannot throw here, where the durably recorded insert could no longer be rolled
     /// back.
-    for (const auto & block_id : block_ids)
-        ++existing_logs.at(block_id_log_numbers.at(block_id)).live_entries_count;
-
     deduplication_map.trimToMaxSize([&](const std::string & block_id, const auto &)
     {
         auto source_it = block_id_log_numbers.find(block_id);
@@ -1507,7 +1525,16 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
 
     /// Can happen in case we have unfinished log
     if (!current_writer)
-        current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+    {
+        /// `load` with a zero window deliberately does not inspect the log contents.
+        /// Therefore its newest file may end in an unreadable tail; appending behind
+        /// it would make every new record unreachable on the next restart. Start a
+        /// fresh file whenever re-enabling has to reopen a writer.
+        if (was_disabled)
+            rotate();
+        else
+            current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+    }
 }
 
 
