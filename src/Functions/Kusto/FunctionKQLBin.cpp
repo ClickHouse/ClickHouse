@@ -103,7 +103,10 @@ private:
 
         /// A datetime is rounded by an interval. The bin size may be a column, so the rounding
         /// cannot delegate to `toStartOfInterval`, which only takes a constant interval.
-        if (isDateOrDate32OrDateTimeOrDateTime64(value_type))
+        /// KQL datetime values are `DateTime64`. Do not accept ClickHouse's narrower date
+        /// carriers here: for example, `DateTime` cannot represent a bin before the Unix
+        /// epoch, whereas KQL datetime arithmetic can produce one.
+        if (isDateTime64(value_type))
         {
             if (!isInterval(bin_type))
                 throw Exception(

@@ -46,8 +46,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isDateTimeOrDateTime64(removeNullable(arguments[0])) || !isInterval(removeNullable(arguments[1]))
-            || !isDateTimeOrDateTime64(removeNullable(arguments[2])))
+        if (!isDateTime64(removeNullable(arguments[0])) || !isInterval(removeNullable(arguments[1]))
+            || !isDateTime64(removeNullable(arguments[2])))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} expects a datetime, a timespan and a datetime", getName());
         return makeNullable(removeNullable(arguments[0]));
     }
@@ -57,7 +57,7 @@ public:
         struct Operand
         {
             ColumnPtr full;
-            const IColumn * values;
+            const IColumn * values = nullptr;
             const NullMap * nulls = nullptr;
         };
         std::array<Operand, 3> operands;
@@ -206,7 +206,10 @@ private:
         /// below short-circuits it, so it must get the query regardless of the other types.
         const bool value_is_null_literal = isNothing(value_type) || isNothing(bin_type) || isNothing(fixed_type);
 
-        if (!value_is_null_literal && isDateOrDate32OrDateTimeOrDateTime64(value_type))
+        /// KQL datetime values are `DateTime64`. The other ClickHouse date carriers cannot
+        /// faithfully represent the full KQL result range: in particular, `DateTime` is an
+        /// unsigned epoch-second type, while a valid `bin_at` result may precede 1970.
+        if (!value_is_null_literal && isDateTime64(value_type))
         {
             if (!isInterval(bin_type))
                 throw Exception(
@@ -214,7 +217,7 @@ private:
                     "Function {} rounds a datetime by a timespan, but the second argument has type {}",
                     getName(),
                     arguments[1].type->getName());
-            if (!isDateOrDate32OrDateTimeOrDateTime64(fixed_type))
+            if (!isDateTime64(fixed_type))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Function {} rounds a datetime from a datetime fixed point, but the third argument has type {}",

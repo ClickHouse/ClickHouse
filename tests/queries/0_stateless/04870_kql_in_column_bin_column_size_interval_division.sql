@@ -40,6 +40,7 @@ print bin(datetime(null), 1h);
 
 print '-- bin_at still agrees with bin when the fixed point is the epoch --';
 print bin_at(datetime(2026-08-01 12:34:56), 1h, datetime(1970-01-01 00:00:00));
+print bin_at(datetime(1970-01-01 00:00:00), 2d, datetime(1970-01-02 00:00:00));
 
 print '-- timespan / timespan is a real --';
 print 15ms / 10ms;

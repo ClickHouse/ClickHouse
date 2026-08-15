@@ -21,6 +21,7 @@ b
 \N
 -- bin_at still agrees with bin when the fixed point is the epoch --
 2026-08-01 12:00:00.0000000
+1969-12-31 00:00:00.0000000
 -- timespan / timespan is a real --
 1.5
 2
