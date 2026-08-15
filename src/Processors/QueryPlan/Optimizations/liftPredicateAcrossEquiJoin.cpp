@@ -72,20 +72,32 @@ std::unordered_set<std::string> collectTargetAtoms(const QueryPlan::Node * targe
     return result;
 }
 
-bool atomSubstitutable(const ActionsDAG::Node * node, const SubstitutionMap & sub)
+/// Moving an atom to the other join side makes it execute on rows that the source-side
+/// predicate did not see. Restrict the pass to predicates that cannot raise an exception
+/// for those additional values. In particular, do not propagate arbitrary deterministic
+/// functions such as `intDiv` or casts.
+bool atomSafelySubstitutable(const ActionsDAG::Node * node, const SubstitutionMap & sub)
 {
-    if (!node || node->type == ActionsDAG::ActionType::ARRAY_JOIN)
+    if (!node || node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
         return false;
-    if (!node->isDeterministic())
+
+    const auto & name = node->function_base->getName();
+    const bool is_null_check = name == "isNull" || name == "isNotNull";
+    const bool is_comparison = name == "equals" || name == "notEquals"
+        || name == "less" || name == "greater" || name == "lessOrEquals" || name == "greaterOrEquals";
+    if ((!is_null_check && !is_comparison) || node->children.size() != (is_null_check ? 1 : 2))
         return false;
-    /// Stateful functions (aiEmbed, timeSeriesStoreTags) are deterministic but carry side effects or external calls
-    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->isStateful())
-        return false;
-    if (node->type == ActionsDAG::ActionType::INPUT)
-        return sub.contains(node->result_name);
+
     for (const auto * child : node->children)
-        if (!atomSubstitutable(child, sub))
+    {
+        if (child->type == ActionsDAG::ActionType::INPUT)
+        {
+            if (!sub.contains(child->result_name))
+                return false;
+        }
+        else if (child->type != ActionsDAG::ActionType::COLUMN)
             return false;
+    }
     return true;
 }
 
@@ -144,7 +156,7 @@ size_t tryLiftSide(
     ActionsDAG::NodeRawConstPtrs liftable;
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter_root))
     {
-        if (atomSubstitutable(atom, filter_level_sub))
+        if (atomSafelySubstitutable(atom, filter_level_sub))
             liftable.push_back(atom);
     }
     if (liftable.empty())

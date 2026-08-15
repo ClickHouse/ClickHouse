@@ -321,7 +321,7 @@ void optimizeTreeSecondPass(
                 convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
-    /// If join runtime filters were added re-run push down optimizations
+    /// If join runtime filters or lifted join predicates were added re-run push down optimizations
     /// to move newly added runtime filter as deep in the tree as possible
     if (join_runtime_filters_were_added)
     {
@@ -719,10 +719,10 @@ void optimizeTreeSecondPass(
         }
     }
 
-    /// Lazy materialization and the post-lazy `tryMergeFilters` pass replace `FilterStep`s
-    /// without carrying over the QCC key that `updateQueryConditionCache` set earlier in
-    /// this pass. Re-walk the plan so the surviving main-branch `FilterStep` gets the key.
-    if (optimization_settings.use_query_condition_cache && lazy_materialization_applied)
+    /// Join-filter pushdown and lazy materialization replace `FilterStep`s without carrying over
+    /// the QCC key that `updateQueryConditionCache` set earlier in this pass. Re-walk the plan
+    /// so the surviving main-branch `FilterStep` gets the key.
+    if (optimization_settings.use_query_condition_cache && (join_runtime_filters_were_added || lazy_materialization_applied))
     {
         Stack qcc_stack;
         qcc_stack.push_back({.node = &root});
