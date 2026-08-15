@@ -436,6 +436,40 @@ String ASTCreateQuery::getID(char delim) const
     return res;
 }
 
+void ASTCreateQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// These members select the CREATE form or add clauses, but do not appear in `children`.
+    /// `has_uuid_clause` and `attach_short_syntax` are intentionally excluded: they are parser-
+    /// normalization / internal state that formatting does not preserve (see their declarations).
+    hash_state.update(cluster);
+    hash_state.update(as_database);
+    hash_state.update(as_table);
+    hash_state.update(attach_from_path);
+    hash_state.update(attach_as_replicated.has_value());
+    if (attach_as_replicated.has_value())
+        hash_state.update(*attach_as_replicated);
+    hash_state.update(if_not_exists);
+    hash_state.update(is_ordinary_view);
+    hash_state.update(is_materialized_view);
+    hash_state.update(is_window_view);
+    hash_state.update(is_time_series_table);
+    hash_state.update(is_populate);
+    hash_state.update(is_create_empty);
+    hash_state.update(is_clone_as);
+    hash_state.update(replace_view);
+    hash_state.update(has_uuid);
+    hash_state.update(has_inner_uuid_clause);
+    hash_state.update(is_dictionary);
+    hash_state.update(is_watermark_strictly_ascending);
+    hash_state.update(is_watermark_ascending);
+    hash_state.update(is_watermark_bounded);
+    hash_state.update(allowed_lateness);
+    hash_state.update(replace_table);
+    hash_state.update(create_or_replace);
+    hash_state.update(has_attach_from_path);
+    ASTQueryWithTableAndOutput::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
 void ASTCreateQuery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "CreateQuery");

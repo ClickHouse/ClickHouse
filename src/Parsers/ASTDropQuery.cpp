@@ -29,6 +29,26 @@ String ASTDropQuery::getID(char delim) const
     throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
 }
 
+void ASTDropQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// These query modes and filters are not children. `no_ddl_lock` and `no_access_check` are
+    /// internal execution details, never represented in SQL, and deliberately stay out of the hash.
+    hash_state.update(static_cast<UInt8>(kind));
+    hash_state.update(cluster);
+    hash_state.update(if_exists);
+    hash_state.update(if_empty);
+    hash_state.update(has_all);
+    hash_state.update(has_tables);
+    hash_state.update(like);
+    hash_state.update(not_like);
+    hash_state.update(case_insensitive_like);
+    hash_state.update(is_dictionary);
+    hash_state.update(is_view);
+    hash_state.update(sync);
+    hash_state.update(permanently);
+    ASTQueryWithTableAndOutput::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
 ASTPtr ASTDropQuery::clone() const
 {
     auto res = make_intrusive<ASTDropQuery>(*this);

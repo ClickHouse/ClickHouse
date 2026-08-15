@@ -347,6 +347,36 @@ TEST(TreeHashCompleteness, MemberOnlyClausesAreSignificant)
     }
 }
 
+TEST(TreeHashCompleteness, CreateDropAndShowMembersAreSignificant)
+{
+    EXPECT_NE(hashOf("CREATE TABLE t (a UInt8) ENGINE = Memory"),
+              hashOf("CREATE TABLE IF NOT EXISTS t (a UInt8) ENGINE = Memory"));
+    EXPECT_NE(hashOf("CREATE TABLE dst AS db1.src"), hashOf("CREATE TABLE dst AS db2.src"));
+    EXPECT_NE(hashOf("CREATE VIEW v AS SELECT 1"), hashOf("CREATE OR REPLACE VIEW v AS SELECT 1"));
+
+    EXPECT_NE(hashOf("DROP TABLE t"), hashOf("DROP VIEW t"));
+    EXPECT_NE(hashOf("DETACH TABLE t"), hashOf("DETACH TABLE t PERMANENTLY"));
+    EXPECT_NE(hashOf("TRUNCATE TABLES FROM db LIKE 'x%'"), hashOf("TRUNCATE TABLES FROM db LIKE 'y%'"));
+
+    EXPECT_NE(hashOf("SHOW COLUMNS FROM t"), hashOf("SHOW COLUMNS FROM u"));
+    EXPECT_NE(hashOf("SHOW COLUMNS FROM t"), hashOf("SHOW COLUMNS FROM t LIMIT 1"));
+    EXPECT_NE(hashOf("SHOW INDEXES FROM t"), hashOf("SHOW COLUMNS FROM t"));
+    EXPECT_EQ(hashOfJSONRoundTrip("SHOW COLUMNS FROM t LIMIT 1"), hashOf("SHOW COLUMNS FROM t LIMIT 1"));
+
+    for (const std::string query : {
+             "CREATE OR REPLACE VIEW v AS SELECT 1",
+             "DETACH TABLE t PERMANENTLY",
+             "SHOW COLUMNS FROM t LIMIT 1",
+             "SHOW INDEXES FROM t WHERE name = 'i'",
+         })
+    {
+        ASTPtr ast = parse(query);
+        const auto hash = ast->getTreeHash(/*ignore_aliases=*/ false);
+        EXPECT_EQ(ast->clone()->getTreeHash(/*ignore_aliases=*/ false), hash) << query;
+        EXPECT_EQ(hashOf(ast->formatWithSecretsOneLine()), hash) << query;
+    }
+}
+
 TEST(TreeHashCompleteness, ViewsRejectAPrimaryKeyTheyCannotFormat)
 {
     /// A plain view has no storage definition, and a materialized view with `TO [db].[table]` must

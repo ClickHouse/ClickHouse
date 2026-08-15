@@ -29,6 +29,25 @@ ASTPtr ASTShowColumnsQuery::clone() const
     return res;
 }
 
+void ASTShowColumnsQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// `where_expression` and `limit_length` are deliberately member-only to match the parser.
+    hash_state.update(extended);
+    hash_state.update(full);
+    hash_state.update(not_like);
+    hash_state.update(case_insensitive_like);
+    hash_state.update(database);
+    hash_state.update(table);
+    hash_state.update(like);
+    hash_state.update(where_expression != nullptr);
+    if (where_expression)
+        where_expression->updateTreeHash(hash_state, ignore_aliases);
+    hash_state.update(limit_length != nullptr);
+    if (limit_length)
+        limit_length->updateTreeHash(hash_state, ignore_aliases);
+    ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
 void ASTShowColumnsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     ostr
@@ -99,11 +118,7 @@ void ASTShowColumnsQuery::readJSON(const Poco::JSON::Object & json)
     not_like = r.getBool("not_like");
     case_insensitive_like = r.getBool("case_insensitive_like");
     where_expression = r.readChild("where_expression");
-    if (where_expression)
-        children.push_back(where_expression);
     limit_length = r.readChild("limit_length");
-    if (limit_length)
-        children.push_back(limit_length);
 
     /// `ParserShowColumnsQuery` consumes `NOT` and `ILIKE` only as part of a LIKE clause, so these
     /// flags cannot exist without a pattern; `formatQueryImpl` silently drops them when 'like' is empty.
