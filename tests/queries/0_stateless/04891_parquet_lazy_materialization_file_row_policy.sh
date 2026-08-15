@@ -54,6 +54,10 @@ SELECT k, d FROM t_lazy_row_policy ORDER BY k LIMIT 3;
 SELECT '-- aggregates over the policy-filtered table';
 SELECT count(), sum(d), sum(a), uniqExact(a) FROM t_lazy_row_policy;
 DROP ROW POLICY policy_04891 ON t_lazy_row_policy;
+CREATE ROW POLICY policy_04891_count ON t_lazy_row_policy USING 0 TO ALL;
+SELECT '-- a column-less row policy disables the count-only fast path';
+SELECT count() FROM t_lazy_row_policy;
+DROP ROW POLICY policy_04891_count ON t_lazy_row_policy;
 DROP TABLE t_lazy_row_policy;
 
 INSERT INTO FUNCTION file('${DATA_DIR}/row_policy_subcolumn.parquet', Parquet)

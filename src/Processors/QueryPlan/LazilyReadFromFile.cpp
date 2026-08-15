@@ -15,7 +15,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_ROWS;
 }
 
-UInt64 LazyFileRegistry::registerFile(const String & path, const String & version_token)
+UInt64 LazyFileRegistry::registerFile(const String & path, const String & version_token, bool version_settled)
 {
     std::lock_guard lock(mutex);
     if (files.size() >= MAX_FILES)
@@ -23,7 +23,7 @@ UInt64 LazyFileRegistry::registerFile(const String & path, const String & versio
             "Too many files ({}) are read by a query with lazy materialization. "
             "Disable the query_plan_optimize_lazy_materialization_for_file setting",
             files.size());
-    files.push_back({path, version_token});
+    files.push_back({path, version_token, version_settled});
     return files.size() - 1;
 }
 

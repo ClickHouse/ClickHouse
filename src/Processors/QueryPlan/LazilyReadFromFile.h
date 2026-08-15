@@ -33,12 +33,15 @@ struct LazyFileRegistry
         /// (see `computeFileCacheVersionToken`). The lazy pass fails close if a re-stat of
         /// the path produces a different token.
         String version_token;
+        /// Whether the version token was outside the filesystem timestamp settle window when the
+        /// main pass opened the file. An unsettled token cannot safely key the format metadata cache.
+        bool version_settled;
     };
 
     std::mutex mutex;
     std::vector<FileEntry> files;
 
-    UInt64 registerFile(const String & path, const String & version_token);
+    UInt64 registerFile(const String & path, const String & version_token, bool version_settled);
 };
 
 using LazyFileRegistryPtr = std::shared_ptr<LazyFileRegistry>;

@@ -1976,7 +1976,10 @@ Chunk StorageFileSource::generate()
                             "Rerun the query, or disable the query_plan_optimize_lazy_materialization_for_file setting",
                             current_path);
 
-                    current_file_index = lazy_row_index_registry->registerFile(current_path, *current_file_cache_version);
+                    current_file_index = lazy_row_index_registry->registerFile(
+                        current_path,
+                        *current_file_cache_version,
+                        current_file_version_settled);
                 }
 
                 auto row_numbers_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
@@ -2282,6 +2285,7 @@ void StorageFile::read(
 
     bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
         && context->getSettingsRef()[Setting::optimize_count_from_files]
+        && !query_info.row_level_filter
         && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto reading = std::make_unique<ReadFromFile>(
@@ -2443,14 +2447,18 @@ public:
                 if (!fileCacheVersionTokenStillHolds(path, file.file.version_token))
                     throwFileChanged(path);
 
-                /// The same synthetic metadata the main pass builds, so this read hits the same
-                /// format metadata cache entries (e.g. the Parquet footer cache).
-                ObjectMetadata md;
-                md.size_bytes = file_stat.st_size;
-                md.last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
-                md.etag = file.file.version_token;
                 std::optional<RelativePathWithMetadata> object_with_metadata;
-                object_with_metadata.emplace(path, std::move(md));
+                if (file.file.version_settled)
+                {
+                    /// The same synthetic metadata the main pass builds, so this read hits the same
+                    /// format metadata cache entries (e.g. the Parquet footer cache). An unsettled
+                    /// token cannot safely identify a generation on coarse-timestamp filesystems.
+                    ObjectMetadata md;
+                    md.size_bytes = file_stat.st_size;
+                    md.last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
+                    md.etag = file.file.version_token;
+                    object_with_metadata.emplace(path, std::move(md));
+                }
 
                 /// The rows of a file must be returned in ascending order, otherwise
                 /// LazyMaterializingTransform would restore the original row order incorrectly.
@@ -2462,19 +2470,37 @@ public:
                 auto format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, getContext(), nullptr, nullptr, nullptr);
                 format_filter_info->rows_to_read = file.rows;
 
-                input_format = FormatFactory::instance().getInputWithMetadata(
-                    storage->format_name,
-                    *read_buf,
-                    info.format_header,
-                    getContext(),
-                    max_block_size,
-                    object_with_metadata,
-                    format_settings,
-                    parser_shared_resources,
-                    format_filter_info,
-                    /*is_remote_fs=*/ false,
-                    CompressionMethod::None,
-                    /*need_only_count=*/ false);
+                if (object_with_metadata)
+                {
+                    input_format = FormatFactory::instance().getInputWithMetadata(
+                        storage->format_name,
+                        *read_buf,
+                        info.format_header,
+                        getContext(),
+                        max_block_size,
+                        object_with_metadata,
+                        format_settings,
+                        parser_shared_resources,
+                        format_filter_info,
+                        /*is_remote_fs=*/ false,
+                        CompressionMethod::None,
+                        /*need_only_count=*/ false);
+                }
+                else
+                {
+                    input_format = FormatFactory::instance().getInput(
+                        storage->format_name,
+                        *read_buf,
+                        info.format_header,
+                        getContext(),
+                        max_block_size,
+                        format_settings,
+                        parser_shared_resources,
+                        format_filter_info,
+                        /*is_remote_fs=*/ false,
+                        CompressionMethod::None,
+                        /*need_only_count=*/ false);
+                }
                 input_format->setSerializationHints(info.serialization_hints);
 
                 QueryPipelineBuilder builder;
