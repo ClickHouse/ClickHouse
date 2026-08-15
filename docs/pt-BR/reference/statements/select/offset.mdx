@@ -9,10 +9,10 @@ doc_type: 'reference'
 `OFFSET` e `FETCH` permitem recuperar dados em partes. Eles especificam um bloco de linhas que você deseja obter em uma única consulta.
 
 ```sql
--- Estilo SQL padrão:
+-- SQL Standard style:
 [OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}]
 
--- Estilo MySQL/PostgreSQL:
+-- MySQL/PostgreSQL style:
 [LIMIT [n, ]m] [OFFSET offset_row_count]
 ```
 
@@ -52,7 +52,7 @@ A opção `WITH TIES` é usada para retornar linhas adicionais empatadas na últ
 </Note>
 
 <Note>
-  O deslocamento real também pode depender da configuração [offset](/pt-BR/reference/settings/session-settings#offset).
+  O deslocamento real também pode depender da configuração [offset](/pt-BR/reference/settings/session-settings/other#offset).
 </Note>
 
 <div id="examples">

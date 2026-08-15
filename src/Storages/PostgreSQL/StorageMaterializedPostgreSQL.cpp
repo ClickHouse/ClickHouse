@@ -354,10 +354,10 @@ IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes() const
 }
 
 
-IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes(const Names & columns) const
+IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const
 {
     if (auto nested = tryGetNested())
-        return nested->getColumnSizes(columns);
+        return nested->getColumnSizes(columns, calculate_subcolumn_sizes);
     return {};
 }
 
@@ -755,7 +755,8 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             configuration.port,
             configuration.username,
             configuration.password,
-            args.getContext()->getSettingsRef()[Setting::postgresql_connection_attempt_timeout]);
+            args.getContext()->getSettingsRef()[Setting::postgresql_connection_attempt_timeout],
+            configuration.ssl);
 
         bool has_settings = args.storage_def->settings;
         auto postgresql_replication_settings = std::make_unique<MaterializedPostgreSQLSettings>();
@@ -800,7 +801,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 <CloudNotSupportedBadge/>
 
 :::note
-ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
+ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes/home) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
 :::
 
 Creates ClickHouse table with an initial data dump of PostgreSQL table and starts the replication process, i.e. it executes a background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.
@@ -830,6 +831,21 @@ PRIMARY KEY key;
 - `table` — Remote table name.
 - `user` — PostgreSQL user.
 - `password` — User password.
+
+## TLS/SSL {#tls-ssl}
+
+TLS/SSL parameters are forwarded to `libpq` and can be supplied through a [named collection](/operations/named-collections) or as trailing key-value arguments of the engine: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`; when unset, the `libpq` default of `prefer` applies), and the certificates and the key in one of two forms. `sslrootcert` (CA certificate), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files, accepted only from a named collection defined in the server configuration file. `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead, can be specified from SQL, and are masked in logs and `SHOW` queries like a password.
+
+```sql
+CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_table', 'postgres_user', 'postgres_password',
+                                sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----')
+PRIMARY KEY key;
+```
+
+The TLS/SSL parameters are part of the PostgreSQL connection parameters, which are fixed when the table is created.
 
 ## Requirements {#requirements}
 

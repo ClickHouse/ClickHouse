@@ -7,7 +7,7 @@ doc_type: 'guide'
 ---
 
 <Note>
-  En la mayoría de los casos, no necesita una clave de partición y, en la mayoría de los demás, tampoco necesita una clave de partición con una granularidad mayor que la mensual, salvo en casos de uso de observabilidad, donde la partición por día es habitual.
+  En la mayoría de los casos, no necesita una clave de partición y, en la mayoría de los demás, tampoco necesita una clave de partición con una granularidad mayor que la mensual, salvo en casos de uso de observabilidad, donde el particionamiento por día es habitual.
 
   Nunca debe usar una partición demasiado granular. No particione sus datos por identificadores o nombres de cliente. En su lugar, haga que el identificador o nombre del cliente sea la primera columna de la expresión `ORDER BY`.
 </Note>
@@ -40,7 +40,7 @@ ORDER BY (CounterID, StartDate, intHash32(UserID));
 
 En este ejemplo, configuramos el particionamiento por los tipos de eventos que se produjeron durante la semana actual.
 
-De forma predeterminada, no se admite la clave de partición de coma flotante. Para usarla, habilite la opción [allow&#95;floating&#95;point&#95;partition&#95;key](/es/reference/settings/merge-tree-settings#allow_floating_point_partition_key).
+De forma predeterminada, no se admite la clave de partición de coma flotante. Para usarla, habilite la opción [allow&#95;floating&#95;point&#95;partition&#95;key](/es/reference/settings/merge-tree-settings/allow#allow_floating_point_partition_key).
 
 Al insertar datos nuevos en una tabla, estos se almacenan como una parte independiente (fragmento), ordenada por la clave primaria. Entre 10 y 15 minutos después de la inserción, las partes de la misma partición se fusionan en una sola parte.
 

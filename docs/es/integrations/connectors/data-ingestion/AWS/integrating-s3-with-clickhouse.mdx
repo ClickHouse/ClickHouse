@@ -341,7 +341,7 @@ INSERT INTO default.trips_all
     )
 ```
 
-Las inserciones se realizarán en el nodo iniciador. Esto significa que, aunque las lecturas se realizarán en cada nodo, las filas resultantes se enviarán al iniciador para su distribución. En escenarios de alto volumen, esto puede convertirse en un cuello de botella. Para solucionarlo, establezca el parámetro [parallel&#95;distributed&#95;insert&#95;select](/es/reference/settings/session-settings#parallel_distributed_insert_select) para la función `s3cluster`.
+Las inserciones se realizarán en el nodo iniciador. Esto significa que, aunque las lecturas se realizarán en cada nodo, las filas resultantes se enviarán al iniciador para su distribución. En escenarios de alto volumen, esto puede convertirse en un cuello de botella. Para solucionarlo, establezca el parámetro [parallel&#95;distributed&#95;insert&#95;select](/es/reference/settings/session-settings/parallel#parallel_distributed_insert_select) para la función `s3cluster`.
 
 <div id="s3-table-engines">
   ## Motores de tabla de S3
@@ -723,10 +723,10 @@ La replicación con discos S3 puede implementarse mediante el motor de tabla `Re
   ### Lecturas y escrituras
 </div>
 
-Las siguientes notas describen la implementación de las interacciones de S3 con ClickHouse. Aunque en general son solo informativas, pueden resultar útiles al [Optimizar el rendimiento](#s3-optimizing-performance):
+Las siguientes notas describen la implementación de las interacciones de S3 con ClickHouse. Aunque en general son solo informativas, pueden resultar útiles al [optimización del rendimiento](#s3-optimizing-performance):
 
-* De forma predeterminada, el número máximo de hilos de procesamiento de consultas que puede usar cualquier etapa del pipeline de procesamiento de consultas es igual al número de núcleos. Algunas etapas se pueden paralelizar más que otras, por lo que este valor establece un límite superior. Varias etapas de la consulta pueden ejecutarse al mismo tiempo, ya que los datos se transmiten desde el disco. Por ello, el número exacto de hilos usados para una consulta puede superar este valor. Modifíquelo mediante la configuración [max&#95;threads](/es/reference/settings/session-settings#max_threads).
-* Las lecturas en S3 son asíncronas de forma predeterminada. Este comportamiento viene determinado por la configuración `remote_filesystem_read_method`, cuyo valor predeterminado es `threadpool`. Al atender una solicitud, ClickHouse lee los gránulos en franjas. Cada una de estas franjas puede contener muchas columnas. Un hilo leerá las columnas de sus gránulos una por una. En lugar de hacerlo de forma síncrona, se realiza una precarga de todas las columnas antes de esperar los datos. Esto ofrece mejoras significativas de rendimiento frente a esperar de forma síncrona cada columna. En la mayoría de los casos no necesitará cambiar esta configuración; consulte [Optimizar el rendimiento](#s3-optimizing-performance).
+* De forma predeterminada, el número máximo de hilos de procesamiento de consultas que puede usar cualquier etapa del pipeline de procesamiento de consultas es igual al número de núcleos. Algunas etapas se pueden paralelizar más que otras, por lo que este valor establece un límite superior. Varias etapas de la consulta pueden ejecutarse al mismo tiempo, ya que los datos se transmiten desde el disco. Por ello, el número exacto de hilos usados para una consulta puede superar este valor. Modifíquelo mediante la configuración [max&#95;threads](/es/reference/settings/session-settings/max-threads#max_threads).
+* Las lecturas en S3 son asíncronas de forma predeterminada. Este comportamiento viene determinado por la configuración `remote_filesystem_read_method`, cuyo valor predeterminado es `threadpool`. Al atender una solicitud, ClickHouse lee los gránulos en franjas. Cada una de estas franjas puede contener muchas columnas. Un hilo leerá las columnas de sus gránulos una por una. En lugar de hacerlo de forma síncrona, se realiza una precarga de todas las columnas antes de esperar los datos. Esto ofrece mejoras significativas de rendimiento frente a esperar de forma síncrona cada columna. En la mayoría de los casos no necesitará cambiar esta configuración; consulte [optimización del rendimiento](#s3-optimizing-performance).
 * Las escrituras se realizan en paralelo, con un máximo de 100 hilos concurrentes de escritura de archivos. `max_insert_delayed_streams_for_parallel_write`, que tiene un valor predeterminado de 1000, controla el número de blobs de S3 que se escriben en paralelo. Como se requiere un búfer para cada archivo que se escribe (~1MB), esto limita de forma efectiva el consumo de memoria de un INSERT. Puede ser conveniente reducir este valor en entornos con poca memoria en el servidor.
 
 <div id="configuring-s3-for-clickhouse-use">
@@ -1207,7 +1207,7 @@ Cuando agregó la [configuración del clúster](#define-a-cluster), se definió 
   1 row in set. Elapsed: 0.009 sec. `
   ```
 
-* Cree una tabla en el clúster usando el engine de tabla `ReplicatedMergeTree`:
+* Cree una tabla en el clúster usando el motor de tabla `ReplicatedMergeTree`:
   ```sql
   create table trips on cluster 'cluster_1S_2R' (
    `trip_id` UInt32,
@@ -1259,7 +1259,7 @@ Cuando agregó la [configuración del clúster](#define-a-cluster), se definió 
   ```
 
 <Note>
-  Puede personalizar la ruta de ZooKeeper `'clickhouse/tables/{uuid}/{shard}` que se muestra arriba configurando `default_replica_path` y `default_replica_name`. La documentación está [aquí](/es/reference/settings/server-settings/settings#default_replica_path).
+  Puede personalizar la ruta de ZooKeeper `'clickhouse/tables/{uuid}/{shard}` que se muestra arriba configurando `default_replica_path` y `default_replica_name`. La documentación está [aquí](/es/reference/settings/server-settings/settings/default-replica#default_replica_path).
 </Note>
 
 <div id="testing-1">
