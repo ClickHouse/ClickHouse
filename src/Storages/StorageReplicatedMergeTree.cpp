@@ -1263,14 +1263,48 @@ void StorageReplicatedMergeTree::createReplicaAttempt(const StorageMetadataPtr &
         const auto & zk_mutation_pointer            = response_exists[response_num++].data;
         const auto & zk_creator_info                = response_exists[response_num++].data;
 
+        /// The `metadata` and `columns` nodes could have been written by a server version that
+        /// serialized the same table definition to a different text: the redundant parentheses
+        /// the user has written around key or column expressions were kept by some versions and
+        /// are suppressed now (`IAST::FormatSettings::ignore_redundant_parentheses`). When the
+        /// texts differ, compare structurally, so that a retry of a partially created replica
+        /// after an upgrade still recognizes its own nodes. These lambdas are only reached for
+        /// an empty, never-active replica at our own path; a structural mismatch or unparseable
+        /// node throws (e.g. `METADATA_MISMATCH`), which describes the problem better than the
+        /// `REPLICA_ALREADY_EXISTS` the fall-through create attempt would produce.
+        auto is_same_metadata = [&](const String & zk_metadata_str)
+        {
+            if (zk_metadata_str == local_metadata)
+                return true;
+            auto zk_metadata_parsed = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+                zk_metadata_str,
+                metadata_snapshot->getColumns(),
+                metadata_snapshot->add_minmax_index_for_numeric_columns,
+                metadata_snapshot->add_minmax_index_for_string_columns,
+                getContext());
+            return ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).checkEquals(
+                zk_metadata_parsed,
+                metadata_snapshot->columns,
+                metadata_snapshot->virtuals,
+                getStorageID().getNameForLogs(),
+                getContext());
+        };
+
+        auto is_same_columns = [&](const String & zk_columns_str)
+        {
+            if (zk_columns_str == local_columns)
+                return true;
+            return ColumnsDescription::parse(zk_columns_str) == metadata_snapshot->getColumns();
+        };
+
         if (zk_host.empty() &&
             zk_log_pointer.empty() &&
             zk_queue.empty() &&
             zk_parts.empty() &&
             zk_flags.empty() &&
             (zk_is_lost == "0" || zk_is_lost == "1") &&
-            zk_metadata == local_metadata &&
-            zk_columns == local_columns &&
+            is_same_metadata(zk_metadata) &&
+            is_same_columns(zk_columns) &&
             zk_metadata_version == local_metadata_version &&
             zk_min_unprocessed_insert_time.empty() &&
             zk_max_processed_insert_time.empty() &&
@@ -6880,11 +6914,13 @@ void StorageReplicatedMergeTree::alter(
         applyMetadataChangesToCreateQuery(ast, future_metadata, query_context);
     }
 
+    /// The definitions below are written into Keeper and compared with what the other replicas have
+    /// written, so their text must not depend on the parentheses the user has written around them.
     auto ast_to_str = [](ASTPtr query) -> String
     {
         if (!query)
             return "";
-        return query->formatWithSecretsOneLine();
+        return query->formatIgnoringRedundantParentheses();
     };
 
     const auto zookeeper = getZooKeeperAndAssertNotReadonly();
@@ -6932,19 +6968,19 @@ void StorageReplicatedMergeTree::alter(
             /// list here and we cannot change this representation for compatibility. Also we have preparsed AST `sorting_key.expression_list_ast`
             /// in KeyDescription, but it contain version column for VersionedCollapsingMergeTree, which shouldn't be defined as a part of key definition AST.
             /// So the best compatible way is just to convert definition_ast to list and serialize it. In all other places key.expression_list_ast should be used.
-            future_metadata_in_zk.sorting_key = extractKeyExpressionList(future_metadata.sorting_key.definition_ast)->formatWithSecretsOneLine();
+            future_metadata_in_zk.sorting_key = ast_to_str(extractKeyExpressionList(future_metadata.sorting_key.definition_ast));
         }
 
         if (ast_to_str(future_metadata.sampling_key.definition_ast) != ast_to_str(current_metadata->sampling_key.definition_ast))
-            future_metadata_in_zk.sampling_expression = extractKeyExpressionList(future_metadata.sampling_key.definition_ast)->formatWithSecretsOneLine();
+            future_metadata_in_zk.sampling_expression = ast_to_str(extractKeyExpressionList(future_metadata.sampling_key.definition_ast));
 
         if (ast_to_str(future_metadata.partition_key.definition_ast) != ast_to_str(current_metadata->partition_key.definition_ast))
-            future_metadata_in_zk.partition_key = extractKeyExpressionList(future_metadata.partition_key.definition_ast)->formatWithSecretsOneLine();
+            future_metadata_in_zk.partition_key = ast_to_str(extractKeyExpressionList(future_metadata.partition_key.definition_ast));
 
         if (ast_to_str(future_metadata.table_ttl.definition_ast) != ast_to_str(current_metadata->table_ttl.definition_ast))
         {
             if (future_metadata.table_ttl.definition_ast)
-                future_metadata_in_zk.ttl_table = future_metadata.table_ttl.definition_ast->formatWithSecretsOneLine();
+                future_metadata_in_zk.ttl_table = ast_to_str(future_metadata.table_ttl.definition_ast);
             else /// TTL was removed
                 future_metadata_in_zk.ttl_table = "";
         }
