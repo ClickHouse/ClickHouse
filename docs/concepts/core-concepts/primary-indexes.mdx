@@ -16,7 +16,7 @@ This page introduces ClickHouse's sparse primary index, how it's built, how it w
 For advanced indexing strategies and deeper technical detail, see the [primary indexes deep dive](/guides/clickhouse/data-modelling/sparse-primary-indexes).
 </Tip>
 
-## How does the sparse primary index work in ClickHouse? {#how-does-the-sparse-primary-index-work-in-clickhouse}
+## How does the sparse primary index work in ClickHouse? {#how-does-the-sparse-primary-index-work-in-clickHouse}
 <br/>
 
 The sparse primary index in ClickHouse helps efficiently identify [granules](/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing)—blocks of rows—that might contain data matching a query's condition on the table's primary key columns. In the next section, we explain how this index is constructed from the values in those columns.

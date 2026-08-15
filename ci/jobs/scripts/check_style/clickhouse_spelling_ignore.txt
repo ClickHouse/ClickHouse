@@ -18,6 +18,11 @@ ci/jobs/check_style.py	`ClickhouseBuffer`
 ci/jobs/check_style.py	`click_house`
 docs/resources/develop-contribute/contribute/style.mdx	Not `Clickhouse`
 
+# Published documentation fragments are public URLs. Preserve these legacy anchors while
+# enforcing the product spelling in their visible headings and everywhere else.
+docs/concepts/core-concepts/primary-indexes.mdx	{#how-does-the-sparse-primary-index-work-in-clickHouse}
+docs/concepts/core-concepts/query-parallelism.mdx	{#step-by-step-how-clickHouse-parallelizes-an-aggregation-query}
+
 # `ClickhouseClientOptions` / `ClickhouseOptions` are declared by our fork of the Azure SDK
 # (contrib/azure, blob_options.hpp); renaming them belongs to that repository.
 src/Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.cpp	ClickhouseOptions

@@ -15,7 +15,7 @@ This guide walks through how query parallelism works in ClickHouse and how you c
 
 We use an aggregation query on the [uk_price_paid_simple](/concepts/core-concepts/parts) dataset to illustrate key concepts.
 
-## Step-by-step: How ClickHouse parallelizes an aggregation query {#step-by-step-how-clickhouse-parallelizes-an-aggregation-query}
+## Step-by-step: How ClickHouse parallelizes an aggregation query {#step-by-step-how-clickHouse-parallelizes-an-aggregation-query}
 
 When ClickHouse ① runs an aggregation query with a filter on the table's primary key, it ② loads the primary index into memory to ③ identify which granules need to be processed, and which can be safely skipped:
 
