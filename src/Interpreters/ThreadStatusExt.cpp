@@ -155,9 +155,8 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_)
     , global_context(query_context_->getGlobalContext())
     , fatal_error_callback(parent->fatal_error_callback)
     , os_threads_nice_value(parent->os_threads_nice_value)
-    , memory_spill_scheduler(parent->memory_spill_scheduler)
-    , performance_counters(VariableContext::Process, &parent->performance_counters)
-    , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
+    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(query_context_->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler]))
+    , rollup_counters(&parent->performance_counters)
 {
     chassert(effective_group_stopwatch.elapsed() == 0);
 
@@ -180,6 +179,13 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_)
 
 ThreadGroup::~ThreadGroup()
 {
+    /// An async insert is an independent query and `ProcessList::insert` connects its normal
+    /// counter chain to the inserting user's counters. Roll its completed counters into the
+    /// enclosing `SYSTEM FLUSH` group locally so query-level accounting is preserved without
+    /// charging the flush-query user for another user's insert.
+    if (rollup_counters)
+        rollup_counters->addSnapshotLocally(performance_counters.getPartiallyAtomicSnapshot());
+
     /// Ownerless background groups that parent their tracker to `background_memory_tracker` must
     /// subtract their retained allocations from it when the work ends; otherwise residual memory
     /// stays charged to `background_memory_tracker` / `MergesMutationsMemoryTracking` and skews

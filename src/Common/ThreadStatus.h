@@ -95,6 +95,11 @@ public:
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
+    /// Receives the completed counters of a nested async-insert query locally. It must not be
+    /// the normal counter parent: `ProcessList::insert` owns the latter and connects it to the
+    /// async insert's user counters.
+    ProfileEvents::Counters * rollup_counters = nullptr;
+
     /// When true, the destructor runs `background_memory_tracker.adjustOnBackgroundTaskEnd(&memory_tracker)`.
     /// Set for the ownerless background groups that parent their tracker directly to
     /// `background_memory_tracker` and have no external cleanup owner (scope / materialized-view /
