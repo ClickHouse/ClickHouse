@@ -18,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_FORMAT;
+    extern const int UNKNOWN_TABLE;
 }
 
 
@@ -184,8 +185,13 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
     }
     if (db_indices.size() > 1)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Multiple database components in HTTP URL path: '{}' and '{}'. At most one is allowed.",
+        /// A path this deep names no resource: the path form is `/database/table[.format[.compression]]`,
+        /// so there is nothing for a third component to be. Report it as "not found" rather than as a
+        /// malformed request, so that enabling `http_allow_path_requests` does not turn the plain 404 an
+        /// unmatched URL used to get into a 400 (`UNKNOWN_TABLE` maps to HTTP 404, `BAD_ARGUMENTS` to 400).
+        throw Exception(ErrorCodes::UNKNOWN_TABLE,
+            "There is no table at the HTTP URL path: it has more than one database component "
+            "('{}' and '{}'). The path form is /database/table[.format[.compression]].",
             components[db_indices[0]], components[db_indices[1]]);
     }
     /// Special case: if there is exactly one non-filter component and allow_database is on
