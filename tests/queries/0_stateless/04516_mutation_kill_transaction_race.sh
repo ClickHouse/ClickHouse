@@ -111,12 +111,11 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE ${rep_db}.t (key UInt64, value UInt64) ENGIN
 tx 3 "SET throw_on_unsupported_query_inside_transaction=0" > /dev/null
 tx 3 "BEGIN TRANSACTION" > /dev/null
 set +e
-tx 3 "ALTER TABLE ${rep_db}.t RENAME COLUMN value TO value2" > "$CLICKHOUSE_TMP"/04516_replicated_metadata_alter_out.txt 2>&1
-replicated_alter_status=$?
+replicated_alter_output=$(tx 3 "ALTER TABLE ${rep_db}.t RENAME COLUMN value TO value2")
 set -e
 tx 3 "ROLLBACK" > /dev/null
 
-echo "replicated_metadata_alter_rejected $([ "$replicated_alter_status" -ne 0 ] && grep -c NOT_IMPLEMENTED "$CLICKHOUSE_TMP"/04516_replicated_metadata_alter_out.txt)"
+echo "replicated_metadata_alter_rejected $(grep -c NOT_IMPLEMENTED <<< "$replicated_alter_output")"
 echo "replicated_column_after_metadata_alter $($CLICKHOUSE_CLIENT -q "SELECT name FROM system.columns WHERE database = '${rep_db}' AND table = 't' AND name IN ('value', 'value2')")"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${rep_db} SYNC"
 
