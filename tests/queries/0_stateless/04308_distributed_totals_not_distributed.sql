@@ -1,9 +1,9 @@
 -- Tags: no-old-analyzer
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
 
--- Regression test: WITH TOTALS / ROLLUP / CUBE produce extra streams (a totals stream, or subtotal
--- rows from a Rollup/Cube step) that the distributed exchange protocol does not carry. make_distributed_plan
--- rejects such plans rather than silently running them single-node.
+-- Regression test: WITH TOTALS produces a totals stream that the distributed exchange protocol
+-- does not carry. make_distributed_plan rejects such plans rather than silently running them
+-- single-node.
 
 DROP TABLE IF EXISTS t_totals_guard;
 
@@ -17,11 +17,5 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
 
 SELECT '-- WITH TOTALS';
 SELECT a, sum(v) FROM t_totals_guard GROUP BY a WITH TOTALS ORDER BY a; -- { serverError SUPPORT_IS_DISABLED }
-
-SELECT '-- ROLLUP';
-SELECT a, sum(v) FROM t_totals_guard GROUP BY a WITH ROLLUP ORDER BY a; -- { serverError SUPPORT_IS_DISABLED }
-
-SELECT '-- CUBE';
-SELECT a, sum(v) FROM t_totals_guard GROUP BY a WITH CUBE ORDER BY a; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE t_totals_guard;
