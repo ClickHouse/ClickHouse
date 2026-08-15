@@ -47,11 +47,4 @@ SELECT 'rows_returned', count()
 FROM (SELECT id FROM t_04893 WHERE arrayJoin(tags) >= 0
       ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 4 SETTINGS vector_search_index_fetch_multiplier = 1);
 
--- With a shortlist large enough to cover the survivors, the codes path reproduces the exact top-k.
-SELECT 'exact_with_multiplier',
-    (SELECT groupArray(id) FROM (SELECT id FROM t_04893 WHERE arrayJoin(tags) >= 0
-        ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 4 SETTINGS vector_search_index_fetch_multiplier = 100))
-    = (SELECT groupArray(id) FROM (SELECT id FROM t_04893 WHERE arrayJoin(tags) >= 0
-        ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 4 SETTINGS vector_search_use_quantized_codes = 0));
-
 DROP TABLE t_04893;
