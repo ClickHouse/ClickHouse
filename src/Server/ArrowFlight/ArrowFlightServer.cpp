@@ -445,7 +445,7 @@ void ArrowFlightServer::start()
 
     try
     {
-        server_thread.emplace([this]
+        server_thread.emplace(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this]
         {
             try
             {
@@ -464,7 +464,7 @@ void ArrowFlightServer::start()
 
         if (tickets_lifetime_seconds || poll_descriptors_lifetime_seconds || prepared_statements_lifetime_seconds != 0)
         {
-            cleanup_thread.emplace([this]
+            cleanup_thread.emplace(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this]
             {
                 try
                 {

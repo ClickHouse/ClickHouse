@@ -312,7 +312,7 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
     try
     {
         for (size_t i = 0; i < pool_size; ++i)
-            dump_by_first_update_threads.emplace_back([this, i] { processBatchDeadlines(i); });
+            dump_by_first_update_threads.emplace_back(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this, i] { processBatchDeadlines(i); });
     }
     catch (...)
     {

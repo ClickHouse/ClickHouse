@@ -1865,7 +1865,7 @@ public:
                 tryLogCurrentException(log, "run");
             }
         };
-        queue_thread = ThreadFromGlobalPool{runner_function};
+        queue_thread = ThreadFromGlobalPool{ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, runner_function};
     }
 
     void stop()
