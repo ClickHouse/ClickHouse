@@ -3,6 +3,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/isValidUTF8.h>
 #include <Common/assert_cast.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -170,6 +171,11 @@ void contentDefinedCdcOneRow(
     bool utf8_boundaries,
     bool return_offsets)
 {
+    if (utf8_boundaries && !UTF8::isValidUTF8(data, data_size))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Input of UTF-8 content-defined chunking function must be valid UTF-8");
+
     RollingHashCDC::forEachContentDefinedChunk(
         data,
         data_size,
@@ -400,7 +406,7 @@ Min chunk length is `window_size`; max chunk size depends on `reverse_probabilit
 
     FunctionDocumentation::Description cdc_utf8_desc = R"(
 Same as `contentDefinedChunks`, but cuts only at UTF-8 code point boundaries so chunks never split a multibyte character.
-If the input is not valid UTF-8 (e.g. contains a run of continuation bytes longer than the maximum chunk size), a forced cut at the maximum chunk size may fall inside such a run; the maximum chunk size cap always holds.
+Input must be valid UTF-8.
 )";
     FunctionDocumentation::Examples cdc_utf8_ex = {
         {"Chunk UTF-8 text without splitting multibyte characters",
@@ -440,7 +446,7 @@ Returns start byte offsets of each chunk (first offset is always 0 for non-empty
 
     FunctionDocumentation::Description cdc_off_utf8_desc = R"(
 Same as `contentDefinedChunkOffsets`, but only allows boundaries at UTF-8 code point starts.
-If the input is not valid UTF-8, a forced cut at the maximum chunk size may fall inside a malformed byte run; the maximum chunk size cap always holds.
+Input must be valid UTF-8.
 )";
     FunctionDocumentation::Examples cdc_off_utf8_ex = {
         {"Get chunk start offsets at UTF-8 code point boundaries",

@@ -16,12 +16,7 @@ SELECT contentDefinedChunksUTF8('abcdefghijklmnop', toUInt128(4), 1000); -- { se
 SELECT contentDefinedChunkOffsets('abcdefghijklmnop', 4, toUInt256(1000)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT contentDefinedChunkOffsetsUTF8('abcdefghijklmnop', toUInt128(4), 1000); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- The max chunk size cap holds even for malformed UTF-8 (a run of continuation bytes longer than the cap).
--- reverse_probability = 2 gives the minimal max chunk size of 262144 bytes.
-SELECT '--- strict max chunk size cap on malformed UTF-8';
-WITH
-    concat('A', repeat(char(0x80), 300000), 'B') AS s,
-    contentDefinedChunkOffsetsUTF8(s, 8, 2) AS offs
-SELECT
-    arrayMax(arrayDifference(arrayPushBack(offs, toUInt64(length(s))))) <= 262144,
-    arrayStringConcat(contentDefinedChunksUTF8(s, 8, 2), '') = s;
+-- The UTF-8 variants reject malformed input, preserving their whole-code-point contract.
+SELECT '--- malformed UTF-8 is rejected';
+SELECT contentDefinedChunksUTF8(unhex('418042'), 1, 941); -- { serverError BAD_ARGUMENTS }
+SELECT contentDefinedChunkOffsetsUTF8(unhex('418042'), 1, 941); -- { serverError BAD_ARGUMENTS }
