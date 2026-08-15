@@ -101,4 +101,3 @@ SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase(
 SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT false OR (false AND (SELECT count(*) FROM test_03562) > 1) AS bool%' AND type = 'QueryFinish' AND is_initial_query = 1 ORDER BY event_time DESC LIMIT 1;
 
 DROP TABLE IF EXISTS test_03562;
-
