@@ -48,7 +48,7 @@ Each daemon serves a `/livez` endpoint on its health port. The JSON `status` fie
 | Scraper              | 8082        | 9092         |
 | Troubleshooter       | 8084        | 9094         |
 
-When support sessions are enabled, the gateway additionally serves HTTPS on port 8443.
+When support sessions are enabled, the gateway additionally listens on port 8443: self-signed TLS on a VM, pod-local HTTP behind `kubectl port-forward` or a TLS-terminating Ingress on Kubernetes.
 
 On a VM you can run the full check suite at any time:
 

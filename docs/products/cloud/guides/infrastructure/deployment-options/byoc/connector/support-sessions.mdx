@@ -18,7 +18,7 @@ A support session is a time-boxed window during which the troubleshooter accepts
 
 You control sessions through two surfaces:
 
-- **The session gateway**, an HTTPS surface embedded in the troubleshooter with `enable`, `disable`, and `status` endpoints. Every gateway call requires a short-lived OIDC ID token whose email is on your operator allowlist.
+- **The session gateway**, an authenticated API embedded in the troubleshooter with `enable`, `disable`, and `status` endpoints. Every gateway call requires a short-lived OIDC ID token whose email is on your operator allowlist. Transport depends on the target: on a VM the gateway serves self-signed TLS that each operator fingerprint-pins, while on Kubernetes it listens pod-locally over HTTP and is reached through `kubectl port-forward`, whose tunnel rides the API server's TLS, or through an Ingress that terminates TLS with a CA-issued certificate.
 - **The local session file** on Linux VM installs, written directly on the host with root access.
 
 You choose your session posture, including the operator allowlist, during `clicklink clctl init`.
