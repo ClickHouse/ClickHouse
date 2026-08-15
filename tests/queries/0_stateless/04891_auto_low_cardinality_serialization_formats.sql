@@ -19,6 +19,6 @@ INSERT INTO t_auto_lc_formats VALUES (1, 'encoded');
 ALTER TABLE t_auto_lc_formats MODIFY SETTING max_uniq_number_for_low_cardinality = 0;
 INSERT INTO t_auto_lc_formats VALUES (2, 'plain');
 
-SELECT value FROM t_auto_lc_formats ORDER BY id SETTINGS max_block_size = 1 FORMAT JSONColumns;
+SELECT value FROM t_auto_lc_formats ORDER BY id SETTINGS max_block_size = 1, output_format_json_pretty_print = 0 FORMAT JSONColumns;
 
 DROP TABLE t_auto_lc_formats;
