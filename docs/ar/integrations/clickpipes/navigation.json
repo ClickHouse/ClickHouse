@@ -1,9 +1,10 @@
 {
   "groups": [
     {
-      "group": "ClickPipes لتخزين الكائنات",
+      "group": "ClickPipes for Object Storage",
       "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
       "pages": [
+        "ar/integrations/clickpipes/home",
         {
           "group": "Amazon S3",
           "icon": "/images/integrations/logos/amazon_s3_logo.svg",
@@ -30,13 +31,13 @@
             "ar/integrations/clickpipes/object-storage/azure-blob-storage/get-started"
           ]
         }
-      ],
-      "root": "ar/integrations/clickpipes/home"
+      ]
     },
     {
       "group": "ClickPipes for Postgres",
       "icon": "/images/integrations/logos/postgresql.svg",
       "pages": [
+        "ar/integrations/clickpipes/postgres/index",
         "ar/integrations/clickpipes/postgres/deduplication",
         "ar/integrations/clickpipes/postgres/ordering-keys",
         "ar/integrations/clickpipes/postgres/toast",
@@ -47,9 +48,8 @@
         "ar/integrations/clickpipes/postgres/postgres-generated-columns",
         "ar/integrations/clickpipes/postgres/parallel-initial-load",
         "ar/integrations/clickpipes/postgres/lifecycle",
-        "ar/integrations/clickpipes/postgres/auth",
         {
-          "group": "العمليات",
+          "group": "Operations",
           "pages": [
             "ar/integrations/clickpipes/postgres/add-table",
             "ar/integrations/clickpipes/postgres/pause-and-resume",
@@ -61,7 +61,7 @@
           ]
         },
         {
-          "group": "المصدر",
+          "group": "Source",
           "pages": [
             "ar/integrations/clickpipes/postgres/source/alloydb",
             "ar/integrations/clickpipes/postgres/source/rds",
@@ -76,20 +76,19 @@
             "ar/integrations/clickpipes/postgres/source/planetscale"
           ]
         }
-      ],
-      "root": "ar/integrations/clickpipes/postgres/index"
+      ]
     },
     {
       "group": "ClickPipes for Kafka",
       "icon": "/images/integrations/logos/kafka.svg",
       "pages": [
+        "ar/integrations/clickpipes/kafka/index",
         "ar/integrations/clickpipes/kafka/create-kafka-clickpipe",
         "ar/integrations/clickpipes/kafka/schema-registries",
         "ar/integrations/clickpipes/kafka/reference",
         "ar/integrations/clickpipes/kafka/best-practices",
         "ar/integrations/clickpipes/kafka/faq"
-      ],
-      "root": "ar/integrations/clickpipes/kafka/index"
+      ]
     },
     {
       "group": "ClickPipes for Kinesis",
@@ -97,8 +96,7 @@
       "pages": [
         "ar/integrations/clickpipes/kinesis/overview",
         "ar/integrations/clickpipes/kinesis/auth"
-      ],
-      "root": "ar/integrations/clickpipes/kinesis/index"
+      ]
     },
     {
       "group": "ClickPipes for GCP Pub/Sub",
@@ -106,20 +104,20 @@
       "pages": [
         "ar/integrations/clickpipes/pubsub/overview",
         "ar/integrations/clickpipes/pubsub/auth"
-      ],
-      "root": "ar/integrations/clickpipes/pubsub/index"
+      ]
     },
     {
       "group": "ClickPipes for MySQL",
       "icon": "/images/integrations/logos/mysql.svg",
       "pages": [
+        "ar/integrations/clickpipes/mysql/index",
         "ar/integrations/clickpipes/mysql/faq",
         "ar/integrations/clickpipes/mysql/datatypes",
         "ar/integrations/clickpipes/mysql/parallel-initial-load",
         "ar/integrations/clickpipes/mysql/schema-changes",
         "ar/integrations/clickpipes/mysql/lifecycle",
         {
-          "group": "العمليات",
+          "group": "Operations",
           "pages": [
             "ar/integrations/clickpipes/mysql/add-table",
             "ar/integrations/clickpipes/mysql/pause-and-resume",
@@ -131,7 +129,7 @@
           ]
         },
         {
-          "group": "المصدر",
+          "group": "Source",
           "pages": [
             "ar/integrations/clickpipes/mysql/source/rds",
             "ar/integrations/clickpipes/mysql/source/aurora",
@@ -142,19 +140,19 @@
             "ar/integrations/clickpipes/mysql/source/generic-maria"
           ]
         }
-      ],
-      "root": "ar/integrations/clickpipes/mysql/index"
+      ]
     },
     {
       "group": "ClickPipes for MongoDB",
       "icon": "/images/integrations/logos/mongodb.svg",
       "pages": [
+        "ar/integrations/clickpipes/mongodb/index",
         "ar/integrations/clickpipes/mongodb/datatypes",
         "ar/integrations/clickpipes/mongodb/quickstart",
         "ar/integrations/clickpipes/mongodb/lifecycle",
         "ar/integrations/clickpipes/mongodb/faq",
         {
-          "group": "العمليات",
+          "group": "Operations",
           "pages": [
             "ar/integrations/clickpipes/mongodb/add-table",
             "ar/integrations/clickpipes/mongodb/remove-table",
@@ -166,15 +164,14 @@
           ]
         },
         {
-          "group": "المصدر",
+          "group": "Source",
           "pages": [
             "ar/integrations/clickpipes/mongodb/source/atlas",
             "ar/integrations/clickpipes/mongodb/source/generic",
             "ar/integrations/clickpipes/mongodb/source/documentdb"
           ]
         }
-      ],
-      "root": "ar/integrations/clickpipes/mongodb/index"
+      ]
     },
     {
       "group": "ClickPipes for BigQuery",
@@ -185,7 +182,7 @@
       ]
     },
     {
-      "group": "الوصول البرمجي",
+      "group": "Programmatic access",
       "icon": "code",
       "pages": [
         "ar/integrations/clickpipes/programmatic-access/openapi",
@@ -193,10 +190,20 @@
       ]
     },
     {
-      "group": "أخرى",
+      "group": "Networking",
+      "icon": "network-wired",
+      "pages": [
+        "ar/integrations/clickpipes/networking/index",
+        "ar/integrations/clickpipes/networking/static-ips",
+        "ar/integrations/clickpipes/networking/aws-privatelink",
+        "ar/integrations/clickpipes/networking/gcp-psc",
+        "ar/integrations/clickpipes/networking/azure-privatelink"
+      ]
+    },
+    {
+      "group": "Other",
       "icon": "ellipsis",
       "pages": [
-        "ar/integrations/clickpipes/aws-privatelink",
         "ar/integrations/clickpipes/dynamodb",
         "ar/integrations/clickpipes/monitoring"
       ]
