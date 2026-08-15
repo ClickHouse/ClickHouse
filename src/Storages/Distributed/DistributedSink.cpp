@@ -648,7 +648,7 @@ void DistributedSink::onFinish()
 
     /// Pool finished means that some exception had been thrown before,
     /// and scheduling new jobs will return "Cannot schedule a task" error.
-    if (insert_sync && pool && !pool->finished())
+    if (insert_sync && pool && !pool->isFinished())
     {
         finished_jobs_count = 0;
         try
@@ -692,7 +692,7 @@ void DistributedSink::onFinish()
 void DistributedSink::onCancel() noexcept
 {
     std::lock_guard lock(execution_mutex);
-    if (pool && !pool->finished())
+    if (pool && !pool->isFinished())
     {
         try
         {

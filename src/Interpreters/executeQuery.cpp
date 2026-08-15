@@ -2819,17 +2819,19 @@ void executeQueryInBackground(std::string_view query, const ASTPtr & ast, Contex
     if (context->hasSessionContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A background query context must not be attached to a session");
 
-    GlobalThreadPool::instance().scheduleOrThrow([query_text = String(query), context]
-    {
-        ThreadStatus thread_status;
+    /// The caller keeps using its own context to finish the response, so the background query gets its own copy.
+    auto background_context = Context::createCopy(context);
+    background_context->makeQueryContext();
 
+    context->getBackgroundQueryPool().scheduleOrThrow([query_text = String(query), background_context]
+    {
         try
         {
-            auto thread_group = ThreadGroup::createForQuery(context);
+            auto thread_group = ThreadGroup::createForQuery(background_context);
             ThreadGroupSwitcher switcher(thread_group, ThreadName::BACKGROUND_QUERY);
             SCOPE_EXIT_SAFE(thread_group->memory_tracker.logPeakMemoryUsage());
 
-            auto io = executeQuery(query_text, context, QueryFlags{ .background = true }).second;
+            auto io = executeQuery(query_text, background_context, QueryFlags{ .background = true }).second;
             try
             {
                 if (io.pipeline.initialized())
@@ -2851,13 +2853,14 @@ void executeQueryInBackground(std::string_view query, const ASTPtr & ast, Contex
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Queries that receive data from the client cannot be run in the background");
                     }
                 }
-                io.onFinish();
             }
             catch (...)
             {
                 io.onException();
                 throw;
             }
+
+            io.onFinish();
         }
         catch (...)
         {
