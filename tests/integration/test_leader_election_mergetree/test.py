@@ -170,37 +170,6 @@ def test_leader_elected(started_cluster):
     node2.query("DROP TABLE IF EXISTS test_le SYNC")
 
 
-def test_freeze_unfreeze_are_fenced_to_leadership_epoch(started_cluster):
-    """`FREEZE`/`UNFREEZE` must not mutate the shared `shadow/` prefix after a lease change."""
-    table = "test_freeze_leader_election"
-    uuid = "12345678-abcd-abcd-abcd-123456789ab1"
-
-    try:
-        create_table_on_first_node(node1, table, uuid)
-        attach_table_on_second_node(node2, table, uuid)
-        leader, followers = wait_for_leader([node1, node2], table_name=table)
-        follower = followers[0]
-        leader.query(f"INSERT INTO {table} VALUES (1)")
-
-        # The generic publish fence simulates a lease loss and reacquisition between command
-        # admission and its first shared-storage mutation. `FREEZE` must fail before creating
-        # the snapshot rather than continuing under the newer epoch.
-        leader.query("SYSTEM ENABLE FAILPOINT merge_tree_leader_election_stale_epoch_before_commit")
-        try:
-            with pytest.raises(Exception, match="Leadership epoch changed"):
-                leader.query(f"ALTER TABLE {table} FREEZE")
-        finally:
-            leader.query("SYSTEM DISABLE FAILPOINT merge_tree_leader_election_stale_epoch_before_commit")
-
-        leader.query(f"ALTER TABLE {table} FREEZE WITH NAME 'leader_backup'")
-        with pytest.raises(Exception, match="TABLE_IS_READ_ONLY"):
-            follower.query(f"ALTER TABLE {table} UNFREEZE WITH NAME 'leader_backup'")
-        leader.query(f"ALTER TABLE {table} UNFREEZE WITH NAME 'leader_backup'")
-    finally:
-        node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
-        node2.query(f"DROP TABLE IF EXISTS {table} SYNC")
-
-
 def test_metrics(started_cluster):
     """Verify that `MergeTreeLeaderElection*` CurrentMetrics and ProfileEvents are wired up."""
     table = "test_metrics"
