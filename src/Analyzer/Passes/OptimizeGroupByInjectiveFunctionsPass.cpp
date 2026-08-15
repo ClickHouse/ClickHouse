@@ -56,7 +56,14 @@ public:
         bool allow_suspicious_types = getSettings()[Setting::allow_suspicious_types_in_group_by];
 
         auto & group_by = query->getGroupBy().getNodes();
-        group_by = unwrapInjectiveFunctionsInKeys(group_by, allow_suspicious_types);
+
+        auto new_group_by = unwrapInjectiveFunctionsInKeys(group_by, allow_suspicious_types);
+
+        /// At least one key is needed for GROUP BY: with an empty key list the query does not
+        /// aggregate at all. Unwrapping yields nothing when every key is an injective function
+        /// of constants.
+        if (!new_group_by.empty())
+            group_by = std::move(new_group_by);
     }
 };
 
