@@ -16,16 +16,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE_1}" < /dev/null
 ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLICKHOUSE_DATABASE_1} ENGINE = Memory" < /dev/null
 
-# Length of the pre-commit pause the drop has to land inside, and the lower bound its wait on the
-# table lock must reach. The bound leaves room for the time spent observing the pause.
+# Length of the pre-commit pause the drop has to land inside.
 WINDOW_MS=10000
-MIN_LOCK_WAIT_MS=$((WINDOW_MS / 2))
 
 # Every DROP the test's logic depends on pins ignore_drop_queries_probability: the stress runner
 # injects 0.2 and clickhouse-client --fake-drop (upgrade check) injects 1, and for a storage that
 # keeps data on disk the injection returns success without dropping anything.
 function setup_table()
 {
+    local window=${2:-$WINDOW_MS}
     ${CLICKHOUSE_CLIENT} --query "
         DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.t SYNC SETTINGS ignore_drop_queries_probability = 0;
 
@@ -37,7 +36,7 @@ function setup_table()
         INSERT INTO ${CLICKHOUSE_DATABASE_1}.t SELECT number, 'a' FROM numbers(2);
 
         ALTER TABLE ${CLICKHOUSE_DATABASE_1}.t
-            MODIFY SETTING sleep_before_commit_local_part_in_replicated_table_ms = ${WINDOW_MS};
+            MODIFY SETTING sleep_before_commit_local_part_in_replicated_table_ms = ${window};
     " < /dev/null
 }
 
@@ -45,7 +44,10 @@ function setup_table()
 # announce its pre-commit pause for this arm's query id. An arm that never reaches that window says
 # so rather than reporting success. The poll pins enable_parallel_replicas: system.text_log has to
 # be read on this server, not on a cluster of hosts that never logged the message.
-function race_with_drop()
+#
+# Returns 1 without printing when the window closed before the drop reached it: the drop then never
+# contends, so its outcome carries no information about the lock and the caller has to try again.
+function race_with_drop_once()
 {
     local arm=$1
     shift
@@ -94,8 +96,9 @@ function race_with_drop()
         else
             drop=failed
         fi
-        # Blocking on the table lock is the property under test. Wall-clock cannot show it, so the
-        # drop's own wait counter is read: a drop that never queued behind the lock reports zero.
+        # Blocking on the table lock is the property under test. The counter advances only while the
+        # request sleeps on the lock, so it is zero for an uncontended drop however long the
+        # statement itself ran.
         if [ "$drop" = ok ]; then
             local waited
             waited=$(${CLICKHOUSE_CLIENT} --query "
@@ -108,8 +111,12 @@ function race_with_drop()
             case "$waited" in
                 '' | *[!0-9]*) waited=-1 ;;
             esac
-            if [ "$waited" -lt "$MIN_LOCK_WAIT_MS" ]; then
-                drop="did not wait for the lock (${waited}ms)"
+            if [ "$waited" -eq 0 ]; then
+                wait "$updater" 2>/dev/null || true
+                return 1
+            fi
+            if [ "$waited" -lt 0 ]; then
+                drop="lock wait unreadable"
             fi
         fi
     fi
@@ -122,6 +129,27 @@ function race_with_drop()
     else
         echo "$arm: commit window never observed"
     fi
+}
+
+# Each retry installs a longer window, since a retry means observing the pause outran the last one.
+# Running out of attempts is printed rather than ignored, so a server on which the drop can never be
+# made to contend still fails.
+function race_with_drop()
+{
+    local arm=$1
+    shift
+    local attempt
+    local window=$WINDOW_MS
+    for attempt in 1 2; do
+        if [ "$attempt" -ne 1 ]; then
+            window=$((window * 3))
+            setup_table "$arm" "$window"
+        fi
+        if race_with_drop_once "$arm" "$@"; then
+            return 0
+        fi
+    done
+    echo "$arm: drop never overlapped the commit window"
 }
 
 setup_table update
