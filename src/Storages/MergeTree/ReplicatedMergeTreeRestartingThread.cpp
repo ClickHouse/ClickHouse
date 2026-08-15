@@ -206,6 +206,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         /// the whole startup instead of proceeding without region information.
         if (!storage.geo_replication_controller.start())
         {
+            storage.geo_replication_controller.stop();
             LOG_WARNING(log, "Failed to publish the region for geo replication control. Will try again.");
             return false;
         }
@@ -267,6 +268,10 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
     }
     catch (...)
     {
+        /// `geo_replication_controller.start` publishes the replica region and may acquire the regional leader
+        /// lease before the remaining startup steps finish. A readonly replica must not keep that state alive:
+        /// it would prevent an active peer in the same region from becoming leader and fetching remote parts.
+        storage.geo_replication_controller.stop();
         storage.replica_is_active_node = nullptr;
 
         try

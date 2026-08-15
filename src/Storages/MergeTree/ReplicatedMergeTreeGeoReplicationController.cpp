@@ -259,6 +259,11 @@ bool ReplicatedMergeTreeGeoReplicationController::start()
     if (!task)
         return true;
 
+    /// A failed synchronous start schedules a delayed retry. Cancel and join that retry before starting a new
+    /// synchronous pass: otherwise it can execute after the new pass has published the region node, reset the
+    /// active term, and temporarily remove this replica's region membership and leader lease.
+    task->deactivate();
+
     /// Clear `shutdown` before running: otherwise the controller pass can observe a stale `shutdown == true`,
     /// returning early without ever creating the region node or entering leader election.
     shutdown = false;
