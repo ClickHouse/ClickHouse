@@ -19,6 +19,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
 
+#include <cmath>
 #include <queue>
 
 
@@ -173,6 +174,38 @@ bool fieldHasStringWithNulByte(const Field & field)
         case Field::Types::Map:
             for (const auto & element : field.safeGet<Map>())
                 if (fieldHasStringWithNulByte(element))
+                    return true;
+            return false;
+        default:
+            return false;
+    }
+}
+
+/// SQLite parses ClickHouse's unquoted `inf` and `nan` spellings as identifiers rather than
+/// numeric literals. Keep predicates containing non-finite floating-point values local.
+bool fieldHasNonFiniteFloatingPointValue(const Field & field)
+{
+    checkStackSize();
+
+    switch (field.getType())
+    {
+        case Field::Types::Float64:
+            return !std::isfinite(field.safeGet<Float64>());
+        case Field::Types::Float32:
+            return !std::isfinite(field.safeGet<Float32>());
+        case Field::Types::Tuple:
+            for (const auto & element : field.safeGet<Tuple>())
+                if (fieldHasNonFiniteFloatingPointValue(element))
+                    return true;
+            return false;
+        case Field::Types::Array:
+            for (const auto & element : field.safeGet<Array>())
+                if (fieldHasNonFiniteFloatingPointValue(element))
+                    return true;
+            return false;
+        case Field::Types::Map:
+            for (const auto & element : field.safeGet<Map>())
+                if (fieldHasNonFiniteFloatingPointValue(element))
                     return true;
             return false;
         default:
@@ -497,6 +530,9 @@ bool isCompatible(
         /// SQLite cannot represent NUL bytes in string literals, and PostgreSQL cannot store NUL
         /// bytes in string values, so do not push such predicates down.
         if (literal_escaping_style != LiteralEscapingStyle::Regular && fieldHasStringWithNulByte(literal->value))
+            return false;
+
+        if (literal_escaping_style == LiteralEscapingStyle::SQLite && fieldHasNonFiniteFloatingPointValue(literal->value))
             return false;
 
         /// Foreign databases often have no support for Array / Map, and ClickHouse would serialize
