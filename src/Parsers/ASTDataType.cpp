@@ -191,24 +191,79 @@ constexpr TypeNameArgument columns_list_arguments[]
     {"structureToProtobufSchema", 0},
 };
 
-/** A table function in a persisted definition: rewrite every argument of it that is a columns declaration list.
-  *
-  * The position of that argument differs between table functions and even between overloads of one of them
-  * (`file(path, format)` versus `file(path, format, structure)`, `s3` with and without credentials), so instead
-  * of an allowlist of positions every string argument is tried and only the ones that really are a columns
-  * declaration list are rewritten.
+/// Return the structure argument of a table function, if this overload has one.
+///
+/// This must follow the individual table-function signatures. In particular, a string which happens to look like
+/// a columns list is still data for `format(format, data)`, and must not be rewritten.
+ASTPtr * getTableFunctionStructureArgument(ASTFunction & table_function)
+{
+    if (!table_function.arguments)
+        return nullptr;
+
+    auto & arguments = table_function.arguments->children;
+    const auto argument_at = [&arguments](size_t index) -> ASTPtr *
+    {
+        return index < arguments.size() ? &arguments[index] : nullptr;
+    };
+
+    if (equalsCaseInsensitiveString(table_function.name, "format"))
+        return arguments.size() == 3 ? argument_at(1) : nullptr;
+    if (equalsCaseInsensitiveString(table_function.name, "generateRandom")
+        || equalsCaseInsensitiveString(table_function.name, "input")
+        || equalsCaseInsensitiveString(table_function.name, "null"))
+        return argument_at(0);
+    if (equalsCaseInsensitiveString(table_function.name, "file")
+        || equalsCaseInsensitiveString(table_function.name, "url")
+        || equalsCaseInsensitiveString(table_function.name, "s3")
+        || equalsCaseInsensitiveString(table_function.name, "hdfs")
+        || equalsCaseInsensitiveString(table_function.name, "azureBlobStorage")
+        || equalsCaseInsensitiveString(table_function.name, "executable"))
+        return argument_at(2);
+    if (equalsCaseInsensitiveString(table_function.name, "redis"))
+        return argument_at(2);
+    if (equalsCaseInsensitiveString(table_function.name, "ytsaurus"))
+        return arguments.size() == 2 ? argument_at(1) : arguments.size() == 4 ? argument_at(3) : nullptr;
+    if (equalsCaseInsensitiveString(table_function.name, "hive"))
+        return argument_at(3);
+
+    return nullptr;
+}
+
+/// Materialize the subset of constant expressions accepted as table-function structures before freezing their type.
+/// Table functions evaluate their arguments later, so a persisted `concat('id ', 'UUID')` must become a literal now.
+bool foldConstantStringExpression(ASTPtr & argument)
+{
+    if (argument->as<ASTLiteral>())
+        return true;
+
+    auto * function = argument->as<ASTFunction>();
+    if (!function || !equalsCaseInsensitiveString(function->name, "concat") || !function->arguments)
+        return false;
+
+    String result;
+    for (auto & child : function->arguments->children)
+    {
+        if (!foldConstantStringExpression(child))
+            return false;
+        const auto * literal = child->as<ASTLiteral>();
+        if (literal->value.getType() != Field::Types::String)
+            return false;
+        result += literal->value.safeGet<String>();
+    }
+
+    argument = make_intrusive<ASTLiteral>(Field(std::move(result)));
+    return true;
+}
+
+/** Rewrite the schema string of a table function in a persisted definition.
   */
 bool substituteBareUUIDInTableFunction(ASTFunction & table_function)
 {
-    if (!table_function.arguments)
+    auto * structure_argument = getTableFunctionStructureArgument(table_function);
+    if (!structure_argument || !foldConstantStringExpression(*structure_argument))
         return false;
 
-    bool substituted = false;
-    for (const auto & argument : table_function.arguments->children)
-        if (auto * literal = argument->as<ASTLiteral>())
-            substituted |= substituteBareUUIDInColumnsListLiteral(*literal);
-
-    return substituted;
+    return substituteBareUUIDInColumnsListLiteral(*(*structure_argument)->as<ASTLiteral>());
 }
 
 bool substituteBareUUIDInColumnsListLiteralArgument(ASTFunction & function)
