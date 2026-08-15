@@ -274,7 +274,7 @@ std::string getPathPrefixForRelativeCachePath(ContextPtr context)
     if (!config_fs_caches_dir.empty())
         return config_fs_caches_dir;
 
-    return pathToGenericString(fs::path(context->getPath()) / "caches");
+    return pathToGenericString(pathFromString(context->getPath()) / "caches");
 }
 
 }

@@ -29,7 +29,7 @@ class DiskWithPath
 public:
     explicit DiskWithPath(DiskPtr disk_, std::optional<String> path_ = std::nullopt);
 
-    String getAbsolutePath(const String & any_path) const { return normalizePath(pathToGenericString(fs::path(path) / any_path)); }
+    String getAbsolutePath(const String & any_path) const { return normalizePath(pathToGenericString(pathFromString(path) / pathFromString(any_path))); }
 
     String getCurrentPath() const { return path; }
 

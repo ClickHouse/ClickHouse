@@ -102,9 +102,9 @@ protected:
         {
             copied_path_from.pop_back();
         }
-        String plain_filename = pathToGenericString(fs::path(copied_path_from).filename());
+        String plain_filename = pathToGenericString(pathFromString(copied_path_from).filename());
 
-        return pathToGenericString(fs::path{path_to} / plain_filename);
+        return pathToGenericString(pathFromString(path_to) / pathFromString(plain_filename));
     }
 
 

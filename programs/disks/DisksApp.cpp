@@ -438,7 +438,7 @@ void DisksApp::initializeHistoryFile()
     else
         history_file = home_path + "/.disks-file-history";
 
-    if (!history_file.empty() && !fs::exists(history_file))
+    if (!history_file.empty() && !fs::exists(pathFromString(history_file)))
     {
         try
         {
@@ -487,7 +487,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         try
         {
             ConfigProcessor config_processor(config_path, false, false);
-            ConfigProcessor::setConfigPath(pathToGenericString(fs::path(config_path).parent_path()));
+            ConfigProcessor::setConfigPath(pathToGenericString(pathFromString(config_path).parent_path()));
             auto loaded_config = config_processor.loadConfig();
             config().add(loaded_config.configuration.duplicate(), false, false);
         }
@@ -516,7 +516,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         auto log_path = config().getString("logger.clickhouse-disks", "/var/log/clickhouse-server/clickhouse-disks.log");
 
         log_file = new Poco::FileChannel;
-        log_file->setProperty(Poco::FileChannel::PROP_PATH, pathToGenericString(fs::weakly_canonical(log_path)));
+        log_file->setProperty(Poco::FileChannel::PROP_PATH, pathToGenericString(fs::weakly_canonical(pathFromString(log_path))));
         log_file->setProperty(Poco::FileChannel::PROP_ROTATION, "100M");
         log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
         log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, "false");

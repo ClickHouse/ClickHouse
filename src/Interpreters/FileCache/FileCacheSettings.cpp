@@ -271,7 +271,7 @@ void FileCacheSettings::validate()
         if (settings[FileCacheSetting::max_size_ratio_to_total_space] <= 0 || settings[FileCacheSetting::max_size_ratio_to_total_space] > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "`max_size_ratio_to_total_space` must be in range (0, 1]");
 
-        fs::create_directories(settings[FileCacheSetting::path].value);
+        fs::create_directories(pathFromString(settings[FileCacheSetting::path].value));
         struct statvfs stat = getStatVFS(settings[FileCacheSetting::path]);
         const auto total_space = stat.f_blocks * stat.f_frsize;
         settings[FileCacheSetting::max_size] =
