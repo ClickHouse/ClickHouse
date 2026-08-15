@@ -552,22 +552,11 @@ void MaterializedPostgreSQLConsumer::preserveUnchangedToastValues(StorageData & 
         return key;
     };
 
-    std::map<Row, size_t> latest_buffer_rows;
     std::set<Row> keys_to_read;
-    /// Several updates of the same row can be present in one buffer. Only the
-    /// first one needs a lookup in the nested table; later updates use the
-    /// preceding buffered row after it has been restored.
     for (size_t row_idx = 0; row_idx < rows; ++row_idx)
     {
         for (const auto * value : unchanged_values_by_row[row_idx])
-        {
-            auto source_key = get_key(value->key_source_row_idx);
-            if (!latest_buffer_rows.contains(source_key))
-                keys_to_read.insert(std::move(source_key));
-        }
-
-        if (buffer.columns[sign_column_idx]->getInt(row_idx) == 1)
-            latest_buffer_rows[get_key(row_idx)] = row_idx;
+            keys_to_read.insert(get_key(value->key_source_row_idx));
     }
 
     std::vector<size_t> affected_column_indices(affected_columns.begin(), affected_columns.end());
@@ -673,17 +662,26 @@ void MaterializedPostgreSQLConsumer::preserveUnchangedToastValues(StorageData & 
         }
     }
 
+    std::map<size_t, MutableColumnPtr> restored_columns;
     for (const auto column_idx : affected_column_indices)
     {
         const auto & old_column = buffer.columns[column_idx];
         auto new_column = old_column->cloneEmpty();
         new_column->reserve(rows);
-        latest_buffer_rows.clear();
+        restored_columns.emplace(column_idx, std::move(new_column));
+    }
 
-        /// Rebuild only affected columns. Processing rows in replication order
-        /// makes already restored buffered rows available to subsequent updates.
-        for (size_t row_idx = 0; row_idx < rows; ++row_idx)
+    std::map<Row, size_t> latest_buffer_rows;
+    /// Rebuild affected columns together. The latest-row map must use the
+    /// restored values of every replica-identity column, otherwise a later
+    /// update in the same transaction cannot find a prior row with an
+    /// unchanged TOAST key component.
+    for (size_t row_idx = 0; row_idx < rows; ++row_idx)
+    {
+        for (const auto column_idx : affected_column_indices)
         {
+            auto & new_column = restored_columns.at(column_idx);
+            const auto & old_column = buffer.columns[column_idx];
             const auto marker = std::find_if(
                 unchanged_values_by_row[row_idx].begin(),
                 unchanged_values_by_row[row_idx].end(),
@@ -716,12 +714,26 @@ void MaterializedPostgreSQLConsumer::preserveUnchangedToastValues(StorageData & 
                     new_column->insert(stored_source->second[affected_column_offsets.at(column_idx)]);
                 }
             }
-
-            if (buffer.columns[sign_column_idx]->getInt(row_idx) == 1)
-                latest_buffer_rows[get_key(row_idx)] = row_idx;
         }
 
-        buffer.columns[column_idx] = std::move(new_column);
+        if (buffer.columns[sign_column_idx]->getInt(row_idx) == 1)
+        {
+            Row key;
+            key.reserve(buffer.key_column_indices.size());
+            for (const auto column_idx : buffer.key_column_indices)
+            {
+                if (const auto it = restored_columns.find(column_idx); it != restored_columns.end())
+                    key.push_back((*it->second)[row_idx]);
+                else
+                    key.push_back((*buffer.columns[column_idx])[row_idx]);
+            }
+            latest_buffer_rows[std::move(key)] = row_idx;
+        }
+    }
+
+    for (auto & [column_idx, column] : restored_columns)
+    {
+        buffer.columns[column_idx] = std::move(column);
     }
 
     buffer.unchanged_toast_values.clear();

@@ -403,7 +403,34 @@ def test_toast_in_changed_composite_replica_identity(started_cluster):
         instance.query(
             f"SELECT id, length(toast_key), other FROM test_database.{table}"
         )
-        == "2\\t2500\\tupdated\\n"
+        == "2\t2500\tupdated\n"
+    )
+
+    # Both updates are buffered before the transaction is flushed. The second
+    # update must find the first row using its restored TOAST key, rather than
+    # the temporary default value used while parsing the new tuple.
+    conn = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        database=True,
+        auto_commit=False,
+    )
+    cursor = conn.cursor()
+    cursor.execute(f"UPDATE {table} SET id = 3, other = 'first update' WHERE id = 2")
+    cursor.execute(f"UPDATE {table} SET id = 4, other = 'second update' WHERE id = 3")
+    conn.commit()
+    conn.close()
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(
+            f"SELECT id, length(toast_key), other FROM test_database.{table}"
+        )
+        == "4\t2500\tsecond update\n"
     )
 
     pg_manager.drop_materialized_db()

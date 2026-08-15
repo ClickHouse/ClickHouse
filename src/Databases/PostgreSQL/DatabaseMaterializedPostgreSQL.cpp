@@ -998,7 +998,7 @@ WHERE oid = 'postgres_table'::regclass;
 ```
 
 :::note
-[**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) values are replicated. When PostgreSQL sends an unchanged TOAST reference during an update, the existing value is preserved. Replica identity columns must not arrive as unchanged TOAST values, because the row cannot then be identified.
+[**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) values are replicated. When PostgreSQL sends an unchanged TOAST reference during an update, the existing value is preserved. An unchanged TOAST replica identity column requires PostgreSQL to send an old key tuple, otherwise the row cannot be identified.
 :::
 
 ## Settings {#settings}
