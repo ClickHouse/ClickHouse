@@ -35,7 +35,8 @@ Remember it as `$REPO` and use it everywhere below instead of the literal `Click
 Fetch PR metadata using `gh` if available, otherwise use `WebFetch` on the GitHub API:
 
 ```bash
-gh pr view "$PR_NUMBER" --json number,title,body,headRefName,baseRefName,state,mergeable,mergeStateStatus,author,url,headRepository,headRepositoryOwner,statusCheckRollup,reviews,comments,reviewRequests
+GH_USER=$(gh api user --jq .login)
+gh pr view "$PR_NUMBER" --json number,title,body,headRefName,baseRefName,state,mergeable,mergeStateStatus,author,url,headRepository,headRepositoryOwner,isCrossRepository,maintainerCanModify,statusCheckRollup,reviews,comments,reviewRequests
 ```
 
 If `gh` is not available or not authenticated, use WebFetch to get the data. Append `?per_page=100` and follow the `Link` header for pagination (the `rel="next"` URL) to fetch all pages:
@@ -107,13 +108,17 @@ Resolving merge markers is not always enough. If the branch is long-stale, the m
 4. Only when a full rework is genuinely infeasible in this environment — e.g. a submodule points at a fork that cannot be fetched or built here — do the most you can (merge, resolve conflicts, rework whatever you can build), push it, and state plainly what could not be verified and what remains blocked (e.g. the submodule needs a ClickHouse-org fork).
 
 **A `CONFLICTING` PR must not be left unresolved whenever you can push.** Resolve the conflicts (steps above) and push:
-- For your own PRs / branches in the main repo, and for **fork PRs where `maintainerCanModify` is true**, push the resolved branch — to the fork's remote for fork PRs (step 7). A `contested`, `reserved`, `NA`, `dsgn`, or "superseded" note does **not** block the mechanical conflict resolution and push; it only reserves the final *design / merge* decision. Resolving conflicts means keeping the author's intended change merge-clean against current master — it does **not** require the PR's design to be correct (that stays the human's call).
-- **If you cannot push** — a fork with `maintainerCanModify=false`, or you otherwise lack permission — **supersede the PR**, provided the change is still wanted and is not obsolete, already fixed on master, already covered by another open PR, or design-rejected/contested. (In those excluded cases, report the state and leave the human decision; never open a duplicate of an existing superseding PR.) To supersede:
+- Determine pushability in this order:
+  1. A branch in the main repository (`isCrossRepository=false`) is directly pushable through `origin`. **Ignore `maintainerCanModify` for same-repository PRs**; GitHub can report it as false because the field describes maintainer access to a fork, not access to a branch in the base repository.
+  2. A fork owned by the authenticated `$GH_USER` (or a PR authored by `$GH_USER`) is directly pushable through that user's fork remote. **Ignore `maintainerCanModify` for the authenticated user's own fork PRs**; the owner can push regardless of whether base-repository maintainers are allowed to edit.
+  3. Only for a cross-repository fork owned by someone else, use `maintainerCanModify`: true means push to the fork remote; false means the branch is not pushable by the authenticated user.
+- For every pushable PR above, push the resolved branch — to `origin` for same-repository PRs and to the fork's remote for fork PRs (step 7). A `contested`, `reserved`, `NA`, `dsgn`, or "superseded" note does **not** block the mechanical conflict resolution and push; it only reserves the final *design / merge* decision. Resolving conflicts means keeping the author's intended change merge-clean against current master — it does **not** require the PR's design to be correct (that stays the human's call).
+- **If you cannot push** — specifically, another author's cross-repository fork with `maintainerCanModify=false`, or a push actually fails for lack of permission — **supersede the PR**, provided the change is still wanted and is not obsolete, already fixed on master, already covered by another open PR, or design-rejected/contested. (In those excluded cases, report the state and leave the human decision; never open a duplicate of an existing superseding PR.) To supersede:
   1. You already have the resolved + reworked branch in the worktree. Push it to the **main repo** (`origin`) under a new name (e.g. `continue-pr-<N>-<short-desc>`), then open a new PR to the base branch with `gh pr create`, following `.github/PULL_REQUEST_TEMPLATE.md`. State that it **supersedes** the original and add `Related: <original PR URL>` (and `Closes: <issue>` if the original targeted one).
   2. **Credit the original author.** If they have signed the CLA, keep their original commits so their authorship is preserved in the history. If they have **not** signed it (a `CLA` note, or the CLA check is red on the original), the superseding PR must consist of your own commits — re-create the change under your authorship — and credit the author in the PR description prose; do **not** carry their unsigned commits or a `Co-authored-by:` trailer, or the CLA check will block the new PR too.
   3. Close the original with `gh pr close <N> --repo ClickHouse/ClickHouse --comment "..."`: say it is superseded by the new PR (link it), that you could not push the resolution here because maintainer edits are disabled on the fork, and thank the author.
   If the change is genuinely not worth superseding, resolve locally if useful and report the **specific** blocker (e.g. "resolved locally but the fork has maintainer edits disabled") — not a bare "needs attention".
-- Check push access up front with `gh pr view <n> --json maintainerCanModify,headRepositoryOwner,headRepository` so you know before starting whether a resolved branch can land or must be superseded.
+- Check push access up front with `gh api user --jq .login` and `gh pr view <n> --json author,isCrossRepository,maintainerCanModify,headRepositoryOwner,headRepository`. Never infer that a same-repository PR or the authenticated user's own PR is unpushable from `maintainerCanModify=false`.
 
 ### 4. Analyze CI status and fix failures
 

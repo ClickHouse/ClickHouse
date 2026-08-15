@@ -202,6 +202,10 @@ public:
         return "(String, Integer) -> String";
     }
 
+    /// `repeat` throws `TOO_LARGE_STRING_SIZE` when the number of repetitions or the size of the
+    /// resulting string exceeds the limit, and both of them depend on the data of a single row.
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
