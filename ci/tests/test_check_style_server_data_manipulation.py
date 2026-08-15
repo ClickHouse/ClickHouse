@@ -180,6 +180,14 @@ def test_fetch_without_mutation_is_not_flagged(tmp_path):
     assert not _run(tmp_path, FETCH_PART_PATH + 'echo "$path"\n')
 
 
+def test_arrow_diagnostic_is_not_treated_as_redirection(tmp_path):
+    # A diagnostic can contain `-> $output`; this is not shell redirection.
+    assert not _run(
+        tmp_path,
+        FETCH_PART_PATH + 'echo "Query failed: $* -> $output"\n',
+    )
+
+
 def test_mktemp_scratch_redirect_is_not_flagged(tmp_path):
     # Command substitution in a redirect only counts when the same line pulls the
     # path out of a system table; `$(mktemp)` stays allowed.
