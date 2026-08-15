@@ -107,3 +107,39 @@ DROP ROW POLICY rp_atf_policy ON rp_atf;
 DROP TABLE rp_atf_dist;
 DROP TABLE rp_atf;
 "
+
+# A table reached only through the policy's own IN subquery has nothing lowered into the shipped
+# plan, so its additional_table_filters entry has to be resolved here or it is lost. The filter
+# narrows what the policy admits from ten rows to three, so an unapplied filter reads as the full
+# range rather than as a count both cases could produce.
+${CLICKHOUSE_CLIENT} -m -q "
+DROP TABLE IF EXISTS rp_sq_src;
+DROP TABLE IF EXISTS rp_sq_leaf;
+DROP TABLE IF EXISTS rp_sq_dist;
+CREATE TABLE rp_sq_src (s UInt32) ENGINE = MergeTree ORDER BY s;
+INSERT INTO rp_sq_src SELECT number FROM numbers(10);
+CREATE TABLE rp_sq_leaf (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY x;
+INSERT INTO rp_sq_leaf SELECT number, number FROM numbers(10);
+CREATE TABLE rp_sq_dist AS rp_sq_leaf
+    ENGINE = Distributed(test_shard_localhost, currentDatabase(), rp_sq_leaf);
+DROP ROW POLICY IF EXISTS rp_sq_policy ON rp_sq_leaf;
+-- The policy text is re-resolved on the executing node against its own default database, so the
+-- subquery names the database explicitly.
+CREATE ROW POLICY rp_sq_policy ON rp_sq_leaf FOR SELECT
+    USING y IN (SELECT s FROM ${CLICKHOUSE_DATABASE}.rp_sq_src) TO ALL;
+"
+
+for sqp in 1 0; do
+    echo -n "atf on policy subquery sqp=${sqp} "
+    ${CLICKHOUSE_CLIENT} -q "
+        SELECT arraySort(groupArray(x)) FROM rp_sq_dist
+        SETTINGS prefer_localhost_replica = 0, enable_analyzer = 1, serialize_query_plan = ${sqp},
+                 additional_table_filters = {'${CLICKHOUSE_DATABASE}.rp_sq_src': 's < 3'}"
+done
+
+${CLICKHOUSE_CLIENT} -m -q "
+DROP ROW POLICY rp_sq_policy ON rp_sq_leaf;
+DROP TABLE rp_sq_dist;
+DROP TABLE rp_sq_leaf;
+DROP TABLE rp_sq_src;
+"

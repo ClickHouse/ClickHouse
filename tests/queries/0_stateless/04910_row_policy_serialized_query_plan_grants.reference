@@ -6,3 +6,5 @@ granted y only, selects x, sqp=0 ACCESS_DENIED
 granted y only, selects x, sqp=1 ACCESS_DENIED
 atf nd sqp=1 ONCE
 atf nd sqp=0 ONCE
+atf on policy subquery sqp=1 [0,1,2]
+atf on policy subquery sqp=0 [0,1,2]

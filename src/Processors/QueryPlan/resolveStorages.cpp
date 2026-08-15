@@ -48,6 +48,7 @@ namespace Setting
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsMap additional_table_filters;
 }
 
 namespace ErrorCodes
@@ -121,6 +122,23 @@ static ASTPtr wrapWithUnion(ASTPtr select)
     select_with_union->children.push_back(select_with_union->list_of_selects);
 
     return select_with_union;
+}
+
+/// Every key form `parseAdditionalFilterAstIfNeeded` would match against `table_id` is dropped, so
+/// that the entry cannot resolve again for this table while entries for other tables still can.
+static Map dropAdditionalTableFiltersFor(const Map & additional_filters, const StorageID & table_id, const ContextPtr & context)
+{
+    Map kept;
+    for (const auto & additional_filter : additional_filters)
+    {
+        const auto & table = additional_filter.safeGet<Tuple>().at(0).safeGet<String>();
+        if (table == table_id.getFullNameNotQuoted()
+            || (table == table_id.getTableName() && context->getCurrentDatabase() == table_id.getDatabaseName()))
+            continue;
+
+        kept.push_back(additional_filter);
+    }
+    return kept;
 }
 
 static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const ContextPtr & context)
@@ -270,9 +288,13 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
             options.ignore_table_access_check = true;
 
             auto row_policy_context = Context::createCopy(context);
-            /// The initiator has already lowered `additional_table_filters` into an explicit filter step
-            /// of the shipped plan, so re-resolving the setting here would apply it a second time.
-            row_policy_context->setSetting("additional_table_filters", Map{});
+            /// This table's entry already arrived as an explicit filter step of the shipped plan, so
+            /// resolving it again here would filter twice. Entries for other tables are reachable only
+            /// through the policy's own filter, for which nothing was shipped, so they stay.
+            row_policy_context->setSetting(
+                "additional_table_filters",
+                dropAdditionalTableFiltersFor(
+                    context->getSettingsRef()[Setting::additional_table_filters], storage->getStorageID(), context));
             /// Parallelism of the read is decided by the step, not by this node's setting.
             row_policy_context->setSetting(
                 "allow_experimental_parallel_reading_from_replicas",
