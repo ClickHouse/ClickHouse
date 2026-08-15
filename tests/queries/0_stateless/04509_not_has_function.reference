@@ -91,6 +91,22 @@ SELECT count() FROM test_not_has WHERE notHas([1, NULL], x);
 20
 SELECT count() FROM test_not_has WHERE notHas([1, NULL], x) SETTINGS use_primary_key = 0;
 20
+-- Float arrays must not become primary-key set atoms: `has` treats NaN as unequal to itself,
+-- while the set-index comparator treats NaNs as equal. Both primary-key modes must return all rows.
+DROP TABLE IF EXISTS test_not_has_float;
+CREATE TABLE test_not_has_float (x Float64) ENGINE = MergeTree
+ORDER BY x
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_not_has_float VALUES (nan), (1), (2);
+SELECT count() FROM test_not_has_float WHERE notHas([CAST('nan', 'Float64')], x);
+3
+SELECT count() FROM test_not_has_float WHERE notHas([CAST('nan', 'Float64')], x) SETTINGS use_primary_key = 0;
+3
+SELECT count() FROM test_not_has_float WHERE NOT has([CAST('nan', 'Float64')], x);
+3
+SELECT count() FROM test_not_has_float WHERE NOT has([CAST('nan', 'Float64')], x) SETTINGS use_primary_key = 0;
+3
+DROP TABLE test_not_has_float;
 -- Empty array: `has` matches nothing, `notHas` matches everything.
 SELECT count() FROM test_not_has WHERE has([], x);
 0

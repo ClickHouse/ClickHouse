@@ -2739,6 +2739,13 @@ bool KeyCondition::tryPrepareSetIndexForHas(
 
     const DataTypePtr & array_nested_type = array_data_type->getNestedType();
 
+    /// `has` uses accurate equality for array elements, while MergeTreeSetIndex compares floating-point
+    /// keys with ColumnVector::compareAt. In particular, `has([nan], nan)` is false but the set index
+    /// considers the two NaNs equal. Do not build a set atom for floating-point arrays: using it under
+    /// `notHas` could otherwise prune rows that satisfy the predicate.
+    if (isFloat(removeNullable(removeLowCardinality(array_nested_type))))
+        return false;
+
     const auto array_elements = array_col->getDataPtr();
     if (array_elements->empty())
     {
