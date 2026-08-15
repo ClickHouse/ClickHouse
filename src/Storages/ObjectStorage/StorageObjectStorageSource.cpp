@@ -1358,11 +1358,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 auto name_in_storage = wanted_column.getNameInStorage();
                 if (!seen_names.emplace(name_in_storage).second)
                     continue;
-                columns_with_synthesized.emplace_back(name_in_storage, wanted_column.getTypeInStorage());
                 /// A name the file's own schema carries is left alone even when the transform does
                 /// not emit it: the reader resolves it by field id, so it denotes that physical
-                /// column rather than a missing one, and filters on it are evaluated there.
-                if (!header_after_transform.has(name_in_storage) && !initial_header.has(name_in_storage))
+                /// column rather than a missing one, and filters on it are evaluated there. It is
+                /// kept out of the list below too, which is what any column in it is created from.
+                const bool emitted = header_after_transform.has(name_in_storage);
+                if (!emitted && initial_header.has(name_in_storage))
+                    continue;
+                columns_with_synthesized.emplace_back(name_in_storage, wanted_column.getTypeInStorage());
+                if (!emitted)
                     synthesized_columns.emplace(name_in_storage);
             }
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-msan
 # Random settings limits: optimize_read_in_order=(1, None)
 # Tag no-fasttest: Depends on Avro and Parquet
+# Tag no-msan: DeltaKernel is not compiled with msan
 # The clamp above pins optimize_read_in_order because the sorting-key arm asserts whether
 # read-in-order was taken, which optimize_read_in_order=0 disables outright. Everything else
 # stays randomized.
@@ -76,6 +77,9 @@ ${CH} -q "SELECT groupArray(renamed_a) FROM icebergLocal('${ICE}16/', 'Parquet',
 # A name the file's own (older) schema carries is NOT a missing column: the reader resolves it by
 # field id. It stays rejected, as before, rather than being turned into a silent default.
 ${CH} -q "SELECT groupArray(a) FROM icebergLocal('${ICE}16/', 'Parquet', 'a Nullable(Int64)')" 2>&1 | grep -oE 'Code: [0-9]+' | head -1
+# Requesting it beside a column that IS synthesized must not change that: the synthesis list is
+# what every column in it is built from, so a name left out of it stays rejected either way.
+${CH} -q "SELECT groupArray(a), countIf(zzz IS NULL) FROM icebergLocal('${ICE}16/', 'Parquet', 'a Nullable(Int64), zzz Nullable(String)')" 2>&1 | grep -oE 'Code: [0-9]+' | head -1
 
 # An added column is emitted by the evolution transform itself rather than synthesized here, so it
 # reaches `AddingDefaultsTransform` at a position the reader's missing-value bitmask does not
@@ -147,7 +151,9 @@ ${CH} --query_id="${QID_NOSTRUCT}" -q "SELECT id FROM icebergS3Cluster('test_clu
 ${CH} --query_id="${QID_STRUCT}" -q "SELECT id FROM icebergS3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='${CLICKHOUSE_DATABASE}_ice14/', format='Parquet', structure='id Nullable(Int64)') ORDER BY id SETTINGS optimize_read_in_order = 1" > /dev/null
 ${CH} -q "SYSTEM FLUSH LOGS processors_profile_log"
 # Worker rows only: query_id differs from initial_query_id on a secondary query. No sort on the
-# worker means the key survived and read-in-order was taken there.
+# worker means the key survived and read-in-order was taken there. Asserted for this query id
+# first, so that a count of zero sorts cannot be read from an absence of worker rows.
+${CH} -q "SELECT count() > 0 FROM system.processors_profile_log WHERE initial_query_id = '${QID_NOSTRUCT}' AND query_id != initial_query_id"
 ${CH} -q "SELECT countIf(name = 'PartialSortingTransform') FROM system.processors_profile_log WHERE initial_query_id = '${QID_NOSTRUCT}' AND query_id != initial_query_id"
 # The same read WITH a user structure still reaches the worker, which proves the arm above is not
 # green merely because nothing was dispatched.
@@ -163,6 +169,24 @@ echo "-- iceberg cluster: a worker keeps declared columns that the metadata does
 # array reads the same whether two default rows arrived or none did.
 ${CH} --allow_experimental_insert_into_iceberg=1 -q "INSERT INTO ice14 SELECT number, 'x' FROM numbers(2)"
 ${CH} -q "SELECT count(), countIf(zzz IS NULL), toTypeName(zzz) FROM icebergS3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='${CLICKHOUSE_DATABASE}_ice14/', format='Parquet', structure='zzz Nullable(String)')"
+
+# A DEFAULT clause survives only as long as the structure reaches the worker as text: the columns the
+# initiator resolves carry names and types alone, so a structure rebuilt from them would read as
+# `zzz UInt64` and fill zeros. Summing is the oracle, since a dropped clause still yields two rows.
+echo "-- iceberg cluster: a worker honors a DEFAULT declared in the structure"
+${CH} -q "SELECT count(), sum(zzz) FROM icebergS3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='${CLICKHOUSE_DATABASE}_ice14/', format='Parquet', structure='zzz UInt64 DEFAULT 42')"
+
+# A named collection and an explicit URL reach different argument-rewriting branches, and only the
+# explicit one rewrites the key-value arguments in place, so both are covered. The non-cluster read
+# is the reference: the two must agree, whichever branch rewrote the arguments.
+echo "-- iceberg cluster: a DEFAULT declared next to an explicit URL is honored too"
+${CH} -q "SELECT count(), sum(zzz) FROM icebergS3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/${CLICKHOUSE_DATABASE}_ice14/', 'test', 'testtest', format='Parquet', structure='zzz UInt64 DEFAULT 42')"
+${CH} -q "SELECT count(), sum(zzz) FROM icebergS3('http://localhost:11111/test/${CLICKHOUSE_DATABASE}_ice14/', 'test', 'testtest', format='Parquet', structure='zzz UInt64 DEFAULT 42')"
+
+# A key-value value may be any constant expression, not just a literal, and it is evaluated before
+# the arguments are rewritten. Reading it as a literal alone would treat it as absent.
+echo "-- iceberg cluster: a DEFAULT in a non-literal structure expression is honored"
+${CH} -q "SELECT count(), sum(zzz) FROM icebergS3Cluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/${CLICKHOUSE_DATABASE}_ice14/', 'test', 'testtest', format='Parquet', structure=concat('zzz UInt64 DEFAULT ', '42'))"
 
 # The key describes the metadata schema, so a declared type that reorders the key column makes it
 # unsound: read-in-order would then emit rows in the underlying numeric order while the user asked

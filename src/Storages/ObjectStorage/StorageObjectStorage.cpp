@@ -339,7 +339,6 @@ bool StorageObjectStorage::applyDataLakeSnapshotToMetadata(
     /// analysis (which picks the schema) and query execution (which iterates files).
     metadata.setDataLakeTableState(state);
 
-    /// Reload schema state if needed.
     /// Schema reload for consistency can be disabled, because
     /// 1. user can want to define a table with only
     ///    a subset of columns from remote delta table
