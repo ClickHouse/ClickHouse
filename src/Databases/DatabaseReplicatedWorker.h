@@ -61,6 +61,8 @@ private:
 
     bool checkParentTableExists(const UUID & uuid) const;
 
+    void restoreRemovedWindowViews(const ZooKeeperPtr & zookeeper, UInt32 log_ptr);
+
     bool shouldSkipCreatingRMVTempTable(const ZooKeeperPtr & zookeeper, UUID parent_uuid, UUID create_uuid, int64_t ddl_log_ctime);
     bool shouldSkipRenamingRMVTempTable(const ZooKeeperPtr & zookeeper, UUID parent_uuid, const QualifiedTableName & rename_from_table);
 

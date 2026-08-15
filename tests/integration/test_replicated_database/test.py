@@ -1801,28 +1801,50 @@ def test_skip_legacy_window_view_ddl_chain(started_cluster):
         else:
             raise AssertionError("Could not find the CREATE TABLE DDL entry")
 
-        main_node.query(
-            f"ALTER TABLE {database}.wv MODIFY COMMENT 'obsolete'",
-            settings=settings,
-        )
-        main_node.query(f"DROP TABLE {database}.wv", settings=settings)
     finally:
         dummy_node.query("SYSTEM DISABLE FAILPOINT database_replicated_stop_entry_execution")
 
     dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
-    assert dummy_node.query(f"SELECT count() FROM system.tables WHERE database = '{database}'") == "0\n"
-
     main_node.query(
-        f"CREATE TABLE {database}.wv (n UInt8) ENGINE = Memory",
+        f"CREATE TABLE {database}.ordinary (n UInt8) ENGINE = Memory",
+        settings=settings,
+    )
+    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+
+    # The first obsolete entry is already skipped. Restart replica2 before its
+    # retained follow-ups so the worker must rebuild the obsolete-name state
+    # from the queue. The mixed rename also verifies that real rename pairs
+    # continue to execute while the obsolete pair is skipped.
+    dummy_node.query("SYSTEM ENABLE FAILPOINT database_replicated_stop_entry_execution")
+    main_node.query(
+        f"RENAME TABLE {database}.ordinary TO {database}.ordinary_renamed, {database}.wv TO {database}.wv2",
         settings=settings,
     )
     main_node.query(
-        f"ALTER TABLE {database}.wv MODIFY COMMENT 'not obsolete'",
+        f"ALTER TABLE {database}.wv2 MODIFY COMMENT 'obsolete'",
+        settings=settings,
+    )
+    dummy_node.restart_clickhouse()
+    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+    assert dummy_node.query(
+        f"SELECT count() FROM system.tables WHERE database = '{database}' AND name = 'wv2'"
+    ) == "0\n"
+    assert dummy_node.query(
+        f"SELECT count() FROM system.tables WHERE database = '{database}' AND name = 'ordinary_renamed'"
+    ) == "1\n"
+
+    main_node.query(f"DROP TABLE {database}.wv2", settings=settings)
+    main_node.query(
+        f"CREATE TABLE {database}.wv2 (n UInt8) ENGINE = Memory",
+        settings=settings,
+    )
+    main_node.query(
+        f"ALTER TABLE {database}.wv2 MODIFY COMMENT 'not obsolete'",
         settings=settings,
     )
     dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
     assert dummy_node.query(
-        f"SELECT comment FROM system.tables WHERE database = '{database}' AND name = 'wv'"
+        f"SELECT comment FROM system.tables WHERE database = '{database}' AND name = 'wv2'"
     ) == "not obsolete\n"
 
     main_node.query(f"DROP DATABASE {database} SYNC")

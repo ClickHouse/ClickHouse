@@ -1,6 +1,7 @@
 #include <Databases/DatabaseReplicatedWorker.h>
 #include <base/sleep.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <thread>
 #include <Core/ServerUUID.h>
@@ -100,6 +101,13 @@ std::optional<String> getTableName(const Tokens & tokens, size_t pos)
     return name;
 }
 
+size_t getTableNameEnd(const Tokens & tokens, size_t pos)
+{
+    if (pos + 2 < tokens.size() && tokens[pos + 1].type == TokenType::Dot && isIdentifier(tokens[pos + 2]))
+        return pos + 3;
+    return pos + 1;
+}
+
 std::optional<String> getRemovedWindowViewName(const Tokens & tokens)
 {
     if (tokens.size() < 5
@@ -118,10 +126,12 @@ std::optional<String> getRemovedWindowViewName(const Tokens & tokens)
 struct WindowViewFollowup
 {
     String table_name;
+    std::optional<String> rename_to;
+    bool if_exists;
     bool removes_window_view;
 };
 
-std::optional<WindowViewFollowup> getWindowViewFollowup(const Tokens & tokens)
+std::vector<WindowViewFollowup> getWindowViewFollowups(const Tokens & tokens)
 {
     if (tokens.empty()
         || (!isKeyword(tokens[0], "ALTER")
@@ -132,6 +142,46 @@ std::optional<WindowViewFollowup> getWindowViewFollowup(const Tokens & tokens)
             && !isKeyword(tokens[0], "CHECK")
             && !isKeyword(tokens[0], "RENAME")))
         return {};
+
+    if (isKeyword(tokens[0], "RENAME"))
+    {
+        size_t pos = 1;
+        if (pos < tokens.size() && isKeyword(tokens[pos], "DATABASE"))
+            return {};
+        if (pos < tokens.size() && isKeyword(tokens[pos], "TABLE"))
+            ++pos;
+
+        std::vector<WindowViewFollowup> result;
+        while (pos < tokens.size())
+        {
+            bool if_exists = false;
+            if (pos + 1 < tokens.size() && isKeyword(tokens[pos], "IF") && isKeyword(tokens[pos + 1], "EXISTS"))
+            {
+                if_exists = true;
+                pos += 2;
+            }
+
+            const auto from = getTableName(tokens, pos);
+            if (!from)
+                return {};
+            pos = getTableNameEnd(tokens, pos);
+
+            if (pos == tokens.size() || !isKeyword(tokens[pos], "TO"))
+                return {};
+            ++pos;
+
+            const auto to = getTableName(tokens, pos);
+            if (!to)
+                return {};
+            pos = getTableNameEnd(tokens, pos);
+
+            result.push_back({.table_name = *from, .rename_to = *to, .if_exists = if_exists, .removes_window_view = true});
+            if (pos == tokens.size() || tokens[pos].type != TokenType::Comma)
+                return result;
+            ++pos;
+        }
+        return result;
+    }
 
     size_t pos = 1;
     while (pos < tokens.size() && !isKeyword(tokens[pos], "TABLE"))
@@ -145,13 +195,56 @@ std::optional<WindowViewFollowup> getWindowViewFollowup(const Tokens & tokens)
 
     if (const auto table_name = getTableName(tokens, pos))
     {
-        return WindowViewFollowup{
+        return {WindowViewFollowup{
             .table_name = *table_name,
+            .rename_to = {},
+            .if_exists = false,
             .removes_window_view = isKeyword(tokens[0], "DROP") || isKeyword(tokens[0], "DETACH") || isKeyword(tokens[0], "RENAME"),
-        };
+        }};
     }
 
     return {};
+}
+
+void updateRemovedWindowViews(NameSet & removed_window_views, const std::vector<WindowViewFollowup> & followups)
+{
+    for (const auto & followup : followups)
+    {
+        if (!removed_window_views.contains(followup.table_name))
+            continue;
+
+        if (followup.rename_to)
+        {
+            removed_window_views.erase(followup.table_name);
+            removed_window_views.insert(*followup.rename_to);
+        }
+        else if (followup.removes_window_view)
+        {
+            removed_window_views.erase(followup.table_name);
+        }
+    }
+}
+
+String formatRenameWithoutRemovedWindowViews(const std::vector<WindowViewFollowup> & followups, const NameSet & removed_window_views)
+{
+    String query = "RENAME TABLE ";
+    bool first = true;
+    for (const auto & followup : followups)
+    {
+        if (removed_window_views.contains(followup.table_name))
+            continue;
+
+        chassert(followup.rename_to);
+        if (!first)
+            query += ", ";
+        first = false;
+        if (followup.if_exists)
+            query += "IF EXISTS ";
+        query += followup.table_name;
+        query += " TO ";
+        query += *followup.rename_to;
+    }
+    return query;
 }
 
 }
@@ -354,6 +447,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         String log_entry_name = DDLTaskBase::getLogEntryName(our_log_ptr);
         last_skipped_entry_name.emplace(log_entry_name);
         initializeLogPointer(log_entry_name);
+        restoreRemovedWindowViews(zookeeper, our_log_ptr);
     }
 
     {
@@ -834,17 +928,36 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         return {};
     }
 
-    if (const auto followup = getWindowViewFollowup(tokens); followup && removed_window_views.contains(followup->table_name))
+    const auto followups = getWindowViewFollowups(tokens);
+    const bool has_removed_window_view = std::any_of(followups.begin(), followups.end(), [this](const auto & followup)
     {
+        return removed_window_views.contains(followup.table_name);
+    });
+    if (has_removed_window_view)
+    {
+        const bool is_rename = isKeyword(tokens[0], "RENAME");
+        const bool has_non_removed_window_view = std::any_of(followups.begin(), followups.end(), [this](const auto & followup)
+        {
+            return !removed_window_views.contains(followup.table_name);
+        });
+        const String rewritten_rename = is_rename && has_non_removed_window_view
+            ? formatRenameWithoutRemovedWindowViews(followups, removed_window_views)
+            : String{};
         if (!dry_run)
         {
-            if (followup->removes_window_view)
-                removed_window_views.erase(followup->table_name);
-            zookeeper->set(database->replica_path + "/log_ptr", toString(entry_num));
+            updateRemovedWindowViews(removed_window_views, followups);
+            if (!is_rename || !has_non_removed_window_view)
+                zookeeper->set(database->replica_path + "/log_ptr", toString(entry_num));
         }
-        LOG_WARNING(log, "Skip DDL {} for removed WINDOW VIEW {}", entry_name, followup->table_name);
-        out_reason = fmt::format("Entry {} modifies an obsolete WINDOW VIEW {}", entry_name, followup->table_name);
-        return {};
+        if (!is_rename || !has_non_removed_window_view)
+        {
+            LOG_WARNING(log, "Skip DDL {} for removed WINDOW VIEW", entry_name);
+            out_reason = fmt::format("Entry {} modifies an obsolete WINDOW VIEW", entry_name);
+            return {};
+        }
+
+        task->entry.query = rewritten_rename;
+        LOG_WARNING(log, "Remove obsolete WINDOW VIEWs from DDL {}", entry_name);
     }
 
     task->parseQueryFromEntry(context);
@@ -932,6 +1045,27 @@ bool DatabaseReplicatedDDLWorker::checkParentTableExists(const UUID & uuid) cons
 {
     auto [db, table] = DatabaseCatalog::instance().tryGetByUUID(uuid);
     return db.get() == database && table != nullptr && !table->is_dropped.load() && !table->is_detached.load();
+}
+
+void DatabaseReplicatedDDLWorker::restoreRemovedWindowViews(const ZooKeeperPtr & zookeeper, UInt32 log_ptr)
+{
+    Strings entries = zookeeper->getChildren(queue_dir);
+    std::erase_if(entries, [] (const String & entry_name) { return !startsWith(entry_name, "query-"); });
+    std::sort(entries.begin(), entries.end());
+
+    for (const auto & entry_name : entries)
+    {
+        if (DDLTaskBase::getLogEntryNumber(entry_name) > log_ptr)
+            break;
+
+        DDLLogEntry entry;
+        entry.parse(zookeeper->get(fs::path(queue_dir) / entry_name));
+        const auto tokens = getSignificantTokens(entry.query);
+        if (const auto window_view_name = getRemovedWindowViewName(tokens))
+            removed_window_views.insert(*window_view_name);
+        else
+            updateRemovedWindowViews(removed_window_views, getWindowViewFollowups(tokens));
+    }
 }
 
 void DatabaseReplicatedDDLWorker::initializeLogPointer(const String & processed_entry_name)
