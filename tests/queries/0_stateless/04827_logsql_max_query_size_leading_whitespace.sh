@@ -28,10 +28,11 @@ error | count()" |& grep -om1 "Max query size exceeded"
 # Whitespace alone longer than the budget is rejected too.
 ${CLICKHOUSE_CURL} -sS "$LOGSQL_URL" --data-binary "$(printf ' %.0s' {1..60})error" |& grep -om1 "Max query size exceeded"
 
-# The client enforces the same accounting when it parses the dialect itself
-# (the client trims leading whitespace before parsing, so a comment prefix is used).
+# The client enforces the same accounting when it parses the dialect itself.
 $CLICKHOUSE_CLIENT --allow_experimental_logsql_dialect 1 --logsql_table logs_04827 --dialect logsql --max_query_size 50 \
     -q "-- padding padding padding padding padding
 error | count()" |& grep -om1 "Max query size exceeded"
+$CLICKHOUSE_CLIENT --allow_experimental_logsql_dialect 1 --logsql_table logs_04827 --dialect logsql --max_query_size 50 \
+    -q "$(printf ' %.0s' {1..60})error" |& grep -om1 "Max query size exceeded"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE logs_04827"

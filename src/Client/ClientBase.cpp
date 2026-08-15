@@ -481,7 +481,7 @@ ClientBase::ClientBase(
     terminal_width = getTerminalWidth(in_fd_, err_fd_);
 }
 
-ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements)
+ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements, const char * raw_query_begin)
 {
     std::unique_ptr<IParserBase> parser;
     ASTPtr res;
@@ -668,7 +668,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             parser = std::make_unique<ParserLogsQLQuery>(
                 settings[Setting::logsql_database], settings[Setting::logsql_table],
                 settings[Setting::logsql_time_column], settings[Setting::logsql_message_column],
-                pos, end, settings[Setting::allow_experimental_logsql_dialect], settings[Setting::max_parser_depth],
+                raw_query_begin ? raw_query_begin : pos, end, settings[Setting::allow_experimental_logsql_dialect], settings[Setting::max_parser_depth],
                 settings[Setting::max_query_size]);
         else
             parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
@@ -3073,6 +3073,8 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     if (this_query_begin >= all_queries_end)
         return MultiQueryProcessingStage::QUERIES_END;
 
+    const char * raw_query_begin = this_query_begin;
+
     // Remove leading empty newlines and other whitespace, because they
     // are annoying to filter in the query log. This is mostly relevant for
     // the tests.
@@ -3120,7 +3122,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     {
         parsed_query = parseQuery(this_query_end, all_queries_end,
             client_context->getSettingsRef(),
-            /*allow_multi_statements=*/ true);
+            /*allow_multi_statements=*/ true, raw_query_begin);
     }
     catch (const Exception & e)
     {

@@ -72,24 +72,10 @@ ASTPtr makeNot(ASTPtr condition)
     return makeASTFunction("not", std::move(condition));
 }
 
-/// Word boundary patterns for RE2. Words consist of ASCII alphanumeric characters here.
-/// This matches the tokenization of hasToken and of the tokenbf_v1 skip index
-/// (VictoriaLogs additionally treats underscores and non-ASCII letters and digits as word characters).
-constexpr const char * boundary_before = "(?:^|[^0-9A-Za-z])";
-constexpr const char * boundary_after = "(?:$|[^0-9A-Za-z])";
-
-bool isPlainASCIIToken(const String & text)
-{
-    if (text.empty())
-        return false;
-    for (char c : text)
-    {
-        bool is_token_char = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
-        if (!is_token_char)
-            return false;
-    }
-    return true;
-}
+/// Word boundary patterns for RE2. They match the LogsQL lexer definition.
+/// In particular, `_` and every non-ASCII UTF-8 byte belong to a word.
+constexpr const char * boundary_before = "(?:^|[^0-9A-Za-z_\\x80-\\xFF])";
+constexpr const char * boundary_after = "(?:$|[^0-9A-Za-z_\\x80-\\xFF])";
 
 /// True if the text is a plain decimal integer or float, so that it can be used
 /// as a numeric literal in the resulting query.
@@ -1048,7 +1034,7 @@ ASTPtr LogsQLParser::parseFilterAnyCase(const String & field_name)
         if (!lex.isKeyword(")"))
             throwSyntaxError(fmt::format("missing ')' after i(*); got {}", lex.getToken()));
         lex.nextToken();
-        return makeASTFunction("notEquals", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String())));
+        return makeASTFunction("notEquals", stringValueExpr(field_name), make_intrusive<ASTLiteral>(Field(String())));
     }
 
     String phrase = lex.nextCompoundToken();
@@ -1481,14 +1467,7 @@ ASTPtr LogsQLParser::makePhraseFilter(const String & field_name, const String & 
     if (phrase.empty())
         return nullptr;
 
-    if (isPlainASCIIToken(phrase))
-    {
-        /// A single word: match it with token boundaries. hasToken can use tokenbf skip indexes.
-        return makeASTFunction(case_insensitive ? "hasTokenCaseInsensitive" : "hasToken",
-            stringValueExpr(field_name), make_intrusive<ASTLiteral>(Field(phrase)));
-    }
-
-    /// A phrase: match it with word boundaries on both sides.
+    /// ClickHouse hasToken() uses a different word definition, so use the LogsQL boundary regex.
     String pattern = fmt::format("{}{}{}{}", case_insensitive ? "(?i)" : "", boundary_before, escapeRegexp(phrase), boundary_after);
     return makeASTFunction("match", stringValueExpr(field_name), make_intrusive<ASTLiteral>(Field(pattern)));
 }
@@ -1898,16 +1877,17 @@ ASTPtr LogsQLParser::parseFilterTime()
 
         TimeBound bound = parseTimeBound();
         auto offset = parseOptionalTimeOffset();
+        const bool is_instant = bound.start && bound.end && bound.start == bound.end;
         if (is_greater)
         {
             /// _time:>2023-04-25Z means "after the whole day", _time:>=2023-04-25Z means "from the start of the day".
-            ASTPtr lower = inclusive ? bound.start : bound.end;
-            recordTimeLowerBound(lower, inclusive ? bound.start_ns : bound.end_ns, offset.value_or(0));
-            return makeTimeCondition(lower, true, nullptr, false, offset.value_or(0));
+            ASTPtr lower = inclusive || is_instant ? bound.start : bound.end;
+            recordTimeLowerBound(lower, inclusive || is_instant ? bound.start_ns : bound.end_ns, offset.value_or(0));
+            return makeTimeCondition(lower, is_instant ? inclusive : true, nullptr, false, offset.value_or(0));
         }
-        ASTPtr upper = inclusive ? bound.end : bound.start;
-        recordTimeUpperBound(upper, inclusive ? bound.end_ns : bound.start_ns, offset.value_or(0));
-        return makeTimeCondition(nullptr, false, upper, false, offset.value_or(0));
+        ASTPtr upper = inclusive || is_instant ? bound.end : bound.start;
+        recordTimeUpperBound(upper, inclusive || is_instant ? bound.end_ns : bound.start_ns, offset.value_or(0));
+        return makeTimeCondition(nullptr, false, upper, is_instant ? inclusive : false, offset.value_or(0));
     }
 
     if (lex.isKeyword("[") || lex.isKeyword("("))
@@ -1929,17 +1909,19 @@ ASTPtr LogsQLParser::parseFilterTime()
 
         /// An inclusive start means the start of the period; an exclusive start skips the whole period.
         /// An inclusive end includes the whole period.
-        ASTPtr lower = include_start ? start_bound.start : start_bound.end;
-        ASTPtr upper = include_end ? end_bound.end : end_bound.start;
+        const bool same_instant = start_bound.start && start_bound.end && end_bound.start && end_bound.end
+            && start_bound.start == start_bound.end && end_bound.start == end_bound.end && start_bound.start == end_bound.start;
+        ASTPtr lower = include_start || same_instant ? start_bound.start : start_bound.end;
+        ASTPtr upper = include_end || same_instant ? end_bound.end : end_bound.start;
 
         /// Remember the window bounds for the rate() and rate_sum() stats functions:
         /// all top-level `_time` filters intersect into the effective query time range.
-        auto lower_ns = include_start ? start_bound.start_ns : start_bound.end_ns;
-        auto upper_ns = include_end ? end_bound.end_ns : end_bound.start_ns;
+        auto lower_ns = include_start || same_instant ? start_bound.start_ns : start_bound.end_ns;
+        auto upper_ns = include_end || same_instant ? end_bound.end_ns : end_bound.start_ns;
         recordTimeLowerBound(lower, lower_ns, offset.value_or(0));
         recordTimeUpperBound(upper, upper_ns, offset.value_or(0));
 
-        return makeTimeCondition(lower, true, upper, false, offset.value_or(0));
+        return makeTimeCondition(lower, same_instant ? include_start : true, upper, same_instant ? include_end : false, offset.value_or(0));
     }
 
     /// The `_time:=<timestamp>` form is equivalent to `_time:<timestamp>`.
@@ -1968,6 +1950,8 @@ ASTPtr LogsQLParser::parseFilterTime()
         recordTimeLowerBound(bound.start, bound.start_ns, offset.value_or(0));
         recordTimeUpperBound(bound.end, bound.end_ns, offset.value_or(0));
     }
+    if (bound.start && bound.end && bound.start == bound.end)
+        return makeASTFunction("equals", columnExpr("_time"), shiftTime(bound.start, offset.value_or(0) + options_time_offset_ns));
     return makeTimeCondition(bound.start, true, bound.end, false, offset.value_or(0));
 }
 

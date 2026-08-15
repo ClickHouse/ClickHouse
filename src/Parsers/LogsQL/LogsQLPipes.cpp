@@ -752,7 +752,7 @@ void LogsQLParser::applySortWithExtras(
     /// sorting by a source field that is not part of the final projection.
     wrapLayerIf(layer,
         !layer.order_by.empty() || layer.order_by_all || layer.limit.has_value() || layer.offset.has_value()
-        || layer.has_aggregation);
+        || layer.has_aggregation || layer.has_projection);
 
     auto make_order_elements = [&]
     {
@@ -1978,13 +1978,30 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
                         /// columns and integer-valued field strings. A non-numeric LogsQL field
                         /// becomes NULL, which is an explicit separate group instead of
                         /// attempting arithmetic on text.
-                        ASTPtr value = makeASTFunction("accurateCastOrNull", columnExpr(name), makeStringLiteral("Int128"));
+                        ASTPtr integer_value = makeASTFunction("accurateCastOrNull", columnExpr(name), makeStringLiteral("Int128"));
+                        ASTPtr integer_key = integer_value;
                         if (offset_value)
-                            value = makeASTFunction("minus", value, make_int128(*offset_value));
-                        key = makeASTFunction("minus", value,
-                            makeASTFunction("positiveModulo", value->clone(), make_int128(*step)));
+                            integer_key = makeASTFunction("minus", integer_key, make_int128(*offset_value));
+                        integer_key = makeASTFunction("minus", integer_key,
+                            makeASTFunction("positiveModulo", integer_key->clone(), make_int128(*step)));
                         if (offset_value)
-                            key = makeASTFunction("plus", key, make_int128(*offset_value));
+                            integer_key = makeASTFunction("plus", integer_key, make_int128(*offset_value));
+
+                        /// Preserve exact buckets for integral inputs, but use the normal
+                        /// floating path for decimal strings and typed decimal/float columns.
+                        ASTPtr step_literal = make_intrusive<ASTLiteral>(Field(to_float(*step)));
+                        ASTPtr decimal_value = numericValueExpr(name);
+                        ASTPtr offset_literal;
+                        if (offset_value)
+                        {
+                            offset_literal = make_intrusive<ASTLiteral>(Field(to_float(*offset_value)));
+                            decimal_value = makeASTFunction("minus", decimal_value, offset_literal);
+                        }
+                        ASTPtr decimal_key = makeASTFunction("multiply",
+                            makeASTFunction("floor", makeASTFunction("divide", decimal_value, step_literal)), step_literal->clone());
+                        if (offset_literal)
+                            decimal_key = makeASTFunction("plus", decimal_key, offset_literal->clone());
+                        key = makeASTFunction("if", makeASTFunction("isNotNull", integer_value), integer_key, decimal_key);
                     }
                     else
                     {
@@ -2764,6 +2781,14 @@ ASTPtr LogsQLParser::parseMathExprOperand()
     /// A number literal or a field name.
     static const std::vector<std::string_view> math_stop_tokens = {"+", "-", "/"};
     String token = lex.nextCompoundToken(math_stop_tokens);
+    if (token.size() >= 2 && (token.back() == 'e' || token.back() == 'E') && isNumberPrefix(token)
+        && !lex.skippedSpace() && (lex.isKeyword("+") || lex.isKeyword("-")))
+    {
+        const String sign = lex.getToken();
+        lex.nextToken();
+        if (!lex.skippedSpace() && isNumberPrefix(lex.getToken()))
+            token += sign + lex.nextCompoundToken(math_stop_tokens);
+    }
     if (isNumberPrefix(token) || Poco::toLower(token) == "inf" || Poco::toLower(token) == "nan")
     {
         /// Integral literals keep their exact 64-bit value; only genuinely

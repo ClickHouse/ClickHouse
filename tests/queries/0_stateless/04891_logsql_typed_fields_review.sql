@@ -8,12 +8,13 @@ CREATE TABLE logs_04891
     `level` String,
     `size` UInt64,
     `bucket` String,
+    `fractional_bucket` String,
     `nullable` Nullable(String)
 ) ENGINE = MergeTree ORDER BY _time;
 
 INSERT INTO logs_04891 VALUES
-    ('2024-01-01 00:00:00', 'id=5', '{"size":"7"}', 'error', 5, '5', NULL),
-    ('2024-01-01 00:01:00', 'id=30', '{"size":"40"}', 'info', 30, '30', '');
+    ('2024-01-01 00:00:00', 'id=5', '{"size":"7"}', 'error', 5, '5', '15.5', NULL),
+    ('2024-01-01 00:01:00', 'id=30', '{"size":"40"}', 'info', 30, '30', '-0.25', '');
 
 SET allow_experimental_logsql_dialect = 1;
 SET logsql_table = 'logs_04891';
@@ -22,10 +23,13 @@ SET dialect = 'logsql';
 -- Text filters stringify typed fields, and a missing Nullable field is empty.
 size:* | count();
 size:i(""*) | count();
+size:i(*) | count();
 nullable:"" | count();
 
 -- Numeric buckets parse String fields row-by-row instead of doing arithmetic on strings.
 * | stats by (bucket:10) count() | sort by (bucket);
+* | stats by (bucket:1) count() | sort by (bucket);
+* | stats by (fractional_bucket:10) count() | sort by (fractional_bucket);
 
 -- Text pipes replace typed target fields with their LogsQL string values.
 * | format if (level:error) "X" as size | fields size | sort by (_time);
