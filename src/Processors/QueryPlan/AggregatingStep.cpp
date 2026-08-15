@@ -1056,12 +1056,11 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation] = params.enable_producing_buckets_out_of_order_in_aggregation;
     settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge] = params.enable_parallel_single_level_merge;
 
-    /// External aggregation on a remote shard has to spill exactly like it would on the initiator:
-    /// with the initiator's `temporary_files_codec`, buffer size, and the `allow_experimental_codecs`
-    /// opt-in that the codec was accepted under. The temporary data scope is not part of the plan
-    /// payload, so the settings it was built from travel with the step and are re-applied in
-    /// `deserialize`; otherwise the shard would silently fall back to the server-level temporary
-    /// data settings, and an experimental codec would be rejected there.
+    /// External aggregation on a remote shard has to spill with the initiator's
+    /// `temporary_files_codec`, buffer size, and `allow_experimental_codecs` opt-in. The temporary
+    /// data scope is not part of the plan payload and can be absent on the initiator even though a
+    /// worker has one, so the query settings travel independently with the step and are re-applied
+    /// in `deserialize`.
     ///
     /// `allow_experimental_codecs` is a plan-setting name older peers do not know, and
     /// `QueryPlanSerializationSettings::readBinary` throws on an unknown name, so it goes on the wire only
@@ -1075,20 +1074,16 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     /// for such a plan encodes the identical spill behavior, and a peer too old to know the name rejects
     /// only the plans that can actually spill with an experimental codec, instead of every plan with this
     /// step.
-    if (params.tmp_data_scope)
-    {
-        const auto & tmp_data_settings = params.tmp_data_scope->getSettings();
-        settings[QueryPlanSerializationSetting::temporary_files_codec] = tmp_data_settings.compression_codec;
-        settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = tmp_data_settings.buffer_size;
-        const bool external_aggregation_is_reachable = params.max_bytes_before_external_group_by != 0
-            && (params.group_by_two_level_threshold != 0 || params.group_by_two_level_threshold_bytes != 0)
-            && aggregationCanGoTwoLevel(*input_headers.front(), params.keys, grouping_sets_params);
-        if (spillCodecNeedsExperimentalCodecsOptIn(
-                external_aggregation_is_reachable,
-                tmp_data_settings.allow_experimental_codecs,
-                tmp_data_settings.compression_codec))
-            settings[QueryPlanSerializationSetting::allow_experimental_codecs] = true;
-    }
+    settings[QueryPlanSerializationSetting::temporary_files_codec] = params.temporary_files_codec;
+    settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = params.temporary_files_buffer_size;
+    const bool external_aggregation_is_reachable = params.max_bytes_before_external_group_by != 0
+        && (params.group_by_two_level_threshold != 0 || params.group_by_two_level_threshold_bytes != 0)
+        && aggregationCanGoTwoLevel(*input_headers.front(), params.keys, grouping_sets_params);
+    if (spillCodecNeedsExperimentalCodecsOptIn(
+            external_aggregation_is_reachable,
+            params.allow_experimental_codecs,
+            params.temporary_files_codec))
+        settings[QueryPlanSerializationSetting::allow_experimental_codecs] = true;
 
     /// Both values, every version: a peer predating the name serializes String keys the way `false` does, so
     /// omitting either one would silently leave it on the other layout.

@@ -16,6 +16,9 @@ namespace DB
 namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
+    extern const QueryPlanSerializationSettingsString temporary_files_codec;
+    extern const QueryPlanSerializationSettingsBool allow_experimental_codecs;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 }
 
@@ -60,25 +63,51 @@ SharedHeader makeHeader()
     return std::make_shared<const Block>(Block({ColumnWithTypeAndName(type->createColumn(), type, "k")}));
 }
 
-Aggregator::Params makeParams(bool serialize_string_with_zero_byte)
+Aggregator::Params makeParams(
+    bool serialize_string_with_zero_byte,
+    const String & temporary_files_codec = "LZ4",
+    bool allow_experimental_codecs = false,
+    size_t temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE)
 {
-    /// Merge-only constructor.
     return Aggregator::Params(
         Names{"k"},
         AggregateDescriptions{},
         /*overflow_row=*/false,
+        /*max_rows_to_group_by=*/0,
+        OverflowMode::THROW,
+        /*group_by_two_level_threshold=*/1,
+        /*group_by_two_level_threshold_bytes=*/0,
+        /*max_bytes_before_external_group_by=*/1,
+        /*empty_result_for_aggregation_by_empty_set=*/false,
+        /*tmp_data_scope=*/nullptr,
+        temporary_files_codec,
+        allow_experimental_codecs,
+        temporary_files_buffer_size,
         /*max_threads=*/1,
+        /*min_free_disk_space=*/0,
+        /*compile_aggregate_expressions=*/false,
+        /*min_count_to_compile_aggregate_expression=*/0,
         /*max_block_size=*/65536,
+        /*enable_prefetch=*/false,
+        /*only_merge=*/false,
+        /*optimize_group_by_constant_keys=*/false,
         /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
+        StatsCollectingParams{},
+        /*enable_producing_buckets_out_of_order_in_aggregation=*/false,
         serialize_string_with_zero_byte,
+        /*enable_parallel_single_level_merge=*/false,
         /*enable_packed_string_keys=*/true);
 }
 
-std::unique_ptr<AggregatingStep> makeAggregatingStep(bool serialize_string_with_zero_byte)
+std::unique_ptr<AggregatingStep> makeAggregatingStep(
+    bool serialize_string_with_zero_byte,
+    const String & temporary_files_codec = "LZ4",
+    bool allow_experimental_codecs = false,
+    size_t temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE)
 {
     return std::make_unique<AggregatingStep>(
         makeHeader(),
-        makeParams(serialize_string_with_zero_byte),
+        makeParams(serialize_string_with_zero_byte, temporary_files_codec, allow_experimental_codecs, temporary_files_buffer_size),
         GroupingSetsParamsList{},
         /*final=*/true,
         /*max_block_size=*/65536,
@@ -131,6 +160,30 @@ TEST(AggregatingStepSettingsRoundTrip, SerializeStringWithZeroByteTrueSurvives)
     tryRegisterAggregateFunctions();
 
     EXPECT_TRUE(roundTripSerializeStringWithZeroByte(*makeAggregatingStep(true)));
+}
+
+TEST(AggregatingStepSettingsRoundTrip, SpillSettingsSurviveWithoutInitiatorTemporaryStorage)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    const auto step = makeAggregatingStep(
+        /*serialize_string_with_zero_byte=*/false,
+        /*temporary_files_codec=*/"ZXC",
+        /*allow_experimental_codecs=*/true,
+        /*temporary_files_buffer_size=*/123456);
+    QueryPlanSerializationSettings written;
+    step->serializeSettings(written, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
+    WriteBufferFromOwnString out;
+    written.writeChangedBinary(out);
+    ReadBufferFromString in(out.str());
+    QueryPlanSerializationSettings read;
+    read.readBinary(in);
+
+    EXPECT_EQ(read[QueryPlanSerializationSetting::temporary_files_codec], "ZXC");
+    EXPECT_TRUE(read[QueryPlanSerializationSetting::allow_experimental_codecs]);
+    EXPECT_EQ(read[QueryPlanSerializationSetting::temporary_files_buffer_size], 123456);
 }
 
 TEST(MergingAggregatedStepSettingsRoundTrip, SerializeStringWithZeroByteFalseSurvives)

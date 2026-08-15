@@ -294,7 +294,13 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     /// files (see `canSpillToTemporaryFiles`) never resolves the codec and must not carry the opt-in. See
     /// the matching comment in `AggregatingStep::serializeSettings` and
     /// `spillCodecNeedsExperimentalCodecsOptIn`.
-    if (spillCodecNeedsExperimentalCodecsOptIn(canSpillToTemporaryFiles(join_operator), allow_experimental_codecs, temporary_files_codec))
+    /// A remote worker rebuilds its temporary-data scope locally. Even if the initiator has no
+    /// temporary storage, the worker can spill this serialized join, so the opt-in has to follow
+    /// the plan whenever that worker-visible execution can reach the codec.
+    auto worker_settings = *this;
+    worker_settings.temporary_storage_available = true;
+    if (spillCodecNeedsExperimentalCodecsOptIn(
+            worker_settings.canSpillToTemporaryFiles(join_operator), allow_experimental_codecs, temporary_files_codec))
         settings[QueryPlanSerializationSetting::allow_experimental_codecs] = true;
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
     settings[QueryPlanSerializationSetting::join_output_by_rowlist_perkey_rows_threshold] = join_output_by_rowlist_perkey_rows_threshold;

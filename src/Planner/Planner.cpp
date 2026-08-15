@@ -672,6 +672,9 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]
                 && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys),
         tmp_data_scope,
+        settings[Setting::temporary_files_codec],
+        settings[Setting::allow_experimental_codecs],
+        settings[Setting::temporary_files_buffer_size],
         getMaxThreadsForAvailableMemory(settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]),
         settings[Setting::min_free_disk_space_for_temporary_data],
         settings[Setting::compile_aggregate_expressions],
