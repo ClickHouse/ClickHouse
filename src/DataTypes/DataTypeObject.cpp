@@ -1202,22 +1202,31 @@ DataTypePtr applyJSONSharedDataPathPolicyImpl(const DataTypePtr & type, const Da
         source_tuple && source_tuple->getElements().size() == 1 && !typeid_cast<const DataTypeTuple *>(type.get()))
         return applyJSONSharedDataPathPolicyImpl(type, source_tuple->getElements().front(), merge_rules);
 
-    /// `map('k', j)`: the JSON value only ever lives in the value type, so descend there, leaving
-    /// the key type untouched.
+    /// `map('k', j)` or `map(j, 1)`: DataTypeMap::isValidKeyType permits a JSON key (it only
+    /// excludes Nullable), so the JSON value isn't necessarily in the value type -- try the key
+    /// side first and fall back to the value side, taking whichever one actually changes.
     if (const auto * target_map = typeid_cast<const DataTypeMap *>(type.get());
         target_map && !typeid_cast<const DataTypeMap *>(policy_source_type.get()))
     {
-        auto nested = applyJSONSharedDataPathPolicyImpl(target_map->getValueType(), policy_source_type, merge_rules);
-        if (nested == target_map->getValueType())
+        auto nested_key = applyJSONSharedDataPathPolicyImpl(target_map->getKeyType(), policy_source_type, merge_rules);
+        if (nested_key != target_map->getKeyType())
+            return std::make_shared<DataTypeMap>(std::move(nested_key), target_map->getValueType());
+
+        auto nested_value = applyJSONSharedDataPathPolicyImpl(target_map->getValueType(), policy_source_type, merge_rules);
+        if (nested_value == target_map->getValueType())
             return type;
-        return std::make_shared<DataTypeMap>(target_map->getKeyType(), std::move(nested));
+        return std::make_shared<DataTypeMap>(target_map->getKeyType(), std::move(nested_value));
     }
 
-    /// Source-side mirror of the map case above: the JSON value can only have come from the map's
-    /// value type, so descend there regardless of which side carries the Map wrapper.
+    /// Source-side mirror of the map case above: same either-side ambiguity, same resolution order.
     if (const auto * source_map = typeid_cast<const DataTypeMap *>(policy_source_type.get());
         source_map && !typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        auto from_key = applyJSONSharedDataPathPolicyImpl(type, source_map->getKeyType(), merge_rules);
+        if (from_key != type)
+            return from_key;
         return applyJSONSharedDataPathPolicyImpl(type, source_map->getValueType(), merge_rules);
+    }
 
     if (const auto * object = typeid_cast<const DataTypeObject *>(type.get()))
     {
