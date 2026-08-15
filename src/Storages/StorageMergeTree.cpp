@@ -468,10 +468,14 @@ void StorageMergeTree::alter(
     if (!only_setting_changes)
         assertNotReadonly();
 
-    if (local_context->getCurrentTransaction() && local_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
+    const auto current_transaction = local_context->getCurrentTransaction();
+    if (current_transaction && local_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER METADATA is not supported inside transactions");
 
     auto table_id = getStorageID();
+    if (current_transaction && DatabaseCatalog::instance().getDatabase(table_id.database_name)->hasReplicationThread())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER METADATA is not supported inside transactions for replicated databases");
+
     auto old_storage_settings = getSettings();
     const auto & query_settings = local_context->getSettingsRef();
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-replicated-database, no-parallel
+# Tags: no-ordinary-database, no-replicated-database, no-parallel, zookeeper
 # no-parallel: enables a global pauseable failpoint that would pause mutation
 # registration in concurrently running tests.
 
@@ -98,6 +98,27 @@ tx_wait 2
 echo "metadata_invalid_transaction_errors $(grep -c INVALID_TRANSACTION "$CLICKHOUSE_TMP"/04516_metadata_alter_out.txt)"
 echo "metadata_mutations_left $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_mutation_kill_txn_race'")"
 echo "column_after_metadata_kill $($CLICKHOUSE_CLIENT -q "SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 't_mutation_kill_txn_race' AND name IN ('value', 'value2')")"
+
+# DatabaseReplicated commits metadata to ZooKeeper and cannot roll it back. Metadata
+# ALTERs must therefore remain rejected in a transaction even when the compatibility
+# setting permits them for rollbackable databases.
+rep_db="${CLICKHOUSE_DATABASE}_rep"
+rep_zk_path="/test/${CLICKHOUSE_DATABASE}/04516"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${rep_db} SYNC"
+$CLICKHOUSE_CLIENT -q "CREATE DATABASE ${rep_db} ENGINE = Replicated('${rep_zk_path}', 'shard1', 'replica1')"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ${rep_db}.t (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key"
+
+tx 3 "SET throw_on_unsupported_query_inside_transaction=0" > /dev/null
+tx 3 "BEGIN TRANSACTION" > /dev/null
+set +e
+tx 3 "ALTER TABLE ${rep_db}.t RENAME COLUMN value TO value2" > "$CLICKHOUSE_TMP"/04516_replicated_metadata_alter_out.txt 2>&1
+replicated_alter_status=$?
+set -e
+tx 3 "ROLLBACK" > /dev/null
+
+echo "replicated_metadata_alter_rejected $([ "$replicated_alter_status" -ne 0 ] && grep -c NOT_IMPLEMENTED "$CLICKHOUSE_TMP"/04516_replicated_metadata_alter_out.txt)"
+echo "replicated_column_after_metadata_alter $($CLICKHOUSE_CLIENT -q "SELECT name FROM system.columns WHERE database = '${rep_db}' AND table = 't' AND name IN ('value', 'value2')")"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE ${rep_db} SYNC"
 
 # Subsequent mutations must not be blocked by the removed one.
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_mutation_kill_txn_race UPDATE value = value + 7 WHERE 1 SETTINGS mutations_sync = 1"
