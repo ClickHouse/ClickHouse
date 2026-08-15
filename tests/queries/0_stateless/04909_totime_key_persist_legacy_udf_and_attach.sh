@@ -73,6 +73,11 @@ CREATE TABLE ${CLICKHOUSE_DATABASE}.t_on_cluster_mv_src (c0 DateTime) ENGINE = M
 CREATE MATERIALIZED VIEW ${CLICKHOUSE_DATABASE}.t_on_cluster_mv ON CLUSTER test_shard_localhost
 ENGINE = MergeTree() ORDER BY toTime(c0) AS SELECT c0 FROM ${CLICKHOUSE_DATABASE}.t_on_cluster_mv_src;
 SELECT 'on_cluster_oldest_entry_mv', extract(create_table_query, 'ORDER BY [^ ]*') FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_mv';
+
+-- A projection carries its own physical sorting key, declared inside the column list.
+CREATE TABLE ${CLICKHOUSE_DATABASE}.t_on_cluster_projection_key ON CLUSTER test_shard_localhost
+(c0 DateTime, v UInt32, PROJECTION pr (SELECT c0, v ORDER BY toTime(c0))) ENGINE = MergeTree() ORDER BY tuple();
+SELECT 'on_cluster_oldest_entry_projection', extract(create_table_query, 'ORDER BY toTime[A-Za-z]*') FROM system.tables WHERE database = currentDatabase() AND name = 't_on_cluster_projection_key';
 "
 
 ${CLICKHOUSE_CLIENT} --multiquery -q "
@@ -84,6 +89,7 @@ DROP TABLE t_ttl_key;
 DROP TABLE t_on_cluster_key;
 DROP TABLE t_on_cluster_udf_key;
 DROP TABLE t_on_cluster_mv;
+DROP TABLE t_on_cluster_projection_key;
 DROP TABLE t_on_cluster_mv_src;
 DROP FUNCTION ${UDF};
 "

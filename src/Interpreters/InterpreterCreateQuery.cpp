@@ -233,49 +233,40 @@ void replaceLegacyToTimeInCreateQuery(ASTPtr & ast)
     }
 }
 
-/// Rewrites only the slots that can hold a key expression. The engine is deliberately left alone:
-/// it is an `ASTFunction` too, and a SQL UDF may carry an engine's name, so expanding UDFs over the
-/// whole definition would substitute an engine with a function body.
-void normalizeLegacyToTimeInKeyExpressions(ASTStorage & storage, bool substitute_udfs, const ContextPtr & context)
+/// Substitutes SQL UDFs the way `createTable` does, but never into an engine: an engine is an
+/// `ASTFunction` too, and a UDF may carry an engine's name, so substituting there would replace the
+/// engine with a function body. Key expressions live in several places (storage, a view's inner
+/// engine, a projection's own `ORDER BY`), so the walk covers the query rather than a list of slots.
+void substituteUserDefinedFunctionsOutsideEngines(ASTPtr & ast, const ContextPtr & context)
 {
-    std::array<IAST **, 6> key_expressions{
-        &storage.partition_by, &storage.primary_key, &storage.order_by,
-        &storage.sample_by, &storage.ttl_table, &storage.unique_key};
-
-    for (auto ** slot : key_expressions)
+    for (auto & child : ast->children)
     {
-        if (!*slot)
+        if (!child)
             continue;
 
-        ASTPtr expression = (*slot)->ptr();
-        const IAST * old_ptr = expression.get();
-        /// A key expression can reach `toTime` through a SQL UDF body.
-        if (substitute_udfs)
-            UserDefinedSQLFunctionVisitor::visit(expression, context);
-        replaceLegacyToTimeInCreateQuery(expression);
+        const auto * storage = ast->as<ASTStorage>();
+        if (storage && child.get() == storage->engine)
+            continue;
 
-        if (expression.get() != old_ptr)
-        {
-            for (auto & child : storage.children)
-                if (child.get() == old_ptr)
-                    child = expression;
-            storage.updatePointerToChild(old_ptr, expression);
-        }
+        const IAST * old_ptr = child.get();
+        substituteUserDefinedFunctionsOutsideEngines(child, context);
+        if (child.get() != old_ptr)
+            ast->updatePointerToChild(old_ptr, child);
+    }
+
+    if (ast->as<ASTFunction>() && !ast->as<ASTStorage>())
+    {
+        ASTPtr expression = ast;
+        UserDefinedSQLFunctionVisitor::visit(expression, context);
+        ast = expression;
     }
 }
 
-void normalizeLegacyToTimeInCreateQuery(ASTCreateQuery & create, const ContextPtr & context)
+void normalizeLegacyToTimeInCreateQuery(ASTPtr & query, const ContextPtr & context)
 {
-    const bool substitute_udfs = !UserDefinedSQLFunctionFactory::instance().empty();
-
-    if (create.storage)
-        normalizeLegacyToTimeInKeyExpressions(*create.storage, substitute_udfs, context);
-
-    /// A materialized view keeps its inner table's definition here rather than in `storage`.
-    if (create.targets)
-        for (auto * inner_engine : create.targets->getInnerEngines())
-            if (inner_engine)
-                normalizeLegacyToTimeInKeyExpressions(*inner_engine, substitute_udfs, context);
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        substituteUserDefinedFunctionsOutsideEngines(query, context);
+    replaceLegacyToTimeInCreateQuery(query);
 }
 
 }
@@ -3523,7 +3514,7 @@ BlockIO InterpreterCreateQuery::execute()
             /// so a worker there would resolve `toTime` with its own default.
             if (!is_create_database && !create.attach_short_syntax && !is_restore_from_backup
                 && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
-                normalizeLegacyToTimeInCreateQuery(create, getContext());
+                normalizeLegacyToTimeInCreateQuery(query_ptr, getContext());
 
             return executeQueryOnCluster(create);
         }
