@@ -559,11 +559,15 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
 bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named, size_t start)
 {
     String url_arg;
+    std::string_view named_key = "connection_string";
     if (argument_is_named)
     {
         url_arg_idx = findNamedArgument(&url_arg, "connection_string", start);
         if (url_arg_idx == -1 || url_arg.empty())
+        {
+            named_key = "storage_account_url";
             url_arg_idx = findNamedArgument(&url_arg, "storage_account_url", start);
+        }
         if (url_arg_idx == -1 || url_arg.empty())
             return false;
     }
@@ -594,6 +598,17 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
             result.replacement = url_arg;
             return true;
         }
+    }
+    else if (maskAzureSASSignature(url_arg))
+    {
+        /// A storage account url authenticates with the shared access signature in its query string:
+        /// when the url contains a '?', `processURL` takes everything after it as `sas_auth`. Only
+        /// the signature is secret, so the argument is replaced in place and the account, the
+        /// container and the remaining parameters stay visible. Unlike the connection string above
+        /// this is not a whole-argument replacement, so return false and let the caller go on to
+        /// mask a positional `account_key` as well.
+        result.replaced_arguments[static_cast<size_t>(url_arg_idx)]
+            = argument_is_named ? (String(named_key) + " = " + quoteString(url_arg)) : quoteString(url_arg);
     }
 
     return false;
