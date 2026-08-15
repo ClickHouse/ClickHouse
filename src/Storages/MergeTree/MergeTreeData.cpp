@@ -87,6 +87,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -9175,6 +9176,19 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     if (!query_context->getSettingsRef()[Setting::use_partition_pruning])
         return std::nullopt;
 
+    /// The predicate is evaluated asynchronously for a background mutation. A subquery that is
+    /// still present here has not been rewritten to an initiator-time literal, so evaluating it
+    /// while pruning could allocate block numbers for a different snapshot than the mutation
+    /// eventually sees. Conservatively leave such mutations unpruned.
+    auto contains_subquery = [](const ASTPtr & ast, const auto & self) -> bool
+    {
+        if (ast->as<ASTSubquery>())
+            return true;
+        return std::ranges::any_of(ast->children, [&](const auto & child) { return self(child, self); });
+    };
+    if (command_runs_in_background && contains_subquery(predicate, contains_subquery))
+        return std::nullopt;
+
     auto predicate_clone = predicate->clone();
 
     /// The analysis must accept everything the mutation itself accepts, so it has to run in the
@@ -9342,7 +9356,12 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsAffectedByCommands
     std::unordered_set<String> * analyzed_partition_ids) const
 {
     std::set<String> affected_partition_ids;
-    bool optimize_with_pruning = query_context->getSettingsRef()[Setting::optimize_mutations_with_partition_pruning];
+    /// When validation is disabled, mutation predicates may deliberately reference objects that
+    /// do not exist yet. Do not run the pruning analysis then: it would eagerly validate the
+    /// predicate and change `validate_mutation_query = 0` from deferred validation into a
+    /// submission-time exception.
+    bool optimize_with_pruning = query_context->getSettingsRef()[Setting::optimize_mutations_with_partition_pruning]
+        && query_context->getSettingsRef()[Setting::validate_mutation_query];
 
     /// Each pruned command analyzes its own snapshot of the local parts, taken at a slightly
     /// different time. A partition counts as analyzed only if every pruned command has seen it,
