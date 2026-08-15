@@ -41,103 +41,143 @@ ClickHouse Cloud теперь предлагает ClickPipes для мигра�
   Если во время миграции возникнут проблемы, ознакомьтесь с [FAQ по миграциям Managed Postgres](/ru/products/managed-postgres/migrations/faq), где описаны распространённые ошибки и способы их устранения.
 </Note>
 
-<Steps>
-  <Step title="Подключитесь к исходной базе данных" id="step-1-connect">
-    Откройте [консоль ClickHouse Cloud](https://clickhouse.cloud) и выберите свой сервис Managed Postgres.
+<div id="step-1-connect">
+  ## Шаг 1: Подключитесь к исходной базе данных
+</div>
 
-    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Карточка сервиса Managed Postgres в списке сервисов ClickHouse Cloud" size="lg" border />
+Откройте [консоль ClickHouse Cloud](https://clickhouse.cloud) и выберите свой сервис Managed Postgres.
 
-    На левой боковой панели нажмите **источник данных**.
+<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Карточка сервиса Managed Postgres в списке сервисов ClickHouse Cloud" size="lg" border />
 
-    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="Пункт источник данных на боковой панели сервиса Managed Postgres" size="lg" border />
+На левой боковой панели нажмите **источник данных**.
 
-    Нажмите **Start import**.
+<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Пункт источник данных на боковой панели сервиса Managed Postgres" size="lg" border />
 
-    <Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Страница источник данных с кнопкой Start import" size="lg" border />
+Нажмите **Start import**.
 
-    Заполните сведения о подключении к исходной базе данных PostgreSQL: host, port, username, password и имя базы данных. Включите **TLS**, если это требуется для исходной базы.
+<Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Страница источник данных с кнопкой Start import" size="lg" border />
 
-    Если вам нужно приватное подключение к исходной базе данных, можно выбрать **SSH tunneling** и указать необходимые параметры SSH. Это позволит миграции безопасно подключаться к базам данных, которые недоступны из публичной сети.
+Заполните сведения о подключении к исходной базе данных PostgreSQL: host, port, username, password и имя базы данных. Включите **TLS**, если это требуется для исходной базы.
 
-    Выберите метод ингестии:
+Если вам нужно приватное подключение к исходной базе данных, можно выбрать **SSH tunneling** и указать необходимые параметры SSH. Это позволит миграции безопасно подключаться к базам данных, которые недоступны из публичной сети.
 
-    * **Initial load + CDC** — копирует существующие данные, а затем поддерживает синхронизацию целевой системы с последующими изменениями.
-    * **Initial load only** — однократное копирование без дальнейшей репликации.
-    * **CDC only** — пропускает начальное копирование и реплицирует только новые изменения, начиная с этого момента.
+Выберите метод ингестии:
 
-    <Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="Шаг 1: форма подключения к исходной базе данных с вариантами метода ингестии" size="lg" border />
+* **Initial load + CDC** — копирует существующие данные, а затем поддерживает синхронизацию целевой системы с последующими изменениями.
+* **Initial load only** — однократное копирование без дальнейшей репликации.
+* **CDC only** — пропускает начальное копирование и реплицирует только новые изменения, начиная с этого момента.
 
-    Нажмите **Next**.
-  </Step>
+<Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="Шаг 1: форма подключения к исходной базе данных с вариантами метода ингестии" size="lg" border />
 
-  <Step title="Экспортируйте схему базы данных" id="step-2-export-schema">
-    Мастер покажет команду `pg_dump`, уже заполненную сведениями о подключении к исходной базе данных. Выполните её в терминале:
+Нажмите **Next**.
 
-    <Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="Шаг 2: команда pg_dump для экспорта схемы" size="lg" border />
+<div id="automated-schema-migration">
+  ## Автоматизированная миграция схемы
+</div>
 
-    ```shell
-    pg_dump \
-      -h <source_host> \
-      -U <source_user> \
-      -d <source_database> \
-      --schema-only \
-      -f pg.sql
-    ```
+<Image img="/images/managed-postgres/pg_dump_restore/automated.webp" alt="Шаг 2: автоматизированная миграция схемы с выбором целевой базы данных" size="lg" border />
 
-    В результате в текущем каталоге будет создан файл `pg.sql`.
+При выборе этого варианта ClickPipe автоматически получит схему исходной базы данных и применит её к сервису Managed Postgres на этапе [Setup](/ru/integrations/clickpipes/postgres/lifecycle#setup) после создания ClickPipe.
 
-    <Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="Вывод терминала после выполнения pg_dump" size="lg" border />
+Эта возможность предполагает **пустую целевую базу данных**, поскольку переносит из исходной базы данных все объекты независимо от того, какие таблицы вы выберете позже в мастере. Если целевая база данных уже содержит данные или требуется более гибкая настройка, выберите режим [**Manual**](#manual-schema-migration).
 
-    Нажмите **Next**.
-  </Step>
+Выберите целевую базу данных в раскрывающемся списке или нажмите **Create a new database**, чтобы создать её.
 
-  <Step title="Импортируйте схему в свой сервис Managed Postgres" id="step-3-import-schema">
-    Выберите базу данных назначения в раскрывающемся списке или нажмите **Create a new database**, чтобы создать новую.
+<Image img="/images/managed-postgres/pg_dump_restore/newdb.webp" alt="Диалог создания новой базы данных Postgres" size="lg" border />
 
-    Мастер покажет команду `psql` для применения дампа схемы к вашему сервису Managed Postgres. Выполните её в терминале:
+<div id="monitoring">
+  ### Мониторинг
+</div>
 
-    <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="Шаг 3: команда psql для импорта схемы" size="lg" border />
+Ход миграции схемы можно отслеживать в представлении сведений о ClickPipes. В разделе **Журналы** отображаются статус миграции схемы и все возникшие ошибки.
 
-    ```shell
-    psql \
-      -h <target_host> \
-      -p 5432 \
-      -U <target_user> \
-      -d <target_database> \
-      -f pg.sql
-    ```
+Этот режим имеет следующие ограничения:
 
-    <Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="Вывод терминала после выполнения импорта схемы через psql" size="lg" border />
+* Пайпы, использующие SSH tunneling, не поддерживают автоматическую миграцию схемы. Схему необходимо [экспортировать и импортировать вручную](#manual-schema-migration).
 
-    Нажмите **Next**.
-  </Step>
+<div id="manual-schema-migration">
+  ## Ручная миграция схемы
+</div>
 
-  <Step title="Настройте параметры ингестии" id="step-4-ingestion-settings">
-    Укажите публикацию для логической репликации. Если оставить это поле пустым, публикация будет создана автоматически.
+Если в целевой базе данных уже есть данные или вам нужна более индивидуальная настройка, а не чистое состояние, которое предполагает автоматический режим, выберите режим **Manual**.
 
-    Разверните **Advanced replication settings**, чтобы настроить пропускную способность:
+<Image img="/images/managed-postgres/pg_dump_restore/manual.webp" alt="Шаг 2: ручная миграция схемы с помощью команды экспорта pg_dump" size="lg" border />
 
-    | Setting                               | Default | Description                                                 |
-    | ------------------------------------- | ------- | ----------------------------------------------------------- |
-    | Sync interval (seconds)               | 10      | Как часто опрашивается слот репликации                      |
-    | Parallel threads for initial load     | 4       | Количество потоков для этапа массового копирования          |
-    | Pull batch size                       | 100,000 | Количество строк, получаемых за один батч репликации        |
-    | Snapshot number of rows per partition | 100000  | Размер партиции для снимков больших таблиц                  |
-    | Snapshot number of tables in parallel | 1       | Количество таблиц, для которых снимки создаются параллельно |
+<div id="step-2-export-schema">
+  ### Экспортируйте схему базы данных
+</div>
 
-    <Image img="/images/managed-postgres/pgpg/advancedsettings.webp" alt="Шаг 4: форма параметров ингестии с публикацией и расширенными параметрами репликации" size="lg" border />
+Мастер покажет команду `pg_dump`, уже заполненную сведениями о подключении к исходной базе данных. Выполните её в терминале:
 
-    Нажмите **Next**.
-  </Step>
+<Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="Шаг 2: команда pg_dump для экспорта схемы" size="lg" border />
 
-  <Step title="Выберите таблицы" id="step-5-select-tables">
-    Выберите таблицы, которые хотите реплицировать. Таблицы сгруппированы по схемам. Выберите отдельные таблицы или разверните схему, чтобы выбрать все таблицы в ней.
+```shell
+pg_dump \
+  -h <source_host> \
+  -U <source_user> \
+  -d <source_database> \
+  --schema-only \
+  -f pg.sql
+```
 
-    <Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="Шаг 5: table picker, сгруппированный по схеме, с кнопкой Create migration" size="lg" border />
+В результате в текущем каталоге будет создан файл `pg.sql`.
 
-    Нажмите **Create migration**.
-  </Step>
-</Steps>
+<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="Вывод терминала после выполнения pg_dump" size="lg" border />
+
+Нажмите **Next**.
+
+<div id="step-3-import-schema">
+  ### Импортируйте схему в свой сервис Managed Postgres
+</div>
+
+Выберите целевую базу данных в раскрывающемся списке или нажмите **Create a new database**, чтобы создать новую.
+
+Мастер покажет команду `psql` для применения дампа схемы к вашему сервису Managed Postgres. Выполните её в терминале:
+
+<Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="Шаг 3: команда psql для импорта схемы" size="lg" border />
+
+```shell
+psql \
+  -h <target_host> \
+  -p 5432 \
+  -U <target_user> \
+  -d <target_database> \
+  -f pg.sql
+```
+
+<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="Вывод терминала после выполнения импорта схемы через psql" size="lg" border />
+
+Нажмите **Next**.
+
+<div id="step-4-ingestion-settings">
+  ## Шаг 4: Настройка параметров ингестии
+</div>
+
+Укажите публикацию, которую нужно использовать для логической репликации. Если оставить это поле пустым, публикация будет создана автоматически.
+
+Разверните **Расширенные настройки репликации**, чтобы настроить пропускную способность:
+
+| Параметр                                            | Значение по умолчанию | Описание                                                     |
+| --------------------------------------------------- | --------------------- | ------------------------------------------------------------ |
+| Интервал синхронизации (секунды)                    | 10                    | Как часто опрашивается слот репликации                       |
+| Параллельные потоки для начальной загрузки          | 4                     | Количество потоков для этапа пакетной загрузки               |
+| Размер батча Pull                                   | 100,000               | Количество строк, извлекаемых за один батч репликации        |
+| Количество строк снимка на партицию                 | 100000                | Размер партиции для снимков больших таблиц                   |
+| Количество таблиц для снимков в параллельном режиме | 1                     | Количество таблиц, для которых снимки создаются одновременно |
+
+<Image img="/images/managed-postgres/pgpg/advancedsettings.webp" alt="Шаг 4: форма параметров ингестии с публикацией и расширенными параметрами репликации" size="lg" border />
+
+Нажмите **Далее**.
+
+<div id="step-5-select-tables">
+  ## Шаг 5: Выберите таблицы
+</div>
+
+Выберите таблицы, которые нужно реплицировать. Таблицы сгруппированы по схемам. Вы можете выбрать отдельные таблицы или развернуть схему, чтобы выбрать все таблицы в ней.
+
+<Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="Шаг 5: панель выбора таблиц, сгруппированных по схемам, с кнопкой Create migration" size="lg" border />
+
+Нажмите **Create migration**.
 
 <div id="monitor">
   ## Отслеживание миграции
