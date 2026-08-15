@@ -174,13 +174,18 @@ ColumnsCache::getIntersecting(
     return result;
 }
 
-UInt64 ColumnsCache::getInvalidationGeneration(const UUID & table_uuid)
+std::pair<UInt64, UInt64> ColumnsCache::getInvalidationGenerations(const UUID & table_uuid, const String & part_name)
 {
     std::lock_guard lock(interval_index_mutex);
-    return currentGeneration(table_uuid);
+    const PartIdentifier part_id{table_uuid, part_name};
+    return {currentGeneration(table_uuid), currentPartGeneration(part_id)};
 }
 
-bool ColumnsCache::set(const Key & key, const MappedPtr & mapped, UInt64 expected_generation)
+bool ColumnsCache::set(
+    const Key & key,
+    const MappedPtr & mapped,
+    UInt64 expected_table_generation,
+    UInt64 expected_part_generation)
 {
     /// Hold interval_index_mutex across all updates so getIntersecting / clearAll
     /// observe a consistent view, and so that overlap detection cannot race with
@@ -197,7 +202,9 @@ bool ColumnsCache::set(const Key & key, const MappedPtr & mapped, UInt64 expecte
     /// CACHE` could resurrect entries the drop removed. Checked under the same
     /// lock removeTable and clearAll use, so the comparison cannot race with a
     /// concurrent bump.
-    if (currentGeneration(key.table_uuid) != expected_generation)
+    const PartIdentifier part_id{key.table_uuid, key.part_name};
+    if (currentGeneration(key.table_uuid) != expected_table_generation
+        || currentPartGeneration(part_id) != expected_part_generation)
         return false;
 
     /// An entry whose weight exceeds the cache size limit would be evicted by
@@ -206,8 +213,6 @@ bool ColumnsCache::set(const Key & key, const MappedPtr & mapped, UInt64 expecte
     /// does not erase useful overlapping cached ranges.
     if (ColumnsCacheWeightFunction{}(*mapped) > Base::maxSizeInBytes())
         return false;
-
-    PartIdentifier part_id{key.table_uuid, key.part_name};
 
     /// Scan the per-column interval map for ranges that overlap the new key, but
     /// do NOT mutate `interval_index` or `Base` yet. A write can still fail
@@ -368,6 +373,7 @@ void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
     std::lock_guard lock(interval_index_mutex);
 
     PartIdentifier part_id{table_uuid, part_name};
+    ++part_generations[part_id];
     auto part_it = interval_index.find(part_id);
     if (part_it == interval_index.end())
         return;

@@ -31,7 +31,8 @@ TEST(ColumnsCache, SetAndGetIntersecting)
     const UUID table_uuid = UUIDHelpers::generateV4();
 
     ColumnsCacheKey key{table_uuid, "part_1", "col", 0, 100};
-    EXPECT_TRUE(cache.set(key, makeEntry(100), 0));
+    const auto [table_generation, part_generation] = cache.getInvalidationGenerations(table_uuid, "part_1");
+    EXPECT_TRUE(cache.set(key, makeEntry(100), table_generation, part_generation));
 
     auto intersecting = cache.getIntersecting(table_uuid, "part_1", "col", 10, 20);
     ASSERT_EQ(intersecting.size(), 1);
@@ -40,7 +41,7 @@ TEST(ColumnsCache, SetAndGetIntersecting)
     /// A write fully covered by an existing wider interval is a no-op
     /// and must report that no bytes were written.
     ColumnsCacheKey narrow_key{table_uuid, "part_1", "col", 10, 20};
-    EXPECT_FALSE(cache.set(narrow_key, makeEntry(10), 0));
+    EXPECT_FALSE(cache.set(narrow_key, makeEntry(10), table_generation, part_generation));
 }
 
 TEST(ColumnsCache, ClearAllIsStickyAgainstInFlightReaders)
@@ -50,18 +51,19 @@ TEST(ColumnsCache, ClearAllIsStickyAgainstInFlightReaders)
     const UUID table_uuid = UUIDHelpers::generateV4();
 
     /// A reader captures the generation when it starts reading.
-    const UInt64 generation = cache.getInvalidationGeneration(table_uuid);
+    const auto [table_generation, part_generation] = cache.getInvalidationGenerations(table_uuid, "part_1");
 
     /// `SYSTEM DROP COLUMNS CACHE` happens while that reader is still running.
     cache.clearAll();
 
     /// The reader's deferred write must not resurrect entries after the drop.
     ColumnsCacheKey key{table_uuid, "part_1", "col", 0, 100};
-    EXPECT_FALSE(cache.set(key, makeEntry(100), generation));
+    EXPECT_FALSE(cache.set(key, makeEntry(100), table_generation, part_generation));
     EXPECT_TRUE(cache.getIntersecting(table_uuid, "part_1", "col", 0, 100).empty());
 
     /// A reader that starts after the drop caches normally again.
-    EXPECT_TRUE(cache.set(key, makeEntry(100), cache.getInvalidationGeneration(table_uuid)));
+    const auto [new_table_generation, new_part_generation] = cache.getInvalidationGenerations(table_uuid, "part_1");
+    EXPECT_TRUE(cache.set(key, makeEntry(100), new_table_generation, new_part_generation));
     EXPECT_EQ(cache.getIntersecting(table_uuid, "part_1", "col", 0, 100).size(), 1u);
 }
 
@@ -71,17 +73,17 @@ TEST(ColumnsCache, ClearAllAndRemoveTableGenerationsDoNotCancelOut)
         /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
     const UUID table_uuid = UUIDHelpers::generateV4();
 
-    const UInt64 generation = cache.getInvalidationGeneration(table_uuid);
+    const auto [table_generation, part_generation] = cache.getInvalidationGenerations(table_uuid, "part_1");
 
     /// Both kinds of invalidation happen while a reader is in flight. The token is
     /// a sum of two monotonically increasing counters, so no combination of bumps
     /// can bring it back to a previously observed value.
     cache.clearAll();
     cache.removeTable(table_uuid);
-    EXPECT_NE(cache.getInvalidationGeneration(table_uuid), generation);
+    EXPECT_NE(cache.getInvalidationGenerations(table_uuid, "part_1").first, table_generation);
 
     ColumnsCacheKey key{table_uuid, "part_1", "col", 0, 100};
-    EXPECT_FALSE(cache.set(key, makeEntry(100), generation));
+    EXPECT_FALSE(cache.set(key, makeEntry(100), table_generation, part_generation));
     EXPECT_TRUE(cache.getIntersecting(table_uuid, "part_1", "col", 0, 100).empty());
 }
 
@@ -94,7 +96,7 @@ TEST(ColumnsCache, OversizedEntryRejected)
     const UUID table_uuid = UUIDHelpers::generateV4();
 
     ColumnsCacheKey big_key{table_uuid, "part_1", "col", 0, 1000};
-    EXPECT_FALSE(cache.set(big_key, makeEntry(1000), 0));
+    EXPECT_FALSE(cache.set(big_key, makeEntry(1000), 0, 0));
     EXPECT_TRUE(cache.getIntersecting(table_uuid, "part_1", "col", 0, 1000).empty());
 }
 
@@ -105,12 +107,12 @@ TEST(ColumnsCache, OversizedEntryDoesNotEraseOverlappingRanges)
     const UUID table_uuid = UUIDHelpers::generateV4();
 
     ColumnsCacheKey small_key{table_uuid, "part_1", "col", 0, 10};
-    EXPECT_TRUE(cache.set(small_key, makeEntry(10), 0));
+    EXPECT_TRUE(cache.set(small_key, makeEntry(10), 0, 0));
 
     /// A replacement that cannot stay resident must be rejected before it
     /// erases useful overlapping cached ranges.
     ColumnsCacheKey big_key{table_uuid, "part_1", "col", 0, 1000};
-    EXPECT_FALSE(cache.set(big_key, makeEntry(1000), 0));
+    EXPECT_FALSE(cache.set(big_key, makeEntry(1000), 0, 0));
 
     auto intersecting = cache.getIntersecting(table_uuid, "part_1", "col", 0, 10);
     ASSERT_EQ(intersecting.size(), 1);
@@ -125,13 +127,13 @@ TEST(ColumnsCache, SLRUOversizedEntryRejected)
     const UUID table_uuid = UUIDHelpers::generateV4();
 
     ColumnsCacheKey big_key{table_uuid, "part_1", "col", 0, 1000};
-    EXPECT_FALSE(cache.set(big_key, makeEntry(1000), 0));
+    EXPECT_FALSE(cache.set(big_key, makeEntry(1000), 0, 0));
     EXPECT_TRUE(cache.getIntersecting(table_uuid, "part_1", "col", 0, 1000).empty());
 
     /// An entry within the size limit is admitted even when it is larger than
     /// the protected segment of the SLRU policy.
     ColumnsCacheKey medium_key{table_uuid, "part_1", "col", 0, 60};
-    EXPECT_TRUE(cache.set(medium_key, makeEntry(60), 0));
+    EXPECT_TRUE(cache.set(medium_key, makeEntry(60), 0, 0));
     EXPECT_EQ(cache.getIntersecting(table_uuid, "part_1", "col", 0, 60).size(), 1);
 }
 
@@ -148,7 +150,7 @@ TEST(ColumnsCache, SLRUFailedAdmissionPreservesOverlappingRanges)
     const UUID table_uuid = UUIDHelpers::generateV4();
 
     ColumnsCacheKey key_a{table_uuid, "part_1", "col", 0, 10};
-    ASSERT_TRUE(cache.set(key_a, makeEntry(10), 0));
+    ASSERT_TRUE(cache.set(key_a, makeEntry(10), 0, 0));
 
     /// Promote A into the protected segment so the probationary overflow sweep
     /// triggered by the next insertion cannot evict it.
@@ -157,7 +159,7 @@ TEST(ColumnsCache, SLRUFailedAdmissionPreservesOverlappingRanges)
     ColumnsCacheKey key_b{table_uuid, "part_1", "col", 0, 55};
     auto entry_b = makeEntry(55);
     ASSERT_LE(ColumnsCacheWeightFunction{}(*entry_b), 1024u);
-    EXPECT_FALSE(cache.set(key_b, entry_b, 0));
+    EXPECT_FALSE(cache.set(key_b, entry_b, 0, 0));
 
     /// A must still be served after B's failed admission.
     auto intersecting = cache.getIntersecting(table_uuid, "part_1", "col", 0, 10);
@@ -168,6 +170,27 @@ TEST(ColumnsCache, SLRUFailedAdmissionPreservesOverlappingRanges)
     /// A subsequent in-limit write to a fresh part still succeeds, i.e. the failed
     /// admission did not leave a dangling side-index bucket or corrupt the cache.
     ColumnsCacheKey key_c{table_uuid, "part_2", "col", 0, 10};
-    EXPECT_TRUE(cache.set(key_c, makeEntry(10), 0));
+    EXPECT_TRUE(cache.set(key_c, makeEntry(10), 0, 0));
     EXPECT_EQ(cache.getIntersecting(table_uuid, "part_2", "col", 0, 10).size(), 1u);
+}
+
+TEST(ColumnsCache, RemovePartIsStickyAgainstInFlightReaders)
+{
+    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
+        /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
+    const UUID table_uuid = UUIDHelpers::generateV4();
+    ColumnsCacheKey key{table_uuid, "part_1", "col", 0, 100};
+
+    /// A reader captures both generations before the part is removed.
+    const auto [table_generation, part_generation] = cache.getInvalidationGenerations(table_uuid, "part_1");
+    cache.removePart(table_uuid, "part_1");
+
+    /// Its deferred write cannot resurrect the removed part.
+    EXPECT_FALSE(cache.set(key, makeEntry(100), table_generation, part_generation));
+    EXPECT_TRUE(cache.getIntersecting(table_uuid, "part_1", "col", 0, 100).empty());
+
+    /// A reader started after removal can populate a newly attached part with
+    /// that name normally.
+    const auto [new_table_generation, new_part_generation] = cache.getInvalidationGenerations(table_uuid, "part_1");
+    EXPECT_TRUE(cache.set(key, makeEntry(100), new_table_generation, new_part_generation));
 }

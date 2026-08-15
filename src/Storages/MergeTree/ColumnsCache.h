@@ -116,12 +116,18 @@ private:
     mutable std::mutex interval_index_mutex;
 
     /// Per-table invalidation generation, advanced by removeTable. See
-    /// getInvalidationGeneration. Guarded by interval_index_mutex.
+    /// getInvalidationGenerations. Guarded by interval_index_mutex.
     std::unordered_map<UUID, UInt64> table_generations;
+
+    /// Per-part invalidation generation, advanced by removePart. Unlike the
+    /// interval index, this retains tombstones for removed parts so a reader
+    /// that started before removal cannot repopulate the cache afterwards.
+    /// Guarded by interval_index_mutex.
+    std::unordered_map<PartIdentifier, UInt64, PartIdentifierHash> part_generations;
 
     /// Cache-wide invalidation generation, advanced by clearAll (`SYSTEM DROP
     /// COLUMNS CACHE`). It is folded into the token returned by
-    /// getInvalidationGeneration, so a drop also rejects deferred writes from
+    /// getInvalidationGenerations, so a drop also rejects deferred writes from
     /// readers that started before it. Guarded by interval_index_mutex.
     UInt64 global_generation = 0;
 
@@ -134,6 +140,12 @@ private:
     {
         auto it = table_generations.find(table_uuid);
         return global_generation + (it == table_generations.end() ? 0 : it->second);
+    }
+
+    UInt64 currentPartGeneration(const PartIdentifier & part_id) const
+    {
+        auto it = part_generations.find(part_id);
+        return it == part_generations.end() ? 0 : it->second;
     }
 
     /// Counts set() calls since the last compaction. Used to amortize the cost of
@@ -193,13 +205,10 @@ public:
     /// size limit). Callers use the return value to avoid charging the per-query
     /// write budget for writes that never landed in the cache.
     ///
-    /// `expected_generation` is the invalidation token the caller captured (via
-    /// getInvalidationGeneration) when it started reading the data being cached.
-    /// If it no longer matches the table's current token, the table (or the whole
-    /// cache) was invalidated (e.g. by a `RENAME COLUMN` or a `SYSTEM DROP COLUMNS
-    /// CACHE`) after the read started, so this write would repopulate the cache
-    /// with stale or just-dropped data and is dropped instead.
-    bool set(const Key & key, const MappedPtr & mapped, UInt64 expected_generation);
+    /// The expected generations are captured through getInvalidationGenerations
+    /// when the reader starts. A mismatch means the table, whole cache, or part
+    /// was invalidated after the read began, so the deferred write is dropped.
+    bool set(const Key & key, const MappedPtr & mapped, UInt64 expected_table_generation, UInt64 expected_part_generation);
 
     /// Current invalidation token for a table. Advances each time removeTable is
     /// called (a metadata change that can remap column names) and each time
@@ -208,7 +217,7 @@ public:
     /// by a reader that started before the invalidation cannot repopulate the
     /// cache with stale data, and cannot resurrect entries an explicit drop
     /// removed.
-    UInt64 getInvalidationGeneration(const UUID & table_uuid);
+    std::pair<UInt64, UInt64> getInvalidationGenerations(const UUID & table_uuid, const String & part_name);
 
     /// Remove all cached entries for a specific data part.
     /// Should be called when a part is dropped, merged, or mutated.

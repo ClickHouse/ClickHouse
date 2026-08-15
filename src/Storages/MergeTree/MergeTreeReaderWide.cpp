@@ -509,11 +509,12 @@ size_t MergeTreeReaderWide::readRows(
                 cache_row_begin = row_begin;
                 cache_range_last_mark = cache_last_mark;
                 cache_column_sizes_at_task_start.resize(num_columns);
-                /// Capture the invalidation generation at the start of the read.
+                /// Capture the invalidation generations at the start of the read.
                 /// The deferred write below passes it to set(), which drops the
                 /// write if the table was invalidated, or the whole cache dropped,
                 /// after this point.
-                cache_generation = columns_cache->getInvalidationGeneration(data_part_info_for_read->getTableUUID());
+                std::tie(cache_table_generation, cache_part_generation) = columns_cache->getInvalidationGenerations(
+                    data_part_info_for_read->getTableUUID(), data_part_info_for_read->getPartName());
             }
 
             for (size_t pos = 0; pos < num_columns; ++pos)
@@ -667,7 +668,7 @@ size_t MergeTreeReaderWide::readRows(
                             /// this range; a no-op write must not consume the budget, otherwise
                             /// a query could exhaust the cap and skip later real inserts even
                             /// though those bytes were never written to the cache.
-                            if (columns_cache->set(cache_key, entry, cache_generation) && bytes_written)
+                            if (columns_cache->set(cache_key, entry, cache_table_generation, cache_part_generation) && bytes_written)
                                 bytes_written->fetch_add(entry_weight, std::memory_order_relaxed);
 
                             LOG_TEST(log, "Cached column: {}, row_begin={}, row_end={}, rows={}",
