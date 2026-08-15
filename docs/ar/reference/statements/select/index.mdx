@@ -1,6 +1,6 @@
 ---
 description: 'توثيق استعلام SELECT'
-sidebarTitle: 'SELECT'
+sidebarTitle: 'نظرة عامة'
 slug: /sql-reference/statements/select/
 title: 'استعلام SELECT'
 doc_type: 'reference'
@@ -34,9 +34,9 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 ```
 
-جميع البنود اختيارية، باستثناء قائمة التعبيرات المطلوبة التي تأتي مباشرة بعد `SELECT`، والتي تُشرح بمزيد من التفصيل [أدناه](#select-clause).
+قائمة التعبيرات التي تأتي مباشرة بعد `SELECT` مطلوبة؛ أما جميع البنود الأخرى فاختيارية.
 
-تُشرح تفاصيل كل بند اختياري في أقسام منفصلة، وهي مُدرجة بالترتيب نفسه الذي تُنفَّذ به (باستثناء `SELECT` و `DISTINCT`، المُدرجَين أولًا للتيسير: لا تُقيَّم تعبيراتهما إلا بعد اكتمال البنود السابقة، كما هو موضح [أدناه](#select-clause)):
+يُشرح `SELECT` وبنوده الاختيارية في أقسام منفصلة:
 
 * [بند WITH](/ar/reference/statements/select/with)
 * [بند SELECT](#select-clause)
@@ -61,6 +61,15 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 * [بند EXCEPT](/ar/reference/statements/select/except)
 * [بند INTO OUTFILE](/ar/reference/statements/select/into-outfile)
 * [بند FORMAT](/ar/reference/statements/select/format)
+
+يمكن أيضًا كتابة الاستعلام كسلسلة خطية من التحويلات باستخدام [عوامل الأنبوب](/ar/reference/statements/select/pipe-operators):
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+|> ORDER BY c DESC
+```
 
 <div id="select-clause">
   ## بند SELECT
@@ -199,7 +208,7 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 
 يمكنك استخدام المرادفات (الأسماء المستعارة باستخدام `AS`) في أي جزء من الاستعلام.
 
-تدعم بنود `GROUP BY` و`ORDER BY` و`LIMIT BY` الوسيطات الموضعية. لتمكين ذلك، فعِّل الإعداد [enable&#95;positional&#95;arguments](/ar/reference/settings/session-settings#enable_positional_arguments). بعد ذلك، على سبيل المثال، سيؤدي `ORDER BY 1,2` إلى فرز صفوف الجدول حسب العمود الأول ثم العمود الثاني.
+تدعم بنود `GROUP BY` و`ORDER BY` و`LIMIT BY` الوسيطات الموضعية. لتمكين ذلك، فعِّل الإعداد [enable&#95;positional&#95;arguments](/ar/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments). بعد ذلك، على سبيل المثال، سيؤدي `ORDER BY 1,2` إلى فرز صفوف الجدول حسب العمود الأول ثم العمود الثاني.
 
 <div id="implementation-details">
   ## تفاصيل التنفيذ
