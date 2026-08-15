@@ -2788,6 +2788,58 @@ TEST(MergeTreeDeduplicationLog, UnfenceableDivergedHistoryFailsOperationsClosed)
     std::filesystem::remove_all(work_dir);
 }
 
+/// Regression test: a clean shutdown must not lose the process-local barrier left
+/// when a rollback could neither repair nor fence diverged history. The disk can
+/// recover after the last operation, so shutdown must use that opportunity before a
+/// restart replays the abandoned ADD records. Disabling deduplication first must not
+/// bypass the barrier either.
+TEST(MergeTreeDeduplicationLog, UnfenceableDivergedHistoryIsFencedOnShutdown)
+{
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    for (const bool disable_deduplication : {false, true})
+    {
+        const std::string work_dir = "tmp/gtest_dedup_log_fence_shutdown_" + std::to_string(disable_deduplication) + "/";
+        std::filesystem::remove_all(work_dir);
+        std::filesystem::create_directories(work_dir);
+
+        {
+            auto disk = std::make_shared<DiskFailingRotationSyncAndLogFlushes>(
+                "faulty", work_dir, /*fail_on_sync=*/ 1, /*fail_from_flush=*/ 5);
+            disk->marker_writable = false;
+
+            MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+            log.load();
+
+            EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0")).empty());
+            EXPECT_ANY_THROW(log.addPart({"block2", "block3", "block4"}, part("all_2_2_0")));
+
+            /// The disk recovers after the failed operation, but there is no later
+            /// addPart or dropPart to enter prepareToWrite before the clean stop.
+            disk->fail_on_sync = std::numeric_limits<size_t>::max();
+            disk->fail_from_flush = std::numeric_limits<size_t>::max();
+            disk->marker_writable = true;
+            if (disable_deduplication)
+                log.setDeduplicationWindowSize(0);
+            log.shutdown();
+        }
+
+        {
+            auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+            MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+            log.load();
+
+            /// The abandoned ADD record was never committed, so retrying it must be
+            /// accepted rather than silently deduplicated away after the restart.
+            EXPECT_TRUE(log.addPart({"block3"}, part("all_3_3_0")).empty());
+            log.shutdown();
+        }
+
+        std::filesystem::remove_all(work_dir);
+    }
+}
+
 #ifdef MERGE_TREE_DEDUPLICATION_LOG_FIX_IS_PRESENT
 /// Regression test for the last-resort rollback the sink falls back to when `dropPart`
 /// itself throws (MergeTreeSink::commitPart): the block ids of a part that never became

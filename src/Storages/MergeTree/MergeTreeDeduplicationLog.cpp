@@ -1544,6 +1544,16 @@ void MergeTreeDeduplicationLog::shutdown()
     if (stopped)
         return;
 
+    /// A rollback may have left durable records behind while neither its repair
+    /// snapshot nor the marker that fences the records could be persisted. Once the
+    /// disk recovers, a graceful shutdown is the last opportunity before a restart to
+    /// make that state safe: compact while the live map is still available, or at
+    /// least persist the marker that makes the next load discard the suspect history.
+    /// In particular this cannot wait for prepareToWrite, because no later write is
+    /// required before a clean server stop; the zero-window path has no writes at all.
+    if (history_fence_pending)
+        fenceOffDivergedHistory();
+
     stopped = true;
     if (current_writer)
     {
