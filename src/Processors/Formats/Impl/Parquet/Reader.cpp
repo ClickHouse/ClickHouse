@@ -50,6 +50,7 @@ namespace ProfileEvents
 {
     extern const Event ParquetRowsFilterExpression;
     extern const Event ParquetColumnsFilterExpression;
+    extern const Event ParquetReadPages;
     extern const Event ParquetPrunedPages;
 }
 
@@ -1064,6 +1065,7 @@ void Reader::initializePrefetches()
                 {
                     size_t len = size_t(column.meta->meta_data.bloom_filter_length);
                     max_header_length = std::min(max_header_length, len);
+                    column.bloom_filter_data_bytes = len;
                     column.bloom_filter_data_prefetch = prefetcher.registerRange(
                         size_t(column.meta->meta_data.bloom_filter_offset),
                         len, /*likely_to_be_used=*/ false);
@@ -1149,6 +1151,7 @@ void Reader::initializePrefetches()
                 auto it = std::upper_bound(all_offsets.begin(), all_offsets.end(), offset);
                 size_t end = it == all_offsets.end() ? prefetcher.getFileSize() : *it;
 
+                column.bloom_filter_data_bytes = end - offset;
                 column.bloom_filter_data_prefetch = prefetcher.registerRange(
                     offset, end - offset, /*likely_to_be_used=*/ false);
             }
@@ -1326,6 +1329,13 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     const size_t bytes_per_block = 32;
     if (column.bloom_filter_header.numBytes <= 0 || column.bloom_filter_header.numBytes % bytes_per_block != 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid bloom filter size.");
+    /// The bitset must fit in the bloom filter byte range the file declared, otherwise the block
+    /// subranges below would point outside the data we fetched.
+    if (header_size > column.bloom_filter_data_bytes ||
+        size_t(column.bloom_filter_header.numBytes) > column.bloom_filter_data_bytes - header_size)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Bloom filter bitset of {} bytes doesn't fit in {} bytes of bloom filter "
+            "data (including a {}-byte header) at offset {}. Use setting input_format_parquet_bloom_filter_push_down=0 to ignore.",
+            column.bloom_filter_header.numBytes, column.bloom_filter_data_bytes, header_size, column.meta->meta_data.bloom_filter_offset);
     size_t num_blocks = size_t(column.bloom_filter_header.numBytes) / bytes_per_block;
 
     const auto & hashes = column_info.bloom_filter_hashes;
@@ -1910,6 +1920,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
         size_t prev_row_idx = 0; // start of the latest range of rows that pass filter
+        size_t pruned_pages = 0;
         for (size_t page_idx = 0; page_idx < num_pages; ++page_idx)
         {
             Range & range = hyperrectangle[column_info.idx_in_output_block];
@@ -1965,12 +1976,15 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                 if (start_row > prev_row_idx)
                     column.row_ranges_after_column_index.emplace_back(prev_row_idx, start_row);
                 prev_row_idx = end_row;
-                ProfileEvents::increment(ProfileEvents::ParquetPrunedPages);
+                ++pruned_pages;
             }
         }
 
         if (size_t(row_group.meta->num_rows) > prev_row_idx)
             column.row_ranges_after_column_index.emplace_back(prev_row_idx, row_group.meta->num_rows);
+
+        if (pruned_pages)
+            ProfileEvents::increment(ProfileEvents::ParquetPrunedPages, pruned_pages);
     }
     catch (Exception & e)
     {
@@ -2835,6 +2849,7 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
     if (max_rep > 0 || column.need_null_map)
         decodeRepOrDefLevels(def_encoding, max_def, page.num_values, std::span(encoded_def, encoded_def_size), page.def);
 
+    ProfileEvents::increment(ProfileEvents::ParquetReadPages);
     page.initialized = true;
     return true;
 }
