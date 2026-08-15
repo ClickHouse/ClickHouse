@@ -2001,7 +2001,11 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
                             makeASTFunction("floor", makeASTFunction("divide", decimal_value, step_literal)), step_literal->clone());
                         if (offset_literal)
                             decimal_key = makeASTFunction("plus", decimal_key, offset_literal->clone());
-                        key = makeASTFunction("if", makeASTFunction("isNotNull", integer_value), integer_key, decimal_key);
+                        /// The exact integer and decimal fallbacks have no common numeric
+                        /// supertype (`if` would produce Dynamic), which cannot be a GROUP BY
+                        /// key. LogsQL field values are textual, so use their canonical textual
+                        /// form for the bucket key; this also preserves Int128 precision.
+                        key = makeASTFunction("toString", makeASTFunction("if", makeASTFunction("isNotNull", integer_value), integer_key, decimal_key));
                     }
                     else
                     {
