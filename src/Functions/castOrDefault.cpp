@@ -997,7 +997,7 @@ SELECT
         toIPv6OrDefault_documentation);
 
     FunctionDocumentation::Description toVersionOrDefault_description = R"(
-Converts a string to a [`Version`](../data-types/version.md) value.
+Converts a string to a [`Version`](/reference/data-types/version) value.
 If the string has an invalid format, it returns `0.0.0.0` (0 Version), or the provided Version default.
     )";
     FunctionDocumentation::Syntax toVersionOrDefault_syntax = "toVersionOrDefault(string[, default])";

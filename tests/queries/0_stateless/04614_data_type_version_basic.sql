@@ -4,7 +4,8 @@
 --   * leading zeros in a component are parsed purely numerically ('01' -> 1);
 --   * text output always prints the full canonical 4-component form, regardless of how
 --     many components were given on input.
--- A clean run produces no output (all assertions pass).
+-- A clean run of the throwIf() assertions below produces a single "0" line of output per
+-- assertion (throwIf returns 0 rather than nothing when its condition is false).
 
 SELECT throwIf(NOT (toVersion('1.2') = toVersion('1.2.0.0')), 'FAIL: padding equality 1.2 vs 1.2.0.0');
 SELECT throwIf(NOT (toVersion('20.0') = toVersion('20.0.0.0')), 'FAIL: padding equality 20.0');

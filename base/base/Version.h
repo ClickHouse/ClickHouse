@@ -14,8 +14,9 @@ namespace DB
     /// This is deliberately NOT semver: there is no support for pre-release (`-alpha`) or
     /// build-metadata (`+build`) suffixes, since neither has a value that fits into the fixed
     /// numeric packing above without either running out of spare bits or giving up free integer
-    /// ordering. Text containing such a suffix is rejected with `CANNOT_PARSE_VERSION` rather than
-    /// silently truncated. This model is closer to `ClickHouse`'s own version scheme
+    /// ordering. Text containing such a suffix is rejected rather than silently truncated: parsing
+    /// stops at the suffix and the generic leftover-input check reports `CANNOT_PARSE_TEXT`, which
+    /// points at the offending position. This model is closer to `ClickHouse`'s own version scheme
     /// (`24.3.1.2672`) than to full semver.
     struct Version : StrongTypedef<UInt128, struct VersionTag>
     {

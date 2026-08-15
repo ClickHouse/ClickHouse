@@ -49,11 +49,12 @@ public:
     /// review discussion) found no live bug from this: the one real-looking risk (Version compared
     /// against a bare integer literal) already fails safely with NO_COMMON_TYPE because
     /// TypeIndex::Version is not enumerated in getLeastSupertype.cpp's getNumericType(), unlike
-    /// IPv4. Flipping these to false (to match IPv6) would remove MinMax/TDigest/CountMinSketch/
-    /// Uniq statistics eligibility and top-k skip-index eligibility for Version columns (see
-    /// Statistics*.cpp, optimizeTopK.cpp) and would require a companion fix to
-    /// convertFieldToType.cpp -- deliberately deferred to a follow-up design decision, not part of
-    /// this fix pass.
+    /// IPv4. Note that statistics and top-k skip-index eligibility gate on
+    /// isValueRepresentedByNumber(), not on isValueRepresentedByInteger(), so they are unaffected by
+    /// the Integer flag. What the Integer flag does decide is the Distributed sharding key:
+    /// StorageDistributed.cpp accepts a sharding expression of this type at CREATE and only fails on
+    /// the first INSERT, whereas false would reject it at CREATE. That is a small argument for
+    /// false, deliberately deferred to a follow-up design decision, not part of this fix pass.
     bool isValueRepresentedByNumber() const override { return true; }
     bool isValueRepresentedByInteger() const override { return true; }
     bool isValueRepresentedByUnsignedInteger() const override { return true; }

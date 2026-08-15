@@ -1,7 +1,7 @@
 -- Comparison ordering for the Version data type, plus the two documented rejection cases.
 --
--- A clean run of the throwIf() assertions below produces no output (throwIf raises only when
--- its condition is true, i.e. only on a genuine failure).
+-- A clean run of the throwIf() assertions below produces a single "0" line of output per
+-- assertion (throwIf returns 0 rather than nothing when its condition is false).
 --
 -- The last two statements are deliberately invalid input and are expected to throw
 -- CANNOT_PARSE_VERSION; per the house convention used throughout this test suite (see e.g.

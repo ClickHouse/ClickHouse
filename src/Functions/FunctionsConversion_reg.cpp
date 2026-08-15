@@ -1498,7 +1498,7 @@ SELECT toIPv4(2130706433);
 
     /// toVersion documentation
     FunctionDocumentation::Description description_toVersion = R"(
-Converts a string to a value of type [`Version`](../data-types/version.md).
+Converts a string to a value of type [`Version`](/reference/data-types/version).
 
 `Version` is a semantic-version-like value made of up to 4 dot-separated components (`major.minor.patch.build`), packed into a `UInt128`. Missing trailing components are padded with zero, so `toVersion('1.2')` equals `toVersion('1.2.0.0')`. Comparisons between `Version` values are performed component-wise (major first, then minor, then patch, then build).
 )";
@@ -2801,7 +2801,7 @@ SELECT
 
     /// toVersionOrZero documentation
     FunctionDocumentation::Description description_toVersionOrZero = R"(
-Converts an input value to a value of type [Version](../data-types/version.md) but returns zero Version (`0.0.0.0`) in case of an error.
+Converts an input value to a value of type [Version](/reference/data-types/version) but returns zero Version (`0.0.0.0`) in case of an error.
 Like [`toVersion`](#toVersion) but returns zero Version instead of throwing an exception on conversion errors.
 
 Supported arguments:

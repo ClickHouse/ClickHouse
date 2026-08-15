@@ -42,8 +42,8 @@ SELECT toVersion('1.2');
 
 ```text
 ┌─toVersion('1.2')─┐
-│ 1.2.0.0           │
-└───────────────────┘
+│ 1.2.0.0          │
+└──────────────────┘
 ```
 
 Because the components are packed most-significant-first (major, then minor, then patch, then
@@ -56,8 +56,8 @@ SELECT toVersion('2.0.0.0') > toVersion('1.99.99.99');
 
 ```text
 ┌─greater(toVersion('2.0.0.0'), toVersion('1.99.99.99'))─┐
-│                                                       1 │
-└──────────────────────────────────────────────────────────┘
+│                                                      1 │
+└────────────────────────────────────────────────────────┘
 ```
 )DOCS_MD",
             .syntax = "Version",
