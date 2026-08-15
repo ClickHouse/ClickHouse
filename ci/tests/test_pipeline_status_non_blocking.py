@@ -132,6 +132,38 @@ def test_both_consumers_read_the_flag_with_the_same_predicate():
     ), "hook_html dependee-drop predicate changed - re-check Runner._pipeline_status"
 
 
+def test_the_output_site_delegates_to_the_helper():
+    """The `pipeline_status` writer must not re-implement the predicate.
+
+    Every other test here calls `Runner._pipeline_status` directly, so a call
+    site that computed its own status would leave them all green while GitHub
+    went back to seeing `failure` for a non-blocking `ERROR`.
+    """
+    import inspect
+
+    source = inspect.getsource(Runner._post_run)
+    assert "pipeline_status = self._pipeline_status(result)" in source
+    assert "is_failure()" not in source, (
+        "the output site must not re-derive the status - call _pipeline_status"
+    )
+
+
+def test_the_merge_gate_never_reads_the_non_blocking_flag():
+    """Merge readiness must stay independent of the flag.
+
+    A non-blocking job is exempted from downstream dispatch only. Were the
+    merge computation to honour the same flag, a job could go green for merging
+    on a status it merely asked not to propagate.
+    """
+    import inspect
+
+    from ci.praktika import native_jobs
+
+    source = inspect.getsource(native_jobs._finish_workflow)
+    assert "do_not_block_pipeline_on_failure" not in source
+    assert "allow_failure" in source
+
+
 def test_the_reported_shard_shape_does_not_block_the_pipeline():
     """End to end on the measured production result.
 
